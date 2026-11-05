@@ -28,12 +28,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.16">
-  <link rel="icon" href="icon-dark.svg?v=6.16" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.16" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="icon" href="favicon-dark.ico?v=6.16" sizes="48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.16" sizes="48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" href="icon-180.png?v=6.16">
+  <link rel="manifest" href="manifest.json?v=6.18">
+  <link rel="icon" href="icon-dark.svg?v=6.18" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.18" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="favicon-dark.ico?v=6.18" sizes="48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.18" sizes="48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" href="icon-180.png?v=6.18">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -10258,8 +10258,8 @@ svg.ic-crit { color: var(--crit); }
       return Object.assign({ instantLocal: true }, buildBlueprintResponse(matchedIndObj || INDUSTRIES[0], cleanQ));
     }
     if ((low.startsWith('analyze the ') && low.includes('dashboard')) ||
-        (/\b(screenshot|screen[ _-]?shot|understand|undersand|explain\s+this|what\s+is\s+this)\b/i.test(low)) ||
-        (/^\[attached:.*\.(?:png|jpe?g|webp|gif|bmp)\]/i.test(cleanQ))) {
+        (/\b(screenshot|screen[ _-]?shot|understand|undersand|explain\s+this|what\s+is\s+this|capture|écran|ecran|comprends|explique)\b|(?:صورة|لقطة|شاشة|اشرح|افهم|أفهم)/i.test(cleanQ)) ||
+        (/^(?:\[?attached:?)\s*.*\.(?:png|jpe?g|webp|gif|bmp|svg)\b/i.test(cleanQ))) {
       const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
       const brief = buildDashboardBriefing(targetSboxKey, cleanQ);
       return Object.assign({ instantLocal: true }, brief, {
@@ -10759,7 +10759,7 @@ svg.ic-crit { color: var(--crit); }
       extraActions += `<button type="button" class="ai-act-link" data-configure-ind="${escapeHtml(item.actionCfg)}">Configure Scope</button>`;
     }
 
-    const isRtl = item.lang === 'ar' || /[\u0600-\u06FF]/.test(item.answer || '');
+    const isRtl = /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
     const userDirAttr = /[\u0600-\u06FF]/.test(item.q || '') ? ' dir="rtl"' : '';
     const isConv = Boolean(item.conversational) && !tableBlockHtml;
@@ -10770,6 +10770,7 @@ svg.ic-crit { color: var(--crit); }
         ? 'Souhaitez-vous explorer l\'un de ces sujets ou poser une autre question ?'
         : 'Would you like to explore one of these next, or ask me something else?');
     const promptLead = item.promptText || defaultPromptLead;
+    const fDirAttr = /[\u0600-\u06FF]/.test(promptLead) ? ' dir="rtl" style="text-align:right"' : dirAttr;
 
     const bubble1Html = isConv
       ? `
@@ -10802,7 +10803,7 @@ svg.ic-crit { color: var(--crit); }
     if (isNewest && state.aiTypingFollowup) {
       bubble2Html = `
       <div class="ai-msg-followup">
-        <div class="ai-thinking-bubble"${dirAttr}>
+        <div class="ai-thinking-bubble"${fDirAttr}>
           <span class="ai-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>
         </div>
       </div>`;
@@ -10812,7 +10813,7 @@ svg.ic-crit { color: var(--crit); }
         : '';
       bubble2Html = `
       <div class="ai-msg-followup">
-        <div class="ai-bot-followup-bubble"${dirAttr}>
+        <div class="ai-bot-followup-bubble"${fDirAttr}>
           <p class="ai-followup-lead">${promptLead}</p>
           ${followUpsHtml}
           ${convActions}
@@ -11761,11 +11762,36 @@ svg.ic-crit { color: var(--crit); }
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        let canceledRec = false;
+        ['ai-inline-form', 'ai-drawer-form'].forEach(fid => {
+          const f = document.getElementById(fid);
+          if (f && typeof f._isRec === 'function' && f._isRec()) {
+            if (typeof f._cancelRec === 'function') f._cancelRec();
+            canceledRec = true;
+          }
+        });
+        if (canceledRec) return;
         stopAllShowcaseAskTools(false);
         const bd = document.getElementById('ai-drawer-backdrop');
         if (bd && !bd.hidden) bd.hidden = true;
       }
     });
+
+    function extractShowcaseClipboardFiles(clipboardData) {
+      if (!clipboardData) return [];
+      if (clipboardData.files && clipboardData.files.length) return Array.from(clipboardData.files);
+      const out = [];
+      if (clipboardData.items && clipboardData.items.length) {
+        for (let i = 0; i < clipboardData.items.length; i++) {
+          const it = clipboardData.items[i];
+          if (it && it.kind === 'file' && typeof it.getAsFile === 'function') {
+            const f = it.getAsFile();
+            if (f) out.push(f);
+          }
+        }
+      }
+      return out;
+    }
 
     // Mount File Attachment & Voice Recording controls on both Ask ISABI forms
     function mountShowcaseAskTools(formId, inpId) {
@@ -11836,16 +11862,17 @@ svg.ic-crit { color: var(--crit); }
           fileInp.value = '';
         }
       });
-      formEl.addEventListener('dragover', ev => { ev.preventDefault(); });
-      formEl.addEventListener('drop', ev => {
+      const dropZone = formEl.closest('#ai-drawer-backdrop, #ai-section') || formEl;
+      dropZone.addEventListener('dragover', ev => { ev.preventDefault(); });
+      dropZone.addEventListener('drop', ev => {
         if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
           ev.preventDefault();
           addFiles(ev.dataTransfer.files);
         }
       });
-      formEl.addEventListener('paste', ev => {
-        const files = ev.clipboardData && ev.clipboardData.files;
-        if (files && files.length) {
+      dropZone.addEventListener('paste', ev => {
+        const files = extractShowcaseClipboardFiles(ev.clipboardData);
+        if (files.length) {
           ev.preventDefault();
           addFiles(files);
         }
@@ -11929,6 +11956,8 @@ svg.ic-crit { color: var(--crit); }
         if (ev.target.closest('[data-vstop]')) stopRec(false);
       });
 
+      formEl._isRec = () => recActive;
+      formEl._cancelRec = () => stopRec(true);
       formEl._stopRec = () => stopRec(false);
       formEl._clearAttachments = () => {
         stagedFiles = [];
@@ -11953,9 +11982,14 @@ svg.ic-crit { color: var(--crit); }
       const consumed = formEl && formEl._consumeAttachments ? formEl._consumeAttachments() : { names: [], wasRec: false, vLang: 'en' };
       const atts = consumed.names || [];
       let q = (inp?.value || '').trim();
-      if (!q && atts.length) q = `Attached ${atts.join(', ')}: how does ISABI import and reconcile spreadsheets and documents?`;
-      else if (q && atts.length) q = `[Attached: ${atts.join(', ')}] ${q}`;
-      else if (!q && consumed.wasRec) {
+      if (!q && atts.length) {
+        const hasImageAtt = atts.some(n => /\.(?:png|jpe?g|webp|gif|bmp|svg)$/i.test(n));
+        q = hasImageAtt
+          ? `[Attached: ${atts.join(', ')}] Explain this screenshot and dashboard numbers`
+          : `[Attached: ${atts.join(', ')}] How does ISABI import and reconcile spreadsheets and documents?`;
+      } else if (q && atts.length) {
+        q = `[Attached: ${atts.join(', ')}] ${q}`;
+      } else if (!q && consumed.wasRec) {
         q = consumed.vLang === 'ar'
           ? 'ما هي أهم مميزات نظام إيسابي وكيف يربط العمليات بالمحاسبة؟'
           : (consumed.vLang === 'fr' ? 'Comment fonctionne la plateforme ERP ISABI ?' : 'Give me an executive overview of ISABI Systems');
@@ -12054,11 +12088,12 @@ svg.ic-crit { color: var(--crit); }
       triggerInstall();
     });
 
-    // Register Service Worker with immediate update check & single-reload controllerchange
+    // Register Service Worker with immediate update check & single-reload controllerchange (only when upgrading an existing controller)
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       let refreshing = false;
+      const hadController = Boolean(navigator.serviceWorker.controller);
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!refreshing) {
+        if (hadController && !refreshing) {
           refreshing = true;
           location.reload();
         }

@@ -1749,8 +1749,10 @@
       };
     }
 
-    // 17. Screen / Screenshot / "App-entered this period" explanation without attachment
-    if (/\b(explain\s+this\s+(?:screen|page|view|dashboard|screenshot)|i\s+don'?t\s+unders?tand\s+(?:this\s+|the\s+)?(?:screen|page|view|dashboard|screenshot)|what\s+am\s+i\s+looking\s+at|what\s+does\s+app[- ]entered\s+this\s+period\s+mean|explain\s+app[- ]entered)\b/i.test(cleanQ)) {
+    // 17. Screen / Screenshot / "App-entered this period" / UI Column Glossary explanation
+    if (/\b(explain\s+this\s+(?:screen|page|view|dashboard|screenshot)|i\s+don'?t\s+unders?tand\s+(?:this\s+|the\s+)?(?:screen|page|view|dashboard|screenshot)|what\s+am\s+i\s+looking\s+at|what\s+does\s+app[- ]entered\s+this\s+period\s+mean|explain\s+app[- ]entered|what\s+(?:is|does)\s+(?:mof\s+tax|credit\s+days|shared\s+registries|connected\s+tables|realized\s+gross\s+margin|operating\s+cash\s+profit))\b/i.test(cleanQ) ||
+        /(اشرح\s+لي\s+هذه\s+(?:الشاشة|الصورة)|لا\s+(?:أفهم|افهم)\s+(?:هذه\s+)?(?:الشاشة|الصورة)|ما\s+هذه\s+(?:الشاشة|الصورة))/.test(cleanQ) ||
+        /\b(explique[zr]?\s+(?:cet\s+écran|cette\s+capture)|je\s+ne\s+comprends\s+pas\s+(?:cet\s+écran|cette\s+capture))\b/i.test(cleanQ)) {
       const snap = captureLiveScreenSnapshot();
       const targetView = (snap && snap.viewId) || ((_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview');
       return buildScreenWalkthroughReply(cleanQ, lang, scope, null, targetView, snap, '');
@@ -1921,6 +1923,7 @@
   function parseTabularText(rawText, fileName) {
     const text = String(rawText || '').replace(/^\uFEFF/, '').trim();
     if (!text || isBinaryGarbageString(text)) return null;
+    if (/\.(?:pdf|docx?|rtf)$/i.test(fileName || '')) return null;
 
     // 1. JSON array / object support
     if ((text.startsWith('[') || text.startsWith('{')) && (/\.json$/i.test(fileName || '') || text.endsWith(']') || text.endsWith('}'))) {
@@ -1936,25 +1939,43 @@
       } catch (_) {}
     }
 
-    // 2. CSV / TSV / Semicolon table support
+    // 2. CSV / TSV / Semicolon table support (guard against multi-line prose sentences containing commas)
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length < 1) return null;
+    if (lines.length < 2) return null;
     const first = lines[0];
+    const isExplicitSheetExt = /\.(?:csv|tsv|xlsx?)$/i.test(fileName || '');
     const delim = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
     const allRows = lines.map(l => splitCsvLine(l, delim));
     if (allRows.length >= 2 && allRows[0].length >= 2) {
-      const headers = allRows[0].map((h, idx) => cleanOut(String(h || '').replace(/^\uFEFF/, '') || `Col ${idx + 1}`));
+      const rawHeaders = allRows[0];
+      const maxHdrLen = rawHeaders.reduce((m, h) => Math.max(m, String(h || '').trim().length), 0);
       const dataRows = allRows.slice(1).filter(r => r.some(c => String(c || '').trim() !== ''));
+      if (!dataRows.length) return null;
+      const consistentCols = dataRows.filter(r => Math.abs(r.length - rawHeaders.length) <= 1).length;
+      if (!isExplicitSheetExt && delim === ',' && (maxHdrLen > 45 || (consistentCols / dataRows.length) < 0.6)) {
+        return null;
+      }
+      const headers = rawHeaders.map((h, idx) => cleanOut(String(h || '').replace(/^\uFEFF/, '') || `Col ${idx + 1}`));
       return summarizeParsedTable(headers, dataRows);
     }
     return null;
   }
 
-  function summarizeParsedTable(headers, rawDataRows) {
-    if (!headers || !headers.length || !rawDataRows || !rawDataRows.length) return null;
+  function summarizeParsedTable(rawHeaders, rawDataRows) {
+    if (!rawHeaders || !rawHeaders.length || !rawDataRows || !rawDataRows.length) return null;
     // Exclude bottom Total / Subtotal rows so numericSum never double-counts a summary row
     const nonSummaryRows = rawDataRows.filter(r => !isSummaryTableRow(r));
-    const dataRows = nonSummaryRows.length ? nonSummaryRows : rawDataRows;
+    const baseRows = nonSummaryRows.length ? nonSummaryRows : rawDataRows;
+
+    // Trim trailing empty columns where header is auto-generated Col N and all data cells are blank
+    let effColCnt = rawHeaders.length;
+    while (effColCnt > 2 && /^Col \d+$/i.test(rawHeaders[effColCnt - 1] || '')) {
+      const hasAnyData = baseRows.some(r => String(r[effColCnt - 1] == null ? '' : r[effColCnt - 1]).trim() !== '');
+      if (hasAnyData) break;
+      effColCnt--;
+    }
+    const headers = rawHeaders.slice(0, effColCnt);
+    const dataRows = baseRows.map(r => r.slice(0, effColCnt));
     const colCnt = headers.length;
     let bestColIdx = -1;
     let bestScore = -1;
@@ -2021,6 +2042,15 @@
       .replace(/&apos;/g, "'");
   }
 
+  function excelColToIdx(colLetters) {
+    let idx = 0;
+    const s = String(colLetters || '').toUpperCase();
+    for (let i = 0; i < s.length; i++) {
+      idx = idx * 26 + (s.charCodeAt(i) - 64);
+    }
+    return Math.max(0, idx - 1);
+  }
+
   // Native client-side ZIP XML extractor for .xlsx and .docx files using DecompressionStream('deflate-raw')
   async function extractOfficeZipContent(arrayBuffer, fileName) {
     try {
@@ -2029,37 +2059,78 @@
       if (bytes[0] !== 0x50 || bytes[1] !== 0x4B) return null;
       const view = new DataView(arrayBuffer);
       const entries = {};
-      let offset = 0;
       const decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
       if (!decoder) return null;
 
-      while (offset + 30 <= arrayBuffer.byteLength) {
-        const sig = view.getUint32(offset, true);
-        if (sig !== 0x04034b50) break;
-        const flag = view.getUint16(offset + 6, true);
-        const method = view.getUint16(offset + 8, true);
-        const compSize = view.getUint32(offset + 18, true);
-        const nameLen = view.getUint16(offset + 26, true);
-        const extraLen = view.getUint16(offset + 28, true);
-        const dataStart = offset + 30 + nameLen + extraLen;
-        if ((flag & 0x08) !== 0 || compSize === 0xFFFFFFFF || dataStart + compSize > arrayBuffer.byteLength) break;
-        const entryName = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLen));
-        if (/^(xl\/sharedStrings\.xml|xl\/worksheets\/sheet1\.xml|word\/document\.xml)$/i.test(entryName)) {
-          const slice = bytes.subarray(dataStart, dataStart + compSize);
-          if (method === 0) {
-            entries[entryName] = decoder.decode(slice);
-          } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
-            try {
-              const ds = new DecompressionStream('deflate-raw');
-              const writer = ds.writable.getWriter();
-              writer.write(slice).catch(() => {});
-              writer.close().catch(() => {});
-              const ab = await new Response(ds.readable).arrayBuffer();
-              entries[entryName] = decoder.decode(new Uint8Array(ab));
-            } catch (_) {}
-          }
+      const decodeZipSlice = async (slice, method) => {
+        if (method === 0) return decoder.decode(slice);
+        if (method === 8 && typeof DecompressionStream !== 'undefined') {
+          try {
+            const ds = new DecompressionStream('deflate-raw');
+            const writer = ds.writable.getWriter();
+            writer.write(slice).catch(() => {});
+            writer.close().catch(() => {});
+            const ab = await new Response(ds.readable).arrayBuffer();
+            return decoder.decode(new Uint8Array(ab));
+          } catch (_) {}
         }
-        offset = dataStart + compSize;
+        return '';
+      };
+
+      // Pass 1: Scan ZIP Central Directory from End of Central Directory (handles streaming ZIPs where flag & 0x08 sets local compSize=0)
+      let eocdOffset = -1;
+      const minEocd = Math.max(0, arrayBuffer.byteLength - 65558);
+      for (let p = arrayBuffer.byteLength - 22; p >= minEocd; p--) {
+        if (view.getUint32(p, true) === 0x06054b50) {
+          eocdOffset = p;
+          break;
+        }
+      }
+      if (eocdOffset >= 0) {
+        const cdEntries = view.getUint16(eocdOffset + 10, true);
+        let cdPos = view.getUint32(eocdOffset + 16, true);
+        for (let i = 0; i < cdEntries && cdPos + 46 <= arrayBuffer.byteLength; i++) {
+          if (view.getUint32(cdPos, true) !== 0x02014b50) break;
+          const method = view.getUint16(cdPos + 10, true);
+          const compSize = view.getUint32(cdPos + 20, true);
+          const nameLen = view.getUint16(cdPos + 28, true);
+          const extraLen = view.getUint16(cdPos + 30, true);
+          const commentLen = view.getUint16(cdPos + 32, true);
+          const localHdrOff = view.getUint32(cdPos + 42, true);
+          const entryName = decoder.decode(bytes.subarray(cdPos + 46, cdPos + 46 + nameLen));
+          if (/^(xl\/sharedStrings\.xml|xl\/worksheets\/sheet1\.xml|word\/document\.xml)$/i.test(entryName) && localHdrOff + 30 <= arrayBuffer.byteLength) {
+            const lNameLen = view.getUint16(localHdrOff + 26, true);
+            const lExtraLen = view.getUint16(localHdrOff + 28, true);
+            const dataStart = localHdrOff + 30 + lNameLen + lExtraLen;
+            if (compSize > 0 && dataStart + compSize <= arrayBuffer.byteLength) {
+              const txt = await decodeZipSlice(bytes.subarray(dataStart, dataStart + compSize), method);
+              if (txt) entries[entryName] = txt;
+            }
+          }
+          cdPos += 46 + nameLen + extraLen + commentLen;
+        }
+      }
+
+      // Pass 2: Local File Header scan fallback
+      if (!Object.keys(entries).length) {
+        let offset = 0;
+        while (offset + 30 <= arrayBuffer.byteLength) {
+          const sig = view.getUint32(offset, true);
+          if (sig !== 0x04034b50) break;
+          const flag = view.getUint16(offset + 6, true);
+          const method = view.getUint16(offset + 8, true);
+          const compSize = view.getUint32(offset + 18, true);
+          const nameLen = view.getUint16(offset + 26, true);
+          const extraLen = view.getUint16(offset + 28, true);
+          const dataStart = offset + 30 + nameLen + extraLen;
+          if ((flag & 0x08) !== 0 || compSize === 0xFFFFFFFF || dataStart + compSize > arrayBuffer.byteLength) break;
+          const entryName = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLen));
+          if (/^(xl\/sharedStrings\.xml|xl\/worksheets\/sheet1\.xml|word\/document\.xml)$/i.test(entryName)) {
+            const txt = await decodeZipSlice(bytes.subarray(dataStart, dataStart + compSize), method);
+            if (txt) entries[entryName] = txt;
+          }
+          offset = dataStart + compSize;
+        }
       }
 
       if (entries['word/document.xml']) {
@@ -2107,6 +2178,11 @@
               const vm = inner.match(/<v>([\s\S]*?)<\/v>/);
               const rawV = vm ? vm[1].trim() : '';
               val = (isShared && shared[Number(rawV)] != null) ? shared[Number(rawV)] : decodeXmlEntities(rawV);
+            }
+            const refMatch = attrs.match(/\br="([A-Z]+)\d+"/i);
+            if (refMatch) {
+              const targetIdx = excelColToIdx(refMatch[1]);
+              while (rowCells.length < targetIdx && rowCells.length < 36) rowCells.push('');
             }
             rowCells.push(cleanOut(val));
           }
@@ -2176,29 +2252,90 @@
     return _tesseractLoader;
   }
 
+  const VIEW_TITLE_MAP = {
+    overview: 'Executive Overview',
+    daily_ops: 'Daily Operations',
+    entities: 'Multi-Entity Comparison',
+    sentinels: 'Sentinels & Alerts',
+    sentinel_hub: 'Sentinels & Alerts',
+    alerts: 'Sentinels & Alerts',
+    alert_rules: 'Alerts & Thresholds',
+    pbi: 'Dashboards & Reports',
+    pbi_hub: 'Dashboards & Reports',
+    statements: 'Printable Statements & SOA',
+    sales: 'Sales & Receivables',
+    customers: 'Customer Receivables',
+    pricing: 'Commercial Pricing & Commissions',
+    raw: 'Quarry, Haulage & JVs',
+    raw_pricing: 'Quarry & Haulage Rates',
+    raw_jv: 'JV & Partnerships',
+    expenses: 'Expenses & Overhead',
+    recurring_expenses: 'Recurring Expense Schedules',
+    suppliers: 'Suppliers & Payables',
+    fleet: 'Fleet & Fuel',
+    fleet_equip: 'Equipment Running Costs',
+    fleet_maint: 'Repairs, Warnings & Oil Logs',
+    fleet_drivers: 'Drivers & Overtime',
+    warehouse: 'Warehouse Stock & Moves',
+    inventory: 'Warehouse Stock & Moves',
+    warehouse_parts: 'Parts & Item Usage',
+    payroll: 'Payroll & Workforce',
+    workforce_map: 'Daily Plant & Machine Map',
+    payroll_attendance: 'Biometric Attendance & Shifts',
+    payroll_allowances: 'Site Transport & Allowances',
+    payroll_contracts: 'Staff Contracts & Freelance',
+    cashflow: 'Cash Flow & Daily Till',
+    cash_flow: 'Cash Flow & Daily Till',
+    external: 'External Treasury Movements',
+    ledger_treasury: 'Loans & Settlements',
+    conversions: 'FX & Currency Conversions',
+    ledger: 'General Ledger & Trial Balance',
+    gl_coa: 'General Ledger & Trial Balance',
+    coa_classes: 'Lebanese PCG Classes 1-7',
+    gl_automation: 'Automated GL Accounts',
+    reg_customers: 'Customers Registry',
+    reg_suppliers: 'Suppliers & Haulers Registry',
+    reg_sites: 'Sites & Regions Registry',
+    reg_regions: 'Sites & Regions Registry',
+    reg_products: 'Products & Grades Registry',
+    reg_items: 'Items & Spare Parts Registry',
+    reg_categories: 'Expense Categories Registry',
+    reg_equipment: 'Equipment Registry',
+    reg_drivers: 'Drivers Registry',
+    reg_staff: 'Staff Members Registry',
+    reg_roles: 'Staff Roles Registry',
+    reg_fx_rates: 'Currency & FX Rates Registry',
+    reg_currencies: 'Currency & FX Rates Registry',
+    reg_vat_rates: 'VAT Rates Registry',
+    tables: 'All Tables & Registers',
+    kiosks: 'Plant Kiosks',
+    kiosk: 'Plant Kiosks',
+    users: 'Users & Security'
+  };
+
   function captureLiveScreenSnapshot() {
     if (typeof document === 'undefined') return null;
     try {
       const st = (_ctx && _ctx.STATE) || {};
       const viewId = String(st.view || (location.hash || '').replace(/^#/, '') || 'overview');
       const titleEl = document.getElementById('topbarTitle') || document.getElementById('pageTitle');
-      const pageTitle = cleanOut(titleEl ? titleEl.textContent : '');
+      const pageTitle = cleanOut((titleEl ? titleEl.textContent : '') || VIEW_TITLE_MAP[viewId] || '');
       const coSel = document.getElementById('companySelect');
       const activeCoText = cleanOut(coSel && coSel.selectedOptions && coSel.selectedOptions[0] ? coSel.selectedOptions[0].textContent : (st.company || 'WTC'));
       const ws = document.getElementById('workspace');
 
       const topKpis = ws
-        ? Array.from(ws.querySelectorAll('.kpis .kpi')).slice(0, 8).map(el => ({
-          label: cleanOut((el.querySelector('.k-label') || {}).textContent || ''),
-          val: cleanOut((el.querySelector('.k-val') || {}).textContent || ''),
-          sub: cleanOut((el.querySelector('.k-sub') || {}).textContent || '')
+        ? Array.from(ws.querySelectorAll('.kpis .kpi, .pbi-kpi-card, .dops-kpi, .sales-recon-metrics > span')).slice(0, 8).map(el => ({
+          label: cleanOut((el.querySelector('.k, .k-label, .dops-kpi-lbl, small') || {}).textContent || '').replace(/\s*↗$/, ''),
+          val: cleanOut((el.querySelector('.v, .k-val, .dops-kpi-val, b') || {}).textContent || ''),
+          sub: cleanOut((el.querySelector('.d, .k-sub, .dops-kpi-unit, .dops-kpi-sub') || {}).textContent || '')
         })).filter(x => x.label && x.val)
         : [];
 
       const opsCells = ws
         ? Array.from(ws.querySelectorAll('.ops-strip .ops-cell')).slice(0, 8).map(el => ({
-          label: cleanOut((el.querySelector('.ops-lbl') || {}).textContent || ''),
-          val: cleanOut((el.querySelector('.ops-val') || {}).textContent || '')
+          label: cleanOut((el.querySelector('.ops-lbl, span:first-child') || {}).textContent || ''),
+          val: cleanOut((el.querySelector('.ops-val, b, strong') || {}).textContent || '')
         })).filter(x => x.label && x.val)
         : [];
 
@@ -2206,23 +2343,29 @@
       const appStripText = appStripEl ? cleanOut(appStripEl.textContent.replace(/Open registers\s*[-→]*/i, '')) : '';
 
       const hubCards = ws
-        ? Array.from(ws.querySelectorAll('.pa-hub-table-card')).slice(0, 6).map(el => ({
-          title: cleanOut((el.querySelector('.pa-htc-title') || {}).textContent || ''),
-          count: cleanOut((el.querySelector('.pa-htc-count-num') || {}).textContent || ''),
+        ? Array.from(ws.querySelectorAll('.univ-reg-card, .pa-hub-table-card')).slice(0, 6).map(el => ({
+          title: cleanOut((el.querySelector('.urc-title, .pa-htc-title') || {}).textContent || ''),
+          count: cleanOut((el.querySelector('.urc-cnt, .pa-htc-count-num') || {}).textContent || '').replace(/^[(\s]+|[)\s]+$/g, ''),
+          sub: cleanOut((el.querySelector('.urc-sub') || {}).textContent || ''),
           active: el.classList.contains('active')
         })).filter(x => x.title)
         : [];
 
       const connectedChips = ws
-        ? Array.from(ws.querySelectorAll('.pa-hub-conn-chip')).slice(0, 8).map(el => cleanOut(el.textContent || '')).filter(Boolean)
+        ? Array.from(ws.querySelectorAll('.conn-table-chip, .pa-hub-conn-chip')).slice(0, 8).map(el => {
+          const lbl = cleanOut((el.querySelector('.conn-chip-lbl') || {}).textContent || '');
+          const cnt = cleanOut((el.querySelector('.conn-chip-cnt') || {}).textContent || '');
+          if (lbl) return cnt ? `${lbl} ${cnt}` : lbl;
+          return cleanOut((el.textContent || '').replace(/[▾▴]/g, ''));
+        }).filter(Boolean)
         : [];
 
       const viewTabs = ws
-        ? Array.from(ws.querySelectorAll('.pa-view-tab')).slice(0, 6).map(el => cleanOut(el.textContent || '')).filter(Boolean)
+        ? Array.from(ws.querySelectorAll('.view-seg-btn, .pa-view-tab, .chip-bar .filter-chip')).slice(0, 6).map(el => cleanOut(el.textContent || '')).filter(Boolean)
         : [];
 
       const panelHeadings = ws
-        ? Array.from(ws.querySelectorAll('.panel .ph h3, .pbi-card-hdr h3, .pbi-sec-title')).slice(0, 8).map(el => cleanOut(el.textContent || '')).filter(Boolean)
+        ? Array.from(ws.querySelectorAll('.panel .ph h3, .panel-head .panel-title, .pbi-panel-title, .pbi-kpi-sec-hdr, .dops-domain-title')).slice(0, 8).map(el => cleanOut(el.textContent || '')).filter(Boolean)
         : [];
 
       const tableHeaders = [];
@@ -2270,26 +2413,60 @@
 
   function detectViewFromOcrText(ocrText) {
     const t = String(ocrText || '').toLowerCase();
-    if (!t || t.length < 12) return null;
-    if (/consolidated\s*revenue/.test(t) || /realized\s*gross\s*margin/.test(t) || /app[- ]?entered\s*this\s*period/.test(t) || /cash\s*till\s*[&and]*\s*net\s*flow/.test(t)) return 'overview';
-    if (/customers?\s*registry/.test(t) || (/shared\s*registries/.test(t) && /credit\s*days/.test(t))) return 'reg_customers';
-    if (/suppliers?\s*[&and]*\s*haulers?/.test(t) && /shared\s*registries/.test(t)) return 'reg_suppliers';
-    if (/sites?\s*[&and]*\s*regions?/.test(t)) return 'reg_sites';
-    if (/catalog\s*[&and]*\s*categories/.test(t) || /products?\s*[&and]*\s*aggregates/.test(t)) return 'reg_products';
-    if (/sentinels?\s*[&and]*\s*alerts/.test(t) || /anomaly\s*detection/.test(t)) return 'alerts';
-    if (/daily\s*operations/.test(t) && /weighbridge/.test(t)) return 'daily_ops';
-    if (/entity\s*comparison/.test(t)) return 'entities';
-    if (/sales\s*[&and]*\s*receivables/.test(t)) return 'sales';
-    if (/quarry\s*,\s*haulage|raw\s*material\s*purchases/.test(t)) return 'raw';
-    if (/expenses?\s*[&and]*\s*payables/.test(t)) return 'expenses';
-    if (/fleet\s*[&and]*\s*maintenance/.test(t) || /diesel\s*tank/.test(t)) return 'fleet';
-    if (/warehouse\s*[&and]*\s*parts/.test(t)) return 'inventory';
-    if (/payroll\s*[&and]*\s*workforce/.test(t)) return 'payroll';
-    if (/cash\s*flow\s*[&and]*\s*treasury/.test(t)) return 'cash_flow';
-    if (/general\s*ledger\s*[&and]*\s*coa|trial\s*balance/.test(t)) return 'gl_coa';
-    if (/dashboards?\s*[&and]*\s*reports/.test(t)) return 'pbi';
-    if (/users?\s*[&and]*\s*access/.test(t)) return 'users';
-    if (/kiosk\s*hub/.test(t)) return 'kiosk';
+    if (!t || t.length < 10) return null;
+
+    // 1. Direct URL hash match from browser address bar in full-window screenshots (e.g. "isabisystems.com/app/#reg_customers")
+    const urlHashMatch = t.match(/(?:isabisystems\.com\/app\/|\/app\/)#([a-z0-9_]+)/i);
+    if (urlHashMatch && VIEW_TITLE_MAP[urlHashMatch[1].toLowerCase()]) {
+      return urlHashMatch[1].toLowerCase();
+    }
+
+    // 2. Main-workspace-exclusive phrases (never match static left-sidebar nav labels that appear in every full screenshot)
+    if (/consolidated\s*revenue/.test(t) || /realized\s*gross\s*margin/.test(t) || /app[- ]?entered\s*this\s*period/.test(t) || /cash\s*till\s*[&and]*\s*net\s*flow/.test(t) || /monthly\s*revenue,\s*raw\s*cost/.test(t)) return 'overview';
+    if (/customers?\s*registry/.test(t) || /open\s*ar\s*balance\s*>\s*\$?0/.test(t) || /vat\s*registered\s*\(mof\)/.test(t) || (/shared\s*registries/.test(t) && /credit\s*days/.test(t))) return 'reg_customers';
+    if (/material\s*quarries,\s*3rd[- ]party\s*haulers/.test(t) && /suppliers?\s*[&and]*\s*haulers?\s*active/.test(t)) return 'reg_suppliers';
+    if (/regions?\s*[&and]*\s*sites?\s*map\s*studio/.test(t) || /search\s*zone\s*shape/.test(t) || /sites?\s*registry/.test(t)) return 'reg_sites';
+    if (/products?\s*[&and]*\s*grades?\s*registry/.test(t) || /conversion\s*rate\s*\(t\/m/.test(t)) return 'reg_products';
+    if (/items?\s*[&and]*\s*spare\s*parts?\s*registry/.test(t) || /standardized\s*skus/.test(t)) return 'reg_items';
+    if (/expense\s*categories\s*registry/.test(t)) return 'reg_categories';
+    if (/equipment\s*registry/.test(t) || /truck\s*adjustment\s*windows/.test(t)) return 'reg_equipment';
+    if (/drivers?\s*registry/.test(t) || /driver\s*assignment\s*log/.test(t)) return 'reg_drivers';
+    if (/staff\s*members?\s*registry/.test(t) || /rem\.\s*payment/.test(t)) return 'reg_staff';
+    if (/staff\s*roles?\s*registry/.test(t)) return 'reg_roles';
+    if (/currency\s*[&and]*\s*fx\s*rates\s*registry/.test(t)) return 'reg_fx_rates';
+    if (/vat\s*rates?\s*registry/.test(t) || /mof\s*tax\s*windows/.test(t)) return 'reg_vat_rates';
+    if (/shareholder\s*daily\s*operations/.test(t) || /yesterday'?s\s*after[- ]hours/.test(t)) return 'daily_ops';
+    if (/multi[- ]entity\s*comparison/.test(t)) return 'entities';
+    if (/ai\s*sentinels?\s*[&and]*\s*(?:audit|alerts?)/.test(t) || /mark\s*all\s*flagged\s*checked/.test(t) || /unreviewed\s*operational\s*[&and]*\s*financial\s*exceptions/.test(t)) return 'sentinels';
+    if (/alerts?\s*[&and]*\s*thresholds/.test(t) || /new\s*custom\s*alert/.test(t)) return 'alert_rules';
+    if (/printable\s*financial\s*statements/.test(t) || /statement\s*of\s*account\s*\(soa\)/.test(t)) return 'statements';
+    if (/executive\s*[&and]*\s*operational\s*dashboards/.test(t)) return 'pbi';
+    if (/price\s*[&and]*\s*commission\s*agreements/.test(t) || /list\s*price\s*evolution/.test(t)) return 'pricing';
+    if (/fifo\s*ar\s*aging/.test(t) || /customer\s*receivables\s*ledger/.test(t)) return 'customers';
+    if (/billed[- ]first\s*vat/.test(t) || /sales\s*tickets\s*register/.test(t)) return 'sales';
+    if (/quarry\s*[&and]*\s*haulage\s*rates/.test(t)) return 'raw_pricing';
+    if (/jv\s*[&and]*\s*partnerships/.test(t)) return 'raw_jv';
+    if (/raw\s*material\s*purchases/.test(t) || /quarry\s*[&and]*\s*haulage\s*tickets/.test(t)) return 'raw';
+    if (/standing\s*recurring\s*expenses/.test(t)) return 'recurring_expenses';
+    if (/3[- ]leg\s*ap\s*bridge/.test(t) || /suppliers?\s*[&and]*\s*payables\s*ledger/.test(t)) return 'suppliers';
+    if (/expense\s*vouchers\s*register/.test(t) || /expense\s*items\s*catalog/.test(t)) return 'expenses';
+    if (/repairs?,\s*warnings?\s*[&and]*\s*oil\s*logs/.test(t) || /preventive\s*oil\s*logs/.test(t)) return 'fleet_maint';
+    if (/equipment\s*running\s*costs/.test(t)) return 'fleet_equip';
+    if (/diesel\s*tank\s*ledger/.test(t) || /hydraulic\s*leak\s*audit/.test(t) || /daily\s*greasing/.test(t)) return 'fleet';
+    if (/parts?\s*[&and]*\s*item\s*usage/.test(t)) return 'warehouse_parts';
+    if (/warehouse\s*stock\s*[&and]*\s*moves/.test(t)) return 'warehouse';
+    if (/daily\s*plant\s*[&and]*\s*machine\s*map/.test(t)) return 'workforce_map';
+    if (/shift\s*[&and]*\s*lateness\s*policy/.test(t)) return 'payroll_attendance';
+    if (/daily\s*on[- ]site\s*tally/.test(t)) return 'payroll_allowances';
+    if (/role\s*[&and]*\s*equipment\s*log/.test(t)) return 'payroll_contracts';
+    if (/staff\s*payroll\s*register/.test(t)) return 'payroll';
+    if (/daily\s*till\s*sheet/.test(t) || /usd\s*\/\s*lbp\s*cashbook/.test(t)) return 'cashflow';
+    if (/lebanese\s*pcg\s*classes/.test(t)) return 'coa_classes';
+    if (/automated\s*gl\s*accounts/.test(t)) return 'gl_automation';
+    if (/double[- ]entry\s*soa\s*[&and]*\s*trial\s*balance/.test(t)) return 'ledger';
+    if (/all\s*tables?\s*[&and]*\s*registers/.test(t)) return 'tables';
+    if (/plant\s*kiosks/.test(t) || /station\s*admin/.test(t)) return 'kiosks';
+    if (/permissions?\s*matrix/.test(t) || /face\s*id\s*enrolment\s*studio/.test(t)) return 'users';
     return null;
   }
 
@@ -2312,12 +2489,29 @@
               att.summaryLine = `${w}×${h} · ${att.sizeLabel}`;
               renderAttachmentBar();
             }
+
+            // Downscale large screenshots onto an offscreen canvas (max 1280px wide) so OCR finishes in <800ms
+            let ocrSource = img;
+            if (w > 1280 && h > 0 && typeof document !== 'undefined') {
+              try {
+                const scale = 1280 / w;
+                const cvs = document.createElement('canvas');
+                cvs.width = 1280;
+                cvs.height = Math.max(1, Math.round(h * scale));
+                const ctx2d = cvs.getContext('2d');
+                if (ctx2d) {
+                  ctx2d.drawImage(img, 0, 0, cvs.width, cvs.height);
+                  ocrSource = cvs;
+                }
+              } catch (_) {}
+            }
+
             const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
             // 1. Native Chromium TextDetector if present
             if (typeof window !== 'undefined' && 'TextDetector' in window) {
               try {
                 const td = new window.TextDetector();
-                const blocks = await td.detect(img);
+                const blocks = await td.detect(ocrSource);
                 if (Array.isArray(blocks) && blocks.length) {
                   const rawTxt = cleanOut(blocks.map(b => b.rawValue || '').join(' '));
                   if (rawTxt.length >= 10) {
@@ -2335,7 +2529,7 @@
             if (!isAutoTest || (window.Tesseract && typeof window.Tesseract.recognize === 'function')) {
               const Tess = await loadTesseractOcr();
               if (Tess && typeof Tess.recognize === 'function') {
-                const res = await Tess.recognize(att.thumbUrl, 'eng');
+                const res = await Tess.recognize(ocrSource, 'eng');
                 const txt = cleanOut((res && res.data && res.data.text) || '');
                 if (txt) {
                   att.ocrText = txt;
@@ -2372,40 +2566,25 @@
     const cashOut = Number(k.cash_outflow != null ? k.cash_outflow : (k.cash_out || 0));
     const tillVal = Number(k.cash_till != null ? k.cash_till : (k.net_cash_flow || 0));
     const viewId = String(targetViewId || (snap && snap.viewId) || ((_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview'));
-    const viewTitleMap = {
-      overview: 'Executive Overview',
-      daily_ops: 'Daily Operations',
-      entities: 'Multi-Entity Comparison',
-      alerts: 'Sentinels & Alerts',
-      pbi: 'Dashboards & Reports',
-      sales: 'Sales & Receivables',
-      raw: 'Quarry, Haulage & JVs',
-      expenses: 'Expenses & Payables',
-      fleet: 'Fleet & Maintenance',
-      inventory: 'Warehouse & Parts',
-      payroll: 'Payroll & Workforce',
-      cash_flow: 'Cash Flow & Treasury',
-      gl_coa: 'General Ledger & COA',
-      reg_customers: 'Customers Registry',
-      reg_suppliers: 'Suppliers & Haulers Registry',
-      reg_sites: 'Sites & Regions Registry',
-      reg_products: 'Catalog & Categories Registry',
-      tables: 'Data Tables & Schema',
-      kiosk: 'Kiosk Hub',
-      users: 'Users & Access Control'
-    };
-    const screenTitle = viewTitleMap[viewId] || (snap && snap.viewId === viewId && snap.pageTitle ? snap.pageTitle : 'ISABI Command Center');
+    const useSnap = (snap && snap.viewId === viewId) ? snap : null;
+    const screenTitle = VIEW_TITLE_MAP[viewId] || (useSnap && useSnap.pageTitle ? useSnap.pageTitle : 'ISABI Command Center');
     const attBadge = primaryAtt ? ` in <b>${esc(primaryAtt.name)}</b>` : '';
     const bullets = [];
     let headers = ['Screen Section', 'Displayed Value', 'What It Means'];
     let rows = [];
 
-    // If the user asked a specific sub-question alongside the screenshot, answer it directly in the first bullet
+    // Answer any specific metric or UI glossary question right in the first bullet
     if (/cash\s*till|net\s*flow|-?\$?4,?990/i.test(cleanQ)) {
       bullets.push(`<b>Why Cash Till is ${fmtMoney(tillVal, 2)}</b>: Direct cash outflows (<b>${fmtMoney(k.cash_expense, 0)}</b> cash expenses + <b>${fmtMoney(k.settlements_paid, 0)}</b> supplier settlements = <b>${fmtMoney(cashOut, 0)}</b>) exceeded direct physical cash inflows (<b>${fmtMoney(k.cash_sales, 0)}</b> cash sales + <b>${fmtMoney(k.receipts_collected, 0)}</b> customer receipts = <b>${fmtMoney(cashIn, 0)}</b>). Because most revenue (<b>${fmtMoney(k.credit_sales, 0)}</b>) is billed on credit rather than paid into the physical till at dispatch, the cash drawer net flow is negative even while operating profit is <b>+${fmtMoney(k.operating_profit, 0)}</b>.`);
     }
     if (/app[- ]?entered|not\s+yet\s+in\s+the\s+book/i.test(cleanQ)) {
       bullets.push(`<b>What "App-entered this period (not yet in the book totals)" means</b>: This strip tracks live vouchers created directly inside the Command Center or field kiosks (such as <b>14 sales tickets · $7,532</b>, <b>23 raw receipts · $1,250</b>, <b>8 expenses · $4,469</b>, and <b>2 supplier settlements · $6,000</b>) that are staged separately from reconciled historical book totals until period close.`);
+    }
+    if (/mof\s*tax/i.test(cleanQ)) {
+      bullets.push(`<b>What "MOF Tax #" means</b>: The counterparty's official Lebanese Ministry of Finance tax registration number used on statutory 11% VAT invoices and quarterly VAT declarations.`);
+    }
+    if (/credit\s*days/i.test(cleanQ)) {
+      bullets.push(`<b>What "Credit Days" means</b>: The approved payment term window (e.g., <b>30 days</b>) granted to a credit customer before unpaid FIFO invoices are flagged as overdue by AI Sentinel #04.`);
     }
 
     if (viewId === 'overview') {
@@ -2414,9 +2593,9 @@
       const avgSellM3 = salesM3 > 0 ? (k.sales_ttc / salesM3).toFixed(2) : (k.avg_price_m3 ? Number(k.avg_price_m3).toFixed(2) : '21.71');
       const avgRawM3 = k.raw_m3 > 0 ? (k.raw_cost / k.raw_m3).toFixed(2) : (k.raw_cost_m3 ? Number(k.raw_cost_m3).toFixed(2) : '5.96');
 
-      bullets.push(`<b>Row 1 · Financial Scorecards (Top 4 Cards)</b>: Shows <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> split into Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) and Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>); <b>Realized Gross Margin (${fmtMoney(k.gross_margin, 0)} · ${marginPct}%)</b> after deducting <b>${fmtMoney(k.raw_cost, 0)}</b> in Raw Material Cost; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> after <b>${fmtMoney(expTotal, 0)}</b> in operating expenses and payroll; and <b>Cash Till & Net Flow (${fmtMoney(tillVal, 2)})</b>, which turns negative whenever physical cash outflows (<b>${fmtMoney(cashOut, 0)}</b>) exceed direct cash-in-hand inflows (<b>${fmtMoney(cashIn, 0)}</b>) while credit sales sit in Accounts Receivable.`);
-      bullets.push(`<b>Row 2 · Unit Economics Strip (Middle 4 Cells)</b>: Tracks physical plant throughput: <b>${fmtInt(salesLoads)} sales loads (${fmtInt(salesTons, 0)} t)</b> dispatched, <b>$${avgSellM3} / m³</b> average selling price, <b>${fmtInt(k.raw_loads)} raw material intake loads ($${avgRawM3}/m³)</b>, and <b>${fmtInt(k.active_fleet || 1170)} active fleet units</b>.`);
-      bullets.push(`<b>Row 3 · "App-entered this period (not yet in the book totals)" Banner</b>: Highlights live vouchers entered directly through the app or field kiosks (${snap && snap.appStripText ? esc(snap.appStripText.replace(/^App-entered this period \(not yet in the book totals\):\s*/i, '')) : '14 sales tickets · $7,532, 23 raw receipts · $1,250, 8 expenses · $4,469, 2 supplier settlements · $6,000'}) before they are merged into closed historical accounting books. Click <b>Open registers</b> to inspect or edit those entries.`);
+      bullets.push(`<b>Row 1 · Financial Scorecards (Top 6 Cards)</b>: Shows <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> split into Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) and Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>); <b>Realized Gross Margin (${fmtMoney(k.gross_margin, 0)} · ${marginPct}%)</b> after deducting <b>${fmtMoney(k.raw_cost, 0)}</b> in Raw Material Cost; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> after <b>${fmtMoney(expTotal, 0)}</b> in operating expenses and payroll; and <b>Cash Till & Net Flow (${fmtMoney(tillVal, 2)})</b>, which turns negative whenever physical cash outflows (<b>${fmtMoney(cashOut, 0)}</b>) exceed direct cash-in-hand inflows (<b>${fmtMoney(cashIn, 0)}</b>) while credit sales sit in Accounts Receivable.`);
+      bullets.push(`<b>Row 2 · Unit Economics Strip (Middle Cells)</b>: Tracks physical plant throughput: <b>${fmtInt(salesLoads)} sales loads (${fmtInt(salesTons, 0)} t)</b> dispatched, <b>$${avgSellM3} / m³</b> average selling price, <b>${fmtInt(k.raw_loads)} raw material intake loads ($${avgRawM3}/m³)</b>, and <b>${fmtInt(k.active_equip || k.active_fleet || 1170)} active fleet units</b>.`);
+      bullets.push(`<b>Row 3 · "App-entered this period (not yet in the book totals)" Banner</b>: Highlights live vouchers entered directly through the app or field kiosks (${useSnap && useSnap.appStripText ? esc(useSnap.appStripText.replace(/^App-entered this period \(not yet in the book totals\):\s*/i, '')) : '14 sales tickets · $7,532, 23 raw receipts · $1,250, 8 expenses · $4,469, 2 supplier settlements · $6,000'}) before they are merged into closed historical accounting books. Click <b>Open registers</b> to inspect or edit those entries.`);
       bullets.push(`<b>Row 4 · Monthly Trajectory & Entity / Grade Breakdowns</b>: The left bar chart plots monthly <b>Total Sales</b> (blue), <b>Raw Material Cost</b> (slate), and <b>Operating Profit</b> (gold) from Dec 25 to Nov 26. The right tables break down performance across <b>Operating Entities</b> (WTC, BBConstruction, Lions Transport) and <b>Top Aggregates & Materials</b> (Mghasal, Bahre, mixer trucks).`);
 
       rows = [
@@ -2427,51 +2606,71 @@
         ['5. Unit Economics Strip', `$${avgSellM3}/m³ sell · $${avgRawM3}/m³ raw`, `${fmtInt(salesLoads)} sales loads (${fmtInt(salesTons, 0)} t) · ${fmtInt(k.raw_loads)} raw loads`],
         ['6. App-Entered Strip', 'Live App Vouchers', 'New app/kiosk tickets staged before book lock']
       ];
-    } else if (/^reg_/.test(viewId) || (snap && snap.hubCards && snap.hubCards.length > 0)) {
-      const activeCard = (snap && snap.hubCards && snap.hubCards.find(c => c.active)) || { title: screenTitle, count: fmtInt(((_ctx.SEED && _ctx.SEED.records && _ctx.SEED.records.customers) || []).length || 1099) };
-      const otherCards = (snap && snap.hubCards ? snap.hubCards.filter(c => !c.active).map(c => `${c.title} (${c.count})`).join(', ') : 'Suppliers & Haulers, Sites & Regions');
-      const conns = (snap && snap.connectedChips && snap.connectedChips.length)
-        ? snap.connectedChips.join(' · ')
+    } else if (/^reg_/.test(viewId) || (useSnap && useSnap.hubCards && useSnap.hubCards.length > 0)) {
+      const regTableMap = {
+        reg_customers: 'customers',
+        reg_suppliers: 'suppliers',
+        reg_sites: 'sites',
+        reg_regions: 'regions',
+        reg_products: 'products',
+        reg_items: 'items',
+        reg_categories: 'expense_categories',
+        reg_equipment: 'equipment',
+        reg_drivers: 'drivers',
+        reg_staff: 'staff_members',
+        reg_roles: 'staff_roles',
+        reg_fx_rates: 'fx_rates',
+        reg_currencies: 'currencies',
+        reg_vat_rates: 'vat_rates'
+      };
+      const fallbackTblKey = regTableMap[viewId] || 'customers';
+      const fallbackCnt = fmtInt((((_ctx && _ctx.SEED && _ctx.SEED.records && _ctx.SEED.records[fallbackTblKey]) || []).length) || 1099);
+      const activeCard = (useSnap && useSnap.hubCards && useSnap.hubCards.find(c => c.active)) || { title: screenTitle, count: fallbackCnt };
+      const otherCards = (useSnap && useSnap.hubCards && useSnap.hubCards.length > 1)
+        ? useSnap.hubCards.filter(c => !c.active).map(c => `${c.title} (${c.count})`).join(', ')
+        : 'Suppliers & Haulers, Staff Members';
+      const conns = (useSnap && useSnap.connectedChips && useSnap.connectedChips.length)
+        ? useSnap.connectedChips.join(' · ')
         : 'Sales Tickets (15,967) · Customer Receipts (AR) (2,331) · Price & Commission Agreements · VAT 11% Tax Invoices (304)';
-      const views = (snap && snap.viewTabs && snap.viewTabs.length)
-        ? snap.viewTabs.join(' · ')
-        : 'All Customers (1,099) · Open AR Balance > $0 (50) · VAT Registered (MOF) (51)';
-      const cols = (snap && snap.tableHeaders && snap.tableHeaders[0] && snap.tableHeaders[0].cols.length)
-        ? snap.tableHeaders[0].cols.join(', ')
+      const views = (useSnap && useSnap.viewTabs && useSnap.viewTabs.length)
+        ? useSnap.viewTabs.join(' · ')
+        : `All ${activeCard.title} (${activeCard.count || fallbackCnt}) · Open AR Balance > $0 (50) · VAT Registered (MOF) (51)`;
+      const cols = (useSnap && useSnap.tableHeaders && useSnap.tableHeaders[0] && useSnap.tableHeaders[0].cols.length)
+        ? useSnap.tableHeaders[0].cols.join(', ')
         : 'CUSTOMER, METHOD, VAT (11%), MOF TAX #, PHONE, ADDRESS, CREDIT DAYS';
 
-      bullets.push(`<b>1. Shared Registries Switcher (Top Cards)</b>: Shows that <b>${esc(activeCard.title)}</b> is currently active with <b>${esc(activeCard.count || '1,099')}</b> master records (shared across all entities), with one-click switching to <b>${esc(otherCards || 'Suppliers & Haulers')}</b>.`);
-      bullets.push(`<b>2. Connected Tables Bar</b>: Links this master registry directly to its downstream transaction tables: <b>${esc(conns)}</b>. Clicking any chip jumps straight to that transaction register.`);
+      bullets.push(`<b>1. Shared Registries Switcher (Top Cards)</b>: Shows that <b>${esc(activeCard.title)}</b> is currently active with <b>${esc(activeCard.count || fallbackCnt)}</b> master records (shared across all entities), with one-click switching to <b>${esc(otherCards || 'Suppliers & Haulers')}</b>.`);
+      bullets.push(`<b>2. Connected Tables Bar</b>: Links this master registry directly to its downstream transaction tables: <b>${esc(conns)}</b>. Clicking any chip previews or jumps straight to that transaction register.`);
       bullets.push(`<b>3. Saved Views & Search Deck</b>: Filters the registry by operational slice (<b>${esc(views)}</b>) alongside instant frequency-ranked search.`);
-      bullets.push(`<b>4. Master Record Grid (${esc(cols)})</b>: Lists each account's payment terms (<b>Credit</b> vs <b>Cash</b>), <b>11% VAT</b> registration badge, Ministry of Finance (<b>MOF Tax #</b>), phone, address, and credit days. Clicking any row opens the <b>360° Counterparty Inspector</b> with full FIFO AR/AP aging and statement history.`);
+      bullets.push(`<b>4. Master Record Grid (${esc(cols)})</b>: Lists each record's master attributes (such as payment method <b>Credit</b> vs <b>Cash</b>, <b>11% VAT</b> status, <b>MOF Tax #</b>, phone, address, and credit days). Clicking any row opens its <b>360° Record Inspector</b> or edit desk.`);
 
       rows = [
-        ['Shared Registries Bar', `${activeCard.title} (${activeCard.count || '1,099'})`, 'Switches between shared master tables'],
-        ['Connected Tables', conns.slice(0, 68), 'Jumps to linked sales, receipts, pricing, or VAT tables'],
-        ['Views Filter Bar', views.slice(0, 68), 'Filters All accounts vs Open AR > $0 vs MOF VAT registered'],
+        ['Shared Registries Bar', `${activeCard.title} (${activeCard.count || fallbackCnt})`, 'Switches between shared master tables'],
+        ['Connected Tables', conns.slice(0, 68), 'Previews or jumps to linked transaction registers'],
+        ['Views Filter Bar', views.slice(0, 68), 'Filters master records by operational slice'],
         ['Registry Grid Columns', cols.slice(0, 68), 'Click any row to open its 360° Inspector & ledger']
       ];
     } else {
-      if (snap && snap.openFormTitle) {
-        bullets.push(`<b>Open Smart Entry Modal (${esc(snap.openFormTitle)})</b>: You are viewing an active data-entry voucher form with chronological effective-date validation and frequency-ranked comboboxes.`);
+      if (useSnap && useSnap.openFormTitle) {
+        bullets.push(`<b>Open Smart Entry Modal (${esc(useSnap.openFormTitle)})</b>: You are viewing an active data-entry voucher form with chronological effective-date validation and frequency-ranked comboboxes.`);
       }
-      if (snap && snap.openInspectorTitle) {
-        bullets.push(`<b>Open 360° Inspector (${esc(snap.openInspectorTitle)})</b>: Shows the complete audit trail, linked transactions, and in-place Modify Drawer for the selected record.`);
+      if (useSnap && useSnap.openInspectorTitle) {
+        bullets.push(`<b>Open 360° Inspector (${esc(useSnap.openInspectorTitle)})</b>: Shows the complete audit trail, linked transactions, and in-place Modify Drawer for the selected record.`);
       }
-      if (snap && snap.topKpis && snap.topKpis.length) {
-        bullets.push(`<b>Top KPI Scorecards</b>: ${snap.topKpis.slice(0, 4).map(x => `<b>${esc(x.label)}</b>: ${esc(x.val)}${x.sub ? ' (' + esc(x.sub) + ')' : ''}`).join(' · ')}.`);
-        snap.topKpis.slice(0, 5).forEach(x => {
+      if (useSnap && useSnap.topKpis && useSnap.topKpis.length) {
+        bullets.push(`<b>Top KPI Scorecards</b>: ${useSnap.topKpis.slice(0, 4).map(x => `<b>${esc(x.label)}</b>: ${esc(x.val)}${x.sub ? ' (' + esc(x.sub) + ')' : ''}`).join(' · ')}.`);
+        useSnap.topKpis.slice(0, 5).forEach(x => {
           rows.push([x.label, x.val, x.sub || 'Live scoped KPI metric']);
         });
       }
-      if (snap && snap.opsCells && snap.opsCells.length) {
-        bullets.push(`<b>Operational Strip</b>: ${snap.opsCells.slice(0, 4).map(x => `<b>${esc(x.label)}</b>: ${esc(x.val)}`).join(' · ')}.`);
+      if (useSnap && useSnap.opsCells && useSnap.opsCells.length) {
+        bullets.push(`<b>Operational Strip</b>: ${useSnap.opsCells.slice(0, 4).map(x => `<b>${esc(x.label)}</b>: ${esc(x.val)}`).join(' · ')}.`);
       }
-      if (snap && snap.panelHeadings && snap.panelHeadings.length) {
-        bullets.push(`<b>Charts & Register Panels</b>: Displays <b>${esc(snap.panelHeadings.slice(0, 5).join(', '))}</b> under <b>${esc(scope.fullScopeLabel)}</b>.`);
+      if (useSnap && useSnap.panelHeadings && useSnap.panelHeadings.length) {
+        bullets.push(`<b>Charts & Register Panels</b>: Displays <b>${esc(useSnap.panelHeadings.slice(0, 5).join(', '))}</b> under <b>${esc(scope.fullScopeLabel)}</b>.`);
       }
-      if (snap && snap.tableHeaders && snap.tableHeaders.length) {
-        const t0 = snap.tableHeaders[0];
+      if (useSnap && useSnap.tableHeaders && useSnap.tableHeaders.length) {
+        const t0 = useSnap.tableHeaders[0];
         bullets.push(`<b>Active Data Table</b>: Columns include <b>${esc(t0.cols.join(', '))}</b>${t0.sample ? ` (top row: ${esc(t0.sample)})` : ''}. Click any row to inspect or edit.`);
       }
       if (!bullets.length) {
@@ -2539,7 +2738,7 @@
     const preParsedTable = rawDesc.table || null;
     if (rawDesc.text != null || preParsedTable) {
       att.textContent = extractReadableDocText(rawDesc.text || '');
-      const tab = preParsedTable || parseTabularText(rawDesc.text, name);
+      const tab = preParsedTable || (att.kind !== 'pdf' ? parseTabularText(rawDesc.text, name) : null);
       if (tab && tab.rowCount > 0) {
         att.kind = 'spreadsheet';
         att.colHeaders = tab.colHeaders;
@@ -2764,19 +2963,21 @@
       const cleaned = m.replace(/^(?:ticket|voucher|invoice|\s|#)+/i, '').trim().toLowerCase();
       if (cleaned.length >= 2) candidateTickets.add(cleaned);
     });
-    if (primary.kind === 'spreadsheet') {
-      if (Array.isArray(primary.ticketRefs) && primary.ticketRefs.length) {
-        primary.ticketRefs.forEach(v => candidateTickets.add(v));
-      } else if (primary.colHeaders.length && primary.parsedRows.length) {
-        const tktColIdx = primary.colHeaders.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
-        if (tktColIdx >= 0) {
-          primary.parsedRows.forEach(r => {
-            const v = String(r[tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
-            if (v.length >= 2) candidateTickets.add(v);
-          });
+    nonAudioAtts.forEach(att => {
+      if (att.kind === 'spreadsheet') {
+        if (Array.isArray(att.ticketRefs) && att.ticketRefs.length) {
+          att.ticketRefs.forEach(v => candidateTickets.add(v));
+        } else if (att.colHeaders && att.colHeaders.length && att.parsedRows && att.parsedRows.length) {
+          const tktColIdx = att.colHeaders.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
+          if (tktColIdx >= 0) {
+            att.parsedRows.forEach(r => {
+              const v = String(r[tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
+              if (v.length >= 2) candidateTickets.add(v);
+            });
+          }
         }
       }
-    }
+    });
 
     const matchedErpTickets = [];
     const missingTickets = [];
@@ -2886,6 +3087,10 @@
       const s0 = matchedSuppliers[0];
       actions.push({ type: 'inspect', crKey: 'suppliers', id: s0.id, label: `360° ${s0.name}` });
     }
+    if (nonAudioAtts.length > 1) {
+      const extraDesc = nonAudioAtts.slice(1).map(a => `<b>${esc(a.name)}</b> (${esc(a.summaryLine || a.sizeLabel)})`).join(' · ');
+      bullets.push(`Additional Attached Files (${nonAudioAtts.length - 1}): ${extraDesc}`);
+    }
 
     // Case A: Spreadsheet / CSV / TSV / JSON / XLSX attachment
     if (primary.kind === 'spreadsheet' && primary.rowCount > 0) {
@@ -2927,7 +3132,7 @@
     if (primary.kind === 'image') {
       const ocrText = cleanOut(primary.ocrText || primary.textContent || '');
       const detectedView = primary.detectedView || detectViewFromOcrText(ocrText);
-      const asksScreenshotOrExplain = /\b(screenshot|screen[ _-]?shot|capture|snip|understand|undersand|explain|what\s+is\s+this|what\s+am\s+i\s+looking\s+at|what\s+does|mean|walk\s+me\s+through|guide|overview|dashboard|screen|page|view|app[- ]?entered|cash\s+till)\b/i.test(cleanQ);
+      const asksScreenshotOrExplain = /\b(screenshot|screen[ _-]?shot|capture|snip|understand|undersand|explain|what\s+is\s+this|what\s+am\s+i\s+looking\s+at|what\s+does|mean|walk\s+me\s+through|guide|overview|dashboard|screen|page|view|app[- ]?entered|cash\s+till|écran|ecran|comprends|explique)\b|(?:صورة|لقطة|شاشة|اشرح|افهم|أفهم)/i.test(cleanQ);
       const isGenericClipboardName = /^(?:image|screenshot|screen[ _-]?shot|capture|snip|clipboard|pasted[ _-]?image)[\w .-]*\.(?:png|jpe?g|webp|gif|bmp)$/i.test(primary.name);
       const isExplicitVoucherPhoto = /\b(weighbridge|slip|receipt|voucher|invoice|bill|defect|broken|repair|leak|damage|tire|hydraulic|fuel|diesel|mazout)\b/i.test(cleanQ + ' ' + primary.name) && !detectedView && !/\b(screenshot|understand|undersand|explain\s+this\s+screen)\b/i.test(cleanQ);
       const isLandscapeScreenRatio = primary.aspectRatio >= 1.2 && primary.aspectRatio <= 2.6;
@@ -2935,7 +3140,11 @@
       if (detectedView || ((asksScreenshotOrExplain || isGenericClipboardName || isLandscapeScreenRatio) && !isExplicitVoucherPhoto)) {
         const snap = primary.screenSnapshot || captureLiveScreenSnapshot();
         const targetView = detectedView || (snap && snap.viewId) || ((_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview');
-        return buildScreenWalkthroughReply(cleanQ, lang, scope, primary, targetView, snap, ocrText);
+        const wtReply = buildScreenWalkthroughReply(cleanQ, lang, scope, primary, targetView, snap, ocrText);
+        if (bullets.length && Array.isArray(wtReply.bullets)) {
+          wtReply.bullets.push(...bullets);
+        }
+        return wtReply;
       }
 
       const dollarHitsImg = ocrText.match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || [];
@@ -3262,12 +3471,11 @@
     syncVoiceBarUi();
 
     if (opts && opts.autoSend) {
-      const qToSend = finalTranscript || (activeLang === 'ar' ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة' : (activeLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts'));
       if (inp) {
         inp.value = '';
         inp.dir = 'ltr';
       }
-      submitQuestion(qToSend, { fromVoice: true });
+      submitQuestion(finalTranscript, { fromVoice: true });
     }
     return { transcript: finalTranscript, durationSec: recordedDuration, lang: activeLang, attachment: voiceAtt };
   }
@@ -3562,7 +3770,7 @@
   }
 
   function renderTurnHtml(item, isNewest) {
-    const isRtl = item.lang === 'ar' || /[\u0600-\u06FF]/.test(item.answer || '');
+    const isRtl = /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
     const uDirAttr = /[\u0600-\u06FF]/.test(item.q || '') ? ' dir="rtl"' : '';
 
@@ -3613,9 +3821,10 @@
       `;
     } else if ((Array.isArray(item.followUps) && item.followUps.length) || item.promptText) {
       const lead = item.promptText || (item.lang === 'ar' ? 'هل تود فحص أحد هذه المواضيع؟' : (item.lang === 'fr' ? 'Souhaitez-vous vérifier l\'un de ces points ?' : 'Would you like to check one of these next?'));
+      const fDirAttr = /[\u0600-\u06FF]/.test(lead) ? ' dir="rtl" style="text-align:right"' : dirAttr;
       const chips = (item.followUps || []).map(f => `<button type="button" class="ai-followup-chip" data-ask-chip="${esc(f)}">${esc(f)}</button>`).join('');
       followHtml = `
-        <div class="ai-msg-followup"${dirAttr}>
+        <div class="ai-msg-followup"${fDirAttr}>
           <div class="ai-followup-lead">${esc(lead)}</div>
           ${chips ? `<div class="ai-followup-chips">${chips}</div>` : ''}
         </div>
@@ -3732,12 +3941,17 @@
 
     let cleanQ = String(qRaw || '').trim();
     if (!cleanQ && turnAtts.length) {
-      const f0 = turnAtts[0];
-      cleanQ = f0.kind === 'audio'
-        ? 'Give me an executive briefing & open alerts'
-        : (f0.kind === 'image'
-          ? `Explain attached image ${f0.name}`
-          : `Analyze attached file ${f0.name} and reconcile with live records`);
+      const f0 = turnAtts.find(a => a && a.kind !== 'audio') || turnAtts[0];
+      if (f0.kind === 'audio') {
+        const vLang = f0.voiceLang || _chatState.voiceLang || 'en';
+        cleanQ = vLang === 'ar'
+          ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة'
+          : (vLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts');
+      } else if (f0.kind === 'image') {
+        cleanQ = `Explain attached image ${f0.name}`;
+      } else {
+        cleanQ = `Analyze attached file ${f0.name} and reconcile with live records`;
+      }
     }
     if (!cleanQ) return;
 
@@ -3752,8 +3966,8 @@
       const attHit = hasNonAudioAtt ? buildAttachmentAnalysisAnswer(cleanQ, scope, turnAtts) : null;
       const sqlHit = buildLiveDataAnswer(cleanQ, scope);
       if (attHit && (attHit.topic === 'screen_walkthrough' || /^(?:Analyze|Explain) attached (?:file|image)\b|\b(file|sheet|csv|attachment|attached|receipt|image|photo|pdf|document|reconcile|screenshot|screen|understand|undersand|explain|what is this)\b/i.test(cleanQ) || !sqlHit)) {
-        if (sqlHit && sqlHit.answer && attHit.topic !== 'screen_walkthrough' && Array.isArray(attHit.bullets)) {
-          attHit.bullets = [`<b>Direct Answer</b>: ${sqlHit.answer}`, ...attHit.bullets];
+        if (sqlHit && sqlHit.answer && sqlHit.topic !== 'screen_walkthrough' && sqlHit.topic !== 'briefing' && sqlHit.topic !== 'greeting' && sqlHit.answer !== attHit.answer && Array.isArray(attHit.bullets)) {
+          attHit.bullets = [`<b>Direct Answer (${esc(sqlHit.title || 'Live Match')})</b>: ${sqlHit.answer}`, ...attHit.bullets];
         }
         return attHit;
       }
@@ -4112,7 +4326,8 @@
           const botBubble = speakBtn.closest('.ai-msg-bot');
           const pEl = botBubble ? botBubble.querySelector('.ai-bot-p') : null;
           const listEl = botBubble ? botBubble.querySelector('.ai-bot-list') : null;
-          const combinedHtml = [pEl ? pEl.innerHTML : '', listEl ? listEl.innerHTML : ''].filter(Boolean).join('. ');
+          const bulletTexts = listEl ? Array.from(listEl.querySelectorAll('li')).map(li => li.textContent.trim()).filter(Boolean) : [];
+          const combinedHtml = [pEl ? pEl.textContent.trim() : '', ...bulletTexts].filter(Boolean).join('. ');
           speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en');
           return;
         }
@@ -4179,6 +4394,7 @@
         size: a.size,
         rowCount: a.rowCount,
         numericSum: a.numericSum,
+        detectedView: a.detectedView || '',
         summaryLine: a.summaryLine
       })),
       lastReply: _chatState.history[_chatState.history.length - 1] || null
