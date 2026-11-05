@@ -43,10 +43,13 @@
     voiceTimerId: null,
     speechRec: null,
     mediaRecorder: null,
+    mediaRecorderMime: '',
     mediaStream: null,
     audioChunks: [],
     voiceBaseText: '',
-    voiceInterimText: ''
+    voiceInterimText: '',
+    voiceStatusOverride: '',
+    activeAudioEl: null
   };
 
   function cleanOut(s) {
@@ -1838,6 +1841,21 @@
     return 'document';
   }
 
+  function isBinaryGarbageString(rawStr) {
+    const s = String(rawStr || '');
+    if (!s) return false;
+    if (s.startsWith('PK\x03\x04') || s.startsWith('%PDF-') || (s.charCodeAt(0) === 0xD0 && s.charCodeAt(1) === 0xCF)) {
+      return true;
+    }
+    const sample = s.slice(0, 1024);
+    let bad = 0;
+    for (let i = 0; i < sample.length; i++) {
+      const code = sample.charCodeAt(i);
+      if (code === 0xFFFD || (code < 32 && code !== 9 && code !== 10 && code !== 13)) bad++;
+    }
+    return sample.length > 0 && (bad / sample.length) > 0.08;
+  }
+
   function splitCsvLine(line, delim) {
     const out = [];
     let cur = '';
@@ -1866,14 +1884,30 @@
     if (typeof val === 'number') return Number.isFinite(val) ? val : NaN;
     const s = String(val == null ? '' : val).trim();
     if (!s || /^\d{4}-\d{2}-\d{2}$/.test(s) || /^#?[A-Za-z]+\d*$/.test(s)) return NaN;
-    const clean = s.replace(/[$,\s]|USD|LBP|LL/gi, '').replace(/^\((.+)\)$/, '-$1');
+    const clean = s
+      .replace(/[$€£,\s]|USD|EUR|LBP|LL/gi, '')
+      .replace(/^\((.+)\)$/, '-$1')
+      .replace(/^(\d+(?:\.\d+)?)-$/, '-$1');
     if (!/^[-+]?\d+(?:\.\d+)?$/.test(clean)) return NaN;
     return Number(clean);
   }
 
+  function isSummaryTableRow(row) {
+    if (!Array.isArray(row)) return false;
+    for (let i = 0; i < Math.min(row.length, 3); i++) {
+      const cell = String(row[i] == null ? '' : row[i]).trim();
+      if (!cell) continue;
+      if (/^(?:total|grand\s+total|sub[- ]?total|sum|net\s+total|sheet\s+total|المجموع|الإجمالي|المجموع\s+العام)$/i.test(cell)) {
+        return true;
+      }
+      break;
+    }
+    return false;
+  }
+
   function parseTabularText(rawText, fileName) {
-    const text = String(rawText || '').trim();
-    if (!text) return null;
+    const text = String(rawText || '').replace(/^\uFEFF/, '').trim();
+    if (!text || isBinaryGarbageString(text)) return null;
 
     // 1. JSON array / object support
     if ((text.startsWith('[') || text.startsWith('{')) && (/\.json$/i.test(fileName || '') || text.endsWith(']') || text.endsWith('}'))) {
@@ -1882,7 +1916,7 @@
         const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.rows || parsed.records || parsed.data) ? (parsed.rows || parsed.records || parsed.data) : [parsed]);
         const objs = arr.filter(x => x && typeof x === 'object');
         if (objs.length) {
-          const headers = Object.keys(objs[0]).slice(0, 10);
+          const headers = Object.keys(objs[0]).slice(0, 12);
           const rows = objs.map(o => headers.map(h => String(o[h] == null ? '' : o[h])));
           return summarizeParsedTable(headers, rows);
         }
@@ -1896,15 +1930,18 @@
     const delim = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
     const allRows = lines.map(l => splitCsvLine(l, delim));
     if (allRows.length >= 2 && allRows[0].length >= 2) {
-      const headers = allRows[0].map((h, idx) => cleanOut(h || `Col ${idx + 1}`));
+      const headers = allRows[0].map((h, idx) => cleanOut(String(h || '').replace(/^\uFEFF/, '') || `Col ${idx + 1}`));
       const dataRows = allRows.slice(1).filter(r => r.some(c => String(c || '').trim() !== ''));
       return summarizeParsedTable(headers, dataRows);
     }
     return null;
   }
 
-  function summarizeParsedTable(headers, dataRows) {
-    if (!headers || !headers.length || !dataRows || !dataRows.length) return null;
+  function summarizeParsedTable(headers, rawDataRows) {
+    if (!headers || !headers.length || !rawDataRows || !rawDataRows.length) return null;
+    // Exclude bottom Total / Subtotal rows so numericSum never double-counts a summary row
+    const nonSummaryRows = rawDataRows.filter(r => !isSummaryTableRow(r));
+    const dataRows = nonSummaryRows.length ? nonSummaryRows : rawDataRows;
     const colCnt = headers.length;
     let bestColIdx = -1;
     let bestScore = -1;
@@ -1941,29 +1978,162 @@
       }
     }
 
+    // Extract ticket references across up to 500 rows (even beyond the 25-row UI preview)
+    const ticketRefs = [];
+    const tktColIdx = headers.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
+    if (tktColIdx >= 0) {
+      for (let r = 0; r < Math.min(dataRows.length, 500); r++) {
+        const v = String(dataRows[r][tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
+        if (v.length >= 2 && ticketRefs.length < 80) ticketRefs.push(v);
+      }
+    }
+
     return {
       colHeaders: headers,
       rowCount: dataRows.length,
       numericCol,
       numericSum,
       isMoneyCol,
+      ticketRefs,
       parsedRows: dataRows.slice(0, 25)
     };
   }
 
+  function decodeXmlEntities(str) {
+    return String(str || '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'");
+  }
+
+  // Native client-side ZIP XML extractor for .xlsx and .docx files using DecompressionStream('deflate-raw')
+  async function extractOfficeZipContent(arrayBuffer, fileName) {
+    try {
+      if (!arrayBuffer || arrayBuffer.byteLength < 30) return null;
+      const bytes = new Uint8Array(arrayBuffer);
+      if (bytes[0] !== 0x50 || bytes[1] !== 0x4B) return null;
+      const view = new DataView(arrayBuffer);
+      const entries = {};
+      let offset = 0;
+      const decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
+      if (!decoder) return null;
+
+      while (offset + 30 <= arrayBuffer.byteLength) {
+        const sig = view.getUint32(offset, true);
+        if (sig !== 0x04034b50) break;
+        const flag = view.getUint16(offset + 6, true);
+        const method = view.getUint16(offset + 8, true);
+        const compSize = view.getUint32(offset + 18, true);
+        const nameLen = view.getUint16(offset + 26, true);
+        const extraLen = view.getUint16(offset + 28, true);
+        const dataStart = offset + 30 + nameLen + extraLen;
+        if ((flag & 0x08) !== 0 || compSize === 0xFFFFFFFF || dataStart + compSize > arrayBuffer.byteLength) break;
+        const entryName = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLen));
+        if (/^(xl\/sharedStrings\.xml|xl\/worksheets\/sheet1\.xml|word\/document\.xml)$/i.test(entryName)) {
+          const slice = bytes.subarray(dataStart, dataStart + compSize);
+          if (method === 0) {
+            entries[entryName] = decoder.decode(slice);
+          } else if (method === 8 && typeof DecompressionStream !== 'undefined') {
+            try {
+              const ds = new DecompressionStream('deflate-raw');
+              const writer = ds.writable.getWriter();
+              writer.write(slice).catch(() => {});
+              writer.close().catch(() => {});
+              const ab = await new Response(ds.readable).arrayBuffer();
+              entries[entryName] = decoder.decode(new Uint8Array(ab));
+            } catch (_) {}
+          }
+        }
+        offset = dataStart + compSize;
+      }
+
+      if (entries['word/document.xml']) {
+        const xml = entries['word/document.xml'];
+        const words = [];
+        const wRe = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
+        let m;
+        while ((m = wRe.exec(xml)) && words.length < 800) {
+          words.push(decodeXmlEntities(m[1]));
+        }
+        return { text: cleanOut(words.join(' ')) };
+      }
+
+      if (entries['xl/worksheets/sheet1.xml']) {
+        const shared = [];
+        if (entries['xl/sharedStrings.xml']) {
+          const siRe = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
+          let sm;
+          while ((sm = siRe.exec(entries['xl/sharedStrings.xml'])) && shared.length < 5000) {
+            const tParts = [];
+            const tRe = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+            let tm;
+            while ((tm = tRe.exec(sm[1]))) tParts.push(decodeXmlEntities(tm[1]));
+            shared.push(tParts.join(''));
+          }
+        }
+        const sheetXml = entries['xl/worksheets/sheet1.xml'];
+        const parsedGrid = [];
+        const rowRe = /<row\b[^>]*>([\s\S]*?)<\/row>/g;
+        let rm;
+        while ((rm = rowRe.exec(sheetXml)) && parsedGrid.length < 500) {
+          const rowCells = [];
+          const cRe = /<c\b([^>]*)>([\s\S]*?)<\/c>/g;
+          let cm;
+          while ((cm = cRe.exec(rm[1]))) {
+            const attrs = cm[1] || '';
+            const inner = cm[2] || '';
+            const isShared = /\bt="s"/.test(attrs);
+            const isInline = /\bt="inlineStr"/.test(attrs);
+            let val = '';
+            if (isInline) {
+              const im = inner.match(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/);
+              val = im ? decodeXmlEntities(im[1]) : '';
+            } else {
+              const vm = inner.match(/<v>([\s\S]*?)<\/v>/);
+              const rawV = vm ? vm[1].trim() : '';
+              val = (isShared && shared[Number(rawV)] != null) ? shared[Number(rawV)] : decodeXmlEntities(rawV);
+            }
+            rowCells.push(cleanOut(val));
+          }
+          if (rowCells.some(c => c !== '')) parsedGrid.push(rowCells);
+        }
+        if (parsedGrid.length >= 2) {
+          const headers = parsedGrid[0].map((h, idx) => h || `Col ${idx + 1}`);
+          const dataRows = parsedGrid.slice(1);
+          return { table: summarizeParsedTable(headers, dataRows), text: parsedGrid.slice(0, 30).map(r => r.join(', ')).join('\n') };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function extractReadableDocText(rawStr) {
-    const s = String(rawStr || '');
+    const s = String(rawStr || '').replace(/^\uFEFF/, '');
     if (!s) return '';
     if (s.startsWith('%PDF-')) {
       const chunks = [];
       const tjRe = /\(([^()\\]{2,160})\)\s*Tj/g;
       let m;
       while ((m = tjRe.exec(s)) && chunks.length < 120) {
-        chunks.push(m[1]);
+        const piece = m[1].replace(/[\x00-\x1F]+/g, ' ').trim();
+        if (piece && !isBinaryGarbageString(piece)) chunks.push(piece);
       }
-      if (chunks.length) return cleanOut(chunks.join(' '));
+      return chunks.length ? cleanOut(chunks.join(' ')) : '';
     }
+    if (isBinaryGarbageString(s)) return '';
     return cleanOut(s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]+/g, ' ').replace(/\s+/g, ' ').slice(0, 6000));
+  }
+
+  function revokeAttachmentUrls(att) {
+    if (!att || typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') return;
+    if (att.audioUrl && String(att.audioUrl).startsWith('blob:')) {
+      try { URL.revokeObjectURL(att.audioUrl); } catch (_) {}
+    }
+    if (att.thumbUrl && String(att.thumbUrl).startsWith('blob:')) {
+      try { URL.revokeObjectURL(att.thumbUrl); } catch (_) {}
+    }
   }
 
   function buildAttachmentMetaObject(rawDesc) {
@@ -1981,20 +2151,22 @@
       thumbUrl: rawDesc.thumbUrl || rawDesc.dataUrl || '',
       audioUrl: rawDesc.audioUrl || '',
       durationSec: Number(rawDesc.durationSec || 0),
-       voiceLang: rawDesc.voiceLang || '',
+      voiceLang: rawDesc.voiceLang || '',
       textContent: '',
       colHeaders: [],
       rowCount: 0,
       numericCol: '',
       numericSum: 0,
       isMoneyCol: false,
+      ticketRefs: [],
       parsedRows: [],
       summaryLine: formatBytes(size)
     };
 
-    if (rawDesc.text != null) {
-      att.textContent = extractReadableDocText(rawDesc.text);
-      const tab = parseTabularText(rawDesc.text, name);
+    const preParsedTable = rawDesc.table || null;
+    if (rawDesc.text != null || preParsedTable) {
+      att.textContent = extractReadableDocText(rawDesc.text || '');
+      const tab = preParsedTable || parseTabularText(rawDesc.text, name);
       if (tab && tab.rowCount > 0) {
         att.kind = 'spreadsheet';
         att.colHeaders = tab.colHeaders;
@@ -2002,6 +2174,7 @@
         att.numericCol = tab.numericCol;
         att.numericSum = tab.numericSum;
         att.isMoneyCol = tab.isMoneyCol;
+        att.ticketRefs = Array.isArray(tab.ticketRefs) ? tab.ticketRefs : [];
         att.parsedRows = tab.parsedRows;
         const sumPart = tab.numericCol
           ? ` · ${tab.isMoneyCol ? fmtMoney(tab.numericSum, 2) : fmtInt(tab.numericSum, 1)}`
@@ -2009,8 +2182,10 @@
         att.summaryLine = `${tab.rowCount} ${tab.rowCount === 1 ? 'row' : 'rows'}${sumPart}`;
       } else if (att.kind === 'pdf') {
         att.summaryLine = `PDF Document · ${att.sizeLabel}`;
+      } else if (att.kind === 'spreadsheet') {
+        att.summaryLine = `Spreadsheet · ${att.sizeLabel}`;
       } else if (att.textContent) {
-        const lineCnt = String(rawDesc.text).split(/\r?\n/).filter(Boolean).length;
+        const lineCnt = String(rawDesc.text || att.textContent).split(/\r?\n/).filter(Boolean).length;
         att.summaryLine = `${lineCnt} ${lineCnt === 1 ? 'line' : 'lines'} · ${att.sizeLabel}`;
       }
     } else if (att.kind === 'audio') {
@@ -2038,6 +2213,10 @@
       const kind = detectAttachmentKind(name, mime);
 
       if (kind === 'image' && typeof FileReader !== 'undefined') {
+        if (size > 15 * 1024 * 1024) {
+          resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+          return;
+        }
         const fr = new FileReader();
         fr.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind, dataUrl: String(fr.result || '') }));
         fr.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
@@ -2060,11 +2239,37 @@
         }));
         return;
       }
+      // Office ZIP containers (.xlsx / .docx): unpack XML sheets/paragraphs cleanly without dumping binary PK bytes
+      if (/\.(xlsx|docx)$/i.test(name) && typeof file.arrayBuffer === 'function' && size <= 10 * 1024 * 1024) {
+        file.arrayBuffer().then(ab => extractOfficeZipContent(ab, name)).then(extracted => {
+          if (extracted && (extracted.table || extracted.text)) {
+            resolve(buildAttachmentMetaObject({
+              name,
+              type: mime,
+              size,
+              kind,
+              table: extracted.table || null,
+              text: extracted.text || ''
+            }));
+          } else {
+            resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+          }
+        }).catch(() => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind })));
+        return;
+      }
+      // Binary legacy Office (.xls / .doc): avoid reading binary OLE2 stream as UTF-8 CSV
+      if (/\.(xls|doc)$/i.test(name)) {
+        resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+        return;
+      }
       if (typeof FileReader !== 'undefined') {
+        const sliceToRead = (size > 1024 * 1024 && typeof file.slice === 'function')
+          ? file.slice(0, 1024 * 1024)
+          : file;
         const fr = new FileReader();
         fr.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind, text: String(fr.result || '') }));
         fr.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
-        fr.readAsText(file);
+        fr.readAsText(sliceToRead);
         return;
       }
       resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
@@ -2076,9 +2281,15 @@
     const list = Array.isArray(fileListOrArr) ? fileListOrArr : Array.from(fileListOrArr);
     const added = [];
     for (let i = 0; i < list.length; i++) {
-      if (_chatState.attachments.length >= 5) break;
+      if (_chatState.attachments.length >= 6) break;
       const item = list[i];
       if (!item) continue;
+      const candidateName = cleanOut(item.name || '');
+      const candidateSize = Number(item.size || (item.text ? item.text.length : 0));
+      // Prevent accidental duplicate staging of the exact same file
+      if (candidateName && _chatState.attachments.some(a => a && a.name === candidateName && a.size === candidateSize && a.kind !== 'audio')) {
+        continue;
+      }
       if (!(typeof Blob !== 'undefined' && item instanceof Blob)) {
         const syncAtt = buildAttachmentMetaObject(item);
         _chatState.attachments.push(syncAtt);
@@ -2096,11 +2307,16 @@
   }
 
   function removeAttachment(attId) {
+    const removed = _chatState.attachments.find(a => a && a.id === attId);
+    if (removed) revokeAttachmentUrls(removed);
     _chatState.attachments = _chatState.attachments.filter(a => a && a.id !== attId);
     renderAttachmentBar();
   }
 
-  function clearAttachments() {
+  function clearAttachments(revokeUrls = false) {
+    if (revokeUrls) {
+      _chatState.attachments.forEach(revokeAttachmentUrls);
+    }
     _chatState.attachments = [];
     renderAttachmentBar();
   }
@@ -2153,28 +2369,36 @@
     const nonAudioAtts = turnAtts.filter(a => a && a.kind !== 'audio');
     if (!nonAudioAtts.length) return null;
 
+    const user = scope.user;
     const lang = detectLang(cleanQ);
     const primary = nonAudioAtts[0];
     const combinedCorpus = [
       cleanQ,
-      ...nonAudioAtts.map(a => `${a.name} ${a.textContent || ''}`)
+      ...nonAudioAtts.map(a => {
+        const cellSample = Array.isArray(a.parsedRows) ? a.parsedRows.map(r => r.join(' ')).join(' ') : '';
+        return `${a.name} ${a.textContent || ''} ${cellSample}`;
+      })
     ].join(' ');
     const lowCorpus = combinedCorpus.toLowerCase();
 
-    // Cross-match ticket numbers (#1045, ticket 1045, or first-column numbers in a spreadsheet)
+    // Cross-match ticket numbers (#1045, ticket 1045, or ticket columns across all rows)
     const candidateTickets = new Set();
     const tktMatches = combinedCorpus.match(/(?:\bticket\s*#?|\bvoucher\s*#?|\binvoice\s*#?|#)\s*([A-Za-z0-9-]{2,18})\b/gi) || [];
     tktMatches.forEach(m => {
       const cleaned = m.replace(/^(?:ticket|voucher|invoice|\s|#)+/i, '').trim().toLowerCase();
       if (cleaned.length >= 2) candidateTickets.add(cleaned);
     });
-    if (primary.kind === 'spreadsheet' && primary.colHeaders.length && primary.parsedRows.length) {
-      const tktColIdx = primary.colHeaders.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
-      if (tktColIdx >= 0) {
-        primary.parsedRows.forEach(r => {
-          const v = String(r[tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
-          if (v.length >= 2) candidateTickets.add(v);
-        });
+    if (primary.kind === 'spreadsheet') {
+      if (Array.isArray(primary.ticketRefs) && primary.ticketRefs.length) {
+        primary.ticketRefs.forEach(v => candidateTickets.add(v));
+      } else if (primary.colHeaders.length && primary.parsedRows.length) {
+        const tktColIdx = primary.colHeaders.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
+        if (tktColIdx >= 0) {
+          primary.parsedRows.forEach(r => {
+            const v = String(r[tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
+            if (v.length >= 2) candidateTickets.add(v);
+          });
+        }
       }
     }
 
@@ -2182,10 +2406,10 @@
     const missingTickets = [];
     if (candidateTickets.size > 0 && _ctx && _ctx.SEED && _ctx.SEED.records) {
       const pools = [
-        { key: 'sales_tickets', label: 'Sales Ticket', view: 'sales' },
-        { key: 'raw_purchases', label: 'Quarry Ticket', view: 'raw' },
-        { key: 'expenses', label: 'Expense Voucher', view: 'expenses' },
-        { key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }
+        ...(canHub('sales', user) ? [{ key: 'sales_tickets', label: 'Sales Ticket', view: 'sales' }] : []),
+        ...(canHub('raw', user) ? [{ key: 'raw_purchases', label: 'Quarry Ticket', view: 'raw' }] : []),
+        ...(canHub('expenses', user) ? [{ key: 'expenses', label: 'Expense Voucher', view: 'expenses' }] : []),
+        ...(canHub('fleet', user) ? [{ key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }] : [])
       ];
       candidateTickets.forEach(tNo => {
         let found = null;
@@ -2202,7 +2426,7 @@
       });
     }
 
-    // Cross-match Counterparties (Customers & Suppliers) mentioned in file or caption
+    // Cross-match Counterparties (Customers & Suppliers) mentioned in file or caption (respecting Hub & BU RLS)
     const matchedCustomers = [];
     const matchedSuppliers = [];
     const hasWordMatch = (haystackLow, needleRaw) => {
@@ -2213,41 +2437,43 @@
       return re.test(haystackLow);
     };
     if (_ctx && _ctx.SEED && _ctx.SEED.records) {
-      const custs = _ctx.SEED.records.customers || [];
-      const mCusts = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).customers || [];
-      for (let i = 0; i < custs.length; i++) {
-        const c = custs[i];
-        if (!c || c.voided || !c.name || c.name.length < 4) continue;
-        if (hasWordMatch(lowCorpus, c.name)) {
-          const mHit = mCusts.find(x => norm(x.Customer || x.name) === norm(c.name));
-          matchedCustomers.push({
-            id: c.id,
-            name: c.name,
-            loads: mHit ? Number(mHit.loads || 0) : 0,
-            sales: mHit ? Number(mHit.sales_ttc || 0) : 0,
-            ar: mHit ? Number(mHit.ar_balance || 0) : 0
-          });
+      if (canHub('sales', user)) {
+        const custs = _ctx.SEED.records.customers || [];
+        const mCusts = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).customers || [];
+        for (let i = 0; i < custs.length; i++) {
+          const c = custs[i];
+          if (!c || c.voided || !c.name || c.name.length < 4) continue;
+          if (hasWordMatch(lowCorpus, c.name)) {
+            const mHit = mCusts.find(x => norm(x.Customer || x.name) === norm(c.name));
+            const loads = mHit ? Number(mHit.loads || 0) : 0;
+            const sales = mHit ? Number(mHit.sales_ttc || 0) : 0;
+            const ar = mHit ? Number(mHit.ar_balance || 0) : 0;
+            if (mHit || !c.company || scope.coNames.some(co => norm(co) === norm(c.company))) {
+              matchedCustomers.push({ id: c.id, name: c.name, loads, sales, ar });
+            }
+          }
         }
+        matchedCustomers.sort((a, b) => (b.sales - a.sales) || (b.ar - a.ar));
       }
-      matchedCustomers.sort((a, b) => (b.sales - a.sales) || (b.ar - a.ar));
 
-      const sups = _ctx.SEED.records.suppliers || [];
-      const mSups = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).suppliers || [];
-      for (let i = 0; i < sups.length; i++) {
-        const s = sups[i];
-        if (!s || s.voided || !s.name || s.name.length < 4) continue;
-        if (hasWordMatch(lowCorpus, s.name)) {
-          const mHit = mSups.find(x => norm(x.Supplier || x.name) === norm(s.name));
-          matchedSuppliers.push({
-            id: s.id,
-            name: s.name,
-            loads: mHit ? Number(mHit.raw_loads || 0) : 0,
-            cost: mHit ? Number(mHit.raw_cost || 0) + Number(mHit.expenses || 0) : 0,
-            ap: mHit ? Number(mHit.ap_balance || 0) : 0
-          });
+      if (canHub('raw', user) || canHub('expenses', user)) {
+        const sups = _ctx.SEED.records.suppliers || [];
+        const mSups = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).suppliers || [];
+        for (let i = 0; i < sups.length; i++) {
+          const s = sups[i];
+          if (!s || s.voided || !s.name || s.name.length < 4) continue;
+          if (hasWordMatch(lowCorpus, s.name)) {
+            const mHit = mSups.find(x => norm(x.Supplier || x.name) === norm(s.name));
+            const loads = mHit ? Number(mHit.raw_loads || 0) : 0;
+            const cost = mHit ? Number(mHit.raw_cost || 0) + Number(mHit.expenses || 0) : 0;
+            const ap = mHit ? Number(mHit.ap_balance || 0) : 0;
+            if (mHit || !s.company || scope.coNames.some(co => norm(co) === norm(s.company))) {
+              matchedSuppliers.push({ id: s.id, name: s.name, loads, cost, ap });
+            }
+          }
         }
+        matchedSuppliers.sort((a, b) => (b.cost - a.cost) || (b.ap - a.ap));
       }
-      matchedSuppliers.sort((a, b) => (b.cost - a.cost) || (b.ap - a.ap));
     }
 
     const bullets = [];
@@ -2285,7 +2511,7 @@
       actions.push({ type: 'inspect', crKey: 'suppliers', id: s0.id, label: `360° ${s0.name}` });
     }
 
-    // Case A: Spreadsheet / CSV / TSV / JSON attachment
+    // Case A: Spreadsheet / CSV / TSV / JSON / XLSX attachment
     if (primary.kind === 'spreadsheet' && primary.rowCount > 0) {
       const previewCols = primary.colHeaders.slice(0, 4);
       const previewRows = primary.parsedRows.slice(0, 6).map(r => previewCols.map((_, idx) => cleanOut(r[idx] != null ? r[idx] : '-')));
@@ -2352,7 +2578,7 @@
       };
     }
 
-    // Case C: PDF / Document / Text file
+    // Case C: PDF / Document / Binary Excel (.xls) / Text file
     const dollarHits = (primary.textContent || '').match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || [];
     if (dollarHits.length) {
       bullets.push(`Detected Document Amounts: <b>${esc(dollarHits.slice(0, 5).join(' · '))}</b>`);
@@ -2403,11 +2629,24 @@
     if (statusLbl) {
       statusLbl.textContent = _chatState.voiceInterimText
         ? cleanOut(_chatState.voiceInterimText).slice(-48)
-        : `Listening (${lInfo.name})...`;
+        : (_chatState.voiceStatusOverride || `Listening (${lInfo.name})...`);
     }
     voiceBar.querySelectorAll('[data-ai-voice-lang]').forEach(b => {
       b.classList.toggle('active', b.getAttribute('data-ai-voice-lang') === _chatState.voiceLang);
     });
+  }
+
+  function stopActivePlayback() {
+    if (_chatState.activeAudioEl) {
+      try {
+        _chatState.activeAudioEl.pause();
+        _chatState.activeAudioEl.currentTime = 0;
+      } catch (_) {}
+      _chatState.activeAudioEl = null;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
   }
 
   function stopVoiceHardwareStreams() {
@@ -2447,6 +2686,7 @@
       rec.interimResults = true;
       rec.onresult = ev => {
         if (!_chatState.voiceActive) return;
+        _chatState.voiceStatusOverride = '';
         let finalChunk = '';
         let interimChunk = '';
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -2466,9 +2706,19 @@
         }
         syncVoiceBarUi();
       };
-      rec.onerror = () => {};
+      rec.onerror = ev => {
+        if (!_chatState.voiceActive) return;
+        const err = ev && ev.error ? String(ev.error) : '';
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          _chatState.voiceStatusOverride = 'Microphone permission blocked in browser';
+          syncVoiceBarUi();
+        } else if (err === 'audio-capture') {
+          _chatState.voiceStatusOverride = 'No microphone detected';
+          syncVoiceBarUi();
+        }
+      };
       rec.onend = () => {
-        if (_chatState.voiceActive && _chatState.speechRec === rec) {
+        if (_chatState.voiceActive && _chatState.speechRec === rec && !_chatState.voiceStatusOverride) {
           try { rec.start(); } catch (_) {}
         }
       };
@@ -2477,10 +2727,24 @@
     } catch (_) {}
   }
 
+  function negotiateAudioMime() {
+    if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+      return 'audio/webm';
+    }
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+      } catch (_) {}
+    }
+    return '';
+  }
+
   function startVoiceRecording(opts = {}) {
     if (_chatState.voiceActive) {
       return stopVoiceRecording(opts);
     }
+    stopActivePlayback();
     const inp = document.getElementById('aiInput');
     if (opts && opts.lang && VOICE_LANG_MAP[opts.lang]) {
       _chatState.voiceLang = opts.lang;
@@ -2491,7 +2755,9 @@
     _chatState.voiceStartMs = Date.now();
     _chatState.voiceBaseText = inp ? inp.value.trim() : '';
     _chatState.voiceInterimText = '';
+    _chatState.voiceStatusOverride = '';
     _chatState.audioChunks = [];
+    _chatState.mediaRecorderMime = negotiateAudioMime() || 'audio/webm';
     syncVoiceBarUi();
 
     _chatState.voiceTimerId = setInterval(() => {
@@ -2509,13 +2775,21 @@
           return;
         }
         _chatState.mediaStream = stream;
-        const mr = new MediaRecorder(stream);
+        const mimeOpt = negotiateAudioMime();
+        const mr = mimeOpt ? new MediaRecorder(stream, { mimeType: mimeOpt }) : new MediaRecorder(stream);
+        _chatState.mediaRecorderMime = mr.mimeType || mimeOpt || 'audio/webm';
         mr.ondataavailable = e => {
           if (e.data && e.data.size > 0) _chatState.audioChunks.push(e.data);
         };
         _chatState.mediaRecorder = mr;
-        mr.start();
-      }).catch(() => {});
+        // Request 200ms timeslices so audioChunks are populated continuously before stop()
+        mr.start(200);
+      }).catch(() => {
+        if (!_chatState.speechRec) {
+          _chatState.voiceStatusOverride = 'Microphone unavailable or blocked';
+          syncVoiceBarUi();
+        }
+      });
     }
     return true;
   }
@@ -2525,17 +2799,16 @@
     const elapsedSec = Math.max(1, Math.round((Date.now() - (_chatState.voiceStartMs || Date.now())) / 1000));
     const recordedDuration = Number(opts.durationSec || elapsedSec);
     const activeLang = (opts && opts.lang && VOICE_LANG_MAP[opts.lang]) ? opts.lang : _chatState.voiceLang;
+    const recMime = _chatState.mediaRecorderMime || 'audio/webm';
+    const activeMr = _chatState.mediaRecorder;
 
     let audioUrl = '';
     if (_chatState.audioChunks && _chatState.audioChunks.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
       try {
-        const blob = new Blob(_chatState.audioChunks, { type: 'audio/webm' });
+        const blob = new Blob(_chatState.audioChunks, { type: recMime });
         audioUrl = URL.createObjectURL(blob);
       } catch (_) {}
     }
-
-    stopVoiceHardwareStreams();
-    _chatState.voiceActive = false;
 
     const inp = document.getElementById('aiInput');
     const finalTranscript = cleanOut(
@@ -2548,29 +2821,55 @@
       inp.dir = /[\u0600-\u06FF]/.test(finalTranscript) || activeLang === 'ar' ? 'rtl' : 'ltr';
     }
     _chatState.voiceInterimText = '';
-    syncVoiceBarUi();
+    _chatState.voiceStatusOverride = '';
 
-    // Attach voice note metadata pill when a voice note was captured or explicitly stopped with audio
+    // Attach voice note metadata pill when audio was recorded or explicitly stopped
     let voiceAtt = null;
     if (audioUrl || opts.attachVoiceNote !== false) {
       voiceAtt = buildAttachmentMetaObject({
         name: `Voice Note (${(VOICE_LANG_MAP[activeLang] || VOICE_LANG_MAP.en).label})`,
         kind: 'audio',
-        type: 'audio/webm',
+        type: recMime,
         size: recordedDuration * 6400,
         audioUrl,
         durationSec: recordedDuration,
         voiceLang: activeLang
       });
-      // Replace any previous unsubmitted voice note pill so rapid re-records stay clean
+      // Replace any previous unsubmitted voice note pill (revoking its blob URL) so rapid re-records stay clean
+      _chatState.attachments.filter(a => a && a.kind === 'audio').forEach(revokeAttachmentUrls);
       _chatState.attachments = _chatState.attachments.filter(a => a.kind !== 'audio');
       _chatState.attachments.push(voiceAtt);
       renderAttachmentBar();
     }
 
+    // If MediaRecorder was active, wire onstop to flush the final trailing chunk into voiceAtt.audioUrl
+    if (activeMr && activeMr.state !== 'inactive' && voiceAtt) {
+      const chunksRef = _chatState.audioChunks;
+      activeMr.onstop = () => {
+        if (chunksRef && chunksRef.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+          try {
+            if (voiceAtt.audioUrl) URL.revokeObjectURL(voiceAtt.audioUrl);
+            const fullBlob = new Blob(chunksRef, { type: recMime });
+            voiceAtt.audioUrl = URL.createObjectURL(fullBlob);
+            voiceAtt.size = fullBlob.size || voiceAtt.size;
+            voiceAtt.sizeLabel = formatBytes(voiceAtt.size);
+            renderAttachmentBar();
+            if (_chatState.history.length) renderThread(false);
+          } catch (_) {}
+        }
+      };
+    }
+
+    stopVoiceHardwareStreams();
+    _chatState.voiceActive = false;
+    syncVoiceBarUi();
+
     if (opts && opts.autoSend) {
       const qToSend = finalTranscript || (activeLang === 'ar' ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة' : (activeLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts'));
-      if (inp) inp.value = '';
+      if (inp) {
+        inp.value = '';
+        inp.dir = 'ltr';
+      }
       submitQuestion(qToSend, { fromVoice: true });
     }
     return { transcript: finalTranscript, durationSec: recordedDuration, lang: activeLang, attachment: voiceAtt };
@@ -2580,14 +2879,20 @@
     stopVoiceHardwareStreams();
     _chatState.voiceActive = false;
     _chatState.voiceInterimText = '';
+    _chatState.voiceStatusOverride = '';
+    _chatState.audioChunks = [];
     const inp = document.getElementById('aiInput');
-    if (inp) inp.value = _chatState.voiceBaseText || '';
+    if (inp) {
+      inp.value = _chatState.voiceBaseText || '';
+      inp.dir = /[\u0600-\u06FF]/.test(inp.value) ? 'rtl' : 'ltr';
+    }
     syncVoiceBarUi();
   }
 
   function setVoiceLang(lang) {
     if (!VOICE_LANG_MAP[lang]) return;
     _chatState.voiceLang = lang;
+    _chatState.voiceStatusOverride = '';
     if (_chatState.voiceActive) {
       if (_chatState.speechRec) {
         try {
@@ -2602,17 +2907,26 @@
   }
 
   function speakBotReply(rawHtml, lang) {
-    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' '));
+    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
     if (!plain) return false;
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (isAutoTest || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
       return true;
     }
     try {
-      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        if (_chatState.lastSpokenText === plain) {
+          _chatState.lastSpokenText = '';
+          return true;
+        }
+      }
+      _chatState.lastSpokenText = plain;
       const utt = new window.SpeechSynthesisUtterance(plain);
       utt.lang = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
       utt.rate = 1.02;
+      utt.onend = () => { _chatState.lastSpokenText = ''; };
+      utt.onerror = () => { _chatState.lastSpokenText = ''; };
       window.speechSynthesis.speak(utt);
       return true;
     } catch (_) {
@@ -3149,21 +3463,46 @@
 
   function closeDrawer() {
     if (_chatState.voiceActive) cancelVoiceRecording();
+    stopActivePlayback();
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
-    askDrawer.classList.remove('open');
+    askDrawer.classList.remove('open', 'is-drag-over');
     askDrawer.setAttribute('aria-hidden', 'true');
   }
 
   function resetThread() {
     if (_chatState.voiceActive) cancelVoiceRecording();
-    clearAttachments();
+    stopActivePlayback();
+    clearAttachments(true);
+    _chatState.history.forEach(turn => {
+      if (turn && Array.isArray(turn.attachments)) {
+        turn.attachments.forEach(revokeAttachmentUrls);
+      }
+    });
     _chatState.history = [];
     _chatState.pending = null;
     _chatState.typingFollowup = false;
     _chatState.lastTurn = null;
     syncHeaderAndChips(true);
     renderThread(false);
+  }
+
+  function extractClipboardFiles(clipboardData) {
+    if (!clipboardData) return [];
+    if (clipboardData.files && clipboardData.files.length) {
+      return Array.from(clipboardData.files);
+    }
+    const out = [];
+    if (clipboardData.items && clipboardData.items.length) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const it = clipboardData.items[i];
+        if (it && it.kind === 'file' && typeof it.getAsFile === 'function') {
+          const f = it.getAsFile();
+          if (f) out.push(f);
+        }
+      }
+    }
+    return out;
   }
 
   function ensureComposerControlsMounted() {
@@ -3251,14 +3590,6 @@
       if (_chatState.voiceActive) stopVoiceRecording({ attachVoiceNote: true });
       else startVoiceRecording();
     });
-
-    askInput.addEventListener('paste', e => {
-      const items = e.clipboardData && e.clipboardData.files;
-      if (items && items.length) {
-        e.preventDefault();
-        attachFiles(items);
-      }
-    });
   }
 
   function init(ctx) {
@@ -3293,12 +3624,32 @@
     }
 
     if (askDrawer) {
+      askDrawer.addEventListener('paste', e => {
+        const files = extractClipboardFiles(e.clipboardData);
+        if (files.length) {
+          e.preventDefault();
+          attachFiles(files);
+        }
+      });
+
+      askDrawer.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+          if (_chatState.voiceActive) {
+            e.stopPropagation();
+            cancelVoiceRecording();
+          } else if (askDrawer.classList.contains('open')) {
+            closeDrawer();
+          }
+        }
+      });
+
       askDrawer.addEventListener('dragover', e => {
         e.preventDefault();
         askDrawer.classList.add('is-drag-over');
       });
       askDrawer.addEventListener('dragleave', e => {
-        if (!askDrawer.contains(e.relatedTarget)) {
+        const rel = e.relatedTarget;
+        if (!rel || !(rel instanceof Node) || !askDrawer.contains(rel)) {
           askDrawer.classList.remove('is-drag-over');
         }
       });
@@ -3337,7 +3688,17 @@
         if (playBtn) {
           const url = playBtn.getAttribute('data-ai-play-audio');
           if (url && typeof Audio !== 'undefined') {
-            try { new Audio(url).play().catch(() => {}); } catch (_) {}
+            try {
+              if (_chatState.activeAudioEl && _chatState.activeAudioEl.src === url && !_chatState.activeAudioEl.paused) {
+                stopActivePlayback();
+                return;
+              }
+              stopActivePlayback();
+              const audioEl = new Audio(url);
+              _chatState.activeAudioEl = audioEl;
+              audioEl.onended = () => { if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null; };
+              audioEl.play().catch(() => {});
+            } catch (_) {}
           }
           return;
         }
@@ -3345,7 +3706,9 @@
         if (speakBtn) {
           const botBubble = speakBtn.closest('.ai-msg-bot');
           const pEl = botBubble ? botBubble.querySelector('.ai-bot-p') : null;
-          speakBotReply(pEl ? pEl.innerHTML : '', speakBtn.getAttribute('data-ai-speak') || 'en');
+          const listEl = botBubble ? botBubble.querySelector('.ai-bot-list') : null;
+          const combinedHtml = [pEl ? pEl.innerHTML : '', listEl ? listEl.innerHTML : ''].filter(Boolean).join('. ');
+          speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en');
           return;
         }
         const chip = e.target.closest('#aiChips .ai-pill-btn');
