@@ -40219,8 +40219,8 @@
         ? sel('f_method', expMthOpts, expMthVal)
         : `<div class="exp-method-seg" id="expMethodPills" role="group" aria-label="Payment method"><button type="button" class="exp-mth-pill${expMthVal === 'Cash' ? ' active' : ''}" data-exp-mth="Cash">Cash</button><button type="button" class="exp-mth-pill${expMthVal === 'Credit' ? ' active' : ''}" data-exp-mth="Credit">Credit (AP)</button></div>` + sel('f_method', expMthOpts, expMthVal);
       const expSupplierLbl = pendEditRow
-        ? 'Supplier / Vendor'
-        : `Supplier / Vendor <span class="exp-sup-ap-pill" id="expSupplierApPill" hidden></span>`;
+        ? 'Supplier *'
+        : `Supplier * <span class="exp-sup-ap-pill" id="expSupplierApPill" hidden></span>`;
       return cockpitHtml + `
         ${adminHeaderHtml}
         ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference</b>' : ''} below.</span></div>` : ''}
@@ -40237,8 +40237,8 @@
             : { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit while Price is Pending ($0.00 AP)' })}
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
           ${pendEditRow
-            ? fld('Subcategory', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: 'Locked to the subcategory recorded on delivery', hintId: 'hint_subcat', hint: '' })
-            : fld('Subcategory', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
+            ? fld('Subcategory *', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: 'Locked to the subcategory recorded on delivery', hintId: 'hint_subcat', hint: '' })
+            : fld('Subcategory *', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
           ${fld(expSupplierLbl, inp('f_supplier', 'text', expSupVal, `list="dl_suppliers" placeholder="Select or type supplier..."${pendEditRow && expSupVal ? ' readonly' : ''}`) + dl('dl_suppliers', supplierNames('expense')), pendEditRow && expSupVal ? { id: 'wrap_f_supplier', lockField: 'f_supplier', lockReason: 'Locked to the supplier recorded on delivery', hintId: 'hint_supplier', hint: '' } : { id: 'wrap_f_supplier', span: isSingleBuScope ? 2 : false, hintId: 'hint_supplier', hint: '' })}
           ${pendEditRow
             ? fld('<span id="lbl_exp_equip">Equipment *</span>', inp('f_truck', 'text', expEqVal, 'list="dl_equip" placeholder="None (Plant / General)" readonly') + dl('dl_equip', equipmentNames()), { id: 'wrap_f_truck', lockField: 'f_truck', lockReason: 'Locked to the equipment unit recorded on delivery' })
@@ -44832,7 +44832,7 @@
     const isBulkTankRefill = isFuelDiesel && !hasEquipTarget && !hasWhTarget;
     setText('lbl_exp_qty', isBulkTankRefill ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : (hasEquipTarget || hasWhTarget ? 'Quantity & Unit *' : 'Quantity & Unit')));
     setText('lbl_exp_amount', pricePending ? 'Total ($)' : 'Total ($) *');
-    setHint('hint_subcat', '', '');
+    setHint('hint_subcat', (FORM_UI.postAttempted && !subNow) ? 'Required' : '', (FORM_UI.postAttempted && !subNow) ? 'crit' : '');
     setText('calc_total', pricePending ? 'PENDING ($0.00)' : fmtUSD(amount, 2));
     setText('calc_post', pricePending ? 'Credit · Pending Price' : (method === 'Cash' ? 'Cash' : 'Credit'));
     const ap = openApBalance(supplier);
@@ -44849,10 +44849,10 @@
     }
     setHint(
       'hint_supplier',
-      (method === 'Credit' || pricePending) && !supplier
-        ? (pricePending ? 'Required when Price is Pending' : 'Required for Credit')
+      !supplier
+        ? (pricePending ? 'Required when Price is Pending' : (method === 'Credit' ? 'Required for Credit' : (FORM_UI.postAttempted ? 'Required' : '')))
         : '',
-      (FORM_UI.postAttempted && (method === 'Credit' || pricePending) && !supplier) ? 'crit' : ''
+      (FORM_UI.postAttempted && !supplier) ? 'crit' : ''
     );
     if (pendEditRow) {
       setHint('hint_qty', isBulkTankRefill && qty > 0 ? `${fmtNum(qty, 0)} L already received in ${val('f_company') || 'WTC'} Diesel Tank` : '', 'ok');
@@ -52482,9 +52482,10 @@
     } else if (f === 'expense') {
       const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
       if (!val('f_category')) addErr('f_category', 'Category is required.');
+      if (!val('f_subcategory')) addErr('f_subcategory', 'Subcategory is required.');
+      if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (pendEditRow) {
         if (!(c.amount > 0)) addErr('f_amount', 'Enter the final supplier invoice amount above zero.');
-        if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
         record = Object.assign({}, pendEditRow, {
           company,
           date,
@@ -52596,10 +52597,8 @@
         }
         if (c.pricePending) {
           if (!(c.qty > 0)) addErr($('f_exi_qty_0') ? 'f_exi_qty_0' : 'f_qty', 'Quantity received (e.g. Litres) must be above zero when Price is Pending.');
-          if (!c.supplier) addErr('f_supplier', 'Supplier / Vendor is required when Price is Pending so the unpriced delivery is tracked on their account.');
         } else {
           if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero (or switch to "Pending $0").');
-          if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
         }
         const effHeaderEq = stagedItems.some(x => x.allocation_mode === 'same_equipment' || x.allocation_mode === 'different_equipment')
           ? firstEqUnit
@@ -53581,7 +53580,7 @@
       const usdVal = round2(num('f_usd'));
       const lbpVal = Math.round(num('f_lbp'));
       const amt = round2(c && c.amount != null ? c.amount : num('f_amount'));
-      if (!sup) addErr('f_supplier', 'Supplier / Vendor is required.');
+      if (!sup) addErr('f_supplier', 'Supplier is required.');
       if (!cat) addErr('f_category', 'Category is required.');
       if (!itemPurpose) addErr('f_item_purpose', 'Recurring Item / Purpose is required.');
       if (!(amt > 0)) addErr('f_usd', 'Cycle Rate > $0.00 is required (enter USD or LBP amount).');
@@ -58757,8 +58756,8 @@
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
         { key: 'method', label: 'Payment Method *', type: 'select', options: [['Cash', 'Cash'], ['Credit', 'Credit'], ['Check', 'Check'], ['Bank Transfer', 'Bank Transfer'], ['CR Return', 'CR Return'], ['C Return', 'C Return']], sec: 3 },
         { key: 'category', label: 'Category *', type: 'select', options: expCatOpts, sec: 2 },
-        { key: 'subcategory', label: 'Subcategory', type: 'combo', dl: 'dl_insp_subcategories', sec: 2 },
-        { key: 'supplier', label: 'Supplier / Vendor', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'subcategory', label: 'Subcategory *', type: 'combo', dl: 'dl_insp_subcategories', sec: 2 },
+        { key: 'supplier', label: 'Supplier *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'equipment', label: 'Equipment (cost centre)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'amount', label: 'Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
@@ -58769,7 +58768,7 @@
       recurring_expenses: [
         { key: 'start_date', label: 'Start Date *', type: 'date', sec: 1, getVal: r => r.start_date || r.date || '' },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 1, getVal: r => r.end_date || '' },
-        { key: 'supplier', label: 'Supplier / Vendor *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'supplier', label: 'Supplier *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'category', label: 'Category *', type: 'select', options: expCatOpts, sec: 2 },
         { key: 'subcategory', label: 'Subcategory', type: 'combo', dl: 'dl_insp_subcategories', sec: 2 },
         { key: 'item', label: 'Recurring Item / Purpose *', type: 'text', sec: 2 },
@@ -59192,7 +59191,7 @@
       expense_items: [
         { key: 'date', label: 'Invoice Date *', type: 'date', sec: 1 },
         { key: 'expense_ref', label: 'Expense Ticket #', type: 'text', sec: 1 },
-        { key: 'supplier', label: 'Supplier / Vendor', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'supplier', label: 'Supplier *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'item_name', label: 'Item Name *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
         { key: 'allocation_mode', label: 'Item Routing *', type: 'select', options: [['same_equipment', 'Same Equipment'], ['different_equipment', 'Different Equipment'], ['warehouse', 'Warehouse (+Stock)'], ['general', 'Not for Equipment']], sec: 2 },
         { key: 'target_equipment', label: 'Target Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
