@@ -76,8 +76,8 @@
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
   const DEFAULT_USERS = [
-    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', pin_code: '3333', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', pin_code: '4444', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', pin_code: '4545', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
@@ -256,8 +256,15 @@
       if (Array.isArray(out.face_thumbs) && (String(out.face_updated_at || '') <= '2026-10-21T16:00:00Z' || out.face_thumbs.some(t => /bovMFtu8Q|c0hdoh36p|OyOktXtF0/.test(String(t || ''))))) {
         out = Object.assign({}, out, { face_thumbs: [] });
       }
-      if ((out.id === 'u1' || out.id === 'u2') && typeof out.companies === 'string' && !/bdeir\s*holding/i.test(out.companies) && /wtc/i.test(out.companies) && /bbconstruction/i.test(out.companies)) {
-        out = Object.assign({}, out, { companies: out.companies.trim() + ', Bdeir Holding' });
+      if ((out.id === 'u1' || out.id === 'u2') && typeof out.companies === 'string' && /wtc/i.test(out.companies) && /bbconstruction/i.test(out.companies)) {
+        const extraNames = ['Bdeir Holding', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
+        let cur = out.companies.trim();
+        extraNames.forEach(nm => {
+          if (!new RegExp(`(^|,)\\s*${nm.replace(/\s+/g, '\\s+')}\\s*(,|$)`, 'i').test(cur)) {
+            cur += ', ' + nm;
+          }
+        });
+        if (cur !== out.companies.trim()) out = Object.assign({}, out, { companies: cur });
       }
       return out;
     }),
@@ -414,7 +421,12 @@
     { key: 'wtc', name: 'WTC', label: 'WTC (World Trading & Construction)', industry: 'Manufacturing', sector: 'Concrete, Aggregates & Batching' },
     { key: 'bbconstruction', name: 'BBConstruction', label: 'BBConstruction', industry: 'Manufacturing', sector: 'Contracting & Aggregates' },
     { key: 'lionstransport', name: 'Lions Transport', label: 'Lions Transport', industry: 'Manufacturing', sector: 'Heavy Fleet & Haulage' },
-    { key: 'bdeirholding', name: 'Bdeir Holding', label: 'Bdeir Holding (Group Treasury & JV)', industry: 'Holding & Treasury', sector: 'Group Treasury, Shared Services & JV' }
+    { key: 'bdeirholding', name: 'Bdeir Holding', label: 'Bdeir Holding (Group Treasury & JV)', industry: 'Holding & Treasury', sector: 'Group Treasury, Shared Services & JV' },
+    { key: 'blanca', name: 'Blanca', label: 'Blanca Beach Resort', industry: 'Hospitality & Resorts', sector: 'Beach Resort, Chalets & Events' },
+    { key: 'launa', name: 'La Una', label: 'La Una Resort', industry: 'Hospitality & Resorts', sector: 'Beach Club, POS Restaurant & Pool' },
+    { key: 'palms', name: 'Palms', label: 'Palms Resort', industry: 'Hospitality & Resorts', sector: 'Beach Resort, Cabanas & Memberships' },
+    { key: 'voile', name: 'Voile', label: 'Voile Resort', industry: 'Hospitality & Resorts', sector: 'Coastal Resort, Dining & Events' },
+    { key: 'platinum', name: 'Platinum', label: 'Platinum Hospitality', industry: 'Hospitality & Resorts', sector: 'Hospitality, Events & Catering' }
   ];
 
   // Canonical 10-industry taxonomy for BHFIRMS / ISABI multi-industry scaling (10 Industries × 10–20 Companies each)
@@ -436,7 +448,12 @@
     'wtc': 'WTC (World Trading & Construction)',
     'bbconstruction': 'BBConstruction',
     'lionstransport': 'Lions Transport',
-    'bdeirholding': 'Bdeir Holding (Group Treasury & JV)'
+    'bdeirholding': 'Bdeir Holding (Group Treasury & JV)',
+    'blanca': 'Blanca Beach Resort',
+    'launa': 'La Una Resort',
+    'palms': 'Palms Resort',
+    'voile': 'Voile Resort',
+    'platinum': 'Platinum Hospitality'
   };
 
   const COMPANY_BU_MATCH = {
@@ -444,12 +461,29 @@
     'wtc': 'WTC',
     'bbconstruction': 'BBConstruction',
     'lionstransport': 'Lions Transport',
-    'bdeirholding': 'Bdeir Holding'
+    'bdeirholding': 'Bdeir Holding',
+    'blanca': 'Blanca',
+    'launa': 'La Una',
+    'palms': 'Palms',
+    'voile': 'Voile',
+    'platinum': 'Platinum'
   };
 
-  const COMPANY_KEY_BY_NAME = { 'WTC': 'wtc', 'BBConstruction': 'bbconstruction', 'Lions Transport': 'lionstransport', 'Bdeir Holding': 'bdeirholding' };
-  const COMPANY_INDUSTRY_BY_KEY = { 'wtc': 'Manufacturing', 'bbconstruction': 'Manufacturing', 'lionstransport': 'Manufacturing', 'bdeirholding': 'Holding & Treasury' };
-  const SENTINEL_MODEL_KEY = { 'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport', 'bdeirholding': 'Bdeir Holding' };
+  const COMPANY_KEY_BY_NAME = {
+    'WTC': 'wtc', 'BBConstruction': 'bbconstruction', 'Lions Transport': 'lionstransport',
+    'Bdeir Holding': 'bdeirholding',
+    'Blanca': 'blanca', 'La Una': 'launa', 'Palms': 'palms', 'Voile': 'voile', 'Platinum': 'platinum'
+  };
+  const COMPANY_INDUSTRY_BY_KEY = {
+    'wtc': 'Manufacturing', 'bbconstruction': 'Manufacturing', 'lionstransport': 'Manufacturing',
+    'bdeirholding': 'Holding & Treasury',
+    'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts'
+  };
+  const SENTINEL_MODEL_KEY = {
+    'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport',
+    'bdeirholding': 'Bdeir Holding',
+    'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum'
+  };
 
   function slugCompanyKey(name) {
     return String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '') || 'wtc';
@@ -478,11 +512,7 @@
   function buildEnterprisePreviewCatalog() {
     const list = [];
     ENTERPRISE_INDUSTRIES.forEach(ind => {
-      if (ind.id === 'Manufacturing') {
-        BASE_COMPANY_DIRECTORY.filter(c => c.industry === 'Manufacturing').forEach(c => list.push({ ...c, industry: 'Manufacturing' }));
-      } else if (ind.id === 'Holding & Treasury') {
-        BASE_COMPANY_DIRECTORY.filter(c => c.industry === 'Holding & Treasury').forEach(c => list.push({ ...c, industry: 'Holding & Treasury' }));
-      }
+      BASE_COMPANY_DIRECTORY.filter(c => c.industry === ind.id).forEach(c => list.push({ ...c, industry: ind.id }));
       (ind.sampleCos || []).forEach(coName => {
         list.push({
           key: slugCompanyKey(coName),
@@ -531,7 +561,7 @@
       out.push(obj);
     };
     BASE_COMPANY_DIRECTORY.forEach(c => {
-      if (isSynthetic100Test && c.key === 'bdeirholding') return;
+      if (isSynthetic100Test && c.industry !== 'Manufacturing') return;
       pushCo(c);
     });
     if (Array.isArray(window.MFG_COMPANIES)) window.MFG_COMPANIES.forEach(pushCo);
@@ -541,7 +571,7 @@
     }
     (STATE.users || []).forEach(u => {
       String((u && u.companies) || '').split(/[,;|]+/).map(s => s.trim()).filter(Boolean).forEach(s => {
-        if (isSynthetic100Test && /^bdeir\s*holding$/i.test(s)) return;
+        if (isSynthetic100Test && !/^(wtc|bbconstruction|lions\s*transport|company\s*\d+)$/i.test(s)) return;
         pushCo(s);
       });
     });
@@ -1446,6 +1476,7 @@
   function resolveEffectiveModelKey(coKey) {
     const k = String(coKey || STATE.company || 'manufacturing-group');
     if (k === 'bdeirholding' || k === 'industry:Holding & Treasury') return 'manufacturing-group';
+    if (['blanca', 'launa', 'palms', 'voile', 'platinum', 'industry:Hospitality & Resorts'].includes(k)) return 'manufacturing-group';
     if (k.startsWith('industry:')) {
       const indName = k.slice(9);
       const cat = getCompanyCatalog();
@@ -5483,7 +5514,7 @@
       ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === indTarget).map(c => c.name))
       : null;
     const bu = (opts.ignoreCompany || isIndustryScope || isHoldingRootScope) ? null : COMPANY_BU_MATCH[scopeKey];
-    const excludeHoldingInMfgGroup = !opts.ignoreCompany && !opts.includeHolding && scopeKey === 'manufacturing-group';
+    const excludeNonMfgInMfgGroup = !opts.ignoreCompany && !opts.includeHolding && scopeKey === 'manufacturing-group';
     const showNotes = Array.isArray(opts.cols) && opts.cols.includes('notes');
     const rel = (qTokens.length && window.MFG_PBI && window.MFG_PBI.getHubRelIndex) ? window.MFG_PBI.getHubRelIndex(SEED) : null;
     const tk = opts.tableKey || '';
@@ -5492,7 +5523,7 @@
     const out = list.filter(r => {
       if (!r || r.voided) return false;
       if (bu && r.company && r.company !== bu) return false;
-      if (excludeHoldingInMfgGroup && r.company === 'Bdeir Holding') return false;
+      if (excludeNonMfgInMfgGroup && r.company && !/^(wtc|bbconstruction|lions\s*transport)$/i.test(r.company)) return false;
       if (indCoSet && r.company && !indCoSet.has(r.company)) return false;
       if (allowedCos && r.company && !allowedCos.includes(r.company)) return false;
       if (offScope && !isOfficialRecord(r, effTk)) return false;
@@ -6840,7 +6871,7 @@
     },
     'Entry': {
       shortTitle: 'Entry Operator',
-      tagline: 'Weighbridge, quarry, fuel, expenses, pending prices, payroll & cash till',
+      tagline: 'Weighbridge, quarry, fuel, expenses, payroll & cash till desk',
       title: 'Entry Operator',
       tierBadge: 'ENTRY OPERATOR',
       badgeCls: 'badge-brass',
@@ -6999,7 +7030,7 @@
       if (perms.statements[s.id]) stmtCount += s.codes.length;
     });
     const scopedHubs = typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury')) : !h.industry)
+      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h))
       : [];
     const hubTotal = scopedHubs.length || 11;
     const hubCount = (scopedHubs.length && u)
@@ -7221,10 +7252,10 @@
     hld_partners: 'Partners & Profit Splits',
     hld_loans: 'Loans, Capital & Assets',
     // Hospitality & Resorts industry hubs (Phase 2)
-    hsp_revenue: 'Venue & Event Revenue',
-    hsp_memberships: 'Memberships & Cabanas',
-    hsp_stock: 'Stock & Commissary',
-    hsp_energy: 'Utilities & Energy',
+    hsp_revenue: 'Revenue, POS & Chalets',
+    hsp_memberships: 'Memberships & Splits',
+    hsp_stock: 'Kitchen, Bar & Stock',
+    hsp_energy: 'Generators & Utilities',
     // Trading & Commercial Vehicles industry hubs (Phase 3)
     trd_sales: 'Sales & Quotations',
     trd_purchases: 'Imports & Purchases',
@@ -7545,6 +7576,22 @@
     return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
   }
 
+  function getHospitalityMembershipExceptionBadge(u) {
+    if (!canViewView('hsp_memberships', u)) return null;
+    if (typeof computeHospitalityOperations !== 'function') return null;
+    const hspRes = computeHospitalityOperations({ ignoreSearch: true });
+    const openCnt = hspRes ? Number(hspRes.overdueMembershipsCount || 0) : 0;
+    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
+  }
+
+  function getHospitalityStockExceptionBadge(u) {
+    if (!canViewView('hsp_stock', u)) return null;
+    if (typeof computeHospitalityOperations !== 'function') return null;
+    const hspRes = computeHospitalityOperations({ ignoreSearch: true });
+    const alertCnt = hspRes ? Number(hspRes.stockAlertCount || 0) : 0;
+    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
     if (hubId === 'sentinels') return getSentinelExceptionBadge(u, sentinelsOpen);
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
@@ -7553,6 +7600,8 @@
     if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
     if (hubId === 'hld_interactions') return getHoldingOpenReconExceptionBadge(u);
+    if (hubId === 'hsp_memberships') return getHospitalityMembershipExceptionBadge(u);
+    if (hubId === 'hsp_stock') return getHospitalityStockExceptionBadge(u);
     return null;
   }
 
@@ -7677,6 +7726,47 @@
       ]
     },
     {
+      id: 'hsp_revenue',
+      title: HUB_TITLES.hsp_revenue,
+      group: 'commercial',
+      industry: 'Hospitality & Resorts',
+      tabs: [
+        { view: 'hsp_revenue', label: 'Venue Revenue & Chalets', icon: 'hsp_revenue' },
+        { view: 'hsp_pos', label: 'POS Till Close & Bills', icon: 'hsp_pos' },
+        { view: 'hsp_vat', label: 'Resort VAT & Tax', icon: 'hsp_vat' }
+      ]
+    },
+    {
+      id: 'hsp_memberships',
+      title: HUB_TITLES.hsp_memberships,
+      group: 'commercial',
+      industry: 'Hospitality & Resorts',
+      tabs: [
+        { view: 'hsp_memberships', label: 'Seasonal Memberships', icon: 'hsp_memberships', badgeFn: u => getHospitalityMembershipExceptionBadge(u) },
+        { view: 'hsp_partners', label: 'Partner Splits & Shares', icon: 'hsp_partners' }
+      ]
+    },
+    {
+      id: 'hsp_stock',
+      title: HUB_TITLES.hsp_stock,
+      group: 'plant',
+      industry: 'Hospitality & Resorts',
+      tabs: [
+        { view: 'hsp_stock', label: 'Cellar, Kitchen & Transfers', icon: 'hsp_stock', badgeFn: u => getHospitalityStockExceptionBadge(u) },
+        { view: 'hsp_menu', label: 'Menu Engineering & Cost', icon: 'hsp_menu' }
+      ]
+    },
+    {
+      id: 'hsp_energy',
+      title: HUB_TITLES.hsp_energy,
+      group: 'plant',
+      industry: 'Hospitality & Resorts',
+      tabs: [
+        { view: 'hsp_energy', label: 'Diesel, Solar & Generators', icon: 'hsp_energy' },
+        { view: 'hsp_maint', label: 'Venue Repairs & Assets', icon: 'hsp_maint' }
+      ]
+    },
+    {
       id: 'payroll',
       title: HUB_TITLES.payroll,
       group: 'plant',
@@ -7789,6 +7879,18 @@
     });
   });
 
+  function isHubInActiveIndustry(h, indId) {
+    if (!h) return false;
+    const activeInd = indId || getActiveIndustry(STATE.company);
+    if (activeInd === 'Holding & Treasury') {
+      return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury');
+    }
+    if (activeInd === 'Hospitality & Resorts') {
+      return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Hospitality & Resorts');
+    }
+    return !h.industry;
+  }
+
   function canViewView(view, u) {
     u = u || activeUser();
     if (view === 'coa_classes' || view === 'gl_automation') return canViewView('ledger', u);
@@ -7797,6 +7899,10 @@
     if (view === 'hld_interactions' || view === 'hld_open_recon' || view === 'hld_due_matrix') return canViewView('external', u) || canViewView('cashflow', u);
     if (view === 'hld_partners' || view === 'hld_distributions') return canViewView('raw_jv', u) || canViewView('external', u) || canViewView('cashflow', u);
     if (view === 'hld_loans' || view === 'hld_assets') return canViewView('ledger_treasury', u) || canViewView('cashflow', u);
+    if (view === 'hsp_revenue' || view === 'hsp_pos' || view === 'hsp_vat') return canViewView('sales', u) || canViewView('overview', u);
+    if (view === 'hsp_memberships' || view === 'hsp_partners') return canViewView('sales', u) || canViewView('raw', u) || canViewView('cashflow', u);
+    if (view === 'hsp_stock' || view === 'hsp_menu') return canViewView('raw', u) || canViewView('expenses', u);
+    if (view === 'hsp_energy' || view === 'hsp_maint') return canViewView('fleet', u) || canViewView('expenses', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
@@ -7964,7 +8070,7 @@
     const tokens = (Array.isArray(raw)
       ? raw.map(x => String(x || '').trim()).filter(Boolean)
       : String(raw == null ? 'WTC' : raw).split(/[,;|]+/).map(s => s.trim()).filter(Boolean)
-    ).filter(tok => !(isSynthetic100Test && /^bdeir\s*holding$/i.test(tok)));
+    ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(tok)));
     if (tokens.some(t => /^all(\s+\d+)?\s*(companies|group)?$/i.test(t) || t.toLowerCase() === 'manufacturing-group')) {
       return cat.map(c => c.name);
     }
@@ -9613,22 +9719,24 @@
     const activeAll = rules
       .filter(coversDate)
       .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
-    const activeProd = prodKey ? activeAll.filter(r => norm(r.product) === prodKey) : [];
-    const chosenActive = activeProd.length ? activeProd : activeAll;
+    const activeMatching = prodKey ? activeAll.filter(r => !r.product || norm(r.product) === prodKey) : activeAll;
+    const chosenActive = activeMatching.length ? activeMatching : activeAll;
 
     const activeSeen = new Set();
-    const activeSites = [];
+    const rawActiveSites = [];
     const metaBySite = new Map();
     chosenActive.forEach(r => {
       const sName = String(r.site || '').trim();
       const sk = norm(sName);
       if (!sk || activeSeen.has(sk)) return;
       activeSeen.add(sk);
-      activeSites.push(sName);
+      rawActiveSites.push(sName);
       const sObj = siteInfo(sName);
       const reg = (sObj && sObj.region) || '';
       metaBySite.set(sk, `Active Agreement · ${customerName}${reg ? ' · ' + reg : ''}`);
     });
+    const fIdx = getFreqIndex();
+    const activeSites = uniqSorted(rawActiveSites, fIdx.siteSales);
 
     const allSeen = new Set(activeSeen);
     const allSites = activeSites.slice();
@@ -9673,7 +9781,7 @@
       }
     });
 
-    const singleSite = activeSites.length === 1 ? activeSites[0] : (activeSites.length === 0 && allSites.length === 1 ? allSites[0] : '');
+    const singleSite = activeSites.length === 1 ? activeSites[0] : '';
     return { activeSites, allSites, singleSite, metaBySite };
   }
 
@@ -9695,8 +9803,8 @@
       return s <= effDate && e >= effDate;
     };
     const activeAll = rules.filter(coversDate).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
-    const activeProd = prodKey ? activeAll.filter(r => norm(r.product) === prodKey) : [];
-    const chosenActive = activeProd.length ? activeProd : activeAll;
+    const activeMatching = prodKey ? activeAll.filter(r => !r.product || norm(r.product) === prodKey) : activeAll;
+    const chosenActive = activeMatching.length ? activeMatching : activeAll;
 
     const activeSeen = new Set();
     const activeCusts = [];
@@ -9857,6 +9965,75 @@
     }
     fIdx._lists[cKey] = out;
     return out;
+  }
+  function activeDeliverySiteMetaItems(company, dateStr, customer, product) {
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const coKey = norm(company);
+    const custKey = norm(customer);
+    const prodKey = norm(product);
+    const seen = new Set();
+    const out = [];
+    if (custKey) {
+      const custSites = resolveSitesForCustomer(customer, company, effDate, product);
+      custSites.activeSites.forEach(sName => {
+        const sk = norm(sName);
+        if (!sk || seen.has(sk)) return;
+        seen.add(sk);
+        out.push([sName, custSites.metaBySite.get(sk) || '']);
+      });
+    } else {
+      const activeRules = _mergedActivePriceRules().filter(r => {
+        if (!r || !r.site) return false;
+        if (!/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim())) return false;
+        if (coKey && r.company && norm(r.company) !== coKey) return false;
+        const s = String(r.start_date || '1900-01-01').slice(0, 10);
+        const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+        return s <= effDate && e >= effDate;
+      }).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+      const prodFiltered = prodKey ? activeRules.filter(r => !r.product || norm(r.product) === prodKey) : activeRules;
+      const chosen = prodFiltered.length ? prodFiltered : activeRules;
+      const custsBySite = new Map();
+      const rawNames = [];
+      chosen.forEach(r => {
+        const sName = String(r.site || '').trim();
+        const sk = norm(sName);
+        if (!sk) return;
+        if (!custsBySite.has(sk)) {
+          custsBySite.set(sk, []);
+          rawNames.push(sName);
+        }
+        const cName = String(r.customer || '').trim();
+        if (cName) {
+          const list = custsBySite.get(sk);
+          if (!list.some(x => norm(x) === norm(cName))) list.push(cName);
+        }
+      });
+      const sortedNames = uniqSorted(rawNames, getFreqIndex().siteSales);
+      sortedNames.forEach(sName => {
+        const sk = norm(sName);
+        if (!sk || seen.has(sk)) return;
+        seen.add(sk);
+        const custList = custsBySite.get(sk) || [];
+        const custLabel = custList.length === 1 ? custList[0] : (custList.length > 1 ? `${custList[0]} +${custList.length - 1}` : '');
+        const sObj = siteInfo(sName);
+        const reg = (sObj && sObj.region) || '';
+        const parts = ['Active Agreement'];
+        if (custLabel) parts.push(custLabel);
+        if (reg) parts.push(reg);
+        out.push([sName, parts.join(' · ')]);
+      });
+    }
+    const editOrigSite = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sales_tickets' && STATE.editingRecord.orig && STATE.editingRecord.orig.site) || '').trim();
+    if (editOrigSite && !seen.has(norm(editOrigSite))) {
+      seen.add(norm(editOrigSite));
+      const sObj = siteInfo(editOrigSite);
+      const reg = (sObj && sObj.region) || '';
+      out.push([editOrigSite, `Current Ticket Site${reg ? ' · ' + reg : ''}`]);
+    }
+    return out;
+  }
+  if (window.MFG_SITE_LINKS) {
+    window.MFG_SITE_LINKS.activeDeliverySiteMetaItems = activeDeliverySiteMetaItems;
   }
   function equipmentNames() {
     const fIdx = getFreqIndex();
@@ -14309,13 +14486,13 @@
       behavior: 'block',
       whereLabel: 'Plant Attendance Kiosk',
       jumpView: 'kiosks',
-      why: 'Stops accidental double-taps or standing in front of the tablet camera right after clocking IN from immediately clocking the worker OUT seconds later.',
+      why: 'Stops accidental double-taps or looking at the tablet camera within 5 minutes of clocking IN or OUT from re-triggering a snapshot or flipping the worker punch.',
       params: [
-        { key: 'debounce_sec', label: 'Duplicate Punch Cooldown', def: 120, min: 10, max: 900, step: 10, unit: 'sec' }
+        { key: 'debounce_sec', label: 'Duplicate Punch Cooldown', def: 300, min: 10, max: 900, step: 10, unit: 'sec' }
       ],
-      whatFn: p => `Blocks a second Face ID or PIN clock punch for the same worker within <b>${fmtNum(p.debounce_sec, 0)} seconds</b> (${fmtNum(Number(p.debounce_sec || 120) / 60, 1)} min) unless the worker explicitly taps Switch Direction.`,
+      whatFn: p => `Blocks a second Face ID or PIN clock punch for the same worker within <b>${fmtNum(p.debounce_sec, 0)} seconds</b> (${fmtNum(Number(p.debounce_sec || 300) / 60, 1)} min) unless the worker explicitly taps Switch Direction.`,
       threshFn: p => `${fmtNum(p.debounce_sec, 0)} sec cooldown`,
-      previewFn: p => `Live example: After clocking IN at 07:00:00, accidental repeat scans until 07:00 + ${fmtNum(p.debounce_sec, 0)}s are held so the shift is not closed by mistake.`
+      previewFn: p => `Live example: After clocking IN at 07:00:00, repeat camera glances until 07:00 + ${fmtNum(p.debounce_sec, 0)}s are held without taking a new snapshot so the shift is not closed by mistake.`
     }
   ];
 
@@ -15056,6 +15233,10 @@
     }
     if (!STATE.alertRules.overrides || typeof STATE.alertRules.overrides !== 'object') {
       STATE.alertRules.overrides = {};
+    }
+    const kpOv = STATE.alertRules.overrides.G_KIOSK_PUNCH;
+    if (kpOv && kpOv.params && Number(kpOv.params.debounce_sec) === 120 && !kpOv._userCustomDebounce) {
+      kpOv.params.debounce_sec = 300;
     }
     if (!Array.isArray(STATE.alertRules.custom)) {
       STATE.alertRules.custom = [];
@@ -16708,7 +16889,7 @@
                   wbAuditKey: `wb_rem_${r.rkey}_${r.id}`,
                   bookKey, bs, be, prefix: pfx, slotIdx,
                   kind: 'removed',
-                  kindLabel: `Removed Slip · 0 KM (${r.docType})`,
+                  kindLabel: `Removed Ticket · 0 KM (${r.docType})`,
                   serialLabel: '#' + r.ticket_no,
                   num: r.num,
                   company: co,
@@ -16716,7 +16897,7 @@
                   date: r.date,
                   rep_date: r.rep_date,
                   beforeText: `Book ${bookLbl} · Slot ${slotIdx}/25 Accounted For · $0.00 · 0 m³`,
-                  afterText: `0.0 km spent (Mistake / Spoiled Slip)${r.notes ? ' · ' + r.notes : ''}`,
+                  afterText: `0.0 km spent (Mistake / Spoiled Ticket)${r.notes ? ' · ' + r.notes : ''}`,
                   prevId: r.id, prevRkey: r.rkey,
                   nextId: r.id, nextRkey: r.rkey,
                   kmSpent: 0,
@@ -17311,7 +17492,7 @@
             ${padChip('books', `25-Ticket Books & Count (${fmtNum(booksList.length)} books · ${fmtNum(completeBooksCnt)} full)`)}
             ${padChip('skipped', `Skipped in Pads (${fmtNum(audit.skipped.length)} gaps · ${fmtNum(totSkippedTickets)} tickets)`)}
             ${padChip('duplicates', `Duplicate Serials (${fmtNum(audit.duplicates.length)})`)}
-            ${padChip('removed', `Removed Slips · 0 KM (${fmtNum(audit.removed.length)})`)}
+            ${padChip('removed', `Removed Tickets · 0 KM (${fmtNum(audit.removed.length)})`)}
             ${padChip('returned', `Returned Loads · ${fmtNum(audit.totalReturnedKm, 0)} km RT (${fmtNum(audit.returned.length)})`)}
             ${padChip('unnumbered', `Unnumbered (${fmtNum(audit.unnumbered.length)})`)}
             ${padChip('all_exc', `All Exceptions (${fmtNum(audit.allExceptions.length)})`)}
@@ -17950,7 +18131,7 @@
                 const isRet = isReturnTicket(r);
                 const kmInf = (isRem || isRet) ? resolveTicketRouteKm(r, 'sales') : null;
                 const dispBadgeHtml = isRem
-                  ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Slip · Serial kept in 25-ticket book tally · 0.0 km">Removed · 0 km</span>`
+                  ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Ticket · Serial kept in 25-ticket book tally · 0.0 km">Removed · 0 km</span>`
                   : (isRet
                     ? `<span class="badge badge-warn tkt-ot-badge" title="${esc(kmInf ? kmInf.label : 'Returned load to plant')}">Return · ${kmInf ? fmtNum(kmInf.roundTripKm, 1) : '0.0'} km RT</span>`
                     : '');
@@ -18776,7 +18957,7 @@
                 const isRet = isReturnTicket(r);
                 const kmInf = (isRem || isRet) ? resolveTicketRouteKm(r, 'raw') : null;
                 const dispBadgeHtml = isRem
-                  ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Slip · Serial kept in 25-ticket book tally · 0.0 km">Removed · 0 km</span>`
+                  ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Ticket · Serial kept in 25-ticket book tally · 0.0 km">Removed · 0 km</span>`
                   : (isRet
                     ? `<span class="badge badge-warn tkt-ot-badge" title="${esc(kmInf ? kmInf.label : 'Returned load')}">Return · ${kmInf ? fmtNum(kmInf.roundTripKm, 1) : '0.0'} km RT</span>`
                     : '');
@@ -18843,7 +19024,7 @@
                   const isRetSh = isReturnTicket(r);
                   const kmInfSh = (isRemSh || isRetSh) ? resolveTicketRouteKm(r, 'sales') : null;
                   const dispShHtml = isRemSh
-                    ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Slip · 0.0 km">Removed · 0 km</span>`
+                    ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Ticket · 0.0 km">Removed · 0 km</span>`
                     : (isRetSh
                       ? `<span class="badge badge-warn tkt-ot-badge" title="${esc(kmInfSh ? kmInfSh.label : 'Returned load')}">Return · ${kmInfSh ? fmtNum(kmInfSh.roundTripKm, 1) : '0.0'} km RT</span>`
                       : '');
@@ -37194,20 +37375,20 @@
   ];
 
   const DASH_SUITE_SHORT_NAMES = {
-    dash_overview: 'Overview & Sentinels',
-    dash_commercial: 'Sales & Receivables',
-    dash_plant_fleet: 'Purchases & Fleet',
-    dash_expenses_vat: 'Cash Flow & VAT',
-    dash_payroll_hr: 'Payroll & Workforce',
-    dash_financial_gl: 'General Ledger & CoA'
+    dash_overview: 'Overview',
+    dash_commercial: 'Sales & AR',
+    dash_plant_fleet: 'Quarry & Fleet',
+    dash_expenses_vat: 'Cash & VAT',
+    dash_payroll_hr: 'Payroll',
+    dash_financial_gl: 'GL & CoA'
   };
 
   const STMT_SUITE_SHORT_NAMES = {
-    stmt_digest_ops: 'Daily Ops Registers',
-    stmt_counterparty: 'Counterparty SOAs',
-    stmt_vouchers: 'Invoices & Vouchers',
-    stmt_payroll: 'Payroll Register',
-    stmt_financial_board: 'Audited Financial Pack'
+    stmt_digest_ops: 'Daily Ops',
+    stmt_counterparty: 'SOAs',
+    stmt_vouchers: 'Vouchers',
+    stmt_payroll: 'Payroll',
+    stmt_financial_board: 'Financials'
   };
 
   function normalizeCompaniesScope(cStr) {
@@ -37421,34 +37602,34 @@
     const enterDesc = (perms.rights.enter_dispatch && perms.rights.enter_payroll_jv)
       ? 'All Forms'
       : (isEntryRole
-          ? 'Ops, Payroll & Treasury'
+          ? 'Ops & Till'
           : (perms.rights.enter_dispatch ? 'Ops & Billing' : (perms.rights.enter_accounting ? 'Sales & AR' : 'Read-Only')));
     const capabilities = [
-      { key: 'ops', label: 'Operational, Payroll & Till Hubs', allowed: !!perms.rights.read_ops, state: perms.rights.read_ops ? 'Allowed' : 'Hidden' },
-      { key: 'fin', label: isEntryRole ? 'General Ledger & Sentinels' : 'General Ledger & Treasury', allowed: !!perms.rights.read_fin, state: perms.rights.read_fin ? 'Allowed' : 'Confidential' },
-      { key: 'enter', label: 'Create, Payroll & Till', allowed: canEnter, state: enterDesc },
+      { key: 'ops', label: 'Ops & Payroll', allowed: !!perms.rights.read_ops, state: perms.rights.read_ops ? 'Allowed' : 'Hidden' },
+      { key: 'fin', label: isEntryRole ? 'GL & Sentinels' : 'GL & Accounting', allowed: !!perms.rights.read_fin, state: perms.rights.read_fin ? 'Allowed' : 'Restricted' },
+      { key: 'enter', label: 'Create & Post', allowed: canEnter, state: enterDesc },
       {
         key: 'modify',
-        label: 'Modify & Pending Prices',
+        label: 'Modify Records',
         allowed: !!(perms.rights.modify_data || perms.rights.modify_text || canPendingPrice),
         partial: !perms.rights.modify_data && !!(perms.rights.modify_text || canPendingPrice),
         state: perms.rights.modify_data
           ? 'Full Modify'
-          : (perms.rights.modify_text ? 'Words Only (No Numbers)' : (canPendingPrice ? 'Pending Prices' : 'Locked'))
+          : (perms.rights.modify_text ? 'Words Only' : (canPendingPrice ? 'Pending Only' : 'Locked'))
       },
-      { key: 'void', label: 'Void / Delete Records', allowed: !!perms.rights.void_data, state: perms.rights.void_data ? 'Allowed' : 'Locked' },
+      { key: 'void', label: 'Void / Delete', allowed: !!perms.rights.void_data, state: perms.rights.void_data ? 'Allowed' : 'Locked' },
       {
         key: 'unlocks',
-        label: 'Field-Lock Overrides',
+        label: 'Field Overrides',
         allowed: m.unlockCount > 0,
         partial: m.unlockCount > 0 && m.unlockCount < m.unlockTotal,
         state: m.unlockCount === m.unlockTotal
-          ? `All ${m.unlockTotal} (No PIN)`
-          : (m.unlockCount > 0 ? `${m.unlockCount}/${m.unlockTotal} No PIN` : 'Admin PIN Req')
+          ? `All ${m.unlockTotal} Free`
+          : (m.unlockCount > 0 ? `${m.unlockCount}/${m.unlockTotal} Free` : 'PIN Req')
       }
     ];
     const hubs = (typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury')) : !h.industry)
+      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h))
       : []).map(h => ({
       id: h.id,
       title: h.title,
@@ -37820,57 +38001,43 @@
     const focusCat = opts.focusCat || 'all';
     const isRealSeat = Boolean(owner && actionUid && actionUid !== '__draft__' && actionUid !== '__preview__' && actionUid !== '__new__');
     const tierMeta = getSeatRoleTierMeta(perms);
+    const initials = getSeatMonogram(seatName || perms.preset.shortTitle || perms.preset.title);
+    const tagline = perms.preset.tagline || perms.preset.summary;
     const quickRoles = [
-      { key: 'Entry', label: 'Entry Operator' },
+      { key: 'Entry', label: 'Entry' },
       { key: 'Supervisor', label: 'Supervisor' },
-      { key: 'Supervisor + Entry', label: 'Supervisor + Entry' },
-      { key: 'Full Access (Owner)', label: 'Admin / Owner' },
-      { key: 'Sales', label: 'Commercial & AR' },
-      { key: 'Custom', label: 'Custom Matrix' }
+      { key: 'Supervisor + Entry', label: 'Sup+Entry' },
+      { key: 'Full Access (Owner)', label: 'Admin' },
+      { key: 'Sales', label: 'Sales/AR' },
+      { key: 'Custom', label: 'Custom' }
     ];
     const quickScopes = [
-      { value: 'full|full', label: 'Full Executive' },
-      { value: 'full|partial', label: 'All Dash + Ops Stmt' },
-      { value: 'partial|full', label: 'Ops Dash + All Stmt' },
-      { value: 'partial|partial', label: 'Operational Only' },
-      { value: 'none|partial', label: 'Statements Only' },
-      { value: 'none|none', label: 'No Reports' }
+      { value: 'full|full', label: 'Full Exec' },
+      { value: 'full|partial', label: 'All Dash' },
+      { value: 'partial|full', label: 'All Stmt' },
+      { value: 'partial|partial', label: 'Ops Only' },
+      { value: 'none|partial', label: 'Stmt Only' },
+      { value: 'none|none', label: 'None' }
     ];
     return `
-      <div class="rhc-head">
-        <div class="rhc-title-wrap">
-          <div class="rhc-eyebrow">${seatName ? `${esc(seatName)} · ROLES &amp; PERMISSIONS` : 'ROLE PRESET PREVIEW'}</div>
-          <div class="rhc-title-row">
-            <span class="urp-role-pill ${tierMeta.tierCls}"><i class="urp-role-ico" aria-hidden="true">${tierMeta.icon}</i><strong>${esc(perms.preset.shortTitle || perms.preset.title)}</strong></span>
-            <span class="badge ${perms.preset.badgeCls}">${esc(scopeShortLbl)}</span>
-            ${userObj && getUserBookScope(userObj) === 'official' ? '<span class="badge badge-ok">Official 11% VAT Books</span>' : ''}
+      <div class="rhc-head ${tierMeta.tierCls}">
+        <div class="rhc-identity">
+          <span class="user-dir-avatar rhc-avatar ${tierMeta.tierCls}" aria-hidden="true">${esc(initials)}</span>
+          <div class="rhc-title-wrap">
+            <div class="rhc-title-row">
+              ${seatName ? `<strong class="rhc-seat-name">${esc(seatName)}</strong>` : ''}
+              <span class="urp-role-pill ${tierMeta.tierCls}"><i class="urp-role-ico" aria-hidden="true">${tierMeta.icon}</i><strong>${esc(perms.preset.shortTitle || perms.preset.title)}</strong></span>
+              ${userObj && getUserBookScope(userObj) === 'official' ? '<span class="badge badge-ok">Official 11% VAT</span>' : ''}
+            </div>
+            <div class="rhc-tagline">${esc(tagline)}</div>
           </div>
         </div>
-        <button type="button" class="rhc-close-btn" data-hover-close="1" aria-label="Close preview">✕</button>
+        <div class="rhc-head-actions">
+          ${owner && actionUid ? `<button type="button" class="btn btn-brass rhc-customize-btn" data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="${esc(focusCat)}">${ic('sliders')}<span>Customize</span></button>` : ''}
+          <button type="button" class="rhc-close-btn" data-hover-close="1" aria-label="Close preview">✕</button>
+        </div>
       </div>
-      <p class="rhc-summary">${esc(perms.preset.summary)}</p>
-      ${isRealSeat ? `
-        <div class="rhc-quick-deck">
-          <div class="rhc-quick-row">
-            <span class="rhc-quick-lbl">Quick Role Switch:</span>
-            <div class="rhc-quick-pills">
-              ${quickRoles.map(qr => {
-                const active = (perms.isCustomRole && qr.key === 'Custom') || (!perms.isCustomRole && perms.roleKey === qr.key);
-                return `<button type="button" class="rhc-quick-pill ${active ? 'active' : ''}" data-hover-quick-role="${esc(qr.key)}" data-hover-uid="${esc(actionUid)}">${esc(qr.label)}</button>`;
-              }).join('')}
-            </div>
-          </div>
-          <div class="rhc-quick-row">
-            <span class="rhc-quick-lbl">Report Tier:</span>
-            <div class="rhc-quick-pills">
-              ${quickScopes.map(qs => {
-                const active = !perms.isCustomRole && accVal === qs.value;
-                return `<button type="button" class="rhc-quick-pill scope ${active ? 'active' : ''}" data-hover-quick-access="${esc(qs.value)}" data-hover-uid="${esc(actionUid)}">${esc(qs.label)}</button>`;
-              }).join('')}
-            </div>
-          </div>
-        </div>
-      ` : ''}
+
       <div class="rp-cap-grid compact">
         ${capabilities.map(c => {
           const capTab = c.key === 'unlocks' ? 'unlocks' : 'rights';
@@ -37882,21 +38049,50 @@
           </div>`;
         }).join('')}
       </div>
-      <div class="rhc-section">
-        <div class="rp-sec-lbl">
-          <span>Visible Hubs (${visibleHubs.length}/${hubs.length})</span>
-          <span>${m.pbiPageCount}/${m.pbiPageTotal} Dashboards · ${m.stmtCount}/${m.stmtTotal} Statements</span>
+
+      <div class="rhc-suite-table">
+        <div class="rhc-suite-row ${owner && actionUid ? 'is-clickable' : ''}" ${owner && actionUid ? `data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="rights"` : ''}>
+          <span class="rhc-suite-hdr"><span>Hubs</span><b>${visibleHubs.length}/${hubs.length}</b></span>
+          <div class="rhc-hub-summary">
+            ${hiddenHubs.length === 0
+              ? `<span class="rhc-hub-all-ok">✓ All ${hubs.length} operational, financial &amp; shared hubs visible</span>`
+              : `<span class="rhc-hub-vis-pill">✓ ${visibleHubs.length} Visible</span><span class="rhc-hidden-note">Hidden: ${esc(hiddenHubs.map(h => h.title).join(' · '))}</span>`}
+          </div>
         </div>
-        <div class="rp-suite-tags">
-          ${dashSuites.map(d => `<span class="rp-suite-tag ${d.on ? 'on' : 'off'}" ${owner && actionUid ? `data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="dashboards"` : ''}><i>${d.on ? '✓' : '✕'}</i>${esc(d.short)}</span>`).join('')}
-          ${stmtSuites.map(s => `<span class="rp-suite-tag stmt ${s.on ? 'on' : 'off'}" ${owner && actionUid ? `data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="statements"` : ''}><i>${s.on ? '✓' : '✕'}</i>${esc(s.short)}</span>`).join('')}
+        <div class="rhc-suite-row">
+          <span class="rhc-suite-hdr"><span>Dashboards</span><b>${m.pbiPageCount}/${m.pbiPageTotal}</b></span>
+          <div class="rp-suite-tags is-dash-grid">
+            ${dashSuites.map(d => `<span class="rp-suite-tag ${d.on ? 'on' : 'off'}" ${owner && actionUid ? `data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="dashboards"` : ''}><i>${d.on ? '✓' : '✕'}</i>${esc(d.short)}</span>`).join('')}
+          </div>
         </div>
-        ${hiddenHubs.length ? `<div class="rhc-hidden-note">Hidden from sidebar: ${esc(hiddenHubs.map(h => h.title).join(', '))}</div>` : ''}
+        <div class="rhc-suite-row">
+          <span class="rhc-suite-hdr"><span>Statements</span><b>${m.stmtCount}/${m.stmtTotal}</b></span>
+          <div class="rp-suite-tags is-stmt-row">
+            ${stmtSuites.map(s => `<span class="rp-suite-tag stmt ${s.on ? 'on' : 'off'}" ${owner && actionUid ? `data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="statements"` : ''}><i>${s.on ? '✓' : '✕'}</i>${esc(s.short)}</span>`).join('')}
+          </div>
+        </div>
       </div>
-      ${owner && actionUid ? `
-        <div class="rhc-foot">
-          <span>Click any capability or open the 4-section matrix</span>
-          <button type="button" class="btn btn-brass" style="padding:3px 9px;font-size:10.5px" data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="${esc(focusCat)}">${ic('sliders')} Customize Matrix</button>
+
+      ${isRealSeat ? `
+        <div class="rhc-quick-deck">
+          <div class="rhc-quick-row">
+            <span class="rhc-quick-lbl">Role</span>
+            <div class="rhc-quick-pills">
+              ${quickRoles.map(qr => {
+                const active = (perms.isCustomRole && qr.key === 'Custom') || (!perms.isCustomRole && perms.roleKey === qr.key);
+                return `<button type="button" class="rhc-quick-pill ${active ? 'active' : ''}" data-hover-quick-role="${esc(qr.key)}" data-hover-uid="${esc(actionUid)}">${esc(qr.label)}</button>`;
+              }).join('')}
+            </div>
+          </div>
+          <div class="rhc-quick-row">
+            <span class="rhc-quick-lbl">Reports</span>
+            <div class="rhc-quick-pills">
+              ${quickScopes.map(qs => {
+                const active = !perms.isCustomRole && accVal === qs.value;
+                return `<button type="button" class="rhc-quick-pill scope ${active ? 'active' : ''}" data-hover-quick-access="${esc(qs.value)}" data-hover-uid="${esc(actionUid)}">${esc(qs.label)}</button>`;
+              }).join('')}
+            </div>
+          </div>
         </div>
       ` : ''}
     `;
@@ -37918,35 +38114,69 @@
       }
     }
     const card = ensureRoleHoverCardEl();
+    if (_roleHoverAnchor && _roleHoverAnchor !== anchorEl) {
+      _roleHoverAnchor.classList.remove('is-hover-open');
+    }
     _roleHoverAnchor = anchorEl;
+    anchorEl.classList.add('is-hover-open');
     card.innerHTML = renderRoleHoverCardBodyHtml(userObj, opts);
     const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
     const vh = window.innerHeight || document.documentElement.clientHeight || 768;
-    const cardW = Math.min(430, Math.max(240, vw - 24));
+    const rect = anchorEl.getBoundingClientRect();
+    const inDirTable = !!(anchorEl.closest && anchorEl.closest('#usersDirectoryTbody'));
+    const spaceRight = vw - rect.right - 14;
+    const spaceLeft = rect.left - 14;
+
+    let cardW = Math.min(448, Math.max(250, vw - 24));
+    if (inDirTable && spaceRight >= 390 && spaceRight < 448) {
+      cardW = Math.floor(spaceRight);
+    }
     card.style.boxSizing = 'border-box';
     card.style.width = `${cardW}px`;
     card.style.maxHeight = `${Math.max(180, vh - 24)}px`;
     card.style.left = '12px';
     card.style.top = '12px';
+    card.classList.remove('dock-right', 'dock-left', 'dock-above', 'dock-below');
     card.hidden = false;
 
-    const rect = anchorEl.getBoundingClientRect();
     const cRect = card.getBoundingClientRect();
     const actualW = cRect.width || cardW;
     const actualH = cRect.height || 280;
 
     let left = rect.left;
+    let top = rect.bottom + 8;
+    let dockCls = 'dock-below';
+
+    if (inDirTable && spaceRight >= actualW) {
+      left = rect.right + 10;
+      top = Math.round(rect.top + (rect.height / 2) - (actualH / 2));
+      dockCls = 'dock-right';
+    } else if (rect.bottom + actualH + 8 <= vh - 12) {
+      left = rect.left;
+      top = rect.bottom + 8;
+      dockCls = 'dock-below';
+    } else if (rect.top - actualH - 8 >= 12) {
+      left = rect.left;
+      top = rect.top - actualH - 8;
+      dockCls = 'dock-above';
+    } else if (spaceRight >= actualW) {
+      left = rect.right + 10;
+      top = Math.round(rect.top + (rect.height / 2) - (actualH / 2));
+      dockCls = 'dock-right';
+    } else if (spaceLeft >= actualW) {
+      left = rect.left - actualW - 10;
+      top = Math.round(rect.top + (rect.height / 2) - (actualH / 2));
+      dockCls = 'dock-left';
+    }
+
     if (left + actualW > vw - 12) left = Math.max(12, vw - actualW - 12);
     if (left < 12) left = 12;
-
-    let top = rect.bottom + 8;
-    if (top + actualH > vh - 12 && rect.top - actualH - 8 >= 12) {
-      top = rect.top - actualH - 8;
-    }
-    if (top + actualH > vh - 12) {
-      top = vh - actualH - 12;
-    }
+    if (top + actualH > vh - 12) top = Math.max(12, vh - actualH - 12);
     if (top < 12) top = 12;
+
+    const arrowY = Math.max(20, Math.min(actualH - 20, Math.round((rect.top + rect.height / 2) - top)));
+    card.style.setProperty('--rhc-arrow-y', `${arrowY}px`);
+    card.classList.add(dockCls);
     card.style.left = `${Math.round(left)}px`;
     card.style.top = `${Math.round(top)}px`;
   }
@@ -37956,7 +38186,10 @@
     const doHide = () => {
       const card = document.getElementById('roleHoverPreviewCard');
       if (card) card.hidden = true;
-      _roleHoverAnchor = null;
+      if (_roleHoverAnchor) {
+        _roleHoverAnchor.classList.remove('is-hover-open');
+        _roleHoverAnchor = null;
+      }
     };
     if (immediate) doHide();
     else _roleHoverHideTimer = setTimeout(doHide, 130);
@@ -37978,7 +38211,7 @@
     ];
 
     const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined'
-      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id)) : (!h.industry))
+      ? HUB_CATALOG.filter(h => isHubInActiveIndustry(h))
       : []).map(h => ({
       id: h.id,
       title: h.title,
@@ -38841,8 +39074,8 @@
     staff: 'staff_members', staffrole: 'staff_roles', staffassignment: 'staff_assignments'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
-  function secHdr(title, sub) {
-    return `<div class="pa-form-sec-hdr"><span>${title}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  function secHdr(title, sub, opts = {}) {
+    return `<div class="pa-form-sec-hdr"${opts.id ? ` id="${esc(opts.id)}"` : ''}><span>${title}</span>${opts.rightHtml || (sub ? `<small>${sub}</small>` : '')}</div>`;
   }
   function fld(label, inner, opts = {}) {
     const lockAttr = opts.lockField ? ` data-policy-lock="${esc(opts.lockField)}" data-lock-reason="${esc(opts.lockReason || 'Locked by business rule')}"` : '';
@@ -38974,7 +39207,7 @@
   function renderOriginDispatchBarHtml(company, side) {
     const initOriginSites = [];
     return `
-      <div class="origin-dispatch-card" id="wrap_f_origin_bar" data-origin-side="${esc(side)}" data-active-mode="company">
+      <div class="origin-dispatch-card" id="wrap_f_origin_bar" data-origin-side="${esc(side)}" data-active-mode="company"${side === 'sales' ? ' hidden' : ''}>
         <div class="origin-dispatch-top">
           <div class="origin-dispatch-left">
             <span class="origin-dispatch-lbl">${ORIGIN_COMPASS_SVG}Starting Point</span>
@@ -39450,12 +39683,43 @@
     return null;
   }
 
+  function renderTicketPadBadgeHtml() {
+    return `<button type="button" class="tkt-pad-tab-btn badge badge-brass" id="tktDispBookSummaryBadge" data-toggle-weighbridge-series="1" aria-expanded="false">Weighbridge Pad ▾</button>`;
+  }
+
+  function renderTicketSeriesDrawerHtml() {
+    return `
+      <div class="origin-dispatch-card tkt-disp-card" id="wrap_tkt_series_bar" style="grid-column:1 / -1;margin-bottom:4px" hidden>
+        <div id="tktSeriesConnBar" class="tkt-series-conn-bar" hidden style="margin-top:0;padding-top:0;border-top:none"></div>
+        <div id="ticketDispBookGridDrawer" class="tkt-book-grid-drawer" hidden></div>
+      </div>
+    `;
+  }
+
+  function renderTicketRemoveDrawerHtml() {
+    return `
+      <div class="origin-dispatch-card tkt-disp-card" id="ticketDispRemoveDrawer" hidden style="grid-column:1 / -1;margin-bottom:4px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:700;color:var(--muted)">Quick Reason:</span>
+            <button type="button" class="uom-qpill" data-remove-reason="Written by mistake on physical pad">Written by mistake</button>
+            <button type="button" class="uom-qpill" data-remove-reason="Spoiled or torn paper ticket">Spoiled paper ticket</button>
+            <button type="button" class="uom-qpill" data-remove-reason="Cancelled before truck left plant">Cancelled before dispatch</button>
+            <button type="button" class="uom-qpill" data-remove-reason="Wrong pad or test entry">Wrong pad / test</button>
+          </div>
+          <span class="muted" style="font-size:11.5px" id="tktRemoveBookSlotText">0.0 km · $0.00 · 0 m³</span>
+        </div>
+      </div>
+    `;
+  }
+
   function renderTicketDispositionBarHtml(side) {
     const isSup = canVoid();
     const isEdit = Boolean(STATE.editingRecord && (STATE.editingRecord.crKey === 'sales_tickets' || STATE.editingRecord.crKey === 'raw_purchases'));
     const sideLbl = side === 'raw' ? 'Raw Material Ticket' : 'Sales Ticket';
+    const isSales = side === 'sales';
     return `
-      <div class="origin-dispatch-card tkt-disp-card" id="wrap_f_ticket_disp_bar" data-disp-side="${esc(side)}" data-disp-mode="standard" style="grid-column:1 / -1;margin-bottom:4px">
+      <div class="origin-dispatch-card tkt-disp-card" id="wrap_f_ticket_disp_bar" data-disp-side="${esc(side)}" data-disp-mode="standard" style="grid-column:1 / -1;margin-bottom:4px"${isSales ? ' hidden' : ''}>
         <div class="origin-dispatch-top" style="flex-wrap:wrap;gap:8px">
           <div class="origin-dispatch-left" style="flex-wrap:wrap;gap:8px">
             <span class="origin-dispatch-lbl">${ic('shield')}Ticket Mode</span>
@@ -39466,15 +39730,14 @@
               <button type="button" class="origin-pill" data-ticket-disp-mode="return_wtc" id="tktDispBtnReturn">
                 ${ic('truck')}<span>Return to Plant (2x KM)</span>
               </button>
+              ${isSales ? '' : `
               <button type="button" class="origin-pill${isSup ? '' : ' is-locked-sup'}" data-ticket-disp-mode="remove_slip" id="tktDispBtnRemove" aria-disabled="${isSup ? 'false' : 'true'}">
-                ${isSup ? ic('shield') : ic('lock')}<span>Remove Slip (0 KM${isSup ? '' : ' · Sup'})</span>
+                ${isSup ? ic('shield') : ic('lock')}<span>Remove Ticket (0 KM${isSup ? '' : ' · Sup'})</span>
               </button>
+              `}
             </div>
           </div>
-          <button type="button" class="tkt-pad-tab-btn badge badge-brass" id="tktDispBookSummaryBadge" data-toggle-weighbridge-series="1" aria-expanded="false">Weighbridge Pad ▾</button>
         </div>
-        <div id="tktSeriesConnBar" class="tkt-series-conn-bar" hidden></div>
-        <div id="ticketDispBookGridDrawer" class="tkt-book-grid-drawer" hidden></div>
 
         <div class="origin-site-drawer" id="ticketDispReturnDrawer" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
@@ -39498,19 +39761,6 @@
           </div>
           <div id="tktReturnRecentTicketsWrap" style="margin-top:6px" hidden></div>
         </div>
-
-        <div class="origin-site-drawer" id="ticketDispRemoveDrawer" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:700;color:var(--muted)">Quick Reason:</span>
-              <button type="button" class="uom-qpill" data-remove-reason="Written by mistake on physical pad">Written by mistake</button>
-              <button type="button" class="uom-qpill" data-remove-reason="Spoiled or torn paper slip">Spoiled paper slip</button>
-              <button type="button" class="uom-qpill" data-remove-reason="Cancelled before truck left plant">Cancelled before dispatch</button>
-              <button type="button" class="uom-qpill" data-remove-reason="Wrong pad or test entry">Wrong pad / test</button>
-            </div>
-            <span class="muted" style="font-size:11.5px" id="tktRemoveBookSlotText">0.0 km · $0.00 · 0 m³</span>
-          </div>
-        </div>
       </div>
     `;
   }
@@ -39519,6 +39769,12 @@
     const connBar = $('tktSeriesConnBar');
     const fldBar = $('tktSeriesFieldBar');
     const gridDrawer = $('ticketDispBookGridDrawer');
+    const seriesWrap = $('wrap_tkt_series_bar');
+    const syncSeriesWrapVis = () => {
+      if (seriesWrap) {
+        seriesWrap.hidden = Boolean((!connBar || connBar.hidden) && (!gridDrawer || gridDrawer.hidden));
+      }
+    };
     if (fldBar) {
       fldBar.innerHTML = '';
       fldBar.hidden = true;
@@ -39526,6 +39782,7 @@
     if (!sCtx) {
       if (connBar) { connBar.innerHTML = ''; connBar.hidden = true; }
       if (gridDrawer) { gridDrawer.hidden = true; gridDrawer.innerHTML = ''; }
+      syncSeriesWrapVis();
       return;
     }
 
@@ -39558,6 +39815,7 @@
         gridDrawer.hidden = true;
         gridDrawer.innerHTML = '';
       }
+      syncSeriesWrapVis();
       return;
     }
 
@@ -39572,6 +39830,7 @@
         connBar.hidden = !FORM_UI.ticketSeriesTabOpen;
       }
       if (gridDrawer) { gridDrawer.hidden = true; gridDrawer.innerHTML = ''; }
+      syncSeriesWrapVis();
       return;
     }
 
@@ -39686,6 +39945,7 @@
         `;
       }
     }
+    syncSeriesWrapVis();
   }
 
   function syncTicketDispositionUI(side, originObj) {
@@ -39820,22 +40080,25 @@
       }
     }
 
-    // Streamline fields when Remove Slip (0 KM) or Return to Plant (2x KM) is active
+    // Streamline fields when Remove Ticket (0 KM) or Return to Plant (2x KM) is active
     const isRemove = mode === 'remove_slip';
     const isReturn = mode === 'return_wtc';
     const hideOnRemoveIds = side === 'sales'
-      ? ['wrap_f_time', 'wrap_f_saletype', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_customer', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
+      ? ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_customer', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
       : ['wrap_f_time', 'wrap_f_raw_bundled_bar', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
     const hideOnReturnIds = side === 'sales'
-      ? ['wrap_f_time', 'wrap_f_saletype', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truckowner', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
+      ? ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truckowner', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
       : ['wrap_f_time', 'wrap_f_raw_bundled_bar', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truckowner', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
     const showOnReturnIds = side === 'sales'
-      ? ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_customer', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes']
+      ? ['wrap_f_date', 'wrap_f_saletype', 'wrap_f_ticketno', 'wrap_f_customer', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes']
       : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes'];
 
     if (isRemove) {
       hideOnRemoveIds.forEach(id => setFieldVisible(id, false));
-      ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_notes'].forEach(id => setFieldVisible(id, true));
+      const showOnRemoveIds = side === 'sales'
+        ? ['wrap_f_date', 'wrap_f_saletype', 'wrap_f_ticketno', 'wrap_f_notes']
+        : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_notes'];
+      showOnRemoveIds.forEach(id => setFieldVisible(id, true));
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
@@ -39850,22 +40113,41 @@
     } else if (FORM_UI.lastDispMode === 'remove_slip' || FORM_UI.lastDispMode === 'return_wtc') {
       // Restore base visibility when switching back to standard
       const isSuppDelivNow = side === 'raw' && val('f_raw_bundled') === '1';
-      ['wrap_f_time', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_f_reference'].forEach(id => setFieldVisible(id, true));
+      const salesTypeNow = side === 'sales' ? (val('f_saletype') || 'Pickup') : '';
+      const isSalesDelivNow = side === 'sales' && salesTypeNow === 'Delivery';
+      const isSalesUnregNow = side === 'sales' && salesTypeNow === 'Unregistered';
+      const isSales3POrPickupNow = side === 'sales' && ((isSalesDelivNow && (val('f_transportby') || 'Company fleet') === 'Third-party truck') || salesTypeNow === 'Pickup');
+      ['wrap_f_time', 'wrap_f_product', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_discount', 'wrap_f_reference'].forEach(id => setFieldVisible(id, true));
       if (side === 'sales') {
         ['wrap_f_saletype', 'wrap_f_customer', 'wrap_f_tip'].forEach(id => setFieldVisible(id, true));
+        setFieldVisible('wrap_f_origin_bar', isSalesDelivNow);
+        setFieldVisible('wrap_f_ticket_disp_bar', isSalesDelivNow);
+        setFieldVisible('wrap_f_transportby', isSalesDelivNow);
+        setFieldVisible('wrap_f_site', isSalesDelivNow);
+        setFieldVisible('wrap_f_driver', isSalesDelivNow);
+        setFieldVisible('wrap_f_transunitprice', isSalesDelivNow);
+        setFieldVisible('wrap_f_trans_total', isSalesDelivNow);
+        setFieldVisible('wrap_f_truck', !isSalesUnregNow);
+        setFieldVisible('wrap_f_total_usd', !isSalesUnregNow);
+        setFieldVisible('wrap_f_truckowner', isSales3POrPickupNow);
       } else {
-        ['wrap_f_raw_bundled_bar', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_driver', 'wrap_f_extinvoice'].forEach(id => setFieldVisible(id, true));
+        ['wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_total_usd', 'wrap_f_raw_bundled_bar', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_driver', 'wrap_f_extinvoice'].forEach(id => setFieldVisible(id, true));
         setFieldVisible('wrap_f_transportby', !isSuppDelivNow);
         setFieldVisible('rawBundledModeBanner', isSuppDelivNow);
         setFieldVisible('wrap_f_transunitprice', !isSuppDelivNow && val('f_transportby') !== 'Company fleet');
         setFieldVisible('wrap_f_trans_total', !isSuppDelivNow && val('f_transportby') !== 'Company fleet');
       }
     }
+    if (side === 'sales') {
+      const stNow = val('f_saletype') || 'Pickup';
+      setFieldVisible('wrap_f_ticket_disp_bar', stNow === 'Delivery' && !isRemove);
+      setFieldVisible('wrap_f_origin_bar', stNow === 'Delivery' && !isRemove && !isReturn);
+    }
 
     const mBody = $('modalBody');
     if (mBody) {
       mBody.querySelectorAll('.pa-form-sec-hdr').forEach(hdr => {
-        hdr.hidden = (mode !== 'standard');
+        hdr.hidden = hdr.id === 'secHdrTicketTop' ? false : (mode !== 'standard');
       });
       const liveCalcEl = mBody.querySelector('.live-calc');
       if (liveCalcEl) liveCalcEl.hidden = (mode !== 'standard');
@@ -39874,7 +40156,7 @@
     if (notesInp && !STATE.editingPendingRawId) {
       notesInp.placeholder = isReturn
         ? 'Reason for return / rejection (optional)'
-        : (isRemove ? 'Reason for removing slip (optional)' : 'Required for back-dated entries or discounts above 20%');
+        : (isRemove ? 'Reason for removing ticket (optional)' : 'Required for back-dated entries or discounts above 20%');
     }
     FORM_UI.lastDispMode = mode;
 
@@ -39952,11 +40234,12 @@
     if (fType === 'sales') {
       const prodMetaItems = salesProductMetaItems(company);
       const initSalesUom = company === 'BBConstruction' ? 'Ton' : 'm³';
+      const isSup = canVoid();
       return cockpitHtml + `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          ${secHdr('1. Ticket, Dispatch & Fleet')}
-          ${renderTicketDispositionBarHtml('sales')}
+          ${secHdr('1. Ticket, Dispatch & Fleet', '', { id: 'secHdrTicketTop', rightHtml: renderTicketPadBadgeHtml() })}
+          ${renderTicketSeriesDrawerHtml()}
           ${companyField}
           ${dateField}
           ${repDateField}
@@ -39964,17 +40247,20 @@
           ${fld('Sale Type *', sel('f_saletype', [
             ['Pickup', 'Pick-up (Material Only)'],
             ['Delivery', 'Delivery (Material + Transport)'],
-            ['Unregistered', 'Unregistered (Spot Cash)']
+            ['Unregistered', 'Unregistered (Spot Cash)'],
+            ['Remove', isSup ? 'Remove Ticket (0 KM)' : 'Remove Ticket (0 KM · Sup)']
           ], 'Pickup'), { id: 'wrap_f_saletype' })}
           ${fld('Transported By *', sel('f_transportby', [
             ['Company fleet', 'Company fleet (Own Truck)'],
             ['Third-party truck', 'Third-party truck (Hauler)']
           ], 'Company fleet'), { id: 'wrap_f_transportby', hidden: true })}
           ${fld('Ticket / Invoice No. *', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Enter pad ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '', afterHtml: '<div id="tktSeriesFieldBar" class="tkt-series-field-bar"></div>' })}
+          ${renderTicketRemoveDrawerHtml()}
           ${fld('Product / Aggregate Grade *', inp('f_product', 'text', '', 'list="dl_sales_prods" placeholder="Select or type grade..."') + dlMeta('dl_sales_prods', prodMetaItems), { id: 'wrap_f_product', hintId: 'hint_product', hint: '' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
+          ${renderTicketDispositionBarHtml('sales')}
           ${renderOriginDispatchBarHtml(company, 'sales')}
-          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('sales')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '' })}
+          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', activeDeliverySiteMetaItems(company, today, '', '')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '' })}
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
@@ -40042,8 +40328,10 @@
           </div>
         ` : ''}
         <div class="form-grid-3">
-          ${secHdr('1. Material Receipt & Haulage')}
+          ${secHdr('1. Material Receipt & Haulage', '', { id: 'secHdrTicketTop', rightHtml: pendRawEditRow ? '' : renderTicketPadBadgeHtml() })}
+          ${pendRawEditRow ? '' : renderTicketSeriesDrawerHtml()}
           ${pendRawEditRow ? '' : renderTicketDispositionBarHtml('raw')}
+          ${pendRawEditRow ? '' : renderTicketRemoveDrawerHtml()}
           ${rawCoField}
           ${rawDateField}
           ${rawRepField}
@@ -42834,6 +43122,34 @@
   function recalcSales() {
     syncOriginDispatchUI('sales', true);
     const company = val('f_company');
+    let rawSaleType = val('f_saletype') || 'Pickup';
+    if (rawSaleType === 'Remove') {
+      if (!canVoid()) {
+        toast('Only a Supervisor or Admin seat can remove tickets', 'err');
+        const fallbackSt = (FORM_UI.lastSaleType && FORM_UI.lastSaleType !== 'Remove') ? FORM_UI.lastSaleType : 'Pickup';
+        if ($('f_saletype')) $('f_saletype').value = fallbackSt;
+        rawSaleType = fallbackSt;
+        FORM_UI.ticketDisposition = 'standard';
+      } else {
+        FORM_UI.ticketDisposition = 'remove_slip';
+      }
+    } else if (FORM_UI.ticketDisposition === 'remove_slip') {
+      if (!FORM_UI.hydrating && FORM_UI.lastSaleType === 'Remove') {
+        FORM_UI.ticketDisposition = 'standard';
+      } else if (canVoid()) {
+        if ($('f_saletype')) $('f_saletype').value = 'Remove';
+        rawSaleType = 'Remove';
+      } else {
+        FORM_UI.ticketDisposition = 'standard';
+      }
+    } else if (FORM_UI.ticketDisposition === 'return_wtc' && rawSaleType !== 'Delivery') {
+      if (!FORM_UI.hydrating && FORM_UI.lastSaleType === 'Delivery') {
+        FORM_UI.ticketDisposition = 'standard';
+      } else {
+        if ($('f_saletype')) $('f_saletype').value = 'Delivery';
+        rawSaleType = 'Delivery';
+      }
+    }
     if (FORM_UI.ticketDisposition === 'return_wtc') {
       if ($('f_saletype') && val('f_saletype') !== 'Delivery') $('f_saletype').value = 'Delivery';
       if (!STATE.editingRecord) {
@@ -42978,41 +43294,25 @@
         customerChanged = true;
       }
     }
-    if (isDelivery && !isUnreg && customer) {
-      const custSites = resolveSitesForCustomer(customer, company, effDate, product);
-      const custSiteKey = `${company}|${customer}|${effDate}|${product}`;
+    if (isDelivery && !isUnreg) {
+      const custSites = customer ? resolveSitesForCustomer(customer, company, effDate, product) : { activeSites: [], allSites: [], singleSite: '', metaBySite: new Map() };
+      const custSiteKey = `${company}|${customer}|${effDate}|${product}|${(SEED && SEED._customRev) || 0}`;
       if (FORM_UI.lastSalesSiteCustKey !== custSiteKey) {
         FORM_UI.lastSalesSiteCustKey = custSiteKey;
         const dlSalesSites = $('dl_sites');
         if (dlSalesSites) {
-          const baseItems = siteMetaItems('sales');
-          const baseMetaMap = new Map(baseItems.map(([n, m]) => [norm(n), m]));
-          const seenS = new Set();
-          const topOpts = [];
-          custSites.allSites.forEach(sName => {
-            const sk = norm(sName);
-            if (!sk || seenS.has(sk)) return;
-            seenS.add(sk);
-            const meta = custSites.metaBySite.get(sk) || baseMetaMap.get(sk) || '';
-            topOpts.push([sName, meta]);
-          });
-          baseItems.forEach(([n, m]) => {
-            const sk = norm(n);
-            if (!sk || seenS.has(sk)) return;
-            seenS.add(sk);
-            topOpts.push([n, m]);
-          });
-          dlSalesSites.innerHTML = topOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          const activeOpts = activeDeliverySiteMetaItems(company, effDate, customer, product);
+          dlSalesSites.innerHTML = activeOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
         }
       }
-      if (!FORM_UI.hydrating && customerChanged && !sitePickedOrChanged && $('f_site') && (!site || FORM_UI.siteAutoFilledFromCustomer)) {
+      if (customer && !FORM_UI.hydrating && customerChanged && !sitePickedOrChanged && $('f_site') && (!site || FORM_UI.siteAutoFilledFromCustomer)) {
         if (custSites.singleSite) {
           $('f_site').value = custSites.singleSite;
           site = custSites.singleSite;
           FORM_UI.lastSite = site;
           FORM_UI.siteAutoFilledFromCustomer = true;
           siteChanged = true;
-        } else if (FORM_UI.siteAutoFilledFromCustomer && site && !custSites.allSites.some(s => norm(s) === norm(site))) {
+        } else if (FORM_UI.siteAutoFilledFromCustomer && site && !custSites.activeSites.some(s => norm(s) === norm(site))) {
           $('f_site').value = '';
           site = '';
           FORM_UI.lastSite = '';
@@ -43024,7 +43324,8 @@
       FORM_UI.lastSalesSiteCustKey = '';
       const dlSalesSites = $('dl_sites');
       if (dlSalesSites) {
-        dlSalesSites.innerHTML = siteMetaItems('sales').map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+        const activeOpts = activeDeliverySiteMetaItems(company, effDate, '', product);
+        dlSalesSites.innerHTML = activeOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
       }
     }
 
@@ -43434,7 +43735,7 @@
     const origin = syncOriginDispatchUI('sales', false);
     const disp = syncTicketDispositionUI('sales', origin);
     if (disp.mode === 'remove_slip') {
-      setText('calc_mat', '$0.00 (Removed Slip)');
+      setText('calc_mat', '$0.00 (Removed Ticket)');
       setText('calc_tr', '0.0 km (No Dispatch)');
       setText('calc_vat', '$0.00');
       setText('calc_total', '$0.00 · 0 m³');
@@ -44019,7 +44320,7 @@
     const origin = syncOriginDispatchUI('raw', false);
     const disp = syncTicketDispositionUI('raw', origin);
     if (disp.mode === 'remove_slip') {
-      setText('calc_mat', '$0.00 (Removed Slip)');
+      setText('calc_mat', '$0.00 (Removed Ticket)');
       setText('calc_tr', '0.0 km (No Dispatch)');
       setText('calc_qty', '0 m³');
       setText('calc_total', '$0.00');
@@ -50300,6 +50601,14 @@
             if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') !== 'Delivery') {
               $('f_saletype').value = 'Delivery';
             }
+          } else if (nextDisp === 'remove_slip') {
+            if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') !== 'Remove') {
+              $('f_saletype').value = 'Remove';
+            }
+          } else if (nextDisp === 'standard') {
+            if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') === 'Remove') {
+              $('f_saletype').value = 'Pickup';
+            }
           }
           recalcForm();
           return;
@@ -52140,7 +52449,7 @@
           time: val('f_time') || '12:00',
           overtime: false,
           price_rule: '',
-          notes: notes || 'Removed physical pad slip (0 KM · kept in 25-ticket book tally)',
+          notes: notes || 'Removed physical pad ticket (0 KM · kept in 25-ticket book tally)',
           duplicate_confirmed: true
         };
       } else {
@@ -52333,7 +52642,7 @@
             time: val('f_time') || '12:00',
             overtime: false,
             price_rule: '',
-            notes: notes || 'Removed physical pad slip (0 KM · kept in 25-ticket book tally)',
+            notes: notes || 'Removed physical pad ticket (0 KM · kept in 25-ticket book tally)',
             duplicate_confirmed: true
           };
         } else {
@@ -55505,7 +55814,7 @@
         ? (seatCanSaveEdit
           ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · ${isWordsOnlyEdit ? 'words-only edit mode · numbers locked to Supervisor' : 'updates ledger in place'}`
           : (canVoidCurrent && isTicketEdit
-            ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Slip (0 KM)</b> or <b>Return Load (2x KM)</b> to update this ticket`
+            ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Ticket (0 KM)</b> or <b>Return Load (2x KM)</b> to update this ticket`
             : `Read-only seat (<b>${esc(activeUser().role)}</b>) · click <b>360° Details</b> above for full audit breakdown`))
         : (pendingSalRow
           ? `Updating contract <b>${esc(pendingSalRow.name || pendingSalRow.staff || pendingSalRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · onboarding fields stay locked`
@@ -55517,10 +55826,10 @@
         ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" title="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
         : '';
       const supQuickTicketBtnsHtml = (canVoidCurrent && isTicketEdit)
-        ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" title="Customer rejected product: return load to plant and log Round-Trip KM (2x One-Way KM)">Return Load (2x KM)</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" title="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Slip (0 KM · Keep #)</button>`
+        ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" title="Customer rejected product: return load to plant and log Round-Trip KM (2x One-Way KM)">Return Load (2x KM)</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" title="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
         : '';
       const voidBtnHtml = canVoidCurrent
-        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" title="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Slip instead for spoiled pad slips)' : 'Void / Delete record'}">Void / Delete</button>`
+        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" title="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Ticket instead for spoiled pad tickets)' : 'Void / Delete record'}">Void / Delete</button>`
         : '';
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
@@ -55549,6 +55858,7 @@
       if (retQuickBtn) {
         retQuickBtn.addEventListener('click', () => {
           FORM_UI.ticketDisposition = 'return_wtc';
+          if (STATE.modalForm === 'sales' && $('f_saletype')) $('f_saletype').value = 'Delivery';
           if ($('f_return_rt_km')) $('f_return_rt_km').disabled = false;
           if ($('f_notes')) $('f_notes').disabled = false;
           recalcForm();
@@ -55560,9 +55870,10 @@
         remQuickBtn.addEventListener('click', () => {
           if (!canVoid()) { toast('Only a Supervisor or Admin seat can remove tickets', 'err'); return; }
           FORM_UI.ticketDisposition = 'remove_slip';
+          if (STATE.modalForm === 'sales' && $('f_saletype')) $('f_saletype').value = 'Remove';
           if ($('f_notes')) $('f_notes').disabled = false;
           recalcForm();
-          const bar = $('wrap_f_ticket_disp_bar');
+          const bar = $('ticketDispRemoveDrawer') || $('wrap_f_ticket_disp_bar');
           if (bar) { try { bar.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {} }
         });
       }
@@ -56053,7 +56364,7 @@
         ahBtn.classList.toggle('is-afterhours', isAh);
         ahBtn.setAttribute('aria-pressed', isAh ? 'true' : 'false');
       }
-      const sType = row.sale_type || (row.site ? 'Delivery' : 'Pickup');
+      const sType = isRemovedTicket(row) ? 'Remove' : (isReturnTicket(row) ? 'Delivery' : (row.sale_type || (row.site ? 'Delivery' : 'Pickup')));
       const trBy = row.transport_by || ((row.truck_owner && norm(row.truck_owner) !== norm(rowCo)) ? 'Third-party truck' : 'Company fleet');
       setModalControlVal('f_saletype', sType);
       setModalControlVal('f_transportby', trBy);
@@ -59850,9 +60161,11 @@
     }
     if (dispMode === 'removed' && canVoid()) {
       FORM_UI.ticketDisposition = 'remove_slip';
+      if (formKey === 'sales' && $('f_saletype')) setModalControlVal('f_saletype', 'Remove');
       if ($('f_notes')) $('f_notes').disabled = false;
     } else if (dispMode === 'returned') {
       FORM_UI.ticketDisposition = 'return_wtc';
+      if (formKey === 'sales' && $('f_saletype')) setModalControlVal('f_saletype', 'Delivery');
       if ($('f_return_rt_km')) $('f_return_rt_km').disabled = false;
       if ($('f_notes')) $('f_notes').disabled = false;
     }
@@ -60034,11 +60347,11 @@
       const rObj = item.recObj || null;
       const isRem = item.kind === 'removed';
       const isRet = item.kind === 'returned';
-      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · ${isRem ? 'REMOVED SLIP (0 KM)' : (isRet ? 'RETURNED LOAD (2X KM)' : 'UNNUMBERED TICKET')} · ${co.toUpperCase()}`;
-      titleTxt = `${isRem ? 'Removed Slip' : (isRet ? 'Returned Load' : 'Unnumbered Ticket')} ${cleanSerialLbl} (${item.padRun || bookRangeLbl})`;
+      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · ${isRem ? 'REMOVED TICKET (0 KM)' : (isRet ? 'RETURNED LOAD (2X KM)' : 'UNNUMBERED TICKET')} · ${co.toUpperCase()}`;
+      titleTxt = `${isRem ? 'Removed Ticket' : (isRet ? 'Returned Load' : 'Unnumbered Ticket')} ${cleanSerialLbl} (${item.padRun || bookRangeLbl})`;
       bannerTone = isRem ? 'good' : 'brass';
       bannerTxt = isRem
-        ? `Ticket ${cleanSerialLbl} is logged as a Supervisor Removed Slip (Spoiled / Mistake): Slot ${item.slotIdx || '-'}/25 in Book ${bookRangeLbl} is accounted for with $0.00 billing, 0 m³ volume, and 0.0 km fleet distance.`
+        ? `Ticket ${cleanSerialLbl} is logged as a Supervisor Removed Ticket (Spoiled / Mistake): Slot ${item.slotIdx || '-'}/25 in Book ${bookRangeLbl} is accounted for with $0.00 billing, 0 m³ volume, and 0.0 km fleet distance.`
         : (isRet
           ? `Ticket ${cleanSerialLbl} is logged as a Rejected Load Returned to ${co}: Slot ${item.slotIdx || '-'}/25 in Book ${bookRangeLbl} is accounted for with net $0.00 / 0 m³ and ${fmtNum(item.kmSpent || 0, 1)} km round-trip haulage distance (2x ${fmtNum(item.oneWayKm || 0, 1)} km).`
           : `This ${rObj ? rObj.docType : ''} record on ${fmtDateDMY(item.date)} has no weighbridge ticket number assigned. Click Edit Ticket below to assign its 25-book serial number.`);
@@ -60057,7 +60370,7 @@
           tag: isRem ? 'TRUCK NEVER LEFT' : (isRet ? 'ROUND-TRIP (2X)' : 'STANDARD'),
           tone: isRem ? 'good' : 'brass',
           val: `${fmtNum(item.kmSpent || 0, 1)} km`,
-          sub1: isRem ? '0.0 km spent (Spoiled / Mistake Slip)' : (isRet ? `${fmtNum(item.oneWayKm || 0, 1)} km x 2 (${co} to ${rObj && rObj.site ? rObj.site : 'Site'} and back)` : item.beforeText),
+          sub1: isRem ? '0.0 km spent (Spoiled / Mistake Ticket)' : (isRet ? `${fmtNum(item.oneWayKm || 0, 1)} km x 2 (${co} to ${rObj && rObj.site ? rObj.site : 'Site'} and back)` : item.beforeText),
           sub2: `Truck: ${(rObj && rObj.truck) || 'None'}${rObj && rObj.driver ? ' · Driver: ' + rObj.driver : ''}`,
           pct: isRet ? 100 : 25
         },
@@ -60374,7 +60687,7 @@
         <div class="pa-cmd-actions">
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-primary" id="wbCmdEnterSalesBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Sales #${esc(firstGapNo)}</button>` : ''}
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-brass" id="wbCmdEnterRawBtn" data-wb-enter-stream="raw" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Raw #${esc(firstGapNo)}</button>` : ''}
-          ${firstGapNo && canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" id="wbCmdRemoveSlipBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove Slip · 0 KM (#${esc(firstGapNo)})</button>` : ''}
+          ${firstGapNo && canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" id="wbCmdRemoveSlipBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove Ticket · 0 KM (#${esc(firstGapNo)})</button>` : ''}
           ${prevRec ? `<button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(prevRec.rkey)}" data-wb-open-rec-id="${esc(prevRec.id)}">Open #${esc(prevRec.ticket_no)} (Before)</button>` : ''}
           ${nextRec && (!prevRec || String(nextRec.id) !== String(prevRec.id)) ? `<button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(nextRec.rkey)}" data-wb-open-rec-id="${esc(nextRec.id)}">Open #${esc(nextRec.ticket_no)} (After)</button>` : ''}
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Audit</button>
@@ -66525,6 +66838,16 @@
     hld_distributions: 'Profit Splits & Drawings',
     hld_loans: 'Loans Given / Taken & Interest',
     hld_assets: 'Investments & Group Assets',
+    // Hospitality & Resorts sub-views (Phase 2)
+    hsp_revenue: 'Venue Revenue & Chalet Occupancy',
+    hsp_pos: 'POS Till Close & Bill Variance (R2)',
+    hsp_vat: 'Resort VAT & Fiscal Tax (step253)',
+    hsp_memberships: 'Seasonal Memberships & Arrears',
+    hsp_partners: 'Partner Splits & Category Shares',
+    hsp_stock: 'Cellar, Kitchen & Transfers (R3)',
+    hsp_menu: 'Menu Engineering & Food Cost %',
+    hsp_energy: 'Diesel, Solar & Generators (R4)',
+    hsp_maint: 'Venue Repairs & Fixed Assets',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -66598,6 +66921,15 @@
     hld_distributions: 'Profit Splits',
     hld_loans: 'Loans & Interest',
     hld_assets: 'Group Assets',
+    hsp_revenue: 'Venue Revenue & Chalets',
+    hsp_pos: 'POS Till & Bills',
+    hsp_vat: 'Resort VAT & Tax',
+    hsp_memberships: 'Seasonal Memberships',
+    hsp_partners: 'Partner Splits',
+    hsp_stock: 'Kitchen & Cellar Stock',
+    hsp_menu: 'Menu & Recipe Cost',
+    hsp_energy: 'Generators & Utilities',
+    hsp_maint: 'Venue Repairs',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -66606,7 +66938,12 @@
     wtc: 'WTC (World Trading)',
     bbconstruction: 'BBConstruction',
     lionstransport: 'Lions Transport',
-    bdeirholding: 'Bdeir Holding'
+    bdeirholding: 'Bdeir Holding',
+    blanca: 'Blanca Resort',
+    launa: 'La Una',
+    palms: 'Palms Resort',
+    voile: 'Voile Beach',
+    platinum: 'Platinum'
   };
 
   // Dynamic Multi-Industry Sidebar Specification (Fixed Spine + Swappable Middle Operational Groups)
@@ -66632,13 +66969,13 @@
       ]
     },
     'Hospitality & Resorts': {
-      grp1: 'Resort & Guest Operations',
-      grp2: 'Commissary, Utilities & Staff',
+      grp1: 'Venue Revenue & Procurement',
+      grp2: 'Resort Stock, Energy & Staff',
       slots: [
-        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
-        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
-        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
-        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+        { hub: 'hsp_revenue', view: 'hsp_revenue', label: 'Revenue, POS & Chalets', pillId: '' },
+        { hub: 'hsp_memberships', view: 'hsp_memberships', label: 'Memberships & Splits', pillId: 'navCountRaw' },
+        { hub: 'hsp_stock', view: 'hsp_stock', label: 'Kitchen, Bar & Stock', pillId: 'navCountFleet' },
+        { hub: 'hsp_energy', view: 'hsp_energy', label: 'Generators & Utilities', pillId: '' }
       ]
     },
     'Automotive & Heavy Trading': {
@@ -66841,10 +67178,10 @@
 
     const mfgAllowedCount = STATE.enterpriseScalePreview
       ? allowedNames.length
-      : allowedNames.filter(n => !/^bdeir\s*holding$/i.test(n)).length;
+      : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(n)).length;
     const mfgCatalogCount = STATE.enterpriseScalePreview
       ? catalog.length
-      : catalog.filter(c => c.key !== 'bdeirholding').length;
+      : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum'].includes(c.key)).length;
 
     let visibleBtnCount = 0;
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
@@ -66900,12 +67237,12 @@
       const indName = String(STATE.company).slice(9);
       const grp = allowedIndGroups.find(g => g.id === indName);
       const cnt = grp ? grp.permittedCos.length : 0;
-      trigInd = indName === 'Holding & Treasury' ? 'Holding' : indName;
+      trigInd = indName === 'Holding & Treasury' ? 'Holding' : (indName === 'Hospitality & Resorts' ? 'Hospitality' : indName);
       trigCo = `All ${indName.split(' ')[0]} (${cnt})`;
     } else {
       const coMeta = catalog.find(c => c.key === STATE.company);
       const rawInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
-      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : rawInd;
+      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : rawInd);
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
     if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
@@ -67059,8 +67396,8 @@
     syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
-    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^bdeir\s*holding$/i.test(n));
-    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => c.key !== 'bdeirholding').length;
+    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(n));
+    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum'].includes(c.key)).length;
     COMPANY_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
       ? `All Manufacturing Group (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`
       : `Assigned Entities (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`;
@@ -67568,6 +67905,10 @@
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_allowances: 'logistics', payroll_contracts: 'employment', payroll_analytics: 'salary',
       hld_consolidation: 'external', hld_entities: 'external', hld_interactions: 'external', hld_open_recon: 'external', hld_due_matrix: 'external',
       hld_partners: 'jv', hld_distributions: 'jv', hld_loans: 'treasury', hld_assets: 'expense',
+      hsp_revenue: 'sales', hsp_pos: 'receipt', hsp_vat: 'vatinvoice',
+      hsp_memberships: 'sales', hsp_partners: 'jv',
+      hsp_stock: 'warehousestock', hsp_menu: 'pricerule',
+      hsp_energy: 'fuel', hsp_maint: 'repair',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_staff: 'staff', reg_roles: 'staffrole', reg_sites: 'site', reg_regions: 'region',
@@ -68174,11 +68515,119 @@
     }, 1000);
   }
 
+  function buildKioskWallFlashBannerHtml(activeFlash) {
+    if (!STATE.kioskLocked || !activeFlash || !activeFlash.punch) return '';
+    const isRepeat = Boolean(activeFlash.alreadyClocked || activeFlash.alreadyClockedIn || activeFlash.reason === 'debounced' || activeFlash.reason === 'already-clocked-in-recent');
+    const dir = activeFlash.punch.direction === 'OUT' ? 'OUT' : 'IN';
+    const badgeHtml = isRepeat
+      ? `${ic('check_circle')} Already Clocked ${dir}`
+      : (dir === 'IN' ? `${ic('clock_in')} Clocked IN` : `${ic('clock_out')} Clocked OUT`);
+    const timeMetaHtml = isRepeat
+      ? `Since ${esc(activeFlash.punch.time)}${activeFlash.ageText ? ' (' + esc(activeFlash.ageText) + ')' : ''}`
+      : (dir === 'OUT' && activeFlash.punch.in_time
+        ? `IN ${esc(activeFlash.punch.in_time)} · OUT ${esc(activeFlash.punch.time)}`
+        : esc(activeFlash.punch.time));
+    const showEarlyOutBtn = Boolean((activeFlash.alreadyClockedIn || activeFlash.reason === 'already-clocked-in-recent') && dir === 'IN');
+    return `
+      <div class="kiosk-wall-flash-banner ${dir === 'IN' ? 'is-in' : 'is-out'}" id="kioskWallFlashBanner">
+        <div class="kwf-left">
+          <span class="badge ${dir === 'IN' ? 'badge-ok' : 'badge-warn'}">
+            ${badgeHtml}
+          </span>
+          <div class="kwf-info">
+            <strong>${esc(activeFlash.staff)}</strong>
+            <span class="kwf-meta">
+              <span class="mono">${timeMetaHtml}</span>
+              · ${esc(activeFlash.punch.site)}
+            </span>
+          </div>
+        </div>
+        <div class="kwf-actions">
+          ${showEarlyOutBtn ? `
+            <button type="button" class="btn kiosk-flip-btn" data-force-early-out="${esc(activeFlash.staff)}" data-force-early-time="${esc(activeFlash.attemptedTime || '')}">
+              ${ic('clock_out')} Clock OUT Early
+            </button>
+          ` : `
+            <button type="button" class="btn kiosk-flip-btn" data-flip-punch="${esc(activeFlash.punch.id)}">
+              ${ic('swap')} Switch to ${dir === 'IN' ? 'OUT' : 'IN'}
+            </button>
+          `}
+          <button type="button" class="btn kiosk-mini-btn" id="kioskDismissFlashBtn">Done</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function wireKioskWallFlashBannerEvents(bannerEl) {
+    if (!bannerEl) return;
+    bannerEl.querySelector('#kioskDismissFlashBtn')?.addEventListener('click', e => {
+      e.stopPropagation();
+      clearKioskFlashPunch(true);
+    });
+    bannerEl.querySelectorAll('[data-flip-punch]').forEach(fBtn => {
+      fBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        flipKioskPunchDirection(fBtn.getAttribute('data-flip-punch'));
+      });
+    });
+    bannerEl.querySelectorAll('[data-force-early-out]').forEach(eBtn => {
+      eBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const stf = eBtn.getAttribute('data-force-early-out') || '';
+        const tStr = eBtn.getAttribute('data-force-early-time') || '';
+        if (!stf) return;
+        recordKioskAttendancePunch({
+          staff: stf,
+          direction: 'OUT',
+          time: tStr || undefined,
+          method: 'Face ID',
+          bypassDebounce: true,
+          forceEarlyOut: true
+        });
+      });
+    });
+  }
+
+  function syncKioskAttLiveUiInPlace() {
+    const stEl = $('kioskAttCamStatus');
+    if (stEl) {
+      stEl.textContent = KIOSK_ATT_STATE.statusText || '';
+      stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
+    }
+    const wsShell = $('kioskAttendanceWorkspace');
+    if (!wsShell) return false;
+    const activeFlash = (KIOSK_ATT_STATE.flashPunch && KIOSK_ATT_STATE.flashPunch.punch && KIOSK_ATT_STATE.flashPunch.expiresAt > Date.now())
+      ? KIOSK_ATT_STATE.flashPunch
+      : null;
+    const existingBanner = $('kioskWallFlashBanner');
+    if (STATE.kioskLocked && activeFlash) {
+      const html = buildKioskWallFlashBannerHtml(activeFlash);
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html.trim();
+      const nextBanner = tpl.content.firstElementChild;
+      if (nextBanner) {
+        if (existingBanner) {
+          existingBanner.replaceWith(nextBanner);
+        } else {
+          wsShell.prepend(nextBanner);
+        }
+        wireKioskWallFlashBannerEvents(nextBanner);
+      }
+    } else if (existingBanner) {
+      existingBanner.remove();
+    }
+    return true;
+  }
+
   function clearKioskFlashPunch(reRender = true) {
     clearTimeout(KIOSK_ATT_STATE.flashTimer);
     KIOSK_ATT_STATE.flashTimer = null;
     KIOSK_ATT_STATE.flashPunch = null;
-    if (reRender && STATE.view === 'kiosks') renderApp();
+    const b = $('kioskWallFlashBanner');
+    if (b) b.remove();
+    if (reRender && STATE.view === 'kiosks' && !(STATE.kioskLocked || KIOSK_ATT_STATE.camActive)) {
+      renderApp();
+    }
   }
 
   function setKioskFlashPunch(spec = {}) {
@@ -70648,6 +71097,43 @@
     return syncAttendanceRecordFromPunch(lp);
   }
 
+  function checkKioskRecentPunchGuard(staffName, opts = {}) {
+    if (!staffName || opts.bypassDebounce || opts.forceEarlyOut) return null;
+    const last = getStaffLastPunch(staffName);
+    if (!last) return null;
+    const nowWallMs = Date.now();
+    const hasCustomClock = Boolean(opts.date || opts.time);
+    const defaultNowObj = new Date(nowWallMs);
+    const timeStr = fmtAttClockTime(opts.time || defaultNowObj.toTimeString().slice(0, 5)) || defaultNowObj.toTimeString().slice(0, 5);
+    const dateStr = String(opts.date || todayISO()).slice(0, 10);
+    const punchDateObj = hasCustomClock ? buildLocalPunchDateObj(dateStr, timeStr, nowWallMs) : defaultNowObj;
+    const punchMs = punchDateObj.getTime();
+    const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 300) : 0;
+    if (punchDebounceSec > 0 && last.iso) {
+      const prevMs = Date.parse(last.iso) || 0;
+      const ageSec = Math.round((punchMs - prevMs) / 1000);
+      if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
+        return { reason: 'debounced', last, ageSec, timeStr };
+      }
+    }
+    const MIN_AUTO_CLOCK_OUT_MIN = 30;
+    const rawDirOpt = String(opts.direction || '').trim().toUpperCase();
+    const explicitDir = (rawDirOpt === 'IN' || rawDirOpt === 'OUT') ? rawDirOpt : '';
+    if (!explicitDir && isPunchActiveOnSite(last, punchMs)) {
+      const prevMs = Date.parse(last.iso || '') || 0;
+      let ageMin = prevMs > 0 ? Math.round((punchMs - prevMs) / 60000) : null;
+      if ((ageMin == null || ageMin < 0) && last.date === dateStr) {
+        const mIn = parseClockMinutes(last.time);
+        const mNow = parseClockMinutes(timeStr);
+        if (mIn != null && mNow != null && mNow >= mIn) ageMin = mNow - mIn;
+      }
+      if (STATE.kioskAttDir === 'in' || (STATE.kioskAttDir === 'auto' && ageMin != null && ageMin >= 0 && ageMin < MIN_AUTO_CLOCK_OUT_MIN)) {
+        return { reason: 'already-clocked-in-recent', last, ageMin: ageMin != null ? ageMin : 0, timeStr };
+      }
+    }
+    return null;
+  }
+
   function recordKioskAttendancePunch(opts = {}) {
     const dirList = getKioskStaffDirectory();
     const staffRaw = String(opts.staff || STATE.kioskAttStaff || '').trim();
@@ -70669,29 +71155,48 @@
     const punchMs = punchDateObj.getTime();
     const last = getStaffLastPunch(staffName);
 
-    // 1. Configurable anti-double-punch debounce guard (default 120s)
-    const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 120) : 0;
+    // 1. Configurable anti-double-punch debounce guard (default 300s = 5 minutes)
+    const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 300) : 0;
     if (!opts.bypassDebounce && !opts.forceEarlyOut && punchDebounceSec > 0 && last && last.iso) {
       const prevMs = Date.parse(last.iso) || 0;
       const ageSec = Math.round((punchMs - prevMs) / 1000);
       if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
+        const ageLbl = ageSec >= 60 ? `${Math.floor(ageSec / 60)} min ago` : `${ageSec}s ago`;
         STATE.kioskLastPunch = last;
         STATE.kioskAttPin = '';
-        STATE.kioskAttPinMsg = `${staffName} already clocked ${last.direction} at ${last.time} (${ageSec}s ago). Kept ${last.time} Clock-${last.direction}.`;
-        STATE.kioskAttPinMsgCls = 'warn';
+        STATE.kioskAttPinMsg = `${staffName} already clocked ${last.direction} at ${last.time} (${ageLbl}). Kept ${last.time} Clock-${last.direction}.`;
+        STATE.kioskAttPinMsgCls = 'ok';
         KIOSK_ATT_STATE.lastScanResult = {
           ok: false,
           reason: 'debounced',
           staff: staffName,
           punch: last,
           ageSec,
+          ageText: ageLbl,
           attemptedTime: timeStr,
           shiftLabel: last.shift_label || 'Day · 08:00-16:00',
-          snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || last.snapshot || ''
+          snapshot: last.snapshot || ''
         };
-        setKioskFlashPunch({ punch: last, staff: staffName, reason: 'debounced', attemptedTime: timeStr });
-        toast(`${staffName} already clocked ${last.direction} at ${last.time} (${ageSec}s ago). Tap Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`, 'warn');
-        if (STATE.view === 'kiosks') renderApp();
+        setKioskFlashPunch({
+          punch: last,
+          staff: staffName,
+          reason: 'debounced',
+          alreadyClocked: true,
+          alreadyClockedIn: last.direction === 'IN',
+          ageSec,
+          ageText: ageLbl,
+          attemptedTime: timeStr
+        });
+        if (!opts.liveRepeatQuiet) {
+          toast(`${staffName} already clocked ${last.direction} at ${last.time} (${ageLbl}). Tap Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`, 'ok');
+        }
+        if (STATE.view === 'kiosks') {
+          if ((STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && syncKioskAttLiveUiInPlace()) {
+            // Updated in place without destroying <video id="kioskAttVideo"> (0ms black flash)
+          } else {
+            renderApp();
+          }
+        }
         return { ok: false, reason: 'debounced', punch: last, ageSec, attemptedTime: timeStr };
       }
     }
@@ -70721,13 +71226,31 @@
           staff: staffName,
           punch: last,
           ageMin: ageMin != null ? ageMin : 0,
+          ageText: minLbl,
           attemptedTime: timeStr,
           shiftLabel: last.shift_label || 'Day · 08:00-16:00',
-          snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || last.snapshot || ''
+          snapshot: last.snapshot || ''
         };
-        setKioskFlashPunch({ punch: last, staff: staffName, reason: 'already-clocked-in-recent', attemptedTime: timeStr, ageMin: ageMin != null ? ageMin : 0 });
-        toast(`${staffName} is already Clocked IN since ${last.time} (${minLbl}). Original ${last.time} Clock-IN kept.`, 'ok');
-        if (STATE.view === 'kiosks') renderApp();
+        setKioskFlashPunch({
+          punch: last,
+          staff: staffName,
+          reason: 'already-clocked-in-recent',
+          alreadyClocked: true,
+          alreadyClockedIn: true,
+          attemptedTime: timeStr,
+          ageMin: ageMin != null ? ageMin : 0,
+          ageText: minLbl
+        });
+        if (!opts.liveRepeatQuiet) {
+          toast(`${staffName} is already Clocked IN since ${last.time} (${minLbl}). Original ${last.time} Clock-IN kept.`, 'ok');
+        }
+        if (STATE.view === 'kiosks') {
+          if ((STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && syncKioskAttLiveUiInPlace()) {
+            // Updated in place without destroying <video id="kioskAttVideo"> (0ms black flash)
+          } else {
+            renderApp();
+          }
+        }
         return { ok: false, reason: 'already-clocked-in-recent', punch: last, ageMin: ageMin != null ? ageMin : 0, attemptedTime: timeStr };
       }
     }
@@ -70998,14 +71521,15 @@
 
     KIOSK_ATT_STATE.streakCount = 0;
     KIOSK_ATT_STATE.streakStaff = '';
-    if (opts.videoEl && window.Face && window.Face.snapshot) {
+    const recentGuard = checkKioskRecentPunchGuard(matchedName, opts);
+    // Only capture a new camera snapshot when recording a fresh punch (never on <5m repeat looks)
+    if (!recentGuard && opts.videoEl && window.Face && window.Face.snapshot) {
       KIOSK_ATT_STATE.lastSnap = window.Face.snapshot(opts.videoEl, 240) || '';
     }
-    // On wall-locked stations, keep camera running continuously with a 3.5s cooldown; on desktop preview, single-shot stop
     if (opts.liveVideo) {
       if (STATE.kioskLocked) {
-        KIOSK_ATT_STATE.cooldownUntil = Date.now() + 3500;
-      } else {
+        KIOSK_ATT_STATE.cooldownUntil = Date.now() + (recentGuard ? 2500 : 4500);
+      } else if (!recentGuard) {
         stopKioskAttCamera();
       }
     }
@@ -71014,12 +71538,13 @@
       staff: matchedName,
       method: 'Face ID',
       confidence: conf,
-      snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || '',
+      snapshot: opts.snapshot || (!recentGuard ? KIOSK_ATT_STATE.lastSnap : '') || '',
       bypassDebounce: !!opts.bypassDebounce,
       date: opts.date,
       time: opts.time,
       direction: opts.direction,
-      forceEarlyOut: !!opts.forceEarlyOut
+      forceEarlyOut: !!opts.forceEarlyOut,
+      liveRepeatQuiet: Boolean(opts.liveVideo && STATE.kioskLocked)
     });
     if (res.ok) {
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
@@ -71030,10 +71555,15 @@
       KIOSK_ATT_STATE.statusText = `✓ ${matchedName} is already Clocked IN since ${res.punch ? res.punch.time : ''}.`;
       KIOSK_ATT_STATE.statusCls = 'ok';
     } else {
-      KIOSK_ATT_STATE.statusText = `${matchedName} already clocked ${res.punch ? res.punch.direction : ''} at ${res.punch ? res.punch.time : ''}.`;
-      KIOSK_ATT_STATE.statusCls = 'warn';
+      const ageLbl = res.ageSec != null && res.ageSec >= 60 ? `${Math.floor(res.ageSec / 60)} min ago` : (res.ageSec != null ? `${res.ageSec}s ago` : '');
+      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} already clocked ${res.punch ? res.punch.direction : ''} at ${res.punch ? res.punch.time : ''}${ageLbl ? ' (' + ageLbl + ')' : ''}.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
     }
-    if (STATE.view === 'kiosks') renderApp();
+    const stEl = $('kioskAttCamStatus');
+    if (stEl) {
+      stEl.textContent = KIOSK_ATT_STATE.statusText;
+      stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
+    }
     return res;
   }
 
@@ -73649,40 +74179,7 @@
         ? `${ic('check_circle')} Clock ${selectedNextDir} · ${esc(selectedStaff.split(' ')[0])}`
         : `${ic('check_circle')} Clock ${selectedNextDir}`;
 
-      const wallFlashHtml = (STATE.kioskLocked && activeFlash) ? `
-        <div class="kiosk-wall-flash-banner ${activeFlash.punch.direction === 'IN' ? 'is-in' : 'is-out'}" id="kioskWallFlashBanner">
-          <div class="kwf-left">
-            <span class="badge ${activeFlash.punch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">
-              ${activeFlash.alreadyClockedIn
-                ? `${ic('check_circle')} Already Clocked IN`
-                : (activeFlash.punch.direction === 'IN' ? `${ic('clock_in')} Clocked IN` : `${ic('clock_out')} Clocked OUT`)}
-            </span>
-            <div class="kwf-info">
-              <strong>${esc(activeFlash.staff)}</strong>
-              <span class="kwf-meta">
-                <span class="mono">${activeFlash.alreadyClockedIn
-                  ? `Since ${esc(activeFlash.punch.time)}`
-                  : (activeFlash.punch.direction === 'OUT' && activeFlash.punch.in_time
-                    ? `IN ${esc(activeFlash.punch.in_time)} · OUT ${esc(activeFlash.punch.time)}`
-                    : esc(activeFlash.punch.time))}</span>
-                · ${esc(activeFlash.punch.site)}
-              </span>
-            </div>
-          </div>
-          <div class="kwf-actions">
-            ${activeFlash.alreadyClockedIn ? `
-              <button type="button" class="btn kiosk-flip-btn" data-force-early-out="${esc(activeFlash.staff)}" data-force-early-time="${esc(activeFlash.attemptedTime || '')}">
-                ${ic('clock_out')} Clock OUT Early
-              </button>
-            ` : `
-              <button type="button" class="btn kiosk-flip-btn" data-flip-punch="${esc(activeFlash.punch.id)}">
-                ${ic('swap')} Switch to ${activeFlash.punch.direction === 'IN' ? 'OUT' : 'IN'}
-              </button>
-            `}
-            <button type="button" class="btn kiosk-mini-btn" id="kioskDismissFlashBtn">Done</button>
-          </div>
-        </div>
-      ` : '';
+      const wallFlashHtml = buildKioskWallFlashBannerHtml(activeFlash);
 
       workspaceBodyHtml = `
         <div class="kiosk-att-shell ${STATE.kioskLocked ? 'is-wall-mode' : ''}" id="kioskAttendanceWorkspace">
@@ -74874,8 +75371,9 @@
         el.hidden = true;
       }
     };
-    const slot1Hub = activeInd === 'Holding & Treasury' ? 'hld_interactions' : 'raw';
-    const slot2Hub = activeInd === 'Holding & Treasury' ? 'hld_partners' : 'fleet';
+    const activeSpec = INDUSTRY_SIDEBAR_SPEC[activeInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+    const slot1Hub = (activeSpec.slots[1] && activeSpec.slots[1].hub) || 'raw';
+    const slot2Hub = (activeSpec.slots[2] && activeSpec.slots[2].hub) || 'fleet';
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
     setExceptionPill('navCountSentinels', getHubExceptionBadge('sentinels', user, k, sentinelsOpen));
     setExceptionPill('navCountRaw', getHubExceptionBadge(slot1Hub, user, k, sentinelsOpen));
@@ -74903,6 +75401,15 @@
       case 'hld_distributions': wsHtml = renderHoldingPartners('distributions'); break;
       case 'hld_loans': wsHtml = renderHoldingLoans('main'); break;
       case 'hld_assets': wsHtml = renderHoldingLoans('assets'); break;
+      case 'hsp_revenue': wsHtml = renderHospitalityRevenue('main'); break;
+      case 'hsp_pos': wsHtml = renderHospitalityRevenue('pos'); break;
+      case 'hsp_vat': wsHtml = renderHospitalityRevenue('vat'); break;
+      case 'hsp_memberships': wsHtml = renderHospitalityMemberships('main'); break;
+      case 'hsp_partners': wsHtml = renderHospitalityMemberships('partners'); break;
+      case 'hsp_stock': wsHtml = renderHospitalityStock('main'); break;
+      case 'hsp_menu': wsHtml = renderHospitalityStock('menu'); break;
+      case 'hsp_energy': wsHtml = renderHospitalityEnergy('main'); break;
+      case 'hsp_maint': wsHtml = renderHospitalityEnergy('maint'); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
@@ -77367,15 +77874,11 @@
         renderApp();
       });
     });
-    container.querySelectorAll('[data-jump-co], [data-switch-comm-co]').forEach(row => {
+    container.querySelectorAll('[data-jump-co], [data-switch-comm-co], [data-switch-co]').forEach(row => {
       const goCo = () => {
-        const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co');
+        const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co') || row.getAttribute('data-switch-co');
         if (getAllowedCompanyKeys(activeUserRow).includes(targetCo)) {
-          STATE.company = targetCo;
-          STATE.shown = {};
-          STATE.pbiTablePage = {};
-          saveFilterState();
-          renderApp();
+          selectCompanyScope(targetCo, true);
         } else {
           toast('Your seat is not scoped to that entity', 'err');
         }
@@ -78315,7 +78818,7 @@
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
       const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'universal', 'system', 'master']);
-      const firstHub = HUB_CATALOG.find(h => grps.includes(h.group) && canViewHub(h.id, u));
+      const firstHub = HUB_CATALOG.find(h => grps.includes(h.group) && isHubInActiveIndustry(h) && canViewHub(h.id, u));
       if (firstHub) clickHub(firstHub.id);
       else setView(dv);
     }));
@@ -79542,6 +80045,7 @@
   window.__applyPublicDemoSanitization = applyPublicDemoSanitization;
   window.__restorePublicDemoSanitization = restorePublicDemoSanitization;
   window.MFG_HOLDING = { computeIntercompanyInteractions, getActiveIndustry, syncIndustrySidebarDom, selectCompanyScope, INDUSTRY_SIDEBAR_SPEC };
+  window.MFG_HOSPITALITY = { computeHospitalityOperations, getActiveIndustry, syncIndustrySidebarDom, selectCompanyScope, INDUSTRY_SIDEBAR_SPEC };
 
   let _seedHydrationPromise = null;
   function hydrateSeedData() {
