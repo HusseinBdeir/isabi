@@ -72862,7 +72862,13 @@
     toast(STATE.kioskLocked
       ? `${staffName} clocked ${direction} at ${timeStr}`
       : `${staffName} clocked ${direction} at ${timeStr} (${punch.method})${otSummaryTxt}`, 'ok');
-    if (STATE.view === 'kiosks') renderApp();
+    if (STATE.view === 'kiosks') {
+      if ((STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && syncKioskAttLiveUiInPlace()) {
+        // Updated in place without destroying <video id="kioskAttVideo">
+      } else {
+        renderApp();
+      }
+    }
     syncWithCloud(true);
     return { ok: true, punch, attRec };
   }
@@ -72894,64 +72900,176 @@
     setKioskFlashPunch({ punch: p, staff: p.staff, reason: 'flipped', attemptedTime: p.time });
     const attRec = syncAttendanceRecordFromPunch(p);
     toast(`Switched ${p.staff} punch to ${p.direction} (${p.time})`, 'ok');
-    if (STATE.view === 'kiosks') renderApp();
+    if (STATE.view === 'kiosks') {
+      if ((STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && syncKioskAttLiveUiInPlace()) {
+        // Updated in place without destroying <video id="kioskAttVideo">
+      } else {
+        renderApp();
+      }
+    }
     syncWithCloud(true);
     return { ok: true, punch: p, attRec };
   }
 
   function stopKioskAttCamera() {
     KIOSK_ATT_STATE.camActive = false;
+    KIOSK_ATT_STATE.camStarting = false;
     KIOSK_ATT_STATE.cooldownUntil = 0;
     clearTimeout(KIOSK_ATT_STATE.loopTimer);
     KIOSK_ATT_STATE.loopTimer = null;
+    clearTimeout(KIOSK_ATT_STATE.ensureTimer);
+    KIOSK_ATT_STATE.ensureTimer = null;
+    clearTimeout(KIOSK_ATT_STATE.watchdogTimer);
+    KIOSK_ATT_STATE.watchdogTimer = null;
     KIOSK_ATT_STATE.busy = false;
     KIOSK_ATT_STATE.streakStaff = '';
     KIOSK_ATT_STATE.streakCount = 0;
+    KIOSK_ATT_STATE.unknownStreak = 0;
+    KIOSK_ATT_STATE.lastVideoTime = -1;
+    KIOSK_ATT_STATE.lastTimeMoveAt = 0;
     const v = $('kioskAttVideo');
     if (v && v.srcObject) {
       try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
       v.srcObject = null;
     }
+    if (FACE_STATE.stream) {
+      try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      FACE_STATE.stream = null;
+    }
   }
 
-  async function startKioskAttCamera() {
+  function scheduleKioskAttCameraWatchdogRestart(reason = 'watchdog') {
+    if (typeof window === 'undefined') return false;
+    if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return false;
+    if (KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) return false;
+    if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) return false;
+    KIOSK_ATT_STATE.lastWatchdogReason = String(reason || 'watchdog');
+    if (KIOSK_ATT_STATE.camStarting || KIOSK_ATT_STATE.watchdogTimer) return true;
+    const elapsed = Date.now() - (KIOSK_ATT_STATE.lastRestartAt || 0);
+    const delayMs = Math.max(250, 2200 - elapsed);
+    KIOSK_ATT_STATE.watchdogTimer = setTimeout(() => {
+      KIOSK_ATT_STATE.watchdogTimer = null;
+      if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+        KIOSK_ATT_STATE.lastRestartAt = Date.now();
+        KIOSK_ATT_STATE.restartCount = (KIOSK_ATT_STATE.restartCount || 0) + 1;
+        if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+          startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
+        }
+      }
+    }, delayMs);
+    return true;
+  }
+
+  async function startKioskAttCamera(opts = {}) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      KIOSK_ATT_STATE.camStarting = false;
       KIOSK_ATT_STATE.statusText = 'Camera unavailable on this browser.';
       KIOSK_ATT_STATE.statusCls = 'warn';
-      if (STATE.view === 'kiosks') renderApp();
+      if (STATE.view === 'kiosks') {
+        if (!syncKioskAttLiveUiInPlace()) renderApp();
+      }
       return false;
     }
+    if (KIOSK_ATT_STATE.camStarting) return false;
+    if (!opts.forceRestart && KIOSK_ATT_STATE.camActive && streamAlive()) {
+      const existingVid = $('kioskAttVideo');
+      if (existingVid) {
+        if (existingVid.srcObject !== FACE_STATE.stream) existingVid.srcObject = FACE_STATE.stream;
+        existingVid.play().catch(() => {});
+      }
+      syncKioskAttLiveUiInPlace();
+      if (!KIOSK_ATT_STATE.loopTimer) {
+        KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 35);
+      }
+      return true;
+    }
+    KIOSK_ATT_STATE.camStarting = true;
+    clearTimeout(KIOSK_ATT_STATE.ensureTimer);
+    KIOSK_ATT_STATE.ensureTimer = null;
+    clearTimeout(KIOSK_ATT_STATE.watchdogTimer);
+    KIOSK_ATT_STATE.watchdogTimer = null;
+    clearTimeout(KIOSK_ATT_STATE.loopTimer);
+    KIOSK_ATT_STATE.loopTimer = null;
     try {
       stopFaceCamera();
-      KIOSK_ATT_STATE.lastScanResult = null;
+      const prevVid = $('kioskAttVideo');
+      if (prevVid && prevVid.srcObject) {
+        try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+      }
+      if (!opts.silentWatchdog) {
+        KIOSK_ATT_STATE.lastScanResult = null;
+      }
       KIOSK_ATT_STATE.camPausedByUser = false;
       const modelsP = ensureFaceModelsLoaded();
       const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640, max: 960 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: 15, max: 24 }
+        },
+        audio: false
+      }).catch(() => navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
+      }));
+      if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) {
+        try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+        KIOSK_ATT_STATE.camStarting = false;
+        return false;
+      }
+      if (window.Face && typeof window.Face.trackStream === 'function') {
+        window.Face.trackStream(stream);
+      }
+      stream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+            scheduleKioskAttCameraWatchdogRestart('track-ended');
+          }
+        });
       });
       FACE_STATE.stream = stream;
       KIOSK_ATT_STATE.camActive = true;
+      KIOSK_ATT_STATE.camStarting = false;
+      KIOSK_ATT_STATE.busy = false;
       KIOSK_ATT_STATE.missedFrames = 0;
+      KIOSK_ATT_STATE.unknownStreak = 0;
+      KIOSK_ATT_STATE.lastVideoTime = -1;
+      KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
         ? 'Look inside the oval guide to clock in or out'
         : 'Camera live: look straight ahead inside the oval guide';
       KIOSK_ATT_STATE.statusCls = 'ok';
-      if (STATE.view === 'kiosks') renderApp();
-      const v = $('kioskAttVideo');
+      let v = $('kioskAttVideo');
+      if (STATE.view === 'kiosks') {
+        if (v && (STATE.kioskLocked || syncKioskAttLiveUiInPlace())) {
+          syncKioskAttLiveUiInPlace();
+        } else {
+          renderApp();
+          v = $('kioskAttVideo');
+        }
+      }
       if (v) {
-        v.srcObject = stream;
+        if (v.srcObject !== stream) v.srcObject = stream;
         await v.play().catch(() => {});
       }
       await modelsP;
       clearTimeout(KIOSK_ATT_STATE.loopTimer);
-      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 20);
+      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 40);
       return true;
     } catch (err) {
       KIOSK_ATT_STATE.camActive = false;
-      KIOSK_ATT_STATE.statusText = 'Camera permission denied or busy. Check camera access in Station Admin.';
+      KIOSK_ATT_STATE.camStarting = false;
+      KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+        ? 'Reconnecting camera...'
+        : 'Camera permission denied or busy. Check camera access in Station Admin.';
       KIOSK_ATT_STATE.statusCls = 'warn';
-      if (STATE.view === 'kiosks') renderApp();
+      if (STATE.view === 'kiosks') {
+        if (!syncKioskAttLiveUiInPlace()) renderApp();
+      }
+      if (STATE.kioskLocked && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+        scheduleKioskAttCameraWatchdogRestart('start-error');
+      }
       return false;
     }
   }
@@ -72959,6 +73077,7 @@
   function handleKioskAttDescriptor(det, opts = {}) {
     if (!det || !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
+      KIOSK_ATT_STATE.unknownStreak = 0;
       if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
         KIOSK_ATT_STATE.streakStaff = '';
         KIOSK_ATT_STATE.streakCount = 0;
@@ -72983,10 +73102,29 @@
         KIOSK_ATT_STATE.streakStaff = '';
         KIOSK_ATT_STATE.streakCount = 0;
       }
+      // On live video without opts.instant, ignore low-score background/ceiling-light detections (detScore < 0.42 or bestDist > 0.65)
+      // and require 2 consecutive unknown face frames before showing the amber "Face not recognized" banner.
+      if (opts.liveVideo && !opts.instant) {
+        const detScore = Number(det.score || det.detScore || 0);
+        const bestDist = (m && typeof m.bestDist === 'number') ? m.bestDist : 9;
+        if (detScore < 0.42 || bestDist > 0.65) {
+          KIOSK_ATT_STATE.unknownStreak = 0;
+          KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
+          KIOSK_ATT_STATE.statusCls = '';
+          return { ok: false, reason: 'background-ignored' };
+        }
+        KIOSK_ATT_STATE.unknownStreak = (KIOSK_ATT_STATE.unknownStreak || 0) + 1;
+        if (KIOSK_ATT_STATE.unknownStreak < 2) {
+          KIOSK_ATT_STATE.statusText = 'Look straight ahead inside the oval guide...';
+          KIOSK_ATT_STATE.statusCls = '';
+          return { ok: false, reason: dec.status };
+        }
+      }
       KIOSK_ATT_STATE.statusText = 'Face not recognized. Look straight ahead inside the oval guide.';
       KIOSK_ATT_STATE.statusCls = 'warn';
       return { ok: false, reason: dec.status };
     }
+    KIOSK_ATT_STATE.unknownStreak = 0;
 
     const matchedName = dec.best.name;
     if (KIOSK_ATT_STATE.streakStaff === matchedName) {
@@ -73053,9 +73191,30 @@
   async function kioskAttFaceTick() {
     if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || !KIOSK_ATT_STATE.camActive) return;
     const v = $('kioskAttVideo');
-    if (v && v.srcObject !== FACE_STATE.stream && streamAlive()) {
+    const alive = streamAlive();
+    if (!alive || !v || v.ended) {
+      scheduleKioskAttCameraWatchdogRestart(!alive ? 'stream-dead' : 'video-ended');
+      return;
+    }
+    if (v.srcObject !== FACE_STATE.stream) {
       v.srcObject = FACE_STATE.stream;
       v.play().catch(() => {});
+    } else if (v.paused) {
+      v.play().catch(() => {});
+    }
+    const curTime = typeof v.currentTime === 'number' ? v.currentTime : -1;
+    const frameAdvanced = curTime >= 0 && curTime !== KIOSK_ATT_STATE.lastVideoTime;
+    if (frameAdvanced) {
+      KIOSK_ATT_STATE.lastVideoTime = curTime;
+      KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
+    } else if (KIOSK_ATT_STATE.lastTimeMoveAt > 0 && document.visibilityState === 'visible') {
+      const stuckMs = Date.now() - KIOSK_ATT_STATE.lastTimeMoveAt;
+      if (stuckMs > 1800 && stuckMs <= 3600) {
+        v.play().catch(() => {});
+      } else if (stuckMs > 3600) {
+        scheduleKioskAttCameraWatchdogRestart('frame-frozen');
+        return;
+      }
     }
     if (KIOSK_ATT_STATE.cooldownUntil > Date.now()) {
       KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 180);
@@ -73071,10 +73230,13 @@
         stEl.className = 'kiosk-att-status ok';
       }
     }
-    if (v && v.readyState >= 2 && !KIOSK_ATT_STATE.busy && window.Face) {
+    if (frameAdvanced && v.readyState >= 2 && !KIOSK_ATT_STATE.busy && window.Face) {
       KIOSK_ATT_STATE.busy = true;
       try {
-        const det = await window.Face.detectOne(v, false);
+        const det = await Promise.race([
+          window.Face.detectOne(v, false),
+          new Promise(resolve => setTimeout(() => resolve(null), 2400))
+        ]);
         await handleKioskAttDescriptor(det, { liveVideo: true, videoEl: v });
         const stEl = $('kioskAttCamStatus');
         if (stEl) {
@@ -73085,7 +73247,7 @@
       KIOSK_ATT_STATE.busy = false;
     }
     if (KIOSK_ATT_STATE.camActive && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance') {
-      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 45);
+      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 85);
     }
   }
 
@@ -75695,7 +75857,7 @@
             <div class="panel-card kiosk-att-cam-card">
               <div class="panel-head">
                 <div class="panel-title"><span>${ic('camera')} Face ID Clock-In</span></div>
-                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : (STATE.kioskLocked ? 'Tap to Start' : `${fmtNum(enrolledFaceCount)} Face ID Ready`)}</span>
+                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}" id="kioskAttLiveBadge">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : (STATE.kioskLocked ? 'Tap to Start' : `${fmtNum(enrolledFaceCount)} Face ID Ready`)}</span>
               </div>
               <div class="kiosk-att-cam-body">
                 <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'}" id="kioskAttViewport">
@@ -76505,6 +76667,20 @@
         if (!KIOSK_ATT_STATE.loopTimer) {
           KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 35);
         }
+      }
+      const vpEl = $('kioskAttViewport');
+      if (vpEl) {
+        vpEl.addEventListener('click', e => {
+          if (e.target && e.target.closest && e.target.closest('button')) return;
+          if (!STATE.kioskLocked || KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ATT_STATE.camPausedByUser) return;
+          const kv = $('kioskAttVideo');
+          const stalled = KIOSK_ATT_STATE.lastTimeMoveAt > 0 && (Date.now() - KIOSK_ATT_STATE.lastTimeMoveAt) > 2000;
+          if (!KIOSK_ATT_STATE.camActive || !streamAlive() || !kv || kv.ended || stalled) {
+            startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
+          } else if (kv.paused) {
+            kv.play().catch(() => {});
+          }
+        });
       }
       const siteSel = $('kioskAttSiteSelect');
       if (siteSel) {
@@ -80796,12 +80972,32 @@
     } else {
       syncWithCloud(false);
     }
+    const resumeActiveCamerasIfNeeded = () => {
+      if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
+      if (!STATE.authed && !FACE_STATE.authCamStoppedByUser && !streamAlive()) {
+        startAuthFaceScanner(false);
+        return;
+      }
+      if (STATE.authed && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+        const kv = $('kioskAttVideo');
+        const stalled = KIOSK_ATT_STATE.lastTimeMoveAt > 0 && (Date.now() - KIOSK_ATT_STATE.lastTimeMoveAt) > 3000;
+        if (!streamAlive() || !kv || kv.ended || stalled) {
+          scheduleKioskAttCameraWatchdogRestart('visibility-resume');
+        } else {
+          if (kv.paused) kv.play().catch(() => {});
+          if (!KIOSK_ATT_STATE.loopTimer) KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 45);
+        }
+      }
+    };
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         syncWithCloud(false);
-        if (!STATE.authed && !FACE_STATE.authCamStoppedByUser && !streamAlive() && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
-          startAuthFaceScanner(false);
-        }
+        resumeActiveCamerasIfNeeded();
+      }
+    });
+    window.addEventListener('focus', () => {
+      if (document.visibilityState === 'visible') {
+        resumeActiveCamerasIfNeeded();
       }
     });
     window.addEventListener('online', () => { toast('Back online — syncing'); syncWithCloud(true); });
@@ -81039,7 +81235,27 @@
         saveLocalAuthAndRecords();
         if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
       },
-      feedKioskFaceDescriptor: (vec, opts = {}) => handleKioskAttDescriptor({ descriptor: vec, detScore: 0.96, faceSizeFrac: 0.26, multiple: false }, opts),
+      feedKioskFaceDescriptor: (vec, opts = {}) => handleKioskAttDescriptor({
+        descriptor: vec,
+        score: opts.detScore != null ? Number(opts.detScore) : 0.96,
+        detScore: opts.detScore != null ? Number(opts.detScore) : 0.96,
+        faceSizeFrac: opts.faceSizeFrac != null ? Number(opts.faceSizeFrac) : 0.26,
+        multiple: false
+      }, opts),
+      getKioskAttCameraState: () => ({
+        camActive: KIOSK_ATT_STATE.camActive,
+        camStarting: KIOSK_ATT_STATE.camStarting,
+        camPausedByUser: KIOSK_ATT_STATE.camPausedByUser,
+        lastVideoTime: KIOSK_ATT_STATE.lastVideoTime,
+        lastTimeMoveAt: KIOSK_ATT_STATE.lastTimeMoveAt,
+        lastRestartAt: KIOSK_ATT_STATE.lastRestartAt,
+        restartCount: KIOSK_ATT_STATE.restartCount,
+        lastWatchdogReason: KIOSK_ATT_STATE.lastWatchdogReason,
+        unknownStreak: KIOSK_ATT_STATE.unknownStreak,
+        statusText: KIOSK_ATT_STATE.statusText,
+        statusCls: KIOSK_ATT_STATE.statusCls
+      }),
+      triggerCameraWatchdogRestart: reason => scheduleKioskAttCameraWatchdogRestart(reason || 'manual-test'),
       feedAdminFaceDescriptor: (vec, opts = {}) => handleKioskAdminFaceDescriptor({ descriptor: vec, detScore: 0.96, faceSizeFrac: 0.26, multiple: false }, opts),
       getDefaultAdminFaceDescriptor: () => (DEFAULT_FACE_SEEDS['husseinbdeir@bhfirms.com'] && DEFAULT_FACE_SEEDS['husseinbdeir@bhfirms.com'].face_samples && DEFAULT_FACE_SEEDS['husseinbdeir@bhfirms.com'].face_samples[0]) ? DEFAULT_FACE_SEEDS['husseinbdeir@bhfirms.com'].face_samples[0].slice() : [],
       setKioskLock: (locked, authArg = null) => setKioskLockMode(locked, authArg),

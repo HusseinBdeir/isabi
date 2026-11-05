@@ -133,6 +133,16 @@ const Face = (() => {
 
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
+    // If booting directly into a provisioned Kiosk station (?kiosk=attendance|sales|raw|fuel) with a saved station seat,
+    // warm up the neural models & WebGL shaders immediately without opening #authFaceVideo first (prevents back-to-back camera HAL churn).
+    try {
+      const sp = new URLSearchParams(window.location.search || "");
+      const kParam = String(sp.get("kiosk") || "").toLowerCase();
+      if ((kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel") && localStorage.getItem("isabi_mfg_kiosk_station_seat")) {
+        load().catch(() => {});
+        return;
+      }
+    } catch (_) {}
     // Request webcam stream AND start neural model loading in parallel immediately when #authGate is visible
     // so both camera hardware and WebGL shaders are hot at the same time (zero sequential wait).
     const gate = document.getElementById("authGate");
@@ -167,10 +177,11 @@ const Face = (() => {
             if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
             const hint = document.getElementById("authFaceHint");
             if (hint && (!hint.textContent || /Loading Face ID|Starting|Preparing/i.test(hint.textContent))) {
-              hint.textContent = ready
+              const appScannerReady = Boolean(ready && window.MFG_FACE_TEST);
+              hint.textContent = appScannerReady
                 ? "Look at camera for automatic Face ID"
                 : "Preparing Face ID…";
-              hint.className = ready ? "auth-face-hint ok" : "auth-face-hint";
+              hint.className = appScannerReady ? "auth-face-hint ok" : "auth-face-hint";
             }
           };
           if (vNow.readyState >= 2 && vNow.videoWidth > 0) revealLiveVideo();
@@ -279,7 +290,7 @@ const Face = (() => {
       if (typeof document !== "undefined") {
         const vp = document.getElementById("authCamViewport");
         const hint = document.getElementById("authFaceHint");
-        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
+        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "") && window.MFG_FACE_TEST) {
           hint.textContent = "Look at camera for automatic Face ID";
           hint.className = "auth-face-hint ok";
         }
@@ -413,6 +424,7 @@ const Face = (() => {
   let boostCanvas = null;
   let cropCanvas = null;
   let preferBoostPass = false;
+  let liveMissCount = 0;
   async function detectOne(src, allowCropFallback = false) {
     if (!ready) return null;
     const isLiveVideo = !!(src && src.tagName === "VIDEO");
@@ -430,38 +442,53 @@ const Face = (() => {
       bcv._offsetX = frame._offsetX || 0;
       bcv._offsetY = frame._offsetY || 0;
       const bctx = bcv.getContext("2d");
-      bctx.filter = "brightness(1.40) contrast(1.20)";
+      bctx.filter = "brightness(1.38) contrast(1.18)";
       bctx.drawImage(frame, 0, 0, bw, bh);
       bctx.filter = "none";
       return bcv;
     };
 
     if (isLiveVideo && !allowCropFallback) {
-      // Fast live-video path (~15-25ms): TinyFaceDetector(256) with sticky backlit shadow-lift memory
-      // Both passes share inputSize: 256 so WebGL reuses the exact same pre-compiled shader pipeline (0ms recompile).
-      const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.20 });
-      const boostTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.18 });
+      // Fast live-video path (~18-25ms): single-pass TinyFaceDetector(256) on normal frames.
+      // The backlit shadow-lift pass (buildBoostFrame + second neural pass) is throttled to run
+      // only every 6th missed frame so wall-mounted tablets never suffer GPU/ISP buffer starvation.
+      const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.24 });
+      const boostTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.22 });
       if (preferBoostPass) {
         try {
           const bcv = buildBoostFrame();
           const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-          if (rb) return pack(rb, bcv, false);
-        } catch (_) {}
-        preferBoostPass = false;
-        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        if (r) return pack(r, frame, false);
-        return null;
-      } else {
-        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        if (r) return pack(r, frame, false);
-        try {
-          const bcv = buildBoostFrame();
-          const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
           if (rb) {
-            preferBoostPass = true;
+            liveMissCount = 0;
             return pack(rb, bcv, false);
           }
         } catch (_) {}
+        preferBoostPass = false;
+        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        if (r) {
+          liveMissCount = 0;
+          return pack(r, frame, false);
+        }
+        liveMissCount += 1;
+        return null;
+      } else {
+        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        if (r) {
+          liveMissCount = 0;
+          return pack(r, frame, false);
+        }
+        liveMissCount += 1;
+        if ((liveMissCount % 6) === 0) {
+          try {
+            const bcv = buildBoostFrame();
+            const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+            if (rb) {
+              preferBoostPass = true;
+              liveMissCount = 0;
+              return pack(rb, bcv, false);
+            }
+          } catch (_) {}
+        }
         return null;
       }
     }
