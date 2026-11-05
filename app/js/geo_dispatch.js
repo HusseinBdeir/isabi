@@ -4026,7 +4026,7 @@
 
           if (previewLat != null && previewLng != null && Number.isFinite(previewLat) && Number.isFinite(previewLng)) {
             const inclTransInp = hostEl.querySelector('#f_includes_transport');
-            const allowOptReg = !isCust && Boolean(inclTransInp && inclTransInp.value === '1');
+            const allowOptReg = Boolean(inclTransInp && inclTransInp.value === '1');
             const check = validateSiteInsideRegion({
               siteName: siteInp ? siteInp.value : '',
               regionName: selRegName,
