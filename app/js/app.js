@@ -44249,8 +44249,14 @@
           setHint('hint_site_jv_company', `${jvCo} holds the remaining ${round2(100 - jvS)}% share`, '');
         }
         const mTitle = $('modalTitle');
+        const editingSiteRec = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord : null;
         if (mTitle && !STATE.editingPendingExpenseId) {
-          mTitle.textContent = isCust ? 'New Customer Delivery Site (All BUs)' : 'New Supplier / Quarry Site (All BUs)';
+          if (editingSiteRec) {
+            const sLbl = String(val('f_site') || (editingSiteRec.orig && editingSiteRec.orig.name) || '').trim();
+            mTitle.textContent = `${isCust ? 'Edit Customer Delivery Site' : 'Edit Supplier / Quarry Site'}${sLbl ? ` · ${sLbl}` : ''}`;
+          } else {
+            mTitle.textContent = isCust ? 'New Customer Delivery Site (All BUs)' : 'New Supplier / Quarry Site (All BUs)';
+          }
         }
         const siteInp = $('f_site');
         const regInp = $('f_region');
@@ -44335,15 +44341,21 @@
             }
           }
         }
+        const clearPinBtn = $('modalClearSitePinBtn');
+        if (clearPinBtn) {
+          clearPinBtn.hidden = !(val('f_lat') !== '' && val('f_lng') !== '');
+        }
         const mapCanvas = host ? host.querySelector('#modalSiteMapCanvas') : $('modalSiteMapCanvas');
         if (mapCanvas && typeof mapCanvas._refreshSiteOverlay === 'function') {
           mapCanvas._refreshSiteOverlay();
         }
-        syncUniversalMainDupHint('f_site', 'sites', isCust ? 'Customer Delivery Site' : 'Supplier / Quarry Site', { siteCategory: cat });
+        const siteEditId = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord.id : '';
+        syncUniversalMainDupHint('f_site', 'sites', isCust ? 'Customer Delivery Site' : 'Supplier / Quarry Site', { siteCategory: cat, excludeId: siteEditId });
         return {};
       }
       if (STATE.modalForm === 'region') {
-        syncUniversalMainDupHint('f_region', 'regions', 'Region');
+        const regEditId = (STATE.editingRecord && STATE.editingRecord.crKey === 'regions') ? STATE.editingRecord.id : '';
+        syncUniversalMainDupHint('f_region', 'regions', 'Region', { excludeId: regEditId });
         return {};
       }
       if (STATE.modalForm === 'currency') {
@@ -50274,6 +50286,14 @@
       }
       let siteLat = val('f_lat') !== '' ? num('f_lat') : null;
       let siteLng = val('f_lng') !== '' ? num('f_lng') : null;
+      const pinClearedInEdit = Boolean(
+        editCtx
+        && editCtx.crKey === 'sites'
+        && siteLat == null
+        && siteLng == null
+        && editCtx.orig
+        && ((editCtx.orig.latitude != null && editCtx.orig.latitude !== '') || (editCtx.orig.longitude != null && editCtx.orig.longitude !== ''))
+      );
       let siteReg = val('f_region');
       if (!siteReg && siteLat != null && siteLng != null && window.MFG_GEO && typeof window.MFG_GEO.findContainingRegion === 'function') {
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
@@ -50297,7 +50317,7 @@
           addErr(geoCheck.field || 'f_region', geoCheck.reason);
         } else {
           siteReg = geoCheck.region || siteReg || '';
-          if ((siteLat == null || siteLng == null) && geoCheck.lat != null && geoCheck.lng != null) {
+          if (!pinClearedInEdit && (siteLat == null || siteLng == null) && geoCheck.lat != null && geoCheck.lng != null) {
             siteLat = geoCheck.lat;
             siteLng = geoCheck.lng;
           }
@@ -50322,6 +50342,8 @@
         name: nm,
         site_category: siteCat,
         region: siteReg || '',
+        geo_zone: siteReg || '',
+        _pinCleared: pinClearedInEdit,
         includes_transport: inclTrans,
         haulage_mode: inclTrans ? 'supplier_delivered' : 'separate',
         supplier: siteCat === 'supplier' ? val('f_supplier') : '',
@@ -50490,10 +50512,11 @@
     } else if (f === 'region') {
       crKey = 'regions';
       const regNm = val('f_region') || val('f_map_region_search');
+      const regExclId = (editCtx && editCtx.crKey === 'regions') ? editCtx.id : '';
       if (!regNm) addErr('f_region', 'Region / Zone Name is required.');
       else {
-        const dup = findUniversalDuplicate('regions', regNm);
-        if (dup) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
+        const dup = findUniversalDuplicate('regions', regNm, { excludeId: regExclId });
+        if (dup && !isSelfEditingRow(dup, 'regions')) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
       }
       const zType = val('f_zone_type') || 'boundary';
       const zRad = val('f_radius_km') !== '' ? num('f_radius_km') : 1.5;
@@ -51925,8 +51948,22 @@
           extraApiPosts.push(['loans', Object.assign({}, l)]);
         });
       }
-      if (crKey === 'sites' && window.MFG_GEO && record.latitude != null && record.longitude != null) {
-        window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+      if (crKey === 'sites' && window.MFG_GEO) {
+        if (isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
+          const origCat = resolveSiteCategory(editCtx.orig);
+          const nameChanged = norm(editCtx.orig.name) !== norm(record.name);
+          const catChanged = origCat !== record.site_category;
+          const pinRemoved = record.latitude == null || record.longitude == null;
+          if (nameChanged || catChanged || pinRemoved) {
+            window.MFG_GEO.clearLocationPin({ name: editCtx.orig.name, siteCategory: origCat, excludeId: record.id }, SEED);
+          }
+          if (pinRemoved && !nameChanged) {
+            window.MFG_GEO.clearLocationPin({ name: record.name, siteCategory: record.site_category, excludeId: record.id }, SEED);
+          }
+        }
+        if (record.latitude != null && record.longitude != null) {
+          window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+        }
       }
       if (crKey === 'sites' && record.is_jv) {
         syncSiteJvPartnershipRecords(record, extraApiPosts);
@@ -52548,7 +52585,7 @@
         printThermalBtn.onclick = null;
       }
     }
-    if (tabsWrap) tabsWrap.hidden = Boolean(pendingTargetRow);
+    if (tabsWrap) tabsWrap.hidden = Boolean(pendingTargetRow || (editTargetRow && (form === 'site' || form === 'region')));
     const tabPermCheck = fId => (editTargetRow && fId === form) ? true : canEnterForm(fId);
     if (tabsWrap && window.MFG_FORMS) {
       const prevGroupsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-groups') : null;
@@ -52986,8 +53023,6 @@
     'items',
     'product_types',
     'uoms',
-    'sites',
-    'regions',
     'equipment',
     'company_equipment',
     'drivers',
@@ -53686,12 +53721,12 @@
       setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
       setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
     } else if (form === 'site') {
-      const sCat = siteRecordCategory(row);
+      const sCat = resolveSiteCategory(row);
       const isJvS = sCat === 'supplier' && Boolean(row.is_jv || row.jv);
       const inclTrS = sCat === 'supplier' && !isJvS && isSupplierDeliveredSite(row);
       setModalControlVal('f_site_category', sCat);
       setModalControlVal('f_includes_transport', inclTrS ? '1' : '0');
-      setModalControlVal('f_region', row.region || '');
+      setModalControlVal('f_region', row.region || row.geo_zone || '');
       if ($('f_region')) $('f_region').dataset.autoFromPlace = '0';
       setModalControlVal('f_site', row.name || row.site || '');
       setModalControlVal('f_supplier', row.supplier || '');
@@ -53700,8 +53735,25 @@
       setModalControlVal('f_jv_partner', row.jv_partner || '');
       setModalControlVal('f_jv_share', row.jv_share != null && Number(row.jv_share) > 0 ? row.jv_share : 50);
       if (row.jv_company && $('f_jv_company')) setModalControlVal('f_jv_company', row.jv_company);
-      if (row.latitude != null && row.latitude !== '') setModalControlVal('f_lat', row.latitude);
-      if (row.longitude != null && row.longitude !== '') setModalControlVal('f_lng', row.longitude);
+      setModalControlVal('f_lat', row.latitude != null && row.latitude !== '' ? row.latitude : '');
+      setModalControlVal('f_lng', row.longitude != null && row.longitude !== '' ? row.longitude : '');
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'region') {
+      const zType = row.zone_type || (row.radius_km != null && Number(row.radius_km) > 0 ? 'circle' : 'boundary');
+      setModalControlVal('f_zone_type', zType);
+      setModalControlVal('f_region', row.name || row.region || '');
+      if ($('f_map_region_search')) {
+        setModalControlVal('f_map_region_search', zType === 'boundary' ? (row.name || row.region || '') : '');
+      }
+      setModalControlVal('f_corridor', row.corridor || '');
+      if ($('f_corridor_display')) setModalControlVal('f_corridor_display', row.corridor || '');
+      if (row.radius_km != null && row.radius_km !== '') setModalControlVal('f_radius_km', row.radius_km);
+      if (row.distance_km != null && row.distance_km !== '') setModalControlVal('f_distance_km', row.distance_km);
+      setModalControlVal('f_auto_code', row.code || '');
+      setModalControlVal('f_center_lat', row.center_lat != null && row.center_lat !== '' ? row.center_lat : '');
+      setModalControlVal('f_center_lng', row.center_lng != null && row.center_lng !== '' ? row.center_lng : '');
+      setModalControlVal('f_zone_geojson', row.zone_geojson ? (typeof row.zone_geojson === 'string' ? row.zone_geojson : JSON.stringify(row.zone_geojson)) : '');
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     }
 
     // Sync FORM_UI.last* trackers to hydrated values so initial recalcForm() never overwrites saved values with defaults
@@ -53735,6 +53787,17 @@
     } finally {
       FORM_UI.hydrating = false;
     }
+    if (form === 'site') {
+      const siteMapEl = $('modalSiteMapCanvas');
+      if (siteMapEl && typeof siteMapEl._refreshSiteOverlay === 'function') {
+        siteMapEl._refreshSiteOverlay({ initialOpen: true });
+      }
+    } else if (form === 'region') {
+      const regMapEl = $('modalRegionMapCanvas');
+      if (regMapEl && typeof regMapEl._hydrateRegionOverlay === 'function') {
+        regMapEl._hydrateRegionOverlay();
+      }
+    }
     if (modalForm) {
       modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
         el.dataset.initVal = String(el.value ?? '');
@@ -53755,6 +53818,8 @@
       case 'recurring_expenses': return 'recurringexpense';
       case 'warehouse_movements': return 'warehousestock';
       case 'items': return 'item';
+      case 'sites': return 'site';
+      case 'regions': return 'region';
       case 'staff_members': return 'staff';
       case 'staff_roles': return 'staffrole';
       case 'staff_assignments': return 'staffassignment';
@@ -53795,6 +53860,9 @@
 
   function shouldOpenEntryFormOnRowClick(crKey, row, id, trEl) {
     if (!crKey || !row || !row.id) return false;
+    if (crKey === 'sites' || crKey === 'regions') {
+      return Boolean(trEl && typeof trEl.closest === 'function' && trEl.closest('#sitesRegPanel, #regionsRegPanel'));
+    }
     if (INSPECTOR_ONLY_CR_KEYS.has(crKey)) return false;
     if (STATE.view === 'pbi' || STATE.view === 'dashboards' || STATE.view === 'sentinels' || STATE.view === 'tables') return false;
     if (trEl && typeof trEl.closest === 'function') {
@@ -54189,11 +54257,12 @@
         ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
         : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Ex-Quarry (Separate Haulage)');
       const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
+      const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
       return {
         tone: 'info',
         text: isCustSite
-          ? `Customer Delivery Site: ${row.name} (${row.region || 'Lebanon'})  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
-          : `Supplier / Quarry Site: ${row.name} (${regTxt})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  Supply Basis: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+          ? `Customer Delivery Site: ${row.name}${regPart}  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+          : `Supplier / Quarry Site: ${row.name}${regPart}  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  Supply Basis: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
       };
     }
     if (key === 'products') {
@@ -71834,6 +71903,7 @@
         STATE,
         rerenderWorkspace: () => renderApp(),
         openInspector: (k, id) => showRecordInspector(k, id),
+        editRecord: (k, id) => openEntryModalForRecord(k, id),
         postRecordToLocalApi,
         toast,
         uid,
@@ -72227,7 +72297,7 @@
       btn.addEventListener('click', e => {
         e.stopPropagation();
         const sid = btn.getAttribute('data-exp-inspect-site') || '';
-        if (sid) showRecordInspector('sites', sid);
+        if (sid) openEntryModalForRecord('sites', sid);
       });
     });
     const clearRegFilterBtn = $('clearRegionFilterBtn');

@@ -1695,7 +1695,7 @@
       const ov = GEO_STORE.sites[`${cat}:${nk}`] || GEO_STORE.sites[nk];
       const basePin = BASELINE_SITE_PINS[nk];
       let geoZone = s.region || '';
-      if (basePin) {
+      if (basePin && !s._pinCleared) {
         if (s.latitude == null || s.latitude === '') s.latitude = basePin.lat;
         if (s.longitude == null || s.longitude === '') s.longitude = basePin.lng;
         if (!geoZone && basePin.region) geoZone = basePin.region;
@@ -2300,7 +2300,8 @@
     const unassignedSites = [];
     const siteFreqScore = s => {
       const st = siteStats.byNorm.get(norm(s.name));
-      return st ? (st.total || 0) : 0;
+      if (!st) return 0;
+      return resolveGeoSiteCat(s) === 'customer' ? (st.sales || 0) : (st.raw || 0);
     };
     activeSites.slice().sort((a, b) => siteFreqScore(b) - siteFreqScore(a)).forEach(s => {
       const rk = norm(s.region || s.geo_zone);
@@ -2372,17 +2373,24 @@
       ? regions.find(r => norm(r.name) === norm(STUDIO.selectedRegion))
       : null;
 
+    const chevronSvg = open => `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
+
     const renderMemberSiteBtn = (s) => {
       const siteCat = resolveGeoSiteCat(s);
       const isJvSite = siteCat === 'supplier' && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
+      const isBundSite = siteCat === 'supplier' && !isJvSite && Boolean(s.includes_transport === true || s.includes_transport === 1 || s.haulage_mode === 'supplier_delivered');
       const dotCls = isJvSite ? 'dual' : (siteCat === 'supplier' ? 'raw' : 'sales');
+      const catCls = isJvSite ? 'is-jv' : (siteCat === 'customer' ? 'is-cust' : '');
+      const catLbl = isJvSite ? 'JV 50/50' : (siteCat === 'customer' ? 'Delivery' : (isBundSite ? 'Mat+Trans' : 'Quarry'));
       const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
-      const metaLbl = st.total > 0 ? `${st.total} ${st.total === 1 ? 'load' : 'loads'}` : (s.latitude != null && s.longitude != null ? 'Pinned' : 'Site');
+      const siteLoads = siteCat === 'customer' ? (st.sales || 0) : (st.raw || 0);
+      const metaLbl = siteLoads > 0 ? `${siteLoads.toLocaleString('en-US')} ${siteLoads === 1 ? 'load' : 'loads'}` : (s.latitude != null && s.longitude != null ? 'Pinned' : '');
       return `
         <button type="button" class="geo-reg-site-item" data-geo-inspect-site="${esc(s.id)}">
           <span class="geo-dot ${dotCls}"></span>
           <span class="geo-reg-site-name">${esc(s.name)}</span>
-          <span class="geo-reg-site-meta">${esc(metaLbl)}</span>
+          <span class="geo-reg-site-cat ${catCls}">${esc(catLbl)}</span>
+          ${metaLbl ? `<span class="geo-reg-site-meta">${esc(metaLbl)}</span>` : ''}
         </button>
       `;
     };
@@ -2519,7 +2527,7 @@
                         </div>
                         <div class="geo-reg-card-sub">
                           ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
-                          <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? (showSublist ? ' ?' : ' ?') : ''}</span>
+                          <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? ' ' + chevronSvg(showSublist) : ''}</span>
                           ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
                         </div>
                       </button>
@@ -2539,7 +2547,7 @@
                         <span class="geo-reg-shape is-none">${unassignedSites.length} Sites</span>
                       </div>
                       <div class="geo-reg-card-sub">
-                        <span>Sites without an assigned region${showUnassSub ? ' ?' : ' ?'}</span>
+                        <span class="geo-reg-sites-cnt">Sites without an assigned region ${chevronSvg(showUnassSub)}</span>
                       </div>
                     </button>
                     ${showUnassSub ? `
@@ -2575,18 +2583,27 @@
                     <div class="geo-focus-sites-lbl">Sites Inside (${selRegMemberSites.length}):</div>
                     ${selRegMemberSites.length ? `
                       <div class="geo-focus-sites-list">
-                        ${selRegMemberSites.slice(0, 10).map(ms => {
-                          const mCat = resolveGeoSiteCat(ms);
-                          const mJv = mCat === 'supplier' && Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
-                          const mDot = mJv ? 'dual' : (mCat === 'supplier' ? 'raw' : 'sales');
-                          return `<button type="button" class="geo-focus-site-chip" data-geo-inspect-site="${esc(ms.id)}"><span class="geo-dot ${mDot}"></span>${esc(ms.name)}</button>`;
-                        }).join('')}
+                        ${(() => {
+                          const focusNameCnt = new Map();
+                          selRegMemberSites.forEach(ms => {
+                            const k = norm(ms.name);
+                            focusNameCnt.set(k, (focusNameCnt.get(k) || 0) + 1);
+                          });
+                          return selRegMemberSites.slice(0, 10).map(ms => {
+                            const mCat = resolveGeoSiteCat(ms);
+                            const mJv = mCat === 'supplier' && Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
+                            const mDot = mJv ? 'dual' : (mCat === 'supplier' ? 'raw' : 'sales');
+                            const isDupName = (focusNameCnt.get(norm(ms.name)) || 0) > 1;
+                            const roleTag = isDupName ? ` (${mJv ? 'JV' : (mCat === 'customer' ? 'Delivery' : 'Quarry')})` : '';
+                            return `<button type="button" class="geo-focus-site-chip" data-geo-inspect-site="${esc(ms.id)}"><span class="geo-dot ${mDot}"></span>${esc(ms.name + roleTag)}</button>`;
+                          }).join('');
+                        })()}
                         ${selRegMemberSites.length > 10 ? `<span class="geo-focus-site-more">+${selRegMemberSites.length - 10} more below</span>` : ''}
                       </div>
                     ` : `<div class="geo-focus-sites-empty">No sites assigned yet</div>`}
                   </div>
                   <div class="geo-focus-actions">
-                    <button type="button" class="geo-mini-btn primary" data-geo-open-reg-360="${esc(selRegObj.id)}">Region 360? &amp; Edit</button>
+                    <button type="button" class="geo-mini-btn primary" data-geo-open-reg-360="${esc(selRegObj.id)}">Edit Region &amp; Zone</button>
                     <button type="button" class="geo-mini-btn" data-open-modal="site" data-prefill-region="${esc(selRegObj.name)}">+ Add Site Here</button>
                   </div>
                 </div>
@@ -2783,8 +2800,9 @@
             ${loadsLine}
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             ${bbcEst && bbcEst.available ? `<div>From BBConstruction: <b>${bbcEst.oneWayKm.toFixed(1)} km</b> (RT ${bbcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
-            <div style="display:flex;gap:5px;margin-top:6px">
-              <button type="button" class="geo-mini-btn primary" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">
+              <button type="button" class="geo-mini-btn primary" data-popup-edit-site="${esc(s.id)}">Edit Site</button>
+              <button type="button" class="geo-mini-btn" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
               <button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>
             </div>
           </div>
@@ -3100,10 +3118,17 @@
     const hasOppositeSameName = sites.some(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) !== effCat);
     if (!hasOppositeSameName) {
       GEO_STORE.sites[nk] = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    } else if (GEO_STORE.sites[nk]) {
+      const oppCat = effCat === 'customer' ? 'supplier' : 'customer';
+      if (!GEO_STORE.sites[`${oppCat}:${nk}`]) {
+        GEO_STORE.sites[`${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[nk], { site_category: oppCat });
+      }
+      delete GEO_STORE.sites[nk];
     }
     saveStoredConfig(true);
 
     if (row) {
+      row._pinCleared = false;
       row.site_category = effCat;
       if (effCat === 'customer') {
         row.supplier = '';
@@ -3142,6 +3167,36 @@
     if (typeof postRecordToLocalApi === 'function') postRecordToLocalApi('sites', Object.assign({}, row, { modified_by: ctx.userEmail || 'app' }));
     if (toast) toast(`Pinned ${cleanName}${region ? ' in zone ' + region : ''}`, 'ok');
     return true;
+  }
+
+  function clearLocationPin(opts, SEED) {
+    const o = opts || {};
+    const nm = String(o.name || '').trim();
+    const nk = norm(nm);
+    if (!nk) return;
+    const cat = o.siteCategory === 'customer' ? 'customer' : (o.siteCategory === 'supplier' ? 'supplier' : '');
+    let changed = false;
+    if (cat) {
+      if (GEO_STORE.sites[`${cat}:${nk}`]) { delete GEO_STORE.sites[`${cat}:${nk}`]; changed = true; }
+    } else {
+      ['supplier', 'customer'].forEach(c => {
+        if (GEO_STORE.sites[`${c}:${nk}`]) { delete GEO_STORE.sites[`${c}:${nk}`]; changed = true; }
+      });
+    }
+    const sites = (SEED && SEED.records && SEED.records.sites) || [];
+    const oppRow = cat ? sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) !== cat && (!o.excludeId || String(s.id) !== String(o.excludeId))) : null;
+    if (GEO_STORE.sites[nk]) {
+      if (oppRow) {
+        const oppCat = resolveGeoSiteCat(oppRow);
+        if (!GEO_STORE.sites[`${oppCat}:${nk}`]) {
+          GEO_STORE.sites[`${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[nk], { site_category: oppCat });
+        }
+      }
+      delete GEO_STORE.sites[nk];
+      changed = true;
+    }
+    if (changed) saveStoredConfig(true);
+    if (SEED) hydrateSeedGeo(SEED, true);
   }
 
   function wireGeoStudio(container, ctx) {
@@ -3224,14 +3279,18 @@
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         const sid = btn.getAttribute('data-geo-inspect-site') || '';
-        if (sid && typeof ctx.openInspector === 'function') ctx.openInspector('sites', sid);
+        if (!sid) return;
+        if (typeof ctx.editRecord === 'function') ctx.editRecord('sites', sid);
+        else if (typeof ctx.openInspector === 'function') ctx.openInspector('sites', sid);
       });
     });
     deck.querySelectorAll('[data-geo-open-reg-360]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         const rid = btn.getAttribute('data-geo-open-reg-360') || '';
-        if (rid && typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
+        if (!rid) return;
+        if (typeof ctx.editRecord === 'function') ctx.editRecord('regions', rid);
+        else if (typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
       });
     });
     const focusCloseBtn = deck.querySelector('#geoFocusCloseBtn');
@@ -3841,6 +3900,15 @@
             rerenderWorkspace();
           });
         });
+        popEl.querySelectorAll('[data-popup-edit-site]').forEach(b => {
+          b.addEventListener('click', () => {
+            const sid = b.getAttribute('data-popup-edit-site') || '';
+            try { map.closePopup && map.closePopup(); } catch (_) {}
+            if (!sid) return;
+            if (typeof ctx.editRecord === 'function') ctx.editRecord('sites', sid);
+            else if (typeof ctx.openInspector === 'function') ctx.openInspector('sites', sid);
+          });
+        });
         popEl.querySelectorAll('[data-popup-repin-site]').forEach(b => {
           b.addEventListener('click', () => {
             const nm = b.getAttribute('data-popup-repin-site') || '';
@@ -3909,6 +3977,7 @@
         const catInp = hostEl.querySelector('#f_site_category');
         const pasteInp = hostEl.querySelector('#f_site_coord_paste');
         const kmStatus = hostEl.querySelector('#modalSiteKmReadout');
+        const clearPinBtn = hostEl.querySelector('#modalClearSitePinBtn');
 
         const map = L.map(canvas, { zoomControl: true, attributionControl: false }).setView([33.85, 35.51], 10);
         canvas._leafletMap = map;
@@ -3918,6 +3987,27 @@
         const lg = L.layerGroup().addTo(map);
         setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 50);
         let lastFocusedRegion = '';
+
+        const applyPickedSiteLatLng = (lat, lng) => {
+          if (latInp) {
+            latInp.value = String(lat);
+            latInp.dataset.autoFromPlace = '';
+          }
+          if (lngInp) {
+            lngInp.value = String(lng);
+            lngInp.dataset.autoFromPlace = '';
+          }
+          const det = findContainingRegion(lat, lng, SEED);
+          const resolvedReg = det.best || canonGovernorateName(resolveGovernorateForPoint(lat, lng).label);
+          if (resolvedReg && regInp) {
+            regInp.value = resolvedReg;
+            regInp.dataset.autoFromPlace = '';
+            regInp.dispatchEvent(new Event('input', { bubbles: true }));
+            regInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (latInp) latInp.dispatchEvent(new Event('input', { bubbles: true }));
+          refreshSiteOverlay();
+        };
 
         const refreshSiteOverlay = (opts) => {
           const o = opts || {};
@@ -3973,6 +4063,7 @@
           const rawLat = latInp && latInp.value !== '' ? parseFloat(latInp.value) : null;
           const rawLng = lngInp && lngInp.value !== '' ? parseFloat(lngInp.value) : null;
           const hasExplicitPin = rawLat != null && rawLng != null && Number.isFinite(rawLat) && Number.isFinite(rawLng);
+          if (clearPinBtn) clearPinBtn.hidden = !hasExplicitPin;
           const placeHit = siteInp && siteInp.value ? resolvePlaceLocation(siteInp.value, SEED) : null;
           const previewLat = hasExplicitPin ? rawLat : (placeHit ? placeHit.lat : (selRegObj ? selRegObj.center_lat : null));
           const previewLng = hasExplicitPin ? rawLng : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null));
@@ -3989,7 +4080,15 @@
             }, SEED);
             const pinColor = (!check.ok && selRegName) ? '#DC2626' : accentColor;
             const badgeText = hasExplicitPin ? pinLabel : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name + ' Center' : pinLabel));
-            L.marker([previewLat, previewLng], { icon: makeSvgPinIcon(L, pinColor, badgeText, false) }).addTo(lg);
+            const pinMarker = L.marker([previewLat, previewLng], {
+              draggable: true,
+              icon: makeSvgPinIcon(L, pinColor, badgeText, false),
+              zIndexOffset: 1050
+            }).addTo(lg);
+            pinMarker.on('dragend', ev => {
+              const pos = ev.target.getLatLng();
+              applyPickedSiteLatLng(round5(pos.lat), round5(pos.lng));
+            });
             const wtcHub = getCompanyHub('WTC', SEED);
             const ow = roadAdjustedKm(wtcHub.lat, wtcHub.lng, previewLat, previewLng);
             const det = findContainingRegion(previewLat, previewLng, SEED);
@@ -3997,43 +4096,46 @@
             if (kmStatus) {
               kmStatus.textContent = `${zoneLbl ? 'Region: ' + zoneLbl + ' · ' : ''}From WTC: One-Way ${ow.toFixed(1)} km · Round-Trip ${(ow * 2).toFixed(1)} km`;
             }
+          } else if (kmStatus) {
+            kmStatus.textContent = 'Click map or select Region to estimate KM';
           }
 
-          if (selRegObj && (o.panToRegion || norm(selRegObj.name) !== lastFocusedRegion)) {
+          if ((o.initialOpen || o.panToPin) && hasExplicitPin) {
+            lastFocusedRegion = selRegObj ? norm(selRegObj.name) : '';
+            map.setView([rawLat, rawLng], 13, { animate: false });
+          } else if (selRegObj && (o.panToRegion || o.initialOpen || norm(selRegObj.name) !== lastFocusedRegion)) {
             lastFocusedRegion = norm(selRegObj.name);
-            if (!hasExplicitPin && selRegObj.center_lat != null && selRegObj.center_lng != null) {
+            const pinOutsideNewReg = hasExplicitPin && o.panToRegion && !isPointInsideNamedRegion(rawLat, rawLng, selRegName, SEED);
+            if ((!hasExplicitPin || pinOutsideNewReg) && selRegObj.center_lat != null && selRegObj.center_lng != null) {
               map.setView([Number(selRegObj.center_lat), Number(selRegObj.center_lng)], selRegObj.zone_type === 'circle' ? 12 : 11, { animate: false });
             }
+          } else if (o.initialOpen && placeHit) {
+            map.setView([placeHit.lat, placeHit.lng], 12, { animate: false });
           }
+          stripLeafletTitles(canvas);
         };
 
         canvas._refreshSiteOverlay = refreshSiteOverlay;
-        refreshSiteOverlay();
+        refreshSiteOverlay({ initialOpen: true });
         map.on('click', ev => {
-          const lat = round5(ev.latlng.lat), lng = round5(ev.latlng.lng);
-          if (latInp) {
-            latInp.value = String(lat);
-            latInp.dataset.autoFromPlace = '';
-          }
-          if (lngInp) {
-            lngInp.value = String(lng);
-            lngInp.dataset.autoFromPlace = '';
-          }
-          const det = findContainingRegion(lat, lng, SEED);
-          const resolvedReg = det.best || canonGovernorateName(resolveGovernorateForPoint(lat, lng).label);
-          if (resolvedReg && regInp) {
-            regInp.value = resolvedReg;
-            regInp.dataset.autoFromPlace = '';
-            regInp.dispatchEvent(new Event('input', { bubbles: true }));
-            regInp.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          if (latInp) latInp.dispatchEvent(new Event('input', { bubbles: true }));
-          refreshSiteOverlay();
+          applyPickedSiteLatLng(round5(ev.latlng.lat), round5(ev.latlng.lng));
         });
+        if (clearPinBtn) {
+          clearPinBtn.addEventListener('click', () => {
+            if (latInp) { latInp.value = ''; latInp.dataset.autoFromPlace = ''; }
+            if (lngInp) { lngInp.value = ''; lngInp.dataset.autoFromPlace = ''; }
+            if (pasteInp) pasteInp.value = '';
+            if (latInp) {
+              latInp.dispatchEvent(new Event('input', { bubbles: true }));
+              latInp.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            refreshSiteOverlay({ panToRegion: true });
+          });
+        }
         [latInp, lngInp].forEach(el => {
           if (el) el.addEventListener('change', () => {
             el.dataset.autoFromPlace = '';
-            refreshSiteOverlay();
+            refreshSiteOverlay({ panToPin: true });
           });
         });
         if (regInp) {
@@ -4474,6 +4576,25 @@
         });
       }
 
+      const hydrateRegionFieldsIntoMapState = () => {
+        const zt = (shapeSel && shapeSel.value) || 'boundary';
+        if (zt === 'polygon' && gjInp && gjInp.value) {
+          polyPts = extractEditablePolyRing(gjInp.value, 24);
+          polyLocked = polyPts.length >= 3;
+        } else if (zt === 'boundary' && regNameInp && regNameInp.value) {
+          activeBoundaryItem = findAtlasRegionByName(regNameInp.value, SEED) || null;
+          regNameInp.dataset.fromMapSearch = '1';
+        } else if (zt === 'circle' && radSlider && radInp && radInp.value !== '') {
+          radSlider.value = String(Math.min(25, Math.max(0.3, parseFloat(radInp.value) || 1.5)));
+        }
+      };
+
+      canvas._hydrateRegionOverlay = () => {
+        hydrateRegionFieldsIntoMapState();
+        redraw({ fitBounds: true });
+      };
+
+      hydrateRegionFieldsIntoMapState();
       syncToolbarAndStatus();
 
       ensureLeaflet().then(L => {
@@ -4551,6 +4672,9 @@
                 if (distInp) distInp.value = String(Math.round(roadAdjustedKm(wtcHub.lat, wtcHub.lng, nLat, nLng)));
                 redraw();
               });
+              if (opts.fitBounds) {
+                map.setView([clat, clng], rad > 4 ? 11 : 12, { animate: false });
+              }
             }
           } else if (zt === 'polygon') {
             const ll = polyPts.map(p => [p[1], p[0]]);
@@ -4632,7 +4756,8 @@
           stripLeafletTitles(canvas);
         };
 
-        redraw({ fitBounds: Boolean(activeBoundaryItem || polyPts.length >= 3) });
+        hydrateRegionFieldsIntoMapState();
+        redraw({ fitBounds: true });
 
         map.on('mousemove', ev => {
           const zt = (shapeSel && shapeSel.value) || 'boundary';
@@ -4937,6 +5062,7 @@
     parsePastedCoordinates,
     persistRegionZone,
     persistLocationPin,
+    clearLocationPin,
     renderGeoStudioHtml,
     wireGeoStudio,
     cleanupGeoStudio,

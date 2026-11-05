@@ -1427,8 +1427,11 @@
           <div class="form-field span-3" id="siteRegionConsistencyBanner" hidden></div>
           <div class="geo-modal-map-wrap">
             <div class="geo-modal-map-bar">
-              <span id="modalSiteMapPrompt"><b>Pin Site Inside Region:</b> Select a Region above or click anywhere on the map to pin GPS &amp; auto-detect its containing Region</span>
-              <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map or select Region to estimate KM</span>
+              <span id="modalSiteMapPrompt"><b>Site Location:</b> Click on the map, drag the pin, or select a Region above to set or modify where this site is</span>
+              <span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map or select Region to estimate KM</span>
+                <button type="button" class="geo-mini-btn" id="modalClearSitePinBtn" hidden>Clear Pin</button>
+              </span>
             </div>
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>

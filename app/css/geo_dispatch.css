@@ -985,6 +985,44 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 .geo-reg-sites-cnt {
   font-weight: 700;
   color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.geo-exp-chev {
+  flex-shrink: 0;
+  opacity: 0.78;
+  vertical-align: middle;
+}
+.geo-reg-site-cat {
+  font-size: 0.63rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+}
+.geo-reg-site-cat.is-cust {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1D4ED8;
+}
+.geo-reg-site-cat.is-jv {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6D28D9;
+}
+[data-theme="dark"] .geo-reg-site-cat {
+  background: rgba(52, 211, 153, 0.18);
+  color: #6EE7B7;
+}
+[data-theme="dark"] .geo-reg-site-cat.is-cust {
+  background: rgba(96, 165, 250, 0.18);
+  color: #93C5FD;
+}
+[data-theme="dark"] .geo-reg-site-cat.is-jv {
+  background: rgba(167, 139, 250, 0.2);
+  color: #DDD6FE;
 }
 .geo-reg-sites-sublist {
   display: flex;

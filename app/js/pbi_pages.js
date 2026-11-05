@@ -9893,11 +9893,22 @@
       return { label: r.name, value: cnt, sub: `${gov} · ${fmtNum(lds)} loads` };
     }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
 
+    const siteNameCnt = new Map();
+    siteRows.forEach(r => {
+      const k = norm(r && r.name);
+      if (k) siteNameCnt.set(k, (siteNameCnt.get(k) || 0) + 1);
+    });
     const siteChartRows = siteRows.map(r => {
-      const lds = Number(cellValue(r, 'sales_loads', 'sites', rel) || 0) + Number(cellValue(r, 'raw_loads', 'sites', rel) || 0);
+      const sCat = resolveSiteCategoryPbi(r);
+      const lds = sCat === 'customer'
+        ? Number(cellValue(r, 'sales_loads', 'sites', rel) || 0)
+        : Number(cellValue(r, 'raw_loads', 'sites', rel) || 0);
       const regLbl = cellValue(r, 'region', 'sites', rel) || 'Unassigned';
-      return { label: r.name, value: lds, sub: regLbl };
+      const isDup = (siteNameCnt.get(norm(r.name)) || 0) > 1;
+      const roleSuffix = isDup ? ` (${sCat === 'customer' ? 'Delivery' : 'Quarry'})` : '';
+      return { label: `${r.name}${roleSuffix}`, value: lds, sub: regLbl };
     }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+    const regChevSvg = open => `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
 
     return `
       <div class="panel-card sites-regions-hub" id="univRegPanel">
@@ -9932,23 +9943,39 @@
                 ${regShown.map(r => {
                   const rk = norm(r.name);
                   const re = rel.regByName[rk] || { sites_count: 0, sites: [] };
-                  const memberSites = (re.sites || []).slice().sort((a, b) => {
-                    const sa = rel.siteByName[norm(a.name)] || {};
-                    const sb = rel.siteByName[norm(b.name)] || {};
-                    return ((sb.sales_loads || 0) + (sb.raw_loads || 0)) - ((sa.sales_loads || 0) + (sa.raw_loads || 0));
-                  });
+                  const memberSiteLoads = ms => {
+                    const mCat = resolveSiteCategoryPbi(ms);
+                    const se = (rel.siteByCatKey && rel.siteByCatKey[`${mCat}|${norm(ms.name)}`]) || rel.siteByName[norm(ms.name)] || {};
+                    return mCat === 'customer' ? Number(se.sales_loads || 0) : Number(se.raw_loads || 0);
+                  };
+                  const memberSites = (re.sites || []).slice().sort((a, b) => memberSiteLoads(b) - memberSiteLoads(a));
                   const cnt = memberSites.length;
                   const explicitExp = Boolean(STATE.expandedRegions && STATE.expandedRegions[rk]);
                   const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (selReg && selReg !== '__unassigned__' && norm(selReg) === rk));
-                  const previewNames = memberSites.slice(0, 3).map(ms => ms.name).join(', ');
+                  const groupedPreview = [];
+                  const previewByNorm = new Map();
+                  memberSites.forEach(ms => {
+                    const mk = norm(ms.name);
+                    const mCat = resolveSiteCategoryPbi(ms);
+                    let g = previewByNorm.get(mk);
+                    if (!g) {
+                      g = { name: ms.name, hasSupp: false, hasCust: false };
+                      previewByNorm.set(mk, g);
+                      groupedPreview.push(g);
+                    }
+                    if (mCat === 'customer') g.hasCust = true;
+                    else g.hasSupp = true;
+                  });
+                  const previewNames = groupedPreview.slice(0, 3).map(g => (g.hasSupp && g.hasCust) ? `${g.name} (Quarry & Delivery)` : g.name).join(', ');
+                  const previewMoreCnt = groupedPreview.length > 3 ? (groupedPreview.length - 3) : 0;
                   return `
                     <tr class="rrow" data-rkey="regions" data-rid="${esc(r.id)}">
                       ${regCols.map((c, ci) => {
                         if (c === 'sites_count') {
                           return `<td class="r">
                             <div class="reg-sites-cell" style="justify-content:flex-end">
-                              ${cnt > 0 ? `<span class="reg-sites-inline-list">${esc(previewNames)}${cnt > 3 ? ` +${cnt - 3}` : ''}</span>` : ''}
-                              <button type="button" class="reg-sites-expand-pill${isExp ? ' active' : ''}${cnt === 0 ? ' is-zero' : ''}" data-reg-toggle-sites="${esc(r.name)}">${fmtNum(cnt)} ${cnt === 1 ? 'Site' : 'Sites'} ${isExp ? '▴' : '▾'}</button>
+                              ${cnt > 0 ? `<span class="reg-sites-inline-list">${esc(previewNames)}${previewMoreCnt > 0 ? ` +${previewMoreCnt}` : ''}</span>` : ''}
+                              <button type="button" class="reg-sites-expand-pill${isExp ? ' active' : ''}${cnt === 0 ? ' is-zero' : ''}" data-reg-toggle-sites="${esc(r.name)}">${fmtNum(cnt)} ${cnt === 1 ? 'Site' : 'Sites'} ${regChevSvg(isExp)}</button>
                             </div>
                           </td>`;
                         }
@@ -9971,12 +9998,11 @@
                                   const isBund = sCat === 'supplier' && !isJv && isBundledQuarrySitePbi(ms);
                                   const catCls = isJv ? 'is-jv' : (sCat === 'customer' ? 'is-cust' : '');
                                   const catLbl = isJv ? 'JV 50/50' : (sCat === 'customer' ? 'Delivery' : (isBund ? 'Quarry (Mat+Trans)' : 'Quarry'));
-                                  const se = rel.siteByName[norm(ms.name)] || {};
-                                  const sLoads = (se.sales_loads || 0) + (se.raw_loads || 0);
+                                  const sLoads = memberSiteLoads(ms);
                                   return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
                                     <b>${esc(ms.name)}</b>
                                     <span class="reg-exp-site-cat ${catCls}">${catLbl}</span>
-                                    ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} loads</span>` : ''}
+                                    ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} ${sLoads === 1 ? 'load' : 'loads'}</span>` : ''}
                                   </button>`;
                                 }).join('')}
                               </div>
