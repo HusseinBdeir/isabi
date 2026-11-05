@@ -2538,7 +2538,8 @@
       addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.ap_credit_usd || 0), 0);
     });
 
-    if ((!asof || asof >= '2026-11-04') && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
+    const seedCutRdl = String((typeof SEED !== 'undefined' && SEED && SEED.generated_at) || '').slice(0, 10) || '2026-11-04';
+    if ((!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
       const coKey = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
       const legRes = window.__mfgComputeThreeLegPayables({ company: coKey, ignorePeriod: true });
       if (legRes && legRes.byNorm) {
