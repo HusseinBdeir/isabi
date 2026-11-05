@@ -576,7 +576,13 @@
       });
     });
     if (SEED && SEED.records && typeof window.MFG_FREQ === 'function') {
-      const coFreq = window.MFG_FREQ().company;
+      const coFreq = (_FREQ_IDX && _FREQ_IDX.company)
+        ? _FREQ_IDX.company
+        : ((_FREQ_TKT_CACHE && _FREQ_TKT_CACHE.bCompany)
+          ? _FREQ_TKT_CACHE.bCompany
+          : ((mfgCoLen > 0 || seedCoLen > 0 || epLen > 0)
+            ? window.MFG_FREQ().company
+            : new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]])));
       if (coFreq && coFreq.size) {
         out.sort((a, b) => (coFreq.get(norm(b.name)) || 0) - (coFreq.get(norm(a.name)) || 0));
       }
@@ -1927,21 +1933,24 @@
 
   const ticketProductQty = ticketMeters;
 
+  const _eqRemoveStr = v => typeof v === 'string' && v.length >= 6 && (v === 'Remove' || v === 'remove' || v.trim().toLowerCase() === 'remove');
   function isRemovedTicket(r) {
     if (!r) return false;
     if (r.removed_slip === true || r.ticket_disposition === 'remove_slip') return true;
-    const m = String(r.method || '').trim().toLowerCase();
-    const p = String(r.product || '').trim().toLowerCase();
-    const s = String(r.site || '').trim().toLowerCase();
-    const c = String(r.customer || '').trim().toLowerCase();
-    return m === 'remove' || p === 'remove' || s === 'remove' || c === 'remove';
+    const m = r.method;
+    if (m === 'Remove' || m === 'remove') return true;
+    if (m !== 'Credit' && m !== 'Cash' && _eqRemoveStr(m)) return true;
+    return _eqRemoveStr(r.product) || _eqRemoveStr(r.site) || _eqRemoveStr(r.customer);
   }
 
   function isReturnTicket(r) {
-    if (!r || isRemovedTicket(r)) return false;
+    if (!r) return false;
+    const m = r.method;
+    if ((m === 'Credit' || m === 'Cash') && r.return_to_wtc !== true && r.ticket_disposition !== 'return_wtc') return false;
+    if (isRemovedTicket(r)) return false;
     if (r.return_to_wtc === true || r.ticket_disposition === 'return_wtc') return true;
-    const m = String(r.method || '').trim();
-    return m === 'C Return' || m === 'CR Return' || m === 'Cash Return' || m === 'Credit Return';
+    const ms = typeof m === 'string' ? m.trim() : '';
+    return ms === 'C Return' || ms === 'CR Return' || ms === 'Cash Return' || ms === 'Credit Return';
   }
 
   // m18a / m272: Sale = +1 (Cash / Credit / Barter), Return = -1 (C Return / CR Return / Cash Return / Credit Return), Free / Remove / Config = 0
@@ -8252,6 +8261,8 @@
       const bProductSalesByCo = new Map(), bProductRawByCo = new Map(), bProduct = new Map(), bCustomer = new Map();
       const bSupplier = new Map(), bSiteOwner = new Map(), bTruckOwner = new Map(), bSiteSales = new Map();
       const bSiteRaw = new Map(), bSite = new Map(), bTruck = new Map(), bDriver = new Map();
+      const bSupCategory = new Map();
+      const bCompany = new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]]);
       const bUom = new Map([['m³', 100], ['ton', 80], ['truck', 60], ['litre', 40], ['piece', 30], ['unit', 20], ['bag', 10]]);
       sales.forEach(r => {
         if (!r || r.voided) return;
@@ -8267,6 +8278,10 @@
         incTruckTo(bTruck, r.truck, 1);
         inc(bDriver, r.driver, 1);
         inc(bUom, r.uom || r.unit, 1);
+        if (r.company) {
+          inc(bCompany, r.company, 1);
+          if (/\s/.test(r.company)) inc(bCompany, String(r.company).replace(/\s+/g, '-'), 1);
+        }
       });
       raws.forEach(r => {
         if (!r || r.voided) return;
@@ -8283,12 +8298,19 @@
         incTruckTo(bTruck, r.truck, 1);
         inc(bDriver, r.driver, 1);
         inc(bUom, r.uom || r.unit, 1);
+        if (r.site_owner) inc(bSupCategory, 'Site & Raw Materials', 1);
+        if (r.truck_owner && !/company/i.test(r.transport_by || '')) inc(bSupCategory, 'Hauler / Truck Owner', 1);
+        if (r.company) {
+          inc(bCompany, r.company, 1);
+          if (/\s/.test(r.company)) inc(bCompany, String(r.company).replace(/\s+/g, '-'), 1);
+        }
       });
       _FREQ_TKT_CACHE = {
         key: tktKey,
         bProductSales, bProductRaw, bProductSalesTickets, bProductRawTickets,
         bProductSalesByCo, bProductRawByCo, bProduct, bCustomer,
-        bSupplier, bSiteOwner, bTruckOwner, bSiteSales, bSiteRaw, bSite, bTruck, bDriver, bUom
+        bSupplier, bSiteOwner, bTruckOwner, bSiteSales, bSiteRaw, bSite, bTruck, bDriver, bUom,
+        bSupCategory, bCompany
       };
     }
 
@@ -8397,8 +8419,8 @@
 
     const item = new Map();
     const warehouseLoc = new Map([['wtc main warehouse', 40], ['bbconstruction spare store', 30], ['lions garage store', 20], ['crusher site store', 10]]);
-    const supCategory = new Map();
-    const company = new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]]);
+    const supCategory = _cloneMap(_FREQ_TKT_CACHE.bSupCategory);
+    const company = _cloneMap(_FREQ_TKT_CACHE.bCompany);
 
     expItems.forEach(r => {
       if (!r || r.voided) return;
@@ -8453,11 +8475,6 @@
         });
       });
     });
-    raws.forEach(r => {
-      if (!r || r.voided) return;
-      if (r.site_owner) inc(supCategory, 'Site & Raw Materials', 1);
-      if (r.truck_owner && !/company/i.test(r.transport_by || '')) inc(supCategory, 'Hauler / Truck Owner', 1);
-    });
     exps.forEach(r => {
       if (!r || r.voided || !r.category) return;
       const nc = typeof normalizeSupplierCategory === 'function' ? normalizeSupplierCategory(r.category) : r.category;
@@ -8467,7 +8484,7 @@
       inc(company, coNm, 3 - i);
       inc(company, coNm.replace(/\s+/g, '-'), 3 - i);
     });
-    [sales, raws, exps, rcpts, settles, fuels, sals, atts, emps, rules, loans, extMovs, overs, rec.equipment || [], rec.drivers || [], rec.company_equipment || [], rec.company_drivers || []].forEach(tbl => {
+    [exps, rcpts, settles, fuels, sals, atts, emps, rules, loans, extMovs, overs, rec.equipment || [], rec.drivers || [], rec.company_equipment || [], rec.company_drivers || []].forEach(tbl => {
       (tbl || []).forEach(r => {
         if (r && !r.voided && r.company) {
           inc(company, r.company, 1);
@@ -9225,8 +9242,12 @@
           s.haulage_mode = 'separate';
         }
       } else {
-        if (s.includes_transport === undefined && s.source !== 'app') {
-          const st = rawStatBySite.get(norm(s.name));
+        const st = rawStatBySite.get(norm(s.name));
+        const hasOwnOrPeerHaul = Boolean(st && (st.ownLoads > 0 || st.paidHaulLoads > 0 || st.hasTransRule));
+        if (hasOwnOrPeerHaul) {
+          s.includes_transport = false;
+          s.haulage_mode = 'separate';
+        } else if (s.includes_transport === undefined && s.source !== 'app') {
           const isBundled = Boolean(
             st &&
             st.ownLoads === 0 &&
@@ -9244,7 +9265,11 @@
     });
     (recs.price_rules || []).forEach(pr => {
       if (!pr || pr.voided || pr.rule_type !== 'Purchase Price (Site)') return;
-      if (pr.includes_transport === undefined && pr.source !== 'app') {
+      const st = pr.site ? rawStatBySite.get(norm(pr.site)) : null;
+      const hasOwnOrPeerHaul = Boolean(st && (st.ownLoads > 0 || st.paidHaulLoads > 0 || st.hasTransRule));
+      if (hasOwnOrPeerHaul) {
+        pr.includes_transport = false;
+      } else if (pr.includes_transport === undefined && pr.source !== 'app') {
         const hasTr = Number(pr.trans_unit_price || pr.trans_indiff_price || 0) > 0;
         pr.includes_transport = Boolean(!hasTr && pr.site && bundledSeedSiteNorms.has(norm(pr.site)));
       }
@@ -9254,10 +9279,79 @@
   const _QUARRY_NON_AGG_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity|bonus)\b/i;
   const _IS_OWN_BU_RE = /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i;
 
+  function _getQuarrySiteProfileMap() {
+    const fIdx = getFreqIndex();
+    if (!fIdx._quarrySiteProfile) {
+      const pMap = new Map();
+      const ensureP = sk => {
+        let p = pMap.get(sk);
+        if (!p) {
+          p = { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, zeroTransMatLoads: 0, zeroTransMatCost: 0, zeroTransQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false };
+          pMap.set(sk, p);
+        }
+        return p;
+      };
+      ((SEED.records && SEED.records.price_rules) || []).forEach(pr => {
+        if (!pr || pr.voided || !pr.site) return;
+        const sk = norm(pr.site);
+        if (!sk) return;
+        const p = ensureP(sk);
+        if (pr.rule_type === 'Transport Price (Site)' && Number(pr.trans_unit_price || pr.indiff_price || pr.unit_price || pr.price || 0) > 0) p.hasTransRule = true;
+        else if (pr.rule_type === 'Purchase Price (Site)') p.hasPurchRule = true;
+      });
+      ((SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+        if (!r || r.voided || !r.site || isRemovedTicket(r) || isReturnTicket(r) || isPendingPriceRaw(r)) return;
+        const sk = norm(r.site);
+        if (!sk) return;
+        const p = ensureP(sk);
+        const q = Number(r.qty || 0);
+        const mc = Number(r.cost || 0);
+        const tc = Number(r.trans_cost || 0);
+        const tuc = Number(r.trans_unit_cost || 0);
+        const isOwn = r.transport_by === 'Company fleet' || _IS_OWN_BU_RE.test(String(r.truck_owner || '').trim());
+        if (isOwn) {
+          p.ownFleetLoads += 1;
+          p.separateMatCost += mc;
+          p.separateQty += q;
+        } else if (Math.abs(tc) > 0.004 || Math.abs(tuc) > 0.004) {
+          p.paidHaulLoads += 1;
+          p.paidHaulCost += tc;
+          p.separateMatCost += mc;
+          p.separateQty += q;
+        } else if (!_QUARRY_NON_AGG_RE.test(String(r.product || '').trim()) && (Math.abs(mc) > 0.004 || r.includes_transport === true || r.includes_transport === 1 || r.transport_by === 'Supplier-delivered')) {
+          p.zeroTransMatLoads += 1;
+          p.zeroTransMatCost += mc;
+          p.zeroTransQty += q;
+        }
+      });
+      pMap.forEach((p, sk) => {
+        const sObj = siteInfo(sk);
+        const isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
+        const hasOwnOrPeerHaul = Boolean(p.ownFleetLoads > 0 || p.paidHaulLoads > 0 || p.hasTransRule);
+        if (!isJv && !hasOwnOrPeerHaul) {
+          p.bundledLoads = p.zeroTransMatLoads;
+          p.bundledMatCost = p.zeroTransMatCost;
+          p.bundledQty = p.zeroTransQty;
+        } else {
+          p.bundledLoads = 0;
+          p.bundledMatCost = 0;
+          p.bundledQty = 0;
+          p.separateMatCost += p.zeroTransMatCost;
+          p.separateQty += p.zeroTransQty;
+        }
+      });
+      fIdx._quarrySiteProfile = pMap;
+    }
+    return fIdx._quarrySiteProfile;
+  }
+
   function isSupplierDeliveredSite(siteOrName) {
     if (!siteOrName) return false;
     const s = typeof siteOrName === 'string' ? siteInfo(siteOrName) : siteOrName;
     if (!s || s.is_jv || s.jv) return false;
+    const sk = norm(typeof siteOrName === 'string' ? siteOrName : (s.name || ''));
+    const st = sk ? _getQuarrySiteProfileMap().get(sk) : null;
+    if (st && (st.ownFleetLoads > 0 || st.paidHaulLoads > 0 || st.hasTransRule)) return false;
     return Boolean(s.includes_transport === true || s.includes_transport === 1 || s.includes_transport === '1' || s.haulage_mode === 'supplier_delivered');
   }
 
@@ -9286,78 +9380,37 @@
     const tc = Math.abs(Number(r.trans_cost || 0));
     const tuc = Math.abs(Number(r.trans_unit_cost || 0));
     if (tc > 0.004 || tuc > 0.004) return false;
-    if (r.includes_transport === true || r.includes_transport === 1 || r.transport_by === 'Supplier-delivered') return true;
     if (r.includes_transport === false || r.transport_by === 'Company fleet') return false;
     if (_IS_OWN_BU_RE.test(String(r.truck_owner || '').trim())) return false;
     if (_QUARRY_NON_AGG_RE.test(String(r.product || '').trim())) return false;
     const sObj = r.site ? siteInfo(r.site) : null;
     if (sObj && (sObj.is_jv || sObj.jv)) return false;
-    if (sObj && sObj.source === 'app' && sObj.includes_transport === false) return false;
+    if (r.site) {
+      return Boolean(isSupplierDeliveredSite(sObj || r.site) && (Math.abs(Number(r.cost || 0)) > 0.004 || r.includes_transport === true || r.includes_transport === 1 || r.transport_by === 'Supplier-delivered'));
+    }
+    if (r.includes_transport === true || r.includes_transport === 1 || r.transport_by === 'Supplier-delivered') return true;
     return Math.abs(Number(r.cost || 0)) > 0.004;
   }
 
   function isBundledRawPriceRule(pr) {
     if (!pr || pr.voided || pr.rule_type !== 'Purchase Price (Site)') return false;
     if (Number(pr.trans_unit_price || pr.trans_indiff_price || 0) > 0.004) return false;
+    if (pr.site) return Boolean(isSupplierDeliveredSite(pr.site) && pr.includes_transport !== false);
     if (pr.includes_transport === true || pr.includes_transport === 1) return true;
-    if (pr.includes_transport === false) return false;
-    return Boolean(pr.site && isSupplierDeliveredSite(pr.site));
+    return false;
   }
 
   function getSiteHaulageProfile(siteOrName) {
-    const fIdx = getFreqIndex();
-    if (!fIdx._quarrySiteProfile) {
-      const pMap = new Map();
-      const ensureP = sk => {
-        let p = pMap.get(sk);
-        if (!p) {
-          p = { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false };
-          pMap.set(sk, p);
-        }
-        return p;
-      };
-      ((SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
-        if (!r || r.voided || !r.site || isRemovedTicket(r) || isReturnTicket(r) || isPendingPriceRaw(r)) return;
-        const sk = norm(r.site);
-        if (!sk) return;
-        const p = ensureP(sk);
-        const q = Number(r.qty || 0);
-        const mc = Number(r.cost || 0);
-        const tc = Number(r.trans_cost || 0);
-        if (isBundledRawTicket(r)) {
-          p.bundledLoads += 1;
-          p.bundledMatCost += mc;
-          p.bundledQty += q;
-        } else if (r.transport_by === 'Company fleet' || _IS_OWN_BU_RE.test(String(r.truck_owner || '').trim())) {
-          p.ownFleetLoads += 1;
-          p.separateMatCost += mc;
-          p.separateQty += q;
-        } else if (tc > 0 || Number(r.trans_unit_cost || 0) > 0) {
-          p.paidHaulLoads += 1;
-          p.paidHaulCost += tc;
-          p.separateMatCost += mc;
-          p.separateQty += q;
-        }
-      });
-      ((SEED.records && SEED.records.price_rules) || []).forEach(pr => {
-        if (!pr || pr.voided || !pr.site) return;
-        const sk = norm(pr.site);
-        if (!sk) return;
-        const p = ensureP(sk);
-        if (pr.rule_type === 'Transport Price (Site)' && Number(pr.trans_unit_price || pr.indiff_price || pr.unit_price || pr.price || 0) > 0) p.hasTransRule = true;
-        else if (pr.rule_type === 'Purchase Price (Site)') p.hasPurchRule = true;
-      });
-      fIdx._quarrySiteProfile = pMap;
-    }
+    const pMap = _getQuarrySiteProfileMap();
     const sObj = typeof siteOrName === 'string' ? siteInfo(siteOrName) : siteOrName;
     const sk = norm(typeof siteOrName === 'string' ? siteOrName : (sObj && sObj.name));
-    const st = sk ? (fIdx._quarrySiteProfile.get(sk) || { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false }) : { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false };
+    const st = sk ? (pMap.get(sk) || { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false }) : { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false };
     const isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
     const hasOwnOrPeerHaul = Boolean(st.ownFleetLoads > 0 || st.paidHaulLoads > 0 || st.hasTransRule);
-    const isSupDelivFlag = isSupplierDeliveredSite(sObj);
-    const isMixed = Boolean(!isJv && st.bundledLoads > 0 && hasOwnOrPeerHaul);
-    const isBundledOnly = Boolean(!isJv && !isMixed && (isSupDelivFlag || (st.bundledLoads > 0 && !hasOwnOrPeerHaul)));
-    const mode = isJv ? 'jv' : (isMixed ? 'mixed' : (isBundledOnly ? 'supplier_delivered' : 'separate'));
+    const isSupDelivFlag = isSupplierDeliveredSite(sObj || siteOrName);
+    const isMixed = false;
+    const isBundledOnly = Boolean(!isJv && !hasOwnOrPeerHaul && (isSupDelivFlag || st.bundledLoads > 0));
+    const mode = isJv ? 'jv' : (isBundledOnly ? 'supplier_delivered' : 'separate');
     return {
       site: sObj,
       mode,
@@ -9393,6 +9446,10 @@
     if (target) {
       target.region = effReg;
       target.geo_zone = effReg;
+      if (!target.is_jv && !target.jv) {
+        target.includes_transport = false;
+        target.haulage_mode = 'separate';
+      }
       if ((target.latitude == null || target.longitude == null) && geoRes && geoRes.ok && geoRes.lat != null && geoRes.lng != null) {
         target.latitude = geoRes.lat;
         target.longitude = geoRes.lng;
@@ -9407,6 +9464,12 @@
       if (cIdx >= 0) Object.assign(STATE.customRecords.sites[cIdx], target);
       else STATE.customRecords.sites.unshift(Object.assign({}, target));
       if (Array.isArray(extraApiPosts)) extraApiPosts.push(['sites', Object.assign({}, target)]);
+      ((SEED.records && SEED.records.price_rules) || []).forEach(pr => {
+        if (pr && !pr.voided && pr.rule_type === 'Purchase Price (Site)' && norm(pr.site) === sk) pr.includes_transport = false;
+      });
+      ((STATE.customRecords && STATE.customRecords.price_rules) || []).forEach(pr => {
+        if (pr && !pr.voided && pr.rule_type === 'Purchase Price (Site)' && norm(pr.site) === sk) pr.includes_transport = false;
+      });
     } else {
       target = {
         id: uid('si'),
@@ -9551,8 +9614,37 @@
       }
     };
     if (STATE && STATE.customRecords) addList(STATE.customRecords.price_rules);
-    if (SEED && SEED.records) addList(SEED.records.price_rules);
+    if (SEED && SEED.records) {
+      addList(SEED.records.price_rules);
+      const seedEndById = new Map();
+      (SEED.records.price_rules || []).forEach(sr => {
+        if (!sr || !sr.id || !sr.end_date) return;
+        const se = String(sr.end_date).slice(0, 10);
+        if (se >= '1900-01-01' && se < '2030-01-01') seedEndById.set(String(sr.id), se);
+      });
+      if (seedEndById.size) {
+        out.forEach(r => {
+          if (!r || !r.id || r._reopenedExplicitly) return;
+          const re = r.end_date ? String(r.end_date).slice(0, 10) : '';
+          if (!re || re >= '2030-01-01') {
+            const closedEnd = seedEndById.get(String(r.id));
+            if (closedEnd) r.end_date = closedEnd;
+          }
+        });
+      }
+    }
     return out;
+  }
+
+  function isSiteClosedOnDate(siteName, dateStr) {
+    if (!siteName) return false;
+    const sObj = siteInfo(siteName);
+    if (!sObj) return false;
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const sEnd = sObj.end_date ? String(sObj.end_date).slice(0, 10) : '';
+    if (sEnd && sEnd >= '1900-01-01' && sEnd < effDate) return true;
+    if (!sEnd && /^closed$/i.test(String(sObj.status || '').trim())) return true;
+    return false;
   }
 
   function resolveSuppliersForSite(siteName, company, dateStr, product) {
@@ -9568,6 +9660,7 @@
       (!coKey || !r.company || norm(r.company) === coKey)
     );
     const coversDate = r => {
+      if (isSiteClosedOnDate(r.site, effDate)) return false;
       const s = String(r.start_date || '1900-01-01').slice(0, 10);
       const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
       return s <= effDate && e >= effDate;
@@ -9654,6 +9747,7 @@
       (!coKey || !r.company || norm(r.company) === coKey)
     );
     const coversDate = r => {
+      if (isSiteClosedOnDate(r.site, effDate)) return false;
       const s = String(r.start_date || '1900-01-01').slice(0, 10);
       const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
       return s <= effDate && e >= effDate;
@@ -9700,7 +9794,8 @@
     ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
       if (s && !s.voided && s.name && norm(s.supplier) === supKey) addSite(s.name, `Supplier Site · ${supplierName}`);
     });
-    const singleSite = activeSites.length === 1 ? activeSites[0] : (activeSites.length === 0 && allSites.length === 1 ? allSites[0] : '');
+    const openAllSites = allSites.filter(sName => !isSiteClosedOnDate(sName, effDate));
+    const singleSite = activeSites.length === 1 ? activeSites[0] : (activeSites.length === 0 && openAllSites.length === 1 ? openAllSites[0] : '');
     return { activeSites, allSites, singleSite, metaBySite };
   }
 
@@ -9717,6 +9812,7 @@
       (!coKey || !r.company || norm(r.company) === coKey)
     );
     const coversDate = r => {
+      if (isSiteClosedOnDate(r.site, effDate)) return false;
       const s = String(r.start_date || '1900-01-01').slice(0, 10);
       const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
       return s <= effDate && e >= effDate;
@@ -9803,6 +9899,7 @@
       (!coKey || !r.company || norm(r.company) === coKey)
     );
     const coversDate = r => {
+      if (isSiteClosedOnDate(r.site, effDate)) return false;
       const s = String(r.start_date || '1900-01-01').slice(0, 10);
       const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
       return s <= effDate && e >= effDate;
@@ -9991,6 +10088,7 @@
         if (!r || !r.site) return false;
         if (!/^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim())) return false;
         if (coKey && r.company && norm(r.company) !== coKey) return false;
+        if (isSiteClosedOnDate(r.site, effDate)) return false;
         const s = String(r.start_date || '1900-01-01').slice(0, 10);
         const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
         return s <= effDate && e >= effDate;
@@ -10111,17 +10209,60 @@
     );
     return fIdx._lists.roles;
   }
+  let _EXP_CAT_NORM_CACHE = null;
+  let _EXP_CAT_LIST_CACHE = null;
+  function _getExpenseCatSubNormSet() {
+    const rec = (SEED && SEED.records) || {};
+    const exps = rec.expenses || [];
+    const cats = rec.expense_categories || [];
+    const subs = rec.expense_subcategories || [];
+    const key = `${(SEED && SEED._customRev) || 0}|${exps.length}|${cats.length}|${subs.length}`;
+    if (_EXP_CAT_NORM_CACHE && _EXP_CAT_NORM_CACHE.key === key) return _EXP_CAT_NORM_CACHE.set;
+    const set = new Set();
+    ['Fuel', 'Oils & Lubricants', 'Spare Parts', 'Repairs and Maintenance', 'Tools & Garage', 'Transport & Site Logistics', 'Staff & Social Security', 'Utilities & Telecom', 'Office & Facility', 'Insurance, Permits & Taxes', 'Capital Expenditures'].forEach(c => {
+      const k = norm(c);
+      if (k) set.add(k);
+    });
+    for (let i = 0; i < cats.length; i++) {
+      const c = cats[i];
+      if (!c || c.voided) continue;
+      const k = norm(c.name || c.category);
+      if (k) set.add(k);
+    }
+    for (let i = 0; i < subs.length; i++) {
+      const sc = subs[i];
+      if (!sc || sc.voided) continue;
+      const kc = norm(sc.category);
+      const ks = norm(sc.name || sc.subcategory);
+      if (kc) set.add(kc);
+      if (ks) set.add(ks);
+    }
+    for (let i = 0; i < exps.length; i++) {
+      const x = exps[i];
+      if (!x || x.voided) continue;
+      if (x.category) { const kc = norm(x.category); if (kc) set.add(kc); }
+      if (x.subcategory) { const ks = norm(x.subcategory); if (ks) set.add(ks); }
+    }
+    _EXP_CAT_NORM_CACHE = { key, set };
+    return set;
+  }
   function expenseCategories() {
+    const rec = (SEED && SEED.records) || {};
+    const exps = rec.expenses || [];
+    const cats = rec.expense_categories || [];
+    const subs = rec.expense_subcategories || [];
+    const cacheKey = `${(SEED && SEED._customRev) || 0}|${_WIN_REV}|${exps.length}|${cats.length}|${subs.length}`;
+    if (_EXP_CAT_LIST_CACHE && _EXP_CAT_LIST_CACHE.key === cacheKey) return _EXP_CAT_LIST_CACHE.list;
     const map = new Map();
-    (SEED.records.expense_categories || []).forEach(c => {
+    cats.forEach(c => {
       if (c && c.name && !map.has(c.name)) map.set(c.name, new Set());
     });
-    (SEED.records.expense_subcategories || []).forEach(sc => {
+    subs.forEach(sc => {
       if (!sc || !sc.category || !sc.name) return;
       if (!map.has(sc.category)) map.set(sc.category, new Set());
       map.get(sc.category).add(sc.name);
     });
-    SEED.records.expenses.forEach(x => {
+    exps.forEach(x => {
       if (!x.category) return;
       if (!map.has(x.category)) map.set(x.category, new Set());
       if (x.subcategory) map.get(x.category).add(x.subcategory);
@@ -10130,26 +10271,26 @@
     const fIdx = getFreqIndex();
     const catFreq = fIdx.category;
     const subFreq = fIdx.subcategory;
-    return Array.from(map.entries())
-      .map(([c, subs]) => ({
+    const list = Array.from(map.entries())
+      .map(([c, subSet]) => ({
         category: c,
-        subs: Array.from(subs).sort((a, b) => (subFreq.get(norm(b)) || 0) - (subFreq.get(norm(a)) || 0) || a.localeCompare(b))
+        subs: Array.from(subSet).sort((a, b) => (subFreq.get(norm(b)) || 0) - (subFreq.get(norm(a)) || 0) || a.localeCompare(b))
       }))
       .sort((a, b) => (catFreq.get(norm(b.category)) || 0) - (catFreq.get(norm(a.category)) || 0) || a.category.localeCompare(b.category));
+    _EXP_CAT_LIST_CACHE = { key: cacheKey, list };
+    return list;
   }
   function isExpenseSubcategoryOrCategoryName(nm) {
     const k = norm(nm);
     if (!k) return false;
-    const cats = (typeof FORM_UI !== 'undefined' && FORM_UI && FORM_UI.catCache)
-      ? FORM_UI.catCache
-      : expenseCategories();
-    for (let i = 0; i < cats.length; i++) {
-      const c = cats[i];
-      if (norm(c.category) === k) return true;
-      if (Array.isArray(c.subs) && c.subs.some(s => norm(s) === k)) return true;
+    if (_getExpenseCatSubNormSet().has(k)) return true;
+    if (typeof FORM_UI !== 'undefined' && FORM_UI && Array.isArray(FORM_UI.catCache)) {
+      for (let i = 0; i < FORM_UI.catCache.length; i++) {
+        const c = FORM_UI.catCache[i];
+        if (norm(c.category) === k) return true;
+        if (Array.isArray(c.subs) && c.subs.some(s => norm(s) === k)) return true;
+      }
     }
-    if (((SEED.records && SEED.records.expense_categories) || []).some(c => c && !c.voided && norm(c.name || c.category) === k)) return true;
-    if (((SEED.records && SEED.records.expense_subcategories) || []).some(sc => sc && !sc.voided && norm(sc.name || sc.subcategory) === k)) return true;
     return false;
   }
   function compareProductByDomain(nameA, nameB, side, company, fIdx) {
@@ -16102,11 +16243,24 @@
       const pk = `${norm(r.company)}|${norm(r.customer)}|${norm(r.product)}`;
       let arr = custProdRules.get(pk);
       if (!arr) { arr = []; custProdRules.set(pk, arr); }
-      arr.push(r);
+      const s0 = r.start_date ? String(r.start_date).slice(0, 10) : '1900-01-01';
+      const e0 = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+      arr.push({
+        raw: r,
+        id: r.id,
+        up,
+        s0,
+        e0,
+        endStr: r.end_date ? String(r.end_date).slice(0, 10) : '',
+        openToday: (!r.end_date || e0 >= SEED_DATE) && (!r.start_date || s0 <= SEED_DATE),
+        rtLower: String(r.rule_type || '').toLowerCase(),
+        siteNorm: norm(r.site)
+      });
     });
 
     const belowPairsMap = new Map();
     const lapsedPairsMap = new Map();
+    const s5UnitTol = getAlertParam('S5', 'unit_tolerance_usd', 0.01);
     const salesScoped = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     salesScoped.forEach(t => {
       if (!t || t.voided || ticketSign(t) !== 1) return;
@@ -16120,30 +16274,24 @@
       if (!allCand || !allCand.length) return;
 
       const isPickup = /pickup/i.test(String(t.sale_type || ''));
-      const typeCand = allCand.filter(r => {
-        const rt = String(r.rule_type || '').toLowerCase();
-        if (isPickup) return !rt.includes('delivery');
-        return !rt.includes('pickup');
-      });
+      const typeCand = allCand.filter(r => isPickup ? !r.rtLower.includes('delivery') : !r.rtLower.includes('pickup'));
       const pool1 = typeCand.length ? typeCand : allCand;
       const tSite = norm(t.site);
-      const exactSite = tSite ? pool1.filter(r => norm(r.site) === tSite) : [];
-      const blankSite = pool1.filter(r => !norm(r.site));
+      const exactSite = tSite ? pool1.filter(r => r.siteNorm === tSite) : [];
+      const blankSite = pool1.filter(r => !r.siteNorm);
       const cand = exactSite.length ? exactSite : (blankSite.length ? blankSite : pool1);
 
-      const actOnDate = cand.filter(r => {
-        const s0 = r.start_date ? String(r.start_date).slice(0, 10) : '1900-01-01';
-        const e0 = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
-        return s0 <= txDate && txDate <= e0;
-      });
+      let minAg = Infinity;
+      let anyActOnDate = false;
+      for (let ci = 0; ci < cand.length; ci++) {
+        const r = cand[ci];
+        if (r.s0 <= txDate && txDate <= r.e0) {
+          anyActOnDate = true;
+          if (r.up > 0 && r.up < minAg) minAg = r.up;
+        }
+      }
 
-      if (actOnDate.length) {
-        let minAg = Infinity;
-        actOnDate.forEach(r => {
-          const rp = Number(r.unit_price ?? r.price ?? 0);
-          if (rp > 0 && rp < minAg) minAg = rp;
-        });
-        const s5UnitTol = getAlertParam('S5', 'unit_tolerance_usd', 0.01);
+      if (anyActOnDate) {
         if (Number.isFinite(minAg) && up + s5UnitTol < minAg) {
           let b = belowPairsMap.get(pk);
           if (!b) {
@@ -16161,17 +16309,19 @@
           }
         }
       } else {
-        const hasRenewedOpen = cand.some(isRuleOpenToday);
+        const hasRenewedOpen = cand.some(r => r.openToday);
         if (!hasRenewedOpen) {
-          const endedBefore = cand.filter(r => r.end_date && String(r.end_date).slice(0, 10) < txDate);
-          if (endedBefore.length) {
-            let latestEnded = endedBefore[0];
-            endedBefore.forEach(r => {
-              if (String(r.end_date).slice(0, 10) > String(latestEnded.end_date).slice(0, 10)) latestEnded = r;
-            });
+          let latestEnded = null;
+          for (let ci = 0; ci < cand.length; ci++) {
+            const r = cand[ci];
+            if (r.endStr && r.endStr < txDate) {
+              if (!latestEnded || r.endStr > latestEnded.endStr) latestEnded = r;
+            }
+          }
+          if (latestEnded) {
             let lp = lapsedPairsMap.get(pk);
             if (!lp) {
-              lp = { cust: t.customer, prod: t.product, company: t.company, qty: 0, rev: 0, tickets: 0, agreedPrice: Number(latestEnded.unit_price ?? latestEnded.price ?? 0), endDate: String(latestEnded.end_date).slice(0, 10), lastDate: '', lastId: t.id, ruleId: latestEnded.id };
+              lp = { cust: t.customer, prod: t.product, company: t.company, qty: 0, rev: 0, tickets: 0, agreedPrice: latestEnded.up, endDate: latestEnded.endStr, lastDate: '', lastId: t.id, ruleId: latestEnded.id };
               lapsedPairsMap.set(pk, lp);
             }
             lp.qty += qty;
@@ -16181,8 +16331,8 @@
               lp.lastDate = txDate;
               lp.lastId = t.id;
               lp.ruleId = latestEnded.id;
-              lp.agreedPrice = Number(latestEnded.unit_price ?? latestEnded.price ?? 0);
-              lp.endDate = String(latestEnded.end_date).slice(0, 10);
+              lp.agreedPrice = latestEnded.up;
+              lp.endDate = latestEnded.endStr;
             }
           }
         }
@@ -16303,7 +16453,7 @@
     const dateGaps = [];
     const scanDateGaps = (tblLabel, rkey, list, amtFn) => {
       filterRecords(list, { ignoreSearch: true }).forEach(r => {
-        if (!r || r.voided || !r.date || !r.rep_date) return;
+        if (!r || r.voided || !r.date || !r.rep_date || r.date === r.rep_date) return;
         const d1 = String(r.date).slice(0, 10);
         const d2 = String(r.rep_date).slice(0, 10);
         if (d1 === d2 || d1.length < 10 || d2.length < 10) return;
@@ -16379,12 +16529,15 @@
 
     // 4. Overdue AR > 60 Days (S4) & Workforce Absent-Driver / Unattributed Machine Entries (S9)
     const s4MinAr60 = getAlertParam('S4', 'min_sentinel_ar60_usd', 0.01);
+    const custIdByNorm = new Map();
+    (SEED.records.customers || []).forEach(x => {
+      if (x && x.name && x.id) custIdByNorm.set(norm(x.name), x.id);
+    });
     const overdueArRows = (mdl.customers || [])
       .filter(c => Number(c.ar_60_plus || 0) > s4MinAr60)
       .sort((a, b) => Number(b.ar_60_plus || 0) - Number(a.ar_60_plus || 0))
       .map(c => {
-        const ci = customerInfo(c.Customer);
-        const cid = (ci && ci.id) ? ci.id : c.Customer;
+        const cid = custIdByNorm.get(norm(c.Customer)) || c.Customer;
         return {
           id: cid, rid: cid, rkey: 'customers',
           customer: c.Customer,
@@ -16774,18 +16927,25 @@
       const all = [];
       const pushRec = (docType, rkey, list) => (list || []).forEach(r => {
         if (!r || r.voided) return;
-        const rawNo = String(r.ticket_no == null ? '' : r.ticket_no).trim();
-        const m = rawNo.match(/^(.*?)(\d+)$/);
-        const prefix = m ? m[1].trim() : '';
-        const digits = m ? m[2] : '';
+        const rawNo = typeof r.ticket_no === 'string' ? r.ticket_no.trim() : String(r.ticket_no == null ? '' : r.ticket_no).trim();
+        let dStart = rawNo.length;
+        while (dStart > 0) {
+          const cc = rawNo.charCodeAt(dStart - 1);
+          if (cc >= 48 && cc <= 57) dStart--;
+          else break;
+        }
+        const digits = dStart < rawNo.length ? rawNo.slice(dStart) : '';
+        const prefix = (dStart > 0 && digits) ? rawNo.slice(0, dStart).trim() : '';
         const num = digits ? parseInt(digits, 10) : null;
         const isRemoved = (docType === 'Sales' || docType === 'Raw') ? isRemovedTicket(r) : false;
-        const isReturned = (docType === 'Sales' || docType === 'Raw') ? isReturnTicket(r) : false;
+        const isReturned = (!isRemoved && (docType === 'Sales' || docType === 'Raw')) ? isReturnTicket(r) : false;
+        const dStr = typeof r.date === 'string' && r.date.length === 10 ? r.date : String(r.date || '').slice(0, 10);
+        const rdStr = r.rep_date === r.date ? dStr : (typeof r.rep_date === 'string' && r.rep_date.length === 10 ? r.rep_date : String(r.rep_date || dStr).slice(0, 10));
         all.push({
           id: r.id, rkey, docType, company: r.company || 'WTC',
           ticket_no: rawNo, prefix, digits, num,
-          date: String(r.date || '').slice(0, 10),
-          rep_date: String(r.rep_date || r.date || '').slice(0, 10),
+          date: dStr,
+          rep_date: rdStr,
           party: r.customer || r.site_owner || r.site || r.equipment || r.truck || '-',
           product: r.product || r.item || (r.litres ? r.litres + ' L' : '-'),
           qty: Number(r.qty ?? r.litres ?? 0),
@@ -16804,7 +16964,16 @@
       pushRec('Raw', 'raw_purchases', SEED.records.raw_purchases);
       pushRec('Fuel', 'fuel_intakes', SEED.records.fuel_intakes);
 
-      const dayDiff = (d1, d2) => (!d1 || !d2) ? 0 : Math.round((new Date(d2 + 'T00:00:00Z') - new Date(d1 + 'T00:00:00Z')) / 86400000);
+      const _dayEpochCache = new Map();
+      const toDayIdx = d => {
+        let v = _dayEpochCache.get(d);
+        if (v === undefined) {
+          v = Math.round(Date.parse(d + 'T00:00:00Z') / 86400000);
+          _dayEpochCache.set(d, v);
+        }
+        return v;
+      };
+      const dayDiff = (d1, d2) => (!d1 || !d2 || d1 === d2) ? 0 : (toDayIdx(d2) - toDayIdx(d1));
       const mNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const fmtMY = iso => (!iso || iso.length < 7) ? '' : (mNames[parseInt(iso.slice(5, 7), 10) - 1] || '') + ' ' + iso.slice(0, 4);
 
@@ -18650,16 +18819,14 @@
         o.has_raw = Boolean(o.raw_loads > 0 || o.mat_credit !== 0 || o.quarry_haul !== 0 || o.mat_qty > 0);
         o.has_cust_haul = Boolean(o.sales_haul !== 0 || o.sales_haul_loads > 0);
         o.is_bundled_only = Boolean(!o.is_jv && o.bundled_loads > 0 && o.separate_loads === 0 && Math.abs(o.quarry_haul) < 0.005);
-        o.is_mixed_bundled = Boolean(!o.is_jv && o.bundled_loads > 0 && (o.separate_loads > 0 || Math.abs(o.quarry_haul) >= 0.005));
+        o.is_mixed_bundled = false;
         o.site_kind = o.is_jv
           ? 'JV 50/50'
           : (o.has_raw && o.has_cust_haul
               ? 'Source + 3P Haul'
               : (o.is_bundled_only
                   ? 'Bundled (Mat+Trans)'
-                  : (o.is_mixed_bundled
-                      ? 'Mixed (Bundled+Haul)'
-                      : (o.has_raw ? 'Source Site' : (o.has_cust_haul ? '3P Customer Haul' : 'Settlement')))));
+                  : (o.has_raw ? 'Source Site' : (o.has_cust_haul ? '3P Customer Haul' : 'Settlement'))));
         _siteAllList.push(o);
       });
 
@@ -20823,12 +20990,29 @@
     if (SEED._itemsCatalogSeededRev === rev && SEED.records.items.length >= CANONICAL_ITEMS_SEED.length) {
       return SEED.records.items;
     }
+    const candCache = new Map();
+    const isCandFast = (nm, cat) => {
+      const ck = `${norm(nm)}|${norm(cat)}`;
+      let res = candCache.get(ck);
+      if (res === undefined) {
+        res = isValidCatalogItemCandidate(nm, cat);
+        candCache.set(ck, res);
+      }
+      return res;
+    };
+    const customItemNorms = new Set();
+    customItems.forEach(ci => {
+      if (ci && !ci.voided) {
+        const k = norm(ci.name || ci.item_name);
+        if (k) customItemNorms.add(k);
+      }
+    });
     const keptItems = SEED.records.items.filter(r => {
       if (!r || r.voided) return false;
       const nm = String(r.name || r.item_name || '').trim();
       if (!nm) return false;
-      if (r.source === 'app' || customItems.some(ci => ci && !ci.voided && norm(ci.name || ci.item_name) === norm(nm))) return true;
-      return isValidCatalogItemCandidate(nm, r.category);
+      if (r.source === 'app' || customItemNorms.has(norm(nm))) return true;
+      return isCandFast(nm, r.category);
     });
     SEED.records.items.length = 0;
     const byKey = new Map();
@@ -20865,7 +21049,7 @@
     const histCostAgg = new Map();
     const histSubcatMap = new Map();
     (SEED.records.expense_items || []).forEach(r => {
-      if (!r || r.voided || !r.item_name || !isValidCatalogItemCandidate(r.item_name, r.category)) return;
+      if (!r || r.voided || !r.item_name || !isCandFast(r.item_name, r.category)) return;
       const k = norm(r.item_name);
       const subStr = String(r.subcategory || '').trim();
       if (subStr) {
@@ -20884,7 +21068,7 @@
     const autoInferFromRow = (rawName, uomRaw, catRaw, subRaw, costRaw, locRaw, minRaw, isExplicitStockOrRepair = false) => {
       const nm = String(rawName || '').trim();
       if (!nm) return;
-      if (!isExplicitStockOrRepair && !isValidCatalogItemCandidate(nm, catRaw)) return;
+      if (!isExplicitStockOrRepair && !isCandFast(nm, catRaw)) return;
       if (isExplicitStockOrRepair && isTransportRentalItemName(nm, catRaw)) return;
       const k = norm(nm);
       if (byKey.has(k)) {
@@ -41080,6 +41264,60 @@
     `;
   }
 
+  function renderSalesTypeBarHtml(isSup, currentVal = 'Pickup') {
+    const v = String(currentVal || 'Pickup');
+    const remOptLbl = isSup ? 'Remove Ticket (0 KM)' : 'Remove Ticket (0 KM · Sup)';
+    return `
+      <div class="origin-dispatch-card tkt-disp-card sales-type-bar" id="wrap_f_saletype" data-sale-type="${esc(v)}" style="grid-column:1 / -1;margin-bottom:4px">
+        <div class="origin-dispatch-top">
+          <div class="origin-dispatch-left">
+            <span class="origin-dispatch-lbl"><span class="pa-fld-lbl">${ic('sales')}<span>Sales Type *</span></span></span>
+            <div class="origin-mode-pills" id="saleTypePills" role="radiogroup" aria-label="Sales Type">
+              <button type="button" role="radio" aria-checked="${v === 'Pickup' ? 'true' : 'false'}" class="origin-pill ${v === 'Pickup' ? 'active' : ''}" data-sale-type-pill="Pickup" id="saleTypeBtnPickup">${ic('plant')}<span>Pick-up (Material Only)</span></button>
+              <button type="button" role="radio" aria-checked="${v === 'Delivery' ? 'true' : 'false'}" class="origin-pill ${v === 'Delivery' ? 'active' : ''}" data-sale-type-pill="Delivery" id="saleTypeBtnDelivery">${ic('truck')}<span>Delivery (Material + Transport)</span></button>
+              <button type="button" role="radio" aria-checked="${v === 'Unregistered' ? 'true' : 'false'}" class="origin-pill ${v === 'Unregistered' ? 'active' : ''}" data-sale-type-pill="Unregistered" id="saleTypeBtnUnreg">${ic('cashflow')}<span>Unregistered (Spot Cash)</span></button>
+              <button type="button" role="radio" aria-checked="${v === 'Remove' ? 'true' : 'false'}" class="origin-pill is-remove-pill${isSup ? '' : ' is-locked-sup'} ${v === 'Remove' ? 'active' : ''}" data-sale-type-pill="Remove" id="saleTypeBtnRemove" aria-disabled="${isSup ? 'false' : 'true'}">${isSup ? ic('shield') : ic('lock')}<span data-sale-type-rem-lbl="1">${esc(remOptLbl)}</span></button>
+            </div>
+          </div>
+        </div>
+        <select id="f_saletype" data-native-select="1" data-select-wired="1" hidden aria-hidden="true" tabindex="-1">
+          <option value="Pickup"${v === 'Pickup' ? ' selected' : ''}>Pick-up (Material Only)</option>
+          <option value="Delivery"${v === 'Delivery' ? ' selected' : ''}>Delivery (Material + Transport)</option>
+          <option value="Unregistered"${v === 'Unregistered' ? ' selected' : ''}>Unregistered (Spot Cash)</option>
+          <option value="Remove"${v === 'Remove' ? ' selected' : ''}>${esc(remOptLbl)}</option>
+        </select>
+      </div>
+    `;
+  }
+
+  function syncSalesTypeBarUI(activeVal) {
+    const wrap = $('wrap_f_saletype');
+    const stSel = $('f_saletype');
+    const effVal = String(activeVal || (stSel && stSel.value) || 'Pickup');
+    if (wrap) wrap.setAttribute('data-sale-type', effVal);
+    const isSup = canVoid();
+    const remOptLbl = isSup ? 'Remove Ticket (0 KM)' : 'Remove Ticket (0 KM · Sup)';
+    const pillsWrap = $('saleTypePills');
+    if (pillsWrap) {
+      pillsWrap.querySelectorAll('[data-sale-type-pill]').forEach(btn => {
+        const pVal = btn.getAttribute('data-sale-type-pill') || '';
+        const isAct = pVal === effVal;
+        btn.classList.toggle('active', isAct);
+        btn.setAttribute('aria-checked', isAct ? 'true' : 'false');
+        if (pVal === 'Remove') {
+          btn.classList.toggle('is-locked-sup', !isSup);
+          btn.setAttribute('aria-disabled', isSup ? 'false' : 'true');
+          const remLblEl = btn.querySelector('[data-sale-type-rem-lbl]');
+          if (remLblEl) remLblEl.textContent = remOptLbl;
+        }
+      });
+    }
+    if (stSel) {
+      const remOpt = stSel.querySelector('option[value="Remove"]');
+      if (remOpt) remOpt.textContent = remOptLbl;
+    }
+  }
+
   function renderTicketDispositionBarHtml(side) {
     const isSup = canVoid();
     const isEdit = Boolean(STATE.editingRecord && (STATE.editingRecord.crKey === 'sales_tickets' || STATE.editingRecord.crKey === 'raw_purchases'));
@@ -41089,13 +41327,13 @@
       <div class="origin-dispatch-card tkt-disp-card" id="wrap_f_ticket_disp_bar" data-disp-side="${esc(side)}" data-disp-mode="standard" style="grid-column:1 / -1;margin-bottom:4px"${isSales ? ' hidden' : ''}>
         <div class="origin-dispatch-top" style="flex-wrap:wrap;gap:8px">
           <div class="origin-dispatch-left" style="flex-wrap:wrap;gap:8px">
-            <span class="origin-dispatch-lbl">${ic('shield')}Ticket Mode</span>
+            <span class="origin-dispatch-lbl">${ic('shield')}${isSales ? 'Delivery Outcome' : 'Receipt Outcome'}</span>
             <div class="origin-mode-pills" id="ticketDispPills" role="group" aria-label="${esc(sideLbl)} Disposition">
               <button type="button" class="origin-pill active" data-ticket-disp-mode="standard" id="tktDispBtnStandard">
-                ${ic('check_circle')}<span>Standard ${side === 'raw' ? 'Receipt' : 'Dispatch'}</span>
+                ${ic('check_circle')}<span>${isSales ? 'Delivered (Sale Completed)' : 'Received (Load Accepted)'}</span>
               </button>
               <button type="button" class="origin-pill" data-ticket-disp-mode="return_wtc" id="tktDispBtnReturn">
-                ${ic('truck')}<span>Return to Plant (2x KM)</span>
+                ${ic('rotate')}<span>${isSales ? 'Sale Failed / Rejected · Returned to Plant ($0 · 2x KM)' : 'Load Rejected · Returned ($0 · 2x KM)'}</span>
               </button>
               ${isSales ? '' : `
               <button type="button" class="origin-pill${isSup ? '' : ' is-locked-sup'}" data-ticket-disp-mode="remove_slip" id="tktDispBtnRemove" aria-disabled="${isSup ? 'false' : 'true'}">
@@ -41109,6 +41347,7 @@
         <div class="origin-site-drawer" id="ticketDispReturnDrawer" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px">
+              <span class="badge badge-warn" id="tktReturnStatusBadge">${isSales ? 'Sale Failed · $0.00 Billed (0 m³)' : 'Load Rejected · $0.00 Cost (0 m³)'}</span>
               <span style="color:var(--ink-soft)" id="tktReturnRouteText">Plant Hub to Site and back to Plant Hub</span>
               <span style="color:var(--muted)">·</span>
               <strong style="color:var(--brass)" id="tktReturnKmMathText">0.0 km × 2 = 0.0 km Round-Trip</strong>
@@ -41410,7 +41649,10 @@
     if (mode === 'return_wtc') {
       const fromHub = (orig && (orig.originSite || orig.originName)) || company;
       const toDest = siteName || (side === 'raw' ? 'Quarry Site' : 'Customer Site');
-      setText('tktReturnRouteText', `${fromHub} Hub to ${toDest} and back to ${fromHub} Hub`);
+      setText('tktReturnStatusBadge', side === 'raw' ? 'Load Rejected · $0.00 Cost (0 m³)' : 'Sale Failed · $0.00 Billed (0 m³)');
+      setText('tktReturnRouteText', side === 'raw'
+        ? `Rejected load returned (${fromHub} Hub to ${toDest} and back to ${fromHub} Hub)`
+        : `Customer rejected delivery · returned to ${fromHub} Hub (${fromHub} to ${toDest} and back)`);
       setText('tktReturnKmMathText', `${effOwKm.toFixed(1)} km x 2 = ${effRtKm.toFixed(1)} km Round-Trip`);
       const isEdit = Boolean(STATE.editingRecord && (STATE.editingRecord.crKey === 'sales_tickets' || STATE.editingRecord.crKey === 'raw_purchases'));
       setText('tktReturnBookNetText', isEdit && subMode === 'pair'
@@ -41452,10 +41694,10 @@
     const isReturn = mode === 'return_wtc';
     const hideOnRemoveIds = side === 'sales'
       ? ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_customer', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
-      : ['wrap_f_time', 'wrap_f_raw_bundled_bar', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
+      : ['wrap_f_time', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
     const hideOnReturnIds = side === 'sales'
       ? ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truckowner', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
-      : ['wrap_f_time', 'wrap_f_raw_bundled_bar', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truckowner', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
+      : ['wrap_f_time', 'rawBundledModeBanner', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site_region', 'wrap_f_siteowner', 'wrap_f_truckowner', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
     const showOnReturnIds = side === 'sales'
       ? ['wrap_f_date', 'wrap_f_saletype', 'wrap_f_ticketno', 'wrap_f_customer', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes']
       : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes'];
@@ -41498,7 +41740,7 @@
         setFieldVisible('wrap_f_total_usd', !isSalesUnregNow);
         setFieldVisible('wrap_f_truckowner', isSales3POrPickupNow);
       } else {
-        ['wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_total_usd', 'wrap_f_raw_bundled_bar', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_driver', 'wrap_f_extinvoice'].forEach(id => setFieldVisible(id, true));
+        ['wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_total_usd', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_driver', 'wrap_f_extinvoice'].forEach(id => setFieldVisible(id, true));
         setFieldVisible('wrap_f_transportby', !isSuppDelivNow);
         setFieldVisible('rawBundledModeBanner', isSuppDelivNow);
         setFieldVisible('wrap_f_transunitprice', !isSuppDelivNow && val('f_transportby') !== 'Company fleet');
@@ -41507,6 +41749,7 @@
     }
     if (side === 'sales') {
       const stNow = val('f_saletype') || 'Pickup';
+      syncSalesTypeBarUI(stNow);
       setFieldVisible('wrap_f_ticket_disp_bar', stNow === 'Delivery' && !isRemove);
       setFieldVisible('wrap_f_origin_bar', stNow === 'Delivery' && !isRemove && !isReturn);
     }
@@ -41522,7 +41765,7 @@
     const notesInp = $('f_notes');
     if (notesInp && !STATE.editingPendingRawId) {
       notesInp.placeholder = isReturn
-        ? 'Reason for return / rejection (optional)'
+        ? (side === 'raw' ? 'Reason load was rejected / returned (optional)' : 'Reason sale failed / customer rejected delivery (optional)')
         : (isRemove ? 'Reason for removing ticket (optional)' : 'Required for back-dated entries or discounts above 20%');
     }
     FORM_UI.lastDispMode = mode;
@@ -41535,9 +41778,10 @@
         saveBtn.textContent = 'Remove Ticket (0 KM · Keep # in 25-Book)';
         saveBtn.hidden = false;
       } else if (mode === 'return_wtc') {
+        const failLbl = STATE.modalForm === 'raw' ? 'Rejected Load' : 'Failed Sale';
         saveBtn.textContent = (isEditingExisting && subMode === 'pair')
-          ? `Post Return to ${company} (${effRtKm.toFixed(1)} km RT)`
-          : `Save Return to ${company} (${effRtKm.toFixed(1)} km RT)`;
+          ? `Post ${failLbl} · Return to ${company} ($0 · ${effRtKm.toFixed(1)} km RT)`
+          : `Save ${failLbl} · Return to ${company} ($0 · ${effRtKm.toFixed(1)} km RT)`;
         saveBtn.hidden = false;
       } else {
         saveBtn.textContent = isEditingExisting ? 'Save Changes' : (STATE.editingPendingRawId ? 'Save Final Price' : 'Post');
@@ -41607,22 +41851,17 @@
         <div class="form-grid-3">
           ${secHdr('1. Ticket, Dispatch & Fleet', '', { id: 'secHdrTicketTop', rightHtml: renderTicketPadBadgeHtml() })}
           ${renderTicketSeriesDrawerHtml()}
+          ${renderSalesTypeBarHtml(isSup, 'Pickup')}
+          ${renderTicketRemoveDrawerHtml()}
           ${companyField}
           ${dateField}
           ${repDateField}
           ${timeField(false)}
-          ${fld('Sale Type *', sel('f_saletype', [
-            ['Pickup', 'Pick-up (Material Only)'],
-            ['Delivery', 'Delivery (Material + Transport)'],
-            ['Unregistered', 'Unregistered (Spot Cash)'],
-            ['Remove', isSup ? 'Remove Ticket (0 KM)' : 'Remove Ticket (0 KM · Sup)']
-          ], 'Pickup'), { id: 'wrap_f_saletype' })}
           ${fld('Transported By *', sel('f_transportby', [
             ['Company fleet', 'Company fleet (Own Truck)'],
             ['Third-party truck', 'Third-party truck (Hauler)']
           ], 'Company fleet'), { id: 'wrap_f_transportby', hidden: true })}
           ${fld('Ticket / Invoice No. *', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Enter pad ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '', afterHtml: '<div id="tktSeriesFieldBar" class="tkt-series-field-bar"></div>' })}
-          ${renderTicketRemoveDrawerHtml()}
           ${fld('Product / Aggregate Grade *', inp('f_product', 'text', '', 'list="dl_sales_prods" placeholder="Select or type grade..."') + dlMeta('dl_sales_prods', prodMetaItems), { id: 'wrap_f_product', hintId: 'hint_product', hint: '' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
           ${renderTicketDispositionBarHtml('sales')}
@@ -41710,18 +41949,7 @@
           ], (pendRawEditRow && pendRawEditRow.transport_by === 'Third-party truck') ? 'Third-party truck' : 'Company fleet'), { id: 'wrap_f_transportby', ...(pendRawEditRow ? { lockField: 'f_transportby', lockReason: 'Locked while entering final supplier invoice price' } : {}) })}
           ${fld('Raw Material (Product) *', inp('f_product', 'text', pendRawEditRow ? (pendRawEditRow.product || '') : '', 'list="dl_products" placeholder="Select or type grade..."') + dlMeta('dl_products', rawProdMeta), { id: 'wrap_f_product', ...(pendRawEditRow ? { lockField: 'f_product', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_product', hint: '' })}
           ${renderOriginDispatchBarHtml(effRawCo, 'raw')}
-          <div class="form-field span-3 quarry-pr-bundled-bar" id="wrap_f_raw_bundled_bar">
-            <label class="pa-fld-lbl">Quarry Supply &amp; Haulage Arrangement</label>
-            <input type="hidden" id="f_raw_bundled" value="${(pendRawEditRow && (pendRawEditRow.includes_transport || pendRawEditRow.transport_by === 'Supplier-delivered')) ? '1' : '0'}">
-            <div class="raw-supply-mode-bar" role="group" aria-label="Quarry Supply and Haulage Arrangement">
-              <button type="button" class="raw-supply-mode-btn${(pendRawEditRow && (pendRawEditRow.includes_transport || pendRawEditRow.transport_by === 'Supplier-delivered')) ? '' : ' active'}" data-raw-supply-mode="separate"${pendRawEditRow ? ' disabled' : ''}>
-                <div><span>Our Fleet or 3rd-Party Hauler</span><small>Ex-quarry material · Region &amp; Site required for haulage</small></div>
-              </button>
-              <button type="button" class="raw-supply-mode-btn${(pendRawEditRow && (pendRawEditRow.includes_transport || pendRawEditRow.transport_by === 'Supplier-delivered')) ? ' active' : ''}" data-raw-supply-mode="bundled"${pendRawEditRow ? ' disabled' : ''}>
-                <div><span>Supplier Provides Mat + Transport</span><small>Delivered price includes transport (internal split unknown · Region optional)</small></div>
-              </button>
-            </div>
-          </div>
+          <input type="hidden" id="f_raw_bundled" value="${(pendRawEditRow && isBundledRawTicket(pendRawEditRow)) ? '1' : '0'}">
           <div id="rawBundledModeBanner" class="form-field span-3 quarry-landed-callout" hidden></div>
           ${fld('Site *', inp('f_site', 'text', pendRawEditRow ? (pendRawEditRow.site || '') : '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('raw')), { id: 'wrap_f_site', ...(pendRawEditRow ? { lockField: 'f_site', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_site', hint: '' })}
           ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_raw_site_regions" placeholder="Select region to enable haulage..."') + dl('dl_raw_site_regions', regionNames()), { id: 'wrap_f_site_region', hidden: true, hintId: 'hint_raw_site_region', hint: 'Region and Site must both be specified when adding transportation in our trucks or associated 3rd-party haulers.' })}
@@ -43698,7 +43926,7 @@
       date: winOpts.date || '',
       types: ['Transport Price (Site)']
     });
-    if (ownHaulRule) return null;
+    if (ownHaulRule && normOwnerName(ownHaulRule.supplier) === normOwnerName(truckRow.supplier)) return null;
     if (winOpts.siteOwner && normOwnerName(winOpts.siteOwner) !== normOwnerName(truckRow.supplier)) {
       const siteOwnerRule = findRule({
         company,
@@ -43708,7 +43936,7 @@
         date: winOpts.date || '',
         types: ['Transport Price (Site)']
       });
-      if (siteOwnerRule && siteOwnerRule.supplier && !isCompanyName(siteOwnerRule.supplier)) {
+      if (siteOwnerRule && siteOwnerRule.supplier && normOwnerName(siteOwnerRule.supplier) === normOwnerName(winOpts.siteOwner) && !_IS_OWN_BU_RE.test(String(siteOwnerRule.supplier || '').trim())) {
         return {
           payee: siteOwnerRule.supplier,
           physicalOwner: truckRow.supplier,
@@ -44600,6 +44828,7 @@
       }
     }
     const saleType = val('f_saletype') || 'Pickup';
+    syncSalesTypeBarUI(saleType);
     const isDelivery = saleType === 'Delivery';
     const isPickup = saleType === 'Pickup';
     const isUnreg = saleType === 'Unregistered';
@@ -45245,11 +45474,11 @@
     }
     const sInfo = site ? siteInfo(site, 'raw') : null;
 
-    if (siteChanged && !pendRawEditRowEarly && !STATE.editingRecord) {
-      if (!FORM_UI.rawSupplyModeManual && !FORM_UI.transportByManual && $('f_raw_bundled')) {
-        $('f_raw_bundled').value = (sInfo && isSupplierDeliveredSite(sInfo)) ? '1' : '0';
+    if (!pendRawEditRowEarly && (!STATE.editingRecord || siteChanged)) {
+      if ($('f_raw_bundled')) {
+        $('f_raw_bundled').value = (site && isSupplierDeliveredSite(sInfo || site)) ? '1' : '0';
       }
-      if ($('f_site_region')) {
+      if (siteChanged && $('f_site_region')) {
         $('f_site_region').value = effectiveSiteRegion(sInfo, site);
       }
     }
@@ -45260,13 +45489,6 @@
     const isCoFleet = !isSuppDeliv && transportBy === 'Company fleet';
     const is3PHauler = !isSuppDeliv && !isCoFleet;
 
-    const rawModeBar = $('wrap_f_raw_bundled_bar');
-    if (rawModeBar) {
-      rawModeBar.querySelectorAll('[data-raw-supply-mode]').forEach(btn => {
-        const m = btn.getAttribute('data-raw-supply-mode');
-        btn.classList.toggle('active', m === (isSuppDeliv ? 'bundled' : 'separate'));
-      });
-    }
     const bundBanner = $('rawBundledModeBanner');
     if (bundBanner) {
       if (isSuppDeliv && FORM_UI.ticketDisposition === 'standard') {
@@ -48069,7 +48291,10 @@
         const uomVal = hasMat ? normPrUnit(val('f_uom') || 'm³') : ratePer;
         if (hasMat && $('f_uom') && $('f_uom').value !== uomVal) $('f_uom').value = uomVal;
         const isTruckMat = hasMat && uomVal === 'Truck';
-        const prInclTransChecked = Boolean(isPurch && $('f_pr_incl_transport') && $('f_pr_incl_transport').checked);
+        const prSiteObj = prSite ? siteInfo(prSite, isRawDomain ? 'raw' : 'sales') : null;
+        const prAutoBundled = Boolean(isPurch && prSite && isSupplierDeliveredSite(prSiteObj || prSite));
+        if ($('f_pr_incl_transport')) $('f_pr_incl_transport').checked = prAutoBundled;
+        const prInclTransChecked = prAutoBundled;
         if (matLbl) {
           matLbl.textContent = isComm
             ? (isTruckMat ? 'Commission Rate ($) *' : `Commission Rate ($ / ${uomVal}) *`)
@@ -48082,7 +48307,6 @@
         const matIsM3 = hasMat && /^m/i.test(uomVal);
         const transIsM3 = hasTrans && /^m/i.test(ratePer);
         const anyLegIsM3 = !isList && !isComm && (matIsM3 || transIsM3);
-        const prSiteObj = prSite ? siteInfo(prSite, isRawDomain ? 'raw' : 'sales') : null;
         const prNeedSiteReg = Boolean(isTransSite && prSite && !effectiveSiteRegion(prSiteObj, prSite));
 
         setFieldVisible('wrap_pr_ruletype', !isComm);
@@ -48090,15 +48314,12 @@
         setFieldVisible('wrap_pr_supplier', showSupplier);
         setFieldVisible('wrap_pr_site', showSite);
         setFieldVisible('wrap_pr_site_region', prNeedSiteReg);
-        setFieldVisible('wrap_pr_incl_transport', isPurch);
+        setFieldVisible('wrap_pr_incl_transport', prAutoBundled);
         setFieldVisible('wrap_pr_uom', hasMat);
         setFieldVisible('wrap_pr_matprice', hasMat);
         setFieldVisible('wrap_pr_transrate', hasTrans);
         setFieldVisible('wrap_pr_transprice', hasTrans);
         setFieldVisible('wrap_pr_truck', anyLegIsM3);
-        if (!isPurch && $('f_pr_incl_transport') && $('f_pr_incl_transport').checked) {
-          $('f_pr_incl_transport').checked = false;
-        }
         if (prNeedSiteReg) {
           const enteredPrReg = val('f_site_region');
           setHint('hint_pr_site_region', enteredPrReg
@@ -48381,10 +48602,17 @@
         return {};
       }
       if (STATE.modalForm === 'site') {
-        const inclTrans = val('f_includes_transport') === '1';
+        const editingSiteRec = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord : null;
+        const editSiteName = editingSiteRec ? String(val('f_site') || (editingSiteRec.orig && editingSiteRec.orig.name) || '').trim() : '';
+        const editProf = editSiteName ? getSiteHaulageProfile(editSiteName) : null;
+        const forcedSep = Boolean(editProf && (editProf.hasOwnOrPeerHaul || editProf.isJv));
+        if (forcedSep && $('f_includes_transport') && $('f_includes_transport').value !== '0') {
+          $('f_includes_transport').value = '0';
+        }
+        const inclTrans = !forcedSep && val('f_includes_transport') === '1';
         const haulDeck = $('quarryHaulageModeDeck');
         if (haulDeck) {
-          haulDeck.hidden = false;
+          haulDeck.hidden = forcedSep;
           haulDeck.querySelectorAll('[data-quarry-bundled]').forEach(b => {
             const on = (b.getAttribute('data-quarry-bundled') === '1') === inclTrans;
             b.classList.toggle('active', on);
@@ -48400,7 +48628,6 @@
         if (siteNameLbl) siteNameLbl.textContent = inclTrans ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *';
 
         const mTitle = $('modalTitle');
-        const editingSiteRec = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord : null;
         if (mTitle && !STATE.editingPendingExpenseId) {
           if (editingSiteRec) {
             const sLbl = String(val('f_site') || (editingSiteRec.orig && editingSiteRec.orig.name) || '').trim();
@@ -50306,6 +50533,7 @@
         updateKioskLiveThermalPreview(res);
       }
     }
+    if (typeof stripNativeTitles === 'function') stripNativeTitles(document);
     return res;
   }
 
@@ -52024,6 +52252,29 @@
           recalcForm();
           return;
         }
+        const saleTypePillBtn = ev.target && ev.target.closest ? ev.target.closest('[data-sale-type-pill]') : null;
+        if (saleTypePillBtn) {
+          ev.preventDefault();
+          const nextSt = saleTypePillBtn.getAttribute('data-sale-type-pill') || 'Pickup';
+          const stSel = $('f_saletype');
+          if (!stSel || (stSel.disabled && !(nextSt === 'Remove' && canVoid()))) return;
+          if (nextSt === 'Remove' && !canVoid()) {
+            toast('Only a Supervisor or Admin seat can remove tickets', 'err');
+            return;
+          }
+          if (nextSt === 'Remove' && canVoid()) {
+            stSel.disabled = false;
+            if ($('f_notes')) $('f_notes').disabled = false;
+          }
+          if (stSel.value !== nextSt) {
+            stSel.value = nextSt;
+            stSel.dispatchEvent(new Event('input', { bubbles: true }));
+            stSel.dispatchEvent(new Event('change', { bubbles: true }));
+          } else {
+            recalcForm();
+          }
+          return;
+        }
         const tktDispBtn = ev.target && ev.target.closest ? ev.target.closest('[data-ticket-disp-mode]') : null;
         if (tktDispBtn) {
           ev.preventDefault();
@@ -52490,17 +52741,6 @@
         const bund = btn.getAttribute('data-quarry-bundled') === '1' ? '1' : '0';
         if (bund === '1' && $('f_isjv') && $('f_isjv').checked) $('f_isjv').checked = false;
         if ($('f_includes_transport')) $('f_includes_transport').value = bund;
-        recalcForm();
-      });
-    });
-
-    body.querySelectorAll('[data-raw-supply-mode]').forEach(btn => {
-      btn.addEventListener('click', ev => {
-        ev.preventDefault();
-        if (btn.disabled) return;
-        const mode = btn.getAttribute('data-raw-supply-mode') === 'bundled' ? '1' : '0';
-        if ($('f_raw_bundled')) $('f_raw_bundled').value = mode;
-        FORM_UI.rawSupplyModeManual = true;
         recalcForm();
       });
     });
@@ -54524,7 +54764,7 @@
         trans_adj2: tAdj2v,
         start_date: date,
         end_date: val('f_enddate') || '',
-        ...(rt === 'Transport Price (Site)' && prSiteVal && !prSiteHasReg && effPrSiteReg ? { _assign_site_region: { site: prSiteVal, region: effPrSiteReg, supplier: val('f_supplier') || '' } } : {})
+        ...(rt === 'Transport Price (Site)' && prSiteVal && effPrSiteReg ? { _assign_site_region: { site: prSiteVal, region: effPrSiteReg, supplier: val('f_supplier') || '' } } : {})
       };
     } else if (f === 'vatinvoice') {
       const inv = val('f_ticketno'), cust = val('f_customer'), net = round2(num('f_amount')), vat = round2(num('f_vat'));
@@ -57264,7 +57504,7 @@
         ? (seatCanSaveEdit
           ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · ${isWordsOnlyEdit ? 'words-only edit mode · numbers locked to Supervisor' : 'updates ledger in place'}`
           : (canVoidCurrent && isTicketEdit
-            ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Ticket (0 KM)</b> or <b>Return Load (2x KM)</b> to update this ticket`
+            ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Ticket (0 KM)</b> or <b>${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</b> to update this ticket`
             : `Read-only seat (<b>${esc(activeUser().role)}</b>) · click <b>360° Details</b> above for full audit breakdown`))
         : (pendingSalRow
           ? `Updating contract <b>${esc(pendingSalRow.name || pendingSalRow.staff || pendingSalRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · onboarding fields stay locked`
@@ -57273,13 +57513,13 @@
             : `Posting as <b>${esc(activeUser().full_name)}</b> · stored on this device, the cloud ledger${HAS_LOCAL_API ? ' and SQLite' : ''}`));
       const saveBtnLbl = editTargetRow ? 'Save Changes' : (pendingSalRow ? 'Save Final Salary' : (pendingTargetRow ? 'Save Final Price' : 'Post'));
       const nextDayBtnHtml = (!editTargetRow && !pendingTargetRow && form === 'attendance')
-        ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" title="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
+        ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" data-ui-tip="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
         : '';
       const supQuickTicketBtnsHtml = (canVoidCurrent && isTicketEdit)
-        ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" title="Customer rejected product: return load to plant and log Round-Trip KM (2x One-Way KM)">Return Load (2x KM)</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" title="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
+        ? `<button type="button" class="btn-ghost-bar" id="modalReturnWtcBtn" data-ui-tip="Customer rejected product: return load to plant at $0 and log Round-Trip KM (2x One-Way KM)">${form === 'raw' ? 'Load Rejected · Return ($0 · 2x KM)' : 'Sale Failed · Return Load ($0 · 2x KM)'}</button><button type="button" class="btn-ghost-bar" id="modalRemoveSlipBtn" data-ui-tip="Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)">Remove Ticket (0 KM · Keep #)</button>`
         : '';
       const voidBtnHtml = canVoidCurrent
-        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" title="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Ticket instead for spoiled pad tickets)' : 'Void / Delete record'}">Void / Delete</button>`
+        ? `<button type="button" class="btn-ghost-bar modal-void-record-btn" id="modalVoidRecordBtn" data-ui-tip="${isTicketEdit ? 'Deletes record completely (creates a gap in the 25-ticket book · use Remove Ticket instead for spoiled pad tickets)' : 'Void / Delete record'}">Void / Delete</button>`
         : '';
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
@@ -64845,7 +65085,7 @@
       const expArr = Array.isArray(STATE.customRecords.expenses) ? STATE.customRecords.expenses : [];
       if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
       const eiArr = STATE.customRecords.expense_items;
-      const expCats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
+      let expCats = null;
       expArr.forEach(ex => {
         if (!ex || ex.voided) return;
         if (Array.isArray(ex.admin_overrides) && !ex.price_pending && ex.admin_overrides.includes('f_subcategory')) {
@@ -64865,6 +65105,7 @@
           }
         }
         if (ex.category && ex.subcategory) {
+          if (!expCats) expCats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
           const catHit = expCats.find(c => c.category === ex.category);
           if (catHit && catHit.subs.length && !catHit.subs.some(s => norm(s) === norm(ex.subcategory))) {
             ex.subcategory = /^fuel$/i.test(ex.category) ? 'Diesel' : '';
@@ -65006,6 +65247,40 @@
     return removedAny;
   }
 
+  // Preserve explicitly closed end_date / effective_to / adj_windows when an incoming sync or stale open custom record has an open end_date
+  function _preserveClosedEffectiveDates(existingObj, incomingObj) {
+    if (!existingObj || !incomingObj || incomingObj._reopenedExplicitly) return;
+    ['end_date', 'effective_to'].forEach(ef => {
+      const prevEnd = existingObj[ef] ? String(existingObj[ef]).slice(0, 10) : '';
+      const nextEnd = incomingObj[ef] ? String(incomingObj[ef]).slice(0, 10) : '';
+      if (prevEnd >= '1900-01-01' && prevEnd < '2030-01-01' && (!nextEnd || nextEnd >= '2030-01-01')) {
+        incomingObj[ef] = prevEnd;
+      }
+    });
+    if (Array.isArray(existingObj.adj_windows) && Array.isArray(incomingObj.adj_windows)) {
+      const closedWinMap = new Map();
+      existingObj.adj_windows.forEach(w => {
+        if (!w || typeof w !== 'object') return;
+        const we = w.e ? String(w.e).slice(0, 10) : '';
+        if (we >= '1900-01-01' && we < '2030-01-01') {
+          const wk = `${w.side || ''}|${String(w.s || '').slice(0, 10)}|${norm(w.own)}|${norm(w.drv)}|${norm(w.site)}|${norm(w.client)}`;
+          closedWinMap.set(wk, we);
+        }
+      });
+      if (closedWinMap.size) {
+        incomingObj.adj_windows.forEach(w => {
+          if (!w || typeof w !== 'object' || w._reopenedExplicitly) return;
+          const we = w.e ? String(w.e).slice(0, 10) : '';
+          if (!we || we >= '2030-01-01') {
+            const wk = `${w.side || ''}|${String(w.s || '').slice(0, 10)}|${norm(w.own)}|${norm(w.drv)}|${norm(w.site)}|${norm(w.client)}`;
+            const prevWe = closedWinMap.get(wk);
+            if (prevWe) w.e = prevWe;
+          }
+        });
+      }
+    }
+  }
+
   // Union-merge another device's app entries into ours. A void tombstone always wins.
   function mergeCustomRecords(remote) {
     if (!remote || typeof remote !== 'object') return false;
@@ -65023,6 +65298,7 @@
         if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
         else if (r.voided && !cur.voided) { cur.voided = true; cur.voided_by = r.voided_by; cur.voided_at = r.voided_at; changed = true; }
         else if (!cur.voided && !r.voided && r.modified_at && (!cur.modified_at || String(r.modified_at) > String(cur.modified_at))) {
+          _preserveClosedEffectiveDates(cur, r);
           Object.assign(cur, r);
           if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
           changed = true;
@@ -65036,12 +65312,12 @@
   // Project the app entries onto the seed registers (voided rows drop out, new rows sort in by date, and fleet owner/driver links stay synchronized)
   const _FLEET_DEP_KEYS = new Set(['equipment', 'company_equipment', 'drivers', 'company_drivers', 'suppliers', 'customers', 'sites', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'price_rules']);
   function applyCustomRecordsToSeed() {
+    SEED._customRev = (SEED._customRev || 0) + 1;
     ensureGlobalFinanceTablesSeeded();
     ensureItemsCatalogSeeded();
     ensureStaffMembersSeeded();
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
-    SEED._customRev = (SEED._customRev || 0) + 1;
     if (!SEED._tableRev) SEED._tableRev = {};
     let fleetTouched = false;
     const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'staff_members', 'staff_roles', 'customers', 'products', 'items', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
@@ -65076,6 +65352,7 @@
         }
         const existingById = rid ? list.find(x => x && String(x.id) === rid) : null;
         if (existingById) {
+          _preserveClosedEffectiveDates(existingById, r);
           Object.assign(existingById, r);
           if (!r.admin_overrides && existingById.admin_overrides) delete existingById.admin_overrides;
           touched = true;
@@ -65085,6 +65362,7 @@
           const mk = UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, r) : norm(r.name);
           const existingByName = mk ? list.find(x => x && String(x.id) !== rid && (UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, x) === mk : norm(x.name || x.equipment || x.driver) === mk)) : null;
           if (existingByName) {
+            _preserveClosedEffectiveDates(existingByName, r);
             Object.assign(existingByName, r, { id: existingByName.id || r.id });
             touched = true;
             return;
@@ -65116,7 +65394,7 @@
       if (touched && list.some(x => x && x.date)) list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     });
 
-    enrichGlobalRateTables();
+    enrichGlobalRateTables({ quiet: true });
     syncAllStaffCurrentFromLogs();
     applyUserEquipmentWindowsToTickets();
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
@@ -66170,7 +66448,6 @@
       window.Face.Sound.playSuccess();
     }
 
-    // Show verification card overlay on #authGate briefly
     const card = $('authFaceCard');
     const photoEl = $('authFaceCardImg') || $('authFacePhoto');
     const nameEl = $('authFaceCardName') || $('authFaceName');
@@ -66183,11 +66460,9 @@
       if (metaEl) metaEl.textContent = `${Math.round(confPct)}% match`;
       if (confEl) confEl.textContent = `${formatCleanSeatRole(user.role)} · ${formatSeatEntityCountLabel(user)}`;
       if (photoEl && snapshotUrl) photoEl.src = snapshotUrl;
-      card.hidden = false;
+      card.hidden = true;
     }
 
-    await new Promise(r => setTimeout(r, 35));
-    if (card) card.hidden = true;
     return performLogin(user.email, user.pin_code || '1111', {
       bypass2FA: true,
       method: methodLabel || 'Face ID',
@@ -69145,6 +69420,8 @@
     STATE.authed = true;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
+    if (FACE_STATE.loopTimer) { clearTimeout(FACE_STATE.loopTimer); FACE_STATE.loopTimer = null; }
+    FACE_STATE.camActive = false;
     FACE_STATE.pending2faUser = null;
     FACE_STATE.pendingPinUser = null;
     FACE_STATE.streakUser = null;
@@ -69152,14 +69429,28 @@
     FACE_STATE.seatDrawerOpen = false;
     FACE_STATE.disambiguatePin = '';
     FACE_STATE.enrolCamActive = false;
-    setAuthStreak(0, 3);
-    resetLivenessState();
-    stopAuthFaceScanner();
-    stopFaceCamera();
     window.__mfgAuthedEmail = activeUser().email;
     const gate = $('authGate');
     if (gate) gate.hidden = true;
     document.body.classList.remove('locked');
+    setAuthStreak(0, 3);
+    resetLivenessState();
+    if (IS_AUTOMATED_TEST) {
+      stopFaceCamera();
+      updateAuthFaceUi();
+    } else if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (STATE.authed && !FACE_STATE.enrolCamActive) {
+            stopFaceCamera();
+            updateAuthFaceUi();
+          }
+        }, 0);
+      });
+    } else {
+      stopFaceCamera();
+      updateAuthFaceUi();
+    }
     const keep = new URLSearchParams();
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     if (STATE.kioskLocked && STATE.view === 'kiosks' && STATE.activeKiosk) {
@@ -73595,7 +73886,7 @@
     }
     const pinSaveBtn = $('staffEnrolPinSaveBtn');
     if (pinSaveBtn) pinSaveBtn.disabled = !curEntry;
-    stripNativeTitles(modal);
+    stripNativeTitles(document);
   }
 
   function openStaffFaceEnrolModal(staffName = '') {
@@ -74535,7 +74826,7 @@
       });
 
       wireModalSuggestions(modal);
-      stripNativeTitles(modal);
+      stripNativeTitles(document);
     };
 
     modal.hidden = false;
@@ -81782,8 +82073,8 @@
         const periodSelInit = $('periodSelect');
         const gp = ((SEED.models['manufacturing-group'] || {}).periods) || {};
         if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
-        applyCustomRecordsToSeed();
         invalidateAllSeedCaches();
+        applyCustomRecordsToSeed();
         window.__mfgCoreSeedLoaded = true;
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) safeRender();
@@ -81797,11 +82088,36 @@
         SEED._canonicalByMain = null;
         SEED._recordsReady = true;
         if (shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
-        applyCustomRecordsToSeed();
         invalidateAllSeedCaches();
+        applyCustomRecordsToSeed();
         window.MFG_SEED = SEED;
         try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
-        if (STATE.authed || isAutoTest) safeRender();
+        if (STATE.authed || isAutoTest) {
+          safeRender();
+        } else {
+          // Non-blocking background warm-up of post-login caches while user is at #authGate
+          const prewarmSteps = [
+            () => { try { getKPI('manufacturing-group'); } catch (_) {} },
+            () => { try { getKPI('wtc'); getKPI('bbconstruction'); getKPI('lionstransport'); } catch (_) {} },
+            () => { try { getCanonicalCounterpartyRollups(); } catch (_) {} },
+            () => { try { sentinelSlice(); } catch (_) {} },
+            () => { try { getFreqIndex(); } catch (_) {} }
+          ];
+          let pwIdx = 0;
+          const runNextPrewarm = () => {
+            if (STATE.authed || pwIdx >= prewarmSteps.length) return;
+            if (FACE_STATE.busy) {
+              setTimeout(runNextPrewarm, 40);
+              return;
+            }
+            const stepFn = prewarmSteps[pwIdx++];
+            stepFn();
+            if (!STATE.authed && pwIdx < prewarmSteps.length) {
+              setTimeout(runNextPrewarm, 10);
+            }
+          };
+          setTimeout(runNextPrewarm, 5);
+        }
       } catch (err) {
         console.error('Seed hydration error:', err);
         SEED._recordsReady = true;

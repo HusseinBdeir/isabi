@@ -442,7 +442,7 @@ const Face = (() => {
       bcv._offsetX = frame._offsetX || 0;
       bcv._offsetY = frame._offsetY || 0;
       const bctx = bcv.getContext("2d");
-      bctx.filter = "brightness(1.38) contrast(1.18)";
+      bctx.filter = "brightness(1.40) contrast(1.20)";
       bctx.drawImage(frame, 0, 0, bw, bh);
       bctx.filter = "none";
       return bcv;

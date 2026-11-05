@@ -6712,7 +6712,7 @@
                 const sm = siteMetaByNorm.get(sk);
                 const bLoads = siteBundledLoads.get(sk) || 0;
                 const totLoads = Number(s.raw_loads || 0);
-                const isBundled = Boolean((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads * 2 >= Math.max(1, totLoads)));
+                const isBundled = Boolean(!(Number(s.raw_haulage || 0) > 0) && ((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads === totLoads)));
                 return Object.assign({}, s, {
                   siteOwner: resolveSiteOwner(s.Site),
                   isBundled,
@@ -6975,7 +6975,7 @@
                 const sm = siteMetaByNorm.get(sk);
                 const bLoads = siteBundledLoads.get(sk) || 0;
                 const totLoads = Number(s.raw_loads || 0);
-                const isBundled = Boolean((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads * 2 >= Math.max(1, totLoads)));
+                const isBundled = Boolean(!(Number(s.raw_haulage || 0) > 0) && ((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads === totLoads)));
                 return Object.assign({}, s, {
                   siteOwner: resolveSiteOwner(s.Site),
                   isBundled,

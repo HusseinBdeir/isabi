@@ -988,11 +988,9 @@
           ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
           ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm, hintId: 'hint_pr_site', hint: '' })}
           ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_pr_regions" placeholder="Select region for site haulage..."') + dl('dl_pr_regions', regNames), { id: 'wrap_pr_site_region', hidden: true, hintId: 'hint_pr_site_region', hint: 'Region and Site are both required when adding transportation with our trucks or associated 3rd-party haulers.' })}
-          <div class="form-field span-3 quarry-pr-bundled-bar" id="wrap_pr_incl_transport" ${isRawForm ? '' : 'hidden'}>
-            <label class="site-jv-toggle-pill quarry-bundled-toggle-pill" for="f_pr_incl_transport">
-              <input type="checkbox" id="f_pr_incl_transport">
-              <span class="site-jv-toggle-lbl"><b>Supplier Provides Material + Transportation (Bundled Delivered Price)</b> · Rate includes supplier delivery to plant; transport split unknown ($0 separate haulage · Region optional)</span>
-            </label>
+          <div class="form-field span-3 quarry-landed-callout" id="wrap_pr_incl_transport" hidden>
+            <input type="checkbox" id="f_pr_incl_transport" hidden>
+            <div><b>Supplier Provides Material + Transportation (Bundled Delivered Price):</b> Rate includes supplier delivery to plant; transport split unknown ($0 separate haulage · Region optional)</div>
           </div>
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
