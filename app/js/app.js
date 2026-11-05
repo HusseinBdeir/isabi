@@ -8910,7 +8910,12 @@
     const fromEq = (SEED.records.equipment || []).filter(e => normOwnerName(e.supplier) === o && isTruckUnit(e)).map(e => e.name);
     const sup = (SEED.records.suppliers || []).find(s => normOwnerName(s.name) === o);
     const fromSup = (sup && Array.isArray(sup.trucks)) ? sup.trucks.filter(isTruckUnit) : [];
-    const fromTx = (idx.txTrucksByOwner.get(o) || []).filter(isTruckUnit);
+    const fromTx = (idx.txTrucksByOwner.get(o) || []).filter(tn => {
+      if (!isTruckUnit(tn)) return false;
+      const eq = equipInfo(tn);
+      if (!eq || !eq.supplier || normOwnerName(eq.supplier) === o) return true;
+      return Array.isArray(eq.adj_windows) && eq.adj_windows.some(w => w && normOwnerName(w.own) === o);
+    });
     const cust = (SEED.records.customers || []).find(c => normOwnerName(c.name) === o);
     const fromCust = (cust && Array.isArray(cust.trucks)) ? cust.trucks.filter(isTruckUnit) : [];
     return uniqSorted(fromEq.concat(fromSup, fromCust, fromTx), getFreqIndex().truck);
@@ -36041,6 +36046,1368 @@
     `;
   }
 
+  // ==========================================================================
+  // HOSPITALITY & RESORTS ENGINE (PHASE 2 — BLANCA · LA UNA · PALMS · VOILE · PLATINUM)
+  // ==========================================================================
+  const HSP_RESORT_KEYS = ['blanca', 'launa', 'palms', 'voile', 'platinum'];
+  const HSP_RESORT_META = [
+    { key: 'blanca', name: 'Blanca', label: 'Blanca Beach & Resort', chalets: 48, cabanas: 24, color: '#3B82F6' },
+    { key: 'launa', name: 'La Una', label: 'La Una Dining & Lounge', chalets: 18, cabanas: 16, color: '#10B981' },
+    { key: 'palms', name: 'Palms', label: 'Palms Beach Resort', chalets: 64, cabanas: 30, color: '#F59E0B' },
+    { key: 'voile', name: 'Voile', label: 'Voile Beach Club', chalets: 22, cabanas: 28, color: '#06B6D4' },
+    { key: 'platinum', name: 'Platinum', label: 'Platinum Suites & Events', chalets: 36, cabanas: 14, color: '#8B5CF6' }
+  ];
+
+  function getActiveHospitalityResorts(coOverride) {
+    const co = String(coOverride || STATE.company || '');
+    const hit = HSP_RESORT_META.find(r => r.key === co || r.name.toLowerCase() === co.toLowerCase());
+    if (hit) return [hit];
+    return HSP_RESORT_META;
+  }
+
+  function computeHospitalityOperations(opts) {
+    const scopeCo = (opts && opts.company) || STATE.company;
+    const activeResorts = getActiveHospitalityResorts(scopeCo);
+    const activeNames = new Set(activeResorts.map(r => r.name));
+    const q = norm(STATE.search);
+
+    const baseVenueRows = [
+      { id: 'HSP-REV-001', date: '2026-09-28', company: 'Blanca', outlet: 'Chalets & Cabanas', category: 'Chalet Rental', rooms: 44, capacity: 48, covers: 132, ht_usd: 11800, vat_usd: 1298, ttc_usd: 13098, method: 'Card / Whish', notes: 'Weekend chalet & VIP cabana full-board occupancy' },
+      { id: 'HSP-REV-002', date: '2026-09-28', company: 'Blanca', outlet: 'Blanca Restaurant & Terrace', category: 'Restaurant F&B', rooms: 0, capacity: 0, covers: 285, ht_usd: 9450, vat_usd: 1039.5, ttc_usd: 10489.5, method: 'Cash & Card', notes: 'Sunday seafood lunch & sunset terrace service' },
+      { id: 'HSP-REV-003', date: '2026-09-27', company: 'Blanca', outlet: 'Beach & Pool Gate', category: 'Beach Entrance', rooms: 0, capacity: 0, covers: 410, ht_usd: 8200, vat_usd: 902, ttc_usd: 9102, method: 'Cash', notes: 'Day-pass admissions & sunbed packages' },
+      { id: 'HSP-REV-004', date: '2026-09-28', company: 'La Una', outlet: 'La Una Main Dining', category: 'Restaurant F&B', rooms: 16, capacity: 18, covers: 340, ht_usd: 14200, vat_usd: 1562, ttc_usd: 15762, method: 'POS Till #1', notes: 'Dinner tasting service + boutique suite stays (RawBT synced)' },
+      { id: 'HSP-REV-005', date: '2026-09-27', company: 'La Una', outlet: 'La Una Lounge & Shisha', category: 'Shisha & Lounge', rooms: 0, capacity: 0, covers: 190, ht_usd: 5600, vat_usd: 616, ttc_usd: 6216, method: 'Cash & Card', notes: 'Evening terrace shisha & cocktail program' },
+      { id: 'HSP-REV-006', date: '2026-09-26', company: 'Palms', outlet: 'Palms Chalet Village', category: 'Chalet Rental', rooms: 58, capacity: 64, covers: 174, ht_usd: 15400, vat_usd: 1694, ttc_usd: 17094, method: 'Bank Transfer', notes: 'Family chalet block + poolside duplexes' },
+      { id: 'HSP-REV-007', date: '2026-09-26', company: 'Palms', outlet: 'Palms Banquet Lawn', category: 'Events & Weddings', rooms: 0, capacity: 0, covers: 320, ht_usd: 18500, vat_usd: 2035, ttc_usd: 20535, method: 'Contract Deposit', notes: 'Seaside wedding banquet & audio-visual package' },
+      { id: 'HSP-REV-008', date: '2026-09-25', company: 'Voile', outlet: 'Voile Sunset Deck', category: 'Beach Entrance', rooms: 20, capacity: 22, covers: 295, ht_usd: 10900, vat_usd: 1199, ttc_usd: 12099, method: 'Card / Whish', notes: 'VIP daybeds, DJ sunset deck & bungalow stays' },
+      { id: 'HSP-REV-009', date: '2026-09-25', company: 'Voile', outlet: 'Voile Valet & Marina', category: 'Valet & Services', rooms: 0, capacity: 0, covers: 165, ht_usd: 1950, vat_usd: 214.5, ttc_usd: 2164.5, method: 'Cash', notes: 'VIP valet parking & jetty tender mooring' },
+      { id: 'HSP-REV-010', date: '2026-09-24', company: 'Platinum', outlet: 'Platinum Executive Suites', category: 'Chalet Rental', rooms: 33, capacity: 36, covers: 88, ht_usd: 12600, vat_usd: 1386, ttc_usd: 13986, method: 'Card / Corporate', notes: 'Executive suites & penthouse hospitality' },
+      { id: 'HSP-REV-011', date: '2026-09-24', company: 'Platinum', outlet: 'Platinum Ballroom', category: 'Events & Weddings', rooms: 0, capacity: 0, covers: 250, ht_usd: 14800, vat_usd: 1628, ttc_usd: 16428, method: 'Bank Transfer', notes: 'Corporate gala dinner & stage production' }
+    ];
+
+    // Also include any custom sales_tickets entered for Hospitality resorts
+    const customSales = ((SEED && SEED.records && SEED.records.sales_tickets) || []).filter(t => t && !t.voided && activeNames.has(String(t.company || '').trim()));
+    customSales.forEach((t, idx) => {
+      const ttc = Number(t.total_ttc != null ? t.total_ttc : t.total || 0);
+      const vat = Number(t.vat || 0);
+      const ht = round2(ttc - vat);
+      baseVenueRows.unshift({
+        id: t.id || `HSP-CUST-${idx + 1}`,
+        date: t.date || '2026-09-28',
+        company: t.company,
+        outlet: t.site || t.product || 'Main Venue',
+        category: /chalet|room|suite/i.test(String(t.product || '')) ? 'Chalet Rental' : 'Restaurant F&B',
+        rooms: Number(t.rooms || 1),
+        capacity: 1,
+        covers: Math.max(1, Math.round(Number(t.qty || 1))),
+        ht_usd: ht,
+        vat_usd: vat,
+        ttc_usd: ttc,
+        method: t.method || 'Cash',
+        notes: cleanNotesText(t.notes) || `${t.customer || 'Guest'} · ${t.product || 'Hospitality Service'}`
+      });
+    });
+
+    const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
+
+    const posRows = [
+      { id: 'POS-Z-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una RawBT Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'RawBT thermal Z-Read verified 100% against physical drawer' },
+      { id: 'POS-Z-902', date: '2026-09-28', company: 'Blanca', terminal: 'Blanca Terrace POS #1', shift: 'Full Day', cashier: 'Maya S.', bills_count: 192, pos_billed_ttc: 10489.5, cash_usd: 5120, card_whish_usd: 5219.5, comp_usd: 150, variance_usd: 0, status: 'Balanced', notes: 'All credit slips & Whish QR receipts reconciled' },
+      { id: 'POS-Z-903', date: '2026-09-27', company: 'Blanca', terminal: 'Blanca Pool Bar POS #2', shift: 'Sunset Shift', cashier: 'Rami H.', bills_count: 164, pos_billed_ttc: 9102, cash_usd: 6810, card_whish_usd: 2110, comp_usd: 0, variance_usd: -182, status: 'R2 Variance', notes: 'Rule R2 Alert: Unclosed cabana tab #B-14 ($182) pending guest checkout' },
+      { id: 'POS-Z-904', date: '2026-09-27', company: 'La Una', terminal: 'La Una Lounge POS #2', shift: 'Evening Shift', cashier: 'Karim T.', bills_count: 112, pos_billed_ttc: 6216, cash_usd: 3890, card_whish_usd: 2326, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Shisha & cocktail counter closed with zero discrepancy' },
+      { id: 'POS-Z-905', date: '2026-09-26', company: 'Palms', terminal: 'Palms Main Reception POS', shift: 'Day Shift', cashier: 'Lara M.', bills_count: 138, pos_billed_ttc: 17094, cash_usd: 7400, card_whish_usd: 9434, comp_usd: 260, variance_usd: 0, status: 'Balanced', notes: 'Chalet check-in & beach gate Z-report matched' },
+      { id: 'POS-Z-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'R2 Variance', notes: 'Rule R2 Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
+      { id: 'POS-Z-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
+    ].filter(r => activeNames.has(r.company));
+
+    const vatRows = [
+      { id: 'HSP-VAT-101', date: '2026-09-28', company: 'Blanca', doc_ref: 'VAT-BL-2026-091', category: 'Chalet & F&B Sales', tax_rule: '11% Standard VAT', ht_usd: 29450, vat_usd: 3239.5, ttc_usd: 32689.5, direction: 'Output VAT', notes: 'Official 11% fiscal declaration on resort rooms & dining' },
+      { id: 'HSP-VAT-102', date: '2026-09-28', company: 'La Una', doc_ref: 'VAT-LU-2026-084', category: 'Restaurant & Lounge', tax_rule: '11% Standard VAT', ht_usd: 19800, vat_usd: 2178, ttc_usd: 21978, direction: 'Output VAT', notes: 'La Una fiscal POS Z-batch 11% output tax' },
+      { id: 'HSP-VAT-103', date: '2026-09-27', company: 'Blanca', doc_ref: 'EX-BL-2026-412', category: 'Generator Diesel Intake', tax_rule: 'Never VAT (step253)', ht_usd: 4850, vat_usd: 0, ttc_usd: 4850, direction: 'Exempt (Never VAT)', notes: 'step253 Enforced: Excised generator fuel carries $0 VAT' },
+      { id: 'HSP-VAT-104', date: '2026-09-27', company: 'La Una', doc_ref: 'TIP-LU-2026-019', category: 'Staff Gratuities & Tips', tax_rule: 'Never VAT (step253)', ht_usd: 1920, vat_usd: 0, ttc_usd: 1920, direction: 'Exempt (Never VAT)', notes: 'step253 Enforced: Pass-through staff tips excluded from VAT base' },
+      { id: 'HSP-VAT-105', date: '2026-09-26', company: 'Palms', doc_ref: 'VAT-PL-2026-067', category: 'Chalets & Wedding Banquets', tax_rule: '11% Standard VAT', ht_usd: 33900, vat_usd: 3729, ttc_usd: 37629, direction: 'Output VAT', notes: 'Palms seasonal chalet & event fiscal batch' },
+      { id: 'HSP-VAT-106', date: '2026-09-25', company: 'Voile', doc_ref: 'AP-VL-2026-308', category: 'Cellar & Kitchen Imports', tax_rule: '11% Deductible Input', ht_usd: 11200, vat_usd: 1232, ttc_usd: 12432, direction: 'Input VAT', notes: 'Deductible supplier VAT on F&B commissary invoices' },
+      { id: 'HSP-VAT-107', date: '2026-09-24', company: 'Platinum', doc_ref: 'VAT-PT-2026-052', category: 'Suites & Gala Ballroom', tax_rule: '11% Standard VAT', ht_usd: 27400, vat_usd: 3014, ttc_usd: 30414, direction: 'Output VAT', notes: 'Platinum corporate suites & ballroom 11% output VAT' }
+    ].filter(r => activeNames.has(r.company));
+
+    const membershipRows = [
+      { id: 'MEM-2026-001', company: 'Blanca', member: 'Khoury Family Trust', unit: 'Royal Chalet #A-01', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 28000, paid_usd: 28000, balance_usd: 0, due_date: '2026-06-15', status: 'Paid in Full', notes: 'Front-row beach chalet + 6 VIP beach passes' },
+      { id: 'MEM-2026-002', company: 'Blanca', member: 'Nassar Holdings SAL', unit: 'Duplex Chalet #B-08', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 24000, paid_usd: 16500, balance_usd: 7500, due_date: '2026-08-30', status: 'Overdue Arrears', notes: '3rd installment ($7,500) past due — follow-up scheduled' },
+      { id: 'MEM-2026-003', company: 'Palms', member: 'Saab & Associates', unit: 'Presidential Villa #P-04', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 36000, paid_usd: 27000, balance_usd: 9000, due_date: '2026-09-10', status: 'Overdue Arrears', notes: 'Q3 villa installment overdue · statement dispatched' },
+      { id: 'MEM-2026-004', company: 'Palms', member: 'Dr. Tarek Mansour', unit: 'Pool Cabana #C-12', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 14500, paid_usd: 14500, balance_usd: 0, due_date: '2026-05-15', status: 'Paid in Full', notes: 'Settled upfront with 5% early-bird discount' },
+      { id: 'MEM-2026-005', company: 'Voile', member: 'Horizon Marine Club', unit: 'Sunset Cabana #V-02 + Jetty', season: 'Summer 2026', start_date: '2026-05-15', end_date: '2026-10-15', contract_usd: 19500, paid_usd: 15000, balance_usd: 4500, due_date: '2026-10-05', status: 'Partial / Active', notes: 'Final closing installment due Oct 5' },
+      { id: 'MEM-2026-006', company: 'La Una', member: 'Gourmet Circle VIP (12 Cards)', unit: 'Private Cellar Locker #L-03', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 18000, paid_usd: 18000, balance_usd: 0, due_date: '2026-02-01', status: 'Paid in Full', notes: 'Corporate dining & private cellar membership' },
+      { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
+    ].filter(r => activeNames.has(r.company));
+
+    const partnerSplitRows = [
+      { id: 'HSP-JV-01', company: 'Blanca', category: 'Restaurant & Terrace F&B', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Chef Operator (30%) · Co-Investor (20%)', gross_pool_usd: 148500, operator_share_usd: 44550, holding_share_usd: 74250, coinvest_share_usd: 29700, paid_drawings_usd: 125000, open_payable_usd: 23500, status: 'Active Split' },
+      { id: 'HSP-JV-02', company: 'Blanca', category: 'Shisha & Sunset Lounge', start_date: '2026-05-01', end_date: 'Open', slot_count: 2, partners_summary: 'Blanca Resort (60%) · Shisha Concessionaire (40%)', gross_pool_usd: 54000, operator_share_usd: 21600, holding_share_usd: 32400, coinvest_share_usd: 0, paid_drawings_usd: 54000, open_payable_usd: 0, status: 'Settled' },
+      { id: 'HSP-JV-03', company: 'La Una', category: 'Fine Dining & RawBT Till Pool', start_date: '2026-01-01', end_date: 'Open', slot_count: 4, partners_summary: 'Bdeir Holding (55%) · Managing Partner (25%) · Culinary Dir (10%) · Backer (10%)', gross_pool_usd: 212000, operator_share_usd: 74200, holding_share_usd: 116600, coinvest_share_usd: 21200, paid_drawings_usd: 190000, open_payable_usd: 22000, status: 'Active Split' },
+      { id: 'HSP-JV-04', company: 'Palms', category: 'Weddings, Banquets & Chalets', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (60%) · Event Partner (25%) · Resort GM Pool (15%)', gross_pool_usd: 265000, operator_share_usd: 106000, holding_share_usd: 159000, coinvest_share_usd: 0, paid_drawings_usd: 240000, open_payable_usd: 25000, status: 'Active Split' },
+      { id: 'HSP-JV-05', company: 'Voile', category: 'Beach Deck, DJ & Valet Pool', start_date: '2026-05-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Beach Club Promoter (35%) · Valet Operator (15%)', gross_pool_usd: 118000, operator_share_usd: 59000, holding_share_usd: 59000, coinvest_share_usd: 0, paid_drawings_usd: 104000, open_payable_usd: 14000, status: 'Active Split' },
+      { id: 'HSP-JV-06', company: 'Platinum', category: 'Suites & Corporate Ballroom', start_date: '2026-01-01', end_date: 'Open', slot_count: 2, partners_summary: 'Bdeir Holding (70%) · Hospitality Equity Partner (30%)', gross_pool_usd: 184000, operator_share_usd: 55200, holding_share_usd: 128800, coinvest_share_usd: 0, paid_drawings_usd: 184000, open_payable_usd: 0, status: 'Settled' }
+    ].filter(r => activeNames.has(r.company));
+
+    const stockRows = [
+      { id: 'STK-HSP-01', date: '2026-09-28', company: 'La Una', store: 'Main Kitchen & Cold Room', item_group: 'Prime Cuts & Imported Seafood', opening_usd: 6400, purchases_in_usd: 14800, transfers_net_usd: -1200, recipe_usage_usd: 12900, closing_usd: 7100, r3_ratio: 1.05, status: 'Optimal', notes: 'Transferred $1,200 vacuum-sealed cuts to Blanca terrace kitchen' },
+      { id: 'STK-HSP-02', date: '2026-09-28', company: 'La Una', store: 'Sommelier Cellar & Bar', item_group: 'Vintage Wines & Single Malts', opening_usd: 18200, purchases_in_usd: 9600, transfers_net_usd: 0, recipe_usage_usd: 7400, closing_usd: 20400, r3_ratio: 1.30, status: 'R3 Ratio Alert', notes: 'Rule R3 Watch (1.30x): Cellar restock ahead of October private tastings' },
+      { id: 'STK-HSP-03', date: '2026-09-28', company: 'Blanca', store: 'Beach Bar & Terrace Commissary', item_group: 'Spirits, Mixers & Draft', opening_usd: 8900, purchases_in_usd: 11400, transfers_net_usd: 1200, recipe_usage_usd: 11850, closing_usd: 9650, r3_ratio: 1.06, status: 'Optimal', notes: 'Includes $1,200 inter-resort commissary transfer from La Una' },
+      { id: 'STK-HSP-04', date: '2026-09-27', company: 'Palms', store: 'Banquet & Wedding Commissary', item_group: 'Banquet Proteins, Dairy & Pastry', opening_usd: 9500, purchases_in_usd: 16200, transfers_net_usd: -800, recipe_usage_usd: 14900, closing_usd: 10000, r3_ratio: 1.03, status: 'Optimal', notes: '320-guest wedding banquet consumption reconciled to recipe BOM' },
+      { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'R3 Ratio Alert', notes: 'Rule R3 Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
+      { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: ' VIP suite minibars & ballroom catering stock balanced' }
+    ].filter(r => activeNames.has(r.company));
+
+    const menuRows = [
+      { id: 'MNU-001', company: 'La Una', item: 'Dry-Aged Ribeye 450g (Josper Grill)', category: 'Main Course · Kitchen', price_ttc: 68.00, price_ht: 61.26, recipe_cost: 19.60, margin_usd: 41.66, food_cost_pct: 32.0, units_sold: 184, menu_class: 'Star (High Margin · High Vol)', notes: 'Top gross margin contributor on RawBT Till #1' },
+      { id: 'MNU-002', company: 'La Una', item: 'Truffle Burrata & Heirloom Carpaccio', category: 'Starter · Kitchen', price_ttc: 26.00, price_ht: 23.42, recipe_cost: 5.85, margin_usd: 17.57, food_cost_pct: 25.0, units_sold: 260, menu_class: 'Star (High Margin · High Vol)', notes: '25.0% food cost · highest table attachment rate' },
+      { id: 'MNU-003', company: 'Blanca', item: 'Mediterranean Catch of the Day (1kg)', category: 'Seafood · Kitchen', price_ttc: 75.00, price_ht: 67.57, recipe_cost: 27.70, margin_usd: 39.87, food_cost_pct: 41.0, units_sold: 142, menu_class: 'Plowhorse (High Vol · Watch Cost)', notes: 'Fresh wild catch cost rose 4% this week — review market price' },
+      { id: 'MNU-004', company: 'Blanca', item: 'Signature Passionfruit Mezcal Pitcher', category: 'Cocktails · Bar', price_ttc: 48.00, price_ht: 43.24, recipe_cost: 8.65, margin_usd: 34.59, food_cost_pct: 20.0, units_sold: 215, menu_class: 'Star (High Margin · High Vol)', notes: '80% gross pour margin across beach cabanas' },
+      { id: 'MNU-005', company: 'Palms', item: 'Royal Wedding Banquet Package (Per Guest)', category: 'Banquet · Events', price_ttc: 65.00, price_ht: 58.56, recipe_cost: 18.15, margin_usd: 40.41, food_cost_pct: 31.0, units_sold: 320, menu_class: 'Star (High Margin · High Vol)', notes: 'Includes 4-course plated service + live stations' },
+      { id: 'MNU-006', company: 'Voile', item: 'Sunset Sushi & Sashimi Boat (36 pcs)', category: 'Raw Bar · Deck', price_ttc: 95.00, price_ht: 85.59, recipe_cost: 33.38, margin_usd: 52.21, food_cost_pct: 39.0, units_sold: 96, menu_class: 'Puzzle (High Margin $ · Niche)', notes: 'High dollar contribution per daybed order' },
+      { id: 'MNU-007', company: 'Platinum', item: 'Executive Gala Surf & Turf Menu', category: 'Ballroom · Events', price_ttc: 82.00, price_ht: 73.87, recipe_cost: 22.90, margin_usd: 50.97, food_cost_pct: 31.0, units_sold: 250, menu_class: 'Star (High Margin · High Vol)', notes: 'Standardized banquet BOM locked at 31% food cost' }
+    ].filter(r => activeNames.has(r.company));
+
+    const energyRows = [
+      { id: 'NRG-001', date: '2026-09-28', company: 'Blanca', asset: 'Perkins 500kVA Prime Gen #1 + 180kWp Solar', tank_level_l: 6420, refill_l: 3000, run_hours: 14.5, diesel_used_l: 435, l_per_hr: 30.0, rated_l_hr: 31.0, kwh_gen: 1980, solar_offset_pct: 38, status: 'Normal Burn', notes: 'Solar PV covered 38% of peak afternoon chiller & pool pump load' },
+      { id: 'NRG-002', date: '2026-09-28', company: 'La Una', asset: 'Cummins 250kVA Silent Gen + Hybrid Inverter', tank_level_l: 3180, refill_l: 0, run_hours: 16.0, diesel_used_l: 272, l_per_hr: 17.0, rated_l_hr: 18.0, kwh_gen: 1120, solar_offset_pct: 29, status: 'Normal Burn', notes: 'Cold rooms & Josper extraction running within rated curve' },
+      { id: 'NRG-003', date: '2026-09-27', company: 'Palms', asset: 'Caterpillar 650kVA Banquet Gen #1', tank_level_l: 4850, refill_l: 4000, run_hours: 18.0, diesel_used_l: 792, l_per_hr: 44.0, rated_l_hr: 36.0, kwh_gen: 2840, solar_offset_pct: 24, status: 'R4 Burn Spike (+22%)', notes: 'Rule R4 Alert: 44.0 L/hr vs 36.0 L/hr rated (+22%) during wedding HVAC peak — inspect injectors' },
+      { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
+      { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
+    ].filter(r => activeNames.has(r.company));
+
+    const maintRows = [
+      { id: 'MNT-HSP-01', date: '2026-09-28', company: 'Palms', asset: 'Caterpillar 650kVA Gen #1', zone: 'Power House', type: 'Corrective · Fuel Injector Calibration', priority: 'Urgent', downtime_hrs: 2.5, cost_usd: 680, vendor: 'jounieh marine & power', status: 'Open Work Order', notes: 'Triggered by Rule R4 44.0 L/hr burn spike alert' },
+      { id: 'MNT-HSP-02', date: '2026-09-27', company: 'Blanca', asset: 'Infinity Pool Filtration & Salt Chlorinator', zone: 'Main Pool Deck', type: 'Preventive · Membrane & Pump Service', priority: 'Standard', downtime_hrs: 0, cost_usd: 420, vendor: 'aqua-tech lebanon', status: 'Completed', notes: 'Overnight backwash & dosing pump calibration' },
+      { id: 'MNT-HSP-03', date: '2026-09-26', company: 'La Una', asset: 'Walk-In Cold Room #2 Compressor', zone: 'Main Commissary', type: 'Preventive · Refrigerant & Thermostat Check', priority: 'High', downtime_hrs: 0.5, cost_usd: 310, vendor: 'frio-serv commercial', status: 'Completed', notes: 'Held -2.0°C steady under full weekend load' },
+      { id: 'MNT-HSP-04', date: '2026-09-25', company: 'Blanca', asset: 'Chalet Block B Split HVAC Units (8 Units)', zone: 'Chalet Village', type: 'Preventive · Coil Deep Clean & Gas Top-Up', priority: 'Standard', downtime_hrs: 1.0, cost_usd: 540, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'End-of-September guest turnover HVAC service' },
+      { id: 'MNT-HSP-05', date: '2026-09-24', company: 'Voile', asset: 'Reverse Osmosis Desalination Skid (80m³/day)', zone: 'Utility Plant', type: 'Corrective · High-Pressure Seal Replacement', priority: 'High', downtime_hrs: 3.0, cost_usd: 890, vendor: 'aqua-tech lebanon', status: 'Open Work Order', notes: 'Scheduled Tuesday morning between guest check-outs' },
+      { id: 'MNT-HSP-06', date: '2026-09-23', company: 'Platinum', asset: 'Ballroom Acoustic Dimmers & Chiller AHU #3', zone: 'Grand Ballroom', type: 'Preventive · Pre-Gala Inspection', priority: 'Standard', downtime_hrs: 0, cost_usd: 390, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'Verified 100% ahead of corporate gala season' }
+    ].filter(r => activeNames.has(r.company));
+
+    const matchSearch = row => {
+      if (!q) return true;
+      return Object.values(row).some(v => norm(v).includes(q));
+    };
+
+    const totalRoomsCap = activeResorts.reduce((s, r) => s + r.chalets + r.cabanas, 0);
+    const occupiedUnits = venueRows.reduce((s, r) => s + Number(r.rooms || 0), 0);
+    const totalRevenueTtc = round2(venueRows.reduce((s, r) => s + r.ttc_usd, 0));
+    const totalRevenueHt = round2(venueRows.reduce((s, r) => s + r.ht_usd, 0));
+    const totalVatOutput = round2(vatRows.filter(r => r.direction === 'Output VAT').reduce((s, r) => s + r.vat_usd, 0));
+    const totalVatInput = round2(vatRows.filter(r => r.direction === 'Input VAT').reduce((s, r) => s + r.vat_usd, 0));
+    const totalNeverVatUsd = round2(vatRows.filter(r => r.direction.includes('Never VAT')).reduce((s, r) => s + r.ttc_usd, 0));
+    const revParUsd = totalRoomsCap > 0 ? round2(totalRevenueTtc / totalRoomsCap) : 0;
+
+    const totalMemContract = round2(membershipRows.reduce((s, r) => s + r.contract_usd, 0));
+    const totalMemPaid = round2(membershipRows.reduce((s, r) => s + r.paid_usd, 0));
+    const totalMemArrears = round2(membershipRows.reduce((s, r) => s + r.balance_usd, 0));
+    const overdueMemCount = membershipRows.filter(r => r.status === 'Overdue Arrears').length;
+
+    const totalPartnerPool = round2(partnerSplitRows.reduce((s, r) => s + r.gross_pool_usd, 0));
+    const totalOpenPartnerPayable = round2(partnerSplitRows.reduce((s, r) => s + r.open_payable_usd, 0));
+
+    const totalStockPurchases = round2(stockRows.reduce((s, r) => s + r.purchases_in_usd, 0));
+    const totalStockUsage = round2(stockRows.reduce((s, r) => s + r.recipe_usage_usd, 0));
+    const totalStockClosing = round2(stockRows.reduce((s, r) => s + r.closing_usd, 0));
+    const r3AlertCount = stockRows.filter(r => r.r3_ratio > 1.18).length;
+
+    const avgFoodCostPct = menuRows.length ? round2(menuRows.reduce((s, r) => s + r.food_cost_pct, 0) / menuRows.length) : 0;
+
+    const totalDieselTankL = energyRows.reduce((s, r) => s + r.tank_level_l, 0);
+    const totalDieselUsedL = energyRows.reduce((s, r) => s + r.diesel_used_l, 0);
+    const totalRunHours = round2(energyRows.reduce((s, r) => s + r.run_hours, 0));
+    const avgSolarOffsetPct = energyRows.length ? round2(energyRows.reduce((s, r) => s + r.solar_offset_pct, 0) / energyRows.length) : 0;
+    const r4SpikeCount = energyRows.filter(r => r.l_per_hr > r.rated_l_hr * 1.15).length;
+
+    const totalMaintUsd = round2(maintRows.reduce((s, r) => s + r.cost_usd, 0));
+    const openMaintCount = maintRows.filter(r => r.status === 'Open Work Order').length;
+
+    return {
+      activeResorts,
+      venueRows: venueRows.filter(matchSearch),
+      posRows: posRows.filter(matchSearch),
+      vatRows: vatRows.filter(matchSearch),
+      membershipRows: membershipRows.filter(matchSearch),
+      partnerSplitRows: partnerSplitRows.filter(matchSearch),
+      stockRows: stockRows.filter(matchSearch),
+      menuRows: menuRows.filter(matchSearch),
+      energyRows: energyRows.filter(matchSearch),
+      maintRows: maintRows.filter(matchSearch),
+      summary: {
+        totalRoomsCap,
+        occupiedUnits,
+        totalRevenueTtc,
+        totalRevenueHt,
+        totalVatOutput,
+        totalVatInput,
+        totalNeverVatUsd,
+        revParUsd,
+        totalMemContract,
+        totalMemPaid,
+        totalMemArrears,
+        overdueMemCount,
+        totalPartnerPool,
+        totalOpenPartnerPayable,
+        totalStockPurchases,
+        totalStockUsage,
+        totalStockClosing,
+        r3AlertCount,
+        avgFoodCostPct,
+        totalDieselTankL,
+        totalDieselUsedL,
+        totalRunHours,
+        avgSolarOffsetPct,
+        r4SpikeCount,
+        totalMaintUsd,
+        openMaintCount
+      }
+    };
+  }
+
+  function renderHospitalityRevenue(submode = 'main') {
+    const u = activeUser();
+    const hsp = computeHospitalityOperations();
+    const s = hsp.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    // Resort Revenue Breakdown SVG Chart
+    const byResort = hsp.activeResorts.map(res => {
+      const rows = hsp.venueRows.filter(r => r.company === res.name);
+      const chaletUsd = round2(rows.filter(r => r.category === 'Chalet Rental').reduce((a, r) => a + r.ttc_usd, 0));
+      const fnbUsd = round2(rows.filter(r => r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
+      const beachEventsUsd = round2(rows.filter(r => r.category !== 'Chalet Rental' && r.category !== 'Restaurant F&B' && r.category !== 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
+      const total = round2(chaletUsd + fnbUsd + beachEventsUsd);
+      return { ...res, chaletUsd, fnbUsd, beachEventsUsd, total };
+    });
+    const maxResortRev = Math.max(1, ...byResort.map(r => r.total));
+    const chartW = 780, chartH = 200;
+    const slotW = Math.floor((chartW - 70) / Math.max(1, byResort.length));
+    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 22) / 3)));
+    const revSvgBars = byResort.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hChalet = Math.max(3, Math.round((r.chaletUsd / maxResortRev) * 125));
+      const hFnb = Math.max(3, Math.round((r.fnbUsd / maxResortRev) * 125));
+      const hEvent = Math.max(3, Math.round((r.beachEventsUsd / maxResortRev) * 125));
+      const baseY = 152;
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hChalet}" width="${barW}" height="${hChalet}" rx="3" fill="#3B82F6"/>
+          <rect x="${gx + barW + 3}" y="${baseY - hFnb}" width="${barW}" height="${hFnb}" rx="3" fill="#10B981"/>
+          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hEvent}" width="${barW}" height="${hEvent}" rx="3" fill="#F59E0B"/>
+          <text x="${gx + barW + 3}" y="${baseY - Math.max(hChalet, hFnb, hEvent) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.total)}</text>
+          <text x="${gx + barW + 3}" y="170" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.name)}</text>
+          <text x="${gx + barW + 3}" y="184" text-anchor="middle" fill="var(--mu)" font-size="9.5">${r.chalets} Chalets · ${r.cabanas} Cabanas</text>
+        </g>
+      `;
+    }).join('');
+
+    const chaletTotal = round2(hsp.venueRows.filter(r => r.category === 'Chalet Rental').reduce((a, r) => a + r.ttc_usd, 0));
+    const fnbTotal = round2(hsp.venueRows.filter(r => r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
+    const beachEventTotal = round2(hsp.venueRows.filter(r => r.category === 'Beach Entrance' || r.category === 'Events & Weddings' || r.category === 'Valet & Services').reduce((a, r) => a + r.ttc_usd, 0));
+    const posVarCount = hsp.posRows.filter(r => Math.abs(r.variance_usd) > 0.5).length;
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Venue Revenue (TTC)</div>
+          <div class="kpi-val good">${fmtUSD(s.totalRevenueTtc, 0)}</div>
+          <div class="kpi-sub">Net HT ${fmtUSD(s.totalRevenueHt, 0)} across ${hsp.activeResorts.length} resort(s)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Chalets &amp; Cabanas</div>
+          <div class="kpi-val">${fmtUSD(chaletTotal, 0)}</div>
+          <div class="kpi-sub">${fmtNum(s.occupiedUnits)} occupied units · RevPAR ${fmtUSD(s.revParUsd, 0)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Restaurant, Lounge &amp; Shisha</div>
+          <div class="kpi-val">${fmtUSD(fnbTotal, 0)}</div>
+          <div class="kpi-sub">La Una RawBT till + resort dining terraces</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Beach, Weddings &amp; Valet</div>
+          <div class="kpi-val brass">${fmtUSD(beachEventTotal, 0)}</div>
+          <div class="kpi-sub">Gate day-passes, banquets &amp; VIP valet</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">POS Till Close (Rule R2)</div>
+          <div class="kpi-val ${posVarCount > 0 ? 'warn' : 'good'}">${posVarCount > 0 ? `${posVarCount} Variance` : '100% Balanced'}</div>
+          <div class="kpi-sub">${fmtNum(hsp.posRows.length)} shift Z-reports audited</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Resort VAT &amp; step253 Guard</div>
+          <div class="kpi-val">${fmtUSD(s.totalVatOutput - s.totalVatInput, 0)}</div>
+          <div class="kpi-sub">Net VAT payable · ${fmtUSD(s.totalNeverVatUsd, 0)} Never-VAT exempt</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'pos') {
+      const filteredPos = hsp.posRows.filter(r => {
+        if (f === 'variance') return Math.abs(r.variance_usd) > 0.5;
+        if (f === 'balanced') return Math.abs(r.variance_usd) <= 0.5;
+        if (f === 'launa') return r.company === 'La Una';
+        return true;
+      });
+      const shownPos = filteredPos.slice(0, shownCount('hsp_pos'));
+      const sumBilled = round2(filteredPos.reduce((a, r) => a + r.pos_billed_ttc, 0));
+      const sumCash = round2(filteredPos.reduce((a, r) => a + r.cash_usd, 0));
+      const sumCard = round2(filteredPos.reduce((a, r) => a + r.card_whish_usd, 0));
+      const sumComp = round2(filteredPos.reduce((a, r) => a + r.comp_usd, 0));
+      const sumVar = round2(filteredPos.reduce((a, r) => a + r.variance_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('hsp_pos')} POS SHIFT Z-READ &amp; BILL-TO-COLLECTION RECONCILIATION (RULE R2)</span></div>
+            <span class="panel-meta">Blue:Chalets · Green:Restaurant &amp; Bar · Amber:Beach &amp; Events</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Hospitality POS Shift Reconciliation Chart">
+            <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
+            ${revSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="hspPosPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('hsp_pos')} POS TILL CLOSE &amp; BILL VARIANCE REGISTER (${fmtNum(filteredPos.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Shifts (${fmtNum(hsp.posRows.length)})`)}
+                ${chip('variance', `R2 Variance (${fmtNum(posVarCount)})`)}
+                ${chip('balanced', `Balanced (${fmtNum(hsp.posRows.length - posVarCount)})`)}
+                ${chip('launa', 'La Una RawBT')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search terminal, cashier, shift...')}
+              ${exportBtn('hspPosPanel', 'Hospitality_POS_Till_Close')}
+              ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ POS Till Close</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Z-Ref</th>
+                  <th>Date</th>
+                  <th>Resort</th>
+                  <th>Terminal &amp; Shift</th>
+                  <th>Cashier</th>
+                  <th class="r">Bills</th>
+                  <th class="r">POS Billed ($)</th>
+                  <th class="r">Cash ($)</th>
+                  <th class="r">Card / Whish ($)</th>
+                  <th class="r">Comp ($)</th>
+                  <th class="r">R2 Variance ($)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownPos.length ? shownPos.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.terminal)}</strong> <small class="mu">· ${esc(r.shift)}</small></td>
+                    <td>${esc(r.cashier)}</td>
+                    <td class="r mono">${fmtNum(r.bills_count)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.pos_billed_ttc, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.cash_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.card_whish_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.comp_usd, 2)}</td>
+                    <td class="r mono ${Math.abs(r.variance_usd) > 0.5 ? 'warn' : 'good'}"><strong>${fmtSignedUSD(r.variance_usd, 2)}</strong></td>
+                    <td><span class="badge ${Math.abs(r.variance_usd) > 0.5 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No POS shift records match current filter')}
+                ${showMoreRow('hsp_pos', filteredPos.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="5"><strong>TOTAL POS SHIFT CLOSES (${fmtNum(filteredPos.length)} SHIFTS)</strong></td>
+                  <td class="r mono"><strong>${fmtNum(filteredPos.reduce((a, r) => a + r.bills_count, 0))}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumBilled, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCash, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCard, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumComp, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtSignedUSD(sumVar, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'vat') {
+      const filteredVat = hsp.vatRows.filter(r => {
+        if (f === 'taxable_11') return r.direction === 'Output VAT';
+        if (f === 'never_vat') return r.direction.includes('Never VAT');
+        if (f === 'input_vat') return r.direction === 'Input VAT';
+        return true;
+      });
+      const shownVat = filteredVat.slice(0, shownCount('hsp_vat'));
+      const sumHt = round2(filteredVat.reduce((a, r) => a + r.ht_usd, 0));
+      const sumVat = round2(filteredVat.reduce((a, r) => a + r.vat_usd, 0));
+      const sumTtc = round2(filteredVat.reduce((a, r) => a + r.ttc_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('hsp_vat')} RESORT 11% VAT &amp; STEP253 NEVER-VAT FISCAL GUARD (DIESEL &amp; TIPS EXEMPT)</span></div>
+            <span class="panel-meta">11% Output VAT vs Deductible Input VAT vs step253 Never-VAT</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Resort VAT Breakdown Chart">
+            <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
+            ${revSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="hspVatPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('hsp_vat')} RESORT VAT &amp; FISCAL TAX REGISTER (${fmtNum(filteredVat.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Fiscal Rows (${fmtNum(hsp.vatRows.length)})`)}
+                ${chip('taxable_11', '11% Output VAT')}
+                ${chip('never_vat', 'step253 Never VAT (Diesel & Tips)')}
+                ${chip('input_vat', 'Deductible Input VAT')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search doc ref, resort, tax rule...')}
+              ${exportBtn('hspVatPanel', 'Hospitality_Resort_VAT_Register')}
+              ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="vatinvoice">+ VAT Declaration</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Doc Ref</th>
+                  <th>Date</th>
+                  <th>Resort</th>
+                  <th>Category</th>
+                  <th>Tax Rule (step253)</th>
+                  <th>Direction</th>
+                  <th class="r">Net HT ($)</th>
+                  <th class="r">VAT 11% ($)</th>
+                  <th class="r">Total TTC ($)</th>
+                  <th>Fiscal Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownVat.length ? shownVat.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.doc_ref)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.category)}</strong></td>
+                    <td><span class="badge ${r.tax_rule.includes('Never') ? 'badge-info' : 'badge-good'}">${esc(r.tax_rule)}</span></td>
+                    <td>${esc(r.direction)}</td>
+                    <td class="r mono">${fmtUSD(r.ht_usd, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.vat_usd, 2)}</strong></td>
+                    <td class="r mono"><strong>${fmtUSD(r.ttc_usd, 2)}</strong></td>
+                    <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
+                  </tr>
+                `).join('') : emptyRow(10, 'No VAT rows match current filter')}
+                ${showMoreRow('hsp_vat', filteredVat.length, 10)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL RESORT FISCAL REGISTER (${fmtNum(filteredVat.length)} ROWS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumHt, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredRev = hsp.venueRows.filter(r => {
+      if (f === 'chalets') return r.category === 'Chalet Rental';
+      if (f === 'restaurant') return r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge';
+      if (f === 'beach') return r.category === 'Beach Entrance' || r.category === 'Valet & Services';
+      if (f === 'events') return r.category === 'Events & Weddings';
+      return true;
+    });
+    const shownRev = filteredRev.slice(0, shownCount('hsp_revenue'));
+    const sumRooms = filteredRev.reduce((a, r) => a + Number(r.rooms || 0), 0);
+    const sumCovers = filteredRev.reduce((a, r) => a + Number(r.covers || 0), 0);
+    const sumHt = round2(filteredRev.reduce((a, r) => a + r.ht_usd, 0));
+    const sumVat = round2(filteredRev.reduce((a, r) => a + r.vat_usd, 0));
+    const sumTtc = round2(filteredRev.reduce((a, r) => a + r.ttc_usd, 0));
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hsp_revenue')} RESORT VENUE REVENUE BY PROPERTY &amp; PROFIT CENTER (CHALETS · F&amp;B · BEACH &amp; EVENTS)</span></div>
+          <span class="panel-meta">Blue:Chalets &amp; Suites · Green:Restaurant &amp; Shisha · Amber:Beach Gate &amp; Weddings</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Resort Venue Revenue Chart">
+          <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
+          ${revSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="hspRevenuePanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('hsp_revenue')} VENUE REVENUE &amp; CHALET OCCUPANCY LEDGER (${fmtNum(filteredRev.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Venues (${fmtNum(hsp.venueRows.length)})`)}
+              ${chip('chalets', 'Chalets & Suites')}
+              ${chip('restaurant', 'Restaurant & Shisha')}
+              ${chip('beach', 'Beach Gate & Valet')}
+              ${chip('events', 'Weddings & Events')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search resort, outlet, category, notes...')}
+            ${exportBtn('hspRevenuePanel', 'Hospitality_Venue_Revenue')}
+            ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Venue Revenue Entry</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Date</th>
+                <th>Resort</th>
+                <th>Outlet / Venue</th>
+                <th>Revenue Category</th>
+                <th class="r">Rooms / Units</th>
+                <th class="r">Guests / Covers</th>
+                <th class="r">Net HT ($)</th>
+                <th class="r">VAT 11% ($)</th>
+                <th class="r">Total TTC ($)</th>
+                <th>Settlement</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRev.length ? shownRev.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.outlet)}</strong></td>
+                  <td><span class="badge badge-info">${esc(r.category)}</span></td>
+                  <td class="r mono">${r.rooms ? `${fmtNum(r.rooms)} / ${fmtNum(r.capacity)}` : '—'}</td>
+                  <td class="r mono">${fmtNum(r.covers)}</td>
+                  <td class="r mono">${fmtUSD(r.ht_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(r.vat_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.ttc_usd, 2)}</strong></td>
+                  <td>${esc(r.method)}</td>
+                  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
+                </tr>
+              `).join('') : emptyRow(12, 'No venue revenue entries match current filter')}
+              ${showMoreRow('hsp_revenue', filteredRev.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL VENUE REVENUE (${fmtNum(filteredRev.length)} ENTRIES)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumRooms)} Units</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumCovers)} Covers</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumHt, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHospitalityMemberships(submode = 'main') {
+    const u = activeUser();
+    const hsp = computeHospitalityOperations();
+    const s = hsp.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const collectionRatePct = s.totalMemContract > 0 ? round2((s.totalMemPaid / s.totalMemContract) * 100) : 100;
+
+    const chartW = 780, chartH = 195;
+    const byResortMem = hsp.activeResorts.map(res => {
+      const mRows = hsp.membershipRows.filter(r => r.company === res.name);
+      const pRows = hsp.partnerSplitRows.filter(r => r.company === res.name);
+      const contractUsd = round2(mRows.reduce((a, r) => a + r.contract_usd, 0));
+      const paidUsd = round2(mRows.reduce((a, r) => a + r.paid_usd, 0));
+      const arrearsUsd = round2(mRows.reduce((a, r) => a + r.balance_usd, 0));
+      const poolUsd = round2(pRows.reduce((a, r) => a + r.gross_pool_usd, 0));
+      return { ...res, contractUsd, paidUsd, arrearsUsd, poolUsd };
+    });
+    const maxVal = Math.max(1, ...byResortMem.map(r => Math.max(r.contractUsd, r.poolUsd * 0.35)));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, byResortMem.length));
+    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 22) / 3)));
+    const memSvgBars = byResortMem.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hCont = Math.max(3, Math.round((r.contractUsd / maxVal) * 120));
+      const hPaid = Math.max(3, Math.round((r.paidUsd / maxVal) * 120));
+      const hArr = Math.max(3, Math.round((r.arrearsUsd / maxVal) * 120));
+      const baseY = 150;
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hCont}" width="${barW}" height="${hCont}" rx="3" fill="#3B82F6"/>
+          <rect x="${gx + barW + 3}" y="${baseY - hPaid}" width="${barW}" height="${hPaid}" rx="3" fill="#10B981"/>
+          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hArr}" width="${barW}" height="${hArr}" rx="3" fill="#F59E0B"/>
+          <text x="${gx + barW + 3}" y="${baseY - Math.max(hCont, hPaid, hArr) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.contractUsd)}</text>
+          <text x="${gx + barW + 3}" y="168" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.name)}</text>
+          <text x="${gx + barW + 3}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">Arrears ${fmtUSDk(r.arrearsUsd)}</text>
+        </g>
+      `;
+    }).join('');
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Seasonal Membership Contracts</div>
+          <div class="kpi-val">${fmtUSD(s.totalMemContract, 0)}</div>
+          <div class="kpi-sub">${fmtNum(hsp.membershipRows.length)} active chalet &amp; cabana contracts</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Collected Membership Cash</div>
+          <div class="kpi-val good">${fmtUSD(s.totalMemPaid, 0)}</div>
+          <div class="kpi-sub">${collectionRatePct}% contract collection rate</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Remaining Member Arrears</div>
+          <div class="kpi-val ${s.totalMemArrears > 0 ? 'warn' : 'good'}">${fmtUSD(s.totalMemArrears, 0)}</div>
+          <div class="kpi-sub">${fmtNum(s.overdueMemCount)} overdue installment contract(s)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Partner Split Revenue Pool</div>
+          <div class="kpi-val">${fmtUSD(s.totalPartnerPool, 0)}</div>
+          <div class="kpi-sub">${fmtNum(hsp.partnerSplitRows.length)} chronological category agreements</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Bdeir Holding Group Share</div>
+          <div class="kpi-val good">${fmtUSD(hsp.partnerSplitRows.reduce((a, r) => a + r.holding_share_usd, 0), 0)}</div>
+          <div class="kpi-sub">Retained resort equity share</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Open Partner Payable</div>
+          <div class="kpi-val ${s.totalOpenPartnerPayable > 0 ? 'brass' : 'good'}">${fmtUSD(s.totalOpenPartnerPayable, 0)}</div>
+          <div class="kpi-sub">Pending distribution settlement</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'partners') {
+      const filteredPartners = hsp.partnerSplitRows.filter(r => {
+        if (f === 'active') return r.status === 'Active Split';
+        if (f === 'settled') return r.status === 'Settled';
+        if (f === 'pending') return r.open_payable_usd > 0;
+        return true;
+      });
+      const shownPartners = filteredPartners.slice(0, shownCount('hsp_partners'));
+      const sumPool = round2(filteredPartners.reduce((a, r) => a + r.gross_pool_usd, 0));
+      const sumHold = round2(filteredPartners.reduce((a, r) => a + r.holding_share_usd, 0));
+      const sumOp = round2(filteredPartners.reduce((a, r) => a + r.operator_share_usd + r.coinvest_share_usd, 0));
+      const sumPaid = round2(filteredPartners.reduce((a, r) => a + r.paid_drawings_usd, 0));
+      const sumOpen = round2(filteredPartners.reduce((a, r) => a + r.open_payable_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('hsp_partners')} MULTI-PARTNER PROFIT SPLITS &amp; CHRONOLOGICAL CATEGORY AGREEMENTS (UP TO 10 SLOTS)</span></div>
+            <span class="panel-meta">Blue:Contract Value · Green:Collected Cash · Amber:Remaining Arrears</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Resort Partner Splits Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${memSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="hspPartnersPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('hsp_partners')} PARTNER SPLITS &amp; CATEGORY SHARES (${fmtNum(filteredPartners.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Agreements (${fmtNum(hsp.partnerSplitRows.length)})`)}
+                ${chip('active', 'Active Splits')}
+                ${chip('pending', 'Open Payable')}
+                ${chip('settled', 'Settled')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search resort, category, partner...')}
+              ${exportBtn('hspPartnersPanel', 'Hospitality_Partner_Splits')}
+              ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-primary" data-open-modal="jv">+ Partner Split Rule</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Agreement ID</th>
+                  <th>Resort</th>
+                  <th>Profit Center / Category</th>
+                  <th>Effective Window (7z-chrono)</th>
+                  <th class="r">Slots</th>
+                  <th>Partner Allocation Formula</th>
+                  <th class="r">Gross Pool ($)</th>
+                  <th class="r">Holding Share ($)</th>
+                  <th class="r">Partner Share ($)</th>
+                  <th class="r">Paid Drawings ($)</th>
+                  <th class="r">Open Payable ($)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownPartners.length ? shownPartners.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.category)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.start_date))} → ${esc(r.end_date)}</td>
+                    <td class="r mono">${fmtNum(r.slot_count)} / 10</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis">${esc(r.partners_summary)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.gross_pool_usd, 2)}</strong></td>
+                    <td class="r mono good">${fmtUSD(r.holding_share_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.operator_share_usd + r.coinvest_share_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.paid_drawings_usd, 2)}</td>
+                    <td class="r mono ${r.open_payable_usd > 0 ? 'warn' : 'good'}"><strong>${fmtUSD(r.open_payable_usd, 2)}</strong></td>
+                    <td><span class="badge ${r.open_payable_usd > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No partner split agreements match current filter')}
+                ${showMoreRow('hsp_partners', filteredPartners.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL PARTNER SPLIT AGREEMENTS (${fmtNum(filteredPartners.length)})</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumPool, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumHold, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumOp, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumOpen, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredMem = hsp.membershipRows.filter(r => {
+      if (f === 'overdue') return r.status === 'Overdue Arrears';
+      if (f === 'partial') return r.balance_usd > 0;
+      if (f === 'paid') return r.balance_usd <= 0;
+      return true;
+    });
+    const shownMem = filteredMem.slice(0, shownCount('hsp_memberships'));
+    const sumCont = round2(filteredMem.reduce((a, r) => a + r.contract_usd, 0));
+    const sumPaid = round2(filteredMem.reduce((a, r) => a + r.paid_usd, 0));
+    const sumBal = round2(filteredMem.reduce((a, r) => a + r.balance_usd, 0));
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hsp_memberships')} SEASONAL CHALET &amp; CABANA MEMBERSHIPS (CONTRACT VS COLLECTED VS ARREARS)</span></div>
+          <span class="panel-meta">Blue:Contract Value · Green:Paid Cash · Amber:Remaining Arrears</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Seasonal Memberships Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${memSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="hspMembershipsPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('hsp_memberships')} SEASONAL MEMBERSHIPS &amp; INSTALLMENT ARREARS (${fmtNum(filteredMem.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Contracts (${fmtNum(hsp.membershipRows.length)})`)}
+              ${chip('overdue', `Overdue Arrears (${fmtNum(s.overdueMemCount)})`)}
+              ${chip('partial', 'Open Balance')}
+              ${chip('paid', 'Paid in Full')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search member, chalet unit, resort...')}
+            ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
+            ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Contract ID</th>
+                <th>Resort</th>
+                <th>Member / Account</th>
+                <th>Chalet / Cabana Unit</th>
+                <th>Season Window</th>
+                <th class="r">Contract ($)</th>
+                <th class="r">Paid ($)</th>
+                <th class="r">Remaining Arrears ($)</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownMem.length ? shownMem.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.member)}</strong></td>
+                  <td>${esc(r.unit)}</td>
+                  <td class="mono">${esc(r.season)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
+                  <td class="r mono good">${fmtUSD(r.paid_usd, 2)}</td>
+                  <td class="r mono ${r.balance_usd > 0 ? 'warn' : 'good'}"><strong>${fmtUSD(r.balance_usd, 2)}</strong></td>
+                  <td class="mono">${esc(fmtDateDMY(r.due_date))}</td>
+                  <td><span class="badge ${r.status === 'Overdue Arrears' ? 'badge-crit' : (r.balance_usd > 0 ? 'badge-warn' : 'badge-good')}">${esc(r.status)}</span></td>
+                  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
+                </tr>
+              `).join('') : emptyRow(11, 'No seasonal memberships match current filter')}
+              ${showMoreRow('hsp_memberships', filteredMem.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL SEASONAL MEMBERSHIPS (${fmtNum(filteredMem.length)} CONTRACTS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumCont, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumBal, 2)}</strong></td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHospitalityStock(submode = 'main') {
+    const u = activeUser();
+    const hsp = computeHospitalityOperations();
+    const s = hsp.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const overallR3Ratio = s.totalStockUsage > 0 ? round2(s.totalStockPurchases / s.totalStockUsage) : 1.0;
+
+    const chartW = 780, chartH = 195;
+    const maxStk = Math.max(1, ...hsp.stockRows.map(r => Math.max(r.purchases_in_usd, r.recipe_usage_usd, r.closing_usd)));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, hsp.stockRows.length));
+    const barW = Math.min(28, Math.max(12, Math.floor((slotW - 18) / 3)));
+    const stkSvgBars = hsp.stockRows.map((r, i) => {
+      const gx = 50 + i * slotW;
+      const hPur = Math.max(3, Math.round((r.purchases_in_usd / maxStk) * 120));
+      const hUse = Math.max(3, Math.round((r.recipe_usage_usd / maxStk) * 120));
+      const hCls = Math.max(3, Math.round((r.closing_usd / maxStk) * 120));
+      const baseY = 150;
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hPur}" width="${barW}" height="${hPur}" rx="3" fill="#3B82F6"/>
+          <rect x="${gx + barW + 3}" y="${baseY - hUse}" width="${barW}" height="${hUse}" rx="3" fill="#10B981"/>
+          <rect x="${gx + (barW + 3) * 2}" y="${baseY - hCls}" width="${barW}" height="${hCls}" rx="3" fill="${r.r3_ratio > 1.18 ? '#F59E0B' : '#06B6D4'}"/>
+          <text x="${gx + barW + 3}" y="${baseY - Math.max(hPur, hUse, hCls) - 6}" text-anchor="middle" fill="var(--tx)" font-size="9.5" font-family="var(--font-mono)" font-weight="700">${r.r3_ratio.toFixed(2)}x</text>
+          <text x="${gx + barW + 3}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.company)}</text>
+          <text x="${gx + barW + 3}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.store.split(' ')[0])}</text>
+        </g>
+      `;
+    }).join('');
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Commissary &amp; Cellar Purchases</div>
+          <div class="kpi-val">${fmtUSD(s.totalStockPurchases, 0)}</div>
+          <div class="kpi-sub">Kitchen, bar &amp; banquet intake</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Recipe BOM Consumption</div>
+          <div class="kpi-val good">${fmtUSD(s.totalStockUsage, 0)}</div>
+          <div class="kpi-sub">Depleted via POS &amp; banquet covers</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Closing Cellar &amp; Cold Stock</div>
+          <div class="kpi-val">${fmtUSD(s.totalStockClosing, 0)}</div>
+          <div class="kpi-sub">Physical count across ${fmtNum(hsp.stockRows.length)} stores</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Rule R3 Purchase/Use Ratio</div>
+          <div class="kpi-val ${s.r3AlertCount > 0 ? 'warn' : 'good'}">${overallR3Ratio.toFixed(2)}x</div>
+          <div class="kpi-sub">${s.r3AlertCount > 0 ? `${s.r3AlertCount} store(s) above 1.18x R3 threshold` : 'All stores within 1.18x R3 guard'}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Menu Food &amp; Pour Cost %</div>
+          <div class="kpi-val good">${s.avgFoodCostPct.toFixed(1)}%</div>
+          <div class="kpi-sub">Target ≤ 33.0% blended F&amp;B cost</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Engineered Menu Items</div>
+          <div class="kpi-val">${fmtNum(hsp.menuRows.length)}</div>
+          <div class="kpi-sub">${fmtNum(hsp.menuRows.filter(m => m.menu_class.startsWith('Star')).length)} Star dishes &amp; signature pours</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'menu') {
+      const filteredMenu = hsp.menuRows.filter(r => {
+        if (f === 'star') return r.menu_class.startsWith('Star');
+        if (f === 'high_cost') return r.food_cost_pct >= 35;
+        if (f === 'bar') return /bar|cocktail/i.test(r.category);
+        if (f === 'kitchen') return /kitchen|seafood|banquet|ballroom/i.test(r.category);
+        return true;
+      });
+      const shownMenu = filteredMenu.slice(0, shownCount('hsp_menu'));
+      const sumUnits = filteredMenu.reduce((a, r) => a + r.units_sold, 0);
+      const sumRevHt = round2(filteredMenu.reduce((a, r) => a + r.price_ht * r.units_sold, 0));
+      const sumBomCost = round2(filteredMenu.reduce((a, r) => a + r.recipe_cost * r.units_sold, 0));
+      const sumGrossMargin = round2(filteredMenu.reduce((a, r) => a + r.margin_usd * r.units_sold, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('hsp_menu')} MENU ENGINEERING, RECIPE BOM COST &amp; GROSS MARGIN CONTRIBUTION</span></div>
+            <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; R3 Ratio</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Menu Engineering Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${stkSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="hspMenuPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('hsp_menu')} MENU ENGINEERING &amp; RECIPE COST MATRIX (${fmtNum(filteredMenu.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Menu Items (${fmtNum(hsp.menuRows.length)})`)}
+                ${chip('star', 'Stars (High Margin)')}
+                ${chip('high_cost', 'Food Cost ≥ 35%')}
+                ${chip('kitchen', 'Kitchen & Banquet')}
+                ${chip('bar', 'Bar & Cocktails')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search dish, resort, menu class...')}
+              ${exportBtn('hspMenuPanel', 'Hospitality_Menu_Engineering')}
+              ${canEnterForm('pricerule', u) ? '<button type="button" class="btn btn-primary" data-open-modal="pricerule">+ Menu Price / BOM</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Resort</th>
+                  <th>Menu Item / Package</th>
+                  <th>Outlet Category</th>
+                  <th class="r">Price TTC ($)</th>
+                  <th class="r">Net HT ($)</th>
+                  <th class="r">Recipe BOM ($)</th>
+                  <th class="r">Unit Margin ($)</th>
+                  <th class="r">Food Cost %</th>
+                  <th class="r">Units Sold</th>
+                  <th>Menu Engineering Class</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownMenu.length ? shownMenu.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.item)}</strong></td>
+                    <td>${esc(r.category)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.price_ttc, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.price_ht, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.recipe_cost, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(r.margin_usd, 2)}</strong></td>
+                    <td class="r mono ${r.food_cost_pct >= 36 ? 'warn' : 'good'}"><strong>${r.food_cost_pct.toFixed(1)}%</strong></td>
+                    <td class="r mono">${fmtNum(r.units_sold)}</td>
+                    <td><span class="badge ${r.menu_class.startsWith('Star') ? 'badge-good' : 'badge-info'}">${esc(r.menu_class)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No menu items match current filter')}
+                ${showMoreRow('hsp_menu', filteredMenu.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="5"><strong>TOTAL MENU CONTRIBUTION (${fmtNum(filteredMenu.length)} ITEMS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumRevHt, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumBomCost, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGrossMargin, 2)}</strong></td>
+                  <td class="r mono"><strong>${(sumRevHt > 0 ? (sumBomCost / sumRevHt * 100) : 0).toFixed(1)}%</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumUnits)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredStk = hsp.stockRows.filter(r => {
+      if (f === 'r3_alert') return r.r3_ratio > 1.18;
+      if (f === 'cellar') return /cellar|bar/i.test(r.store);
+      if (f === 'kitchen') return /kitchen|commissary|pantry/i.test(r.store);
+      if (f === 'transfers') return Math.abs(r.transfers_net_usd) > 0;
+      return true;
+    });
+    const shownStk = filteredStk.slice(0, shownCount('hsp_stock'));
+    const sumOpen = round2(filteredStk.reduce((a, r) => a + r.opening_usd, 0));
+    const sumPur = round2(filteredStk.reduce((a, r) => a + r.purchases_in_usd, 0));
+    const sumTrf = round2(filteredStk.reduce((a, r) => a + r.transfers_net_usd, 0));
+    const sumUse = round2(filteredStk.reduce((a, r) => a + r.recipe_usage_usd, 0));
+    const sumClose = round2(filteredStk.reduce((a, r) => a + r.closing_usd, 0));
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hsp_stock')} KITCHEN, CELLAR &amp; BAR STOCK RECONCILIATION (RULE R3 PURCHASE-TO-CONSUMPTION RATIO)</span></div>
+          <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; R3 Ratio</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Stock & Cellar Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${stkSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="hspStockPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('hsp_stock')} CELLAR, KITCHEN &amp; INTER-RESORT TRANSFERS (${fmtNum(filteredStk.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Stores (${fmtNum(hsp.stockRows.length)})`)}
+              ${chip('r3_alert', `R3 Ratio Watch (${fmtNum(s.r3AlertCount)})`)}
+              ${chip('kitchen', 'Kitchen & Commissary')}
+              ${chip('cellar', 'Cellar & Bars')}
+              ${chip('transfers', 'Inter-Resort Transfers')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search store, item group, resort...')}
+            ${exportBtn('hspStockPanel', 'Hospitality_Kitchen_Cellar_Stock')}
+            ${canEnterForm('warehousestock', u) ? '<button type="button" class="btn btn-primary" data-open-modal="warehousestock">+ Stock Intake / Transfer</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Date</th>
+                <th>Resort</th>
+                <th>Commissary / Store</th>
+                <th>Item Group</th>
+                <th class="r">Opening ($)</th>
+                <th class="r">Purchases In ($)</th>
+                <th class="r">Net Transfers ($)</th>
+                <th class="r">Recipe Usage ($)</th>
+                <th class="r">Closing ($)</th>
+                <th class="r">R3 Ratio</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownStk.length ? shownStk.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.store)}</strong></td>
+                  <td>${esc(r.item_group)}</td>
+                  <td class="r mono">${fmtUSD(r.opening_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(r.purchases_in_usd, 2)}</td>
+                  <td class="r mono ${r.transfers_net_usd < 0 ? 'warn' : (r.transfers_net_usd > 0 ? 'good' : '')}">${fmtSignedUSD(r.transfers_net_usd, 2)}</td>
+                  <td class="r mono good">${fmtUSD(r.recipe_usage_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.closing_usd, 2)}</strong></td>
+                  <td class="r mono ${r.r3_ratio > 1.18 ? 'warn' : 'good'}"><strong>${r.r3_ratio.toFixed(2)}x</strong></td>
+                  <td><span class="badge ${r.r3_ratio > 1.18 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(12, 'No kitchen or cellar stock rows match current filter')}
+              ${showMoreRow('hsp_stock', filteredStk.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL COMMISSARY &amp; CELLAR STOCK (${fmtNum(filteredStk.length)} STORES)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumOpen, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPur, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(sumTrf, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumUse, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumClose, 2)}</strong></td>
+                <td class="r mono"><strong>${(sumUse > 0 ? (sumPur / sumUse) : 1).toFixed(2)}x</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHospitalityEnergy(submode = 'main') {
+    const u = activeUser();
+    const hsp = computeHospitalityOperations();
+    const s = hsp.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const avgBurnLhr = s.totalRunHours > 0 ? round2(s.totalDieselUsedL / s.totalRunHours) : 0;
+
+    const chartW = 780, chartH = 195;
+    const maxLhr = Math.max(1, ...hsp.energyRows.map(r => Math.max(r.l_per_hr, r.rated_l_hr)));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, hsp.energyRows.length));
+    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 20) / 2)));
+    const nrgSvgBars = hsp.energyRows.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hRated = Math.max(4, Math.round((r.rated_l_hr / maxLhr) * 120));
+      const hAct = Math.max(4, Math.round((r.l_per_hr / maxLhr) * 120));
+      const isSpike = r.l_per_hr > r.rated_l_hr * 1.15;
+      const baseY = 150;
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hRated}" width="${barW}" height="${hRated}" rx="3" fill="#3B82F6"/>
+          <rect x="${gx + barW + 4}" y="${baseY - hAct}" width="${barW}" height="${hAct}" rx="3" fill="${isSpike ? '#EF4444' : '#10B981'}"/>
+          <text x="${gx + barW + 2}" y="${baseY - Math.max(hRated, hAct) - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${r.l_per_hr.toFixed(1)} L/h</text>
+          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="11" font-weight="700">${esc(r.company)}</text>
+          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">Solar ${r.solar_offset_pct}% · ${fmtNum(r.tank_level_l)}L</text>
+        </g>
+      `;
+    }).join('');
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Resort Diesel Tank Reserves</div>
+          <div class="kpi-val">${fmtNum(s.totalDieselTankL)} L</div>
+          <div class="kpi-sub">Live tank sounding across ${fmtNum(hsp.energyRows.length)} power plants</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Generator Burn &amp; Run Hours</div>
+          <div class="kpi-val">${fmtNum(s.totalDieselUsedL)} L</div>
+          <div class="kpi-sub">${s.totalRunHours} hrs run · Avg ${avgBurnLhr.toFixed(1)} L/hr</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Solar PV Hybrid Offset</div>
+          <div class="kpi-val good">${s.avgSolarOffsetPct.toFixed(1)}%</div>
+          <div class="kpi-sub">${fmtNum(hsp.energyRows.reduce((a, r) => a + r.kwh_gen, 0))} kWh generated</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Rule R4 Burn Spike Guard</div>
+          <div class="kpi-val ${s.r4SpikeCount > 0 ? 'crit' : 'good'}">${s.r4SpikeCount > 0 ? `${s.r4SpikeCount} Spike Alert` : 'All Within Curve'}</div>
+          <div class="kpi-sub">Flags actual L/hr &gt; 15% over rated curve</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Venue Repairs &amp; Preventive Maintenance</div>
+          <div class="kpi-val">${fmtUSD(s.totalMaintUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(hsp.maintRows.length)} work orders across pools, HVAC &amp; gensets</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Open Facility Work Orders</div>
+          <div class="kpi-val ${s.openMaintCount > 0 ? 'warn' : 'good'}">${fmtNum(s.openMaintCount)} Open</div>
+          <div class="kpi-sub">${fmtNum(hsp.maintRows.length - s.openMaintCount)} completed on schedule</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'maint') {
+      const filteredMaint = hsp.maintRows.filter(r => {
+        if (f === 'open') return r.status === 'Open Work Order';
+        if (f === 'urgent') return r.priority === 'Urgent' || r.priority === 'High';
+        if (f === 'preventive') return r.type.startsWith('Preventive');
+        if (f === 'completed') return r.status === 'Completed';
+        return true;
+      });
+      const shownMaint = filteredMaint.slice(0, shownCount('hsp_maint'));
+      const sumDown = round2(filteredMaint.reduce((a, r) => a + r.downtime_hrs, 0));
+      const sumCost = round2(filteredMaint.reduce((a, r) => a + r.cost_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('hsp_maint')} VENUE REPAIRS, POOL PLANT, HVAC &amp; GENERATOR MAINTENANCE</span></div>
+            <span class="panel-meta">Blue:Rated L/hr Curve · Green:Normal Actual Burn · Red:Rule R4 Burn Spike</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Resort Maintenance & Utilities Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${nrgSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="hspMaintPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('hsp_maint')} VENUE REPAIRS &amp; FIXED ASSET WORK ORDERS (${fmtNum(filteredMaint.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Work Orders (${fmtNum(hsp.maintRows.length)})`)}
+                ${chip('open', `Open (${fmtNum(s.openMaintCount)})`)}
+                ${chip('urgent', 'Urgent / High')}
+                ${chip('preventive', 'Preventive PM')}
+                ${chip('completed', 'Completed')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search asset, zone, contractor, resort...')}
+              ${exportBtn('hspMaintPanel', 'Hospitality_Venue_Repairs')}
+              ${canEnterForm('repair', u) ? '<button type="button" class="btn btn-primary" data-open-modal="repair">+ Venue Work Order</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>WO Ref</th>
+                  <th>Date</th>
+                  <th>Resort</th>
+                  <th>Facility Asset / Equipment</th>
+                  <th>Zone</th>
+                  <th>Work Order Type</th>
+                  <th>Priority</th>
+                  <th class="r">Downtime (Hrs)</th>
+                  <th class="r">Cost ($)</th>
+                  <th>Status</th>
+                  <th>Technical Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownMaint.length ? shownMaint.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.asset)}</strong></td>
+                    <td>${esc(r.zone)}</td>
+                    <td>${esc(r.type)}</td>
+                    <td><span class="badge ${r.priority === 'Urgent' ? 'badge-crit' : (r.priority === 'High' ? 'badge-warn' : 'badge-info')}">${esc(r.priority)}</span></td>
+                    <td class="r mono">${r.downtime_hrs.toFixed(1)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.cost_usd, 2)}</strong></td>
+                    <td><span class="badge ${r.status === 'Open Work Order' ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No facility work orders match current filter')}
+                ${showMoreRow('hsp_maint', filteredMaint.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL VENUE MAINTENANCE WORK ORDERS (${fmtNum(filteredMaint.length)})</strong></td>
+                  <td class="r mono"><strong>${sumDown.toFixed(1)} hrs</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCost, 2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredNrg = hsp.energyRows.filter(r => {
+      if (f === 'r4_spike') return r.l_per_hr > r.rated_l_hr * 1.15;
+      if (f === 'refill') return r.refill_l > 0;
+      if (f === 'solar') return r.solar_offset_pct >= 30;
+      return true;
+    });
+    const shownNrg = filteredNrg.slice(0, shownCount('hsp_energy'));
+    const sumTank = filteredNrg.reduce((a, r) => a + r.tank_level_l, 0);
+    const sumRefill = filteredNrg.reduce((a, r) => a + r.refill_l, 0);
+    const sumHrs = round2(filteredNrg.reduce((a, r) => a + r.run_hours, 0));
+    const sumUsed = filteredNrg.reduce((a, r) => a + r.diesel_used_l, 0);
+    const sumKwh = filteredNrg.reduce((a, r) => a + r.kwh_gen, 0);
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hsp_energy')} GENERATOR BURN RATE (L/HR) VS RATED CURVE &amp; SOLAR PV HYBRID OFFSET (RULE R4)</span></div>
+          <span class="panel-meta">Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Rule R4 Spike (&gt;15% Over Rated)</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Generator Burn Rate Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${nrgSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="hspEnergyPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('hsp_energy')} DIESEL TANKS, GENERATORS &amp; SOLAR TELEMETRY (${fmtNum(filteredNrg.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Power Plants (${fmtNum(hsp.energyRows.length)})`)}
+              ${chip('r4_spike', `R4 Burn Spike (${fmtNum(s.r4SpikeCount)})`)}
+              ${chip('refill', 'Tank Refills')}
+              ${chip('solar', 'Solar Offset ≥ 30%')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search generator, resort, status...')}
+            ${exportBtn('hspEnergyPanel', 'Hospitality_Generators_Utilities')}
+            ${canEnterForm('fuel', u) ? '<button type="button" class="btn btn-primary" data-open-modal="fuel">+ Generator / Diesel Log</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Log ID</th>
+                <th>Date</th>
+                <th>Resort</th>
+                <th>Generator &amp; Solar Plant</th>
+                <th class="r">Tank Level (L)</th>
+                <th class="r">Refill In (L)</th>
+                <th class="r">Run Hrs</th>
+                <th class="r">Diesel Used (L)</th>
+                <th class="r">Actual L/hr</th>
+                <th class="r">Rated L/hr</th>
+                <th class="r">kWh Gen</th>
+                <th class="r">Solar %</th>
+                <th>R4 Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownNrg.length ? shownNrg.map(r => {
+                const isSpike = r.l_per_hr > r.rated_l_hr * 1.15;
+                return `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.asset)}</strong></td>
+                    <td class="r mono">${fmtNum(r.tank_level_l)} L</td>
+                    <td class="r mono ${r.refill_l > 0 ? 'good' : ''}">${r.refill_l > 0 ? `+${fmtNum(r.refill_l)} L` : '—'}</td>
+                    <td class="r mono">${r.run_hours.toFixed(1)}</td>
+                    <td class="r mono"><strong>${fmtNum(r.diesel_used_l)} L</strong></td>
+                    <td class="r mono ${isSpike ? 'crit' : 'good'}"><strong>${r.l_per_hr.toFixed(1)}</strong></td>
+                    <td class="r mono">${r.rated_l_hr.toFixed(1)}</td>
+                    <td class="r mono">${fmtNum(r.kwh_gen)}</td>
+                    <td class="r mono good"><strong>${r.solar_offset_pct}%</strong></td>
+                    <td><span class="badge ${isSpike ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
+                  </tr>
+                `;
+              }).join('') : emptyRow(13, 'No generator or utility logs match current filter')}
+              ${showMoreRow('hsp_energy', filteredNrg.length, 13)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="4"><strong>TOTAL RESORT POWER PLANTS (${fmtNum(filteredNrg.length)} UNITS)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumTank)} L</strong></td>
+                <td class="r mono"><strong>+${fmtNum(sumRefill)} L</strong></td>
+                <td class="r mono"><strong>${sumHrs.toFixed(1)} hrs</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumUsed)} L</strong></td>
+                <td class="r mono"><strong>${(sumHrs > 0 ? (sumUsed / sumHrs) : 0).toFixed(1)} L/h</strong></td>
+                <td class="r mono">—</td>
+                <td class="r mono"><strong>${fmtNum(sumKwh)} kWh</strong></td>
+                <td class="r mono"><strong>${s.avgSolarOffsetPct.toFixed(1)}%</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHubAnalyticsView(modKey) {
     const title = VIEW_TITLES[modKey] || 'Module Analytics';
     return `
@@ -42319,6 +43686,40 @@
     return Boolean(FORM_UI.autoUnlockedForEdit instanceof Set && FORM_UI.autoUnlockedForEdit.has(fid));
   }
 
+  function resolveSubCharterHaulerPayee(company, winOpts, truckRow) {
+    if (!winOpts || winOpts.side !== 'raw' || !winOpts.site || !truckRow || !truckRow.supplier || isPureOwnUnit(truckRow, company)) {
+      return null;
+    }
+    const ownHaulRule = findRule({
+      company,
+      supplier: truckRow.supplier,
+      site: winOpts.site,
+      product: winOpts.product || '',
+      date: winOpts.date || '',
+      types: ['Transport Price (Site)']
+    });
+    if (ownHaulRule) return null;
+    if (winOpts.siteOwner && normOwnerName(winOpts.siteOwner) !== normOwnerName(truckRow.supplier)) {
+      const siteOwnerRule = findRule({
+        company,
+        supplier: winOpts.siteOwner,
+        site: winOpts.site,
+        product: winOpts.product || '',
+        date: winOpts.date || '',
+        types: ['Transport Price (Site)']
+      });
+      if (siteOwnerRule && siteOwnerRule.supplier && !isCompanyName(siteOwnerRule.supplier)) {
+        return {
+          payee: siteOwnerRule.supplier,
+          physicalOwner: truckRow.supplier,
+          site: winOpts.site,
+          rule: siteOwnerRule
+        };
+      }
+    }
+    return null;
+  }
+
   function syncFleetCascade(company, isCoFleet, is3P, isUnreg, needDriver = true, winOpts = null) {
     const truckInpEl = $('f_truck');
     if (truckInpEl && truckInpEl.value && !FORM_UI.hydrating) {
@@ -42329,7 +43730,7 @@
     }
     const curTruck = val('f_truck');
     const curOwner = val('f_truckowner');
-    const winKey = winOpts ? `${company}|${winOpts.date || ''}|${winOpts.side || ''}|${norm(winOpts.customer)}|${norm(winOpts.site)}` : '';
+    const winKey = winOpts ? `${company}|${winOpts.date || ''}|${winOpts.side || ''}|${norm(winOpts.customer)}|${norm(winOpts.site)}|${norm(winOpts.siteOwner)}|${norm(winOpts.product)}` : '';
     const truckChanged = !FORM_UI.hydrating && curTruck !== FORM_UI.lastTruck;
     const winChanged = !FORM_UI.hydrating && !truckChanged && Boolean(curTruck && winKey && FORM_UI.lastWinKey !== undefined && FORM_UI.lastWinKey !== winKey);
     const ownerChanged = !FORM_UI.hydrating && !truckChanged && curOwner !== FORM_UI.lastTruckOwner;
@@ -42342,8 +43743,13 @@
         FORM_UI.driverManual = false;
       }
       const tRow = curTruck ? equipInfo(curTruck, company, isCoFleet, winOpts) : null;
-      if (is3P && $('f_truckowner') && (!isFieldAdminUnlocked('f_truckowner') || isAutoEditUnlockedField('f_truckowner') || truckChanged) && !FORM_UI.ownerManuallyPicked) {
-        $('f_truckowner').value = (tRow && tRow.supplier && !isPureOwnUnit(tRow, company)) ? tRow.supplier : '';
+      const subCharterEarly = is3P ? resolveSubCharterHaulerPayee(company, winOpts, tRow) : null;
+      const resolvedPayee = subCharterEarly ? subCharterEarly.payee : ((tRow && tRow.supplier && !isPureOwnUnit(tRow, company)) ? tRow.supplier : '');
+      const hasManualSubCharterUnlock = Boolean(isFieldAdminUnlocked('f_truckowner') && !isAutoEditUnlockedField('f_truckowner') && curOwner && curTruck);
+      if (is3P && $('f_truckowner') && !hasManualSubCharterUnlock && (!isFieldAdminUnlocked('f_truckowner') || isAutoEditUnlockedField('f_truckowner') || truckChanged || winChanged) && !FORM_UI.ownerManuallyPicked) {
+        $('f_truckowner').value = resolvedPayee;
+      } else if (is3P && $('f_truckowner') && !curTruck && !FORM_UI.ownerManuallyPicked) {
+        $('f_truckowner').value = '';
       }
       if ($('f_driver') && (truckChanged || winChanged || !FORM_UI.driverManual || !isFieldAdminUnlocked('f_driver') || isAutoEditUnlockedField('f_driver'))) {
         if (!needDriver) {
@@ -42367,35 +43773,42 @@
         }
       }
     } else if (ownerChanged && is3P) {
-      FORM_UI.ownerManuallyPicked = !!curOwner;
-      FORM_UI.driverManual = false;
-      const tRow = curTruck ? equipInfo(curTruck, company, false, winOpts) : null;
-      const allowedTrucks = curOwner ? trucksForOwner(curOwner, company, false) : [];
-      const truckMatches = !!(curOwner && curTruck && ((tRow && normOwnerName(tRow.supplier) === normOwnerName(curOwner)) || allowedTrucks.some(tn => norm(tn) === norm(curTruck) || (tRow && norm(tn) === norm(tRow.name)))));
-      if (curTruck && !truckMatches) {
-        if ($('f_truck')) $('f_truck').value = '';
-        if ($('f_driver')) $('f_driver').value = '';
-        FORM_UI.qtyManual = false;
-        if (qtyEl() && !/truck/i.test(val('f_uom'))) qtyEl().value = '';
-      }
-      const curDrv = val('f_driver');
-      const dRow = curDrv ? driverInfo(curDrv) : null;
-      const allowedDrvs = curOwner ? driversForOwner(curOwner, company, false, tRow) : [];
-      const drvMatches = !!(curOwner && curDrv && ((dRow && normOwnerName(dRow.truck_owner) === normOwnerName(curOwner)) || allowedDrvs.some(dn => norm(dn) === norm(curDrv))));
-      if (curDrv && !drvMatches) {
-        if ($('f_driver')) $('f_driver').value = '';
+      const subCharterOverride = Boolean(isFieldAdminUnlocked('f_truckowner') && !isAutoEditUnlockedField('f_truckowner') && curTruck);
+      FORM_UI.ownerManuallyPicked = !!curOwner && !subCharterOverride;
+      if (!subCharterOverride) {
+        FORM_UI.driverManual = false;
+        const tRow = curTruck ? equipInfo(curTruck, company, false, winOpts) : null;
+        const allowedTrucks = curOwner ? trucksForOwner(curOwner, company, false) : [];
+        const truckMatches = !!(curOwner && curTruck && ((tRow && normOwnerName(tRow.supplier) === normOwnerName(curOwner)) || allowedTrucks.some(tn => norm(tn) === norm(curTruck) || (tRow && norm(tn) === norm(tRow.name)))));
+        if (curTruck && !truckMatches) {
+          if ($('f_truck')) $('f_truck').value = '';
+          if ($('f_driver')) $('f_driver').value = '';
+          FORM_UI.qtyManual = false;
+          if (qtyEl() && !/truck/i.test(val('f_uom'))) qtyEl().value = '';
+        }
+        const curDrv = val('f_driver');
+        const dRow = curDrv ? driverInfo(curDrv) : null;
+        const allowedDrvs = curOwner ? driversForOwner(curOwner, company, false, tRow) : [];
+        const drvMatches = !!(curOwner && curDrv && ((dRow && normOwnerName(dRow.truck_owner) === normOwnerName(curOwner)) || allowedDrvs.some(dn => norm(dn) === norm(curDrv))));
+        if (curDrv && !drvMatches) {
+          if ($('f_driver')) $('f_driver').value = '';
+        }
       }
     }
 
     let truckName = val('f_truck');
     let truckRow = truckName ? equipInfo(truckName, company, isCoFleet, winOpts) : null;
-    if (is3P && truckRow && truckRow.supplier && !isPureOwnUnit(truckRow, company) && $('f_truckowner') && (!isFieldAdminUnlocked('f_truckowner') || isAutoEditUnlockedField('f_truckowner')) && !FORM_UI.ownerManuallyPicked) {
-      $('f_truckowner').value = truckRow.supplier;
+    const subCharter = is3P ? resolveSubCharterHaulerPayee(company, winOpts, truckRow) : null;
+    const defaultTruckPayee = subCharter ? subCharter.payee : ((truckRow && truckRow.supplier && !isPureOwnUnit(truckRow, company)) ? truckRow.supplier : '');
+    if (is3P && defaultTruckPayee && $('f_truckowner') && (!isFieldAdminUnlocked('f_truckowner') || isAutoEditUnlockedField('f_truckowner')) && !FORM_UI.ownerManuallyPicked) {
+      $('f_truckowner').value = defaultTruckPayee;
     }
     const truckOwner = is3P ? val('f_truckowner') : company;
     const ownerFromTruck = !!(is3P && truckRow && truckRow.supplier && !isPureOwnUnit(truckRow, company));
     applyFieldLockState('f_truckowner', ownerFromTruck, ownerFromTruck
-      ? `Locked to ${truckRow.name} registered owner (${truckRow.supplier})`
+      ? (subCharter
+          ? `Auto-filled to ${subCharter.payee} from ${subCharter.site} Transport Agreement (physical truck ${truckRow.name} owned by ${truckRow.supplier}) · click LOCKED to override payee`
+          : `Locked to ${truckRow.name} registered owner (${truckRow.supplier}) · click LOCKED to override payee for sub-chartered haulage`)
       : 'Auto-populated when a Truck with a registered owner is selected; open when truck has no preset owner');
 
     const activeDriver = (!needDriver || !truckName)
@@ -42483,7 +43896,7 @@
 
     FORM_UI.lastTruck = val('f_truck');
     FORM_UI.lastTruckOwner = val('f_truckowner');
-    return { truckName, truckRow, truckOwner, ownerFromTruck, allowedDrivers };
+    return { truckName, truckRow, truckOwner, ownerFromTruck, allowedDrivers, subCharter };
   }
 
   let _FORM_INTEL_CACHE = null;
@@ -43360,12 +44773,15 @@
     }
 
     // 4. Cascading Truck -> Truck Owner + Driver + Capacity (Date & Client/Site Window Aware)
-    const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3POrPickup, isUnreg, isDelivery, { date: effDate, side: 'sales', customer, site: isDelivery ? site : '' });
+    const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3POrPickup, isUnreg, isDelivery, { date: effDate, side: 'sales', customer, site: isDelivery ? site : '', product });
+    const isSalesSubCharter = Boolean(is3POrPickup && truckRow && truckRow.supplier && truckOwner && normOwnerName(truckOwner) !== normOwnerName(truckRow.supplier));
     setHint('hint_truckowner', is3POrPickup
-      ? (ownerFromTruck
-          ? `Provided by Truck ${truckRow.name} (${truckOwner})`
-          : (truckOwner ? `Filtering trucks${isDelivery ? ' & drivers' : ''} for ${truckOwner}` : 'Auto-provided when you select a Truck'))
-      : '', '');
+      ? (isSalesSubCharter
+          ? `Sub-charter payee override: paying ${truckOwner} · Physical truck ${truckRow.name} owned by ${truckRow.supplier}`
+          : (ownerFromTruck
+              ? `Provided by Truck ${truckRow.name} (${truckOwner})`
+              : (truckOwner ? `Filtering trucks${isDelivery ? ' & drivers' : ''} for ${truckOwner}` : 'Auto-provided when you select a Truck')))
+      : '', isSalesSubCharter ? 'ok' : '');
 
     const ownTruck = isOwnUnit(truckRow, company);
     const pureOwnTruck = isPureOwnUnit(truckRow, company);
@@ -43964,7 +45380,7 @@
 
     // 3. Cascading Truck Plate -> Truck Owner + Driver + Capacity (Date & Quarry Site Window Aware)
     const savedSuppDriver = isSuppDeliv ? val('f_driver') : '';
-    const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site });
+    const { truckName, truckRow, truckOwner, ownerFromTruck, subCharter } = syncFleetCascade(company, isCoFleet, is3PHauler, isSuppDeliv, !isSuppDeliv, { date: effDate, side: 'raw', site, siteOwner: owner, product });
     if (isSuppDeliv && !pendRawEditRowEarly) {
       applyFieldLockState('f_driver', false, 'Optional supplier driver on supplier-delivered loads');
       const drvElSupp = $('f_driver');
@@ -44224,11 +45640,16 @@
         setHint('hint_trans', haulRule ? `${haulRule.rule_type}${haulIsIndiff ? ' · Per Truck Load' : (rawHaulConv.converted ? ` · ${rawHaulConv.note}` : '')}${haulRule.site ? ' · ' + haulRule.site : ''}` : '', haulRule ? 'ok' : '');
       }
     }
+    const isRawSubCharter = Boolean(is3PHauler && truckRow && truckRow.supplier && truckOwner && normOwnerName(truckOwner) !== normOwnerName(truckRow.supplier));
     setHint('hint_truckowner', is3PHauler
-      ? (ownerFromTruck
-          ? `Provided by Truck ${truckRow.name} (${truckOwner})`
-          : (truckOwner ? `Filtering trucks & drivers for ${truckOwner}` : 'Auto-provided when you select a Truck'))
-      : '', (FORM_UI.postAttempted && is3PHauler && !truckOwner && truckName) ? 'crit' : '');
+      ? (isRawSubCharter
+          ? (subCharter
+              ? `Payable hauler from ${site || 'site'} agreement (${truckOwner}) · Physical truck ${truckRow.name} owned by ${truckRow.supplier}`
+              : `Sub-charter payee override: paying ${truckOwner} · Physical truck ${truckRow.name} owned by ${truckRow.supplier}`)
+          : (ownerFromTruck
+              ? `Provided by Truck ${truckRow.name} (${truckOwner})`
+              : (truckOwner ? `Filtering trucks & drivers for ${truckOwner}` : 'Auto-provided when you select a Truck')))
+      : '', (FORM_UI.postAttempted && is3PHauler && !truckOwner && truckName) ? 'crit' : (isRawSubCharter ? 'ok' : ''));
     const ap = openApBalance(owner);
     setHint('hint_owner', owner ? (ap != null ? `Open AP ${fmtUSD(ap, 2)}` : 'New payee - not in the AP book yet') : '', '');
 
@@ -49580,6 +51001,20 @@
             if (il === ql) exact.push(item);
             else if (il.includes(ql) || ml.includes(ql)) freqOrdered.push(item);
           }
+          if (!exact.length && !freqOrdered.length && el.id === 'f_truck' && ql && val('f_transportby') !== 'Company fleet') {
+            const coNow = val('f_company');
+            for (const tn of truckNames()) {
+              const tl = String(tn || '').toLowerCase();
+              const eq = equipInfo(tn, coNow, false);
+              const metaParts = [];
+              if (eq && eq.plate_no && norm(eq.plate_no) !== norm(tn)) metaParts.push(eq.plate_no);
+              if (eq && eq.supplier) metaParts.push(eq.supplier);
+              if (eq && Number(eq.capacity) > 0) metaParts.push(`${Number(eq.capacity)} m³`);
+              const metaStr = metaParts.join(' · ');
+              if (tl === ql) exact.push({ value: tn, meta: metaStr });
+              else if (tl.includes(ql) || metaStr.toLowerCase().includes(ql)) freqOrdered.push({ value: tn, meta: metaStr });
+            }
+          }
           filtered = exact.concat(freqOrdered);
         }
         const isCatRegInput = el.dataset.strictCatalog === '1' || el.dataset.catalogReg === '1';
@@ -49773,6 +51208,12 @@
         }
         clearTimeout(blurTimer);
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
+          if (el.id === 'f_truckowner') {
+            FORM_UI.adminUnlocked.f_truckowner = true;
+            recalcForm();
+            renderMenu(true, true);
+            return;
+          }
           openAdminUnlockPrompt(el.id);
           return;
         }
@@ -52055,6 +53496,10 @@
           }
           recalcForm();
           toast('Field re-locked to policy rule', 'ok');
+        } else if (fid === 'f_truckowner') {
+          FORM_UI.adminUnlocked.f_truckowner = true;
+          recalcForm();
+          toast('Truck Owner (Hauler) unlocked for sub-charter / payee override', 'ok');
         } else {
           openAdminUnlockPrompt(fid);
         }
@@ -52088,6 +53533,11 @@
       el.addEventListener('mousedown', ev => {
         if (el.id === 'f_fxrate') return;
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
+          if (el.id === 'f_truckowner') {
+            FORM_UI.adminUnlocked.f_truckowner = true;
+            recalcForm();
+            return;
+          }
           if (el.tagName === 'SELECT' || el.type === 'date') ev.preventDefault();
           openAdminUnlockPrompt(el.id);
         }
@@ -64057,7 +65507,7 @@
     if (($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
       || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
       || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)) return true;
-    if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || STAFF_FACE_MODAL_STATE.camActive) return true;
+    if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || KIOSK_ATT_STATE.camStarting || STAFF_FACE_MODAL_STATE.camActive) return true;
     if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
     return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput');
@@ -67392,7 +68842,11 @@
     STATE.isOfficialRecord = isOfficialRecord;
     STATE.canAccessRdlReport = r => canAccessRdlReport(r, user);
 
-    if (!allowedCos.includes(STATE.company)) STATE.company = allowedCos[0];
+    const isPermittedIndScope = String(STATE.company || '').startsWith('industry:') && allowedNames.some(n => {
+      const hit = catalog.find(c => c.name.toLowerCase() === n.toLowerCase());
+      return hit && hit.industry === String(STATE.company).slice(9);
+    });
+    if (!allowedCos.includes(STATE.company) && !isPermittedIndScope) STATE.company = allowedCos[0];
     syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
@@ -68051,16 +69505,25 @@
   // ==========================================================================
   const KIOSK_ATT_STATE = {
     camActive: false,
+    camStarting: false,
     camPausedByUser: false,
     cooldownUntil: 0,
     flashPunch: null,
     flashTimer: null,
     wallClockTimer: null,
     loopTimer: null,
+    ensureTimer: null,
+    watchdogTimer: null,
     busy: false,
     streakStaff: '',
     streakCount: 0,
+    unknownStreak: 0,
     bestDist: 9,
+    lastVideoTime: -1,
+    lastTimeMoveAt: 0,
+    lastRestartAt: 0,
+    restartCount: 0,
+    lastWatchdogReason: '',
     statusText: 'Look inside the oval guide to clock in or out.',
     statusCls: '',
     lastSnap: '',
@@ -68594,6 +70057,24 @@
       stEl.textContent = KIOSK_ATT_STATE.statusText || '';
       stEl.className = 'kiosk-att-status' + (KIOSK_ATT_STATE.statusCls ? ' ' + KIOSK_ATT_STATE.statusCls : '');
     }
+    const badgeEl = $('kioskAttLiveBadge') || document.querySelector('.kiosk-att-cam-card .panel-head .badge');
+    if (badgeEl) {
+      badgeEl.className = 'badge' + (KIOSK_ATT_STATE.camActive ? ' badge-ok' : '');
+      if (KIOSK_ATT_STATE.camActive) {
+        badgeEl.textContent = 'Live Camera';
+      } else if (STATE.kioskLocked) {
+        badgeEl.textContent = KIOSK_ATT_STATE.camStarting ? 'Starting Camera...' : 'Tap to Start';
+      }
+    }
+    const vpEl = $('kioskAttViewport');
+    if (vpEl) {
+      vpEl.classList.toggle('is-live', !!KIOSK_ATT_STATE.camActive);
+      vpEl.classList.toggle('is-standby', !KIOSK_ATT_STATE.camActive);
+      if (KIOSK_ATT_STATE.camActive) {
+        const standbyCard = vpEl.querySelector('.kiosk-cam-standby-card');
+        if (standbyCard) standbyCard.remove();
+      }
+    }
     const wsShell = $('kioskAttendanceWorkspace');
     if (!wsShell) return false;
     const activeFlash = (KIOSK_ATT_STATE.flashPunch && KIOSK_ATT_STATE.flashPunch.punch && KIOSK_ATT_STATE.flashPunch.expiresAt > Date.now())
@@ -68651,10 +70132,12 @@
     if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
     if (!STATE.authed || STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || !STATE.kioskLocked) return;
     if (KIOSK_ADMIN_MODAL_STATE.open) return;
-    if (KIOSK_ATT_STATE.camActive || KIOSK_ATT_STATE.camPausedByUser) return;
+    if ((KIOSK_ATT_STATE.camActive && streamAlive()) || KIOSK_ATT_STATE.camStarting || KIOSK_ATT_STATE.camPausedByUser) return;
     if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) return;
-    setTimeout(() => {
-      if (STATE.authed && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked && !KIOSK_ADMIN_MODAL_STATE.open && !KIOSK_ATT_STATE.camActive && !KIOSK_ATT_STATE.camPausedByUser) {
+    clearTimeout(KIOSK_ATT_STATE.ensureTimer);
+    KIOSK_ATT_STATE.ensureTimer = setTimeout(() => {
+      KIOSK_ATT_STATE.ensureTimer = null;
+      if (STATE.authed && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked && !KIOSK_ADMIN_MODAL_STATE.open && !(KIOSK_ATT_STATE.camActive && streamAlive()) && !KIOSK_ATT_STATE.camStarting && !KIOSK_ATT_STATE.camPausedByUser) {
         startKioskAttCamera();
       }
     }, 90);
@@ -80044,8 +81527,20 @@
   }
   window.__applyPublicDemoSanitization = applyPublicDemoSanitization;
   window.__restorePublicDemoSanitization = restorePublicDemoSanitization;
-  window.MFG_HOLDING = { computeIntercompanyInteractions, getActiveIndustry, syncIndustrySidebarDom, selectCompanyScope, INDUSTRY_SIDEBAR_SPEC };
-  window.MFG_HOSPITALITY = { computeHospitalityOperations, getActiveIndustry, syncIndustrySidebarDom, selectCompanyScope, INDUSTRY_SIDEBAR_SPEC };
+  window.MFG_HOLDING = {
+    computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
+  window.MFG_HOSPITALITY = {
+    computeHospitalityOperations: typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
 
   let _seedHydrationPromise = null;
   function hydrateSeedData() {

@@ -8774,7 +8774,7 @@
       const completeBooks = bookRows.filter(b => b.enteredCount === 25).length;
       const excRows = (sl.bookStatus === 'Duplicate Serials'
         ? audit.duplicates
-        : (sl.bookStatus === 'Removed Slips'
+        : ((sl.bookStatus === 'Removed Tickets' || sl.bookStatus === 'Removed Slips')
           ? (audit.removed || [])
           : (sl.bookStatus === 'Returned Loads'
             ? (audit.returned || [])
@@ -8784,11 +8784,11 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Weighbridge 25-Ticket Pad Hygiene, 25-Ticket Books Count, Removed Slips (0 KM) & Returned Loads (Round-Trip KM)', [
+          ${kpiBand('1 · Weighbridge 25-Ticket Pad Hygiene, 25-Ticket Books Count, Removed Tickets (0 KM) & Returned Loads (Round-Trip KM)', [
             { label: '25-Ticket Books Tracked', value: fmtNum(bookRows.length), sub: fmtNum(completeBooks) + ' complete (25/25) · ' + fmtNum(Math.max(0, bookRows.length - completeBooks)) + ' open', tone: 'good' },
             { label: 'Skipped Serial Gaps', value: fmtNum(audit.skipped.length), sub: fmtNum(totSkippedTickets) + ' skipped tickets in books', tone: 'warn' },
             { label: 'Duplicate Ticket Numbers', value: fmtNum(audit.duplicates.length || prSn.duplicate_ticket_numbers || 0), sub: 'Excludes paired returns', tone: 'warn' },
-            { label: 'Removed Slips (In 25-Book)', value: fmtNum((audit.removed || []).length), sub: '0.0 km · $0 · Supervisor only', tone: 'good' },
+            { label: 'Removed Tickets (In 25-Book)', value: fmtNum((audit.removed || []).length), sub: '0.0 km · $0 · Supervisor only', tone: 'good' },
             { label: 'Returned Loads to Plant', value: fmtNum((audit.returned || []).length), sub: fmtNum(audit.totalReturnedKm || 0, 1) + ' km Round-Trip (2x KM)', tone: 'brass' },
             { label: 'Next Suggested Ticket #', value: (() => { const co = STATE.company === 'bbconstruction' ? 'BBConstruction' : 'WTC'; const n = ctx.nextTicketNo ? ctx.nextTicketNo(co, [rec.sales_tickets, rec.raw_purchases, rec.fuel_intakes]) : ''; return n ? '#' + n + ' · ' + co : 'Auto'; })(), sub: 'Follows latest dated ticket of pad', tone: 'brass' }
           ])}
