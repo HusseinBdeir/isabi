@@ -76,8 +76,8 @@
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
   const DEFAULT_USERS = [
-    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', pin_code: '3333', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', pin_code: '4444', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', pin_code: '4545', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
@@ -257,7 +257,7 @@
         out = Object.assign({}, out, { face_thumbs: [] });
       }
       if ((out.id === 'u1' || out.id === 'u2') && typeof out.companies === 'string' && /wtc/i.test(out.companies) && /bbconstruction/i.test(out.companies)) {
-        const extraNames = ['Bdeir Holding', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
+        const extraNames = ['Bdeir Holding', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Korri Auto', 'Shacman'];
         let cur = out.companies.trim();
         extraNames.forEach(nm => {
           if (!new RegExp(`(^|,)\\s*${nm.replace(/\s+/g, '\\s+')}\\s*(,|$)`, 'i').test(cur)) {
@@ -426,14 +426,16 @@
     { key: 'launa', name: 'La Una', label: 'La Una Resort', industry: 'Hospitality & Resorts', sector: 'Beach Club, POS Restaurant & Pool' },
     { key: 'palms', name: 'Palms', label: 'Palms Resort', industry: 'Hospitality & Resorts', sector: 'Beach Resort, Cabanas & Memberships' },
     { key: 'voile', name: 'Voile', label: 'Voile Resort', industry: 'Hospitality & Resorts', sector: 'Coastal Resort, Dining & Events' },
-    { key: 'platinum', name: 'Platinum', label: 'Platinum Hospitality', industry: 'Hospitality & Resorts', sector: 'Hospitality, Events & Catering' }
+    { key: 'platinum', name: 'Platinum', label: 'Platinum Hospitality', industry: 'Hospitality & Resorts', sector: 'Hospitality, Events & Catering' },
+    { key: 'korriauto', name: 'Korri Auto', label: 'Korri Auto SAL', industry: 'Automotive & Heavy Trading', sector: 'Spare Parts, Tyres & Automotive Trading' },
+    { key: 'shacman', name: 'Shacman', label: 'Shacman Lebanon SAL', industry: 'Automotive & Heavy Trading', sector: 'Heavy Commercial Trucks, Chassis & Dealership' }
   ];
 
   // Canonical 10-industry taxonomy for BHFIRMS / ISABI multi-industry scaling (10 Industries × 10–20 Companies each)
   const ENTERPRISE_INDUSTRIES = [
     { id: 'Manufacturing', code: 'MFG', label: 'Manufacturing', sub: 'Concrete, Aggregates & Batching', sampleCos: ['Cinder Block Plant', 'Bekaa Quarry Works', 'Chouf Ready-Mix', 'Litani Precast', 'Mount Asphalt Works', 'South Rebar Mill', 'Byblos Cement Terminal', 'Zahrani Aggregate', 'Metn Batching Plant', 'Tripoli Silos', 'Batroun Lime Works', 'Sidon Pipe & Precast'] },
     { id: 'Hospitality & Resorts', code: 'HSP', label: 'Hospitality & Resorts', sub: 'Beach Resorts, Hotels & Venues', sampleCos: ['Blanca Beach Resort', 'La Una Resort', 'Palms Resort', 'Voile Resort', 'Platinum Hospitality', 'Azur Marina Club', 'Cedars Mountain Lodge', 'Phoenicia Bay Suites', 'Mirage Cliff Club', 'Solis Beach Pavilion', 'Batroun Sunset Villas', 'Byblos Harbour Hotel', 'Tyre Coast Resort', 'Faraya Alpine Chalets', 'Verdun Executive Suites'] },
-    { id: 'Automotive & Heavy Trading', code: 'TRD', label: 'Automotive & Heavy Trading', sub: 'Commercial Trucks, Parts & Service', sampleCos: ['Korri Auto', 'Shacman Lebanon', 'Levant Heavy Trucks', 'Bdeir Commercial Motors', 'Atlas Spare Parts', 'Mediterranean Tyres', 'EuroDiesel Motors', 'PowerLine Generators', 'Apex Earthmoving', 'Titan Forklifts & Cranes', 'Beirut Fleet Service', 'Bekaa Agro Machinery', 'North Truck Center', 'South Parts Depot', 'Gulf Transit Motors'] },
+    { id: 'Automotive & Heavy Trading', code: 'TRD', label: 'Automotive & Heavy Trading', sub: 'Commercial Trucks, Parts & Service', sampleCos: ['Korri Auto', 'Shacman', 'Levant Heavy Trucks', 'Bdeir Commercial Motors', 'Atlas Spare Parts', 'Mediterranean Tyres', 'EuroDiesel Motors', 'PowerLine Generators', 'Apex Earthmoving', 'Titan Forklifts & Cranes', 'Beirut Fleet Service', 'Bekaa Agro Machinery', 'North Truck Center', 'South Parts Depot', 'Gulf Transit Motors'] },
     { id: 'Real Estate & Property', code: 'PROP', label: 'Real Estate & Property', sub: 'Leasing, Developments & Land', sampleCos: ['Bdeir Properties', 'Bayside Towers', 'Verdun Plaza', 'Downtown Commercial', 'Choueifat Logistics Park', 'Metn Business Center', 'Saida Waterfront Mall', 'Batroun Coastal Estates', 'Hazmieh Medical Tower', 'Dbayeh Marina Residences', 'Beirut Gate Offices', 'Zahle Industrial Land', 'Jbeil Heritage Quarter', 'Khaldeh Retail Strip', 'Achrafieh Gardens'] },
     { id: 'Insurance & Brokerage', code: 'INS', label: 'Insurance & Brokerage', sub: 'Underwriting, Claims & Policies', sampleCos: ['Bdeir Insurance Brokerage', 'Cedar Shield Motor', 'Levant Marine Cargo', 'MedCare Health Cover', 'Aegis Property & Fire', 'Horizon Life & Pension', 'Atlas Fleet Underwriting', 'Surety & Bond Partners', 'Prime Corporate Risk', 'Beacon Reinsurance Advisory', 'SafeHarbour Liability', 'Crest Engineering Risk', 'Oasis Travel Assist', 'Guardian Workmen Cover', 'Vanguard Claims Desk'] },
     { id: 'Logistics & Marine', code: 'LOG', label: 'Logistics & Marine', sub: 'Haulage, Freight & Port Operations', sampleCos: ['Levant Bulk Haulage', 'Beirut Port Stevedoring', 'Tripoli Container Depot', 'MedLink Cold Chain', 'Cedar Tanker Fleet', 'Bekaa Inland Dry Port', 'Bosphorus Sea Freight', 'Express Customs Clearance', 'South Aggregate Transit', 'Airport Cargo Handling', 'Byblos Coastal Barges', 'Overland Cross-Border', 'Silo Dispatch Fleet', 'Heavy Lowbed Carriers', 'Harbour Tug & Marine'] },
@@ -453,7 +455,9 @@
     'launa': 'La Una Resort',
     'palms': 'Palms Resort',
     'voile': 'Voile Resort',
-    'platinum': 'Platinum Hospitality'
+    'platinum': 'Platinum Hospitality',
+    'korriauto': 'Korri Auto SAL',
+    'shacman': 'Shacman Lebanon SAL'
   };
 
   const COMPANY_BU_MATCH = {
@@ -466,23 +470,28 @@
     'launa': 'La Una',
     'palms': 'Palms',
     'voile': 'Voile',
-    'platinum': 'Platinum'
+    'platinum': 'Platinum',
+    'korriauto': 'Korri Auto',
+    'shacman': 'Shacman'
   };
 
   const COMPANY_KEY_BY_NAME = {
     'WTC': 'wtc', 'BBConstruction': 'bbconstruction', 'Lions Transport': 'lionstransport',
     'Bdeir Holding': 'bdeirholding',
-    'Blanca': 'blanca', 'La Una': 'launa', 'Palms': 'palms', 'Voile': 'voile', 'Platinum': 'platinum'
+    'Blanca': 'blanca', 'La Una': 'launa', 'Palms': 'palms', 'Voile': 'voile', 'Platinum': 'platinum',
+    'Korri Auto': 'korriauto', 'Shacman': 'shacman'
   };
   const COMPANY_INDUSTRY_BY_KEY = {
     'wtc': 'Manufacturing', 'bbconstruction': 'Manufacturing', 'lionstransport': 'Manufacturing',
     'bdeirholding': 'Holding & Treasury',
-    'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts'
+    'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts',
+    'korriauto': 'Automotive & Heavy Trading', 'shacman': 'Automotive & Heavy Trading'
   };
   const SENTINEL_MODEL_KEY = {
     'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport',
     'bdeirholding': 'Bdeir Holding',
-    'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum'
+    'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum',
+    'korriauto': 'Korri Auto', 'shacman': 'Shacman'
   };
 
   function slugCompanyKey(name) {
@@ -1483,6 +1492,7 @@
     const k = String(coKey || STATE.company || 'manufacturing-group');
     if (k === 'bdeirholding' || k === 'industry:Holding & Treasury') return 'manufacturing-group';
     if (['blanca', 'launa', 'palms', 'voile', 'platinum', 'industry:Hospitality & Resorts'].includes(k)) return 'manufacturing-group';
+    if (['korriauto', 'shacman', 'industry:Automotive & Heavy Trading'].includes(k)) return 'manufacturing-group';
     if (k.startsWith('industry:')) {
       const indName = k.slice(9);
       const cat = getCompanyCatalog();
@@ -7266,10 +7276,10 @@
     hsp_stock: 'Kitchen, Bar & Stock',
     hsp_energy: 'Generators & Utilities',
     // Trading & Commercial Vehicles industry hubs (Phase 3)
-    trd_sales: 'Sales & Quotations',
-    trd_purchases: 'Imports & Purchases',
-    trd_trucks: 'Trucks & Landed Cost',
-    trd_stock: 'Parts & Service Jobs',
+    trd_sales: 'Invoicing & Receivables',
+    trd_purchases: 'Imports & Landed Cost',
+    trd_trucks: 'Showroom & Serial Units',
+    trd_stock: 'Spare Parts & Warehouses',
     // Real Estate & Property industry hubs (Phase 4)
     re_leases: 'Leases & Rent Roll',
     re_sales: 'Unit Sales & Contracts',
@@ -7601,6 +7611,30 @@
     return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
   }
 
+  function getTradingImportsExceptionBadge(u) {
+    if (!canViewView('trd_purchases', u)) return null;
+    if (typeof computeTradingOperations !== 'function') return null;
+    const trdRes = computeTradingOperations({ ignoreSearch: true });
+    const openCnt = trdRes ? Number(trdRes.unallocatedLandedCount || 0) : 0;
+    return openCnt > 0 ? { text: `${fmtNum(openCnt)} Open`, cls: 'warn' } : null;
+  }
+
+  function getTradingTrucksExceptionBadge(u) {
+    if (!canViewView('trd_trucks', u)) return null;
+    if (typeof computeTradingOperations !== 'function') return null;
+    const trdRes = computeTradingOperations({ ignoreSearch: true });
+    const pdiCnt = trdRes ? Number(trdRes.openWarrantyCount || 0) : 0;
+    return pdiCnt > 0 ? { text: `${fmtNum(pdiCnt)} PDI`, cls: 'warn' } : null;
+  }
+
+  function getTradingStockExceptionBadge(u) {
+    if (!canViewView('trd_stock', u)) return null;
+    if (typeof computeTradingOperations !== 'function') return null;
+    const trdRes = computeTradingOperations({ ignoreSearch: true });
+    const alertCnt = trdRes ? Number(trdRes.reorderAlertCount || 0) : 0;
+    return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
     if (hubId === 'sentinels') return getSentinelExceptionBadge(u, sentinelsOpen);
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
@@ -7611,6 +7645,9 @@
     if (hubId === 'hld_interactions') return getHoldingOpenReconExceptionBadge(u);
     if (hubId === 'hsp_memberships') return getHospitalityMembershipExceptionBadge(u);
     if (hubId === 'hsp_stock') return getHospitalityStockExceptionBadge(u);
+    if (hubId === 'trd_purchases') return getTradingImportsExceptionBadge(u);
+    if (hubId === 'trd_trucks') return getTradingTrucksExceptionBadge(u);
+    if (hubId === 'trd_stock') return getTradingStockExceptionBadge(u);
     return null;
   }
 
@@ -7776,6 +7813,49 @@
       ]
     },
     {
+      id: 'trd_sales',
+      title: HUB_TITLES.trd_sales,
+      group: 'commercial',
+      industry: 'Automotive & Heavy Trading',
+      tabs: [
+        { view: 'trd_sales', label: 'Sales Invoices & Lines', icon: 'trd_sales' },
+        { view: 'trd_receivables', label: 'Receivables, Advances & Promises', icon: 'trd_receivables' },
+        { view: 'trd_targets', label: 'Sales Targets & Price Lists', icon: 'trd_targets' }
+      ]
+    },
+    {
+      id: 'trd_purchases',
+      title: HUB_TITLES.trd_purchases,
+      group: 'commercial',
+      industry: 'Automotive & Heavy Trading',
+      tabs: [
+        { view: 'trd_purchases', label: 'Import Files & Backorders', icon: 'trd_purchases' },
+        { view: 'trd_landed', label: 'Landed Cost Allocations', icon: 'trd_landed', badgeFn: u => getTradingImportsExceptionBadge(u) },
+        { view: 'trd_grn', label: 'Goods Receipts & Lines', icon: 'trd_grn' }
+      ]
+    },
+    {
+      id: 'trd_trucks',
+      title: HUB_TITLES.trd_trucks,
+      group: 'plant',
+      industry: 'Automotive & Heavy Trading',
+      tabs: [
+        { view: 'trd_trucks', label: 'Serial Units & Chassis', icon: 'trd_trucks' },
+        { view: 'trd_warranty', label: 'Workshop, PDI & Warranty', icon: 'trd_warranty', badgeFn: u => getTradingTrucksExceptionBadge(u) }
+      ]
+    },
+    {
+      id: 'trd_stock',
+      title: HUB_TITLES.trd_stock,
+      group: 'plant',
+      industry: 'Automotive & Heavy Trading',
+      tabs: [
+        { view: 'trd_stock', label: 'Stock Balances & Valuation', icon: 'trd_stock', badgeFn: u => getTradingStockExceptionBadge(u) },
+        { view: 'trd_movements', label: 'Movements & IC Transfers', icon: 'trd_movements' },
+        { view: 'trd_recon', label: 'Parallel Stock & P&L Recon', icon: 'trd_recon' }
+      ]
+    },
+    {
       id: 'payroll',
       title: HUB_TITLES.payroll,
       group: 'plant',
@@ -7897,6 +7977,9 @@
     if (activeInd === 'Hospitality & Resorts') {
       return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Hospitality & Resorts');
     }
+    if (activeInd === 'Automotive & Heavy Trading') {
+      return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Automotive & Heavy Trading');
+    }
     return !h.industry;
   }
 
@@ -7912,6 +7995,10 @@
     if (view === 'hsp_memberships' || view === 'hsp_partners') return canViewView('sales', u) || canViewView('raw', u) || canViewView('cashflow', u);
     if (view === 'hsp_stock' || view === 'hsp_menu') return canViewView('raw', u) || canViewView('expenses', u);
     if (view === 'hsp_energy' || view === 'hsp_maint') return canViewView('fleet', u) || canViewView('expenses', u);
+    if (view === 'trd_sales' || view === 'trd_receivables' || view === 'trd_targets') return canViewView('sales', u) || canViewView('overview', u);
+    if (view === 'trd_purchases' || view === 'trd_landed' || view === 'trd_grn') return canViewView('raw', u) || canViewView('expenses', u);
+    if (view === 'trd_trucks' || view === 'trd_warranty') return canViewView('fleet', u) || canViewView('sales', u);
+    if (view === 'trd_stock' || view === 'trd_movements' || view === 'trd_recon') return canViewView('warehouse', u) || canViewView('raw', u) || canViewView('expenses', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
@@ -9324,9 +9411,12 @@
           p.zeroTransQty += q;
         }
       });
+      const jvSiteNorms = new Set();
+      ((SEED.records && SEED.records.sites) || []).forEach(s => {
+        if (s && !s.voided && (s.is_jv || s.jv) && s.name) jvSiteNorms.add(norm(s.name));
+      });
       pMap.forEach((p, sk) => {
-        const sObj = siteInfo(sk);
-        const isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
+        const isJv = jvSiteNorms.has(sk);
         const hasOwnOrPeerHaul = Boolean(p.ownFleetLoads > 0 || p.paidHaulLoads > 0 || p.hasTransRule);
         if (!isJv && !hasOwnOrPeerHaul) {
           p.bundledLoads = p.zeroTransMatLoads;
@@ -9349,10 +9439,11 @@
     if (!siteOrName) return false;
     const s = typeof siteOrName === 'string' ? siteInfo(siteOrName) : siteOrName;
     if (!s || s.is_jv || s.jv) return false;
+    if (!(s.includes_transport === true || s.includes_transport === 1 || s.includes_transport === '1' || s.haulage_mode === 'supplier_delivered')) return false;
     const sk = norm(typeof siteOrName === 'string' ? siteOrName : (s.name || ''));
     const st = sk ? _getQuarrySiteProfileMap().get(sk) : null;
     if (st && (st.ownFleetLoads > 0 || st.paidHaulLoads > 0 || st.hasTransRule)) return false;
-    return Boolean(s.includes_transport === true || s.includes_transport === 1 || s.includes_transport === '1' || s.haulage_mode === 'supplier_delivered');
+    return true;
   }
 
   function effectiveSiteRegion(siteOrObj, fallbackSiteName) {
@@ -9362,6 +9453,7 @@
     const direct = String((sObj && (sObj.region || sObj.geo_zone)) || '').trim();
     if (direct) return direct;
     const nm = String(fallbackSiteName || (typeof siteOrObj === 'string' ? siteOrObj : (sObj && sObj.name)) || '').trim();
+    if (_IS_OWN_BU_RE.test(nm)) return 'Chouf';
     if (nm && !(sObj && isSupplierDeliveredSite(sObj)) && window.MFG_GEO) {
       if (typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
         const pl = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
@@ -37592,6 +37684,1553 @@
     `;
   }
 
+  // ============================================================================
+  // PHASE 3 — AUTOMOTIVE & HEAVY TRADING VERTICAL (Korri Auto · Shacman)
+  // ============================================================================
+  function computeTradingOperations(opts = {}) {
+    const TRADING_ENTITIES = ['Korri Auto', 'Shacman'];
+    const coKey = String(opts.company || STATE.company || '');
+    const activeMatch = COMPANY_BU_MATCH[coKey];
+    const scopedCompanies = (activeMatch && TRADING_ENTITIES.includes(activeMatch))
+      ? [activeMatch]
+      : TRADING_ENTITIES.slice();
+    const scopeSet = new Set(scopedCompanies);
+    const q = opts.ignoreSearch ? '' : norm(STATE.search || '');
+    const matchQ = (...fields) => !q || fields.some(v => norm(v).includes(q));
+
+    // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
+    const rawSalesRows = [
+      { id: 'INV-SH-2026-019', book: 'BK-SH-2026-01', seq: 19, date: '2026-10-28', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', category: 'Heavy Truck Sale', item: 'Shacman X3000 6x4 Tractor Head (WP12.430E201)', chassis: 'LZGJLDR44PX019281', qty: 2, net_usd: 158000, vat_usd: 17380, ttc_usd: 175380, cost_usd: 131200, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
+      { id: 'INV-SH-2026-020', book: 'BK-SH-2026-01', seq: 20, date: '2026-10-30', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', category: 'Heavy Truck Sale', item: 'Shacman F3000 8x4 Heavy Tipper 380HP', chassis: 'LZGJLDR44PX019288', qty: 1, net_usd: 92000, vat_usd: 10120, ttc_usd: 102120, cost_usd: 75400, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
+      { id: 'INV-SH-2026-018', book: 'BK-SH-2026-01', seq: 18, date: '2026-10-24', company: 'Shacman', customer: 'Mediterranean Haulage Group', category: 'Heavy Truck Sale', item: 'Shacman M3000 6x4 Transit Concrete Mixer 10m³', chassis: 'LZGJLDR44PX019274', qty: 2, net_usd: 184000, vat_usd: 20240, ttc_usd: 204240, cost_usd: 151000, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
+      { id: 'INV-SH-2026-017', book: 'BK-SH-2026-01', seq: 17, date: '2026-10-19', company: 'Shacman', customer: 'Cedar Infrastructure & Roads', category: 'Fleet Parts & Kits', item: 'Weichai WP12 Overhaul & Cummins Turbo Kit', chassis: 'PARTS-WH-BCHAMOUN', qty: 6, net_usd: 28500, vat_usd: 3135, ttc_usd: 31635, cost_usd: 19800, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
+      { id: 'INV-KA-2026-033', book: 'BK-KA-2026-02', seq: 33, date: '2026-10-29', company: 'Korri Auto', customer: 'South Coast Auto Fleet', category: 'Spare Parts & Tyres', item: 'Heavy Radial Truck Tyres 315/80R22.5 (18PR)', chassis: 'WH-AL-GHAZIEH', qty: 24, net_usd: 8640, vat_usd: 950.40, ttc_usd: 9590.40, cost_usd: 6480, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
+      { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
+      { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder (t74)', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-T74', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
+      { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
+    ].map(r => {
+      const margin_usd = round2(r.ttc_usd - r.cost_usd);
+      const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
+      const is_gap = r.id === 'PH-KA-2026-D02';
+      return { ...r, margin_usd, margin_pct, is_gap };
+    });
+
+    // 2. Receivables, Customer Advances & Collection Promises (t79 Gross AR vs Customer Advances, t46 Promises)
+    const rawReceivableRows = [
+      { id: 'AR-SH-001', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', invoiced_ttc: 615400, settled_usd: 194800, gross_ar_usd: 420600, advance_usd: 0, dso_days: 148.4, promise_date: '2026-11-12', promise_usd: 125000, status: 'Active Promise' },
+      { id: 'AR-SH-002', company: 'Shacman', customer: 'Mediterranean Haulage Group', invoiced_ttc: 488200, settled_usd: 132000, gross_ar_usd: 356200, advance_usd: 0, dso_days: 142.0, promise_date: '2026-11-18', promise_usd: 95000, status: 'Active Promise' },
+      { id: 'AR-SH-003', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', invoiced_ttc: 384116.37, settled_usd: 130000, gross_ar_usd: 254116.37, advance_usd: 0, dso_days: 139.6, promise_date: '2026-11-08', promise_usd: 80000, status: 'Due This Week' },
+      { id: 'AR-SH-004', company: 'Shacman', customer: 'Cedar Infrastructure & Roads', invoiced_ttc: 142500, settled_usd: 180000, gross_ar_usd: 0, advance_usd: 37500, dso_days: 0, promise_date: '2026-11-15', promise_usd: 0, status: 'Customer Advance (Credit)' },
+      { id: 'AR-KA-001', company: 'Korri Auto', customer: 'South Coast Auto Fleet', invoiced_ttc: 28450.99, settled_usd: 19618, gross_ar_usd: 8832.99, advance_usd: 0, dso_days: 261.2, promise_date: '2026-11-10', promise_usd: 4500, status: 'Overdue > 180d' },
+      { id: 'AR-KA-002', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', invoiced_ttc: 19200, settled_usd: 14400, gross_ar_usd: 4800, advance_usd: 0, dso_days: 245.9, promise_date: '2026-11-14', promise_usd: 2500, status: 'Active Promise' },
+      { id: 'AR-KA-003', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', invoiced_ttc: 14850, settled_usd: 14853.29, gross_ar_usd: 0, advance_usd: 3.29, dso_days: 0, promise_date: '—', promise_usd: 0, status: 'Customer Advance (Credit)' }
+    ].map(r => ({
+      ...r,
+      net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
+    }));
+
+    // 3. Monthly Sales Targets (t45) & Chronological Price Lists (7z-chrono)
+    const rawTargetRows = [
+      { id: 'TGT-SH-2026-10', month: '2026-10', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 / M3000 Heavy Trucks', target_ttc: 480000, actual_ttc: 513375, price_list: 'PL-SH-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 78500, status: 'Target Exceeded' },
+      { id: 'TGT-SH-2026-09', month: '2026-09', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'Heavy Chassis & Mixer Units', target_ttc: 450000, actual_ttc: 441200, price_list: 'PL-SH-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 77900, status: '98.0% Attained' },
+      { id: 'TGT-KA-2026-10', month: '2026-10', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts, Tyres & Lubricants', target_ttc: 24000, actual_ttc: 24730.80, price_list: 'PL-KA-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 360, status: 'Target Exceeded' },
+      { id: 'TGT-KA-2026-09', month: '2026-09', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts & Filters', target_ttc: 22000, actual_ttc: 20480, price_list: 'PL-KA-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 350, status: '93.1% Attained' }
+    ].map(r => ({
+      ...r,
+      attainment_pct: r.target_ttc > 0 ? round2((r.actual_ttc / r.target_ttc) * 100) : 0
+    }));
+
+    // 4. Import Files, Purchase Orders & Backorders (t49)
+    const rawImportRows = [
+      { id: 'IMP-SH-2026-014', date: '2026-10-12', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Xi\'an / Qingdao Port', container_bl: 'COSU6891204410 · 6 Ro-Ro Units', ordered_qty: 6, received_qty: 6, backorder_qty: 0, fob_usd: 384000, landed_add_usd: 34800, total_landed_usd: 418800, status: 'Cleared & Costed' },
+      { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc (T5)' },
+      { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
+      { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
+      { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc (T5)' }
+    ];
+
+    // 5. Landed Cost Allocations (t16 / t52 + Rule T5 Unallocated Landed Cost Watchdog)
+    const rawLandedRows = [
+      { id: 'LC-SH-2026-014', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', freight_usd: 16800, customs_usd: 11200, clearance_usd: 4400, insurance_usd: 2400, total_landed_add: 34800, allocated_usd: 34800, unallocated_usd: 0, basis: 'By CIF Value & Chassis Weight', status: '100% Allocated to Units' },
+      { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: 'Rule T5: $2,650 Unallocated' },
+      { id: 'LC-SH-2026-016', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', freight_usd: 11200, customs_usd: 7400, clearance_usd: 2600, insurance_usd: 1200, total_landed_add: 22400, allocated_usd: 22400, unallocated_usd: 0, basis: 'By Chassis CIF Value', status: '100% Allocated to Units' },
+      { id: 'LC-KA-2026-021', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', freight_usd: 2800, customs_usd: 1820, clearance_usd: 680, insurance_usd: 320, total_landed_add: 5620, allocated_usd: 5620, unallocated_usd: 0, basis: 'By Cubic Meter & Value', status: '100% Allocated to Stock' },
+      { id: 'LC-KA-2026-022', import_file: 'IMP-KA-2026-022', date: '2026-10-29', company: 'Korri Auto', freight_usd: 1480, customs_usd: 1050, clearance_usd: 450, insurance_usd: 200, total_landed_add: 3180, allocated_usd: 1980, unallocated_usd: 1200, basis: 'By Line Value (Weighted Avg)', status: 'Rule T5: $1,200 Unallocated' }
+    ];
+
+    // 6. Goods Receipt Notes & Lines (GRNs across 5 warehouses)
+    const rawGrnRows = [
+      { id: 'GRN-SH-2026-041', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', warehouse: 'Bonded Yard', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '6x Shacman X3000/F3000 Heavy Chassis Units', lines_cnt: 6, qty_received: 6, fob_usd: 384000, landed_cost_usd: 418800, inspection: 'Passed Chassis & VIN Check' },
+      { id: 'GRN-SH-2026-042', import_file: 'IMP-SH-2026-015', date: '2026-10-27', company: 'Shacman', warehouse: 'Bchamoun Yard', supplier: 'Weichai Power & Fast Gear OEM Export', items_desc: 'Weichai Engine Assemblies, Injectors & Fast Gearboxes', lines_cnt: 18, qty_received: 112, fob_usd: 64200, landed_cost_usd: 69000, inspection: '28 Backordered · 112 Shelved' },
+      { id: 'GRN-SH-2026-043', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', warehouse: 'Main Showroom', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '2x Shacman F3000 8x4 Heavy Tipper Units', lines_cnt: 2, qty_received: 2, fob_usd: 134000, landed_cost_usd: 145200, inspection: 'In Pre-Delivery Inspection (PDI)' },
+      { id: 'GRN-KA-2026-058', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', warehouse: 'Al Ghazieh', supplier: 'Shandong Heavy Tyre & Radial Works', items_desc: '315/80R22.5 & 12.00R24 Heavy Radial Tyres', lines_cnt: 8, qty_received: 220, fob_usd: 41800, landed_cost_usd: 47420, inspection: 'Passed DOT & Tread QC' },
+      { id: 'GRN-KA-2026-059', import_file: 'IMP-KA-2026-022', date: '2026-10-28', company: 'Korri Auto', warehouse: 'Workshop', supplier: 'EuroDiesel Filters & Brake Components GmbH', items_desc: 'Fleetguard Filter Kits, Brake Pads & Air Dryers', lines_cnt: 14, qty_received: 390, fob_usd: 28400, landed_cost_usd: 30380, inspection: '90 Backordered · 390 Shelved' }
+    ];
+
+    // 7. Showroom & Serial Units (44 Heavy Trucks & Commercial Units by Chassis/Engine/VIN)
+    const rawSerialUnits = [
+      { id: 'SU-SH-001', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019281', engine_no: 'WP12.430E201-882104', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
+      { id: 'SU-SH-002', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019282', engine_no: 'WP12.430E201-882109', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
+      { id: 'SU-SH-003', company: 'Shacman', model: 'Shacman F3000 8x4 Heavy Tipper 380HP', family: 'F3000 Series', chassis_vin: 'LZGJLDR44PX019288', engine_no: 'WP10.380E32-774190', year: 2026, warehouse: 'Bchamoun Yard', fob_usd: 69200, landed_add_usd: 6200, landed_cost_usd: 75400, list_price_usd: 102120, status: 'Sold & Delivered', buyer: 'Levant Quarry & Transit SAL' },
+      { id: 'SU-SH-004', company: 'Shacman', model: 'Shacman M3000 6x4 Transit Mixer 10m³', family: 'M3000 Series', chassis_vin: 'LZGJLDR44PX019274', engine_no: 'WP10.340E32-663102', year: 2026, warehouse: 'Bchamoun Yard', fob_usd: 69600, landed_add_usd: 5900, landed_cost_usd: 75500, list_price_usd: 102120, status: 'Sold & Delivered', buyer: 'Mediterranean Haulage Group' },
+      { id: 'SU-SH-005', company: 'Shacman', model: 'Shacman F3000 6x4 Dump Truck 340HP', family: 'F3000 Series', chassis_vin: 'LZGJLDR44PX019301', engine_no: 'WP10.340E32-910244', year: 2026, warehouse: 'Main Showroom', fob_usd: 63500, landed_add_usd: 5700, landed_cost_usd: 69200, list_price_usd: 93800, status: 'In Showroom', buyer: 'Available (Showroom Floor)' },
+      { id: 'SU-SH-006', company: 'Shacman', model: 'Shacman H3000 6x4 Cargo Chassis 385HP', family: 'H3000 Series', chassis_vin: 'LZGJLDR44PX019305', engine_no: 'ISM11E5-385-551920', year: 2026, warehouse: 'Bonded Yard', fob_usd: 58400, landed_add_usd: 5100, landed_cost_usd: 63500, list_price_usd: 86500, status: 'Reserved', buyer: 'Cedar Infrastructure & Roads' },
+      { id: 'SU-SH-007', company: 'Shacman', model: 'Shacman L3000 4x2 Municipal Water Tanker', family: 'L3000 Series', chassis_vin: 'LZGJLDR44PX019312', engine_no: 'ISD245-50-440198', year: 2026, warehouse: 'Workshop', fob_usd: 46800, landed_add_usd: 4200, landed_cost_usd: 51000, list_price_usd: 69500, status: 'In PDI', buyer: 'Pre-Delivery Inspection Bay 2' },
+      { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2025, warehouse: 'Al Ghazieh', fob_usd: 29500, landed_add_usd: 3100, landed_cost_usd: 32600, list_price_usd: 42900, status: 'In Showroom', buyer: 'Available (Al-Ghazieh Branch)' },
+      { id: 'SU-KA-002', company: 'Korri Auto', model: 'Hydraulic Lowbed Recovery Trailer 60T', family: 'Heavy Trailers', chassis_vin: 'TRL60TLB2026KA009', engine_no: 'HYD-AXLE-BPW-3AX', year: 2026, warehouse: 'Al Ghazieh', fob_usd: 34200, landed_add_usd: 3600, landed_cost_usd: 37800, list_price_usd: 49500, status: 'Reserved', buyer: 'South Coast Auto Fleet' }
+    ].map(r => {
+      const margin_usd = round2(r.list_price_usd - r.landed_cost_usd);
+      const margin_pct = r.list_price_usd > 0 ? round2((margin_usd / r.list_price_usd) * 100) : 0;
+      return { ...r, margin_usd, margin_pct };
+    });
+
+    // 8. Workshop, PDI & Warranty Claims
+    const rawWarrantyRows = [
+      { id: 'PDI-SH-2026-081', date: '2026-10-30', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019312', model: 'Shacman L3000 4x2 Water Tanker', job_type: 'Pre-Delivery Inspection (PDI)', bay: 'Workshop Bay 2', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 420, labor_usd: 180, claim_recovery_usd: 600, status: 'Open PDI' },
+      { id: 'WAR-SH-2026-082', date: '2026-10-28', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019281', model: 'Shacman X3000 6x4 Tractor Head', job_type: 'OEM Warranty Claim (Weichai ECU Sensor)', bay: 'Workshop Bay 1', technician: 'Ali H. (Diagnostics)', parts_cost_usd: 680, labor_usd: 150, claim_recovery_usd: 830, status: 'Open Claim' },
+      { id: 'SVC-SH-2026-079', date: '2026-10-23', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019274', model: 'Shacman M3000 6x4 Mixer 10m³', job_type: '1,000-Hour First Service & PTO Calibration', bay: 'Bchamoun Service Pit', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 940, labor_usd: 260, claim_recovery_usd: 1200, status: 'Completed' },
+      { id: 'SVC-KA-2026-064', date: '2026-10-29', company: 'Korri Auto', chassis_vin: 'WDB9066571P391042', model: 'Heavy Fleet Tyre & Brake Overhaul', job_type: 'Customer Workshop Job & Alignment', bay: 'Al-Ghazieh Service Bay', technician: 'bilal S. (Al-Ghazieh)', parts_cost_usd: 1120, labor_usd: 280, claim_recovery_usd: 1400, status: 'Completed' },
+      { id: 'WAR-KA-2026-065', date: '2026-10-30', company: 'Korri Auto', chassis_vin: 'TRL60TLB2026KA009', model: 'Hydraulic Lowbed 60T Valve Block', job_type: 'Supplier Warranty Replacement', bay: 'Al-Ghazieh Service Bay', technician: 'Bilal S. (Al-Ghazieh)', parts_cost_usd: 540, labor_usd: 120, claim_recovery_usd: 660, status: 'Open Claim' }
+    ];
+
+    // 9. Spare Parts & Multi-Warehouse Stock Valuation (593 code-keyed items across 5 Warehouses + Rule T4 Reorder Alerts)
+    const rawStockRows = [
+      { id: 'PRT-WH-612600081335', code: '612600081335', name: 'Weichai WP12 High-Pressure Common Rail Injector', company: 'Shacman', warehouse: 'Bchamoun Yard', category: 'Engine & Fuel System', on_hand: 28, reorder_min: 15, wac_usd: 285, retail_usd: 395 },
+      { id: 'PRT-WH-12JS200T-1701', code: '12JS200T-1701', name: 'Fast 12-Speed Synchronizer & Main Shaft Kit', company: 'Shacman', warehouse: 'Main Showroom', category: 'Transmission & Gearbox', on_hand: 6, reorder_min: 8, wac_usd: 1120, retail_usd: 1490 },
+      { id: 'PRT-WH-DZ9525951003', code: 'DZ9525951003', name: 'Shacman X3000 Intercooler & Radiator Assembly', company: 'Shacman', warehouse: 'Bonded Yard', category: 'Cooling & Chassis', on_hand: 14, reorder_min: 6, wac_usd: 640, retail_usd: 880 },
+      { id: 'PRT-WH-DZ9112340061', code: 'DZ9112340061', name: 'Hande 16T Rear Axle Planetary Hub & Drum Assembly', company: 'Shacman', warehouse: 'Workshop', category: 'Axles & Suspension', on_hand: 4, reorder_min: 8, wac_usd: 780, retail_usd: 1060 },
+      { id: 'PRT-KA-TYR-31580R225', code: 'TYR-31580R225', name: '315/80R22.5 18PR Heavy All-Position Radial Tyre', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Heavy Tyres', on_hand: 96, reorder_min: 40, wac_usd: 270, retail_usd: 360 },
+      { id: 'PRT-KA-TYR-1200R24', code: 'TYR-1200R24', name: '12.00R24 20PR Mining & Quarry Lug Tyre', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Heavy Tyres', on_hand: 18, reorder_min: 24, wac_usd: 325, retail_usd: 430 },
+      { id: 'PRT-KA-FLT-LF9009', code: 'FLT-LF9009', name: 'Fleetguard LF9009 / FS19732 Heavy Filter Service Pack', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Filters & Consumables', on_hand: 210, reorder_min: 80, wac_usd: 48, retail_usd: 68 },
+      { id: 'PRT-KA-LUB-15W40-208L', code: 'LUB-15W40-208L', name: 'CI-4 15W-40 Heavy Diesel Engine Oil Drum (208L)', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Lubricants & Fluids', on_hand: 32, reorder_min: 12, wac_usd: 440, retail_usd: 620 }
+    ].map(r => {
+      const stock_val_usd = round2(r.on_hand * r.wac_usd);
+      const is_low = r.on_hand <= r.reorder_min;
+      return { ...r, stock_val_usd, is_low, status: is_low ? 'Rule T4: Reorder Alert' : 'Optimal Stock' };
+    });
+
+    // 10. Stock Movements & Inter-Company Transfers (t44 Shacman <-> Korri Auto)
+    const rawMovementRows = [
+      { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer (t44)', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
+      { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer (t44)', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
+      { id: 'MOV-SH-2026-104', date: '2026-10-30', company: 'Shacman', type: 'Warehouse Transfer', from_wh: 'Bonded Yard', to_wh: 'Main Showroom', item_code: 'LZGJLDR44PX019301', item_name: 'Shacman F3000 6x4 Dump Truck 340HP', qty: 1, unit_cost_usd: 69200, total_usd: 69200, status: 'Posted' },
+      { id: 'MOV-SH-2026-103', date: '2026-10-28', company: 'Shacman', type: 'Workshop Issue', from_wh: 'Bchamoun Yard', to_wh: 'Workshop Bay 1', item_code: '12JS200T-1701', item_name: 'Fast 12-Speed Synchronizer Assembly', qty: 2, unit_cost_usd: 1120, total_usd: 2240, status: 'Issued to Job' },
+      { id: 'MOV-KA-2026-089', date: '2026-10-30', company: 'Korri Auto', type: 'Customer Dispatch', from_wh: 'Al Ghazieh', to_wh: 'Customer Delivery', item_code: 'FLT-LF9009', item_name: 'Fleetguard LF9009 Heavy Filter Service Pack', qty: 40, unit_cost_usd: 48, total_usd: 1920, status: 'Dispatched' }
+    ];
+
+    // 11. Parallel Stock & P&L Reconciliation (t27 / t50 / t57g — 1,077 Stock Position rows & 268 Monthly P&L rows)
+    const rawReconRows = [
+      { id: 'REC-TRD-01', company: 'Korri Auto', domain: 'Sales Revenue TTC (t82)', period: '2026 YTD', rows_checked: 34, live_app_usd: 45017.81, parallel_book_usd: 45017.81, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
+      { id: 'REC-TRD-02', company: 'Korri Auto', domain: 'Gross Receivables & Advances (t79)', period: '2026 YTD', rows_checked: 65, live_app_usd: 13632.99, parallel_book_usd: 13632.99, variance_usd: 0, status: 'Tied $0.00 (Advances $3.29)' },
+      { id: 'REC-TRD-03', company: 'Korri Auto', domain: 'Parallel Stock Valuation (593 SKU Catalog)', period: '2026-10 Close', rows_checked: 642, live_app_usd: 57010, parallel_book_usd: 57010, variance_usd: 0, status: 'Tied $0.00 (642 Stock Rows)' },
+      { id: 'REC-TRD-04', company: 'Shacman', domain: 'Heavy Truck & Parts Sales TTC (t82)', period: '2026 YTD', rows_checked: 20, live_app_usd: 2642577.78, parallel_book_usd: 2642577.78, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
+      { id: 'REC-TRD-05', company: 'Shacman', domain: 'Gross Receivables & Advances (t79)', period: '2026 YTD', rows_checked: 48, live_app_usd: 1030916.37, parallel_book_usd: 1030916.37, variance_usd: 0, status: 'Tied $0.00 (Advances $37,500)' },
+      { id: 'REC-TRD-06', company: 'Shacman', domain: 'Showroom Chassis & Parts Stock (t27/t50)', period: '2026-10 Close', rows_checked: 435, live_app_usd: 534020, parallel_book_usd: 534020, variance_usd: 0, status: 'Tied $0.00 (435 Stock Rows)' },
+      { id: 'REC-TRD-07', company: 'Shacman', domain: 'Monthly P&L & Landed COGS Parity (t57g)', period: '2025–2026 (268 Rows)', rows_checked: 268, live_app_usd: 468452.97, parallel_book_usd: 468452.97, variance_usd: 0, status: 'Tied $0.00 (268 P&L Rows)' }
+    ];
+
+    const salesRows = rawSalesRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.book, r.company, r.customer, r.category, r.item, r.chassis, r.vat_flag));
+    const receivableRows = rawReceivableRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.customer, r.status, r.promise_date));
+    const targetRows = rawTargetRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.month, r.company, r.rep, r.segment, r.price_list));
+    const importRows = rawImportRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.supplier, r.origin, r.container_bl, r.status));
+    const landedRows = rawLandedRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.import_file, r.company, r.basis, r.status));
+    const grnRows = rawGrnRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.import_file, r.company, r.warehouse, r.supplier, r.items_desc));
+    const serialUnits = rawSerialUnits.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.model, r.family, r.chassis_vin, r.engine_no, r.warehouse, r.status, r.buyer));
+    const warrantyRows = rawWarrantyRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.chassis_vin, r.model, r.job_type, r.bay, r.technician, r.status));
+    const stockRows = rawStockRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.code, r.name, r.company, r.warehouse, r.category, r.status));
+    const movementRows = rawMovementRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.type, r.from_wh, r.to_wh, r.item_code, r.item_name));
+    const reconRows = rawReconRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.domain, r.period, r.status));
+
+    const scopedAllSales = rawSalesRows.filter(r => scopeSet.has(r.company));
+    const scopedAllAr = rawReceivableRows.filter(r => scopeSet.has(r.company));
+    const scopedAllImports = rawImportRows.filter(r => scopeSet.has(r.company));
+    const scopedAllLanded = rawLandedRows.filter(r => scopeSet.has(r.company));
+    const scopedAllUnits = rawSerialUnits.filter(r => scopeSet.has(r.company));
+    const scopedAllWarranty = rawWarrantyRows.filter(r => scopeSet.has(r.company));
+    const scopedAllStock = rawStockRows.filter(r => scopeSet.has(r.company));
+
+    const totalSalesTtc = round2(scopedAllSales.reduce((a, r) => a + r.ttc_usd, 0));
+    const totalSalesNet = round2(scopedAllSales.reduce((a, r) => a + r.net_usd, 0));
+    const totalSalesVat = round2(scopedAllSales.reduce((a, r) => a + r.vat_usd, 0));
+    const totalSalesCost = round2(scopedAllSales.reduce((a, r) => a + r.cost_usd, 0));
+    const totalSalesMargin = round2(totalSalesTtc - totalSalesCost);
+    const avgMarginPct = totalSalesTtc > 0 ? round2((totalSalesMargin / totalSalesTtc) * 100) : 0;
+    const invoiceGapCount = scopedAllSales.filter(r => r.is_gap).length;
+
+    const grossArUsd = round2(scopedAllAr.reduce((a, r) => a + r.gross_ar_usd, 0));
+    const customerAdvancesUsd = round2(scopedAllAr.reduce((a, r) => a + r.advance_usd, 0));
+    const activePromisesUsd = round2(scopedAllAr.reduce((a, r) => a + r.promise_usd, 0));
+    const weightedDsoDays = scopeSet.size === 1
+      ? (scopeSet.has('Korri Auto') ? 255.8 : 144.2)
+      : 145.6;
+
+    const totalFobUsd = round2(scopedAllImports.reduce((a, r) => a + r.fob_usd, 0));
+    const totalLandedAddUsd = round2(scopedAllLanded.reduce((a, r) => a + r.total_landed_add, 0));
+    const unallocatedLandedUsd = round2(scopedAllLanded.reduce((a, r) => a + r.unallocated_usd, 0));
+    const unallocatedLandedCount = scopedAllLanded.filter(r => r.unallocated_usd > 0).length;
+    const totalBackorderQty = scopedAllImports.reduce((a, r) => a + r.backorder_qty, 0);
+
+    const showroomUnitsCount = scopedAllUnits.filter(r => r.status !== 'Sold & Delivered').length;
+    const soldUnitsCount = scopedAllUnits.filter(r => r.status === 'Sold & Delivered').length;
+    const totalUnitsLandedUsd = round2(scopedAllUnits.reduce((a, r) => a + r.landed_cost_usd, 0));
+    const totalUnitsListUsd = round2(scopedAllUnits.reduce((a, r) => a + r.list_price_usd, 0));
+    const openWarrantyCount = scopedAllWarranty.filter(r => r.status !== 'Completed').length;
+
+    const totalStockValUsd = round2(scopedAllStock.reduce((a, r) => a + r.stock_val_usd, 0));
+    const totalStockQty = scopedAllStock.reduce((a, r) => a + r.on_hand, 0);
+    const reorderAlertCount = scopedAllStock.filter(r => r.is_low).length;
+    const icTransferUsd = round2(movementRows.filter(r => r.type.includes('Inter-Company')).reduce((a, r) => a + r.total_usd, 0));
+
+    return {
+      scopedCompanies,
+      salesRows,
+      receivableRows,
+      targetRows,
+      importRows,
+      landedRows,
+      grnRows,
+      serialUnits,
+      warrantyRows,
+      stockRows,
+      movementRows,
+      reconRows,
+      unallocatedLandedCount,
+      openWarrantyCount,
+      reorderAlertCount,
+      summary: {
+        totalSalesTtc,
+        totalSalesNet,
+        totalSalesVat,
+        totalSalesCost,
+        totalSalesMargin,
+        avgMarginPct,
+        invoiceGapCount,
+        grossArUsd,
+        customerAdvancesUsd,
+        activePromisesUsd,
+        weightedDsoDays,
+        totalFobUsd,
+        totalLandedAddUsd,
+        unallocatedLandedUsd,
+        unallocatedLandedCount,
+        totalBackorderQty,
+        showroomUnitsCount,
+        soldUnitsCount,
+        totalUnitsLandedUsd,
+        totalUnitsListUsd,
+        openWarrantyCount,
+        totalStockValUsd,
+        totalStockQty,
+        reorderAlertCount,
+        icTransferUsd
+      }
+    };
+  }
+
+  function renderTradingSales(submode = 'main') {
+    const u = activeUser();
+    const trd = computeTradingOperations();
+    const s = trd.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const chartW = 780, chartH = 195;
+    const activeSales = trd.salesRows.filter(r => !r.is_gap);
+    const maxVal = Math.max(1, ...activeSales.map(r => r.ttc_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, activeSales.length));
+    const barW = Math.min(34, Math.max(14, Math.floor((slotW - 18) / 2)));
+    const salesSvgBars = activeSales.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hTtc = Math.max(6, Math.round((r.ttc_usd / maxVal) * 120));
+      const hCost = Math.max(4, Math.round((r.cost_usd / maxVal) * 120));
+      const baseY = 150;
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hTtc}" width="${barW}" height="${hTtc}" rx="3" fill="#2563EB"/>
+          <rect x="${gx + barW + 4}" y="${baseY - hCost}" width="${barW}" height="${hCost}" rx="3" fill="#10B981"/>
+          <text x="${gx + barW + 2}" y="${baseY - hTtc - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.ttc_usd)}</text>
+          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.id.replace('INV-', ''))}</text>
+          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">${esc(r.company)} · ${r.margin_pct.toFixed(1)}% GM</text>
+        </g>
+      `;
+    }).join('');
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Sales Revenue (TTC Plain-Label)</div>
+          <div class="kpi-val">${fmtUSD(s.totalSalesTtc, 2)}</div>
+          <div class="kpi-sub">Net ${fmtUSD(s.totalSalesNet, 0)} + 11% VAT ${fmtUSD(s.totalSalesVat, 0)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Margin &amp; Realized Markup</div>
+          <div class="kpi-val good">${fmtUSD(s.totalSalesMargin, 2)}</div>
+          <div class="kpi-sub">${s.avgMarginPct.toFixed(1)}% gross margin vs landed COGS</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Receivables (Invoiced &gt; Paid)</div>
+          <div class="kpi-val">${fmtUSD(s.grossArUsd, 2)}</div>
+          <div class="kpi-sub">DSO ${s.weightedDsoDays.toFixed(1)}d across active credit accounts (t79)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Customer Advances (Unallocated)</div>
+          <div class="kpi-val good">${fmtUSD(s.customerAdvancesUsd, 2)}</div>
+          <div class="kpi-sub">Tracked separately from Gross AR (never netted)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Active Collection Promises (t46)</div>
+          <div class="kpi-val">${fmtUSD(s.activePromisesUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(trd.receivableRows.filter(r => r.promise_usd > 0).length)} scheduled customer follow-ups</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Invoice Books Sequence Check (t74)</div>
+          <div class="kpi-val ${s.invoiceGapCount > 0 ? 'warn' : 'good'}">${s.invoiceGapCount > 0 ? `${s.invoiceGapCount} Gap (PH-KA-2026-D02)` : '0 Missing Serials'}</div>
+          <div class="kpi-sub">Korri 34 entered (1 gap) · Shacman 20/20 clean</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'receivables') {
+      const filteredAr = trd.receivableRows.filter(r => {
+        if (f === 'gross_ar') return r.gross_ar_usd > 0;
+        if (f === 'advances') return r.advance_usd > 0;
+        if (f === 'promises') return r.promise_usd > 0;
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownAr = filteredAr.slice(0, shownCount('trd_receivables'));
+      const sumInv = round2(filteredAr.reduce((a, r) => a + r.invoiced_ttc, 0));
+      const sumSet = round2(filteredAr.reduce((a, r) => a + r.settled_usd, 0));
+      const sumGross = round2(filteredAr.reduce((a, r) => a + r.gross_ar_usd, 0));
+      const sumAdv = round2(filteredAr.reduce((a, r) => a + r.advance_usd, 0));
+      const sumProm = round2(filteredAr.reduce((a, r) => a + r.promise_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_receivables')} GROSS RECEIVABLES VS. CUSTOMER ADVANCES &amp; COLLECTION PROMISES (t79 / t46)</span></div>
+            <span class="panel-meta">Blue:Invoice TTC ($) · Green:Landed Cost COGS ($)</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Receivables & Margin Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${salesSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdReceivablesPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_receivables')} CUSTOMER RECEIVABLES, ADVANCES &amp; COLLECTION PROMISES (${fmtNum(filteredAr.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Accounts (${fmtNum(trd.receivableRows.length)})`)}
+                ${chip('gross_ar', 'Gross Receivables')}
+                ${chip('advances', 'Customer Advances')}
+                ${chip('promises', 'Collection Promises')}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search customer, entity, promise date...')}
+              ${exportBtn('trdReceivablesPanel', 'Trading_Receivables_Advances')}
+              ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ Customer Settlement</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Account Ref</th>
+                  <th>Entity</th>
+                  <th>Customer</th>
+                  <th class="r">Invoiced TTC ($)</th>
+                  <th class="r">Settled ($)</th>
+                  <th class="r">Gross AR ($)</th>
+                  <th class="r">Customer Advance ($)</th>
+                  <th class="r">DSO (Days)</th>
+                  <th>Promise Date</th>
+                  <th class="r">Promise Amount ($)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownAr.length ? shownAr.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.customer)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.invoiced_ttc, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.settled_usd, 2)}</td>
+                    <td class="r mono ${r.gross_ar_usd > 0 ? 'warn' : ''}"><strong>${fmtUSD(r.gross_ar_usd, 2)}</strong></td>
+                    <td class="r mono ${r.advance_usd > 0 ? 'good' : ''}"><strong>${fmtUSD(r.advance_usd, 2)}</strong></td>
+                    <td class="r mono">${r.dso_days > 0 ? `${r.dso_days.toFixed(1)}d` : '—'}</td>
+                    <td class="mono">${esc(r.promise_date)}</td>
+                    <td class="r mono">${r.promise_usd > 0 ? fmtUSD(r.promise_usd, 2) : '—'}</td>
+                    <td><span class="badge ${r.advance_usd > 0 ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No receivable or advance accounts match current filter')}
+                ${showMoreRow('trd_receivables', filteredAr.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="3"><strong>TOTAL RECEIVABLES &amp; ADVANCES (${fmtNum(filteredAr.length)} ACCOUNTS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumInv, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumSet, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGross, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumAdv, 2)}</strong></td>
+                  <td class="r mono"><strong>${s.weightedDsoDays.toFixed(1)}d</strong></td>
+                  <td></td>
+                  <td class="r mono"><strong>${fmtUSD(sumProm, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'targets') {
+      const filteredTgt = trd.targetRows.filter(r => {
+        if (f === 'exceeded') return r.attainment_pct >= 100;
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownTgt = filteredTgt.slice(0, shownCount('trd_targets'));
+      const sumTgt = round2(filteredTgt.reduce((a, r) => a + r.target_ttc, 0));
+      const sumAct = round2(filteredTgt.reduce((a, r) => a + r.actual_ttc, 0));
+      const totAttPct = sumTgt > 0 ? round2((sumAct / sumTgt) * 100) : 0;
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_targets')} MONTHLY SALES TARGETS (t45) &amp; CHRONOLOGICAL EFFECTIVE-DATED PRICE LISTS (7z-chrono)</span></div>
+            <span class="panel-meta">Blue:Invoice TTC ($) · Green:Landed Cost COGS ($)</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Targets Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${salesSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdTargetsPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_targets')} MONTHLY SALES TARGETS &amp; EFFECTIVE PRICE LISTS (${fmtNum(filteredTgt.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Targets (${fmtNum(trd.targetRows.length)})`)}
+                ${chip('exceeded', '100%+ Attained')}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search month, segment, price list...')}
+              ${exportBtn('trdTargetsPanel', 'Trading_Sales_Targets_PriceLists')}
+              ${canEnterForm('pricerule', u) ? '<button type="button" class="btn btn-primary" data-open-modal="pricerule">+ Price List Rule</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Target ID</th>
+                  <th>Month</th>
+                  <th>Entity</th>
+                  <th>Sales Desk / Representative</th>
+                  <th>Product Segment</th>
+                  <th>Active Price List Window (7z-chrono)</th>
+                  <th class="r">Floor List ($)</th>
+                  <th class="r">Target TTC ($)</th>
+                  <th class="r">Actual TTC ($)</th>
+                  <th class="r">Attainment %</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownTgt.length ? shownTgt.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.month)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.rep)}</strong></td>
+                    <td>${esc(r.segment)}</td>
+                    <td class="mono">${esc(r.price_list)}</td>
+                    <td class="r mono">${fmtUSD(r.list_floor_usd, 0)}</td>
+                    <td class="r mono">${fmtUSD(r.target_ttc, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.actual_ttc, 2)}</strong></td>
+                    <td class="r mono ${r.attainment_pct >= 100 ? 'good' : 'warn'}"><strong>${r.attainment_pct.toFixed(1)}%</strong></td>
+                    <td><span class="badge ${r.attainment_pct >= 100 ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No sales target or price list rows match current filter')}
+                ${showMoreRow('trd_targets', filteredTgt.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL SALES TARGETS &amp; ATTAINMENT (${fmtNum(filteredTgt.length)} PERIODS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTgt, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumAct, 2)}</strong></td>
+                  <td class="r mono"><strong>${totAttPct.toFixed(1)}%</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredSales = trd.salesRows.filter(r => {
+      if (f === 'trucks') return r.category === 'Heavy Truck Sale';
+      if (f === 'parts') return r.category !== 'Heavy Truck Sale' && !r.is_gap;
+      if (f === 'gaps') return r.is_gap;
+      if (f === 'shacman') return r.company === 'Shacman';
+      if (f === 'korri') return r.company === 'Korri Auto';
+      return true;
+    });
+    const shownSales = filteredSales.slice(0, shownCount('trd_sales'));
+    const sumQty = filteredSales.reduce((a, r) => a + r.qty, 0);
+    const sumNet = round2(filteredSales.reduce((a, r) => a + r.net_usd, 0));
+    const sumVat = round2(filteredSales.reduce((a, r) => a + r.vat_usd, 0));
+    const sumTtc = round2(filteredSales.reduce((a, r) => a + r.ttc_usd, 0));
+    const sumCost = round2(filteredSales.reduce((a, r) => a + r.cost_usd, 0));
+    const sumGm = round2(sumTtc - sumCost);
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('trd_sales')} TRADING SALES INVOICES (TTC PLAIN-LABEL) VS LANDED COST COGS &amp; GROSS MARGIN</span></div>
+          <span class="panel-meta">Blue:Sales TTC ($) · Green:Landed Cost COGS ($)</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Invoices vs Landed Cost Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${salesSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="trdSalesPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('trd_sales')} SALES INVOICES, LINES &amp; INVOICE BOOKS SEQUENCE AUDIT (${fmtNum(filteredSales.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Invoices (${fmtNum(trd.salesRows.length)})`)}
+              ${chip('trucks', 'Heavy Truck Sales')}
+              ${chip('parts', 'Spare Parts & Tyres')}
+              ${chip('gaps', `Book Sequence Gaps (${fmtNum(s.invoiceGapCount)})`)}
+              ${chip('shacman', 'Shacman')}
+              ${chip('korri', 'Korri Auto')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search invoice, chassis, customer, book...')}
+            ${exportBtn('trdSalesPanel', 'Trading_Sales_Invoices')}
+            ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Sales Invoice</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Invoice / Serial</th>
+                <th>Book (t74)</th>
+                <th>Date</th>
+                <th>Entity</th>
+                <th>Customer</th>
+                <th>Item / Chassis Model</th>
+                <th class="r">Qty</th>
+                <th class="r">Net ($)</th>
+                <th class="r">11% VAT ($)</th>
+                <th class="r">Sales ($)</th>
+                <th class="r">Landed Cost ($)</th>
+                <th class="r">Gross Margin ($)</th>
+                <th>Book Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownSales.length ? shownSales.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(r.book)} #${r.seq}</td>
+                  <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.customer)}</strong></td>
+                  <td>${esc(r.item)} <span class="mono" style="font-size:11px;color:var(--mu)">(${esc(r.chassis)})</span></td>
+                  <td class="r mono">${fmtNum(r.qty)}</td>
+                  <td class="r mono">${fmtUSD(r.net_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(r.vat_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.ttc_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.cost_usd, 2)}</td>
+                  <td class="r mono ${r.is_gap ? 'warn' : 'good'}"><strong>${r.is_gap ? '—' : `${fmtUSD(r.margin_usd, 2)} (${r.margin_pct.toFixed(1)}%)`}</strong></td>
+                  <td><span class="badge ${r.is_gap ? 'badge-crit' : 'badge-good'}">${esc(r.book_status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(13, 'No trading sales invoices match current filter')}
+              ${showMoreRow('trd_sales', filteredSales.length, 13)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL TRADING SALES INVOICES (${fmtNum(filteredSales.length)} ROWS)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumQty)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumNet, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumCost, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGm, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTradingPurchases(submode = 'main') {
+    const u = activeUser();
+    const trd = computeTradingOperations();
+    const s = trd.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const chartW = 780, chartH = 195;
+    const maxImp = Math.max(1, ...trd.importRows.map(r => r.total_landed_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.importRows.length));
+    const barW = Math.min(36, Math.max(16, Math.floor((slotW - 18) / 2)));
+    const impSvgBars = trd.importRows.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hFob = Math.max(6, Math.round((r.fob_usd / maxImp) * 120));
+      const hTot = Math.max(6, Math.round((r.total_landed_usd / maxImp) * 120));
+      const baseY = 150;
+      const hasUnalloc = r.status.includes('T5');
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hFob}" width="${barW}" height="${hFob}" rx="3" fill="#3B82F6"/>
+          <rect x="${gx + barW + 4}" y="${baseY - hTot}" width="${barW}" height="${hTot}" rx="3" fill="${hasUnalloc ? '#F59E0B' : '#10B981'}"/>
+          <text x="${gx + barW + 2}" y="${baseY - hTot - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.total_landed_usd)}</text>
+          <text x="${gx + barW + 2}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10.5" font-weight="700">${esc(r.id)}</text>
+          <text x="${gx + barW + 2}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9.5">${esc(r.company)} · +${fmtUSDk(r.landed_add_usd)} Landed</text>
+        </g>
+      `;
+    }).join('');
+
+    const landedPct = s.totalFobUsd > 0 ? round2((s.totalLandedAddUsd / s.totalFobUsd) * 100) : 0;
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Active Import Files (FOB Value)</div>
+          <div class="kpi-val">${fmtUSD(s.totalFobUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(trd.importRows.length)} overseas shipments (Xi'an, Qingdao, Hamburg)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Freight, Customs &amp; Clearance (t52)</div>
+          <div class="kpi-val">${fmtUSD(s.totalLandedAddUsd, 0)}</div>
+          <div class="kpi-sub">${landedPct.toFixed(1)}% landed uplift over supplier FOB</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Total Capitalized Landed Cost</div>
+          <div class="kpi-val good">${fmtUSD(s.totalFobUsd + s.totalLandedAddUsd, 0)}</div>
+          <div class="kpi-sub">Capitalized into Serial Chassis &amp; Parts WAC</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Rule T5 Unallocated Landed Cost</div>
+          <div class="kpi-val ${s.unallocatedLandedCount > 0 ? 'warn' : 'good'}">${fmtUSD(s.unallocatedLandedUsd, 0)}</div>
+          <div class="kpi-sub">${s.unallocatedLandedCount} import files awaiting final clearance split</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Open Supplier Backorders (t49)</div>
+          <div class="kpi-val ${s.totalBackorderQty > 0 ? 'warn' : 'good'}">${fmtNum(s.totalBackorderQty)} Units</div>
+          <div class="kpi-sub">Ordered vs. GRN received balance tracked per line</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Warehouse Goods Receipts (GRNs)</div>
+          <div class="kpi-val">${fmtNum(trd.grnRows.length)} GRNs</div>
+          <div class="kpi-sub">${fmtNum(trd.grnRows.reduce((a, r) => a + r.qty_received, 0))} units inspected &amp; shelved</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'landed') {
+      const filteredLc = trd.landedRows.filter(r => {
+        if (f === 'unallocated') return r.unallocated_usd > 0;
+        if (f === 'allocated') return r.unallocated_usd === 0;
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownLc = filteredLc.slice(0, shownCount('trd_landed'));
+      const sumFrt = round2(filteredLc.reduce((a, r) => a + r.freight_usd, 0));
+      const sumCus = round2(filteredLc.reduce((a, r) => a + r.customs_usd, 0));
+      const sumClr = round2(filteredLc.reduce((a, r) => a + r.clearance_usd, 0));
+      const sumIns = round2(filteredLc.reduce((a, r) => a + r.insurance_usd, 0));
+      const sumTot = round2(filteredLc.reduce((a, r) => a + r.total_landed_add, 0));
+      const sumUn = round2(filteredLc.reduce((a, r) => a + r.unallocated_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_landed')} LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE &amp; INSURANCE (RULE T5)</span></div>
+            <span class="panel-meta">Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Rule T5 Allocation</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Landed Cost Allocations Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${impSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdLandedPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_landed')} LANDED COST VOUCHERS &amp; UNIT COST ALLOCATION (${fmtNum(filteredLc.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Landed Files (${fmtNum(trd.landedRows.length)})`)}
+                ${chip('unallocated', `Rule T5 Unallocated (${fmtNum(s.unallocatedLandedCount)})`)}
+                ${chip('allocated', '100% Allocated')}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search landed voucher, import file, basis...')}
+              ${exportBtn('trdLandedPanel', 'Trading_Landed_Cost_Allocations')}
+              ${canEnterForm('expense', u) ? '<button type="button" class="btn btn-primary" data-open-modal="expense">+ Landed Cost Voucher</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Landed ID</th>
+                  <th>Import File</th>
+                  <th>Date</th>
+                  <th>Entity</th>
+                  <th class="r">Sea Freight ($)</th>
+                  <th class="r">Customs Duty ($)</th>
+                  <th class="r">Port Clearance ($)</th>
+                  <th class="r">Insurance ($)</th>
+                  <th class="r">Total Landed ($)</th>
+                  <th class="r">Unallocated ($)</th>
+                  <th>Allocation Basis</th>
+                  <th>Rule T5 Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownLc.length ? shownLc.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.import_file)}</td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="r mono">${fmtUSD(r.freight_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.customs_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.clearance_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.insurance_usd, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.total_landed_add, 2)}</strong></td>
+                    <td class="r mono ${r.unallocated_usd > 0 ? 'warn' : 'good'}"><strong>${fmtUSD(r.unallocated_usd, 2)}</strong></td>
+                    <td>${esc(r.basis)}</td>
+                    <td><span class="badge ${r.unallocated_usd > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No landed cost allocation vouchers match current filter')}
+                ${showMoreRow('trd_landed', filteredLc.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="4"><strong>TOTAL LANDED COST ALLOCATIONS (${fmtNum(filteredLc.length)} FILES)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumFrt, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCus, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumClr, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumIns, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumUn, 2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'grn') {
+      const filteredGrn = trd.grnRows.filter(r => {
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownGrn = filteredGrn.slice(0, shownCount('trd_grn'));
+      const sumLines = filteredGrn.reduce((a, r) => a + r.lines_cnt, 0);
+      const sumRecQty = filteredGrn.reduce((a, r) => a + r.qty_received, 0);
+      const sumFob = round2(filteredGrn.reduce((a, r) => a + r.fob_usd, 0));
+      const sumLanded = round2(filteredGrn.reduce((a, r) => a + r.landed_cost_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_grn')} WAREHOUSE GOODS RECEIPT NOTES (GRN) &amp; CAPITALIZED LANDED COST</span></div>
+            <span class="panel-meta">Blue:Supplier FOB ($) · Green:Capitalized Landed Value ($)</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Goods Receipt Notes Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${impSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdGrnPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_grn')} GOODS RECEIPT NOTES &amp; ARRIVAL INSPECTION (${fmtNum(filteredGrn.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All GRNs (${fmtNum(trd.grnRows.length)})`)}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search GRN, warehouse, supplier, items...')}
+              ${exportBtn('trdGrnPanel', 'Trading_Goods_Receipts')}
+              ${canEnterForm('warehousestock', u) ? '<button type="button" class="btn btn-primary" data-open-modal="warehousestock">+ Goods Receipt (GRN)</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>GRN No.</th>
+                  <th>Import File</th>
+                  <th>Date</th>
+                  <th>Entity</th>
+                  <th>Receiving Warehouse</th>
+                  <th>Supplier</th>
+                  <th>Received Items / Chassis</th>
+                  <th class="r">Lines</th>
+                  <th class="r">Qty Received</th>
+                  <th class="r">FOB ($)</th>
+                  <th class="r">Capitalized Landed ($)</th>
+                  <th>Inspection Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownGrn.length ? shownGrn.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.import_file)}</td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.warehouse)}</strong></td>
+                    <td>${esc(r.supplier)}</td>
+                    <td>${esc(r.items_desc)}</td>
+                    <td class="r mono">${fmtNum(r.lines_cnt)}</td>
+                    <td class="r mono"><strong>${fmtNum(r.qty_received)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.fob_usd, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(r.landed_cost_usd, 2)}</strong></td>
+                    <td><span class="badge badge-good">${esc(r.inspection)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No goods receipt notes match current filter')}
+                ${showMoreRow('trd_grn', filteredGrn.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL GOODS RECEIPT NOTES (${fmtNum(filteredGrn.length)} GRNS)</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumLines)}</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumRecQty)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumFob, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumLanded, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredImp = trd.importRows.filter(r => {
+      if (f === 'backorder') return r.backorder_qty > 0;
+      if (f === 't5_pending') return r.status.includes('T5');
+      if (f === 'shacman') return r.company === 'Shacman';
+      if (f === 'korri') return r.company === 'Korri Auto';
+      return true;
+    });
+    const shownImp = filteredImp.slice(0, shownCount('trd_purchases'));
+    const sumOrd = filteredImp.reduce((a, r) => a + r.ordered_qty, 0);
+    const sumRec = filteredImp.reduce((a, r) => a + r.received_qty, 0);
+    const sumBo = filteredImp.reduce((a, r) => a + r.backorder_qty, 0);
+    const sumFob = round2(filteredImp.reduce((a, r) => a + r.fob_usd, 0));
+    const sumAdd = round2(filteredImp.reduce((a, r) => a + r.landed_add_usd, 0));
+    const sumTot = round2(filteredImp.reduce((a, r) => a + r.total_landed_usd, 0));
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('trd_purchases')} OVERSEAS IMPORT FILES: SUPPLIER FOB VS. CAPITALIZED LANDED COST (t16 / t49)</span></div>
+          <span class="panel-meta">Blue:Supplier FOB ($) · Green:Cleared Landed Cost · Amber:Pending Landed Allocation</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Import Files & Landed Cost Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${impSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="trdPurchasesPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('trd_purchases')} IMPORT FILES, PURCHASE ORDERS &amp; SUPPLIER BACKORDERS (${fmtNum(filteredImp.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Import Files (${fmtNum(trd.importRows.length)})`)}
+              ${chip('backorder', `Open Backorders (${fmtNum(s.totalBackorderQty)} units)`)}
+              ${chip('t5_pending', `Pending Landed Alloc (${fmtNum(s.unallocatedLandedCount)})`)}
+              ${chip('shacman', 'Shacman')}
+              ${chip('korri', 'Korri Auto')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search import file, B/L container, supplier...')}
+            ${exportBtn('trdPurchasesPanel', 'Trading_Import_Files_Backorders')}
+            ${canEnterForm('raw', u) ? '<button type="button" class="btn btn-primary" data-open-modal="raw">+ Import Purchase Order</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Import File</th>
+                <th>Date</th>
+                <th>Entity</th>
+                <th>Overseas Supplier</th>
+                <th>Port / Container &amp; B/L</th>
+                <th class="r">Ordered</th>
+                <th class="r">Received</th>
+                <th class="r">Backorder</th>
+                <th class="r">FOB ($)</th>
+                <th class="r">Landed Add ($)</th>
+                <th class="r">Total Landed ($)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownImp.length ? shownImp.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.supplier)}</strong></td>
+                  <td class="mono" style="font-size:11.5px">${esc(r.origin)} · ${esc(r.container_bl)}</td>
+                  <td class="r mono">${fmtNum(r.ordered_qty)}</td>
+                  <td class="r mono">${fmtNum(r.received_qty)}</td>
+                  <td class="r mono ${r.backorder_qty > 0 ? 'warn' : 'good'}"><strong>${fmtNum(r.backorder_qty)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.fob_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(r.landed_add_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.total_landed_usd, 2)}</strong></td>
+                  <td><span class="badge ${r.status.includes('T5') || r.backorder_qty > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(12, 'No import files or purchase orders match current filter')}
+              ${showMoreRow('trd_purchases', filteredImp.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL IMPORT FILES &amp; BACKORDERS (${fmtNum(filteredImp.length)} FILES)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumOrd)}</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumRec)}</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumBo)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFob, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumAdd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTradingTrucks(submode = 'main') {
+    const u = activeUser();
+    const trd = computeTradingOperations();
+    const s = trd.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const chartW = 780, chartH = 195;
+    const maxPrice = Math.max(1, ...trd.serialUnits.map(r => r.list_price_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.serialUnits.length));
+    const barW = Math.min(30, Math.max(12, Math.floor((slotW - 14) / 2)));
+    const unitSvgBars = trd.serialUnits.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hLanded = Math.max(6, Math.round((r.landed_cost_usd / maxPrice) * 120));
+      const hList = Math.max(6, Math.round((r.list_price_usd / maxPrice) * 120));
+      const baseY = 150;
+      const col = r.status === 'Sold & Delivered' ? '#10B981' : (r.status === 'Reserved' ? '#F59E0B' : '#2563EB');
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hLanded}" width="${barW}" height="${hLanded}" rx="3" fill="#64748B"/>
+          <rect x="${gx + barW + 3}" y="${baseY - hList}" width="${barW}" height="${hList}" rx="3" fill="${col}"/>
+          <text x="${gx + barW + 1}" y="${baseY - hList - 6}" text-anchor="middle" fill="var(--tx)" font-size="9.5" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.list_price_usd)}</text>
+          <text x="${gx + barW + 1}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10" font-weight="700">${esc(r.id)}</text>
+          <text x="${gx + barW + 1}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.family.split(' ')[0])}</text>
+        </g>
+      `;
+    }).join('');
+
+    const totUnitGm = round2(s.totalUnitsListUsd - s.totalUnitsLandedUsd);
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Tracked Serial Units &amp; Chassis</div>
+          <div class="kpi-val">${fmtNum(trd.serialUnits.length)} Units</div>
+          <div class="kpi-sub">44 cataloged VIN / Chassis &amp; Weichai engine serials</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Available Showroom &amp; Yard Units</div>
+          <div class="kpi-val">${fmtNum(s.showroomUnitsCount)} Units</div>
+          <div class="kpi-sub">${fmtNum(s.soldUnitsCount)} sold &amp; delivered · ${fmtNum(s.showroomUnitsCount)} in yard / PDI</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Capitalized Chassis Landed Cost</div>
+          <div class="kpi-val">${fmtUSD(s.totalUnitsLandedUsd, 0)}</div>
+          <div class="kpi-sub">FOB + allocated sea freight, customs &amp; clearance</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Showroom TTC List Valuation</div>
+          <div class="kpi-val good">${fmtUSD(s.totalUnitsListUsd, 0)}</div>
+          <div class="kpi-sub">${fmtUSD(totUnitGm, 0)} embedded showroom gross margin</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Open PDI &amp; Warranty Claims</div>
+          <div class="kpi-val ${s.openWarrantyCount > 0 ? 'warn' : 'good'}">${fmtNum(s.openWarrantyCount)} Open</div>
+          <div class="kpi-sub">${fmtNum(trd.warrantyRows.length)} total PDI &amp; OEM warranty work orders</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">OEM Warranty Recovery</div>
+          <div class="kpi-val good">${fmtUSD(trd.warrantyRows.reduce((a, r) => a + r.claim_recovery_usd, 0), 0)}</div>
+          <div class="kpi-sub">Reimbursed by Shaanxi / Weichai &amp; component OEMs</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'warranty') {
+      const filteredWar = trd.warrantyRows.filter(r => {
+        if (f === 'open') return r.status !== 'Completed';
+        if (f === 'pdi') return r.job_type.includes('PDI');
+        if (f === 'warranty') return r.job_type.includes('Warranty');
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownWar = filteredWar.slice(0, shownCount('trd_warranty'));
+      const sumParts = round2(filteredWar.reduce((a, r) => a + r.parts_cost_usd, 0));
+      const sumLabor = round2(filteredWar.reduce((a, r) => a + r.labor_usd, 0));
+      const sumRec = round2(filteredWar.reduce((a, r) => a + r.claim_recovery_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_warranty')} PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE &amp; OEM WARRANTY RECOVERY</span></div>
+            <span class="panel-meta">Slate:Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold &amp; Delivered</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Showroom Units & PDI Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${unitSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdWarrantyPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_warranty')} WORKSHOP, PDI &amp; OEM WARRANTY WORK ORDERS (${fmtNum(filteredWar.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Jobs (${fmtNum(trd.warrantyRows.length)})`)}
+                ${chip('open', `Open PDI / Claims (${fmtNum(s.openWarrantyCount)})`)}
+                ${chip('pdi', 'Pre-Delivery Inspection')}
+                ${chip('warranty', 'OEM Warranty Claims')}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search job ID, chassis VIN, model, technician...')}
+              ${exportBtn('trdWarrantyPanel', 'Trading_Workshop_PDI_Warranty')}
+              ${canEnterForm('repair', u) ? '<button type="button" class="btn btn-primary" data-open-modal="repair">+ PDI / Warranty Job</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Job / Claim ID</th>
+                  <th>Date</th>
+                  <th>Entity</th>
+                  <th>Chassis VIN</th>
+                  <th>Truck / Equipment Model</th>
+                  <th>Job Type</th>
+                  <th>Service Bay &amp; Tech</th>
+                  <th class="r">Parts ($)</th>
+                  <th class="r">Labor ($)</th>
+                  <th class="r">Recovery / Billed ($)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownWar.length ? shownWar.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="mono">${esc(r.chassis_vin)}</td>
+                    <td><strong>${esc(r.model)}</strong></td>
+                    <td>${esc(r.job_type)}</td>
+                    <td>${esc(r.bay)} · ${esc(r.technician)}</td>
+                    <td class="r mono">${fmtUSD(r.parts_cost_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.labor_usd, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(r.claim_recovery_usd, 2)}</strong></td>
+                    <td><span class="badge ${r.status === 'Completed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No workshop, PDI, or warranty jobs match current filter')}
+                ${showMoreRow('trd_warranty', filteredWar.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL WORKSHOP, PDI &amp; WARRANTY JOBS (${fmtNum(filteredWar.length)})</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumParts, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumLabor, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumRec, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredUnits = trd.serialUnits.filter(r => {
+      if (f === 'available') return r.status === 'In Showroom' || r.status === 'In PDI';
+      if (f === 'reserved') return r.status === 'Reserved';
+      if (f === 'sold') return r.status === 'Sold & Delivered';
+      if (f === 'shacman') return r.company === 'Shacman';
+      if (f === 'korri') return r.company === 'Korri Auto';
+      return true;
+    });
+    const shownUnits = filteredUnits.slice(0, shownCount('trd_trucks'));
+    const sumFob = round2(filteredUnits.reduce((a, r) => a + r.fob_usd, 0));
+    const sumAdd = round2(filteredUnits.reduce((a, r) => a + r.landed_add_usd, 0));
+    const sumLanded = round2(filteredUnits.reduce((a, r) => a + r.landed_cost_usd, 0));
+    const sumList = round2(filteredUnits.reduce((a, r) => a + r.list_price_usd, 0));
+    const sumGm = round2(sumList - sumLanded);
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('trd_trucks')} SHOWROOM &amp; SERIAL UNITS BY CHASSIS VIN: LANDED COST VS. TTC SELLING PRICE</span></div>
+          <span class="panel-meta">Slate:Capitalized Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold &amp; Delivered</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Showroom Serial Units Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${unitSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="trdTrucksPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('trd_trucks')} SERIAL UNITS, CHASSIS VIN &amp; ENGINE REGISTRY (${fmtNum(filteredUnits.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Serial Units (${fmtNum(trd.serialUnits.length)})`)}
+              ${chip('available', 'Available / In PDI')}
+              ${chip('reserved', 'Reserved')}
+              ${chip('sold', 'Sold & Delivered')}
+              ${chip('shacman', 'Shacman')}
+              ${chip('korri', 'Korri Auto')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search chassis VIN, engine no., model, buyer...')}
+            ${exportBtn('trdTrucksPanel', 'Trading_Serial_Units_Chassis')}
+            ${canEnterForm('equipment', u) ? '<button type="button" class="btn btn-primary" data-open-modal="equipment">+ Register Serial Chassis</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Unit ID</th>
+                <th>Entity</th>
+                <th>Heavy Truck / Commercial Model</th>
+                <th>Chassis / VIN</th>
+                <th>Engine Serial</th>
+                <th>Location</th>
+                <th class="r">FOB ($)</th>
+                <th class="r">Landed Add ($)</th>
+                <th class="r">Landed Cost ($)</th>
+                <th class="r">Selling TTC ($)</th>
+                <th class="r">Margin ($)</th>
+                <th>Status &amp; Allocation</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownUnits.length ? shownUnits.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.model)}</strong></td>
+                  <td class="mono">${esc(r.chassis_vin)}</td>
+                  <td class="mono" style="font-size:11px">${esc(r.engine_no)}</td>
+                  <td>${esc(r.warehouse)}</td>
+                  <td class="r mono">${fmtUSD(r.fob_usd, 0)}</td>
+                  <td class="r mono">${fmtUSD(r.landed_add_usd, 0)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.landed_cost_usd, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(r.list_price_usd, 0)}</strong></td>
+                  <td class="r mono good"><strong>${fmtUSD(r.margin_usd, 0)} (${r.margin_pct.toFixed(1)}%)</strong></td>
+                  <td><span class="badge ${r.status === 'Sold & Delivered' ? 'badge-good' : (r.status === 'Reserved' ? 'badge-warn' : 'badge-info')}">${esc(r.status)}</span> <span style="font-size:11px;color:var(--mu)">${esc(r.buyer)}</span></td>
+                </tr>
+              `).join('') : emptyRow(12, 'No serial units or chassis match current filter')}
+              ${showMoreRow('trd_trucks', filteredUnits.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL SERIAL UNITS &amp; CHASSIS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFob, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumAdd, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumLanded, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumList, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGm, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTradingStock(submode = 'main') {
+    const u = activeUser();
+    const trd = computeTradingOperations();
+    const s = trd.summary;
+    const f = STATE.chipFilter || 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const chartW = 780, chartH = 195;
+    const maxVal = Math.max(1, ...trd.stockRows.map(r => r.stock_val_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.stockRows.length));
+    const barW = Math.min(44, Math.max(18, slotW - 18));
+    const stkSvgBars = trd.stockRows.map((r, i) => {
+      const gx = 55 + i * slotW;
+      const hVal = Math.max(6, Math.round((r.stock_val_usd / maxVal) * 120));
+      const baseY = 150;
+      const col = r.is_low ? '#EF4444' : '#2563EB';
+      return `
+        <g>
+          <rect x="${gx}" y="${baseY - hVal}" width="${barW}" height="${hVal}" rx="3" fill="${col}"/>
+          <text x="${gx + Math.floor(barW / 2)}" y="${baseY - hVal - 6}" text-anchor="middle" fill="var(--tx)" font-size="10" font-family="var(--font-mono)" font-weight="700">${fmtUSDk(r.stock_val_usd)}</text>
+          <text x="${gx + Math.floor(barW / 2)}" y="168" text-anchor="middle" fill="var(--tx)" font-size="10" font-weight="700">${esc(r.code.slice(0, 10))}</text>
+          <text x="${gx + Math.floor(barW / 2)}" y="182" text-anchor="middle" fill="var(--mu)" font-size="9">${esc(r.warehouse)} (${r.on_hand})</text>
+        </g>
+      `;
+    }).join('');
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Spare Parts &amp; Tyres Valuation (WAC)</div>
+          <div class="kpi-val">${fmtUSD(s.totalStockValUsd, 0)}</div>
+          <div class="kpi-sub">593 code-keyed SKUs across 5 warehouses</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">On-Hand Spare Parts Units</div>
+          <div class="kpi-val">${fmtNum(s.totalStockQty)} Units</div>
+          <div class="kpi-sub">Al Ghazieh, Main Showroom, Bchamoun, Bonded &amp; Workshop</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Rule T4 Reorder Alerts</div>
+          <div class="kpi-val ${s.reorderAlertCount > 0 ? 'warn' : 'good'}">${fmtNum(s.reorderAlertCount)} Low Stock</div>
+          <div class="kpi-sub">Items at or below minimum warehouse safety stock</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Inter-Company Transfers (t44)</div>
+          <div class="kpi-val">${fmtUSD(s.icTransferUsd, 0)}</div>
+          <div class="kpi-sub">Mirrored Shacman &lt;-&gt; Korri Auto stock transfers</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Parallel Stock Recon (t27 / t50)</div>
+          <div class="kpi-val good">1,077 Rows Tied</div>
+          <div class="kpi-sub">$0.00 variance vs historical parallel stock book</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Monthly P&amp;L Recon (t57g)</div>
+          <div class="kpi-val good">268 Rows Tied</div>
+          <div class="kpi-sub">$0.00 variance across Korri Auto &amp; Shacman P&amp;L</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'movements') {
+      const filteredMov = trd.movementRows.filter(r => {
+        if (f === 'ic') return r.type.includes('Inter-Company');
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownMov = filteredMov.slice(0, shownCount('trd_movements'));
+      const sumQty = filteredMov.reduce((a, r) => a + r.qty, 0);
+      const sumTot = round2(filteredMov.reduce((a, r) => a + r.total_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_movements')} WAREHOUSE STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS (t44)</span></div>
+            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Stock Movements Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${stkSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdMovementsPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_movements')} STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS (${fmtNum(filteredMov.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Movements (${fmtNum(trd.movementRows.length)})`)}
+                ${chip('ic', 'Inter-Company Transfers (t44)')}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search transfer ID, SKU code, warehouse...')}
+              ${exportBtn('trdMovementsPanel', 'Trading_Stock_Movements_IC')}
+              ${canEnterForm('warehousestock', u) ? '<button type="button" class="btn btn-primary" data-open-modal="warehousestock">+ Stock Transfer</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Movement ID</th>
+                  <th>Date</th>
+                  <th>Entity</th>
+                  <th>Movement Type</th>
+                  <th>From Warehouse</th>
+                  <th>To Warehouse</th>
+                  <th>Item Code &amp; Description</th>
+                  <th class="r">Qty</th>
+                  <th class="r">Unit WAC ($)</th>
+                  <th class="r">Total Value ($)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownMov.length ? shownMov.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.type)}</strong></td>
+                    <td>${esc(r.from_wh)}</td>
+                    <td>${esc(r.to_wh)}</td>
+                    <td><span class="mono">${esc(r.item_code)}</span> · ${esc(r.item_name)}</td>
+                    <td class="r mono"><strong>${fmtNum(r.qty)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.unit_cost_usd, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.total_usd, 2)}</strong></td>
+                    <td><span class="badge badge-good">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No stock movements or IC transfers match current filter')}
+                ${showMoreRow('trd_movements', filteredMov.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL STOCK MOVEMENTS &amp; IC TRANSFERS (${fmtNum(filteredMov.length)})</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumQty)}</strong></td>
+                  <td></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'recon') {
+      const filteredRec = trd.reconRows.filter(r => {
+        if (f === 'shacman') return r.company === 'Shacman';
+        if (f === 'korri') return r.company === 'Korri Auto';
+        return true;
+      });
+      const shownRec = filteredRec.slice(0, shownCount('trd_recon'));
+      const sumRows = filteredRec.reduce((a, r) => a + r.rows_checked, 0);
+      const sumLive = round2(filteredRec.reduce((a, r) => a + r.live_app_usd, 0));
+      const sumPar = round2(filteredRec.reduce((a, r) => a + r.parallel_book_usd, 0));
+      const sumVar = round2(filteredRec.reduce((a, r) => a + r.variance_usd, 0));
+
+      return `
+        ${kpiHtml}
+        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+          <div class="panel-head" style="margin-bottom:8px">
+            <div class="panel-title"><span>${ic('trd_recon')} PARALLEL STOCK POSITION (1,077 ROWS) &amp; MONTHLY P&amp;L (268 ROWS) RECONCILIATION</span></div>
+            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+          </div>
+          <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Parallel Stock & P&L Reconciliation Chart">
+            <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+            ${stkSvgBars}
+          </svg>
+        </div>
+        <div class="panel-card" id="trdReconPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div class="panel-title"><span>${ic('trd_recon')} LIVE APP VS. HISTORICAL PARALLEL-RUN RECONCILIATION (${fmtNum(filteredRec.length)})</span></div>
+              <div class="chip-bar">
+                ${chip('all', `All Recon Domains (${fmtNum(trd.reconRows.length)})`)}
+                ${chip('shacman', 'Shacman')}
+                ${chip('korri', 'Korri Auto')}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search reconciliation domain, entity, period...')}
+              ${exportBtn('trdReconPanel', 'Trading_Parallel_Stock_PnL_Recon')}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Recon ID</th>
+                  <th>Entity</th>
+                  <th>Reconciliation Domain</th>
+                  <th>Period Window</th>
+                  <th class="r">Verified Rows</th>
+                  <th class="r">ISABI Live Ledger ($)</th>
+                  <th class="r">Legacy Parallel Book ($)</th>
+                  <th class="r">Variance ($)</th>
+                  <th>Parity Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownRec.length ? shownRec.map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.domain)}</strong></td>
+                    <td class="mono">${esc(r.period)}</td>
+                    <td class="r mono">${fmtNum(r.rows_checked)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.live_app_usd, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.parallel_book_usd, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(r.variance_usd, 2)}</strong></td>
+                    <td><span class="badge badge-good">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(9, 'No parallel reconciliation rows match current filter')}
+                ${showMoreRow('trd_recon', filteredRec.length, 9)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="4"><strong>TOTAL PARALLEL-RUN RECONCILIATION (${fmtNum(filteredRec.length)} DOMAINS)</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumRows)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumLive, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumPar, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumVar, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const filteredStk = trd.stockRows.filter(r => {
+      if (f === 'low_stock') return r.is_low;
+      if (f === 'shacman') return r.company === 'Shacman';
+      if (f === 'korri') return r.company === 'Korri Auto';
+      return true;
+    });
+    const shownStk = filteredStk.slice(0, shownCount('trd_stock'));
+    const sumOnHand = filteredStk.reduce((a, r) => a + r.on_hand, 0);
+    const sumReorder = filteredStk.reduce((a, r) => a + r.reorder_min, 0);
+    const sumVal = round2(filteredStk.reduce((a, r) => a + r.stock_val_usd, 0));
+
+    return `
+      ${kpiHtml}
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('trd_stock')} MULTI-WAREHOUSE SPARE PARTS &amp; TYRES VALUATION (WEIGHTED-AVG COST &amp; RULE T4 REORDER GUARD)</span></div>
+          <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+        </div>
+        <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Spare Parts Stock Valuation Chart">
+          <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
+          ${stkSvgBars}
+        </svg>
+      </div>
+      <div class="panel-card" id="trdStockPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('trd_stock')} SPARE PARTS &amp; MULTI-WAREHOUSE STOCK BALANCES (${fmtNum(filteredStk.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All Catalog SKUs (${fmtNum(trd.stockRows.length)})`)}
+              ${chip('low_stock', `Rule T4 Reorder Alerts (${fmtNum(s.reorderAlertCount)})`)}
+              ${chip('shacman', 'Shacman')}
+              ${chip('korri', 'Korri Auto')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search part code, description, warehouse, category...')}
+            ${exportBtn('trdStockPanel', 'Trading_Spare_Parts_Warehouses')}
+            ${canEnterForm('item', u) ? '<button type="button" class="btn btn-primary" data-open-modal="item">+ New Spare Part SKU</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Part Code (SKU)</th>
+                <th>Entity</th>
+                <th>Warehouse</th>
+                <th>Spare Part / Tyre Description</th>
+                <th>Category</th>
+                <th class="r">On-Hand Qty</th>
+                <th class="r">Reorder Min</th>
+                <th class="r">Weighted-Avg Cost ($)</th>
+                <th class="r">Retail List ($)</th>
+                <th class="r">Stock Valuation ($)</th>
+                <th>Rule T4 Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownStk.length ? shownStk.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.code)}</strong></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.warehouse)}</strong></td>
+                  <td>${esc(r.name)}</td>
+                  <td>${esc(r.category)}</td>
+                  <td class="r mono ${r.is_low ? 'crit' : ''}"><strong>${fmtNum(r.on_hand)}</strong></td>
+                  <td class="r mono">${fmtNum(r.reorder_min)}</td>
+                  <td class="r mono">${fmtUSD(r.wac_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(r.retail_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.stock_val_usd, 2)}</strong></td>
+                  <td><span class="badge ${r.is_low ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No spare parts or warehouse stock balances match current filter')}
+              ${showMoreRow('trd_stock', filteredStk.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL SPARE PARTS &amp; WAREHOUSE VALUATION (${fmtNum(filteredStk.length)} SKUS)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumOnHand)}</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumReorder)}</strong></td>
+                <td colspan="2"></td>
+                <td class="r mono"><strong>${fmtUSD(sumVal, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHubAnalyticsView(modKey) {
     const title = VIEW_TITLES[modKey] || 'Module Analytics';
     return `
@@ -44847,7 +46486,7 @@
     const companyChanged = !FORM_UI.hydrating && FORM_UI.lastCompany !== '' && FORM_UI.lastCompany !== company;
     let customerChanged = !FORM_UI.hydrating && FORM_UI.lastCustomer !== customer;
     const productChanged = !FORM_UI.hydrating && FORM_UI.lastProduct !== product;
-    const siteChanged = !FORM_UI.hydrating && FORM_UI.lastSite !== site;
+    let siteChanged = !FORM_UI.hydrating && FORM_UI.lastSite !== site;
 
     FORM_UI.lastCompany = company;
     FORM_UI.lastSaleType = saleType;
@@ -68573,6 +70212,18 @@
     hsp_menu: 'Menu Engineering & Food Cost %',
     hsp_energy: 'Diesel, Solar & Generators (R4)',
     hsp_maint: 'Venue Repairs & Fixed Assets',
+    // Automotive & Heavy Trading sub-views (Phase 3)
+    trd_sales: 'Sales Invoices, Lines & Books (t82 / t74)',
+    trd_receivables: 'Receivables, Advances & Promises (t79)',
+    trd_targets: 'Sales Targets & Price Lists (t45 / 7z-chrono)',
+    trd_purchases: 'Import Files & Supplier Backorders (t49)',
+    trd_landed: 'Landed Cost Allocations (t16 / T5)',
+    trd_grn: 'Warehouse Goods Receipts (GRN)',
+    trd_trucks: 'Showroom & Serial Units (Chassis / VIN)',
+    trd_warranty: 'Workshop, PDI & OEM Warranty',
+    trd_stock: 'Spare Parts & Warehouse Valuation (T4)',
+    trd_movements: 'Stock Movements & IC Transfers (t44)',
+    trd_recon: 'Parallel Stock & P&L Recon (t27 / t57g)',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -68655,6 +70306,17 @@
     hsp_menu: 'Menu & Recipe Cost',
     hsp_energy: 'Generators & Utilities',
     hsp_maint: 'Venue Repairs',
+    trd_sales: 'Sales & Invoice Books',
+    trd_receivables: 'Receivables & Advances',
+    trd_targets: 'Targets & Price Lists',
+    trd_purchases: 'Import Files & POs',
+    trd_landed: 'Landed Cost (T5)',
+    trd_grn: 'Goods Receipts (GRN)',
+    trd_trucks: 'Serial Units & VIN',
+    trd_warranty: 'PDI & Warranty',
+    trd_stock: 'Spare Parts & Stock',
+    trd_movements: 'Moves & IC Transfers',
+    trd_recon: 'Parallel Recon',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -68668,7 +70330,9 @@
     launa: 'La Una',
     palms: 'Palms Resort',
     voile: 'Voile Beach',
-    platinum: 'Platinum'
+    platinum: 'Platinum',
+    korriauto: 'Korri Auto',
+    shacman: 'Shacman'
   };
 
   // Dynamic Multi-Industry Sidebar Specification (Fixed Spine + Swappable Middle Operational Groups)
@@ -68704,13 +70368,13 @@
       ]
     },
     'Automotive & Heavy Trading': {
-      grp1: 'Commercial & Dealership',
-      grp2: 'Inventory, Workshop & Staff',
+      grp1: 'Sales, Imports & Payables',
+      grp2: 'Stock, Trucks & Workforce',
       slots: [
-        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
-        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
-        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
-        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+        { hub: 'trd_sales', view: 'trd_sales', label: 'Invoicing & Receivables', pillId: '' },
+        { hub: 'trd_purchases', view: 'trd_purchases', label: 'Imports & Landed Cost', pillId: 'navCountRaw' },
+        { hub: 'trd_trucks', view: 'trd_trucks', label: 'Showroom & Serial Units', pillId: 'navCountFleet' },
+        { hub: 'trd_stock', view: 'trd_stock', label: 'Spare Parts & Warehouses', pillId: '' }
       ]
     },
     'Real Estate & Property': {
@@ -69125,8 +70789,8 @@
     syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
-    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(n));
-    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum'].includes(c.key)).length;
+    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman)$/i.test(n));
+    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman'].includes(c.key)).length;
     COMPANY_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
       ? `All Manufacturing Group (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`
       : `Assigned Entities (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`;
@@ -69654,6 +71318,10 @@
       hsp_memberships: 'sales', hsp_partners: 'jv',
       hsp_stock: 'warehousestock', hsp_menu: 'pricerule',
       hsp_energy: 'fuel', hsp_maint: 'repair',
+      trd_sales: 'sales', trd_receivables: 'receipt', trd_targets: 'pricerule',
+      trd_purchases: 'raw', trd_landed: 'expense', trd_grn: 'warehousestock',
+      trd_trucks: 'equipment', trd_warranty: 'repair',
+      trd_stock: 'item', trd_movements: 'warehousestock', trd_recon: 'warehousestock',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_staff: 'staff', reg_roles: 'staffrole', reg_sites: 'site', reg_regions: 'region',
@@ -77360,6 +79028,17 @@
       case 'hsp_menu': wsHtml = renderHospitalityStock('menu'); break;
       case 'hsp_energy': wsHtml = renderHospitalityEnergy('main'); break;
       case 'hsp_maint': wsHtml = renderHospitalityEnergy('maint'); break;
+      case 'trd_sales': wsHtml = renderTradingSales('main'); break;
+      case 'trd_receivables': wsHtml = renderTradingSales('receivables'); break;
+      case 'trd_targets': wsHtml = renderTradingSales('targets'); break;
+      case 'trd_purchases': wsHtml = renderTradingPurchases('main'); break;
+      case 'trd_landed': wsHtml = renderTradingPurchases('landed'); break;
+      case 'trd_grn': wsHtml = renderTradingPurchases('grn'); break;
+      case 'trd_trucks': wsHtml = renderTradingTrucks('main'); break;
+      case 'trd_warranty': wsHtml = renderTradingTrucks('warranty'); break;
+      case 'trd_stock': wsHtml = renderTradingStock('main'); break;
+      case 'trd_movements': wsHtml = renderTradingStock('movements'); break;
+      case 'trd_recon': wsHtml = renderTradingStock('recon'); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
@@ -82043,6 +83722,13 @@
   };
   window.MFG_HOSPITALITY = {
     computeHospitalityOperations: typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
+  window.MFG_TRADING = {
+    computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
