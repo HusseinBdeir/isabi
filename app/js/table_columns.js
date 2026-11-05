@@ -695,7 +695,7 @@
           <strong>Columns (${visibleCount}/${colCount})</strong>
           <small>Hide/show or widen/narrow · reverts to default</small>
         </div>
-        <button type="button" class="tbl-col-pop-reset" data-col-pop-reset="${esc(tableId)}" ${customized ? '' : 'disabled'} title="Revert all hidden columns and column widths back to default">
+        <button type="button" class="tbl-col-pop-reset" data-col-pop-reset="${esc(tableId)}" ${customized ? '' : 'disabled'} data-ui-tip="Revert all hidden columns and column widths back to default">
           ${ICONS.reset}<span>Default</span>
         </button>
       </div>
@@ -711,12 +711,12 @@
             <div class="tbl-col-pop-row ${isHidden ? 'is-hidden' : ''} ${hasCustomW ? 'is-resized' : ''}" data-col-idx="${ci}">
               <label class="tbl-col-pop-chk">
                 <input type="checkbox" data-col-toggle-idx="${ci}" ${isHidden ? '' : 'checked'} ${disableHide ? 'disabled' : ''}>
-                <span class="tbl-col-pop-name" title="${esc(lbl)}${isAuto ? ' (Auto-hidden when 1 corporation is selected)' : ''}">${esc(lbl)}${isAuto ? '<em class="tbl-col-auto-tag">(Single Co.)</em>' : ''}</span>
+                <span class="tbl-col-pop-name" data-ui-tip="${esc(lbl)}${isAuto ? ' (Auto-hidden when 1 corporation is selected)' : ''}">${esc(lbl)}${isAuto ? '<em class="tbl-col-auto-tag">(Single Co.)</em>' : ''}</span>
               </label>
               <div class="tbl-col-pop-size">
-                <button type="button" class="tbl-col-sz-btn" data-col-narrow-idx="${ci}" ${isHidden ? 'disabled' : ''} title="Narrow ${esc(lbl)} (−${STEP_COL_W}px)" aria-label="Narrow ${esc(lbl)}">−</button>
-                <button type="button" class="tbl-col-sz-val ${hasCustomW ? 'custom' : ''}" data-col-reset-w-idx="${ci}" ${isHidden ? 'disabled' : ''} title="${hasCustomW ? 'Click to revert this column width to default' : 'Current column width'}">${esc(dispW)}</button>
-                <button type="button" class="tbl-col-sz-btn" data-col-widen-idx="${ci}" ${isHidden ? 'disabled' : ''} title="Widen ${esc(lbl)} (+${STEP_COL_W}px)" aria-label="Widen ${esc(lbl)}">+</button>
+                <button type="button" class="tbl-col-sz-btn" data-col-narrow-idx="${ci}" ${isHidden ? 'disabled' : ''} data-ui-tip="Narrow ${esc(lbl)} (−${STEP_COL_W}px)" aria-label="Narrow ${esc(lbl)}">−</button>
+                <button type="button" class="tbl-col-sz-val ${hasCustomW ? 'custom' : ''}" data-col-reset-w-idx="${ci}" ${isHidden ? 'disabled' : ''} data-ui-tip="${hasCustomW ? 'Click to revert this column width to default' : 'Current column width'}">${esc(dispW)}</button>
+                <button type="button" class="tbl-col-sz-btn" data-col-widen-idx="${ci}" ${isHidden ? 'disabled' : ''} data-ui-tip="Widen ${esc(lbl)} (+${STEP_COL_W}px)" aria-label="Widen ${esc(lbl)}">+</button>
               </div>
             </div>
           `;
@@ -794,7 +794,7 @@
             valBtn.disabled = isHidden;
             valBtn.classList.toggle('custom', hasCustomW);
             valBtn.textContent = dispW;
-            valBtn.title = hasCustomW ? 'Click to revert this column width to default' : 'Current column width';
+            valBtn.setAttribute('data-ui-tip', hasCustomW ? 'Click to revert this column width to default' : 'Current column width');
           }
         });
       }

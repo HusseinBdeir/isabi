@@ -6563,15 +6563,108 @@
       face_updated_at: bio.face_updated_at || bio.updated_at || ''
     };
   }
+  function isSupervisorSeat(u) {
+    u = u || activeUser();
+    if (!u || isOwner(u)) return false;
+    const rk = resolveCanonicalRoleKey(u.role);
+    if (rk === 'Supervisor' || rk === 'Supervisor + Entry') return true;
+    const p = getEffectivePermissions(u);
+    return Boolean(p && p.rights && (p.rights.modify_data || p.rights.void_data || p.rights.manage_users));
+  }
+  function getUserDirectoryScopeTier(u) {
+    u = u || activeUser();
+    if (!u) return 'entry';
+    if (isOwner(u)) return 'owner';
+    const p = getEffectivePermissions(u);
+    if (p && p.rights && p.rights.manage_users) return 'owner';
+    if (isSupervisorSeat(u)) return 'supervisor';
+    return 'entry';
+  }
+  function getSupervisorScopedBus(u) {
+    u = u || activeUser();
+    const myBus = allowedCompanyNames(u);
+    const singleBu = COMPANY_BU_MATCH[STATE.company] || '';
+    if (singleBu && myBus.some(b => norm(b) === norm(singleBu))) {
+      return [singleBu];
+    }
+    return myBus;
+  }
+  function filterCompaniesForViewer(rawCompanies, viewer) {
+    viewer = viewer || activeUser();
+    const tier = getUserDirectoryScopeTier(viewer);
+    if (tier === 'owner') return parseUserCompanies(rawCompanies);
+    if (tier === 'entry') return [];
+    const scopedBus = getSupervisorScopedBus(viewer);
+    const scopedSet = new Set(scopedBus.map(b => norm(b)));
+    const parsed = parseUserCompanies(rawCompanies).filter(c => scopedSet.has(norm(c)));
+    if (parsed.length) return parsed;
+    const viewerBus = allowedCompanyNames(viewer);
+    const viewerSet = new Set(viewerBus.map(b => norm(b)));
+    const fallback = parseUserCompanies(rawCompanies).filter(c => viewerSet.has(norm(c)));
+    return fallback.length ? fallback : scopedBus.slice(0, 1);
+  }
+  function getVisibleDirectoryUsers(viewer) {
+    viewer = viewer || activeUser();
+    const tier = getUserDirectoryScopeTier(viewer);
+    const allUsers = Array.isArray(STATE.users) ? STATE.users : [];
+    if (tier === 'owner') return allUsers.slice();
+    if (tier === 'entry') {
+      const selfHit = allUsers.find(u => u && (String(u.id) === String(viewer.id) || norm(u.email) === norm(viewer.email)));
+      return [selfHit || viewer];
+    }
+    const scopedBus = getSupervisorScopedBus(viewer);
+    const scopedSet = new Set(scopedBus.map(b => norm(b)));
+    return allUsers.filter(u => {
+      if (!u) return false;
+      if (String(u.id) === String(viewer.id) || norm(u.email) === norm(viewer.email)) return true;
+      const uCos = parseUserCompanies(u);
+      return uCos.some(c => scopedSet.has(norm(c)));
+    });
+  }
+  function getVisibleDirectorySessions(viewer) {
+    viewer = viewer || activeUser();
+    const tier = getUserDirectoryScopeTier(viewer);
+    const allSessions = Array.isArray(STATE.sessions) ? STATE.sessions : [];
+    if (tier === 'owner') return allSessions.slice(0, 10);
+    const vEmail = norm(viewer && viewer.email);
+    const vName = norm(viewer && viewer.full_name);
+    if (tier === 'entry') {
+      return allSessions.filter(s => {
+        if (!s) return false;
+        const sEmail = norm(s.email || s.user_email || '');
+        const sName = norm(s.full_name || s.user_name || '');
+        return (vEmail && sEmail === vEmail) || (vName && sName === vName);
+      }).slice(0, 10);
+    }
+    const scopedBus = getSupervisorScopedBus(viewer);
+    const scopedSet = new Set(scopedBus.map(b => norm(b)));
+    return allSessions.filter(s => {
+      if (!s) return false;
+      const sEmail = norm(s.email || s.user_email || '');
+      const sName = norm(s.full_name || s.user_name || '');
+      if ((vEmail && sEmail === vEmail) || (vName && sName === vName)) return true;
+      const matchedSeat = (STATE.users || []).find(u => u && ((sEmail && norm(u.email) === sEmail) || (sName && norm(u.full_name) === sName)));
+      const cos = matchedSeat ? parseUserCompanies(matchedSeat) : parseUserCompanies(s.companies);
+      return cos.some(c => scopedSet.has(norm(c)));
+    }).slice(0, 10);
+  }
   function enrolTargetUser() {
-    if (!isOwner() && !isAdminUser(activeUser())) return activeUser();
+    const me = activeUser();
+    const tier = getUserDirectoryScopeTier(me);
+    if (tier === 'entry') return me;
     const rawId = String(FACE_STATE.enrolUserId || '');
     if (/^stfbio:/i.test(rawId)) {
+      if (tier === 'supervisor') {
+        const k = norm(rawId.replace(/^stfbio:/i, ''));
+        const dir = typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : [];
+        if (!dir.some(s => norm(s.name) === k)) return me;
+      }
       const stObj = buildKioskStaffTargetObject(rawId);
       if (stObj) return stObj;
     }
-    const hit = STATE.users.find(u => u && String(u.id) === rawId);
-    return hit || activeUser();
+    const visUsers = getVisibleDirectoryUsers(me);
+    const hit = visUsers.find(u => u && String(u.id) === rawId);
+    return hit || me;
   }
   function usableFaces(includeUnsavedForUser, opts = {}) {
     const list = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
@@ -8694,6 +8787,10 @@
     const salesCustSetByNorm = new Map();
     const hasSalesRuleByNorm = new Set();
     const hasRawRuleByNorm = new Set();
+    const latestRawRuleByNorm = new Map();
+    const latestSalesRuleByNorm = new Map();
+    const rawOwnerLoadsByNorm = new Map();
+    const refToday = (typeof SEED_DATE === 'string' && SEED_DATE) ? SEED_DATE : '2026-12-31';
 
     const addCust = (k, cust) => {
       const c = String(cust || '').trim();
@@ -8716,17 +8813,39 @@
       const k = norm(r.site);
       if (!k) return;
       rawLoadsByNorm.set(k, (rawLoadsByNorm.get(k) || 0) + 1);
+      const so = String(r.site_owner || '').trim();
+      if (so) {
+        if (!rawOwnerLoadsByNorm.has(k)) rawOwnerLoadsByNorm.set(k, new Map());
+        const om = rawOwnerLoadsByNorm.get(k);
+        const sok = norm(so);
+        om.set(sok, { name: so, count: (om.get(sok) ? om.get(sok).count : 0) + 1 });
+      }
     });
     (recs.price_rules || []).forEach(pr => {
       if (!pr || pr.voided || !pr.site) return;
       const k = norm(pr.site);
       if (!k) return;
       const rt = String(pr.rule_type || '').trim();
+      const sDate = String(pr.start_date || '1900-01-01').slice(0, 10);
+      const eDate = pr.end_date ? String(pr.end_date).slice(0, 10) : '9999-12-31';
+      const isActiveNow = sDate <= refToday && eDate >= refToday;
       if (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rt)) {
         hasRawRuleByNorm.add(k);
+        if (/^Purchase Price \(Site\)$/i.test(rt) && pr.supplier) {
+          const prev = latestRawRuleByNorm.get(k);
+          if (!prev || (isActiveNow && !prev.active) || (isActiveNow === prev.active && sDate >= prev.start)) {
+            latestRawRuleByNorm.set(k, { supplier: String(pr.supplier).trim(), start: sDate, active: isActiveNow });
+          }
+        }
       } else if (!/^Commission$/i.test(rt)) {
         hasSalesRuleByNorm.add(k);
         addCust(k, pr.customer);
+        if (pr.customer) {
+          const prev = latestSalesRuleByNorm.get(k);
+          if (!prev || (isActiveNow && !prev.active) || (isActiveNow === prev.active && sDate >= prev.start)) {
+            latestSalesRuleByNorm.set(k, { customer: String(pr.customer).trim(), start: sDate, active: isActiveNow });
+          }
+        }
       }
     });
 
@@ -8734,6 +8853,15 @@
       const m = salesCustSetByNorm.get(k);
       if (!m || m.size !== 1) return '';
       return Array.from(m.values())[0] || '';
+    };
+    const topRawOwner = k => {
+      const om = rawOwnerLoadsByNorm.get(k);
+      if (!om || !om.size) return '';
+      let best = '', bestCnt = -1;
+      om.forEach(v => {
+        if (v.count > bestCnt) { bestCnt = v.count; best = v.name; }
+      });
+      return best;
     };
 
     // Unify sites by normalized name: merge any __cust or duplicate site records into one canonical record
@@ -8771,15 +8899,25 @@
       if (!s || !s.name) return;
       const k = norm(s.name);
       const soloCust = singleSalesCust(k);
+      const rawRuleSup = latestRawRuleByNorm.get(k);
+      const salesRuleCust = latestSalesRuleByNorm.get(k);
       const ms = msByNorm.get(k);
       const salesLoads = Math.max(Number((ms && ms.loads) || 0), stLoadsByNorm.get(k) || 0);
       const rawLoads = Math.max(Number((ms && ms.raw_loads) || 0), rawLoadsByNorm.get(k) || 0);
       const inRaw = rawLoads > 0 || hasRawRuleByNorm.has(k);
       const inSales = salesLoads > 0 || hasSalesRuleByNorm.has(k);
-      if (!s.customer && soloCust && s.source !== 'app') {
+      if (rawRuleSup && rawRuleSup.supplier) {
+        s.supplier = rawRuleSup.supplier;
+      } else if (!s.supplier) {
+        const fallbackSup = topRawOwner(k);
+        if (fallbackSup) s.supplier = fallbackSup;
+      }
+      if (salesRuleCust && salesRuleCust.customer) {
+        s.customer = salesRuleCust.customer;
+      } else if (!s.customer && soloCust) {
         s.customer = soloCust;
       }
-      if (!s.site_category || s._seedCatAuto) {
+      if (!s.site_category || s._seedCatAuto || s.source === 'app') {
         s.site_category = (!s.is_jv && !inRaw && inSales && !s.supplier) ? 'customer' : 'supplier';
         s._seedCatAuto = true;
       } else {
@@ -8856,8 +8994,14 @@
     const bundledSeedSiteNorms = new Set();
     recs.sites.forEach(s => {
       if (!s || !s.name) return;
+      const jpMeta = jvPartBySiteNorm.get(norm(s.name));
+      if (jpMeta && jpMeta.partner) {
+        s.is_jv = true;
+        s.jv_partner = jpMeta.partner;
+        s.jv_share = jpMeta.share || 50;
+        s.jv_company = jpMeta.company || s.jv_company || s.company || 'WTC';
+      }
       if (s.is_jv || s.jv) {
-        const jpMeta = jvPartBySiteNorm.get(norm(s.name));
         if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || 'Assaf';
         if (!(Number(s.jv_share) > 0)) s.jv_share = (jpMeta && jpMeta.share) || 50;
         if (!s.jv_company) s.jv_company = (jpMeta && jpMeta.company) || s.company || 'WTC';
@@ -9176,6 +9320,340 @@
     }
     return fIdx._siteByNorm.get(n) || null;
   }
+
+  function _mergedActivePriceRules() {
+    const seen = new Set();
+    const out = [];
+    const addList = arr => {
+      if (!Array.isArray(arr)) return;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || r.voided) continue;
+        const id = r.id ? String(r.id) : '';
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        out.push(r);
+      }
+    };
+    if (STATE && STATE.customRecords) addList(STATE.customRecords.price_rules);
+    if (SEED && SEED.records) addList(SEED.records.price_rules);
+    return out;
+  }
+
+  function resolveSuppliersForSite(siteName, company, dateStr, product) {
+    const sk = norm(siteName);
+    if (!sk) return { activeSupplier: '', suppliers: [], hasActiveRule: false, multipleActive: false };
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const coKey = norm(company);
+    const prodKey = norm(product);
+    const rules = _mergedActivePriceRules().filter(r =>
+      norm(r.site) === sk &&
+      r.supplier &&
+      /^Purchase Price \(Site\)$/i.test(String(r.rule_type || '').trim()) &&
+      (!coKey || !r.company || norm(r.company) === coKey)
+    );
+    const coversDate = r => {
+      const s = String(r.start_date || '1900-01-01').slice(0, 10);
+      const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+      return s <= effDate && e >= effDate;
+    };
+    const activeAll = rules.filter(coversDate).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    const activeProd = prodKey ? activeAll.filter(r => norm(r.product) === prodKey) : [];
+    const activeBlank = prodKey ? activeAll.filter(r => !r.product) : [];
+    const chosenActive = activeProd.length ? activeProd : (activeBlank.length ? activeBlank : activeAll);
+
+    const activeSupSeen = new Set();
+    const activeSupList = [];
+    chosenActive.forEach(r => {
+      const sup = String(r.supplier || '').trim();
+      const k = norm(sup);
+      if (k && !activeSupSeen.has(k)) {
+        activeSupSeen.add(k);
+        activeSupList.push(sup);
+      }
+    });
+
+    const allSeen = new Set(activeSupSeen);
+    const allSups = activeSupList.slice();
+    const addSup = v => {
+      const sup = String(v || '').trim();
+      const k = norm(sup);
+      if (k && !allSeen.has(k)) {
+        allSeen.add(k);
+        allSups.push(sup);
+      }
+    };
+
+    const sInf = siteInfo(siteName);
+    if (activeSupList.length === 0) {
+      const anyCoveringAnyDate = rules.length > 0;
+      if (!anyCoveringAnyDate && sInf && sInf.supplier) {
+        addSup(sInf.supplier);
+      }
+      rules
+        .slice()
+        .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))
+        .forEach(r => addSup(r.supplier));
+      if (sInf && sInf.supplier) addSup(sInf.supplier);
+    } else {
+      rules
+        .slice()
+        .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))
+        .forEach(r => addSup(r.supplier));
+      if (sInf && sInf.supplier) addSup(sInf.supplier);
+    }
+
+    const rawCounts = new Map();
+    ((SEED && SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+      if (!r || r.voided || norm(r.site) !== sk || !r.site_owner) return;
+      const so = String(r.site_owner).trim();
+      const k = norm(so);
+      if (!k) return;
+      const cur = rawCounts.get(k) || { name: so, count: 0 };
+      cur.count += 1;
+      rawCounts.set(k, cur);
+    });
+    Array.from(rawCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .forEach(x => addSup(x.name));
+
+    const activeSupplier = activeSupList.length > 0 ? activeSupList[0] : (allSups[0] || '');
+    return {
+      activeSupplier,
+      suppliers: allSups,
+      hasActiveRule: activeSupList.length > 0,
+      multipleActive: activeSupList.length > 1
+    };
+  }
+
+  function resolveSitesForSupplier(supplierName, company, dateStr, product) {
+    const supKey = norm(supplierName);
+    if (!supKey) return { activeSites: [], allSites: [], singleSite: '', metaBySite: new Map() };
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const coKey = norm(company);
+    const prodKey = norm(product);
+    const rules = _mergedActivePriceRules().filter(r =>
+      r.site &&
+      norm(r.supplier) === supKey &&
+      /^Purchase Price \(Site\)$/i.test(String(r.rule_type || '').trim()) &&
+      (!coKey || !r.company || norm(r.company) === coKey)
+    );
+    const coversDate = r => {
+      const s = String(r.start_date || '1900-01-01').slice(0, 10);
+      const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+      return s <= effDate && e >= effDate;
+    };
+    const activeRules = rules
+      .filter(r => coversDate(r) && (!prodKey || !r.product || norm(r.product) === prodKey))
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    // Exclude sites where another supplier currently holds a newer active Purchase Price (Site) agreement on effDate
+    const activeSeen = new Set();
+    const activeSites = [];
+    const metaBySite = new Map();
+    activeRules.forEach(r => {
+      const sName = String(r.site || '').trim();
+      const sk = norm(sName);
+      if (!sk || activeSeen.has(sk)) return;
+      const curOwner = resolveSuppliersForSite(sName, company, effDate, product);
+      if (curOwner.hasActiveRule && curOwner.activeSupplier && norm(curOwner.activeSupplier) !== supKey && !curOwner.multipleActive) return;
+      activeSeen.add(sk);
+      activeSites.push(sName);
+      metaBySite.set(sk, `Active Agreement · ${supplierName}`);
+    });
+    const allSeen = new Set(activeSeen);
+    const allSites = activeSites.slice();
+    const addSite = (nm, meta) => {
+      const s = String(nm || '').trim();
+      const sk = norm(s);
+      if (!sk || allSeen.has(sk)) return;
+      allSeen.add(sk);
+      allSites.push(s);
+      if (meta && !metaBySite.has(sk)) metaBySite.set(sk, meta);
+    };
+    rules.forEach(r => addSite(r.site, `Price Agreement · ${supplierName}`));
+    const loadCounts = new Map();
+    ((SEED && SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+      if (!r || r.voided || !r.site || norm(r.site_owner) !== supKey) return;
+      const sk = norm(r.site);
+      const cur = loadCounts.get(sk) || { name: r.site, count: 0 };
+      cur.count += 1;
+      loadCounts.set(sk, cur);
+    });
+    Array.from(loadCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .forEach(x => addSite(x.name, `${x.count} Raw loads · ${supplierName}`));
+    ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
+      if (s && !s.voided && s.name && norm(s.supplier) === supKey) addSite(s.name, `Supplier Site · ${supplierName}`);
+    });
+    const singleSite = activeSites.length === 1 ? activeSites[0] : (activeSites.length === 0 && allSites.length === 1 ? allSites[0] : '');
+    return { activeSites, allSites, singleSite, metaBySite };
+  }
+
+  function resolveSitesForCustomer(customerName, company, dateStr, product) {
+    const custKey = norm(customerName);
+    if (!custKey) return { activeSites: [], allSites: [], singleSite: '', metaBySite: new Map() };
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const coKey = norm(company);
+    const prodKey = norm(product);
+    const rules = _mergedActivePriceRules().filter(r =>
+      r.site &&
+      norm(r.customer) === custKey &&
+      /^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim()) &&
+      (!coKey || !r.company || norm(r.company) === coKey)
+    );
+    const coversDate = r => {
+      const s = String(r.start_date || '1900-01-01').slice(0, 10);
+      const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+      return s <= effDate && e >= effDate;
+    };
+    const activeAll = rules
+      .filter(coversDate)
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    const activeProd = prodKey ? activeAll.filter(r => norm(r.product) === prodKey) : [];
+    const chosenActive = activeProd.length ? activeProd : activeAll;
+
+    const activeSeen = new Set();
+    const activeSites = [];
+    const metaBySite = new Map();
+    chosenActive.forEach(r => {
+      const sName = String(r.site || '').trim();
+      const sk = norm(sName);
+      if (!sk || activeSeen.has(sk)) return;
+      activeSeen.add(sk);
+      activeSites.push(sName);
+      const sObj = siteInfo(sName);
+      const reg = (sObj && sObj.region) || '';
+      metaBySite.set(sk, `Active Agreement · ${customerName}${reg ? ' · ' + reg : ''}`);
+    });
+
+    const allSeen = new Set(activeSeen);
+    const allSites = activeSites.slice();
+    const addSite = (nm, meta) => {
+      const s = String(nm || '').trim();
+      const sk = norm(s);
+      if (!sk || allSeen.has(sk)) return;
+      allSeen.add(sk);
+      allSites.push(s);
+      if (meta && !metaBySite.has(sk)) metaBySite.set(sk, meta);
+    };
+    activeAll.forEach(r => {
+      const sObj = siteInfo(r.site);
+      const reg = (sObj && sObj.region) || '';
+      addSite(r.site, `Active Agreement · ${customerName}${reg ? ' · ' + reg : ''}`);
+    });
+    rules.forEach(r => {
+      const sObj = siteInfo(r.site);
+      const reg = (sObj && sObj.region) || '';
+      addSite(r.site, `Price Agreement · ${customerName}${reg ? ' · ' + reg : ''}`);
+    });
+
+    const loadCounts = new Map();
+    ((SEED && SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
+      if (!t || t.voided || !t.site || norm(t.customer) !== custKey) return;
+      const sk = norm(t.site);
+      const cur = loadCounts.get(sk) || { name: t.site, count: 0 };
+      cur.count += 1;
+      loadCounts.set(sk, cur);
+    });
+    Array.from(loadCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .forEach(x => {
+        const sObj = siteInfo(x.name);
+        const reg = (sObj && sObj.region) || '';
+        addSite(x.name, `${x.count} Delivery loads · ${customerName}${reg ? ' · ' + reg : ''}`);
+      });
+
+    ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
+      if (s && !s.voided && s.name && norm(s.customer) === custKey) {
+        addSite(s.name, `Customer Site · ${customerName}${s.region ? ' · ' + s.region : ''}`);
+      }
+    });
+
+    const singleSite = activeSites.length === 1 ? activeSites[0] : (activeSites.length === 0 && allSites.length === 1 ? allSites[0] : '');
+    return { activeSites, allSites, singleSite, metaBySite };
+  }
+
+  function resolveCustomersForSite(siteName, company, dateStr, product) {
+    const sk = norm(siteName);
+    if (!sk) return { activeCustomer: '', customers: [], singleCustomer: '', hasActiveRule: false, multipleActive: false };
+    const effDate = String(dateStr || SEED_DATE || '2026-12-31').slice(0, 10);
+    const coKey = norm(company);
+    const prodKey = norm(product);
+    const rules = _mergedActivePriceRules().filter(r =>
+      norm(r.site) === sk &&
+      r.customer &&
+      /^(Sales \(Delivery\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim()) &&
+      (!coKey || !r.company || norm(r.company) === coKey)
+    );
+    const coversDate = r => {
+      const s = String(r.start_date || '1900-01-01').slice(0, 10);
+      const e = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+      return s <= effDate && e >= effDate;
+    };
+    const activeAll = rules.filter(coversDate).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    const activeProd = prodKey ? activeAll.filter(r => norm(r.product) === prodKey) : [];
+    const chosenActive = activeProd.length ? activeProd : activeAll;
+
+    const activeSeen = new Set();
+    const activeCusts = [];
+    chosenActive.forEach(r => {
+      const c = String(r.customer || '').trim();
+      const ck = norm(c);
+      if (ck && !activeSeen.has(ck)) {
+        activeSeen.add(ck);
+        activeCusts.push(c);
+      }
+    });
+
+    const allSeen = new Set(activeSeen);
+    const allCusts = activeCusts.slice();
+    const addCust = v => {
+      const c = String(v || '').trim();
+      const ck = norm(c);
+      if (ck && !allSeen.has(ck)) {
+        allSeen.add(ck);
+        allCusts.push(c);
+      }
+    };
+
+    rules
+      .slice()
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))
+      .forEach(r => addCust(r.customer));
+
+    const loadCounts = new Map();
+    ((SEED && SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
+      if (!t || t.voided || norm(t.site) !== sk || !t.customer) return;
+      const c = String(t.customer).trim();
+      const ck = norm(c);
+      if (!ck) return;
+      const cur = loadCounts.get(ck) || { name: c, count: 0 };
+      cur.count += 1;
+      loadCounts.set(ck, cur);
+    });
+    Array.from(loadCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .forEach(x => addCust(x.name));
+
+    const sInf = siteInfo(siteName);
+    if (sInf && sInf.customer) addCust(sInf.customer);
+
+    const activeCustomer = activeCusts.length > 0 ? activeCusts[0] : (allCusts[0] || '');
+    const singleCustomer = activeCusts.length === 1 ? activeCusts[0] : (activeCusts.length === 0 && allCusts.length === 1 ? allCusts[0] : '');
+    return {
+      activeCustomer,
+      customers: allCusts,
+      singleCustomer,
+      hasActiveRule: activeCusts.length > 0,
+      multipleActive: activeCusts.length > 1
+    };
+  }
+  window.MFG_SITE_LINKS = {
+    resolveSuppliersForSite,
+    resolveSitesForSupplier,
+    resolveSitesForCustomer,
+    resolveCustomersForSite
+  };
   function regionNames() {
     const fIdx = getFreqIndex();
     if (!fIdx._lists) fIdx._lists = {};
@@ -10681,14 +11159,19 @@
       return Boolean(customSpec.isSameSeries(a, b));
     }
     switch (crKey) {
-      case 'price_rules':
-        return norm(a.rule_type || '') === norm(b.rule_type || '')
-          && norm(a.customer || '') === norm(b.customer || '')
-          && norm(a.supplier || '') === norm(b.supplier || '')
+      case 'price_rules': {
+        const sameType = norm(a.rule_type || '') === norm(b.rule_type || '');
+        if (!sameType) return false;
+        const isPurchSite = /^purchase price \(site\)$/i.test(String(a.rule_type || '').trim()) && Boolean(norm(a.site || ''));
+        const sameSup = norm(a.supplier || '') === norm(b.supplier || '')
+          || (isPurchSite && String(a.start_date || '').slice(0, 10) !== String(b.start_date || '').slice(0, 10));
+        return norm(a.customer || '') === norm(b.customer || '')
+          && sameSup
           && norm(a.site || '') === norm(b.site || '')
           && norm(a.product || '') === norm(b.product || '')
           && norm(a.truck || '') === norm(b.truck || '')
           && Number(a.min_qty || 0) === Number(b.min_qty || 0);
+      }
       case 'employments':
       case 'staff_assignments':
         return norm(a.staff || '') === norm(b.staff || '');
@@ -11295,6 +11778,7 @@
     }
 
     if (isRawSide) {
+      const isSitePurchRule = /^Purchase Price \(Site\)$/i.test(rt) && Boolean((ruleRow && ruleRow.site) || (origRow && origRow.site));
       const rawRows = (SEED.records && SEED.records.raw_purchases) || [];
       for (let i = 0; i < rawRows.length; i++) {
         const r = rawRows[i];
@@ -11308,7 +11792,7 @@
         if ((ruleRow && ruleRow.supplier) || (origRow && origRow.supplier)) {
           const matchMatSup = matchField(r.site_owner, 'supplier');
           const matchTrSup = matchField(r.truck_owner, 'supplier');
-          if (!matchMatSup && !matchTrSup) continue;
+          if (!isSitePurchRule && !matchMatSup && !matchTrSup) continue;
         }
 
         let rowChanged = false;
@@ -11338,6 +11822,13 @@
         }
 
         if (/Purchase Price/i.test(rt)) {
+          if (isSitePurchRule && r.site) {
+            const soRes = resolveSuppliersForSite(r.site, r.company, d, r.product);
+            if (soRes && soRes.hasActiveRule && soRes.activeSupplier && !soRes.multipleActive && norm(r.site_owner) !== norm(soRes.activeSupplier)) {
+              r.site_owner = soRes.activeSupplier;
+              rowChanged = true;
+            }
+          }
           const pRule = findRule({
             company: r.company,
             supplier: r.site_owner,
@@ -11397,6 +11888,9 @@
       if (rawUpdated > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
     }
 
+    if ((ruleRow && ruleRow.site) || (origRow && origRow.site)) {
+      normalizeDistinctSiteCategories(SEED);
+    }
     if (salesUpdated + rawUpdated > 0) {
       SEED._customRev = (SEED._customRev || 0) + 1;
     }
@@ -35960,6 +36454,7 @@
 
   function showRoleHoverCard(anchorEl, userObj, opts = {}) {
     if (!anchorEl || !userObj) return;
+    if (getUserDirectoryScopeTier(activeUser()) === 'entry') return;
     if (_roleHoverHideTimer) { clearTimeout(_roleHoverHideTimer); _roleHoverHideTimer = null; }
     if (typeof window.__mfgHideUiTooltip === 'function') window.__mfgHideUiTooltip();
     if (!anchorEl.closest || !anchorEl.closest('#nuRolePermsSelector')) {
@@ -36402,19 +36897,27 @@
   }
 
   function renderUsersDirectoryRowsHtml() {
-    const owner = isOwner(activeUser());
+    const me = activeUser();
+    const tier = getUserDirectoryScopeTier(me);
+    const owner = isOwner(me);
+    const hideRoleAndRlsCols = tier === 'entry';
+    const visUsers = getVisibleDirectoryUsers(me);
     const editUser = getEditingSeatUser();
     const editId = (!STATE.showAddUserForm || STATE.editingUserId === '__new__' || !editUser) ? '' : String(editUser.id);
-    return STATE.users.map((u, idx) => {
+    return visUsers.map(u => {
+      const idx = STATE.users.findIndex(x => x && String(x.id) === String(u.id));
+      const isSelf = idx === STATE.activeUserIdx || String(u.id) === String(me.id);
+      const canManageFace = owner || tier === 'supervisor' || isSelf;
       const fSamples = userFaceSamples(u);
       const faceCnt = Math.min(3, fSamples.length);
       const faceActive = faceCnt > 0 && effectiveSeatAuthMode(u) !== 'pin_only';
       const isTarget = String(u.id) === String(enrolTargetUser().id);
       const isEditing = String(u.id) === editId;
-      const compBadge = formatCompactCompaniesBadge(u.companies, 3);
+      const scopedCoList = filterCompaniesForViewer(u.companies, me);
+      const compBadge = formatCompactCompaniesBadge(scopedCoList, 3);
       const shownCoNames = Array.isArray(compBadge.shownNames) && compBadge.shownNames.length
         ? compBadge.shownNames
-        : parseUserCompanies(u.companies).slice(0, 3);
+        : scopedCoList.slice(0, 3);
       const b = buildRoleCapabilityBreakdown(u);
       const { perms, m: pm, scopeShortLbl } = b;
       const roleTitle = perms.preset.shortTitle || u.role;
@@ -36463,10 +36966,10 @@
       <tr class="user-dir-row ${isTarget ? 'enrol-selected-row' : ''} ${isEditing ? 'seat-editing-row' : ''}" data-user-row="${esc(u.id)}">
         <td class="user-dir-name-cell">
           <div class="user-dir-identity">
-            <span class="user-dir-avatar ${tierMeta.tierCls}" aria-hidden="true">${esc(initials)}</span>
+            <span class="user-dir-avatar ${hideRoleAndRlsCols ? 'tier-entry' : tierMeta.tierCls}" aria-hidden="true">${esc(initials)}</span>
             <div class="user-dir-name-stack">
               <div class="user-dir-name-line">
-                <strong>${esc(u.full_name)}</strong>${idx === STATE.activeUserIdx ? ' <span class="badge badge-ok user-you-badge">you</span>' : ''}
+                <strong>${esc(u.full_name)}</strong>${isSelf ? ' <span class="badge badge-ok user-you-badge">you</span>' : ''}
               </div>
             </div>
           </div>
@@ -36474,10 +36977,11 @@
         <td class="user-dir-email-cell"><span class="user-email-pill mono">${esc(u.email)}</span></td>
         ${owner && !STATE.demoVisitor ? `<td class="user-dir-pin-cell"><span class="badge badge-info user-pin-keycap mono">${esc(u.pin_code || '1111')}</span></td>` : ''}
         <td class="user-dir-face-cell">
-          ${(owner || idx === STATE.activeUserIdx)
+          ${canManageFace
             ? `<button type="button" class="user-face-capsule ${faceActive ? 'is-enrolled' : 'is-pin-only'} ${isTarget ? 'is-target' : ''}" data-enrol-user="${esc(u.id)}">${poseDotsHtml}<span>${esc(faceCompactLbl)}</span></button>`
             : `<span class="user-face-capsule ${faceActive ? 'is-enrolled' : 'is-pin-only'} is-readonly">${poseDotsHtml}<span>${esc(faceCompactLbl)}</span></span>`}
         </td>
+        ${hideRoleAndRlsCols ? '' : `
         <td class="user-role-perm-cell">
           ${owner
             ? `<button type="button" class="user-role-perm-btn ${tierMeta.tierCls} ${isEditing && STATE.showRolePermMatrix ? 'is-active' : ''}" data-check-perms="${esc(u.id)}" data-role-hover-user="${esc(u.id)}">${roleCellInner}</button>`
@@ -36495,13 +36999,14 @@
             ${compBadge.indCount > 1 ? `<span class="badge badge-info">${compBadge.indCount} Ind</span>` : ''}
           </div>
         </td>
+        `}
         <td class="user-dir-status-cell"><span class="badge ${u.status === 'Suspended' ? 'badge-err' : 'badge-ok'} user-status-pill"><i class="user-status-dot" aria-hidden="true"></i>${esc(u.status || 'Active')}</span></td>
         <td class="user-dir-login-cell">${loginHtml}</td>
         <td class="user-actions-cell">
           <div class="user-actions-wrap">
             ${owner ? `<button type="button" class="btn user-act-btn ${isEditing ? 'btn-primary' : ''}" data-edit-user="${esc(u.id)}">${ic('edit')}<span>Edit</span></button>` : ''}
-            ${(owner || idx === STATE.activeUserIdx) ? `<button type="button" class="btn user-act-btn ${isTarget ? 'btn-brass' : ''}" data-enrol-user="${esc(u.id)}">${ic('camera')}<span>Face ID</span></button>` : ''}
-            ${owner ? `
+            ${canManageFace ? `<button type="button" class="btn user-act-btn ${isTarget ? 'btn-brass' : ''}" data-enrol-user="${esc(u.id)}">${ic('camera')}<span>Face ID</span></button>` : ''}
+            ${owner && idx >= 0 ? `
               <button type="button" class="btn user-act-btn ${STATE.activeUserIdx === idx ? 'is-active-seat' : ''}" data-sim-user="${idx}">${STATE.activeUserIdx === idx ? '● Active' : `${ic('user')}<span>Impersonate</span>`}</button>
               <button type="button" class="btn user-act-btn" data-invite-user="${idx}">${ic('link')}<span>Invite Link</span></button>
               <button type="button" class="btn user-act-btn ${u.status === 'Suspended' ? 'is-activate' : 'is-suspend'}" data-toggle-user="${idx}">${u.status === 'Suspended' ? 'Activate' : 'Suspend'}</button>
@@ -36513,17 +37018,23 @@
   }
 
   function renderUsers() {
-    const uCount = STATE.users.length;
     const me = activeUser();
+    const tier = getUserDirectoryScopeTier(me);
     const owner = isOwner(me);
+    const hideRoleAndRlsCols = tier === 'entry';
+    const canSwitchEnrolTarget = owner || tier === 'supervisor';
+    const visUsers = getVisibleDirectoryUsers(me);
+    const visSessions = getVisibleDirectorySessions(me);
+    const uCount = visUsers.length;
     const sbConfigured = !!(STATE.supabaseCfg.url && STATE.supabaseCfg.anonKey);
     const enrolUser = enrolTargetUser();
     syncEnrolBufferFromUser(enrolUser, false);
-    const faceCount = STATE.users.filter(userHasFaceId).length;
+    const faceCount = visUsers.filter(userHasFaceId).length;
     const enrolSavedSamples = userFaceSamples(enrolUser);
     const capCount = FACE_STATE.enrolCaptures.length;
     const poseComplete = capCount >= 3;
     const showcaseHref = (IS_LOCAL && !location.pathname.includes('/app/')) ? '/showcase/' : '../';
+    const supScopeLbl = tier === 'supervisor' ? (getSupervisorScopedBus(me).join(' · ') || 'Your Business Unit') : '';
 
     return `
       <div class="cockpit-banner has-insights">
@@ -36534,11 +37045,15 @@
         <div class="cockpit-pills insight-grid cols-3">
           ${insightCard({
             label: 'Active Web Seats',
-            badge: 'Multi-Device RLS',
+            badge: hideRoleAndRlsCols ? 'Personal Account' : (tier === 'supervisor' ? 'BU Scoped RLS' : 'Multi-Device RLS'),
             badgeCls: 'brass',
-            val: `${uCount} Users`,
+            val: hideRoleAndRlsCols ? '1 Seat (You)' : `${uCount} ${uCount === 1 ? 'User' : 'Users'}`,
             valCls: 'brass',
-            sub: `Scoped across phones, tablets &amp; laptops with BU Row-Level Security`,
+            sub: hideRoleAndRlsCols
+              ? `Your personal sign-in profile &amp; biometric security`
+              : (tier === 'supervisor'
+                ? `Team seats scoped to ${esc(supScopeLbl)}`
+                : `Scoped across phones, tablets &amp; laptops with BU Row-Level Security`),
             tone: 'brass'
           })}
           ${insightCard({
@@ -36620,33 +37135,39 @@
             <div class="enrol-config-grid">
               <div class="enrol-config-card">
                 <div class="enrol-config-lbl-row">
-                  <label class="enrol-config-lbl" for="enrolUserSelect">Seat or Active Staff</label>
-                  ${owner ? `
+                  <label class="enrol-config-lbl" for="enrolUserSelect">${hideRoleAndRlsCols ? 'My Account' : 'Seat or Active Staff'}</label>
+                  ${canSwitchEnrolTarget ? `
                     <div class="enrol-seat-step-btns">
                       <button type="button" class="enrol-step-btn" id="enrolPrevUserBtn" aria-label="Previous seat or staff">‹ Prev</button>
                       <button type="button" class="enrol-step-btn" id="enrolNextUserBtn" aria-label="Next seat or staff">Next ›</button>
                     </div>
                   ` : ''}
                 </div>
-                <select id="enrolUserSelect" class="enrol-select" ${owner ? '' : 'disabled'}>
-                  <optgroup label="Team Login Seats">
-                    ${STATE.users.filter(u => u.status !== 'Suspended').map(u => `
-                      <option value="${esc(u.id)}" ${String(u.id) === String(enrolUser.id) ? 'selected' : ''}>
-                        ${esc(u.full_name)} (${userFaceSamples(u).length ? userFaceSamples(u).length + '/3 poses' : 'no Face ID'})
-                      </option>
-                    `).join('')}
-                  </optgroup>
-                  <optgroup label="Active Staff (Kiosk Face ID)">
-                    ${getKioskStaffDirectory().filter(s => !s.userObj).map(s => {
-                      const stVal = 'stfbio:' + norm(s.name);
-                      const fCnt = s.faceCount || 0;
-                      return `
-                        <option value="${esc(stVal)}" ${String(enrolUser.id) === stVal ? 'selected' : ''}>
-                          ${esc(s.name)} · ${esc(s.company)} (${fCnt ? fCnt + '/3 poses' : 'no Face ID'})
+                <select id="enrolUserSelect" class="enrol-select" ${canSwitchEnrolTarget ? '' : 'disabled'}>
+                  ${hideRoleAndRlsCols ? `
+                    <option value="${esc(me.id)}" selected>
+                      ${esc(me.full_name)} (${userFaceSamples(me).length ? userFaceSamples(me).length + '/3 poses' : 'no Face ID'})
+                    </option>
+                  ` : `
+                    <optgroup label="Team Login Seats">
+                      ${visUsers.filter(u => u.status !== 'Suspended').map(u => `
+                        <option value="${esc(u.id)}" ${String(u.id) === String(enrolUser.id) ? 'selected' : ''}>
+                          ${esc(u.full_name)} (${userFaceSamples(u).length ? userFaceSamples(u).length + '/3 poses' : 'no Face ID'})
                         </option>
-                      `;
-                    }).join('')}
-                  </optgroup>
+                      `).join('')}
+                    </optgroup>
+                    <optgroup label="Active Staff (Kiosk Face ID)">
+                      ${getKioskStaffDirectory().filter(s => !s.userObj).map(s => {
+                        const stVal = 'stfbio:' + norm(s.name);
+                        const fCnt = s.faceCount || 0;
+                        return `
+                          <option value="${esc(stVal)}" ${String(enrolUser.id) === stVal ? 'selected' : ''}>
+                            ${esc(s.name)} · ${esc(s.company)} (${fCnt ? fCnt + '/3 poses' : 'no Face ID'})
+                          </option>
+                        `;
+                      }).join('')}
+                    </optgroup>
+                  `}
                 </select>
                 <label class="enrol-config-lbl" for="enrolSeatAuthModeSelect" style="margin-top:6px">Seat Sign-In Requirement</label>
                 <select id="enrolSeatAuthModeSelect" class="enrol-select" ${(owner && !enrolUser.isKioskStaffOnly) ? '' : 'disabled'}>
@@ -36707,7 +37228,7 @@
 
       <div class="panel-card" style="margin-bottom:14px">
         <div class="panel-head">
-          <div class="panel-title"><span>TEAM LOGIN DIRECTORY &amp; ROW-LEVEL SECURITY (RLS) SCOPES</span></div>
+          <div class="panel-title"><span>${hideRoleAndRlsCols ? 'MY ACCOUNT &amp; SIGN-IN SECURITY' : (tier === 'supervisor' ? 'BUSINESS-UNIT TEAM LOGIN DIRECTORY' : 'TEAM LOGIN DIRECTORY &amp; ROW-LEVEL SECURITY (RLS) SCOPES')}</span></div>
           <div style="display:flex;gap:6px">
             <button class="btn" style="padding:4px 10px;font-size:11px" id="syncCloudNowBtn">↻ Sync Cloud Now</button>
             ${owner ? `<button class="btn btn-primary" style="padding:4px 10px;font-size:11px" id="addWebUserBtn">+ New Team Login</button>` : ''}
@@ -36721,8 +37242,10 @@
                 <th>Login Email</th>
                 ${owner && !STATE.demoVisitor ? '<th>PIN</th>' : ''}
                 <th>Face ID (2FA)</th>
+                ${hideRoleAndRlsCols ? '' : `
                 <th>Roles &amp; Permissions</th>
                 <th>Allowed Companies (RLS)</th>
+                `}
                 <th>Status</th>
                 <th>Last Login</th>
                 <th>Actions</th>
@@ -36736,9 +37259,9 @@
       </div>
 
       <div class="split-grid-2">
-        <div class="panel-card">
+        <div class="panel-card" id="usersSessionAuditPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>LIVE MULTI-DEVICE SESSION AUDIT LOG</span></div>
+            <div class="panel-title"><span>${hideRoleAndRlsCols ? 'MY RECENT SIGN-IN ACTIVITY' : (tier === 'supervisor' ? 'BUSINESS-UNIT SESSION AUDIT LOG' : 'LIVE MULTI-DEVICE SESSION AUDIT LOG')}</span></div>
             <span class="badge ${/Live/.test(STATE.cloudStatus) ? 'badge-ok' : 'badge-warn'}">${/Live/.test(STATE.cloudStatus) ? 'CLOUD SYNCED' : 'LOCAL ONLY'}</span>
           </div>
           <div class="table-wrap">
@@ -36748,22 +37271,22 @@
                   <th>Timestamp</th>
                   <th>Team Member</th>
                   <th>Auth Method</th>
-                  <th>Role / Scope</th>
+                  ${hideRoleAndRlsCols ? '' : '<th>Role / Scope</th>'}
                   <th>Device</th>
                 </tr>
               </thead>
-              <tbody>
-                ${(STATE.sessions || []).slice(0, 10).map(s => {
-                  const sBadge = formatCompactCompaniesBadge(s.companies, 3);
+              <tbody id="usersSessionAuditTbody">
+                ${visSessions.map(s => {
+                  const sBadge = formatCompactCompaniesBadge(filterCompaniesForViewer(s.companies, me), 3);
                   return `
                   <tr>
                     <td class="mono" style="font-size:10.5px">${esc(s.logged_in_at)}</td>
                     <td><strong>${esc(s.full_name)}</strong></td>
                     <td><span class="badge ${/Face/i.test(s.method || '') ? 'badge-ok' : 'badge-info'}">${esc(s.method || 'PIN')}${s.confidence ? ` · ${Math.round(Number(s.confidence))}%` : ''}</span></td>
-                    <td><span class="badge badge-brass" title="${esc(sBadge.fullTitle)}">${esc(sBadge.text)}</span></td>
+                    ${hideRoleAndRlsCols ? '' : `<td><span class="badge badge-brass" data-ui-tip="${esc(sBadge.fullTitle)}">${esc(sBadge.text)}</span></td>`}
                     <td class="mono" style="font-size:10.5px">${esc(s.device)}</td>
                   </tr>`;
-                }).join('') || emptyRow(5, 'No sign-ins recorded yet')}
+                }).join('') || emptyRow(hideRoleAndRlsCols ? 4 : 5, 'No sign-ins recorded yet')}
               </tbody>
             </table>
           </div>
@@ -40979,15 +41502,73 @@
         if (qtyEl()) qtyEl().value = '';
       }
     }
-    const sitePickedOrChanged = Boolean(site && site !== FORM_UI.lastSite);
+    const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
+    const sitePickedOrChanged = Boolean(!FORM_UI.hydrating && site !== FORM_UI.lastSite);
     FORM_UI.lastSite = site;
-    if (isDelivery && !isUnreg && sitePickedOrChanged && !customer && $('f_customer')) {
-      const sInf = siteInfo(site, 'sales');
-      if (sInf && sInf.customer) {
-        $('f_customer').value = sInf.customer;
-        customer = sInf.customer;
+    if (sitePickedOrChanged) {
+      FORM_UI.siteAutoFilledFromCustomer = false;
+    }
+    if (customerChanged && !sitePickedOrChanged) {
+      FORM_UI.custAutoFilledFromSite = false;
+    }
+    if (isDelivery && !isUnreg && sitePickedOrChanged && site && $('f_customer') && (!customer || FORM_UI.custAutoFilledFromSite)) {
+      const siteCusts = resolveCustomersForSite(site, company, effDate, product);
+      const resolvedCust = siteCusts.singleCustomer || siteCusts.activeCustomer || '';
+      if (resolvedCust) {
+        $('f_customer').value = resolvedCust;
+        customer = resolvedCust;
         FORM_UI.lastCustomer = customer;
+        FORM_UI.custAutoFilledFromSite = true;
         customerChanged = true;
+      }
+    }
+    if (isDelivery && !isUnreg && customer) {
+      const custSites = resolveSitesForCustomer(customer, company, effDate, product);
+      const custSiteKey = `${company}|${customer}|${effDate}|${product}`;
+      if (FORM_UI.lastSalesSiteCustKey !== custSiteKey) {
+        FORM_UI.lastSalesSiteCustKey = custSiteKey;
+        const dlSalesSites = $('dl_sites');
+        if (dlSalesSites) {
+          const baseItems = siteMetaItems('sales');
+          const baseMetaMap = new Map(baseItems.map(([n, m]) => [norm(n), m]));
+          const seenS = new Set();
+          const topOpts = [];
+          custSites.allSites.forEach(sName => {
+            const sk = norm(sName);
+            if (!sk || seenS.has(sk)) return;
+            seenS.add(sk);
+            const meta = custSites.metaBySite.get(sk) || baseMetaMap.get(sk) || '';
+            topOpts.push([sName, meta]);
+          });
+          baseItems.forEach(([n, m]) => {
+            const sk = norm(n);
+            if (!sk || seenS.has(sk)) return;
+            seenS.add(sk);
+            topOpts.push([n, m]);
+          });
+          dlSalesSites.innerHTML = topOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+        }
+      }
+      if (!FORM_UI.hydrating && customerChanged && !sitePickedOrChanged && $('f_site') && (!site || FORM_UI.siteAutoFilledFromCustomer)) {
+        if (custSites.singleSite) {
+          $('f_site').value = custSites.singleSite;
+          site = custSites.singleSite;
+          FORM_UI.lastSite = site;
+          FORM_UI.siteAutoFilledFromCustomer = true;
+          siteChanged = true;
+        } else if (FORM_UI.siteAutoFilledFromCustomer && site && !custSites.allSites.some(s => norm(s) === norm(site))) {
+          $('f_site').value = '';
+          site = '';
+          FORM_UI.lastSite = '';
+          FORM_UI.siteAutoFilledFromCustomer = false;
+          siteChanged = true;
+        }
+      }
+    } else if (FORM_UI.lastSalesSiteCustKey) {
+      FORM_UI.lastSalesSiteCustKey = '';
+      const dlSalesSites = $('dl_sites');
+      if (dlSalesSites) {
+        dlSalesSites.innerHTML = siteMetaItems('sales').map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
       }
     }
 
@@ -41022,7 +41603,6 @@
     }
 
     // 4. Cascading Truck -> Truck Owner + Driver + Capacity (Date & Client/Site Window Aware)
-    const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
     const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, is3POrPickup, isUnreg, isDelivery, { date: effDate, side: 'sales', customer, site: isDelivery ? site : '' });
     setHint('hint_truckowner', is3POrPickup
       ? (ownerFromTruck
@@ -41450,10 +42030,47 @@
       }
     }
     const pendRawEditRowEarly = STATE.editingPendingRawId ? findRawPurchaseRecordById(STATE.editingPendingRawId) : null;
-    const site = val('f_site'), product = val('f_product'), date = val('f_date');
+    let site = val('f_site');
+    const product = val('f_product'), date = val('f_date');
     const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
+    const rawDateChanged = !FORM_UI.hydrating && FORM_UI.lastRawEffDate !== '' && FORM_UI.lastRawEffDate !== effDate;
+    FORM_UI.lastRawEffDate = effDate;
+    let siteChanged = !FORM_UI.hydrating && FORM_UI.lastSite !== site;
+    if (siteChanged) {
+      FORM_UI.siteAutoFilledFromOwner = false;
+    }
+    const earlyOwner = val('f_siteowner');
+    const earlyOwnerChanged = !FORM_UI.hydrating && FORM_UI.lastSiteOwner !== earlyOwner;
+    if (earlyOwnerChanged && !siteChanged && earlyOwner && (!site || FORM_UI.siteAutoFilledFromOwner)) {
+      const supSites = resolveSitesForSupplier(earlyOwner, company, effDate, product);
+      const dlRawSites = $('dl_sites');
+      if (dlRawSites && supSites.allSites.length) {
+        const baseItems = siteMetaItems('raw');
+        const baseMetaMap = new Map(baseItems.map(([n, m]) => [norm(n), m]));
+        const seenS = new Set();
+        const topOpts = [];
+        supSites.allSites.forEach(sName => {
+          const sk = norm(sName);
+          if (!sk || seenS.has(sk)) return;
+          seenS.add(sk);
+          topOpts.push([sName, supSites.metaBySite.get(sk) || baseMetaMap.get(sk) || '']);
+        });
+        baseItems.forEach(([n, m]) => {
+          const sk = norm(n);
+          if (!sk || seenS.has(sk)) return;
+          seenS.add(sk);
+          topOpts.push([n, m]);
+        });
+        dlRawSites.innerHTML = topOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+      }
+      if (supSites.singleSite && $('f_site')) {
+        $('f_site').value = supSites.singleSite;
+        site = supSites.singleSite;
+        FORM_UI.siteAutoFilledFromOwner = true;
+        siteChanged = true;
+      }
+    }
     const sInfo = site ? siteInfo(site, 'raw') : null;
-    const siteChanged = !FORM_UI.hydrating && FORM_UI.lastSite !== site;
 
     if (siteChanged && !pendRawEditRowEarly && !STATE.editingRecord) {
       if (!FORM_UI.rawSupplyModeManual && !FORM_UI.transportByManual && $('f_raw_bundled')) {
@@ -41568,16 +42185,20 @@
       }
     }
 
-    // 2. Site -> Default Quarry Site Owner (Material Payee)
-    const siteHasOwner = !!(sInfo && sInfo.supplier);
+    // 2. Site -> Default Quarry Site Owner (Material Payee, resolved dynamically by Date & Price Agreement)
+    const siteSups = site ? resolveSuppliersForSite(site, company, effDate, product) : { activeSupplier: '', suppliers: [], hasActiveRule: false, multipleActive: false };
+    const resolvedSiteOwner = siteSups.activeSupplier || '';
+    const siteHasOwner = Boolean(resolvedSiteOwner && !siteSups.multipleActive);
     const ownerLocked = applyFieldLockState('f_siteowner', siteHasOwner, siteHasOwner
-      ? `Locked to ${site} default supplier (${sInfo.supplier})`
-      : 'Unlocked (Site has no preset default supplier)');
-    if ($('f_siteowner') && (!isFieldAdminUnlocked('f_siteowner') || isAutoEditUnlockedField('f_siteowner') || siteChanged)) {
-      if (siteHasOwner && (ownerLocked || siteChanged || !val('f_siteowner'))) {
-        $('f_siteowner').value = sInfo.supplier;
+      ? (siteSups.hasActiveRule
+          ? `Locked to active ${site} Price Agreement supplier (${resolvedSiteOwner}) on ${effDate}`
+          : `Locked to ${site} supplier (${resolvedSiteOwner})`)
+      : 'Unlocked (Site has no active single supplier agreement)');
+    if ($('f_siteowner') && (!isFieldAdminUnlocked('f_siteowner') || isAutoEditUnlockedField('f_siteowner') || siteChanged || (rawDateChanged && siteSups.hasActiveRule) || (productChanged && siteSups.hasActiveRule))) {
+      if (siteHasOwner && (ownerLocked || siteChanged || rawDateChanged || productChanged || !val('f_siteowner'))) {
+        $('f_siteowner').value = resolvedSiteOwner;
       } else if (!siteHasOwner && siteChanged) {
-        $('f_siteowner').value = '';
+        $('f_siteowner').value = resolvedSiteOwner || '';
       }
     }
     const owner = val('f_siteowner');
@@ -44133,14 +44754,67 @@
             dlPrSups.innerHTML = supplierNames(isRawDomain ? 'raw_owner' : 'all').map(v => `<option value="${esc(v)}">`).join('');
           }
         }
+        const prCust = val('f_customer');
+        const prSup = val('f_supplier');
+        const prEffDate = val('f_date') || SEED_DATE;
+        if (!FORM_UI.hydrating && showCustomer && showSite && prCust !== FORM_UI.lastCustomer) {
+          FORM_UI.lastCustomer = prCust;
+          const dlPrSites = $('dl_sites');
+          if (dlPrSites && prCust) {
+            const custSites = resolveSitesForCustomer(prCust, prCo, prEffDate, prProduct);
+            const baseItems = siteMetaItems('sales');
+            const baseMetaMap = new Map(baseItems.map(([n, m]) => [norm(n), m]));
+            const seenS = new Set();
+            const topOpts = [];
+            custSites.allSites.forEach(sName => {
+              const sk = norm(sName);
+              if (!sk || seenS.has(sk)) return;
+              seenS.add(sk);
+              topOpts.push([sName, custSites.metaBySite.get(sk) || baseMetaMap.get(sk) || '']);
+            });
+            baseItems.forEach(([n, m]) => {
+              const sk = norm(n);
+              if (!sk || seenS.has(sk)) return;
+              seenS.add(sk);
+              topOpts.push([n, m]);
+            });
+            dlPrSites.innerHTML = topOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          }
+        } else if (!FORM_UI.hydrating && isRawDomain && showSite && prSup !== FORM_UI.lastSupplier) {
+          FORM_UI.lastSupplier = prSup;
+          const dlPrSites = $('dl_sites');
+          if (dlPrSites && prSup) {
+            const supSites = resolveSitesForSupplier(prSup, prCo, prEffDate, prProduct);
+            const baseItems = siteMetaItems('raw');
+            const baseMetaMap = new Map(baseItems.map(([n, m]) => [norm(n), m]));
+            const seenS = new Set();
+            const topOpts = [];
+            supSites.allSites.forEach(sName => {
+              const sk = norm(sName);
+              if (!sk || seenS.has(sk)) return;
+              seenS.add(sk);
+              topOpts.push([sName, supSites.metaBySite.get(sk) || baseMetaMap.get(sk) || '']);
+            });
+            baseItems.forEach(([n, m]) => {
+              const sk = norm(n);
+              if (!sk || seenS.has(sk)) return;
+              seenS.add(sk);
+              topOpts.push([n, m]);
+            });
+            dlPrSites.innerHTML = topOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          }
+        }
         if (!FORM_UI.hydrating && prSite !== FORM_UI.lastSite) {
           FORM_UI.lastSite = prSite;
           if (prSite) {
             const sInf = siteInfo(prSite, isRawDomain ? 'raw' : 'sales');
-            if (isPurch && sInf && sInf.supplier && $('f_supplier') && !val('f_supplier')) {
-              $('f_supplier').value = sInf.supplier;
-            } else if (!isRawDomain && !isComm && showCustomer && sInf && sInf.customer && $('f_customer') && !val('f_customer')) {
-              $('f_customer').value = sInf.customer;
+            if (isPurch && $('f_supplier') && !val('f_supplier')) {
+              const supRes = resolveSuppliersForSite(prSite, prCo, prEffDate, prProduct);
+              if (supRes.activeSupplier) $('f_supplier').value = supRes.activeSupplier;
+            } else if (!isRawDomain && !isComm && showCustomer && $('f_customer') && !val('f_customer')) {
+              const custRes = resolveCustomersForSite(prSite, prCo, prEffDate, prProduct);
+              const defCust = custRes.singleCustomer || custRes.activeCustomer || '';
+              if (defCust) $('f_customer').value = defCust;
             }
             if (isPurch && $('f_pr_incl_transport') && !STATE.editingRecord) {
               $('f_pr_incl_transport').checked = Boolean(sInf && isSupplierDeliveredSite(sInf));
@@ -44529,12 +45203,7 @@
         return {};
       }
       if (STATE.modalForm === 'site') {
-        const host = activeFormHost();
-        const isJvSite = Boolean($('f_isjv') && $('f_isjv').checked);
-        if (isJvSite && $('f_includes_transport') && $('f_includes_transport').value !== '0') {
-          $('f_includes_transport').value = '0';
-        }
-        const inclTrans = !isJvSite && val('f_includes_transport') === '1';
+        const inclTrans = val('f_includes_transport') === '1';
         const haulDeck = $('quarryHaulageModeDeck');
         if (haulDeck) {
           haulDeck.hidden = false;
@@ -44552,81 +45221,6 @@
         const siteNameLbl = document.querySelector('#wrap_site_name .pa-fld-lbl');
         if (siteNameLbl) siteNameLbl.textContent = inclTrans ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *';
 
-        setFieldVisible('wrap_site_supplier', true);
-        setFieldVisible('wrap_site_jv', !inclTrans);
-        setFieldVisible('wrap_site_jv_details', isJvSite);
-        setFieldVisible('wrap_site_customer', !inclTrans);
-        if (inclTrans) {
-          if ($('f_customer') && $('f_customer').value) $('f_customer').value = '';
-        }
-        if (!isJvSite && $('f_jv_partner') && $('f_jv_partner').value) {
-          $('f_jv_partner').value = '';
-        }
-        if (isJvSite) {
-          const jvP = val('f_jv_partner') || 'Partner';
-          const jvS = Math.max(1, Math.min(99, round2(num('f_jv_share') || 50)));
-          const jvCo = val('f_jv_company') || val('f_company') || defaultEntryCompany() || 'WTC';
-          const supVal = val('f_supplier');
-          const dlJvEl = $('dl_jv_partners');
-          if (dlJvEl && dlJvEl.dataset.excludedOwner !== norm(supVal)) {
-            dlJvEl.dataset.excludedOwner = norm(supVal);
-            const rec = (SEED && SEED.records) || {};
-            const isBu = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
-            const exKey = norm(supVal);
-            const seen = new Set();
-            const jvSitesByPartner = new Map();
-            const addRef = (pRaw, sName, pct) => {
-              const p = String(pRaw || '').trim();
-              if (!p || isBu(p)) return;
-              const k = norm(p);
-              if (exKey && k === exKey) return;
-              if (!jvSitesByPartner.has(k)) jvSitesByPartner.set(k, { name: p, sites: new Set(), pct: Number(pct) || 50 });
-              const entry = jvSitesByPartner.get(k);
-              if (sName) entry.sites.add(String(sName).trim());
-              if (Number(pct) > 0) entry.pct = Number(pct);
-            };
-            addRef('Assaf', 'Jiyeh JV', 50);
-            addRef('Assaf', 'Halat JV', 50);
-            (rec.jv_partnerships || []).forEach(j => { if (j && !j.voided) addRef(j.partner || j.counterparty, j.site, j.percentage ?? j.share_pct); });
-            (rec.jv_distributions || []).forEach(j => { if (j && !j.voided) addRef(j.partner || j.counterparty, j.site, 50); });
-            (rec.sites || []).forEach(s => { if (s && !s.voided && s.jv_partner) addRef(s.jv_partner, s.name, s.jv_share || 50); });
-            const items = [];
-            jvSitesByPartner.forEach((info, k) => {
-              seen.add(k);
-              const sList = Array.from(info.sites).slice(0, 2).join(', ');
-              items.push([info.name, `Active JV Partner${sList ? ' · ' + sList : ''} (${info.pct}%)`]);
-            });
-            const rawSupSet = new Set();
-            (rec.suppliers || []).forEach(s => {
-              if (!s || s.voided || !s.name) return;
-              const catStr = [s.category, s.category1, s.category2, s.category3].filter(Boolean).join(' ');
-              if (/raw\s*material|quarry|site|assaf/i.test(catStr) || /assaf/i.test(s.name)) rawSupSet.add(norm(s.name));
-            });
-            (rec.raw_purchases || []).forEach(r => { if (r && r.site_owner) rawSupSet.add(norm(r.site_owner)); });
-            const t2 = [], t3 = [];
-            (supplierNames() || []).forEach(v => {
-              const s = String(v || '').trim();
-              const k = norm(s);
-              if (!s || seen.has(k) || isBu(s) || (exKey && k === exKey)) return;
-              seen.add(k);
-              if (rawSupSet.has(k)) t2.push([s, 'Quarry / Raw Material Counterparty']);
-              else t3.push([s, 'Registered Counterparty']);
-            });
-            dlJvEl.innerHTML = items.concat(t2, t3).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
-          }
-          const sameAsOwner = Boolean(supVal && val('f_jv_partner') && norm(supVal) === norm(val('f_jv_partner')));
-          setHint(
-            'hint_site_jv_partner',
-            sameAsOwner
-              ? `Same as Default Site Owner above · pick a separate JV partner`
-              : (supVal
-                ? `Site Owner: ${supVal} · JV Partner: ${val('f_jv_partner') || 'Select partner'}`
-                : 'Profit-sharing partner (distinct from Site Owner)'),
-            sameAsOwner ? 'warn' : (val('f_jv_partner') ? 'ok' : '')
-          );
-          setHint('hint_site_jv_share', `${jvP}: ${jvS}% · ${jvCo}: ${round2(100 - jvS)}%`, 'ok');
-          setHint('hint_site_jv_company', `${jvCo} holds the remaining ${round2(100 - jvS)}% share`, '');
-        }
         const mTitle = $('modalTitle');
         const editingSiteRec = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord : null;
         if (mTitle && !STATE.editingPendingExpenseId) {
@@ -47764,6 +48358,129 @@
       });
     });
 
+    // 3. Upgrade clearable End Date / Effective To / optional <input type="date"> controls with 1-click × clear & single-keystroke Backspace/Delete
+    const isClearableDateInput = el => {
+      if (!el || el.classList.contains('date-native-proxy') || el.id === 'wfMapDateInput') return false;
+      if (el.dataset.clearableDate === '0') return false;
+      if (el.dataset.clearableDate === '1') return true;
+      const keyStr = `${el.id || ''} ${el.name || ''} ${el.getAttribute('data-mod-field') || ''}`;
+      if (/(?:^|[_\-\s])(end|enddate|end_date|effend|effective_to|resolved_date|to_date|valid_until|expiry_date)(?:$|[_\-\s])/i.test(keyStr)
+          || /(?:enddate|effend|tw_end|log_end|passend|ovend)/i.test(keyStr)) {
+        return true;
+      }
+      const fld = el.closest('.form-field, .ssm-field');
+      const lblEl = fld ? fld.querySelector('label') : (el.id ? body.querySelector(`label[for="${el.id}"]`) : null);
+      const lblTxt = String((lblEl && lblEl.textContent) || '').trim();
+      if (/\b(end\s+date|effective\s+to|resolved\s+date|blank\s*=|leave\s+open|optional)\b/i.test(lblTxt)) {
+        return true;
+      }
+      return false;
+    };
+
+    body.querySelectorAll('input[type="date"]').forEach(el => {
+      if (el.dataset.dateClearWired === '1') return;
+      if (!isClearableDateInput(el)) return;
+      el.dataset.dateClearWired = '1';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'pa-suggest-wrap pa-date-wrap';
+      el.parentNode.insertBefore(wrap, el);
+      wrap.appendChild(el);
+
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'pa-suggest-clear pa-date-clear';
+      clearBtn.tabIndex = -1;
+      clearBtn.hidden = true;
+      clearBtn.setAttribute('aria-label', 'Clear date (leave Open)');
+      clearBtn.setAttribute('data-ui-tip', 'Clear date (leave Open)');
+      clearBtn.innerHTML = CLEAR_X_SVG;
+      wrap.appendChild(clearBtn);
+
+      const getRawDateVal = () => (protoInputValDesc && protoInputValDesc.get) ? protoInputValDesc.get.call(el) : el.value;
+      const isDateLocked = () => Boolean(
+        el.disabled || el.readOnly || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id))
+      );
+      const syncDateClearBtn = () => {
+        const hasVal = !isDateLocked() && (
+          String(getRawDateVal() || '').trim().length > 0
+          || Boolean(el.validity && el.validity.badInput)
+        );
+        wrap.classList.toggle('has-value', hasVal);
+        clearBtn.hidden = !hasVal;
+      };
+      if (protoInputValDesc && protoInputValDesc.get && protoInputValDesc.set) {
+        try {
+          Object.defineProperty(el, 'value', {
+            configurable: true,
+            get() { return protoInputValDesc.get.call(this); },
+            set(v) {
+              if (String(v || '') === '' && this.validity && this.validity.badInput) {
+                protoInputValDesc.set.call(this, '2000-01-01');
+              }
+              protoInputValDesc.set.call(this, v);
+              syncDateClearBtn();
+            }
+          });
+        } catch (_) {}
+      }
+      syncDateClearBtn();
+
+      const clearDateVal = restoreFocus => {
+        if (isDateLocked()) return;
+        const hadVal = String(getRawDateVal() || '').trim().length > 0 || Boolean(el.validity && el.validity.badInput);
+        if (protoInputValDesc && protoInputValDesc.set) {
+          protoInputValDesc.set.call(el, '2000-01-01');
+          protoInputValDesc.set.call(el, '');
+        } else {
+          el.value = '2000-01-01';
+          el.value = '';
+        }
+        syncDateClearBtn();
+        if (restoreFocus) {
+          try { el.focus({ preventScroll: true }); } catch (_) {}
+        }
+        if (hadVal) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      };
+
+      let dateClearPointerDown = false;
+      const onDateClearActivate = ev => {
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (ev.type === 'mousedown') {
+          dateClearPointerDown = true;
+          const resetDateClearDown = () => { setTimeout(() => { dateClearPointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetDateClearDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && dateClearPointerDown) {
+          dateClearPointerDown = false;
+          return;
+        }
+        clearDateVal(true);
+      };
+      clearBtn.addEventListener('mousedown', onDateClearActivate);
+      clearBtn.addEventListener('click', onDateClearActivate);
+
+      el.addEventListener('input', syncDateClearBtn);
+      el.addEventListener('change', syncDateClearBtn);
+      el.addEventListener('keyup', syncDateClearBtn);
+      el.addEventListener('focus', syncDateClearBtn);
+      el.addEventListener('blur', syncDateClearBtn);
+      el.addEventListener('keydown', ev => {
+        if ((ev.key === 'Backspace' || ev.key === 'Delete') && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+          if (isDateLocked()) return;
+          const hasAny = String(getRawDateVal() || '').trim().length > 0 || Boolean(el.validity && el.validity.badInput);
+          if (!hasAny) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          clearDateVal(true);
+        }
+      });
+    });
+
     // Multi-Select Supplier Category popover (#supCategoryMultiWrap)
     const supMsWrap = body.querySelector('#supCategoryMultiWrap');
     const supMsTrig = body.querySelector('#supCategoryTrigger');
@@ -47915,6 +48632,7 @@
     FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
+    FORM_UI.siteAutoFilledFromCustomer = false; FORM_UI.custAutoFilledFromSite = false; FORM_UI.siteAutoFilledFromOwner = false; FORM_UI.lastSalesSiteCustKey = ''; FORM_UI.lastRawEffDate = val('f_date') || '';
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastSettleSupplier = val('f_supplier'); FORM_UI.lastDupSig = ''; FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
@@ -50694,8 +51412,8 @@
       };
     } else if (f === 'site') {
       const nm = val('f_site');
-      const isJvSite = !!($('f_isjv') && $('f_isjv').checked);
-      const inclTrans = !isJvSite && val('f_includes_transport') === '1';
+      const origSite = (editCtx && editCtx.crKey === 'sites' && editCtx.orig) ? editCtx.orig : null;
+      const inclTrans = val('f_includes_transport') === '1';
       if (!nm) addErr('f_site', 'Site Name is required.');
       else {
         const dup = findUniversalDuplicate('sites', nm, { excludeId: (editCtx && editCtx.crKey === 'sites') ? editCtx.id : '' });
@@ -50745,25 +51463,12 @@
           }
         }
       }
-      const supVal = val('f_supplier');
-      const custVal = !inclTrans ? val('f_customer') : '';
-      const jvPartnerVal = isJvSite ? val('f_jv_partner') : '';
-      const jvShareVal = isJvSite ? (num('f_jv_share') || 50) : 0;
-      const jvCoVal = isJvSite ? (val('f_jv_company') || company || 'WTC') : '';
-      if ((inclTrans || isJvSite) && !supVal) {
-        addErr('f_supplier', 'Default Site Owner (Supplier) is required for Bundled or JV Sites.');
-      }
-      if (!inclTrans && !isJvSite && !supVal && !custVal) {
-        addErr('f_supplier', 'Default Site Owner (Supplier) or Linked Customer is required.');
-      }
-      if (isJvSite) {
-        if (!jvPartnerVal) {
-          addErr('f_jv_partner', 'JV Partner is required when Joint-Venture (JV) Site is checked (apart from Default Site Owner).');
-        }
-        if (!(jvShareVal > 0 && jvShareVal < 100)) {
-          addErr('f_jv_share', 'JV Partner Share (%) must be between 1% and 99%.');
-        }
-      }
+      const supVal = (nm ? resolveSuppliersForSite(nm, company, date, '').activeSupplier : '') || (origSite && origSite.supplier) || '';
+      const custVal = !inclTrans ? ((nm ? resolveCustomersForSite(nm, company, date, '').activeCustomer : '') || (origSite && origSite.customer) || '') : '';
+      const isJvSite = Boolean(origSite && (origSite.is_jv || origSite.jv));
+      const jvPartnerVal = isJvSite ? (origSite.jv_partner || '') : '';
+      const jvShareVal = isJvSite ? (Number(origSite.jv_share) || 50) : 0;
+      const jvCoVal = isJvSite ? (origSite.jv_company || company || 'WTC') : '';
       const effSiteCat = (!isJvSite && !inclTrans && custVal && !supVal) ? 'customer' : 'supplier';
       record = {
         ...base,
@@ -52433,7 +53138,7 @@
         if (!isBuP) {
           const allSites = ((SEED.records && SEED.records.sites) || []).concat(STATE.customRecords.sites || []);
           allSites.forEach(s => {
-            if (s && !s.voided && norm(s.name) === norm(record.site) && resolveSiteCategory(s) === 'supplier') {
+            if (s && !s.voided && norm(s.name) === norm(record.site)) {
               s.is_jv = true;
               s.jv_partner = record.partner;
               s.jv_share = Number(record.percentage ?? record.share_pct ?? 50) || 50;
@@ -52441,6 +53146,9 @@
             }
           });
         }
+      }
+      if (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases') {
+        normalizeDistinctSiteCategories(SEED);
       }
       if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
         window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
@@ -52911,6 +53619,9 @@
     if (voidedTarget && (isEffVoidTbl || crKey === 'products')) {
       backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts);
       applyCustomRecordsToSeed();
+    }
+    if (crKey === 'jv_partnerships' || crKey === 'jv_distributions' || crKey === 'sites' || crKey === 'price_rules' || crKey === 'sales_tickets' || crKey === 'raw_purchases') {
+      normalizeDistinctSiteCategories(SEED);
     }
     saveLocalAuthAndRecords();
     renderApp();
@@ -54195,18 +54906,11 @@
       setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
       setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
     } else if (form === 'site') {
-      const isJvS = Boolean(row.is_jv || row.jv);
-      const inclTrS = !isJvS && isSupplierDeliveredSite(row);
+      const inclTrS = isSupplierDeliveredSite(row);
       setModalControlVal('f_includes_transport', inclTrS ? '1' : '0');
       setModalControlVal('f_region', row.region || row.geo_zone || '');
       if ($('f_region')) $('f_region').dataset.autoFromPlace = '0';
       setModalControlVal('f_site', row.name || row.site || '');
-      setModalControlVal('f_supplier', row.supplier || '');
-      setModalControlVal('f_customer', row.customer || '');
-      setModalControlVal('f_isjv', isJvS);
-      setModalControlVal('f_jv_partner', row.jv_partner || '');
-      setModalControlVal('f_jv_share', row.jv_share != null && Number(row.jv_share) > 0 ? row.jv_share : 50);
-      if (row.jv_company && $('f_jv_company')) setModalControlVal('f_jv_company', row.jv_company);
       setModalControlVal('f_lat', row.latitude != null && row.latitude !== '' ? row.latitude : '');
       setModalControlVal('f_lng', row.longitude != null && row.longitude !== '' ? row.longitude : '');
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
@@ -56496,11 +57200,6 @@
         { key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isSupplierDeliveredSite(r) },
         { key: 'name', label: 'Site Name *', type: 'text', sec: 1 },
         { key: 'region', label: (row && isSupplierDeliveredSite(row)) ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
-        { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
-        { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
-        { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
-        { key: 'jv_partner', label: 'JV Partner', type: 'combo', dl: 'dl_insp_counterparties', sec: 2, getVal: r => r.is_jv ? (r.jv_partner || 'Assaf') : (r.jv_partner || '') },
-        { key: 'jv_share', label: 'Partner Share (%)', type: 'number', step: '0.5', min: '0', max: '100', sec: 3, getVal: r => r.is_jv ? (r.jv_share || 50) : (r.jv_share ?? '') },
         { key: 'latitude', label: 'GPS Latitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'longitude', label: 'GPS Longitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'notes', label: 'Notes / Directions', type: 'text', sec: 3, span: true }
@@ -59213,28 +59912,15 @@
         const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(mLit) ? 0 : 1;
         html = `<span>Item: <b>${esc(mCls.item)} (${esc(mCls.category)})</b></span><span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, dec)} ${esc(mUom)}</b></span><span>${mCls.isDiesel ? 'Tank Impact' : 'Stock Impact'}: <b>${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${esc(mUom)} (${mLit >= 0 ? '+ deducts' : '- adds'})</b></span>`;
       } else if (key === 'sites') {
-        const isJvMod = (getModVal('is_jv') === 'Yes' || getModVal('is_jv') === 'true' || (!getModVal('is_jv') && Boolean(row.is_jv)));
-        const inclTrEl = $('insp_edit_includes_transport');
-        if (inclTrEl && isJvMod) inclTrEl.value = 'No';
-        const isBundledMod = !isJvMod && (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
-        const inclTrWrap = inclTrEl && inclTrEl.closest('.form-field');
-        if (inclTrWrap) inclTrWrap.hidden = isJvMod;
+        const isBundledMod = (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
         const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
         if (regLblMod) regLblMod.textContent = isBundledMod ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *';
-        ['jv_partner', 'jv_share'].forEach(fk => {
-          const el = $('insp_edit_' + fk);
-          const wrap = el && el.closest('.form-field');
-          if (wrap) wrap.hidden = !isJvMod;
-        });
-        const custEl = $('insp_edit_customer');
-        const custWrap = custEl && custEl.closest('.form-field');
-        if (custWrap) custWrap.hidden = isBundledMod;
         const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
-        const mSup = getModVal('supplier') || '—';
-        const mCust = !isBundledMod ? (getModVal('customer') || '—') : '—';
-        const mJvPart = isJvMod ? (getModVal('jv_partner') || row.jv_partner || 'Assaf') : '';
-        const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
-        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : (isJvMod ? 'JV 50/50 Site' : 'Standard Site (Separate Haul)')}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>Site Owner: <b>${esc(mSup)}</b></span>${!isBundledMod ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
+        const supRes = row && row.name ? resolveSuppliersForSite(row.name, '', SEED_DATE, '') : null;
+        const custRes = row && row.name ? resolveCustomersForSite(row.name, '', SEED_DATE, '') : null;
+        const mSup = (supRes && supRes.activeSupplier) || row.supplier || '';
+        const mCust = (custRes && custRes.activeCustomer) || row.customer || '';
+        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Standard Site (Separate Haul)'}</b></span><span>Region: <b>${esc(mReg)}</b></span>${mSup ? `<span>Active Supplier: <b>${esc(mSup)}</b></span>` : ''}${mCust ? `<span>Active Customer: <b>${esc(mCust)}</b></span>` : ''}`;
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -60066,19 +60752,17 @@
           const itemSuffix = mCls.isDiesel ? '' : ` · ${mCls.item}`;
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${itemSuffix}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         } else if (key === 'sites') {
-          row.site_category = (!row.is_jv && !isSupplierDeliveredSite(row) && row.customer && !row.supplier) ? 'customer' : 'supplier';
-          if ('is_jv' in pendingUpdates || 'jv_partner' in pendingUpdates || 'jv_share' in pendingUpdates) {
-            if (row.is_jv) {
-              row.jv_partner = String(row.jv_partner || 'Assaf').trim() || 'Assaf';
-              row.jv_share = Number(row.jv_share) > 0 ? Number(row.jv_share) : 50;
-              syncSiteJvPartnershipRecords(row);
-            } else {
-              row.jv_partner = '';
-            }
+          if ('includes_transport' in pendingUpdates) {
+            row.haulage_mode = row.includes_transport ? 'supplier_delivered' : 'separate';
           }
+          if ('region' in pendingUpdates) {
+            row.geo_zone = row.region || '';
+          }
+          row.site_category = (!row.is_jv && !isSupplierDeliveredSite(row) && row.customer && !row.supplier) ? 'customer' : 'supplier';
           if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
             window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
           }
+          normalizeDistinctSiteCategories(SEED);
         } else if (key === 'repair_items' || key === 'expense_items') {
           if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
             row.line_total = round2(Number(row.qty || 0) * Number(row.unit_cost || 0));
@@ -63466,8 +64150,9 @@
     const enrolSavedSamples = userFaceSamples(enrolUser);
     const capCount = FACE_STATE.enrolCaptures.length;
     const poseComplete = capCount >= 3;
-    const faceCount = STATE.users.filter(userHasFaceId).length;
-    const uCount = STATE.users.length;
+    const visUsers = getVisibleDirectoryUsers(activeUser());
+    const faceCount = visUsers.filter(userHasFaceId).length;
+    const uCount = visUsers.length;
 
     const cockpitCountEl = $('enrolCockpitCount');
     if (cockpitCountEl) {
@@ -67420,17 +68105,18 @@
       if (!k || seen.has(k)) return;
       const uCos = parseUserCompanies(u);
       const matchingEmp = activeEmps.find(x => x.k === k);
+      const viewerIsOwner = isOwner(activeUser());
       if (scopedCo) {
-        const hasCoAccess = Boolean(matchingEmp) || uCos.includes(scopedCo) || isAdminUser(u);
+        const hasCoAccess = Boolean(matchingEmp) || uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u));
         if (!hasCoAccess) return;
-      } else if (allowedCos.length && uCos.length && !uCos.some(c => allowedCos.includes(c)) && !isAdminUser(u)) {
+      } else if (allowedCos.length && uCos.length && !uCos.some(c => allowedCos.includes(c)) && !(viewerIsOwner && isAdminUser(u))) {
         return;
       }
       seen.add(k);
       const bio = bioMap[k] || null;
       const co = matchingEmp
         ? matchingEmp.empCo
-        : ((scopedCo && (uCos.includes(scopedCo) || isAdminUser(u)))
+        : ((scopedCo && (uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u))))
           ? scopedCo
           : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo));
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
@@ -75814,6 +76500,8 @@
         canViewHub,
         canViewView,
         userHasFaceId,
+        getVisibleDirectoryUsers,
+        getUserDirectoryScopeTier,
         setView,
         openEntryModal,
         showRecordInspector,
@@ -75995,6 +76683,24 @@
       selectSeatForEdit: (targetId, opts) => selectSeatForEdit(targetId, opts),
       saveSeatEditorForm: () => saveSeatEditorForm(),
       openEntryModal: (fid, prefill) => openEntryModal(fid, prefill),
+      getUserDirectoryScopeTier: emailOrUser => {
+        const u = typeof emailOrUser === 'string'
+          ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))
+          : (emailOrUser || activeUser());
+        return getUserDirectoryScopeTier(u);
+      },
+      getVisibleDirectoryUsers: emailOrUser => {
+        const u = typeof emailOrUser === 'string'
+          ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))
+          : (emailOrUser || activeUser());
+        return getVisibleDirectoryUsers(u);
+      },
+      getVisibleDirectorySessions: emailOrUser => {
+        const u = typeof emailOrUser === 'string'
+          ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))
+          : (emailOrUser || activeUser());
+        return getVisibleDirectorySessions(u);
+      },
       getEffectivePermissions: emailOrUser => {
         const u = typeof emailOrUser === 'string'
           ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))

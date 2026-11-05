@@ -334,7 +334,8 @@
 
       const salesAll = rawSales.map(r => {
         const m = String(r.method || '').trim();
-        const sign = (m === 'C Return' || m === 'CR Return' || m === 'Cash Return' || m === 'Credit Return' || r.return) ? -1 : ((m === 'Free' || m === 'Remove' || m === 'Config' || m === 'VATConfig') ? 0 : 1);
+        const pNorm = String(r.product || '').trim().toLowerCase();
+        const sign = (pNorm === 'remove' || m === 'Free' || m === 'Remove' || m === 'Config' || m === 'VATConfig') ? 0 : ((m === 'C Return' || m === 'CR Return' || m === 'Cash Return' || m === 'Credit Return' || r.return) ? -1 : 1);
         const totTtc = sign * Number(r.total_ttc !== undefined ? r.total_ttc : (r.total_usd !== undefined ? r.total_usd : (r.total || 0)));
         const vat = sign * Number(r.vat !== undefined ? r.vat : (r.vat_usd || 0));
         const isCash = m === 'Cash' || m === 'C Return' || m === 'Cash Return';
@@ -569,7 +570,7 @@
               total_usd: amt
             });
           }
-          return;
+          if (m === 'Cash VAT Dis' || m.toLowerCase() === 'vat paid') return;
         }
         if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
         if (Math.abs(amt) < 0.005) return;
@@ -2536,6 +2537,39 @@
       if (!r.is_ap_credit) return;
       addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.ap_credit_usd || 0), 0);
     });
+
+    if ((!asof || asof >= '2026-11-04') && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
+      const coKey = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+      const legRes = window.__mfgComputeThreeLegPayables({ company: coKey, ignorePeriod: true });
+      if (legRes && legRes.byNorm) {
+        const lastDateByNorm = new Map();
+        bySup.forEach((g, s) => {
+          const nk = String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const ck = nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+          const prev = lastDateByNorm.get(ck) || '';
+          if (g.lastDate && g.lastDate > prev) lastDateByNorm.set(ck, g.lastDate);
+        });
+        bySup.clear();
+        legRes.byNorm.forEach((lr, sk) => {
+          const s = lr.supplier || sk;
+          if (supFilter && supFilter !== 'ALL' && String(s).toLowerCase() !== String(supFilter).toLowerCase()) return;
+          const rmUsd = Number(lr.quarry_cr || 0);
+          const haulUsd = Number(lr.trans_cr || 0);
+          const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
+          const billed = rmUsd + haulUsd + expUsd;
+          const paid = Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0);
+          bySup.set(s, {
+            supplier: s,
+            rmUsd,
+            haulUsd,
+            expUsd,
+            billed,
+            paid,
+            lastDate: lastDateByNorm.get(sk) || asof || '2026-11-04'
+          });
+        });
+      }
+    }
 
     const rows = [...bySup.values()]
       .filter(g => Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01)

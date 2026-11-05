@@ -2680,9 +2680,8 @@
       }
     });
     if (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function') {
-      const payTargetCo = singleBu === 'WTC' ? 'wtc' : (singleBu === 'BBConstruction' ? 'bbconstruction' : (singleBu === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
       const payReg = window.__mfgComputeStaffPayrollRegister({
-        company: payTargetCo,
+        company: 'manufacturing-group',
         ignoreSearch: true,
         activeRange: null,
         cutoffMode: payCutoffStamp
@@ -2700,7 +2699,6 @@
           if (!sr || !sr.staff) return;
           const st = ensure(rel.staffByName, sr.staff, initStaff);
           if (!st) return;
-          if (sr.company) st.companies.add(sr.company);
           st.total_earned = round2((st.total_earned || 0) + Number(sr.earnings || 0));
           st.total_paid = round2((st.total_paid || 0) + Number(sr.paid || 0));
           st.rem_payment = round2((st.rem_payment || 0) + Number(sr.balance || 0));

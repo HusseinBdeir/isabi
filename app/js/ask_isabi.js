@@ -24,12 +24,29 @@
   };
 
   let _ctx = null;
+  let _attSeq = 0;
+  const VOICE_LANG_MAP = {
+    en: { bcp47: 'en-US', label: 'EN', name: 'English' },
+    ar: { bcp47: 'ar-LB', label: 'AR', name: 'العربية' },
+    fr: { bcp47: 'fr-FR', label: 'FR', name: 'Français' }
+  };
   const _chatState = {
     history: [],
     pending: null,
     typingFollowup: false,
     lastTurn: null,
-    wired: false
+    wired: false,
+    attachments: [],
+    voiceActive: false,
+    voiceLang: 'en',
+    voiceStartMs: 0,
+    voiceTimerId: null,
+    speechRec: null,
+    mediaRecorder: null,
+    mediaStream: null,
+    audioChunks: [],
+    voiceBaseText: '',
+    voiceInterimText: ''
   };
 
   function cleanOut(s) {
@@ -1538,8 +1555,9 @@
     if (/\b(kiosk|kiosks|thermal|printer|gate\s+pass|team|biometric|face\s+id|seat|seats|permission|permissions|role|roles|users)\b/i.test(effLow) ||
         /(بصمة الوجه|صلاحيات|مستخدمين|كشك|طباعة حرارية)/.test(cleanQ) ||
         /\b(borne|kiosque|imprimante|reconnaissance\s+faciale|utilisateurs?)\b/i.test(effLow)) {
-      const users = (_ctx.STATE && _ctx.STATE.users) || [];
+      const users = (typeof _ctx.getVisibleDirectoryUsers === 'function' ? _ctx.getVisibleDirectoryUsers(user) : (_ctx.STATE && _ctx.STATE.users)) || [];
       const faceCnt = (_ctx.userHasFaceId) ? users.filter(_ctx.userHasFaceId).length : 0;
+      const tier = typeof _ctx.getUserDirectoryScopeTier === 'function' ? _ctx.getUserDirectoryScopeTier(user) : 'owner';
       return {
         q: cleanQ,
         lang,
@@ -1783,9 +1801,829 @@
   }
 
   // ============================================================================
+  // FILE ATTACHMENT PARSER, LIVE ERP RECONCILIATION & VOICE RECORDING ENGINE
+  // ============================================================================
+  const AI_SVGS = {
+    paperclip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 10.5a7 7 0 0 0 14 0"/><line x1="12" y1="17.5" x2="12" y2="21.5"/><line x1="8.5" y1="21.5" x2="15.5" y2="21.5"/></svg>',
+    sheet: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="3.5" y1="15" x2="20.5" y2="15"/><line x1="9.5" y1="9.5" x2="9.5" y2="20.5"/></svg>',
+    doc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8Z"/><polyline points="14 2.5 14 8 19.5 8"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="17" x2="13.5" y2="17"/></svg>',
+    image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="8.8" cy="8.8" r="1.6"/><path d="m20.5 15.5-4.6-4.6L6.5 20.5"/></svg>',
+    audio: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 5.8a9 9 0 0 1 0 12.4"/></svg>',
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 5 19 12 7 19 7 5"/></svg>'
+  };
+
+  function formatBytes(bytes) {
+    const b = Number(bytes || 0);
+    if (b <= 0) return '0 B';
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function formatDuration(sec) {
+    const s = Math.max(0, Math.round(Number(sec || 0)));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  }
+
+  function detectAttachmentKind(name, mime) {
+    const n = String(name || '').toLowerCase();
+    const m = String(mime || '').toLowerCase();
+    if (m.startsWith('audio/') || /\.(webm|m4a|mp3|wav|ogg|aac)$/.test(n)) return 'audio';
+    if (m.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|svg)$/.test(n)) return 'image';
+    if (/\.(csv|tsv|xlsx?|json)$/.test(n) || /csv|spreadsheet|excel|json/.test(m)) return 'spreadsheet';
+    if (/\.pdf$/.test(n) || m.includes('pdf')) return 'pdf';
+    return 'document';
+  }
+
+  function splitCsvLine(line, delim) {
+    const out = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQ = !inQ;
+        }
+      } else if (ch === delim && !inQ) {
+        out.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  function parseNumericCell(val) {
+    if (typeof val === 'number') return Number.isFinite(val) ? val : NaN;
+    const s = String(val == null ? '' : val).trim();
+    if (!s || /^\d{4}-\d{2}-\d{2}$/.test(s) || /^#?[A-Za-z]+\d*$/.test(s)) return NaN;
+    const clean = s.replace(/[$,\s]|USD|LBP|LL/gi, '').replace(/^\((.+)\)$/, '-$1');
+    if (!/^[-+]?\d+(?:\.\d+)?$/.test(clean)) return NaN;
+    return Number(clean);
+  }
+
+  function parseTabularText(rawText, fileName) {
+    const text = String(rawText || '').trim();
+    if (!text) return null;
+
+    // 1. JSON array / object support
+    if ((text.startsWith('[') || text.startsWith('{')) && (/\.json$/i.test(fileName || '') || text.endsWith(']') || text.endsWith('}'))) {
+      try {
+        const parsed = JSON.parse(text);
+        const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.rows || parsed.records || parsed.data) ? (parsed.rows || parsed.records || parsed.data) : [parsed]);
+        const objs = arr.filter(x => x && typeof x === 'object');
+        if (objs.length) {
+          const headers = Object.keys(objs[0]).slice(0, 10);
+          const rows = objs.map(o => headers.map(h => String(o[h] == null ? '' : o[h])));
+          return summarizeParsedTable(headers, rows);
+        }
+      } catch (_) {}
+    }
+
+    // 2. CSV / TSV / Semicolon table support
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 1) return null;
+    const first = lines[0];
+    const delim = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
+    const allRows = lines.map(l => splitCsvLine(l, delim));
+    if (allRows.length >= 2 && allRows[0].length >= 2) {
+      const headers = allRows[0].map((h, idx) => cleanOut(h || `Col ${idx + 1}`));
+      const dataRows = allRows.slice(1).filter(r => r.some(c => String(c || '').trim() !== ''));
+      return summarizeParsedTable(headers, dataRows);
+    }
+    return null;
+  }
+
+  function summarizeParsedTable(headers, dataRows) {
+    if (!headers || !headers.length || !dataRows || !dataRows.length) return null;
+    const colCnt = headers.length;
+    let bestColIdx = -1;
+    let bestScore = -1;
+
+    for (let c = 0; c < colCnt; c++) {
+      const hLow = String(headers[c] || '').toLowerCase();
+      if (/\b(id|ticket|voucher|invoice|no|number|code|date|phone|year)\b/.test(hLow) && !/\b(total|amount|usd|balance|price|cost|net|ttc)\b/.test(hLow)) {
+        continue;
+      }
+      let validNums = 0;
+      for (let r = 0; r < Math.min(dataRows.length, 40); r++) {
+        const n = parseNumericCell(dataRows[r][c]);
+        if (Number.isFinite(n)) validNums++;
+      }
+      if (!validNums) continue;
+      let weight = validNums;
+      if (/\b(total_ttc|total|amount|usd|balance|net|sales|cost|expense|payable|receivable|ar|ap|price)\b/.test(hLow)) weight += 100;
+      else if (/\b(qty|tons|loads|litres|volume)\b/.test(hLow)) weight += 40;
+      if (weight >= bestScore) {
+        bestScore = weight;
+        bestColIdx = c;
+      }
+    }
+
+    let numericSum = 0;
+    let numericCol = '';
+    let isMoneyCol = false;
+    if (bestColIdx >= 0) {
+      numericCol = headers[bestColIdx];
+      isMoneyCol = /\b(total|amount|usd|balance|net|sales|cost|expense|payable|receivable|ar|ap|price|ttc|salary|paid)\b|\$/i.test(numericCol);
+      for (let r = 0; r < dataRows.length; r++) {
+        const n = parseNumericCell(dataRows[r][bestColIdx]);
+        if (Number.isFinite(n)) numericSum += n;
+      }
+    }
+
+    return {
+      colHeaders: headers,
+      rowCount: dataRows.length,
+      numericCol,
+      numericSum,
+      isMoneyCol,
+      parsedRows: dataRows.slice(0, 25)
+    };
+  }
+
+  function extractReadableDocText(rawStr) {
+    const s = String(rawStr || '');
+    if (!s) return '';
+    if (s.startsWith('%PDF-')) {
+      const chunks = [];
+      const tjRe = /\(([^()\\]{2,160})\)\s*Tj/g;
+      let m;
+      while ((m = tjRe.exec(s)) && chunks.length < 120) {
+        chunks.push(m[1]);
+      }
+      if (chunks.length) return cleanOut(chunks.join(' '));
+    }
+    return cleanOut(s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]+/g, ' ').replace(/\s+/g, ' ').slice(0, 6000));
+  }
+
+  function buildAttachmentMetaObject(rawDesc) {
+    const name = cleanOut(rawDesc.name || 'attachment');
+    const mime = String(rawDesc.type || rawDesc.mime || '');
+    const size = Number(rawDesc.size || (rawDesc.text ? rawDesc.text.length : 0));
+    const kind = rawDesc.kind || detectAttachmentKind(name, mime);
+    const att = {
+      id: 'att_' + (++_attSeq),
+      name,
+      kind,
+      mime,
+      size,
+      sizeLabel: formatBytes(size),
+      thumbUrl: rawDesc.thumbUrl || rawDesc.dataUrl || '',
+      audioUrl: rawDesc.audioUrl || '',
+      durationSec: Number(rawDesc.durationSec || 0),
+       voiceLang: rawDesc.voiceLang || '',
+      textContent: '',
+      colHeaders: [],
+      rowCount: 0,
+      numericCol: '',
+      numericSum: 0,
+      isMoneyCol: false,
+      parsedRows: [],
+      summaryLine: formatBytes(size)
+    };
+
+    if (rawDesc.text != null) {
+      att.textContent = extractReadableDocText(rawDesc.text);
+      const tab = parseTabularText(rawDesc.text, name);
+      if (tab && tab.rowCount > 0) {
+        att.kind = 'spreadsheet';
+        att.colHeaders = tab.colHeaders;
+        att.rowCount = tab.rowCount;
+        att.numericCol = tab.numericCol;
+        att.numericSum = tab.numericSum;
+        att.isMoneyCol = tab.isMoneyCol;
+        att.parsedRows = tab.parsedRows;
+        const sumPart = tab.numericCol
+          ? ` · ${tab.isMoneyCol ? fmtMoney(tab.numericSum, 2) : fmtInt(tab.numericSum, 1)}`
+          : '';
+        att.summaryLine = `${tab.rowCount} ${tab.rowCount === 1 ? 'row' : 'rows'}${sumPart}`;
+      } else if (att.kind === 'pdf') {
+        att.summaryLine = `PDF Document · ${att.sizeLabel}`;
+      } else if (att.textContent) {
+        const lineCnt = String(rawDesc.text).split(/\r?\n/).filter(Boolean).length;
+        att.summaryLine = `${lineCnt} ${lineCnt === 1 ? 'line' : 'lines'} · ${att.sizeLabel}`;
+      }
+    } else if (att.kind === 'audio') {
+      att.summaryLine = `Voice Note${att.durationSec ? ' · ' + formatDuration(att.durationSec) : ''}${att.voiceLang ? ' · ' + att.voiceLang.toUpperCase() : ''}`;
+    } else if (att.kind === 'image') {
+      att.summaryLine = `Image · ${att.sizeLabel}`;
+    }
+    return att;
+  }
+
+  function readFileAsAttachment(file) {
+    return new Promise(resolve => {
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      // Plain descriptor object (used by programmatic API / headless tests / voice notes)
+      if (!(typeof Blob !== 'undefined' && file instanceof Blob)) {
+        resolve(buildAttachmentMetaObject(file));
+        return;
+      }
+      const name = file.name || 'attachment';
+      const mime = file.type || '';
+      const size = file.size || 0;
+      const kind = detectAttachmentKind(name, mime);
+
+      if (kind === 'image' && typeof FileReader !== 'undefined') {
+        const fr = new FileReader();
+        fr.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind, dataUrl: String(fr.result || '') }));
+        fr.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+        fr.readAsDataURL(file);
+        return;
+      }
+      if (kind === 'audio') {
+        let audioUrl = '';
+        try {
+          if (typeof URL !== 'undefined' && URL.createObjectURL) audioUrl = URL.createObjectURL(file);
+        } catch (_) {}
+        resolve(buildAttachmentMetaObject({
+          name,
+          type: mime,
+          size,
+          kind: 'audio',
+          audioUrl,
+          durationSec: file.durationSec || 0,
+          voiceLang: file.voiceLang || ''
+        }));
+        return;
+      }
+      if (typeof FileReader !== 'undefined') {
+        const fr = new FileReader();
+        fr.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind, text: String(fr.result || '') }));
+        fr.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+        fr.readAsText(file);
+        return;
+      }
+      resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
+    });
+  }
+
+  async function attachFiles(fileListOrArr) {
+    if (!fileListOrArr) return [];
+    const list = Array.isArray(fileListOrArr) ? fileListOrArr : Array.from(fileListOrArr);
+    const added = [];
+    for (let i = 0; i < list.length; i++) {
+      if (_chatState.attachments.length >= 5) break;
+      const item = list[i];
+      if (!item) continue;
+      if (!(typeof Blob !== 'undefined' && item instanceof Blob)) {
+        const syncAtt = buildAttachmentMetaObject(item);
+        _chatState.attachments.push(syncAtt);
+        added.push(syncAtt);
+      } else {
+        const asyncAtt = await readFileAsAttachment(item);
+        if (asyncAtt) {
+          _chatState.attachments.push(asyncAtt);
+          added.push(asyncAtt);
+        }
+      }
+    }
+    renderAttachmentBar();
+    return added;
+  }
+
+  function removeAttachment(attId) {
+    _chatState.attachments = _chatState.attachments.filter(a => a && a.id !== attId);
+    renderAttachmentBar();
+  }
+
+  function clearAttachments() {
+    _chatState.attachments = [];
+    renderAttachmentBar();
+  }
+
+  function iconForAttachment(kind) {
+    if (kind === 'spreadsheet') return AI_SVGS.sheet;
+    if (kind === 'image') return AI_SVGS.image;
+    if (kind === 'audio') return AI_SVGS.audio;
+    return AI_SVGS.doc;
+  }
+
+  function renderAttachmentBar() {
+    const bar = document.getElementById('aiAttachmentBar');
+    const btn = document.getElementById('aiAttachBtn');
+    const badge = document.getElementById('aiAttachCountBadge');
+    const cnt = _chatState.attachments.length;
+
+    if (btn) btn.classList.toggle('has-files', cnt > 0);
+    if (badge) {
+      badge.hidden = cnt === 0;
+      badge.textContent = String(cnt);
+    }
+    if (!bar) return;
+    if (!cnt) {
+      bar.hidden = true;
+      bar.innerHTML = '';
+      return;
+    }
+    bar.hidden = false;
+    bar.innerHTML = _chatState.attachments.map(a => {
+      const leadVisual = (a.kind === 'image' && a.thumbUrl)
+        ? `<img src="${esc(a.thumbUrl)}" alt="${esc(a.name)}" class="ai-att-thumb">`
+        : `<span class="ai-att-ico">${iconForAttachment(a.kind)}</span>`;
+      return `
+        <div class="ai-att-chip" data-att-id="${esc(a.id)}" data-att-kind="${esc(a.kind)}">
+          ${leadVisual}
+          <div class="ai-att-meta">
+            <span class="ai-att-name">${esc(a.name)}</span>
+            <span class="ai-att-sub">${esc(a.summaryLine || a.sizeLabel)}</span>
+          </div>
+          <button type="button" class="ai-att-rm" data-ai-remove-att="${esc(a.id)}" aria-label="Remove ${esc(a.name)}">✕</button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Reconcile attached files (CSV/Excel/JSON/PDF/Image) against live scoped SEED.records
+  function buildAttachmentAnalysisAnswer(cleanQ, scope, turnAtts) {
+    if (!Array.isArray(turnAtts) || !turnAtts.length) return null;
+    const nonAudioAtts = turnAtts.filter(a => a && a.kind !== 'audio');
+    if (!nonAudioAtts.length) return null;
+
+    const lang = detectLang(cleanQ);
+    const primary = nonAudioAtts[0];
+    const combinedCorpus = [
+      cleanQ,
+      ...nonAudioAtts.map(a => `${a.name} ${a.textContent || ''}`)
+    ].join(' ');
+    const lowCorpus = combinedCorpus.toLowerCase();
+
+    // Cross-match ticket numbers (#1045, ticket 1045, or first-column numbers in a spreadsheet)
+    const candidateTickets = new Set();
+    const tktMatches = combinedCorpus.match(/(?:\bticket\s*#?|\bvoucher\s*#?|\binvoice\s*#?|#)\s*([A-Za-z0-9-]{2,18})\b/gi) || [];
+    tktMatches.forEach(m => {
+      const cleaned = m.replace(/^(?:ticket|voucher|invoice|\s|#)+/i, '').trim().toLowerCase();
+      if (cleaned.length >= 2) candidateTickets.add(cleaned);
+    });
+    if (primary.kind === 'spreadsheet' && primary.colHeaders.length && primary.parsedRows.length) {
+      const tktColIdx = primary.colHeaders.findIndex(h => /\b(ticket|voucher|invoice|serial|ref|no)\b/i.test(h));
+      if (tktColIdx >= 0) {
+        primary.parsedRows.forEach(r => {
+          const v = String(r[tktColIdx] || '').replace(/^#/, '').trim().toLowerCase();
+          if (v.length >= 2) candidateTickets.add(v);
+        });
+      }
+    }
+
+    const matchedErpTickets = [];
+    const missingTickets = [];
+    if (candidateTickets.size > 0 && _ctx && _ctx.SEED && _ctx.SEED.records) {
+      const pools = [
+        { key: 'sales_tickets', label: 'Sales Ticket', view: 'sales' },
+        { key: 'raw_purchases', label: 'Quarry Ticket', view: 'raw' },
+        { key: 'expenses', label: 'Expense Voucher', view: 'expenses' },
+        { key: 'fuel_intakes', label: 'Fuel Entry', view: 'fleet' }
+      ];
+      candidateTickets.forEach(tNo => {
+        let found = null;
+        for (const p of pools) {
+          const rows = scopedRows(p.key, scope, { ignorePeriod: true });
+          const hit = rows.find(r => norm(r.ticket_no || r.invoice_no || r.voucher_no || '') === tNo);
+          if (hit) {
+            found = { pool: p, row: hit };
+            break;
+          }
+        }
+        if (found) matchedErpTickets.push(found);
+        else missingTickets.push(tNo);
+      });
+    }
+
+    // Cross-match Counterparties (Customers & Suppliers) mentioned in file or caption
+    const matchedCustomers = [];
+    const matchedSuppliers = [];
+    const hasWordMatch = (haystackLow, needleRaw) => {
+      const nLow = String(needleRaw || '').trim().toLowerCase();
+      if (nLow.length < 4) return false;
+      const escN = nLow.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(?:^|[^a-z0-9])${escN}(?:$|[^a-z0-9])`, 'i');
+      return re.test(haystackLow);
+    };
+    if (_ctx && _ctx.SEED && _ctx.SEED.records) {
+      const custs = _ctx.SEED.records.customers || [];
+      const mCusts = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).customers || [];
+      for (let i = 0; i < custs.length; i++) {
+        const c = custs[i];
+        if (!c || c.voided || !c.name || c.name.length < 4) continue;
+        if (hasWordMatch(lowCorpus, c.name)) {
+          const mHit = mCusts.find(x => norm(x.Customer || x.name) === norm(c.name));
+          matchedCustomers.push({
+            id: c.id,
+            name: c.name,
+            loads: mHit ? Number(mHit.loads || 0) : 0,
+            sales: mHit ? Number(mHit.sales_ttc || 0) : 0,
+            ar: mHit ? Number(mHit.ar_balance || 0) : 0
+          });
+        }
+      }
+      matchedCustomers.sort((a, b) => (b.sales - a.sales) || (b.ar - a.ar));
+
+      const sups = _ctx.SEED.records.suppliers || [];
+      const mSups = ((_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {}).suppliers || [];
+      for (let i = 0; i < sups.length; i++) {
+        const s = sups[i];
+        if (!s || s.voided || !s.name || s.name.length < 4) continue;
+        if (hasWordMatch(lowCorpus, s.name)) {
+          const mHit = mSups.find(x => norm(x.Supplier || x.name) === norm(s.name));
+          matchedSuppliers.push({
+            id: s.id,
+            name: s.name,
+            loads: mHit ? Number(mHit.raw_loads || 0) : 0,
+            cost: mHit ? Number(mHit.raw_cost || 0) + Number(mHit.expenses || 0) : 0,
+            ap: mHit ? Number(mHit.ap_balance || 0) : 0
+          });
+        }
+      }
+      matchedSuppliers.sort((a, b) => (b.cost - a.cost) || (b.ap - a.ap));
+    }
+
+    const bullets = [];
+    const actions = [];
+
+    if (matchedErpTickets.length > 0) {
+      const erpSum = matchedErpTickets.reduce((a, x) => {
+        const r = x.row;
+        return a + Number(r.total_ttc != null ? r.total_ttc : (r.total != null ? r.total : (r.amount || 0)));
+      }, 0);
+      bullets.push(`Live Register Match: <b>${fmtInt(matchedErpTickets.length)}</b> voucher/ticket ${matchedErpTickets.length === 1 ? 'number matches' : 'numbers match'} live records totaling <b>${fmtMoney(erpSum, 2)}</b>${missingTickets.length ? ` · <b>${fmtInt(missingTickets.length)}</b> ticket ref(s) (${esc(missingTickets.slice(0, 4).join(', '))}) not found in ${esc(scope.scopeCoLabel)}` : ' (100% matched)'}.`);
+      const firstHit = matchedErpTickets[0];
+      actions.push({
+        type: 'inspect',
+        crKey: firstHit.pool.key,
+        id: firstHit.row.id,
+        label: `Inspect #${firstHit.row.ticket_no || firstHit.row.id}`
+      });
+    } else if (missingTickets.length > 0) {
+      bullets.push(`Unrecorded Ticket Check: Ticket ref(s) <b>#${esc(missingTickets.slice(0, 4).join(', #'))}</b> were not found in <b>${esc(scope.scopeCoLabel)}</b> live registers.`);
+    }
+
+    if (matchedCustomers.length > 0) {
+      matchedCustomers.slice(0, 2).forEach(cItem => {
+        bullets.push(`Matched Customer Ledger (<b>${esc(cItem.name)}</b>): <b>${fmtInt(cItem.loads)}</b> live loads · Billed <b>${fmtMoney(cItem.sales, 2)}</b> · Open AR <b>${fmtMoney(cItem.ar, 2)}</b>.`);
+      });
+      const c0 = matchedCustomers[0];
+      actions.push({ type: 'inspect', crKey: 'customers', id: c0.id, label: `360° ${c0.name}` });
+    }
+    if (matchedSuppliers.length > 0) {
+      matchedSuppliers.slice(0, 2).forEach(sItem => {
+        bullets.push(`Matched Supplier Ledger (<b>${esc(sItem.name)}</b>): <b>${fmtInt(sItem.loads)}</b> quarry/haulage loads · Total Spend <b>${fmtMoney(sItem.cost, 2)}</b> · Open AP <b>${fmtMoney(sItem.ap, 2)}</b>.`);
+      });
+      const s0 = matchedSuppliers[0];
+      actions.push({ type: 'inspect', crKey: 'suppliers', id: s0.id, label: `360° ${s0.name}` });
+    }
+
+    // Case A: Spreadsheet / CSV / TSV / JSON attachment
+    if (primary.kind === 'spreadsheet' && primary.rowCount > 0) {
+      const previewCols = primary.colHeaders.slice(0, 4);
+      const previewRows = primary.parsedRows.slice(0, 6).map(r => previewCols.map((_, idx) => cleanOut(r[idx] != null ? r[idx] : '-')));
+      const totalLabel = primary.numericCol
+        ? (primary.isMoneyCol ? fmtMoney(primary.numericSum, 2) : fmtInt(primary.numericSum, 2))
+        : `${fmtInt(primary.rowCount)} rows`;
+
+      if (!actions.some(a => a.type === 'view')) {
+        actions.push({ type: 'view', view: matchedSuppliers.length ? 'suppliers' : 'sales', label: matchedSuppliers.length ? 'Suppliers & Payables' : 'Sales & Receivables' });
+        actions.push({ type: 'form', form: matchedSuppliers.length ? 'raw' : 'sales', label: matchedSuppliers.length ? '+ New Raw Ticket' : '+ New Sales Ticket' });
+      }
+
+      return {
+        q: cleanQ,
+        lang,
+        instantLocal: !isReasoningQuery(cleanQ),
+        topic: 'attachment',
+        title: `File Reconciliation · ${primary.name}`,
+        answer: `Parsed <b>${esc(primary.name)}</b> (<b>${fmtInt(primary.rowCount)}</b> ${primary.rowCount === 1 ? 'row' : 'rows'} across <b>${fmtInt(primary.colHeaders.length)}</b> columns${primary.numericCol ? `, column <b>${esc(primary.numericCol)}</b> total: <b>${totalLabel}</b>` : ''}) and cross-checked against <b>${esc(scope.fullScopeLabel)}</b>.`,
+        bullets: bullets.length ? bullets : [
+          `Detected Columns: <b>${esc(primary.colHeaders.slice(0, 6).join(', '))}</b>`
+        ],
+        headers: previewCols.length ? previewCols : undefined,
+        rows: previewRows.length ? previewRows : undefined,
+        total: primary.numericCol && previewCols.length >= 2 ? [`Sheet Total (${primary.rowCount} rows)`, totalLabel] : undefined,
+        promptText: 'Would you like to inspect the matched ERP records or post a new entry from this sheet?',
+        actions,
+        followUps: [
+          `Show ${scope.scopeCoLabel} summary`,
+          'Show overdue receivables',
+          'Check open AI Sentinel alerts'
+        ]
+      };
+    }
+
+    // Case B: Image / Receipt / Weighbridge Slip photo
+    if (primary.kind === 'image') {
+      const isFuel = /fuel|diesel|mazout|tank/i.test(lowCorpus);
+      const isRaw = /quarry|raw|supplier|hauler|sand|gravel/i.test(lowCorpus);
+      const isDefect = /defect|broken|repair|leak|damage|tire|hydraulic/i.test(lowCorpus);
+      const targetForm = isDefect ? 'defect' : (isFuel ? 'fuel' : (isRaw ? 'raw' : (matchedSuppliers.length ? 'expense' : 'sales')));
+      const targetFormLbl = isDefect ? '+ Report Defect' : (isFuel ? '+ New Fuel Entry' : (isRaw ? '+ New Raw Ticket' : (matchedSuppliers.length ? '+ New Expense' : '+ New Sales Ticket')));
+
+      actions.push({ type: 'form', form: targetForm, label: targetFormLbl });
+      actions.push({ type: 'view', view: isDefect ? 'fleet_maint' : (isFuel ? 'fleet' : 'daily_ops'), label: 'Open Register' });
+
+      return {
+        q: cleanQ,
+        lang,
+        instantLocal: !isReasoningQuery(cleanQ),
+        topic: 'attachment',
+        title: `Visual Attachment · ${primary.name}`,
+        answer: `Attached image <b>${esc(primary.name)}</b> (${esc(primary.sizeLabel)}) under <b>${esc(scope.fullScopeLabel)}</b>${matchedErpTickets.length || matchedCustomers.length || matchedSuppliers.length ? ' and linked matching live ledger records below' : '. Ready to log or reconcile against your active operational registers'}.`,
+        bullets: bullets.length ? bullets : [
+          `Quick Action: Open <b>${esc(targetFormLbl)}</b> to post this voucher or inspect live ${esc(scope.scopeCoLabel)} registers.`
+        ],
+        promptText: 'Would you like to post a voucher from this image or inspect matching accounts?',
+        actions,
+        followUps: [
+          'Show today\'s daily operations',
+          'Check pending-price vouchers',
+          'Show top expense categories'
+        ]
+      };
+    }
+
+    // Case C: PDF / Document / Text file
+    const dollarHits = (primary.textContent || '').match(/\$\s?\d[\d,]*(?:\.\d{2})?/g) || [];
+    if (dollarHits.length) {
+      bullets.push(`Detected Document Amounts: <b>${esc(dollarHits.slice(0, 5).join(' · '))}</b>`);
+    }
+    if (!bullets.length && primary.textContent) {
+      bullets.push(`Document Excerpt: "${esc(primary.textContent.slice(0, 140))}${primary.textContent.length > 140 ? '...' : ''}"`);
+    }
+    actions.push({ type: 'view', view: 'statements', label: 'Printable Statements' });
+    actions.push({ type: 'form', form: 'expense', label: '+ New Expense' });
+
+    return {
+      q: cleanQ,
+      lang,
+      instantLocal: !isReasoningQuery(cleanQ),
+      topic: 'attachment',
+      title: `Document Analysis · ${primary.name}`,
+      answer: `Reviewed attached document <b>${esc(primary.name)}</b> (${esc(primary.summaryLine)}) against active scope <b>${esc(scope.fullScopeLabel)}</b>.`,
+      bullets,
+      promptText: 'Would you like to open Printable Statements or inspect matched accounts?',
+      actions,
+      followUps: [
+        `Give me an executive briefing & open alerts`,
+        'Show Accounts Payable breakdown',
+        'Show overdue receivables'
+      ]
+    };
+  }
+
+  // Voice Recording & Multilingual Speech-to-Text (EN / AR / FR)
+  function syncVoiceBarUi() {
+    const voiceBar = document.getElementById('aiVoiceBar');
+    const voiceBtn = document.getElementById('aiVoiceBtn');
+    const timerEl = document.getElementById('aiVoiceTimer');
+    const statusLbl = document.getElementById('aiVoiceStatusText');
+    const active = Boolean(_chatState.voiceActive);
+
+    if (voiceBtn) {
+      voiceBtn.classList.toggle('is-recording', active);
+      voiceBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    if (!voiceBar) return;
+    voiceBar.hidden = !active;
+    if (!active) return;
+
+    const elapsedSec = _chatState.voiceStartMs ? Math.floor((Date.now() - _chatState.voiceStartMs) / 1000) : 0;
+    if (timerEl) timerEl.textContent = formatDuration(elapsedSec);
+    const lInfo = VOICE_LANG_MAP[_chatState.voiceLang] || VOICE_LANG_MAP.en;
+    if (statusLbl) {
+      statusLbl.textContent = _chatState.voiceInterimText
+        ? cleanOut(_chatState.voiceInterimText).slice(-48)
+        : `Listening (${lInfo.name})...`;
+    }
+    voiceBar.querySelectorAll('[data-ai-voice-lang]').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-ai-voice-lang') === _chatState.voiceLang);
+    });
+  }
+
+  function stopVoiceHardwareStreams() {
+    if (_chatState.voiceTimerId) {
+      clearInterval(_chatState.voiceTimerId);
+      _chatState.voiceTimerId = null;
+    }
+    if (_chatState.speechRec) {
+      try {
+        _chatState.speechRec.onresult = null;
+        _chatState.speechRec.onerror = null;
+        _chatState.speechRec.onend = null;
+        _chatState.speechRec.stop();
+      } catch (_) {}
+      _chatState.speechRec = null;
+    }
+    if (_chatState.mediaRecorder && _chatState.mediaRecorder.state !== 'inactive') {
+      try { _chatState.mediaRecorder.stop(); } catch (_) {}
+    }
+    _chatState.mediaRecorder = null;
+    if (_chatState.mediaStream) {
+      try { _chatState.mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      _chatState.mediaStream = null;
+    }
+  }
+
+  function startSpeechRecognitionInstance() {
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (!SpeechRec || isAutoTest) return;
+
+    try {
+      const rec = new SpeechRec();
+      const lInfo = VOICE_LANG_MAP[_chatState.voiceLang] || VOICE_LANG_MAP.en;
+      rec.lang = lInfo.bcp47;
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = ev => {
+        if (!_chatState.voiceActive) return;
+        let finalChunk = '';
+        let interimChunk = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const t = ev.results[i][0] ? ev.results[i][0].transcript : '';
+          if (ev.results[i].isFinal) finalChunk += t + ' ';
+          else interimChunk += t;
+        }
+        if (finalChunk) {
+          _chatState.voiceBaseText = (_chatState.voiceBaseText ? _chatState.voiceBaseText + ' ' : '') + finalChunk.trim();
+        }
+        _chatState.voiceInterimText = interimChunk.trim();
+        const combined = [_chatState.voiceBaseText, _chatState.voiceInterimText].filter(Boolean).join(' ').trim();
+        const inp = document.getElementById('aiInput');
+        if (inp && combined) {
+          inp.value = combined;
+          inp.dir = /[\u0600-\u06FF]/.test(combined) || _chatState.voiceLang === 'ar' ? 'rtl' : 'ltr';
+        }
+        syncVoiceBarUi();
+      };
+      rec.onerror = () => {};
+      rec.onend = () => {
+        if (_chatState.voiceActive && _chatState.speechRec === rec) {
+          try { rec.start(); } catch (_) {}
+        }
+      };
+      _chatState.speechRec = rec;
+      rec.start();
+    } catch (_) {}
+  }
+
+  function startVoiceRecording(opts = {}) {
+    if (_chatState.voiceActive) {
+      return stopVoiceRecording(opts);
+    }
+    const inp = document.getElementById('aiInput');
+    if (opts && opts.lang && VOICE_LANG_MAP[opts.lang]) {
+      _chatState.voiceLang = opts.lang;
+    } else if (inp && inp.value && /[\u0600-\u06FF]/.test(inp.value)) {
+      _chatState.voiceLang = 'ar';
+    }
+    _chatState.voiceActive = true;
+    _chatState.voiceStartMs = Date.now();
+    _chatState.voiceBaseText = inp ? inp.value.trim() : '';
+    _chatState.voiceInterimText = '';
+    _chatState.audioChunks = [];
+    syncVoiceBarUi();
+
+    _chatState.voiceTimerId = setInterval(() => {
+      if (!_chatState.voiceActive) return;
+      syncVoiceBarUi();
+    }, 500);
+
+    startSpeechRecognitionInstance();
+
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (!isAutoTest && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function' && typeof MediaRecorder !== 'undefined') {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        if (!_chatState.voiceActive) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+        _chatState.mediaStream = stream;
+        const mr = new MediaRecorder(stream);
+        mr.ondataavailable = e => {
+          if (e.data && e.data.size > 0) _chatState.audioChunks.push(e.data);
+        };
+        _chatState.mediaRecorder = mr;
+        mr.start();
+      }).catch(() => {});
+    }
+    return true;
+  }
+
+  function stopVoiceRecording(opts = {}) {
+    if (!_chatState.voiceActive && !(opts && opts.transcript)) return null;
+    const elapsedSec = Math.max(1, Math.round((Date.now() - (_chatState.voiceStartMs || Date.now())) / 1000));
+    const recordedDuration = Number(opts.durationSec || elapsedSec);
+    const activeLang = (opts && opts.lang && VOICE_LANG_MAP[opts.lang]) ? opts.lang : _chatState.voiceLang;
+
+    let audioUrl = '';
+    if (_chatState.audioChunks && _chatState.audioChunks.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+      try {
+        const blob = new Blob(_chatState.audioChunks, { type: 'audio/webm' });
+        audioUrl = URL.createObjectURL(blob);
+      } catch (_) {}
+    }
+
+    stopVoiceHardwareStreams();
+    _chatState.voiceActive = false;
+
+    const inp = document.getElementById('aiInput');
+    const finalTranscript = cleanOut(
+      opts.transcript != null
+        ? opts.transcript
+        : ((inp && inp.value.trim()) || [_chatState.voiceBaseText, _chatState.voiceInterimText].filter(Boolean).join(' '))
+    );
+    if (inp && finalTranscript) {
+      inp.value = finalTranscript;
+      inp.dir = /[\u0600-\u06FF]/.test(finalTranscript) || activeLang === 'ar' ? 'rtl' : 'ltr';
+    }
+    _chatState.voiceInterimText = '';
+    syncVoiceBarUi();
+
+    // Attach voice note metadata pill when a voice note was captured or explicitly stopped with audio
+    let voiceAtt = null;
+    if (audioUrl || opts.attachVoiceNote !== false) {
+      voiceAtt = buildAttachmentMetaObject({
+        name: `Voice Note (${(VOICE_LANG_MAP[activeLang] || VOICE_LANG_MAP.en).label})`,
+        kind: 'audio',
+        type: 'audio/webm',
+        size: recordedDuration * 6400,
+        audioUrl,
+        durationSec: recordedDuration,
+        voiceLang: activeLang
+      });
+      // Replace any previous unsubmitted voice note pill so rapid re-records stay clean
+      _chatState.attachments = _chatState.attachments.filter(a => a.kind !== 'audio');
+      _chatState.attachments.push(voiceAtt);
+      renderAttachmentBar();
+    }
+
+    if (opts && opts.autoSend) {
+      const qToSend = finalTranscript || (activeLang === 'ar' ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة' : (activeLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts'));
+      if (inp) inp.value = '';
+      submitQuestion(qToSend, { fromVoice: true });
+    }
+    return { transcript: finalTranscript, durationSec: recordedDuration, lang: activeLang, attachment: voiceAtt };
+  }
+
+  function cancelVoiceRecording() {
+    stopVoiceHardwareStreams();
+    _chatState.voiceActive = false;
+    _chatState.voiceInterimText = '';
+    const inp = document.getElementById('aiInput');
+    if (inp) inp.value = _chatState.voiceBaseText || '';
+    syncVoiceBarUi();
+  }
+
+  function setVoiceLang(lang) {
+    if (!VOICE_LANG_MAP[lang]) return;
+    _chatState.voiceLang = lang;
+    if (_chatState.voiceActive) {
+      if (_chatState.speechRec) {
+        try {
+          _chatState.speechRec.onend = null;
+          _chatState.speechRec.stop();
+        } catch (_) {}
+        _chatState.speechRec = null;
+      }
+      startSpeechRecognitionInstance();
+    }
+    syncVoiceBarUi();
+  }
+
+  function speakBotReply(rawHtml, lang) {
+    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' '));
+    if (!plain) return false;
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAutoTest || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      return true;
+    }
+    try {
+      window.speechSynthesis.cancel();
+      const utt = new window.SpeechSynthesisUtterance(plain);
+      utt.lang = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
+      utt.rate = 1.02;
+      window.speechSynthesis.speak(utt);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ============================================================================
   // HYBRID CLOUD + CLIENT LLM LAYER FOR OPEN-ENDED ANALYTICAL QUESTIONS
   // ============================================================================
-  function buildLlmContextMessages(cleanQ, lang, scope, fallback) {
+  function buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts = []) {
     const user = scope.user;
     const win = computeWindowSummary(scope);
     const k = win.k;
@@ -1804,6 +2642,16 @@
       domainDetail = `\nDomain Register Detail (${cleanOut(fallback.title || 'Scoped View')}): ${plainAns}${plainRows}`;
     }
 
+    let attDetail = '';
+    if (Array.isArray(turnAtts) && turnAtts.length) {
+      attDetail = '\nAttached Files / Voice Notes:\n' + turnAtts.map(a => {
+        const sample = a.parsedRows && a.parsedRows.length
+          ? ' | Sample rows: ' + a.parsedRows.slice(0, 4).map(r => r.join(', ')).join(' ; ')
+          : (a.textContent ? ' | Excerpt: ' + a.textContent.slice(0, 300) : '');
+        return `- ${a.name} (${a.kind}, ${a.summaryLine || a.sizeLabel})${sample}`;
+      }).join('\n');
+    }
+
     const kpiLine = [
       `Scope: ${scope.fullScopeLabel} (Basis: ${scope.basis === 'tx' ? 'Transaction Date' : 'Reporting Date'})`,
       `${salesLabel(user)}: ${fmtMoney(k.sales_ttc, 0)} across ${fmtInt(k.loads)} loads (${fmtInt(k.tons_sold, 0)} tons)`,
@@ -1815,7 +2663,8 @@
       canHub('cashflow', user) ? `Cash Till: ${fmtMoney(k.cash_till, 2)}` : '',
       canHub('fleet', user) ? `Diesel Dispensed: ${fmtInt(k.diesel_litres, 0)} L` : '',
       `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 3).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
-      domainDetail
+      domainDetail,
+      attDetail
     ].filter(Boolean).join('\n');
 
     const sysPrompt = [
@@ -1867,6 +2716,8 @@
         bullets: fallback.bullets,
         promptText: obj.promptText ? cleanOut(obj.promptText) : fallback.promptText,
         actions: fallback.actions,
+        attachments: fallback.attachments,
+        fromVoice: fallback.fromVoice,
         followUps: Array.isArray(obj.followUps) && obj.followUps.length
           ? obj.followUps.slice(0, 3).map(cleanOut).filter(Boolean)
           : fallback.followUps
@@ -1876,11 +2727,11 @@
     }
   }
 
-  async function callHybridCommandLlm(cleanQ, lang, scope, fallback) {
+  async function callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts = []) {
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (isAutoTest) return fallback;
 
-    const messages = buildLlmContextMessages(cleanQ, lang, scope, fallback);
+    const messages = buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts);
     const askCfg = window.MFG_ASK_CFG || {};
     let flowUrl = '';
     let flowKey = '';
@@ -1986,12 +2837,28 @@
         <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. Active scope is <b>${esc(scope.fullScopeLabel)}</b> (${tbOk ? 'books tied at <b>$0.00</b>' : 'review trial balance'} · <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}).</p>
       </div>
       <div class="ai-msg-followup">
-        <div class="ai-followup-lead">Ask anything in English, العربية, or Français, or pick a live check:</div>
+        <div class="ai-followup-lead">Ask anything in English, العربية, or Français, record a voice note, or attach a file:</div>
         <div class="ai-followup-chips">
           ${starterChips.map(c => `<button type="button" class="ai-followup-chip" data-ask-chip="${esc(c)}">${esc(c)}</button>`).join('')}
         </div>
       </div>
     `;
+  }
+
+  function renderUserAttachmentsHtml(atts) {
+    if (!Array.isArray(atts) || !atts.length) return '';
+    return `<div class="ai-user-att-list">${atts.map(a => {
+      if (a.kind === 'image' && a.thumbUrl) {
+        return `<div class="ai-user-att-card"><img src="${esc(a.thumbUrl)}" alt="${esc(a.name)}" class="ai-user-att-img"><span>${esc(a.name)} · ${esc(a.sizeLabel)}</span></div>`;
+      }
+      if (a.kind === 'audio') {
+        const playBtn = a.audioUrl
+          ? `<button type="button" class="ai-voice-play-btn" data-ai-play-audio="${esc(a.audioUrl)}" aria-label="Play voice note">${AI_SVGS.play}</button>`
+          : `<span class="ai-att-ico">${AI_SVGS.audio}</span>`;
+        return `<div class="ai-user-att-card">${playBtn}<span>${esc(a.name)}${a.durationSec ? ' · ' + esc(formatDuration(a.durationSec)) : ''}</span></div>`;
+      }
+      return `<div class="ai-user-att-card"><span class="ai-att-ico">${iconForAttachment(a.kind)}</span><span>${esc(a.name)} · ${esc(a.summaryLine || a.sizeLabel)}</span></div>`;
+    }).join('')}</div>`;
   }
 
   function renderTurnHtml(item, isNewest) {
@@ -2017,13 +2884,21 @@
       ? `<ul class="ai-bot-list">${item.bullets.map(b => `<li>${b}</li>`).join('')}</ul>`
       : '';
 
-    const actionsHtml = Array.isArray(item.actions) && item.actions.length
-      ? `<div class="ai-bot-actions">${item.actions.map((a, idx) => {
+    const baseActions = Array.isArray(item.actions) ? item.actions.slice() : [];
+    if (item.fromVoice && !baseActions.some(a => a.type === 'speak')) {
+      baseActions.push({ type: 'speak', lang: item.lang || 'en', label: 'Read Aloud' });
+    }
+
+    const actionsHtml = baseActions.length
+      ? `<div class="ai-bot-actions">${baseActions.map((a, idx) => {
           if (a.type === 'inspect') {
             return `<button type="button" class="ai-act-btn" data-ai-inspect-key="${esc(a.crKey)}" data-ai-inspect-id="${esc(a.id)}">${esc(a.label)}</button>`;
           }
           if (a.type === 'form') {
             return `<button type="button" class="ai-act-btn" data-ai-open-form="${esc(a.form)}">${esc(a.label)}</button>`;
+          }
+          if (a.type === 'speak') {
+            return `<button type="button" class="ai-act-btn" data-ai-speak="${esc(a.lang || 'en')}">${esc(a.label)}</button>`;
           }
           return `<button type="button" class="ai-act-btn${idx === 0 ? ' is-primary' : ''}" data-ai-goto-view="${esc(a.view)}">${esc(a.label)}</button>`;
         }).join('')}</div>`
@@ -2047,8 +2922,10 @@
       `;
     }
 
+    const userAttHtml = renderUserAttachmentsHtml(item.attachments);
+
     return `
-      <div class="ai-msg-user"${uDirAttr}>${esc(item.q)}</div>
+      <div class="ai-msg-user"${uDirAttr}>${userAttHtml}<div>${esc(item.q)}</div></div>
       <div class="ai-msg-bot"${dirAttr}>
         ${item.title ? `<div class="ai-bot-eyebrow">${esc(item.title)}</div>` : ''}
         <p class="ai-bot-p">${item.answer}</p>
@@ -2060,12 +2937,13 @@
     `;
   }
 
-  function renderThinkingHtml(qText, lang) {
+  function renderThinkingHtml(qText, lang, atts) {
     const lbl = lang === 'ar' ? 'جاري فحص السجلات الحية...' : (lang === 'fr' ? 'Analyse des écritures en direct...' : 'Checking live records...');
     const uDir = /[\u0600-\u06FF]/.test(qText || '') ? ' dir="rtl"' : '';
     const bDir = lang === 'ar' ? ' dir="rtl" style="text-align:right"' : '';
+    const userAttHtml = renderUserAttachmentsHtml(atts);
     return `
-      <div class="ai-msg-user"${uDir}>${esc(qText)}</div>
+      <div class="ai-msg-user"${uDir}>${userAttHtml}<div>${esc(qText)}</div></div>
       <div class="ai-msg-bot ai-msg-pending"${bDir}>
         <span class="ai-pending-lbl">${esc(lbl)}</span>
         <span class="ai-typing-indicator" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -2125,7 +3003,7 @@
     }
     const lastIdx = _chatState.history.length - 1;
     const html = _chatState.history.map((it, idx) => renderTurnHtml(it, idx === lastIdx && !_chatState.pending)).join('')
-      + (_chatState.pending ? renderThinkingHtml(_chatState.pending.q, _chatState.pending.lang) : '');
+      + (_chatState.pending ? renderThinkingHtml(_chatState.pending.q, _chatState.pending.lang, _chatState.pending.attachments) : '');
     log.innerHTML = html;
     if (scrollToBottom) log.scrollTop = log.scrollHeight;
   }
@@ -2143,19 +3021,53 @@
     };
   }
 
-  function submitQuestion(qRaw) {
-    const cleanQ = String(qRaw || '').trim();
-    if (!cleanQ || !_ctx) return;
+  function submitQuestion(qRaw, opts = {}) {
+    if (!_ctx) return;
+    if (_chatState.voiceActive) {
+      stopVoiceRecording({ attachVoiceNote: true });
+    }
+    const turnAtts = _chatState.attachments.slice();
+    const hasNonAudioAtt = turnAtts.some(a => a && a.kind !== 'audio');
+    const hasAudioAtt = turnAtts.some(a => a && a.kind === 'audio');
+
+    let cleanQ = String(qRaw || '').trim();
+    if (!cleanQ && turnAtts.length) {
+      const f0 = turnAtts[0];
+      cleanQ = f0.kind === 'audio'
+        ? 'Give me an executive briefing & open alerts'
+        : `Analyze attached file ${f0.name} and reconcile with live records`;
+    }
+    if (!cleanQ) return;
+
+    clearAttachments();
 
     const user = getActiveUser();
     const lang = detectLang(cleanQ);
     const scope = resolveQueryScope(cleanQ, user);
-    const directHit = buildLiveDataAnswer(cleanQ, scope);
+    const fromVoice = Boolean((opts && opts.fromVoice) || hasAudioAtt);
+
+    // If a file (spreadsheet/image/PDF/doc) is attached, run live ERP attachment reconciliation
+    // unless the user also asked a specific live-SQL question that isn't generic "Analyze attached file..."
+    const attHit = hasNonAudioAtt ? buildAttachmentAnalysisAnswer(cleanQ, scope, turnAtts) : null;
+    const sqlHit = buildLiveDataAnswer(cleanQ, scope);
+    const directHit = (attHit && (/^Analyze attached file\b|\b(file|sheet|csv|attachment|attached|receipt|image|photo|pdf|document|reconcile)\b/i.test(cleanQ) || !sqlHit))
+      ? attHit
+      : (sqlHit || attHit);
+
+    const decorateReply = rep => {
+      if (!rep) return rep;
+      return Object.assign({}, rep, {
+        q: cleanQ,
+        attachments: turnAtts.length ? turnAtts : undefined,
+        fromVoice
+      });
+    };
+
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
 
     // Synchronous path for automated headless suites
     if (isAutoTest) {
-      const syncAns = directHit || buildExecutiveBriefing(cleanQ, lang, scope, true);
+      const syncAns = decorateReply(directHit || buildExecutiveBriefing(cleanQ, lang, scope, true));
       rememberTurnScope(scope, syncAns);
       _chatState.pending = null;
       _chatState.typingFollowup = false;
@@ -2165,18 +3077,19 @@
       return;
     }
 
-    _chatState.pending = { q: cleanQ, lang };
+    _chatState.pending = { q: cleanQ, lang, attachments: turnAtts };
     _chatState.typingFollowup = false;
     renderThread(true);
 
-    // Fast path (<180ms): exact live-SQL intent, specific counterparty/ticket lookup, or greeting
+    // Fast path (<180ms): exact live-SQL intent, file reconciliation, specific counterparty/ticket lookup, or greeting
     if (directHit && directHit.instantLocal) {
+      const decoratedFast = decorateReply(directHit);
       setTimeout(() => {
         if (!_chatState.pending || _chatState.pending.q !== cleanQ) return;
-        rememberTurnScope(scope, directHit);
+        rememberTurnScope(scope, decoratedFast);
         _chatState.pending = null;
         _chatState.typingFollowup = true;
-        _chatState.history.push(directHit);
+        _chatState.history.push(decoratedFast);
         if (_chatState.history.length > 12) _chatState.history.shift();
         renderThread(true);
         setTimeout(() => {
@@ -2188,11 +3101,11 @@
     }
 
     // Hybrid path: Live-SQL grounded snapshot + Dual-IP Cloud/Browser LLM reasoning
-    const fallback = directHit || buildExecutiveBriefing(cleanQ, lang, scope, false);
+    const fallback = decorateReply(directHit || buildExecutiveBriefing(cleanQ, lang, scope, false));
     const minBeat = new Promise(r => setTimeout(r, 240));
-    Promise.all([callHybridCommandLlm(cleanQ, lang, scope, fallback), minBeat]).then(([resolved]) => {
+    Promise.all([callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts), minBeat]).then(([resolved]) => {
       if (!_chatState.pending || _chatState.pending.q !== cleanQ) return;
-      const finalAns = resolved || fallback;
+      const finalAns = decorateReply(resolved || fallback);
       rememberTurnScope(scope, finalAns);
       _chatState.pending = null;
       _chatState.typingFollowup = true;
@@ -2219,6 +3132,7 @@
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
     if (_ctx && typeof _ctx.closeRail === 'function') _ctx.closeRail();
+    ensureComposerControlsMounted();
     syncHeaderAndChips(true);
     askDrawer.classList.add('open');
     askDrawer.setAttribute('aria-hidden', 'false');
@@ -2234,6 +3148,7 @@
   }
 
   function closeDrawer() {
+    if (_chatState.voiceActive) cancelVoiceRecording();
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
     askDrawer.classList.remove('open');
@@ -2241,6 +3156,8 @@
   }
 
   function resetThread() {
+    if (_chatState.voiceActive) cancelVoiceRecording();
+    clearAttachments();
     _chatState.history = [];
     _chatState.pending = null;
     _chatState.typingFollowup = false;
@@ -2249,8 +3166,104 @@
     renderThread(false);
   }
 
+  function ensureComposerControlsMounted() {
+    const askForm = document.getElementById('aiForm');
+    const askInput = document.getElementById('aiInput');
+    if (!askForm || !askInput || document.getElementById('aiComposerRow')) return;
+
+    const submitBtn = askForm.querySelector('button[type="submit"]');
+
+    const attachBar = document.createElement('div');
+    attachBar.className = 'ai-attach-bar';
+    attachBar.id = 'aiAttachmentBar';
+    attachBar.hidden = true;
+
+    const voiceBar = document.createElement('div');
+    voiceBar.className = 'ai-voice-bar';
+    voiceBar.id = 'aiVoiceBar';
+    voiceBar.hidden = true;
+    voiceBar.innerHTML = `
+      <div class="ai-voice-status">
+        <span class="ai-rec-dot" aria-hidden="true"></span>
+        <span class="ai-voice-timer" id="aiVoiceTimer">0:00</span>
+        <span class="ai-voice-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+        <span id="aiVoiceStatusText">Listening (English)...</span>
+      </div>
+      <div class="ai-voice-controls">
+        <div class="ai-voice-langs" role="group" aria-label="Voice Recognition Language">
+          <button type="button" class="ai-voice-lang-btn active" data-ai-voice-lang="en">EN</button>
+          <button type="button" class="ai-voice-lang-btn" data-ai-voice-lang="ar">AR</button>
+          <button type="button" class="ai-voice-lang-btn" data-ai-voice-lang="fr">FR</button>
+        </div>
+        <button type="button" class="ai-voice-act-btn" id="aiVoiceCancelBtn">Cancel</button>
+        <button type="button" class="ai-voice-act-btn" id="aiVoiceStopBtn">Done</button>
+        <button type="button" class="ai-voice-act-btn is-send" id="aiVoiceSendBtn">Send</button>
+      </div>
+    `;
+
+    const row = document.createElement('div');
+    row.className = 'ai-composer-row';
+    row.id = 'aiComposerRow';
+
+    const fileInp = document.createElement('input');
+    fileInp.type = 'file';
+    fileInp.id = 'aiFileInput';
+    fileInp.multiple = true;
+    fileInp.accept = 'image/*,.pdf,.csv,.tsv,.txt,.json,.xls,.xlsx,.doc,.docx,audio/*';
+    fileInp.hidden = true;
+
+    const attachBtn = document.createElement('button');
+    attachBtn.type = 'button';
+    attachBtn.className = 'ai-tool-btn';
+    attachBtn.id = 'aiAttachBtn';
+    attachBtn.setAttribute('data-ui-tip', 'Attach receipt photo, CSV/Excel sheet, PDF, or document (or drag & drop / paste)');
+    attachBtn.setAttribute('aria-label', 'Attach file');
+    attachBtn.innerHTML = `${AI_SVGS.paperclip}<span class="ai-tool-badge" id="aiAttachCountBadge" hidden>0</span>`;
+
+    const voiceBtn = document.createElement('button');
+    voiceBtn.type = 'button';
+    voiceBtn.className = 'ai-tool-btn';
+    voiceBtn.id = 'aiVoiceBtn';
+    voiceBtn.setAttribute('data-ui-tip', 'Record voice question or note (EN / العربية / FR)');
+    voiceBtn.setAttribute('aria-label', 'Record voice');
+    voiceBtn.setAttribute('aria-pressed', 'false');
+    voiceBtn.innerHTML = AI_SVGS.mic;
+
+    row.appendChild(fileInp);
+    row.appendChild(attachBtn);
+    row.appendChild(voiceBtn);
+    row.appendChild(askInput);
+    if (submitBtn) row.appendChild(submitBtn);
+
+    askForm.appendChild(attachBar);
+    askForm.appendChild(voiceBar);
+    askForm.appendChild(row);
+
+    attachBtn.addEventListener('click', () => fileInp.click());
+    fileInp.addEventListener('change', () => {
+      if (fileInp.files && fileInp.files.length) {
+        attachFiles(fileInp.files);
+        fileInp.value = '';
+      }
+    });
+
+    voiceBtn.addEventListener('click', () => {
+      if (_chatState.voiceActive) stopVoiceRecording({ attachVoiceNote: true });
+      else startVoiceRecording();
+    });
+
+    askInput.addEventListener('paste', e => {
+      const items = e.clipboardData && e.clipboardData.files;
+      if (items && items.length) {
+        e.preventDefault();
+        attachFiles(items);
+      }
+    });
+  }
+
   function init(ctx) {
     _ctx = ctx;
+    ensureComposerControlsMounted();
     syncHeaderAndChips(true);
     if (_chatState.wired) return;
     _chatState.wired = true;
@@ -2272,14 +3285,69 @@
       askForm.addEventListener('submit', e => {
         e.preventDefault();
         const v = askInput.value.trim();
-        if (!v) return;
+        if (!v && !_chatState.attachments.length && !_chatState.voiceActive) return;
         askInput.value = '';
+        askInput.dir = 'ltr';
         submitQuestion(v);
       });
     }
 
     if (askDrawer) {
+      askDrawer.addEventListener('dragover', e => {
+        e.preventDefault();
+        askDrawer.classList.add('is-drag-over');
+      });
+      askDrawer.addEventListener('dragleave', e => {
+        if (!askDrawer.contains(e.relatedTarget)) {
+          askDrawer.classList.remove('is-drag-over');
+        }
+      });
+      askDrawer.addEventListener('drop', e => {
+        e.preventDefault();
+        askDrawer.classList.remove('is-drag-over');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+          attachFiles(e.dataTransfer.files);
+        }
+      });
+
       askDrawer.addEventListener('click', e => {
+        const rmAttBtn = e.target.closest('[data-ai-remove-att]');
+        if (rmAttBtn) {
+          removeAttachment(rmAttBtn.getAttribute('data-ai-remove-att'));
+          return;
+        }
+        const vLangBtn = e.target.closest('[data-ai-voice-lang]');
+        if (vLangBtn) {
+          setVoiceLang(vLangBtn.getAttribute('data-ai-voice-lang'));
+          return;
+        }
+        if (e.target.closest('#aiVoiceCancelBtn')) {
+          cancelVoiceRecording();
+          return;
+        }
+        if (e.target.closest('#aiVoiceStopBtn')) {
+          stopVoiceRecording({ attachVoiceNote: true });
+          return;
+        }
+        if (e.target.closest('#aiVoiceSendBtn')) {
+          stopVoiceRecording({ attachVoiceNote: true, autoSend: true });
+          return;
+        }
+        const playBtn = e.target.closest('[data-ai-play-audio]');
+        if (playBtn) {
+          const url = playBtn.getAttribute('data-ai-play-audio');
+          if (url && typeof Audio !== 'undefined') {
+            try { new Audio(url).play().catch(() => {}); } catch (_) {}
+          }
+          return;
+        }
+        const speakBtn = e.target.closest('[data-ai-speak]');
+        if (speakBtn) {
+          const botBubble = speakBtn.closest('.ai-msg-bot');
+          const pEl = botBubble ? botBubble.querySelector('.ai-bot-p') : null;
+          speakBotReply(pEl ? pEl.innerHTML : '', speakBtn.getAttribute('data-ai-speak') || 'en');
+          return;
+        }
         const chip = e.target.closest('#aiChips .ai-pill-btn');
         if (chip) {
           submitQuestion(chip.getAttribute('data-prompt') || chip.textContent);
@@ -2321,11 +3389,30 @@
     close: closeDrawer,
     reset: resetThread,
     ask: submitQuestion,
+    attachFiles,
+    removeAttachment,
+    clearAttachments,
+    startVoice: startVoiceRecording,
+    stopVoice: stopVoiceRecording,
+    cancelVoice: cancelVoiceRecording,
+    setVoiceLang,
+    speak: speakBotReply,
     syncScope: syncHeaderAndChips,
     answer: answerHtmlSnapshot,
     getState: () => ({
       turns: _chatState.history.length,
       pending: Boolean(_chatState.pending),
+      voiceActive: Boolean(_chatState.voiceActive),
+      voiceLang: _chatState.voiceLang,
+      attachments: _chatState.attachments.map(a => ({
+        id: a.id,
+        name: a.name,
+        kind: a.kind,
+        size: a.size,
+        rowCount: a.rowCount,
+        numericSum: a.numericSum,
+        summaryLine: a.summaryLine
+      })),
       lastReply: _chatState.history[_chatState.history.length - 1] || null
     })
   };

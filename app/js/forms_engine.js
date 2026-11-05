@@ -501,7 +501,7 @@
     const priorSettled = (rec.settlements || []).reduce((sum, sp) => {
       if (!sp || sp.voided || (company && sp.company && sp.company !== company) || norm(sp.supplier) !== sNorm) return sum;
       const m = String(sp.method || '').trim();
-      if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return sum;
+      if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return sum;
       return sum + Number(sp.amount || 0) + Number(sp.discount || 0);
     }, 0);
 
@@ -1144,6 +1144,33 @@
           .concat((rec.items || []).map(r => r && (r.default_location || r.warehouse_location))),
         fIdx && fIdx.warehouseLoc
       );
+      const itemSubcats = uniqSorted(
+        [
+          'Filters (Oil, Fuel, Air, Hydraulic)',
+          'Tires, Tubes & Rims',
+          'Electrical, Batteries & Motors',
+          'Brakes, Clutch & Drivetrain',
+          'Hydraulic Hoses, Pumps & Cylinders',
+          'Conveyor Belts, Rollers & Pulleys',
+          'Bearings & Bushings',
+          'Crusher & Screen Wear Parts',
+          'Bolts, Nuts, Pins & Fasteners',
+          'Engine, Cooling & Mechanical Parts',
+          'Engine Oil (15W-40)',
+          'Hydraulic Oil (68)',
+          'Gear & Transmission Oil (90 / ATF)',
+          'Grease & Lubrication',
+          'Diesel',
+          'Gasoline (Benzine)',
+          'Fuel Additives & AdBlue',
+          'Hand & Power Tools',
+          'Welding & Cutting Consumables',
+          'Safety Gear, PPE & Workshop Supplies'
+        ]
+          .concat((rec.expense_subcategories || []).map(r => r && r.name))
+          .concat((rec.items || []).map(r => r && r.subcategory)),
+        fIdx && fIdx.subcategory
+      );
       return `
         <div class="form-grid-3">
           ${secHdr('1. Catalog Item Identity & Locked Unit (Universal Catalog · All BUs)')}
@@ -1155,6 +1182,7 @@
             ['Plant Consumables', 'Plant Consumables'],
             ['Fuel', 'Fuel']
           ], 'Spare Parts'), { id: 'wrap_f_item_cat' })}
+          ${fld('Subcategory *', inp('f_item_subcat', 'text', '', 'list="dl_item_subcats" placeholder="Select or type subcategory..."') + dl('dl_item_subcats', itemSubcats), { id: 'wrap_f_item_subcat', hint: 'Links item to its Expense Subcategory across Equipment & Warehouse.' })}
           ${fld('Frozen Unit (UoM) *', sel('f_uom', [
             ['Piece', 'Piece (pcs)'],
             ['Set', 'Set'],
@@ -1166,25 +1194,12 @@
           ${fld('Reference Unit Price ($)', inp('f_default_cost', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_f_default_cost' })}
           ${fld('Default Warehouse Store', inp('f_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
           ${fld('Min Reorder Alert Qty', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock' })}
-          <div class="form-field span-3" id="wrap_f_item_compat">
-            <label>Connected Equipment Units <span class="exp-qc-lock-inline">(Controls which fleet or plant classes can use this item)</span></label>
-            <input type="hidden" id="f_item_compat" value="">
-            <div class="exp-qc-chip-row" id="itemCompatEquipBar" role="group" aria-label="Connected equipment classes">
-              <button type="button" class="exp-qc-eq-chip active" data-item-compat-chip="all">All Units</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Truck">Trucks</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Wheel Loader">Loaders</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Excavator">Excavators</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Plant">Plant &amp; Crusher</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Generator">Generators</button>
-              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Vehicle">Vehicles</button>
-            </div>
-          </div>
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM part code, storage shelf, or supplier note..."'), { span: 3 })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM part code, storage shelf, or supplier note..."'), { span: 2 })}
         </div>
         <div class="live-calc" id="itemCatalogLiveCalc">
           <div><small>Catalog Scope</small><b id="calc_item_scope">All Entities (Shared)</b></div>
+          <div><small>Subcategory</small><b id="calc_item_subcat">All Subcategories</b></div>
           <div><small>Frozen Unit</small><b id="calc_item_uom">Piece</b></div>
-          <div><small>Connected Units</small><b id="calc_item_compat">All Units</b></div>
           <div><small>Reference Price</small><b id="calc_item_cost">$0.00</b></div>
         </div>
       `;
@@ -1299,13 +1314,12 @@
       const bundledSiteCount = activeSites.filter(s => !s.is_jv && !s.jv && Boolean(s.includes_transport || s.haulage_mode === 'supplier_delivered')).length;
       const separateSiteCount = Math.max(0, activeSites.length - bundledSiteCount);
       const defBundled = activeSitesTblVw === 'bundled';
-      const jvPartnerMetaItems = buildJvPartnerMetaItems();
       return `
         <div class="form-grid-3">
           <div class="form-field span-3" id="quarryHaulageModeDeck">
             <label><span class="pa-fld-lbl">Site Location &amp; Transportation Basis *</span></label>
             <div class="quarry-mode-deck" role="radiogroup" aria-label="Quarry Transportation Mode">
-              <button type="button" class="quarry-mode-card quarry-mode-separate${!defBundled ? ' active' : ''}" data-quarry-bundled="0" aria-pressed="${!defBundled ? 'true' : 'false'}">
+              <button type="button" class="quarry-mode-card site-cat-card quarry-mode-separate${!defBundled ? ' active' : ''}" data-quarry-bundled="0" aria-pressed="${!defBundled ? 'true' : 'false'}">
                 <span class="quarry-mode-icon">${ic('truck')}</span>
                 <span class="quarry-mode-body">
                   <span class="quarry-mode-title-row">
@@ -1318,9 +1332,9 @@
                     <span class="quarry-mode-tag">Material + Haulage Tracked Separately</span>
                   </span>
                 </span>
-                <span class="quarry-mode-check" aria-hidden="true">${!defBundled ? '✓ Selected' : 'Select'}</span>
+                <span class="quarry-mode-check site-cat-check" aria-hidden="true">${!defBundled ? '✓ Selected' : 'Select'}</span>
               </button>
-              <button type="button" class="quarry-mode-card quarry-mode-bundled${defBundled ? ' active' : ''}" data-quarry-bundled="1" aria-pressed="${defBundled ? 'true' : 'false'}">
+              <button type="button" class="quarry-mode-card site-cat-card quarry-mode-bundled${defBundled ? ' active' : ''}" data-quarry-bundled="1" aria-pressed="${defBundled ? 'true' : 'false'}">
                 <span class="quarry-mode-icon">${ic('box')}</span>
                 <span class="quarry-mode-body">
                   <span class="quarry-mode-title-row">
@@ -1333,7 +1347,7 @@
                     <span class="quarry-mode-tag is-brass">Includes Supplier Transport</span>
                   </span>
                 </span>
-                <span class="quarry-mode-check" aria-hidden="true">${defBundled ? '✓ Selected' : 'Select'}</span>
+                <span class="quarry-mode-check site-cat-check" aria-hidden="true">${defBundled ? '✓ Selected' : 'Select'}</span>
               </button>
             </div>
             <input type="hidden" id="f_includes_transport" value="${defBundled ? '1' : '0'}">
@@ -1351,34 +1365,6 @@
             hint: defBundled ? 'Bundled quarry source (material + transport included in supplier price).' : 'Must be located inside the selected Region.',
             hintId: 'hint_site_name'
           })}
-          <div class="form-field span-3" id="wrap_site_counterparties" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0">
-            ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier (if quarry/source)..."') + dl('dl_suppliers', supNames), {
-              id: 'wrap_site_supplier',
-              afterHtml: `<div class="site-jv-subbar" id="wrap_site_jv"><label class="site-jv-toggle-pill" for="f_isjv"><input type="checkbox" id="f_isjv"><span class="site-jv-toggle-lbl"><b>Joint-Venture (JV) Site</b> · 50/50 partner split</span></label></div>`
-            })}
-            ${fld('Linked Customer (Optional)', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer (if delivery site)..."') + dl('dl_customers', custNames), {
-              id: 'wrap_site_customer',
-              hidden: defBundled,
-              hint: 'Auto-fills Customer when this site is selected on a Sales Delivery ticket.'
-            })}
-          </div>
-          <div class="site-jv-partner-row span-3" id="wrap_site_jv_details" hidden>
-            ${fld('JV Partner *', inp('f_jv_partner', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner..."') + dlMeta('dl_jv_partners', jvPartnerMetaItems), {
-              id: 'wrap_site_jv_partner',
-              hint: 'Profit-sharing partner (distinct from Site Owner)',
-              hintId: 'hint_site_jv_partner'
-            })}
-            ${fld('Partner Share (%) *', inp('f_jv_share', 'number', '50', 'step="0.5" min="1" max="99"'), {
-              id: 'wrap_site_jv_share',
-              hint: `Partner: 50% · ${company || 'WTC'}: 50%`,
-              hintId: 'hint_site_jv_share'
-            })}
-            ${fld('Operating Company (BU)', sel('f_jv_company', comps, company || 'WTC'), {
-              id: 'wrap_site_jv_company',
-              hint: `${company || 'WTC'} holds the remaining 50% share`,
-              hintId: 'hint_site_jv_company'
-            })}
-          </div>
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste lat, lng or Maps link"'))}
