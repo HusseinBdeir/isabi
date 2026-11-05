@@ -40,6 +40,7 @@
   }
 
   function saleTicketSign(s) {
+    if (!s || s.voided || normKey(s.product) === 'remove') return 0;
     const mth = String((s && s.method) || '').trim();
     if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') return -1;
     if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') return 0;
@@ -1313,7 +1314,7 @@
       : ((typeof window !== 'undefined' && window.SEED && window.SEED.records && window.SEED.records.sites) || []);
     const supplierSiteByNorm = new Map();
     sitesPool.forEach(s => {
-      if (s && !s.voided && s.name && resolveSiteCategoryPbi(s) === 'supplier') {
+      if (s && !s.voided && s.name) {
         supplierSiteByNorm.set(normKey(s.name), s);
       }
     });
@@ -1603,7 +1604,7 @@
       { id: 'iva', label: 'IVA & VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
     { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
-    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'subcategory', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'expense_subcategories', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses', 'recurring_expenses'], views: [
@@ -1613,13 +1614,13 @@
       { id: 'capex', label: 'Capital Expenditure', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
     { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses', 'recurring_expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
-    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'site_category', 'supply_mode', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
-      { id: 'all', label: 'All Sites', cols: ['name', 'site_category', 'supply_mode', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
-      { id: 'source', label: 'Supplier / Quarry Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier', cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
-      { id: 'bundled', label: 'Bundled (Mat + Trans)', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
-      { id: 'delivery', label: 'Customer Delivery Sites', fn: r => resolveSiteCategoryPbi(r) === 'customer', cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
-      { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
-      { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'site_category', 'region', 'linked_party', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
+    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
+      { id: 'all', label: 'All Sites', cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
+      { id: 'source', label: 'Quarry / Raw Sites', fn: (r, rel) => Boolean(r.supplier || r.is_jv || isBundledQuarrySitePbi(r) || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].raw_loads) || 0) > 0 || !r.customer), cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
+      { id: 'bundled', label: 'Bundled (Mat + Trans)', fn: r => isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
+      { id: 'delivery', label: 'Customer Delivery Sites', fn: (r, rel) => Boolean(r.customer || ((rel && rel.siteByName[norm(r.name)] && rel.siteByName[norm(r.name)].sales_loads) || 0) > 0), cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
+      { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
+      { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'supply_mode', 'region', 'supplier', 'customer', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
     ] },
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
@@ -1993,7 +1994,7 @@
     return 'suppliers';
   }
   function getActiveSingleBuName() {
-    const st = typeof window !== 'undefined' ? window.STATE : null;
+    const st = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
     if (!st) return '';
     const co = String(st.company || '').trim().toLowerCase();
     if (!co || co.startsWith('industry:')) return '';
@@ -2107,14 +2108,19 @@
     });
     if (Array.isArray(rec.sales_tickets) && rec.sales_tickets.length > 0) {
       const cCanon = new Map();
-      const ensureCC = nm => {
+      const normCustKey = nm => {
         const nk = norm(nm);
+        return nk === 'mohamd afara' ? 'mohamad afara' : nk;
+      };
+      const ensureCC = nm => {
+        const nk = normCustKey(nm);
         if (!nk) return null;
         if (!cCanon.has(nk)) cCanon.set(nk, { loads: 0, ttc: 0, crTtc: 0, settled: 0 });
         return cCanon.get(nk);
       };
       (rec.sales_tickets || []).forEach(s => {
         if (!s || s.voided || !s.customer) return;
+        if (singleBu && s.company && s.company !== singleBu) return;
         const sgn = saleTicketSign(s);
         if (sgn === 0) return;
         const cur = ensureCC(s.customer);
@@ -2127,6 +2133,7 @@
       });
       (rec.receipts || []).forEach(r => {
         if (!r || r.voided || !r.customer || !isArSettlingRecpt(r)) return;
+        if (singleBu && r.company && r.company !== singleBu) return;
         const cur = ensureCC(r.customer);
         if (cur) cur.settled += Number(r.amount || 0) + Number(r.discount || 0);
       });
@@ -2136,18 +2143,29 @@
         e.sales_loads = st.loads;
         e.total_sales = round2(st.ttc);
         e.ar_balance = round2(st.crTtc - st.settled);
+        if (nk === 'mohamad afara') {
+          const eAlt = rel.custByName['mohamd afara'] || (rel.custByName['mohamd afara'] = initCust());
+          eAlt.sales_loads = st.loads;
+          eAlt.total_sales = round2(st.ttc);
+          eAlt.ar_balance = round2(st.crTtc - st.settled);
+        }
       });
     }
     if ((Array.isArray(rec.raw_purchases) && rec.raw_purchases.length > 0) || (Array.isArray(rec.settlements) && rec.settlements.length > 0)) {
       const sCanon = new Map();
-      const ensureSC = nm => {
+      const normSupKey = nm => {
         const nk = norm(nm);
+        return nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+      };
+      const ensureSC = nm => {
+        const nk = normSupKey(nm);
         if (!nk) return null;
         if (!sCanon.has(nk)) sCanon.set(nk, { rawLoads: 0, rawCost: 0, onCr: 0, settled: 0 });
         return sCanon.get(nk);
       };
       (rec.raw_purchases || []).forEach(r => {
         if (!r || r.voided) return;
+        if (singleBu && r.company && r.company !== singleBu) return;
         const matOwner = r.site_owner || r.truck_owner;
         if (matOwner) {
           const cur = ensureSC(matOwner);
@@ -2169,6 +2187,7 @@
       });
       (rec.expenses || []).forEach(x => {
         if (!x || x.voided || !x.supplier) return;
+        if (singleBu && x.company && x.company !== singleBu) return;
         const mth = String(x.method || '').trim();
         if (mth === 'Credit' || mth === 'CR Return' || mth === 'IVA' || mth === 'VAT' || mth === 'VAT Dis') {
           const sgn = mth === 'CR Return' ? -1 : 1;
@@ -2178,8 +2197,9 @@
       });
       (rec.settlements || []).forEach(sp => {
         if (!sp || sp.voided || !sp.supplier) return;
+        if (singleBu && sp.company && sp.company !== singleBu) return;
         const mth = String(sp.method || '').trim();
-        if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent') return;
+        if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent') return;
         const cur = ensureSC(sp.supplier);
         if (cur) cur.settled += Number(sp.amount || 0) + Number(sp.discount || 0);
       });
@@ -2190,6 +2210,26 @@
         if (st.rawCost !== 0) e.raw_cost = round2(st.rawCost);
         e.ap_balance = round2(st.onCr - st.settled);
       });
+      if (typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
+        const legTargetCo = singleBu === 'WTC' ? 'wtc' : (singleBu === 'BBConstruction' ? 'bbconstruction' : (singleBu === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+        const legRes = window.__mfgComputeThreeLegPayables({ company: legTargetCo, ignorePeriod: true });
+        if (legRes && legRes.byNorm) {
+          legRes.byNorm.forEach((lr, sk) => {
+            const e = rel.suppByName[sk] || (rel.suppByName[sk] = initSupp());
+            e.quarry_rem = round2(lr.quarry_rem || 0);
+            e.trans_rem = round2(lr.trans_rem || 0);
+            e.exp_rem_usd = round2(lr.exp_rem_usd || 0);
+            e.exp_vat_rem_usd = round2(lr.exp_vat_rem_usd || 0);
+            e.exp_rem_lbp = Math.round(lr.exp_rem_lbp || 0);
+            e.exp_rem_ttc = round2(lr.exp_rem_ttc || 0);
+            e.ap_balance = round2((lr.quarry_rem || 0) + (lr.trans_rem || 0) + (lr.exp_rem_ttc || 0));
+            if (sk === 'karim bdeir') {
+              const eAlt = rel.suppByName['kareem bdeir'] || (rel.suppByName['kareem bdeir'] = initSupp());
+              Object.assign(eAlt, { ap_balance: e.ap_balance, quarry_rem: e.quarry_rem, trans_rem: e.trans_rem, exp_rem_usd: e.exp_rem_usd, exp_vat_rem_usd: e.exp_vat_rem_usd, exp_rem_lbp: e.exp_rem_lbp, exp_rem_ttc: e.exp_rem_ttc });
+            }
+          });
+        }
+      }
     }
 
     const eqLabelMap = {};
@@ -2266,9 +2306,7 @@
     (rec.regions || []).forEach(rg => { if (rg && !rg.voided) ensure(rel.regByName, rg.name, initReg); });
     (rec.sites || []).forEach(s => {
       if (!s || s.voided) return;
-      const sCat = resolveSiteCategoryPbi(s);
       ensure(rel.siteByName, s.name, initSite);
-      ensureSiteCat(sCat, s.name);
       const effReg = s.region || s.geo_zone || '';
       if (s.name && effReg) siteRegMap[norm(s.name)] = effReg;
       const re = ensure(rel.regByName, effReg, initReg);
@@ -2276,7 +2314,7 @@
         re.sites_count++;
         re.sites.push(s);
       }
-      if (sCat === 'supplier' && s.supplier) {
+      if (s.supplier) {
         const se = ensure(rel.suppByName, s.supplier, initSupp);
         if (se) { se.is_quarry = true; if (s.name) se.sites.add(s.name); }
       }
@@ -2599,7 +2637,6 @@
       if (st) {
         if (fl.company) st.companies.add(fl.company);
         st.has_daily_contract = true;
-        st.total_paid = round2(st.total_paid + Number(fl.total != null ? fl.total : (Number(fl.hours || 0) * Number(fl.rate_usd || 0))));
       }
     });
     (rec.logistics_allowances || []).forEach(lg => {
@@ -2794,16 +2831,22 @@
       return (window.MFG_FX && typeof window.MFG_FX.getRate === 'function') ? window.MFG_FX.getRate(null, r.code) : 89500;
     }
     if (tableKey === 'sites') {
-      const sCat = resolveSiteCategoryPbi(r);
-      if (c === 'region') return r.region || r.geo_zone || null;
-      if (c === 'site_category') return sCat === 'customer' ? 'Customer Delivery Site' : 'Supplier / Quarry Site';
-      if (c === 'supply_mode') return sCat === 'customer' ? 'Customer Delivery' : (r.is_jv ? 'JV 50/50 Partner' : (isBundledQuarrySitePbi(r) ? 'Mat + Trans Included' : 'Ex-Quarry (Separate Haul)'));
-      if (c === 'linked_party') return sCat === 'customer' ? (r.customer || null) : (r.supplier || null);
-      if (c === 'supplier') return sCat === 'supplier' ? (r.supplier || null) : null;
-      if (c === 'customer') return sCat === 'customer' ? (r.customer || null) : null;
-      if (c === 'is_jv') return sCat === 'supplier' ? Boolean(r.is_jv) : false;
-      if (c === 'jv_partner') return (sCat === 'supplier' && r.is_jv) ? (r.jv_partner || 'Assaf') : null;
-      if (c === 'jv_share') return (sCat === 'supplier' && r.is_jv) ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
+      if (c === 'region') return r.region || r.geo_zone || (isBundledQuarrySitePbi(r) ? 'Unassigned (Mat + Trans)' : null);
+      if (c === 'site_category') return 'Unified Site';
+      if (c === 'supply_mode') {
+        const se = rel && rel.siteByName ? rel.siteByName[norm(r.name)] : null;
+        if (r.is_jv) return 'JV 50/50 Partner';
+        if (isBundledQuarrySitePbi(r)) return 'Mat + Trans Included';
+        if ((se && se.raw_loads > 0 && se.sales_loads > 0) || (r.supplier && r.customer)) return 'Raw & Delivery (Separate Haul)';
+        if ((se && se.sales_loads > 0 && !(se.raw_loads > 0)) || (r.customer && !r.supplier)) return 'Customer Delivery';
+        return 'Ex-Quarry (Separate Haul)';
+      }
+      if (c === 'linked_party') return [r.supplier, r.customer].filter(Boolean).join(' · ') || null;
+      if (c === 'supplier') return r.supplier || null;
+      if (c === 'customer') return r.customer || null;
+      if (c === 'is_jv') return Boolean(r.is_jv);
+      if (c === 'jv_partner') return r.is_jv ? (r.jv_partner || 'Assaf') : null;
+      if (c === 'jv_share') return r.is_jv ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
     }
     if (tableKey === 'regions' && c === 'corridor') {
       return (window.MFG_GEO && typeof window.MFG_GEO.corridorLabel === 'function' && r.corridor)
@@ -2947,11 +2990,10 @@
         if (ue && ue[c] != null) return ue[c];
       }
       if (tableKey === 'sites') {
-        const sCat = resolveSiteCategoryPbi(r);
-        if (c === 'is_jv') return sCat === 'supplier' ? Boolean(r.is_jv) : false;
-        const se = (rel.siteByCatKey && rel.siteByCatKey[`${sCat}|${norm(r.name)}`]) || rel.siteByName[norm(r.name)];
-        if (c === 'raw_loads') return sCat === 'supplier' ? (se ? se.raw_loads : 0) : 0;
-        if (c === 'sales_loads') return sCat === 'customer' ? (se ? se.sales_loads : 0) : 0;
+        if (c === 'is_jv') return Boolean(r.is_jv);
+        const se = rel.siteByName[norm(r.name)];
+        if (c === 'raw_loads') return se ? se.raw_loads : 0;
+        if (c === 'sales_loads') return se ? se.sales_loads : 0;
         if (c === 'active_rules') return se ? se.active_rules : 0;
         if (se && se[c] != null) return se[c];
       }
@@ -3023,6 +3065,7 @@
         }
       }
       if (tableKey === 'loans' && c === 'settled_amount') {
+        if (r && r.settled_amount !== undefined && r.settled_amount !== null) return Number(r.settled_amount || 0);
         const cp = cellValue(r, 'counterparty');
         return cp ? (rel.loanSettledByCp[norm(cp)] || 0) : 0;
       }
@@ -4196,7 +4239,7 @@
       const isApSettlingSettle = sp => {
         if (!sp || sp.voided) return false;
         const mth = String(sp.method || '').trim();
-        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
+        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
       };
       const expSignedCredit = x => {
         const mth = String((x && x.method) || '').trim();
@@ -4536,22 +4579,30 @@
         });
 
         if (!activeRange && !forceScope) {
+          const legMap = (typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function')
+            ? ((window.__mfgComputeThreeLegPayables({ company: STATE.company || 'manufacturing-group', ignorePeriod: true }) || {}).byNorm || null)
+            : null;
+          const normSup = nm => {
+            const nk = norm(nm);
+            return nk === 'kareem bdeir' ? 'karim bdeir' : nk;
+          };
           const seenSupNorm = new Set();
           const baseModelSupps = STATE._officialScopeActive
             ? (m.suppliers || []).filter(s => sMap.has(norm(s.Supplier || '(Unassigned Supplier)')) || s.IVA === 'Yes')
             : (m.suppliers || []);
           const result = baseModelSupps.map(s => {
             const sName = s.Supplier || '(Unassigned Supplier)';
-            const sk = norm(sName);
+            const sk = normSup(sName);
             if (sk) seenSupNorm.add(sk);
-            const st = sMap.get(sk) || { raw_loads: 0, raw_mat_cost: 0, raw_haulage: 0, expenses: 0, ap_expense: 0, settlements_paid: 0, ap_settled: 0 };
-            const mat = round2(st.raw_mat_cost);
-            const haul = round2(st.raw_haulage);
-            const exp = round2(st.ap_expense);
+            const st = sMap.get(sk) || sMap.get(norm(sName)) || { raw_loads: 0, raw_mat_cost: 0, raw_haulage: 0, expenses: 0, ap_expense: 0, settlements_paid: 0, ap_settled: 0 };
+            const lr = legMap ? legMap.get(sk) : null;
+            const mat = lr ? round2(lr.quarry_cr || 0) : round2(st.raw_mat_cost);
+            const haul = lr ? round2(lr.trans_cr || 0) : round2(st.raw_haulage);
+            const exp = lr ? round2((lr.exp_cr_usd || 0) - (lr.exp_ret_other_usd || 0) + (lr.exp_vat_cr_usd || 0)) : round2(st.ap_expense);
             const onCr = round2(mat + haul + exp);
-            const paid = round2(st.settlements_paid);
-            const settled = round2(st.ap_settled);
-            const bal = round2(onCr - settled);
+            const settled = lr ? round2((lr.quarry_pd || 0) + (lr.trans_pd || 0) + (lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0)) : round2(st.ap_settled);
+            const paid = lr ? settled : round2(st.settlements_paid);
+            const bal = lr ? round2((lr.quarry_rem || 0) + (lr.trans_rem || 0) + (lr.exp_rem_ttc || 0)) : round2(onCr - settled);
             return Object.assign({}, s, {
               Supplier: sName,
               IVA: s.IVA || suppIvaMap.get(sk) || 'No',
@@ -4570,18 +4621,21 @@
               ap_balance: bal
             });
           });
-          sMap.forEach((st, sk) => {
+          sMap.forEach((st, rawSk) => {
+            const sk = normSup(rawSk);
             if (!sk || seenSupNorm.has(sk)) return;
-            const mat = round2(st.raw_mat_cost);
-            const haul = round2(st.raw_haulage);
-            const exp = round2(st.ap_expense);
+            seenSupNorm.add(sk);
+            const lr = legMap ? legMap.get(sk) : null;
+            const mat = lr ? round2(lr.quarry_cr || 0) : round2(st.raw_mat_cost);
+            const haul = lr ? round2(lr.trans_cr || 0) : round2(st.raw_haulage);
+            const exp = lr ? round2((lr.exp_cr_usd || 0) - (lr.exp_ret_other_usd || 0) + (lr.exp_vat_cr_usd || 0)) : round2(st.ap_expense);
             const onCr = round2(mat + haul + exp);
-            const paid = round2(st.settlements_paid);
-            const settled = round2(st.ap_settled);
-            const bal = round2(onCr - settled);
-            if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005) return;
+            const settled = lr ? round2((lr.quarry_pd || 0) + (lr.trans_pd || 0) + (lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0)) : round2(st.ap_settled);
+            const paid = lr ? settled : round2(st.settlements_paid);
+            const bal = lr ? round2((lr.quarry_rem || 0) + (lr.trans_rem || 0) + (lr.exp_rem_ttc || 0)) : round2(onCr - settled);
+            if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005 && Math.abs(bal) <= 0.005) return;
             result.push({
-              Supplier: st.displayName || sk,
+              Supplier: (lr && lr.supplier) || st.displayName || sk,
               IVA: suppIvaMap.get(sk) || 'No',
               raw_loads: st.raw_loads,
               raw_mat_cost: mat,
@@ -4598,6 +4652,36 @@
               ap_balance: bal
             });
           });
+          if (legMap) {
+            legMap.forEach((lr, sk) => {
+              if (!sk || seenSupNorm.has(sk)) return;
+              seenSupNorm.add(sk);
+              const mat = round2(lr.quarry_cr || 0);
+              const haul = round2(lr.trans_cr || 0);
+              const exp = round2((lr.exp_cr_usd || 0) - (lr.exp_ret_other_usd || 0) + (lr.exp_vat_cr_usd || 0));
+              const onCr = round2(mat + haul + exp);
+              const settled = round2((lr.quarry_pd || 0) + (lr.trans_pd || 0) + (lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0));
+              const bal = round2((lr.quarry_rem || 0) + (lr.trans_rem || 0) + (lr.exp_rem_ttc || 0));
+              if (Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
+              result.push({
+                Supplier: lr.supplier || sk,
+                IVA: suppIvaMap.get(sk) || 'No',
+                raw_loads: 0,
+                raw_mat_cost: mat,
+                raw_haulage: haul,
+                raw_cost: round2(mat + haul),
+                ap_material: mat,
+                ap_haulage: haul,
+                ap_expense: exp,
+                expenses: exp,
+                ap_on_credit: onCr,
+                settlements_paid: settled,
+                ap_settled: settled,
+                opening_ap: 0,
+                ap_balance: bal
+              });
+            });
+          }
           result.sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.ap_balance || 0) - Number(a.ap_balance || 0));
           return result;
         }
@@ -6548,7 +6632,7 @@
             const siteMetaByNorm = new Map();
             const siteBundledLoads = new Map();
             (rec.sites || []).forEach(rs => {
-              if (rs && rs.name && resolveSiteCategoryPbi(rs) === 'supplier') {
+              if (rs && rs.name) {
                 const sk = norm(rs.name);
                 siteMetaByNorm.set(sk, rs);
                 if (rs.supplier && !siteOwnerTally.has(sk)) {
@@ -6811,7 +6895,7 @@
             const siteMetaByNorm = new Map();
             const siteBundledLoads = new Map();
             (rec.sites || []).forEach(rs => {
-              if (rs && rs.name && resolveSiteCategoryPbi(rs) === 'supplier') {
+              if (rs && rs.name) {
                 const sk = norm(rs.name);
                 siteMetaByNorm.set(sk, rs);
                 if (rs.supplier && !siteOwnerTally.has(sk)) {
@@ -9436,24 +9520,24 @@
   };
 
   const UNIV_REG_CARD_META = {
-    customers: { icon: 'reg_customers', sub: 'Client accounts, credit limits, VAT & AR balances' },
-    suppliers: { icon: 'reg_suppliers', sub: 'Material quarries, 3rd-party haulers & expense vendors' },
-    products: { icon: 'reg_products', sub: 'Commercial concrete, aggregate grades & fuel items' },
-    product_types: { icon: 'box', sub: 'Material families & product classification groups' },
-    uoms: { icon: 'ruler', sub: 'Standard weighing, volume & dispatch units (m³, Ton, Truck)' },
-    items: { icon: 'reg_items', sub: 'Spare parts, oils, lubricants & workshop consumables' },
-    expense_categories: { icon: 'reg_categories', sub: 'Primary cost buckets & production / OPEX / CAPEX class' },
-    expense_subcategories: { icon: 'expenses', sub: 'Detailed expense sub-classifications linked to categories' },
-    fx_rates: { icon: 'reg_fx_rates', sub: 'Effective-dated USD to LBP exchange rate windows' },
-    currencies: { icon: 'reg_currencies', sub: 'ISO currency definitions, symbols & active rates' },
-    vat_rates: { icon: 'reg_vat_rates', sub: 'Statutory MoF VAT rate schedules & LBP conversion rates' },
-    equipment: { icon: 'reg_equipment', sub: 'Company fleet, 3rd-party haulers & plant machinery' },
-    drivers: { icon: 'reg_drivers', sub: 'Company & hauler drivers, assigned trucks & trip history' },
-    staff_members: { icon: 'reg_staff', sub: 'Master worker directory, contracts, salaries & advances' },
-    staff_roles: { icon: 'reg_roles', sub: 'Standard job roles, role categories & equipment eligibility' },
-    sites: { icon: 'reg_sites', sub: 'Supplier quarries, JV pits & customer delivery sites' },
-    regions: { icon: 'reg_regions', sub: 'Geographic delivery zones, corridors & trip distances' },
-    gl_accounts: { icon: 'gl_automation', sub: 'Lebanese PCG Classes 1–7 & automated posting rules' }
+    customers: { icon: 'reg_customers', sub: 'Client accounts, credit limits & AR' },
+    suppliers: { icon: 'reg_suppliers', sub: 'Quarries, haulers & expense vendors' },
+    products: { icon: 'reg_products', sub: 'Concrete, aggregate grades & fuel' },
+    product_types: { icon: 'box', sub: 'Material families & product groups' },
+    uoms: { icon: 'ruler', sub: 'Weighing & dispatch units (m³, Ton)' },
+    items: { icon: 'reg_items', sub: 'Spare parts, oils & consumables' },
+    expense_categories: { icon: 'reg_categories', sub: 'Cost buckets & OPEX / CAPEX classes' },
+    expense_subcategories: { icon: 'expenses', sub: 'Detailed expense sub-classifications' },
+    fx_rates: { icon: 'reg_fx_rates', sub: 'Effective USD to LBP rate windows' },
+    currencies: { icon: 'reg_currencies', sub: 'ISO currency codes & active rates' },
+    vat_rates: { icon: 'reg_vat_rates', sub: 'Statutory MoF VAT rate schedules' },
+    equipment: { icon: 'reg_equipment', sub: 'Company fleet, haulers & machinery' },
+    drivers: { icon: 'reg_drivers', sub: 'Drivers, assigned trucks & trips' },
+    staff_members: { icon: 'reg_staff', sub: 'Worker directory, contracts & payroll' },
+    staff_roles: { icon: 'reg_roles', sub: 'Job roles, categories & eligibility' },
+    sites: { icon: 'reg_sites', sub: 'Quarries, JV pits & delivery sites' },
+    regions: { icon: 'reg_regions', sub: 'Delivery zones & trip distances' },
+    gl_accounts: { icon: 'gl_automation', sub: 'Lebanese PCG Classes 1–7 & rules' }
   };
 
   const TABLE_HOME_VIEW_MAP = {
@@ -9579,6 +9663,7 @@
 
   function renderTablesHub(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
+    _activePbiState = STATE;
     const catalog = typeof ctx.canAccessTable === 'function' ? TABLE_CATALOG.filter(t => ctx.canAccessTable(t.key)) : TABLE_CATALOG;
     const tablePool = catalog.length ? catalog : TABLE_CATALOG;
     const activeKey = STATE.activeTableKey || 'sales_tickets';
@@ -9694,7 +9779,7 @@
                 if (t.key === 'settlements' && (!ctx.canAccessTable || ctx.canAccessTable('price_rules'))) {
                   const rawPrCnt = chipCounts.rawPrCnt;
                   const isRawPrAct = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
-                  return mainChip + `<button type="button" class="filter-chip ${isRawPrAct ? 'active' : ''}" data-tbl-key="price_rules" data-tbl-view="raw_all" title="Raw Material &amp; Site Haulage Price Agreements">Raw &amp; Haulage Agreements <span class="mono" style="opacity:.75">(${fmtNum(rawPrCnt)})</span></button>`;
+                  return mainChip + `<button type="button" class="filter-chip ${isRawPrAct ? 'active' : ''}" data-tbl-key="price_rules" data-tbl-view="raw_all" data-ui-tip="Raw Material &amp; Site Haulage Price Agreements">Raw &amp; Haulage Agreements <span class="mono" style="opacity:.75">(${fmtNum(rawPrCnt)})</span></button>`;
                 }
                 return mainChip;
               }).join('')}
@@ -9759,7 +9844,7 @@
           ` : ''}
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              ${searchBox('Search ' + effLabel + '...')}
+              ${searchBox('Search ' + String(effLabel || '').replace(/\s+Registry$/i, '') + '...')}
             </div>
             <div style="display:flex;gap:6px">
               ${exportBtn('tablesHubPanel', meta.key)}
@@ -10159,20 +10244,10 @@
       return { label: r.name, value: cnt, sub: `${gov} · ${fmtNum(lds)} loads` };
     }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
 
-    const siteNameCnt = new Map();
-    siteRows.forEach(r => {
-      const k = norm(r && r.name);
-      if (k) siteNameCnt.set(k, (siteNameCnt.get(k) || 0) + 1);
-    });
     const siteChartRows = siteRows.map(r => {
-      const sCat = resolveSiteCategoryPbi(r);
-      const lds = sCat === 'customer'
-        ? Number(cellValue(r, 'sales_loads', 'sites', rel) || 0)
-        : Number(cellValue(r, 'raw_loads', 'sites', rel) || 0);
+      const lds = Number(cellValue(r, 'raw_loads', 'sites', rel) || 0) + Number(cellValue(r, 'sales_loads', 'sites', rel) || 0);
       const regLbl = cellValue(r, 'region', 'sites', rel) || 'Unassigned';
-      const isDup = (siteNameCnt.get(norm(r.name)) || 0) > 1;
-      const roleSuffix = isDup ? ` (${sCat === 'customer' ? 'Delivery' : 'Quarry'})` : '';
-      return { label: `${r.name}${roleSuffix}`, value: lds, sub: regLbl };
+      return { label: r.name, value: lds, sub: regLbl };
     }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
     const regChevSvg = open => `<svg class="geo-exp-chev" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${open ? 'M2.5 7.5L6 4l3.5 3.5' : 'M2.5 4.5L6 8l3.5-3.5'}"/></svg>`;
 
@@ -10210,30 +10285,15 @@
                   const rk = norm(r.name);
                   const re = rel.regByName[rk] || { sites_count: 0, sites: [] };
                   const memberSiteLoads = ms => {
-                    const mCat = resolveSiteCategoryPbi(ms);
-                    const se = (rel.siteByCatKey && rel.siteByCatKey[`${mCat}|${norm(ms.name)}`]) || rel.siteByName[norm(ms.name)] || {};
-                    return mCat === 'customer' ? Number(se.sales_loads || 0) : Number(se.raw_loads || 0);
+                    const se = rel.siteByName[norm(ms.name)] || {};
+                    return Number(se.raw_loads || 0) + Number(se.sales_loads || 0);
                   };
                   const memberSites = (re.sites || []).slice().sort((a, b) => memberSiteLoads(b) - memberSiteLoads(a));
                   const cnt = memberSites.length;
                   const explicitExp = Boolean(STATE.expandedRegions && STATE.expandedRegions[rk]);
                   const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (selReg && selReg !== '__unassigned__' && norm(selReg) === rk));
-                  const groupedPreview = [];
-                  const previewByNorm = new Map();
-                  memberSites.forEach(ms => {
-                    const mk = norm(ms.name);
-                    const mCat = resolveSiteCategoryPbi(ms);
-                    let g = previewByNorm.get(mk);
-                    if (!g) {
-                      g = { name: ms.name, hasSupp: false, hasCust: false };
-                      previewByNorm.set(mk, g);
-                      groupedPreview.push(g);
-                    }
-                    if (mCat === 'customer') g.hasCust = true;
-                    else g.hasSupp = true;
-                  });
-                  const previewNames = groupedPreview.slice(0, 3).map(g => (g.hasSupp && g.hasCust) ? `${g.name} (Quarry & Delivery)` : g.name).join(', ');
-                  const previewMoreCnt = groupedPreview.length > 3 ? (groupedPreview.length - 3) : 0;
+                  const previewNames = memberSites.slice(0, 3).map(ms => ms.name).join(', ');
+                  const previewMoreCnt = memberSites.length > 3 ? (memberSites.length - 3) : 0;
                   return `
                     <tr class="rrow" data-rkey="regions" data-rid="${esc(r.id)}">
                       ${regCols.map((c, ci) => {
@@ -10259,12 +10319,16 @@
                             ${cnt > 0 ? `
                               <div class="reg-expanded-sites-grid">
                                 ${memberSites.map(ms => {
-                                  const sCat = resolveSiteCategoryPbi(ms);
-                                  const isJv = sCat === 'supplier' && Boolean(ms.is_jv);
-                                  const isBund = sCat === 'supplier' && !isJv && isBundledQuarrySitePbi(ms);
-                                  const catCls = isJv ? 'is-jv' : (sCat === 'customer' ? 'is-cust' : '');
-                                  const catLbl = isJv ? 'JV 50/50' : (sCat === 'customer' ? 'Delivery' : (isBund ? 'Quarry (Mat+Trans)' : 'Quarry'));
-                                  const sLoads = memberSiteLoads(ms);
+                                  const se = rel.siteByName[norm(ms.name)] || {};
+                                  const rLoads = Number(se.raw_loads || 0);
+                                  const sLoadsCnt = Number(se.sales_loads || 0);
+                                  const isJv = Boolean(ms.is_jv);
+                                  const isBund = !isJv && isBundledQuarrySitePbi(ms);
+                                  const isDual = !isJv && !isBund && ((rLoads > 0 && sLoadsCnt > 0) || Boolean(ms.supplier && ms.customer));
+                                  const isCustOnly = !isJv && !isBund && !isDual && (sLoadsCnt > 0 || Boolean(ms.customer && !ms.supplier));
+                                  const catCls = isJv ? 'is-jv' : (isCustOnly ? 'is-cust' : '');
+                                  const catLbl = isJv ? 'JV 50/50' : (isBund ? 'Quarry (Mat+Trans)' : (isDual ? 'Raw & Sales' : (isCustOnly ? 'Delivery' : 'Quarry')));
+                                  const sLoads = rLoads + sLoadsCnt;
                                   return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
                                     <b>${esc(ms.name)}</b>
                                     <span class="reg-exp-site-cat ${catCls}">${catLbl}</span>
@@ -10616,6 +10680,7 @@
   // ==================== DEDICATED UNIVERSAL REGISTRIES WORKSPACE RENDERER ====================
   function renderUniversalRegistriesView(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
+    _activePbiState = STATE;
     if (STATE && (STATE.view === 'reg_sites' || STATE.view === 'reg_regions')) {
       const relDual = getHubRelIndex(SEED);
       return renderSitesAndRegionsDualView(ctx, relDual);
@@ -10671,19 +10736,17 @@
                 <span class="pa-univ-deck-ico">${pbiIcon('tables')}</span>
                 <span class="pa-hub-lbl">Shared Registries:</span>
               </span>
-              <span class="pa-univ-deck-hint">Switch between master registries shared across all business units</span>
             </div>
             <div class="pa-univ-reg-grid cols-${Math.min(3, groupTabsMeta.length)}">
               ${groupTabsMeta.map(gt => {
                 const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
                 const isAct = gt.key === meta.key;
-                const cardSpec = UNIV_REG_CARD_META[gt.key] || { icon: TABLE_ICON_MAP[gt.key] || gt.navView || 'tables', sub: 'Shared master registry across all business units' };
+                const cardSpec = UNIV_REG_CARD_META[gt.key] || { icon: TABLE_ICON_MAP[gt.key] || gt.navView || 'tables', sub: 'Shared master registry' };
                 return `<button type="button" class="filter-chip univ-reg-card ${isAct ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>
                   <span class="urc-ico">${pbiIcon(cardSpec.icon)}</span>
                   <span class="urc-body">
                     <span class="urc-top">
                       <span class="urc-title">${esc(gt.label)}</span>
-                      <span class="urc-status-badge">${isAct ? 'Active' : 'Switch ▸'}</span>
                     </span>
                     <span class="urc-sub">${esc(cardSpec.sub)}</span>
                   </span>
@@ -10750,7 +10813,7 @@
           ` : ''}
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              ${searchBox('Search ' + meta.label + '...')}
+              ${searchBox('Search ' + String(meta.label || '').replace(/\s+Registry$/i, '') + '...')}
             </div>
             <div style="display:flex;gap:6px">
               ${exportBtn('univRegPanel', meta.key)}
