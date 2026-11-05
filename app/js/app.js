@@ -9366,9 +9366,15 @@
   const _QUARRY_NON_AGG_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity|bonus)\b/i;
   const _IS_OWN_BU_RE = /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i;
 
+  let _QUARRY_PROFILE_CACHE = null;
   function _getQuarrySiteProfileMap() {
-    const fIdx = getFreqIndex();
-    if (!fIdx._quarrySiteProfile) {
+    const rec = (SEED && SEED.records) || {};
+    const tr = (SEED && SEED._tableRev) || {};
+    const sitesArr = rec.sites || [];
+    const rawsArr = rec.raw_purchases || [];
+    const rulesArr = rec.price_rules || [];
+    const cKey = `${sitesArr.length}:${rawsArr.length}:${rulesArr.length}:${tr.sites || 0}:${tr.raw_purchases || 0}:${tr.price_rules || 0}:${SEED._customRev || 0}`;
+    if (!_QUARRY_PROFILE_CACHE || _QUARRY_PROFILE_CACHE.key !== cKey) {
       const pMap = new Map();
       const ensureP = sk => {
         let p = pMap.get(sk);
@@ -9378,7 +9384,7 @@
         }
         return p;
       };
-      ((SEED.records && SEED.records.price_rules) || []).forEach(pr => {
+      rulesArr.forEach(pr => {
         if (!pr || pr.voided || !pr.site) return;
         const sk = norm(pr.site);
         if (!sk) return;
@@ -9386,7 +9392,7 @@
         if (pr.rule_type === 'Transport Price (Site)' && Number(pr.trans_unit_price || pr.indiff_price || pr.unit_price || pr.price || 0) > 0) p.hasTransRule = true;
         else if (pr.rule_type === 'Purchase Price (Site)') p.hasPurchRule = true;
       });
-      ((SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+      rawsArr.forEach(r => {
         if (!r || r.voided || !r.site || isRemovedTicket(r) || isReturnTicket(r) || isPendingPriceRaw(r)) return;
         const sk = norm(r.site);
         if (!sk) return;
@@ -9412,7 +9418,7 @@
         }
       });
       const jvSiteNorms = new Set();
-      ((SEED.records && SEED.records.sites) || []).forEach(s => {
+      sitesArr.forEach(s => {
         if (s && !s.voided && (s.is_jv || s.jv) && s.name) jvSiteNorms.add(norm(s.name));
       });
       pMap.forEach((p, sk) => {
@@ -9430,9 +9436,9 @@
           p.separateQty += p.zeroTransQty;
         }
       });
-      fIdx._quarrySiteProfile = pMap;
+      _QUARRY_PROFILE_CACHE = { key: cKey, map: pMap };
     }
-    return fIdx._quarrySiteProfile;
+    return _QUARRY_PROFILE_CACHE.map;
   }
 
   function isSupplierDeliveredSite(siteOrName) {
