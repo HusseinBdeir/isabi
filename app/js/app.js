@@ -83192,15 +83192,13 @@
       <div class="kiosk-wall-header" id="kioskWallHeader">
         <div class="kwh-brand">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge brand-badge-sm" role="img" aria-label="ISABI Systems">
-            <g transform="translate(27.73,87.77) scale(1.16)">
-              <g class="badge-ii" fill="#281D15">
-                <path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>
-                <path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/>
-              </g>
-              <g class="badge-rule" fill="#B88228">
-                <rect x="-3" y="9.5" width="61.66" height="3.6" rx="0.8"/>
-                <rect x="-3" y="17.5" width="61.66" height="3.6" rx="0.8"/>
-              </g>
+            <g class="badge-ii" fill="#281D15">
+              <rect x="32" y="18" width="20" height="60"/>
+              <rect x="68" y="18" width="20" height="60"/>
+            </g>
+            <g class="badge-rule" fill="#B88228">
+              <rect x="28" y="84" width="64" height="6" rx="1"/>
+              <rect x="28" y="96" width="64" height="6" rx="1"/>
             </g>
           </svg>
           <div class="kwh-station-meta">

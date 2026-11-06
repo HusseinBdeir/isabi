@@ -8,7 +8,7 @@ import sys
 import tempfile
 
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
-URL = 'file:///C:/Users/HusseinBdeir/bhfirms/isabi/index.html'
+URL = 'file:///' + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html').replace('\\', '/')
 ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(), 'isabi_verify_shots')
 
 

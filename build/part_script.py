@@ -18,7 +18,7 @@ JS = r"""
   }
   const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
-  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" class="sbox-mini-badge" style="flex-shrink:0"><g transform="translate(27.73,87.77) scale(1.16)"><g class="badge-ii" fill="#281D15"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g class="badge-rule" fill="#B88228"><rect x="-3" y="9.5" width="61.66" height="3.6" rx="0.8"/><rect x="-3" y="17.5" width="61.66" height="3.6" rx="0.8"/></g></g></svg>';
+  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" class="sbox-mini-badge" style="flex-shrink:0"><g class="badge-ii" fill="#281D15"><rect x="32" y="18" width="20" height="60"/><rect x="68" y="18" width="20" height="60"/></g><g class="badge-rule" fill="#B88228"><rect x="28" y="84" width="64" height="6" rx="1"/><rect x="28" y="96" width="64" height="6" rx="1"/></g></svg>';
   const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="var(--wm-ink, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="var(--wm-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
   const ICONS = __ICONS_JSON__;
 
