@@ -90781,6 +90781,17 @@
     setView: typeof setView === 'function' ? setView : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
+  window.MFG_ENTERPRISE = {
+    computeEnterpriseRollup: typeof computeEnterpriseRollup === 'function' ? computeEnterpriseRollup : null,
+    buildIndustrySentinelItems: typeof buildIndustrySentinelItems === 'function' ? buildIndustrySentinelItems : null,
+    renderIndustryOverview: typeof renderIndustryOverview === 'function' ? renderIndustryOverview : null,
+    renderIndustryContextBanner: typeof renderIndustryContextBanner === 'function' ? renderIndustryContextBanner : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    setView: typeof setView === 'function' ? setView : null,
+    contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
 
   let _seedHydrationPromise = null;
   function hydrateSeedData() {
