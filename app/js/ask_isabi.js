@@ -974,6 +974,165 @@
     const specificHit = trySpecificRecordLookup(cleanQ, scope);
     if (specificHit) return specificHit;
 
+    // 2b. Multi-Industry Deterministic Fast-Path Copilot (Holding, Hospitality, Trading, Real Estate, Insurance)
+    const activeInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+      ? window.MFG_ENTERPRISE.getActiveIndustry()
+      : 'Manufacturing';
+    const domainMentionInd = /\b(bdeir\s+holding|intercompany|partner\s+split|due[- ]from|due[- ]to|root[- ]bu)\b/i.test(low)
+      ? 'Holding & Treasury'
+      : (/\b(blanca|la\s+una|palms|voile|platinum|cabana|pos\s+till|rawbt|resort|venue\s+revenue|membership)\b/i.test(low)
+          ? 'Hospitality & Resorts'
+          : (/\b(korri\s+auto|shacman|vin\b|chassis|invoice\s+book|parts\s+fifo|landed\s+cost|heavy\s+truck)\b/i.test(low)
+              ? 'Automotive & Heavy Trading'
+              : (/\b(4235|rent\s+roll|lease\s+expiry|tenant\s+arrears|occupancy|landlord|properties\s+bu)\b/i.test(low)
+                  ? 'Real Estate & Property'
+                  : (/\b(gwp\b|gross\s+written\s+premium|brokerage|carrier\s+payable|bordereau|policy\s+renewal|loss\s+ratio|claim\s+reserve|underwriter)\b/i.test(low)
+                      ? 'Insurance & Brokerage'
+                      : null))));
+    const targetInd = domainMentionInd || (activeInd !== 'Manufacturing' ? activeInd : null);
+    if (targetInd && !/\b(trial\s+balance|coa|double[- ]entry|pcg|journal\s+voucher)\b/i.test(low)) {
+      if (targetInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+        const h = window.MFG_HOLDING.compute();
+        const hk = h.kpis || {};
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: true,
+          topic: 'holding',
+          title: `Holding & Treasury Briefing · Bdeir Holding`,
+          answer: `Across <b>Bdeir Holding (ROOT-BU)</b>, shared overhead stands at <b>${fmtMoney(hk.totalExpenses || 0, 0)}</b> across <b>${fmtInt(hk.voucherCount || 0)}</b> vouchers, treasury net cashflow is <b>${fmtMoney(hk.netCashflow || 0, 0)}</b>, and bilateral intercompany clearing nets to <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b>.`,
+          bullets: [
+            `Intercompany Due-From vs Due-To: <b>${fmtMoney(hk.dueFromTotal || 0, 0)}</b> receivable vs <b>${fmtMoney(hk.dueToTotal || 0, 0)}</b> payable across <b>${fmtInt((h.intercompany || []).length)}</b> subsidiary pairs`,
+            `Partner & Equity Current Accounts (165): <b>${fmtInt((h.partners || []).length)}</b> shareholder ledgers · Total Capital & Draws tracked in real time`
+          ],
+          promptText: 'Which Holding & Treasury register or statement would you like to open?',
+          actions: [
+            { type: 'view', view: 'hld_expenses', label: 'Holding Expenses' },
+            { type: 'view', view: 'hld_partners', label: 'Partner Split & IC' },
+            { type: 'view', view: 'pbi', label: 'Holding Dashboards' },
+            { type: 'view', view: 'statements', label: 'RDL-23 Statement' }
+          ],
+          followUps: [
+            'Show bilateral intercompany Due-From and Due-To matrix',
+            'Show shareholder partner split balances',
+            'Verify double-entry trial balance'
+          ]
+        };
+      }
+      if (targetInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
+        const d = window.MFG_HOSPITALITY.compute();
+        const hk = d.kpis || {};
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: true,
+          topic: 'hospitality',
+          title: `Hospitality & Resorts Copilot · ${scope.scopeCoLabel}`,
+          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, venue revenue (TTC) is <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts (<b>${fmtInt(hk.coversTotal || 0)}</b> guest covers, avg check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>), with operating profit at <b>${fmtMoney(hk.operatingProfit || 0, 0)}</b>.`,
+          bullets: [
+            `POS Till & Settlement Mix: Cash USD <b>${fmtMoney(hk.cashCollected || 0, 0)}</b> · Card/POS <b>${fmtMoney(hk.cardCollected || 0, 0)}</b> · Open F&B/Supplier AP <b>${fmtMoney(hk.apBalance || 0, 0)}</b>`,
+            `Seasonal Cabanas & Platinum Memberships: <b>${fmtInt(hk.activeMembers || 0)}</b> active packages worth <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> (<b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> receivable)`
+          ],
+          promptText: 'Drill into a Hospitality hub or official register:',
+          actions: [
+            { type: 'view', view: 'hsp_sales', label: 'Venue Revenue & POS' },
+            { type: 'view', view: 'hsp_memberships', label: 'Memberships & Pool' },
+            { type: 'view', view: 'pbi', label: 'Hospitality Dashboards' },
+            { type: 'view', view: 'statements', label: 'RDL-24 Statement' }
+          ],
+          followUps: [
+            'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue',
+            'Show active seasonal cabana and gym memberships',
+            'Show today\'s daily operations'
+          ]
+        };
+      }
+      if (targetInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
+        const d = window.MFG_TRADING.compute();
+        const tk = d.kpis || {};
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: true,
+          topic: 'trading',
+          title: `Automotive & Heavy Trading Copilot · ${scope.scopeCoLabel}`,
+          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, multi-book commercial sales (N/S/IS/IN) stand at <b>${fmtMoney(tk.salesTotal || 0, 0)}</b> with gross margin of <b>${fmtMoney(tk.grossMargin || 0, 0)}</b> (<b>${fmtPctVal(tk.grossMargin, tk.salesTotal)}</b>) and operating profit of <b>${fmtMoney(tk.operatingProfit || 0, 0)}</b>.`,
+          bullets: [
+            `Heavy Truck VIN Yard & Parts Stock: <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered / <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom VINs · FIFO Spare Parts Valuation <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`,
+            `Working Capital: Customer AR <b>${fmtMoney(tk.arBalance || 0, 0)}</b> · Foreign Supplier & Customs AP <b>${fmtMoney(tk.apBalance || 0, 0)}</b>`
+          ],
+          promptText: 'Explore Trading invoice books, Shacman VIN units, or FIFO stock:',
+          actions: [
+            { type: 'view', view: 'trd_sales', label: 'Invoice Books & AR' },
+            { type: 'view', view: 'trd_trucks', label: 'Shacman VIN Registry' },
+            { type: 'view', view: 'pbi', label: 'Trading Dashboards' },
+            { type: 'view', view: 'statements', label: 'RDL-25 Statement' }
+          ],
+          followUps: [
+            'Show Shacman heavy truck VIN registry and unit margins',
+            'Show FIFO spare parts stock valuation and reorder alerts',
+            'Show today\'s daily operations'
+          ]
+        };
+      }
+      if (targetInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
+        const d = window.MFG_REALESTATE.compute();
+        const rk = d.kpis || {};
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: true,
+          topic: 'realestate',
+          title: `Real Estate & 4235 S.A.L Copilot · ${scope.scopeCoLabel}`,
+          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, contracted annual rent (TTC) is <b>${fmtMoney(rk.annualRentTtc || 0, 0)}</b> (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>), portfolio occupancy is <b>${fmtInt(rk.occupancyPct || 0, 1)}%</b> (<b>${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)}</b> units), and Net Operating Income (NOI) is <b>${fmtMoney(rk.noiUsd || 0, 0)}</b>.`,
+          bullets: [
+            `Rent Billing & Collections: Billed <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> · Collected <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> · Open Tenant AR <b>${fmtMoney(rk.openArUsd || 0, 0)}</b>`,
+            `Lease Expiry & Maintenance: <b>${fmtInt(rk.expiring90d || 0)}</b> leases within 90 days · Property Upkeep & Municipal Taxes <b>${fmtMoney(rk.maintTotalUsd || 0, 0)}</b>`
+          ],
+          promptText: 'Inspect the 4235 rent roll, tenant arrears, or lease expiry radar:',
+          actions: [
+            { type: 'view', view: 're_properties', label: 'Properties & Units' },
+            { type: 'view', view: 're_leases', label: 'Leases & 4235 Rent Roll' },
+            { type: 'view', view: 'pbi', label: 'Real Estate Dashboards' },
+            { type: 'view', view: 'statements', label: 'RDL-26 Rent Roll' }
+          ],
+          followUps: [
+            'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears',
+            'Which leases are expiring within 90 days?',
+            'Show today\'s daily operations'
+          ]
+        };
+      }
+      if (targetInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
+        const d = window.MFG_INSURANCE.compute();
+        const ik = d.kpis || {};
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: true,
+          topic: 'insurance',
+          title: `Insurance & Brokerage Copilot · ${scope.scopeCoLabel}`,
+          answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, Gross Written Premium (GWP) is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> across <b>${fmtInt(ik.policyCount || 0)}</b> active policies, brokerage commission earned is <b>${fmtMoney(ik.commTotal || 0, 0)}</b> (<b>${fmtInt(ik.avgCommYield || 0, 1)}%</b> yield), and net brokerage operating profit is <b>${fmtMoney(ik.netBrokerageIncome || 0, 0)}</b>.`,
+          bullets: [
+            `Premium Collections & Carrier Clearing: Client Receivable (411) <b>${fmtMoney(ik.unpaidPremUsd || 0, 0)}</b> · Net Carrier Payable (401) <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>`,
+            `Renewals & Claims Watch: <b>${fmtInt(ik.renewing60d || 0)}</b> policies renewing in <=60d (<b>${fmtMoney(ik.renewalGwp60d || 0, 0)}</b> GWP) · Incurred Claims <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b> (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)`
+          ],
+          promptText: 'Open the policy schedule, renewal queue, claims hub, or carrier bordereau:',
+          actions: [
+            { type: 'view', view: 'ins_policies', label: 'Policies & GWP' },
+            { type: 'view', view: 'ins_renewals', label: 'Renewal Pipeline' },
+            { type: 'view', view: 'ins_claims', label: 'Claims & Carrier Recon' },
+            { type: 'view', view: 'statements', label: 'RDL-27 Statement' }
+          ],
+          followUps: [
+            'Show 30/60/90-day policy renewal pipeline',
+            'Show carrier bordereau payable reconciliation',
+            'Show open insurance claims and loss ratio by line'
+          ]
+        };
+      }
+    }
+
     // Inherit prior turn's topic on bare entity/date follow-ups ("What about BBConstruction?", "And in March 2026?")
     const hasNewTopic = /\b(daily\s+ops|daily\s+operations|after[- ]hours|what\s+happened|sentinel|sentinels|watchdog|watchdogs|alert|alerts|anomal|threshold|thresholds|expense|expenses|overhead|spending|recurring|pending\s+price|price\s+pending|warehouse|inventory|stock|spare\s+part|consumable|ar\b|overdue|receivable|receivables|debtor|credit\s+hold|dso|collections?|ap\b|payable|payables|quarry|quarries|raw\s+material|haulage|hauler|settlement|defect|repair|oil\s+log|preventive|workshop|maintenance|grease|lubricant|diesel|tank|fuel|litre|mazout|malfunction|cash|till|drawer|cashflow|lbp|treasury|loan|fx|conversion|trial\s+balance|coa|ledger|gl\b|double[- ]entry|pcg|payroll|salary|salaries|overtime|attendance|lateness|workforce|contract|freelance|pricing|price\s+agreement|agreed\s+price|commission|kiosk|thermal|printer|gate\s+pass|biometric|face\s+id|seat|permission|role|margin|gm\b|p&l|pnl|profit|compare|comparison|revenue|sales|loads|tons|volume|product|products|grade|grades|aggregate|aggregates|material|materials|peak\s+month|best\s+month|worst\s+month|which\s+month|monthly|top\s+\d*\s*(?:customer|client|supplier|product|grade)|briefing|overview|summary|status|health)\b/i.test(low) ||
       /(مبيعات|أرباح|ارباح|مصاريف|ذمم|مازوت|رواتب|مستودع|ميزان|تنبيه|ملخص)/.test(cleanQ);
@@ -3885,8 +4044,58 @@
     }
 
     const chipsBox = document.getElementById('aiChips');
+    const activeInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+      ? window.MFG_ENTERPRISE.getActiveIndustry()
+      : 'Manufacturing';
+    if (inp && activeInd !== 'Manufacturing') {
+      const indPlaceholders = {
+        'Holding & Treasury': `Ask about Bdeir Holding overhead, intercompany Due-From/Due-To, partner splits, trial balance...`,
+        'Hospitality & Resorts': `Ask about ${scope.scopeCoLabel} venue revenue, POS tills, cabanas, memberships, F&B costs...`,
+        'Automotive & Heavy Trading': `Ask about ${scope.scopeCoLabel} invoice books (N/S/IS/IN), Shacman VINs, FIFO parts stock...`,
+        'Real Estate & Property': `Ask about ${scope.scopeCoLabel} 4235 VAT rent roll, occupancy, expiring leases, tenant AR...`,
+        'Insurance & Brokerage': `Ask about GWP, brokerage commissions, 30/60/90d renewals, claims loss ratio, carrier payables...`
+      };
+      inp.placeholder = indPlaceholders[activeInd] || inp.placeholder;
+    }
     if (chipsBox) {
-      const chips = [
+      const domainChipsMap = {
+        'Holding & Treasury': [
+          { label: 'Holding Briefing', prompt: 'Give me a Bdeir Holding & Treasury executive briefing' },
+          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
+          { label: 'Intercompany Matrix', prompt: 'Show bilateral intercompany Due-From and Due-To matrix' },
+          { label: 'Partner Splits (165)', prompt: 'Show shareholder partner split balances' },
+          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+        ],
+        'Hospitality & Resorts': [
+          { label: 'Hospitality Briefing', prompt: 'Give me a Hospitality & Resorts executive briefing' },
+          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
+          { label: 'Venue Revenue & POS', prompt: 'Compare Blanca, La Una, Palms, Voile & Platinum venue revenue' },
+          { label: 'Cabanas & Memberships', prompt: 'Show active seasonal cabana and gym memberships' },
+          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+        ],
+        'Automotive & Heavy Trading': [
+          { label: 'Trading Briefing', prompt: 'Give me an Automotive & Heavy Trading executive briefing' },
+          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
+          { label: 'Shacman VIN Fleet', prompt: 'Show Shacman heavy truck VIN registry and unit margins' },
+          { label: 'FIFO Stock & Parts', prompt: 'Show FIFO spare parts stock valuation and reorder alerts' },
+          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+        ],
+        'Real Estate & Property': [
+          { label: 'Real Estate Briefing', prompt: 'Give me a Real Estate & 4235 S.A.L executive briefing' },
+          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
+          { label: '4235 VAT Rent Roll', prompt: 'Show 4235 Company S.A.L 11% VAT rent invoices and tenant arrears' },
+          { label: 'Expiring Leases', prompt: 'Which leases are expiring within 90 days?' },
+          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+        ],
+        'Insurance & Brokerage': [
+          { label: 'Insurance Briefing', prompt: 'Give me an Insurance & Brokerage executive briefing' },
+          { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
+          { label: '30/60/90d Renewals', prompt: 'Show 30/60/90-day policy renewal pipeline' },
+          { label: 'Carrier Recon & Claims', prompt: 'Show carrier bordereau payable reconciliation' },
+          { label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }
+        ]
+      };
+      const chips = domainChipsMap[activeInd] || [
         { label: 'Executive Briefing', prompt: 'Give me an executive briefing & open alerts' },
         { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
         { label: 'Entity Sales & Profit', prompt: 'Compare entity sales & operating profit' },

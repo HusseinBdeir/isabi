@@ -33,7 +33,12 @@
     { id: '19', code: '19', slug: 'pl_recon',      cat: 'Tax & Recon',    name: 'P&L Reconciliation',    title: 'P&L Reconciliation',    ar: 'مطابقة الأرباح والخسائر', landscape: true,  params: ['year', 'month'] },
     { id: '20', code: '20', slug: 'sales_inv',     cat: 'Documents',      name: 'Sales Invoice',         title: 'Sales Invoice',         ar: 'فاتورة مبيعات',        landscape: false, params: ['invoiceNo'] },
     { id: '21', code: '21', slug: 'deliv_ticket',  cat: 'Documents',      name: 'Delivery Ticket',       title: 'Delivery Ticket',       ar: 'بون تسليم',            landscape: false, params: ['ticketId'] },
-    { id: '22', code: '22', slug: 'rcpt_voucher',  cat: 'Documents',      name: 'Receipt Voucher',       title: 'Receipt Voucher',       ar: 'سند قبض',              landscape: false, params: ['receiptId'] }
+    { id: '22', code: '22', slug: 'rcpt_voucher',  cat: 'Documents',      name: 'Receipt Voucher',       title: 'Receipt Voucher',       ar: 'سند قبض',              landscape: false, params: ['receiptId'] },
+    { id: '23', code: '23', slug: 'hld_intercompany_reg', cat: 'Registers', name: 'Intercompany & Partner Split', title: 'Intercompany & Partner Split Register', ar: 'سجل الذمم المشتركة وتوزيع حصص الشركاء', landscape: true, params: ['from', 'to'] },
+    { id: '24', code: '24', slug: 'hsp_venue_till_reg',   cat: 'Registers', name: 'Venue Revenue & POS Till',     title: 'Venue Revenue, POS Till & Membership Register', ar: 'سجل إيرادات المنتجعات وصندوق الكاشير والاشتراكات', landscape: true, params: ['from', 'to'] },
+    { id: '25', code: '25', slug: 'trd_books_stock_reg',  cat: 'Registers', name: 'Invoice Books & Stock Valuation', title: 'Invoice Books, Serial VIN & Stock Valuation', ar: 'سجل دفاتر الفواتير والشاحنات وتقييم المخزون', landscape: true, params: ['from', 'to'] },
+    { id: '26', code: '26', slug: 're_rent_roll_stmt',    cat: 'Statements', name: '4235 Official Rent Roll',    title: 'Official 4235 VAT Rent Roll & Lease Expiry', ar: 'جدول عقود الإيجار والفواتير الضريبية 4235', landscape: true, params: ['from', 'to'] },
+    { id: '27', code: '27', slug: 'ins_policy_recon_stmt', cat: 'Statements', name: 'Policy Schedule & Carrier Recon', title: 'Policy Schedule, Renewal Queue & Carrier Recon', ar: 'جدول البوالص والتجديدات ومطابقة شركات التأمين', landscape: true, params: ['from', 'to'] }
   ];
 
   const RDL_CATEGORIES = ['All', 'Digest', 'Statements', 'General Ledger', 'Registers', 'Counterparties', 'Tax & Recon', 'Documents'];
@@ -61,24 +66,164 @@
     short: 'Lions Transport',
     legal: 'Lions Transport',
     ar: 'ليونز للنقل',
-    mof: 'VAT —',
+    mof: 'VAT -',
     address: 'Beirut, Lebanon',
     phone: ''
   };
   const CO_ALL = {
     co: 'ALL',
     short: 'Manufacturing Group',
-    legal: 'Bdeir Holding — Manufacturing Group (WTC · BBConstruction · Lions Transport)',
-    ar: 'مجموعة التصنيع والكسارات — شركة التجارة والبناء العالمية وبوزوير وبدير',
+    legal: 'Bdeir Holding · Manufacturing Group (WTC · BBConstruction · Lions Transport)',
+    ar: 'مجموعة التصنيع والكسارات · شركة التجارة والبناء العالمية وبوزوير وبدير',
     mof: 'VAT 2585321-601 / 601-2372701',
     address: 'Ras Beirut & Riad El Solh, Beirut, Lebanon',
     phone: 'Tel: 03/224839 · 01/998550-1'
+  };
+  const CO_HOLDING = {
+    co: 'Bdeir Holding',
+    short: 'Bdeir Holding',
+    legal: 'Bdeir Holding Group Treasury & Shared Overhead',
+    ar: 'مجموعة بدير القابضة · الخزينة والمركز الرئيسي',
+    mof: 'ROOT-BU · Group Consolidation',
+    address: 'Ras Beirut, Hamra Street 776, Beirut, Lebanon',
+    phone: 'Tel: 01/998550-1 · 03/224839'
+  };
+  const CO_BLANCA = {
+    co: 'Blanca',
+    short: 'Blanca',
+    legal: 'Blanca Beach Resort & Hospitality Operations',
+    ar: 'منتجع بلانكا السياحي',
+    mof: 'Hospitality Division · Blanca',
+    address: 'South Coast Highway, Lebanon',
+    phone: 'Hospitality Operations'
+  };
+  const CO_LAUNA = {
+    co: 'La Una',
+    short: 'La Una',
+    legal: 'La Una Dining & Lounge Operations',
+    ar: 'لا أونا للمطاعم والضيافة',
+    mof: 'Hospitality Division · La Una',
+    address: 'Beirut Waterfront & Coastal District, Lebanon',
+    phone: 'Hospitality Operations'
+  };
+  const CO_PALMS = {
+    co: 'Palms',
+    short: 'Palms',
+    legal: 'The Palms Beach Resort & Cabanas',
+    ar: 'منتجع بالمز السياحي',
+    mof: 'Hospitality Division · Palms',
+    address: 'Coastal Highway, Lebanon',
+    phone: 'Hospitality Operations'
+  };
+  const CO_VOILE = {
+    co: 'Voile',
+    short: 'Voile',
+    legal: 'Voile Beach Club & Events',
+    ar: 'فوال بيتش كلوب',
+    mof: 'Hospitality Division · Voile',
+    address: 'Coastal Highway, Lebanon',
+    phone: 'Hospitality Operations'
+  };
+  const CO_PLATINUM = {
+    co: 'Platinum',
+    short: 'Platinum',
+    legal: 'Platinum Fitness, Wellness & Pool Club',
+    ar: 'نادي بلاتينوم الرياضي والصحي',
+    mof: 'Hospitality & Wellness · Platinum',
+    address: 'Beirut, Lebanon',
+    phone: 'Wellness & Memberships'
+  };
+  const CO_HOSP_ALL = {
+    co: 'Hospitality Group',
+    short: 'Hospitality Group',
+    legal: 'Bdeir Holding · Hospitality & Resorts Group (Blanca · La Una · Palms · Voile · Platinum)',
+    ar: 'مجموعة الضيافة والمنتجعات · بلانكا ولا أونا وبالمز وفوال وبلاتينوم',
+    mof: 'Hospitality Consolidated Division',
+    address: 'Beirut & Coastal Resorts, Lebanon',
+    phone: 'Hospitality Operations'
+  };
+  const CO_KORRI = {
+    co: 'Korri Auto',
+    short: 'Korri Auto',
+    legal: 'Korri Auto Trading & Spare Parts S.A.R.L',
+    ar: 'شركة قري أوتو لتجارة السيارات وقطع الغيار',
+    mof: 'Commercial Register & VAT · Korri Auto',
+    address: 'Industrial Highway, Beirut, Lebanon',
+    phone: 'Automotive & Parts Division'
+  };
+  const CO_SHACMAN = {
+    co: 'Shacman',
+    short: 'Shacman',
+    legal: 'Shacman Heavy Trucks & Machinery Trading',
+    ar: 'شاكمان لتجارة الشاحنات والآليات الثقيلة',
+    mof: 'Heavy Trucks & VIN Registry · Shacman',
+    address: 'Heavy Commercial Zone, Beirut, Lebanon',
+    phone: 'Heavy Trucks Division'
+  };
+  const CO_TRD_ALL = {
+    co: 'Trading Group',
+    short: 'Trading Group',
+    legal: 'Bdeir Holding · Automotive & Heavy Trading Group (Korri Auto · Shacman)',
+    ar: 'مجموعة تجارة السيارات والشاحنات وقطع الغيار · قري أوتو وشاكمان',
+    mof: 'Trading Consolidated Division',
+    address: 'Beirut, Lebanon',
+    phone: 'Trading Operations'
+  };
+  const CO_PROPERTIES = {
+    co: 'Properties',
+    short: 'Properties',
+    legal: 'Bdeir Real Estate & Property Portfolio (Properties BU)',
+    ar: 'إدارة العقارات والأملاك · محفظة الإيجارات',
+    mof: 'Property Management & Lease Portfolio',
+    address: 'Ras Beirut & Riad El Solh, Beirut, Lebanon',
+    phone: 'Real Estate Operations'
+  };
+  const CO_4235 = {
+    co: '4235 Company S.A.L',
+    short: '4235 Company S.A.L',
+    legal: '4235 Company S.A.L · Official Property & Commercial Lessors',
+    ar: 'شركة 4235 ش.م.ل · العقارات والتأجير التجاري',
+    mof: 'Official MoF VAT Landlord · 11% VAT Schedule',
+    address: 'Riad El Solh, Beirut, Lebanon',
+    phone: 'Tel: 01/998550-1'
+  };
+  const CO_RE_ALL = {
+    co: 'Real Estate Group',
+    short: 'Real Estate Group',
+    legal: 'Bdeir Holding · Real Estate & Property Group (Properties · 4235 Company S.A.L)',
+    ar: 'مجموعة العقارات والأملاك · شركة 4235 ش.م.ل ومحفظة العقارات',
+    mof: 'Real Estate Consolidated Division',
+    address: 'Ras Beirut & Riad El Solh, Beirut, Lebanon',
+    phone: 'Real Estate Operations'
+  };
+  const CO_INS = {
+    co: 'Insurance Company',
+    short: 'Insurance Brokerage',
+    legal: 'Bdeir Insurance Brokerage & Risk Advisory',
+    ar: 'مؤسسة الوساطة التأمينية وإدارة البوالص',
+    mof: 'Insurance Brokerage · Motor · Medical · Marine · Property',
+    address: 'Beirut, Lebanon',
+    phone: 'Insurance Operations'
   };
   const CO_LEGAL = {
     WTC: CO_WTC, wtc: CO_WTC,
     BBC: CO_BBC, BBConstruction: CO_BBC, bbconstruction: CO_BBC,
     LT: CO_LT, 'Lions Transport': CO_LT, lionstransport: CO_LT,
-    ALL: CO_ALL, 'manufacturing-group': CO_ALL
+    ALL: CO_ALL, 'manufacturing-group': CO_ALL, 'industry:Manufacturing': CO_ALL,
+    'Bdeir Holding': CO_HOLDING, bdeirholding: CO_HOLDING, 'industry:Holding & Treasury': CO_HOLDING,
+    Blanca: CO_BLANCA, blanca: CO_BLANCA,
+    'La Una': CO_LAUNA, launa: CO_LAUNA,
+    Palms: CO_PALMS, palms: CO_PALMS,
+    Voile: CO_VOILE, voile: CO_VOILE,
+    Platinum: CO_PLATINUM, platinum: CO_PLATINUM,
+    'Hospitality Group': CO_HOSP_ALL, 'industry:Hospitality & Resorts': CO_HOSP_ALL,
+    'Korri Auto': CO_KORRI, korriauto: CO_KORRI,
+    Shacman: CO_SHACMAN, shacman: CO_SHACMAN,
+    'Trading Group': CO_TRD_ALL, 'industry:Automotive & Heavy Trading': CO_TRD_ALL,
+    Properties: CO_PROPERTIES, properties: CO_PROPERTIES,
+    '4235 Company S.A.L': CO_4235, '4235company': CO_4235,
+    'Real Estate Group': CO_RE_ALL, 'industry:Real Estate & Property': CO_RE_ALL,
+    'Insurance Company': CO_INS, insurance: CO_INS, 'industry:Insurance & Brokerage': CO_INS
   };
 
   function esc(v) {
@@ -169,10 +314,26 @@
   }
 
   function normalizeStateCo(stateCo) {
-    const s = String(stateCo || '').toLowerCase();
+    const raw = String(stateCo || '');
+    if (CO_LEGAL[raw]) return CO_LEGAL[raw].co;
+    const s = raw.toLowerCase();
     if (s === 'wtc') return 'WTC';
     if (s === 'bbconstruction' || s === 'bbc') return 'BBConstruction';
     if (s === 'lionstransport' || s === 'lions transport' || s === 'lt') return 'Lions Transport';
+    if (s === 'bdeirholding' || s === 'bdeir holding' || s === 'industry:holding & treasury') return 'Bdeir Holding';
+    if (s === 'blanca') return 'Blanca';
+    if (s === 'launa' || s === 'la una') return 'La Una';
+    if (s === 'palms') return 'Palms';
+    if (s === 'voile') return 'Voile';
+    if (s === 'platinum') return 'Platinum';
+    if (s === 'industry:hospitality & resorts') return 'Hospitality Group';
+    if (s === 'korriauto' || s === 'korri auto') return 'Korri Auto';
+    if (s === 'shacman') return 'Shacman';
+    if (s === 'industry:automotive & heavy trading') return 'Trading Group';
+    if (s === 'properties') return 'Properties';
+    if (s === '4235company' || s === '4235 company s.a.l') return '4235 Company S.A.L';
+    if (s === 'industry:real estate & property') return 'Real Estate Group';
+    if (s === 'insurance' || s === 'insurance company' || s === 'industry:insurance & brokerage') return 'Insurance Company';
     return 'ALL';
   }
 
@@ -3185,6 +3346,452 @@
     `;
   }
 
+  function render23HoldingRegister(meta, ctx) {
+    const h = (window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
+      ? window.MFG_HOLDING.compute()
+      : { kpis: {}, expenses: [], partners: [], intercompany: [], cashflow: [] };
+    const k = h.kpis || {};
+    const icRows = h.intercompany || [];
+    const pRows = h.partners || [];
+    const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
+    return `
+      ${sheetHeaderHtml(meta, coKey, `ROOT-BU Treasury & Intercompany Consolidation · Window ${ctx.from} to ${ctx.to}`)}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(coKey)}
+        ${metaRowsHtml([
+          ['Statement Code', 'RDL-23 · Holding & Treasury'],
+          ['Reporting Window', `${ctx.from} to ${ctx.to}`],
+          ['Shared Holding Overhead', fmtUsd(k.totalExpenses || 0, 2)],
+          ['Net Intercompany Clearing', fmtUsd(k.netIntercompany || 0, 2)]
+        ])}
+      </div>
+      <div class="rdl-section-hdr">1. Bilateral Intercompany Due-From / Due-To Matrix (جدول الذمم المتبادلة بين الشركات)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Pair Code</th>
+            <th>From Entity</th>
+            <th>To Entity</th>
+            <th>Nature / Description</th>
+            <th class="num">Due From ($)</th>
+            <th class="num">Due To ($)</th>
+            <th class="num">Net Position ($)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${icRows.map((r, i) => `
+            <tr>
+              <td class="mono bold">${esc(r.pair || ('IC-' + (i + 1)))}</td>
+              <td>${esc(r.from || 'Bdeir Holding')}</td>
+              <td>${esc(r.to || r.counterparty || 'Subsidiary')}</td>
+              <td>${esc(r.nature || r.note || 'Shared Treasury & Management Allocation')}</td>
+              <td class="num">${fmtUsd(r.dueFrom || 0, 2)}</td>
+              <td class="num">${fmtUsd(r.dueTo || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(r.net || ((r.dueFrom || 0) - (r.dueTo || 0)), 2)}</td>
+              <td>${esc(r.status || 'Reconciled')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="4">Total Intercompany Clearing (إجمالي المطابقة بين الشركات)</td>
+            <td class="num">${fmtUsd(icRows.reduce((s, r) => s + Number(r.dueFrom || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(icRows.reduce((s, r) => s + Number(r.dueTo || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(icRows.reduce((s, r) => s + Number(r.net || ((r.dueFrom || 0) - (r.dueTo || 0))), 0), 2)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Shareholder & Partner Split Ledger · Account 165 (توزيع حصص الشركاء - حساب 165)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Partner / Shareholder</th>
+            <th>Equity Role</th>
+            <th class="num">Equity Share %</th>
+            <th class="num">Opening Capital ($)</th>
+            <th class="num">Distributions / Draws ($)</th>
+            <th class="num">Allocated Overhead ($)</th>
+            <th class="num">Closing Current Account ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pRows.map(p => `
+            <tr>
+              <td class="bold">${esc(p.partner || p.name || '-')}</td>
+              <td>${esc(p.role || 'Managing Shareholder')}</td>
+              <td class="num">${fmtNum(p.sharePct || 0, 1)}%</td>
+              <td class="num">${fmtUsd(p.opening || 0, 2)}</td>
+              <td class="num">${fmtUsd(p.draws || p.distributions || 0, 2)}</td>
+              <td class="num">${fmtUsd(p.allocatedOverhead || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(p.closingBalance || p.balance || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${signatureRowHtml('Group Chief Financial Officer / المدير المالي للمجموعة', 'Managing Shareholder / الشريك المفوض')}
+      ${sheetFooterHtml(coKey, 1, 1)}
+    `;
+  }
+
+  function render24HospitalityRegister(meta, ctx) {
+    const d = (window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
+      ? window.MFG_HOSPITALITY.compute()
+      : { kpis: {}, salesRows: [], memberRows: [] };
+    const k = d.kpis || {};
+    const sRows = (d.salesRows || []).slice(0, 18);
+    const mRows = (d.memberRows || []).slice(0, 10);
+    const coKey = (ctx.co && ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Hospitality Group'].includes(ctx.co)) ? ctx.co : 'Hospitality Group';
+    return `
+      ${sheetHeaderHtml(meta, coKey, `Resort F&B, Cabanas, POS Till & Membership Audit · Window ${ctx.from} to ${ctx.to}`)}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(coKey)}
+        ${metaRowsHtml([
+          ['Statement Code', 'RDL-24 · Hospitality & Resorts'],
+          ['Venue Revenue (TTC)', fmtUsd(k.salesTotal || 0, 2)],
+          ['Cash Collected vs Card', `${fmtUsd(k.cashCollected || 0, 0)} / ${fmtUsd(k.cardCollected || 0, 0)}`],
+          ['Active Memberships', `${fmtNum(k.activeMembers || 0, 0)} (${fmtUsd(k.membershipPkgValue || 0, 0)})`]
+        ])}
+      </div>
+      <div class="rdl-section-hdr">1. Venue Revenue & RawBT POS Till Register (سجل إيرادات الصالات وصندوق الكاشير)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Receipt #</th>
+            <th>Date</th>
+            <th>Venue</th>
+            <th>Outlet / Zone</th>
+            <th>Guest / Walk-in</th>
+            <th class="num">Covers</th>
+            <th>Channel</th>
+            <th class="num">Total TTC ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sRows.map(r => `
+            <tr>
+              <td class="mono bold">${esc(r.receiptNo || r.id)}</td>
+              <td class="mono">${esc(r.date)}</td>
+              <td>${esc(r.company)}</td>
+              <td>${esc(r.outlet || r.category)}</td>
+              <td>${esc(r.guest || 'Walk-in Guest')}</td>
+              <td class="num">${fmtNum(r.covers || 1, 0)}</td>
+              <td>${esc(r.payMethod || 'Cash USD')}</td>
+              <td class="num bold">${fmtUsd(r.totalTtc || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="5">Total Venue Sales Register (إجمالي مبيعات الصالات)</td>
+            <td class="num">${fmtNum(sRows.reduce((s, r) => s + Number(r.covers || 0), 0), 0)}</td>
+            <td></td>
+            <td class="num">${fmtUsd(sRows.reduce((s, r) => s + Number(r.totalTtc || 0), 0), 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Seasonal Cabana, Pool & Gym Memberships (اشتراكات الشاليهات والنادي الصحي)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Member Code</th>
+            <th>Venue</th>
+            <th>Member Name</th>
+            <th>Tier / Package</th>
+            <th>Valid Window</th>
+            <th class="num">Package ($)</th>
+            <th class="num">Paid ($)</th>
+            <th class="num">Balance ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mRows.map(m => `
+            <tr>
+              <td class="mono bold">${esc(m.code || m.id)}</td>
+              <td>${esc(m.company)}</td>
+              <td>${esc(m.member)}</td>
+              <td>${esc(m.tier)}</td>
+              <td class="mono">${esc(m.startDate)} to ${esc(m.endDate)}</td>
+              <td class="num">${fmtUsd(m.packageUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(m.paidUsd || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(m.balanceUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${signatureRowHtml('Resort General Manager / مدير المنتجع', 'Hospitality Controller / المراقب المالي')}
+      ${sheetFooterHtml(coKey, 1, 1)}
+    `;
+  }
+
+  function render25TradingRegister(meta, ctx) {
+    const d = (window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
+      ? window.MFG_TRADING.compute()
+      : { kpis: {}, salesRows: [], vehicleRows: [], stockRows: [] };
+    const k = d.kpis || {};
+    const sRows = (d.salesRows || []).slice(0, 14);
+    const vRows = (d.vehicleRows || []).slice(0, 10);
+    const coKey = (ctx.co && ['Korri Auto', 'Shacman', 'Trading Group'].includes(ctx.co)) ? ctx.co : 'Trading Group';
+    return `
+      ${sheetHeaderHtml(meta, coKey, `Multi-Book Commercial Sales (N/S/IS/IN), Shacman VIN Fleet & FIFO Stock · Window ${ctx.from} to ${ctx.to}`)}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(coKey)}
+        ${metaRowsHtml([
+          ['Statement Code', 'RDL-25 · Automotive & Heavy Trading'],
+          ['Commercial Revenue (TTC)', fmtUsd(k.salesTotal || 0, 2)],
+          ['Heavy Trucks Delivered', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} VINs`],
+          ['FIFO Stock Valuation', fmtUsd(k.stockValuation || 0, 2)]
+        ])}
+      </div>
+      <div class="rdl-section-hdr">1. Multi-Book Commercial Invoice Register · N / S / IS / IN (سجل دفاتر الفواتير التجارية)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Book</th>
+            <th>Date</th>
+            <th>Entity</th>
+            <th>Customer / Dealer</th>
+            <th>Description</th>
+            <th class="num">Total TTC ($)</th>
+            <th class="num">AR Balance ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sRows.map(r => `
+            <tr>
+              <td class="mono bold">${esc(r.invNo || r.id)}</td>
+              <td class="mono">${esc(r.book)}</td>
+              <td class="mono">${esc(r.date)}</td>
+              <td>${esc(r.company)}</td>
+              <td>${esc(r.customer)}</td>
+              <td>${esc(r.description)}</td>
+              <td class="num">${fmtUsd(r.totalTtc || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(r.balanceUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="6">Total Commercial Invoice Books (إجمالي دفاتر الفواتير)</td>
+            <td class="num">${fmtUsd(sRows.reduce((s, r) => s + Number(r.totalTtc || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(sRows.reduce((s, r) => s + Number(r.balanceUsd || 0), 0), 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Serialized Heavy Truck & VIN Unit Registry (سجل الشاحنات وأرقام الشاصي VIN)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>VIN / Chassis</th>
+            <th>Model</th>
+            <th>Customs Declaration</th>
+            <th>Buyer / Yard</th>
+            <th class="num">Landed Cost ($)</th>
+            <th class="num">Sale Price ($)</th>
+            <th class="num">Unit Margin ($)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${vRows.map(v => `
+            <tr>
+              <td class="mono bold">${esc(v.vin)}</td>
+              <td>${esc(v.model)}</td>
+              <td class="mono">${esc(v.customsNo)}</td>
+              <td>${esc(v.buyer || 'Showroom Yard')}</td>
+              <td class="num">${fmtUsd(v.landedCostUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(v.salePriceUsd || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(v.marginUsd || 0, 2)}</td>
+              <td>${esc(v.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${signatureRowHtml('Commercial Director / المدير التجاري', 'Parts & Customs Controller / مراقب المخزون والجمارك')}
+      ${sheetFooterHtml(coKey, 1, 1)}
+    `;
+  }
+
+  function render26RealEstateRegister(meta, ctx) {
+    const d = (window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
+      ? window.MFG_REALESTATE.compute()
+      : { kpis: {}, leases: [], rentInvoices: [] };
+    const k = d.kpis || {};
+    const lRows = d.leases || [];
+    const rRows = d.rentInvoices || [];
+    const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
+    return `
+      ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · Window ${ctx.from} to ${ctx.to}`)}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(coKey)}
+        ${metaRowsHtml([
+          ['Statement Code', 'RDL-26 · Real Estate & Property'],
+          ['Contracted Annual Rent (TTC)', fmtUsd(k.annualRentTtc || 0, 2)],
+          ['Portfolio Occupancy', `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} (${fmtNum(k.occupancyPct || 0, 1)}%)`],
+          ['Rent Collected vs Open AR', `${fmtUsd(k.collectedUsd || 0, 0)} / ${fmtUsd(k.openArUsd || 0, 0)}`]
+        ])}
+      </div>
+      <div class="rdl-section-hdr">1. Active Commercial & Residential Lease Roll (جدول عقود الإيجار الفعالة)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Lease #</th>
+            <th>Landlord Entity</th>
+            <th>Property & Unit</th>
+            <th>Tenant</th>
+            <th>Term Window</th>
+            <th class="num">Annual Base ($)</th>
+            <th class="num">11% VAT ($)</th>
+            <th class="num">Annual TTC ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lRows.map(l => `
+            <tr>
+              <td class="mono bold">${esc(l.code)}</td>
+              <td>${esc(l.company)}</td>
+              <td>${esc(l.property)} · ${esc(l.unitCode)}</td>
+              <td>${esc(l.tenant)}</td>
+              <td class="mono">${esc(l.startDate)} to ${esc(l.endDate)}</td>
+              <td class="num">${fmtUsd(l.annualBaseUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(l.vatUsd || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(l.annualTtcUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="5">Total Contracted Rent Roll (إجمالي عقود الإيجار السنوية)</td>
+            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualBaseUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0), 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Date</th>
+            <th>Tenant</th>
+            <th>Unit</th>
+            <th class="num">Base Rent ($)</th>
+            <th class="num">VAT 11% ($)</th>
+            <th class="num">Total TTC ($)</th>
+            <th class="num">Balance ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rRows.map(r => `
+            <tr>
+              <td class="mono bold">${esc(r.invNo)}</td>
+              <td class="mono">${esc(r.date)}</td>
+              <td>${esc(r.tenant)}</td>
+              <td class="mono">${esc(r.unitCode)}</td>
+              <td class="num">${fmtUsd(r.baseUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(r.vatUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(r.totalTtc || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(r.balanceUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${signatureRowHtml('Property Portfolio Director / مدير العقارات', '4235 S.A.L Legal Signatory / المفوض بالتوقيع')}
+      ${sheetFooterHtml(coKey, 1, 1)}
+    `;
+  }
+
+  function render27InsuranceRegister(meta, ctx) {
+    const d = (window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
+      ? window.MFG_INSURANCE.compute()
+      : { kpis: {}, policies: [], claims: [], carrierMatrix: [] };
+    const k = d.kpis || {};
+    const pRows = d.policies || [];
+    const cRows = d.carrierMatrix || [];
+    const coKey = 'Insurance Company';
+    return `
+      ${sheetHeaderHtml(meta, coKey, `Gross Written Premium (GWP), Brokerage Commission & Carrier Statement Recon · Window ${ctx.from} to ${ctx.to}`)}
+      <div class="rdl-doc-top">
+        ${companyBlockHtml(coKey)}
+        ${metaRowsHtml([
+          ['Statement Code', 'RDL-27 · Insurance & Brokerage'],
+          ['Gross Written Premium (GWP)', fmtUsd(k.gwpTotal || 0, 2)],
+          ['Brokerage Commission Earned', `${fmtUsd(k.commTotal || 0, 2)} (${fmtNum(k.avgCommYield || 0, 1)}%)`],
+          ['Net Carrier Payable (401)', fmtUsd(k.carrierPayableUsd || 0, 2)]
+        ])}
+      </div>
+      <div class="rdl-section-hdr">1. Active Policy Schedule & 30/60/90-Day Renewal Pipeline (جدول البوالص والتجديدات)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Policy #</th>
+            <th>Insured Client</th>
+            <th>Carrier / Underwriter</th>
+            <th>Line</th>
+            <th>Expiry</th>
+            <th class="num">GWP ($)</th>
+            <th class="num">Broker Comm ($)</th>
+            <th class="num">Unpaid Prem ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pRows.map(p => `
+            <tr>
+              <td class="mono bold">${esc(p.policyNo)}</td>
+              <td>${esc(p.insured)}</td>
+              <td>${esc(p.carrier)}</td>
+              <td>${esc(p.line)}</td>
+              <td class="mono">${esc(p.endDate)} (${p.daysToExpiry}d)</td>
+              <td class="num">${fmtUsd(p.gwpUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(p.commUsd || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(p.clientBalanceUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="5">Total Policy Schedule (إجمالي جدول البوالص)</td>
+            <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.gwpUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.commUsd || 0), 0), 2)}</td>
+            <td class="num">${fmtUsd(pRows.reduce((s, p) => s + Number(p.clientBalanceUsd || 0), 0), 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Underwriter Carrier Bordereau Reconciliation (مطابقة حسابات شركات التأمين)</div>
+      <table class="rdl-table">
+        <thead>
+          <tr>
+            <th>Carrier / Underwriter</th>
+            <th class="num">Policies</th>
+            <th class="num">Gross Written Prem ($)</th>
+            <th class="num">Brokerage Comm ($)</th>
+            <th class="num">Net Carrier Payable ($)</th>
+            <th class="num">Remitted ($)</th>
+            <th class="num">Balance Due ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cRows.map(c => `
+            <tr>
+              <td class="bold">${esc(c.carrier)}</td>
+              <td class="num">${fmtNum(c.policies || 0, 0)}</td>
+              <td class="num">${fmtUsd(c.gwpUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(c.commUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(c.netPayableUsd || 0, 2)}</td>
+              <td class="num">${fmtUsd(c.remittedUsd || 0, 2)}</td>
+              <td class="num bold">${fmtUsd(c.balanceDueUsd || 0, 2)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${signatureRowHtml('Principal Insurance Broker / الوسيط التأميني المعتمد', 'Carrier Accounting Recon / محاسبة شركات التأمين')}
+      ${sheetFooterHtml(coKey, 1, 1)}
+    `;
+  }
+
 
   const SHEET_RENDERERS = {
     '01': render01DailyOps,
@@ -3208,7 +3815,12 @@
     '19': render19PlRecon,
     '20': render20SalesInvoice,
     '21': render21DeliveryTicket,
-    '22': render22ReceiptVoucher
+    '22': render22ReceiptVoucher,
+    '23': render23HoldingRegister,
+    '24': render24HospitalityRegister,
+    '25': render25TradingRegister,
+    '26': render26RealEstateRegister,
+    '27': render27InsuranceRegister
   };
 
   function renderRdlSheet(id, ctx) {
