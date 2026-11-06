@@ -71786,11 +71786,11 @@
       if (s && s.name) suppByNorm.set(normOwnerName(s.name), s);
     });
     const appExpByModelSup = {};
-    ((STATE.customRecords && STATE.customRecords.expenses) || []).forEach(e => {
-      if (!e || e.source !== 'app' || e.voided || !e.supplier) return;
+    forEachCashCustomDelta('expenses', () => true, (e, dir) => {
+      if (!e || !e.supplier) return;
       const sgn = expenseSign(e);
       if (sgn === 0) return;
-      const amt = round2(sgn * Number(e.amount || 0));
+      const amt = round2(dir * sgn * Number(e.amount || 0));
       if (amt === 0) return;
       const isCr = isCreditExpense(e);
       const sn = normOwnerName(e.supplier);
@@ -87361,6 +87361,7 @@
       const v = thEl && thEl.getAttribute('data-sort-view');
       if (!v) return;
       wrap.addEventListener('scroll', () => {
+        if (!wrap.isConnected || wrap.clientHeight <= 0 || wrap.scrollHeight <= wrap.clientHeight || wrap.scrollTop <= 0) return;
         if (wrap.scrollTop + wrap.clientHeight < wrap.scrollHeight - 160) return;
         const rendered = wrap.querySelectorAll('tbody tr').length;
         if (rendered < shownCount(v)) return;
@@ -87369,10 +87370,10 @@
         const wsY = ws ? ws.scrollTop : 0;
         STATE.shown[v] = shownCount(v) + PAGE;
         renderApp();
-        if (ws) ws.scrollTop = wsY;
+        if (ws && wsY > 0) ws.scrollTop = wsY;
         const nextTh = container.querySelector(`th[data-sort-view="${v}"]`);
         const nextWrap = nextTh && nextTh.closest('.table-wrap');
-        if (nextWrap) nextWrap.scrollTop = prevTop;
+        if (nextWrap && prevTop > 0) nextWrap.scrollTop = prevTop;
       }, { passive: true });
     });
 
@@ -89038,8 +89039,15 @@
     window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
     window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
+    window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
+    window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
+    window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
+    window.__getKPI = co => getKPI(co);
+    window.__computeCustomCashDeltas = (co, range) => computeCustomCashDeltas(co, range);
+    window.__buildDailyTillSheetRows = co => buildDailyTillSheetRows(co);
+    window.__buildLiveCashFlowTables = (cf, co, rate) => buildLiveCashFlowTables(cf, co, rate);
     if (!window.__navToView) window.__navToView = v => setView(v);
 
     document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
