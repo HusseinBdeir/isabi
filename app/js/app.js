@@ -3934,7 +3934,7 @@
         continue;
       }
       const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
-      const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || (isAppRecord(sp) && (mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return'));
+      const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return';
       if (leg === 'quarry') {
         if (isStdPayMth) rSp.quarry_pd += totV;
       } else if (leg === 'transportation') {
@@ -34867,11 +34867,9 @@
       }
     });
 
-    let customNetUsdAll = 0, customNetLbpAll = 0;
-    customDeltaByDate.forEach(cd => {
-      customNetUsdAll += (cd.iu - cd.ou);
-      customNetLbpAll += (cd.il - cd.ol);
-    });
+    const cdAll = computeCustomCashDeltas(effCo, null);
+    const customNetUsdAll = round2(cdAll.liveInU - cdAll.liveOutU);
+    const customNetLbpAll = Math.round(cdAll.liveInL - cdAll.liveOutL);
     const targetFinalUsd = (cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
     const targetFinalLbp = (cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
 
@@ -34951,6 +34949,183 @@
     out.reverse();
     if (_dailyTillCacheMap.size > 24) _dailyTillCacheMap.clear();
     _dailyTillCacheMap.set(dailyCacheKey, out);
+    return out;
+  }
+
+  function buildLiveCashFlowTables(cf, coKey, rate) {
+    const src = (cf && cf.tables) || {};
+    const cloneTbl = (t, defTotals) => ({
+      rows: Array.isArray(t && t.rows) ? t.rows.map(r => Object.assign({}, r)) : [],
+      totals: Object.assign({}, defTotals, (t && t.totals) || {})
+    });
+    const out = {
+      sales: cloneTbl(src.sales, { usd: 0, lbp: 0 }),
+      expenses: cloneTbl(src.expenses, { usd: 0, lbp: 0 }),
+      borrowing: cloneTbl(src.borrowing, { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 }),
+      salary: cloneTbl(src.salary, { usd: 0, lbp: 0 }),
+      external: cloneTbl(src.external, { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 }),
+      extended: cloneTbl(src.extended, { usd: 0, lbp: 0 }),
+      conversion: cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 })
+    };
+    if (!STATE.customRecords || coKey === 'lionstransport') return out;
+    const targetBu = COMPANY_BU_MATCH[coKey] || null;
+    const matchCo = r => r && (!targetBu || (r.company || 'WTC') === targetBu);
+    const upsertNamed = (tbl, rawName, applyFn) => {
+      const nm = String(rawName || '—').trim() || '—';
+      const nk = norm(nm);
+      let row = tbl.rows.find(x => x && norm(x.name) === nk);
+      if (!row) {
+        row = { name: nm, usd: 0, lbp: 0, rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0, exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 };
+        tbl.rows.push(row);
+      }
+      applyFn(row);
+    };
+    forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
+      if (t.removed_slip || !isCashSaleTicket(t)) return;
+      const amt = round2(mult * salesCashMoveAmount(t));
+      if (!amt) return;
+      upsertNamed(out.sales, t.customer || 'Cash Customer', row => { row.usd = round2(Number(row.usd || 0) + amt); });
+      out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + amt);
+    });
+    forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
+      if (/^credit/i.test(String(rc.method || 'Payment'))) return;
+      const amt = round2(mult * Number(rc.amount || 0));
+      if (!amt) return;
+      upsertNamed(out.sales, rc.customer || 'Customer', row => { row.usd = round2(Number(row.usd || 0) + amt); });
+      out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + amt);
+    });
+    forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
+      if (e.price_pending || isCreditExpense(e)) return;
+      const sgn = expenseSign(e);
+      if (sgn === 0) return;
+      const u = round2(mult * sgn * (e.lbp_amount ? Number(e.usd_amount || 0) : Number(e.usd_amount != null ? e.usd_amount : e.amount || 0)));
+      const l = Math.round(mult * sgn * Number(e.lbp_amount || 0));
+      if (!u && !l) return;
+      upsertNamed(out.expenses, e.supplier || e.subcategory || e.category || 'Expense', row => {
+        row.usd = round2(Number(row.usd || 0) + u);
+        row.lbp = Math.round(Number(row.lbp || 0) + l);
+      });
+      out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + u);
+      out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
+    });
+    forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
+      if (/^credit/i.test(String(sp.method || 'Payment'))) return;
+      const amt = round2(mult * Number(sp.amount || 0));
+      if (!amt) return;
+      upsertNamed(out.expenses, sp.supplier || 'Supplier', row => { row.usd = round2(Number(row.usd || 0) + amt); });
+      out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + amt);
+    });
+    forEachCashCustomDelta('salaries', matchCo, (sa, mult) => {
+      const u = round2(mult * Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0)));
+      const l = Math.round(mult * Number(sa.lbp_amount || 0));
+      if (!u && !l) return;
+      upsertNamed(out.salary, sa.staff || 'Staff', row => {
+        row.usd = round2(Number(row.usd || 0) + u);
+        row.lbp = Math.round(Number(row.lbp || 0) + l);
+      });
+      out.salary.totals.usd = round2(Number(out.salary.totals.usd || 0) + u);
+      out.salary.totals.lbp = Math.round(Number(out.salary.totals.lbp || 0) + l);
+    });
+    forEachCashCustomDelta('loans', matchCo, (ln, mult) => {
+      const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
+      const u = round2(mult * Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0)));
+      const l = Math.round(mult * Math.abs(Number(ln.lbp_amount || 0)));
+      if (!u && !l) return;
+      upsertNamed(out.borrowing, ln.lender || ln.counterparty || ln.borrower || 'Borrower', row => {
+        if (isBorrowIn) {
+          row.paid_usd = round2(Number(row.paid_usd || 0) + u);
+          row.paid_lbp = Math.round(Number(row.paid_lbp || 0) + l);
+        } else {
+          row.rec_usd = round2(Number(row.rec_usd || 0) + u);
+          row.rec_lbp = Math.round(Number(row.rec_lbp || 0) + l);
+        }
+      });
+      if (isBorrowIn) {
+        out.borrowing.totals.paid_usd = round2(Number(out.borrowing.totals.paid_usd || 0) + u);
+        out.borrowing.totals.paid_lbp = Math.round(Number(out.borrowing.totals.paid_lbp || 0) + l);
+      } else {
+        out.borrowing.totals.rec_usd = round2(Number(out.borrowing.totals.rec_usd || 0) + u);
+        out.borrowing.totals.rec_lbp = Math.round(Number(out.borrowing.totals.rec_lbp || 0) + l);
+      }
+    });
+    forEachCashCustomDelta('loan_settlements', matchCo, (ls, mult) => {
+      const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
+      const u = round2(mult * Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0)));
+      const l = Math.round(mult * Math.abs(Number(ls.lbp_amount || 0)));
+      if (!u && !l) return;
+      upsertNamed(out.borrowing, ls.borrower || ls.loan || ls.counterparty || 'Borrower', row => {
+        if (isIn) {
+          row.paid_usd = round2(Number(row.paid_usd || 0) + u);
+          row.paid_lbp = Math.round(Number(row.paid_lbp || 0) + l);
+        } else {
+          row.rec_usd = round2(Number(row.rec_usd || 0) + u);
+          row.rec_lbp = Math.round(Number(row.rec_lbp || 0) + l);
+        }
+      });
+      if (isIn) {
+        out.borrowing.totals.paid_usd = round2(Number(out.borrowing.totals.paid_usd || 0) + u);
+        out.borrowing.totals.paid_lbp = Math.round(Number(out.borrowing.totals.paid_lbp || 0) + l);
+      } else {
+        out.borrowing.totals.rec_usd = round2(Number(out.borrowing.totals.rec_usd || 0) + u);
+        out.borrowing.totals.rec_lbp = Math.round(Number(out.borrowing.totals.rec_lbp || 0) + l);
+      }
+    });
+    forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
+      const flowStr = String(ex.flow || ex.type || '');
+      const isExtd = /extended/i.test(flowStr) || /^Extended\./i.test(String(ex.notes || ''));
+      const isCfg = /^config$/i.test(flowStr);
+      const isOut = /out|expense/i.test(String(ex.direction || flowStr));
+      const lbpRaw = Number(ex.lbp_amount || 0);
+      const usdRaw = lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0);
+      const uMag = round2(mult * (isCfg ? Math.abs(usdRaw) : Math.abs(usdRaw)));
+      const lMag = Math.round(mult * Math.abs(lbpRaw));
+      if (isExtd) {
+        const owesU = round2(mult * (isCfg ? -usdRaw : (isOut ? Math.abs(usdRaw) : -Math.abs(usdRaw))));
+        const owesL = Math.round(mult * (isCfg ? -lbpRaw : (isOut ? Math.abs(lbpRaw) : -Math.abs(lbpRaw))));
+        if (!owesU && !owesL) return;
+        upsertNamed(out.extended, ex.counterparty || 'Extended Stakeholder', row => {
+          row.usd = round2(Number(row.usd || 0) + owesU);
+          row.lbp = Math.round(Number(row.lbp || 0) + owesL);
+        });
+        out.extended.totals.usd = round2(Number(out.extended.totals.usd || 0) + owesU);
+        out.extended.totals.lbp = Math.round(Number(out.extended.totals.lbp || 0) + owesL);
+      } else {
+        const effOut = isCfg ? (usdRaw < 0 || lbpRaw < 0) : isOut;
+        if (!uMag && !lMag) return;
+        upsertNamed(out.external, ex.counterparty || 'External Treasury', row => {
+          if (effOut) {
+            row.exp_usd = round2(Number(row.exp_usd || 0) + uMag);
+            row.exp_lbp = Math.round(Number(row.exp_lbp || 0) + lMag);
+          } else {
+            row.rev_usd = round2(Number(row.rev_usd || 0) + uMag);
+            row.rev_lbp = Math.round(Number(row.rev_lbp || 0) + lMag);
+          }
+        });
+        if (effOut) {
+          out.external.totals.exp_usd = round2(Number(out.external.totals.exp_usd || 0) + uMag);
+          out.external.totals.exp_lbp = Math.round(Number(out.external.totals.exp_lbp || 0) + lMag);
+        } else {
+          out.external.totals.rev_usd = round2(Number(out.external.totals.rev_usd || 0) + uMag);
+          out.external.totals.rev_lbp = Math.round(Number(out.external.totals.rev_lbp || 0) + lMag);
+        }
+      }
+    });
+    forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
+      const d = convSignedDeltas(cv, rate);
+      const tp = d.u2l ? 'USD to LBP' : 'LBP to USD';
+      let row = out.conversion.rows.find(r => r && new RegExp(tp, 'i').test(r.type || ''));
+      if (!row) {
+        row = { type: tp, from_amt: 0, to_amt: 0 };
+        out.conversion.rows.push(row);
+      }
+      if (d.u2l) {
+        row.from_amt = round2(Number(row.from_amt || 0) + mult * d.usdMag);
+        row.to_amt = Math.round(Number(row.to_amt || 0) + mult * d.lbpMag);
+      } else {
+        row.from_amt = Math.round(Number(row.from_amt || 0) + mult * d.lbpMag);
+        row.to_amt = round2(Number(row.to_amt || 0) + mult * d.usdMag);
+      }
+    });
     return out;
   }
 
@@ -35041,7 +35216,7 @@
     const hasDrill = Boolean(focusDate || focusYm || focusParty);
     const activeCfChip = STATE.chipFilter || 'all';
     const isAllTimeWindow = !periodRange(STATE.period);
-    const tbls = cf.tables || {};
+    const tbls = buildLiveCashFlowTables(cf, STATE.company, rate);
     const tSales = tbls.sales || { rows: [], totals: { usd: 0, lbp: 0 } };
     const tExps = tbls.expenses || { rows: [], totals: { usd: 0, lbp: 0 } };
     const tBor = tbls.borrowing || { rows: [], totals: { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 } };
@@ -49399,7 +49574,7 @@
   function _getFormIntelIndex() {
     const recs = SEED.records || {};
     const tr = (SEED && SEED._tableRev) || {};
-    const rev = `${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.expenses||0}:${tr.credit_terms||0}:${tr.jv_distributions||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.external_movements||0}:${tr.logistics_allowances||0}:${tr.attendance||0}:${tr.customers||0}:${tr.sites||0}:${_GLOBAL_RATES_REV||0}:${_WIN_REV}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${(recs.receipts && recs.receipts.length) || 0}|${(recs.settlements && recs.settlements.length) || 0}|${(recs.expenses && recs.expenses.length) || 0}|${(recs.credit_terms && recs.credit_terms.length) || 0}|${(recs.jv_distributions && recs.jv_distributions.length) || 0}|${(recs.loans && recs.loans.length) || 0}|${(recs.loan_settlements && recs.loan_settlements.length) || 0}`;
+    const rev = `${SEED._customRev || 0}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.expenses||0}:${tr.credit_terms||0}:${tr.jv_distributions||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.external_movements||0}:${tr.logistics_allowances||0}:${tr.attendance||0}:${tr.customers||0}:${tr.sites||0}:${_GLOBAL_RATES_REV||0}:${_WIN_REV}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${(recs.receipts && recs.receipts.length) || 0}|${(recs.settlements && recs.settlements.length) || 0}|${(recs.expenses && recs.expenses.length) || 0}|${(recs.credit_terms && recs.credit_terms.length) || 0}|${(recs.jv_distributions && recs.jv_distributions.length) || 0}|${(recs.loans && recs.loans.length) || 0}|${(recs.loan_settlements && recs.loan_settlements.length) || 0}`;
     if (_FORM_INTEL_CACHE && _FORM_INTEL_CACHE.rev === rev) return _FORM_INTEL_CACHE;
 
     const creditTermsByCust = new Map();
@@ -49409,7 +49584,7 @@
     const absentStaffByDate = new Map();
 
     // 1. Latest ticket serial per BU + truck loads per date + unbilled VAT tickets (cached across non-ticket saves)
-    const tktRev = `${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${tr.sales_tickets||0}|${tr.raw_purchases||0}|${tr.customers||0}|${tr.sites||0}|${_GLOBAL_RATES_REV||0}|${_WIN_REV}`;
+    const tktRev = `${SEED._customRev || 0}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${tr.sales_tickets||0}|${tr.raw_purchases||0}|${tr.customers||0}|${tr.sites||0}|${_GLOBAL_RATES_REV||0}|${_WIN_REV}`;
     if (!_FORM_INTEL_TKT_CACHE || _FORM_INTEL_TKT_CACHE.rev !== tktRev) {
       const bLastSales = new Map();
       const bLastRaw = new Map();
@@ -61799,7 +61974,11 @@
     }
     if (record && editCtx && editCtx.orig) {
       const orig = editCtx.orig;
+      const seedOrigSnap = !isAppRecord(orig) ? captureSeedOrigSnapshot(crKey, orig) : null;
       record = Object.assign({}, orig, record);
+      if (seedOrigSnap && !record._seed_orig) {
+        record._seed_orig = buildSeedOrigMeta(seedOrigSnap);
+      }
       record.id = String(orig.id);
       if (adminOverrides.length) record.admin_overrides = adminOverrides;
       else delete record.admin_overrides;
@@ -62343,7 +62522,11 @@
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         const seenEi = new Set();
         const voidOldExpItem = it => {
-          if (!it || it.voided || !(String(it.expense_id || '') === String(record.id) || (record.name && norm(it.expense_ref) === norm(record.name)))) return;
+          if (!it || it.voided) return;
+          const matchExp = it.expense_id
+            ? (String(it.expense_id) === String(record.id))
+            : (Boolean(record.name) && norm(it.expense_ref) === norm(record.name));
+          if (!matchExp) return;
           it.voided = true;
           it.voided_at = new Date().toISOString();
           if (it.id && !seenEi.has(String(it.id))) {
@@ -62789,10 +62972,11 @@
       if (!SEED.records[crKey].some(x => x && String(x.id) === String(cleanSeed.id))) {
         SEED.records[crKey].unshift(cleanSeed);
       }
-      if (r && !isAppRecord(r)) list.splice(rIdx, 1);
     }
     if (r) {
       r.voided = false;
+      r.restored_at = new Date().toISOString();
+      r.modified_at = r.restored_at;
       delete r.voided_by;
       delete r.voided_at;
     }
@@ -62807,7 +62991,10 @@
       const seenChild = new Set();
       childPool.forEach(ch => {
         if (!ch || !ch.voided) return;
-        if (String(ch[idField] || '') !== parentId && (!parentRef || norm(ch[refField] || '') !== parentRef)) return;
+        const matchChild = ch[idField]
+          ? (String(ch[idField]) === parentId)
+          : (Boolean(parentRef) && norm(ch[refField] || '') === parentRef);
+        if (!matchChild) return;
         const cid = String(ch.id || ch.name || '');
         if (cid && seenChild.has(cid)) return;
         if (cid) seenChild.add(cid);
@@ -62851,21 +63038,30 @@
     const who = activeUser().full_name;
     const when = nowStamp();
     if (seedRow) {
+      const origSeedSnap = captureSeedOrigSnapshot(crKey, seedRow) || Object.assign({}, seedRow, { voided: false });
       if (!SEED_VOIDED_ARCHIVE[crKey]) SEED_VOIDED_ARCHIVE[crKey] = new Map();
       const sid = String(seedRow.id || q);
       if (!SEED_VOIDED_ARCHIVE[crKey].has(sid)) {
-        SEED_VOIDED_ARCHIVE[crKey].set(sid, Object.assign({}, seedRow, { voided: false }));
+        SEED_VOIDED_ARCHIVE[crKey].set(sid, Object.assign({}, origSeedSnap, { voided: false }));
       }
       seedRow.voided = true;
       seedRow.voided_by = who;
       seedRow.voided_at = when;
     }
     if (r) {
+      if (seedRow && !r._seed_orig) {
+        const sOrig = captureSeedOrigSnapshot(crKey, seedRow);
+        if (sOrig) r._seed_orig = buildSeedOrigMeta(sOrig);
+      }
       r.voided = true;
       r.voided_by = who;
       r.voided_at = when;
+      delete r.restored_at;
     } else if (seedRow) {
+      const sOrig = captureSeedOrigSnapshot(crKey, seedRow);
       r = Object.assign({}, seedRow, { id: seedRow.id || q, voided: true, voided_by: who, voided_at: when });
+      if (sOrig && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(sOrig);
+      delete r.restored_at;
       list.unshift(r);
     }
     const extraVoidPosts = [];
@@ -62880,7 +63076,10 @@
       const seenChild = new Set();
       childPool.forEach(ch => {
         if (!ch || ch.voided) return;
-        if (String(ch[idField] || '') !== parentId && (!parentRef || norm(ch[refField] || '') !== parentRef)) return;
+        const matchChild = ch[idField]
+          ? (String(ch[idField]) === parentId)
+          : (Boolean(parentRef) && norm(ch[refField] || '') === parentRef);
+        if (!matchChild) return;
         const cid = String(ch.id || ch.name || '');
         if (cid && seenChild.has(cid)) return;
         if (cid) seenChild.add(cid);
@@ -64042,7 +64241,11 @@
       const childItems = ((STATE.customRecords && STATE.customRecords.expense_items) || [])
         .concat((SEED.records && SEED.records.expense_items) || [])
         .filter(it => {
-          if (!it || it.voided || !(String(it.expense_id || '') === String(row.id) || (row.name && norm(it.expense_ref) === norm(row.name)))) return false;
+          if (!it || it.voided) return false;
+          const matchExp = it.expense_id
+            ? (String(it.expense_id) === String(row.id))
+            : (Boolean(row.name) && norm(it.expense_ref) === norm(row.name));
+          if (!matchExp) return false;
           if (it.id && seenEi.has(String(it.id))) return false;
           if (it.id) seenEi.add(String(it.id));
           return true;
@@ -66117,7 +66320,7 @@
     else if (key === 'expense_categories' || key === 'expense_subcategories' || key === 'expenses') {
       const cat = row.category || row.name;
       if (key === 'expenses') {
-        const expLines = (rec.expense_items || []).filter(i => String(i.expense_id) === String(row.id) || norm(i.expense_ref) === norm(row.name));
+        const expLines = (rec.expense_items || []).filter(i => i && (i.expense_id ? (String(i.expense_id) === String(row.id)) : (norm(i.expense_ref) === norm(row.name))));
         addGrid('sg_exp_items', `Invoice Item Lines (${row.name})`, 'Invoice Items', 'Item Breakdown', 'expense_items', expLines, ['name', 'item_name', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
       }
       if (key === 'expense_categories') {
@@ -69955,6 +70158,10 @@
           }
         }
         const origRowSnap = Object.assign({}, row);
+        if (!isAppRecord(origRowSnap)) {
+          const sOrig = captureSeedOrigSnapshot(key, origRowSnap);
+          if (sOrig && !row._seed_orig) row._seed_orig = buildSeedOrigMeta(sOrig);
+        }
         const editedKeySet = new Set(Object.keys(pendingUpdates));
         let changedCount = 0;
         const isBoundedEqSub = Boolean(isEquipInspect && effToDate);
@@ -70340,7 +70547,11 @@
             const linkedItems = STATE.customRecords.expense_items
               .concat((SEED.records && SEED.records.expense_items) || [])
               .filter(it => {
-                if (!it || it.voided || !(String(it.expense_id || '') === String(row.id) || (row.name && norm(it.expense_ref) === norm(row.name)))) return false;
+                if (!it || it.voided) return false;
+                const matchExp = it.expense_id
+                  ? (String(it.expense_id) === String(row.id))
+                  : (Boolean(row.name) && norm(it.expense_ref) === norm(row.name));
+                if (!matchExp) return false;
                 if (it.id && seenModEi.has(String(it.id))) return false;
                 if (it.id) seenModEi.add(String(it.id));
                 return true;
@@ -71091,11 +71302,14 @@
         const seedArr = SEED.records && SEED.records[k];
         if (!Array.isArray(arr) || !arr.length || !Array.isArray(seedArr) || !seedArr.length) return;
         const seedById = new Map(seedArr.map(x => [String(x.id), x]));
+        const origArch = SEED_ORIG_ARCHIVE[k] || null;
+        const voidArch = SEED_VOIDED_ARCHIVE[k] || null;
         const nextArr = arr.filter(r => {
           if (!r) return false;
           const rid = String(r.id == null ? '' : r.id);
           if (!posRe.test(rid)) return true;
-          const sRow = seedById.get(rid);
+          if (r.voided || r.modified_at || r.modified_by || r.restored_at) return true;
+          const sRow = (origArch && origArch.get(rid)) || (voidArch && voidArch.get(rid)) || seedById.get(rid) || r._seed_orig;
           if (!sRow) return false;
           if (r.name && sRow.name && String(r.name) !== String(sRow.name)) return false;
           if (r.ticket_no && sRow.ticket_no && String(r.ticket_no) !== String(sRow.ticket_no)) return false;
@@ -71133,9 +71347,59 @@
           }
         }
       }
+      if (Array.isArray(STATE.customRecords.suppliers)) {
+        STATE.customRecords.suppliers.forEach(s => {
+          if (!s || s.voided) return;
+          if ((s.iva || s.vat_registered) && s.vat_wtc == null && s.vat_bbc == null) {
+            s.vat_registered = true;
+            s.vat_wtc = true;
+            s.vat_bbc = true;
+            s.iva = true;
+            removedAny = true;
+          }
+        });
+      }
       const expArr = Array.isArray(STATE.customRecords.expenses) ? STATE.customRecords.expenses : [];
       if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
       const eiArr = STATE.customRecords.expense_items;
+      // Restore & normalize ex-mw4vzlrd-7ac2pg (MISC SAL 900-026-9 split lines accidentally voided by same-name collision)
+      const miscExpRow = expArr.find(x => x && x.id === 'ex-mw4vzlrd-7ac2pg' && !x.voided);
+      if (miscExpRow) {
+        const bogusFallback = eiArr.find(x => x && x.id === 'ex-mw4vzlrd-7ac2pg-i1' && !x.voided);
+        if (bogusFallback) {
+          bogusFallback.voided = true;
+          bogusFallback.voided_by = 'system-iva-sync';
+          bogusFallback.voided_at = '2026-11-06T13:45:00Z';
+          removedAny = true;
+        }
+        [
+          { id: 'ei-mw4w8wju-gqclw5', qty: 3, uc: 1000, pre: 3000, vat: 330, tot: 3330 },
+          { id: 'ei-mw4w8wju-sn65ec', qty: 1.5, uc: 1000, pre: 1500, vat: 165, tot: 1665 }
+        ].forEach(sp => {
+          const eiHit = eiArr.find(x => x && x.id === sp.id);
+          if (eiHit && (eiHit.voided || Number(eiHit.line_total) !== sp.tot || Number(eiHit.pre_vat_total) !== sp.pre)) {
+            eiHit.voided = false;
+            delete eiHit.voided_by;
+            delete eiHit.voided_at;
+            eiHit.qty = sp.qty;
+            eiHit.unit_cost = sp.uc;
+            eiHit.pre_vat_total = sp.pre;
+            eiHit.vat_amount = sp.vat;
+            eiHit.line_total = sp.tot;
+            eiHit.modified_at = '2026-11-06T13:45:00.000Z';
+            removedAny = true;
+          }
+        });
+        if (Number(miscExpRow.amount) === 4500 || Number(miscExpRow.item_count) !== 2) {
+          miscExpRow.amount = 4995;
+          miscExpRow.pre_vat_amount = 4500;
+          miscExpRow.vat_amount = 495;
+          miscExpRow.item_count = 2;
+          miscExpRow.item_summary = '3x Structural Steel / Fabrication (iron box) (Maghsal) · 1.5x Structural Steel / Fabrication (iron box) (Maghsal)';
+          miscExpRow.modified_at = '2026-11-06T13:45:00.000Z';
+          removedAny = true;
+        }
+      }
       let expCats = null;
       expArr.forEach(ex => {
         if (!ex || ex.voided) return;
@@ -71194,6 +71458,8 @@
           const effQ = Number(ex.qty) || 1;
           const itNm = sub || ex.category || 'Expense';
           const amt = Number(ex.amount) || 0;
+          const isExIva = isSupplierIvaForCompany(ex.supplier, ex.company || 'WTC');
+          const preVatAmt = ex.price_pending ? 0 : round2(isExIva ? (amt / 1.11) : amt);
           const newEi = {
             id: `${ex.id}-i1`,
             name: `${ex.name || ('EXP ' + (ex.date || ''))} · L1 · ${itNm}`,
@@ -71209,7 +71475,9 @@
             item_name: itNm,
             qty: round2(effQ),
             uom: /^fuel|oil/i.test(ex.category || '') ? 'Litre' : 'Piece',
-            unit_cost: ex.price_pending ? 0 : round2(amt / (effQ > 0 ? effQ : 1)),
+            unit_cost: ex.price_pending ? 0 : round2(preVatAmt / (effQ > 0 ? effQ : 1)),
+            pre_vat_total: preVatAmt,
+            vat_amount: ex.price_pending ? 0 : round2(round2(amt) - preVatAmt),
             line_total: ex.price_pending ? 0 : round2(amt),
             allocation_mode: 'same_equipment',
             target_equipment: ex.equipment || '',
@@ -71347,10 +71615,31 @@
         if (!r || !r.id) return;
         const cur = byId.get(r.id);
         if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
-        else if (r.voided && !cur.voided) { cur.voided = true; cur.voided_by = r.voided_by; cur.voided_at = r.voided_at; changed = true; }
+        else if (r.voided && !cur.voided) {
+          const curRestTs = String(cur.restored_at || '');
+          const inVoidTs = String(r.voided_at || '');
+          if (!curRestTs || !inVoidTs || inVoidTs >= curRestTs) {
+            cur.voided = true;
+            cur.voided_by = r.voided_by;
+            cur.voided_at = r.voided_at;
+            if (r._seed_orig && !cur._seed_orig) cur._seed_orig = r._seed_orig;
+            delete cur.restored_at;
+            changed = true;
+          }
+        }
+        else if (!r.voided && cur.voided && r.restored_at && (!cur.voided_at || String(r.restored_at) > String(cur.voided_at))) {
+          cur.voided = false;
+          cur.restored_at = r.restored_at;
+          if (r.modified_at) cur.modified_at = r.modified_at;
+          delete cur.voided_by;
+          delete cur.voided_at;
+          changed = true;
+        }
         else if (!cur.voided && !r.voided && r.modified_at && (!cur.modified_at || String(r.modified_at) > String(cur.modified_at))) {
           _preserveClosedEffectiveDates(cur, r);
+          const prevSeedOrig = cur._seed_orig;
           Object.assign(cur, r);
+          if (prevSeedOrig && !cur._seed_orig) cur._seed_orig = prevSeedOrig;
           if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
           changed = true;
         }
@@ -71390,10 +71679,12 @@
             i = list.findIndex(x => x && norm(x.name || x.equipment || x.driver || x.staff) === rNameNorm);
           }
           if (i >= 0) {
+            const origSeed = captureSeedOrigSnapshot(k, list[i]) || Object.assign({}, list[i], { voided: false });
+            if (!r._seed_orig) r._seed_orig = buildSeedOrigMeta(origSeed);
             if (!SEED_VOIDED_ARCHIVE[k]) SEED_VOIDED_ARCHIVE[k] = new Map();
             const sid = String(list[i].id || rid);
             if (!SEED_VOIDED_ARCHIVE[k].has(sid)) {
-              SEED_VOIDED_ARCHIVE[k].set(sid, Object.assign({}, list[i], { voided: false }));
+              SEED_VOIDED_ARCHIVE[k].set(sid, Object.assign({}, origSeed, { voided: false }));
             }
             list[i].voided = true;
             list.splice(i, 1);
@@ -71403,6 +71694,10 @@
         }
         const existingById = rid ? list.find(x => x && String(x.id) === rid) : null;
         if (existingById) {
+          if (!isAppRecord(existingById)) {
+            const origSeed = captureSeedOrigSnapshot(k, existingById);
+            if (origSeed && !r._seed_orig) r._seed_orig = buildSeedOrigMeta(origSeed);
+          }
           _preserveClosedEffectiveDates(existingById, r);
           Object.assign(existingById, r);
           if (!r.admin_overrides && existingById.admin_overrides) delete existingById.admin_overrides;
