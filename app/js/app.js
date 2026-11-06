@@ -87540,14 +87540,32 @@
           KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 35);
         }
       }
+      const liveBadgeEl = $('kioskAttLiveBadge');
+      if (liveBadgeEl) {
+        liveBadgeEl.style.cursor = 'pointer';
+        liveBadgeEl.addEventListener('click', () => {
+          if (KIOSK_ADMIN_MODAL_STATE.open) return;
+          KIOSK_ATT_STATE.camPausedByUser = false;
+          if ('serviceWorker' in navigator) {
+            try { navigator.serviceWorker.getRegistration().then(r => r && r.update().catch(() => {})).catch(() => {}); } catch (_) {}
+          }
+          startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
+        });
+      }
       const vpEl = $('kioskAttViewport');
       if (vpEl) {
         vpEl.addEventListener('click', e => {
           if (e.target && e.target.closest && e.target.closest('button')) return;
           if (!STATE.kioskLocked || KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ATT_STATE.camPausedByUser) return;
+          const nowTap = Date.now();
+          const isDoubleTap = (nowTap - (KIOSK_ATT_STATE.lastViewportTapAt || 0)) < 600;
+          KIOSK_ATT_STATE.lastViewportTapAt = nowTap;
           const kv = $('kioskAttVideo');
-          const stalled = KIOSK_ATT_STATE.lastTimeMoveAt > 0 && (Date.now() - KIOSK_ATT_STATE.lastTimeMoveAt) > 2000;
-          if (!KIOSK_ATT_STATE.camActive || !streamAlive() || !kv || kv.ended || stalled) {
+          const stalled = KIOSK_ATT_STATE.lastTimeMoveAt > 0 && (nowTap - KIOSK_ATT_STATE.lastTimeMoveAt) > 1500;
+          if (isDoubleTap || !KIOSK_ATT_STATE.camActive || !streamAlive() || !kv || kv.ended || stalled) {
+            if ('serviceWorker' in navigator) {
+              try { navigator.serviceWorker.getRegistration().then(r => r && r.update().catch(() => {})).catch(() => {}); } catch (_) {}
+            }
             startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
           } else if (kv.paused) {
             kv.play().catch(() => {});
