@@ -76784,10 +76784,11 @@
     }
     const demoBtn = $('companySwitchScalePreviewBtn');
     if (demoBtn) {
-      demoBtn.hidden = !isOwner(user);
+      const isDemoSession = Boolean(STATE.demoVisitor || isPublicDemoSandbox() || PARAMS.get('demo') === '1' || PARAMS.get('autologin') === '1' || PARAMS.get('scale') === '1' || STATE.enterpriseScalePreview);
+      demoBtn.hidden = !(isOwner(user) && isDemoSession);
       demoBtn.classList.toggle('active', !!STATE.enterpriseScalePreview);
       demoBtn.innerHTML = STATE.enterpriseScalePreview
-        ? `${ic('check_circle')} 10 Ind × 150 Co Preview (Reset to 3)`
+        ? `${ic('check_circle')} 10 Ind × 150 Co Preview (Reset to 14)`
         : `${ic('bolt')} Preview 10 Ind × 150 Co`;
     }
     const offBtn = $('officialScopeToggleBtn');
@@ -76855,6 +76856,7 @@
     if (demoBtn) {
       demoBtn.addEventListener('click', e => {
         e.stopPropagation();
+        if (!isOwner() || !(STATE.demoVisitor || isPublicDemoSandbox() || PARAMS.get('demo') === '1' || PARAMS.get('autologin') === '1' || PARAMS.get('scale') === '1' || STATE.enterpriseScalePreview)) return;
         STATE.enterpriseScalePreview = !STATE.enterpriseScalePreview;
         STATE.enterprisePreviewCompanies = STATE.enterpriseScalePreview ? buildEnterprisePreviewCatalog() : [];
         STATE.companySwitchIndFilter = 'all';
@@ -88987,7 +88989,8 @@
     const qIndRaw = String(PARAMS.get('industry') || '').trim().toLowerCase();
     const qScale = PARAMS.get('scale') === '1';
     const mappedInd = INDUSTRY_SLUG_MAP[qIndRaw] || (ENTERPRISE_INDUSTRIES.find(x => x.id.toLowerCase() === qIndRaw || x.code.toLowerCase() === qIndRaw) || {}).id || '';
-    if (qScale || (mappedInd && mappedInd !== 'Manufacturing')) {
+    const isSyntheticInd = Boolean(mappedInd && !['Manufacturing', 'Hospitality & Resorts', 'Automotive & Heavy Trading', 'Real Estate & Property', 'Insurance & Brokerage', 'Holding & Treasury'].includes(mappedInd));
+    if (qScale || isSyntheticInd) {
       STATE.enterpriseScalePreview = true;
       STATE.enterprisePreviewCompanies = buildEnterprisePreviewCatalog();
     }
