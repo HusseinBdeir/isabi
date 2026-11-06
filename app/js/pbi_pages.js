@@ -2020,6 +2020,25 @@
     if (_pbiCustSet.has(o) && (!_pbiSupSet.has(o) || _pbiCustEqSet.has(o))) return 'customers';
     return 'suppliers';
   }
+  const PBI_BU_MAP = {
+    wtc: 'WTC',
+    bbconstruction: 'BBConstruction',
+    bbc: 'BBConstruction',
+    lions: 'Lions Transport',
+    'lions-transport': 'Lions Transport',
+    lionstransport: 'Lions Transport',
+    bdeirholding: 'Bdeir Holding',
+    blanca: 'Blanca',
+    launa: 'La Una',
+    palms: 'Palms',
+    voile: 'Voile',
+    platinum: 'Platinum',
+    korriauto: 'Korri Auto',
+    shacman: 'Shacman',
+    properties: 'Properties',
+    '4235company': '4235 Company S.A.L',
+    insurance: 'Insurance Company'
+  };
   function getActiveSingleBuName() {
     const st = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
     if (!st) return '';
@@ -2031,9 +2050,7 @@
       }
       return '';
     }
-    if (co === 'wtc') return 'WTC';
-    if (co === 'bbconstruction' || co === 'bbc') return 'BBConstruction';
-    if (co === 'lions' || co === 'lions-transport' || co === 'lionstransport') return 'Lions Transport';
+    if (PBI_BU_MAP[co]) return PBI_BU_MAP[co];
     return String(st.company || '').trim();
   }
   function getHubRelIndex(SEED) {
@@ -2043,8 +2060,14 @@
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
     const singleBu = getActiveSingleBuName();
+    const activeInd = (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function')
+      ? window.__mfgGetActiveIndustry()
+      : 'Manufacturing';
+    const isMfg = activeInd === 'Manufacturing';
+    const inIndDim = r => Boolean(r && !r.voided && (isMfg ? !r._multiIndustrySeed : r._industry === activeInd));
+    const inInd = r => Boolean(inIndDim(r) && (!singleBu || !r.company || r.company === singleBu));
     const payCutoffStamp = (_activePbiState && _activePbiState.payrollCutoffMode) || 'closed_month';
-    const stamp = `${singleBu}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const stamp = `${activeInd}|${singleBu}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -2122,24 +2145,26 @@
     });
 
     // Seed from Manufacturing Group consolidated model + fallback semantic_model summaries, then overlay canonical hydrated AR/AP
-    const mgModel = ((SEED && SEED.models) || {})['manufacturing-group'] || {};
-    (mgModel.customers || (((SEED && SEED.semantic_model) || {}).customer_ar_summary) || []).forEach(c => {
-      const e = ensure(rel.custByName, c.Customer, initCust);
-      if (e) {
-        e.sales_loads = Number(c.loads || 0);
-        e.total_sales = Number(c.sales_ttc || 0);
-        e.ar_balance = Number(c.ar_balance || 0);
-      }
-    });
-    (mgModel.suppliers || (((SEED && SEED.semantic_model) || {}).supplier_ap_summary) || []).forEach(s => {
-      const e = ensure(rel.suppByName, s.Supplier, initSupp);
-      if (e) {
-        e.raw_loads = Number(s.raw_loads || 0);
-        e.raw_cost = Number(s.raw_cost || 0);
-        e.ap_balance = Number(s.ap_balance || 0);
-      }
-    });
-    if (Array.isArray(rec.sales_tickets) && rec.sales_tickets.length > 0) {
+    const mgModel = isMfg ? (((SEED && SEED.models) || {})['manufacturing-group'] || {}) : {};
+    if (isMfg) {
+      (mgModel.customers || (((SEED && SEED.semantic_model) || {}).customer_ar_summary) || []).forEach(c => {
+        const e = ensure(rel.custByName, c.Customer, initCust);
+        if (e) {
+          e.sales_loads = Number(c.loads || 0);
+          e.total_sales = Number(c.sales_ttc || 0);
+          e.ar_balance = Number(c.ar_balance || 0);
+        }
+      });
+      (mgModel.suppliers || (((SEED && SEED.semantic_model) || {}).supplier_ap_summary) || []).forEach(s => {
+        const e = ensure(rel.suppByName, s.Supplier, initSupp);
+        if (e) {
+          e.raw_loads = Number(s.raw_loads || 0);
+          e.raw_cost = Number(s.raw_cost || 0);
+          e.ap_balance = Number(s.ap_balance || 0);
+        }
+      });
+    }
+    if (isMfg && Array.isArray(rec.sales_tickets) && rec.sales_tickets.length > 0) {
       const cCanon = new Map();
       const normCustKey = nm => {
         const nk = norm(nm);
@@ -2152,7 +2177,7 @@
         return cCanon.get(nk);
       };
       (rec.sales_tickets || []).forEach(s => {
-        if (!s || s.voided || !s.customer) return;
+        if (!s || s.voided || !s.customer || s._multiIndustrySeed) return;
         if (singleBu && s.company && s.company !== singleBu) return;
         const sgn = saleTicketSign(s);
         if (sgn === 0) return;
@@ -2165,7 +2190,7 @@
         if (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return') cur.crTtc += ttc;
       });
       (rec.receipts || []).forEach(r => {
-        if (!r || r.voided || !r.customer || !isArSettlingRecpt(r)) return;
+        if (!r || r.voided || !r.customer || r._multiIndustrySeed || !isArSettlingRecpt(r)) return;
         if (singleBu && r.company && r.company !== singleBu) return;
         const cur = ensureCC(r.customer);
         if (cur) cur.settled += Number(r.amount || 0) + Number(r.discount || 0);
@@ -2196,31 +2221,32 @@
         if (!sCanon.has(nk)) sCanon.set(nk, { rawLoads: 0, rawCost: 0, onCr: 0, settled: 0 });
         return sCanon.get(nk);
       };
-      (rec.raw_purchases || []).forEach(r => {
-        if (!r || r.voided) return;
-        if (singleBu && r.company && r.company !== singleBu) return;
-        const matOwner = r.site_owner || r.truck_owner;
-        if (matOwner) {
-          const cur = ensureSC(matOwner);
-          if (cur) {
-            cur.rawLoads += 1;
-            const c = Number(r.cost || 0);
-            cur.rawCost += c;
-            cur.onCr += c;
+      if (isMfg) {
+        (rec.raw_purchases || []).forEach(r => {
+          if (!r || r.voided || r._multiIndustrySeed) return;
+          if (singleBu && r.company && r.company !== singleBu) return;
+          const matOwner = r.site_owner || r.truck_owner;
+          if (matOwner) {
+            const cur = ensureSC(matOwner);
+            if (cur) {
+              cur.rawLoads += 1;
+              const c = Number(r.cost || 0);
+              cur.rawCost += c;
+              cur.onCr += c;
+            }
           }
-        }
-        if (Number(r.trans_cost || 0) !== 0) {
-          const curH = ensureSC(r.truck_owner || '(Unassigned Supplier)');
-          if (curH) {
-            const hc = Number(r.trans_cost || 0);
-            curH.rawCost += hc;
-            curH.onCr += hc;
+          if (Number(r.trans_cost || 0) !== 0) {
+            const curH = ensureSC(r.truck_owner || '(Unassigned Supplier)');
+            if (curH) {
+              const hc = Number(r.trans_cost || 0);
+              curH.rawCost += hc;
+              curH.onCr += hc;
+            }
           }
-        }
-      });
+        });
+      }
       (rec.expenses || []).forEach(x => {
-        if (!x || x.voided || !x.supplier) return;
-        if (singleBu && x.company && x.company !== singleBu) return;
+        if (!inInd(x) || !x.supplier) return;
         const mth = String(x.method || '').trim();
         if (mth === 'Credit' || mth === 'CR Return' || mth === 'IVA' || mth === 'VAT' || mth === 'VAT Dis') {
           const sgn = mth === 'CR Return' ? -1 : 1;
@@ -2229,8 +2255,7 @@
         }
       });
       (rec.settlements || []).forEach(sp => {
-        if (!sp || sp.voided || !sp.supplier) return;
-        if (singleBu && sp.company && sp.company !== singleBu) return;
+        if (!inInd(sp) || !sp.supplier) return;
         const mth = String(sp.method || '').trim();
         if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent') return;
         const cur = ensureSC(sp.supplier);
@@ -2244,7 +2269,10 @@
         e.ap_balance = round2(st.onCr - st.settled);
       });
       if (typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
-        const legTargetCo = singleBu === 'WTC' ? 'wtc' : (singleBu === 'BBConstruction' ? 'bbconstruction' : (singleBu === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+        const stObj = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
+        const legTargetCo = isMfg
+          ? (singleBu === 'WTC' ? 'wtc' : (singleBu === 'BBConstruction' ? 'bbconstruction' : (singleBu === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group')))
+          : String((stObj && stObj.company) || ('industry:' + activeInd));
         const legRes = window.__mfgComputeThreeLegPayables({ company: legTargetCo, ignorePeriod: true });
         if (legRes && legRes.byNorm) {
           legRes.byNorm.forEach((lr, sk) => {
@@ -2267,6 +2295,7 @@
 
     const eqLabelMap = {};
     (rec.equipment || []).forEach(eq => {
+      if (!inIndDim(eq)) return;
       if (eq && eq.name && eq.plate_no && norm(eq.plate_no) !== norm(eq.name)) {
         const lbl = `${eq.name} (${eq.plate_no})`;
         eqLabelMap[norm(eq.name)] = lbl;
@@ -2275,9 +2304,20 @@
     });
     const fmtTruckRef = t => eqLabelMap[norm(t)] || t;
 
-    (rec.customers || []).forEach(c => { ensure(rel.custByName, c.name, initCust); });
+    (rec.customers || []).forEach(c => {
+      if (!inIndDim(c)) return;
+      const e = ensure(rel.custByName, c.name, initCust);
+      if (e && !isMfg) {
+        if (c.sales_loads != null) e.sales_loads += Number(c.sales_loads || 0);
+        if (c.total_sales != null) e.total_sales = round2(e.total_sales + Number(c.total_sales || 0));
+        if (c.ar_balance != null) e.ar_balance = round2(e.ar_balance + Number(c.ar_balance || 0));
+        if (c.credit_days != null) e.credit_days = c.credit_days;
+        if (c.credit_limit != null) e.credit_limit = c.credit_limit;
+      }
+    });
 
     (rec.suppliers || []).forEach(s => {
+      if (!inIndDim(s)) return;
       const e = ensure(rel.suppByName, s.name, initSupp);
       if (!e) return;
       if (Array.isArray(s.trucks)) s.trucks.forEach(t => { if (t) e.trucks.add(fmtTruckRef(t)); });
@@ -2287,6 +2327,7 @@
     });
 
     (rec.credit_terms || []).forEach(ct => {
+      if (!inIndDim(ct)) return;
       const e = ensure(rel.custByName, ct.customer, initCust);
       if (e) {
         if (ct.credit_days != null) e.credit_days = ct.credit_days;
@@ -2295,6 +2336,7 @@
     });
 
     (rec.price_rules || []).forEach(pr => {
+      if (!inIndDim(pr)) return;
       if (pr.customer) {
         const e = ensure(rel.custByName, pr.customer, initCust);
         if (e && !pr.end_date) e.active_rules++;
@@ -2324,35 +2366,59 @@
     });
 
     const prodTypeMap = {};
-    (rec.product_types || []).forEach(pt => { ensure(rel.typeByName, pt.name, initType); });
-    (rec.uoms || []).forEach(u => { ensure(rel.uomByName, u.name, initUom); });
+    if (isMfg) {
+      (rec.product_types || []).forEach(pt => { ensure(rel.typeByName, pt.name, initType); });
+      (rec.uoms || []).forEach(u => { ensure(rel.uomByName, u.name, initUom); });
+    }
     (rec.products || []).forEach(p => {
-      ensure(rel.prodByName, p.name, initProd);
+      if (!inIndDim(p)) return;
+      const pe = ensure(rel.prodByName, p.name, initProd);
+      if (pe && !isMfg) {
+        if (p.list_price != null) pe.list_price = p.list_price;
+        if (p.sales_loads != null) pe.sales_loads += Number(p.sales_loads || 0);
+      }
       if (p.name && p.type) prodTypeMap[norm(p.name)] = p.type;
       const te = ensure(rel.typeByName, p.type, initType);
-      if (te) te.products_count++;
+      if (te) {
+        te.products_count++;
+        if (!isMfg && p.sales_loads != null) te.sales_loads += Number(p.sales_loads || 0);
+      }
       const ue = ensure(rel.uomByName, p.uom, initUom);
       if (ue) ue.products_count++;
     });
 
     const siteRegMap = {};
-    (rec.regions || []).forEach(rg => { if (rg && !rg.voided) ensure(rel.regByName, rg.name, initReg); });
+    (rec.regions || []).forEach(rg => {
+      if (inIndDim(rg)) {
+        const re = ensure(rel.regByName, rg.name, initReg);
+        if (re && !isMfg && rg.overtime_rate != null) re.overtime_rate = rg.overtime_rate;
+      }
+    });
     (rec.sites || []).forEach(s => {
-      if (!s || s.voided) return;
-      ensure(rel.siteByName, s.name, initSite);
+      if (!inIndDim(s)) return;
+      const se = ensure(rel.siteByName, s.name, initSite);
+      if (se && !isMfg) {
+        if (s.sales_loads != null) se.sales_loads += Number(s.sales_loads || 0);
+        if (s.raw_loads != null) se.raw_loads += Number(s.raw_loads || 0);
+      }
       const effReg = s.region || s.geo_zone || '';
       if (s.name && effReg) siteRegMap[norm(s.name)] = effReg;
       const re = ensure(rel.regByName, effReg, initReg);
       if (re) {
         re.sites_count++;
         re.sites.push(s);
+        if (!isMfg) {
+          re.sales_loads += Number(s.sales_loads || 0);
+          re.raw_loads += Number(s.raw_loads || 0);
+          re.total_loads += Number(s.sales_loads || 0) + Number(s.raw_loads || 0);
+        }
       }
       if (s.supplier) {
-        const se = ensure(rel.suppByName, s.supplier, initSupp);
-        if (se) { se.is_quarry = true; if (s.name) se.sites.add(s.name); }
+        const supE = ensure(rel.suppByName, s.supplier, initSupp);
+        if (supE) { supE.is_quarry = true; if (s.name) supE.sites.add(s.name); }
       }
     });
-    if ((!Array.isArray(rec.sales_tickets) || !rec.sales_tickets.length) && Array.isArray(mgModel.sites)) {
+    if (isMfg && (!Array.isArray(rec.sales_tickets) || !rec.sales_tickets.length) && Array.isArray(mgModel.sites)) {
       mgModel.sites.forEach(ms => {
         const nm = ms && (ms.Site || ms.name);
         if (!nm) return;
@@ -2364,12 +2430,15 @@
         if (rl > 0) { const ss = ensureSiteCat('supplier', nm); if (ss) ss.raw_loads = rl; }
       });
     }
-    (rec.overtime_rates || []).forEach(ot => {
-      const re = ensure(rel.regByName, ot.region, initReg);
-      if (re && ot.amount != null && (!ot.end_date || re.overtime_rate == null)) re.overtime_rate = ot.amount;
-    });
+    if (isMfg) {
+      (rec.overtime_rates || []).forEach(ot => {
+        const re = ensure(rel.regByName, ot.region, initReg);
+        if (re && ot.amount != null && (!ot.end_date || re.overtime_rate == null)) re.overtime_rate = ot.amount;
+      });
+    }
 
     (rec.company_equipment || []).forEach(ce => {
+      if (!inInd(ce)) return;
       const ee = ensure(rel.equipByName, ce.equipment, initEquip);
       if (ee && ce.company) ee.companies.add(ce.company);
       if (ce.default_driver) {
@@ -2378,8 +2447,14 @@
       }
     });
     (rec.equipment || []).forEach(eq => {
+      if (!inIndDim(eq)) return;
       const ee = ensure(rel.equipByName, eq.name, initEquip);
       if (ee && eq.type) ee.type = eq.type;
+      if (ee && !isMfg) {
+        if (eq.loads_hauled != null) ee.loads_hauled += Number(eq.loads_hauled || 0);
+        if (eq.fuel_fills != null) ee.fuel_fills += Number(eq.fuel_fills || 0);
+        if (eq.company) ee.companies.add(eq.company);
+      }
       if (ee && eq.plate_no && norm(eq.plate_no) !== norm(eq.name)) {
         rel.equipByName[norm(eq.plate_no)] = ee;
       }
@@ -2398,7 +2473,13 @@
       }
     });
     (rec.drivers || []).forEach(drv => {
-      ensure(rel.drvByName, drv.name || drv.driver, initDrv);
+      if (!inIndDim(drv)) return;
+      const de = ensure(rel.drvByName, drv.name || drv.driver, initDrv);
+      if (de && !isMfg) {
+        if (drv.loads_hauled != null) de.loads_hauled += Number(drv.loads_hauled || 0);
+        if (drv.fuel_fills != null) de.fuel_fills += Number(drv.fuel_fills || 0);
+        if (drv.company) de.companies.add(drv.company);
+      }
       if (drv.truck_owner) {
         const isCustDrv = resolveTruckOwnerTargetPbi(drv.truck_owner, null, SEED) === 'customers';
         const se = isCustDrv ? ensure(rel.custByName, drv.truck_owner, initCust) : ensure(rel.suppByName, drv.truck_owner, initSupp);
@@ -2410,117 +2491,123 @@
       }
     });
     (rec.company_drivers || []).forEach(cd => {
+      if (!inInd(cd)) return;
       const de = ensure(rel.drvByName, cd.driver, initDrv);
       if (de && cd.company) de.companies.add(cd.company);
     });
 
-    (rec.sales_tickets || []).forEach(t => {
-      if (t.customer) {
-        const ce = ensure(rel.custByName, t.customer, initCust);
-        if (ce) {
-          ce.sample_loads++;
-          if (ce.sample_loads > ce.sales_loads) ce.sales_loads = ce.sample_loads;
+    if (isMfg) {
+      (rec.sales_tickets || []).forEach(t => {
+        if (!t || t._multiIndustrySeed) return;
+        if (t.customer) {
+          const ce = ensure(rel.custByName, t.customer, initCust);
+          if (ce) {
+            ce.sample_loads++;
+            if (ce.sample_loads > ce.sales_loads) ce.sales_loads = ce.sample_loads;
+          }
         }
-      }
-      const pNorm = t.product ? norm(t.product) : '';
-      if (pNorm) {
-        const pe = rel.prodByName[pNorm] || (rel.prodByName[pNorm] = initProd());
-        pe.sales_loads++;
-        const pType = prodTypeMap[pNorm];
-        if (pType) {
-          const te = ensure(rel.typeByName, pType, initType);
-          if (te) te.sales_loads++;
+        const pNorm = t.product ? norm(t.product) : '';
+        if (pNorm) {
+          const pe = rel.prodByName[pNorm] || (rel.prodByName[pNorm] = initProd());
+          pe.sales_loads++;
+          const pType = prodTypeMap[pNorm];
+          if (pType) {
+            const te = ensure(rel.typeByName, pType, initType);
+            if (te) te.sales_loads++;
+          }
         }
-      }
-      const ue = ensure(rel.uomByName, t.uom, initUom);
-      if (ue) ue.tickets_count++;
-      const sNorm = t.site ? norm(t.site) : '';
-      if (sNorm) {
-        const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
-        se.sales_loads++;
-        const ck = `customer|${sNorm}`;
-        const cs = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
-        cs.sales_loads++;
-        const sReg = siteRegMap[sNorm];
-        if (sReg) {
-          const re = ensure(rel.regByName, sReg, initReg);
-          if (re) { re.sales_loads++; re.total_loads++; }
+        const ue = ensure(rel.uomByName, t.uom, initUom);
+        if (ue) ue.tickets_count++;
+        const sNorm = t.site ? norm(t.site) : '';
+        if (sNorm) {
+          const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
+          se.sales_loads++;
+          const ck = `customer|${sNorm}`;
+          const cs = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
+          cs.sales_loads++;
+          const sReg = siteRegMap[sNorm];
+          if (sReg) {
+            const re = ensure(rel.regByName, sReg, initReg);
+            if (re) { re.sales_loads++; re.total_loads++; }
+          }
         }
-      }
-      const ee = ensure(rel.equipByName, t.truck, initEquip);
-      if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
-      const de = ensure(rel.drvByName, t.driver, initDrv);
-      if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
-      if (t.truck_owner) {
-        const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
-        const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
-        if (he) {
-          he.is_hauler = true;
-          he.haul_loads++;
-          if (t.truck) he.trucks.add(fmtTruckRef(t.truck));
-          if (t.driver) he.drivers.add(t.driver);
+        const ee = ensure(rel.equipByName, t.truck, initEquip);
+        if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
+        const de = ensure(rel.drvByName, t.driver, initDrv);
+        if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
+        if (t.truck_owner) {
+          const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
+          const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
+          if (he) {
+            he.is_hauler = true;
+            he.haul_loads++;
+            if (t.truck) he.trucks.add(fmtTruckRef(t.truck));
+            if (t.driver) he.drivers.add(t.driver);
+          }
         }
-      }
-      if (t.vat_invoice) rel.vatInvByNo[norm(t.vat_invoice)] = (rel.vatInvByNo[norm(t.vat_invoice)] || 0) + 1;
-    });
+        if (t.vat_invoice) rel.vatInvByNo[norm(t.vat_invoice)] = (rel.vatInvByNo[norm(t.vat_invoice)] || 0) + 1;
+      });
 
-    (rec.raw_purchases || []).forEach(t => {
-      const ue = ensure(rel.uomByName, t.uom, initUom);
-      if (ue) ue.tickets_count++;
-      const sNorm = t.site ? norm(t.site) : '';
-      if (sNorm) {
-        const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
-        se.raw_loads++;
-        const ck = `supplier|${sNorm}`;
-        const ss = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
-        ss.raw_loads++;
-        const rReg = t.region || siteRegMap[sNorm] || '';
-        if (rReg) {
-          const re = ensure(rel.regByName, rReg, initReg);
-          if (re) { re.raw_loads++; re.total_loads++; }
+      (rec.raw_purchases || []).forEach(t => {
+        if (!t || t._multiIndustrySeed) return;
+        const ue = ensure(rel.uomByName, t.uom, initUom);
+        if (ue) ue.tickets_count++;
+        const sNorm = t.site ? norm(t.site) : '';
+        if (sNorm) {
+          const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
+          se.raw_loads++;
+          const ck = `supplier|${sNorm}`;
+          const ss = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
+          ss.raw_loads++;
+          const rReg = t.region || siteRegMap[sNorm] || '';
+          if (rReg) {
+            const re = ensure(rel.regByName, rReg, initReg);
+            if (re) { re.raw_loads++; re.total_loads++; }
+          }
         }
-      }
-      const ee = ensure(rel.equipByName, t.truck, initEquip);
-      if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
-      const de = ensure(rel.drvByName, t.driver, initDrv);
-      if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
-      if (t.site_owner) {
-        const qe = ensure(rel.suppByName, t.site_owner, initSupp);
-        if (qe) {
-          qe.is_quarry = true;
-          qe.raw_loads_cnt++;
-          qe.raw_cost_sample += Number(t.cost || 0);
-          if (qe.raw_loads_cnt > qe.raw_loads) qe.raw_loads = qe.raw_loads_cnt;
-          if (t.site) qe.sites.add(t.site);
+        const ee = ensure(rel.equipByName, t.truck, initEquip);
+        if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
+        const de = ensure(rel.drvByName, t.driver, initDrv);
+        if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
+        if (t.site_owner) {
+          const qe = ensure(rel.suppByName, t.site_owner, initSupp);
+          if (qe) {
+            qe.is_quarry = true;
+            qe.raw_loads_cnt++;
+            qe.raw_cost_sample += Number(t.cost || 0);
+            if (qe.raw_loads_cnt > qe.raw_loads) qe.raw_loads = qe.raw_loads_cnt;
+            if (t.site) qe.sites.add(t.site);
+          }
         }
-      }
-      if (t.truck_owner) {
-        const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
-        const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
-        if (he) {
-          he.is_hauler = true;
-          he.haul_loads++;
-          he.raw_cost_sample += Number(t.trans_cost || 0);
-          if (t.truck) he.trucks.add(fmtTruckRef(t.truck));
-          if (t.driver) he.drivers.add(t.driver);
+        if (t.truck_owner) {
+          const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
+          const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
+          if (he) {
+            he.is_hauler = true;
+            he.haul_loads++;
+            he.raw_cost_sample += Number(t.trans_cost || 0);
+            if (t.truck) he.trucks.add(fmtTruckRef(t.truck));
+            if (t.driver) he.drivers.add(t.driver);
+          }
         }
-      }
-    });
+      });
 
-    (rec.fuel_intakes || []).forEach(f => {
-      const ee = ensure(rel.equipByName, f.equipment, initEquip);
-      if (ee) ee.fuel_fills++;
-      const de = ensure(rel.drvByName, f.driver, initDrv);
-      if (de) de.fuel_fills++;
-      if (f.item) {
-        const pe = ensure(rel.prodByName, f.item, initProd);
-        if (pe) pe.fuel_fills++;
-      }
-      if (f.supplier) {
-        const se = ensure(rel.suppByName, f.supplier, initSupp);
-        if (se) { se.is_expense = true; se.expenses_count++; }
-      }
-    });
+      (rec.fuel_intakes || []).forEach(f => {
+        if (!f || f._multiIndustrySeed) return;
+        const ee = ensure(rel.equipByName, f.equipment, initEquip);
+        if (ee) ee.fuel_fills++;
+        const de = ensure(rel.drvByName, f.driver, initDrv);
+        if (de) de.fuel_fills++;
+        if (f.item) {
+          const pe = ensure(rel.prodByName, f.item, initProd);
+          if (pe) pe.fuel_fills++;
+        }
+        if (f.supplier) {
+          const se = ensure(rel.suppByName, f.supplier, initSupp);
+          if (se) { se.is_expense = true; se.expenses_count++; }
+        }
+      });
+    }
 
     (rec.expense_categories || []).forEach(ec => {
       if (!ec) return;
@@ -2539,6 +2626,7 @@
       if (ce) ce.subcategories_count++;
     });
     (rec.expenses || []).forEach(ex => {
+      if (!inInd(ex)) return;
       const sgn = hubExpenseSign(ex);
       if (sgn === 0) return;
       const amt = round2(sgn * Number(ex.amount || ex.usd_amount || 0));
@@ -2570,7 +2658,7 @@
       if (re && (sr.role_category || sr.category)) re.category = sr.role_category || sr.category;
     });
     (rec.staff_members || []).forEach(sm => {
-      if (!sm || sm.voided) return;
+      if (!inIndDim(sm)) return;
       const sName = sm.name || sm.staff;
       const st = ensure(rel.staffByName, sName, initStaff);
       if (st) {
@@ -2586,7 +2674,7 @@
       }
     });
     (rec.staff_assignments || []).forEach(sa => {
-      if (!sa || sa.voided) return;
+      if (!inInd(sa)) return;
       const sName = sa.staff || sa.name;
       const st = ensure(rel.staffByName, sName, initStaff);
       const ended = sa.status === 'Ended' || Boolean(sa.end_date && String(sa.end_date).slice(0, 10) < seedDateIso);
@@ -2613,7 +2701,7 @@
       }
     });
     (rec.employments || []).forEach(emp => {
-      if (!emp || emp.voided) return;
+      if (!inInd(emp)) return;
       const sName = emp.staff || emp.name;
       const st = ensure(rel.staffByName, sName, initStaff);
       if (!st) return;
@@ -2645,7 +2733,7 @@
       if (/driver|operat|loader|excavat|crusher|truck/i.test(String(emp.role || ''))) st.is_driver_op = true;
     });
     (rec.salaries || []).forEach(sal => {
-      if (!sal || sal.voided) return;
+      if (!inInd(sal)) return;
       const st = ensure(rel.staffByName, sal.staff, initStaff);
       if (st) {
         st.payments_count++;
@@ -2657,7 +2745,7 @@
       }
     });
     (rec.attendance || []).forEach(att => {
-      if (!att || att.voided || /^config/i.test(String(att.type || att.status || ''))) return;
+      if (!inInd(att) || /^config/i.test(String(att.type || att.status || ''))) return;
       const st = ensure(rel.staffByName, att.staff, initStaff);
       if (st) {
         st.attendance_days++;
@@ -2665,7 +2753,7 @@
       }
     });
     (rec.freelance_entries || []).forEach(fl => {
-      if (!fl || fl.voided) return;
+      if (!inInd(fl)) return;
       const st = ensure(rel.staffByName, fl.staff, initStaff);
       if (st) {
         if (fl.company) st.companies.add(fl.company);
@@ -2673,7 +2761,7 @@
       }
     });
     (rec.logistics_allowances || []).forEach(lg => {
-      if (!lg || lg.voided) return;
+      if (!inInd(lg)) return;
       const st = ensure(rel.staffByName, lg.staff, initStaff);
       if (st) {
         if (lg.company) st.companies.add(lg.company);
@@ -2681,7 +2769,7 @@
       }
     });
     (rec.company_drivers || []).forEach(cd => {
-      if (!cd || cd.voided) return;
+      if (!inInd(cd)) return;
       const st = ensure(rel.staffByName, cd.staff || cd.driver, initStaff);
       if (st) {
         st.is_driver_op = true;
@@ -2690,7 +2778,7 @@
       }
     });
     (rec.drivers || []).forEach(drv => {
-      if (!drv || drv.voided) return;
+      if (!inIndDim(drv)) return;
       const st = rel.staffByName[norm(drv.name || drv.driver)];
       if (st) {
         st.is_driver_op = true;
@@ -2700,8 +2788,10 @@
       }
     });
     if (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function') {
+      const stObj = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
+      const payCo = isMfg ? 'manufacturing-group' : String((stObj && stObj.company) || ('industry:' + activeInd));
       const payReg = window.__mfgComputeStaffPayrollRegister({
-        company: 'manufacturing-group',
+        company: payCo,
         ignoreSearch: true,
         activeRange: null,
         cutoffMode: payCutoffStamp
@@ -2740,10 +2830,11 @@
     rel.itemByName = {};
     const initItem = () => ({ tickets_count: 0, qty_purchased: 0, total_spent: 0 });
     (rec.items || []).forEach(it => {
+      if (!inIndDim(it)) return;
       ensure(rel.itemByName, it.name || it.item_name, initItem);
     });
     (rec.expense_items || []).forEach(ei => {
-      if (!ei || ei.voided) return;
+      if (!inInd(ei)) return;
       const ie = ensure(rel.itemByName, ei.item_name || ei.name, initItem);
       if (ie) {
         ie.tickets_count++;
@@ -2758,13 +2849,16 @@
 
     rel.loanSettledByCp = {};
     (rec.loan_settlements || []).forEach(ls => {
+      if (!inInd(ls)) return;
       const cp = cellValue(ls, 'loan') || ls.loan || '';
       if (cp) rel.loanSettledByCp[norm(cp)] = (rel.loanSettledByCp[norm(cp)] || 0) + Number(ls.usd_amount || ls.amount || 0);
     });
     rel.jvDistBySite = {};
-    (rec.jv_distributions || []).forEach(jd => {
-      if (jd.site) rel.jvDistBySite[norm(jd.site)] = (rel.jvDistBySite[norm(jd.site)] || 0) + Number(jd.total || jd.amount || 0);
-    });
+    if (isMfg) {
+      (rec.jv_distributions || []).forEach(jd => {
+        if (jd.site) rel.jvDistBySite[norm(jd.site)] = (rel.jvDistBySite[norm(jd.site)] || 0) + Number(jd.total || jd.amount || 0);
+      });
+    }
 
     _hubRelCache = rel;
     return rel;

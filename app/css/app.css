@@ -30636,4 +30636,216 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   z-index: 60;
 }
 
+/* ==================== TRILINGUAL SWITCHER (EN | عربي | FR) & RTL MIRRORING ==================== */
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.lang-switch .lang-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  white-space: nowrap;
+}
+
+.lang-switch .lang-btn:hover {
+  color: var(--ink);
+  background: var(--brass-tint);
+}
+
+.lang-switch .lang-btn.active {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: var(--brass-strong);
+  font-weight: 800;
+}
+
+.mobile-lang-btn {
+  min-width: 34px;
+  padding: 4px 7px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+.auth-top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kiosk-lang-switch {
+  margin-right: 4px;
+}
+
+html[dir="rtl"] *,
+[dir="rtl"] * {
+  letter-spacing: 0 !important;
+}
+
+html[dir="rtl"] .rail {
+  border-right: none;
+  border-left: 1px solid var(--line);
+}
+
+html[dir="rtl"] .rail-nav button.nav-item {
+  text-align: right;
+}
+
+html[dir="rtl"] .rail-nav button.nav-item.on {
+  border-left: none;
+  border-right: 3px solid var(--brass);
+}
+
+html[dir="rtl"] .rail-resizer {
+  right: auto;
+  left: -3px;
+}
+
+html[dir="rtl"] .ai-drawer {
+  right: auto;
+  left: 0;
+  border-left: none;
+  border-right: 1px solid var(--line);
+  transform: translateX(-104%);
+}
+
+html[dir="rtl"] .ai-drawer.open {
+  transform: translateX(0);
+}
+
+html[dir="rtl"] .num,
+html[dir="rtl"] .mono,
+html[dir="rtl"] .kpi-val,
+html[dir="rtl"] .kpi .v,
+html[dir="rtl"] .kpi .d,
+html[dir="rtl"] .date-range-bar,
+html[dir="rtl"] .pin-disc,
+html[dir="rtl"] code,
+html[dir="rtl"] td.num,
+html[dir="rtl"] th.num {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+
+/* ============================================================================
+   v19.6.152 — SINGLE-SCREEN CEO EXECUTIVE OVERVIEW COCKPIT
+   4 Headline KPIs + Monthly Trajectory Chart + Operating Entities Scorecard
+   ============================================================================ */
+.workspace > .kpis.kpis-4.ceo-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-bottom: 3px double var(--brass);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.kpis.ceo-kpis .kpi {
+  padding: 15px 18px;
+  gap: 5px;
+}
+
+.kpis.ceo-kpis .kpi .k {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.kpis.ceo-kpis .kpi .v {
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.kpis.ceo-kpis .kpi .v small {
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.kpis.ceo-kpis .kpi .d {
+  font-size: 11.5px;
+}
+
+@media (min-width: 861px) {
+  .workspace > .row2.ceo-stage {
+    grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
+    gap: 16px;
+    margin: 0;
+    min-height: clamp(360px, calc(100dvh - 248px), 540px);
+    align-items: stretch;
+  }
+
+  .ceo-stage > .panel {
+    border-radius: 10px;
+  }
+
+  .ceo-stage .ph {
+    padding: 14px 18px 11px;
+  }
+
+  .ceo-stage .ph h3 {
+    font-size: 14.5px;
+  }
+
+  .ceo-chart-panel #execChartWrap {
+    padding: 14px 18px 12px;
+  }
+
+  .ceo-chart-panel #execChartWrap svg.chart {
+    width: 100%;
+    height: auto;
+    max-height: calc(100dvh - 340px);
+  }
+}
+
+.ceo-scorecard-table thead th {
+  padding: 11px 14px;
+  font-size: 11px;
+}
+
+.ceo-scorecard-table tbody td {
+  padding: 14px 14px;
+  font-size: 13px;
+}
+
+.ceo-scorecard-table tfoot td {
+  padding: 13px 14px;
+  font-size: 13px;
+}
+
+.ceo-scorecard-table tbody tr.is-active-co td {
+  background: color-mix(in srgb, var(--brass) 10%, var(--surface));
+}
+
+@media (max-width: 1120px) {
+  .workspace > .kpis.kpis-4.ceo-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace > .kpis.kpis-4.ceo-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
 

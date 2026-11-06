@@ -3257,7 +3257,7 @@
     const t = range ? range.to : MAX_DATE;
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const cacheKey = `${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
+    const cacheKey = `${rawKey}|${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${SEED._recordsReady ? 1 : 0}`;
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
@@ -3339,7 +3339,7 @@
     if (rawInd && rawInd !== 'Manufacturing' && typeof getIndustryKpiSnapshot === 'function') {
       const indKpi = getIndustryKpiSnapshot(rawInd, rawKey, computed);
       if (_kpiRangeCacheMap.size > 64) _kpiRangeCacheMap.clear();
-      _kpiRangeCacheMap.set(cacheKey + '|IND:' + rawKey, indKpi);
+      _kpiRangeCacheMap.set(cacheKey, indKpi);
       return indKpi;
     }
 
@@ -8184,7 +8184,7 @@
       group: 'commercial',
       industry: 'Holding & Treasury',
       tabs: [
-        { view: 'hld_interactions', label: 'Interactions Register (h29)', icon: 'hld_interactions' },
+        { view: 'hld_interactions', label: 'Interactions Register', icon: 'hld_interactions' },
         { view: 'hld_open_recon', label: 'Open Reconciliation Queue', icon: 'hld_open_recon', badgeFn: u => getHoldingOpenReconExceptionBadge(u) },
         { view: 'hld_due_matrix', label: 'Due From / Due To Matrix', icon: 'hld_due_matrix' }
       ]
@@ -8300,7 +8300,7 @@
       industry: 'Real Estate & Property',
       tabs: [
         { view: 're_leases', label: 'Leases, Units & Escalations', icon: 're_leases' },
-        { view: 're_invoicing', label: 'Period Rent Invoices (r33)', icon: 're_invoicing', badgeFn: u => getRealEstateLeasesExceptionBadge(u) },
+        { view: 're_invoicing', label: 'Period Rent Invoices', icon: 're_invoicing', badgeFn: u => getRealEstateLeasesExceptionBadge(u) },
         { view: 're_receipts', label: 'Receipts, Deposits & Advances', icon: 're_receipts' }
       ]
     },
@@ -8343,7 +8343,7 @@
       industry: 'Insurance & Brokerage',
       tabs: [
         { view: 'ins_policies', label: 'Live Policies, Endorsements & Discounts', icon: 'ins_policies' },
-        { view: 'ins_renewals', label: '30/60/90-Day Renewal Queue (i30)', icon: 'ins_renewals', badgeFn: u => getInsurancePoliciesExceptionBadge(u) },
+        { view: 'ins_renewals', label: '30/60/90-Day Renewal Queue', icon: 'ins_renewals', badgeFn: u => getInsurancePoliciesExceptionBadge(u) },
         { view: 'ins_items', label: 'Insured Vehicles, Persons & Risks', icon: 'ins_items' }
       ]
     },
@@ -8353,9 +8353,9 @@
       group: 'commercial',
       industry: 'Insurance & Brokerage',
       tabs: [
-        { view: 'ins_billing', label: 'Premium Invoices & Receipts (i33 / i36)', icon: 'ins_billing' },
-        { view: 'ins_remittances', label: 'Net Remittances & Carrier Ledger (4017)', icon: 'ins_remittances' },
-        { view: 'ins_statements', label: 'Commission Statements & Recon (i32)', icon: 'ins_statements', badgeFn: u => getInsuranceBillingExceptionBadge(u) }
+        { view: 'ins_billing', label: 'Premium Invoices & Receipts', icon: 'ins_billing' },
+        { view: 'ins_remittances', label: 'Net Remittances & Carrier Ledger', icon: 'ins_remittances' },
+        { view: 'ins_statements', label: 'Commission Statements & Recon', icon: 'ins_statements', badgeFn: u => getInsuranceBillingExceptionBadge(u) }
       ]
     },
     {
@@ -8373,8 +8373,8 @@
       group: 'plant',
       industry: 'Insurance & Brokerage',
       tabs: [
-        { view: 'ins_catalogue', label: '12 Lines & 52 Insurance Products (i07)', icon: 'ins_catalogue' },
-        { view: 'ins_agreements', label: 'Commission Rate Agreements (7z-chrono)', icon: 'ins_agreements', badgeFn: u => getInsuranceCatalogueExceptionBadge(u) }
+        { view: 'ins_catalogue', label: '12 Lines & 52 Insurance Products', icon: 'ins_catalogue' },
+        { view: 'ins_agreements', label: 'Commission Rate Agreements', icon: 'ins_agreements', badgeFn: u => getInsuranceCatalogueExceptionBadge(u) }
       ]
     },
     {
@@ -14530,19 +14530,9 @@
     const expVal = STATE.basis === 'rep' ? (k.exp_rep_date || k.expenses) : k.expenses;
     const opProfit = STATE.basis === 'rep' ? (k.op_profit_rep_date || k.operating_profit) : k.operating_profit;
 
-    const allowedNames = allowedCompanyNames();
     const allowedKeys = getAllowedCompanyKeys(activeUser());
-    const sentinelRows = buildSentinelItems().slice(0, 4);
-    const soaAll = (m.soa_stream || []).filter(r => !r || !r.company || allowedNames.includes(r.company));
-    const soaRows = soaAll.slice(0, 8);
+    const mfgAllowedKeys = ['wtc', 'bbconstruction', 'lionstransport'].filter(ek => allowedKeys.includes(ek));
     const tb = tbStatus(k);
-    const liveAllowedBooks = allowedKeys.filter(ek => ek !== 'manufacturing-group' && modelHasLedger(ek)).length;
-    const totalAllowedEntities = allowedNames.length;
-    const booksCount = STATE.company === 'manufacturing-group' ? String(liveAllowedBooks) : (modelHasLedger() ? '1' : '0');
-    const booksUnit = STATE.company === 'manufacturing-group' ? ` of ${totalAllowedEntities} live` : ' of 1';
-
-    let totDeb = 0, totCred = 0;
-    soaAll.forEach(r => { totDeb += Number(r.debit || 0); totCred += Number(r.credit || 0); });
 
     if (!modelHasLedger()) {
       const activeInd = getActiveIndustry(STATE.company);
@@ -14552,72 +14542,45 @@
       return `
         <div class="cockpit-banner">
           <div class="cockpit-title-block">
-            <div class="cockpit-eyebrow">${esc(COMPANY_LABELS[STATE.company])} · NO PUBLISHED LEDGER YET</div>
+            <div class="cockpit-eyebrow">${esc(COMPANY_LABELS[STATE.company])} · FLEET OPERATIONS</div>
             <div class="cockpit-title">Executive Overview</div>
-            <div class="cockpit-sub">The semantic snapshot carries no periods, customers or GL for ${esc(COMPANY_LABELS[STATE.company])}. Transactions keyed here still post to the cloud ledger and appear in the registers.</div>
+            <div class="cockpit-sub">No standalone financial ledger is published yet for ${esc(COMPANY_LABELS[STATE.company])}. Switch to <b>WTC</b>, <b>BBConstruction</b>, or <b>All Group</b> in the entity selector to view consolidated financial scorecards.</div>
           </div>
-        </div>
-        ${appStrip()}
-        <div class="panel-card"><div class="panel-head"><div class="panel-title"><span>WHAT YOU CAN DO HERE</span></div></div>
-          <div style="padding:14px 16px;font-size:13px;line-height:1.6">
-            • Key sales tickets, raw receipts, fuel intakes, expenses and settlements with <b>+ New Entry</b> (they carry the <span class="badge badge-app">APP</span> badge until the books absorb them).<br>
-            • Switch to <b>WTC</b>, <b>BBConstruction</b> or <b>All Group</b> in the entity bar for the published KPIs, GL and statements.
-          </div></div>`;
+        </div>`;
     }
 
     return `
-      <!-- 1. UNIFIED 6-COLUMN EXECUTIVE KPI BAND (REV 10 "LEDGER" SURFACE) -->
-      <section class="kpis" aria-label="Executive Key Performance Indicators">
-        <div class="kpi kpi-link" data-nav-jump="sales" role="button" tabindex="0" title="Open the Sales & Deliveries register">
+      <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE FINANCIAL KPIS -->
+      <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
+        <div class="kpi kpi-link" data-nav-jump="sales" role="button" tabindex="0" data-ui-tip="Open Sales &amp; Receivables">
           <span class="k">Consolidated Revenue</span>
           <span class="v num">${fmtUSD(salesVal, 0)}</span>
           <span class="d good">Cash: ${fmtUSD(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, 0)} · Credit: ${fmtUSD(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, 0)}</span>
         </div>
-        <div class="kpi kpi-link" data-nav-jump="raw" role="button" tabindex="0" title="Open Material &amp; Transportation">
-          <span class="k">Realized Gross Margin</span>
-          <span class="v num">${fmtUSD(k.gross_margin, 0)}<small>${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)}</small></span>
-          <span class="d good">Raw Material Cost: ${fmtUSD(rawVal, 0)}</span>
-        </div>
-        <div class="kpi kpi-link" data-nav-jump="expenses" role="button" tabindex="0" title="Open Expenses & Payroll">
+        <div class="kpi kpi-link" data-nav-jump="expenses" role="button" tabindex="0" data-ui-tip="Open Expenses &amp; Payables">
           <span class="k">Operating Cash Profit</span>
-          <span class="v num">${fmtUSD(opProfit, 0)}<small>${fmtPct(k.op_margin_pct, opProfit, k.net_sales)}</small></span>
-          <span class="d">Expenses: ${fmtUSD(expVal, 0)} · Payroll: ${fmtUSD(k.salaries_paid, 0)}</span>
+          <span class="v num">${fmtUSD(opProfit, 0)}<small>${fmtPct(k.op_margin_pct, opProfit, k.net_sales)} margin</small></span>
+          <span class="d good">Gross Margin: ${fmtUSD(k.gross_margin, 0)} (${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)}) · Raw Cost: ${fmtUSD(rawVal, 0)}</span>
         </div>
-        <div class="kpi kpi-link" data-nav-jump="cashflow" role="button" tabindex="0" title="Open Cash Flow &amp; Till">
-          <span class="k">Cash Till &amp; Net Flow</span>
+        <div class="kpi kpi-link" data-nav-jump="cashflow" role="button" tabindex="0" data-ui-tip="Open Cash Flow &amp; Treasury">
+          <span class="k">Cash Position &amp; Net Flow</span>
           <span class="v num">${fmtUSD(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till, 2)}<small>${fmtLBP(k.cash_till_lbp || 0)}</small></span>
           <span class="d good">Total: ${fmtUSD(k.cash_till, 2)} · In: ${fmtUSDk(k.cash_inflow)} / Out: ${fmtUSDk(k.cash_outflow)}</span>
         </div>
-        <div class="kpi kpi-link" data-nav-jump="customers" role="button" tabindex="0" title="Open Customers & AR Aging">
-          <span class="k">Open AR Receivables (FIFO)</span>
-          <span class="v num">${fmtUSD(k.ar_balance, 0)}</span>
-          <span class="d ${Number(k.ar_overdue || 0) > 0 ? 'crit' : 'good'}">Overdue &gt;30d: ${fmtUSD(k.ar_overdue, 0)} · DSO ${fmtNum(k.dso_days, 0)}d</span>
-        </div>
-        <div class="kpi books kpi-link" data-nav-jump="sentinels" role="button" tabindex="0" title="Open the AI Sentinels & Trial Balance audit">
-          <span class="k">Operating Books Status</span>
-          <span class="v num">${booksCount}<small>${booksUnit}</small></span>
-          <span class="d ${tb.ok === false ? 'crit' : 'good'}">Trial Balance ${tb.ok === false ? 'variance ' + fmtUSD(k.tb_check, 2) : '$0.00 Variance'}</span>
+        <div class="kpi kpi-link" data-nav-jump="customers" role="button" tabindex="0" data-ui-tip="Open Receivables &amp; Payables">
+          <span class="k">Receivables &amp; Payables (AR / AP)</span>
+          <span class="v num">${fmtUSD(k.ar_balance, 0)}<small>Open AR</small></span>
+          <span class="d ${Number(k.ar_overdue || 0) > 0 ? 'crit' : 'good'}">Overdue &gt;30d: ${fmtUSD(k.ar_overdue, 0)} · Open AP: ${fmtUSD(k.ap_balance, 0)}</span>
         </div>
       </section>
 
-      <!-- 2. SECONDARY OPERATIONAL PROOF STRIP -->
-      <section class="ops-strip" aria-label="Operational Unit Economics">
-        <div class="ops-cell kpi-link" data-nav-jump="sales" role="button" tabindex="0"><span>Sales Loads &amp; Volume</span><b class="num">${fmtNum(k.loads)} (${fmtNum(k.tons_sold, 0)} t)</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Avg Selling Price</span><b class="num">${fmtUSD(k.avg_price_ttc, 2)} / m³</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="raw" role="button" tabindex="0"><span>Raw Material Intake</span><b class="num">${fmtNum(k.raw_loads)} loads (${fmtUSD(k.avg_raw_cost, 2)}/m³)</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="fleet" role="button" tabindex="0"><span>Active Fleet &amp; Cost/Ton</span><b class="num">${fmtNum(k.active_equip)} units · ${fmtUSD(k.cost_per_ton, 2)}/t</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Customer Price Matrix</span><b class="num">${fmtNum(k.active_agreements)} active rules</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="suppliers" role="button" tabindex="0"><span>3-Leg AP Open Balance</span><b class="num">${fmtUSD(k.ap_balance, 0)}</b></div>
-      </section>
-      ${appStrip()}
-
-      <!-- 3. ROW 2: MONTHLY TRAJECTORY CHART + OPERATING ENTITIES & TOP GRADES -->
-      <section class="row2">
-        <div class="panel">
+      <!-- 2. SINGLE-SCREEN CEO STAGE: MONTHLY TRAJECTORY CHART + OPERATING ENTITIES SCORECARD -->
+      <section class="row2 ceo-stage">
+        <div class="panel ceo-chart-panel">
           <div class="ph">
             <div>
               <h3>Monthly Revenue, Raw Cost &amp; Cash Profit Trajectory</h3>
-              <span class="ph-sub">${esc(COMPANY_LABELS[STATE.company])} · Tap or hover bars to inspect monthly ledger totals</span>
+              <span class="ph-sub">${esc(COMPANY_LABELS[STATE.company])} · Hover any month to inspect detailed figures</span>
             </div>
             <div class="legend">
               <span><i class="sw-box s-1"></i>Total Sales</span>
@@ -14629,69 +14592,56 @@
             ${buildExecutiveChart(getScopedMonthly(m.monthly, 12))}
             <div class="chart-tip" id="execChartTip" hidden></div>
           </div>
-          ${(() => {
-            const months = getScopedMonthly(m.monthly, 12);
-            const peakM = months.reduce((best, r) => (Number(r.sales_ttc || 0) > Number((best && best.sales_ttc) || 0) ? r : best), months[0] || {});
-            const peakLabel = peakM['Year Month'] || peakM.Month || peakM.label || '—';
-            const avgM = months.length ? months.reduce((a, r) => a + Number(r.sales_ttc || 0), 0) / months.length : 0;
-            const cogsPct = Number(k.net_sales || 0) > 0 ? ((Number(k.raw_cost || 0) / Number(k.net_sales || 1)) * 100).toFixed(1) + '%' : '0.0%';
-            const opPctStr = fmtPct(k.op_margin_pct, opProfit, k.net_sales);
-            const gmPctStr = fmtPct(k.gm_pct, k.gross_margin, k.net_sales);
-            return `
-              <div class="chart-ftr">
-                <div class="chart-ftr-cell"><small>Peak Month (${esc(peakLabel)})</small><b class="num">${fmtUSD(peakM.sales_ttc || 0, 0)}</b></div>
-                <div class="chart-ftr-cell"><small>Monthly Run-Rate (last ${months.length || 12}m)</small><b class="num">${fmtUSD(avgM, 0)} / mo</b></div>
-                <div class="chart-ftr-cell"><small>Direct Material Ratio</small><b class="num">${cogsPct} of Net</b></div>
-                <div class="chart-ftr-cell"><small>Operating Profit %</small><b class="num">${opPctStr} (${gmPctStr} GM)</b></div>
-              </div>
-            `;
-          })()}
         </div>
 
-        <div class="panel">
+        <div class="panel ceo-entities-panel">
           <div class="ph">
-            <h3>Operating Entities &amp; Books Status</h3>
-            <span class="ph-sub">Click any entity to filter workspace</span>
+            <div>
+              <h3>Operating Entities Scorecard</h3>
+              <span class="ph-sub">Click any entity to focus workspace</span>
+            </div>
+            <button type="button" class="btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-nav-jump="entities">Entity Comparison</button>
           </div>
-          <div class="table-scroll">
-            <table class="m-grid">
+          <div class="table-scroll ceo-table-scroll">
+            <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
               <thead>
                 <tr>
                   <th>Entity</th>
-                  <th class="n">Sales TTC</th>
+                  <th class="n">Revenue</th>
                   <th class="n hide-xs">Loads</th>
-                  <th class="n">GM %</th>
+                  <th class="n">Gross Margin</th>
                   <th class="n">Op. Profit</th>
-                  <th>Books</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                ${[['wtc', 'WTC<span class="hide-xs"> · World Trading</span>', wtcK], ['bbconstruction', 'BBConstruction', bbcK]].filter(([key]) => allowedKeys.includes(key)).map(([key, label, kk]) => {
+                ${[['wtc', 'WTC<span class="hide-xs"> · World Trading</span>', wtcK], ['bbconstruction', 'BBConstruction', bbcK]].filter(([key]) => mfgAllowedKeys.includes(key)).map(([key, label, kk]) => {
                   const t = tbStatus(kk);
+                  const isFocused = STATE.company === key;
                   return `
-                <tr class="clickable-row" data-jump-co="${key}">
+                <tr class="clickable-row ${isFocused ? 'is-active-co' : ''}" data-jump-co="${key}">
                   <td><b>${label}</b></td>
                   <td class="n">${fmtUSD(kk.sales_ttc, 0)}</td>
                   <td class="n hide-xs">${fmtNum(kk.loads)}</td>
                   <td class="n">${fmtPct(kk.gm_pct, kk.gross_margin, kk.net_sales)}</td>
-                  <td class="n">${fmtUSD(kk.operating_profit, 0)}</td>
+                  <td class="n"><b>${fmtUSD(kk.operating_profit, 0)}</b></td>
                   <td><span class="m-chip ${t.ok === false ? 'crit' : 'closed'}">${esc(t.label)}</span></td>
                 </tr>`;
                 }).join('')}
-                ${allowedKeys.includes('lionstransport') ? `
-                <tr class="clickable-row" data-jump-co="lionstransport">
+                ${mfgAllowedKeys.includes('lionstransport') ? `
+                <tr class="clickable-row ${STATE.company === 'lionstransport' ? 'is-active-co' : ''}" data-jump-co="lionstransport">
                   <td><b>Lions Transport</b></td>
                   <td class="n">${ltHasLedger ? fmtUSD(ltK.sales_ttc, 0) : '—'}</td>
                   <td class="n hide-xs">${ltHasLedger ? fmtNum(ltK.loads) : '—'}</td>
                   <td class="n">${ltHasLedger ? fmtPct(ltK.gm_pct, ltK.gross_margin, ltK.net_sales) : 'Fleet'}</td>
                   <td class="n">${ltHasLedger ? fmtUSD(ltK.operating_profit, 0) : '—'}</td>
-                  <td><span class="m-chip ${ltHasLedger ? 'closed' : ''}">${ltHasLedger ? 'Balanced' : 'No ledger'}</span></td>
+                  <td><span class="m-chip ${ltHasLedger ? 'closed' : ''}">${ltHasLedger ? 'Balanced' : 'Fleet Active'}</span></td>
                 </tr>` : ''}
               </tbody>
-              ${allowedNames.length >= 2 ? `
+              ${mfgAllowedKeys.length >= 2 ? `
               <tfoot>
                 <tr class="total">
-                  <td><b>${allowedNames.length < getCompanyCatalog().length ? 'Assigned Total' : 'Group Total'}<span class="hide-xs"> (${liveAllowedBooks} live BUs)</span></b></td>
+                  <td><b>Group Total<span class="hide-xs"> (${mfgAllowedKeys.length} entities)</span></b></td>
                   <td class="n"><b>${fmtUSD(grpK.sales_ttc, 0)}</b></td>
                   <td class="n hide-xs"><b>${fmtNum(grpK.loads)}</b></td>
                   <td class="n"><b>${fmtPct(grpK.gm_pct, grpK.gross_margin, grpK.net_sales)}</b></td>
@@ -14699,118 +14649,6 @@
                   <td><span class="m-chip ${tb.ok === false ? 'crit' : 'brass'}">${tb.ok === false ? 'TB ' + tb.label : 'Audited'}</span></td>
                 </tr>
               </tfoot>` : ''}
-            </table>
-          </div>
-
-          <div class="ph" style="border-top:1px solid var(--line);margin-top:4px">
-            <h3>Top Aggregates &amp; Materials by Revenue</h3>
-            <span class="ph-sub">${getScopedModelProducts(m).length} Active Grades</span>
-          </div>
-          <div class="table-scroll">
-            <table class="m-grid">
-              <thead>
-                <tr>
-                  <th>Aggregate Grade</th>
-                  <th class="hide-xs">UoM</th>
-                  <th class="n hide-xs">Loads</th>
-                  <th class="n">Tons</th>
-                  <th class="n">Avg TTC</th>
-                  <th class="n">Revenue TTC</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${getScopedModelProducts(m).slice(0, 4).map(p => `
-                  <tr>
-                    <td><b>${esc(p.Product)}</b></td>
-                    <td class="mu hide-xs">${esc(p.UoM || 'm³')}</td>
-                    <td class="n hide-xs">${fmtNum(p.loads)}</td>
-                    <td class="n">${fmtNum(p.tons_sold, 0)}</td>
-                    <td class="n">${fmtUSD(p.avg_price_ttc, 2)}</td>
-                    <td class="n"><b>${fmtUSD(p.sales_ttc, 0)}</b></td>
-                  </tr>
-                `).join('') || emptyRow(6, 'No product revenue in this snapshot')}
-              </tbody>
-              <tfoot>
-                <tr class="total">
-                  <td><b>Total (${fmtNum(getScopedModelProducts(m).length)} grades)</b></td>
-                  <td class="mu hide-xs">All</td>
-                  <td class="n hide-xs"><b>${fmtNum(getScopedModelProducts(m).reduce((a, p) => a + Number(p.loads || 0), 0))}</b></td>
-                  <td class="n"><b>${fmtNum(getScopedModelProducts(m).reduce((a, p) => a + Number(p.tons_sold || 0), 0), 0)}</b></td>
-                  <td class="n"><b>${fmtUSD(k.avg_price_ttc, 2)}</b></td>
-                  <td class="n"><b>${fmtUSD(getScopedModelProducts(m).reduce((a, p) => a + Number(p.sales_ttc || 0), 0) || k.sales_ttc, 0)}</b></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- 4. ROW 3: EXECUTIVE EXCEPTIONS & WATCHDOGS + AUDITED DOUBLE-ENTRY GL STREAM -->
-      <section class="row3">
-        <div class="panel">
-          <div class="ph">
-            <h3>Executive Exceptions &amp; Sentinel Watchdogs</h3>
-            <button type="button" class="btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="sentinels">All ${buildSentinelItems().length} Sentinels</button>
-          </div>
-          <ul class="att">
-            ${sentinelRows.map(s => {
-              const cls = s.severity === 'ok' ? 'good' : s.severity;
-              return `
-                <li class="${cls}">
-                  <b>${esc(s.title)}</b>
-                  <span>${esc(s.detail)}</span>
-                  <button type="button" class="att-act" data-nav-jump="sentinels">${esc(s.badge)}</button>
-                </li>
-              `;
-            }).join('')}
-          </ul>
-        </div>
-
-        <div class="panel">
-          <div class="ph">
-            <div>
-              <h3>Audited General Ledger Stream (Double-Entry Lebanese CoA)</h3>
-              <span class="ph-sub">Closed with the ISABI Double Rule · Every Sales Ticket, Raw Material Leg, VAT 11% &amp; Settlement</span>
-            </div>
-            <button type="button" class="btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="ledger">Full Trial Balance</button>
-          </div>
-          <div class="table-scroll">
-            <table class="m-grid">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>BU</th>
-                  <th>Voucher</th>
-                  <th>CoA Account &amp; Counterparty</th>
-                  <th class="n">Debit</th>
-                  <th class="n">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${soaRows.map(r => {
-                  const rawDoc = String(r.doc || '—');
-                  const hashMatch = rawDoc.match(/#\d+/);
-                  const shortDoc = hashMatch ? ('TKT ' + hashMatch[0]) : rawDoc.slice(0, 14);
-                  const cp = String(r.detail || r.desc || '').split('·')[0].trim().slice(0, 20);
-                  return `
-                  <tr>
-                    <td class="mu">${esc(fmtDateDMY(r.date))}</td>
-                    <td><span class="m-chip brass">${esc(r.company === 'BBConstruction' ? 'BBC' : (r.company || 'WTC'))}</span></td>
-                    <td class="mono">${esc(shortDoc)}</td>
-                    <td><b>${esc(r.code)}</b> · ${esc(String(r.account || '').slice(0, 18))}${cp ? ` <span class="mu">(${esc(cp)})</span>` : ''}</td>
-                    <td class="n">${r.debit ? fmtUSD(r.debit, 2) : '—'}</td>
-                    <td class="n">${r.credit ? fmtUSD(r.credit, 2) : '—'}</td>
-                  </tr>
-                  `;
-                }).join('') || emptyRow(6, 'No journal legs in this snapshot')}
-              </tbody>
-              <tfoot>
-                <tr class="total">
-                  <td colspan="4"><b>Total (${fmtNum(soaAll.length)} legs) · TB variance ${fmtUSD(k.tb_check || 0, 2)}</b></td>
-                  <td class="n"><b>${fmtUSD(totDeb, 2)}</b></td>
-                  <td class="n"><b>${fmtUSD(totCred, 2)}</b></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </div>
@@ -29084,6 +28922,7 @@
 
   let _PAYROLL_INTEL_CACHE = null;
   function _getPayrollIntelIndex() {
+    ensureMultiIndustrySpineSeeded();
     const fxRate = getLbpFxRate();
     const rev = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${fxRate}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.logistics_allowances && SEED.records.logistics_allowances.length) || 0}|${(SEED.records && SEED.records.fuel_intakes && SEED.records.fuel_intakes.length) || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}|${(SEED.records && SEED.records.overtime_rates && SEED.records.overtime_rates.length) || 0}|${(SEED.records && SEED.records.sites && SEED.records.sites.length) || 0}|${(SEED.records && SEED.records.company_drivers && SEED.records.company_drivers.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
     if (_PAYROLL_INTEL_CACHE && _PAYROLL_INTEL_CACHE.rev === rev) return _PAYROLL_INTEL_CACHE;
@@ -37325,7 +37164,7 @@
       { label: 'Automotive & Trading (Shacman · Korri)', val: trdInd.sales_ttc, op: trdInd.operating_profit, color: '#d97706' },
       { label: 'Real Estate & Property (Properties · 4235)', val: reInd.sales_ttc, op: reInd.operating_profit, color: '#7c3aed' },
       { label: 'Insurance & Brokerage (GWP · Comm)', val: insInd.sales_ttc, op: insInd.operating_profit, color: '#0d9488' },
-      { label: 'Intercompany Eliminated (h29)', val: icRes.totalMatchedUsd, op: -icRes.totalOpenUsd, color: '#059669' }
+      { label: 'Intercompany Eliminated', val: icRes.totalMatchedUsd, op: -icRes.totalOpenUsd, color: '#059669' }
     ];
     const maxRev = Math.max(1, ...svgBars.map(b => b.val));
     const svgH = 264;
@@ -37349,20 +37188,20 @@
     `;
 
     const pnlRows = [
-      { line: 'Gross Billed Revenue / GWP (TTC)', mfg: mfgInd.sales_ttc, hsp: hspInd.sales_ttc, trd: trdInd.sales_ttc, re: reInd.sales_ttc, ins: insInd.sales_ttc, hld: 0, elim: 0, cons: grossEntitySalesTtc, bold: true },
+      { line: 'Gross Billed Revenue / GWP', mfg: mfgInd.sales_ttc, hsp: hspInd.sales_ttc, trd: trdInd.sales_ttc, re: reInd.sales_ttc, ins: insInd.sales_ttc, hld: 0, elim: 0, cons: grossEntitySalesTtc, bold: true },
       { line: 'Net Operating Revenue / Earned Comm', mfg: mfgInd.net_sales, hsp: hspInd.net_sales, trd: trdInd.net_sales, re: reInd.net_sales, ins: insInd.net_sales, hld: 0, elim: 0, cons: grossEntityNetSales, bold: false },
       { line: 'Direct Material, Stock, Landed & Fit-Out Cost', mfg: -mfgInd.raw_cost, hsp: -hspInd.raw_cost, trd: -trdInd.raw_cost, re: -reInd.raw_cost, ins: -insInd.raw_cost, hld: 0, elim: 0, cons: -totals.raw_cost, bold: false },
       { line: 'Gross Operating Margin / Net Brokerage', mfg: mfgInd.gross_margin, hsp: hspInd.gross_margin, trd: trdInd.gross_margin, re: reInd.gross_margin, ins: insInd.gross_margin, hld: 0, elim: 0, cons: grossEntityMargin, bold: true },
       { line: 'Plant, Venue, Showroom & Office Expenses', mfg: -mfgInd.expenses, hsp: -hspInd.expenses, trd: -trdInd.expenses, re: -reInd.expenses, ins: -insInd.expenses, hld: -hldInd.expenses, elim: 0, cons: -totals.expenses, bold: false },
       { line: 'Payroll, Salaries & Site Transport', mfg: -mfgInd.salaries, hsp: -hspInd.salaries, trd: -trdInd.salaries, re: -reInd.salaries, ins: -insInd.salaries, hld: 0, elim: 0, cons: -totals.salaries, bold: false },
       { line: 'Consolidated Operating Profit (EBITDA)', mfg: mfgInd.operating_profit, hsp: hspInd.operating_profit, trd: trdInd.operating_profit, re: reInd.operating_profit, ins: insInd.operating_profit, hld: hldInd.operating_profit, elim: 0, cons: grossEntityOpProfit, bold: true },
-      { line: 'Intercompany Treasury Transfers (Eliminated h29)', mfg: -icRes.totalMatchedUsd, hsp: 0, trd: 0, re: 0, ins: 0, hld: 0, elim: icRes.totalMatchedUsd, cons: 0, bold: false }
+      { line: 'Intercompany Treasury Transfers (Eliminated)', mfg: -icRes.totalMatchedUsd, hsp: 0, trd: 0, re: 0, ins: 0, hld: 0, elim: icRes.totalMatchedUsd, cons: 0, bold: false }
     ];
 
     return `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_consolidation">
-          <div class="kpi-label">6-INDUSTRY CONSOLIDATED REVENUE (TTC)</div>
+          <div class="kpi-label">6-INDUSTRY CONSOLIDATED REVENUE</div>
           <div class="kpi-val">${fmtUSD(grossEntitySalesTtc, 0)}</div>
           <div class="kpi-sub">Net Base: <b>${fmtUSD(grossEntityNetSales, 0)}</b> across 14 entities</div>
         </div>
@@ -37382,7 +37221,7 @@
           <div class="kpi-sub">AR: <b>${fmtUSDk(totals.ar_balance)}</b> · AP: <b>${fmtUSDk(totals.ap_balance)}</b></div>
         </div>
         <div class="kpi-card" data-jump-view="hld_interactions">
-          <div class="kpi-label">INTERCOMPANY ELIMINATED (H29)</div>
+          <div class="kpi-label">INTERCOMPANY ELIMINATED</div>
           <div class="kpi-val good">${fmtUSD(icRes.totalMatchedUsd, 0)}</div>
           <div class="kpi-sub"><b>${fmtNum(icRes.matchedCount)}</b> matched pairs (${icRes.reconRatePct.toFixed(1)}% reconciled)</div>
         </div>
@@ -37419,7 +37258,7 @@
                 <th>Industry Vertical</th>
                 <th>Sector &amp; Operations</th>
                 <th class="r">Loads / Entries</th>
-                <th class="r">Revenue TTC ($)</th>
+                <th class="r">Revenue ($)</th>
                 <th class="r">Gross Margin ($)</th>
                 <th class="r">Expenses &amp; Payroll ($)</th>
                 <th class="r">Operating Profit ($)</th>
@@ -37489,7 +37328,7 @@
             </thead>
             <tbody>
               ${pnlRows.map(r => `
-                <tr class="${r.bold ? 'totals-row' : ''}">
+                <tr class="rrow ${r.bold ? 'totals-row' : ''}">
                   <td>${r.bold ? `<strong>${esc(r.line)}</strong>` : esc(r.line)}</td>
                   <td class="r mono">${fmtSignedUSD(r.mfg, 2)}</td>
                   <td class="r mono">${fmtSignedUSD(r.hsp, 2)}</td>
@@ -37562,7 +37401,7 @@
     const kpiHeader = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_interactions">
-          <div class="kpi-label">TOTAL IC INTERACTIONS (H29)</div>
+          <div class="kpi-label">TOTAL IC INTERACTIONS</div>
           <div class="kpi-val">${fmtNum(icRes.totalCount)}</div>
           <div class="kpi-sub">Across <b>${fmtNum(icRes.byPair.length)}</b> directed entity corridors</div>
         </div>
@@ -37630,7 +37469,7 @@
               </thead>
               <tbody>
                 ${icRes.byPair.length ? icRes.byPair.map(p => `
-                  <tr>
+                  <tr class="rrow">
                     <td>${coBadge(p.fromCo)} <strong>${esc(p.fromCo)}</strong></td>
                     <td>${coBadge(p.toCo)} <strong>${esc(p.toCo)}</strong></td>
                     <td class="r mono">${fmtNum(p.totalCount)}</td>
@@ -43849,41 +43688,22 @@
   function renderIndustryOverview(indOverride) {
     const ind = indOverride || getActiveIndustry(STATE.company);
     const rollup = computeEnterpriseRollup();
-    const sentinels = buildIndustrySentinelItems(ind);
-    const openSn = sentinels.filter(s => s.severity !== 'ok').length;
     const indEntities = ind === 'Holding & Treasury'
       ? rollup.entities
       : rollup.entities.filter(e => e.industry === ind);
 
     let kpis = [];
-    let opsCells = [];
     let chartTitle = '';
     let chartSub = '';
     let chartBars = [];
-    let topDriversTitle = '';
-    let topDriversHead = '';
-    let topDriversBody = '';
-    let streamTitle = '';
-    let streamJump = 'ledger';
-    let streamRows = [];
 
     if (ind === 'Holding & Treasury') {
       const { totals, icRes, byIndustry } = rollup;
       kpis = [
-        { jump: 'hld_consolidation', k: '6-Industry Consolidated Revenue', v: fmtUSD(totals.sales_ttc, 0), d: `Net Base: ${fmtUSD(totals.net_sales, 0)} across 14 BUs`, cls: 'good' },
-        { jump: 'hld_entities', k: 'Consolidated Gross Margin', v: fmtUSD(totals.gross_margin, 0), d: `Direct Cost: ${fmtUSD(totals.raw_cost, 0)}`, cls: 'good' },
-        { jump: 'hld_consolidation', k: 'Consolidated Operating Profit', v: fmtSignedUSD(totals.operating_profit, 0), d: `OpEx: ${fmtUSD(totals.expenses, 0)} · Payroll: ${fmtUSD(totals.salaries, 0)}`, cls: 'good' },
-        { jump: 'cashflow', k: 'Group Combined Cash & Till', v: fmtUSD(totals.cash_till, 0), d: `AR: ${fmtUSDk(totals.ar_balance)} · AP: ${fmtUSDk(totals.ap_balance)}`, cls: 'good' },
-        { jump: 'hld_interactions', k: 'Intercompany Eliminated (h29)', v: fmtUSD(icRes.totalMatchedUsd, 0), d: `${fmtNum(icRes.matchedCount)} matched pairs (${icRes.reconRatePct.toFixed(1)}%)`, cls: 'good' },
-        { jump: 'sentinels', k: 'Operating Books & Sentinels', v: '14 of 14', d: `${openSn} open Holding watchdogs · GL 181 tied`, cls: openSn > 0 ? 'warn' : 'good', books: true }
-      ];
-      opsCells = [
-        { jump: 'hld_interactions', k: 'IC Interactions (h29)', v: `${fmtNum(icRes.totalCount)} (${fmtNum(icRes.matchedCount)} paired)` },
-        { jump: 'hld_open_recon', k: 'Still-to-Book Queue', v: `${fmtNum(icRes.openCount)} legs (${fmtUSD(icRes.totalOpenUsd, 0)})` },
-        { jump: 'hld_due_matrix', k: 'Sister Corridors (GL 181)', v: `${fmtNum(icRes.byPair.length)} active pairs` },
-        { jump: 'hld_partners', k: 'Partner Split Matrix', v: '10-Slot · 7z-chrono' },
-        { jump: 'hld_loans', k: 'Central Loans (4281/1689)', v: '6 active facilities' },
-        { jump: 'hld_entities', k: 'Group Subsidiaries', v: '14 entities · 6 industries' }
+        { jump: 'hld_consolidation', k: 'Consolidated Revenue', v: fmtUSD(totals.sales_ttc, 0), d: `Net Base: ${fmtUSD(totals.net_sales, 0)} across 14 entities`, cls: 'good' },
+        { jump: 'hld_consolidation', k: 'Consolidated Operating Profit', v: fmtSignedUSD(totals.operating_profit, 0), d: `Gross Margin: ${fmtUSD(totals.gross_margin, 0)} · OpEx: ${fmtUSD(totals.expenses, 0)}`, cls: 'good' },
+        { jump: 'cashflow', k: 'Group Cash Position', v: fmtUSD(totals.cash_till, 0), d: `Intercompany Eliminated: ${fmtUSD(icRes.totalMatchedUsd, 0)} (${icRes.reconRatePct.toFixed(1)}%)`, cls: 'good' },
+        { jump: 'hld_interactions', k: 'Receivables & Payables (AR / AP)', v: fmtUSD(totals.ar_balance, 0), d: `Group AP: ${fmtUSD(totals.ap_balance, 0)} · ${fmtNum(icRes.openCount)} Open IC Legs`, cls: 'good' }
       ];
       chartTitle = '6-Industry Consolidated Revenue & Operating Profit Bridge';
       chartSub = 'Bdeir Holding · Consolidated rollup across Manufacturing, Hospitality, Trading, Real Estate & Insurance';
@@ -43894,12 +43714,6 @@
         { label: 'Real Estate (2)', rev: byIndustry.re.sales_ttc, cost: byIndustry.re.raw_cost, op: byIndustry.re.operating_profit },
         { label: 'Insurance (1)', rev: byIndustry.ins.sales_ttc, cost: byIndustry.ins.raw_cost, op: byIndustry.ins.operating_profit }
       ];
-      topDriversTitle = 'Top Intercompany Corridors (GL 181 Sister Balances)';
-      topDriversHead = '<tr><th>Corridor</th><th class="n">Legs</th><th class="n">Matched ($)</th><th class="n">Open ($)</th></tr>';
-      topDriversBody = icRes.byPair.slice(0, 5).map(p => `<tr><td><b>${esc(p.pairKey)}</b></td><td class="n">${fmtNum(p.totalCount)}</td><td class="n">${fmtUSD(p.matchedUsd, 0)}</td><td class="n">${fmtUSD(p.openUsd, 0)}</td></tr>`).join('');
-      streamTitle = 'Audited Intercompany & Treasury Stream (GL 181 / 4515 / 1689)';
-      streamJump = 'hld_interactions';
-      streamRows = icRes.interactions.slice(0, 6).map(x => ({ date: x.date, bu: x.fromCo, doc: x.id, desc: `181 · Sister Transfer ${x.fromCo} to ${x.toCo} (${x.matchType})`, deb: x.usd, cred: x.status === 'Reconciled' ? x.usd : 0 }));
     } else if (ind === 'Hospitality & Resorts') {
       const hsp = computeHospitalityOperations({ ignoreSearch: true });
       const s = hsp.summary;
@@ -43907,108 +43721,50 @@
       const netMargin = round2(s.totalRevenueHt + s.totalMemContract - s.totalStockUsage);
       const opProf = round2(netMargin - s.totalMaintUsd);
       kpis = [
-        { jump: 'hsp_revenue', k: 'Venue & Membership Revenue (TTC)', v: fmtUSD(totRev, 0), d: `Venue TTC: ${fmtUSD(s.totalRevenueTtc, 0)} · Memberships: ${fmtUSD(s.totalMemContract, 0)}`, cls: 'good' },
-        { jump: 'hsp_stock', k: 'Net F&B & Chalet Margin', v: fmtUSD(netMargin, 0), d: `Kitchen/Bar Usage: ${fmtUSD(s.totalStockUsage, 0)} (${s.avgFoodCostPct.toFixed(1)}% Food Cost)`, cls: 'good' },
-        { jump: 'hsp_energy', k: 'Venue Operating Cash Profit', v: fmtUSD(opProf, 0), d: `Maint & Repairs: ${fmtUSD(s.totalMaintUsd, 0)} · Solar Offset ${s.avgSolarOffsetPct.toFixed(1)}%`, cls: 'good' },
-        { jump: 'hsp_pos', k: 'POS Till & Membership Cash', v: fmtUSD(s.totalMemPaid + s.totalRevenueHt, 0), d: `Memberships Paid: ${fmtUSD(s.totalMemPaid, 0)} · POS Z-Reads Synced`, cls: 'good' },
-        { jump: 'hsp_memberships', k: 'Open Membership Arrears (AR)', v: fmtUSD(s.totalMemArrears, 0), d: `${fmtNum(s.overdueMemCount)} overdue contracts · Partner Pool ${fmtUSD(s.totalPartnerPool, 0)}`, cls: s.overdueMemCount > 0 ? 'crit' : 'good' },
-        { jump: 'sentinels', k: 'Resort Books & Sentinels', v: `${hsp.activeResorts.length} Venues`, d: `${openSn} open Hospitality watchdogs (R1-R5)`, cls: openSn > 0 ? 'warn' : 'good', books: true }
-      ];
-      opsCells = [
-        { jump: 'hsp_revenue', k: 'Chalet Occupancy & RevPAR', v: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)} units · ${fmtUSD(s.revParUsd, 0)}` },
-        { jump: 'hsp_pos', k: 'POS Till Closes (RawBT)', v: `${fmtNum(hsp.posRows.length)} shifts audited` },
-        { jump: 'hsp_memberships', k: 'Seasonal Memberships', v: `${fmtNum(hsp.membershipRows.length)} contracts (${fmtUSD(s.totalMemContract, 0)})` },
-        { jump: 'hsp_stock', k: 'Kitchen & Cellar Stock', v: `${fmtUSD(s.totalStockClosing, 0)} on hand · ${s.avgFoodCostPct.toFixed(1)}% FC` },
-        { jump: 'hsp_energy', k: 'Generator Diesel & Solar', v: `${fmtNum(s.totalDieselTankL, 0)} L tank · ${fmtNum(s.totalRunHours, 0)} hrs` },
-        { jump: 'hsp_partners', k: 'Partner Distributions', v: `${fmtUSD(s.totalPartnerPool, 0)} pool (${fmtUSD(s.totalOpenPartnerPayable, 0)} open)` }
+        { jump: 'hsp_revenue', k: 'Venue & Membership Revenue', v: fmtUSD(totRev, 0), d: `Venue: ${fmtUSD(s.totalRevenueTtc, 0)} · Memberships: ${fmtUSD(s.totalMemContract, 0)}`, cls: 'good' },
+        { jump: 'hsp_energy', k: 'Venue Operating Cash Profit', v: fmtUSD(opProf, 0), d: `Net F&B/Chalet Margin: ${fmtUSD(netMargin, 0)} (${s.avgFoodCostPct.toFixed(1)}% Food Cost)`, cls: 'good' },
+        { jump: 'hsp_pos', k: 'POS Till & Membership Cash', v: fmtUSD(s.totalMemPaid + s.totalRevenueHt, 0), d: `Memberships Collected: ${fmtUSD(s.totalMemPaid, 0)} · POS Till Closes Synced`, cls: 'good' },
+        { jump: 'hsp_memberships', k: 'Receivables & Partner Pool', v: fmtUSD(s.totalMemArrears, 0), d: `${fmtNum(s.overdueMemCount)} Overdue Contracts · Partner Pool: ${fmtUSD(s.totalPartnerPool, 0)}`, cls: s.overdueMemCount > 0 ? 'crit' : 'good' }
       ];
       chartTitle = 'Resort Venue Revenue, Kitchen Cost & Operating Profit by Property';
       chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Hospitality & Resorts')} · Daily Venue Revenue, Memberships & F&B Cost`;
       chartBars = indEntities.map(e => ({ label: e.name, rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit }));
-      topDriversTitle = 'Top Resort Outlets & Revenue Categories';
-      topDriversHead = '<tr><th>Venue / Outlet</th><th>Category</th><th class="n">Covers</th><th class="n">Revenue TTC</th></tr>';
-      topDriversBody = hsp.venueRows.slice(0, 5).map(r => `<tr><td><b>${esc(r.company)} · ${esc(r.outlet)}</b></td><td>${esc(r.category)}</td><td class="n">${fmtNum(r.covers)}</td><td class="n"><b>${fmtUSD(r.ttc_usd, 0)}</b></td></tr>`).join('');
-      streamTitle = 'Audited Resort Venue, POS & Membership Ledger Stream';
-      streamJump = 'hsp_revenue';
-      streamRows = hsp.venueRows.slice(0, 6).map(r => ({ date: r.date, bu: r.company, doc: r.id, desc: `701 · ${r.outlet} (${r.category} · ${r.method})`, deb: r.ttc_usd, cred: r.ttc_usd }));
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = computeTradingOperations({ ignoreSearch: true });
       const s = trd.summary;
       const opProf = round2(s.totalSalesMargin - s.totalLandedAddUsd * 0.35);
       kpis = [
-        { jump: 'trd_sales', k: 'Invoiced Sales Revenue (TTC)', v: fmtUSD(s.totalSalesTtc, 0), d: `Ex-VAT Net: ${fmtUSD(s.totalSalesNet, 0)} · 11% VAT: ${fmtUSD(s.totalSalesVat, 0)}`, cls: 'good' },
-        { jump: 'trd_sales', k: 'Realized Gross Margin (vs WAC)', v: fmtUSD(s.totalSalesMargin, 0), d: `Margin Rate: ${s.avgMarginPct.toFixed(1)}% · COGS: ${fmtUSD(s.totalSalesCost, 0)}`, cls: 'good' },
-        { jump: 'trd_purchases', k: 'Trading Operating Profit', v: fmtUSD(opProf, 0), d: `FOB Imports: ${fmtUSD(s.totalFobUsd, 0)} · Landed Add: ${fmtUSD(s.totalLandedAddUsd, 0)}`, cls: 'good' },
-        { jump: 'trd_stock', k: '5-Warehouse Inventory & Trucks', v: fmtUSD(s.totalStockValUsd + s.totalUnitsLandedUsd, 0), d: `Parts WAC: ${fmtUSD(s.totalStockValUsd, 0)} · ${fmtNum(s.showroomUnitsCount)} Showroom Units`, cls: 'good' },
-        { jump: 'trd_receivables', k: 'Gross AR Receivables (t79)', v: fmtUSD(s.grossArUsd, 0), d: `Unallocated Advances: ${fmtUSD(s.customerAdvancesUsd, 0)} · DSO ${s.weightedDsoDays.toFixed(0)}d`, cls: 'good' },
-        { jump: 'sentinels', k: 'Trading Books & Sentinels', v: `${trd.scopedCompanies.length} Entities`, d: `${openSn} open Trading watchdogs (T1-T5)`, cls: openSn > 0 ? 'warn' : 'good', books: true }
-      ];
-      opsCells = [
-        { jump: 'trd_sales', k: 'Invoice Books & Gap Check', v: `${fmtNum(trd.salesRows.filter(r => !r.is_gap).length)} invoices · ${fmtNum(s.invoiceGapCount)} gap` },
-        { jump: 'trd_trucks', k: 'Heavy Trucks & Serial Units', v: `${fmtNum(s.showroomUnitsCount)} showroom · ${fmtNum(s.soldUnitsCount)} delivered` },
-        { jump: 'trd_purchases', k: 'Import Files & Backorders', v: `${fmtNum(trd.importRows.length)} containers · ${fmtNum(s.totalBackorderQty)} BO qty` },
-        { jump: 'trd_landed', k: 'Landed Cost Capitalization', v: `${fmtUSD(s.totalLandedAddUsd, 0)} (${fmtUSD(s.unallocatedLandedUsd, 0)} open)` },
-        { jump: 'trd_stock', k: 'Spare Parts Stock (5 WH)', v: `${fmtNum(s.totalStockQty)} units · ${fmtNum(s.reorderAlertCount)} reorder` },
-        { jump: 'trd_movements', k: 'Inter-Company Stock (t44)', v: `${fmtUSD(s.icTransferUsd, 0)} transferred` }
+        { jump: 'trd_sales', k: 'Invoiced Sales Revenue', v: fmtUSD(s.totalSalesTtc, 0), d: `Ex-VAT Net: ${fmtUSD(s.totalSalesNet, 0)} · 11% VAT: ${fmtUSD(s.totalSalesVat, 0)}`, cls: 'good' },
+        { jump: 'trd_purchases', k: 'Trading Operating Profit', v: fmtUSD(opProf, 0), d: `Gross Margin: ${fmtUSD(s.totalSalesMargin, 0)} (${s.avgMarginPct.toFixed(1)}%) · Landed Add: ${fmtUSD(s.totalLandedAddUsd, 0)}`, cls: 'good' },
+        { jump: 'trd_stock', k: 'Inventory & Showroom Stock', v: fmtUSD(s.totalStockValUsd + s.totalUnitsLandedUsd, 0), d: `Parts WAC: ${fmtUSD(s.totalStockValUsd, 0)} · ${fmtNum(s.showroomUnitsCount)} Showroom Units`, cls: 'good' },
+        { jump: 'trd_receivables', k: 'Receivables & Advances (AR)', v: fmtUSD(s.grossArUsd, 0), d: `Unallocated Advances: ${fmtUSD(s.customerAdvancesUsd, 0)} · DSO ${s.weightedDsoDays.toFixed(0)}d`, cls: 'good' }
       ];
       chartTitle = 'Heavy Truck & Spare Parts Revenue, Landed Cost & Margin Trajectory';
       chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Automotive & Heavy Trading')} · Shacman Heavy Trucks & Korri Auto Parts`;
       chartBars = trd.salesRows.filter(r => !r.is_gap).slice(0, 6).map(r => ({ label: `${r.company} #${r.seq}`, rev: r.ttc_usd, cost: r.cost_usd, op: r.margin_usd }));
-      topDriversTitle = 'Top Heavy Truck Serials & Spare Parts Invoices';
-      topDriversHead = '<tr><th>Invoice #</th><th>Entity</th><th>Item / Chassis</th><th class="n">Margin</th><th class="n">Total TTC</th></tr>';
-      topDriversBody = trd.salesRows.filter(r => !r.is_gap).slice(0, 5).map(r => `<tr><td class="mono"><b>${esc(r.id)}</b></td><td>${esc(r.company)}</td><td>${esc(r.item.slice(0, 32))}</td><td class="n">${fmtUSD(r.margin_usd, 0)}</td><td class="n"><b>${fmtUSD(r.ttc_usd, 0)}</b></td></tr>`).join('');
-      streamTitle = 'Audited Trading Sales, Landed Cost & AR Ledger Stream (CoA 707 / 607 / 411)';
-      streamJump = 'trd_sales';
-      streamRows = trd.salesRows.filter(r => !r.is_gap).slice(0, 6).map(r => ({ date: r.date, bu: r.company, doc: r.id, desc: `707 · ${r.customer} (${r.category})`, deb: r.ttc_usd, cred: r.ttc_usd }));
     } else if (ind === 'Real Estate & Property') {
       const re = computeRealEstateOperations({ ignoreSearch: true });
       const s = re.summary;
       const noi = round2(s.contractedAnnualRentUsd - s.woActualUsd);
       kpis = [
-        { jump: 're_properties', k: 'Portfolio Appraised Value (LGB)', v: fmtUSD(s.portfolioGrossUsd, 0), d: `Group Share (/2400): ${fmtUSD(s.portfolioShareUsd, 0)} across ${fmtNum(re.properties.length)} plots`, cls: 'good' },
-        { jump: 're_leases', k: 'Contracted Annual Rent Roll', v: fmtUSD(s.contractedAnnualRentUsd, 0), d: `Billed TTC: ${fmtUSD(s.totalInvoicedTtcUsd, 0)} · Occupancy ${s.occupancyPct.toFixed(1)}%`, cls: 'good' },
-        { jump: 're_properties', k: 'Net Operating Income (NOI)', v: fmtUSD(noi, 0), d: `Fit-Out & Repairs: ${fmtUSD(s.woActualUsd, 0)} · Unrecharged: ${fmtUSD(s.unrechargedUsd, 0)}`, cls: 'good' },
-        { jump: 're_sales', k: 'Property Sales & Instalments', v: fmtUSD(s.salesContractUsd, 0), d: `Collected: ${fmtUSD(s.salesPaidUsd, 0)} · Open Buyer Balance: ${fmtUSD(s.salesOpenUsd, 0)}`, cls: 'good' },
-        { jump: 're_invoicing', k: 'Open Rent & Buyer AR', v: fmtUSD(s.openRentArUsd + s.salesOpenUsd, 0), d: `Rent AR: ${fmtUSD(s.openRentArUsd, 0)} · Deposits Held (4196): ${fmtUSD(s.securityDepositsHeldUsd, 0)}`, cls: 'good' },
-        { jump: 'sentinels', k: 'Property Books & Sentinels', v: `${re.properties.length} Assets`, d: `${openSn} open Real Estate watchdogs (P1-P5)`, cls: openSn > 0 ? 'warn' : 'good', books: true }
-      ];
-      opsCells = [
-        { jump: 're_units', k: 'Building Units & Occupancy', v: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalUnits)} units (${s.occupancyPct.toFixed(1)}%)` },
-        { jump: 're_leases', k: 'Active Lease Contracts', v: `${fmtNum(re.leases.length)} leases (${fmtNum(re.expiringLeaseCount)} <=90d)` },
-        { jump: 're_receipts', k: 'Security Deposits & Advances', v: `${fmtUSD(s.securityDepositsHeldUsd, 0)} dep · ${fmtUSD(s.unallocatedAdvancesUsd, 0)} adv` },
-        { jump: 're_valuations', k: 'Independent Valuations', v: `${fmtNum(re.valuations.length)} LGB & court appraisals` },
-        { jump: 're_workorders', k: 'Fit-Out & Work Orders', v: `${fmtNum(re.workorders.length)} orders (${fmtUSD(s.unrechargedUsd, 0)} recharge)` },
-        { jump: 're_ownership', k: 'Co-Ownership & NOI Splits', v: `${fmtNum(re.ownership.length)} deed-share stakes (/2400)` }
+        { jump: 're_leases', k: 'Contracted Annual Rent Roll', v: fmtUSD(s.contractedAnnualRentUsd, 0), d: `Portfolio Value: ${fmtUSD(s.portfolioGrossUsd, 0)} · Occupancy ${s.occupancyPct.toFixed(1)}%`, cls: 'good' },
+        { jump: 're_properties', k: 'Net Operating Income (NOI)', v: fmtUSD(noi, 0), d: `Billed TTC: ${fmtUSD(s.totalInvoicedTtcUsd, 0)} · Fit-Out & Repairs: ${fmtUSD(s.woActualUsd, 0)}`, cls: 'good' },
+        { jump: 're_sales', k: 'Property Sales & Deposits', v: fmtUSD(s.salesContractUsd, 0), d: `Collected: ${fmtUSD(s.salesPaidUsd, 0)} · Security Deposits: ${fmtUSD(s.securityDepositsHeldUsd, 0)}`, cls: 'good' },
+        { jump: 're_invoicing', k: 'Open Rent & Buyer AR', v: fmtUSD(s.openRentArUsd + s.salesOpenUsd, 0), d: `Rent AR: ${fmtUSD(s.openRentArUsd, 0)} · Buyer Balance: ${fmtUSD(s.salesOpenUsd, 0)}`, cls: 'good' }
       ];
       chartTitle = 'Property Portfolio Valuation, Annual Rent Roll & NOI by Asset';
       chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Real Estate & Property')} · Properties & 4235 Company S.A.L`;
       chartBars = re.properties.filter(p => p.annual_rent_usd > 0).slice(0, 6).map(p => ({ label: p.plot_no, rev: p.annual_rent_usd, cost: Math.max(0, p.annual_rent_usd - p.annual_noi_usd), op: p.annual_noi_usd }));
-      topDriversTitle = 'Top Income-Producing Lease Contracts';
-      topDriversHead = '<tr><th>Property / Unit</th><th>Tenant</th><th class="n">Period</th><th class="n">Annual Rent</th></tr>';
-      topDriversBody = re.leases.slice(0, 5).map(l => `<tr><td><b>${esc(l.unit)}</b></td><td>${esc(l.tenant)}</td><td class="n">${esc(l.frequency)}</td><td class="n"><b>${fmtUSD(l.annual_ttc_usd, 0)}</b></td></tr>`).join('');
-      streamTitle = 'Audited Rent Invoicing, Tenant Receipts & Property Sales Stream (CoA 706 / 411 / 4196)';
-      streamJump = 're_invoicing';
-      streamRows = re.invoices.slice(0, 6).map(r => ({ date: r.date || r.period_start, bu: r.company, doc: r.id, desc: `706 · ${r.tenant} (${r.period || r.unit || r.lease_code})`, deb: r.amount_ttc_usd != null ? r.amount_ttc_usd : r.ttc_usd, cred: r.collected_usd != null ? r.collected_usd : r.paid_usd }));
     } else if (ind === 'Insurance & Brokerage') {
       const ins = computeInsuranceOperations();
       const s = ins.summary;
       const totRev = round2(s.netCommUsd + s.policyFees7064Usd);
       const opProf = round2(totRev - 11400);
       kpis = [
-        { jump: 'ins_policies', k: 'Gross Written Premium (GWP)', v: fmtUSD(s.gwpUsd, 0), d: `${fmtNum(s.totalPolicyCount)} live policies & ${fmtNum(s.endorsementCount)} endorsements across ${fmtNum(s.carriersCount)} carriers`, cls: 'good' },
-        { jump: 'ins_statements', k: 'Gross Brokerage Commission (7063)', v: fmtUSD(s.grossComm7063Usd, 0), d: `Client Discounts (7065): -${fmtUSD(s.discount7065Usd, 0)} · Policy Fees: +${fmtUSD(s.policyFees7064Usd, 0)}`, cls: 'good' },
-        { jump: 'ins_statements', k: 'Net Brokerage Revenue & Profit', v: fmtUSD(totRev, 0), d: `Operating Profit: ${fmtUSD(opProf, 0)} after brokerage office overhead`, cls: 'good' },
-        { jump: 'ins_remittances', k: 'Fiduciary Cash & Carrier Payable', v: fmtUSD(s.cashHeldUsd, 0), d: `Payable to Carriers (4017): ${fmtUSD(s.payableToCarriers4017Usd, 0)}`, cls: 'good' },
-        { jump: 'ins_billing', k: 'Open Client Premium AR (4112)', v: fmtUSD(s.openClientAr4112Usd, 0), d: `${fmtNum(ins.billing.length)} instalment invoices tracked (` + s.retentionPct.toFixed(1) + '% retention)', cls: 'good' },
-        { jump: 'sentinels', k: 'Brokerage Books & Sentinels', v: '6 Carriers', d: `${openSn} open Insurance watchdogs (I1-I5)`, cls: openSn > 0 ? 'warn' : 'good', books: true }
-      ];
-      opsCells = [
-        { jump: 'ins_renewals', k: '30/60/90-Day Renewal Queue', v: `${fmtNum(s.dueRenewals90dCount)} due · ${s.retentionPct.toFixed(1)}% retention` },
-        { jump: 'ins_items', k: 'Insured Risks & Censuses', v: `${fmtNum(ins.items.length)} risk schedules` },
-        { jump: 'ins_remittances', k: 'Net Carrier Remittances (4017)', v: `${fmtUSD(s.payableToCarriers4017Usd, 0)} open payable` },
-        { jump: 'ins_statements', k: 'Commission Recon (i32)', v: `${fmtNum(ins.statements.length)} stmts (${fmtNum(s.stmtDiscrepancyCount)} variance)` },
-        { jump: 'ins_claims', k: 'Active Claims & Recoveries', v: `${fmtNum(s.openClaimsCount)} open of ${fmtNum(ins.claims.length)} claims` },
-        { jump: 'ins_catalogue', k: 'Lines, Products & Rates', v: `${fmtNum(s.linesCount)} lines · ${fmtNum(s.productsCount)} products · ${fmtNum(s.agreementsCount)} rules` }
+        { jump: 'ins_policies', k: 'Gross Written Premium (GWP)', v: fmtUSD(s.gwpUsd, 0), d: `${fmtNum(s.totalPolicyCount)} policies & ${fmtNum(s.endorsementCount)} endorsements across ${fmtNum(s.carriersCount)} carriers`, cls: 'good' },
+        { jump: 'ins_statements', k: 'Net Brokerage Revenue & Profit', v: fmtUSD(opProf, 0), d: `Gross Commission: ${fmtUSD(s.grossComm7063Usd, 0)} · Net Revenue: ${fmtUSD(totRev, 0)}`, cls: 'good' },
+        { jump: 'ins_remittances', k: 'Fiduciary Cash Held', v: fmtUSD(s.cashHeldUsd, 0), d: `Retention: ${s.retentionPct.toFixed(1)}% · ${fmtNum(s.dueRenewals90dCount)} Renewals Due`, cls: 'good' },
+        { jump: 'ins_billing', k: 'Client AR & Carrier Payable', v: fmtUSD(s.openClientAr4112Usd, 0), d: `Payable to Carriers: ${fmtUSD(s.payableToCarriers4017Usd, 0)} across ${fmtNum(ins.billing.length)} invoices`, cls: 'good' }
       ];
       chartTitle = 'Gross Written Premium, Gross Commission & Net Brokerage Margin by Carrier';
       chartSub = 'Bdeir Insurance Brokerage · 6 Carriers · 12 Insurance Lines · 52 Products';
@@ -44018,32 +43774,26 @@
         const stmtComm = Number(st.statement_comm_usd || st.stmt_comm_usd || expComm);
         return { label: st.carrier, rev: carrierGwp, cost: Math.max(0, round2(carrierGwp - expComm)), op: stmtComm };
       });
-      topDriversTitle = 'Top Active Policies & Corporate Accounts by GWP';
-      topDriversHead = '<tr><th>Policy #</th><th>Client</th><th>Carrier &amp; Line</th><th class="n">Net Comm</th><th class="n">GWP ($)</th></tr>';
-      topDriversBody = ins.policies.slice(0, 5).map(p => `<tr><td class="mono"><b>${esc(p.id)}</b></td><td>${esc(p.client)}</td><td>${esc(p.carrier)} · ${esc(p.line)}</td><td class="n">${fmtUSD(p.net_comm_usd, 0)}</td><td class="n"><b>${fmtUSD(p.gross_prem_usd, 0)}</b></td></tr>`).join('');
-      streamTitle = 'Audited Brokerage Fiduciary & Commission Ledger Stream (CoA 4112 / 4017 / 7063 / 7065)';
-      streamJump = 'ins_billing';
-      streamRows = ins.billing.slice(0, 6).map(b => ({ date: b.due_date, bu: 'Insurance', doc: b.id, desc: `4112 · ${b.client} (${b.carrier} · ${b.instalment})`, deb: b.client_billed_4112_usd != null ? b.client_billed_4112_usd : b.gross_due_usd, cred: b.collected_usd != null ? b.collected_usd : b.paid_usd }));
     }
 
     const maxBar = Math.max(1, ...chartBars.map(b => Math.max(Number(b.rev || 0), Number(b.op || 0))));
     const slotW = Math.floor(680 / Math.max(1, chartBars.length));
     const barW = Math.min(28, Math.max(12, Math.floor((slotW - 18) / 3)));
     const chartSvg = `
-      <svg viewBox="0 0 760 210" width="100%" height="210" role="img" aria-label="${esc(chartTitle)}" style="display:block;overflow:visible">
-        <line x1="48" y1="168" x2="740" y2="168" stroke="var(--line)" stroke-width="1" />
+      <svg viewBox="0 0 760 220" width="100%" height="220" role="img" aria-label="${esc(chartTitle)}" style="display:block;overflow:visible">
+        <line x1="48" y1="178" x2="740" y2="178" stroke="var(--line)" stroke-width="1" />
         ${chartBars.map((b, i) => {
           const gx = 62 + i * slotW;
-          const h1 = Math.max(6, Math.round((Math.max(0, Number(b.rev || 0)) / maxBar) * 136));
-          const h2 = Math.max(4, Math.round((Math.max(0, Number(b.cost || 0)) / maxBar) * 136));
-          const h3 = Math.max(5, Math.round((Math.max(0, Number(b.op || 0)) / maxBar) * 136));
+          const h1 = Math.max(6, Math.round((Math.max(0, Number(b.rev || 0)) / maxBar) * 144));
+          const h2 = Math.max(4, Math.round((Math.max(0, Number(b.cost || 0)) / maxBar) * 144));
+          const h3 = Math.max(5, Math.round((Math.max(0, Number(b.op || 0)) / maxBar) * 144));
           return `
             <g>
-              <rect x="${gx}" y="${168 - h1}" width="${barW}" height="${h1}" rx="3" fill="#2563eb" />
-              <rect x="${gx + barW + 3}" y="${168 - h2}" width="${barW}" height="${h2}" rx="3" fill="#d97706" />
-              <rect x="${gx + (barW + 3) * 2}" y="${168 - h3}" width="${barW}" height="${h3}" rx="3" fill="#059669" />
-              <text x="${gx + barW * 1.5}" y="186" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">${esc(String(b.label || '').slice(0, 14))}</text>
-              <text x="${gx + barW * 1.5}" y="${Math.max(14, 162 - h1)}" text-anchor="middle" fill="var(--ink-2)" font-size="10" font-family="var(--font-mono)">${esc(fmtUSDk(b.rev || 0))}</text>
+              <rect x="${gx}" y="${178 - h1}" width="${barW}" height="${h1}" rx="3" fill="#2563eb" />
+              <rect x="${gx + barW + 3}" y="${178 - h2}" width="${barW}" height="${h2}" rx="3" fill="#d97706" />
+              <rect x="${gx + (barW + 3) * 2}" y="${178 - h3}" width="${barW}" height="${h3}" rx="3" fill="#059669" />
+              <text x="${gx + barW * 1.5}" y="198" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">${esc(String(b.label || '').slice(0, 14))}</text>
+              <text x="${gx + barW * 1.5}" y="${Math.max(14, 172 - h1)}" text-anchor="middle" fill="var(--ink-2)" font-size="10" font-family="var(--font-mono)">${esc(fmtUSDk(b.rev || 0))}</text>
             </g>
           `;
         }).join('')}
@@ -44056,9 +43806,9 @@
     const sumEntOp = round2(indEntities.reduce((s, e) => s + Number(e.k.operating_profit || 0), 0));
 
     return `
-      <section class="kpis" aria-label="Executive Key Performance Indicators">
+      <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
         ${kpis.map(c => `
-          <div class="kpi ${c.books ? 'books' : ''} kpi-link" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0">
+          <div class="kpi kpi-link" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0">
             <span class="k">${esc(c.k)}</span>
             <span class="v num">${c.v}</span>
             <span class="d ${esc(c.cls || 'good')}">${c.d}</span>
@@ -44066,18 +43816,8 @@
         `).join('')}
       </section>
 
-      <section class="ops-strip" aria-label="Operational Unit Economics">
-        ${opsCells.map(c => `
-          <div class="ops-cell kpi-link" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0">
-            <span>${esc(c.k)}</span>
-            <b class="num">${esc(c.v)}</b>
-          </div>
-        `).join('')}
-      </section>
-      ${appStrip()}
-
-      <section class="row2">
-        <div class="panel">
+      <section class="row2 ceo-stage">
+        <div class="panel ceo-chart-panel">
           <div class="ph">
             <div>
               <h3>${esc(chartTitle)}</h3>
@@ -44092,46 +43832,43 @@
           <div class="chartwrap" id="execChartWrap">
             ${chartSvg}
           </div>
-          <div class="chart-ftr">
-            <div class="chart-ftr-cell"><small>Active Industry Vertical</small><b class="num">${esc(ind)}</b></div>
-            <div class="chart-ftr-cell"><small>Scoped Revenue / GWP</small><b class="num">${fmtUSD(sumEntRev, 0)}</b></div>
-            <div class="chart-ftr-cell"><small>Scoped Gross Margin</small><b class="num">${fmtUSD(sumEntGm, 0)}</b></div>
-            <div class="chart-ftr-cell"><small>Operating Profit</small><b class="num">${fmtSignedUSD(sumEntOp, 0)}</b></div>
-          </div>
         </div>
 
-        <div class="panel">
+        <div class="panel ceo-entities-panel">
           <div class="ph">
-            <h3>Operating Entities &amp; Books Status (${indEntities.length})</h3>
-            <span class="ph-sub">Click any entity to filter workspace</span>
+            <div>
+              <h3>Operating Entities Scorecard (${indEntities.length})</h3>
+              <span class="ph-sub">Click any entity to focus workspace</span>
+            </div>
+            <button type="button" class="btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-nav-jump="entities">Entity Comparison</button>
           </div>
-          <div class="table-scroll">
-            <table class="m-grid">
+          <div class="table-scroll ceo-table-scroll">
+            <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
               <thead>
                 <tr>
                   <th>Entity</th>
-                  <th class="n">Revenue TTC</th>
+                  <th class="n">Revenue</th>
                   <th class="n hide-xs">Entries</th>
-                  <th class="n">Margin</th>
+                  <th class="n">Gross Margin</th>
                   <th class="n">Op. Profit</th>
-                  <th>Books</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 ${indEntities.map(e => `
-                  <tr class="clickable-row" data-jump-co="${esc(e.key)}">
+                  <tr class="clickable-row ${STATE.company === e.key ? 'is-active-co' : ''}" data-jump-co="${esc(e.key)}">
                     <td><b>${esc(e.name)}</b></td>
                     <td class="n">${fmtUSD(e.k.sales_ttc || 0, 0)}</td>
                     <td class="n hide-xs">${fmtNum(e.k.loads || 0)}</td>
                     <td class="n">${fmtUSD(e.k.gross_margin || 0, 0)}</td>
-                    <td class="n">${fmtSignedUSD(e.k.operating_profit || 0, 0)}</td>
+                    <td class="n"><b>${fmtSignedUSD(e.k.operating_profit || 0, 0)}</b></td>
                     <td><span class="m-chip closed">Live</span></td>
                   </tr>
                 `).join('')}
               </tbody>
               <tfoot>
                 <tr class="total">
-                  <td><b>Total (${indEntities.length} BUs)</b></td>
+                  <td><b>Total (${indEntities.length} entities)</b></td>
                   <td class="n"><b>${fmtUSD(sumEntRev, 0)}</b></td>
                   <td class="n hide-xs"><b>${fmtNum(sumEntLoads)}</b></td>
                   <td class="n"><b>${fmtUSD(sumEntGm, 0)}</b></td>
@@ -44139,74 +43876,6 @@
                   <td><span class="m-chip brass">Audited</span></td>
                 </tr>
               </tfoot>
-            </table>
-          </div>
-
-          <div class="ph" style="border-top:1px solid var(--line);margin-top:4px">
-            <h3>${esc(topDriversTitle)}</h3>
-            <span class="ph-sub">Live Operational Breakdown</span>
-          </div>
-          <div class="table-scroll">
-            <table class="m-grid">
-              <thead>${topDriversHead}</thead>
-              <tbody>${topDriversBody}</tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section class="row3">
-        <div class="panel">
-          <div class="ph">
-            <h3>Executive Exceptions &amp; ${esc(ind)} Sentinels</h3>
-            <button type="button" class="btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="sentinels">All ${sentinels.length} Sentinels</button>
-          </div>
-          <ul class="att">
-            ${sentinels.slice(0, 4).map(s => {
-              const cls = s.severity === 'ok' ? 'good' : s.severity;
-              return `
-                <li class="${cls}">
-                  <b>${esc(s.title)}</b>
-                  <span>${esc(s.detail)}</span>
-                  <button type="button" class="att-act" data-nav-jump="${esc(s.navView || 'sentinels')}">${esc(s.badge)}</button>
-                </li>
-              `;
-            }).join('')}
-          </ul>
-        </div>
-
-        <div class="panel">
-          <div class="ph">
-            <div>
-              <h3>${esc(streamTitle)}</h3>
-              <span class="ph-sub">Double-Entry Lebanese CoA · Every Operational Voucher &amp; Settlement</span>
-            </div>
-            <button type="button" class="btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="${esc(streamJump)}">Open Register</button>
-          </div>
-          <div class="table-scroll">
-            <table class="m-grid">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>BU</th>
-                  <th>Voucher</th>
-                  <th>CoA Account &amp; Counterparty</th>
-                  <th class="n">Debit</th>
-                  <th class="n">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${streamRows.map(r => `
-                  <tr>
-                    <td class="mu">${esc(fmtDateDMY(r.date))}</td>
-                    <td><span class="m-chip brass">${esc(r.bu)}</span></td>
-                    <td class="mono">${esc(r.doc)}</td>
-                    <td><b>${esc(r.desc)}</b></td>
-                    <td class="n">${fmtUSD(r.deb || 0, 2)}</td>
-                    <td class="n">${fmtUSD(r.cred || 0, 2)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
             </table>
           </div>
         </div>
@@ -44949,7 +44618,949 @@
     return rows;
   }
 
+  function ensureMultiIndustrySpineSeeded() {
+    if (!SEED || !SEED.records || SEED._multiIndustrySpineSeeded) return;
+    SEED._multiIndustrySpineSeeded = true;
+    const recs = SEED.records;
+    const ensureArr = k => {
+      if (!Array.isArray(recs[k])) recs[k] = [];
+      recs[k]._hasMultiIndustrySeed = true;
+      return recs[k];
+    };
+    const supArr = ensureArr('suppliers');
+    const custArr = ensureArr('customers');
+    const regArr = ensureArr('regions');
+    const siteArr = ensureArr('sites');
+    const prodArr = ensureArr('products');
+    const itemArr = ensureArr('items');
+    const eqArr = ensureArr('equipment');
+    const coEqArr = ensureArr('company_equipment');
+    const drvArr = ensureArr('drivers');
+    const coDrvArr = ensureArr('company_drivers');
+    const expArr = ensureArr('expenses');
+    const expItmArr = ensureArr('expense_items');
+    const recExpArr = ensureArr('recurring_expenses');
+    const setArr = ensureArr('settlements');
+    const stfArr = ensureArr('staff_members');
+    const empArr = ensureArr('employments');
+    const asgArr = ensureArr('staff_assignments');
+    const salArr = ensureArr('salaries');
+    const attArr = ensureArr('attendance');
+    const logArr = ensureArr('logistics_allowances');
+    const extArr = ensureArr('external_movements');
+    const loanArr = ensureArr('loans');
+    const lsetArr = ensureArr('loan_settlements');
+    const convArr = ensureArr('conversions');
+
+    const ENTITIES = [
+      {
+        ind: 'Holding & Treasury', co: 'Bdeir Holding', code: 'HLD', region: 'Beirut Central', corridor: 'Beirut CBD & Verdun', lat: 33.8886, lng: 35.4955,
+        partner: 'Bdeir Family Holding Trust', extIn: 68000, extOut: 24500, loanTaken: 120000,
+        suppliers: [
+          { name: 'Deloitte & Touche Advisory ME', role: 'Audit & Statutory Tax', cat: 'Office & Facility', subcat: 'Audit & Legal', iva: true, mof: '1044812-601', phone: '+961 1 364 700', expAmt: 14500, recAmt: 2400, recItem: 'Monthly Group Statutory Audit & Tax Retainer' },
+          { name: 'Matouk Bassiouny Corporate Law', role: 'Corporate Counsel', cat: 'Insurance, Permits & Taxes', subcat: 'Legal & Notary', iva: true, mof: '2091145-601', phone: '+961 1 985 120', expAmt: 8200, recAmt: 1500, recItem: 'Subsidiary Governance & M&A Retainer' }
+        ],
+        customers: [
+          { name: 'WTC Sister Treasury Clearing', mof: '3100492-601', phone: '+961 3 410 100', sales: 85000, ar: 18500 },
+          { name: 'Blanca Resort Holding Account', mof: '3100884-601', phone: '+961 3 520 200', sales: 64000, ar: 12000 }
+        ],
+        sites: ['Bdeir Holding Verdun HQ', 'Beirut Financial Vault & Archive'],
+        products: [
+          { name: 'Group Management & Shared Advisory', type: 'Corporate Service', uom: 'Unit', price: 12500 },
+          { name: 'Central Treasury Facility Allocation', type: 'Treasury Facility', uom: 'Unit', price: 25000 }
+        ],
+        items: [
+          { name: 'HSM Hardware Security Module Token', cat: 'Tools & Consumables', subcat: 'IT & Security', cost: 420 },
+          { name: 'APC Smart-UPS 3000VA Server Battery Pack', cat: 'Spare Parts', subcat: 'Electrical', cost: 680 }
+        ],
+        equipment: [
+          { name: 'HLD-EXEC-01 (Mercedes S500 Armored)', plate: 'B-100420', type: 'Vehicle', cap: 5 },
+          { name: 'HLD-GEN-01 (Perkins 150kVA HQ Backup)', plate: 'GEN-HLD-01', type: 'Generator', cap: 150 }
+        ],
+        staff: [
+          { name: 'Nabil Kanaan', role: 'Group CFO & Treasury Director', cat: 'Management & Admin', sal: 4800, phone: '+961 3 611 201' },
+          { name: 'Rania Maalouf', role: 'Senior Consolidation Controller', cat: 'Management & Admin', sal: 3100, phone: '+961 3 611 202' },
+          { name: 'Tarek Chami', role: 'Executive Chauffeur & Security Lead', cat: 'Fleet & Drivers', sal: 1450, phone: '+961 70 412 880' }
+        ]
+      },
+      {
+        ind: 'Hospitality & Resorts', co: 'Blanca', code: 'BLN', region: 'Jiyeh Coast', corridor: 'South Coastal Highway', lat: 33.6672, lng: 35.4148,
+        partner: 'Blanca Beachfront Partners', extIn: 42000, extOut: 16500, loanTaken: 65000,
+        suppliers: [
+          { name: 'Château Ksara Cellars S.A.L.', role: 'Beverage & Cellar Vendor', cat: 'Beverage Supplies', subcat: 'Cellar & Fine Wine', iva: true, mof: '118204-601', phone: '+961 8 813 495', expAmt: 9400, recAmt: 1800, recItem: 'Monthly Cellar & Beverage Allocation' },
+          { name: 'Boecker Food Safety & Hygiene', role: 'Sanitation & HACCP', cat: 'Sanitation and Pest Control', subcat: 'Kitchen Hygiene', iva: true, mof: '449102-601', phone: '+961 1 281 777', expAmt: 3600, recAmt: 650, recItem: 'Resort Kitchen HACCP & Pest Control Contract' }
+        ],
+        customers: [
+          { name: 'VIP Cabana Member — Dr. Mazen Saab', mof: '774120-601', phone: '+961 3 221 900', sales: 48000, ar: 9500 },
+          { name: 'Corporate Sunset Gala — MEA', mof: '100291-601', phone: '+961 1 629 999', sales: 36500, ar: 7200 }
+        ],
+        sites: ['Blanca Beachfront & Infinity Pool Deck', 'Blanca Central Commissary & Cellar'],
+        products: [
+          { name: 'VIP Beachfront Cabana Full-Day Package', type: 'Resort Admission', uom: 'Unit', price: 350 },
+          { name: 'Blanca Sunset Banquet Menu (Per Cover)', type: 'F&B Hospitality', uom: 'Unit', price: 85 }
+        ],
+        items: [
+          { name: 'La Marzocco Espresso Group Gasket & Screen Kit', cat: 'Spare Parts', subcat: 'Kitchen Equipment', cost: 145 },
+          { name: 'Pool Ionizer Copper Anode Replacement', cat: 'Spare Parts', subcat: 'Pool & Marine', cost: 310 }
+        ],
+        equipment: [
+          { name: 'BLN-GEN-01 (CAT 500kVA Silent Resort)', plate: 'GEN-BLN-01', type: 'Generator', cap: 500 },
+          { name: 'BLN-SHUTTLE-01 (Club Car 8-Seater VIP)', plate: 'RES-BLN-02', type: 'Vehicle', cap: 8 }
+        ],
+        staff: [
+          { name: 'Chef Marwan Khoury', role: 'Executive Sous-Chef', cat: 'Plant & Production', sal: 2400, phone: '+961 3 701 112' },
+          { name: 'Lara Frem', role: 'Guest Relations & Cabana Host', cat: 'Site & Operations', sal: 1350, phone: '+961 71 802 334' }
+        ]
+      },
+      {
+        ind: 'Hospitality & Resorts', co: 'La Una', code: 'LAU', region: 'Jiyeh Coast', corridor: 'South Coastal Highway', lat: 33.6695, lng: 35.4162,
+        partner: 'La Una Hospitality Syndicate', extIn: 38000, extOut: 14200, loanTaken: 52000,
+        suppliers: [
+          { name: 'G. Vincenti & Sons Fine Spirits', role: 'Premium Bar & Spirits', cat: 'Beverage Supplies', subcat: 'Imported Spirits', iva: true, mof: '229104-601', phone: '+961 1 896 444', expAmt: 11200, recAmt: 2100, recItem: 'Standing Lounge Bar & Spirits Replenishment' },
+          { name: 'Transmed Foodservice Hospitality', role: 'Prime F&B Provisions', cat: 'Food Supplies', subcat: 'Dry & Chilled Goods', iva: true, mof: '103882-601', phone: '+961 1 683 000', expAmt: 7800, recAmt: 1250, recItem: 'Cold-Chain Commissary Delivery Schedule' }
+        ],
+        customers: [
+          { name: 'La Una Lounge VIP Table — Karim Nassar', mof: '881203-601', phone: '+961 3 911 405', sales: 39000, ar: 6800 },
+          { name: 'Summer Wedding Reception — Hitti Family', mof: '889120-601', phone: '+961 3 334 510', sales: 54000, ar: 11400 }
+        ],
+        sites: ['La Una Sunset Deck & RawBT Till Terrace', 'La Una Cold-Chain Kitchen Store'],
+        products: [
+          { name: 'Prime Angus Ribeye & Cellar Pairing', type: 'F&B Hospitality', uom: 'Unit', price: 95 },
+          { name: 'La Una Sunset Lounge Table Minimum', type: 'Resort Admission', uom: 'Unit', price: 450 }
+        ],
+        items: [
+          { name: 'RawBT Thermal POS Printer Roller 80mm Box', cat: 'Tools & Consumables', subcat: 'POS & Till', cost: 85 },
+          { name: 'Scotsman Ice Maker Water Inlet Solenoid', cat: 'Spare Parts', subcat: 'Kitchen Equipment', cost: 220 }
+        ],
+        equipment: [
+          { name: 'LAU-COOL-01 (Walk-In Chiller & Ice Plant)', plate: 'EQ-LAU-01', type: 'Machinery', cap: 40 },
+          { name: 'LAU-GEN-02 (Cummins 350kVA Acoustic)', plate: 'GEN-LAU-02', type: 'Generator', cap: 350 }
+        ],
+        staff: [
+          { name: 'Rami Haddad', role: 'Floor & POS Operations Manager', cat: 'Management & Admin', sal: 2100, phone: '+961 3 744 901' },
+          { name: 'Nour Gemayel', role: 'Head Sommelier & Bar Lead', cat: 'Site & Operations', sal: 1500, phone: '+961 76 512 908' }
+        ]
+      },
+      {
+        ind: 'Hospitality & Resorts', co: 'Palms', code: 'PLM', region: 'Damour Coast', corridor: 'Coastal Resort Belt', lat: 33.7294, lng: 35.4461,
+        partner: 'Palms Resort Co-Investors', extIn: 31000, extOut: 11800, loanTaken: 48000,
+        suppliers: [
+          { name: 'Khalil Fattal & Fils Hospitality', role: 'Resort F&B & Amenities', cat: 'Hotel Supplies', subcat: 'Guest Amenities', iva: true, mof: '100441-601', phone: '+961 1 512 000', expAmt: 6900, recAmt: 1100, recItem: 'Seasonal Chalet Linen & Guest Amenity Supply' },
+          { name: 'Coral Oil Marine & Resort Diesel', role: 'Energy & Generator Fuel', cat: 'Fuel', subcat: 'Diesel', iva: true, mof: '192881-601', phone: '+961 1 587 000', expAmt: 8400, recAmt: 1600, recItem: 'Standing Hybrid Generator Diesel Top-Up' }
+        ],
+        customers: [
+          { name: 'Palms Chalet #A12 — Nadia Trad', mof: '901124-601', phone: '+961 3 605 112', sales: 32000, ar: 5500 },
+          { name: 'Palms Seasonal Family Pass — Boustani', mof: '904512-601', phone: '+961 3 818 220', sales: 24500, ar: 4200 }
+        ],
+        sites: ['Palms Resort Lagoon & Chalet Zone', 'Palms Solar & Generator Plant'],
+        products: [
+          { name: 'Seasonal Lagoon Chalet Lease (Summer)', type: 'Chalet Membership', uom: 'Unit', price: 8500 },
+          { name: 'Palms Family Pool & Beach Day Pass', type: 'Resort Admission', uom: 'Unit', price: 45 }
+        ],
+        items: [
+          { name: 'Hayward Commercial Pool Sand Filter Multiport Valve', cat: 'Spare Parts', subcat: 'Pool & Marine', cost: 290 },
+          { name: 'SMA Solar Inverter String Surge Protector', cat: 'Spare Parts', subcat: 'Electrical', cost: 195 }
+        ],
+        equipment: [
+          { name: 'PLM-SOLAR-01 (Hybrid 250kWp Solar + Perkins)', plate: 'GEN-PLM-01', type: 'Generator', cap: 250 },
+          { name: 'PLM-PUMP-02 (Pentair Lagoon Circulation Bank)', plate: 'EQ-PLM-02', type: 'Machinery', cap: 80 }
+        ],
+        staff: [
+          { name: 'Bilal Dandash', role: 'Resort Chief Engineer & Solar Tech', cat: 'Maintenance & Workshop', sal: 1850, phone: '+961 70 918 441' },
+          { name: 'Maya Sfeir', role: 'Membership & Chalet Coordinator', cat: 'Management & Admin', sal: 1400, phone: '+961 3 490 772' }
+        ]
+      },
+      {
+        ind: 'Hospitality & Resorts', co: 'Voile', code: 'VOL', region: 'Jiyeh Coast', corridor: 'South Coastal Highway', lat: 33.6641, lng: 35.4125,
+        partner: 'Voile Marine & Beach Group', extIn: 27500, extOut: 9800, loanTaken: 42000,
+        suppliers: [
+          { name: 'Atlantic Seafood Imports Beirut', role: 'Fresh Catch & Cold Chain', cat: 'Food Supplies', subcat: 'Fresh Seafood', iva: true, mof: '551902-601', phone: '+961 1 448 210', expAmt: 7600, recAmt: 1350, recItem: 'Weekly Fresh Catch & Oysters Delivery' },
+          { name: 'Ets. Michel Najjar Specialty Coffee', role: 'Roastery & Espresso', cat: 'Beverage Supplies', subcat: 'Coffee & Tea', iva: true, mof: '112098-601', phone: '+961 1 888 555', expAmt: 2900, recAmt: 520, recItem: 'Monthly Specialty Coffee & Barista Service' }
+        ],
+        customers: [
+          { name: 'Voile Marina Deck — Yacht Club Charter', mof: '661209-601', phone: '+961 3 771 040', sales: 29500, ar: 6100 },
+          { name: 'Voile Beach Pavilion — Fares Group', mof: '664890-601', phone: '+961 3 119 850', sales: 21800, ar: 3900 }
+        ],
+        sites: ['Voile Beach Pavilion & Marine Pier', 'Voile Seafood Cold Room'],
+        products: [
+          { name: 'Mediterranean Seafood Platter & Marina Pass', type: 'F&B Hospitality', uom: 'Unit', price: 110 },
+          { name: 'Voile Sunset Gazebo Reservation', type: 'Resort Admission', uom: 'Unit', price: 280 }
+        ],
+        items: [
+          { name: 'Marine 316L Stainless Deck Misting Nozzle Set', cat: 'Spare Parts', subcat: 'Pool & Marine', cost: 165 },
+          { name: 'Teak Sunbed Sunbrella Cushion Cover Set', cat: 'Tools & Consumables', subcat: 'Beach Furniture', cost: 240 }
+        ],
+        equipment: [
+          { name: 'VOL-BUGGY-01 (Club Car 6-Seater Resort Shuttle)', plate: 'RES-VOL-01', type: 'Vehicle', cap: 6 },
+          { name: 'VOL-GEN-01 (FG Wilson 250kVA Marine Gen)', plate: 'GEN-VOL-01', type: 'Generator', cap: 250 }
+        ],
+        staff: [
+          { name: 'Ziad Mouawad', role: 'Marina & Beach Deck Supervisor', cat: 'Site & Operations', sal: 1650, phone: '+961 71 339 102' },
+          { name: 'Hiba Rizk', role: 'Commissary & Recipe BOM Controller', cat: 'Plant & Production', sal: 1450, phone: '+961 76 882 419' }
+        ]
+      },
+      {
+        ind: 'Hospitality & Resorts', co: 'Platinum', code: 'PLT', region: 'Khaldeh Coast', corridor: 'Airport-Coastal Corridor', lat: 33.7882, lng: 35.4741,
+        partner: 'Platinum Hospitality & Suites', extIn: 35000, extOut: 12900, loanTaken: 58000,
+        suppliers: [
+          { name: 'LINEN & Co. Luxury Hotel Textiles', role: 'Hotel Linen & Banqueting', cat: 'Hotel Supplies', subcat: 'Banquet Textiles', iva: true, mof: '719204-601', phone: '+961 1 492 300', expAmt: 6400, recAmt: 980, recItem: 'VIP Suite & Ballroom Linen Laundry Contract' },
+          { name: 'ProSound & Lighting Ballroom Systems', role: 'AV & Stage Rigging', cat: 'Repairs and Maintenance', subcat: 'AV & Lighting', iva: true, mof: '728110-601', phone: '+961 1 255 900', expAmt: 5100, recAmt: 850, recItem: 'Ballroom Acoustic & DMX Lighting Maintenance' }
+        ],
+        customers: [
+          { name: 'Platinum Grand Ballroom — Bankers Association', mof: '501928-601', phone: '+961 1 970 500', sales: 44000, ar: 8900 },
+          { name: 'Platinum VIP Suite — Diplomatic Delegation', mof: '509812-601', phone: '+961 1 982 100', sales: 31500, ar: 5200 }
+        ],
+        sites: ['Platinum Banquet Hall & VIP Suites', 'Platinum Central Chiller & Kitchen Plant'],
+        products: [
+          { name: 'Grand Ballroom Corporate Gala Package', type: 'Banquet & Events', uom: 'Unit', price: 6500 },
+          { name: 'Executive Sea-View Suite Nightly Rate', type: 'Hotel Lodging', uom: 'Unit', price: 260 }
+        ],
+        items: [
+          { name: 'DMX Moving-Head Stage Spotlight Discharge Lamp', cat: 'Spare Parts', subcat: 'Electrical', cost: 210 },
+          { name: 'Carrier Chiller Condenser Fan Contactor', cat: 'Spare Parts', subcat: 'HVAC', cost: 175 }
+        ],
+        equipment: [
+          { name: 'PLT-HVAC-01 (Carrier 180-Ton Ballroom Chiller)', plate: 'EQ-PLT-01', type: 'Machinery', cap: 180 },
+          { name: 'PLT-GEN-01 (Volvo Penta 400kVA Standby)', plate: 'GEN-PLT-01', type: 'Generator', cap: 400 }
+        ],
+        staff: [
+          { name: 'Walid Kassab', role: 'Banquet & Events Director', cat: 'Management & Admin', sal: 2300, phone: '+961 3 518 720' },
+          { name: 'Samar Aoun', role: 'Executive Housekeeping Lead', cat: 'Site & Operations', sal: 1300, phone: '+961 70 614 390' }
+        ]
+      },
+      {
+        ind: 'Automotive & Heavy Trading', co: 'Korri Auto', code: 'KOR', region: 'Choueifat Industrial', corridor: 'Choueifat-Khaldeh Highway', lat: 33.8054, lng: 35.4892,
+        partner: 'Korri Automotive Trade Partners', extIn: 74000, extOut: 29000, loanTaken: 145000,
+        suppliers: [
+          { name: 'Bosch Commercial Diesel Systems DE', role: 'OEM Diesel & Injector Vendor', cat: 'Spare Parts', subcat: 'Fuel Injection & ECU', iva: true, mof: '330192-601', phone: '+961 1 804 220', expAmt: 24800, recAmt: 3200, recItem: 'Bosch Diagnostic & Bonded Warehouse Subscription' },
+          { name: 'Mediterranean Shipping Co. (MSC Beirut)', role: 'Ocean Freight & Customs', cat: 'Transportation', subcat: 'Container Freight & Duty', iva: true, mof: '100842-601', phone: '+961 1 567 700', expAmt: 16400, recAmt: 2600, recItem: 'Beirut Port Free Zone Bonded Storage Lease' }
+        ],
+        customers: [
+          { name: 'Cedar Logistics & Heavy Haulage S.A.L.', mof: '410928-601', phone: '+961 3 301 880', sales: 128000, ar: 34200 },
+          { name: 'Bekaa Ready-Mix & Contracting Co.', mof: '419002-601', phone: '+961 8 542 100', sales: 94500, ar: 21800 }
+        ],
+        sites: ['Korri Auto Showroom & Central Parts Hub', 'Beirut Port Free Zone Bonded Yard'],
+        products: [
+          { name: 'Weichai WP12 430HP Complete Engine Assembly', type: 'Heavy Powertrain', uom: 'Unit', price: 14800 },
+          { name: 'Fast Gear 12-Speed Heavy Transmission Kit', type: 'Heavy Powertrain', uom: 'Unit', price: 6900 }
+        ],
+        items: [
+          { name: 'Fleetguard LF16015 Spin-On Oil Filter Master Case', cat: 'Oils & Lubricants', subcat: 'Filtration', cost: 340 },
+          { name: 'WABCO Air Dryer Cartridge 432410 Twin-Pack', cat: 'Spare Parts', subcat: 'Braking & Air', cost: 185 }
+        ],
+        equipment: [
+          { name: 'KOR-FORK-01 (Toyota 5-Ton Parts Forklift)', plate: 'IND-KOR-01', type: 'Machinery', cap: 5 },
+          { name: 'KOR-SRV-01 (Isuzu NPR Mobile Workshop Van)', plate: 'M-408112', type: 'Vehicle', cap: 4 }
+        ],
+        staff: [
+          { name: 'Eng. Bassam Korri', role: 'Showroom & Import Operations Director', cat: 'Management & Admin', sal: 3200, phone: '+961 3 209 411' },
+          { name: 'Hadi Shamseddine', role: 'Chief Bonded Warehouse & Parts Lead', cat: 'Plant & Production', sal: 1750, phone: '+961 70 841 229' }
+        ]
+      },
+      {
+        ind: 'Automotive & Heavy Trading', co: 'Shacman', code: 'SHC', region: 'Zahle Industrial', corridor: 'Bekaa Chtaura-Zahle Highway', lat: 33.8463, lng: 35.9020,
+        partner: 'Shacman Levant Heavy Trucks', extIn: 92000, extOut: 36000, loanTaken: 180000,
+        suppliers: [
+          { name: 'Shaanxi Heavy Duty Automobile Import & Export', role: 'OEM Heavy Truck Factory', cat: 'Merchandise', subcat: 'Heavy Trucks & Chassis', iva: true, mof: '990142-601', phone: '+961 8 801 500', expAmt: 38500, recAmt: 4100, recItem: 'OEM Warranty Portal & Technical Telematics License' },
+          { name: 'CMA CGM Levant Container Line', role: 'Ro-Ro & Ocean Shipping', cat: 'Transportation', subcat: 'Ro-Ro Vessel Freight', iva: true, mof: '100319-601', phone: '+961 1 445 800', expAmt: 19200, recAmt: 2900, recItem: 'Tripoli & Beirut Ro-Ro Customs Clearance Retainer' }
+        ],
+        customers: [
+          { name: 'Mount Lebanon Excavation & Roads S.A.L.', mof: '612094-601', phone: '+961 3 712 900', sales: 197000, ar: 52400 },
+          { name: 'Litani Infrastructure Syndicate', mof: '618920-601', phone: '+961 8 661 300', sales: 142000, ar: 31600 }
+        ],
+        sites: ['Shacman Heavy Truck Assembly & PDI Yard', 'Chtaura Spare Parts Branch #3'],
+        products: [
+          { name: 'Shacman X3000 6x4 Tipper Truck (430HP VIN)', type: 'Commercial Vehicle', uom: 'Unit', price: 98500 },
+          { name: 'Shacman F3000 8x4 Transit Mixer Chassis', type: 'Commercial Vehicle', uom: 'Unit', price: 106000 }
+        ],
+        items: [
+          { name: 'Hande 16-Ton Planetary Rear Axle Hub Seal Kit', cat: 'Spare Parts', subcat: 'Axles & Suspension', cost: 460 },
+          { name: 'Sachs 430mm Heavy Ceramic Clutch Pressure Plate', cat: 'Spare Parts', subcat: 'Drivetrain', cost: 620 }
+        ],
+        equipment: [
+          { name: 'SHC-CRN-01 (25-Ton Yard Gantry & PDI Crane)', plate: 'IND-SHC-01', type: 'Machinery', cap: 25 },
+          { name: 'SHC-REC-01 (Shacman 6x4 Heavy Recovery Truck)', plate: 'M-519204', type: 'Truck', cap: 30 }
+        ],
+        staff: [
+          { name: 'Mazen Dirani', role: 'Heavy Truck PDI & Warranty Chief', cat: 'Maintenance & Workshop', sal: 2250, phone: '+961 3 884 120' },
+          { name: 'Youssef Berro', role: 'Commercial Fleet Sales Executive', cat: 'Site & Operations', sal: 1800, phone: '+961 71 445 902' }
+        ]
+      },
+      {
+        ind: 'Real Estate & Property', co: 'Properties', code: 'PRP', region: 'Verdun & Ras Beirut', corridor: 'Verdun-Hamra Prime Belt', lat: 33.8842, lng: 35.4812,
+        partner: 'Mulk Co-Owners Pool (/2400 Shares)', extIn: 84000, extOut: 41000, loanTaken: 160000,
+        suppliers: [
+          { name: 'KONE Middle East Elevators & Escalators', role: 'Elevator & Vertical MEP', cat: 'Repairs and Maintenance', subcat: 'Elevator Maintenance', iva: true, mof: '140921-601', phone: '+961 1 390 111', expAmt: 12800, recAmt: 2200, recItem: 'Portfolio High-Speed Elevator Preventive Maintenance' },
+          { name: 'Debbas Enterprise MEP & Automation', role: 'Building Fit-Out & Lighting', cat: 'Capital Expenditures', subcat: 'Tenant Fit-Out', iva: true, mof: '102944-601', phone: '+961 1 585 000', expAmt: 18500, recAmt: 1950, recItem: 'Common-Area BMS & Facade Lighting Service' }
+        ],
+        customers: [
+          { name: 'Prime Retail Tenant — Patchi Flagship', mof: '201944-601', phone: '+961 1 742 000', sales: 145000, ar: 24000 },
+          { name: 'Penthouse Deed Buyer — Sheikh Talal Al-Sabah', mof: '209881-601', phone: '+961 3 900 412', sales: 420000, ar: 85000 }
+        ],
+        sites: ['Verdun Boulevard Commercial Center', 'Bhamdoun Pine Ridge Villa Compound'],
+        products: [
+          { name: 'Prime Ground-Floor Retail Lease (Annual)', type: 'Commercial Lease', uom: 'Unit', price: 72000 },
+          { name: 'Duplex Residence Mulk Deed (/2400 Shares)', type: 'Property Deed Sale', uom: 'Unit', price: 650000 }
+        ],
+        items: [
+          { name: 'Schneider Masterpact 400A Auto Transfer Switch', cat: 'Spare Parts', subcat: 'Electrical', cost: 1250 },
+          { name: 'Grohe Concealed Brass Thermostat Valve Set', cat: 'Spare Parts', subcat: 'Plumbing & MEP', cost: 320 }
+        ],
+        equipment: [
+          { name: 'PRP-ELEV-01 (KONE MonoSpace High-Speed Lift)', plate: 'LIFT-PRP-01', type: 'Machinery', cap: 16 },
+          { name: 'PRP-GEN-01 (Cummins 400kVA Building Power)', plate: 'GEN-PRP-01', type: 'Generator', cap: 400 }
+        ],
+        staff: [
+          { name: 'Arch. Nadim Bsat', role: 'Portfolio & Fit-Out Project Manager', cat: 'Management & Admin', sal: 2600, phone: '+961 3 312 780' },
+          { name: 'Ghassan Wehbe', role: 'Building MEP & Facilities Supervisor', cat: 'Maintenance & Workshop', sal: 1600, phone: '+961 70 219 640' }
+        ]
+      },
+      {
+        ind: 'Real Estate & Property', co: '4235 Company S.A.L', code: 'C42', region: 'Beirut Central', corridor: 'Beirut CBD & Clemenceau', lat: 33.8958, lng: 35.4988,
+        partner: '4235 Company S.A.L Shareholders', extIn: 62000, extOut: 28500, loanTaken: 110000,
+        suppliers: [
+          { name: 'Matelec S.A.L. Transformers & Switchgear', role: 'Medium-Voltage & BMS', cat: 'Repairs and Maintenance', subcat: 'Electrical Substation', iva: true, mof: '101492-601', phone: '+961 4 401 600', expAmt: 14200, recAmt: 2350, recItem: '4235 Tower MV Transformer & Chiller Servicing' },
+          { name: 'Sodexho Lebanon Facility Management', role: 'Tower Security & Janitorial', cat: 'Cleaning Supplies', subcat: 'Facility Management', iva: true, mof: '219402-601', phone: '+961 1 425 800', expAmt: 9600, recAmt: 1850, recItem: '4235 Tower 24/7 Concierge, Security & Facade Cleaning' }
+        ],
+        customers: [
+          { name: 'Anchor Corporate Tenant — Levant Bank HQ', mof: '301920-601', phone: '+961 1 991 000', sales: 185000, ar: 31500 },
+          { name: 'Medical Plaza Suite 402 — Clemenceau Clinic', mof: '308411-601', phone: '+961 1 372 800', sales: 96000, ar: 16400 }
+        ],
+        sites: ['4235 Tower Corporate & Medical Plaza', '4235 Underground Valet & Substation'],
+        products: [
+          { name: 'Corporate Tower Floor Plate Lease (11% VAT)', type: 'Commercial Lease', uom: 'Unit', price: 95000 },
+          { name: 'Underground Valet & Executive Parking Bay', type: 'Commercial Lease', uom: 'Unit', price: 3600 }
+        ],
+        items: [
+          { name: 'Daikin VRV IV Inverter Compressor Module', cat: 'Spare Parts', subcat: 'HVAC', cost: 1480 },
+          { name: 'Honeywell Notifier Addressable Smoke Detector', cat: 'Tools & Consumables', subcat: 'Fire Safety', cost: 135 }
+        ],
+        equipment: [
+          { name: 'C42-BMS-01 (Trane Chiller & Smart BMS Plant)', plate: 'BMS-4235-01', type: 'Machinery', cap: 220 },
+          { name: 'C42-LIFT-02 (Otis Gen2 Twin Tower Elevators)', plate: 'LIFT-4235-02', type: 'Machinery', cap: 20 }
+        ],
+        staff: [
+          { name: 'Mireille Chahine', role: '4235 Statutory Lease & VAT Controller', cat: 'Management & Admin', sal: 2350, phone: '+961 3 640 912' },
+          { name: 'Ibrahim Hojeij', role: 'Tower Security & BMS Plant Operator', cat: 'Site & Operations', sal: 1450, phone: '+961 71 904 511' }
+        ]
+      },
+      {
+        ind: 'Insurance & Brokerage', co: 'Insurance Company', code: 'INS', region: 'Sin El Fil Financial', corridor: 'Metn Highway Financial District', lat: 33.8765, lng: 35.5378,
+        partner: 'Brokerage Fiduciary Partners', extIn: 56000, extOut: 21500, loanTaken: 85000,
+        suppliers: [
+          { name: 'Bankers Assurance S.A.L. (Carrier 4017)', role: 'Underwriting Carrier (4017)', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100118-601', phone: '+961 1 485 200', expAmt: 28400, recAmt: 3400, recItem: 'Monthly Carrier Bordereau & Reinsurance Treaty Clearing' },
+          { name: 'LIA Assurex S.A.L. (Carrier 4017)', role: 'Underwriting Carrier (4017)', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100229-601', phone: '+961 1 982 000', expAmt: 19600, recAmt: 2600, recItem: 'Motor & Medical Fleet Underwriting Bordereau' },
+          { name: 'MedNet Third-Party Claims Administration', role: 'Claims TPA & Surveyors', cat: 'Licences and Fees', subcat: 'Claims Survey & TPA', iva: true, mof: '401829-601', phone: '+961 1 504 700', expAmt: 6800, recAmt: 1150, recItem: '24/7 FNOL Call Center & Medical Claims TPA' }
+        ],
+        customers: [
+          { name: 'Bdeir Holding Fleet & All-Risk Master Policy', mof: '3100100-601', phone: '+961 1 800 900', sales: 148000, ar: 36500 },
+          { name: 'Phoenicia Maritime Cargo Syndicate', mof: '519022-601', phone: '+961 1 581 400', sales: 96000, ar: 22400 },
+          { name: 'Levant Hospital Group Medical Roster', mof: '528910-601', phone: '+961 1 615 000', sales: 87500, ar: 19800 }
+        ],
+        sites: ['Sin El Fil Brokerage HQ & Underwriting Floor', 'Jal El Dib Motor Survey & FNOL Center'],
+        products: [
+          { name: 'Commercial Fleet Comprehensive & TPL Policy', type: 'Motor Insurance', uom: 'Unit', price: 1850 },
+          { name: 'Group Medical Inpatient & Outpatient Plan', type: 'Medical Insurance', uom: 'Unit', price: 1420 },
+          { name: 'Contractors All-Risk (CAR) & Marine Cargo', type: 'Engineering & Cargo', uom: 'Unit', price: 6400 }
+        ],
+        items: [
+          { name: 'Holographic Motor Compulsory TPL Policy Stickers', cat: 'Office & Facility', subcat: 'Underwriting Stationery', cost: 260 },
+          { name: 'Elcometer Digital Paint & Crash Survey Gauge', cat: 'Tools & Consumables', subcat: 'Field Survey', cost: 490 }
+        ],
+        equipment: [
+          { name: 'INS-SRV-01 (Toyota Corolla Claims Survey Unit)', plate: 'G-612098', type: 'Vehicle', cap: 5 },
+          { name: 'INS-SRV-02 (Kia Sportage Rapid FNOL Response)', plate: 'G-619402', type: 'Vehicle', cap: 5 }
+        ],
+        staff: [
+          { name: 'Camille Boustany', role: 'Chief Underwriting & Bordereau Director', cat: 'Management & Admin', sal: 2950, phone: '+961 3 418 600' },
+          { name: 'Zeina Cortbawi', role: 'Motor & Medical Claims FNOL Manager', cat: 'Site & Operations', sal: 2150, phone: '+961 3 902 715' },
+          { name: 'Fadi Karam', role: 'Senior Field Loss Adjuster & Surveyor', cat: 'Fleet & Drivers', sal: 1650, phone: '+961 70 551 820' }
+        ]
+      }
+    ];
+
+    const seenRegionsByInd = new Set();
+    ENTITIES.forEach((ent, eIdx) => {
+      const pfx = ent.code.toLowerCase();
+      const regKey = `${ent.ind}|${ent.region}`;
+      if (!seenRegionsByInd.has(regKey)) {
+        seenRegionsByInd.add(regKey);
+        regArr.push({
+          id: `mi-reg-${pfx}`,
+          name: ent.region,
+          corridor: ent.corridor,
+          zone_shape: 'Corridor',
+          distance_km: 14 + (eIdx % 5) * 4,
+          overtime_rate: 10,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      }
+
+      ent.suppliers.forEach((sup, sIdx) => {
+        supArr.push({
+          id: `mi-sup-${pfx}-${sIdx + 1}`,
+          name: sup.name,
+          company: ent.co,
+          companies: [ent.co],
+          companies_list: ent.co,
+          supplier_role: sup.role,
+          category: sup.cat,
+          method: 'Credit',
+          vat_registered: sup.iva,
+          iva: sup.iva,
+          mof_no: sup.mof,
+          financial_no: sup.mof,
+          phone: sup.phone,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.customers.forEach((cust, cIdx) => {
+        custArr.push({
+          id: `mi-cust-${pfx}-${cIdx + 1}`,
+          name: cust.name,
+          company: ent.co,
+          companies: [ent.co],
+          method: 'Credit',
+          vat_registered: true,
+          'VAT Registered': 'Yes',
+          mof_no: cust.mof,
+          phone: cust.phone,
+          address: ent.corridor,
+          credit_days: 30,
+          credit_limit: 75000,
+          sales_ttc: cust.sales,
+          ar_balance: cust.ar,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.sites.forEach((sName, stIdx) => {
+        const isCustSite = stIdx === 0;
+        const lat = round2(ent.lat + stIdx * 0.0042);
+        const lng = round2(ent.lng + stIdx * 0.0038);
+        siteArr.push({
+          id: `mi-site-${pfx}-${stIdx + 1}`,
+          name: sName,
+          company: ent.co,
+          region: ent.region,
+          geo_zone: ent.region,
+          site_category: isCustSite ? 'customer' : 'supplier',
+          supply_mode: isCustSite ? 'Customer Delivery' : 'Mat + Trans',
+          customer: isCustSite ? ent.customers[0].name : '',
+          supplier: !isCustSite ? ent.suppliers[0].name : '',
+          linked_party: isCustSite ? ent.customers[0].name : ent.suppliers[0].name,
+          includes_transport: !isCustSite,
+          gps_status: 'Verified GPS Pin',
+          latitude: lat,
+          longitude: lng,
+          lat,
+          lng,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.products.forEach((pr, pIdx) => {
+        prodArr.push({
+          id: `mi-prod-${pfx}-${pIdx + 1}`,
+          name: pr.name,
+          type: pr.type,
+          uom: pr.uom,
+          ton_factor: 1,
+          list_price: pr.price,
+          ticket_product: true,
+          fuel_item: false,
+          input_product: false,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.items.forEach((it, iIdx) => {
+        itemArr.push({
+          id: `mi-item-${pfx}-${iIdx + 1}`,
+          name: it.name,
+          category: it.cat,
+          subcategory: it.subcat,
+          uom: 'Unit',
+          default_cost: it.cost,
+          min_stock: 5,
+          status: 'Active',
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.equipment.forEach((eq, qIdx) => {
+        const defDrv = (ent.staff[qIdx] || ent.staff[0]).name;
+        eqArr.push({
+          id: `mi-eq-${pfx}-${qIdx + 1}`,
+          name: eq.name,
+          company: ent.co,
+          companies: [ent.co],
+          companies_list: ent.co,
+          plate_no: eq.plate,
+          type: eq.type,
+          ownership: 'Company',
+          supplier: ent.co,
+          capacity: eq.cap,
+          default_driver: defDrv,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        coEqArr.push({
+          id: `mi-coeq-${pfx}-${qIdx + 1}`,
+          equipment: eq.name,
+          company: ent.co,
+          ownership: 'Company',
+          status: 'Active',
+          supplier: ent.co,
+          default_driver: defDrv,
+          site: ent.sites[0],
+          day_operator: defDrv,
+          start_date: '2025-01-01',
+          end_date: '',
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+      });
+
+      ent.staff.forEach((stf, sfIdx) => {
+        const unitName = (ent.equipment[sfIdx] || ent.equipment[0]).name;
+        const daily = round2(stf.sal / 26);
+        stfArr.push({
+          id: `mi-stf-${pfx}-${sfIdx + 1}`,
+          name: stf.name,
+          staff: stf.name,
+          role: stf.role,
+          role_category: stf.cat,
+          default_equipment: unitName,
+          companies: [ent.co],
+          companies_list: ent.co,
+          phone: stf.phone,
+          status: 'Active',
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        drvArr.push({
+          id: `mi-drv-${pfx}-${sfIdx + 1}`,
+          name: stf.name,
+          driver: stf.name,
+          truck_owner: ent.co,
+          assigned_trucks: unitName,
+          truck: unitName,
+          companies: [ent.co],
+          companies_list: ent.co,
+          phone: stf.phone,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        coDrvArr.push({
+          id: `mi-codrv-${pfx}-${sfIdx + 1}`,
+          driver: stf.name,
+          company: ent.co,
+          staff: stf.name,
+          assigned_trucks: unitName,
+          loads_hauled: 12 + sfIdx * 4,
+          start_date: '2025-01-01',
+          end_date: '',
+          notes: `${ent.co} field & operational roster`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        empArr.push({
+          id: `mi-emp-${pfx}-${sfIdx + 1}`,
+          name: `EMP-${ent.code}-0${sfIdx + 1}`,
+          company: ent.co,
+          staff: stf.name,
+          role: stf.role,
+          category: stf.cat,
+          type: 'Monthly',
+          status: 'Active',
+          salary_usd: stf.sal,
+          reimbursement: 150,
+          package_usd: stf.sal + 150,
+          daily_rate: daily,
+          working_days: 26,
+          working_hours: 8,
+          vacation_days: 15,
+          overtime_multiplier: 1.5,
+          deduction: daily,
+          payments_count: 2,
+          total_paid: stf.sal * 2,
+          start_date: '2025-01-01',
+          end_date: '',
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        asgArr.push({
+          id: `mi-asg-${pfx}-${sfIdx + 1}`,
+          name: `ASG-${ent.code}-0${sfIdx + 1}`,
+          company: ent.co,
+          staff: stf.name,
+          role: stf.role,
+          role_category: stf.cat,
+          equipment: unitName,
+          status: 'Active',
+          start_date: '2025-01-01',
+          end_date: '',
+          notes: `${stf.role} at ${ent.sites[0]}`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        logArr.push({
+          id: `mi-log-${pfx}-${sfIdx + 1}`,
+          name: `LOG-${ent.code}-0${sfIdx + 1}`,
+          company: ent.co,
+          staff: stf.name,
+          site: ent.sites[0],
+          equipment: unitName,
+          daily_usd: 12,
+          usd_amount: 12,
+          lbp_amount: 0,
+          working_days: 'Mon,Tue,Wed,Thu,Fri,Sat',
+          start_date: '2026-01-01',
+          end_date: '',
+          notes: `Daily site transport arrangement (${ent.sites[0]})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        ['2026-08', '2026-09'].forEach((ym, mIdx) => {
+          const payDate = `${ym}-28`;
+          salArr.push({
+            id: `mi-sal-${pfx}-${sfIdx + 1}-${mIdx + 1}`,
+            date: payDate,
+            rep_date: payDate,
+            payroll_month: ym,
+            company: ent.co,
+            staff: stf.name,
+            currency: 'USD',
+            amount: stf.sal,
+            usd_amount: stf.sal,
+            lbp_amount: 0,
+            method: 'Cash',
+            notes: `${ym} monthly salary settlement (${stf.role})`,
+            _multiIndustrySeed: true,
+            _industry: ent.ind
+          });
+        });
+        ['2026-09-18', '2026-09-19', '2026-09-25'].forEach((attDate, aIdx) => {
+          const isOt = aIdx === 0 && sfIdx === 0;
+          attArr.push({
+            id: `mi-att-${pfx}-${sfIdx + 1}-${aIdx + 1}`,
+            date: attDate,
+            set_date: attDate,
+            tx_date: attDate,
+            rep_date: attDate,
+            month: '2026-09',
+            company: ent.co,
+            staff: stf.name,
+            type: isOt ? 'Overtime' : 'Present',
+            status: isOt ? 'Overtime' : 'Present',
+            tally: isOt ? 3 : 1,
+            in_time: '08:00',
+            out_time: isOt ? '19:00' : '17:00',
+            worked_hours: isOt ? 11 : 9,
+            regular_hours: 8,
+            overtime_hours: isOt ? 3 : 0,
+            late_hours: 0,
+            leave_days: 0,
+            extra_usd: 0,
+            biometric: true,
+            notes: `Biometric clock-in at ${ent.sites[0]}`,
+            _multiIndustrySeed: true,
+            _industry: ent.ind
+          });
+        });
+      });
+
+      ent.suppliers.forEach((sup, sIdx) => {
+        const expDate = sIdx === 0 ? '2026-09-22' : '2026-09-26';
+        const eqRef = sIdx === 0 ? ent.equipment[0].name : '';
+        const itm = ent.items[sIdx % ent.items.length];
+        const vatAmt = sup.iva ? round2(sup.expAmt * 0.11) : 0;
+        const ttcAmt = round2(sup.expAmt + vatAmt);
+        const expName = `EXP-${ent.code}-${101 + sIdx}`;
+        expArr.push({
+          id: `mi-exp-${pfx}-${sIdx + 1}`,
+          date: expDate,
+          rep_date: expDate,
+          name: expName,
+          company: ent.co,
+          category: sup.cat,
+          subcategory: sup.subcat,
+          item_summary: `${itm.name} & ${sup.subcat}`,
+          supplier: sup.name,
+          equipment: eqRef,
+          for_equipment: Boolean(eqRef),
+          method: sIdx === 0 ? 'Credit' : 'Cash',
+          qty: 2,
+          amount: sup.expAmt,
+          usd_amount: sup.expAmt,
+          vat: vatAmt,
+          total_ttc: ttcAmt,
+          total: sup.expAmt,
+          invoice: `INV-${ent.code}-${20260 + sIdx}`,
+          reference: `REF-${ent.code}-0${sIdx + 1}`,
+          notes: `${sup.recItem} (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        expItmArr.push({
+          id: `mi-expitm-${pfx}-${sIdx + 1}`,
+          date: expDate,
+          expense_ref: expName,
+          company: ent.co,
+          item_name: itm.name,
+          category: itm.cat,
+          subcategory: itm.subcat,
+          allocation_mode: eqRef ? 'For Equipment' : 'Stored in Warehouse',
+          target_equipment: eqRef,
+          equipment: eqRef,
+          qty: 2,
+          uom: 'Unit',
+          unit_cost: itm.cost,
+          line_total: round2(itm.cost * 2),
+          supplier: sup.name,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        recExpArr.push({
+          id: `mi-recexp-${pfx}-${sIdx + 1}`,
+          name: `REC-${ent.code}-0${sIdx + 1}`,
+          supplier: sup.name,
+          company: ent.co,
+          category: sup.cat,
+          subcategory: sup.subcat,
+          item: sup.recItem,
+          frequency: 'Monthly',
+          amount: sup.recAmt,
+          start_date: '2026-01-01',
+          end_date: '',
+          status: 'Active',
+          notes: `Standing monthly schedule (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        });
+        if (sIdx === 0) {
+          const payAmt = round2(sup.expAmt * 0.55);
+          setArr.push({
+            id: `mi-set-${pfx}-1`,
+            date: '2026-09-27',
+            rep_date: '2026-09-27',
+            name: `SET-${ent.code}-01`,
+            company: ent.co,
+            supplier: sup.name,
+            payable_leg: 'expense',
+            method: 'Payment',
+            kind: 'Payment',
+            amount: payAmt,
+            discount: 0,
+            expense_record: expName,
+            reference: `PAY-${ent.code}-01`,
+            notes: `Partial AP settlement to ${sup.name}`,
+            _multiIndustrySeed: true,
+            _industry: ent.ind
+          });
+        }
+      });
+
+      extArr.push(
+        {
+          id: `mi-ext-${pfx}-1`,
+          date: '2026-09-20',
+          rep_date: '2026-09-20',
+          company: ent.co,
+          kind: 'External',
+          direction: 'External In',
+          type: 'In',
+          method: 'Cash',
+          party: ent.partner,
+          counterparty: ent.partner,
+          usd_amount: ent.extIn,
+          in_usd: ent.extIn,
+          out_usd: 0,
+          amount: ent.extIn,
+          lbp_amount: 0,
+          notes: `${ent.co} treasury liquidity injection`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-ext-${pfx}-2`,
+          date: '2026-09-24',
+          rep_date: '2026-09-24',
+          company: ent.co,
+          kind: 'External',
+          direction: 'External Out',
+          type: 'Out',
+          method: 'Cash',
+          party: ent.partner,
+          counterparty: ent.partner,
+          usd_amount: ent.extOut,
+          in_usd: 0,
+          out_usd: ent.extOut,
+          amount: ent.extOut,
+          lbp_amount: 0,
+          notes: `${ent.co} partner distribution & treasury sweep`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-ext-${pfx}-3`,
+          date: '2026-09-27',
+          rep_date: '2026-09-27',
+          company: ent.co,
+          kind: 'Extended',
+          direction: 'External In',
+          type: 'Extended',
+          method: 'Cash',
+          party: `${ent.partner} Reserve`,
+          counterparty: `${ent.partner} Reserve`,
+          usd_amount: Math.round(ent.extIn * 0.35),
+          in_usd: Math.round(ent.extIn * 0.35),
+          out_usd: 0,
+          amount: Math.round(ent.extIn * 0.35),
+          lbp_amount: 0,
+          notes: `Extended stakeholder reserve allocation (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        }
+      );
+
+      const loanBorName = `LN-${ent.code}-101`;
+      const loanLendName = `ADV-${ent.code}-201`;
+      const settledBor = Math.round(ent.loanTaken * 0.35);
+      loanArr.push(
+        {
+          id: `mi-loan-${pfx}-1`,
+          name: loanBorName,
+          company: ent.co,
+          counterparty: ent.partner,
+          lender: ent.partner,
+          direction: 'Company borrows',
+          side: 'Taken',
+          principal: ent.loanTaken,
+          principal_usd: ent.loanTaken,
+          amount: ent.loanTaken,
+          settled_amount: settledBor,
+          interest_rate: 0,
+          start_date: '2026-02-15',
+          date: '2026-02-15',
+          notes: `${ent.co} working capital & capex credit facility`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-loan-${pfx}-2`,
+          name: loanLendName,
+          company: ent.co,
+          counterparty: ent.staff[0].name,
+          lender: ent.staff[0].name,
+          direction: 'Company lends',
+          side: 'Given',
+          principal: 1800,
+          principal_usd: 1800,
+          amount: 1800,
+          settled_amount: 600,
+          interest_rate: 0,
+          start_date: '2026-05-10',
+          date: '2026-05-10',
+          notes: `Executive staff advance (${ent.staff[0].name})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        }
+      );
+      lsetArr.push(
+        {
+          id: `mi-lset-${pfx}-1`,
+          date: '2026-09-19',
+          rep_date: '2026-09-19',
+          company: ent.co,
+          loan: loanBorName,
+          counterparty: ent.partner,
+          borrower: ent.partner,
+          type: 'Loan Repayment',
+          method: 'Outflow',
+          direction: 'Out',
+          usd_amount: settledBor,
+          amount: settledBor,
+          notes: `Scheduled facility repayment on ${loanBorName}`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-lset-${pfx}-2`,
+          date: '2026-09-25',
+          rep_date: '2026-09-25',
+          company: ent.co,
+          loan: loanLendName,
+          counterparty: ent.staff[0].name,
+          borrower: ent.staff[0].name,
+          type: 'Advance Recovery',
+          method: 'Inflow',
+          direction: 'In',
+          usd_amount: 600,
+          amount: 600,
+          notes: `Payroll deduction recovery on ${loanLendName}`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        }
+      );
+
+      convArr.push(
+        {
+          id: `mi-conv-${pfx}-1`,
+          date: '2026-09-15',
+          rep_date: '2026-09-15',
+          name: `FX-${ent.code}-01`,
+          company: ent.co,
+          type: 'USD to LBP',
+          from_currency: 'USD',
+          to_currency: 'LBP',
+          usd_amount: 2500,
+          lbp_amount: 2500 * 89500,
+          usd_delta: -2500,
+          lbp_delta: 2500 * 89500,
+          exchange_rate: 89500,
+          fx_rate: 89500,
+          notes: `Till LBP replenishment @ 89,500 LL/$ (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-conv-${pfx}-2`,
+          date: '2026-09-23',
+          rep_date: '2026-09-23',
+          name: `FX-${ent.code}-02`,
+          company: ent.co,
+          type: 'LBP to USD',
+          from_currency: 'LBP',
+          to_currency: 'USD',
+          usd_amount: 1600,
+          lbp_amount: 1600 * 89500,
+          usd_delta: 1600,
+          lbp_delta: -1600 * 89500,
+          exchange_rate: 89500,
+          fx_rate: 89500,
+          notes: `Excess LBP drawer conversion to USD @ 89,500 LL/$ (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        }
+      );
+    });
+
+    _PAYROLL_INTEL_CACHE = null;
+    _threeLegApCacheKey = '';
+    _canonCpCacheKey = '';
+  }
+
   function getIndustryGlModel(ind, rawKey, baseModel) {
+    ensureMultiIndustrySpineSeeded();
     const cacheKey = `${ind}|${rawKey}|${SEED._customRev || 0}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
 
@@ -45150,9 +45761,114 @@
       dailyByDate.set(mv.date, cur);
     });
 
+    const buFilter = (!String(rawKey || '').startsWith('industry:') && COMPANY_BU_MATCH[rawKey]) || null;
+    const matchIndRow = r => Boolean(r && !r.voided && r._industry === ind && (!buFilter || !r.company || r.company === buFilter));
+    const legBrk = computeThreeLegPayablesBreakdown({ company: rawKey || ('industry:' + ind), ignorePeriod: true });
+    const indSuppliers = ((SEED.records && SEED.records.suppliers) || []).filter(matchIndRow).map(s => {
+      const lr = (legBrk && legBrk.byNorm && legBrk.byNorm.get(normSupPayable(s.name))) || null;
+      const expCr = lr ? round2((lr.exp_cr_usd || 0) + (lr.exp_vat_cr_usd || 0)) : 0;
+      const expPd = lr ? round2((lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0)) : 0;
+      const expRem = lr ? round2(lr.exp_rem_ttc || 0) : 0;
+      return {
+        Supplier: s.name,
+        IVA: s.iva ? 'Yes' : 'No',
+        raw_loads: 0,
+        raw_mat_cost: 0,
+        raw_haulage: 0,
+        raw_cost: 0,
+        ap_material: 0,
+        ap_haulage: 0,
+        ap_expense: expCr,
+        expenses: expCr,
+        ap_on_credit: expCr,
+        ap_settled: expPd,
+        settlements_paid: expPd,
+        quarry_rem: 0,
+        trans_rem: 0,
+        exp_rem_usd: lr ? round2(lr.exp_rem_usd || 0) : 0,
+        exp_vat_rem_usd: lr ? round2(lr.exp_vat_rem_usd || 0) : 0,
+        exp_rem_lbp: 0,
+        exp_rem_ttc: expRem,
+        opening_ap: 0,
+        ap_balance: expRem
+      };
+    });
+    const indCustomers = ((SEED.records && SEED.records.customers) || []).filter(matchIndRow).map(c => {
+      const salesTtc = round2(Number(c.sales_ttc || 45000));
+      const arBal = round2(Number(c.ar_balance || 9500));
+      const netS = round2(salesTtc / 1.11);
+      const vatS = round2(salesTtc - netS);
+      return {
+        Customer: c.name,
+        'VAT Registered': 'Yes',
+        credit_days: Number(c.credit_days || 30),
+        credit_limit: Number(c.credit_limit || 75000),
+        loads: 12,
+        sales_ttc: salesTtc,
+        net_sales: netS,
+        sales_vat: vatS,
+        credit_sales: netS,
+        credit_sales_ttc: salesTtc,
+        cash_sales: 0,
+        cash_sales_ttc: 0,
+        ar_settled: round2(salesTtc - arBal),
+        receipts_cash: round2(salesTtc - arBal),
+        receipts: round2(salesTtc - arBal),
+        opening_ar: 0,
+        ar_rem_ex_vat: round2(arBal / 1.11),
+        vat_receivable: round2(arBal - arBal / 1.11),
+        ar_current: arBal,
+        ar_1_10: 0,
+        ar_11_30: 0,
+        ar_31_60: 0,
+        ar_1_60: 0,
+        ar_60_plus: 0,
+        ar_balance: arBal,
+        last_sale: '2026-09-28'
+      };
+    });
+    const indProducts = ((SEED.records && SEED.records.products) || []).filter(matchIndRow).map(p => ({
+      Product: p.name,
+      Type: p.type || 'Domain Service',
+      UoM: p.uom || 'Unit',
+      loads: 14,
+      qty_sold: 14,
+      tons_sold: 14,
+      sales_ttc: round2(Number(p.list_price || 500) * 14),
+      net_sales: round2((Number(p.list_price || 500) * 14) / 1.11),
+      trans_rev: 0,
+      commission_due: 0,
+      raw_qty: 0,
+      raw_cost: 0,
+      avg_price_ttc: Number(p.list_price || 500),
+      avg_price_net: round2(Number(p.list_price || 500) / 1.11),
+      avg_raw_cost: 0
+    }));
+    const indSites = ((SEED.records && SEED.records.sites) || []).filter(matchIndRow).map(st => ({
+      Site: st.name,
+      Region: st.region || '',
+      loads: 10,
+      raw_loads: 6,
+      sales_ttc: 28000,
+      raw_cost: 9400
+    }));
+    const indEquipment = ((SEED.records && SEED.records.equipment) || []).filter(matchIndRow).map(eq => ({
+      Equipment: eq.name,
+      Type: eq.type || 'Vehicle',
+      Ownership: 'Company',
+      loads: 12,
+      fuel_litres: 320,
+      expenses: 1850
+    }));
+
     const merged = Object.assign({}, baseModel || {}, {
       _industry: ind,
       _coKey: rawKey,
+      suppliers: indSuppliers,
+      customers: indCustomers,
+      products: indProducts,
+      sites: indSites,
+      equipment: indEquipment,
       gl_tb: glTb,
       soa_stream: soaStream,
       cash_flow_sheet: {
@@ -66495,6 +67211,9 @@
       recalcForm();
     }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(modal || document.body);
+    }
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = getEntryModalStateSignature();
   }
@@ -73645,6 +74364,9 @@
       const inspCard = panel.querySelector('.modal-card');
       if (inspCard) inspCard.scrollTop = 0;
     }
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(panel);
+    }
   }
 
   function closeRecordInspector() {
@@ -74938,7 +75660,9 @@
               else merged.push(mergeUserRow(null, u));
             });
             STATE.users = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
+            const prevV = STATE.view, prevC = STATE.company;
             applyUserRlsAndPermissions();
+            if (STATE.authed && (STATE.view !== prevV || STATE.company !== prevC)) safeRender();
           }
         }
         const ctrlSr = new AbortController();
@@ -75035,7 +75759,9 @@
         STATE.users = next;
         const idx = STATE.users.findIndex(u => norm(u.email) === myEmail);
         if (idx >= 0) STATE.activeUserIdx = idx;
+        const prevV = STATE.view, prevC = STATE.company;
         applyUserRlsAndPermissions();
+        if (STATE.view !== prevV || STATE.company !== prevC) changed = true;
         if (!STATE.authed) { renderQuickSeatsInAuthGate(); updateAuthFaceUi(); }
       }
 
@@ -77622,7 +78348,7 @@
     // Holding & Group Treasury sub-views
     hld_consolidation: 'Group Consolidation & P&L',
     hld_entities: 'Subsidiary Scorecards',
-    hld_interactions: 'Intercompany Interactions (h29)',
+    hld_interactions: 'Intercompany Interactions',
     hld_open_recon: 'Open Reconciliation Queue',
     hld_due_matrix: 'Due From / Due To Matrix',
     hld_partners: 'Partner Capital & Current A/C',
@@ -77631,48 +78357,48 @@
     hld_assets: 'Investments & Group Assets',
     // Hospitality & Resorts sub-views (Phase 2)
     hsp_revenue: 'Venue Revenue & Chalet Occupancy',
-    hsp_pos: 'POS Till Close & Bill Variance (R2)',
-    hsp_vat: 'Resort VAT & Fiscal Tax (step253)',
+    hsp_pos: 'POS Shift Close & Bill Variance',
+    hsp_vat: 'Resort VAT & Tax Classification',
     hsp_memberships: 'Seasonal Memberships & Arrears',
     hsp_partners: 'Partner Splits & Category Shares',
-    hsp_stock: 'Cellar, Kitchen & Transfers (R3)',
+    hsp_stock: 'Cellar, Kitchen & Transfers',
     hsp_menu: 'Menu Engineering & Food Cost %',
-    hsp_energy: 'Diesel, Solar & Generators (R4)',
+    hsp_energy: 'Diesel, Solar & Generators',
     hsp_maint: 'Venue Repairs & Fixed Assets',
     // Automotive & Heavy Trading sub-views (Phase 3)
-    trd_sales: 'Sales Invoices, Lines & Books (t82 / t74)',
-    trd_receivables: 'Receivables, Advances & Promises (t79)',
-    trd_targets: 'Sales Targets & Price Lists (t45 / 7z-chrono)',
-    trd_purchases: 'Import Files & Supplier Backorders (t49)',
-    trd_landed: 'Landed Cost Allocations (t16 / T5)',
+    trd_sales: 'Sales Invoices, Lines & Books',
+    trd_receivables: 'Receivables, Advances & Promises',
+    trd_targets: 'Sales Targets & Price Lists',
+    trd_purchases: 'Import Files & Supplier Backorders',
+    trd_landed: 'Landed Cost Allocations',
     trd_grn: 'Warehouse Goods Receipts (GRN)',
     trd_trucks: 'Showroom & Serial Units (Chassis / VIN)',
     trd_warranty: 'Workshop, PDI & OEM Warranty',
-    trd_stock: 'Spare Parts & Warehouse Valuation (T4)',
-    trd_movements: 'Stock Movements & IC Transfers (t44)',
-    trd_recon: 'Parallel Stock & P&L Recon (t27 / t57g)',
+    trd_stock: 'Spare Parts & Warehouse Valuation',
+    trd_movements: 'Stock Movements & IC Transfers',
+    trd_recon: 'Parallel Stock & P&L Reconciliation',
     // Real Estate & Property sub-views (Phase 4)
-    re_leases: 'Leases, Multi-Unit Links & 3-Year Escalations (7z-chrono)',
-    re_invoicing: 'Period Rent Invoices & VAT Sequence (r33 / r41b)',
-    re_receipts: 'Tenant Settlements, Security Deposits (4196) & Advances (r37)',
-    re_sales: 'Property & Unit Sales Contracts (r01 / r44)',
-    re_instalments: 'Buyer Instalment Schedules & Paid-to-Date (r35)',
-    re_properties: 'Portfolio Properties, Photon Map & Yields (r42 / $51.48M)',
-    re_units: 'Building Units, Floors, Occupancy & Vacancy (r30)',
-    re_valuations: 'LGB Bank Appraisal & Market Valuations (r07 / r44)',
-    re_ownership: 'Co-Ownership Deed Shares (/2400) & NOI Distributions (r38)',
-    re_workorders: 'Repairs, Fit-Out Work Orders & Cost Variance (r44)',
-    re_recharges: 'Tenant Recharge Invoices & Contractor Attribution (P4)',
+    re_leases: 'Leases, Multi-Unit Links & 3-Year Escalations',
+    re_invoicing: 'Period Rent Invoices & VAT Sequence',
+    re_receipts: 'Tenant Settlements, Security Deposits & Advances',
+    re_sales: 'Property & Unit Sales Contracts',
+    re_instalments: 'Buyer Instalment Schedules & Paid-to-Date',
+    re_properties: 'Portfolio Properties, Map & Yields',
+    re_units: 'Building Units, Floors, Occupancy & Vacancy',
+    re_valuations: 'Bank Appraisal & Market Valuations',
+    re_ownership: 'Co-Ownership Deed Shares (/2400) & NOI Distributions',
+    re_workorders: 'Repairs, Fit-Out Work Orders & Cost Variance',
+    re_recharges: 'Tenant Recharge Invoices & Contractor Attribution',
     // Insurance & Brokerage sub-views (Phase 5)
-    ins_policies: 'Policies, Endorsements & Client Discounts (7063 / 7065)',
-    ins_renewals: '30/60/90-Day Renewal Queue & Retention (i31)',
-    ins_items: 'Insured Items, Vehicles, Lives & Properties (i05)',
-    ins_billing: 'Premium Instalments, Client Receipts & Open AR (i33 / 4112)',
-    ins_remittances: 'Insurer Net Premium Remittances & Cash vs 4017',
-    ins_statements: 'Carrier Commission Statement Recon (i32 / 4117)',
-    ins_claims: 'FNOL Claims, Reserves & Insurer Settlements (i34)',
-    ins_catalogue: '12 Insurance Lines & 52 Carrier Products (i07)',
-    ins_agreements: 'Chronological Carrier Commission Agreements (7z-chrono)',
+    ins_policies: 'Policies, Endorsements & Client Discounts',
+    ins_renewals: '30/60/90-Day Renewal Queue & Retention',
+    ins_items: 'Insured Items, Vehicles, Lives & Properties',
+    ins_billing: 'Premium Instalments, Client Receipts & Open AR',
+    ins_remittances: 'Insurer Net Premium Remittances & Fiduciary Cash',
+    ins_statements: 'Carrier Commission Statement Reconciliation',
+    ins_claims: 'FNOL Claims, Reserves & Insurer Settlements',
+    ins_catalogue: '12 Insurance Lines & 52 Carrier Products',
+    ins_agreements: 'Carrier Commission Rate Agreements',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -77739,7 +78465,7 @@
     reg_vat_rates: 'VAT Rates',
     hld_consolidation: 'Group Consolidation',
     hld_entities: 'Subsidiary Scorecards',
-    hld_interactions: 'Intercompany (h29)',
+    hld_interactions: 'Intercompany Hub',
     hld_open_recon: 'Open Reconciliation',
     hld_due_matrix: 'Due From / Due To',
     hld_partners: 'Partners & Capital',
@@ -77747,7 +78473,7 @@
     hld_loans: 'Loans & Interest',
     hld_assets: 'Group Assets',
     hsp_revenue: 'Venue Revenue & Chalets',
-    hsp_pos: 'POS Till & Bills',
+    hsp_pos: 'POS Shift & Bills',
     hsp_vat: 'Resort VAT & Tax',
     hsp_memberships: 'Seasonal Memberships',
     hsp_partners: 'Partner Splits',
@@ -77759,7 +78485,7 @@
     trd_receivables: 'Receivables & Advances',
     trd_targets: 'Targets & Price Lists',
     trd_purchases: 'Import Files & POs',
-    trd_landed: 'Landed Cost (T5)',
+    trd_landed: 'Landed Cost',
     trd_grn: 'Goods Receipts (GRN)',
     trd_trucks: 'Serial Units & VIN',
     trd_warranty: 'PDI & Warranty',
@@ -77767,25 +78493,25 @@
     trd_movements: 'Moves & IC Transfers',
     trd_recon: 'Parallel Recon',
     re_leases: 'Leases & Rent Roll',
-    re_invoicing: 'Rent Invoices (r33)',
+    re_invoicing: 'Rent Invoices',
     re_receipts: 'Receipts & Advances',
     re_sales: 'Property & Unit Sales',
     re_instalments: 'Buyer Instalments',
     re_properties: 'Portfolio & Yields',
     re_units: 'Units & Vacancy',
-    re_valuations: 'LGB Valuations',
+    re_valuations: 'Bank Valuations',
     re_ownership: 'Deed Shares (/2400)',
     re_workorders: 'Work Orders & Fit-Out',
     re_recharges: 'Tenant Recharges',
     ins_policies: 'Policies & Discounts',
-    ins_renewals: 'Renewal Queue (i31)',
-    ins_items: 'Insured Items (i05)',
-    ins_billing: 'Premium Billing (i33)',
+    ins_renewals: 'Renewal Queue',
+    ins_items: 'Insured Items',
+    ins_billing: 'Premium Billing',
     ins_remittances: 'Insurer Remittance',
-    ins_statements: 'Statement Recon (i32)',
-    ins_claims: 'Claims & FNOL (i34)',
-    ins_catalogue: 'Lines & Products (i07)',
-    ins_agreements: 'Carrier Rates (7z)',
+    ins_statements: 'Statement Recon',
+    ins_claims: 'Claims & FNOL',
+    ins_catalogue: 'Lines & Products',
+    ins_agreements: 'Carrier Rates',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -77881,6 +78607,30 @@
     const hit = cat.find(c => c.key === k || c.name.toLowerCase() === k.toLowerCase());
     return (hit && hit.industry) || 'Manufacturing';
   }
+  window.__mfgGetActiveIndustry = getActiveIndustry;
+
+  function resolveIndustryCompatibleView(view, targetInd) {
+    const effInd = (targetInd && INDUSTRY_SIDEBAR_SPEC[targetInd])
+      ? targetInd
+      : (INDUSTRY_SIDEBAR_SPEC[getActiveIndustry(STATE.company)] ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    const nextSpec = INDUSTRY_SIDEBAR_SPEC[effInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+    const curHub = VIEW_TO_HUB[view] || view;
+    const allSpecs = Object.values(INDUSTRY_SIDEBAR_SPEC);
+    for (let i = 0; i < allSpecs.length; i++) {
+      const sIdx = allSpecs[i].slots.findIndex(s => s.hub === curHub);
+      if (sIdx >= 0) {
+        if (nextSpec.slots[sIdx] && nextSpec.slots[sIdx].hub !== curHub) {
+          return nextSpec.slots[sIdx].view;
+        }
+        return view;
+      }
+    }
+    const hubDef = getHubDef(curHub);
+    if (hubDef && hubDef.industry && hubDef.industry !== effInd) {
+      return (nextSpec.slots[0] && nextSpec.slots[0].view) || 'overview';
+    }
+    return view;
+  }
 
   let _lastSyncedSidebarInd = 'Manufacturing';
   function syncIndustrySidebarDom(indId) {
@@ -77895,6 +78645,7 @@
     // The 4 swappable operational hub buttons sit at indices 3, 4 (before expenses at 5) and 6, 7 (before payroll at 8)
     const navBtns = navEl.querySelectorAll('button.nav-item');
     const slotIndices = [3, 4, 6, 7];
+    const activeHubId = VIEW_TO_HUB[STATE.view] || 'overview';
     slotIndices.forEach((btnIdx, slotIdx) => {
       const btn = navBtns[btnIdx];
       const slot = spec.slots[slotIdx];
@@ -77911,6 +78662,7 @@
         const lblSpan = btn.querySelector('span');
         if (lblSpan) lblSpan.textContent = slot.label;
       }
+      btn.classList.toggle('on', slot.hub === activeHubId);
     });
     _lastSyncedSidebarInd = effInd;
   }
@@ -77923,16 +78675,25 @@
     if (!coKey) return;
     const prevInd = getActiveIndustry(STATE.company);
     const nextInd = getActiveIndustry(coKey);
+    const prevView = STATE.view;
     STATE.company = coKey;
     STATE.shown = {};
     STATE.pbiTablePage = {};
-    if (prevInd !== nextInd) {
-      const prevSpec = INDUSTRY_SIDEBAR_SPEC[prevInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
-      const nextSpec = INDUSTRY_SIDEBAR_SPEC[nextInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
-      const curHub = VIEW_TO_HUB[STATE.view] || STATE.view;
-      const slotIdx = prevSpec.slots.findIndex(s => s.hub === curHub);
-      if (slotIdx >= 0 && nextSpec.slots[slotIdx]) {
-        STATE.view = nextSpec.slots[slotIdx].view;
+    const nextView = resolveIndustryCompatibleView(STATE.view, nextInd);
+    if (nextView !== STATE.view || prevInd !== nextInd) {
+      STATE.view = nextView;
+      STATE.search = '';
+      STATE.chipFilter = 'all';
+      STATE._resetWorkspaceScroll = true;
+      _preModalWorkspaceScrollSnap = null;
+      _preModalWorkspaceScope = '';
+      const ws = $('workspace');
+      if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
+    }
+    if (STATE.authed && VIEW_TITLES[STATE.view]) {
+      const targetHash = '#' + STATE.view;
+      if (location.hash !== targetHash || STATE.view !== prevView) {
+        history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
       }
     }
     syncIndustrySidebarDom(nextInd);
@@ -78051,7 +78812,7 @@
           const targetKey = pickedInd === 'Manufacturing'
             ? (allowedCos.includes('manufacturing-group') ? 'manufacturing-group' : (grp && grp.permittedCos[0] ? grp.permittedCos[0].key : 'wtc'))
             : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${pickedInd}`);
-          if (getActiveIndustry(STATE.company) !== pickedInd || STATE.company !== targetKey) {
+          if (getActiveIndustry(STATE.company) !== pickedInd || STATE.company !== targetKey || resolveIndustryCompatibleView(STATE.view, pickedInd) !== STATE.view) {
             selectCompanyScope(targetKey, false);
             return;
           }
@@ -78176,14 +78937,14 @@
         'Holding & Treasury': [
           { view: 'overview', label: 'Overview' },
           { view: 'hld_consolidation', label: 'Group P&L' },
-          { view: 'hld_interactions', label: 'Intercompany (h29)' },
+          { view: 'hld_interactions', label: 'Intercompany Hub' },
           { view: 'hld_partners', label: 'Partner Capital' },
           { view: 'hld_loans', label: 'Loans & Treasury' }
         ],
         'Hospitality & Resorts': [
           { view: 'overview', label: 'Overview' },
           { view: 'hsp_revenue', label: 'Venue Revenue' },
-          { view: 'hsp_pos', label: 'POS & Till Close' },
+          { view: 'hsp_pos', label: 'POS & Shift Close' },
           { view: 'hsp_memberships', label: 'Memberships' },
           { view: 'hsp_stock', label: 'Cellar & Kitchen' }
         ],
@@ -78198,15 +78959,15 @@
           { view: 'overview', label: 'Overview' },
           { view: 're_properties', label: 'Properties & Map' },
           { view: 're_leases', label: 'Active Leases' },
-          { view: 're_invoicing', label: '4235 Rent Invoices' },
+          { view: 're_invoicing', label: 'Rent Invoices' },
           { view: 're_sales', label: 'Deed Sales' }
         ],
         'Insurance & Brokerage': [
           { view: 'overview', label: 'Overview' },
-          { view: 'ins_policies', label: 'Policies & 7065' },
+          { view: 'ins_policies', label: 'Policies & Discounts' },
           { view: 'ins_renewals', label: 'Renewal Queue' },
-          { view: 'ins_billing', label: 'Client AR (4112)' },
-          { view: 'ins_statements', label: 'Carrier Recon (4117)' },
+          { view: 'ins_billing', label: 'Client Billing' },
+          { view: 'ins_statements', label: 'Carrier Recon' },
           { view: 'ins_claims', label: 'FNOL Claims' }
         ]
       };
@@ -78304,9 +79065,12 @@
       if (open) {
         syncCompanySwitchUi();
         if (searchEl) setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
-      } else if (searchEl && searchEl.value) {
-        searchEl.value = '';
-        syncCompanySwitchUi();
+      } else {
+        if (searchEl && searchEl.value) {
+          searchEl.value = '';
+          syncCompanySwitchUi();
+        }
+        if (STATE.renderPending) renderApp();
       }
     };
 
@@ -78448,7 +79212,24 @@
       return hit && hit.industry === String(STATE.company).slice(9);
     });
     if (!allowedCos.includes(STATE.company) && !isPermittedIndScope) STATE.company = allowedCos[0];
-    syncIndustrySidebarDom(getActiveIndustry(STATE.company));
+    const activeIndNow = getActiveIndustry(STATE.company);
+    const compatViewNow = resolveIndustryCompatibleView(STATE.view, activeIndNow);
+    if (compatViewNow !== STATE.view) {
+      STATE.view = compatViewNow;
+      STATE.search = '';
+      STATE.chipFilter = 'all';
+      STATE.shown = {};
+      STATE._resetWorkspaceScroll = true;
+      _preModalWorkspaceScrollSnap = null;
+      _preModalWorkspaceScope = '';
+      if (STATE.authed && VIEW_TITLES[STATE.view]) {
+        const targetHash = '#' + STATE.view;
+        if (location.hash !== targetHash) {
+          history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
+        }
+      }
+    }
+    syncIndustrySidebarDom(activeIndNow);
     syncCompanySwitchUi();
 
     const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?|insurance\s*company)$/i.test(n));
@@ -80652,15 +81433,325 @@
     { id: 'ext_7_4', name: 'Extended Day', short: 'Ext', start_time: '07:00', end_time: '16:00', hours: 9.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'sapphire', isBuiltin: true }
   ];
 
+  const AVAILABLE_STAFF_PERKS = [
+    { id: 'Site Transport', label: 'Site Transport', icon: 'truck' },
+    { id: 'Paid Leave', label: 'Paid Leave', icon: 'check_circle' },
+    { id: 'Meal Allowance', label: 'Meal Allowance', icon: 'spark' },
+    { id: 'Driver Trip OT', label: 'Driver Trip OT', icon: 'truck' },
+    { id: 'Fuel & Phone Perk', label: 'Fuel & Phone Perk', icon: 'fuel' },
+    { id: 'Attendance Bonus', label: 'Attendance Bonus', icon: 'check_circle' }
+  ];
+
+  const DEFAULT_POLICY_GROUPS = [
+    {
+      id: 'pkg_15_open_15d',
+      name: 'Standard 1.5x Perks',
+      short: '1.5x Open · 15d Vac',
+      late_penalty_mode: 'multiplier',
+      late_multiplier: 1.5,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 3,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Site Transport', 'Paid Leave', 'Meal Allowance'],
+      tone: 'emerald',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_15_pass_15d',
+      name: 'Controlled 1.5x OT',
+      short: '1.5x Pass · 15d Vac',
+      late_penalty_mode: 'multiplier',
+      late_multiplier: 1.5,
+      ot_multiplier: 1.5,
+      ot_mode: 'date_range',
+      ot_max_hours: 2,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Site Transport', 'Paid Leave'],
+      tone: 'amber',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_10_fixed_15d',
+      name: 'Fixed 1.0x Standard',
+      short: '1.0x No OT · 15d Vac',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.0,
+      ot_mode: 'none',
+      ot_max_hours: 0,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Site Transport', 'Paid Leave'],
+      tone: 'sapphire',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_exec_21d',
+      name: 'Senior & Supervisor',
+      short: 'OT 1.5x · 21d Vac',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 4,
+      vacation_days: 21,
+      sick_days: 10,
+      working_days: 30,
+      grace_min: 15,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'auto_shift_end',
+      perks: ['Site Transport', 'Fuel & Phone Perk', 'Paid Leave', 'Attendance Bonus'],
+      tone: 'indigo',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_daily_26d',
+      name: 'Daily / Field Crew',
+      short: '1.0x · 7d Vac · 26d',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.0,
+      ot_mode: 'none',
+      ot_max_hours: 0,
+      vacation_days: 7,
+      sick_days: 0,
+      working_days: 26,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Driver Trip OT', 'Site Transport'],
+      tone: 'rose',
+      isBuiltin: true
+    }
+  ];
+
   function ensureWorkSchedulesState() {
     if (!STATE.workSchedules || typeof STATE.workSchedules !== 'object') {
-      STATE.workSchedules = { shiftTypes: [], staffRules: {} };
+      STATE.workSchedules = { shiftTypes: [], policyGroups: [], staffRules: {} };
     }
     if (!Array.isArray(STATE.workSchedules.shiftTypes)) STATE.workSchedules.shiftTypes = [];
+    if (!Array.isArray(STATE.workSchedules.policyGroups)) STATE.workSchedules.policyGroups = [];
     if (!STATE.workSchedules.staffRules || typeof STATE.workSchedules.staffRules !== 'object') {
       STATE.workSchedules.staffRules = {};
     }
     return STATE.workSchedules;
+  }
+
+  function normalizePolicyGroupObj(raw, fallback = null) {
+    const base = Object.assign({}, fallback || {}, raw || {});
+    const nameStr = String(base.name || 'Custom Policy & Perks').trim() || 'Custom Policy & Perks';
+    const lateMult = Math.max(1, Math.min(5, Number(base.late_multiplier != null ? base.late_multiplier : 1.5)));
+    const otMult = Math.max(1, Math.min(5, Number(base.ot_multiplier != null ? base.ot_multiplier : 1.5)));
+    const latePenMode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
+      ? base.late_penalty_mode
+      : (lateMult > 1 ? 'multiplier' : 'exact_hours');
+    const otMode = ['none', 'always', 'max_hours', 'date_range'].includes(base.ot_mode) ? base.ot_mode : 'always';
+    const vacDays = Math.max(0, Math.min(90, Math.round(Number(base.vacation_days != null ? base.vacation_days : 15))));
+    const sickDays = Math.max(0, Math.min(60, Math.round(Number(base.sick_days != null ? base.sick_days : 7))));
+    const workDays = [26, 30].includes(Number(base.working_days)) ? Number(base.working_days) : 30;
+    const graceM = Math.max(0, Math.min(120, Math.round(Number(base.grace_min != null ? base.grace_min : 10))));
+    const earlyGraceM = Math.max(0, Math.min(120, Math.round(Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : graceM))));
+    const noOutRule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(base.no_clock_out_rule)
+      ? base.no_clock_out_rule
+      : 'half_day';
+    const perksArr = Array.isArray(base.perks)
+      ? Array.from(new Set(base.perks.map(p => String(p || '').trim()).filter(Boolean)))
+      : ['Site Transport', 'Paid Leave'];
+    const otModeShort = otMode === 'always'
+      ? 'Open OT'
+      : (otMode === 'date_range' ? 'Date Pass' : (otMode === 'max_hours' ? `Max ${fmtNum(base.ot_max_hours || 2, 0)}h OT` : 'No OT'));
+    const lateMultLbl = latePenMode === 'multiplier' ? `Late ${fmtNum(lateMult, lateMult % 1 ? 1 : 0)}x` : (latePenMode === 'none' ? 'Late $0' : 'Late 1x');
+    const otMultLbl = otMode === 'none' ? 'No OT' : `OT ${fmtNum(otMult, otMult % 1 ? 1 : 0)}x (${otModeShort})`;
+    const summaryText = `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`;
+    return {
+      id: String(base.id || uid('pkg')),
+      name: nameStr,
+      short: String(base.short || `${fmtNum(otMult, 1)}x · ${otModeShort} · ${vacDays}d`).trim().slice(0, 26),
+      late_penalty_mode: latePenMode,
+      late_multiplier: lateMult,
+      ot_multiplier: otMult,
+      ot_mode: otMode,
+      ot_max_hours: Math.max(0, Number(base.ot_max_hours != null ? base.ot_max_hours : 2)),
+      vacation_days: vacDays,
+      sick_days: sickDays,
+      working_days: workDays,
+      grace_min: graceM,
+      early_leave_grace_min: earlyGraceM,
+      no_clock_out_rule: noOutRule,
+      perks: perksArr,
+      summaryText,
+      tone: ['emerald', 'amber', 'sapphire', 'indigo', 'rose'].includes(base.tone) ? base.tone : 'emerald',
+      isBuiltin: Boolean(base.isBuiltin || DEFAULT_POLICY_GROUPS.some(d => d.id === base.id)),
+      voided: Boolean(base.voided),
+      updated_at: String(base.updated_at || '')
+    };
+  }
+
+  function getPolicyGroups() {
+    const ws = ensureWorkSchedulesState();
+    const customById = new Map();
+    (ws.policyGroups || []).forEach(g => {
+      if (g && g.id && !g.voided) customById.set(String(g.id), g);
+    });
+    const out = [];
+    DEFAULT_POLICY_GROUPS.forEach(def => {
+      const ov = customById.get(def.id);
+      out.push(normalizePolicyGroupObj(ov || def, def));
+      customById.delete(def.id);
+    });
+    customById.forEach(custom => {
+      if (custom && !custom.voided) out.push(normalizePolicyGroupObj(custom));
+    });
+    return out;
+  }
+
+  function inferDefaultPolicyGroupId(staffName, company, rawRule = null) {
+    if (rawRule && !rawRule.reset_default && rawRule.policy_group_id) {
+      return String(rawRule.policy_group_id);
+    }
+    const prof = getStaffContractProfile(staffName, company);
+    const roleStr = String((prof && prof.role) || '').toLowerCase();
+    const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director)\b/i.test(roleStr)
+      || norm(staffName) === norm('Hussein Bdeir');
+    if (rawRule && !rawRule.reset_default) {
+      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
+      if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
+      if (rawRule.late_penalty_mode === 'multiplier') return 'pkg_15_open_15d';
+      if (rawRule.ot_mode === 'always' && isSeniorRole) return 'pkg_exec_21d';
+      if (rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
+      if (rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
+    }
+    if (isSeniorRole && Number(prof.otMultiplier || 1.5) >= 1.5) {
+      return Number(prof.vacationDays || 0) >= 21 ? 'pkg_exec_21d' : 'pkg_15_open_15d';
+    }
+    if (prof.hasContract) {
+      if (Number(prof.workingDays) === 26 || (prof.vacationDays != null && Number(prof.vacationDays) > 0 && Number(prof.vacationDays) <= 7)) {
+        return 'pkg_daily_26d';
+      }
+      if (Number(prof.otMultiplier || 1) >= 1.5) {
+        return 'pkg_15_open_15d';
+      }
+    }
+    return 'pkg_10_fixed_15d';
+  }
+
+  function syncStaffContractPolicyFields(staffName, company, patch = {}) {
+    const k = norm(staffName);
+    if (!k || !SEED.records || !Array.isArray(SEED.records.employments)) return false;
+    const coNorm = norm(company || '');
+    const emps = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff || e.name) === k);
+    if (!emps.length) return false;
+    const activeTarget = emps.find(e => (!coNorm || norm(e.company) === coNorm) && isEmploymentActiveToday(e))
+      || emps.find(e => isEmploymentActiveToday(e))
+      || emps[0];
+    if (!activeTarget) return false;
+    let changed = false;
+    if (patch.ot_multiplier != null && Number.isFinite(Number(patch.ot_multiplier))) {
+      activeTarget.overtime_multiplier = Number(patch.ot_multiplier);
+      changed = true;
+    }
+    if (patch.late_multiplier != null && Number.isFinite(Number(patch.late_multiplier))) {
+      activeTarget.lateness_multiplier = patch.late_penalty_mode === 'exact_hours' ? 1.0 : Number(patch.late_multiplier);
+      changed = true;
+    }
+    if (patch.vacation_days != null && Number.isFinite(Number(patch.vacation_days))) {
+      activeTarget.vacation_days = Math.max(0, Math.round(Number(patch.vacation_days)));
+      changed = true;
+    }
+    if (patch.working_days != null && [26, 30].includes(Number(patch.working_days))) {
+      activeTarget.working_days = Number(patch.working_days);
+      changed = true;
+    }
+    if (changed) {
+      if (!Array.isArray(STATE.customRecords.employments)) STATE.customRecords.employments = [];
+      const cIdx = STATE.customRecords.employments.findIndex(x => x && String(x.id) === String(activeTarget.id));
+      if (cIdx >= 0) Object.assign(STATE.customRecords.employments[cIdx], activeTarget);
+      else STATE.customRecords.employments.unshift(Object.assign({}, activeTarget));
+      STATE._customRev = (STATE._customRev || 0) + 1;
+    }
+    return changed;
+  }
+
+  function savePolicyGroup(spec = {}) {
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const grpId = String(spec.id || uid('pkg'));
+    const existingBuiltin = DEFAULT_POLICY_GROUPS.find(d => d.id === grpId) || null;
+    const existingIdx = ws.policyGroups.findIndex(g => g && String(g.id) === grpId);
+    const prev = existingIdx >= 0 ? ws.policyGroups[existingIdx] : existingBuiltin;
+    const normalized = normalizePolicyGroupObj(Object.assign({}, prev || {}, spec, { id: grpId, voided: false, updated_at: nowIso }), existingBuiltin);
+    if (!normalized.name) {
+      return { ok: false, error: 'Policy & Perks group name is required' };
+    }
+    if (existingIdx >= 0) ws.policyGroups[existingIdx] = normalized;
+    else ws.policyGroups.push(normalized);
+
+    let backfilledStaff = 0;
+    if (spec.backfill !== false) {
+      const allStaff = getKioskStaffDirectory({ includeEnded: true });
+      allStaff.forEach(s => {
+        const curRule = getStaffWorkRule(s.name, s.company);
+        if (curRule.policy_group_id === grpId) {
+          saveStaffWorkRule(s.name, {
+            company: s.company,
+            policy_group_id: grpId,
+            late_penalty_mode: normalized.late_penalty_mode,
+            late_multiplier: normalized.late_multiplier,
+            ot_multiplier: normalized.ot_multiplier,
+            ot_mode: normalized.ot_mode,
+            ot_max_hours: normalized.ot_max_hours,
+            vacation_days: normalized.vacation_days,
+            sick_days: normalized.sick_days,
+            working_days: normalized.working_days,
+            grace_min: normalized.grace_min,
+            early_leave_grace_min: normalized.early_leave_grace_min,
+            no_clock_out_rule: normalized.no_clock_out_rule,
+            perks: normalized.perks.slice()
+          }, { deferSave: true });
+          backfilledStaff++;
+        }
+      });
+    }
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
+    syncWithCloud(true);
+    return { ok: true, policyGroup: normalized, backfilledStaff };
+  }
+
+  function deletePolicyGroup(groupId) {
+    const id = String(groupId || '');
+    if (!id || DEFAULT_POLICY_GROUPS.some(d => d.id === id)) {
+      return { ok: false, error: 'Built-in Policy & Perks groups cannot be deleted (you can edit their multipliers & perks)' };
+    }
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const idx = ws.policyGroups.findIndex(g => g && String(g.id) === id);
+    if (idx < 0) return { ok: false, error: 'Policy group not found' };
+    ws.policyGroups[idx] = Object.assign({}, ws.policyGroups[idx], { voided: true, updated_at: nowIso });
+    Object.values(ws.staffRules).forEach(r => {
+      if (r && r.policy_group_id === id) {
+        r.policy_group_id = 'pkg_15_open_15d';
+        r.updated_at = nowIso;
+      }
+    });
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return { ok: true };
   }
 
   function parseClockMinutes(hhmm) {
@@ -80898,6 +81989,7 @@
 
   let _habitualShiftCacheRev = '';
   let _habitualNightCrewSet = new Set();
+  let _habitualExtCrewSet = new Set();
 
   function ensureHabitualNightCrewSet() {
     const attArr = (SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
@@ -80912,30 +82004,44 @@
       const rawOut = a.out_time || a.check_out;
       if (!rawIn || !rawOut) continue;
       const tin = fmtAttClockTime(rawIn);
-      if (!tin || !fmtAttClockTime(rawOut)) continue;
+      const tout = fmtAttClockTime(rawOut);
+      if (!tin || !tout) continue;
       const sk = norm(a.staff);
       if (!sk) continue;
       const ck = `${norm(a.company || 'WTC')}|${sk}`;
       const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
       let arr = byKey.get(ck);
       if (!arr) { arr = []; byKey.set(ck, arr); }
-      arr.push({ d, tin });
+      arr.push({ d, tin, tout, hrs: Number(a.work_hours || 0) });
     }
     const nightSet = new Set();
+    const extSet = new Set();
     byKey.forEach((arr, ck) => {
       if (arr.length < 3) return;
       arr.sort((a, b) => a.d.localeCompare(b.d));
       const recent = arr.length > 15 ? arr.slice(-15) : arr;
       let nightCnt = 0;
+      let earlyOrExtCnt = 0;
       for (let i = 0; i < recent.length; i++) {
         const inMin = parseClockMinutes(recent[i].tin);
-        if (inMin != null && inMin >= 17 * 60) nightCnt++;
+        const outMin = parseClockMinutes(recent[i].tout);
+        if (inMin != null && inMin >= 17 * 60) {
+          nightCnt++;
+        } else if (inMin != null && inMin >= 5 * 60 && inMin <= 7 * 60 + 25) {
+          const spanHrs = (outMin != null && outMin > inMin) ? ((outMin - inMin) / 60) : Number(recent[i].hrs || 0);
+          if (inMin <= 7 * 60 + 15 || spanHrs >= 8.75) {
+            earlyOrExtCnt++;
+          }
+        }
       }
       if (nightCnt / recent.length >= 0.65) {
         nightSet.add(ck);
+      } else if (earlyOrExtCnt / recent.length >= 0.55) {
+        extSet.add(ck);
       }
     });
     _habitualNightCrewSet = nightSet;
+    _habitualExtCrewSet = extSet;
     return nightSet;
   }
 
@@ -80946,10 +82052,13 @@
     const buDef = getBuDefaultShift(effCo);
     const fallbackId = (buDef && (buDef.shift_code || buDef.shift_id))
       ? (buDef.shift_code || buDef.shift_id)
-      : ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4');
+      : ((prof.hasContract && Number(prof.workingHours) >= 9) ? 'ext_7_4' : 'day_8_4');
     if (!k) return fallbackId;
     const coNorm = norm(effCo);
-    return ensureHabitualNightCrewSet().has(`${coNorm}|${k}`) ? 'night_7_3' : fallbackId;
+    ensureHabitualNightCrewSet();
+    if (_habitualNightCrewSet.has(`${coNorm}|${k}`)) return 'night_7_3';
+    if (_habitualExtCrewSet.has(`${coNorm}|${k}`) || (prof.hasContract && Number(prof.workingHours) >= 9)) return 'ext_7_4';
+    return fallbackId;
   }
 
   function getStaffWorkRule(staffName, company) {
@@ -80961,19 +82070,40 @@
     const buDef = getBuDefaultShift(effCo);
     const buDefShiftId = (buDef && (buDef.shift_code || buDef.shift_id))
       ? (buDef.shift_code || buDef.shift_id)
-      : ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4');
+      : ((prof.hasContract && Number(prof.workingHours) >= 9) ? 'ext_7_4' : 'day_8_4');
     const defaultShiftId = (raw && !raw.reset_default && raw.shift_id)
       ? raw.shift_id
       : ((raw && raw.reset_default)
         ? buDefShiftId
         : inferHabitualStaffShiftId(staffName, effCo));
     const resolvedShiftRow = resolveShiftAtDate(defaultShiftId, effCo, todayISO()) || buDef;
-    const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null ? Number(resolvedShiftRow.grace_min) : 10;
-    const defEarlyGrace = resolvedShiftRow && resolvedShiftRow.early_leave_grace_min != null ? Number(resolvedShiftRow.early_leave_grace_min) : defGrace;
+    const policyGroups = getPolicyGroups();
+    const defaultPkgId = inferDefaultPolicyGroupId(staffName, effCo, raw);
+    const matchedPkg = policyGroups.find(g => g.id === defaultPkgId) || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
+    const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null
+      ? Number(resolvedShiftRow.grace_min)
+      : (matchedPkg ? Number(matchedPkg.grace_min || 10) : 10);
+    const defEarlyGrace = resolvedShiftRow && resolvedShiftRow.early_leave_grace_min != null
+      ? Number(resolvedShiftRow.early_leave_grace_min)
+      : defGrace;
+    const defVacDays = (prof.hasContract && prof.vacationDays != null && Number(prof.vacationDays) > 0)
+      ? Number(prof.vacationDays)
+      : Number(matchedPkg.vacation_days != null ? matchedPkg.vacation_days : 15);
+    const defWorkDays = (prof.hasContract && Number(prof.workingDays) > 0)
+      ? Number(prof.workingDays)
+      : Number(matchedPkg.working_days || 30);
+    const defOtMult = (prof.hasContract && Number(prof.otMultiplier) > 0)
+      ? Number(prof.otMultiplier)
+      : Number(matchedPkg.ot_multiplier || 1.5);
+    const defLateMult = (prof.hasContract && Number(prof.lateMultiplier) > 1)
+      ? Number(prof.lateMultiplier)
+      : Number(matchedPkg.late_multiplier || 1.5);
+
     const base = Object.assign({
       staff: staffName || '',
       company: effCo,
       shift_id: defaultShiftId,
+      policy_group_id: matchedPkg.id,
       custom_name: 'Custom Shift',
       custom_start: (resolvedShiftRow && resolvedShiftRow.start_time) || '08:00',
       custom_end: (resolvedShiftRow && resolvedShiftRow.end_time) || '16:00',
@@ -80989,18 +82119,24 @@
         : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : defEarlyGrace),
       late_when: 'both',
       late_count_from: 'shift_start',
-      late_penalty_mode: 'exact_hours',
-      late_multiplier: 1.5,
+      late_penalty_mode: matchedPkg.late_penalty_mode || 'exact_hours',
+      late_multiplier: defLateMult,
       late_half_day_after_min: 60,
-      no_clock_out_rule: 'half_day',
+      no_clock_out_rule: matchedPkg.no_clock_out_rule || 'half_day',
       shift_overrides: [],
-      ot_mode: 'none',
-      ot_max_hours: 2,
+      ot_mode: matchedPkg.ot_mode || 'none',
+      ot_multiplier: defOtMult,
+      ot_max_hours: Number(matchedPkg.ot_max_hours != null ? matchedPkg.ot_max_hours : 2),
       ot_window_start: '',
       ot_window_end: '',
       ot_passes: [],
+      vacation_days: defVacDays,
+      sick_days: Number(matchedPkg.sick_days != null ? matchedPkg.sick_days : 7),
+      working_days: defWorkDays,
+      perks: Array.isArray(matchedPkg.perks) ? matchedPkg.perks.slice() : ['Site Transport', 'Paid Leave'],
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
+    base.policy_group_id = String(base.policy_group_id || matchedPkg.id);
     base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
     base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
@@ -81009,6 +82145,13 @@
       ? base.late_penalty_mode
       : 'exact_hours';
     base.late_multiplier = Math.max(1, Math.min(5, Number(base.late_multiplier != null ? base.late_multiplier : 1.5)));
+    base.ot_multiplier = Math.max(1, Math.min(5, Number(base.ot_multiplier != null ? base.ot_multiplier : defOtMult)));
+    base.vacation_days = Math.max(0, Math.min(90, Math.round(Number(base.vacation_days != null ? base.vacation_days : defVacDays))));
+    base.sick_days = Math.max(0, Math.min(60, Math.round(Number(base.sick_days != null ? base.sick_days : 7))));
+    base.working_days = [26, 30].includes(Number(base.working_days)) ? Number(base.working_days) : defWorkDays;
+    base.perks = Array.isArray(base.perks)
+      ? Array.from(new Set(base.perks.map(p => String(p || '').trim()).filter(Boolean)))
+      : ['Site Transport', 'Paid Leave'];
     base.late_half_day_after_min = Math.max(5, Math.min(360, Number(base.late_half_day_after_min != null ? base.late_half_day_after_min : 60)));
     base.no_clock_out_rule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(base.no_clock_out_rule)
       ? base.no_clock_out_rule
@@ -81028,19 +82171,72 @@
     return base;
   }
 
+  function describeStaffPolicyGroup(staffName, company) {
+    const rule = getStaffWorkRule(staffName, company);
+    const groups = getPolicyGroups();
+    const matched = groups.find(g => g.id === rule.policy_group_id) || groups[0] || DEFAULT_POLICY_GROUPS[0];
+    const lateMultLbl = rule.late_penalty_mode === 'multiplier'
+      ? `Late ${fmtNum(rule.late_multiplier || 1.5, (rule.late_multiplier || 1.5) % 1 ? 1 : 0)}x`
+      : (rule.late_penalty_mode === 'none' ? 'Late $0' : 'Late 1x');
+    const otModeShort = rule.ot_mode === 'always'
+      ? 'Whenever'
+      : (rule.ot_mode === 'date_range' ? 'Date Pass' : (rule.ot_mode === 'max_hours' ? `Max ${fmtNum(rule.ot_max_hours || 2, 0)}h` : 'No OT'));
+    const otMultLbl = rule.ot_mode === 'none'
+      ? 'No OT'
+      : `OT ${fmtNum(rule.ot_multiplier || 1.5, (rule.ot_multiplier || 1.5) % 1 ? 1 : 0)}x (${otModeShort})`;
+    const vacDays = Number(rule.vacation_days != null ? rule.vacation_days : 15);
+    const perksList = Array.isArray(rule.perks) ? rule.perks : [];
+    return {
+      id: matched ? matched.id : 'custom',
+      name: matched ? matched.name : 'Custom Policy & Perks',
+      short: matched ? matched.short : `${lateMultLbl} · ${otMultLbl}`,
+      tone: matched ? matched.tone : 'emerald',
+      lateMultLbl,
+      otMultLbl,
+      vacationDays: vacDays,
+      sickDays: Number(rule.sick_days != null ? rule.sick_days : 7),
+      workingDays: Number(rule.working_days || 30),
+      perks: perksList,
+      summaryLine: `${lateMultLbl} · ${otMultLbl} · ${vacDays}d Vac`,
+      perksLine: perksList.length ? perksList.slice(0, 3).join(' · ') : `${vacDays}d Annual Leave`
+    };
+  }
+
   function saveStaffWorkRule(staffName, patch = {}, opts = {}) {
     const k = norm(staffName);
     if (!k) return { ok: false, error: 'Staff member is required' };
     const ws = ensureWorkSchedulesState();
     const cur = getStaffWorkRule(staffName, patch.company);
     const nowIso = new Date().toISOString();
-    const next = Object.assign({}, cur, patch, {
+    let effectivePatch = Object.assign({}, patch);
+    if (patch.apply_policy_group_id) {
+      const grp = getPolicyGroups().find(g => g.id === patch.apply_policy_group_id);
+      if (grp) {
+        effectivePatch = Object.assign({
+          policy_group_id: grp.id,
+          late_penalty_mode: grp.late_penalty_mode,
+          late_multiplier: grp.late_multiplier,
+          ot_multiplier: grp.ot_multiplier,
+          ot_mode: grp.ot_mode,
+          ot_max_hours: grp.ot_max_hours,
+          vacation_days: grp.vacation_days,
+          sick_days: grp.sick_days,
+          working_days: grp.working_days,
+          grace_min: grp.grace_min,
+          early_leave_grace_min: grp.early_leave_grace_min,
+          no_clock_out_rule: grp.no_clock_out_rule,
+          perks: grp.perks.slice()
+        }, effectivePatch);
+        delete effectivePatch.apply_policy_group_id;
+      }
+    }
+    const next = Object.assign({}, cur, effectivePatch, {
       staff: cur.staff || staffName,
       reset_default: false,
       updated_at: nowIso
     });
     next.grace_min = Math.max(0, Math.min(120, Number(next.grace_min != null ? next.grace_min : 10)));
-    if (patch.grace_min != null && patch.early_leave_grace_min == null) {
+    if (effectivePatch.grace_min != null && effectivePatch.early_leave_grace_min == null) {
       next.early_leave_grace_min = next.grace_min;
     } else {
       next.early_leave_grace_min = Math.max(0, Math.min(120, Number(next.early_leave_grace_min != null ? next.early_leave_grace_min : next.grace_min)));
@@ -81051,6 +82247,13 @@
       ? next.late_penalty_mode
       : 'exact_hours';
     next.late_multiplier = Math.max(1, Math.min(5, Number(next.late_multiplier != null ? next.late_multiplier : 1.5)));
+    next.ot_multiplier = Math.max(1, Math.min(5, Number(next.ot_multiplier != null ? next.ot_multiplier : 1.5)));
+    next.vacation_days = Math.max(0, Math.min(90, Math.round(Number(next.vacation_days != null ? next.vacation_days : 15))));
+    next.sick_days = Math.max(0, Math.min(60, Math.round(Number(next.sick_days != null ? next.sick_days : 7))));
+    next.working_days = [26, 30].includes(Number(next.working_days)) ? Number(next.working_days) : 30;
+    next.perks = Array.isArray(next.perks)
+      ? Array.from(new Set(next.perks.map(p => String(p || '').trim()).filter(Boolean)))
+      : ['Site Transport', 'Paid Leave'];
     next.late_half_day_after_min = Math.max(5, Math.min(360, Number(next.late_half_day_after_min != null ? next.late_half_day_after_min : 60)));
     next.no_clock_out_rule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(next.no_clock_out_rule)
       ? next.no_clock_out_rule
@@ -81067,6 +82270,7 @@
     next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
     next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
     ws.staffRules[k] = next;
+    syncStaffContractPolicyFields(next.staff || staffName, next.company, next);
     if (!opts.skipRecalc) {
       recalcStaffTodayPunchAndAttendance(next.staff || staffName);
     }
@@ -81162,6 +82366,9 @@
           short: 'Off',
           start_time: '08:00',
           end_time: '16:00',
+          regular_start_time: '08:00',
+          regular_end_time: '16:00',
+          regular_hours: 0,
           hours: 0,
           overnight: false,
           days: [],
@@ -81171,7 +82378,8 @@
           overrideObj: activeOv,
           isWorkday: false,
           windowLabel: 'Day Off',
-          badgeLabel: 'Day Off'
+          badgeLabel: 'Day Off',
+          dayScheduleSub: 'Scheduled Off'
         };
       }
       if (activeOv.shift_id === 'custom') {
@@ -81223,14 +82431,21 @@
       }
     }
 
+    const regStart = chosenShift.start_time || '08:00';
+    const regEnd = chosenShift.end_time || '16:00';
+    const regHours = Number(chosenShift.hours || 8);
+    const regOvernight = Boolean(chosenShift.overnight);
+    chosenShift.regular_start_time = regStart;
+    chosenShift.regular_end_time = regEnd;
+    chosenShift.regular_hours = regHours;
+    chosenShift.regular_overnight = regOvernight;
+
     const isWorkday = activeOv ? true : (wk.dayIdx < 0 ? true : chosenShift.days.includes(wk.dayIdx));
     // Apply weekday-specific timing (e.g. Saturday 07:00-14:00) when scheduled on that day
     let isDaySpecific = false;
     if (isWorkday && !activeOv && wk.dayIdx >= 0) {
       const dayTiming = resolveShiftTimingForWeekday(chosenShift, wk.dayIdx);
       if (dayTiming && dayTiming.isDaySpecific) {
-        chosenShift.regular_start_time = chosenShift.start_time;
-        chosenShift.regular_end_time = chosenShift.end_time;
         chosenShift.start_time = dayTiming.start_time;
         chosenShift.end_time = dayTiming.end_time;
         chosenShift.hours = dayTiming.hours;
@@ -81240,13 +82455,22 @@
     }
     const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
     const windowLabel = `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
-    const badgeLabel = `${chosenShift.short}${isDaySpecific && wk.short ? ` (${wk.short})` : ''} · ${chosenShift.start_time}-${chosenShift.end_time}${chosenShift.overnight ? ' +1d' : ''}`;
+    const regWindowLabel = `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
+    const satInfo = chosenShift.sat_diff_enabled
+      ? `Sat ${chosenShift.sat_start_time || '07:00'}-${chosenShift.sat_end_time || '14:00'}`
+      : '';
+    const badgeLabel = `${chosenShift.name} · ${regWindowLabel}`;
+    const dayScheduleSub = satInfo
+      ? `${regWindowLabel} · ${satInfo}`
+      : `${regWindowLabel} · ${formatWorkdaysCompact(chosenShift.days)}`;
     return Object.assign({}, chosenShift, {
       isOverride: Boolean(activeOv),
       overrideObj: activeOv,
       isWorkday,
       isDaySpecific,
       windowLabel,
+      regWindowLabel,
+      dayScheduleSub,
       badgeLabel
     });
   }
@@ -81274,7 +82498,7 @@
       } else {
         sh = Object.assign({}, types.find(t => t.id === rule.shift_id) || types[0]);
       }
-      sh.badgeLabel = `${sh.short} · ${sh.start_time}-${sh.end_time}${sh.overnight ? ' +1d' : ''}`;
+      sh.badgeLabel = `${sh.name || sh.short} · ${sh.start_time}-${sh.end_time}${sh.overnight ? ' +1d' : ''}`;
     }
     if (!sh) {
       return {
@@ -81286,7 +82510,7 @@
         hours: contractHrs || 8,
         overnight: false,
         isOverride: false,
-        badgeLabel: 'Day · 08:00-16:00'
+        badgeLabel: 'Day Shift · 08:00-16:00'
       };
     }
     let startT = sh.start_time || '08:00';
@@ -81313,13 +82537,15 @@
       hours: durHrs,
       overnight,
       isOverride: Boolean(sh.isOverride),
-      badgeLabel: `${sh.short || 'Shift'} · ${startT}-${endT}${overnight ? ' +1d' : ''}`
+      badgeLabel: `${sh.name || sh.short || 'Shift'} · ${startT}-${endT}${overnight ? ' +1d' : ''}`
     };
   }
 
   function describeStaffOvertimeRule(staffName, company, refDate = todayISO()) {
     const dStr = String(refDate || todayISO()).slice(0, 10);
     const rule = getStaffWorkRule(staffName, company);
+    const otMult = Number(rule.ot_multiplier || 1.5);
+    const otMultTag = `${fmtNum(otMult, otMult % 1 ? 1 : 0)}x`;
     const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
     if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
       const sameDay = activePass.start_date === (activePass.end_date || activePass.start_date);
@@ -81329,8 +82555,9 @@
       const capLbl = activePass.max_hours > 0 ? ` (${fmtNum(activePass.max_hours, 1)}h)` : '';
       return {
         mode: 'date_range',
-        badgeText: `OT: ${dateLbl}${capLbl}`,
-        detailText: `Approved for ${dateLbl}${capLbl}`,
+        otMultiplier: otMult,
+        badgeText: `OT ${otMultTag}: ${dateLbl}${capLbl}`,
+        detailText: `Approved for ${dateLbl}${capLbl} at ${otMultTag}`,
         tone: 'emerald',
         activeToday: true,
         pass: activePass
@@ -81339,8 +82566,9 @@
     if (rule.ot_mode === 'always') {
       return {
         mode: 'always',
-        badgeText: 'OT: Anytime',
-        detailText: 'Open overtime authorized anytime beyond shift',
+        otMultiplier: otMult,
+        badgeText: `OT ${otMultTag}: Whenever`,
+        detailText: `Open overtime authorized anytime beyond shift at ${otMultTag}`,
         tone: 'emerald',
         activeToday: true
       };
@@ -81352,8 +82580,9 @@
       const winPart = hasWin ? ` (${rule.ot_window_start}-${rule.ot_window_end})` : '';
       return {
         mode: 'max_hours',
-        badgeText: `OT: ${capPart}${winPart}`,
-        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'}`,
+        otMultiplier: otMult,
+        badgeText: `OT ${otMultTag}: ${capPart}${winPart}`,
+        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'} at ${otMultTag}`,
         tone: 'sapphire',
         activeToday: true
       };
@@ -81367,7 +82596,8 @@
         const lbl = sameDay ? fmtShortDayMonth(upcoming.start_date) : `${fmtShortDayMonth(upcoming.start_date)}-${fmtShortDayMonth(upcoming.end_date)}`;
         return {
           mode: 'date_range',
-          badgeText: `OT: ${lbl}`,
+          otMultiplier: otMult,
+          badgeText: `OT ${otMultTag}: ${lbl}`,
           detailText: `Scheduled OT pass (${lbl}); 0h paid OT today`,
           tone: 'amber',
           activeToday: false,
@@ -81376,7 +82606,8 @@
       }
       return {
         mode: 'date_range',
-        badgeText: 'OT: Date Pass (None)',
+        otMultiplier: otMult,
+        badgeText: `OT ${otMultTag}: Date Pass`,
         detailText: 'Date-range mode with no active date today (0h paid OT)',
         tone: 'muted',
         activeToday: false
@@ -81384,6 +82615,7 @@
     }
     return {
       mode: 'none',
+      otMultiplier: otMult,
       badgeText: 'No Overtime',
       detailText: 'Late clock-out logs actual time with 0h paid overtime',
       tone: 'muted',
@@ -81402,6 +82634,7 @@
     const dStr = String(refDate || todayISO()).slice(0, 10);
     const rule = getStaffWorkRule(staffName, company);
     const shift = resolveStaffShiftForDate(staffName, company, dStr);
+    const policyDesc = describeStaffPolicyGroup(staffName, company);
     const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
     const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
@@ -81503,6 +82736,9 @@
       noOutLabel,
       noOutShort,
       noOutTone,
+      policyGroup: policyDesc,
+      vacationDays: policyDesc.vacationDays,
+      perks: policyDesc.perks,
       badgeLabel: `${penaltyShort} · ${noOutShort}`,
       badgeText: `${penaltyShort} · ${noOutShort}`,
       subText: `${toleranceBadge} · ${whenShortLabels[lateWhen] || whenShortLabels.both}`,
@@ -86490,6 +87726,11 @@
           </div>
         </div>
         <div class="kwh-right">
+          <div class="lang-switch kiosk-lang-switch" id="kioskLangSwitch" role="group" aria-label="Language">
+            <button type="button" class="lang-btn active" data-lang-btn="en">EN</button>
+            <button type="button" class="lang-btn" data-lang-btn="ar">عربي</button>
+            <button type="button" class="lang-btn" data-lang-btn="fr">FR</button>
+          </div>
           <div class="kwh-clock">
             <span class="kwh-clock-time mono" id="kioskWallClockTime">${esc(wallClockNow.time)}</span>
             <span class="kwh-clock-date" id="kioskWallClockDate">${esc(wallClockNow.date)}</span>
@@ -87918,6 +89159,7 @@
 
     applyUserRlsAndPermissions();
     ensureItemsCatalogSeeded();
+    ensureMultiIndustrySpineSeeded();
     const user = activeUser();
     const k = getKPI();
 
@@ -88222,6 +89464,10 @@
         }
       }
     } finally {
+      if (window.MFG_I18N) {
+        window.MFG_I18N.syncLangSwitchersDom();
+        if (window.MFG_I18N.getLang() !== 'en') window.MFG_I18N.translateDom(document.body);
+      }
       stripNativeTitles(document);
       if (_uiTipObserver && document.body) {
         _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
@@ -90974,6 +92220,7 @@
     if (view !== 'kiosks' && KIOSK_ATT_STATE.camActive) {
       stopKioskAttCamera();
     }
+    view = resolveIndustryCompatibleView(view, getActiveIndustry(STATE.company));
     STATE.view = view;
     if (UNIV_VIEW_TO_TABLE_KEY[view]) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[view];
@@ -90994,9 +92241,11 @@
       STATE.cfFocusYm = '';
       STATE.cfFocusParty = '';
     }
+    const h = '#' + view;
     if (!opts.noPush) {
-      const h = '#' + view;
-      if (location.hash !== h) history.pushState({ view }, '', h);
+      if (location.hash !== h) history.pushState({ view, company: STATE.company }, '', h);
+    } else if (STATE.authed && location.hash !== h) {
+      history.replaceState({ view, company: STATE.company }, '', h);
     }
     const sidebar = $('sidebar');
     if (sidebar) sidebar.classList.remove('open');
@@ -92038,6 +93287,13 @@
     // History: back / forward + hash links move between modules (only after sign-in)
     window.addEventListener('popstate', e => {
       if (!STATE.authed) return;
+      if (e.state && e.state.company) {
+        const allowedCos = getAllowedCompanyKeys(activeUser());
+        if (allowedCos.includes(e.state.company) || String(e.state.company).startsWith('industry:')) {
+          STATE.company = e.state.company;
+          saveFilterState();
+        }
+      }
       const v = (e.state && e.state.view) || (location.hash || '').replace(/^#/, '') || 'overview';
       if (VIEW_TITLES[v]) setView(v, { noPush: true });
     });
