@@ -58881,43 +58881,137 @@
       }
 
       const wrap = document.createElement('div');
-      wrap.className = 'pa-suggest-wrap pa-time24-wrap';
+      const inlineWidthStr = String(input.style.width || '').trim();
+      const inlinePx = /^\d+/.test(inlineWidthStr) ? parseInt(inlineWidthStr, 10) : 0;
+      const isCompact = (inlinePx > 0 && inlinePx <= 76) || input.hasAttribute('data-ssm-day-in') || input.hasAttribute('data-ssm-day-out') || input.hasAttribute('data-ssm-row-start') || input.hasAttribute('data-ssm-row-end') || input.hasAttribute('data-ssm-row-sat-start') || input.hasAttribute('data-ssm-row-sat-end');
+      wrap.className = `pa-suggest-wrap pa-time24-wrap${isCompact ? ' is-compact' : ' has-inline-steps'}`;
+      if (inlinePx > 0) {
+        wrap.style.width = isCompact ? `${Math.max(76, inlinePx)}px` : `${Math.max(146, inlinePx)}px`;
+        wrap.style.display = 'inline-flex';
+        input.style.width = '100%';
+      }
       input.parentNode.insertBefore(wrap, input);
       wrap.appendChild(input);
 
+      const ctrlBox = document.createElement('div');
+      ctrlBox.className = 'pa-time24-inline-actions';
+      if (!isCompact) {
+        const stepMinusBtn = document.createElement('button');
+        stepMinusBtn.type = 'button';
+        stepMinusBtn.className = 'pa-time24-step-btn';
+        stepMinusBtn.tabIndex = -1;
+        stepMinusBtn.dataset.t24InlineStep = '-15';
+        stepMinusBtn.setAttribute('aria-label', 'Step back 15 minutes');
+        stepMinusBtn.textContent = '−';
+        const stepPlusBtn = document.createElement('button');
+        stepPlusBtn.type = 'button';
+        stepPlusBtn.className = 'pa-time24-step-btn';
+        stepPlusBtn.tabIndex = -1;
+        stepPlusBtn.dataset.t24InlineStep = '15';
+        stepPlusBtn.setAttribute('aria-label', 'Step forward 15 minutes');
+        stepPlusBtn.textContent = '+';
+        ctrlBox.appendChild(stepMinusBtn);
+        ctrlBox.appendChild(stepPlusBtn);
+      }
+
       const clockBtn = document.createElement('button');
       clockBtn.type = 'button';
-      clockBtn.className = 'pa-suggest-chev pa-time24-clock';
+      clockBtn.className = 'pa-suggest-caret pa-time24-clock';
       clockBtn.tabIndex = -1;
       clockBtn.setAttribute('aria-label', 'Open 24-hour clock picker');
       clockBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>`;
-      wrap.appendChild(clockBtn);
+      ctrlBox.appendChild(clockBtn);
+      wrap.appendChild(ctrlBox);
 
       const menu = document.createElement('div');
       menu.className = 'pa-suggest-menu pa-time24-menu';
-      menu.setAttribute('role', 'listbox');
-      menu.setAttribute('aria-label', '24-hour time selector');
+      menu.setAttribute('role', 'dialog');
+      menu.setAttribute('aria-label', '24-hour time studio');
       menu.hidden = true;
       wrap.appendChild(menu);
 
-      const hoursHtml = Array.from({ length: 24 }, (_, h) => {
-        const hh = String(h).padStart(2, '0');
-        return `<button type="button" class="pa-time24-cell" data-t24-hr="${hh}">${hh}</button>`;
-      }).join('');
-      const minsHtml = Array.from({ length: 60 }, (_, m) => {
+      const hourPeriods = [
+        { label: 'Night', sub: '00–05', hours: [0, 1, 2, 3, 4, 5] },
+        { label: 'Morning', sub: '06–11', hours: [6, 7, 8, 9, 10, 11] },
+        { label: 'Afternoon', sub: '12–17', hours: [12, 13, 14, 15, 16, 17] },
+        { label: 'Evening', sub: '18–23', hours: [18, 19, 20, 21, 22, 23] }
+      ];
+      const hourMatrixHtml = hourPeriods.map(p => `
+        <div class="pa-time24-period-row">
+          <span class="pa-time24-period-lbl"><b>${p.label}</b><small>${p.sub}</small></span>
+          <div class="pa-time24-hr-row-cells">
+            ${p.hours.map(h => {
+              const hh = String(h).padStart(2, '0');
+              return `<button type="button" class="pa-time24-cell is-hr-cell" data-t24-hr="${hh}">${hh}</button>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      const fiveMinHtml = Array.from({ length: 12 }, (_, idx) => {
+        const m = idx * 5;
         const mm = String(m).padStart(2, '0');
-        return `<button type="button" class="pa-time24-cell" data-t24-min="${mm}">${mm}</button>`;
+        const isQ = (m % 15) === 0;
+        return `<button type="button" class="pa-time24-cell is-min-cell${isQ ? ' is-quarter' : ''}" data-t24-min="${mm}">:${mm}</button>`;
       }).join('');
 
+      const exactNonFiveMinHtml = Array.from({ length: 60 }, (_, m) => m)
+        .filter(m => (m % 5) !== 0)
+        .map(m => {
+          const mm = String(m).padStart(2, '0');
+          return `<button type="button" class="pa-time24-cell is-min-exact" data-t24-min="${mm}">:${mm}</button>`;
+        }).join('');
+
+      const quickPresets = ['07:00', '08:00', '09:00', '14:00', '16:00', '17:00'];
+
       menu.innerHTML = `
-        <div class="pa-time24-hdr">
-          <span>HR (24H)</span>
-          <span>MIN</span>
-          ${isOptional ? '<button type="button" class="pa-time24-clear-btn" data-t24-clear="1">Clear</button>' : ''}
+        <div class="pa-time24-hero">
+          <div class="pa-time24-nudge-grp">
+            <button type="button" class="pa-time24-nudge" data-t24-step="-60" title="Subtract 1 hour">−1h</button>
+            <button type="button" class="pa-time24-nudge" data-t24-step="-15" title="Subtract 15 minutes">−15m</button>
+          </div>
+          <div class="pa-time24-readout">
+            <div class="pa-time24-digits mono">
+              <span class="pa-time24-seg is-hr active" data-t24-seg="hr">08</span>
+              <span class="pa-time24-colon">:</span>
+              <span class="pa-time24-seg is-min" data-t24-seg="min">00</span>
+            </div>
+            <span class="pa-time24-period-pill" data-t24-period-pill>Morning · 24H</span>
+          </div>
+          <div class="pa-time24-nudge-grp">
+            <button type="button" class="pa-time24-nudge" data-t24-step="15" title="Add 15 minutes">+15m</button>
+            <button type="button" class="pa-time24-nudge" data-t24-step="60" title="Add 1 hour">+1h</button>
+          </div>
         </div>
-        <div class="pa-time24-cols">
-          <div class="pa-time24-col" data-t24-col="hr">${hoursHtml}</div>
-          <div class="pa-time24-col" data-t24-col="min">${minsHtml}</div>
+        <div class="pa-time24-sec-bar">
+          <span>HOUR (24H MATRIX · 00–23)</span>
+          <span class="pa-time24-sec-sub">Click hour</span>
+        </div>
+        <div class="pa-time24-hr-matrix" data-t24-col="hr">
+          ${hourMatrixHtml}
+        </div>
+        <div class="pa-time24-sec-bar is-min-bar">
+          <span>MINUTES (:00–:55)</span>
+          <div class="pa-time24-fine-bar">
+            <button type="button" class="pa-time24-fine-btn" data-t24-step="-1">−1m</button>
+            <button type="button" class="pa-time24-fine-btn" data-t24-step="1">+1m</button>
+            <button type="button" class="pa-time24-fine-btn is-toggle" data-t24-toggle-exact="1">Exact 1m</button>
+          </div>
+        </div>
+        <div class="pa-time24-min-grid" data-t24-col="min">
+          ${fiveMinHtml}
+        </div>
+        <div class="pa-time24-min-exact-drawer" data-t24-exact-drawer hidden>
+          ${exactNonFiveMinHtml}
+        </div>
+        <div class="pa-time24-footer">
+          <div class="pa-time24-presets">
+            ${quickPresets.map(p => `<button type="button" class="pa-time24-preset-chip mono" data-t24-preset="${p}">${p}</button>`).join('')}
+          </div>
+          <div class="pa-time24-foot-actions">
+            ${isOptional ? '<button type="button" class="pa-time24-clear-btn" data-t24-clear="1">Clear</button>' : ''}
+            <button type="button" class="pa-time24-done-btn" data-t24-done="1">Done</button>
+          </div>
         </div>
       `;
 
@@ -58930,40 +59024,66 @@
         return { hh: '08', mm: '00' };
       };
 
-      const syncActiveCells = (scrollIntoView = false) => {
+      const describePeriod24 = hNum => {
+        if (hNum < 6) return 'Night (00–05) · 24H';
+        if (hNum < 12) return 'Morning (06–11) · 24H';
+        if (hNum < 18) return 'Afternoon (12–17) · 24H';
+        return 'Evening (18–23) · 24H';
+      };
+
+      const syncActiveCells = () => {
         const hasVal = Boolean(String(input.value || '').trim());
         const { hh, mm } = parseParts();
+        const hNum = parseInt(hh, 10) || 0;
+        const mNum = parseInt(mm, 10) || 0;
+        const hrSeg = menu.querySelector('[data-t24-seg="hr"]');
+        const minSeg = menu.querySelector('[data-t24-seg="min"]');
+        const perPill = menu.querySelector('[data-t24-period-pill]');
+        if (hrSeg) hrSeg.textContent = hh;
+        if (minSeg) minSeg.textContent = mm;
+        if (perPill) perPill.textContent = describePeriod24(hNum);
+
         menu.querySelectorAll('[data-t24-hr]').forEach(btn => {
-          const active = hasVal && btn.getAttribute('data-t24-hr') === hh;
-          btn.classList.toggle('active', active);
-          if (active && scrollIntoView) {
-            const col = btn.parentElement;
-            if (col) col.scrollTop = Math.max(0, btn.offsetTop - col.clientHeight / 2 + btn.offsetHeight / 2);
-          }
+          btn.classList.toggle('active', hasVal && btn.getAttribute('data-t24-hr') === hh);
         });
         menu.querySelectorAll('[data-t24-min]').forEach(btn => {
-          const active = hasVal && btn.getAttribute('data-t24-min') === mm;
-          btn.classList.toggle('active', active);
-          if (active && scrollIntoView) {
-            const col = btn.parentElement;
-            if (col) col.scrollTop = Math.max(0, btn.offsetTop - col.clientHeight / 2 + btn.offsetHeight / 2);
-          }
+          btn.classList.toggle('active', hasVal && btn.getAttribute('data-t24-min') === mm);
+        });
+        const exactDrawer = menu.querySelector('[data-t24-exact-drawer]');
+        const toggleBtn = menu.querySelector('[data-t24-toggle-exact]');
+        if (exactDrawer && hasVal && (mNum % 5) !== 0) {
+          exactDrawer.hidden = false;
+          if (toggleBtn) toggleBtn.classList.add('active');
+        }
+        const curFull = `${hh}:${mm}`;
+        menu.querySelectorAll('[data-t24-preset]').forEach(btn => {
+          btn.classList.toggle('active', hasVal && btn.getAttribute('data-t24-preset') === curFull);
         });
       };
-      input._syncTime24Menu = () => syncActiveCells(false);
+      input._syncTime24Menu = () => syncActiveCells();
+
+      const positionMenuSmart = () => {
+        menu.classList.remove('menu-drop-up', 'menu-align-right');
+        const rect = wrap.getBoundingClientRect();
+        const vw = window.innerWidth || 1280;
+        const vh = window.innerHeight || 800;
+        if (rect.left + 324 > vw - 12) menu.classList.add('menu-align-right');
+        if (rect.bottom + 340 > vh - 12 && rect.top > 320) menu.classList.add('menu-drop-up');
+      };
 
       const openTimeMenu = () => {
         if (input.disabled || input.readOnly) return;
         closeAll(menu);
         menu.hidden = false;
         wrap.classList.add('open');
-        requestAnimationFrame(() => syncActiveCells(true));
+        positionMenuSmart();
+        syncActiveCells();
       };
 
       const commitTimeValue = (nextVal, closeAfter = false) => {
         if (nativeDesc && nativeDesc.set) nativeDesc.set.call(input, nextVal);
         else input.value = nextVal;
-        syncActiveCells(false);
+        syncActiveCells();
         input.dispatchEvent(new Event('input', { bubbles: true }));
         if (closeAfter) {
           menu.hidden = true;
@@ -58972,12 +59092,60 @@
         }
       };
 
+      const stepByMinutes = (deltaMin, fireChange = false) => {
+        if (input.disabled || input.readOnly) return;
+        const { hh, mm } = parseParts();
+        const total = ((parseInt(hh, 10) * 60 + parseInt(mm, 10) + deltaMin) % 1440 + 1440) % 1440;
+        const nextH = String(Math.floor(total / 60)).padStart(2, '0');
+        const nextM = String(total % 60).padStart(2, '0');
+        commitTimeValue(`${nextH}:${nextM}`, false);
+        if (fireChange) input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+
+      ctrlBox.querySelectorAll('[data-t24-inline-step]').forEach(btn => {
+        const doInlineStep = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const d = parseInt(btn.getAttribute('data-t24-inline-step') || '15', 10);
+          stepByMinutes(d, false);
+        };
+        btn.addEventListener('mousedown', doInlineStep);
+      });
+
+      menu.querySelectorAll('[data-t24-step]').forEach(btn => {
+        const doStep = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const d = parseInt(btn.getAttribute('data-t24-step') || '15', 10);
+          stepByMinutes(d, false);
+        };
+        btn.addEventListener('mousedown', doStep);
+      });
+
+      const toggleExactBtn = menu.querySelector('[data-t24-toggle-exact]');
+      if (toggleExactBtn) {
+        const doToggleExact = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const drw = menu.querySelector('[data-t24-exact-drawer]');
+          if (drw) {
+            drw.hidden = !drw.hidden;
+            toggleExactBtn.classList.toggle('active', !drw.hidden);
+          }
+        };
+        toggleExactBtn.addEventListener('mousedown', doToggleExact);
+      }
+
       menu.querySelectorAll('[data-t24-hr]').forEach(btn => {
         const pickHr = ev => {
           ev.preventDefault();
           ev.stopPropagation();
           const hh = btn.getAttribute('data-t24-hr') || '08';
           const { mm } = parseParts();
+          const hrSeg = menu.querySelector('[data-t24-seg="hr"]');
+          const minSeg = menu.querySelector('[data-t24-seg="min"]');
+          if (hrSeg) hrSeg.classList.remove('active');
+          if (minSeg) minSeg.classList.add('active');
           commitTimeValue(`${hh}:${mm}`, false);
         };
         btn.addEventListener('mousedown', pickHr);
@@ -58995,6 +59163,29 @@
         btn.addEventListener('mousedown', pickMin);
         btn.addEventListener('click', pickMin);
       });
+
+      menu.querySelectorAll('[data-t24-preset]').forEach(btn => {
+        const pickPreset = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const preset = btn.getAttribute('data-t24-preset') || '08:00';
+          commitTimeValue(preset, true);
+        };
+        btn.addEventListener('mousedown', pickPreset);
+        btn.addEventListener('click', pickPreset);
+      });
+
+      const doneBtn = menu.querySelector('[data-t24-done]');
+      if (doneBtn) {
+        const doDone = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const { hh, mm } = parseParts();
+          commitTimeValue(`${hh}:${mm}`, true);
+        };
+        doneBtn.addEventListener('mousedown', doDone);
+        doneBtn.addEventListener('click', doDone);
+      }
 
       const clearBtn = menu.querySelector('[data-t24-clear]');
       if (clearBtn) {
@@ -59025,10 +59216,26 @@
         openTimeMenu();
       });
 
-      input.addEventListener('click', () => {
+      input.addEventListener('click', ev => {
         if (input.disabled || input.readOnly) return;
         if (menu.hidden) openTimeMenu();
+        try {
+          const rect = input.getBoundingClientRect();
+          const relX = ev.clientX - rect.left;
+          if (relX > 0 && relX < 28 && input.value.length === 5) {
+            input.setSelectionRange(0, 2);
+          } else if (relX >= 28 && relX < 58 && input.value.length === 5) {
+            input.setSelectionRange(3, 5);
+          }
+        } catch (_) {}
       });
+
+      input.addEventListener('wheel', ev => {
+        if (input.disabled || input.readOnly) return;
+        if (document.activeElement !== input && menu.hidden) return;
+        ev.preventDefault();
+        stepByMinutes(ev.deltaY < 0 ? 15 : -15, false);
+      }, { passive: false });
 
       input.addEventListener('input', ev => {
         const raw = String(input.value || '');
@@ -59038,7 +59245,7 @@
             : `${raw.slice(0, 2)}:${raw.slice(2)}`;
           if (nativeDesc && nativeDesc.set) nativeDesc.set.call(input, formatted);
         }
-        syncActiveCells(false);
+        syncActiveCells();
       });
 
       input.addEventListener('keydown', ev => {
@@ -76612,14 +76819,21 @@
     const indGroups = getIndustryGroups(catalog);
     const listEl = $('companySwitchList') || switchEl;
 
-    // Ensure every company in catalog or allowedCos has an .entity-btn inside #companySwitchList
-    const desiredKeys = ['manufacturing-group'];
-    if (indGroups.length >= 2) {
-      indGroups.forEach(g => {
-        const indKey = `industry:${g.id}`;
-        if (allowedCos.includes(indKey)) desiredKeys.push(indKey);
+    // Order each industry's consolidated group row directly above its member companies (preserving MFG_FREQ company rank within each industry)
+    const desiredKeys = [];
+    indGroups.forEach(g => {
+      if (g.id === 'Manufacturing' && allowedCos.includes('manufacturing-group')) {
+        desiredKeys.push('manufacturing-group');
+      }
+      const indKey = `industry:${g.id}`;
+      if (indGroups.length >= 2 && allowedCos.includes(indKey) && !desiredKeys.includes(indKey)) {
+        desiredKeys.push(indKey);
+      }
+      g.companies.forEach(c => {
+        if (!desiredKeys.includes(c.key)) desiredKeys.push(c.key);
       });
-    }
+    });
+    if (!desiredKeys.includes('manufacturing-group')) desiredKeys.unshift('manufacturing-group');
     catalog.forEach(c => { if (!desiredKeys.includes(c.key)) desiredKeys.push(c.key); });
     allowedCos.forEach(k => { if (!desiredKeys.includes(k)) desiredKeys.push(k); });
 
@@ -76639,8 +76853,9 @@
           e.stopPropagation();
           selectCompanyScope(coKey, true);
         });
-        listEl.appendChild(btn);
       }
+      btn.classList.toggle('is-group-scope', coKey === 'manufacturing-group' || coKey.startsWith('industry:'));
+      listEl.appendChild(btn);
     });
 
     // Allowed industries for this user
@@ -76650,22 +76865,28 @@
     })).filter(g => g.permittedCos.length > 0);
     const allowedIndCount = Math.max(1, allowedIndGroups.length);
     const firstAllowedInd = allowedIndGroups[0] ? allowedIndGroups[0].id : 'Manufacturing';
+    const liveInd = getActiveIndustry(STATE.company);
 
     if (STATE.companySwitchIndFilter !== 'all' && !allowedIndGroups.some(g => g.id === STATE.companySwitchIndFilter)) {
       STATE.companySwitchIndFilter = 'all';
+    }
+
+    const indHeadEl = $('companySwitchIndHead');
+    if (indHeadEl) {
+      indHeadEl.textContent = `Industries (${allowedIndCount})`;
     }
 
     // Populate Left Column: Industry Tabs (#companySwitchIndustryList)
     const indListEl = $('companySwitchIndustryList');
     if (indListEl) {
       const indTabsHtml = [
-        `<button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === 'all' ? 'active' : ''}" data-ep-ind="all">
+        `<button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === 'all' ? 'active' : ''}" data-ep-ind="all" data-ui-tip="Show all ${allowedNames.length} permitted companies across ${allowedIndCount} industries">
           <span class="ep-ind-tab-name">All Industries</span>
           <em class="ep-ind-tab-cnt">${allowedNames.length}</em>
         </button>`
       ].concat(allowedIndGroups.map(g => `
-        <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" data-ui-tip="${esc(g.label)} (${g.permittedCos.length} permitted)">
-          <span class="ep-ind-tab-name">${esc(g.label)}</span>
+        <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" data-ui-tip="${esc(g.label)} (${g.permittedCos.length} permitted${g.id === liveInd ? ' · Active' : ''})">
+          <span class="ep-ind-tab-name">${g.id === liveInd ? '<span class="ep-ind-live-dot" aria-hidden="true"></span>' : ''}${esc(g.label)}</span>
           <em class="ep-ind-tab-cnt">${g.permittedCos.length}</em>
         </button>
       `)).join('');
@@ -76675,11 +76896,16 @@
           e.stopPropagation();
           const pickedInd = tabBtn.getAttribute('data-ep-ind') || 'all';
           STATE.companySwitchIndFilter = pickedInd;
-          if (pickedInd !== 'all' && getActiveIndustry(STATE.company) !== pickedInd) {
-            const grp = allowedIndGroups.find(g => g.id === pickedInd);
-            const targetKey = pickedInd === 'Manufacturing'
-              ? (allowedCos.includes('manufacturing-group') ? 'manufacturing-group' : (grp && grp.permittedCos[0] ? grp.permittedCos[0].key : 'wtc'))
-              : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${pickedInd}`);
+          if (searchInpEarly && searchInpEarly.value) searchInpEarly.value = '';
+          if (pickedInd === 'all') {
+            syncCompanySwitchUi();
+            return;
+          }
+          const grp = allowedIndGroups.find(g => g.id === pickedInd);
+          const targetKey = pickedInd === 'Manufacturing'
+            ? (allowedCos.includes('manufacturing-group') ? 'manufacturing-group' : (grp && grp.permittedCos[0] ? grp.permittedCos[0].key : 'wtc'))
+            : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${pickedInd}`);
+          if (getActiveIndustry(STATE.company) !== pickedInd || STATE.company !== targetKey) {
             selectCompanyScope(targetKey, false);
             return;
           }
@@ -76690,7 +76916,7 @@
 
     const searchInp = $('companySwitchSearch');
     const q = searchInp ? String(searchInp.value || '').trim().toLowerCase() : '';
-    const indFilter = STATE.companySwitchIndFilter || 'all';
+    const indFilter = q ? 'all' : (STATE.companySwitchIndFilter || 'all');
 
     const mfgAllowedCount = STATE.enterpriseScalePreview
       ? allowedNames.length
@@ -76700,7 +76926,10 @@
       : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company', 'insurance'].includes(c.key)).length;
 
     let visibleBtnCount = 0;
+    const exactBtns = [];
+    const freqBtns = [];
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
+      btn.classList.remove('kbd-focus');
       const key = btn.getAttribute('data-company') || '';
       const isAllowed = allowedCos.includes(key);
       if (key === 'manufacturing-group') {
@@ -76709,14 +76938,14 @@
           : `All Assigned (${mfgAllowedCount})`;
         btn.setAttribute('data-ind', 'all');
         btn.setAttribute('data-ind-tag', STATE.enterpriseScalePreview && allowedIndCount > 1 ? `${allowedIndCount} Ind` : firstAllowedInd);
-        btn.setAttribute('data-co-search', `all group assigned consolidated ${allowedNames.join(' ').toLowerCase()}`);
+        btn.setAttribute('data-co-search', `all group assigned consolidated manufacturing ${allowedNames.join(' ').toLowerCase()}`);
       } else if (key.startsWith('industry:')) {
         const indName = key.slice(9);
         const grp = allowedIndGroups.find(g => g.id === indName);
         const cnt = grp ? grp.permittedCos.length : 0;
         btn.textContent = `All ${indName} (${cnt})`;
         btn.setAttribute('data-ind', indName);
-        btn.setAttribute('data-ind-tag', 'Industry');
+        btn.setAttribute('data-ind-tag', `All · ${cnt}`);
         btn.setAttribute('data-co-search', `all ${indName.toLowerCase()} industry consolidated`);
       } else {
         const coMeta = catalog.find(c => c.key === key);
@@ -76740,10 +76969,21 @@
         }
         const matchQ = !q || hay.includes(q);
         btn.hidden = !(matchInd && matchQ);
-        if (!btn.hidden) visibleBtnCount += 1;
+        if (!btn.hidden) {
+          visibleBtnCount += 1;
+          if (q) {
+            const labelNorm = btn.textContent.trim().toLowerCase();
+            if (labelNorm === q || key.toLowerCase() === q) exactBtns.push(btn);
+            else freqBtns.push(btn);
+          }
+        }
       }
       btn.classList.toggle('active', key === STATE.company);
     });
+
+    if (q && (exactBtns.length || freqBtns.length)) {
+      exactBtns.concat(freqBtns).forEach(btn => listEl.appendChild(btn));
+    }
 
     // Update Trigger Box 2-Segment Labels (IND + CO)
     const indTextEl = $('companySwitchIndText');
@@ -76767,20 +77007,22 @@
       trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : (rawInd === 'Automotive & Heavy Trading' ? 'Trading' : (rawInd === 'Real Estate & Property' ? 'Real Estate' : (rawInd === 'Insurance & Brokerage' ? 'Insurance' : rawInd))));
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
-    if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
-    if (coTextEl) { coTextEl.textContent = trigCo; coTextEl.setAttribute('data-ui-tip', trigCo); }
+    if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', `Click to browse all ${allowedIndCount} industries`); }
+    if (coTextEl) { coTextEl.textContent = trigCo; coTextEl.setAttribute('data-ui-tip', `Click to switch companies in ${liveInd}`); }
 
     const coHeadEl = $('companySwitchCoHead');
     if (coHeadEl) {
-      coHeadEl.textContent = indFilter === 'all'
-        ? `Operating Companies (${allowedNames.length} Permitted)`
-        : `${indFilter} (${(allowedIndGroups.find(g => g.id === indFilter) || { permittedCos: [] }).permittedCos.length} Permitted)`;
+      coHeadEl.textContent = q
+        ? `Matching Companies (${visibleBtnCount})`
+        : (indFilter === 'all'
+          ? `Operating Companies (${allowedNames.length} Permitted)`
+          : `${indFilter} (${(allowedIndGroups.find(g => g.id === indFilter) || { permittedCos: [] }).permittedCos.length} Permitted)`);
     }
     const footEl = $('companySwitchFootStatus');
     if (footEl) {
       footEl.textContent = q
-        ? `Showing ${visibleBtnCount} matching options · ${allowedNames.length} companies across ${allowedIndCount} ${allowedIndCount === 1 ? 'industry' : 'industries'}`
-        : `${allowedIndCount} ${allowedIndCount === 1 ? 'Industry' : 'Industries'} · ${allowedNames.length} ${allowedNames.length === 1 ? 'Company' : 'Companies'} Permitted (RLS)`;
+        ? `Showing ${visibleBtnCount} match${visibleBtnCount === 1 ? '' : 'es'} · Press Enter to select`
+        : `Active: ${trigInd} · ${trigCo} (${allowedIndCount} ${allowedIndCount === 1 ? 'Industry' : 'Industries'} · ${allowedNames.length} ${allowedNames.length === 1 ? 'Company' : 'Companies'} RLS)`;
     }
     const demoBtn = $('companySwitchScalePreviewBtn');
     if (demoBtn) {
@@ -76822,7 +77064,6 @@
         if (searchEl) setTimeout(() => { try { searchEl.focus({ preventScroll: true }); } catch (_) {} }, 20);
       } else if (searchEl && searchEl.value) {
         searchEl.value = '';
-        STATE.companySwitchIndFilter = 'all';
         syncCompanySwitchUi();
       }
     };
@@ -76830,7 +77071,17 @@
     if (trigBtn) {
       trigBtn.addEventListener('click', e => {
         e.stopPropagation();
-        setOpen(popEl ? popEl.hidden : !switchEl.classList.contains('open'));
+        const willOpen = popEl ? popEl.hidden : !switchEl.classList.contains('open');
+        if (willOpen) {
+          const clickedCoSeg = e.target && e.target.closest && e.target.closest('.ep-seg-co');
+          const clickedIndSeg = e.target && e.target.closest && e.target.closest('.ep-seg-ind');
+          if (clickedCoSeg) {
+            STATE.companySwitchIndFilter = getActiveIndustry(STATE.company);
+          } else if (clickedIndSeg) {
+            STATE.companySwitchIndFilter = 'all';
+          }
+        }
+        setOpen(willOpen);
       });
     }
     if (doneBtn) {
@@ -76842,6 +77093,37 @@
     if (searchEl) {
       searchEl.addEventListener('input', () => {
         syncCompanySwitchUi();
+      });
+      searchEl.addEventListener('keydown', e => {
+        const visibleBtns = Array.from(switchEl.querySelectorAll('.entity-btn:not([hidden])'));
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          if (!visibleBtns.length) return;
+          e.preventDefault();
+          const curIdx = visibleBtns.findIndex(b => b.classList.contains('kbd-focus'));
+          visibleBtns.forEach(b => b.classList.remove('kbd-focus'));
+          const nextIdx = e.key === 'ArrowDown'
+            ? (curIdx < visibleBtns.length - 1 ? curIdx + 1 : 0)
+            : (curIdx > 0 ? curIdx - 1 : visibleBtns.length - 1);
+          const targetBtn = visibleBtns[nextIdx];
+          if (targetBtn) {
+            targetBtn.classList.add('kbd-focus');
+            try { targetBtn.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+          }
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const focusedBtn = switchEl.querySelector('.entity-btn.kbd-focus:not([hidden])') || visibleBtns[0];
+          if (focusedBtn) {
+            selectCompanyScope(focusedBtn.getAttribute('data-company'), true);
+          }
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          if (searchEl.value) {
+            searchEl.value = '';
+            syncCompanySwitchUi();
+          } else {
+            setOpen(false);
+          }
+        }
       });
     }
     if (allBtn) {
@@ -82288,26 +82570,82 @@
                 </button>
               </div>
 
-              ${draftShiftId === 'custom' ? `
-                <div class="ssm-custom-bar">
-                  <div class="ssm-field">
-                    <label for="ssmCustomName">Custom Label</label>
-                    <input type="text" id="ssmCustomName" value="${esc(draftCustomName)}" placeholder="e.g. Split / Early Shift">
+              ${(() => {
+                const tlSStr = draftShiftId === 'custom'
+                  ? normalize24hClockTime(draftCustomStart, '08:00')
+                  : normalize24hClockTime(curShiftObj.start_time, '08:00');
+                const tlEStr = draftShiftId === 'custom'
+                  ? normalize24hClockTime(draftCustomEnd, '16:00')
+                  : normalize24hClockTime(curShiftObj.end_time, '16:00');
+                const tlSMin = parseClockMinutes(tlSStr) ?? 480;
+                const tlEMin = parseClockMinutes(tlEStr) ?? 960;
+                const tlOvn = tlEMin <= tlSMin;
+                const tlDur = Math.round((((tlOvn ? (tlEMin + 1440 - tlSMin) : (tlEMin - tlSMin)) / 60)) * 100) / 100;
+                const sPct = Math.max(0, Math.min(100, (tlSMin / 1440) * 100));
+                const ePct = Math.max(0, Math.min(100, (tlEMin / 1440) * 100));
+                const ticksHtml = [0, 3, 6, 8, 12, 16, 18, 21, 24].map(h => {
+                  const pct = (h / 24) * 100;
+                  const lbl = h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`;
+                  return `<span class="ssm-tl-tick mono" style="left:${pct.toFixed(2)}%"><i></i><b>${lbl}</b></span>`;
+                }).join('');
+                const customPresets = [
+                  { s: '07:00', e: '15:00', lbl: '07:00–15:00 (8h)' },
+                  { s: '08:00', e: '16:00', lbl: '08:00–16:00 (8h)' },
+                  { s: '08:00', e: '17:00', lbl: '08:00–17:00 (9h)' },
+                  { s: '09:00', e: '17:00', lbl: '09:00–17:00 (8h)' },
+                  { s: '07:00', e: '16:00', lbl: '07:00–16:00 (9h)' },
+                  { s: '19:00', e: '03:00', lbl: '19:00–03:00 (8h Night)' }
+                ];
+                return `
+                  <div class="ssm-timeline-studio" id="ssmInteractiveTimeline">
+                    <div class="ssm-tl-header">
+                      <span class="ssm-tl-title">Interactive 24-Hour Shift Timeline <small class="muted">Drag IN / OUT handles or click any time input below</small></span>
+                      <span class="ssm-tl-live-pill mono" id="ssmTlLiveSummary">IN ${esc(tlSStr)} → OUT ${esc(tlEStr)} · ${fmtNum(tlDur, 1)}h${tlOvn ? ' (+1d)' : ''}</span>
+                    </div>
+                    <div class="ssm-tl-track-wrap">
+                      <div class="ssm-tl-track" id="ssmTimelineTrack">
+                        <div class="ssm-tl-seg is-primary" id="ssmTlSegA" style="left:${sPct.toFixed(2)}%;width:${(tlOvn ? (100 - sPct) : Math.max(0, ePct - sPct)).toFixed(2)}%"></div>
+                        <div class="ssm-tl-seg is-overnight" id="ssmTlSegB" style="left:0%;width:${(tlOvn ? ePct : 0).toFixed(2)}%" ${tlOvn ? '' : 'hidden'}></div>
+                        <button type="button" class="ssm-tl-handle is-start" data-ssm-tl-handle="start" style="left:${sPct.toFixed(2)}%" aria-label="Drag Shift Start (24h)">
+                          <span class="ssm-tl-tag mono" id="ssmTlStartTag">IN ${esc(tlSStr)}</span>
+                        </button>
+                        <button type="button" class="ssm-tl-handle is-end" data-ssm-tl-handle="end" style="left:${ePct.toFixed(2)}%" aria-label="Drag Shift End (24h)">
+                          <span class="ssm-tl-tag mono" id="ssmTlEndTag">OUT ${esc(tlEStr)}</span>
+                        </button>
+                      </div>
+                      <div class="ssm-tl-ruler">${ticksHtml}</div>
+                    </div>
                   </div>
-                  <div class="ssm-field">
-                    <label for="ssmCustomStart">Shift Start (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomStart" value="${esc(normalize24hClockTime(draftCustomStart, '08:00'))}">
-                  </div>
-                  <div class="ssm-field">
-                    <label for="ssmCustomEnd">Shift End (24h)</label>
-                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomEnd" value="${esc(normalize24hClockTime(draftCustomEnd, '16:00'))}">
-                  </div>
-                  <div class="ssm-field">
-                    <label>Calculated Shift</label>
-                    <div class="ssm-calc-pill mono">${fmtNum(cDur, 1)}h${cOvernight ? ' · Overnight (+1d)' : ' · Same Day'}</div>
-                  </div>
-                </div>
-              ` : ''}
+                  ${draftShiftId === 'custom' ? `
+                    <div class="ssm-custom-bar">
+                      <div class="ssm-field">
+                        <label for="ssmCustomName">Custom Label</label>
+                        <input type="text" id="ssmCustomName" value="${esc(draftCustomName)}" placeholder="e.g. Split / Early Shift">
+                      </div>
+                      <div class="ssm-field">
+                        <label for="ssmCustomStart">Shift Start (24h)</label>
+                        <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomStart" value="${esc(tlSStr)}">
+                      </div>
+                      <div class="ssm-field">
+                        <label for="ssmCustomEnd">Shift End (24h)</label>
+                        <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomEnd" value="${esc(tlEStr)}">
+                      </div>
+                      <div class="ssm-field">
+                        <label>Calculated Shift</label>
+                        <div class="ssm-calc-pill mono">${fmtNum(cDur, 1)}h${cOvernight ? ' · Overnight (+1d)' : ' · Same Day'}</div>
+                      </div>
+                      <div class="ssm-custom-presets-row">
+                        <span class="ssm-cp-lbl">Quick 24h Windows:</span>
+                        <div class="ssm-cp-chips">
+                          ${customPresets.map(cp => `
+                            <button type="button" class="kiosk-qchip mono ${tlSStr === cp.s && tlEStr === cp.e ? 'active' : ''}" data-ssm-custom-preset="${cp.s}|${cp.e}">${cp.lbl}</button>
+                          `).join('')}
+                        </div>
+                      </div>
+                    </div>
+                  ` : ''}
+                `;
+              })()}
 
               <div class="ssm-days-row">
                 <div class="ssm-days-left">
@@ -83146,6 +83484,31 @@
         }
         const calcPill = modal.querySelector('.ssm-calc-pill');
         if (calcPill) calcPill.textContent = `${fmtNum(dur, 1)}h${ovn ? ' · Overnight (+1d)' : ' · Same Day'}`;
+        const sPct = Math.max(0, Math.min(100, ((sMin != null ? sMin : 480) / 1440) * 100));
+        const ePct = Math.max(0, Math.min(100, ((eMin != null ? eMin : 960) / 1440) * 100));
+        const segA = $('ssmTlSegA');
+        const segB = $('ssmTlSegB');
+        const hStart = modal.querySelector('[data-ssm-tl-handle="start"]');
+        const hEnd = modal.querySelector('[data-ssm-tl-handle="end"]');
+        const tStart = $('ssmTlStartTag');
+        const tEnd = $('ssmTlEndTag');
+        const tlSum = $('ssmTlLiveSummary');
+        if (segA) {
+          segA.style.left = `${sPct.toFixed(2)}%`;
+          segA.style.width = `${(ovn ? (100 - sPct) : Math.max(0, ePct - sPct)).toFixed(2)}%`;
+        }
+        if (segB) {
+          segB.hidden = !ovn;
+          segB.style.width = `${(ovn ? ePct : 0).toFixed(2)}%`;
+        }
+        if (hStart) hStart.style.left = `${sPct.toFixed(2)}%`;
+        if (hEnd) hEnd.style.left = `${ePct.toFixed(2)}%`;
+        if (tStart) tStart.textContent = `IN ${draftCustomStart}`;
+        if (tEnd) tEnd.textContent = `OUT ${draftCustomEnd}`;
+        if (tlSum) tlSum.textContent = `IN ${draftCustomStart} → OUT ${draftCustomEnd} · ${fmtNum(dur, 1)}h${ovn ? ' (+1d)' : ''}`;
+        modal.querySelectorAll('[data-ssm-custom-preset]').forEach(chip => {
+          chip.classList.toggle('active', chip.getAttribute('data-ssm-custom-preset') === `${draftCustomStart}|${draftCustomEnd}`);
+        });
         const customCard = modal.querySelector('[data-ssm-shift="custom"]');
         if (customCard) {
           const hrsEl = customCard.querySelector('.ssm-sc-hrs');
@@ -83167,6 +83530,74 @@
           }
         }
       };
+
+      modal.querySelectorAll('[data-ssm-custom-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const [ps, pe] = String(btn.getAttribute('data-ssm-custom-preset') || '08:00|16:00').split('|');
+          draftShiftId = 'custom';
+          draftCustomStart = normalize24hClockTime(ps, '08:00');
+          draftCustomEnd = normalize24hClockTime(pe, '16:00');
+          if ($('ssmCustomStart')) $('ssmCustomStart').value = draftCustomStart;
+          if ($('ssmCustomEnd')) $('ssmCustomEnd').value = draftCustomEnd;
+          syncSsmTimingDomInPlace();
+        });
+      });
+
+      const tlTrack = $('ssmTimelineTrack');
+      if (tlTrack) {
+        const minToHHMM = m => {
+          const clamped = ((Math.round(m / 15) * 15) % 1440 + 1440) % 1440;
+          return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+        };
+        modal.querySelectorAll('[data-ssm-tl-handle]').forEach(handle => {
+          const which = handle.getAttribute('data-ssm-tl-handle');
+          const startDrag = startEv => {
+            startEv.preventDefault();
+            startEv.stopPropagation();
+            syncLiveInputs();
+            const needsCustomSwitch = draftShiftId !== 'custom';
+            if (needsCustomSwitch) {
+              const curSt = liveShiftTypes.find(s => s.id === draftShiftId);
+              if (curSt) {
+                draftCustomStart = normalize24hClockTime(curSt.start_time, '08:00');
+                draftCustomEnd = normalize24hClockTime(curSt.end_time, '16:00');
+              }
+              draftShiftId = 'custom';
+            }
+            handle.classList.add('is-dragging');
+            const onMove = moveEv => {
+              const clientX = moveEv.touches && moveEv.touches[0] ? moveEv.touches[0].clientX : moveEv.clientX;
+              const rect = tlTrack.getBoundingClientRect();
+              if (!rect.width) return;
+              const ratio = Math.max(0, Math.min(0.9896, (clientX - rect.left) / rect.width));
+              const hhmm = minToHHMM(ratio * 1440);
+              if (which === 'start') {
+                draftCustomStart = hhmm;
+                if ($('ssmCustomStart')) $('ssmCustomStart').value = hhmm;
+              } else {
+                draftCustomEnd = hhmm;
+                if ($('ssmCustomEnd')) $('ssmCustomEnd').value = hhmm;
+              }
+              syncSsmTimingDomInPlace();
+            };
+            const onUp = () => {
+              handle.classList.remove('is-dragging');
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+              window.removeEventListener('touchmove', onMove);
+              window.removeEventListener('touchend', onUp);
+              if (needsCustomSwitch) renderModalInner();
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            window.addEventListener('touchmove', onMove, { passive: true });
+            window.addEventListener('touchend', onUp);
+          };
+          handle.addEventListener('mousedown', startDrag);
+          handle.addEventListener('touchstart', startDrag, { passive: false });
+        });
+      }
 
       ['ssmCustomStart', 'ssmCustomEnd'].forEach(id => {
         $(id)?.addEventListener('input', syncSsmTimingDomInPlace);
