@@ -351,7 +351,8 @@ const Face = (() => {
     cv._scaleX = sw / cw;
     cv._scaleY = sh / ch;
     try {
-      cv.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
+      const ctx = cv.getContext("2d", { willReadFrequently: true }) || cv.getContext("2d");
+      ctx.drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
     } catch (_) {
       return null;
     }
@@ -439,18 +440,19 @@ const Face = (() => {
   }
 
   let boostCanvas = null;
+  let boostLut = null;
   let cropCanvas = null;
   let preferBoostPass = false;
   let liveMissCount = 0;
   async function detectOne(src, allowCropFallback = false) {
     if (!ready) return null;
     const isLiveVideo = !!(src && src.tagName === "VIDEO");
-    const frame = frameToCanvas(src, isLiveVideo && !allowCropFallback ? 320 : 480);
+    const frame = frameToCanvas(src, isLiveVideo && !allowCropFallback ? 288 : 480);
     if (!frame) return null;
 
     const buildBoostFrame = () => {
-      const bw = frameWidth(frame) || 320;
-      const bh = frame.videoHeight || frame.naturalHeight || frame.height || 240;
+      const bw = frameWidth(frame) || 288;
+      const bh = frame.videoHeight || frame.naturalHeight || frame.height || 216;
       const bcv = boostCanvas || (boostCanvas = document.createElement("canvas"));
       if (bcv.width !== bw) bcv.width = bw;
       if (bcv.height !== bh) bcv.height = bh;
@@ -458,10 +460,27 @@ const Face = (() => {
       bcv._scaleY = frame._scaleY || 1;
       bcv._offsetX = frame._offsetX || 0;
       bcv._offsetY = frame._offsetY || 0;
-      const bctx = bcv.getContext("2d");
-      bctx.filter = "brightness(1.40) contrast(1.20)";
+      const bctx = bcv.getContext("2d", { willReadFrequently: true }) || bcv.getContext("2d");
       bctx.drawImage(frame, 0, 0, bw, bh);
-      bctx.filter = "none";
+      // Pure CPU LUT shadow-lift (avoids ctx.filter GPU Skia pipeline which wedges Android SurfaceTexture)
+      try {
+        if (!boostLut) {
+          boostLut = new Uint8ClampedArray(256);
+          for (let i = 0; i < 256; i++) {
+            const b = i * 1.38;
+            boostLut[i] = Math.max(0, Math.min(255, Math.round((b - 128) * 1.18 + 128)));
+          }
+        }
+        const img = bctx.getImageData(0, 0, bw, bh);
+        const d = img.data;
+        const lut = boostLut;
+        for (let i = 0, len = d.length; i < len; i += 4) {
+          d[i] = lut[d[i]];
+          d[i + 1] = lut[d[i + 1]];
+          d[i + 2] = lut[d[i + 2]];
+        }
+        bctx.putImageData(img, 0, 0);
+      } catch (_) {}
       return bcv;
     };
 
