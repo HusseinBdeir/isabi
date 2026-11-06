@@ -177,9 +177,14 @@
     re_properties: s('<rect x="3.5" y="4" width="7" height="16" rx="1"/><rect x="13.5" y="8" width="7" height="12" rx="1"/><line x1="6" y1="8" x2="8" y2="8"/><line x1="6" y1="12" x2="8" y2="12"/>'),
     re_workorders: s('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
     ins_policies: s('<path d="M12 2.5 19.5 5.5v6c0 5-3.3 8.6-7.5 10-4.2-1.4-7.5-5-7.5-10v-6L12 2.5z"/><path d="m9 12.2 2 2 4.2-4.2"/>'),
+    ins_renewals: s('<path d="M21 12a9 9 0 0 0-15.4-6.4L3 8"/><polyline points="3 3.5 3 8 7.5 8"/><path d="M3 12a9 9 0 0 0 15.4 6.4L21 16"/><polyline points="16.5 16 21 16 21 20.5"/><polyline points="12 7.5 12 12 15 13.8"/>'),
+    ins_items: s('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="2.2"/><path d="M5.5 16.5c.5-1.8 1.7-2.8 3-2.8s2.5 1 3 2.8"/><line x1="14" y1="9" x2="18.5" y2="9"/><line x1="14" y1="13" x2="18.5" y2="13"/>'),
     ins_billing: s('<rect x="2.5" y="5" width="19" height="14" rx="2"/><line x1="2.5" y1="10" x2="21.5" y2="10"/><line x1="6.5" y1="15" x2="11.5" y2="15"/>'),
+    ins_remittances: s('<path d="M3 10h18"/><path d="M5 10v8"/><path d="M10 10v8"/><path d="M14 10v8"/><path d="M19 10v8"/><polygon points="12 3 2 8 22 8 12 3"/><line x1="2" y1="20" x2="22" y2="20"/>'),
+    ins_statements: s('<path d="M4 3h13l3 3v15l-2.5-1.6L15 21l-2.5-1.6L10 21l-2.5-1.6L5 21V4a1 1 0 0 1 1-1z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/>'),
     ins_claims: s('<circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12.5"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/>'),
-    ins_catalogue: s('<rect x="3" y="3.5" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20.5"/>')
+    ins_catalogue: s('<rect x="3" y="3.5" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20.5"/>'),
+    ins_agreements: s('<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><line x1="16" y1="8" x2="8" y2="16"/><rect x="3" y="3" width="18" height="18" rx="2.5"/>')
   };
 
   function svg(name, extraCls) {

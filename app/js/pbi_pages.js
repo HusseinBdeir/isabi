@@ -1558,12 +1558,19 @@
       { id: 'usd', label: 'USD Salaries', fn: r => String(r.currency || 'USD').toUpperCase() !== 'LBP' && !r.lbp_amount },
       { id: 'lbp', label: 'LBP Salaries (LL)', fn: r => String(r.currency || '').toUpperCase() === 'LBP' || Number(r.lbp_amount || 0) > 0 }
     ] },
-    { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['set_date', 'tx_date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['employments', 'salaries'], views: [
+    { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['set_date', 'tx_date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['work_shifts', 'employments', 'salaries'], views: [
       { id: 'all', label: 'All Attendance Rows' },
       { id: 'ot', label: 'Overtime', fn: r => Number(r.overtime_hours || 0) > 0 || /^overtime$/i.test(r.type || r.status || '') },
       { id: 'late', label: 'Lateness', fn: r => Number(r.late_hours || 0) > 0 || /^lateness$/i.test(r.type || r.status || '') },
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
+    ] },
+    { key: 'work_shifts', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_attendance', label: 'Regular Shift & Clock Timings', singularLabel: 'Shift & Clock Timing', dvn: 'bhf_workshift', form: 'workshift', pbiPage: 'p12_payroll', chronoSeries: true, seriesKeys: ['company', 'shift_code'], cols: ['name', 'company', 'is_bu_default', 'start_time', 'end_time', 'hours', 'day_schedule_summary', 'workdays_label', 'grace_min', 'early_leave_grace_min', 'associated_staff_count', 'status', 'start_date', 'end_date', 'notes'], relTables: ['attendance', 'employments', 'staff_members'], views: [
+      { id: 'all', label: 'All Shifts' },
+      { id: 'bu_defaults', label: 'BU Defaults', fn: r => Boolean(r && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)) },
+      { id: 'day_diff', label: 'Day-Specific (Sat)', fn: r => Boolean(r && (r.sat_diff_enabled || (r.day_timings && Object.keys(r.day_timings).length > 0))) },
+      { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
+      { id: 'historical', label: 'Historical Windows', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) }
     ] },
     { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'reimbursement', 'package_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'staff_assignments', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_contracts', label: 'Staff Role & Equipment Log', singularLabel: 'Role & Equipment Assignment', dvn: 'bhf_staffassignment', form: 'staffassignment', chronoSeries: true, seriesKeys: ['staff'], cols: ['name', 'company', 'staff', 'role', 'role_category', 'equipment', 'status', 'start_date', 'end_date', 'notes'], relTables: ['staff_members', 'staff_roles', 'employments', 'equipment'], views: [
@@ -1879,6 +1886,18 @@
         ? `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>Yes</span></span>`
         : '<span class="muted">No</span>';
     }
+    if (c === 'is_bu_default' && tableKey === 'work_shifts') {
+      const isDef = /^yes$/i.test(String(v || cell).trim()) || v === true || v === 1;
+      return isDef
+        ? `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('check')}<span>BU Default</span></span>`
+        : '<span class="muted">Optional</span>';
+    }
+    if (c === 'day_schedule_summary' && tableKey === 'work_shifts' && cell && cell !== '—') {
+      const hasCustom = /sat|mon|tue|wed|thu|fri|sun/i.test(cell) && !/^standard/i.test(cell);
+      return hasCustom
+        ? `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('clock')}<span>${esc(cell)}</span></span>`
+        : `<span class="muted">${esc(cell)}</span>`;
+    }
     if (c === 'rem_payment' && tableKey === 'staff_members' && v != null && v !== '') {
       const n = Number(v || 0);
       if (Math.abs(n) > 0.005) {
@@ -1906,7 +1925,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1934,6 +1953,7 @@
       case 'staff_roles':
         return { key: 'staff_count', dir: 'desc' };
       case 'staff_assignments':
+      case 'work_shifts':
         return { key: 'start_date', dir: 'desc' };
       case 'sites':
         return { key: vw === 'delivery' ? 'sales_loads' : 'raw_loads', dir: 'desc' };
@@ -2933,6 +2953,28 @@
       if (c === 'role_category') {
         const re = rel && rel.roleByName && rel.roleByName[norm(r.role)];
         return r.role_category || (re && re.category) || inferRoleCatPbi(r.role);
+      }
+    }
+    if (tableKey === 'work_shifts') {
+      if (c === 'status') {
+        const endIso = String(r.end_date || '').slice(0, 10);
+        return (!endIso || endIso >= localTodayPbi()) ? 'Active' : 'Historical';
+      }
+      if (c === 'is_bu_default') {
+        return (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1) ? 'Yes' : 'No';
+      }
+      if (c === 'day_schedule_summary') {
+        if (r.day_schedule_summary) return r.day_schedule_summary;
+        if (r.sat_diff_enabled && r.sat_start_time && r.sat_end_time) {
+          return `Sat ${r.sat_start_time}-${r.sat_end_time}`;
+        }
+        return 'Standard All Days';
+      }
+      if (c === 'workdays_label') {
+        return r.workdays_label || r.working_days || 'Mon-Sat';
+      }
+      if (c === 'associated_staff_count') {
+        return Number(r.associated_staff_count || 0);
       }
     }
     if (tableKey === 'staff_roles') {
@@ -9533,6 +9575,7 @@
     overtime_rates: 'overtime',
     salaries: 'payroll',
     attendance: 'payroll_attendance',
+    work_shifts: 'clock',
     employments: 'payroll_contracts',
     staff_assignments: 'staffassignment',
     freelance_entries: 'payroll',
@@ -9608,6 +9651,7 @@
     overtime_rates: { view: 'fleet_drivers', label: 'Drivers & Overtime' },
     salaries: { view: 'payroll', label: 'Payroll & Workforce' },
     attendance: { view: 'payroll_attendance', label: 'Attendance & Biometrics' },
+    work_shifts: { view: 'payroll_attendance', label: 'Attendance & Biometrics' },
     employments: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
     staff_assignments: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
     freelance_entries: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
@@ -9931,7 +9975,7 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
-                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
+                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments' || meta.key === 'work_shifts') && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
@@ -10122,7 +10166,15 @@
     credit: 'Total Credit ($)',
     balance: 'Net Balance ($)',
     set_date: 'Set Date',
-    tx_date: 'Tx Date'
+    tx_date: 'Tx Date',
+    is_bu_default: 'BU Default',
+    start_time: 'Start (IN)',
+    end_time: 'End (OUT)',
+    day_schedule_summary: 'Day-Specific Schedule',
+    workdays_label: 'Workdays',
+    grace_min: 'IN Tol. (m)',
+    early_leave_grace_min: 'OUT Tol. (m)',
+    associated_staff_count: 'Staff Assigned'
   };
 
   function hubColLabel(c, tableKey) {
@@ -10151,6 +10203,7 @@
       if (tableKey === 'staff_members') return 'Staff Member';
       if (tableKey === 'staff_roles') return 'Staff Role';
       if (tableKey === 'staff_assignments') return 'Assignment Ref';
+      if (tableKey === 'work_shifts') return 'Shift Name';
       if (tableKey === 'customers') return 'Customer';
       if (tableKey === 'sites') return 'Site';
       if (tableKey === 'regions') return 'Region';
@@ -10648,7 +10701,7 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
-                    else if ((connKey === 'recurring_expenses' || connKey === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
+                    else if ((connKey === 'recurring_expenses' || connKey === 'staff_assignments' || connKey === 'work_shifts') && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
@@ -10883,7 +10936,7 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
-                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
+                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments' || meta.key === 'work_shifts') && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'

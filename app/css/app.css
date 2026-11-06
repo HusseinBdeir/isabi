@@ -29874,3 +29874,125 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   }
 }
 
+/* ============================================================================
+ * 24-HOUR CLOCK PICKER (.pa-time24-wrap / .pa-time24-menu)
+ * Enforces strict 24-hour HH:MM display (00:00–23:59) with zero AM/PM across
+ * Staff Schedule & Rules, Shift Type editor, Smart Entry & 360° Modify Drawer.
+ * ============================================================================ */
+.pa-time24-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.pa-time24-wrap input.pa-time24-input {
+  width: 100%;
+  padding-right: 30px !important;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+}
+.pa-time24-wrap .pa-time24-clock {
+  color: var(--muted);
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.pa-time24-wrap .pa-time24-clock:hover,
+.pa-time24-wrap.open .pa-time24-clock {
+  color: var(--brass-deep, #9A7332);
+  background: var(--brass-soft, rgba(200, 157, 84, 0.14));
+  transform: translateY(-50%) !important;
+}
+.pa-suggest-menu.pa-time24-menu {
+  min-width: 196px;
+  max-width: 240px;
+  max-height: none;
+  overflow: hidden;
+  padding: 6px;
+}
+.pa-time24-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.pa-time24-hdr > span:first-child,
+.pa-time24-hdr > span:nth-child(2) {
+  flex: 1;
+  text-align: center;
+}
+.pa-time24-clear-btn {
+  appearance: none;
+  border: 1px solid var(--line-strong, var(--line));
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pa-time24-clear-btn:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.pa-time24-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 6px;
+}
+.pa-time24-col {
+  max-height: 204px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 2px;
+}
+.pa-time24-col:first-child {
+  border-right: 1px solid var(--line);
+  padding-right: 5px;
+}
+.pa-time24-cell {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 0;
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.pa-time24-cell:hover {
+  background: var(--brass-soft, rgba(200, 157, 84, 0.14));
+  border-color: rgba(200, 157, 84, 0.35);
+}
+.pa-time24-cell.active {
+  background: var(--brass, #C89D54);
+  color: #0B1730;
+  font-weight: 800;
+  border-color: var(--brass-deep, #9A7332);
+}
+.ssm-section:has(.pa-suggest-wrap.open),
+.ssm-custom-bar:has(.pa-suggest-wrap.open),
+.ssm-ot-subpanel:has(.pa-suggest-wrap.open),
+.ssm-field:has(.pa-suggest-wrap.open) {
+  position: relative;
+  z-index: 60;
+}
+
+

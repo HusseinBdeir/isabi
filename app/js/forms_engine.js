@@ -100,6 +100,7 @@
       forms: [
         { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', hubView: 'payroll', pbiPage: 'p12_payroll', title: 'New Salary Payment or Bonus' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Staff Attendance' },
+        { id: 'workshift', label: 'Shift & Clock Timing', badge: 'bhf_workshift', crKey: 'work_shifts', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Shift & Clock Timing' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Employment Contract' },
         { id: 'staffassignment', label: 'Role & Equipment Log', badge: 'bhf_staffassignment', crKey: 'staff_assignments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Staff Role & Equipment Assignment' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Freelance Work' },
@@ -789,6 +790,9 @@
     return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.span2 ? ' span-2' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}${opts.labelRightHtml || ''}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
+    if (type === 'time') {
+      return `<input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="${id}" value="${esc(value == null ? '' : value)}" autocomplete="off" ${attrs}>`;
+    }
     return `<input type="${type}" id="${id}" value="${esc(value == null ? '' : value)}" autocomplete="off" ${attrs}>`;
   }
   function sel(id, options, value, attrs = '') {
@@ -1975,6 +1979,83 @@
           <div><small>Role Category</small><b id="calc_sa_cat">-</b></div>
           <div><small>Assigned Equipment</small><b id="calc_sa_equip">Unassigned</b></div>
           <div><small>Effective Window</small><b id="calc_sa_win">Open</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'workshift') {
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${secHdr('1. Regular Shift, BU Default & Effective Window', 'Configure regular clock timings, set the default shift for the selected BU, or log a new effective-dated shift timing change')}
+          ${companyField}
+          ${fld('Shift Name *', inp('f_shift_name', 'text', '', 'list="dl_work_shifts" placeholder="e.g. Day Shift, Extended Day, Night Shift..."') + dl('dl_work_shifts', ['Day Shift', 'Extended Day', 'Night Shift', 'Morning Shift', 'Afternoon Shift', 'Site Crew Shift']), { id: 'wrap_ws_name', hintId: 'hint_ws_name', hint: '' })}
+          ${fld('Short Tag', inp('f_shift_short', 'text', '', 'placeholder="e.g. Day, Ext Day, Night"'), { id: 'wrap_ws_short' })}
+          ${fld('BU Default Shift *', sel('f_is_bu_default', [
+            ['No', 'No (Additional / Optional Shift)'],
+            ['Yes', 'Yes (Default Shift for Selected BU)']
+          ], 'No'), { id: 'wrap_ws_budef', hintId: 'hint_ws_budef', hint: 'Default shift automatically applies to all staff in this BU unless overridden' })}
+          ${fld('Effective Start Date *', inp('f_date', 'date', today), { id: 'wrap_ws_startdate', hintId: 'hint_ws_dates', hint: '' })}
+          ${fld('Effective End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_ws_enddate' })}
+          <div id="workShiftContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Regular Start Time (IN) *', inp('f_in_time', 'time', '08:00'), { id: 'wrap_ws_in' })}
+          ${fld('Regular End Time (OUT) *', inp('f_out_time', 'time', '16:00'), { id: 'wrap_ws_out' })}
+          ${fld('Scheduled Workdays', sel('f_working_days', [
+            ['Mon,Tue,Wed,Thu,Fri,Sat', 'Mon to Sat (6 Days)'],
+            ['Mon,Tue,Wed,Thu,Fri', 'Mon to Fri (5 Days)'],
+            ['Mon,Tue,Wed,Thu,Fri,Sat,Sun', 'Mon to Sun (7 Days)']
+          ], 'Mon,Tue,Wed,Thu,Fri,Sat'), { id: 'wrap_ws_days' })}
+          ${fld('Clock-IN Tolerance (min)', inp('f_grace_min', 'number', '10', 'min="0" max="180" step="1"'), { id: 'wrap_ws_grace' })}
+          ${fld('Clock-OUT Tolerance (min)', inp('f_early_grace_min', 'number', '10', 'min="0" max="180" step="1"'), { id: 'wrap_ws_early_grace' })}
+          ${fld('Overtime Eligibility Default', sel('f_ot_mode', [
+            ['none', 'No Overtime (0h)'],
+            ['after_end', 'After Shift End + Grace'],
+            ['after_hours', 'After Scheduled Shift Hours'],
+            ['early_and_late', 'Early Arrival + Late Stay']
+          ], 'none'), { id: 'wrap_ws_otmode' })}
+          ${secHdr('2. Day-Specific Shift Timings (Saturday / Weekday Overrides)', 'Set different start and leave times for Saturday or other weekdays (for example starting earlier and leaving earlier on Saturday)')}
+          ${fld('Different Timing by Day (e.g. Saturday)', sel('f_sat_diff', [
+            ['No', 'No (Same Timing Every Scheduled Workday)'],
+            ['Yes', 'Yes (Custom Timing for Saturday / Specific Days)']
+          ], 'No'), { id: 'wrap_ws_sat_diff' })}
+          ${fld('Saturday Start Time (IN)', inp('f_sat_start', 'time', '07:00'), { id: 'wrap_ws_sat_start' })}
+          ${fld('Saturday End Time (OUT)', inp('f_sat_end', 'time', '14:00'), { id: 'wrap_ws_sat_end' })}
+          <div class="form-field span-3" id="wrap_ws_day_matrix">
+            <label>Optional Other Weekday Overrides (Leave blank to use Regular Start/End Time)</label>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev-2)">
+              ${[
+                { idx: '1', lbl: 'Monday' },
+                { idx: '2', lbl: 'Tuesday' },
+                { idx: '3', lbl: 'Wednesday' },
+                { idx: '4', lbl: 'Thursday' },
+                { idx: '5', lbl: 'Friday' },
+                { idx: '6', lbl: 'Saturday' },
+                { idx: '0', lbl: 'Sunday' }
+              ].map(d => `
+                <div style="display:flex;flex-direction:column;gap:3px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:var(--bg-card)">
+                  <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">${d.lbl}</span>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="f_day_in_${d.idx}" data-ws-day-in="${d.idx}" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} Start Time (24h)">
+                    <span style="font-size:10px;color:var(--muted)">to</span>
+                    <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="f_day_out_${d.idx}" data-ws-day-out="${d.idx}" style="font-size:11px;padding:3px 4px;width:100%" title="${d.lbl} End Time (24h)">
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <input type="hidden" id="f_day_timings_json" value="">
+          </div>
+          ${secHdr('3. Retroactive Backfill & Notes', 'When shift timings change, associated staff schedules and attendance records from Effective Start Date onward are automatically updated')}
+          <div class="form-field check-field span-3" id="wrap_ws_backfill">
+            <input type="checkbox" id="f_backfill_shift" checked>
+            <label for="f_backfill_shift" id="lbl_backfill_shift">Backfill all staff associated with this shift (and BU default staff) plus attendance records from the Effective Start Date</label>
+          </div>
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Reason for shift timing update, seasonal Saturday schedule, or BU policy note..."'), { id: 'wrap_ws_notes', span: true })}
+        </div>
+        <div class="live-calc" id="workShiftLiveCalc">
+          <div><small>Regular Window</small><b id="calc_ws_window">08:00 - 16:00 (8.0h)</b></div>
+          <div><small>Day-Specific Timing</small><b id="calc_ws_day_diff">Standard All Days</b></div>
+          <div><small>BU Default &amp; Staff</small><b id="calc_ws_staff_cnt">Custom Shift</b></div>
+          <div><small>Effective Window</small><b id="calc_ws_eff_win">Open</b></div>
         </div>
       `;
     }

@@ -76,8 +76,8 @@
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
   const DEFAULT_USERS = [
-    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', pin_code: '3333', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', pin_code: '4444', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', pin_code: '4545', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
@@ -93,7 +93,8 @@
     'Bdeir Holding',
     'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum',
     'Korri Auto', 'Shacman',
-    'Properties', '4235 Company S.A.L'
+    'Properties', '4235 Company S.A.L',
+    'Insurance Company'
   ];
   function ensureCanonicalMultiIndustrySeat(u) {
     if (!u || typeof u !== 'object') return u;
@@ -396,7 +397,7 @@
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'items',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
     'equipment_defects', 'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
-    'drivers', 'company_drivers', 'staff_members', 'staff_roles', 'staff_assignments', 'expense_categories', 'expense_subcategories',
+    'drivers', 'company_drivers', 'staff_members', 'staff_roles', 'staff_assignments', 'work_shifts', 'expense_categories', 'expense_subcategories',
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
     'conversions', 'jv_partnerships', 'jv_distributions',
@@ -413,7 +414,7 @@
     equipment_defects: 'equipment_defects', equipment_repairs: 'equipment_repairs',
     repair_items: 'repair_items', equipment_oil_logs: 'equipment_oil_logs', part_movements: 'part_movements',
     drivers: 'drivers', company_drivers: 'company_drivers', staff_members: 'staff_members',
-    staff_roles: 'staff_roles', staff_assignments: 'staff_assignments',
+    staff_roles: 'staff_roles', staff_assignments: 'staff_assignments', work_shifts: 'work_shifts',
     expense_categories: 'expense_categories', expense_subcategories: 'expense_subcategories',
     salaries: 'salaries', attendance: 'attendance', employments: 'employments',
     freelance_entries: 'freelance_entries',
@@ -433,7 +434,7 @@
     equipment_defects: 'equipment warning', equipment_repairs: 'equipment repair',
     repair_items: 'repair item', equipment_oil_logs: 'oil & service log', part_movements: 'part movement',
     drivers: 'driver', company_drivers: 'company driver', staff_members: 'staff member',
-    staff_roles: 'staff role', staff_assignments: 'role & equipment log',
+    staff_roles: 'staff role', staff_assignments: 'role & equipment log', work_shifts: 'shift & clock timing',
     expense_categories: 'expense category', expense_subcategories: 'expense subcategory',
     salaries: 'salary payment', attendance: 'attendance log', employments: 'employment contract',
     freelance_entries: 'freelance entry',
@@ -458,7 +459,8 @@
     { key: 'korriauto', name: 'Korri Auto', label: 'Korri Auto SAL', industry: 'Automotive & Heavy Trading', sector: 'Spare Parts, Tyres & Automotive Trading' },
     { key: 'shacman', name: 'Shacman', label: 'Shacman Lebanon SAL', industry: 'Automotive & Heavy Trading', sector: 'Heavy Commercial Trucks, Chassis & Dealership' },
     { key: 'properties', name: 'Properties', label: 'Properties (Buzwair & Bdeir Real Estate)', industry: 'Real Estate & Property', sector: 'Real Estate Portfolio, Leasing & Land' },
-    { key: '4235company', name: '4235 Company S.A.L', label: '4235 Company S.A.L (Msaytbeh Commercial)', industry: 'Real Estate & Property', sector: 'Commercial Building Leasing & VAT Invoicing' }
+    { key: '4235company', name: '4235 Company S.A.L', label: '4235 Company S.A.L (Msaytbeh Commercial)', industry: 'Real Estate & Property', sector: 'Commercial Building Leasing & VAT Invoicing' },
+    { key: 'insurance', name: 'Insurance Company', label: 'Insurance Company (Bdeir Insurance Brokerage)', industry: 'Insurance & Brokerage', sector: 'Insurance Brokerage, Underwriting & Claims' }
   ];
 
   // Canonical 10-industry taxonomy for BHFIRMS / ISABI multi-industry scaling (10 Industries × 10–20 Companies each)
@@ -467,7 +469,7 @@
     { id: 'Hospitality & Resorts', code: 'HSP', label: 'Hospitality & Resorts', sub: 'Beach Resorts, Hotels & Venues', sampleCos: ['Blanca Beach Resort', 'La Una Resort', 'Palms Resort', 'Voile Resort', 'Platinum Hospitality', 'Azur Marina Club', 'Cedars Mountain Lodge', 'Phoenicia Bay Suites', 'Mirage Cliff Club', 'Solis Beach Pavilion', 'Batroun Sunset Villas', 'Byblos Harbour Hotel', 'Tyre Coast Resort', 'Faraya Alpine Chalets', 'Verdun Executive Suites'] },
     { id: 'Automotive & Heavy Trading', code: 'TRD', label: 'Automotive & Heavy Trading', sub: 'Commercial Trucks, Parts & Service', sampleCos: ['Korri Auto', 'Shacman', 'Levant Heavy Trucks', 'Bdeir Commercial Motors', 'Atlas Spare Parts', 'Mediterranean Tyres', 'EuroDiesel Motors', 'PowerLine Generators', 'Apex Earthmoving', 'Titan Forklifts & Cranes', 'Beirut Fleet Service', 'Bekaa Agro Machinery', 'North Truck Center', 'South Parts Depot', 'Gulf Transit Motors'] },
     { id: 'Real Estate & Property', code: 'PROP', label: 'Real Estate & Property', sub: 'Leasing, Developments & Land', sampleCos: ['Properties', '4235 Company S.A.L', 'Bdeir Properties', 'Bayside Towers', 'Verdun Plaza', 'Downtown Commercial', 'Choueifat Logistics Park', 'Metn Business Center', 'Saida Waterfront Mall', 'Batroun Coastal Estates', 'Hazmieh Medical Tower', 'Dbayeh Marina Residences', 'Beirut Gate Offices', 'Zahle Industrial Land', 'Jbeil Heritage Quarter'] },
-    { id: 'Insurance & Brokerage', code: 'INS', label: 'Insurance & Brokerage', sub: 'Underwriting, Claims & Policies', sampleCos: ['Bdeir Insurance Brokerage', 'Cedar Shield Motor', 'Levant Marine Cargo', 'MedCare Health Cover', 'Aegis Property & Fire', 'Horizon Life & Pension', 'Atlas Fleet Underwriting', 'Surety & Bond Partners', 'Prime Corporate Risk', 'Beacon Reinsurance Advisory', 'SafeHarbour Liability', 'Crest Engineering Risk', 'Oasis Travel Assist', 'Guardian Workmen Cover', 'Vanguard Claims Desk'] },
+    { id: 'Insurance & Brokerage', code: 'INS', label: 'Insurance & Brokerage', sub: 'Underwriting, Claims & Policies', sampleCos: ['Insurance Company', 'Bdeir Insurance Brokerage', 'Cedar Shield Motor', 'Levant Marine Cargo', 'MedCare Health Cover', 'Aegis Property & Fire', 'Horizon Life & Pension', 'Atlas Fleet Underwriting', 'Surety & Bond Partners', 'Prime Corporate Risk', 'Beacon Reinsurance Advisory', 'SafeHarbour Liability', 'Crest Engineering Risk', 'Oasis Travel Assist', 'Guardian Workmen Cover'] },
     { id: 'Logistics & Marine', code: 'LOG', label: 'Logistics & Marine', sub: 'Haulage, Freight & Port Operations', sampleCos: ['Levant Bulk Haulage', 'Beirut Port Stevedoring', 'Tripoli Container Depot', 'MedLink Cold Chain', 'Cedar Tanker Fleet', 'Bekaa Inland Dry Port', 'Bosphorus Sea Freight', 'Express Customs Clearance', 'South Aggregate Transit', 'Airport Cargo Handling', 'Byblos Coastal Barges', 'Overland Cross-Border', 'Silo Dispatch Fleet', 'Heavy Lowbed Carriers', 'Harbour Tug & Marine'] },
     { id: 'Retail & F&B Outlets', code: 'POS', label: 'Retail & F&B Outlets', sub: 'POS Tills, Restaurants & Boutiques', sampleCos: ['La Table du Port', 'Cedar Roastery & Cafe', 'Blanca Pool Bar', 'Voile Sunset Grill', 'Palms Beach Bistro', 'Urban Market Express', 'Artisan Bakery Collective', 'Marina Gelato & Lounge', 'Verdun Flagship Store', 'Dbayeh Gourmet Hall', 'Batroun Seafood Deck', 'Byblos Old Souk Cafe', 'Saida Sweet House', 'Faraya Apres-Ski Grill', 'Airport Duty Express'] },
     { id: 'Energy & Fuel Distribution', code: 'NRG', label: 'Energy & Fuel Distribution', sub: 'Diesel Depots, Solar & Generators', sampleCos: ['MedFuel Terminal', 'Zahrani Diesel Depot', 'Dora Tank Farm', 'Cedar Solar Microgrids', 'Bekaa Industrial Gas', 'LubeTech Distribution', 'PeakPower Generator Rental', 'Tripoli Bunker Supply', 'South Station Network', 'Mount Wind & Storage', 'Choueifat Fleet Fueling', 'Batroun Marine Fuel', 'GreenGrid Battery Systems', 'Byblos Utility Services', 'HighVolt Substation Co'] },
@@ -489,7 +491,8 @@
     'korriauto': 'Korri Auto SAL',
     'shacman': 'Shacman Lebanon SAL',
     'properties': 'Properties (Buzwair & Bdeir Real Estate)',
-    '4235company': '4235 Company S.A.L (Msaytbeh Commercial)'
+    '4235company': '4235 Company S.A.L (Msaytbeh Commercial)',
+    'insurance': 'Insurance Company (Bdeir Insurance Brokerage)'
   };
 
   const COMPANY_BU_MATCH = {
@@ -506,7 +509,8 @@
     'korriauto': 'Korri Auto',
     'shacman': 'Shacman',
     'properties': 'Properties',
-    '4235company': '4235 Company S.A.L'
+    '4235company': '4235 Company S.A.L',
+    'insurance': 'Insurance Company'
   };
 
   const COMPANY_KEY_BY_NAME = {
@@ -514,21 +518,24 @@
     'Bdeir Holding': 'bdeirholding',
     'Blanca': 'blanca', 'La Una': 'launa', 'Palms': 'palms', 'Voile': 'voile', 'Platinum': 'platinum',
     'Korri Auto': 'korriauto', 'Shacman': 'shacman',
-    'Properties': 'properties', '4235 Company S.A.L': '4235company'
+    'Properties': 'properties', '4235 Company S.A.L': '4235company',
+    'Insurance Company': 'insurance'
   };
   const COMPANY_INDUSTRY_BY_KEY = {
     'wtc': 'Manufacturing', 'bbconstruction': 'Manufacturing', 'lionstransport': 'Manufacturing',
     'bdeirholding': 'Holding & Treasury',
     'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts',
     'korriauto': 'Automotive & Heavy Trading', 'shacman': 'Automotive & Heavy Trading',
-    'properties': 'Real Estate & Property', '4235company': 'Real Estate & Property'
+    'properties': 'Real Estate & Property', '4235company': 'Real Estate & Property',
+    'insurance': 'Insurance & Brokerage'
   };
   const SENTINEL_MODEL_KEY = {
     'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport',
     'bdeirholding': 'Bdeir Holding',
     'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum',
     'korriauto': 'Korri Auto', 'shacman': 'Shacman',
-    'properties': 'Properties', '4235company': '4235 Company S.A.L'
+    'properties': 'Properties', '4235company': '4235 Company S.A.L',
+    'insurance': 'Insurance Company'
   };
 
   function slugCompanyKey(name) {
@@ -1531,6 +1538,7 @@
     if (['blanca', 'launa', 'palms', 'voile', 'platinum', 'industry:Hospitality & Resorts'].includes(k)) return 'manufacturing-group';
     if (['korriauto', 'shacman', 'industry:Automotive & Heavy Trading'].includes(k)) return 'manufacturing-group';
     if (['properties', '4235company', 'industry:Real Estate & Property'].includes(k)) return 'manufacturing-group';
+    if (['insurance', 'industry:Insurance & Brokerage'].includes(k)) return 'manufacturing-group';
     if (k.startsWith('industry:')) {
       const indName = k.slice(9);
       const cat = getCompanyCatalog();
@@ -7164,7 +7172,7 @@
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master || p.rights.enter_accounting);
       if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement'].includes(form)) return !!(p.rights.enter_accounting || p.rights.enter_master);
-      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'region', 'staff', 'staffrole', 'staffassignment', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
+      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'region', 'staff', 'staffrole', 'staffassignment', 'workshift', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
       if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion'].includes(form)) return !!(p.rights.enter_payroll_jv || p.rights.enter_accounting);
       if (['jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return anyEntryRight;
@@ -7180,7 +7188,7 @@
       return [
         'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'recurringexpense', 'warehousestock', 'settlement',
         'defect', 'repair', 'oillog', 'partlog', 'pricerule',
-        'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'staffassignment',
+        'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'staffassignment', 'workshift',
         'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate',
         'external', 'extmovement', 'treasury', 'loan', 'loansettlement', 'conversion', 'fxrate', 'currency'
       ].includes(form);
@@ -7373,9 +7381,9 @@
     re_workorders: 'Work Orders & Fit-Out',
     // Insurance & Brokerage industry hubs (Phase 5)
     ins_policies: 'Policies & Renewals',
-    ins_billing: 'Premiums & Carrier SOA',
-    ins_claims: 'Claims & Motor Fleet',
-    ins_catalogue: 'Carriers & Products',
+    ins_billing: 'Premiums & Insurer Recon',
+    ins_claims: 'Claims & Recoveries',
+    ins_catalogue: 'Lines, Products & Rates',
     cashflow: 'Cash Flow & Treasury',
     ledger: 'General Ledger & COA',
     univ_parties: 'Counterparties & Sites',
@@ -7749,8 +7757,40 @@
     if (!canViewView('re_workorders', u)) return null;
     if (typeof computeRealEstateOperations !== 'function') return null;
     const reRes = computeRealEstateOperations({ ignoreSearch: true });
-    const cnt = reRes ? Number(reRes.pendingRechargeCount || 0) : 0;
+    const cnt = reRes ? Number(reRes.pendingRechargeCount || reRes.openWorkOrderCount || 0) : 0;
     return cnt > 0 ? { text: `${fmtNum(cnt)} Pending`, cls: 'warn' } : null;
+  }
+
+  function getInsurancePoliciesExceptionBadge(u) {
+    if (!canViewView('ins_policies', u)) return null;
+    if (typeof computeInsuranceOperations !== 'function') return null;
+    const insRes = computeInsuranceOperations({ ignoreSearch: true });
+    const cnt = insRes ? Number(insRes.renewalsDueCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn' } : null;
+  }
+
+  function getInsuranceBillingExceptionBadge(u) {
+    if (!canViewView('ins_billing', u)) return null;
+    if (typeof computeInsuranceOperations !== 'function') return null;
+    const insRes = computeInsuranceOperations({ ignoreSearch: true });
+    const cnt = insRes ? Number(insRes.statementDiscrepancyCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Recon`, cls: 'warn' } : null;
+  }
+
+  function getInsuranceClaimsExceptionBadge(u) {
+    if (!canViewView('ins_claims', u)) return null;
+    if (typeof computeInsuranceOperations !== 'function') return null;
+    const insRes = computeInsuranceOperations({ ignoreSearch: true });
+    const cnt = insRes ? Number(insRes.openClaimsCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn' } : null;
+  }
+
+  function getInsuranceCatalogueExceptionBadge(u) {
+    if (!canViewView('ins_catalogue', u)) return null;
+    if (typeof computeInsuranceOperations !== 'function') return null;
+    const insRes = computeInsuranceOperations({ ignoreSearch: true });
+    const cnt = insRes ? Number(insRes.expiringAgreementsCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert`, cls: 'warn' } : null;
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
@@ -7770,6 +7810,10 @@
     if (hubId === 're_sales') return getRealEstateSalesExceptionBadge(u);
     if (hubId === 're_properties') return getRealEstatePortfolioExceptionBadge(u);
     if (hubId === 're_workorders') return getRealEstateWorkOrdersExceptionBadge(u);
+    if (hubId === 'ins_policies') return getInsurancePoliciesExceptionBadge(u);
+    if (hubId === 'ins_billing') return getInsuranceBillingExceptionBadge(u);
+    if (hubId === 'ins_claims') return getInsuranceClaimsExceptionBadge(u);
+    if (hubId === 'ins_catalogue') return getInsuranceCatalogueExceptionBadge(u);
     return null;
   }
 
@@ -8021,6 +8065,47 @@
       ]
     },
     {
+      id: 'ins_policies',
+      title: HUB_TITLES.ins_policies,
+      group: 'commercial',
+      industry: 'Insurance & Brokerage',
+      tabs: [
+        { view: 'ins_policies', label: 'Live Policies, Endorsements & Discounts', icon: 'ins_policies' },
+        { view: 'ins_renewals', label: '30/60/90-Day Renewal Queue (i30)', icon: 'ins_renewals', badgeFn: u => getInsurancePoliciesExceptionBadge(u) },
+        { view: 'ins_items', label: 'Insured Vehicles, Persons & Risks', icon: 'ins_items' }
+      ]
+    },
+    {
+      id: 'ins_billing',
+      title: HUB_TITLES.ins_billing,
+      group: 'commercial',
+      industry: 'Insurance & Brokerage',
+      tabs: [
+        { view: 'ins_billing', label: 'Premium Invoices & Receipts (i33 / i36)', icon: 'ins_billing' },
+        { view: 'ins_remittances', label: 'Net Remittances & Carrier Ledger (4017)', icon: 'ins_remittances' },
+        { view: 'ins_statements', label: 'Commission Statements & Recon (i32)', icon: 'ins_statements', badgeFn: u => getInsuranceBillingExceptionBadge(u) }
+      ]
+    },
+    {
+      id: 'ins_claims',
+      title: HUB_TITLES.ins_claims,
+      group: 'plant',
+      industry: 'Insurance & Brokerage',
+      tabs: [
+        { view: 'ins_claims', label: 'Claims, Loss Ratio & Recoveries', icon: 'ins_claims', badgeFn: u => getInsuranceClaimsExceptionBadge(u) }
+      ]
+    },
+    {
+      id: 'ins_catalogue',
+      title: HUB_TITLES.ins_catalogue,
+      group: 'plant',
+      industry: 'Insurance & Brokerage',
+      tabs: [
+        { view: 'ins_catalogue', label: '12 Lines & 52 Insurance Products (i07)', icon: 'ins_catalogue' },
+        { view: 'ins_agreements', label: 'Commission Rate Agreements (7z-chrono)', icon: 'ins_agreements', badgeFn: u => getInsuranceCatalogueExceptionBadge(u) }
+      ]
+    },
+    {
       id: 'payroll',
       title: HUB_TITLES.payroll,
       group: 'plant',
@@ -8148,6 +8233,9 @@
     if (activeInd === 'Real Estate & Property') {
       return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Real Estate & Property');
     }
+    if (activeInd === 'Insurance & Brokerage') {
+      return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Insurance & Brokerage');
+    }
     return !h.industry;
   }
 
@@ -8171,6 +8259,10 @@
     if (view === 're_sales' || view === 're_instalments') return canViewView('sales', u) || canViewView('raw', u) || canViewView('cashflow', u);
     if (view === 're_properties' || view === 're_units' || view === 're_valuations' || view === 're_ownership') return canViewView('fleet', u) || canViewView('sales', u) || canViewView('overview', u);
     if (view === 're_workorders' || view === 're_recharges') return canViewView('warehouse', u) || canViewView('fleet', u) || canViewView('expenses', u);
+    if (view === 'ins_policies' || view === 'ins_renewals' || view === 'ins_items') return canViewView('sales', u) || canViewView('overview', u);
+    if (view === 'ins_billing' || view === 'ins_remittances' || view === 'ins_statements') return canViewView('sales', u) || canViewView('raw', u) || canViewView('cashflow', u);
+    if (view === 'ins_claims') return canViewView('fleet', u) || canViewView('sales', u) || canViewView('overview', u);
+    if (view === 'ins_catalogue' || view === 'ins_agreements') return canViewView('warehouse', u) || canViewView('pricing', u) || canViewView('sales', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
@@ -8282,7 +8374,7 @@
       'external_movements', 'loans', 'loan_settlements', 'conversions'
     ];
     const payrollTables = [
-      'staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'employments', 'attendance', 'freelance_entries', 'logistics_allowances', 'overtime_rates'
+      'staff_members', 'staff_roles', 'staff_assignments', 'work_shifts', 'salaries', 'employments', 'attendance', 'freelance_entries', 'logistics_allowances', 'overtime_rates'
     ];
     if (/^Custom/i.test(role) || pbi === 'custom') {
       const p = getEffectivePermissions(u);
@@ -8338,7 +8430,7 @@
     const tokens = (Array.isArray(raw)
       ? raw.map(x => String(x || '').trim()).filter(Boolean)
       : String(raw == null ? 'WTC' : raw).split(/[,;|]+/).map(s => s.trim()).filter(Boolean)
-    ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(tok)));
+    ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?|insurance\s*company)$/i.test(tok)));
     if (tokens.some(t => /^all(\s+\d+)?\s*(companies|group)?$/i.test(t) || t.toLowerCase() === 'manufacturing-group')) {
       return cat.map(c => c.name);
     }
@@ -11806,6 +11898,7 @@
     'price_rules',
     'employments',
     'staff_assignments',
+    'work_shifts',
     'logistics_allowances',
     'recurring_expenses',
     'overtime_rates',
@@ -11912,6 +12005,9 @@
       case 'employments':
       case 'staff_assignments':
         return norm(a.staff || '') === norm(b.staff || '');
+      case 'work_shifts':
+        return norm(a.company || 'WTC') === norm(b.company || 'WTC')
+          && norm(a.shift_code || a.shift_id || a.name || '') === norm(b.shift_code || b.shift_id || b.name || '');
       case 'logistics_allowances':
         if (a.log_mode === 'single' || b.log_mode === 'single') return false;
         return norm(a.staff || '') === norm(b.staff || '');
@@ -12760,6 +12856,9 @@
       const stTarget = (savedRow && savedRow.staff) || (editOrig && editOrig.staff) || '';
       if (stTarget) syncStaffCurrentFromLogs(stTarget);
       return { staffSynced: 1 };
+    }
+    if (crKey === 'work_shifts') {
+      return backfillShiftTimingChange(savedRow, editOrig, extraApiPosts, opts);
     }
     if (crKey === 'credit_terms') {
       return backfillCreditTermsToCustomer(savedRow || editOrig, extraApiPosts);
@@ -21240,7 +21339,7 @@
     const catStr = String(catRaw || '').trim();
     if (/transport|logistics|insurance|permits|taxes|administrative|rent|utilities|salaries|payroll/i.test(catStr)) return false;
     if (typeof isExpenseSubcategoryOrCategoryName === 'function' && isExpenseSubcategoryOrCategoryName(nm)) return false;
-    if (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) return false;
+    if (typeof productByName === 'function' && Boolean(productByName(nm)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) return false;
     if (/^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(nm)) return false;
     if (/^(oil|mechanical|electrical|traffic control|trans diesel|rubber|general|maintenance|repairs?|service|charge|control|accident|accountant|accompliment|moto|bh|b\.h|ac|ups|printer|camera|cameras|air condition|board cleaning|silo|ec210cl|winch|crane|lodar|ضريبة.*|سكر|غير|تلحيم|تشحيم|صيانة.*|خراطة.*|نصليح.*|تصليح.*|تركيب.*|غيار\s+.*|كبس\s+.*|change\s+.*)$/i.test(nm)) return false;
     return true;
@@ -21933,6 +22032,651 @@
     });
   }
 
+  const SHIFT_DAY_SHORT_NAMES = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
+
+  function normalizeDayTimingsMap(rawMap, satDiffEnabled, satStart, satEnd) {
+    const out = {};
+    let src = rawMap;
+    if (typeof src === 'string' && src.trim()) {
+      try { src = JSON.parse(src); } catch (_) { src = null; }
+    }
+    if (src && typeof src === 'object' && !Array.isArray(src)) {
+      Object.entries(src).forEach(([k, v]) => {
+        const dIdx = String(k).trim();
+        if (!/^[0-6]$/.test(dIdx) || !v || typeof v !== 'object') return;
+        const st = fmtAttClockTime(v.start_time || v.start || '') || '';
+        const et = fmtAttClockTime(v.end_time || v.end || '') || '';
+        if (st && et) {
+          out[dIdx] = {
+            start_time: st,
+            end_time: et,
+            hours: computeShiftWorkedHours(st, et) || 8.0
+          };
+        }
+      });
+    }
+    const isSatOn = satDiffEnabled === true || satDiffEnabled === 'Yes' || satDiffEnabled === 1 || satDiffEnabled === '1';
+    if (isSatOn) {
+      const sSt = fmtAttClockTime(satStart || (out['6'] && out['6'].start_time) || '07:00') || '07:00';
+      const sEt = fmtAttClockTime(satEnd || (out['6'] && out['6'].end_time) || '14:00') || '14:00';
+      out['6'] = {
+        start_time: sSt,
+        end_time: sEt,
+        hours: computeShiftWorkedHours(sSt, sEt) || 7.0
+      };
+    }
+    return out;
+  }
+
+  function formatDayTimingsSummary(dayTimings, baseStart = '08:00', baseEnd = '16:00') {
+    const dt = (dayTimings && typeof dayTimings === 'object') ? dayTimings : {};
+    const keys = ['1', '2', '3', '4', '5', '6', '0'].filter(k => dt[k] && dt[k].start_time && dt[k].end_time);
+    if (!keys.length) return 'Standard All Days';
+    const parts = keys.map(k => {
+      const item = dt[k];
+      const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
+      return `${SHIFT_DAY_SHORT_NAMES[k] || 'Day'} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
+    });
+    return parts.join(' · ');
+  }
+
+  function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
+    if (!shiftOrRule || typeof shiftOrRule !== 'object') {
+      return { start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, isDaySpecific: false, dayName: '' };
+    }
+    const baseStart = fmtAttClockTime(shiftOrRule.start_time || shiftOrRule.custom_start || '08:00') || '08:00';
+    const baseEnd = fmtAttClockTime(shiftOrRule.end_time || shiftOrRule.custom_end || '16:00') || '16:00';
+    const dt = normalizeDayTimingsMap(
+      shiftOrRule.day_timings,
+      shiftOrRule.sat_diff_enabled,
+      shiftOrRule.sat_start_time,
+      shiftOrRule.sat_end_time
+    );
+    const key = String(dayIdx != null ? dayIdx : -1);
+    const dayEntry = dt[key] || null;
+    const st = (dayEntry && dayEntry.start_time) ? dayEntry.start_time : baseStart;
+    const et = (dayEntry && dayEntry.end_time) ? dayEntry.end_time : baseEnd;
+    const sMin = parseClockMinutes(st);
+    const eMin = parseClockMinutes(et);
+    const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
+    const hours = computeShiftWorkedHours(st, et) || Number(shiftOrRule.hours || 8.0);
+    return {
+      start_time: st,
+      end_time: et,
+      hours,
+      overnight,
+      isDaySpecific: Boolean(dayEntry && (st !== baseStart || et !== baseEnd)),
+      dayName: SHIFT_DAY_SHORT_NAMES[key] || ''
+    };
+  }
+
+  function parseWorkdaysArrayFromLabel(rawDays, fallback = [1, 2, 3, 4, 5, 6]) {
+    if (Array.isArray(rawDays) && rawDays.length) {
+      return Array.from(new Set(rawDays.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b);
+    }
+    const s = String(rawDays || '').trim();
+    if (!s) return fallback.slice();
+    if (/mon\s*[-–to]+\s*fri/i.test(s) && !/sat/i.test(s)) return [1, 2, 3, 4, 5];
+    if (/mon\s*[-–to]+\s*sun|7\s*day/i.test(s)) return [0, 1, 2, 3, 4, 5, 6];
+    if (/mon\s*[-–to]+\s*sat|6\s*day/i.test(s)) return [1, 2, 3, 4, 5, 6];
+    const map = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    const parsed = [];
+    s.split(/[\s,;/]+/).forEach(tok => {
+      const k = tok.slice(0, 3).toLowerCase();
+      if (map[k] != null) parsed.push(map[k]);
+    });
+    return parsed.length ? Array.from(new Set(parsed)).sort((a, b) => a - b) : fallback.slice();
+  }
+
+  function countAssociatedStaffForShiftRow(shiftRow) {
+    if (!shiftRow || shiftRow.voided) return 0;
+    const co = String(shiftRow.company || 'WTC').trim();
+    const coNorm = norm(co);
+    const codeNorm = norm(shiftRow.shift_code || shiftRow.shift_id || shiftRow.name || '');
+    const nameNorm = norm(shiftRow.name || '');
+    const isBuDef = Boolean(shiftRow.is_bu_default === true || shiftRow.is_bu_default === 'Yes' || shiftRow.is_bu_default === 1);
+    const emps = ((SEED && SEED.records && SEED.records.employments) || []).filter(e =>
+      e && !e.voided && e.status !== 'Ended' && (!e.end_date || String(e.end_date).slice(0, 10) >= todayISO())
+      && (!coNorm || norm(e.company || 'WTC') === coNorm)
+    );
+    const ws = ensureWorkSchedulesState();
+    const seen = new Set();
+    let cnt = 0;
+    emps.forEach(e => {
+      const st = String(e.staff || e.name || '').trim();
+      const sk = norm(st);
+      if (!sk || seen.has(sk)) return;
+      seen.add(sk);
+      const rawRule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
+      const ruleShiftId = rawRule && rawRule.shift_id ? norm(rawRule.shift_id) : '';
+      if (ruleShiftId && (ruleShiftId === codeNorm || ruleShiftId === nameNorm)) {
+        cnt++;
+      } else if (!ruleShiftId && isBuDef) {
+        cnt++;
+      }
+    });
+    return cnt;
+  }
+
+  function hydrateWorkShiftRowComputed(r) {
+    if (!r || typeof r !== 'object') return r;
+    const st = fmtAttClockTime(r.start_time || '08:00') || '08:00';
+    const et = fmtAttClockTime(r.end_time || '16:00') || '16:00';
+    r.start_time = st;
+    r.end_time = et;
+    r.hours = computeShiftWorkedHours(st, et) || Number(r.hours || 8.0);
+    const sMin = parseClockMinutes(st);
+    const eMin = parseClockMinutes(et);
+    r.overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
+    r.days = parseWorkdaysArrayFromLabel(r.days || r.working_days || r.workdays_label, [1, 2, 3, 4, 5, 6]);
+    r.workdays_label = formatWorkdaysCompact(r.days);
+    r.working_days = r.days.map(d => SHIFT_DAY_SHORT_NAMES[String(d)] || '').filter(Boolean).join(',');
+    r.day_timings = normalizeDayTimingsMap(r.day_timings, r.sat_diff_enabled, r.sat_start_time, r.sat_end_time);
+    const satEntry = r.day_timings['6'] || null;
+    r.sat_diff_enabled = Boolean(satEntry && (satEntry.start_time !== st || satEntry.end_time !== et));
+    r.sat_start_time = satEntry ? satEntry.start_time : (r.sat_start_time || '07:00');
+    r.sat_end_time = satEntry ? satEntry.end_time : (r.sat_end_time || '14:00');
+    r.has_day_timings = Object.keys(r.day_timings).length > 0;
+    r.day_schedule_summary = formatDayTimingsSummary(r.day_timings, st, et);
+    r.grace_min = Math.max(0, Math.min(180, Number(r.grace_min != null ? r.grace_min : 10)));
+    r.early_leave_grace_min = Math.max(0, Math.min(180, Number(r.early_leave_grace_min != null ? r.early_leave_grace_min : r.grace_min)));
+    r.is_bu_default = Boolean(r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1);
+    if (!r.shift_code) {
+      r.shift_code = r.shift_id || (/night/i.test(r.name || '') ? 'night_7_3' : (/ext/i.test(r.name || '') ? 'ext_7_4' : 'day_8_4'));
+    }
+    if (!r.shift_id) r.shift_id = r.shift_code;
+    const endIso = String(r.end_date || '').slice(0, 10);
+    r.status = (endIso && endIso < todayISO()) ? 'Historical' : 'Active';
+    r.associated_staff_count = countAssociatedStaffForShiftRow(r);
+    return r;
+  }
+
+  function ensureWorkShiftsSeeded() {
+    if (!SEED || !SEED.records) return [];
+    const rec = SEED.records;
+    if (!Array.isArray(rec.work_shifts)) rec.work_shifts = [];
+    const customList = (STATE.customRecords && Array.isArray(STATE.customRecords.work_shifts)) ? STATE.customRecords.work_shifts : [];
+    const ws = ensureWorkSchedulesState();
+    const rev = `${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}|${customList.length}|${(ws.shiftTypes || []).length}|${Object.keys(ws.staffRules || {}).length}`;
+    if (SEED._workShiftsSeededRev === rev && rec.work_shifts.length > 0) return rec.work_shifts;
+
+    const voidedIds = new Set();
+    const customById = new Map();
+    customList.forEach(r => {
+      if (!r) return;
+      const rid = String(r.id || '');
+      if (r.voided) {
+        if (rid) voidedIds.add(rid);
+        return;
+      }
+      if (rid) customById.set(rid, r);
+    });
+
+    for (let i = rec.work_shifts.length - 1; i >= 0; i--) {
+      const r = rec.work_shifts[i];
+      if (!r || r.voided || voidedIds.has(String(r.id || ''))) {
+        rec.work_shifts.splice(i, 1);
+      }
+    }
+
+    const byId = new Map();
+    rec.work_shifts.forEach(r => {
+      if (r && r.id) byId.set(String(r.id), r);
+    });
+
+    // Seed BU defaults & standard shifts for WTC, BBConstruction, and Lions Transport
+    const seedSpecs = [
+      { id: 'ws_seed_wtc_day', company: 'WTC', shift_code: 'day_8_4', name: 'Day Shift', short: 'Day', is_bu_default: true, start_time: '08:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'WTC default regular plant & quarry shift (Saturday early 07:00-14:00)' },
+      { id: 'ws_seed_wtc_night', company: 'WTC', shift_code: 'night_7_3', name: 'Night Shift', short: 'Night', is_bu_default: false, start_time: '19:00', end_time: '03:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'WTC overnight crusher & dispatch crew' },
+      { id: 'ws_seed_wtc_ext', company: 'WTC', shift_code: 'ext_7_4', name: 'Extended Day', short: 'Ext', is_bu_default: false, start_time: '07:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'WTC 9h extended site & batching shift' },
+      { id: 'ws_seed_bbc_day', company: 'BBConstruction', shift_code: 'day_8_4', name: 'Day Shift', short: 'Day', is_bu_default: true, start_time: '08:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'BBConstruction default regular site shift (Saturday early 07:00-14:00)' },
+      { id: 'ws_seed_lions_ext', company: 'Lions Transport', shift_code: 'ext_7_4', name: 'Extended Day', short: 'Ext', is_bu_default: true, start_time: '07:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 15, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'Lions Transport default fleet & haulage shift (Saturday early 07:00-14:00)' }
+    ];
+
+    seedSpecs.forEach(sp => {
+      if (voidedIds.has(sp.id) || customById.has(sp.id)) return;
+      const hasCustomOverrideSameStart = customList.some(cr =>
+        cr && !cr.voided
+        && norm(cr.company || 'WTC') === norm(sp.company)
+        && norm(cr.shift_code || cr.name || '') === norm(sp.shift_code || sp.name)
+        && String(cr.start_date || '').slice(0, 10) === sp.start_date
+      );
+      if (hasCustomOverrideSameStart) return;
+      let row = byId.get(sp.id);
+      if (!row) {
+        row = Object.assign({
+          date: sp.start_date,
+          rep_date: sp.start_date,
+          source: 'seed',
+          voided: false
+        }, sp);
+        hydrateWorkShiftRowComputed(row);
+        rec.work_shifts.push(row);
+        byId.set(sp.id, row);
+      } else {
+        hydrateWorkShiftRowComputed(row);
+      }
+    });
+
+    // Also bridge any custom shiftTypes created via openShiftTypeModal
+    (ws.shiftTypes || []).forEach(st => {
+      if (!st || st.voided) return;
+      const stId = String(st.id || '');
+      const co = st.company || 'WTC';
+      const bridgeId = stId.startsWith('ws_') ? stId : `ws_st_${stId}_${norm(co).replace(/[^a-z0-9]+/g, '')}`;
+      if (voidedIds.has(bridgeId) || customById.has(bridgeId) || byId.has(bridgeId)) return;
+      const matchingSeed = rec.work_shifts.find(r =>
+        r && !r.voided
+        && norm(r.company || 'WTC') === norm(co)
+        && (norm(r.shift_code || '') === norm(stId) || norm(r.name || '') === norm(st.name || ''))
+        && !r.end_date
+      );
+      if (matchingSeed) {
+        matchingSeed.start_time = st.start_time || matchingSeed.start_time;
+        matchingSeed.end_time = st.end_time || matchingSeed.end_time;
+        matchingSeed.grace_min = st.grace_min != null ? st.grace_min : matchingSeed.grace_min;
+        if (st.day_timings) matchingSeed.day_timings = st.day_timings;
+        if (st.sat_diff_enabled != null) matchingSeed.sat_diff_enabled = st.sat_diff_enabled;
+        if (st.sat_start_time) matchingSeed.sat_start_time = st.sat_start_time;
+        if (st.sat_end_time) matchingSeed.sat_end_time = st.sat_end_time;
+        hydrateWorkShiftRowComputed(matchingSeed);
+        return;
+      }
+      const bRow = hydrateWorkShiftRowComputed({
+        id: bridgeId,
+        company: co,
+        shift_code: stId,
+        shift_id: stId,
+        name: st.name || 'Custom Shift',
+        short: st.short || 'Custom',
+        is_bu_default: Boolean(st.is_bu_default),
+        start_time: st.start_time || '08:00',
+        end_time: st.end_time || '16:00',
+        days: st.days || [1, 2, 3, 4, 5, 6],
+        grace_min: st.grace_min != null ? st.grace_min : 10,
+        early_leave_grace_min: st.early_leave_grace_min != null ? st.early_leave_grace_min : (st.grace_min != null ? st.grace_min : 10),
+        sat_diff_enabled: Boolean(st.sat_diff_enabled),
+        sat_start_time: st.sat_start_time || '07:00',
+        sat_end_time: st.sat_end_time || '14:00',
+        day_timings: st.day_timings || {},
+        start_date: st.start_date || '2025-01-01',
+        end_date: st.end_date || '',
+        tone: st.tone || 'emerald',
+        notes: st.notes || '',
+        date: st.start_date || '2025-01-01',
+        rep_date: st.start_date || '2025-01-01',
+        source: 'app',
+        voided: false
+      });
+      rec.work_shifts.push(bRow);
+      byId.set(bridgeId, bRow);
+    });
+
+    customList.forEach(r => {
+      if (!r || r.voided) return;
+      const rid = String(r.id || '');
+      const existing = rid ? byId.get(rid) : null;
+      if (existing) {
+        Object.assign(existing, r, { voided: false });
+        hydrateWorkShiftRowComputed(existing);
+      } else {
+        const clone = hydrateWorkShiftRowComputed(Object.assign({}, r, { voided: false }));
+        rec.work_shifts.unshift(clone);
+        if (rid) byId.set(rid, clone);
+      }
+    });
+
+    rec.work_shifts.forEach(r => hydrateWorkShiftRowComputed(r));
+    SEED._workShiftsSeededRev = rev;
+    return rec.work_shifts;
+  }
+
+  function getBuDefaultShift(companyRaw, isoDate = todayISO()) {
+    ensureWorkShiftsSeeded();
+    const co = String(companyRaw || defaultEntryCompany() || 'WTC').trim();
+    const coNorm = norm(co);
+    const d = String(isoDate || todayISO()).slice(0, 10);
+    const list = (SEED.records && SEED.records.work_shifts) || [];
+    const activeDefaults = list.filter(r =>
+      r && !r.voided
+      && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)
+      && norm(r.company || 'WTC') === coNorm
+      && (!r.start_date || String(r.start_date).slice(0, 10) <= d)
+      && (!r.end_date || String(r.end_date).slice(0, 10) >= d)
+    ).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    if (activeDefaults.length) return activeDefaults[0];
+    const anyCoDefault = list.filter(r =>
+      r && !r.voided
+      && (r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1)
+      && norm(r.company || 'WTC') === coNorm
+    ).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    if (anyCoDefault.length) return anyCoDefault[0];
+    return list.find(r => r && !r.voided && norm(r.company || 'WTC') === coNorm) || list[0] || null;
+  }
+
+  function resolveShiftAtDate(shiftCodeOrName, companyRaw, isoDate = todayISO()) {
+    ensureWorkShiftsSeeded();
+    const d = String(isoDate || todayISO()).slice(0, 10);
+    const coNorm = companyRaw ? norm(companyRaw) : '';
+    const qNorm = norm(shiftCodeOrName || '');
+    if (!qNorm) return getBuDefaultShift(companyRaw, d);
+    const list = (SEED.records && SEED.records.work_shifts) || [];
+    const matching = list.filter(r => {
+      if (!r || r.voided) return false;
+      if (coNorm && r.company && norm(r.company) !== coNorm) return false;
+      return norm(r.shift_code || '') === qNorm || norm(r.shift_id || '') === qNorm || norm(r.name || '') === qNorm || norm(r.id || '') === qNorm;
+    });
+    const inWindow = matching.filter(r => {
+      const s = String(r.start_date || '').slice(0, 10);
+      const e = String(r.end_date || '').slice(0, 10);
+      return (!s || s <= d) && (!e || e >= d);
+    }).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    if (inWindow.length) return inWindow[0];
+    // Intentional gap fallback -> fall back to BU default shift on `d`
+    return getBuDefaultShift(companyRaw, d);
+  }
+
+  function setBuDefaultShift(companyRaw, shiftIdOrCode, opts = {}) {
+    ensureWorkShiftsSeeded();
+    const co = String(companyRaw || defaultEntryCompany() || 'WTC').trim();
+    const coNorm = norm(co);
+    const targetKey = norm(shiftIdOrCode || '');
+    if (!targetKey) return { ok: false, error: 'Shift selection is required' };
+    const list = (SEED.records && SEED.records.work_shifts) || [];
+    if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
+    let chosen = null;
+    list.forEach(r => {
+      if (!r || r.voided || norm(r.company || 'WTC') !== coNorm) return;
+      const isMatch = norm(r.id || '') === targetKey || norm(r.shift_code || '') === targetKey || norm(r.name || '') === targetKey;
+      const nextDef = Boolean(isMatch && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO()));
+      if (Boolean(r.is_bu_default) !== nextDef) {
+        r.is_bu_default = nextDef;
+        hydrateWorkShiftRowComputed(r);
+        const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(r.id));
+        if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], r);
+        else STATE.customRecords.work_shifts.unshift(Object.assign({}, r));
+      }
+      if (isMatch && (!chosen || !r.end_date)) chosen = r;
+    });
+    if (!chosen) {
+      // Create a BU-scoped default shift clone from getShiftTypes()
+      const st = getShiftTypes().find(t => norm(t.id) === targetKey || norm(t.name) === targetKey);
+      if (st) {
+        chosen = hydrateWorkShiftRowComputed({
+          id: `ws_${norm(co).replace(/[^a-z0-9]+/g, '')}_${st.id}_${Date.now()}`,
+          company: co,
+          shift_code: st.id,
+          shift_id: st.id,
+          name: st.name,
+          short: st.short || st.name.split(/\s+/)[0],
+          is_bu_default: true,
+          start_time: st.start_time,
+          end_time: st.end_time,
+          days: st.days || [1, 2, 3, 4, 5, 6],
+          grace_min: st.grace_min != null ? st.grace_min : 10,
+          early_leave_grace_min: st.early_leave_grace_min != null ? st.early_leave_grace_min : 10,
+          day_timings: st.day_timings || {},
+          sat_diff_enabled: Boolean(st.sat_diff_enabled),
+          sat_start_time: st.sat_start_time || '07:00',
+          sat_end_time: st.sat_end_time || '14:00',
+          start_date: opts.start_date || '2025-01-01',
+          end_date: '',
+          date: opts.start_date || '2025-01-01',
+          rep_date: opts.start_date || '2025-01-01',
+          source: 'app',
+          voided: false
+        });
+        SEED.records.work_shifts.unshift(chosen);
+        STATE.customRecords.work_shifts.unshift(Object.assign({}, chosen));
+      }
+    }
+    if (chosen) {
+      const bf = backfillShiftTimingChange(chosen, null, null, { forceBackfill: true });
+      if (SEED) SEED._workShiftsSeededRev = '';
+      ensureWorkShiftsSeeded();
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+      return { ok: true, shift: chosen, backfill: bf };
+    }
+    return { ok: false, error: 'Matching shift not found' };
+  }
+
+  function backfillShiftTimingChange(savedRow, editOrig, extraApiPosts, opts = {}) {
+    const ref = savedRow || editOrig;
+    if (!ref || window.__fastInspectorModifyTest) return { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0 };
+    hydrateWorkShiftRowComputed(ref);
+    const co = String(ref.company || 'WTC').trim();
+    const coNorm = norm(co);
+    const codeNorm = norm(ref.shift_code || ref.shift_id || ref.name || '');
+    const nameNorm = norm(ref.name || '');
+    const isBuDef = Boolean(ref.is_bu_default);
+
+    // If this row is marked as BU default, clear `is_bu_default` on other open shifts of a different shift_code in the same BU
+    if (savedRow && !savedRow.voided && isBuDef && SEED && SEED.records && Array.isArray(SEED.records.work_shifts)) {
+      SEED.records.work_shifts.forEach(other => {
+        if (!other || other.voided || String(other.id) === String(savedRow.id)) return;
+        if (norm(other.company || 'WTC') === coNorm && norm(other.shift_code || other.name || '') !== codeNorm && other.is_bu_default) {
+          other.is_bu_default = false;
+          hydrateWorkShiftRowComputed(other);
+          if (Array.isArray(STATE.customRecords.work_shifts)) {
+            const ci = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(other.id));
+            if (ci >= 0) Object.assign(STATE.customRecords.work_shifts[ci], other);
+            else STATE.customRecords.work_shifts.unshift(Object.assign({}, other));
+          }
+        }
+      });
+    }
+
+    // Sync global shiftTypes entry if applicable so shift cards & dropdowns reflect the latest active window
+    const ws = ensureWorkSchedulesState();
+    if (savedRow && !savedRow.voided && (!savedRow.end_date || String(savedRow.end_date).slice(0, 10) >= todayISO())) {
+      const targetStId = savedRow.shift_code || savedRow.shift_id || savedRow.id;
+      const stIdx = ws.shiftTypes.findIndex(s => s && (norm(s.id) === norm(targetStId) || norm(s.name) === nameNorm));
+      const stPayload = {
+        id: stIdx >= 0 ? ws.shiftTypes[stIdx].id : targetStId,
+        company: co,
+        name: savedRow.name,
+        short: savedRow.short || String(savedRow.name || 'Shift').split(/\s+/)[0].slice(0, 10),
+        start_time: savedRow.start_time,
+        end_time: savedRow.end_time,
+        hours: savedRow.hours,
+        overnight: savedRow.overnight,
+        days: savedRow.days || [1, 2, 3, 4, 5, 6],
+        grace_min: savedRow.grace_min != null ? savedRow.grace_min : 10,
+        early_leave_grace_min: savedRow.early_leave_grace_min != null ? savedRow.early_leave_grace_min : 10,
+        sat_diff_enabled: Boolean(savedRow.sat_diff_enabled),
+        sat_start_time: savedRow.sat_start_time || '07:00',
+        sat_end_time: savedRow.sat_end_time || '14:00',
+        day_timings: savedRow.day_timings || {},
+        start_date: savedRow.start_date || todayISO(),
+        end_date: savedRow.end_date || '',
+        is_bu_default: Boolean(savedRow.is_bu_default),
+        tone: savedRow.tone || (savedRow.overnight ? 'indigo' : 'amber'),
+        voided: false,
+        updated_at: new Date().toISOString()
+      };
+      if (stIdx >= 0) ws.shiftTypes[stIdx] = Object.assign({}, ws.shiftTypes[stIdx], stPayload);
+      else ws.shiftTypes.push(stPayload);
+    }
+
+    const s1 = savedRow && savedRow.start_date ? String(savedRow.start_date).slice(0, 10) : '2025-01-01';
+    const s2 = editOrig && editOrig.start_date ? String(editOrig.start_date).slice(0, 10) : s1;
+    const e1 = savedRow && savedRow.end_date ? String(savedRow.end_date).slice(0, 10) : '9999-12-31';
+    const e2 = editOrig && editOrig.end_date ? String(editOrig.end_date).slice(0, 10) : '9999-12-31';
+    const rangeFrom = s1 < s2 ? s1 : s2;
+    const rangeTo = e1 > e2 ? e1 : e2;
+
+    // Identify all staff associated with this shift (explicitly assigned OR via BU default)
+    const associatedStaff = new Set();
+    const emps = (SEED && SEED.records && SEED.records.employments) || [];
+    emps.forEach(e => {
+      if (!e || e.voided) return;
+      const st = String(e.staff || e.name || '').trim();
+      const sk = norm(st);
+      if (!sk) return;
+      const empCoNorm = norm(e.company || 'WTC');
+      if (coNorm && empCoNorm !== coNorm) return;
+      const rawRule = ws.staffRules && ws.staffRules[sk] && !ws.staffRules[sk].reset_default ? ws.staffRules[sk] : null;
+      const rShift = rawRule && rawRule.shift_id ? norm(rawRule.shift_id) : '';
+      if (rShift && (rShift === codeNorm || rShift === nameNorm || rShift === norm(ref.id || ''))) {
+        associatedStaff.add(sk);
+      } else if (!rShift && isBuDef) {
+        associatedStaff.add(sk);
+      }
+    });
+    Object.entries(ws.staffRules || {}).forEach(([sk, r]) => {
+      if (!r || r.reset_default) return;
+      if (coNorm && r.company && norm(r.company) !== coNorm) return;
+      const rShift = norm(r.shift_id || '');
+      if (rShift && (rShift === codeNorm || rShift === nameNorm || rShift === norm(ref.id || ''))) {
+        associatedStaff.add(sk);
+      }
+    });
+
+    let staffUpdated = 0;
+    associatedStaff.forEach(sk => {
+      const existingRule = ws.staffRules[sk];
+      if (existingRule && !existingRule.reset_default) {
+        existingRule.grace_min = ref.grace_min != null ? ref.grace_min : existingRule.grace_min;
+        existingRule.early_leave_grace_min = ref.early_leave_grace_min != null ? ref.early_leave_grace_min : existingRule.early_leave_grace_min;
+        existingRule.day_timings = Object.assign({}, ref.day_timings || {});
+        existingRule.sat_diff_enabled = Boolean(ref.sat_diff_enabled);
+        existingRule.sat_start_time = ref.sat_start_time || '07:00';
+        existingRule.sat_end_time = ref.sat_end_time || '14:00';
+        existingRule.updated_at = new Date().toISOString();
+      }
+      staffUpdated++;
+    });
+
+    // Backfill kiosk punches in [rangeFrom, rangeTo] for associated staff
+    let punchesUpdated = 0;
+    if (Array.isArray(STATE.kioskPunches)) {
+      STATE.kioskPunches.forEach(p => {
+        if (!p || p.voided) return;
+        const sk = norm(p.staff || '');
+        if (!sk || !associatedStaff.has(sk)) return;
+        if (coNorm && p.company && norm(p.company) !== coNorm) return;
+        const pDate = String(p.shift_date || p.date || '').slice(0, 10);
+        if (!pDate || pDate < rangeFrom || pDate > rangeTo) return;
+        const shiftOnDate = resolveStaffShiftForDate(p.staff, p.company || co, pDate);
+        p.shift_id = shiftOnDate.id;
+        p.shift_label = shiftOnDate.badgeLabel;
+        const inT = p.direction === 'IN' ? p.time : (p.in_time || '');
+        const outT = p.direction === 'OUT' ? p.time : (p.out_time || '');
+        const evalRes = evaluateShiftPunchTiming(p.staff, p.company || co, pDate, inT, outT, {
+          outDate: p.date,
+          inSameCalendarDay: pDate === String(p.date || pDate).slice(0, 10)
+        });
+        p.late_hours = Number(evalRes.billableLateHours ?? evalRes.lateHours ?? 0);
+        p.raw_late_hours = Number(evalRes.rawLateHours || 0);
+        p.raw_late_min = Number(evalRes.rawLateMin || 0);
+        p.penalty_leave_days = Number(evalRes.penaltyLeaveDays || 0);
+        p.penalty_status = evalRes.penaltyStatus || p.penalty_status;
+        p.penalty_summary = evalRes.penaltySummary || '';
+        p.late_cutoff = evalRes.lateCutoffTime || '';
+        p.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
+        if (inT && outT) {
+          p.paired_hours = evalRes.workedHours;
+          p.overtime_hours = evalRes.overtimeHours;
+          p.unapproved_ot_hours = evalRes.unapprovedOtHours;
+        }
+        punchesUpdated++;
+      });
+    }
+
+    // Backfill attendance records in [rangeFrom, rangeTo] for associated staff
+    const attRows = (SEED && SEED.records && SEED.records.attendance) || [];
+    if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
+    let attUpdated = 0;
+    for (let i = 0; i < attRows.length; i++) {
+      const a = attRows[i];
+      if (!a || a.voided) continue;
+      if (/^(extra|config)/i.test(String(a.type || a.status || ''))) continue;
+      const sk = norm(a.staff || '');
+      const aCoNorm = norm(a.company || 'WTC');
+      if (coNorm && aCoNorm && aCoNorm !== coNorm) continue;
+      const matchesExplicitShift = a.shift_id && (norm(a.shift_id) === codeNorm || norm(a.shift_id) === nameNorm);
+      if (!associatedStaff.has(sk) && !matchesExplicitShift) continue;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      if (!d || d < rangeFrom || d > rangeTo) continue;
+
+      const shiftOnDate = resolveStaffShiftForDate(a.staff, a.company || co, d);
+      const schedH = shiftOnDate.isWorkday ? Number(shiftOnDate.hours || 8) : 0;
+      let rowChanged = false;
+
+      if (a.shift_id !== shiftOnDate.id || a.shift_label !== shiftOnDate.badgeLabel || Number(a.scheduled_hours || 0) !== schedH) {
+        a.shift_id = shiftOnDate.id;
+        a.shift_label = shiftOnDate.badgeLabel;
+        a.scheduled_start = shiftOnDate.start_time;
+        a.scheduled_end = shiftOnDate.end_time;
+        a.scheduled_hours = schedH;
+        rowChanged = true;
+      }
+
+      const inT = fmtAttClockTime(a.in_time || a.check_in || '');
+      const outT = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (inT || outT) {
+        const evalRes = evaluateShiftPunchTiming(a.staff, a.company || co, d, inT, outT);
+        const isPaired = Boolean(inT && outT);
+        const workedH = evalRes.workedHours;
+        const otH = isPaired ? evalRes.overtimeHours : 0;
+        const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+        const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+        const effType = otH > 0
+          ? 'Overtime'
+          : (penLeaveDays >= 1
+            ? 'Absence'
+            : (penLeaveDays >= 0.5
+              ? 'Half Day'
+              : (ltH > 0 ? 'Lateness' : 'Present')));
+        const effTally = otH > 0
+          ? otH
+          : (penLeaveDays > 0
+            ? penLeaveDays
+            : (ltH > 0 ? ltH : workedH));
+
+        if (
+          Math.abs(Number(a.worked_hours || 0) - workedH) > 1e-4
+          || Math.abs(Number(a.overtime_hours || 0) - otH) > 1e-4
+          || Math.abs(Number(a.late_hours || 0) - ltH) > 1e-4
+          || Math.abs(Number(a.leave_days || 0) - penLeaveDays) > 1e-4
+          || a.type !== effType
+        ) {
+          a.worked_hours = workedH;
+          a.regular_hours = isPaired ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
+          a.overtime_hours = otH;
+          a.unapproved_ot_hours = isPaired ? evalRes.unapprovedOtHours : 0;
+          a.late_hours = ltH;
+          a.raw_late_hours = Number(evalRes.rawLateHours || 0);
+          a.raw_late_min = Number(evalRes.rawLateMin || 0);
+          a.leave_days = penLeaveDays;
+          a.late_cutoff = evalRes.lateCutoffTime || '';
+          a.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
+          a.penalty_summary = evalRes.penaltySummary || '';
+          a.type = effType;
+          a.status = effType;
+          a.tally = effTally;
+          rowChanged = true;
+        }
+      }
+
+      if (rowChanged) {
+        attUpdated++;
+        const cIdx = STATE.customRecords.attendance.findIndex(x => x && String(x.id) === String(a.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.attendance[cIdx], a);
+        else STATE.customRecords.attendance.unshift(Object.assign({}, a));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', a]);
+      }
+    }
+
+    if (attUpdated > 0 && SEED) {
+      if (SEED._tableRev) SEED._tableRev.attendance = (SEED._tableRev.attendance || 0) + 1;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    if (SEED) SEED._workShiftsSeededRev = '';
+    return { staffUpdated, attUpdated, punchesUpdated, rangeFrom, rangeTo };
+  }
+
   function ensureStaffMembersSeeded() {
     if (!SEED || !SEED.records) return [];
     const rec = SEED.records;
@@ -22092,6 +22836,7 @@
 
     ensureStaffRolesSeeded();
     ensureStaffAssignmentsSeeded();
+    ensureWorkShiftsSeeded();
     syncAllStaffCurrentFromLogs();
     SEED._staffMembersSeededRev = rev;
     return rec.staff_members;
@@ -27837,15 +28582,49 @@
   function fmtAttClockTime(raw) {
     const s = String(raw == null ? '' : raw).trim();
     if (!s) return '';
-    if (/^\d{1,2}:\d{2}$/.test(s)) {
+    const ampmMatch = s.match(/^(\d{1,2})\s*:\s*(\d{1,2})(?::\d{1,2})?\s*(a\.?m\.?|p\.?m\.?)$/i);
+    if (ampmMatch) {
+      let hh = parseInt(ampmMatch[1], 10) % 12;
+      if (/^p/i.test(ampmMatch[3])) hh += 12;
+      const mm = Math.max(0, Math.min(59, parseInt(ampmMatch[2], 10) || 0));
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+    if (/^\d{1,2}:\d{1,2}$/.test(s)) {
       const [h, m] = s.split(':');
-      return `${String(parseInt(h, 10) % 24).padStart(2, '0')}:${m}`;
+      const hh = Math.max(0, Math.min(23, parseInt(h, 10) || 0));
+      const mm = Math.max(0, Math.min(59, parseInt(m, 10) || 0));
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+    if (/^\d{3,4}$/.test(s)) {
+      const padded = s.padStart(4, '0');
+      const hh = Math.max(0, Math.min(23, parseInt(padded.slice(0, 2), 10) || 0));
+      const mm = Math.max(0, Math.min(59, parseInt(padded.slice(2, 4), 10) || 0));
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
     }
     const dec = parseAttClockHour(s);
     if (dec == null) return s;
     const hh = Math.floor(dec) % 24;
     const mm = Math.round((dec - Math.floor(dec)) * 60);
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  function normalize24hClockTime(raw, fallback = '08:00') {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return fallback;
+    const formatted = fmtAttClockTime(s);
+    if (/^\d{2}:\d{2}$/.test(formatted)) return formatted;
+    const digits = s.replace(/\D+/g, '');
+    if (digits.length === 1 || digits.length === 2) {
+      const hh = Math.max(0, Math.min(23, parseInt(digits, 10) || 0));
+      return `${String(hh).padStart(2, '0')}:00`;
+    }
+    if (digits.length >= 3) {
+      const padded = digits.slice(0, 4).padStart(4, '0');
+      const hh = Math.max(0, Math.min(23, parseInt(padded.slice(0, 2), 10) || 0));
+      const mm = Math.max(0, Math.min(59, parseInt(padded.slice(2, 4), 10) || 0));
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+    return fallback;
   }
 
   function computeShiftWorkedHours(inVal, outVal) {
@@ -40727,6 +41506,982 @@
     `;
   }
 
+  // ============================================================================
+  // PHASE 5 — INSURANCE & BROKERAGE OPERATIONAL HUBS (INS · Bdeir Insurance Brokerage)
+  // ============================================================================
+  function computeInsuranceOperations() {
+    const co = 'Insurance Company';
+    const policies = [
+      { id: 'MGF-MED-2026-52077', company: co, date: '2026-01-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (250 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Corporate Group Medical In/Out', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 12500000, gross_prem_usd: 185000, comm_rate_pct: 10.5, gross_comm_usd: 19425, discount_usd: 750, discount_reason: 'Multi-policy corporate rebate (i41)', net_comm_usd: 18675, policy_fee_usd: 125, net_payable_4017_usd: 165575, status: 'Active' },
+      { id: 'BNK-PRP-2026-08510', company: co, date: '2026-02-01', expiry: '2027-01-31', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Property All Risks (PAR) Commercial', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 18400000, gross_prem_usd: 32000, comm_rate_pct: 17.5, gross_comm_usd: 5600, discount_usd: 500, discount_reason: 'Zero-claim renewal discount (i41)', net_comm_usd: 5100, policy_fee_usd: 75, net_payable_4017_usd: 26400, status: 'Active' },
+      { id: 'ALZ-MOT-2026-12801', company: co, date: '2026-02-18', expiry: '2027-02-17', client: 'Transmed Distribution Fleet (18 Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Commercial Fleet All-Risk Gold', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 640000, gross_prem_usd: 24000, comm_rate_pct: 18.0, gross_comm_usd: 4320, discount_usd: 400, discount_reason: 'Fleet volume commercial concession (i41)', net_comm_usd: 3920, policy_fee_usd: 60, net_payable_4017_usd: 19680, status: 'Active' },
+      { id: 'AXA-ENG-2026-44102', company: co, date: '2026-03-10', expiry: '2027-03-09', client: 'MAN Enterprise Contracting S.A.L.', carrier: 'AXA Middle East', line: 'ENG · Engineering', product: 'Contractors All Risks (CAR) & TPL', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 8500000, gross_prem_usd: 21500, comm_rate_pct: 14.0, gross_comm_usd: 3010, discount_usd: 0, discount_reason: '', net_comm_usd: 3010, policy_fee_usd: 50, net_payable_4017_usd: 18490, status: 'Active' },
+      { id: 'AXA-MAR-2026-31044', company: co, date: '2026-04-04', expiry: '2027-04-03', client: 'Khalil Fattal & Fils (Open Cover)', carrier: 'AXA Middle East', line: 'MAR · Marine', product: 'Marine Cargo Open Cover (ICC A)', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 4200000, gross_prem_usd: 16800, comm_rate_pct: 15.0, gross_comm_usd: 2520, discount_usd: 170, discount_reason: 'Annual open-cover loyalty rebate (i41)', net_comm_usd: 2350, policy_fee_usd: 45, net_payable_4017_usd: 14280, status: 'Active' },
+      { id: 'LBS-LIAB-2026-19008', company: co, date: '2026-04-22', expiry: '2027-04-21', client: 'Phoenicia Hospitality Partners', carrier: 'Libano-Suisse', line: 'LIAB · Liability', product: 'Comprehensive General & Hotel TPL', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 5000000, gross_prem_usd: 12400, comm_rate_pct: 16.0, gross_comm_usd: 1984, discount_usd: 0, discount_reason: '', net_comm_usd: 1984, policy_fee_usd: 35, net_payable_4017_usd: 10416, status: 'Active' },
+      { id: 'BNK-WC-2026-07741', company: co, date: '2026-05-12', expiry: '2027-05-11', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', product: 'Industrial Workmen Compensation', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 2400000, gross_prem_usd: 11200, comm_rate_pct: 15.0, gross_comm_usd: 1680, discount_usd: 0, discount_reason: '', net_comm_usd: 1680, policy_fee_usd: 30, net_payable_4017_usd: 9520, status: 'Active' },
+      { id: 'ALZ-LIFE-2026-60215', company: co, date: '2026-06-01', expiry: '2027-05-31', client: 'Bdeir Executive Key-Man Protection', carrier: 'Allianz SNA', line: 'LIFE · Life', product: 'Corporate Key-Person Term Life', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 3000000, gross_prem_usd: 9600, comm_rate_pct: 12.0, gross_comm_usd: 1152, discount_usd: 0, discount_reason: '', net_comm_usd: 1152, policy_fee_usd: 25, net_payable_4017_usd: 8448, status: 'Active' },
+      { id: 'ARP-MOT-2026-10912', company: co, date: '2026-06-19', expiry: '2027-06-18', client: 'Dr. Nabil Khoury (Porsche Cayenne)', carrier: 'Arope Insurance', line: 'MOT · Motor', product: 'Motor All-Risk Prestige VIP', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 135000, gross_prem_usd: 4250, comm_rate_pct: 20.0, gross_comm_usd: 850, discount_usd: 75, discount_reason: 'VIP medical+motor bundle courtesy (i41)', net_comm_usd: 775, policy_fee_usd: 20, net_payable_4017_usd: 3400, status: 'Active' },
+      { id: 'POL-20251105-RAMISAAB-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Rami Saab (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
+      { id: 'END-2026-MGF-52077-A', company: co, date: '2026-07-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (+14 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Endorsement · Mid-Term Census Addition', producer: 'Carla Moubarak', type: 'Endorsement (+)', sum_insured_usd: 700000, gross_prem_usd: 6400, comm_rate_pct: 10.5, gross_comm_usd: 672, discount_usd: 0, discount_reason: '', net_comm_usd: 672, policy_fee_usd: 10, net_payable_4017_usd: 5728, status: 'Endorsed' },
+      { id: 'END-2026-BNK-08510-A', company: co, date: '2026-08-05', expiry: '2027-01-31', client: 'Unipak Tissue Mill (Solar Roof Ext.)', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Endorsement · 1.2MW Solar Array Cover', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 950000, gross_prem_usd: 2850, comm_rate_pct: 17.5, gross_comm_usd: 499, discount_usd: 0, discount_reason: '', net_comm_usd: 499, policy_fee_usd: 15, net_payable_4017_usd: 2351, status: 'Endorsed' },
+      { id: 'END-2026-ALZ-12801-A', company: co, date: '2026-09-02', expiry: '2027-02-17', client: 'Transmed Distribution (+2 Reefer Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Endorsement · Fleet Vehicle Addition', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 88000, gross_prem_usd: 3100, comm_rate_pct: 18.0, gross_comm_usd: 558, discount_usd: 0, discount_reason: '', net_comm_usd: 558, policy_fee_usd: 0, net_payable_4017_usd: 2542, status: 'Endorsed' },
+      { id: 'END-2026-AXA-31044-R', company: co, date: '2026-09-18', expiry: '2027-04-03', client: 'Khalil Fattal & Fils (Voyage Rebate)', carrier: 'AXA Middle East', line: 'MAR · Marine', product: 'Endorsement · Cancelled Shipment Return', producer: 'Carla Moubarak', type: 'Endorsement (-)', sum_insured_usd: -180000, gross_prem_usd: -800, comm_rate_pct: 15.0, gross_comm_usd: -120, discount_usd: 0, discount_reason: '', net_comm_usd: -120, policy_fee_usd: 0, net_payable_4017_usd: -680, status: 'Return Prem' }
+    ];
+
+    const renewals = [
+      { id: 'REN-2026-11-001', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
+      { id: 'REN-2026-11-002', policy_no: 'MGF-MED-2025-49102', company: co, client: 'Levant Beverage Bottling (42 Lives)', carrier: 'MedGulf', line: 'MED · Medical', expiry_date: '2026-11-24', days_left: 18, bucket: '0–30 Days', expiring_prem_usd: 38400, quoted_renewal_usd: 41200, producer: 'Carla Moubarak', stage: 'Loss-Ratio Review (64%)', status: 'Due for renewal' },
+      { id: 'REN-2026-12-003', policy_no: 'BNK-PAR-2025-07119', company: co, client: 'Bekaa Cold Storage Warehouses', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2026-12-12', days_left: 36, bucket: '31–60 Days', expiring_prem_usd: 14800, quoted_renewal_usd: 14800, producer: 'Joseph Khalil', stage: 'Surveyor Inspection Booked', status: 'Due for renewal' },
+      { id: 'REN-2026-12-004', policy_no: 'ALZ-MOT-2025-11408', company: co, client: 'Cedar Logistics Heavy Haulage (9 Trucks)', carrier: 'Allianz SNA', line: 'MOT · Motor', expiry_date: '2026-12-20', days_left: 44, bucket: '31–60 Days', expiring_prem_usd: 16200, quoted_renewal_usd: 15800, producer: 'Joseph Khalil', stage: 'Renewal Terms Requested', status: 'Due for renewal' },
+      { id: 'REN-2027-01-005', policy_no: 'MGF-MED-2026-52077', company: co, client: 'Holdal Abou Adal Group (264 Lives)', carrier: 'MedGulf', line: 'MED · Medical', expiry_date: '2027-01-14', days_left: 69, bucket: '61–90 Days', expiring_prem_usd: 191400, quoted_renewal_usd: 198000, producer: 'Carla Moubarak', stage: 'Early Renewal Census Prep', status: 'Due for renewal' },
+      { id: 'REN-2027-01-006', policy_no: 'ARP-PA-2026-03310', company: co, client: 'Mount Lebanon Engineering Syndicate', carrier: 'Arope Insurance', line: 'PA · Personal Accident', expiry_date: '2027-01-22', days_left: 77, bucket: '61–90 Days', expiring_prem_usd: 7400, quoted_renewal_usd: 7400, producer: 'Rita Farah', stage: 'Auto-Renewal Slotted', status: 'Due for renewal' },
+      { id: 'REN-2027-01-007', policy_no: 'BNK-PRP-2026-08510', company: co, client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2027-01-31', days_left: 86, bucket: '61–90 Days', expiring_prem_usd: 34850, quoted_renewal_usd: 34500, producer: 'Joseph Khalil', stage: 'Reinsurance Treaty Placement', status: 'Due for renewal' },
+      { id: 'REN-2026-10-008', policy_no: 'LBS-TRV-2025-88201', company: co, client: 'Karim Mansour (Annual Multi-Trip)', carrier: 'Libano-Suisse', line: 'TRV · Travel', expiry_date: '2026-10-15', days_left: -22, bucket: 'Expired (>0d Past)', expiring_prem_usd: 680, quoted_renewal_usd: 680, producer: 'Rita Farah', stage: 'Client Relocated Abroad', status: 'Expired — not renewed' },
+      { id: 'REN-2026-10-009', policy_no: 'AXA-MOT-2025-19044', company: co, client: 'Fadi Rizk (Mercedes GLE 450)', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-10-25', days_left: -12, bucket: 'Expired (>0d Past)', expiring_prem_usd: 2890, quoted_renewal_usd: 2750, producer: 'Joseph Khalil', stage: 'Vehicle Sold by Insured', status: 'Expired — not renewed' }
+    ];
+
+    const items = [
+      { id: 'ITM-MED-52077-01', policy_no: 'MGF-MED-2026-52077', company: co, client: 'Holdal Abou Adal Group', category: 'Group Medical Census', identifier: '264 Active Lives · Class A/B In+Out', location_or_vin: 'Beirut & Metn HQ + Warehouses', sum_insured_usd: 13200000, deductible_usd: 0, annual_prem_usd: 191400, status: 'Covered' },
+      { id: 'ITM-PRP-08510-01', policy_no: 'BNK-PRP-2026-08510', company: co, client: 'Unipak Tissue Mill S.A.L.', category: 'Industrial Plant & Machinery', identifier: 'Halat Paper Mill + 1.2MW Solar Roof', location_or_vin: 'Halat Industrial Zone · Plot 1142', sum_insured_usd: 19350000, deductible_usd: 5000, annual_prem_usd: 34850, status: 'Covered' },
+      { id: 'ITM-MOT-12801-01', policy_no: 'ALZ-MOT-2026-12801', company: co, client: 'Transmed Distribution Fleet', category: 'Commercial Fleet (20 Units)', identifier: '20× Isuzu NPR & Mercedes Sprinter Vans', location_or_vin: 'Plates M-419201 .. M-419220', sum_insured_usd: 728000, deductible_usd: 250, annual_prem_usd: 27100, status: 'Covered' },
+      { id: 'ITM-ENG-44102-01', policy_no: 'AXA-ENG-2026-44102', company: co, client: 'MAN Enterprise Contracting', category: 'Contractors All Risks (CAR)', identifier: 'District S Tower Excavation & Crane Plant', location_or_vin: 'Beirut Central District · Sector 44', sum_insured_usd: 8500000, deductible_usd: 10000, annual_prem_usd: 21500, status: 'Covered' },
+      { id: 'ITM-MAR-31044-01', policy_no: 'AXA-MAR-2026-31044', company: co, client: 'Khalil Fattal & Fils', category: 'Marine Cargo Open Cover', identifier: 'FMCG & Pharma Container Shipments', location_or_vin: 'Med / Europe Ports to Beirut Port', sum_insured_usd: 4020000, deductible_usd: 1500, annual_prem_usd: 16000, status: 'Covered' },
+      { id: 'ITM-MOT-10912-01', policy_no: 'ARP-MOT-2026-10912', company: co, client: 'Dr. Nabil Khoury', category: 'Motor Prestige VIP', identifier: '2025 Porsche Cayenne Coupe AWD', location_or_vin: 'VIN WP1ZZZ9Y8SDA41092 · Plate B-88412', sum_insured_usd: 135000, deductible_usd: 500, annual_prem_usd: 4250, status: 'Covered' },
+      { id: 'ITM-MOT-RAMI-01', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
+    ];
+
+    const billing = [
+      { id: 'INV-INS-2026-001', date: '2026-01-15', due_date: '2026-01-30', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', instalment: 'Q1 + Q2 Instalments (1–2/4)', gross_prem_usd: 92500, discount_7065_usd: 750, fee_7064_usd: 125, client_billed_4112_usd: 91875, collected_usd: 91875, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-004 (Bank Wire)', status: 'Paid' },
+      { id: 'INV-INS-2026-018', date: '2026-07-15', due_date: '2026-08-15', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', instalment: 'Q3 Instalment + Endorsement A', gross_prem_usd: 52650, discount_7065_usd: 0, fee_7064_usd: 10, client_billed_4112_usd: 52660, collected_usd: 45160, open_ar_4112_usd: 7500, receipt_ref: 'RCP-INS-2026-019 (Partial)', status: 'Partial AR' },
+      { id: 'INV-INS-2026-004', date: '2026-02-01', due_date: '2026-02-28', company: co, policy_no: 'BNK-PRP-2026-08510', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', instalment: 'Annual PAR + Solar Endorsement', gross_prem_usd: 34850, discount_7065_usd: 500, fee_7064_usd: 90, client_billed_4112_usd: 34440, collected_usd: 34440, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-008 (Check)', status: 'Paid' },
+      { id: 'INV-INS-2026-009', date: '2026-02-18', due_date: '2026-03-18', company: co, policy_no: 'ALZ-MOT-2026-12801', client: 'Transmed Distribution Fleet', carrier: 'Allianz SNA', instalment: 'Semi-Annual Fleet Tranches 1–2', gross_prem_usd: 27100, discount_7065_usd: 400, fee_7064_usd: 60, client_billed_4112_usd: 26760, collected_usd: 21960, open_ar_4112_usd: 4800, receipt_ref: 'RCP-INS-2026-012 (Partial)', status: 'Overdue 45d' },
+      { id: 'INV-INS-2026-014', date: '2026-03-10', due_date: '2026-04-10', company: co, policy_no: 'AXA-ENG-2026-44102', client: 'MAN Enterprise Contracting', carrier: 'AXA Middle East', instalment: 'Annual CAR Single Tranche', gross_prem_usd: 21500, discount_7065_usd: 0, fee_7064_usd: 50, client_billed_4112_usd: 21550, collected_usd: 17350, open_ar_4112_usd: 4200, receipt_ref: 'RCP-INS-2026-015 (Partial)', status: 'Overdue 30d' },
+      { id: 'INV-INS-2026-021', date: '2026-04-04', due_date: '2026-05-04', company: co, policy_no: 'AXA-MAR-2026-31044', client: 'Khalil Fattal & Fils', carrier: 'AXA Middle East', instalment: 'Marine Deposit Prem (Net of Return)', gross_prem_usd: 16000, discount_7065_usd: 170, fee_7064_usd: 45, client_billed_4112_usd: 15875, collected_usd: 15875, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-022 (Bank Wire)', status: 'Paid' },
+      { id: 'INV-INS-2026-029', date: '2026-05-12', due_date: '2026-06-12', company: co, policy_no: 'BNK-WC-2026-07741', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', instalment: 'Workmen Comp Annual Billing', gross_prem_usd: 11200, discount_7065_usd: 0, fee_7064_usd: 30, client_billed_4112_usd: 11230, collected_usd: 8230, open_ar_4112_usd: 3000, receipt_ref: 'RCP-INS-2026-025 (Partial)', status: 'Overdue 60d' },
+      { id: 'INV-INS-2026-036', date: '2026-06-19', due_date: '2026-06-19', company: co, policy_no: 'ARP-MOT-2026-10912', client: 'Dr. Nabil Khoury', carrier: 'Arope Insurance', instalment: 'Annual VIP Motor Note', gross_prem_usd: 4250, discount_7065_usd: 75, fee_7064_usd: 20, client_billed_4112_usd: 4195, collected_usd: 4195, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-027 (Cash Till)', status: 'Paid' }
+    ];
+
+    const remittances = [
+      { id: 'REM-2026-MGF-01', carrier: 'MedGulf', company: co, gl_payable: '4017 · MedGulf Payable', gross_prem_usd: 191400, broker_comm_7063_usd: 20097, settled_to_carrier_usd: 109203, net_payable_4017_usd: 62100, client_cash_held_usd: 64800, settlement_mode: 'Net of Commission (Bordereau)', next_due: '2026-11-15', status: 'Covered by Cash' },
+      { id: 'REM-2026-BNK-01', carrier: 'Bankers Assurance', company: co, gl_payable: '4017 · Bankers Payable', gross_prem_usd: 46050, broker_comm_7063_usd: 7779, settled_to_carrier_usd: 20271, net_payable_4017_usd: 18000, client_cash_held_usd: 19100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-20', status: 'Covered by Cash' },
+      { id: 'REM-2026-ALZ-01', carrier: 'Allianz SNA', company: co, gl_payable: '4017 · Allianz SNA Payable', gross_prem_usd: 36700, broker_comm_7063_usd: 6030, settled_to_carrier_usd: 14470, net_payable_4017_usd: 16200, client_cash_held_usd: 15900, settlement_mode: 'Net of Commission (Quarterly)', next_due: '2026-11-25', status: 'Stmt Recon Hold' },
+      { id: 'REM-2026-AXA-01', carrier: 'AXA Middle East', company: co, gl_payable: '4017 · AXA Payable', gross_prem_usd: 40650, broker_comm_7063_usd: 5977, settled_to_carrier_usd: 22973, net_payable_4017_usd: 11700, client_cash_held_usd: 12100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-18', status: 'Covered by Cash' },
+      { id: 'REM-2026-LBS-01', carrier: 'Libano-Suisse', company: co, gl_payable: '4017 · Libano-Suisse Payable', gross_prem_usd: 12400, broker_comm_7063_usd: 1984, settled_to_carrier_usd: 5116, net_payable_4017_usd: 5300, client_cash_held_usd: 5500, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' },
+      { id: 'REM-2026-ARP-01', carrier: 'Arope Insurance', company: co, gl_payable: '4017 · Arope Payable', gross_prem_usd: 4250, broker_comm_7063_usd: 850, settled_to_carrier_usd: 600, net_payable_4017_usd: 2800, client_cash_held_usd: 3000, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' }
+    ];
+
+    const statements = [
+      { id: 'STM-AXA-2026-08', period: '2026-08', company: co, carrier: 'AXA Middle East', policies_count: 8, expected_comm_4117_usd: 5977, statement_comm_usd: 5977, variance_usd: 0, note: '100% matched across CAR, Marine & Motor lines (i32)', status: 'Matched' },
+      { id: 'STM-ALZ-2026-09', period: '2026-09', company: co, carrier: 'Allianz SNA', policies_count: 7, expected_comm_4117_usd: 6030, statement_comm_usd: 6005, variance_usd: -25, note: 'Flagged -$25.00 rate rounding diff on ALZ-MOT-2026-00419 (i32)', status: 'Discrepancy' },
+      { id: 'STM-MGF-2026-09', period: '2026-09', company: co, carrier: 'MedGulf', policies_count: 6, expected_comm_4117_usd: 20097, statement_comm_usd: 20097, variance_usd: 0, note: 'Group Medical Q1–Q3 commission settled in full ($0 diff)', status: 'Settled' },
+      { id: 'STM-BNK-2026-10', period: '2026-10', company: co, carrier: 'Bankers Assurance', policies_count: 9, expected_comm_4117_usd: 7779, statement_comm_usd: 7779, variance_usd: 0, note: 'PAR & Workmen Comp bordereau verified', status: 'Matched' },
+      { id: 'STM-LBS-2026-10', period: '2026-10', company: co, carrier: 'Libano-Suisse', policies_count: 5, expected_comm_4117_usd: 1984, statement_comm_usd: 1984, variance_usd: 0, note: 'Hospitality Liability commission cleared against 4017', status: 'Settled' },
+      { id: 'STM-ARP-2026-10', period: '2026-10', company: co, carrier: 'Arope Insurance', policies_count: 3, expected_comm_4117_usd: 850, statement_comm_usd: 810, variance_usd: -40, note: 'Accessory endorsement commission pending carrier credit note', status: 'Discrepancy' }
+    ];
+
+    const claims = [
+      { id: 'CLM-2026-001', loss_date: '2026-03-14', company: co, policy_no: 'ALZ-MOT-2026-12801', client: 'Transmed Distribution Fleet', carrier: 'Allianz SNA', line: 'MOT · Motor', peril: 'Multi-Vehicle Highway Collision (Dbayeh)', adjuster: 'Expert Nabil Tabet', claimed_usd: 6850, deductible_usd: 250, approved_usd: 6400, paid_by_insurer_usd: 6400, status: 'Settled' },
+      { id: 'CLM-2026-002', loss_date: '2026-05-22', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', line: 'MED · Medical', peril: 'Cardiac Stent Inpatient Admission (AUBMC)', adjuster: 'MedGulf TPA Desk', claimed_usd: 14200, deductible_usd: 0, approved_usd: 13850, paid_by_insurer_usd: 13850, status: 'Settled' },
+      { id: 'CLM-2026-003', loss_date: '2026-08-09', company: co, policy_no: 'BNK-PRP-2026-08510', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', peril: 'Chilled-Water Pipe Burst · Paper Roll Store', adjuster: 'Charles Taylor Adjusting', claimed_usd: 28500, deductible_usd: 5000, approved_usd: 22000, paid_by_insurer_usd: 0, status: 'Approved · Awaiting Release' },
+      { id: 'CLM-2026-004', loss_date: '2026-09-29', company: co, policy_no: 'BNK-WC-2026-07741', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', peril: 'Quarry Rig Operator Hand Fracture + 21d TTD', adjuster: 'Dr. Fouad Salameh', claimed_usd: 4900, deductible_usd: 0, approved_usd: 4600, paid_by_insurer_usd: 0, status: 'Under Assessment' },
+      { id: 'CLM-2026-005', loss_date: '2026-10-21', company: co, policy_no: 'AXA-MAR-2026-31044', client: 'Khalil Fattal & Fils', carrier: 'AXA Middle East', line: 'MAR · Marine', peril: 'Reefer Temperature Excursion · Antwerp Voyage', adjuster: 'Surveyor Lloyd Agency Beirut', claimed_usd: 11400, deductible_usd: 1500, approved_usd: 0, paid_by_insurer_usd: 0, status: 'FNOL · Survey Open' }
+    ];
+
+    const catalogue = [
+      { code: 'MOT-AR-GOLD', line_code: 'MOT', line_name: 'Motor Insurance', carrier: 'Allianz SNA', product_name: 'Motor All-Risk Gold (Agency Repair <=5 Yrs)', base_comm_pct: 18.0, min_prem_usd: 650, active_policies: 12, gwp_usd: 34250, status: 'Active' },
+      { code: 'MOT-VIP-PREST', line_code: 'MOT', line_name: 'Motor Insurance', carrier: 'Arope Insurance', product_name: 'Motor All-Risk Prestige VIP (> $100k SI)', base_comm_pct: 20.0, min_prem_usd: 1800, active_policies: 4, gwp_usd: 14100, status: 'Active' },
+      { code: 'MED-GRP-CORP', line_code: 'MED', line_name: 'Medical & Health', carrier: 'MedGulf', product_name: 'Corporate Group Medical In/Out + Maternity', base_comm_pct: 10.5, min_prem_usd: 15000, active_policies: 6, gwp_usd: 191400, status: 'Active' },
+      { code: 'PRP-PAR-IND', line_code: 'PROP', line_name: 'Property & Fire', carrier: 'Bankers Assurance', product_name: 'Property All Risks (PAR) + Business Interruption', base_comm_pct: 17.5, min_prem_usd: 2500, active_policies: 5, gwp_usd: 34850, status: 'Active' },
+      { code: 'ENG-CAR-TPL', line_code: 'ENG', line_name: 'Engineering & CAR', carrier: 'AXA Middle East', product_name: 'Contractors All Risks (CAR) + Cross Liability', base_comm_pct: 14.0, min_prem_usd: 3500, active_policies: 3, gwp_usd: 21500, status: 'Active' },
+      { code: 'MAR-OPEN-ICCA', line_code: 'MAR', line_name: 'Marine Cargo & Hull', carrier: 'AXA Middle East', product_name: 'Marine Cargo Open Cover (ICC Clause A + War)', base_comm_pct: 15.0, min_prem_usd: 2000, active_policies: 3, gwp_usd: 16000, status: 'Active' },
+      { code: 'LIAB-CGL-HOT', line_code: 'LIAB', line_name: 'Third-Party Liability', carrier: 'Libano-Suisse', product_name: 'Commercial General & Hospitality Liability', base_comm_pct: 16.0, min_prem_usd: 1500, active_policies: 3, gwp_usd: 12400, status: 'Active' },
+      { code: 'WC-IND-STAT', line_code: 'WC', line_name: 'Workmen Compensation', carrier: 'Bankers Assurance', product_name: 'Statutory & Employer Liability Workmen Comp', base_comm_pct: 15.0, min_prem_usd: 1200, active_policies: 3, gwp_usd: 11200, status: 'Active' },
+      { code: 'LIFE-KEY-TERM', line_code: 'LIFE', line_name: 'Life & Key-Man', carrier: 'Allianz SNA', product_name: 'Corporate Key-Person Level Term Life', base_comm_pct: 12.0, min_prem_usd: 1000, active_policies: 2, gwp_usd: 9600, status: 'Active' },
+      { code: 'PA-GRP-SYND', line_code: 'PA', line_name: 'Personal Accident', carrier: 'Arope Insurance', product_name: 'Group 24/7 Personal Accident & PTD', base_comm_pct: 20.0, min_prem_usd: 500, active_policies: 1, gwp_usd: 2100, status: 'Active' },
+      { code: 'TRV-SCH-MULT', line_code: 'TRV', line_name: 'Travel & Assistance', carrier: 'Libano-Suisse', product_name: 'Schengen & Worldwide Executive Multi-Trip', base_comm_pct: 25.0, min_prem_usd: 120, active_policies: 2, gwp_usd: 950, status: 'Active' },
+      { code: 'MNY-FID-3D', line_code: 'MNY', line_name: 'Money & Fidelity', carrier: 'Bankers Assurance', product_name: 'Cash-in-Safe, Cash-in-Transit & Fidelity Guarantee', base_comm_pct: 17.5, min_prem_usd: 800, active_policies: 2, gwp_usd: 3100, status: 'Active' }
+    ];
+
+    const agreements = [
+      { id: 'AGR-MGF-MED-2026', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 10.5, renewal_pct: 10.5, override_bonus_pct: 2.0, prior_rate_pct: 10.0, backfill_status: '7z-chrono Active · 6 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-BNK-PRP-2026', carrier: 'Bankers Assurance', line: 'PROP · Property', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 17.5, renewal_pct: 17.5, override_bonus_pct: 2.5, prior_rate_pct: 16.5, backfill_status: '7z-chrono Active · 5 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-ALZ-MOT-2026', carrier: 'Allianz SNA', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 18.0, renewal_pct: 17.5, override_bonus_pct: 2.0, prior_rate_pct: 17.0, backfill_status: '7z-chrono Active · 8 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-AXA-ENG-2026', carrier: 'AXA Middle East', line: 'ENG · Engineering', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 14.0, renewal_pct: 14.0, override_bonus_pct: 1.5, prior_rate_pct: 13.5, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-AXA-MAR-2026', carrier: 'AXA Middle East', line: 'MAR · Marine', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 15.0, renewal_pct: 15.0, override_bonus_pct: 1.5, prior_rate_pct: 15.0, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-LBS-LIAB-2026', carrier: 'Libano-Suisse', line: 'LIAB · Liability', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 16.0, renewal_pct: 16.0, override_bonus_pct: 2.0, prior_rate_pct: 15.0, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-ARP-MOT-2026', carrier: 'Arope Insurance', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 20.0, renewal_pct: 18.5, override_bonus_pct: 2.5, prior_rate_pct: 18.5, backfill_status: '7z-chrono Active · 4 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-MGF-MED-2025', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2025-01-01', end_date: '2025-12-31', new_bus_pct: 10.0, renewal_pct: 10.0, override_bonus_pct: 1.5, prior_rate_pct: 9.5, backfill_status: 'Auto-Closed at 2025-12-31 (prevDayISO)', status: 'Closed Window' }
+    ];
+
+    const gwpUsd = policies.reduce((a, r) => a + r.gross_prem_usd, 0);
+    const grossComm7063Usd = policies.reduce((a, r) => a + r.gross_comm_usd, 0);
+    const discount7065Usd = policies.reduce((a, r) => a + r.discount_usd, 0);
+    const netCommUsd = policies.reduce((a, r) => a + r.net_comm_usd, 0);
+    const policyFees7064Usd = policies.reduce((a, r) => a + r.policy_fee_usd, 0);
+    const openClientAr4112Usd = billing.reduce((a, r) => a + r.open_ar_4112_usd, 0);
+    const payableToCarriers4017Usd = remittances.reduce((a, r) => a + r.net_payable_4017_usd, 0);
+    const cashHeldUsd = remittances.reduce((a, r) => a + r.client_cash_held_usd, 0);
+    const dueRenewals90dCount = renewals.filter(r => r.days_left >= 0 && r.days_left <= 90).length;
+    const expiredUnrenewedCount = renewals.filter(r => r.days_left < 0).length;
+    const stmtDiscrepancyCount = statements.filter(r => r.variance_usd !== 0).length;
+    const openClaimsCount = claims.filter(r => r.status !== 'Settled').length;
+
+    return {
+      policies,
+      renewals,
+      items,
+      billing,
+      remittances,
+      statements,
+      claims,
+      catalogue,
+      agreements,
+      summary: {
+        totalPolicyCount: 38,
+        endorsementCount: 4,
+        carriersCount: 6,
+        linesCount: 12,
+        productsCount: 52,
+        agreementsCount: 21,
+        gwpUsd,
+        grossComm7063Usd,
+        discount7065Usd,
+        netCommUsd,
+        policyFees7064Usd,
+        openClientAr4112Usd,
+        payableToCarriers4017Usd,
+        cashHeldUsd,
+        dueRenewals90dCount,
+        expiredUnrenewedCount,
+        retentionPct: 88.2,
+        stmtDiscrepancyCount,
+        openClaimsCount
+      }
+    };
+  }
+
+  function renderInsurancePolicies(submode = 'main') {
+    const data = computeInsuranceOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredPol = sortRows(data.policies.filter(matchQ), 'ins_policies');
+    const filteredRen = sortRows(data.renewals.filter(matchQ), 'ins_renewals');
+    const filteredItm = sortRows(data.items.filter(matchQ), 'ins_items');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Insurance &amp; Brokerage · Production, Endorsements, Client Discounts (GL 7065) &amp; Renewal Pipeline</div>
+          <h2>${submode === 'renewals' ? '30 / 60 / 90-Day Policy Renewal Queue &amp; Retention' : (submode === 'items' ? 'Insured Items, Vehicles, Group Census &amp; Industrial Assets' : 'Master Policy Register, Endorsements &amp; Net Brokerage Yield')}</h2>
+        </div>
+        <div class="cockpit-controls">
+          <div class="seg" role="tablist" aria-label="Policies & Renewals Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="ins_policies">Policies &amp; Discounts (${s.totalPolicyCount} + ${s.endorsementCount} End.)</button>
+            <button type="button" class="${submode === 'renewals' ? 'active' : ''}" data-nav-jump="ins_renewals">Renewal Queue (${data.renewals.length})</button>
+            <button type="button" class="${submode === 'items' ? 'active' : ''}" data-nav-jump="ins_items">Insured Items (${data.items.length})</button>
+          </div>
+          ${exportBtn(submode === 'renewals' ? 'ins_renewals' : (submode === 'items' ? 'ins_items' : 'ins_policies'))}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Written Premium (GWP)</div>
+          <div class="kpi-val mono">${fmtUSD(s.gwpUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(s.totalPolicyCount)} active policies + ${fmtNum(s.endorsementCount)} endorsements across ${fmtNum(s.carriersCount)} carriers</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Commission (GL 7063)</div>
+          <div class="kpi-val mono">${fmtUSD(s.grossComm7063Usd, 0)}</div>
+          <div class="kpi-sub">12.15% blended carrier commission + ${fmtUSD(s.policyFees7064Usd, 0)} fees (GL 7064)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Net Commission After Discounts</div>
+          <div class="kpi-val mono">${fmtUSD(s.netCommUsd, 0)}</div>
+          <div class="kpi-sub">Less ${fmtUSD(s.discount7065Usd, 0)} client discounts granted (GL 7065 · 5 policies)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">90-Day Renewal Pipeline</div>
+          <div class="kpi-val mono warn">${fmtNum(s.dueRenewals90dCount)} Due · ${fmtPct(s.retentionPct, 1)}</div>
+          <div class="kpi-sub">${fmtNum(s.expiredUnrenewedCount)} expired unrenewed · Rami Saab BMW X5 in 22d</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'renewals') {
+      const sumExp = filteredRen.reduce((a, r) => a + r.expiring_prem_usd, 0);
+      const sumQuo = filteredRen.reduce((a, r) => a + r.quoted_renewal_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>30 / 60 / 90-Day Policy Renewal Queue &amp; Lapsed Policy Tracker (i31) ${shownCount('ins_renewals', filteredRen.length, data.renewals.length)}</h3>
+              <p>Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search renewal, client, carrier, bucket...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('ins_renewals', 'policy_no', 'Expiring Policy #')}
+                  ${th('ins_renewals', 'company', 'Entity')}
+                  ${th('ins_renewals', 'client', 'Insured Client')}
+                  ${th('ins_renewals', 'carrier', 'Carrier')}
+                  ${th('ins_renewals', 'line', 'Line')}
+                  ${th('ins_renewals', 'expiry_date', 'Expiry Date')}
+                  ${th('ins_renewals', 'days_left', 'Days Left', 'r')}
+                  ${th('ins_renewals', 'bucket', 'Horizon Bucket')}
+                  ${th('ins_renewals', 'expiring_prem_usd', 'Expiring Prem ($)', 'r')}
+                  ${th('ins_renewals', 'quoted_renewal_usd', 'Renewal Quote ($)', 'r')}
+                  ${th('ins_renewals', 'stage', 'Renewal Stage')}
+                  ${th('ins_renewals', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRen.length ? sliceRows('ins_renewals', filteredRen).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.policy_no)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">Producer: ${esc(r.producer)}</div></td>
+                    <td>${esc(r.carrier)}</td>
+                    <td>${esc(r.line)}</td>
+                    <td class="mono">${esc(r.expiry_date)}</td>
+                    <td class="r mono ${r.days_left < 0 ? 'crit' : (r.days_left <= 30 ? 'warn' : '')}"><strong>${r.days_left}d</strong></td>
+                    <td><span class="badge ${r.days_left < 0 ? 'badge-crit' : (r.days_left <= 30 ? 'badge-warn' : 'badge-good')}">${esc(r.bucket)}</span></td>
+                    <td class="r mono">${fmtUSD(r.expiring_prem_usd, 0)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.quoted_renewal_usd, 0)}</strong></td>
+                    <td>${esc(r.stage)}</td>
+                    <td><span class="badge ${r.status.includes('Expired') ? 'badge-crit' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No renewal records match current filter')}
+                ${showMoreRow('ins_renewals', filteredRen.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="8"><strong>TOTAL RENEWAL PIPELINE (${fmtNum(filteredRen.length)} POLICIES)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumExp, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumQuo, 0)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'items') {
+      const sumSi = filteredItm.reduce((a, r) => a + r.sum_insured_usd, 0);
+      const sumPr = filteredItm.reduce((a, r) => a + r.annual_prem_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Insured Items, Vehicles (VIN/Plate), Medical Census &amp; Commercial Locations (i05) ${shownCount('ins_items', filteredItm.length, data.items.length)}</h3>
+              <p>Granular risk schedule linked to underlying policies for motor certificates, group medical censuses, and property surveys</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search VIN, plate, location, census, policy...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('ins_items', 'id', 'Item ID')}
+                  ${th('ins_items', 'policy_no', 'Policy #')}
+                  ${th('ins_items', 'company', 'Entity')}
+                  ${th('ins_items', 'client', 'Insured Client')}
+                  ${th('ins_items', 'category', 'Risk Category')}
+                  ${th('ins_items', 'identifier', 'Insured Asset / Census')}
+                  ${th('ins_items', 'location_or_vin', 'VIN / Plate / Cadastral Location')}
+                  ${th('ins_items', 'sum_insured_usd', 'Sum Insured ($)', 'r')}
+                  ${th('ins_items', 'deductible_usd', 'Deductible ($)', 'r')}
+                  ${th('ins_items', 'annual_prem_usd', 'Allocated Prem ($)', 'r')}
+                  ${th('ins_items', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredItm.length ? sliceRows('ins_items', filteredItm).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.policy_no)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.client)}</strong></td>
+                    <td>${esc(r.category)}</td>
+                    <td><strong>${esc(r.identifier)}</strong></td>
+                    <td class="mono">${esc(r.location_or_vin)}</td>
+                    <td class="r mono">${fmtUSD(r.sum_insured_usd, 0)}</td>
+                    <td class="r mono">${fmtUSD(r.deductible_usd, 0)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.annual_prem_usd, 0)}</strong></td>
+                    <td><span class="badge ${r.status === 'Covered' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No insured items match current filter')}
+                ${showMoreRow('ins_items', filteredItm.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL INSURED RISK SCHEDULE (${fmtNum(filteredItm.length)} SCHEDULES)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumSi, 0)}</strong></td>
+                  <td></td>
+                  <td class="r mono"><strong>${fmtUSD(sumPr, 0)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumGwp = filteredPol.reduce((a, r) => a + r.gross_prem_usd, 0);
+    const sumGrossComm = filteredPol.reduce((a, r) => a + r.gross_comm_usd, 0);
+    const sumDisc = filteredPol.reduce((a, r) => a + r.discount_usd, 0);
+    const sumNetComm = filteredPol.reduce((a, r) => a + r.net_comm_usd, 0);
+    const sumPay4017 = filteredPol.reduce((a, r) => a + r.net_payable_4017_usd, 0);
+    const maxPolGwp = Math.max(1, ...filteredPol.map(r => Math.abs(r.gross_prem_usd)));
+
+    return `
+      ${bannerHtml}
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <div>
+            <h3>Gross Written Premium vs Net Brokerage Commission by Policy &amp; Carrier ($)</h3>
+            <p>Carrier Payable (GL 4017) stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker revenue via GL 7065</p>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <svg viewBox="0 0 680 190" style="width:100%;height:180px;display:block" role="img" aria-label="Insurance GWP and Commission Chart">
+            ${filteredPol.slice(0, 5).map((r, idx) => {
+              const y = 10 + idx * 34;
+              const wGwp = Math.max(18, Math.round((Math.abs(r.gross_prem_usd) / maxPolGwp) * 320));
+              const wComm = Math.max(8, Math.round((Math.abs(r.net_comm_usd) / maxPolGwp) * 320));
+              return `
+                <g transform="translate(0,${y})">
+                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.carrier).slice(0, 32))}</text>
+                  <rect x="225" y="3" width="${wGwp}" height="18" rx="4" fill="rgba(37,99,235,0.22)"></rect>
+                  <rect x="225" y="3" width="${wComm}" height="18" rx="4" fill="#0d9488"></rect>
+                  <text x="${233 + wGwp}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">GWP ${fmtUSD(r.gross_prem_usd, 0)} · Net Comm ${fmtUSD(r.net_comm_usd, 0)}</text>
+                </g>
+              `;
+            }).join('')}
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Master Policies, Mid-Term Endorsements &amp; Client Discounts Ledger (GL 7063 / 7065 / 4017) ${shownCount('ins_policies', filteredPol.length, data.policies.length)}</h3>
+            <p>Full policy lifecycle with Gross Commission (7063), Broker-Funded Client Discounts (7065), Policy Admin Fees (7064), and Net Carrier Payable (4017)</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search policy #, client, carrier, line, producer...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('ins_policies', 'id', 'Policy / End. #')}
+                ${th('ins_policies', 'company', 'Entity')}
+                ${th('ins_policies', 'client', 'Insured Client')}
+                ${th('ins_policies', 'carrier', 'Carrier')}
+                ${th('ins_policies', 'line', 'Line')}
+                ${th('ins_policies', 'expiry', 'Expiry')}
+                ${th('ins_policies', 'gross_prem_usd', 'Gross Prem ($)', 'r')}
+                ${th('ins_policies', 'gross_comm_usd', 'Gross Comm 7063 ($)', 'r')}
+                ${th('ins_policies', 'discount_usd', 'Discount 7065 ($)', 'r')}
+                ${th('ins_policies', 'net_comm_usd', 'Net Comm ($)', 'r')}
+                ${th('ins_policies', 'net_payable_4017_usd', 'Carrier 4017 ($)', 'r')}
+                ${th('ins_policies', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredPol.length ? sliceRows('ins_policies', filteredPol).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong><div class="muted" style="font-size:11px">${esc(r.type)}</div></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.product)} · ${esc(r.producer)}</div></td>
+                  <td>${esc(r.carrier)}</td>
+                  <td>${esc(r.line)}</td>
+                  <td class="mono">${esc(r.expiry)}</td>
+                  <td class="r mono">${fmtUSD(r.gross_prem_usd, 0)}</td>
+                  <td class="r mono">${fmtUSD(r.gross_comm_usd, 0)} <span class="muted">(${fmtPct(r.comm_rate_pct, 1)})</span></td>
+                  <td class="r mono ${r.discount_usd > 0 ? 'warn' : ''}">${r.discount_usd > 0 ? '-' + fmtUSD(r.discount_usd, 0) : '$0'}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.net_comm_usd, 0)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.net_payable_4017_usd, 0)}</td>
+                  <td><span class="badge ${r.status === 'Active' || r.status === 'Endorsed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(12, 'No insurance policies match current filter')}
+              ${showMoreRow('ins_policies', filteredPol.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL PRODUCTION LEDGER (${fmtNum(s.totalPolicyCount)} POLICIES + ${fmtNum(s.endorsementCount)} ENDORSEMENTS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGwp, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGrossComm, 0)}</strong></td>
+                <td class="r mono"><strong>-${fmtUSD(sumDisc, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumNetComm, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPay4017, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderInsuranceBilling(submode = 'main') {
+    const data = computeInsuranceOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredBil = sortRows(data.billing.filter(matchQ), 'ins_billing');
+    const filteredRem = sortRows(data.remittances.filter(matchQ), 'ins_remittances');
+    const filteredStm = sortRows(data.statements.filter(matchQ), 'ins_statements');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Insurance &amp; Brokerage · Premium Instalments, Insurer Remittances (GL 4017) &amp; Statement Recon</div>
+          <h2>${submode === 'remittances' ? 'Insurer Net Premium Remittances &amp; Fiduciary Cash Coverage' : (submode === 'statements' ? 'Monthly Carrier Commission Statement Reconciliation (i32)' : 'Premium Instalments, Client Receipts &amp; Open AR (GL 4112)')}</h2>
+        </div>
+        <div class="cockpit-controls">
+          <div class="seg" role="tablist" aria-label="Billing & Recon Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="ins_billing">Instalments &amp; AR (${data.billing.length})</button>
+            <button type="button" class="${submode === 'remittances' ? 'active' : ''}" data-nav-jump="ins_remittances">Insurer Remittances (${data.remittances.length})</button>
+            <button type="button" class="${submode === 'statements' ? 'active' : ''}" data-nav-jump="ins_statements">Statement Recon (${data.statements.length})</button>
+          </div>
+          ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'))}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Open Client Premium AR (GL 4112)</div>
+          <div class="kpi-val mono warn">${fmtUSD(s.openClientAr4112Usd, 0)}</div>
+          <div class="kpi-sub">43 instalments billed · 27 client receipts linked (i36)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Net Payable to Carriers (GL 4017)</div>
+          <div class="kpi-val mono">${fmtUSD(s.payableToCarriers4017Usd, 0)}</div>
+          <div class="kpi-sub">Across 6 carriers under Net-of-Commission settlement</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Fiduciary Cash &amp; Bank Coverage</div>
+          <div class="kpi-val mono">${fmtUSD(s.cashHeldUsd, 0)}</div>
+          <div class="kpi-sub">103.7% coverage vs GL 4017 carrier obligations</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Carrier Statement Discrepancies</div>
+          <div class="kpi-val mono ${s.stmtDiscrepancyCount > 0 ? 'crit' : ''}">${fmtNum(s.stmtDiscrepancyCount)} Flagged</div>
+          <div class="kpi-sub">Allianz Sep -$25 &amp; Arope Oct -$40 held for credit note</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'remittances') {
+      const sumGp = filteredRem.reduce((a, r) => a + r.gross_prem_usd, 0);
+      const sumCm = filteredRem.reduce((a, r) => a + r.broker_comm_7063_usd, 0);
+      const sumSt = filteredRem.reduce((a, r) => a + r.settled_to_carrier_usd, 0);
+      const sumPay = filteredRem.reduce((a, r) => a + r.net_payable_4017_usd, 0);
+      const sumCash = filteredRem.reduce((a, r) => a + r.client_cash_held_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Insurer Net Premium Remittance Bordereaux &amp; Cash-vs-Payable Guard (GL 4017) ${shownCount('ins_remittances', filteredRem.length, data.remittances.length)}</h3>
+              <p>Tracks Gross Premium, Broker Commission retained at source (GL 7063), cumulative carrier remittances, and fiduciary cash coverage</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search carrier, GL 4017 account, status...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('ins_remittances', 'id', 'Bordereau #')}
+                  ${th('ins_remittances', 'company', 'Entity')}
+                  ${th('ins_remittances', 'carrier', 'Insurance Carrier')}
+                  ${th('ins_remittances', 'gl_payable', 'GL 4017 Sub-Account')}
+                  ${th('ins_remittances', 'gross_prem_usd', 'Gross Prem ($)', 'r')}
+                  ${th('ins_remittances', 'broker_comm_7063_usd', 'Commission 7063 ($)', 'r')}
+                  ${th('ins_remittances', 'settled_to_carrier_usd', 'Remitted to Date ($)', 'r')}
+                  ${th('ins_remittances', 'net_payable_4017_usd', 'Open 4017 Payable ($)', 'r')}
+                  ${th('ins_remittances', 'client_cash_held_usd', 'Cash Held ($)', 'r')}
+                  ${th('ins_remittances', 'next_due', 'Next Bordereau')}
+                  ${th('ins_remittances', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRem.length ? sliceRows('ins_remittances', filteredRem).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.carrier)}</strong><div class="muted" style="font-size:11px">${esc(r.settlement_mode)}</div></td>
+                    <td class="mono">${esc(r.gl_payable)}</td>
+                    <td class="r mono">${fmtUSD(r.gross_prem_usd, 0)}</td>
+                    <td class="r mono">${fmtUSD(r.broker_comm_7063_usd, 0)}</td>
+                    <td class="r mono">${fmtUSD(r.settled_to_carrier_usd, 0)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.net_payable_4017_usd, 0)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.client_cash_held_usd, 0)}</td>
+                    <td class="mono">${esc(r.next_due)}</td>
+                    <td><span class="badge ${r.status === 'Covered by Cash' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No insurer remittances match current filter')}
+                ${showMoreRow('ins_remittances', filteredRem.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="4"><strong>TOTAL CARRIER REMITTANCE LEDGER (${fmtNum(filteredRem.length)} CARRIERS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGp, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCm, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumSt, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumPay, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCash, 0)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'statements') {
+      const sumExp = filteredStm.reduce((a, r) => a + r.expected_comm_4117_usd, 0);
+      const sumStm = filteredStm.reduce((a, r) => a + r.statement_comm_usd, 0);
+      const sumVar = filteredStm.reduce((a, r) => a + r.variance_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Monthly Carrier Commission Statement Reconciliation Engine (i32 · GL 4117) ${shownCount('ins_statements', filteredStm.length, data.statements.length)}</h3>
+              <p>Matches carrier commission statements line-by-line against expected agreement rates and isolates rounding or rate discrepancies</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search statement #, carrier, period, status...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('ins_statements', 'id', 'Statement #')}
+                  ${th('ins_statements', 'period', 'Period')}
+                  ${th('ins_statements', 'company', 'Entity')}
+                  ${th('ins_statements', 'carrier', 'Carrier')}
+                  ${th('ins_statements', 'policies_count', 'Policies', 'r')}
+                  ${th('ins_statements', 'expected_comm_4117_usd', 'Expected 4117 ($)', 'r')}
+                  ${th('ins_statements', 'statement_comm_usd', 'Carrier Stmt ($)', 'r')}
+                  ${th('ins_statements', 'variance_usd', 'Variance ($)', 'r')}
+                  ${th('ins_statements', 'note', 'Reconciliation Audit Note')}
+                  ${th('ins_statements', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredStm.length ? sliceRows('ins_statements', filteredStm).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.period)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.carrier)}</strong></td>
+                    <td class="r mono">${fmtNum(r.policies_count)}</td>
+                    <td class="r mono">${fmtUSD(r.expected_comm_4117_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.statement_comm_usd, 2)}</td>
+                    <td class="r mono ${r.variance_usd !== 0 ? 'crit' : ''}"><strong>${fmtUSD(r.variance_usd, 2)}</strong></td>
+                    <td>${esc(r.note)}</td>
+                    <td><span class="badge ${r.status === 'Discrepancy' ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(10, 'No commission statements match current filter')}
+                ${showMoreRow('ins_statements', filteredStm.length, 10)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="5"><strong>TOTAL STATEMENT RECONCILIATION (${fmtNum(filteredStm.length)} STATEMENTS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumExp, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumStm, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumVar, 2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumBilled = filteredBil.reduce((a, r) => a + r.client_billed_4112_usd, 0);
+    const sumColl = filteredBil.reduce((a, r) => a + r.collected_usd, 0);
+    const sumOpen = filteredBil.reduce((a, r) => a + r.open_ar_4112_usd, 0);
+
+    return `
+      ${bannerHtml}
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Premium Instalment Invoices, Client Receipts &amp; Open Receivables (i33 / i36 · GL 4112) ${shownCount('ins_billing', filteredBil.length, data.billing.length)}</h3>
+            <p>Client receivable (GL 4112) equals Gross Premium minus Client Discount (7065) plus Policy Admin Fee (7064); receipts auto-link via bhf_premiumLink</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search invoice #, policy #, client, receipt ref...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('ins_billing', 'id', 'Debit Note #')}
+                ${th('ins_billing', 'due_date', 'Due Date')}
+                ${th('ins_billing', 'company', 'Entity')}
+                ${th('ins_billing', 'policy_no', 'Policy #')}
+                ${th('ins_billing', 'client', 'Client')}
+                ${th('ins_billing', 'carrier', 'Carrier')}
+                ${th('ins_billing', 'client_billed_4112_usd', 'Net Billed 4112 ($)', 'r')}
+                ${th('ins_billing', 'collected_usd', 'Collected ($)', 'r')}
+                ${th('ins_billing', 'open_ar_4112_usd', 'Open AR ($)', 'r')}
+                ${th('ins_billing', 'receipt_ref', 'Linked Receipt (i36)')}
+                ${th('ins_billing', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredBil.length ? sliceRows('ins_billing', filteredBil).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(r.due_date)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td class="mono">${esc(r.policy_no)}</td>
+                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.instalment)}</div></td>
+                  <td>${esc(r.carrier)}</td>
+                  <td class="r mono">${fmtUSD(r.client_billed_4112_usd, 0)}</td>
+                  <td class="r mono">${fmtUSD(r.collected_usd, 0)}</td>
+                  <td class="r mono ${r.open_ar_4112_usd > 0 ? 'warn' : ''}"><strong>${fmtUSD(r.open_ar_4112_usd, 0)}</strong></td>
+                  <td class="mono">${esc(r.receipt_ref)}</td>
+                  <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No premium billing records match current filter')}
+              ${showMoreRow('ins_billing', filteredBil.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL PREMIUM BILLING &amp; RECEIPTS (${fmtNum(filteredBil.length)} SCHEDULES)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumBilled, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumColl, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumOpen, 0)}</strong></td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderInsuranceClaims(submode = 'main') {
+    const data = computeInsuranceOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredClm = sortRows(data.claims.filter(matchQ), 'ins_claims');
+
+    const sumClaimed = filteredClm.reduce((a, r) => a + r.claimed_usd, 0);
+    const sumDed = filteredClm.reduce((a, r) => a + r.deductible_usd, 0);
+    const sumAppr = filteredClm.reduce((a, r) => a + r.approved_usd, 0);
+    const sumPaid = filteredClm.reduce((a, r) => a + r.paid_by_insurer_usd, 0);
+    const maxClm = Math.max(1, ...filteredClm.map(r => r.claimed_usd));
+
+    return `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Insurance &amp; Brokerage · First Notice of Loss (FNOL), Surveyor Reserves &amp; Carrier Settlements (i34)</div>
+          <h2>Claims Register, Loss Adjuster Tracking &amp; Client Indemnity Recoveries</h2>
+        </div>
+        <div class="cockpit-controls">
+          <div class="seg" role="tablist" aria-label="Claims Sub-Views">
+            <button type="button" class="active" data-nav-jump="ins_claims">Claims &amp; Recoveries (${data.claims.length})</button>
+          </div>
+          ${exportBtn('ins_claims')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Total Reported Claims (FNOL)</div>
+          <div class="kpi-val mono">${fmtNum(data.claims.length)} Claims</div>
+          <div class="kpi-sub">${fmtNum(s.openClaimsCount)} active files · 2 settled in full</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Claimed Estimate</div>
+          <div class="kpi-val mono">${fmtUSD(sumClaimed, 0)}</div>
+          <div class="kpi-sub">Across Motor, Medical, Property, WC &amp; Marine</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Adjuster Approved Indemnity</div>
+          <div class="kpi-val mono">${fmtUSD(sumAppr, 0)}</div>
+          <div class="kpi-sub">Net of ${fmtUSD(sumDed, 0)} policy deductibles</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Paid by Carriers to Date</div>
+          <div class="kpi-val mono">${fmtUSD(sumPaid, 0)}</div>
+          <div class="kpi-sub">$26,600 approved/under assessment awaiting release</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <div>
+            <h3>Claimed Estimate vs Adjuster Approved Indemnity by File ($)</h3>
+            <p>Brokerage advocacy tracks surveyor assessment from First Notice of Loss (FNOL) through carrier discharge voucher</p>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Insurance Claims Progression Chart">
+            ${filteredClm.map((r, idx) => {
+              const y = 10 + idx * 33;
+              const wClm = Math.max(16, Math.round((r.claimed_usd / maxClm) * 320));
+              const wApp = Math.max(6, Math.round((r.approved_usd / maxClm) * 320));
+              return `
+                <g transform="translate(0,${y})">
+                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.client).slice(0, 32))}</text>
+                  <rect x="225" y="3" width="${wClm}" height="18" rx="4" fill="rgba(245,158,11,0.25)"></rect>
+                  <rect x="225" y="3" width="${wApp}" height="18" rx="4" fill="#2563eb"></rect>
+                  <text x="${233 + wClm}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">Claimed ${fmtUSD(r.claimed_usd, 0)} · Approved ${fmtUSD(r.approved_usd, 0)}</text>
+                </g>
+              `;
+            }).join('')}
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>FNOL Claims, Loss Adjusters &amp; Carrier Indemnity Settlement Ledger (i34) ${shownCount('ins_claims', filteredClm.length, data.claims.length)}</h3>
+            <p>Tracks claim notifications, expert assignment, policy deductible application, and insurer settlement status</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search claim #, policy #, client, adjuster, peril...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('ins_claims', 'id', 'Claim #')}
+                ${th('ins_claims', 'loss_date', 'Loss Date')}
+                ${th('ins_claims', 'company', 'Entity')}
+                ${th('ins_claims', 'policy_no', 'Policy #')}
+                ${th('ins_claims', 'client', 'Insured Client')}
+                ${th('ins_claims', 'carrier', 'Carrier')}
+                ${th('ins_claims', 'peril', 'Peril / Incident Description')}
+                ${th('ins_claims', 'claimed_usd', 'Claimed ($)', 'r')}
+                ${th('ins_claims', 'deductible_usd', 'Deductible ($)', 'r')}
+                ${th('ins_claims', 'approved_usd', 'Approved ($)', 'r')}
+                ${th('ins_claims', 'paid_by_insurer_usd', 'Settled ($)', 'r')}
+                ${th('ins_claims', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredClm.length ? sliceRows('ins_claims', filteredClm).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(r.loss_date)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td class="mono">${esc(r.policy_no)}</td>
+                  <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.line)}</div></td>
+                  <td>${esc(r.carrier)}</td>
+                  <td><strong>${esc(r.peril)}</strong><div class="muted" style="font-size:11px">Adjuster: ${esc(r.adjuster)}</div></td>
+                  <td class="r mono">${fmtUSD(r.claimed_usd, 0)}</td>
+                  <td class="r mono">${fmtUSD(r.deductible_usd, 0)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.approved_usd, 0)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.paid_by_insurer_usd, 0)}</td>
+                  <td><span class="badge ${r.status === 'Settled' ? 'badge-good' : (r.status.includes('FNOL') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(12, 'No insurance claims match current filter')}
+              ${showMoreRow('ins_claims', filteredClm.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="7"><strong>TOTAL CLAIMS REGISTER (${fmtNum(filteredClm.length)} CLAIMS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumClaimed, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumDed, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumAppr, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPaid, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderInsuranceCatalogue(submode = 'main') {
+    const data = computeInsuranceOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredCat = sortRows(data.catalogue.filter(matchQ), 'ins_catalogue');
+    const filteredAgr = sortRows(data.agreements.filter(matchQ), 'ins_agreements');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Insurance &amp; Brokerage · 12 Insurance Lines, 52 Carrier Products &amp; Chronological Commission Agreements</div>
+          <h2>${submode === 'agreements' ? 'Chronological Carrier Commission Rate Agreements (7z-chrono)' : 'Insurance Lines &amp; Carrier Product Catalogue (i07)'}</h2>
+        </div>
+        <div class="cockpit-controls">
+          <div class="seg" role="tablist" aria-label="Catalogue & Rates Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="ins_catalogue">Lines &amp; Products (${s.linesCount} Lines · ${s.productsCount} Products)</button>
+            <button type="button" class="${submode === 'agreements' ? 'active' : ''}" data-nav-jump="ins_agreements">Commission Agreements (${s.agreementsCount} Rules · 7z-chrono)</button>
+          </div>
+          ${exportBtn(submode === 'agreements' ? 'ins_agreements' : 'ins_catalogue')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Standardized Insurance Lines</div>
+          <div class="kpi-val mono">${fmtNum(s.linesCount)} Lines</div>
+          <div class="kpi-sub">MOT · MED · PROP · ENG · MAR · LIFE · LIAB · WC · PA · TRV · MNY · MISC</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Underwritten Carrier Products</div>
+          <div class="kpi-val mono">${fmtNum(s.productsCount)} Products</div>
+          <div class="kpi-sub">Across 6 Lebanese &amp; regional insurance carriers (i07)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Chronological Rate Agreements</div>
+          <div class="kpi-val mono">${fmtNum(s.agreementsCount)} Active Rules</div>
+          <div class="kpi-sub">Forward start-date guard &amp; retroactive policy backfill (7z-chrono)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Blended Contractual Yield</div>
+          <div class="kpi-val mono">10.5% – 25.0%</div>
+          <div class="kpi-sub">Auto-computes Gross Commission (GL 7063) on policy entry</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'agreements') {
+      const avgNew = filteredAgr.length ? (filteredAgr.reduce((a, r) => a + r.new_bus_pct, 0) / filteredAgr.length) : 0;
+      const avgRen = filteredAgr.length ? (filteredAgr.reduce((a, r) => a + r.renewal_pct, 0) / filteredAgr.length) : 0;
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Chronological Carrier Commission Rate Agreements &amp; Retroactive Backfill (7z-chrono) ${shownCount('ins_agreements', filteredAgr.length, data.agreements.length)}</h3>
+              <p>Enforces strict forward effective dates, auto-closes prior Open rate windows at prevDayISO, and backfills affected policy commissions</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search agreement #, carrier, line, effective date...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('ins_agreements', 'id', 'Agreement ID')}
+                  ${th('ins_agreements', 'carrier', 'Carrier')}
+                  ${th('ins_agreements', 'line', 'Insurance Line')}
+                  ${th('ins_agreements', 'start_date', 'Effective From')}
+                  ${th('ins_agreements', 'end_date', 'Effective To')}
+                  ${th('ins_agreements', 'new_bus_pct', 'New Bus %', 'r')}
+                  ${th('ins_agreements', 'renewal_pct', 'Renewal %', 'r')}
+                  ${th('ins_agreements', 'override_bonus_pct', 'Override %', 'r')}
+                  ${th('ins_agreements', 'prior_rate_pct', 'Prior %', 'r')}
+                  ${th('ins_agreements', 'backfill_status', 'Chrono Audit & Backfill')}
+                  ${th('ins_agreements', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredAgr.length ? sliceRows('ins_agreements', filteredAgr).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td><strong>${esc(r.carrier)}</strong></td>
+                    <td>${esc(r.line)}</td>
+                    <td class="mono">${esc(r.start_date)}</td>
+                    <td class="mono">${esc(r.end_date)}</td>
+                    <td class="r mono"><strong>${fmtPct(r.new_bus_pct, 1)}</strong></td>
+                    <td class="r mono">${fmtPct(r.renewal_pct, 1)}</td>
+                    <td class="r mono">${fmtPct(r.override_bonus_pct, 1)}</td>
+                    <td class="r mono">${fmtPct(r.prior_rate_pct, 1)}</td>
+                    <td>${esc(r.backfill_status)}</td>
+                    <td><span class="badge ${r.status.includes('Active') ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No commission agreements match current filter')}
+                ${showMoreRow('ins_agreements', filteredAgr.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="5"><strong>AVERAGE CONTRACTUAL COMMISSION RATES (${fmtNum(filteredAgr.length)} WINDOWS)</strong></td>
+                  <td class="r mono"><strong>${fmtPct(avgNew, 1)}</strong></td>
+                  <td class="r mono"><strong>${fmtPct(avgRen, 1)}</strong></td>
+                  <td colspan="4"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumPols = filteredCat.reduce((a, r) => a + r.active_policies, 0);
+    const sumGwp = filteredCat.reduce((a, r) => a + r.gwp_usd, 0);
+
+    return `
+      ${bannerHtml}
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>12 Insurance Lines &amp; Carrier Product Catalogue (i07) ${shownCount('ins_catalogue', filteredCat.length, data.catalogue.length)}</h3>
+            <p>Standardized product hierarchy across Motor, Medical, Property, Engineering, Marine, Liability, Workmen Comp, Life, PA, Travel &amp; Fidelity</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search product code, line, carrier, product name...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('ins_catalogue', 'code', 'Product Code')}
+                ${th('ins_catalogue', 'line_code', 'Line Code')}
+                ${th('ins_catalogue', 'line_name', 'Insurance Line')}
+                ${th('ins_catalogue', 'carrier', 'Lead Carrier')}
+                ${th('ins_catalogue', 'product_name', 'Carrier Product Name')}
+                ${th('ins_catalogue', 'base_comm_pct', 'Base Comm %', 'r')}
+                ${th('ins_catalogue', 'min_prem_usd', 'Min Prem ($)', 'r')}
+                ${th('ins_catalogue', 'active_policies', 'Active Policies', 'r')}
+                ${th('ins_catalogue', 'gwp_usd', 'Active GWP ($)', 'r')}
+                ${th('ins_catalogue', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredCat.length ? sliceRows('ins_catalogue', filteredCat).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.code)}</strong></td>
+                  <td class="mono"><span class="badge badge-good">${esc(r.line_code)}</span></td>
+                  <td><strong>${esc(r.line_name)}</strong></td>
+                  <td>${esc(r.carrier)}</td>
+                  <td><strong>${esc(r.product_name)}</strong></td>
+                  <td class="r mono"><strong>${fmtPct(r.base_comm_pct, 1)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.min_prem_usd, 0)}</td>
+                  <td class="r mono">${fmtNum(r.active_policies)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.gwp_usd, 0)}</strong></td>
+                  <td><span class="badge badge-good">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(10, 'No insurance products match current filter')}
+              ${showMoreRow('ins_catalogue', filteredCat.length, 10)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="7"><strong>TOTAL CATALOGUE PRODUCTION (${fmtNum(filteredCat.length)} FLAGSHIP LINES OF ${fmtNum(s.productsCount)} PRODUCTS)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumPols)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGwp, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHubAnalyticsView(modKey) {
     const title = VIEW_TITLES[modKey] || 'Module Analytics';
     return `
@@ -43749,7 +45504,8 @@
     item: 'New Item & Spare Part (Universal Catalog)',
     staff: 'New Staff Member (Universal Registry)',
     staffrole: 'New Staff Role (Universal Registry)',
-    staffassignment: 'Log Staff Role & Equipment Assignment'
+    staffassignment: 'Log Staff Role & Equipment Assignment',
+    workshift: 'New Shift & Clock Timing'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES) || {});
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
@@ -43757,7 +45513,8 @@
     recurringexpense: 'recurring_expenses',
     warehousestock: 'warehouse_movements', settlement: 'settlements',
     repair: 'equipment_repairs', oillog: 'equipment_oil_logs', item: 'items',
-    staff: 'staff_members', staffrole: 'staff_roles', staffassignment: 'staff_assignments'
+    staff: 'staff_members', staffrole: 'staff_roles', staffassignment: 'staff_assignments',
+    workshift: 'work_shifts'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
   function secHdr(title, sub, opts = {}) {
@@ -43769,6 +45526,10 @@
     return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
+    if (type === 'time') {
+      const normTime = value == null || value === '' ? '' : normalize24hClockTime(value, String(value));
+      return `<input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="${id}" value="${esc(normTime)}" autocomplete="off" ${attrs}>`;
+    }
     return `<input type="${type}" id="${id}" value="${esc(value == null ? '' : value)}" autocomplete="off" ${attrs}>`;
   }
   function sel(id, options, value, attrs = '') {
@@ -45912,6 +47673,10 @@
   function renderExpenseItemsBuilderRows() {
     const wrap = $('expItemsRowsWrap');
     if (!wrap) return;
+    const modalBodyEl = $('modalBody');
+    const modalCardEl = wrap.closest('.modal-card');
+    const prevBodyTop = modalBodyEl ? modalBodyEl.scrollTop : 0;
+    const prevCardTop = modalCardEl ? modalCardEl.scrollTop : 0;
     const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
     const curCo = val('f_company') || defaultEntryCompany();
     const expCatNow = val('f_category');
@@ -46116,6 +47881,8 @@
     syncExpenseItemStockHints(curCo);
     syncExpenseItemsSummaryUI();
     if (typeof stripNativeTitles === 'function') stripNativeTitles(wrap);
+    if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+    if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
   }
 
   function syncRepairItemStockHints(company) {
@@ -46161,9 +47928,15 @@
   function renderRepairItemsBuilderRows() {
     const wrap = $('repairItemsRowsWrap');
     if (!wrap) return;
+    const modalBodyEl = $('modalBody');
+    const modalCardEl = wrap.closest('.modal-card');
+    const prevBodyTop = modalBodyEl ? modalBodyEl.scrollTop : 0;
+    const prevCardTop = modalCardEl ? modalCardEl.scrollTop : 0;
     const items = Array.isArray(FORM_UI.repairItems) ? FORM_UI.repairItems : [];
     if (!items.length) {
       wrap.innerHTML = `<div class="line-items-empty">No items listed yet (external labor-only repair). Click <b>+ Add Item Used</b> to record Warehouse or Outside parts.</div>`;
+      if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+      if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
       return;
     }
     const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
@@ -46204,6 +47977,8 @@
     `;
     wireModalSuggestions(wrap);
     syncRepairItemStockHints(val('f_company') || defaultEntryCompany());
+    if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+    if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
   }
 
   function isAdminUser(u) {
@@ -52032,6 +53807,77 @@
         setText('calc_sa_win', `${fmtDateDMY(startDt)} to ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
         return { curStaff, curRole, resolvedCat, curEq };
       }
+      if (STATE.modalForm === 'workshift') {
+        ensureWorkShiftsSeeded();
+        const curCo = val('f_company') || defaultEntryCompany();
+        const shName = val('f_shift_name') || 'Day Shift';
+        const shCode = /night/i.test(shName) ? 'night_7_3' : (/ext/i.test(shName) ? 'ext_7_4' : (norm(shName).replace(/[^a-z0-9]+/g, '_') || 'day_8_4'));
+        const isBuDef = val('f_is_bu_default') === 'Yes';
+        const startDt = val('f_date') || todayISO();
+        const endDt = val('f_enddate') || '';
+        const inT = val('f_in_time') || '08:00';
+        const outT = val('f_out_time') || '16:00';
+        const durHrs = computeShiftWorkedHours(inT, outT) || 8.0;
+        const satDiff = val('f_sat_diff') === 'Yes';
+        const satStart = val('f_sat_start') || '07:00';
+        const satEnd = val('f_sat_end') || '14:00';
+        const matrixBox = $('wrap_ws_day_matrix');
+        const satStartWrap = $('wrap_ws_sat_start');
+        const satEndWrap = $('wrap_ws_sat_end');
+        if (satStartWrap) satStartWrap.hidden = !satDiff;
+        if (satEndWrap) satEndWrap.hidden = !satDiff;
+        if (matrixBox) matrixBox.hidden = !satDiff;
+        const dayMap = {};
+        if (satDiff) {
+          ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
+            const dIn = val(`f_day_in_${dIdx}`);
+            const dOut = val(`f_day_out_${dIdx}`);
+            if (dIn && dOut) {
+              dayMap[dIdx] = { start_time: dIn, end_time: dOut, hours: computeShiftWorkedHours(dIn, dOut) || 7.0 };
+            }
+          });
+          if (!dayMap['6'] && satStart && satEnd) {
+            dayMap['6'] = { start_time: satStart, end_time: satEnd, hours: computeShiftWorkedHours(satStart, satEnd) || 7.0 };
+          }
+        }
+        if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dayMap);
+        const editOrigWs = (STATE.editingRecord && STATE.editingRecord.crKey === 'work_shifts') ? STATE.editingRecord.orig : null;
+        if (shName) {
+          const bounds = getChronologicalSeriesBounds('work_shifts', { company: curCo, shift_code: shCode, name: shName, start_date: startDt, end_date: endDt }, editOrigWs);
+          const dEl = $('f_date'), eEl = $('f_enddate');
+          if (dEl) {
+            if (bounds.minStart) dEl.setAttribute('min', bounds.minStart); else dEl.removeAttribute('min');
+            if (bounds.maxStart) dEl.setAttribute('max', bounds.maxStart); else dEl.removeAttribute('max');
+          }
+          if (eEl) {
+            eEl.setAttribute('min', startDt);
+            if (bounds.maxEnd) eEl.setAttribute('max', bounds.maxEnd); else eEl.removeAttribute('max');
+          }
+          setHint('hint_ws_dates', bounds.minStart ? `Must be after ${fmtDateDMY(prevDayISO(bounds.minStart))} in ${curCo}` : '', bounds.minStart ? 'ok' : '');
+        }
+        const peerRows = ((SEED.records && SEED.records.work_shifts) || []).filter(r =>
+          r && !r.voided && !isSelfEditingRow(r, 'work_shifts')
+          && norm(r.company || 'WTC') === norm(curCo)
+          && (norm(r.shift_code || '') === norm(shCode) || norm(r.name || '') === norm(shName))
+        );
+        const openPrior = peerRows.filter(r => !r.end_date && String(r.start_date || '') < startDt).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))[0] || null;
+        const assocCnt = countAssociatedStaffForShiftRow({ company: curCo, shift_code: shCode, name: shName, is_bu_default: isBuDef });
+        const strip = $('workShiftContextStrip');
+        if (strip) {
+          strip.hidden = false;
+          if (openPrior) {
+            strip.innerHTML = `<div><strong>${esc(curCo)} · ${esc(shName)}</strong> <span class="badge badge-info">Auto-closes prior Open shift (${esc(openPrior.start_time)}-${esc(openPrior.end_time)} since ${esc(fmtDateDMY(openPrior.start_date))}) on ${esc(fmtDateDMY(prevDayISO(startDt)))} &amp; backfills ${fmtNum(assocCnt)} staff</span></div>`;
+          } else {
+            strip.innerHTML = `<div><strong>${esc(curCo)} · ${esc(shName)}</strong> <span class="badge badge-ok">${isBuDef ? `Default Shift for ${esc(curCo)}` : `Additional Shift in ${esc(curCo)}`} · ${fmtNum(assocCnt)} associated staff</span></div>`;
+          }
+        }
+        const daySum = formatDayTimingsSummary(dayMap, inT, outT);
+        setText('calc_ws_window', `${inT} - ${outT} (${fmtNum(durHrs, 1)}h)`);
+        setText('calc_ws_day_diff', daySum);
+        setText('calc_ws_staff_cnt', `${isBuDef ? 'BU Default' : 'Optional'} · ${fmtNum(assocCnt)} Staff`);
+        setText('calc_ws_eff_win', `${fmtDateDMY(startDt)} to ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
+        return { shName, shCode, isBuDef, inT, outT, durHrs, dayMap };
+      }
       if (STATE.modalForm === 'fxrate') {
         const curr = String(val('f_currency') || 'LBP').trim().toUpperCase();
         const startDt = val('f_date') || todayISO();
@@ -53748,6 +55594,13 @@
     logWrap.dataset.logKey = logKey;
 
     const wins = Array.isArray(targetEq.adj_windows) ? targetEq.adj_windows : [];
+    const modalBodyEl = $('modalBody');
+    const modalCardEl = logWrap.closest('.modal-card');
+    const prevBodyTop = modalBodyEl ? modalBodyEl.scrollTop : 0;
+    const prevCardTop = modalCardEl ? modalCardEl.scrollTop : 0;
+    const prevTwWrap = logWrap.querySelector('.table-wrap');
+    const prevTwTop = prevTwWrap ? prevTwWrap.scrollTop : 0;
+    const prevTwLeft = prevTwWrap ? prevTwWrap.scrollLeft : 0;
     const today = todayISO();
     const minAddStart = getTruckWindowMinStart(targetEq, { co: defCo, side: 'both', cust: '', site: '' }, -1);
     const defAddStart = (minAddStart && minAddStart > today) ? minAddStart : today;
@@ -53843,6 +55696,13 @@
     `;
 
     wireModalSuggestions(logWrap);
+    const nextTwWrap = logWrap.querySelector('.table-wrap');
+    if (nextTwWrap) {
+      if (prevTwTop > 0) nextTwWrap.scrollTop = prevTwTop;
+      if (prevTwLeft > 0) nextTwWrap.scrollLeft = prevTwLeft;
+    }
+    if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+    if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
     const logBox = $('eqDriverLogBox');
     const logBtn = $('btnLogEquipDriver');
     const cancelLogBtn = $('btnCancelLogEquipDriver');
@@ -54070,6 +55930,10 @@
   function renderSupplierDriversPanel() {
     const box = $('supOwnerDriversList');
     if (!box) return;
+    const modalBodyEl = $('modalBody');
+    const modalCardEl = box.closest('.modal-card');
+    const prevBodyTop = modalBodyEl ? modalBodyEl.scrollTop : 0;
+    const prevCardTop = modalCardEl ? modalCardEl.scrollTop : 0;
     const supName = val('f_supplier');
     const company = val('f_company');
     const staged = Array.isArray(FORM_UI.stagedOwnerDrivers) ? FORM_UI.stagedOwnerDrivers : [];
@@ -54118,6 +55982,8 @@
 
     if (!rows.length) {
       box.innerHTML = trucksStripHtml + `<div class="pa-owner-drivers-empty">${supName ? `No drivers linked to <b>${esc(supName)}</b> yet — enter a driver name above and click <b>+ Add Driver to Owner</b> (or type a driver name above before saving).` : 'Enter the Supplier / Hauler name above, then add one or more drivers for this hauler.'}</div>`;
+      if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+      if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
       return;
     }
 
@@ -54150,6 +56016,8 @@
         }
       });
     });
+    if (modalBodyEl && prevBodyTop > 0) modalBodyEl.scrollTop = prevBodyTop;
+    if (modalCardEl && prevCardTop > 0) modalCardEl.scrollTop = prevCardTop;
   }
 
   function addStagedSupplierDriver() {
@@ -54218,7 +56086,7 @@
       document.querySelectorAll('.pa-suggest-menu').forEach(m => {
         if (m !== exceptMenu) {
           m.hidden = true;
-          m.innerHTML = '';
+          if (!m.classList.contains('pa-time24-menu')) m.innerHTML = '';
           const w = m.closest('.pa-suggest-wrap');
           if (w) w.classList.remove('open');
         }
@@ -55215,6 +57083,255 @@
         }
       });
     }
+
+    // Step 4: Upgrade all time inputs (data-time24="1" or type="time") into strict 24-hour HH:MM pickers (00:00–23:59, zero AM/PM)
+    body.querySelectorAll('input[type="time"], input[data-time24="1"]').forEach(input => {
+      if (input.dataset.time24Wired === '1') return;
+      input.dataset.time24Wired = '1';
+      if (input.type === 'time') input.type = 'text';
+      input.setAttribute('data-time24', '1');
+      input.setAttribute('inputmode', 'numeric');
+      input.setAttribute('maxlength', '5');
+      if (!input.getAttribute('placeholder')) input.setAttribute('placeholder', 'HH:MM');
+      input.setAttribute('autocomplete', 'off');
+      input.classList.add('pa-time24-input', 'mono');
+      const isOptional = input.dataset.optionalTime === '1' || input.id === 'ssmOtWinStart' || input.id === 'ssmOtWinEnd' || input.hasAttribute('data-ws-day-in') || input.hasAttribute('data-ws-day-out');
+
+      const rawInit = String(input.value || '').trim();
+      if (rawInit) {
+        input.value = normalize24hClockTime(rawInit, rawInit);
+      }
+
+      const nativeDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      if (nativeDesc && nativeDesc.get && nativeDesc.set) {
+        Object.defineProperty(input, 'value', {
+          configurable: true,
+          enumerable: true,
+          get() {
+            return nativeDesc.get.call(this);
+          },
+          set(v) {
+            const str = String(v == null ? '' : v).trim();
+            const nextVal = (!str && isOptional)
+              ? ''
+              : (document.activeElement === this ? str : (str ? normalize24hClockTime(str, str) : ''));
+            nativeDesc.set.call(this, nextVal);
+            if (typeof this._syncTime24Menu === 'function') this._syncTime24Menu();
+          }
+        });
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'pa-suggest-wrap pa-time24-wrap';
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+
+      const clockBtn = document.createElement('button');
+      clockBtn.type = 'button';
+      clockBtn.className = 'pa-suggest-chev pa-time24-clock';
+      clockBtn.tabIndex = -1;
+      clockBtn.setAttribute('aria-label', 'Open 24-hour clock picker');
+      clockBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>`;
+      wrap.appendChild(clockBtn);
+
+      const menu = document.createElement('div');
+      menu.className = 'pa-suggest-menu pa-time24-menu';
+      menu.setAttribute('role', 'listbox');
+      menu.setAttribute('aria-label', '24-hour time selector');
+      menu.hidden = true;
+      wrap.appendChild(menu);
+
+      const hoursHtml = Array.from({ length: 24 }, (_, h) => {
+        const hh = String(h).padStart(2, '0');
+        return `<button type="button" class="pa-time24-cell" data-t24-hr="${hh}">${hh}</button>`;
+      }).join('');
+      const minsHtml = Array.from({ length: 60 }, (_, m) => {
+        const mm = String(m).padStart(2, '0');
+        return `<button type="button" class="pa-time24-cell" data-t24-min="${mm}">${mm}</button>`;
+      }).join('');
+
+      menu.innerHTML = `
+        <div class="pa-time24-hdr">
+          <span>HR (24H)</span>
+          <span>MIN</span>
+          ${isOptional ? '<button type="button" class="pa-time24-clear-btn" data-t24-clear="1">Clear</button>' : ''}
+        </div>
+        <div class="pa-time24-cols">
+          <div class="pa-time24-col" data-t24-col="hr">${hoursHtml}</div>
+          <div class="pa-time24-col" data-t24-col="min">${minsHtml}</div>
+        </div>
+      `;
+
+      const parseParts = () => {
+        const normVal = normalize24hClockTime(input.value, '');
+        if (/^\d{2}:\d{2}$/.test(normVal)) {
+          const [h, m] = normVal.split(':');
+          return { hh: h, mm: m };
+        }
+        return { hh: '08', mm: '00' };
+      };
+
+      const syncActiveCells = (scrollIntoView = false) => {
+        const hasVal = Boolean(String(input.value || '').trim());
+        const { hh, mm } = parseParts();
+        menu.querySelectorAll('[data-t24-hr]').forEach(btn => {
+          const active = hasVal && btn.getAttribute('data-t24-hr') === hh;
+          btn.classList.toggle('active', active);
+          if (active && scrollIntoView) {
+            const col = btn.parentElement;
+            if (col) col.scrollTop = Math.max(0, btn.offsetTop - col.clientHeight / 2 + btn.offsetHeight / 2);
+          }
+        });
+        menu.querySelectorAll('[data-t24-min]').forEach(btn => {
+          const active = hasVal && btn.getAttribute('data-t24-min') === mm;
+          btn.classList.toggle('active', active);
+          if (active && scrollIntoView) {
+            const col = btn.parentElement;
+            if (col) col.scrollTop = Math.max(0, btn.offsetTop - col.clientHeight / 2 + btn.offsetHeight / 2);
+          }
+        });
+      };
+      input._syncTime24Menu = () => syncActiveCells(false);
+
+      const openTimeMenu = () => {
+        if (input.disabled || input.readOnly) return;
+        closeAll(menu);
+        menu.hidden = false;
+        wrap.classList.add('open');
+        requestAnimationFrame(() => syncActiveCells(true));
+      };
+
+      const commitTimeValue = (nextVal, closeAfter = false) => {
+        if (nativeDesc && nativeDesc.set) nativeDesc.set.call(input, nextVal);
+        else input.value = nextVal;
+        syncActiveCells(false);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (closeAfter) {
+          menu.hidden = true;
+          wrap.classList.remove('open');
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      };
+
+      menu.querySelectorAll('[data-t24-hr]').forEach(btn => {
+        const pickHr = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const hh = btn.getAttribute('data-t24-hr') || '08';
+          const { mm } = parseParts();
+          commitTimeValue(`${hh}:${mm}`, false);
+        };
+        btn.addEventListener('mousedown', pickHr);
+        btn.addEventListener('click', pickHr);
+      });
+
+      menu.querySelectorAll('[data-t24-min]').forEach(btn => {
+        const pickMin = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const mm = btn.getAttribute('data-t24-min') || '00';
+          const { hh } = parseParts();
+          commitTimeValue(`${hh}:${mm}`, true);
+        };
+        btn.addEventListener('mousedown', pickMin);
+        btn.addEventListener('click', pickMin);
+      });
+
+      const clearBtn = menu.querySelector('[data-t24-clear]');
+      if (clearBtn) {
+        const doClear = ev => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          commitTimeValue('', true);
+        };
+        clearBtn.addEventListener('mousedown', doClear);
+        clearBtn.addEventListener('click', doClear);
+      }
+
+      clockBtn.addEventListener('mousedown', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (input.disabled || input.readOnly) return;
+        if (!menu.hidden) {
+          menu.hidden = true;
+          wrap.classList.remove('open');
+        } else {
+          input.focus();
+          openTimeMenu();
+        }
+      });
+
+      input.addEventListener('focus', () => {
+        if (input.disabled || input.readOnly) return;
+        openTimeMenu();
+      });
+
+      input.addEventListener('click', () => {
+        if (input.disabled || input.readOnly) return;
+        if (menu.hidden) openTimeMenu();
+      });
+
+      input.addEventListener('input', ev => {
+        const raw = String(input.value || '');
+        if (/^\d{3,4}$/.test(raw) && (!ev || ev.inputType !== 'deleteContentBackward')) {
+          const formatted = raw.length === 4
+            ? normalize24hClockTime(raw, raw)
+            : `${raw.slice(0, 2)}:${raw.slice(2)}`;
+          if (nativeDesc && nativeDesc.set) nativeDesc.set.call(input, formatted);
+        }
+        syncActiveCells(false);
+      });
+
+      input.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && !menu.hidden) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          menu.hidden = true;
+          wrap.classList.remove('open');
+          return;
+        }
+        if (ev.key === 'Enter' && !menu.hidden) {
+          ev.preventDefault();
+          const raw = String(input.value || '').trim();
+          const nextVal = (!raw && isOptional) ? '' : normalize24hClockTime(raw, '08:00');
+          commitTimeValue(nextVal, true);
+          return;
+        }
+        if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          const { hh, mm } = parseParts();
+          const caret = typeof input.selectionStart === 'number' ? input.selectionStart : 0;
+          const delta = ev.key === 'ArrowUp' ? 1 : -1;
+          if (caret <= 2) {
+            const nextH = (parseInt(hh, 10) + delta + 24) % 24;
+            const nextVal = `${String(nextH).padStart(2, '0')}:${mm}`;
+            commitTimeValue(nextVal, false);
+            try { input.setSelectionRange(0, 2); } catch (_) {}
+          } else {
+            const nextM = (parseInt(mm, 10) + delta + 60) % 60;
+            const nextVal = `${hh}:${String(nextM).padStart(2, '0')}`;
+            commitTimeValue(nextVal, false);
+            try { input.setSelectionRange(3, 5); } catch (_) {}
+          }
+        }
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (wrap.contains(document.activeElement)) return;
+          const raw = String(input.value || '').trim();
+          const nextVal = (!raw && isOptional) ? '' : normalize24hClockTime(raw, isOptional ? '' : '08:00');
+          if (nextVal !== raw) {
+            if (nativeDesc && nativeDesc.set) nativeDesc.set.call(input, nextVal);
+            else input.value = nextVal;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          menu.hidden = true;
+          wrap.classList.remove('open');
+        }, 120);
+      });
+    });
   }
 
   let modalFocusTimer = null;
@@ -56378,7 +58495,7 @@
           try { $('exp_qc_name')?.focus(); } catch (_) {}
           return false;
         }
-        if ((typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(rawNm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(rawNm))) {
+        if ((typeof productByName === 'function' && Boolean(productByName(rawNm)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(rawNm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(rawNm))) {
           if (hEl) { hEl.textContent = 'Quarry aggregate products belong in Raw Material / Sales Tickets, not the Spare Parts & Items Catalog.'; hEl.className = 'hint crit'; }
           return false;
         }
@@ -57097,6 +59214,7 @@
           if (body.contains(document.activeElement) && document.activeElement !== document.body) return;
           const modal = $('entryModal');
           const card = modal && modal.querySelector('.modal-card');
+          if ((card && card.scrollTop > 0) || (body && body.scrollTop > 0)) return;
           if (card) {
             const cr = card.getBoundingClientRect();
             const fr = first.getBoundingClientRect();
@@ -57672,12 +59790,7 @@
       record = { ...base, name: `FUEL ${date} ${c.equipment}${ticket ? ' #' + ticket : ''}`, ticket_no: ticket, rep_date: repDate, fuel_type: c.fuelType, item: resolvedItem, equipment: c.equipment, driver: val('f_driver'), litres: round2(c.litres), odometer: c.type === 'odometer' ? c.reading : null, hours: c.type === 'hours' ? c.reading : null, meter_delta: c.delta };
     } else if (f === 'expense') {
       const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
-      if (!pendEditRow) {
-        const qcDrawerNow = $('expQuickCatalogDrawer');
-        if (qcDrawerNow && !qcDrawerNow.hidden && val('exp_qc_name') && typeof FORM_UI.commitQuickCatalogItem === 'function') {
-          FORM_UI.commitQuickCatalogItem();
-          c = recalcExpense();
-        }
+      if (!pendEditRow && !(opts && opts.skipRecalc)) {
         const firstTypedItem = val('f_exi_name_0') || (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems[0] ? String(FORM_UI.expItems[0].item_name || '').trim() : '');
         if (firstTypedItem && !val('f_category') && $('f_category')) {
           const catMatch = resolveCatalogItem(firstTypedItem);
@@ -57755,7 +59868,7 @@
             if (!nm) {
               addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Select a Catalog Item to store in Warehouse.' : `Line ${idx + 1}: Select a Catalog Item.`);
             } else if (mustBeCatalog && !isLegacyUnmodifiedEdit && !catIt) {
-              const isQuarryAgg = (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm));
+              const isQuarryAgg = (typeof productByName === 'function' && Boolean(productByName(nm)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm));
               if (isQuarryAgg) {
                 addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is a quarry aggregate product and belongs in Raw Material / Sales Tickets.`);
               } else {
@@ -57807,7 +59920,7 @@
           const preVatAmt0 = c.pricePending ? 0 : round2(isSupIva ? (amt0 / vatMult) : amt0);
           const uc0 = q0 > 0 ? round2(preVatAmt0 / q0) : preVatAmt0;
           let catIt0 = resolveCatalogItem(nm0);
-          const isQuarryAgg0 = (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm0)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm0));
+          const isQuarryAgg0 = (typeof productByName === 'function' && Boolean(productByName(nm0)) && typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm0)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm0));
           if (!catIt0 && !isQuarryAgg0 && !isExpenseSubcategoryOrCategoryName(nm0)) {
             catIt0 = ensureItemInCatalog({
               name: nm0,
@@ -58372,6 +60485,64 @@
         end_date: endDate,
         status: effStatus
       };
+    } else if (f === 'workshift') {
+      crKey = 'work_shifts';
+      ensureWorkShiftsSeeded();
+      const shName = val('f_shift_name');
+      const shShort = val('f_shift_short') || (shName ? shName.split(/\s+/)[0].slice(0, 10) : 'Shift');
+      const isBuDef = val('f_is_bu_default') === 'Yes';
+      const endDate = val('f_enddate') || '';
+      const inT = fmtAttClockTime(val('f_in_time') || '08:00') || '08:00';
+      const outT = fmtAttClockTime(val('f_out_time') || '16:00') || '16:00';
+      const graceMin = Math.max(0, Math.min(180, Number(val('f_grace_min') || 10)));
+      const earlyGraceMin = Math.max(0, Math.min(180, Number(val('f_early_grace_min') || graceMin)));
+      const workdaysRaw = val('f_working_days') || 'Mon,Tue,Wed,Thu,Fri,Sat';
+      const daysArr = parseWorkdaysArrayFromLabel(workdaysRaw, [1, 2, 3, 4, 5, 6]);
+      const satDiff = val('f_sat_diff') === 'Yes';
+      const satStart = fmtAttClockTime(val('f_sat_start') || '07:00') || '07:00';
+      const satEnd = fmtAttClockTime(val('f_sat_end') || '14:00') || '14:00';
+      const rawDayJson = val('f_day_timings_json') || '';
+      const dayTimings = normalizeDayTimingsMap(rawDayJson, satDiff, satStart, satEnd);
+      if (!shName) addErr('f_shift_name', 'Shift Name is required.');
+      if (!inT) addErr('f_in_time', 'Regular Start Time is required.');
+      if (!outT) addErr('f_out_time', 'Regular End Time is required.');
+      if (endDate && endDate < date) addErr('f_enddate', 'Effective End Date cannot be before Effective Start Date.');
+      const editOrigWs = (STATE.editingRecord && STATE.editingRecord.crKey === 'work_shifts') ? STATE.editingRecord.orig : null;
+      const shCode = (editOrigWs && editOrigWs.shift_code)
+        ? editOrigWs.shift_code
+        : (/^day\s*shift$/i.test(shName) ? 'day_8_4' : (/^night\s*shift$/i.test(shName) ? 'night_7_3' : (/^extended\s*day$/i.test(shName) ? 'ext_7_4' : ('shf_' + (norm(shName).replace(/[^a-z0-9]+/g, '_') || 'custom')))));
+      const sameDayShift = shName && ((SEED.records && SEED.records.work_shifts) || []).find(w =>
+        w && !w.voided
+        && !isSelfEditingRow(w, 'work_shifts')
+        && norm(w.company || 'WTC') === norm(company)
+        && (norm(w.shift_code || '') === norm(shCode) || norm(w.name || '') === norm(shName))
+        && String(w.start_date || '').slice(0, 10) === date
+      );
+      if (sameDayShift) {
+        addErr('f_date', `A shift timing window for "${shName}" in ${company} already starts on ${fmtDateDMY(date)}. Modify that row or pick a later Effective Start Date.`);
+      }
+      record = hydrateWorkShiftRowComputed({
+        ...base,
+        name: shName,
+        short: shShort,
+        shift_code: shCode,
+        shift_id: shCode,
+        is_bu_default: isBuDef,
+        start_time: inT,
+        end_time: outT,
+        days: daysArr,
+        working_days: workdaysRaw,
+        grace_min: graceMin,
+        early_leave_grace_min: earlyGraceMin,
+        ot_mode: val('f_ot_mode') || 'none',
+        sat_diff_enabled: satDiff || Boolean(dayTimings['6']),
+        sat_start_time: (dayTimings['6'] && dayTimings['6'].start_time) || satStart,
+        sat_end_time: (dayTimings['6'] && dayTimings['6'].end_time) || satEnd,
+        day_timings: dayTimings,
+        start_date: date,
+        end_date: endDate,
+        backfill_enabled: !$('f_backfill_shift') || Boolean($('f_backfill_shift').checked)
+      });
     } else if (f === 'expensecategory') {
       const lvl = val('f_cat_level') || 'category';
       if (lvl === 'subcategory') {
@@ -59514,6 +61685,12 @@
     if (!(isEditingExisting ? (canModifyRecord() || isSupTicketAction) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
       toast(isEditingExisting ? 'Your seat cannot modify existing records' : 'Your seat cannot post this entry', 'err');
       return;
+    }
+    if (STATE.modalForm === 'expense' && !STATE.editingPendingExpenseId) {
+      const qcDrawerNow = $('expQuickCatalogDrawer');
+      if (qcDrawerNow && !qcDrawerNow.hidden && val('exp_qc_name') && typeof FORM_UI.commitQuickCatalogItem === 'function') {
+        FORM_UI.commitQuickCatalogItem();
+      }
     }
     const { errors, fieldErrors, record, crKey } = validateAndBuild();
     if (errors.length) {
@@ -60665,6 +62842,10 @@
     STATE.modalGroupOverride = modalGroupOverride;
     const modal = $('entryModal');
     const wasClosed = !modal || modal.hidden;
+    if (wasClosed && !($('recordInspector') && !$('recordInspector').hidden)) {
+      _preModalWorkspaceScrollSnap = captureScrollSnapshot($('workspace'));
+      _preModalWorkspaceScope = currentWorkspaceScrollScope();
+    }
     const body = $('modalBody');
     const title = $('modalTitle');
     const modalEye = $('modalEyebrow');
@@ -60847,6 +63028,9 @@
           </div>
         </div>
       `;
+      body.scrollTop = 0;
+      const mcReset = modal && modal.querySelector('.modal-card');
+      if (mcReset) mcReset.scrollTop = 0;
       const cBtn = $('dynCancelModalBtn');
       const nBtn = $('dynSaveNextDayModalBtn');
       const sBtn = $('dynSaveModalBtn');
@@ -61939,6 +64123,28 @@
       setModalControlVal('f_truck', row.equipment || '');
       setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
       setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
+    } else if (form === 'workshift') {
+      setModalControlVal('f_shift_name', row.name || '');
+      setModalControlVal('f_shift_short', row.short || '');
+      setModalControlVal('f_is_bu_default', (row.is_bu_default === true || row.is_bu_default === 'Yes' || row.is_bu_default === 1) ? 'Yes' : 'No');
+      setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
+      setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
+      setModalControlVal('f_in_time', row.start_time || '08:00');
+      setModalControlVal('f_out_time', row.end_time || '16:00');
+      setModalControlVal('f_grace_min', row.grace_min != null ? row.grace_min : 10);
+      setModalControlVal('f_early_grace_min', row.early_leave_grace_min != null ? row.early_leave_grace_min : (row.grace_min != null ? row.grace_min : 10));
+      const dtMap = normalizeDayTimingsMap(row.day_timings, row.sat_diff_enabled, row.sat_start_time, row.sat_end_time);
+      const hasAnyDayDiff = Boolean(row.sat_diff_enabled || Object.keys(dtMap).length > 0);
+      setModalControlVal('f_sat_diff', hasAnyDayDiff ? 'Yes' : 'No');
+      setModalControlVal('f_sat_start', (dtMap['6'] && dtMap['6'].start_time) || row.sat_start_time || '07:00');
+      setModalControlVal('f_sat_end', (dtMap['6'] && dtMap['6'].end_time) || row.sat_end_time || '14:00');
+      ['1', '2', '3', '4', '5', '6', '0'].forEach(dIdx => {
+        const dSpec = dtMap[dIdx];
+        if ($(`f_day_in_${dIdx}`)) $(`f_day_in_${dIdx}`).value = dSpec ? dSpec.start_time : '';
+        if ($(`f_day_out_${dIdx}`)) $(`f_day_out_${dIdx}`).value = dSpec ? dSpec.end_time : '';
+      });
+      if ($('f_day_timings_json')) $('f_day_timings_json').value = JSON.stringify(dtMap);
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'site') {
       const inclTrS = isSupplierDeliveredSite(row);
       setModalControlVal('f_includes_transport', inclTrS ? '1' : '0');
@@ -62033,6 +64239,7 @@
       case 'staff_members': return 'staff';
       case 'staff_roles': return 'staffrole';
       case 'staff_assignments': return 'staffassignment';
+      case 'work_shifts': return 'workshift';
       case 'fuel_intakes': return 'fuel';
       case 'fuel_malfunctions': return 'malfunction';
       case 'equipment_defects': return 'defect';
@@ -62177,6 +64384,7 @@
     company_equipment: 'Company-Equipment Assignment', drivers: 'Driver & Operator 360°',
     company_drivers: 'Company-Driver Assignment', staff_members: 'Staff Member 360° Master',
     staff_roles: 'Staff Role Master', staff_assignments: 'Staff Role & Equipment Assignment',
+    work_shifts: 'Regular Shift & Clock Timing',
     expense_categories: 'Expense Category',
     expense_subcategories: 'Expense Subcategory', employments: 'Staff & Employment 360°',
     attendance: 'Attendance & Overtime Log', freelance_entries: 'Freelance Work Entry',
@@ -62202,6 +64410,7 @@
     sites: 'bhf_site', regions: 'bhf_region', equipment: 'bhf_equipment',
     company_equipment: 'bhf_companyequipment', drivers: 'bhf_driver', company_drivers: 'bhf_companydriver',
     staff_members: 'bhf_staffmember', staff_roles: 'bhf_staffrole', staff_assignments: 'bhf_staffassignment',
+    work_shifts: 'bhf_workshift',
     expense_categories: 'bhf_expensecategory', expense_subcategories: 'bhf_expensesubcategory',
     employments: 'bhf_mfgemployment', attendance: 'bhf_mfgattendance', freelance_entries: 'bhf_mfgfreelance',
     logistics_allowances: 'bhf_mfglogistics', overtime_rates: 'bhf_mfgovertimerate',
@@ -62251,7 +64460,7 @@
     const q = String(idOrName == null ? '' : idOrName).trim();
     if (!q) return null;
     if (key === 'gl_accounts') syncGlAccountsRegistry();
-    if (key === 'staff_members' || key === 'staff_roles' || key === 'staff_assignments') ensureStaffMembersSeeded();
+    if (key === 'staff_members' || key === 'staff_roles' || key === 'staff_assignments' || key === 'work_shifts') ensureStaffMembersSeeded();
     const nq = norm(q);
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
     let hit = list.find(r => r && String(r.id) === q);
@@ -62545,6 +64754,14 @@
       return {
         tone: ended ? 'warn' : 'info',
         text: `Staff Role & Equipment Log · ${row.staff || 'Staff'} (${row.company || 'WTC'}): ${row.role || 'Role'}${rCat ? ' (' + rCat + ')' : ''}${row.equipment ? ' · Assigned Unit: ' + row.equipment : ''}  |  Window: ${fmtDateDMY(row.start_date)} to ${row.end_date ? fmtDateDMY(row.end_date) : 'Open'}`
+      };
+    }
+    if (key === 'work_shifts') {
+      hydrateWorkShiftRowComputed(row);
+      const ended = Boolean(row.end_date && String(row.end_date).slice(0, 10) < todayISO());
+      return {
+        tone: ended ? 'warn' : 'info',
+        text: `Shift & Clock Timing · ${row.name || 'Shift'} (${row.company || 'WTC'}${row.is_bu_default ? ' · BU Default' : ''}): Regular ${row.start_time}-${row.end_time} (${fmtNum(row.hours || 8, 1)}h)  |  Day-Specific: ${row.day_schedule_summary || 'Standard All Days'}  |  Associated Staff: ${fmtNum(row.associated_staff_count || 0)}  |  Effective: ${fmtDateDMY(row.start_date)} to ${row.end_date ? fmtDateDMY(row.end_date) : 'Open'}`
       };
     }
     if (key === 'employments') {
@@ -63043,6 +65260,22 @@
       };
     }
 
+    if (key === 'work_shifts') {
+      hydrateWorkShiftRowComputed(row);
+      const ended = Boolean(row.end_date && String(row.end_date).slice(0, 10) < todayISO());
+      return {
+        bu: row.company || 'WTC',
+        title: `${row.name || 'Shift'} (${row.start_time}-${row.end_time})`,
+        pill: row.is_bu_default ? `BU DEFAULT · ${row.company || 'WTC'}` : (ended ? 'HISTORICAL WINDOW' : 'ACTIVE SHIFT'),
+        cards: [
+          { lbl: 'REGULAR CLOCK WINDOW', tag: row.is_bu_default ? 'BU DEFAULT' : 'SHIFT TIMING', tone: 'good', val: `${row.start_time} - ${row.end_time}`, sub1: `${fmtNum(row.hours || 8, 1)}h · Workdays: ${row.workdays_label || 'Mon-Sat'}`, sub2: `IN Tol: ${row.grace_min || 10}m · OUT Tol: ${row.early_leave_grace_min || 10}m`, pct: 95 },
+          { lbl: 'DAY-SPECIFIC TIMINGS (SAT)', tag: row.sat_diff_enabled ? 'CUSTOM DAY' : 'UNIFORM', tone: row.sat_diff_enabled ? 'info' : 'good', val: row.day_schedule_summary || 'Standard All Days', sub1: row.sat_diff_enabled ? `Saturday: ${row.sat_start_time}-${row.sat_end_time}` : 'Same timing on all workdays', sub2: `Entity: ${row.company || 'WTC'}`, pct: 90 },
+          { lbl: 'ASSOCIATED STAFF & BACKFILL', tag: `${fmtNum(row.associated_staff_count || 0)} STAFF`, tone: 'info', val: `${fmtNum(row.associated_staff_count || 0)} Staff`, sub1: row.is_bu_default ? `Default for all ${row.company || 'WTC'} staff` : 'Assigned to this shift', sub2: 'Changes backfill from Effective Date', pct: 88 },
+          { lbl: 'EFFECTIVE WINDOW', tag: ended ? 'HISTORICAL' : 'OPEN', tone: ended ? 'warn' : 'good', val: fmtDateDMY(row.start_date), sub1: `Start: ${fmtDateDMY(row.start_date)}`, sub2: `End: ${row.end_date ? fmtDateDMY(row.end_date) : 'Open (Active)'}`, pct: ended ? 60 : 100 }
+        ]
+      };
+    }
+
     // Generic rich 4-card cockpit for all other 30 tables
     const subgrids = buildInspectorSubgrids(key, row);
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
@@ -63534,6 +65767,18 @@
       addGrid('sg_sr_staff', `Staff Members (${roleName})`, 'Staff Members', 'Staff Members', 'staff_members', (rec.staff_members || []).filter(s => s && !s.voided && norm(s.role) === rk), ['name', 'role', 'role_category', 'default_equipment', 'phone']);
       addGrid('sg_sr_assign', `Role & Equipment Assignments (${roleName})`, 'Assignments', 'Assignment Log', 'staff_assignments', (rec.staff_assignments || []).filter(a => a && !a.voided && norm(a.role) === rk), ['name', 'company', 'staff', 'role', 'equipment', 'status', 'start_date', 'end_date', 'notes']);
       addGrid('sg_sr_emp', `Employment Contracts (${roleName})`, 'Contracts', 'Contracts', 'employments', (rec.employments || []).filter(e => e && !e.voided && norm(e.role) === rk), ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'reimbursement', 'package_usd', 'start_date', 'end_date'], 'package_usd');
+    }
+    else if (key === 'work_shifts') {
+      ensureStaffMembersSeeded();
+      hydrateWorkShiftRowComputed(row);
+      const coNorm = norm(row.company || 'WTC');
+      const codeNorm = norm(row.shift_code || row.shift_id || row.name || '');
+      const peerShifts = (rec.work_shifts || []).filter(w => w && !w.voided && norm(w.company || 'WTC') === coNorm);
+      const matchingAtt = (rec.attendance || []).filter(a => a && !a.voided && norm(a.company || 'WTC') === coNorm && (!a.shift_id || norm(a.shift_id) === codeNorm || row.is_bu_default));
+      const matchingEmp = (rec.employments || []).filter(e => e && !e.voided && norm(e.company || 'WTC') === coNorm);
+      addGrid('sg_ws_peers', `Shift & Clock Timing Windows (${row.company || 'WTC'})`, 'BU Shifts', 'Chronological Windows', 'work_shifts', peerShifts, ['name', 'company', 'is_bu_default', 'start_time', 'end_time', 'hours', 'day_schedule_summary', 'start_date', 'end_date', 'status'], 'hours');
+      addGrid('sg_ws_emp', `Associated BU Staff Contracts (${row.company || 'WTC'})`, 'Staff Contracts', 'Associated Staff', 'employments', matchingEmp, ['name', 'company', 'staff', 'role', 'status', 'working_days', 'working_hours', 'start_date', 'end_date'], 'package_usd');
+      addGrid('sg_ws_att', `Attendance Logs Evaluated Against Shift (${row.company || 'WTC'})`, 'Attendance Logs', 'Backfilled Logs', 'attendance', matchingAtt, ['date', 'company', 'staff', 'status', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'notes'], 'worked_hours');
     }
     else if (key === 'expense_categories' || key === 'expense_subcategories' || key === 'expenses') {
       const cat = row.category || row.name;
@@ -64308,6 +66553,21 @@
         { key: 'status', label: 'Status', type: 'select', options: ['Current', 'Ended'], sec: 1 },
         { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      work_shifts: [
+        { key: 'name', label: 'Shift Name *', type: 'text', sec: 1 },
+        { key: 'short', label: 'Short Tag', type: 'text', sec: 1 },
+        { key: 'is_bu_default', label: 'BU Default Shift', type: 'bool', sec: 1 },
+        { key: 'start_time', label: 'Regular Start Time (IN) *', type: 'text', sec: 2, placeholder: '08:00' },
+        { key: 'end_time', label: 'Regular End Time (OUT) *', type: 'text', sec: 2, placeholder: '16:00' },
+        { key: 'grace_min', label: 'Clock-IN Tolerance (min)', type: 'number', step: '1', sec: 2 },
+        { key: 'early_leave_grace_min', label: 'Clock-OUT Tolerance (min)', type: 'number', step: '1', sec: 2 },
+        { key: 'sat_diff_enabled', label: 'Different Timing on Saturday', type: 'bool', sec: 2 },
+        { key: 'sat_start_time', label: 'Saturday Start Time (IN)', type: 'text', sec: 2, placeholder: '07:00' },
+        { key: 'sat_end_time', label: 'Saturday End Time (OUT)', type: 'text', sec: 2, placeholder: '14:00' },
+        { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
+        { key: 'end_date', label: 'Effective End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       expense_categories: [
@@ -65201,6 +67461,11 @@
     const cleanSerialLbl = String(item.serialLabel || '').replace(/[—–]/g, '-');
 
     STATE.inspectorHistory = [];
+    const existingPanel = $('recordInspector');
+    if ((!existingPanel || existingPanel.hidden) && !($('entryModal') && !$('entryModal').hidden)) {
+      _preModalWorkspaceScrollSnap = captureScrollSnapshot($('workspace'));
+      _preModalWorkspaceScope = currentWorkspaceScrollScope();
+    }
     const panel = ensureRecordInspectorModal();
 
     let eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · ${co.toUpperCase()}`;
@@ -65683,6 +67948,8 @@
     }
 
     const bodyEl = $('inspectorBody');
+    bodyEl._activeTableContext = null;
+    bodyEl._preModifySnap = null;
     bodyEl.innerHTML = `
       <div class="pa-cmd-bar">
         <div class="pa-breadcrumbs">
@@ -66027,13 +68294,56 @@
   function showRecordInspector(key, idOrName, opts = {}) {
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
-    const tc = (!opts.full360 && opts.tableContext) ? opts.tableContext : null;
-
     if (!STATE.inspectorHistory) STATE.inspectorHistory = [];
+
+    const existingPanel = $('recordInspector');
+    const existingBody = $('inspectorBody');
+    const wasInspOpen = Boolean(existingPanel && !existingPanel.hidden && existingBody);
+    if (!wasInspOpen && !($('entryModal') && !$('entryModal').hidden)) {
+      _preModalWorkspaceScrollSnap = captureScrollSnapshot($('workspace'));
+      _preModalWorkspaceScope = currentWorkspaceScrollScope();
+    }
+
+    let prevInspSnap = null;
+    let prevActiveTab = 'general';
+    if (wasInspOpen) {
+      prevInspSnap = captureScrollSnapshot(existingBody);
+      if (existingBody._preModifySnap && existingBody._preModifySnap.rootTop > 0) {
+        prevInspSnap.rootTop = existingBody._preModifySnap.rootTop;
+      }
+      if (existingBody._preModifySnap && existingBody._preModifySnap.cardTop > 0) {
+        prevInspSnap.cardTop = existingBody._preModifySnap.cardTop;
+      }
+      const curTabBtn = existingBody.querySelector('.pa-rec-tab[data-insp-tab].active');
+      if (curTabBtn) prevActiveTab = curTabBtn.getAttribute('data-insp-tab') || 'general';
+    }
+
+    const prevTopHist = STATE.inspectorHistory.length ? STATE.inspectorHistory[STATE.inspectorHistory.length - 1] : null;
+    if (opts.pushHistory && prevTopHist && prevInspSnap) {
+      prevTopHist.scrollSnap = prevInspSnap;
+      prevTopHist.tab = prevActiveTab || prevTopHist.tab || 'general';
+      prevTopHist.tableContext = existingBody ? (existingBody._activeTableContext || prevTopHist.tableContext || null) : (prevTopHist.tableContext || null);
+    }
+
+    const isSameInspectorRecord = Boolean(
+      wasInspOpen
+      && !opts.pushHistory
+      && prevTopHist
+      && prevTopHist.key === key
+      && String(prevTopHist.id) === String(row.id || idOrName)
+    );
+
     const recTitle = row.ticket_no ? `#${row.ticket_no}` : (row.name || row.invoice_no || row.staff || row.driver || row.equipment || String(idOrName));
     const crumbLabel = `${INSPECT_LABELS[key] || key}: ${recTitle}`;
+    let targetHist = null;
     if (opts.fromCrumbIdx != null) {
       STATE.inspectorHistory = STATE.inspectorHistory.slice(0, opts.fromCrumbIdx + 1);
+      targetHist = STATE.inspectorHistory[opts.fromCrumbIdx] || null;
+      if (targetHist) {
+        targetHist.key = key;
+        targetHist.id = row.id || idOrName;
+        targetHist.label = crumbLabel;
+      }
     } else if (opts.pushHistory) {
       const last = STATE.inspectorHistory[STATE.inspectorHistory.length - 1];
       if (!last || last.key !== key || String(last.id) !== String(row.id || idOrName)) {
@@ -66043,7 +68353,10 @@
       STATE.inspectorHistory = [{ key, id: row.id || idOrName, label: crumbLabel }];
     }
 
-    const activeTab = opts.tab || 'general';
+    const tc = opts.full360
+      ? null
+      : (opts.tableContext || (targetHist && targetHist.tableContext) || (isSameInspectorRecord && existingBody && existingBody._activeTableContext) || null);
+    const activeTab = opts.tab || (targetHist && targetHist.tab) || (isSameInspectorRecord ? prevActiveTab : 'general');
     let panel = $('recordInspector');
     if (!panel) {
       panel = document.createElement('div');
@@ -66202,10 +68515,21 @@
           </div>
         `;
       }
-      const inpType = fDef.type === 'number' ? 'number' : (fDef.type === 'date' ? 'date' : (fDef.type === 'time' ? 'time' : (fDef.type === 'month' ? 'month' : (fDef.type === 'tel' ? 'tel' : 'text'))));
+      if (fDef.type === 'time') {
+        const initTimeStr = rawCur ? normalize24hClockTime(rawCur, String(rawCur).slice(0, 5)) : '';
+        const timeCls = isNumLocked ? ' class="pa-locked-input pa-time24-input mono"' : ' class="pa-time24-input mono"';
+        const timeLockAttr = isNumLocked ? ' disabled readonly' : '';
+        return `
+          <div class="form-field${spanCls}">
+            <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
+            <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM"${timeCls} id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="time" data-init-val="${esc(initTimeStr)}" value="${esc(initTimeStr)}" autocomplete="off"${timeLockAttr}>
+          </div>
+        `;
+      }
+      const inpType = fDef.type === 'number' ? 'number' : (fDef.type === 'date' ? 'date' : (fDef.type === 'month' ? 'month' : (fDef.type === 'tel' ? 'tel' : 'text')));
       const stepAttr = fDef.type === 'number' ? ` step="${esc(fDef.step || '0.01')}"${fDef.min != null ? ` min="${esc(fDef.min)}"` : ''}${fDef.max != null ? ` max="${esc(fDef.max)}"` : ''}${fDef.min != null && Number(fDef.min) >= 0 ? ' inputmode="decimal"' : ''}` : '';
       const phAttr = fDef.placeholder ? ` placeholder="${esc(fDef.placeholder)}"` : '';
-      const initValStr = String(rawCur == null ? '' : (inpType === 'date' ? String(rawCur).slice(0, 10) : (inpType === 'time' ? String(rawCur).slice(0, 5) : rawCur)));
+      const initValStr = String(rawCur == null ? '' : (inpType === 'date' ? String(rawCur).slice(0, 10) : rawCur));
       return `
         <div class="form-field${spanCls}">
           <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
@@ -66230,6 +68554,8 @@
     const quickFilterVal = String(row.name || row.Customer || row.Supplier || row.Product || row.Site || row.Equipment || row.driver || row.equipment || '').trim();
 
     const bodyEl = $('inspectorBody');
+    bodyEl._activeTableContext = tc;
+    bodyEl._preModifySnap = null;
     bodyEl.innerHTML = `
       <!-- Shared Searchable Datalists for Inspector Modification Drawer & Equipment Log -->
       <div hidden aria-hidden="true">
@@ -66531,6 +68857,15 @@
       if (!btn) return;
       btn.addEventListener('click', () => {
         if (btn.dataset.armed === '1') {
+          if (STATE.inspectorHistory && STATE.inspectorHistory.length > 1) {
+            const prevIdx = STATE.inspectorHistory.length - 2;
+            const prev = STATE.inspectorHistory[prevIdx];
+            voidRecord(key, row.id || row.name || row.ticket_no || idOrName);
+            if (prev && prev.key && prev.id != null) {
+              showRecordInspector(prev.key, prev.id, { fromCrumbIdx: prevIdx, tab: prev.tab, tableContext: prev.tableContext, preserveScroll: true });
+              return;
+            }
+          }
           closeRecordInspector();
           voidRecord(key, row.id || row.name || row.ticket_no || idOrName);
         } else {
@@ -66988,6 +69323,9 @@
     const canUseInspModify = canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
     const openModifyDrawerAndFocus = (focusFieldKey) => {
       if (!modDrawer || !canUseInspModify) return;
+      if (modDrawer.hidden && !bodyEl._preModifySnap) {
+        bodyEl._preModifySnap = captureScrollSnapshot(bodyEl);
+      }
       modDrawer.hidden = false;
       syncModifyLiveSummary();
       const targetInp = focusFieldKey ? $('insp_edit_' + focusFieldKey) : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])');
@@ -67021,8 +69359,15 @@
     }
     if (modBtn && modDrawer) {
       modBtn.addEventListener('click', () => {
-        if (modDrawer.hidden) openModifyDrawerAndFocus('');
-        else modDrawer.hidden = true;
+        if (modDrawer.hidden) {
+          openModifyDrawerAndFocus('');
+        } else {
+          modDrawer.hidden = true;
+          if (bodyEl._preModifySnap) {
+            restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
+            bodyEl._preModifySnap = null;
+          }
+        }
       });
     }
     if (modDrawer) {
@@ -67052,7 +69397,13 @@
 
     const cancelModBtn = $('inspCancelModifyBtn');
     if (cancelModBtn && modDrawer) {
-      cancelModBtn.addEventListener('click', () => { modDrawer.hidden = true; });
+      cancelModBtn.addEventListener('click', () => {
+        modDrawer.hidden = true;
+        if (bodyEl._preModifySnap) {
+          restoreScrollSnapshot(bodyEl, bodyEl._preModifySnap);
+          bodyEl._preModifySnap = null;
+        }
+      });
     }
     const saveModBtn = $('inspSaveModifyBtn');
     if (saveModBtn && modDrawer) {
@@ -67802,6 +70153,9 @@
           if (row.end_date && String(row.end_date).slice(0, 10) < todayISO()) row.status = 'Ended';
           if (row.staff) syncStaffCurrentFromLogs(row.staff);
           if (origRowSnap && origRowSnap.staff && norm(origRowSnap.staff) !== norm(row.staff)) syncStaffCurrentFromLogs(origRowSnap.staff);
+        } else if (key === 'work_shifts') {
+          hydrateWorkShiftRowComputed(row);
+          if (SEED) SEED._workShiftsSeededRev = '';
         } else if (key === 'fuel_malfunctions') {
           const mCls = classifyMalfunctionItem(row.item || 'Diesel', row.category || '');
           row.item = mCls.item;
@@ -67898,7 +70252,7 @@
           inspExtraPosts.forEach(([ek, er]) => postRecordToLocalApi(ek, er));
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
-          showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+          showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
         }
       });
     }
@@ -68046,7 +70400,7 @@
         renderApp();
         const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
         toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}`);
-        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
       });
     }
 
@@ -68064,7 +70418,7 @@
         saveLocalAuthAndRecords();
         renderApp();
         toast('✓ Removed equipment log window');
-        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
       }
     }));
 
@@ -68105,7 +70459,7 @@
       e.stopPropagation();
       if (btn.dataset.armed === '1') {
         voidRecord(btn.getAttribute('data-void'), btn.getAttribute('data-void-id'));
-        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
         return;
       }
       btn.dataset.armed = '1';
@@ -68126,7 +70480,6 @@
     }));
 
     panel.hidden = false;
-    bodyEl.scrollTop = 0;
     document.body.classList.add('modal-open');
     if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
     if (!window.__fastInspectorModifyTest) {
@@ -68135,6 +70488,16 @@
         window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
       }
       if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
+    }
+    const targetInspSnap = (opts.preserveScroll || isSameInspectorRecord)
+      ? (prevInspSnap || (targetHist && targetHist.scrollSnap))
+      : ((opts.fromCrumbIdx != null && targetHist && targetHist.scrollSnap) ? targetHist.scrollSnap : null);
+    if (targetInspSnap) {
+      restoreScrollSnapshot(bodyEl, targetInspSnap);
+    } else if (!opts.focusModifyField) {
+      bodyEl.scrollTop = 0;
+      const inspCard = panel.querySelector('.modal-card');
+      if (inspCard) inspCard.scrollTop = 0;
     }
   }
 
@@ -69147,6 +71510,103 @@
   function safeRender() {
     if (uiBusy()) { STATE.renderPending = true; return; }
     renderApp();
+  }
+
+  let _lastWorkspaceScrollScope = '';
+  let _preModalWorkspaceScrollSnap = null;
+  let _preModalWorkspaceScope = '';
+
+  function currentWorkspaceScrollScope() {
+    return `${STATE.view || ''}|${STATE.view === 'tables' ? (STATE.activeTableKey || '') : ''}|${UNIV_VIEW_TO_TABLE_KEY[STATE.view] ? (STATE.activeUnivRegKey || '') : ''}|${STATE.view === 'pbi' ? (STATE.pbiPage || '') : ''}|${STATE.view === 'statements' ? (STATE.activeStatement || '') : ''}`;
+  }
+
+  function getScrollContainerKeys(el, rootEl, wrapIdx) {
+    const keys = [];
+    if (!el) return keys;
+    if (el.id) keys.push('id:' + el.id);
+    const tbl = el.querySelector && el.querySelector('table');
+    if (tbl) {
+      if (tbl.id) keys.push('tblid:' + tbl.id);
+      if (tbl.dataset && tbl.dataset.colMgrId) keys.push('cmid:' + tbl.dataset.colMgrId);
+    }
+    const sg = el.closest && el.closest('.pa-subgrid-box[id]');
+    if (sg && sg.id) keys.push('sg:' + sg.id);
+    const pnl = el.closest && el.closest('.panel-card[id], .pbi-visual-card[id], section[id]');
+    if (pnl && pnl.id) keys.push('pnl:' + pnl.id);
+    const hostCard = el.closest && el.closest('.panel-card, .pa-subgrid-box, .pbi-visual-card, section');
+    if (hostCard && (!rootEl || rootEl.contains(hostCard))) {
+      const hdr = hostCard.querySelector('.panel-title, .pa-subgrid-hdr strong, .pbi-vis-title, h3, h2');
+      if (hdr && hdr.textContent) {
+        const slug = hdr.textContent.trim().toLowerCase().replace(/\s*\(\d[\d,]*\)\s*$/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 48);
+        if (slug) keys.push('hdr:' + slug);
+      }
+    }
+    keys.push('idx:' + wrapIdx);
+    return keys;
+  }
+
+  function captureScrollSnapshot(rootEl) {
+    if (!rootEl) return null;
+    const cardEl = rootEl.closest && rootEl.closest('.modal-card');
+    const snap = {
+      rootTop: rootEl.scrollTop || 0,
+      rootLeft: rootEl.scrollLeft || 0,
+      cardTop: cardEl ? (cardEl.scrollTop || 0) : 0,
+      inner: new Map()
+    };
+    const innerList = rootEl.querySelectorAll('.table-wrap, .pbi-table-wrap, .conn-explorer-body, #dopsStreamScroll');
+    innerList.forEach((el, idx) => {
+      const st = el.scrollTop || 0;
+      const sl = el.scrollLeft || 0;
+      if (st > 0 || sl > 0) {
+        const pos = { top: st, left: sl };
+        getScrollContainerKeys(el, rootEl, idx).forEach(k => {
+          if (!snap.inner.has(k)) snap.inner.set(k, pos);
+        });
+      }
+    });
+    return snap;
+  }
+
+  function mergeScrollSnapshots(primarySnap, fallbackSnap) {
+    if (!primarySnap) return fallbackSnap || null;
+    if (!fallbackSnap) return primarySnap;
+    const out = {
+      rootTop: primarySnap.rootTop > 0 ? primarySnap.rootTop : (fallbackSnap.rootTop || 0),
+      rootLeft: primarySnap.rootLeft > 0 ? primarySnap.rootLeft : (fallbackSnap.rootLeft || 0),
+      cardTop: primarySnap.cardTop > 0 ? primarySnap.cardTop : (fallbackSnap.cardTop || 0),
+      inner: new Map(fallbackSnap.inner || [])
+    };
+    if (primarySnap.inner) {
+      primarySnap.inner.forEach((v, k) => {
+        if (v && (v.top > 0 || v.left > 0)) out.inner.set(k, v);
+      });
+    }
+    return out;
+  }
+
+  function restoreScrollSnapshot(rootEl, snap) {
+    if (!rootEl || !snap) return;
+    if (snap.rootTop > 0 || rootEl.scrollTop !== snap.rootTop) rootEl.scrollTop = snap.rootTop;
+    if (snap.rootLeft > 0 || rootEl.scrollLeft !== snap.rootLeft) rootEl.scrollLeft = snap.rootLeft;
+    const cardEl = rootEl.closest && rootEl.closest('.modal-card');
+    if (cardEl && (snap.cardTop > 0 || cardEl.scrollTop !== snap.cardTop)) {
+      cardEl.scrollTop = snap.cardTop;
+    }
+    if (snap.inner && snap.inner.size > 0) {
+      const innerList = rootEl.querySelectorAll('.table-wrap, .pbi-table-wrap, .conn-explorer-body, #dopsStreamScroll');
+      innerList.forEach((el, idx) => {
+        const keys = getScrollContainerKeys(el, rootEl, idx);
+        for (let i = 0; i < keys.length; i++) {
+          const hit = snap.inner.get(keys[i]);
+          if (hit) {
+            if (hit.top > 0) el.scrollTop = hit.top;
+            if (hit.left > 0) el.scrollLeft = hit.left;
+            break;
+          }
+        }
+      });
+    }
   }
 
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
@@ -71973,6 +74433,16 @@
     re_ownership: 'Co-Ownership Deed Shares (/2400) & NOI Distributions (r38)',
     re_workorders: 'Repairs, Fit-Out Work Orders & Cost Variance (r44)',
     re_recharges: 'Tenant Recharge Invoices & Contractor Attribution (P4)',
+    // Insurance & Brokerage sub-views (Phase 5)
+    ins_policies: 'Policies, Endorsements & Client Discounts (7063 / 7065)',
+    ins_renewals: '30/60/90-Day Renewal Queue & Retention (i31)',
+    ins_items: 'Insured Items, Vehicles, Lives & Properties (i05)',
+    ins_billing: 'Premium Instalments, Client Receipts & Open AR (i33 / 4112)',
+    ins_remittances: 'Insurer Net Premium Remittances & Cash vs 4017',
+    ins_statements: 'Carrier Commission Statement Recon (i32 / 4117)',
+    ins_claims: 'FNOL Claims, Reserves & Insurer Settlements (i34)',
+    ins_catalogue: '12 Insurance Lines & 52 Carrier Products (i07)',
+    ins_agreements: 'Chronological Carrier Commission Agreements (7z-chrono)',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -72077,6 +74547,15 @@
     re_ownership: 'Deed Shares (/2400)',
     re_workorders: 'Work Orders & Fit-Out',
     re_recharges: 'Tenant Recharges',
+    ins_policies: 'Policies & Discounts',
+    ins_renewals: 'Renewal Queue (i31)',
+    ins_items: 'Insured Items (i05)',
+    ins_billing: 'Premium Billing (i33)',
+    ins_remittances: 'Insurer Remittance',
+    ins_statements: 'Statement Recon (i32)',
+    ins_claims: 'Claims & FNOL (i34)',
+    ins_catalogue: 'Lines & Products (i07)',
+    ins_agreements: 'Carrier Rates (7z)',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -72094,7 +74573,8 @@
     korriauto: 'Korri Auto',
     shacman: 'Shacman',
     properties: 'Properties',
-    '4235company': '4235 Company SAL'
+    '4235company': '4235 Company SAL',
+    insurance: 'Insurance Company'
   };
 
   // Dynamic Multi-Industry Sidebar Specification (Fixed Spine + Swappable Middle Operational Groups)
@@ -72150,13 +74630,13 @@
       ]
     },
     'Insurance & Brokerage': {
-      grp1: 'Underwriting & Carrier Billing',
-      grp2: 'Claims, Fleet & Workforce',
+      grp1: 'Production, Renewals & Claims',
+      grp2: 'Claims, Catalogue & Workforce',
       slots: [
-        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
-        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
-        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
-        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+        { hub: 'ins_policies', view: 'ins_policies', label: 'Policies & Renewals', pillId: '' },
+        { hub: 'ins_billing', view: 'ins_billing', label: 'Premiums & Insurer Recon', pillId: 'navCountRaw' },
+        { hub: 'ins_claims', view: 'ins_claims', label: 'Claims & Recoveries', pillId: 'navCountFleet' },
+        { hub: 'ins_catalogue', view: 'ins_catalogue', label: 'Lines, Products & Rates', pillId: '' }
       ]
     }
   };
@@ -72337,10 +74817,10 @@
 
     const mfgAllowedCount = STATE.enterpriseScalePreview
       ? allowedNames.length
-      : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(n)).length;
+      : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?|insurance\s*company)$/i.test(n)).length;
     const mfgCatalogCount = STATE.enterpriseScalePreview
       ? catalog.length
-      : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company'].includes(c.key)).length;
+      : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company', 'insurance'].includes(c.key)).length;
 
     let visibleBtnCount = 0;
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
@@ -72402,12 +74882,12 @@
       const indName = String(STATE.company).slice(9);
       const grp = allowedIndGroups.find(g => g.id === indName);
       const cnt = grp ? grp.permittedCos.length : 0;
-      trigInd = indName === 'Holding & Treasury' ? 'Holding' : (indName === 'Hospitality & Resorts' ? 'Hospitality' : (indName === 'Automotive & Heavy Trading' ? 'Trading' : (indName === 'Real Estate & Property' ? 'Real Estate' : indName)));
+      trigInd = indName === 'Holding & Treasury' ? 'Holding' : (indName === 'Hospitality & Resorts' ? 'Hospitality' : (indName === 'Automotive & Heavy Trading' ? 'Trading' : (indName === 'Real Estate & Property' ? 'Real Estate' : (indName === 'Insurance & Brokerage' ? 'Insurance' : indName))));
       trigCo = `All ${indName === 'Real Estate & Property' ? 'Real Estate' : indName.split(' ')[0]} (${cnt})`;
     } else {
       const coMeta = catalog.find(c => c.key === STATE.company);
       const rawInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
-      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : (rawInd === 'Automotive & Heavy Trading' ? 'Trading' : (rawInd === 'Real Estate & Property' ? 'Real Estate' : rawInd)));
+      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : (rawInd === 'Automotive & Heavy Trading' ? 'Trading' : (rawInd === 'Real Estate & Property' ? 'Real Estate' : (rawInd === 'Insurance & Brokerage' ? 'Insurance' : rawInd))));
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
     if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
@@ -72507,7 +74987,7 @@
         }
         toast(STATE.enterpriseScalePreview
           ? '⚡ Enterprise Scale Preview active: 10 Industries × 15 Companies (150 Companies) loaded'
-          : 'Restored live BHFIRMS multi-industry catalog (5 Industries · 13 Companies)');
+          : 'Restored live BHFIRMS multi-industry catalog (6 Industries · 14 Companies)');
       });
     }
     if (offBtn) {
@@ -72562,8 +75042,8 @@
     syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
-    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(n));
-    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company'].includes(c.key)).length;
+    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?|insurance\s*company)$/i.test(n));
+    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company', 'insurance'].includes(c.key)).length;
     COMPANY_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
       ? `All Manufacturing Group (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`
       : `Assigned Entities (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`;
@@ -73107,6 +75587,9 @@
       re_sales: 'sales', re_instalments: 'receipt',
       re_properties: 'site', re_units: 'product', re_valuations: 'site', re_ownership: 'jv',
       re_workorders: 'repair', re_recharges: 'expense',
+      ins_policies: 'sales', ins_renewals: 'sales', ins_items: 'equipment',
+      ins_billing: 'receipt', ins_remittances: 'settlement', ins_statements: 'external',
+      ins_claims: 'defect', ins_catalogue: 'product', ins_agreements: 'pricerule',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_staff: 'staff', reg_roles: 'staffrole', reg_sites: 'site', reg_regions: 'region',
@@ -74627,6 +77110,12 @@
       toast('Your seat cannot post this kiosk entry', 'err');
       return { ok: false, reason: 'permission' };
     }
+    if (STATE.modalForm === 'expense' && !STATE.editingPendingExpenseId) {
+      const qcDrawerNow = $('expQuickCatalogDrawer');
+      if (qcDrawerNow && !qcDrawerNow.hidden && val('exp_qc_name') && typeof FORM_UI.commitQuickCatalogItem === 'function') {
+        FORM_UI.commitQuickCatalogItem();
+      }
+    }
     const { errors, fieldErrors, record, crKey } = validateAndBuild();
     if (errors.length) {
       FORM_UI.postAttempted = true;
@@ -74767,8 +77256,16 @@
       : [1, 2, 3, 4, 5, 6];
     const nameStr = String(base.name || 'Custom Shift').trim() || 'Custom Shift';
     const shortStr = String(base.short || nameStr.split(/\s+/)[0] || 'Shift').trim().slice(0, 12);
+    const dayTimings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
+    const satSpec = dayTimings['6'] || null;
+    const satDiff = Boolean(satSpec && (satSpec.start_time !== st || satSpec.end_time !== et));
+    const graceM = Math.max(0, Math.min(180, Number(base.grace_min != null ? base.grace_min : 10)));
+    const earlyGraceM = Math.max(0, Math.min(180, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : graceM)));
     return {
-      id: String(base.id || uid('shf')),
+      id: String(base.id || base.shift_code || uid('shf')),
+      shift_code: String(base.shift_code || base.id || uid('shf')),
+      company: String(base.company || defaultEntryCompany() || 'WTC'),
+      is_bu_default: Boolean(base.is_bu_default === true || base.is_bu_default === 'Yes' || base.is_bu_default === 1),
       name: nameStr,
       short: shortStr,
       start_time: st,
@@ -74776,19 +77273,41 @@
       hours: durHrs,
       overnight,
       days: daysArr,
-      grace_min: Math.max(0, Math.min(60, Number(base.grace_min != null ? base.grace_min : 10))),
+      grace_min: graceM,
+      early_leave_grace_min: earlyGraceM,
+      sat_diff_enabled: satDiff,
+      sat_start_time: satSpec ? satSpec.start_time : (base.sat_start_time || '07:00'),
+      sat_end_time: satSpec ? satSpec.end_time : (base.sat_end_time || '14:00'),
+      day_timings: dayTimings,
+      day_schedule_summary: formatDayTimingsSummary(dayTimings, st, et),
+      start_date: String(base.start_date || '2025-01-01').slice(0, 10),
+      end_date: String(base.end_date || '').slice(0, 10),
       tone: ['amber', 'indigo', 'sapphire', 'emerald'].includes(base.tone) ? base.tone : (overnight ? 'indigo' : 'amber'),
-      isBuiltin: Boolean(base.isBuiltin || DEFAULT_SHIFT_TYPES.some(d => d.id === base.id)),
+      isBuiltin: Boolean(base.isBuiltin || DEFAULT_SHIFT_TYPES.some(d => d.id === base.id || d.id === base.shift_code)),
       voided: Boolean(base.voided),
       updated_at: String(base.updated_at || '')
     };
   }
 
-  function getShiftTypes() {
+  function getShiftTypes(companyOpt = '') {
+    ensureWorkShiftsSeeded();
     const ws = ensureWorkSchedulesState();
+    const coNorm = norm(companyOpt || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC');
     const customById = new Map();
     ws.shiftTypes.forEach(s => {
-      if (s && s.id) customById.set(String(s.id), s);
+      if (s && s.id && !s.voided) customById.set(String(s.id), s);
+    });
+    // Overlay active work_shifts records for the active BU so getShiftTypes() always reflects the live work_shifts table
+    const activeWsRows = ((SEED && SEED.records && SEED.records.work_shifts) || [])
+      .filter(r => r && !r.voided && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO()))
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+    activeWsRows.forEach(r => {
+      const code = String(r.shift_code || r.shift_id || r.id || '');
+      if (!code) return;
+      const rCoNorm = norm(r.company || 'WTC');
+      if (!customById.has(code) || rCoNorm === coNorm) {
+        customById.set(code, Object.assign({}, customById.get(code) || {}, r, { id: code }));
+      }
     });
     const out = [];
     DEFAULT_SHIFT_TYPES.forEach(def => {
@@ -74816,21 +77335,82 @@
   }
 
   function saveShiftType(spec = {}) {
+    ensureWorkShiftsSeeded();
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
-    const existingBuiltin = DEFAULT_SHIFT_TYPES.find(d => d.id === spec.id) || null;
-    const existingCustomIdx = ws.shiftTypes.findIndex(s => s && String(s.id) === String(spec.id || ''));
+    const shiftCode = String(spec.shift_code || spec.id || uid('shf'));
+    const existingBuiltin = DEFAULT_SHIFT_TYPES.find(d => d.id === shiftCode) || null;
+    const existingCustomIdx = ws.shiftTypes.findIndex(s => s && String(s.id) === shiftCode);
     const prev = existingCustomIdx >= 0 ? ws.shiftTypes[existingCustomIdx] : existingBuiltin;
-    const normalized = normalizeShiftTypeObj(Object.assign({}, prev || {}, spec, { voided: false, updated_at: nowIso }), existingBuiltin);
+    const normalized = normalizeShiftTypeObj(Object.assign({}, prev || {}, spec, { id: shiftCode, shift_code: shiftCode, voided: false, updated_at: nowIso }), existingBuiltin);
     if (!normalized.name || !normalized.start_time || !normalized.end_time) {
       return { ok: false, error: 'Shift name, start time, and end time are required' };
     }
     if (existingCustomIdx >= 0) ws.shiftTypes[existingCustomIdx] = normalized;
     else ws.shiftTypes.push(normalized);
+
+    // Also persist/update in SEED.records.work_shifts & STATE.customRecords.work_shifts with chronological effective date & backfill
+    const co = String(spec.company || normalized.company || defaultEntryCompany() || 'WTC').trim();
+    const effStart = String(spec.start_date || todayISO()).slice(0, 10);
+    const effEnd = String(spec.end_date || '').slice(0, 10);
+    if (!Array.isArray(STATE.customRecords.work_shifts)) STATE.customRecords.work_shifts = [];
+    const pool = (SEED.records && SEED.records.work_shifts) || [];
+    const sameStartRow = pool.find(r =>
+      r && !r.voided
+      && norm(r.company || 'WTC') === norm(co)
+      && (norm(r.shift_code || '') === norm(shiftCode) || norm(r.name || '') === norm(normalized.name))
+      && String(r.start_date || '').slice(0, 10) === effStart
+    );
+    const origSnap = sameStartRow ? Object.assign({}, sameStartRow) : null;
+    const wsRow = hydrateWorkShiftRowComputed({
+      id: sameStartRow ? sameStartRow.id : (spec.ws_id || `ws_${norm(co).replace(/[^a-z0-9]+/g, '')}_${shiftCode}_${effStart.replace(/-/g, '')}`),
+      company: co,
+      shift_code: shiftCode,
+      shift_id: shiftCode,
+      name: normalized.name,
+      short: normalized.short,
+      is_bu_default: spec.is_bu_default != null ? Boolean(spec.is_bu_default === true || spec.is_bu_default === 'Yes' || spec.is_bu_default === 1) : Boolean(sameStartRow && sameStartRow.is_bu_default),
+      start_time: normalized.start_time,
+      end_time: normalized.end_time,
+      hours: normalized.hours,
+      overnight: normalized.overnight,
+      days: normalized.days,
+      grace_min: normalized.grace_min,
+      early_leave_grace_min: normalized.early_leave_grace_min,
+      sat_diff_enabled: normalized.sat_diff_enabled,
+      sat_start_time: normalized.sat_start_time,
+      sat_end_time: normalized.sat_end_time,
+      day_timings: normalized.day_timings,
+      start_date: effStart,
+      end_date: effEnd,
+      date: effStart,
+      rep_date: effStart,
+      tone: normalized.tone,
+      notes: spec.notes != null ? spec.notes : (sameStartRow && sameStartRow.notes) || '',
+      source: 'app',
+      entered_by: activeUser().full_name,
+      entered_by_email: activeUser().email,
+      entered_at: nowIso,
+      voided: false
+    });
+    if (sameStartRow) {
+      Object.assign(sameStartRow, wsRow);
+    } else if (SEED.records && Array.isArray(SEED.records.work_shifts)) {
+      SEED.records.work_shifts.unshift(wsRow);
+    }
+    const cIdx = STATE.customRecords.work_shifts.findIndex(x => x && String(x.id) === String(wsRow.id));
+    if (cIdx >= 0) Object.assign(STATE.customRecords.work_shifts[cIdx], wsRow);
+    else STATE.customRecords.work_shifts.unshift(Object.assign({}, wsRow));
+
+    const extraPosts = [];
+    syncChronologicalSeriesNeighbors('work_shifts', wsRow, origSnap, extraPosts);
+    const bf = (spec.backfill !== false) ? backfillShiftTimingChange(wsRow, origSnap, extraPosts) : { staffUpdated: 0, attUpdated: 0, punchesUpdated: 0 };
+    if (SEED) SEED._workShiftsSeededRev = '';
+    ensureWorkShiftsSeeded();
     saveLocalAuthAndRecords();
     postWorkScheduleMutation({ op: 'upsert_shift', item: normalized });
     syncWithCloud(true);
-    return { ok: true, shiftType: normalized };
+    return { ok: true, shiftType: normalized, workShiftRow: wsRow, backfill: bf };
   }
 
   function deleteShiftType(shiftId) {
@@ -74908,9 +77488,13 @@
   function inferHabitualStaffShiftId(staffName, company) {
     const k = norm(staffName);
     const prof = getStaffContractProfile(staffName, company);
-    const fallbackId = (prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4';
+    const effCo = company || prof.company || 'WTC';
+    const buDef = getBuDefaultShift(effCo);
+    const fallbackId = (buDef && (buDef.shift_code || buDef.shift_id))
+      ? (buDef.shift_code || buDef.shift_id)
+      : ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4');
     if (!k) return fallbackId;
-    const coNorm = norm(company || prof.company || 'WTC');
+    const coNorm = norm(effCo);
     return ensureHabitualNightCrewSet().has(`${coNorm}|${k}`) ? 'night_7_3' : fallbackId;
   }
 
@@ -74919,23 +77503,36 @@
     const ws = ensureWorkSchedulesState();
     const raw = (k && ws.staffRules[k]) ? ws.staffRules[k] : null;
     const prof = getStaffContractProfile(staffName, company);
+    const effCo = company || (raw && raw.company) || prof.company || defaultEntryCompany();
+    const buDef = getBuDefaultShift(effCo);
+    const buDefShiftId = (buDef && (buDef.shift_code || buDef.shift_id))
+      ? (buDef.shift_code || buDef.shift_id)
+      : ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4');
     const defaultShiftId = (raw && !raw.reset_default && raw.shift_id)
       ? raw.shift_id
       : ((raw && raw.reset_default)
-        ? ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4')
-        : inferHabitualStaffShiftId(staffName, company));
+        ? buDefShiftId
+        : inferHabitualStaffShiftId(staffName, effCo));
+    const resolvedShiftRow = resolveShiftAtDate(defaultShiftId, effCo, todayISO()) || buDef;
+    const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null ? Number(resolvedShiftRow.grace_min) : 10;
+    const defEarlyGrace = resolvedShiftRow && resolvedShiftRow.early_leave_grace_min != null ? Number(resolvedShiftRow.early_leave_grace_min) : defGrace;
     const base = Object.assign({
       staff: staffName || '',
-      company: company || prof.company || defaultEntryCompany(),
+      company: effCo,
       shift_id: defaultShiftId,
       custom_name: 'Custom Shift',
-      custom_start: '08:00',
-      custom_end: '16:00',
-      custom_days: [1, 2, 3, 4, 5, 6],
-      grace_min: 10,
+      custom_start: (resolvedShiftRow && resolvedShiftRow.start_time) || '08:00',
+      custom_end: (resolvedShiftRow && resolvedShiftRow.end_time) || '16:00',
+      custom_days: (resolvedShiftRow && Array.isArray(resolvedShiftRow.days) && resolvedShiftRow.days.length) ? resolvedShiftRow.days.slice() : [1, 2, 3, 4, 5, 6],
+      sat_diff_enabled: Boolean(resolvedShiftRow && resolvedShiftRow.sat_diff_enabled),
+      sat_start_time: (resolvedShiftRow && resolvedShiftRow.sat_start_time) || '07:00',
+      sat_end_time: (resolvedShiftRow && resolvedShiftRow.sat_end_time) || '14:00',
+      day_timings: Object.assign({}, (resolvedShiftRow && resolvedShiftRow.day_timings) || {}),
+      use_custom_day_timings: false,
+      grace_min: defGrace,
       early_leave_grace_min: (raw && !raw.reset_default && raw.early_leave_grace_min != null)
         ? raw.early_leave_grace_min
-        : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : 10),
+        : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : defEarlyGrace),
       late_when: 'both',
       late_count_from: 'shift_start',
       late_penalty_mode: 'exact_hours',
@@ -74950,7 +77547,7 @@
       ot_passes: [],
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
-    base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : 10)));
+    base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : defGrace)));
     base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
     base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
     base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
@@ -74971,6 +77568,7 @@
     base.custom_days = Array.isArray(base.custom_days) && base.custom_days.length
       ? Array.from(new Set(base.custom_days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b)
       : [1, 2, 3, 4, 5, 6];
+    base.day_timings = normalizeDayTimingsMap(base.day_timings, base.sat_diff_enabled, base.sat_start_time, base.sat_end_time);
     base.shift_overrides = Array.isArray(base.shift_overrides) ? base.shift_overrides.filter(o => o && o.start_date) : [];
     base.ot_passes = Array.isArray(base.ot_passes) ? base.ot_passes.filter(p => p && p.start_date) : [];
     return base;
@@ -75096,7 +77694,8 @@
   function resolveStaffShiftForDate(staffName, company, isoDate = todayISO()) {
     const dStr = String(isoDate || todayISO()).slice(0, 10);
     const rule = getStaffWorkRule(staffName, company);
-    const types = getShiftTypes();
+    const effCo = company || rule.company || defaultEntryCompany();
+    const types = getShiftTypes(effCo);
     const wk = attDateWeekdayInfo(dStr);
     const activeOv = (rule.shift_overrides || []).find(o => o && o.start_date <= dStr && dStr <= (o.end_date || o.start_date)) || null;
 
@@ -75133,7 +77732,8 @@
           tone: 'emerald'
         });
       } else {
-        const foundOv = types.find(t => t.id === activeOv.shift_id) || types[0];
+        const datedOvShift = resolveShiftAtDate(activeOv.shift_id, effCo, dStr);
+        const foundOv = (datedOvShift ? normalizeShiftTypeObj(datedOvShift) : null) || types.find(t => t.id === activeOv.shift_id) || types[0];
         chosenShift = Object.assign({}, foundOv, { days: [0, 1, 2, 3, 4, 5, 6] });
       }
     } else if (rule.shift_id === 'custom') {
@@ -75145,10 +77745,15 @@
         end_time: rule.custom_end,
         days: rule.custom_days,
         grace_min: rule.grace_min,
+        sat_diff_enabled: rule.sat_diff_enabled,
+        sat_start_time: rule.sat_start_time,
+        sat_end_time: rule.sat_end_time,
+        day_timings: rule.day_timings,
         tone: 'emerald'
       });
     } else {
-      const found = types.find(t => t.id === rule.shift_id) || types[0];
+      const datedShift = resolveShiftAtDate(rule.shift_id, effCo, dStr);
+      const found = (datedShift ? normalizeShiftTypeObj(datedShift) : null) || types.find(t => t.id === rule.shift_id) || types[0];
       chosenShift = Object.assign({}, found);
       if (hasExplicitStaffWorkRule(staffName) && Array.isArray(rule.custom_days) && rule.use_custom_days) {
         chosenShift.days = rule.custom_days;
@@ -75156,16 +77761,37 @@
       if (hasExplicitStaffWorkRule(staffName) && rule.grace_min != null) {
         chosenShift.grace_min = Number(rule.grace_min);
       }
+      if (hasExplicitStaffWorkRule(staffName) && rule.use_custom_day_timings) {
+        chosenShift.day_timings = normalizeDayTimingsMap(rule.day_timings, rule.sat_diff_enabled, rule.sat_start_time, rule.sat_end_time);
+        chosenShift.sat_diff_enabled = Boolean(rule.sat_diff_enabled);
+        chosenShift.sat_start_time = rule.sat_start_time || '07:00';
+        chosenShift.sat_end_time = rule.sat_end_time || '14:00';
+      }
     }
 
     const isWorkday = activeOv ? true : (wk.dayIdx < 0 ? true : chosenShift.days.includes(wk.dayIdx));
+    // Apply weekday-specific timing (e.g. Saturday 07:00-14:00) when scheduled on that day
+    let isDaySpecific = false;
+    if (isWorkday && !activeOv && wk.dayIdx >= 0) {
+      const dayTiming = resolveShiftTimingForWeekday(chosenShift, wk.dayIdx);
+      if (dayTiming && dayTiming.isDaySpecific) {
+        chosenShift.regular_start_time = chosenShift.start_time;
+        chosenShift.regular_end_time = chosenShift.end_time;
+        chosenShift.start_time = dayTiming.start_time;
+        chosenShift.end_time = dayTiming.end_time;
+        chosenShift.hours = dayTiming.hours;
+        chosenShift.overnight = dayTiming.overnight;
+        isDaySpecific = true;
+      }
+    }
     const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
     const windowLabel = `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
-    const badgeLabel = `${chosenShift.short} · ${chosenShift.start_time}-${chosenShift.end_time}${chosenShift.overnight ? ' +1d' : ''}`;
+    const badgeLabel = `${chosenShift.short}${isDaySpecific && wk.short ? ` (${wk.short})` : ''} · ${chosenShift.start_time}-${chosenShift.end_time}${chosenShift.overnight ? ' +1d' : ''}`;
     return Object.assign({}, chosenShift, {
       isOverride: Boolean(activeOv),
       overrideObj: activeOv,
       isWorkday,
+      isDaySpecific,
       windowLabel,
       badgeLabel
     });
@@ -77634,6 +80260,10 @@
     }
 
     const renderModalInner = () => {
+      const prevBodyEl = modal.querySelector('.staff-sched-modal-body');
+      const prevCardEl = modal.querySelector('.staff-sched-modal-card');
+      const prevBodyTop = prevBodyEl ? prevBodyEl.scrollTop : 0;
+      const prevCardTop = prevCardEl ? prevCardEl.scrollTop : 0;
       const allDir = getKioskStaffDirectory();
       const scopedDir = allDir.filter(s => s.company === entry.company);
       const freshDir = scopedDir.length > 0 ? scopedDir : allDir;
@@ -77759,12 +80389,12 @@
                     <input type="text" id="ssmCustomName" value="${esc(draftCustomName)}" placeholder="e.g. Split / Early Shift">
                   </div>
                   <div class="ssm-field">
-                    <label for="ssmCustomStart">Shift Start</label>
-                    <input type="time" id="ssmCustomStart" value="${esc(draftCustomStart)}">
+                    <label for="ssmCustomStart">Shift Start (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomStart" value="${esc(normalize24hClockTime(draftCustomStart, '08:00'))}">
                   </div>
                   <div class="ssm-field">
-                    <label for="ssmCustomEnd">Shift End</label>
-                    <input type="time" id="ssmCustomEnd" value="${esc(draftCustomEnd)}">
+                    <label for="ssmCustomEnd">Shift End (24h)</label>
+                    <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmCustomEnd" value="${esc(normalize24hClockTime(draftCustomEnd, '16:00'))}">
                   </div>
                   <div class="ssm-field">
                     <label>Calculated Shift</label>
@@ -77954,12 +80584,12 @@
                       </div>
                     </div>
                     <div class="ssm-field">
-                      <label for="ssmOtWinStart">Optional Clock Window From</label>
-                      <input type="time" id="ssmOtWinStart" value="${esc(draftOtWinStart)}">
+                      <label for="ssmOtWinStart">Optional Clock Window From (24h)</label>
+                      <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmOtWinStart" value="${esc(draftOtWinStart ? normalize24hClockTime(draftOtWinStart, '') : '')}">
                     </div>
                     <div class="ssm-field">
-                      <label for="ssmOtWinEnd">Window To</label>
-                      <input type="time" id="ssmOtWinEnd" value="${esc(draftOtWinEnd)}">
+                      <label for="ssmOtWinEnd">Window To (24h)</label>
+                      <input type="text" data-time24="1" data-optional-time="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="ssmOtWinEnd" value="${esc(draftOtWinEnd ? normalize24hClockTime(draftOtWinEnd, '') : '')}">
                     </div>
                   </div>
                   <div class="ssm-helper">Leave the clock window empty to allow up to ${fmtNum(draftOtMaxHours || 2, 1)}h/day immediately after shift end.</div>
@@ -78064,8 +80694,8 @@
 
       const syncLiveInputs = () => {
         if ($('ssmCustomName')) draftCustomName = $('ssmCustomName').value || 'Custom Shift';
-        if ($('ssmCustomStart')) draftCustomStart = $('ssmCustomStart').value || '08:00';
-        if ($('ssmCustomEnd')) draftCustomEnd = $('ssmCustomEnd').value || '16:00';
+        if ($('ssmCustomStart')) draftCustomStart = normalize24hClockTime($('ssmCustomStart').value, draftCustomStart || '08:00');
+        if ($('ssmCustomEnd')) draftCustomEnd = normalize24hClockTime($('ssmCustomEnd').value, draftCustomEnd || '16:00');
         if ($('ssmGraceMin')) draftGrace = Math.max(0, Math.min(120, Number($('ssmGraceMin').value || 0)));
         if ($('ssmEarlyGraceInput')) draftEarlyGrace = Math.max(0, Math.min(120, Number($('ssmEarlyGraceInput').value || 0)));
         if ($('ssmLateWhenSelect')) draftLateWhen = $('ssmLateWhenSelect').value || 'both';
@@ -78073,8 +80703,14 @@
         if ($('ssmLateMultInput')) draftLateMultiplier = Math.max(1, Math.min(5, Number($('ssmLateMultInput').value || 1.5)));
         if ($('ssmLateHdMinInput')) draftLateHalfDayMin = Math.max(5, Math.min(360, Number($('ssmLateHdMinInput').value || 60)));
         if ($('ssmOtMaxHours')) draftOtMaxHours = Math.max(0, Number($('ssmOtMaxHours').value || 0));
-        if ($('ssmOtWinStart')) draftOtWinStart = $('ssmOtWinStart').value || '';
-        if ($('ssmOtWinEnd')) draftOtWinEnd = $('ssmOtWinEnd').value || '';
+        if ($('ssmOtWinStart')) {
+          const rawWs = String($('ssmOtWinStart').value || '').trim();
+          draftOtWinStart = rawWs ? normalize24hClockTime(rawWs, '') : '';
+        }
+        if ($('ssmOtWinEnd')) {
+          const rawWe = String($('ssmOtWinEnd').value || '').trim();
+          draftOtWinEnd = rawWe ? normalize24hClockTime(rawWe, '') : '';
+        }
       };
 
       $('ssmCloseBtn')?.addEventListener('click', closeStaffScheduleModal);
@@ -78149,6 +80785,48 @@
           }
           renderModalInner();
         });
+      });
+
+      const syncSsmTimingDomInPlace = () => {
+        syncLiveInputs();
+        const sMin = parseClockMinutes(draftCustomStart);
+        const eMin = parseClockMinutes(draftCustomEnd);
+        let dur = 8;
+        let ovn = false;
+        if (sMin != null && eMin != null) {
+          let diff = eMin - sMin;
+          if (diff <= 0) {
+            diff += 24 * 60;
+            ovn = true;
+          }
+          dur = Math.round((diff / 60) * 100) / 100;
+        }
+        const calcPill = modal.querySelector('.ssm-calc-pill');
+        if (calcPill) calcPill.textContent = `${fmtNum(dur, 1)}h${ovn ? ' · Overnight (+1d)' : ' · Same Day'}`;
+        const customCard = modal.querySelector('[data-ssm-shift="custom"]');
+        if (customCard) {
+          const hrsEl = customCard.querySelector('.ssm-sc-hrs');
+          const winEl = customCard.querySelector('.ssm-sc-win');
+          if (hrsEl) hrsEl.textContent = `${fmtNum(dur, 1)}h`;
+          if (winEl) winEl.textContent = `${draftCustomStart} - ${draftCustomEnd}${ovn ? ' (+1d)' : ''}`;
+        }
+        if (draftShiftId === 'custom') {
+          const cutMin = ((sMin != null ? sMin : 480) + draftGrace) % (24 * 60);
+          const cutLbl = `${String(Math.floor(cutMin / 60)).padStart(2, '0')}:${String(cutMin % 60).padStart(2, '0')}`;
+          const outCutMin = (((eMin != null ? eMin : 960) - draftEarlyGrace) + 24 * 60) % (24 * 60);
+          const outCutLbl = `${String(Math.floor(outCutMin / 60)).padStart(2, '0')}:${String(outCutMin % 60).padStart(2, '0')}`;
+          const kpis = modal.querySelectorAll('#ssmLiveSummaryStrip .ssm-live-kpi strong');
+          if (kpis[0]) kpis[0].textContent = `${draftCustomStart} - ${draftCustomEnd} (${fmtNum(dur, 1)}h)`;
+          if (kpis[1]) kpis[1].textContent = `IN > ${cutLbl} · OUT < ${outCutLbl}`;
+          const secSub = modal.querySelector('#ssmLatenessSection .ssm-sec-head .muted');
+          if (secSub) {
+            secSub.innerHTML = `IN late after <b class="mono">${esc(cutLbl)}</b> (${draftGrace}m after ${esc(draftCustomStart)}) · OUT early before <b class="mono">${esc(outCutLbl)}</b> (${draftEarlyGrace}m before ${esc(draftCustomEnd)})`;
+          }
+        }
+      };
+
+      ['ssmCustomStart', 'ssmCustomEnd'].forEach(id => {
+        $(id)?.addEventListener('input', syncSsmTimingDomInPlace);
       });
 
       ['ssmCustomStart', 'ssmCustomEnd', 'ssmGraceMin', 'ssmEarlyGraceInput', 'ssmLateWhenSelect', 'ssmLateCountFromSelect'].forEach(id => {
@@ -78337,6 +81015,10 @@
 
       wireModalSuggestions(modal);
       stripNativeTitles(document);
+      const nextBodyEl = modal.querySelector('.staff-sched-modal-body');
+      const nextCardEl = modal.querySelector('.staff-sched-modal-card');
+      if (nextBodyEl && prevBodyTop > 0) nextBodyEl.scrollTop = prevBodyTop;
+      if (nextCardEl && prevCardTop > 0) nextCardEl.scrollTop = prevCardTop;
     };
 
     modal.hidden = false;
@@ -78396,12 +81078,12 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
             <div class="ssm-field">
-              <label for="stmStart">Start Time</label>
-              <input type="time" id="stmStart" value="${esc(existing ? existing.start_time : '06:00')}">
+              <label for="stmStart">Start Time (24h)</label>
+              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmStart" value="${esc(normalize24hClockTime(existing ? existing.start_time : '06:00', '06:00'))}">
             </div>
             <div class="ssm-field">
-              <label for="stmEnd">End Time</label>
-              <input type="time" id="stmEnd" value="${esc(existing ? existing.end_time : '14:00')}">
+              <label for="stmEnd">End Time (24h)</label>
+              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmEnd" value="${esc(normalize24hClockTime(existing ? existing.end_time : '14:00', '14:00'))}">
             </div>
             <div class="ssm-field">
               <label for="stmGrace">Arrival Grace (min)</label>
@@ -78441,6 +81123,7 @@
     `;
     modal.hidden = false;
     document.body.classList.add('modal-open');
+    wireModalSuggestions(modal);
     stripNativeTitles(modal);
 
     $('stmCloseBtn')?.addEventListener('click', closeShiftTypeModal);
@@ -78472,8 +81155,8 @@
     $('stmSaveBtn')?.addEventListener('click', () => {
       const nm = String($('stmName')?.value || '').trim();
       const sh = String($('stmShort')?.value || '').trim();
-      const st = $('stmStart')?.value || '08:00';
-      const et = $('stmEnd')?.value || '16:00';
+      const st = normalize24hClockTime($('stmStart')?.value, '08:00');
+      const et = normalize24hClockTime($('stmEnd')?.value, '16:00');
       const gr = Number($('stmGrace')?.value || 10);
       if (!nm) {
         toast('Enter a shift type name', 'warn');
@@ -80847,6 +83530,15 @@
     const container = $('workspace');
     if (!container) return;
 
+    const curWsScope = currentWorkspaceScrollScope();
+    const preserveWsScroll = !STATE._resetWorkspaceScroll && _lastWorkspaceScrollScope === curWsScope;
+    STATE._resetWorkspaceScroll = false;
+    const rawWsSnap = preserveWsScroll ? captureScrollSnapshot(container) : null;
+    const wsScrollSnap = preserveWsScroll
+      ? mergeScrollSnapshots(rawWsSnap, _preModalWorkspaceScope === curWsScope ? _preModalWorkspaceScrollSnap : null)
+      : null;
+    _lastWorkspaceScrollScope = curWsScope;
+
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
@@ -80892,6 +83584,15 @@
       case 're_ownership': wsHtml = renderRealEstateProperties('ownership'); break;
       case 're_workorders': wsHtml = renderRealEstateWorkOrders('main'); break;
       case 're_recharges': wsHtml = renderRealEstateWorkOrders('recharges'); break;
+      case 'ins_policies': wsHtml = renderInsurancePolicies('main'); break;
+      case 'ins_renewals': wsHtml = renderInsurancePolicies('renewals'); break;
+      case 'ins_items': wsHtml = renderInsurancePolicies('items'); break;
+      case 'ins_billing': wsHtml = renderInsuranceBilling('main'); break;
+      case 'ins_remittances': wsHtml = renderInsuranceBilling('remittances'); break;
+      case 'ins_statements': wsHtml = renderInsuranceBilling('statements'); break;
+      case 'ins_claims': wsHtml = renderInsuranceClaims('main'); break;
+      case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
+      case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
@@ -80992,6 +83693,12 @@
         }
       }
       wireWorkspace(container, user);
+      if (wsScrollSnap) {
+        restoreScrollSnapshot(container, wsScrollSnap);
+        if (!($('entryModal') && !$('entryModal').hidden) && !($('recordInspector') && !$('recordInspector').hidden)) {
+          _preModalWorkspaceScrollSnap = null;
+        }
+      }
     } finally {
       stripNativeTitles(document);
       if (_uiTipObserver && document.body) {
@@ -83162,8 +85869,11 @@
       if ($('f_log_end') && subDate) $('f_log_end').value = subDate;
       const logBox = $('eqDriverLogBox');
       if (logBox) {
+        const targetTop = Math.max(0, logBox.offsetTop - 80);
+        const mb = $('modalBody');
+        if (mb) mb.scrollTop = targetTop;
         const mc = logBox.closest('.modal-card');
-        if (mc) mc.scrollTop = Math.max(0, logBox.offsetTop - 80);
+        if (mc) mc.scrollTop = targetTop;
         lockShellScroll();
       }
       const drvInp = $('f_log_driver');
@@ -83728,6 +86438,9 @@
     if (sidebar) sidebar.classList.remove('open');
     const bd = $('railBackdrop');
     if (bd) bd.hidden = true;
+    STATE._resetWorkspaceScroll = true;
+    _preModalWorkspaceScrollSnap = null;
+    _preModalWorkspaceScope = '';
     const ws = $('workspace');
     if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
     renderApp();
@@ -85598,6 +88311,14 @@
   };
   window.MFG_REALESTATE = {
     computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    setView: typeof setView === 'function' ? setView : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
+  window.MFG_INSURANCE = {
+    computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
