@@ -79607,10 +79607,35 @@
     KIOSK_ATT_STATE.wallClockTimer = setInterval(() => {
       const elTime = $('kioskWallClockTime');
       const elDate = $('kioskWallClockDate');
-      if (!elTime && !elDate) return;
-      const parts = formatKioskWallClockNow();
-      if (elTime && elTime.textContent !== parts.time) elTime.textContent = parts.time;
-      if (elDate && elDate.textContent !== parts.date) elDate.textContent = parts.date;
+      if (elTime || elDate) {
+        const parts = formatKioskWallClockNow();
+        if (elTime && elTime.textContent !== parts.time) elTime.textContent = parts.time;
+        if (elDate && elDate.textContent !== parts.date) elDate.textContent = parts.date;
+      }
+      if (
+        STATE.view === 'kiosks' &&
+        STATE.activeKiosk === 'attendance' &&
+        (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) &&
+        !KIOSK_ATT_STATE.camPausedByUser &&
+        !KIOSK_ADMIN_MODAL_STATE.open &&
+        !($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) &&
+        !navigator.webdriver &&
+        !window.__MFG_HEADLESS_TEST
+      ) {
+        const now = Date.now();
+        if (KIOSK_ATT_STATE.camStarting && (now - (KIOSK_ATT_STATE.camStartingSince || 0) > 8500)) {
+          KIOSK_ATT_STATE.camStarting = false;
+        }
+        if (!KIOSK_ATT_STATE.camStarting && !KIOSK_ATT_STATE.watchdogTimer) {
+          if (!KIOSK_ATT_STATE.camActive || !streamAlive()) {
+            scheduleKioskAttCameraWatchdogRestart('clock-supervisor-inactive');
+          } else if (!KIOSK_ATT_STATE.loopTimer && !KIOSK_ATT_STATE.busy) {
+            KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 60);
+          } else if (KIOSK_ATT_STATE.lastTimeMoveAt > 0 && (now - KIOSK_ATT_STATE.lastTimeMoveAt > 12000) && !KIOSK_ATT_STATE.busy) {
+            scheduleKioskAttCameraWatchdogRestart('clock-supervisor-stale');
+          }
+        }
+      }
     }, 1000);
   }
 
@@ -82803,13 +82828,59 @@
     }
   }
 
+  function requestKioskUserMediaWithTimeout(constraints, timeoutMs = 6000) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error('getUserMedia-timeout'));
+        }
+      }, timeoutMs);
+      navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+        clearTimeout(timer);
+        if (settled) {
+          try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+          return;
+        }
+        settled = true;
+        resolve(stream);
+      }, err => {
+        clearTimeout(timer);
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      });
+    });
+  }
+
+  function ensureKioskVideoRvfcWired(v) {
+    if (!v || v.__kioskRvfcWired || typeof v.requestVideoFrameCallback !== 'function') return;
+    v.__kioskRvfcWired = true;
+    const onFrame = (now, meta) => {
+      if (!v.isConnected || v.ended) {
+        v.__kioskRvfcWired = false;
+        return;
+      }
+      KIOSK_ATT_STATE.rvfcCount = (KIOSK_ATT_STATE.rvfcCount || 0) + 1;
+      KIOSK_ATT_STATE.lastRvfcAt = Date.now();
+      if (meta && typeof meta.presentedFrames === 'number') {
+        KIOSK_ATT_STATE.lastPresentedFrames = meta.presentedFrames;
+      }
+      try { v.requestVideoFrameCallback(onFrame); } catch (_) { v.__kioskRvfcWired = false; }
+    };
+    try { v.requestVideoFrameCallback(onFrame); } catch (_) { v.__kioskRvfcWired = false; }
+  }
+
   function scheduleKioskAttCameraWatchdogRestart(reason = 'watchdog') {
     if (typeof window === 'undefined') return false;
     if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return false;
     if (KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) return false;
     if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) return false;
     KIOSK_ATT_STATE.lastWatchdogReason = String(reason || 'watchdog');
-    if (KIOSK_ATT_STATE.camStarting || KIOSK_ATT_STATE.watchdogTimer) return true;
+    if (KIOSK_ATT_STATE.camStarting && (Date.now() - (KIOSK_ATT_STATE.camStartingSince || 0) < 8000)) return true;
+    if (KIOSK_ATT_STATE.watchdogTimer) return true;
     const elapsed = Date.now() - (KIOSK_ATT_STATE.lastRestartAt || 0);
     const delayMs = Math.max(500, 4500 - elapsed);
     KIOSK_ATT_STATE.watchdogTimer = setTimeout(() => {
@@ -82835,7 +82906,10 @@
       }
       return false;
     }
-    if (KIOSK_ATT_STATE.camStarting) return false;
+    if (KIOSK_ATT_STATE.camStarting) {
+      if (Date.now() - (KIOSK_ATT_STATE.camStartingSince || 0) < 8000) return false;
+      KIOSK_ATT_STATE.camStarting = false;
+    }
     if (!opts.forceRestart && KIOSK_ATT_STATE.camActive && streamAlive()) {
       ['authFaceVideo', 'enrolFaceVideo', 'ksaAdminFaceVideo'].forEach(id => {
         const ov = $(id);
@@ -82847,6 +82921,7 @@
       const existingVid = $('kioskAttVideo');
       if (existingVid) {
         if (existingVid.srcObject !== FACE_STATE.stream) existingVid.srcObject = FACE_STATE.stream;
+        ensureKioskVideoRvfcWired(existingVid);
         existingVid.play().catch(() => {});
       }
       syncKioskAttLiveUiInPlace();
@@ -82856,6 +82931,7 @@
       return true;
     }
     KIOSK_ATT_STATE.camStarting = true;
+    KIOSK_ATT_STATE.camStartingSince = Date.now();
     clearTimeout(KIOSK_ATT_STATE.ensureTimer);
     KIOSK_ATT_STATE.ensureTimer = null;
     clearTimeout(KIOSK_ATT_STATE.watchdogTimer);
@@ -82877,9 +82953,26 @@
       if (!reusableStream) {
         stopFaceCamera();
         const prevVid = $('kioskAttVideo');
-        if (prevVid && prevVid.srcObject) {
-          try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
-          prevVid.srcObject = null;
+        if (prevVid) {
+          if (prevVid.srcObject) {
+            try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+            prevVid.srcObject = null;
+          }
+          try { prevVid.pause(); } catch (_) {}
+          if (opts.forceRestart && prevVid.parentNode) {
+            try {
+              const freshV = document.createElement('video');
+              freshV.id = 'kioskAttVideo';
+              freshV.autoplay = true;
+              freshV.muted = true;
+              freshV.playsInline = true;
+              freshV.setAttribute('playsinline', '');
+              prevVid.replaceWith(freshV);
+            } catch (_) {}
+          }
+        }
+        if (opts.forceRestart) {
+          await new Promise(r => setTimeout(r, 90));
         }
       }
       if (!opts.silentWatchdog) {
@@ -82887,17 +82980,18 @@
       }
       KIOSK_ATT_STATE.camPausedByUser = false;
       const modelsP = ensureFaceModelsLoaded();
-      const stream = reusableStream || await navigator.mediaDevices.getUserMedia({
+      const stream = reusableStream || await requestKioskUserMediaWithTimeout({
         video: {
           facingMode: 'user',
           width: { ideal: 640 },
-          height: { ideal: 480 }
+          height: { ideal: 480 },
+          frameRate: { ideal: 15, max: 20 }
         },
         audio: false
-      }).catch(() => navigator.mediaDevices.getUserMedia({
+      }, 6000).catch(() => requestKioskUserMediaWithTimeout({
         video: { facingMode: 'user' },
         audio: false
-      }));
+      }, 6000));
       if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) {
         try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
         KIOSK_ATT_STATE.camStarting = false;
@@ -82924,6 +83018,7 @@
       KIOSK_ATT_STATE.unknownStreak = 0;
       KIOSK_ATT_STATE.softRebindAt = 0;
       KIOSK_ATT_STATE.lastProbePixels = null;
+      KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
       KIOSK_ATT_STATE.idleTickCounter = 0;
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
         ? 'Look inside the oval guide to clock in or out'
@@ -82945,22 +83040,9 @@
           v = $('kioskAttVideo');
         }
       }
-      if (opts.forceRestart && v && v.parentNode) {
-        try {
-          v.pause();
-          v.srcObject = null;
-          const freshV = document.createElement('video');
-          freshV.id = 'kioskAttVideo';
-          freshV.autoplay = true;
-          freshV.muted = true;
-          freshV.playsInline = true;
-          freshV.setAttribute('playsinline', '');
-          v.replaceWith(freshV);
-          v = freshV;
-        } catch (_) {}
-      }
       if (v) {
         if (v.srcObject !== stream) v.srcObject = stream;
+        ensureKioskVideoRvfcWired(v);
         await v.play().catch(() => {});
         if (v.readyState < 2 || !v.videoWidth) {
           await new Promise(resolve => {
@@ -82973,10 +83055,12 @@
           await v.play().catch(() => {});
         }
       }
-      await modelsP;
+      await modelsP.catch(() => {});
       v = $('kioskAttVideo') || v;
+      ensureKioskVideoRvfcWired(v);
       KIOSK_ATT_STATE.lastVideoTime = (v && typeof v.currentTime === 'number') ? v.currentTime : -1;
       KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
+      KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
       clearTimeout(KIOSK_ATT_STATE.loopTimer);
       KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 40);
       return true;
@@ -83117,33 +83201,59 @@
       return { ok: false, pixelsChanged: false, meanDiff: 0, nonBlack: false };
     }
     try {
+      ensureKioskVideoRvfcWired(v);
+      const rvfcCount = Number(KIOSK_ATT_STATE.rvfcCount || 0);
+      const rvfcAdvanced = rvfcCount > 0 && rvfcCount !== KIOSK_ATT_STATE.lastCheckedRvfcCount;
+      KIOSK_ATT_STATE.lastCheckedRvfcCount = rvfcCount;
+      let decodedCount = 0;
+      try {
+        if (typeof v.getVideoPlaybackQuality === 'function') {
+          const q = v.getVideoPlaybackQuality();
+          if (q && typeof q.totalVideoFrames === 'number') decodedCount = q.totalVideoFrames;
+        }
+        if (!decodedCount && typeof v.webkitDecodedFrameCount === 'number') {
+          decodedCount = v.webkitDecodedFrameCount;
+        }
+      } catch (_) {}
+      const qualityAdvanced = decodedCount > 0 && decodedCount !== KIOSK_ATT_STATE.lastDecodedFrameCount;
+      KIOSK_ATT_STATE.lastDecodedFrameCount = decodedCount;
+
       const cv = kioskFreezeProbeCanvas || (kioskFreezeProbeCanvas = document.createElement('canvas'));
-      if (cv.width !== 16) cv.width = 16;
-      if (cv.height !== 16) cv.height = 16;
+      if (cv.width !== 32) cv.width = 32;
+      if (cv.height !== 32) cv.height = 32;
       const ctx = cv.getContext('2d', { willReadFrequently: true }) || cv.getContext('2d');
-      ctx.drawImage(v, 0, 0, 16, 16);
-      const data = ctx.getImageData(0, 0, 16, 16).data;
+      const sw = Math.min(32, v.videoWidth);
+      const sh = Math.min(32, v.videoHeight);
+      const sx = Math.max(0, (v.videoWidth - sw) >> 1);
+      const sy = Math.max(0, (v.videoHeight - sh) >> 1);
+      ctx.drawImage(v, sx, sy, sw, sh, 0, 0, 32, 32);
+      const data = ctx.getImageData(0, 0, 32, 32).data;
       const prev = KIOSK_ATT_STATE.lastProbePixels;
-      const curr = new Uint8Array(768);
+      const curr = new Uint8Array(3072);
       let totalDiff = 0;
       let nonBlackCount = 0;
-      for (let i = 0, j = 0; i < 1024; i += 4, j += 3) {
+      for (let i = 0, j = 0; i < 4096; i += 4, j += 3) {
         const r = data[i], g = data[i + 1], b = data[i + 2];
         curr[j] = r;
         curr[j + 1] = g;
         curr[j + 2] = b;
         if (r + g + b > 18) nonBlackCount += 1;
-        if (prev && prev.length === 768) {
+        if (prev && prev.length === 3072) {
           totalDiff += Math.abs(r - prev[j]) + Math.abs(g - prev[j + 1]) + Math.abs(b - prev[j + 2]);
         }
       }
       KIOSK_ATT_STATE.lastProbePixels = curr;
-      const nonBlack = nonBlackCount >= 8;
-      if (!prev || prev.length !== 768) {
+      const nonBlack = nonBlackCount >= 16;
+      if (!prev || prev.length !== 3072) {
+        if (nonBlack) KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
         return { ok: true, pixelsChanged: nonBlack, meanDiff: 10, nonBlack };
       }
-      const meanDiff = totalDiff / 768;
-      const pixelsChanged = nonBlack && totalDiff > 0;
+      const meanDiff = totalDiff / 3072;
+      if (nonBlack && totalDiff > 0) {
+        KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
+      }
+      const recentRawNoise = (Date.now() - (KIOSK_ATT_STATE.lastPixelDiffAt || Date.now())) < 15000;
+      const pixelsChanged = nonBlack && (totalDiff > 0 || ((rvfcAdvanced || qualityAdvanced) && recentRawNoise));
       return { ok: true, pixelsChanged, meanDiff, nonBlack };
     } catch (_) {
       return { ok: false, pixelsChanged: false, meanDiff: 0, nonBlack: false };
@@ -83156,10 +83266,13 @@
     const alive = streamAlive();
     if (!alive || !v || v.ended) {
       scheduleKioskAttCameraWatchdogRestart(!alive ? 'stream-dead' : 'video-ended');
+      clearTimeout(KIOSK_ATT_STATE.loopTimer);
+      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 2200);
       return;
     }
     if (v.srcObject !== FACE_STATE.stream) {
       v.srcObject = FACE_STATE.stream;
+      ensureKioskVideoRvfcWired(v);
       v.play().catch(() => {});
     } else if (v.paused) {
       v.play().catch(() => {});
@@ -83196,11 +83309,14 @@
               v = freshV;
             }
             v.srcObject = FACE_STATE.stream;
+            ensureKioskVideoRvfcWired(v);
             v.play().catch(() => {});
           } catch (_) {}
         }
       } else if (stuckMs > 7200) {
         scheduleKioskAttCameraWatchdogRestart('frame-frozen');
+        clearTimeout(KIOSK_ATT_STATE.loopTimer);
+        KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 2200);
         return;
       }
     }

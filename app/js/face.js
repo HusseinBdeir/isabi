@@ -104,8 +104,8 @@ const Face = (() => {
   function preferredVideoConstraints() {
     const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth;
     return portrait
-      ? { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } }
-      : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } };
+      ? { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 }, frameRate: { ideal: 15, max: 20 } }
+      : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 15, max: 20 } };
   }
 
   function stopAllStreams() {
