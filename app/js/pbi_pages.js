@@ -1502,6 +1502,13 @@
     ] },
     { key: 'jv_partnerships', group: '2 · Purchases, Expenses & Payables', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
     { key: 'jv_distributions', group: '2 · Purchases, Expenses & Payables', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
+    { key: 'documents', group: '2 · Purchases, Expenses & Payables', navView: 'documents', label: 'Document & Receipt Vault', singularLabel: 'Document', dvn: 'bhf_document', form: 'document', cols: ['date', 'name', 'company', 'doc_type', 'title', 'counterparty', 'reference', 'parent_label', 'file_name', 'capture_method', 'amount', 'status', 'notes'], relTables: ['expenses', 'raw_purchases', 'sales_tickets', 'receipts', 'settlements', 'vat_invoices', 'suppliers', 'customers'], views: [
+      { id: 'all', label: 'All Saved Documents & Receipts' },
+      { id: 'invoices', label: 'Invoices & Bills', fn: r => /invoice|bill|tax|vat/i.test(r.doc_type || '') },
+      { id: 'receipts', label: 'Receipts & Vouchers', fn: r => /receipt|voucher|slip|bank/i.test(r.doc_type || '') },
+      { id: 'linked', label: 'Linked to Transactions', fn: r => Boolean(r.parent_label || r.parent_id) },
+      { id: 'standalone', label: 'Standalone Vault Files', fn: r => !r.parent_label && !r.parent_id }
+    ] },
 
     // 3 · Fleet, Fuel, Maintenance & Drivers (10 BU-scoped)
     { key: 'fuel_intakes', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Fuel & Lubricant Intakes', dvn: 'bhf_fuelintake', form: 'fuel', cols: ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'tank_remaining_litres', 'uom', 'odometer', 'hours', 'notes'], relTables: ['equipment', 'company_equipment', 'drivers', 'products', 'fuel_malfunctions'], views: [{ id: 'all', label: 'All Fuel & Lube Fills' }, { id: 'diesel', label: 'Diesel Only', fn: r => /diesel|fuel|mazout/i.test(r.item || '') }, { id: 'lube', label: 'Oils & Lubricants', fn: r => !/diesel|fuel|mazout|grease/i.test(r.item || '') }, { id: 'grease', label: 'Daily Greasing (kg)', fn: r => /grease/i.test(r.item || '') }] },
@@ -12879,6 +12886,29 @@
     `;
   }
 
+  function renderDocumentsVisualsSection(ctx) {
+    const byType = (ctx && ctx.byType) || [];
+    const byParty = (ctx && ctx.byParty) || [];
+    return `
+      <div class="pbi-grid-2" id="documentsChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Saved Documents & Receipts by Category (Count & $ Value)', buildHorizontalBarChart(byType, 'label', 'count', v => `${fmtNum(v, 0)} docs`, {
+          subKey: 'sub',
+          maxItems: 8,
+          colorFn: r => /Invoice/i.test(r.label) ? C.navy : (/Receipt|Voucher/i.test(r.label) ? C.good : C.brass)
+        }), {
+          subtitle: 'Archived invoices, payment receipts, statutory tax filings, contracts, and weighbridge slips by category'
+        })}
+        ${pbiPanel('Document Vault Volume by Counterparty & Linked Module ($)', buildHorizontalBarChart(byParty, 'label', 'amount', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 8,
+          colorFn: r => r.linked ? C.navy : C.steel
+        }), {
+          subtitle: 'Documented transaction value by vendor, customer, or authority with linked transaction count'
+        })}
+      </div>
+    `;
+  }
+
   window.MFG_PBI = {
     PBI_PAGES,
     MOVED_PBI_PAGES,
@@ -12920,6 +12950,7 @@
     renderWarehouseVisualsSection,
     renderWarehousePartsVisualsSection,
     renderContractsVisualsSection,
-    renderSuppliersVisualsSection
+    renderSuppliersVisualsSection,
+    renderDocumentsVisualsSection
   };
 })();

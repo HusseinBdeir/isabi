@@ -400,7 +400,7 @@
     'drivers', 'company_drivers', 'staff_members', 'staff_roles', 'staff_assignments', 'work_shifts', 'expense_categories', 'expense_subcategories',
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
-    'conversions', 'jv_partnerships', 'jv_distributions',
+    'conversions', 'jv_partnerships', 'jv_distributions', 'documents',
     'currencies', 'fx_rates', 'vat_rates', 'gl_accounts'
   ];
   const CR_TABLE = {
@@ -421,6 +421,7 @@
     logistics_allowances: 'logistics_allowances', overtime_rates: 'overtime_rates',
     external_movements: 'external_movements', loans: 'loans', loan_settlements: 'loan_settlements',
     conversions: 'conversions', jv_partnerships: 'jv_partnerships', jv_distributions: 'jv_distributions',
+    documents: 'documents',
     currencies: 'currencies', fx_rates: 'fx_rates', vat_rates: 'vat_rates', gl_accounts: 'gl_accounts'
   };
   const CR_LABEL = {
@@ -441,6 +442,7 @@
     logistics_allowances: 'site transport', overtime_rates: 'overtime rate',
     external_movements: 'external movement', loans: 'partner loan', loan_settlements: 'loan settlement',
     conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution',
+    documents: 'document & receipt',
     currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate', gl_accounts: 'GL account'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
@@ -6663,14 +6665,25 @@
   function appCell(r, crKey) {
     if (!r || r.voided) return '';
     const rid = r.id || r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment;
+    let attHtml = '';
+    if (crKey === 'documents') {
+      if (r.data_url || (Array.isArray(r.attachments) && r.attachments.length)) {
+        attHtml = ` <button type="button" class="att-inline-badge" data-preview-doc-id="${esc(rid)}" data-ui-tip="Preview or download ${esc(r.file_name || r.title || r.name || 'document')}">${ic('eye')}<span>View</span></button>`;
+      }
+    } else if (crKey && rid) {
+      const attCnt = typeof getRecordAttachmentCount === 'function' ? getRecordAttachmentCount(crKey, r) : (Array.isArray(r.attachments) ? r.attachments.length : 0);
+      if (attCnt > 0) {
+        attHtml = ` <button type="button" class="att-inline-badge" data-preview-rec-att="${esc(crKey)}" data-preview-rec-id="${esc(rid)}" data-ui-tip="Preview ${attCnt} attached receipt${attCnt === 1 ? '' : 's'} / document${attCnt === 1 ? '' : 's'}">${ic('receipt')}<span>${attCnt}</span></button>`;
+      }
+    }
     if (!isAppRecord(r)) {
-      return (canVoid() && rid)
+      return attHtml + ((canVoid() && rid)
         ? `<button type="button" class="void-btn row-void-hover" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" title="Void / Delete this record (click once to arm, click again to confirm)">✕</button>`
-        : '';
+        : '');
     }
     const who = r.entered_by ? ' by ' + r.entered_by : '';
     const when = r.entered_at ? ' · ' + r.entered_at : '';
-    return ` <span class="badge badge-app" title="Entered in this web app${esc(who + when)}">APP</span>` +
+    return attHtml + ` <span class="badge badge-app" title="Entered in this web app${esc(who + when)}">APP</span>` +
       (canVoid() ? `<button type="button" class="void-btn" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" title="Void / Delete this app entry (keeps a tombstone so other devices drop it too)">✕</button>` : '');
   }
 
@@ -7443,7 +7456,7 @@
       if (['item', 'expensecategory', 'equipment', 'companyequipment', 'driver'].includes(form)) return anyEntryRight;
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master || p.rights.enter_accounting);
-      if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement'].includes(form)) return !!(p.rights.enter_accounting || p.rights.enter_master);
+      if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement', 'document'].includes(form)) return !!(p.rights.enter_accounting || p.rights.enter_master || p.rights.enter_dispatch);
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'region', 'staff', 'staffrole', 'staffassignment', 'workshift', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
       if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion'].includes(form)) return !!(p.rights.enter_payroll_jv || p.rights.enter_accounting);
       if (['jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
@@ -7454,11 +7467,11 @@
     if (/^Supervisor$/i.test(role)) return false; // Supervisor = strictly read-only oversight
     if (/Sales/i.test(role)) {
       if (isRawPriceForm) return false;
-      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'item', 'site', 'region', 'equipment', 'companyequipment', 'driver'].includes(form);
+      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'item', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'document'].includes(form);
     }
     if (/Entry/i.test(role)) {
       return [
-        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'recurringexpense', 'warehousestock', 'settlement',
+        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'recurringexpense', 'warehousestock', 'settlement', 'document',
         'defect', 'repair', 'oillog', 'partlog', 'pricerule',
         'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'staffassignment', 'workshift',
         'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate',
@@ -8145,6 +8158,7 @@
       tabs: [
         { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
         { view: 'recurring_expenses', label: 'Recurring Schedules', icon: 'recurring_expenses' },
+        { view: 'documents', label: 'Document Vault', icon: 'receipt' },
         { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' }
       ]
     },
@@ -8540,7 +8554,7 @@
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
     if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
     if (view === 'raw_jv' || view === 'jv') return canViewView('raw', u) && (canAccessTable('jv_partnerships', u) || canAccessTable('jv_distributions', u) || canAccessPbiPage('p17_jv', u));
-    if (view === 'recurring_expenses') return canViewView('expenses', u);
+    if (view === 'recurring_expenses' || view === 'documents') return canViewView('expenses', u) || canViewView('sales', u);
     if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
@@ -12189,7 +12203,7 @@
     'equipment_repairs', 'equipment_oil_logs', 'repair_items', 'expense_items',
     'journal_lines', 'daily_totals', 'customers', 'suppliers', 'products', 'items',
     'product_types', 'uoms', 'expense_categories', 'expense_subcategories', 'sites',
-    'regions', 'equipment', 'drivers', 'staff_members', 'staff_roles', 'currencies', 'gl_accounts',
+    'regions', 'equipment', 'drivers', 'staff_members', 'staff_roles', 'currencies', 'gl_accounts', 'documents',
   ]);
 
   const CUSTOM_CHRONO_SPECS = new Map();
@@ -37849,7 +37863,7 @@
             </thead>
             <tbody>
               ${shownPartners.length ? shownPartners.map(p => `
-                <tr>
+                <tr class="rrow">
                   <td><strong>${esc(p.partner)}</strong></td>
                   <td>${Array.from(p.companies).map(c => coBadge(c)).join(' ')}</td>
                   <td class="r mono">${fmtNum(p.count)}</td>
@@ -38137,20 +38151,20 @@
     const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
 
     const posRows = [
-      { id: 'POS-Z-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una RawBT Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'RawBT thermal Z-Read verified 100% against physical drawer' },
-      { id: 'POS-Z-902', date: '2026-09-28', company: 'Blanca', terminal: 'Blanca Terrace POS #1', shift: 'Full Day', cashier: 'Maya S.', bills_count: 192, pos_billed_ttc: 10489.5, cash_usd: 5120, card_whish_usd: 5219.5, comp_usd: 150, variance_usd: 0, status: 'Balanced', notes: 'All credit slips & Whish QR receipts reconciled' },
-      { id: 'POS-Z-903', date: '2026-09-27', company: 'Blanca', terminal: 'Blanca Pool Bar POS #2', shift: 'Sunset Shift', cashier: 'Rami H.', bills_count: 164, pos_billed_ttc: 9102, cash_usd: 6810, card_whish_usd: 2110, comp_usd: 0, variance_usd: -182, status: 'R2 Variance', notes: 'Rule R2 Alert: Unclosed cabana tab #B-14 ($182) pending guest checkout' },
-      { id: 'POS-Z-904', date: '2026-09-27', company: 'La Una', terminal: 'La Una Lounge POS #2', shift: 'Evening Shift', cashier: 'Karim T.', bills_count: 112, pos_billed_ttc: 6216, cash_usd: 3890, card_whish_usd: 2326, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Shisha & cocktail counter closed with zero discrepancy' },
-      { id: 'POS-Z-905', date: '2026-09-26', company: 'Palms', terminal: 'Palms Main Reception POS', shift: 'Day Shift', cashier: 'Lara M.', bills_count: 138, pos_billed_ttc: 17094, cash_usd: 7400, card_whish_usd: 9434, comp_usd: 260, variance_usd: 0, status: 'Balanced', notes: 'Chalet check-in & beach gate Z-report matched' },
-      { id: 'POS-Z-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'R2 Variance', notes: 'Rule R2 Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
-      { id: 'POS-Z-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
+      { id: 'POS-CL-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una RawBT Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'RawBT thermal shift close verified 100% against physical drawer' },
+      { id: 'POS-CL-902', date: '2026-09-28', company: 'Blanca', terminal: 'Blanca Terrace POS #1', shift: 'Full Day', cashier: 'Maya S.', bills_count: 192, pos_billed_ttc: 10489.5, cash_usd: 5120, card_whish_usd: 5219.5, comp_usd: 150, variance_usd: 0, status: 'Balanced', notes: 'All credit slips & Whish QR receipts reconciled' },
+      { id: 'POS-CL-903', date: '2026-09-27', company: 'Blanca', terminal: 'Blanca Pool Bar POS #2', shift: 'Sunset Shift', cashier: 'Rami H.', bills_count: 164, pos_billed_ttc: 9102, cash_usd: 6810, card_whish_usd: 2110, comp_usd: 0, variance_usd: -182, status: 'Close Variance', notes: 'Till Close Alert: Unclosed cabana tab #B-14 ($182) pending guest checkout' },
+      { id: 'POS-CL-904', date: '2026-09-27', company: 'La Una', terminal: 'La Una Lounge POS #2', shift: 'Evening Shift', cashier: 'Karim T.', bills_count: 112, pos_billed_ttc: 6216, cash_usd: 3890, card_whish_usd: 2326, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Shisha & cocktail counter closed with zero discrepancy' },
+      { id: 'POS-CL-905', date: '2026-09-26', company: 'Palms', terminal: 'Palms Main Reception POS', shift: 'Day Shift', cashier: 'Lara M.', bills_count: 138, pos_billed_ttc: 17094, cash_usd: 7400, card_whish_usd: 9434, comp_usd: 260, variance_usd: 0, status: 'Balanced', notes: 'Chalet check-in & beach gate shift close matched' },
+      { id: 'POS-CL-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'Close Variance', notes: 'Till Close Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
+      { id: 'POS-CL-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
     ].filter(r => activeNames.has(r.company));
 
     const vatRows = [
       { id: 'HSP-VAT-101', date: '2026-09-28', company: 'Blanca', doc_ref: 'VAT-BL-2026-091', category: 'Chalet & F&B Sales', tax_rule: '11% Standard VAT', ht_usd: 29450, vat_usd: 3239.5, ttc_usd: 32689.5, direction: 'Output VAT', notes: 'Official 11% fiscal declaration on resort rooms & dining' },
-      { id: 'HSP-VAT-102', date: '2026-09-28', company: 'La Una', doc_ref: 'VAT-LU-2026-084', category: 'Restaurant & Lounge', tax_rule: '11% Standard VAT', ht_usd: 19800, vat_usd: 2178, ttc_usd: 21978, direction: 'Output VAT', notes: 'La Una fiscal POS Z-batch 11% output tax' },
-      { id: 'HSP-VAT-103', date: '2026-09-27', company: 'Blanca', doc_ref: 'EX-BL-2026-412', category: 'Generator Diesel Intake', tax_rule: 'Never VAT (step253)', ht_usd: 4850, vat_usd: 0, ttc_usd: 4850, direction: 'Exempt (Never VAT)', notes: 'step253 Enforced: Excised generator fuel carries $0 VAT' },
-      { id: 'HSP-VAT-104', date: '2026-09-27', company: 'La Una', doc_ref: 'TIP-LU-2026-019', category: 'Staff Gratuities & Tips', tax_rule: 'Never VAT (step253)', ht_usd: 1920, vat_usd: 0, ttc_usd: 1920, direction: 'Exempt (Never VAT)', notes: 'step253 Enforced: Pass-through staff tips excluded from VAT base' },
+      { id: 'HSP-VAT-102', date: '2026-09-28', company: 'La Una', doc_ref: 'VAT-LU-2026-084', category: 'Restaurant & Lounge', tax_rule: '11% Standard VAT', ht_usd: 19800, vat_usd: 2178, ttc_usd: 21978, direction: 'Output VAT', notes: 'La Una fiscal POS shift close 11% output tax' },
+      { id: 'HSP-VAT-103', date: '2026-09-27', company: 'Blanca', doc_ref: 'EX-BL-2026-412', category: 'Generator Diesel Intake', tax_rule: 'Zero-VAT Exempt', ht_usd: 4850, vat_usd: 0, ttc_usd: 4850, direction: 'Exempt (Zero-VAT)', notes: 'Zero-VAT Enforced: Excised generator fuel carries $0 VAT' },
+      { id: 'HSP-VAT-104', date: '2026-09-27', company: 'La Una', doc_ref: 'TIP-LU-2026-019', category: 'Staff Gratuities & Tips', tax_rule: 'Zero-VAT Exempt', ht_usd: 1920, vat_usd: 0, ttc_usd: 1920, direction: 'Exempt (Zero-VAT)', notes: 'Zero-VAT Enforced: Pass-through staff tips excluded from VAT base' },
       { id: 'HSP-VAT-105', date: '2026-09-26', company: 'Palms', doc_ref: 'VAT-PL-2026-067', category: 'Chalets & Wedding Banquets', tax_rule: '11% Standard VAT', ht_usd: 33900, vat_usd: 3729, ttc_usd: 37629, direction: 'Output VAT', notes: 'Palms seasonal chalet & event fiscal batch' },
       { id: 'HSP-VAT-106', date: '2026-09-25', company: 'Voile', doc_ref: 'AP-VL-2026-308', category: 'Cellar & Kitchen Imports', tax_rule: '11% Deductible Input', ht_usd: 11200, vat_usd: 1232, ttc_usd: 12432, direction: 'Input VAT', notes: 'Deductible supplier VAT on F&B commissary invoices' },
       { id: 'HSP-VAT-107', date: '2026-09-24', company: 'Platinum', doc_ref: 'VAT-PT-2026-052', category: 'Suites & Gala Ballroom', tax_rule: '11% Standard VAT', ht_usd: 27400, vat_usd: 3014, ttc_usd: 30414, direction: 'Output VAT', notes: 'Platinum corporate suites & ballroom 11% output VAT' }
@@ -38158,7 +38172,7 @@
 
     const membershipRows = [
       { id: 'MEM-2026-001', company: 'Blanca', member: 'Khoury Family Trust', unit: 'Royal Chalet #A-01', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 28000, paid_usd: 28000, balance_usd: 0, due_date: '2026-06-15', status: 'Paid in Full', notes: 'Front-row beach chalet + 6 VIP beach passes' },
-      { id: 'MEM-2026-002', company: 'Blanca', member: 'Nassar Holdings SAL', unit: 'Duplex Chalet #B-08', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 24000, paid_usd: 16500, balance_usd: 7500, due_date: '2026-08-30', status: 'Overdue Arrears', notes: '3rd installment ($7,500) past due — follow-up scheduled' },
+      { id: 'MEM-2026-002', company: 'Blanca', member: 'Nassar Holdings SAL', unit: 'Duplex Chalet #B-08', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 24000, paid_usd: 16500, balance_usd: 7500, due_date: '2026-08-30', status: 'Overdue Arrears', notes: '3rd installment ($7,500) past due · follow-up scheduled' },
       { id: 'MEM-2026-003', company: 'Palms', member: 'Saab & Associates', unit: 'Presidential Villa #P-04', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 36000, paid_usd: 27000, balance_usd: 9000, due_date: '2026-09-10', status: 'Overdue Arrears', notes: 'Q3 villa installment overdue · statement dispatched' },
       { id: 'MEM-2026-004', company: 'Palms', member: 'Dr. Tarek Mansour', unit: 'Pool Cabana #C-12', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 14500, paid_usd: 14500, balance_usd: 0, due_date: '2026-05-15', status: 'Paid in Full', notes: 'Settled upfront with 5% early-bird discount' },
       { id: 'MEM-2026-005', company: 'Voile', member: 'Horizon Marine Club', unit: 'Sunset Cabana #V-02 + Jetty', season: 'Summer 2026', start_date: '2026-05-15', end_date: '2026-10-15', contract_usd: 19500, paid_usd: 15000, balance_usd: 4500, due_date: '2026-10-05', status: 'Partial / Active', notes: 'Final closing installment due Oct 5' },
@@ -38177,17 +38191,17 @@
 
     const stockRows = [
       { id: 'STK-HSP-01', date: '2026-09-28', company: 'La Una', store: 'Main Kitchen & Cold Room', item_group: 'Prime Cuts & Imported Seafood', opening_usd: 6400, purchases_in_usd: 14800, transfers_net_usd: -1200, recipe_usage_usd: 12900, closing_usd: 7100, r3_ratio: 1.05, status: 'Optimal', notes: 'Transferred $1,200 vacuum-sealed cuts to Blanca terrace kitchen' },
-      { id: 'STK-HSP-02', date: '2026-09-28', company: 'La Una', store: 'Sommelier Cellar & Bar', item_group: 'Vintage Wines & Single Malts', opening_usd: 18200, purchases_in_usd: 9600, transfers_net_usd: 0, recipe_usage_usd: 7400, closing_usd: 20400, r3_ratio: 1.30, status: 'R3 Ratio Alert', notes: 'Rule R3 Watch (1.30x): Cellar restock ahead of October private tastings' },
+      { id: 'STK-HSP-02', date: '2026-09-28', company: 'La Una', store: 'Sommelier Cellar & Bar', item_group: 'Vintage Wines & Single Malts', opening_usd: 18200, purchases_in_usd: 9600, transfers_net_usd: 0, recipe_usage_usd: 7400, closing_usd: 20400, r3_ratio: 1.30, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.30x): Cellar restock ahead of October private tastings' },
       { id: 'STK-HSP-03', date: '2026-09-28', company: 'Blanca', store: 'Beach Bar & Terrace Commissary', item_group: 'Spirits, Mixers & Draft', opening_usd: 8900, purchases_in_usd: 11400, transfers_net_usd: 1200, recipe_usage_usd: 11850, closing_usd: 9650, r3_ratio: 1.06, status: 'Optimal', notes: 'Includes $1,200 inter-resort commissary transfer from La Una' },
       { id: 'STK-HSP-04', date: '2026-09-27', company: 'Palms', store: 'Banquet & Wedding Commissary', item_group: 'Banquet Proteins, Dairy & Pastry', opening_usd: 9500, purchases_in_usd: 16200, transfers_net_usd: -800, recipe_usage_usd: 14900, closing_usd: 10000, r3_ratio: 1.03, status: 'Optimal', notes: '320-guest wedding banquet consumption reconciled to recipe BOM' },
-      { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'R3 Ratio Alert', notes: 'Rule R3 Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
-      { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: ' VIP suite minibars & ballroom catering stock balanced' }
+      { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
+      { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: 'VIP suite minibars & ballroom catering stock balanced' }
     ].filter(r => activeNames.has(r.company));
 
     const menuRows = [
       { id: 'MNU-001', company: 'La Una', item: 'Dry-Aged Ribeye 450g (Josper Grill)', category: 'Main Course · Kitchen', price_ttc: 68.00, price_ht: 61.26, recipe_cost: 19.60, margin_usd: 41.66, food_cost_pct: 32.0, units_sold: 184, menu_class: 'Star (High Margin · High Vol)', notes: 'Top gross margin contributor on RawBT Till #1' },
       { id: 'MNU-002', company: 'La Una', item: 'Truffle Burrata & Heirloom Carpaccio', category: 'Starter · Kitchen', price_ttc: 26.00, price_ht: 23.42, recipe_cost: 5.85, margin_usd: 17.57, food_cost_pct: 25.0, units_sold: 260, menu_class: 'Star (High Margin · High Vol)', notes: '25.0% food cost · highest table attachment rate' },
-      { id: 'MNU-003', company: 'Blanca', item: 'Mediterranean Catch of the Day (1kg)', category: 'Seafood · Kitchen', price_ttc: 75.00, price_ht: 67.57, recipe_cost: 27.70, margin_usd: 39.87, food_cost_pct: 41.0, units_sold: 142, menu_class: 'Plowhorse (High Vol · Watch Cost)', notes: 'Fresh wild catch cost rose 4% this week — review market price' },
+      { id: 'MNU-003', company: 'Blanca', item: 'Mediterranean Catch of the Day (1kg)', category: 'Seafood · Kitchen', price_ttc: 75.00, price_ht: 67.57, recipe_cost: 27.70, margin_usd: 39.87, food_cost_pct: 41.0, units_sold: 142, menu_class: 'Plowhorse (High Vol · Watch Cost)', notes: 'Fresh wild catch cost rose 4% this week · review market price' },
       { id: 'MNU-004', company: 'Blanca', item: 'Signature Passionfruit Mezcal Pitcher', category: 'Cocktails · Bar', price_ttc: 48.00, price_ht: 43.24, recipe_cost: 8.65, margin_usd: 34.59, food_cost_pct: 20.0, units_sold: 215, menu_class: 'Star (High Margin · High Vol)', notes: '80% gross pour margin across beach cabanas' },
       { id: 'MNU-005', company: 'Palms', item: 'Royal Wedding Banquet Package (Per Guest)', category: 'Banquet · Events', price_ttc: 65.00, price_ht: 58.56, recipe_cost: 18.15, margin_usd: 40.41, food_cost_pct: 31.0, units_sold: 320, menu_class: 'Star (High Margin · High Vol)', notes: 'Includes 4-course plated service + live stations' },
       { id: 'MNU-006', company: 'Voile', item: 'Sunset Sushi & Sashimi Boat (36 pcs)', category: 'Raw Bar · Deck', price_ttc: 95.00, price_ht: 85.59, recipe_cost: 33.38, margin_usd: 52.21, food_cost_pct: 39.0, units_sold: 96, menu_class: 'Puzzle (High Margin $ · Niche)', notes: 'High dollar contribution per daybed order' },
@@ -38197,13 +38211,13 @@
     const energyRows = [
       { id: 'NRG-001', date: '2026-09-28', company: 'Blanca', asset: 'Perkins 500kVA Prime Gen #1 + 180kWp Solar', tank_level_l: 6420, refill_l: 3000, run_hours: 14.5, diesel_used_l: 435, l_per_hr: 30.0, rated_l_hr: 31.0, kwh_gen: 1980, solar_offset_pct: 38, status: 'Normal Burn', notes: 'Solar PV covered 38% of peak afternoon chiller & pool pump load' },
       { id: 'NRG-002', date: '2026-09-28', company: 'La Una', asset: 'Cummins 250kVA Silent Gen + Hybrid Inverter', tank_level_l: 3180, refill_l: 0, run_hours: 16.0, diesel_used_l: 272, l_per_hr: 17.0, rated_l_hr: 18.0, kwh_gen: 1120, solar_offset_pct: 29, status: 'Normal Burn', notes: 'Cold rooms & Josper extraction running within rated curve' },
-      { id: 'NRG-003', date: '2026-09-27', company: 'Palms', asset: 'Caterpillar 650kVA Banquet Gen #1', tank_level_l: 4850, refill_l: 4000, run_hours: 18.0, diesel_used_l: 792, l_per_hr: 44.0, rated_l_hr: 36.0, kwh_gen: 2840, solar_offset_pct: 24, status: 'R4 Burn Spike (+22%)', notes: 'Rule R4 Alert: 44.0 L/hr vs 36.0 L/hr rated (+22%) during wedding HVAC peak — inspect injectors' },
+      { id: 'NRG-003', date: '2026-09-27', company: 'Palms', asset: 'Caterpillar 650kVA Banquet Gen #1', tank_level_l: 4850, refill_l: 4000, run_hours: 18.0, diesel_used_l: 792, l_per_hr: 44.0, rated_l_hr: 36.0, kwh_gen: 2840, solar_offset_pct: 24, status: 'Burn Spike (+22%)', notes: 'Burn Rate Alert: 44.0 L/hr vs 36.0 L/hr rated (+22%) during wedding HVAC peak · inspect injectors' },
       { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
     ].filter(r => activeNames.has(r.company));
 
     const maintRows = [
-      { id: 'MNT-HSP-01', date: '2026-09-28', company: 'Palms', asset: 'Caterpillar 650kVA Gen #1', zone: 'Power House', type: 'Corrective · Fuel Injector Calibration', priority: 'Urgent', downtime_hrs: 2.5, cost_usd: 680, vendor: 'jounieh marine & power', status: 'Open Work Order', notes: 'Triggered by Rule R4 44.0 L/hr burn spike alert' },
+      { id: 'MNT-HSP-01', date: '2026-09-28', company: 'Palms', asset: 'Caterpillar 650kVA Gen #1', zone: 'Power House', type: 'Corrective · Fuel Injector Calibration', priority: 'Urgent', downtime_hrs: 2.5, cost_usd: 680, vendor: 'jounieh marine & power', status: 'Open Work Order', notes: 'Triggered by 44.0 L/hr generator burn spike alert' },
       { id: 'MNT-HSP-02', date: '2026-09-27', company: 'Blanca', asset: 'Infinity Pool Filtration & Salt Chlorinator', zone: 'Main Pool Deck', type: 'Preventive · Membrane & Pump Service', priority: 'Standard', downtime_hrs: 0, cost_usd: 420, vendor: 'aqua-tech lebanon', status: 'Completed', notes: 'Overnight backwash & dosing pump calibration' },
       { id: 'MNT-HSP-03', date: '2026-09-26', company: 'La Una', asset: 'Walk-In Cold Room #2 Compressor', zone: 'Main Commissary', type: 'Preventive · Refrigerant & Thermostat Check', priority: 'High', downtime_hrs: 0.5, cost_usd: 310, vendor: 'frio-serv commercial', status: 'Completed', notes: 'Held -2.0°C steady under full weekend load' },
       { id: 'MNT-HSP-04', date: '2026-09-25', company: 'Blanca', asset: 'Chalet Block B Split HVAC Units (8 Units)', zone: 'Chalet Village', type: 'Preventive · Coil Deep Clean & Gas Top-Up', priority: 'Standard', downtime_hrs: 1.0, cost_usd: 540, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'End-of-September guest turnover HVAC service' },
@@ -38222,7 +38236,7 @@
     const totalRevenueHt = round2(venueRows.reduce((s, r) => s + r.ht_usd, 0));
     const totalVatOutput = round2(vatRows.filter(r => r.direction === 'Output VAT').reduce((s, r) => s + r.vat_usd, 0));
     const totalVatInput = round2(vatRows.filter(r => r.direction === 'Input VAT').reduce((s, r) => s + r.vat_usd, 0));
-    const totalNeverVatUsd = round2(vatRows.filter(r => r.direction.includes('Never VAT')).reduce((s, r) => s + r.ttc_usd, 0));
+    const totalNeverVatUsd = round2(vatRows.filter(r => r.direction.includes('Exempt')).reduce((s, r) => s + r.ttc_usd, 0));
     const revParUsd = totalRoomsCap > 0 ? round2(totalRevenueTtc / totalRoomsCap) : 0;
 
     const totalMemContract = round2(membershipRows.reduce((s, r) => s + r.contract_usd, 0));
@@ -38333,11 +38347,13 @@
     const fnbTotal = round2(hsp.venueRows.filter(r => r.category === 'Restaurant F&B' || r.category === 'Shisha & Lounge').reduce((a, r) => a + r.ttc_usd, 0));
     const beachEventTotal = round2(hsp.venueRows.filter(r => r.category === 'Beach Entrance' || r.category === 'Events & Weddings' || r.category === 'Valet & Services').reduce((a, r) => a + r.ttc_usd, 0));
     const posVarCount = hsp.posRows.filter(r => Math.abs(r.variance_usd) > 0.5).length;
+    const hideCo = hsp.activeResorts.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
 
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
-          <div class="kpi-lbl">Gross Venue Revenue (TTC)</div>
+          <div class="kpi-lbl">Gross Venue Revenue</div>
           <div class="kpi-val good">${fmtUSD(s.totalRevenueTtc, 0)}</div>
           <div class="kpi-sub">Net HT ${fmtUSD(s.totalRevenueHt, 0)} across ${hsp.activeResorts.length} resort(s)</div>
         </div>
@@ -38357,14 +38373,14 @@
           <div class="kpi-sub">Gate day-passes, banquets &amp; VIP valet</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">POS Till Close (Rule R2)</div>
+          <div class="kpi-lbl">POS Shift Close</div>
           <div class="kpi-val ${posVarCount > 0 ? 'warn' : 'good'}">${posVarCount > 0 ? `${posVarCount} Variance` : '100% Balanced'}</div>
-          <div class="kpi-sub">${fmtNum(hsp.posRows.length)} shift Z-reports audited</div>
+          <div class="kpi-sub">${fmtNum(hsp.posRows.length)} shift closes audited</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Resort VAT &amp; step253 Guard</div>
+          <div class="kpi-lbl">Resort VAT &amp; Tax Guard</div>
           <div class="kpi-val">${fmtUSD(s.totalVatOutput - s.totalVatInput, 0)}</div>
-          <div class="kpi-sub">Net VAT payable · ${fmtUSD(s.totalNeverVatUsd, 0)} Never-VAT exempt</div>
+          <div class="kpi-sub">Net VAT payable · ${fmtUSD(s.totalNeverVatUsd, 0)} Zero-VAT exempt</div>
         </div>
       </div>
     `;
@@ -38387,7 +38403,7 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_pos')} POS SHIFT Z-READ &amp; BILL-TO-COLLECTION RECONCILIATION (RULE R2)</span></div>
+            <div class="panel-title"><span>${ic('hsp_pos')} POS SHIFT CLOSE &amp; BILL-TO-COLLECTION RECONCILIATION</span></div>
             <span class="panel-meta">Blue:Chalets · Green:Restaurant &amp; Bar · Amber:Beach &amp; Events</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Hospitality POS Shift Reconciliation Chart">
@@ -38398,27 +38414,27 @@
         <div class="panel-card" id="hspPosPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-              <div class="panel-title"><span>${ic('hsp_pos')} POS TILL CLOSE &amp; BILL VARIANCE REGISTER (${fmtNum(filteredPos.length)})</span></div>
+              <div class="panel-title"><span>${ic('hsp_pos')} POS SHIFT CLOSE &amp; BILL VARIANCE REGISTER (${fmtNum(filteredPos.length)})</span></div>
               <div class="chip-bar">
                 ${chip('all', `All Shifts (${fmtNum(hsp.posRows.length)})`)}
-                ${chip('variance', `R2 Variance (${fmtNum(posVarCount)})`)}
+                ${chip('variance', `Close Variance (${fmtNum(posVarCount)})`)}
                 ${chip('balanced', `Balanced (${fmtNum(hsp.posRows.length - posVarCount)})`)}
                 ${chip('launa', 'La Una RawBT')}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search terminal, cashier, shift...')}
-              ${exportBtn('hspPosPanel', 'Hospitality_POS_Till_Close')}
-              ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ POS Till Close</button>' : ''}
+              ${exportBtn('hspPosPanel', 'Hospitality_POS_Shift_Close')}
+              ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ POS Shift Close</button>' : ''}
             </div>
           </div>
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>Z-Ref</th>
+                  <th>Shift Ref</th>
                   <th>Date</th>
-                  <th>Resort</th>
+                  <th${coStyle}>Resort</th>
                   <th>Terminal &amp; Shift</th>
                   <th>Cashier</th>
                   <th class="r">Bills</th>
@@ -38426,16 +38442,16 @@
                   <th class="r">Cash ($)</th>
                   <th class="r">Card / Whish ($)</th>
                   <th class="r">Comp ($)</th>
-                  <th class="r">R2 Variance ($)</th>
+                  <th class="r">Close Variance ($)</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 ${shownPos.length ? shownPos.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.terminal)}</strong> <small class="mu">· ${esc(r.shift)}</small></td>
                     <td>${esc(r.cashier)}</td>
                     <td class="r mono">${fmtNum(r.bills_count)}</td>
@@ -38451,7 +38467,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="5"><strong>TOTAL POS SHIFT CLOSES (${fmtNum(filteredPos.length)} SHIFTS)</strong></td>
+                  <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL POS SHIFT CLOSES (${fmtNum(filteredPos.length)} SHIFTS)</strong></td>
                   <td class="r mono"><strong>${fmtNum(filteredPos.reduce((a, r) => a + r.bills_count, 0))}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumBilled, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCash, 2)}</strong></td>
@@ -38470,7 +38486,7 @@
     if (submode === 'vat') {
       const filteredVat = hsp.vatRows.filter(r => {
         if (f === 'taxable_11') return r.direction === 'Output VAT';
-        if (f === 'never_vat') return r.direction.includes('Never VAT');
+        if (f === 'never_vat') return r.direction.includes('Exempt');
         if (f === 'input_vat') return r.direction === 'Input VAT';
         return true;
       });
@@ -38483,8 +38499,8 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('hsp_vat')} RESORT 11% VAT &amp; STEP253 NEVER-VAT FISCAL GUARD (DIESEL &amp; TIPS EXEMPT)</span></div>
-            <span class="panel-meta">11% Output VAT vs Deductible Input VAT vs step253 Never-VAT</span>
+            <div class="panel-title"><span>${ic('hsp_vat')} RESORT 11% VAT &amp; ZERO-VAT EXEMPTION GUARD (DIESEL &amp; TIPS EXEMPT)</span></div>
+            <span class="panel-meta">11% Output VAT vs Deductible Input VAT vs Zero-VAT Exempt</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:195px;display:block" role="img" aria-label="Resort VAT Breakdown Chart">
             <line x1="40" y1="152" x2="${chartW - 20}" y2="152" stroke="var(--bd)" stroke-width="1"/>
@@ -38498,12 +38514,12 @@
               <div class="chip-bar">
                 ${chip('all', `All Fiscal Rows (${fmtNum(hsp.vatRows.length)})`)}
                 ${chip('taxable_11', '11% Output VAT')}
-                ${chip('never_vat', 'step253 Never VAT (Diesel & Tips)')}
+                ${chip('never_vat', 'Zero-VAT Exempt (Diesel & Tips)')}
                 ${chip('input_vat', 'Deductible Input VAT')}
               </div>
             </div>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              ${searchBox('Search doc ref, resort, tax rule...')}
+              ${searchBox('Search doc ref, resort, tax classification...')}
               ${exportBtn('hspVatPanel', 'Hospitality_Resort_VAT_Register')}
               ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="vatinvoice">+ VAT Declaration</button>' : ''}
             </div>
@@ -38514,24 +38530,24 @@
                 <tr>
                   <th>Doc Ref</th>
                   <th>Date</th>
-                  <th>Resort</th>
+                  <th${coStyle}>Resort</th>
                   <th>Category</th>
-                  <th>Tax Rule (step253)</th>
+                  <th>Tax Classification</th>
                   <th>Direction</th>
                   <th class="r">Net HT ($)</th>
                   <th class="r">VAT 11% ($)</th>
-                  <th class="r">Total TTC ($)</th>
+                  <th class="r">Total ($)</th>
                   <th>Fiscal Notes</th>
                 </tr>
               </thead>
               <tbody>
                 ${shownVat.length ? shownVat.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.doc_ref)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.category)}</strong></td>
-                    <td><span class="badge ${r.tax_rule.includes('Never') ? 'badge-info' : 'badge-good'}">${esc(r.tax_rule)}</span></td>
+                    <td><span class="badge ${r.tax_rule.includes('Zero-VAT') ? 'badge-info' : 'badge-good'}">${esc(r.tax_rule)}</span></td>
                     <td>${esc(r.direction)}</td>
                     <td class="r mono">${fmtUSD(r.ht_usd, 2)}</td>
                     <td class="r mono"><strong>${fmtUSD(r.vat_usd, 2)}</strong></td>
@@ -38543,7 +38559,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL RESORT FISCAL REGISTER (${fmtNum(filteredVat.length)} ROWS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL RESORT FISCAL REGISTER (${fmtNum(filteredVat.length)} ROWS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumHt, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
@@ -38606,24 +38622,24 @@
               <tr>
                 <th>Ref</th>
                 <th>Date</th>
-                <th>Resort</th>
+                <th${coStyle}>Resort</th>
                 <th>Outlet / Venue</th>
                 <th>Revenue Category</th>
                 <th class="r">Rooms / Units</th>
                 <th class="r">Guests / Covers</th>
                 <th class="r">Net HT ($)</th>
                 <th class="r">VAT 11% ($)</th>
-                <th class="r">Total TTC ($)</th>
+                <th class="r">Total Revenue ($)</th>
                 <th>Settlement</th>
                 <th>Notes</th>
               </tr>
             </thead>
             <tbody>
               ${shownRev.length ? shownRev.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.outlet)}</strong></td>
                   <td><span class="badge badge-info">${esc(r.category)}</span></td>
                   <td class="r mono">${r.rooms ? `${fmtNum(r.rooms)} / ${fmtNum(r.capacity)}` : '—'}</td>
@@ -38639,7 +38655,7 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL VENUE REVENUE (${fmtNum(filteredRev.length)} ENTRIES)</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL VENUE REVENUE (${fmtNum(filteredRev.length)} ENTRIES)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumRooms)} Units</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumCovers)} Covers</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumHt, 2)}</strong></td>
@@ -38661,6 +38677,8 @@
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const collectionRatePct = s.totalMemContract > 0 ? round2((s.totalMemPaid / s.totalMemContract) * 100) : 100;
+    const hideCo = hsp.activeResorts.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
 
     const chartW = 780, chartH = 195;
     const byResortMem = hsp.activeResorts.map(res => {
@@ -38776,9 +38794,9 @@
               <thead>
                 <tr>
                   <th>Agreement ID</th>
-                  <th>Resort</th>
+                  <th${coStyle}>Resort</th>
                   <th>Profit Center / Category</th>
-                  <th>Effective Window (7z-chrono)</th>
+                  <th>Effective Window</th>
                   <th class="r">Slots</th>
                   <th>Partner Allocation Formula</th>
                   <th class="r">Gross Pool ($)</th>
@@ -38791,11 +38809,11 @@
               </thead>
               <tbody>
                 ${shownPartners.length ? shownPartners.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.category)}</strong></td>
-                    <td class="mono">${esc(fmtDateDMY(r.start_date))} → ${esc(r.end_date)}</td>
+                    <td class="mono">${esc(fmtDateDMY(r.start_date))} to ${esc(r.end_date)}</td>
                     <td class="r mono">${fmtNum(r.slot_count)} / 10</td>
                     <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis">${esc(r.partners_summary)}</td>
                     <td class="r mono"><strong>${fmtUSD(r.gross_pool_usd, 2)}</strong></td>
@@ -38810,7 +38828,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL PARTNER SPLIT AGREEMENTS (${fmtNum(filteredPartners.length)})</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL PARTNER SPLIT AGREEMENTS (${fmtNum(filteredPartners.length)})</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumPool, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumHold, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumOp, 2)}</strong></td>
@@ -38870,7 +38888,7 @@
             <thead>
               <tr>
                 <th>Contract ID</th>
-                <th>Resort</th>
+                <th${coStyle}>Resort</th>
                 <th>Member / Account</th>
                 <th>Chalet / Cabana Unit</th>
                 <th>Season Window</th>
@@ -38884,9 +38902,9 @@
             </thead>
             <tbody>
               ${shownMem.length ? shownMem.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.member)}</strong></td>
                   <td>${esc(r.unit)}</td>
                   <td class="mono">${esc(r.season)}</td>
@@ -38902,7 +38920,7 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL SEASONAL MEMBERSHIPS (${fmtNum(filteredMem.length)} CONTRACTS)</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL SEASONAL MEMBERSHIPS (${fmtNum(filteredMem.length)} CONTRACTS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumCont, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumBal, 2)}</strong></td>
@@ -38922,6 +38940,8 @@
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const overallR3Ratio = s.totalStockUsage > 0 ? round2(s.totalStockPurchases / s.totalStockUsage) : 1.0;
+    const hideCo = hsp.activeResorts.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
 
     const chartW = 780, chartH = 195;
     const maxStk = Math.max(1, ...hsp.stockRows.map(r => Math.max(r.purchases_in_usd, r.recipe_usage_usd, r.closing_usd)));
@@ -38963,9 +38983,9 @@
           <div class="kpi-sub">Physical count across ${fmtNum(hsp.stockRows.length)} stores</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Rule R3 Purchase/Use Ratio</div>
+          <div class="kpi-lbl">Purchase-to-Usage Ratio</div>
           <div class="kpi-val ${s.r3AlertCount > 0 ? 'warn' : 'good'}">${overallR3Ratio.toFixed(2)}x</div>
-          <div class="kpi-sub">${s.r3AlertCount > 0 ? `${s.r3AlertCount} store(s) above 1.18x R3 threshold` : 'All stores within 1.18x R3 guard'}</div>
+          <div class="kpi-sub">${s.r3AlertCount > 0 ? `${s.r3AlertCount} store(s) above 1.18x threshold` : 'All stores within 1.18x target'}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Menu Food &amp; Pour Cost %</div>
@@ -38999,7 +39019,7 @@
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
             <div class="panel-title"><span>${ic('hsp_menu')} MENU ENGINEERING, RECIPE BOM COST &amp; GROSS MARGIN CONTRIBUTION</span></div>
-            <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; R3 Ratio</span>
+            <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; Usage Ratio</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Menu Engineering Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39029,10 +39049,10 @@
               <thead>
                 <tr>
                   <th>Code</th>
-                  <th>Resort</th>
+                  <th${coStyle}>Resort</th>
                   <th>Menu Item / Package</th>
                   <th>Outlet Category</th>
-                  <th class="r">Price TTC ($)</th>
+                  <th class="r">Menu Price ($)</th>
                   <th class="r">Net HT ($)</th>
                   <th class="r">Recipe BOM ($)</th>
                   <th class="r">Unit Margin ($)</th>
@@ -39043,9 +39063,9 @@
               </thead>
               <tbody>
                 ${shownMenu.length ? shownMenu.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.item)}</strong></td>
                     <td>${esc(r.category)}</td>
                     <td class="r mono"><strong>${fmtUSD(r.price_ttc, 2)}</strong></td>
@@ -39061,7 +39081,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="5"><strong>TOTAL MENU CONTRIBUTION (${fmtNum(filteredMenu.length)} ITEMS)</strong></td>
+                  <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL MENU CONTRIBUTION (${fmtNum(filteredMenu.length)} ITEMS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumRevHt, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumBomCost, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGrossMargin, 2)}</strong></td>
@@ -39094,8 +39114,8 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_stock')} KITCHEN, CELLAR &amp; BAR STOCK RECONCILIATION (RULE R3 PURCHASE-TO-CONSUMPTION RATIO)</span></div>
-          <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; R3 Ratio</span>
+          <div class="panel-title"><span>${ic('hsp_stock')} KITCHEN, CELLAR &amp; BAR STOCK RECONCILIATION (PURCHASE-TO-CONSUMPTION RATIO)</span></div>
+          <span class="panel-meta">Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock &amp; Usage Ratio</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Hospitality Stock & Cellar Chart">
           <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39108,7 +39128,7 @@
             <div class="panel-title"><span>${ic('hsp_stock')} CELLAR, KITCHEN &amp; INTER-RESORT TRANSFERS (${fmtNum(filteredStk.length)})</span></div>
             <div class="chip-bar">
               ${chip('all', `All Stores (${fmtNum(hsp.stockRows.length)})`)}
-              ${chip('r3_alert', `R3 Ratio Watch (${fmtNum(s.r3AlertCount)})`)}
+              ${chip('r3_alert', `Ratio Watch (${fmtNum(s.r3AlertCount)})`)}
               ${chip('kitchen', 'Kitchen & Commissary')}
               ${chip('cellar', 'Cellar & Bars')}
               ${chip('transfers', 'Inter-Resort Transfers')}
@@ -39126,7 +39146,7 @@
               <tr>
                 <th>Ref</th>
                 <th>Date</th>
-                <th>Resort</th>
+                <th${coStyle}>Resort</th>
                 <th>Commissary / Store</th>
                 <th>Item Group</th>
                 <th class="r">Opening ($)</th>
@@ -39134,16 +39154,16 @@
                 <th class="r">Net Transfers ($)</th>
                 <th class="r">Recipe Usage ($)</th>
                 <th class="r">Closing ($)</th>
-                <th class="r">R3 Ratio</th>
+                <th class="r">Pur/Use Ratio</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               ${shownStk.length ? shownStk.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.store)}</strong></td>
                   <td>${esc(r.item_group)}</td>
                   <td class="r mono">${fmtUSD(r.opening_usd, 2)}</td>
@@ -39159,7 +39179,7 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL COMMISSARY &amp; CELLAR STOCK (${fmtNum(filteredStk.length)} STORES)</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL COMMISSARY &amp; CELLAR STOCK (${fmtNum(filteredStk.length)} STORES)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumOpen, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumPur, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtSignedUSD(sumTrf, 2)}</strong></td>
@@ -39182,6 +39202,8 @@
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const avgBurnLhr = s.totalRunHours > 0 ? round2(s.totalDieselUsedL / s.totalRunHours) : 0;
+    const hideCo = hsp.activeResorts.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
 
     const chartW = 780, chartH = 195;
     const maxLhr = Math.max(1, ...hsp.energyRows.map(r => Math.max(r.l_per_hr, r.rated_l_hr)));
@@ -39222,7 +39244,7 @@
           <div class="kpi-sub">${fmtNum(hsp.energyRows.reduce((a, r) => a + r.kwh_gen, 0))} kWh generated</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Rule R4 Burn Spike Guard</div>
+          <div class="kpi-lbl">Generator Burn Rate Guard</div>
           <div class="kpi-val ${s.r4SpikeCount > 0 ? 'crit' : 'good'}">${s.r4SpikeCount > 0 ? `${s.r4SpikeCount} Spike Alert` : 'All Within Curve'}</div>
           <div class="kpi-sub">Flags actual L/hr &gt; 15% over rated curve</div>
         </div>
@@ -39256,7 +39278,7 @@
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
             <div class="panel-title"><span>${ic('hsp_maint')} VENUE REPAIRS, POOL PLANT, HVAC &amp; GENERATOR MAINTENANCE</span></div>
-            <span class="panel-meta">Blue:Rated L/hr Curve · Green:Normal Actual Burn · Red:Rule R4 Burn Spike</span>
+            <span class="panel-meta">Blue:Rated L/hr Curve · Green:Normal Actual Burn · Red:Burn Rate Spike</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Resort Maintenance & Utilities Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39287,7 +39309,7 @@
                 <tr>
                   <th>WO Ref</th>
                   <th>Date</th>
-                  <th>Resort</th>
+                  <th${coStyle}>Resort</th>
                   <th>Facility Asset / Equipment</th>
                   <th>Zone</th>
                   <th>Work Order Type</th>
@@ -39300,10 +39322,10 @@
               </thead>
               <tbody>
                 ${shownMaint.length ? shownMaint.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.asset)}</strong></td>
                     <td>${esc(r.zone)}</td>
                     <td>${esc(r.type)}</td>
@@ -39318,7 +39340,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL VENUE MAINTENANCE WORK ORDERS (${fmtNum(filteredMaint.length)})</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL VENUE MAINTENANCE WORK ORDERS (${fmtNum(filteredMaint.length)})</strong></td>
                   <td class="r mono"><strong>${sumDown.toFixed(1)} hrs</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCost, 2)}</strong></td>
                   <td colspan="2"></td>
@@ -39347,8 +39369,8 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hsp_energy')} GENERATOR BURN RATE (L/HR) VS RATED CURVE &amp; SOLAR PV HYBRID OFFSET (RULE R4)</span></div>
-          <span class="panel-meta">Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Rule R4 Spike (&gt;15% Over Rated)</span>
+          <div class="panel-title"><span>${ic('hsp_energy')} GENERATOR BURN RATE (L/HR) VS RATED CURVE &amp; SOLAR PV HYBRID OFFSET</span></div>
+          <span class="panel-meta">Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Burn Spike (&gt;15% Over Rated)</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Generator Burn Rate Chart">
           <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39361,7 +39383,7 @@
             <div class="panel-title"><span>${ic('hsp_energy')} DIESEL TANKS, GENERATORS &amp; SOLAR TELEMETRY (${fmtNum(filteredNrg.length)})</span></div>
             <div class="chip-bar">
               ${chip('all', `All Power Plants (${fmtNum(hsp.energyRows.length)})`)}
-              ${chip('r4_spike', `R4 Burn Spike (${fmtNum(s.r4SpikeCount)})`)}
+              ${chip('r4_spike', `Burn Spike (${fmtNum(s.r4SpikeCount)})`)}
               ${chip('refill', 'Tank Refills')}
               ${chip('solar', 'Solar Offset ≥ 30%')}
             </div>
@@ -39378,7 +39400,7 @@
               <tr>
                 <th>Log ID</th>
                 <th>Date</th>
-                <th>Resort</th>
+                <th${coStyle}>Resort</th>
                 <th>Generator &amp; Solar Plant</th>
                 <th class="r">Tank Level (L)</th>
                 <th class="r">Refill In (L)</th>
@@ -39388,17 +39410,17 @@
                 <th class="r">Rated L/hr</th>
                 <th class="r">kWh Gen</th>
                 <th class="r">Solar %</th>
-                <th>R4 Status</th>
+                <th>Burn Status</th>
               </tr>
             </thead>
             <tbody>
               ${shownNrg.length ? shownNrg.map(r => {
                 const isSpike = r.l_per_hr > r.rated_l_hr * 1.15;
                 return `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.asset)}</strong></td>
                     <td class="r mono">${fmtNum(r.tank_level_l)} L</td>
                     <td class="r mono ${r.refill_l > 0 ? 'good' : ''}">${r.refill_l > 0 ? `+${fmtNum(r.refill_l)} L` : '—'}</td>
@@ -39416,7 +39438,7 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="4"><strong>TOTAL RESORT POWER PLANTS (${fmtNum(filteredNrg.length)} UNITS)</strong></td>
+                <td colspan="${hideCo ? 3 : 4}"><strong>TOTAL RESORT POWER PLANTS (${fmtNum(filteredNrg.length)} UNITS)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumTank)} L</strong></td>
                 <td class="r mono"><strong>+${fmtNum(sumRefill)} L</strong></td>
                 <td class="r mono"><strong>${sumHrs.toFixed(1)} hrs</strong></td>
@@ -78693,7 +78715,11 @@
     if (STATE.authed && VIEW_TITLES[STATE.view]) {
       const targetHash = '#' + STATE.view;
       if (location.hash !== targetHash || STATE.view !== prevView) {
-        history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
+        try {
+          history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
+        } catch (_) {
+          try { location.hash = targetHash; } catch (__) {}
+        }
       }
     }
     syncIndustrySidebarDom(nextInd);
@@ -79225,7 +79251,11 @@
       if (STATE.authed && VIEW_TITLES[STATE.view]) {
         const targetHash = '#' + STATE.view;
         if (location.hash !== targetHash) {
-          history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
+          try {
+            history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
+          } catch (_) {
+            try { location.hash = targetHash; } catch (__) {}
+          }
         }
       }
     }
@@ -92243,9 +92273,19 @@
     }
     const h = '#' + view;
     if (!opts.noPush) {
-      if (location.hash !== h) history.pushState({ view, company: STATE.company }, '', h);
+      if (location.hash !== h) {
+        try {
+          history.pushState({ view, company: STATE.company }, '', h);
+        } catch (_) {
+          try { location.hash = h; } catch (__) {}
+        }
+      }
     } else if (STATE.authed && location.hash !== h) {
-      history.replaceState({ view, company: STATE.company }, '', h);
+      try {
+        history.replaceState({ view, company: STATE.company }, '', h);
+      } catch (_) {
+        try { location.hash = h; } catch (__) {}
+      }
     }
     const sidebar = $('sidebar');
     if (sidebar) sidebar.classList.remove('open');
@@ -94361,6 +94401,14 @@
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     setView: typeof setView === 'function' ? setView : null,
     contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
+    filterRecords: typeof filterRecords === 'function' ? filterRecords : null,
+    getModel: typeof getModel === 'function' ? getModel : null,
+    getKPI: typeof getKPI === 'function' ? getKPI : null,
+    ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
+    computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
+    computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
+    buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
+    renderApp: typeof renderApp === 'function' ? renderApp : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
 

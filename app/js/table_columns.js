@@ -1223,6 +1223,7 @@
     const selector = 'table.ledger-table, table.m-grid, table.rdl-table';
     const tables = Array.from(root.querySelectorAll(selector)).filter(t => {
       if (t.id === 'kioskRecentTable' || t.id === 'kioskAttFeedTable') return false;
+      if (t.hasAttribute('data-no-col-mgr') || t.classList.contains('ceo-scorecard-table')) return false;
       if (t.closest('.thermal-paper-roll')) return false;
       return Boolean(t.querySelector('thead tr th'));
     });

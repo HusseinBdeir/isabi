@@ -75,6 +75,7 @@
         { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
         { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
+        { id: 'document', label: 'Document & Receipt', badge: 'bhf_document', crKey: 'documents', hubView: 'documents', pbiPage: 'p07_ap', title: 'Save Document, Invoice or Receipt' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
       ]
     },
@@ -2591,6 +2592,66 @@
           <div><small id="lbl_malf_c2">Tank Impact</small><b id="calc_malf_delta">0.0 L</b></div>
           <div><small id="lbl_malf_c3">Tank After Entry</small><b id="calc_malf_after">0.0 L</b></div>
           <div><small id="lbl_malf_c4">Month Malfunction % (5% Watchdog)</small><b id="calc_malf_pct">0.0%</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'document') {
+      const docPartyNames = uniqSorted(supNames.concat(custNames), fIdx && fIdx.supplier);
+      const docRecordRefs = uniqSorted(
+        ((rec.expenses || []).slice(0, 60).map(r => r && r.name))
+          .concat((rec.raw_purchases || []).slice(0, 60).map(r => r && (r.ticket_no || r.name)))
+          .concat((rec.sales_tickets || []).slice(0, 60).map(r => r && (r.ticket_no || r.name)))
+          .concat((rec.settlements || []).slice(0, 40).map(r => r && r.name))
+          .concat((rec.receipts || []).slice(0, 40).map(r => r && r.name))
+          .filter(Boolean)
+      );
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${secHdr('1. Document Classification, Entity & Counterparty', 'Save standalone invoices, receipts, tax filings, contracts, or link supporting scans directly to any operational record')}
+          ${companyField}
+          ${lockedDateField('Document Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Document Category *', sel('f_doc_type', [
+            ['Invoice & Bill', 'Invoice & Bill'],
+            ['Receipt & Payment Voucher', 'Receipt & Payment Voucher'],
+            ['Tax & MoF Filing', 'Tax & MoF Filing'],
+            ['Contract & Agreement', 'Contract & Agreement'],
+            ['Bank & Transfer Slip', 'Bank & Transfer Slip'],
+            ['Delivery & Weighbridge Slip', 'Delivery & Weighbridge Slip'],
+            ['Equipment & Permit Document', 'Equipment & Permit Document'],
+            ['General Document', 'General Document']
+          ], 'Invoice & Bill'), { id: 'wrap_f_doc_type' })}
+          ${fld('Document Title / Subject *', inp('f_doc_title', 'text', '', 'placeholder="e.g. Supplier Invoice #4812, Diesel Receipt, MoF VAT Q3..."'), { id: 'wrap_f_doc_title', cls: 'span-2' })}
+          ${fld('Counterparty (Supplier / Customer / Authority)', inp('f_counterparty', 'text', '', 'list="dl_doc_parties" placeholder="Select or type vendor, client, bank, or authority..."') + dl('dl_doc_parties', docPartyNames), { id: 'wrap_f_doc_party' })}
+          ${fld('External Invoice / Receipt Ref #', inp('f_reference', 'text', '', 'placeholder="Paper invoice #, voucher #, or slip ref..."'), { id: 'wrap_f_doc_ref' })}
+          ${fld('Document Amount ($ · Optional)', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_f_doc_amount' })}
+          ${secHdr('2. Linked Record & Filing Status (Optional)', 'Link this document to an Expense, Raw Ticket, Sales Ticket, Settlement, or keep it as a standalone vault file')}
+          ${fld('Linked Record Module', sel('f_parent_table', [
+            ['', 'Standalone Document (No Linked Transaction)'],
+            ['expenses', 'Operating Expense (bhf_expense)'],
+            ['raw_purchases', 'Raw Material Ticket (bhf_rawpurchase)'],
+            ['sales_tickets', 'Sales Ticket (bhf_salesticket)'],
+            ['settlements', 'Supplier Settlement (bhf_supplierpayment)'],
+            ['receipts', 'Customer Receipt (bhf_customerreceipt)'],
+            ['vat_invoices', 'Statutory VAT Invoice (bhf_vatinvoice)'],
+            ['fuel_intakes', 'Fuel & Lubricant Intake (bhf_fuelintake)'],
+            ['equipment_repairs', 'Equipment Repair (bhf_equipmentrepair)']
+          ], ''), { id: 'wrap_f_parent_table' })}
+          ${fld('Linked Ticket / Voucher #', inp('f_parent_label', 'text', '', 'list="dl_doc_parent_records" placeholder="Optional ticket or voucher # (e.g. EXP-2026-0001)..."') + dl('dl_doc_parent_records', docRecordRefs), { id: 'wrap_f_parent_label' })}
+          ${fld('Filing Status *', sel('f_status', [
+            ['Verified & Filed', 'Verified & Filed'],
+            ['Pending Review', 'Pending Review'],
+            ['Archived', 'Archived']
+          ], 'Verified & Filed'), { id: 'wrap_f_doc_status' })}
+          ${fld('Notes & Filing Tags', inp('f_notes', 'text', '', 'placeholder="Optional notes, folder tag, audit remark, or physical binder location..."'), { span: true })}
+        </div>
+        <div class="live-calc" id="documentLiveCalc">
+          <div><small>Document Category</small><b id="calc_doc_type">Invoice &amp; Bill</b></div>
+          <div><small>Attached Files</small><b id="calc_doc_files">0 files</b></div>
+          <div><small>Linked Record</small><b id="calc_doc_link">Standalone Vault</b></div>
+          <div><small>Document Amount</small><b id="calc_doc_amt">$0.00</b></div>
         </div>
       `;
     }

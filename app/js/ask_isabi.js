@@ -2749,21 +2749,17 @@
     if (viewId === 'overview') {
       const marginPct = k.sales_ttc > 0 ? ((k.gross_margin / k.sales_ttc) * 100).toFixed(1) : '0.0';
       const opPct = k.sales_ttc > 0 ? ((k.operating_profit / k.sales_ttc) * 100).toFixed(1) : '0.0';
-      const avgSellM3 = salesM3 > 0 ? (k.sales_ttc / salesM3).toFixed(2) : (k.avg_price_m3 ? Number(k.avg_price_m3).toFixed(2) : '21.71');
-      const avgRawM3 = k.raw_m3 > 0 ? (k.raw_cost / k.raw_m3).toFixed(2) : (k.raw_cost_m3 ? Number(k.raw_cost_m3).toFixed(2) : '5.96');
 
-      bullets.push(`<b>Row 1 · Financial Scorecards (Top 6 Cards)</b>: Shows <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> split into Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) and Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>); <b>Realized Gross Margin (${fmtMoney(k.gross_margin, 0)} · ${marginPct}%)</b> after deducting <b>${fmtMoney(k.raw_cost, 0)}</b> in Raw Material Cost; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> after <b>${fmtMoney(expTotal, 0)}</b> in operating expenses and payroll; and <b>Cash Till & Net Flow (${fmtMoney(tillVal, 2)})</b>, which turns negative whenever physical cash outflows (<b>${fmtMoney(cashOut, 0)}</b>) exceed direct cash-in-hand inflows (<b>${fmtMoney(cashIn, 0)}</b>) while credit sales sit in Accounts Receivable.`);
-      bullets.push(`<b>Row 2 · Unit Economics Strip (Middle Cells)</b>: Tracks physical plant throughput: <b>${fmtInt(salesLoads)} sales loads (${fmtInt(salesTons, 0)} t)</b> dispatched, <b>$${avgSellM3} / m³</b> average selling price, <b>${fmtInt(k.raw_loads)} raw material intake loads ($${avgRawM3}/m³)</b>, and <b>${fmtInt(k.active_equip || k.active_fleet || 1170)} active fleet units</b>.`);
-      bullets.push(`<b>Row 3 · "App-entered this period (not yet in the book totals)" Banner</b>: Highlights live vouchers entered directly through the app or field kiosks (${useSnap && useSnap.appStripText ? esc(useSnap.appStripText.replace(/^App-entered this period \(not yet in the book totals\):\s*/i, '')) : '14 sales tickets · $7,532, 23 raw receipts · $1,250, 8 expenses · $4,469, 2 supplier settlements · $6,000'}) before they are merged into closed historical accounting books. Click <b>Open registers</b> to inspect or edit those entries.`);
-      bullets.push(`<b>Row 4 · Monthly Trajectory & Entity / Grade Breakdowns</b>: The left bar chart plots monthly <b>Total Sales</b> (blue), <b>Raw Material Cost</b> (slate), and <b>Operating Profit</b> (gold) from Dec 25 to Nov 26. The right tables break down performance across <b>Operating Entities</b> (WTC, BBConstruction, Lions Transport) and <b>Top Aggregates & Materials</b> (Mghasal, Bahre, mixer trucks).`);
+      bullets.push(`<b>Row 1 · 4 Headline Executive KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> split into Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) and Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>); <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> alongside Realized Gross Margin (<b>${fmtMoney(k.gross_margin, 0)} · ${marginPct}%</b>); <b>Cash Position & Net Flow (${fmtMoney(tillVal, 2)})</b>, which turns negative whenever physical cash outflows (<b>${fmtMoney(cashOut, 0)}</b>) exceed direct cash-in-hand inflows (<b>${fmtMoney(cashIn, 0)}</b>); and <b>Receivables & Payables (${fmtMoney(k.ar_balance, 0)} Open AR vs. ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
+      bullets.push(`<b>Row 2 Left · Monthly Revenue, Raw Cost & Cash Profit Trajectory</b>: Plots monthly <b>Total Sales</b> (blue), <b>Raw Material Cost</b> (slate), and <b>Operating Profit</b> (gold) so leadership can track seasonal volume and cash margin trends at a glance.`);
+      bullets.push(`<b>Row 2 Right · Operating Entities Scorecard</b>: Summarizes entity-by-entity <b>Revenue</b>, <b>Loads / Entries</b>, <b>Gross Margin</b>, <b>Operating Profit</b>, and <b>Ledger Status</b> across permitted companies with 1-click workspace filtering.`);
 
       rows = [
         ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
-        ['2. Realized Gross Margin', `${fmtMoney(k.gross_margin, 0)} (${marginPct}%)`, `Revenue minus Raw Material Cost (${fmtMoney(k.raw_cost, 0)})`],
-        ['3. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin minus Expenses & Payroll (${fmtMoney(expTotal, 0)})`],
-        ['4. Cash Till & Net Flow', fmtMoney(tillVal, 2), `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
-        ['5. Unit Economics Strip', `$${avgSellM3}/m³ sell · $${avgRawM3}/m³ raw`, `${fmtInt(salesLoads)} sales loads (${fmtInt(salesTons, 0)} t) · ${fmtInt(k.raw_loads)} raw loads`],
-        ['6. App-Entered Strip', 'Live App Vouchers', 'New app/kiosk tickets staged before book lock']
+        ['2. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin ${fmtMoney(k.gross_margin, 0)} (${marginPct}%) minus OpEx & Payroll (${fmtMoney(expTotal, 0)})`],
+        ['3. Cash Position & Net Flow', fmtMoney(tillVal, 2), `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
+        ['4. Receivables & Payables', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
+        ['5. Operating Entities Scorecard', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Click any entity row to focus the workspace on that company']
       ];
     } else if (/^reg_/.test(viewId) || (useSnap && useSnap.hubCards && useSnap.hubCards.length > 0)) {
       const regTableMap = {
@@ -3753,7 +3749,7 @@
       'You are Ask ISABI, the intelligent operational and financial copilot built inside the ISABI Command Center.',
       'Ground every figure strictly in the Live Scoped ERP Snapshot below. NEVER invent numbers, customers, or offices.',
       'Never use em-dashes, en-dashes, unicode arrows, or internal software/database jargon.',
-      'Reply in the same language as the user (Detected language: ' + lang + '). Keep answers concise, sharp, and human (2 to 3 sentences max).',
+      'Reply in the exact same language as the user (Detected language: ' + lang + '; you support English, Arabic, French, and any world language the user writes in). Keep answers concise, sharp, and human (2 to 3 sentences max).',
       'Live Scoped ERP Snapshot:\n' + kpiLine,
       'Return ONLY valid JSON: {"title": "Short heading", "answer": "Direct 2 to 3 sentence answer grounded in the live snapshot", "promptText": "1 short natural follow-up question", "followUps": ["Short option 1", "Short option 2", "Short option 3"]}'
     ].join('\n\n');
@@ -4105,9 +4101,22 @@
         ...(canView('ledger', user) ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
       ];
       chipsBox.innerHTML = chips.map(c => `<button type="button" class="ai-pill-btn" data-prompt="${esc(c.prompt)}">${esc(c.label)}</button>`).join('');
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+        window.MFG_I18N.translateDom(chipsBox);
+      }
     }
     if (!_chatState.history.length && !_chatState.pending) {
       renderThread(false);
+    }
+  }
+
+  function setPreferredLang(code) {
+    const clean = String(code || 'en').toLowerCase();
+    _chatState.preferredLang = clean;
+    if (VOICE_LANG_MAP[clean]) setVoiceLang(clean);
+    const drawer = document.getElementById('aiDrawer');
+    if (drawer && window.MFG_I18N) {
+      window.MFG_I18N.translateDom(drawer);
     }
   }
 
@@ -4588,6 +4597,7 @@
     stopVoice: stopVoiceRecording,
     cancelVoice: cancelVoiceRecording,
     setVoiceLang,
+    setPreferredLang,
     speak: speakBotReply,
     syncScope: syncHeaderAndChips,
     answer: answerHtmlSnapshot,
