@@ -76,8 +76,8 @@
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
   const DEFAULT_USERS = [
-    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u3', full_name: 'Sabah Kassab', email: 'sabahkassab@bhfirms.com', pin_code: '3333', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u4', full_name: 'WTC Plant Weighbridge 1', email: 'scale1.wtc@bhfirms.com', pin_code: '4444', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u5', full_name: 'WTC Site Dispatch', email: 'quarry.wtc@bhfirms.com', pin_code: '4545', role: 'Entry', companies: 'WTC', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
@@ -87,6 +87,44 @@
     { id: 'u9', full_name: 'Diesel & Garage Officer', email: 'fuel.mfg@bhfirms.com', pin_code: '7878', role: 'Entry', companies: 'WTC, BBConstruction, Lions Transport', pbi_access: 'none', statements_access: 'none', status: 'Active', last_login_at: '' },
     { id: 'u10', full_name: 'Accounts Receivable Collector', email: 'ar.mfg@bhfirms.com', pin_code: '8888', role: 'Sales', companies: 'WTC, BBConstruction', pbi_access: 'partial', statements_access: 'full', status: 'Active', last_login_at: '' }
   ];
+
+  const CANONICAL_GROUP_COMPANIES = [
+    'WTC', 'BBConstruction', 'Lions Transport',
+    'Bdeir Holding',
+    'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum',
+    'Korri Auto', 'Shacman',
+    'Properties', '4235 Company S.A.L'
+  ];
+  function ensureCanonicalMultiIndustrySeat(u) {
+    if (!u || typeof u !== 'object') return u;
+    let uid = String(u.id || '').trim().toLowerCase();
+    const uem = String(u.email || '').trim().toLowerCase();
+    let canonId = u.id;
+    if (uid === 'u-hussein' || uem === 'husseinbdeir@bhfirms.com') canonId = 'u1';
+    else if (uid === 'u-zeinab' || uem === 'zeinabrkein@bhfirms.com') canonId = 'u2';
+    else if (uid === 'u-sabah' || uem === 'sabahkassab@bhfirms.com') canonId = 'u3';
+    const isFullGroupSeat = canonId === 'u1' || canonId === 'u2' || uid === 'u1' || uid === 'u2'
+      || uem === 'husseinbdeir@bhfirms.com' || uem === 'zeinabrkein@bhfirms.com'
+      || /^full\s*access\s*\(owner\)/i.test(String(u.role || ''));
+    if (!isFullGroupSeat) {
+      return canonId !== u.id ? Object.assign({}, u, { id: canonId }) : u;
+    }
+    const rawCos = typeof u.companies === 'string' ? u.companies : (Array.isArray(u.companies) ? u.companies.join(', ') : '');
+    if (rawCos && !(/wtc/i.test(rawCos) && /bbconstruction/i.test(rawCos)) && !/^all/i.test(rawCos.trim())) {
+      return canonId !== u.id ? Object.assign({}, u, { id: canonId }) : u;
+    }
+    let cur = /^all/i.test(rawCos.trim()) ? '' : rawCos.trim();
+    CANONICAL_GROUP_COMPANIES.forEach(nm => {
+      const escNm = nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+      if (!new RegExp(`(^|,)\\s*${escNm}\\s*(,|$)`, 'i').test(cur)) {
+        cur += (cur ? ', ' : '') + nm;
+      }
+    });
+    if (cur !== rawCos.trim() || canonId !== u.id) {
+      return Object.assign({}, u, { id: canonId, companies: cur });
+    }
+    return u;
+  }
 
   function lsGet(key, fallback) {
     try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fallback : v; } catch (_) { return fallback; }
@@ -256,17 +294,7 @@
       if (Array.isArray(out.face_thumbs) && (String(out.face_updated_at || '') <= '2026-10-21T16:00:00Z' || out.face_thumbs.some(t => /bovMFtu8Q|c0hdoh36p|OyOktXtF0/.test(String(t || ''))))) {
         out = Object.assign({}, out, { face_thumbs: [] });
       }
-      if ((out.id === 'u1' || out.id === 'u2') && typeof out.companies === 'string' && /wtc/i.test(out.companies) && /bbconstruction/i.test(out.companies)) {
-        const extraNames = ['Bdeir Holding', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Korri Auto', 'Shacman'];
-        let cur = out.companies.trim();
-        extraNames.forEach(nm => {
-          if (!new RegExp(`(^|,)\\s*${nm.replace(/\s+/g, '\\s+')}\\s*(,|$)`, 'i').test(cur)) {
-            cur += ', ' + nm;
-          }
-        });
-        if (cur !== out.companies.trim()) out = Object.assign({}, out, { companies: cur });
-      }
-      return out;
+      return ensureCanonicalMultiIndustrySeat(out);
     }),
     sessions: lsGet('isabi_mfg_sessions_v2', null) || [],
     customRecords: lsGet('isabi_mfg_custom_recs_v2', null) || {},
@@ -428,7 +456,9 @@
     { key: 'voile', name: 'Voile', label: 'Voile Resort', industry: 'Hospitality & Resorts', sector: 'Coastal Resort, Dining & Events' },
     { key: 'platinum', name: 'Platinum', label: 'Platinum Hospitality', industry: 'Hospitality & Resorts', sector: 'Hospitality, Events & Catering' },
     { key: 'korriauto', name: 'Korri Auto', label: 'Korri Auto SAL', industry: 'Automotive & Heavy Trading', sector: 'Spare Parts, Tyres & Automotive Trading' },
-    { key: 'shacman', name: 'Shacman', label: 'Shacman Lebanon SAL', industry: 'Automotive & Heavy Trading', sector: 'Heavy Commercial Trucks, Chassis & Dealership' }
+    { key: 'shacman', name: 'Shacman', label: 'Shacman Lebanon SAL', industry: 'Automotive & Heavy Trading', sector: 'Heavy Commercial Trucks, Chassis & Dealership' },
+    { key: 'properties', name: 'Properties', label: 'Properties (Buzwair & Bdeir Real Estate)', industry: 'Real Estate & Property', sector: 'Real Estate Portfolio, Leasing & Land' },
+    { key: '4235company', name: '4235 Company S.A.L', label: '4235 Company S.A.L (Msaytbeh Commercial)', industry: 'Real Estate & Property', sector: 'Commercial Building Leasing & VAT Invoicing' }
   ];
 
   // Canonical 10-industry taxonomy for BHFIRMS / ISABI multi-industry scaling (10 Industries × 10–20 Companies each)
@@ -436,7 +466,7 @@
     { id: 'Manufacturing', code: 'MFG', label: 'Manufacturing', sub: 'Concrete, Aggregates & Batching', sampleCos: ['Cinder Block Plant', 'Bekaa Quarry Works', 'Chouf Ready-Mix', 'Litani Precast', 'Mount Asphalt Works', 'South Rebar Mill', 'Byblos Cement Terminal', 'Zahrani Aggregate', 'Metn Batching Plant', 'Tripoli Silos', 'Batroun Lime Works', 'Sidon Pipe & Precast'] },
     { id: 'Hospitality & Resorts', code: 'HSP', label: 'Hospitality & Resorts', sub: 'Beach Resorts, Hotels & Venues', sampleCos: ['Blanca Beach Resort', 'La Una Resort', 'Palms Resort', 'Voile Resort', 'Platinum Hospitality', 'Azur Marina Club', 'Cedars Mountain Lodge', 'Phoenicia Bay Suites', 'Mirage Cliff Club', 'Solis Beach Pavilion', 'Batroun Sunset Villas', 'Byblos Harbour Hotel', 'Tyre Coast Resort', 'Faraya Alpine Chalets', 'Verdun Executive Suites'] },
     { id: 'Automotive & Heavy Trading', code: 'TRD', label: 'Automotive & Heavy Trading', sub: 'Commercial Trucks, Parts & Service', sampleCos: ['Korri Auto', 'Shacman', 'Levant Heavy Trucks', 'Bdeir Commercial Motors', 'Atlas Spare Parts', 'Mediterranean Tyres', 'EuroDiesel Motors', 'PowerLine Generators', 'Apex Earthmoving', 'Titan Forklifts & Cranes', 'Beirut Fleet Service', 'Bekaa Agro Machinery', 'North Truck Center', 'South Parts Depot', 'Gulf Transit Motors'] },
-    { id: 'Real Estate & Property', code: 'PROP', label: 'Real Estate & Property', sub: 'Leasing, Developments & Land', sampleCos: ['Bdeir Properties', 'Bayside Towers', 'Verdun Plaza', 'Downtown Commercial', 'Choueifat Logistics Park', 'Metn Business Center', 'Saida Waterfront Mall', 'Batroun Coastal Estates', 'Hazmieh Medical Tower', 'Dbayeh Marina Residences', 'Beirut Gate Offices', 'Zahle Industrial Land', 'Jbeil Heritage Quarter', 'Khaldeh Retail Strip', 'Achrafieh Gardens'] },
+    { id: 'Real Estate & Property', code: 'PROP', label: 'Real Estate & Property', sub: 'Leasing, Developments & Land', sampleCos: ['Properties', '4235 Company S.A.L', 'Bdeir Properties', 'Bayside Towers', 'Verdun Plaza', 'Downtown Commercial', 'Choueifat Logistics Park', 'Metn Business Center', 'Saida Waterfront Mall', 'Batroun Coastal Estates', 'Hazmieh Medical Tower', 'Dbayeh Marina Residences', 'Beirut Gate Offices', 'Zahle Industrial Land', 'Jbeil Heritage Quarter'] },
     { id: 'Insurance & Brokerage', code: 'INS', label: 'Insurance & Brokerage', sub: 'Underwriting, Claims & Policies', sampleCos: ['Bdeir Insurance Brokerage', 'Cedar Shield Motor', 'Levant Marine Cargo', 'MedCare Health Cover', 'Aegis Property & Fire', 'Horizon Life & Pension', 'Atlas Fleet Underwriting', 'Surety & Bond Partners', 'Prime Corporate Risk', 'Beacon Reinsurance Advisory', 'SafeHarbour Liability', 'Crest Engineering Risk', 'Oasis Travel Assist', 'Guardian Workmen Cover', 'Vanguard Claims Desk'] },
     { id: 'Logistics & Marine', code: 'LOG', label: 'Logistics & Marine', sub: 'Haulage, Freight & Port Operations', sampleCos: ['Levant Bulk Haulage', 'Beirut Port Stevedoring', 'Tripoli Container Depot', 'MedLink Cold Chain', 'Cedar Tanker Fleet', 'Bekaa Inland Dry Port', 'Bosphorus Sea Freight', 'Express Customs Clearance', 'South Aggregate Transit', 'Airport Cargo Handling', 'Byblos Coastal Barges', 'Overland Cross-Border', 'Silo Dispatch Fleet', 'Heavy Lowbed Carriers', 'Harbour Tug & Marine'] },
     { id: 'Retail & F&B Outlets', code: 'POS', label: 'Retail & F&B Outlets', sub: 'POS Tills, Restaurants & Boutiques', sampleCos: ['La Table du Port', 'Cedar Roastery & Cafe', 'Blanca Pool Bar', 'Voile Sunset Grill', 'Palms Beach Bistro', 'Urban Market Express', 'Artisan Bakery Collective', 'Marina Gelato & Lounge', 'Verdun Flagship Store', 'Dbayeh Gourmet Hall', 'Batroun Seafood Deck', 'Byblos Old Souk Cafe', 'Saida Sweet House', 'Faraya Apres-Ski Grill', 'Airport Duty Express'] },
@@ -457,7 +487,9 @@
     'voile': 'Voile Resort',
     'platinum': 'Platinum Hospitality',
     'korriauto': 'Korri Auto SAL',
-    'shacman': 'Shacman Lebanon SAL'
+    'shacman': 'Shacman Lebanon SAL',
+    'properties': 'Properties (Buzwair & Bdeir Real Estate)',
+    '4235company': '4235 Company S.A.L (Msaytbeh Commercial)'
   };
 
   const COMPANY_BU_MATCH = {
@@ -472,26 +504,31 @@
     'voile': 'Voile',
     'platinum': 'Platinum',
     'korriauto': 'Korri Auto',
-    'shacman': 'Shacman'
+    'shacman': 'Shacman',
+    'properties': 'Properties',
+    '4235company': '4235 Company S.A.L'
   };
 
   const COMPANY_KEY_BY_NAME = {
     'WTC': 'wtc', 'BBConstruction': 'bbconstruction', 'Lions Transport': 'lionstransport',
     'Bdeir Holding': 'bdeirholding',
     'Blanca': 'blanca', 'La Una': 'launa', 'Palms': 'palms', 'Voile': 'voile', 'Platinum': 'platinum',
-    'Korri Auto': 'korriauto', 'Shacman': 'shacman'
+    'Korri Auto': 'korriauto', 'Shacman': 'shacman',
+    'Properties': 'properties', '4235 Company S.A.L': '4235company'
   };
   const COMPANY_INDUSTRY_BY_KEY = {
     'wtc': 'Manufacturing', 'bbconstruction': 'Manufacturing', 'lionstransport': 'Manufacturing',
     'bdeirholding': 'Holding & Treasury',
     'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts',
-    'korriauto': 'Automotive & Heavy Trading', 'shacman': 'Automotive & Heavy Trading'
+    'korriauto': 'Automotive & Heavy Trading', 'shacman': 'Automotive & Heavy Trading',
+    'properties': 'Real Estate & Property', '4235company': 'Real Estate & Property'
   };
   const SENTINEL_MODEL_KEY = {
     'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport',
     'bdeirholding': 'Bdeir Holding',
     'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum',
-    'korriauto': 'Korri Auto', 'shacman': 'Shacman'
+    'korriauto': 'Korri Auto', 'shacman': 'Shacman',
+    'properties': 'Properties', '4235company': '4235 Company S.A.L'
   };
 
   function slugCompanyKey(name) {
@@ -508,7 +545,7 @@
     const s = String(text || '').toLowerCase();
     if (/resort|hotel|beach|blanca|la una|palms|voile|platinum|hospitality|chalet|villa|lodge/.test(s)) return 'Hospitality & Resorts';
     if (/auto|shacman|korri|truck|motor|tyre|parts|trading|forklift|crane|machinery/.test(s)) return 'Automotive & Heavy Trading';
-    if (/propert|real estate|tower|plaza|mall|residenc|estate|land|leasing/.test(s)) return 'Real Estate & Property';
+    if (/propert|4235|msaytbeh|buzwair|real estate|tower|plaza|mall|residenc|estate|land|leasing/.test(s)) return 'Real Estate & Property';
     if (/insur|broker|underwrit|claim|cargo|reinsur|surety|policy/.test(s)) return 'Insurance & Brokerage';
     if (/marine|port|stevedor|freight|customs|container|barge|cold chain|logistics/.test(s)) return 'Logistics & Marine';
     if (/pos|bistro|cafe|grill|roaster|bakery|retail|gourmet|restaurant|gelato/.test(s)) return 'Retail & F&B Outlets';
@@ -1493,6 +1530,7 @@
     if (k === 'bdeirholding' || k === 'industry:Holding & Treasury') return 'manufacturing-group';
     if (['blanca', 'launa', 'palms', 'voile', 'platinum', 'industry:Hospitality & Resorts'].includes(k)) return 'manufacturing-group';
     if (['korriauto', 'shacman', 'industry:Automotive & Heavy Trading'].includes(k)) return 'manufacturing-group';
+    if (['properties', '4235company', 'industry:Real Estate & Property'].includes(k)) return 'manufacturing-group';
     if (k.startsWith('industry:')) {
       const indName = k.slice(9);
       const cat = getCompanyCatalog();
@@ -3401,6 +3439,44 @@
     return n === 'kareem bdeir' ? 'karim bdeir' : n;
   }
 
+  function isSupplierIvaForCompany(supplierName, companyName, seedObj) {
+    const sn = normSupPayable(supplierName);
+    if (!sn) return false;
+    const sRoot = seedObj || SEED || {};
+    const recs = sRoot.records || {};
+    const customSups = (typeof STATE !== 'undefined' && STATE && STATE.customRecords && Array.isArray(STATE.customRecords.suppliers))
+      ? STATE.customRecords.suppliers
+      : [];
+    const allSups = customSups.concat(recs.suppliers || []);
+    let sm = null;
+    for (let i = 0; i < allSups.length; i++) {
+      const s = allSups[i];
+      if (!s || s.voided || !s.name) continue;
+      if (normSupPayable(s.name) === sn) {
+        sm = s;
+        break;
+      }
+    }
+    const co = String(companyName || (typeof STATE !== 'undefined' && STATE && STATE.company) || 'WTC').trim();
+    if (sm) {
+      const isCustomOrApp = Boolean(isAppRecord(sm) || sm.modified_at || customSups.some(cs => cs && !cs.voided && normSupPayable(cs.name) === sn));
+      if (co === 'WTC' || /^wtc$/i.test(co)) {
+        return Boolean(sm.vat_wtc || (isCustomOrApp && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      }
+      if (co === 'BBConstruction' || /^bbconstruction|bbc$/i.test(co)) {
+        return Boolean(sm.vat_bbc || (isCustomOrApp && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      }
+      return Boolean(sm.vat_registered || sm.iva || sm.vat_wtc || sm.vat_bbc);
+    }
+    const mk = /^bbconstruction|bbc$/i.test(co) ? 'bbconstruction' : (/^lions/i.test(co) ? 'lionstransport' : 'wtc');
+    const mdl = sRoot.models && sRoot.models[mk];
+    if (mdl && Array.isArray(mdl.suppliers)) {
+      const ms = mdl.suppliers.find(x => x && normSupPayable(x.Supplier) === sn);
+      if (ms && ms.IVA === 'Yes') return true;
+    }
+    return false;
+  }
+
   function getSupplierPayableLegsInfo(supplierName, companyName) {
     const sn = normSupPayable(supplierName);
     if (!sn) return { row: null, hasQ: false, hasT: false, hasE: false, activeLegs: [], quarryRem: 0, transRem: 0, expRem: 0 };
@@ -3480,9 +3556,9 @@
     const isIva = (sn, co) => {
       const sm = supMeta.get(sn);
       if (!sm) return false;
-      if (co === 'WTC') return Boolean(sm.vat_wtc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && sm.vat_registered));
-      if (co === 'BBConstruction') return Boolean(sm.vat_bbc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && sm.vat_registered));
-      return Boolean(sm.vat_registered);
+      if (co === 'WTC') return Boolean(sm.vat_wtc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      if (co === 'BBConstruction') return Boolean(sm.vat_bbc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && (sm.vat_registered || sm.iva)));
+      return Boolean(sm.vat_registered || sm.iva);
     };
     const vRate = (co, dIso) => {
       const mk = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
@@ -6895,9 +6971,9 @@
       tierBadge: 'ENTRY OPERATOR',
       badgeCls: 'badge-brass',
       defaultAccess: 'partial|partial',
-      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, payroll entries (salaries, attendance, site transport, and contracts), and cash till / treasury transactions (external entries, loans, loan settlements, and FX conversions), edits words/text/assignments on posted records while locking all numbers to Supervisor, and adds pending supplier invoice prices on unpriced deliveries.',
+      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, catalog items, equipment driver switches, payroll entries (salaries, attendance, site transport, and contracts), and cash till / treasury transactions (external entries, loans, loan settlements, and FX conversions), edits words/text/assignments on posted records while locking all numbers to Supervisor, and adds pending supplier invoice prices on unpriced deliveries.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_text: true, modify_data: false, void_data: false, manage_users: false },
-      unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
+      unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: false }
     },
@@ -6910,7 +6986,7 @@
       defaultAccess: 'partial|full',
       summary: 'Dedicated to Sales & Receivables, Customer Statements, Commercial Pricing, and 11% VAT Invoices. Hides Quarry Purchases, Fleet & Fuel, Payroll, and General Ledger.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: false, manage_users: false },
-      unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
+      unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: false, dash_expenses_vat: false, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
@@ -7083,20 +7159,22 @@
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
       const p = getEffectivePermissions(u);
+      const anyEntryRight = !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master || p.rights.enter_payroll_jv);
+      if (['item', 'expensecategory', 'equipment', 'companyequipment', 'driver'].includes(form)) return anyEntryRight;
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
-      if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
-      if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
-      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'staffassignment', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
+      if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master || p.rights.enter_accounting);
+      if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement'].includes(form)) return !!(p.rights.enter_accounting || p.rights.enter_master);
+      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'region', 'staff', 'staffrole', 'staffassignment', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
       if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion'].includes(form)) return !!(p.rights.enter_payroll_jv || p.rights.enter_accounting);
       if (['jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
-      return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
+      return anyEntryRight;
     }
     if (/Owner|Full Access/i.test(role)) return true;
     if (/Supervisor\s*\+\s*Entry/i.test(role)) return true;
     if (/^Supervisor$/i.test(role)) return false; // Supervisor = strictly read-only oversight
     if (/Sales/i.test(role)) {
       if (isRawPriceForm) return false;
-      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'site', 'region'].includes(form);
+      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'item', 'site', 'region', 'equipment', 'companyequipment', 'driver'].includes(form);
     }
     if (/Entry/i.test(role)) {
       return [
@@ -7134,6 +7212,11 @@
     u = u || activeUser();
     const r = getEffectivePermissions(u).rights;
     return !!(r.modify_data || r.modify_text);
+  }
+  function canSwitchEquipmentDriver(u) {
+    u = u || activeUser();
+    if (canModifyRecord(u)) return true;
+    return canEnterForm('equipment', u) || canEnterForm('companyequipment', u) || canEnterForm('driver', u) || canEnterForm('sales', u) || canEnterForm('raw', u) || canEnterForm('fuel', u);
   }
   const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
   const WORD_LOCK_NUMERIC_KEY_RE = /^(qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|decimals|price_pending|salary_pending)$/i;
@@ -7177,7 +7260,9 @@
   }
   function isModalControlNumericLocked(el) {
     if (!el) return false;
+    if (el.closest && el.closest('#expQuickCatalogDrawer')) return false;
     const id = String(el.id || '').trim();
+    if (id && /^exp_qc_/i.test(id)) return false;
     if (id && WORD_EDITABLE_ID_KEY_RE.test(id.replace(/^f_/, ''))) return false;
     if (el.type === 'number') return true;
     if (id && WORD_LOCK_MODAL_ID_SET.has(id)) return true;
@@ -7216,6 +7301,7 @@
   function canUnlockField(fieldId, u) {
     u = u || activeUser();
     if (isAdminUser(u)) return true;
+    if ((fieldId === 'f_driver' || fieldId === 'f_truckowner') && canSwitchEquipmentDriver(u)) return true;
     const p = getEffectivePermissions(u);
     const uk = FIELD_TO_UNLOCK_KEY[fieldId];
     return !!(uk && p.unlocks[uk]);
@@ -7282,9 +7368,9 @@
     trd_stock: 'Spare Parts & Warehouses',
     // Real Estate & Property industry hubs (Phase 4)
     re_leases: 'Leases & Rent Roll',
-    re_sales: 'Unit Sales & Contracts',
-    re_properties: 'Properties & Units',
-    re_workorders: 'Work Orders & Snags',
+    re_sales: 'Property Sales & Buyers',
+    re_properties: 'Portfolio & Valuations',
+    re_workorders: 'Work Orders & Fit-Out',
     // Insurance & Brokerage industry hubs (Phase 5)
     ins_policies: 'Policies & Renewals',
     ins_billing: 'Premiums & Carrier SOA',
@@ -7635,6 +7721,38 @@
     return alertCnt > 0 ? { text: `${fmtNum(alertCnt)} Alert${alertCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
   }
 
+  function getRealEstateLeasesExceptionBadge(u) {
+    if (!canViewView('re_leases', u)) return null;
+    if (typeof computeRealEstateOperations !== 'function') return null;
+    const reRes = computeRealEstateOperations({ ignoreSearch: true });
+    const cnt = reRes ? Number(reRes.unbilledOrEscalationCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
+  function getRealEstateSalesExceptionBadge(u) {
+    if (!canViewView('re_sales', u)) return null;
+    if (typeof computeRealEstateOperations !== 'function') return null;
+    const reRes = computeRealEstateOperations({ ignoreSearch: true });
+    const cnt = reRes ? Number(reRes.overdueInstalmentsCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Due`, cls: 'warn' } : null;
+  }
+
+  function getRealEstatePortfolioExceptionBadge(u) {
+    if (!canViewView('re_properties', u)) return null;
+    if (typeof computeRealEstateOperations !== 'function') return null;
+    const reRes = computeRealEstateOperations({ ignoreSearch: true });
+    const cnt = reRes ? Number(reRes.vacantOrFitoutCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Open`, cls: 'warn' } : null;
+  }
+
+  function getRealEstateWorkOrdersExceptionBadge(u) {
+    if (!canViewView('re_workorders', u)) return null;
+    if (typeof computeRealEstateOperations !== 'function') return null;
+    const reRes = computeRealEstateOperations({ ignoreSearch: true });
+    const cnt = reRes ? Number(reRes.pendingRechargeCount || 0) : 0;
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Pending`, cls: 'warn' } : null;
+  }
+
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
     if (hubId === 'sentinels') return getSentinelExceptionBadge(u, sentinelsOpen);
     if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
@@ -7648,6 +7766,10 @@
     if (hubId === 'trd_purchases') return getTradingImportsExceptionBadge(u);
     if (hubId === 'trd_trucks') return getTradingTrucksExceptionBadge(u);
     if (hubId === 'trd_stock') return getTradingStockExceptionBadge(u);
+    if (hubId === 're_leases') return getRealEstateLeasesExceptionBadge(u);
+    if (hubId === 're_sales') return getRealEstateSalesExceptionBadge(u);
+    if (hubId === 're_properties') return getRealEstatePortfolioExceptionBadge(u);
+    if (hubId === 're_workorders') return getRealEstateWorkOrdersExceptionBadge(u);
     return null;
   }
 
@@ -7856,6 +7978,49 @@
       ]
     },
     {
+      id: 're_leases',
+      title: HUB_TITLES.re_leases,
+      group: 'commercial',
+      industry: 'Real Estate & Property',
+      tabs: [
+        { view: 're_leases', label: 'Leases, Units & Escalations', icon: 're_leases' },
+        { view: 're_invoicing', label: 'Period Rent Invoices (r33)', icon: 're_invoicing', badgeFn: u => getRealEstateLeasesExceptionBadge(u) },
+        { view: 're_receipts', label: 'Receipts, Deposits & Advances', icon: 're_receipts' }
+      ]
+    },
+    {
+      id: 're_sales',
+      title: HUB_TITLES.re_sales,
+      group: 'commercial',
+      industry: 'Real Estate & Property',
+      tabs: [
+        { view: 're_sales', label: 'Property & Unit Sales', icon: 're_sales' },
+        { view: 're_instalments', label: 'Buyer Instalment Schedules', icon: 're_instalments', badgeFn: u => getRealEstateSalesExceptionBadge(u) }
+      ]
+    },
+    {
+      id: 're_properties',
+      title: HUB_TITLES.re_properties,
+      group: 'plant',
+      industry: 'Real Estate & Property',
+      tabs: [
+        { view: 're_properties', label: 'Properties, Map & Yields', icon: 're_properties' },
+        { view: 're_units', label: 'Building Units & Vacancy', icon: 're_units', badgeFn: u => getRealEstatePortfolioExceptionBadge(u) },
+        { view: 're_valuations', label: 'LGB & Market Valuations', icon: 're_valuations' },
+        { view: 're_ownership', label: 'Deed Shares (/2400) & NOI', icon: 're_ownership' }
+      ]
+    },
+    {
+      id: 're_workorders',
+      title: HUB_TITLES.re_workorders,
+      group: 'plant',
+      industry: 'Real Estate & Property',
+      tabs: [
+        { view: 're_workorders', label: 'Repairs, Fit-Out & Variance', icon: 're_workorders', badgeFn: u => getRealEstateWorkOrdersExceptionBadge(u) },
+        { view: 're_recharges', label: 'Tenant Recharges & Contractors', icon: 're_recharges' }
+      ]
+    },
+    {
       id: 'payroll',
       title: HUB_TITLES.payroll,
       group: 'plant',
@@ -7980,6 +8145,9 @@
     if (activeInd === 'Automotive & Heavy Trading') {
       return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Automotive & Heavy Trading');
     }
+    if (activeInd === 'Real Estate & Property') {
+      return !['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Real Estate & Property');
+    }
     return !h.industry;
   }
 
@@ -7999,6 +8167,10 @@
     if (view === 'trd_purchases' || view === 'trd_landed' || view === 'trd_grn') return canViewView('raw', u) || canViewView('expenses', u);
     if (view === 'trd_trucks' || view === 'trd_warranty') return canViewView('fleet', u) || canViewView('sales', u);
     if (view === 'trd_stock' || view === 'trd_movements' || view === 'trd_recon') return canViewView('warehouse', u) || canViewView('raw', u) || canViewView('expenses', u);
+    if (view === 're_leases' || view === 're_invoicing' || view === 're_receipts') return canViewView('sales', u) || canViewView('overview', u);
+    if (view === 're_sales' || view === 're_instalments') return canViewView('sales', u) || canViewView('raw', u) || canViewView('cashflow', u);
+    if (view === 're_properties' || view === 're_units' || view === 're_valuations' || view === 're_ownership') return canViewView('fleet', u) || canViewView('sales', u) || canViewView('overview', u);
+    if (view === 're_workorders' || view === 're_recharges') return canViewView('warehouse', u) || canViewView('fleet', u) || canViewView('expenses', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
@@ -8155,7 +8327,7 @@
 
   function parseUserCompanies(userOrRaw) {
     const isUserObj = Boolean(userOrRaw && typeof userOrRaw === 'object' && !Array.isArray(userOrRaw));
-    const raw = isUserObj ? userOrRaw.companies : userOrRaw;
+    const raw = isUserObj ? ensureCanonicalMultiIndustrySeat(userOrRaw).companies : userOrRaw;
     const cat = getCompanyCatalog();
     if (STATE.enterpriseScalePreview && isUserObj && isOwner(userOrRaw)) {
       return cat.map(c => c.name);
@@ -8166,7 +8338,7 @@
     const tokens = (Array.isArray(raw)
       ? raw.map(x => String(x || '').trim()).filter(Boolean)
       : String(raw == null ? 'WTC' : raw).split(/[,;|]+/).map(s => s.trim()).filter(Boolean)
-    ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(tok)));
+    ).filter(tok => !(isSynthetic100Test && /^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(tok)));
     if (tokens.some(t => /^all(\s+\d+)?\s*(companies|group)?$/i.test(t) || t.toLowerCase() === 'manufacturing-group')) {
       return cat.map(c => c.name);
     }
@@ -8213,7 +8385,7 @@
       if (!keys.includes(k)) keys.push(k);
     });
     if (!keys.length) keys.push('wtc');
-    if (STATE.enterpriseScalePreview && industriesSeen.size >= 2) {
+    if (industriesSeen.size >= 2) {
       industriesSeen.forEach(ind => {
         const indKey = `industry:${ind}`;
         COMPANY_BU_MATCH[indKey] = null;
@@ -9361,6 +9533,46 @@
         pr.includes_transport = Boolean(!hasTr && pr.site && bundledSeedSiteNorms.has(norm(pr.site)));
       }
     });
+    if (Array.isArray(recs.expense_items) && recs.expense_items.length) {
+      const expById = new Map();
+      const expByRef = new Map();
+      (recs.expenses || []).forEach(ex => {
+        if (!ex) return;
+        if (ex.id != null) expById.set(String(ex.id), ex);
+        if (ex.name) expByRef.set(norm(ex.name), ex);
+      });
+      recs.expense_items.forEach(ei => {
+        if (!ei || ei.voided || ei._preVatNormalized || ei.source === 'app') return;
+        const parentExp = (ei.expense_id != null && expById.get(String(ei.expense_id)))
+          || (ei.expense_ref && expByRef.get(norm(ei.expense_ref)))
+          || null;
+        if (parentExp && ei.expense_id == null && parentExp.id != null) {
+          ei.expense_id = parentExp.id;
+        }
+        const supName = ei.supplier || (parentExp && parentExp.supplier) || '';
+        const coName = ei.company || (parentExp && parentExp.company) || 'WTC';
+        if (!supName || !isSupplierIvaForCompany(supName, coName, seedObj)) {
+          ei._preVatNormalized = true;
+          return;
+        }
+        const q = Number(ei.qty) > 0 ? Number(ei.qty) : 1;
+        const ttcRaw = parentExp && parentExp.wb_total_ttc != null
+          ? Number(parentExp.wb_total_ttc)
+          : Number(ei.line_total != null ? ei.line_total : (parentExp ? parentExp.amount : 0));
+        if (ttcRaw > 0) {
+          const preVatLine = round2(ttcRaw / 1.11);
+          const rawPreUc = (ttcRaw / 1.11) / q;
+          const cleanPreUc = Math.abs(rawPreUc - round2(rawPreUc)) < 0.005
+            ? round2(rawPreUc)
+            : Math.round(rawPreUc * 10000) / 10000;
+          ei.unit_cost = cleanPreUc;
+          ei.pre_vat_total = preVatLine;
+          ei.vat_amount = round2(round2(ttcRaw) - preVatLine);
+          ei.line_total = round2(ttcRaw);
+        }
+        ei._preVatNormalized = true;
+      });
+    }
   }
 
   const _QUARRY_NON_AGG_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity|bonus)\b/i;
@@ -21156,7 +21368,10 @@
         sSet.add(subStr);
       }
       const q = Math.max(0, Number(r.qty != null ? r.qty : 1));
-      const tot = Math.max(0, Number(r.line_total != null ? r.line_total : (q * Number(r.unit_cost || 0))));
+      const ucPre = Number(r.unit_cost || 0);
+      const tot = ucPre > 0
+        ? round2(q * ucPre)
+        : Math.max(0, Number(r.pre_vat_total != null ? r.pre_vat_total : (r.line_total != null ? r.line_total : 0)));
       if (!(q > 0) || !(tot > 0)) return;
       const cur = histCostAgg.get(k) || { qty: 0, usd: 0 };
       cur.qty += q;
@@ -39237,6 +39452,1280 @@
     `;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REAL ESTATE & PROPERTY ENGINE (PHASE 4 - PROPERTIES & 4235 COMPANY S.A.L)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const RE_ENTITY_KEYS = ['properties', '4235company'];
+  const RE_ENTITY_META = [
+    { key: 'properties', name: 'Properties', label: 'BHFIRMS Properties Portfolio', properties: 14, color: '#2563eb' },
+    { key: '4235company', name: '4235 Company S.A.L', label: '4235 Company S.A.L (Msaytbeh Commercial Center)', properties: 1, color: '#0d9488' }
+  ];
+
+  function sliceRows(view, list) {
+    return (list || []).slice(0, shownCount(view));
+  }
+
+  let _reOpsCache = null;
+  let _reOpsSig = '';
+  function computeRealEstateOperations(opts = {}) {
+    const ignoreSearch = Boolean(opts.ignoreSearch);
+    const activeCo = STATE.company || 'manufacturing-group';
+    const selectedEntityName = RE_ENTITY_KEYS.includes(activeCo) ? COMPANY_BU_MATCH[activeCo] : null;
+    const sig = `${activeCo}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}`;
+    if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
+
+    const properties = [
+      { id: 'PROP-4235', code: 'PLOT-4235-MSY', company: '4235 Company S.A.L', name: '4235 Msaytbeh Commercial Center', cadastry: 'Msaytbeh (Beirut)', plot_no: '4235', asset_class: 'Commercial Mixed-Use Building', area_sqm: 3120, units_total: 9, units_occupied: 8, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 10000000, share_val_usd: 10000000, annual_rent_usd: 306700, annual_noi_usd: 268400, status: 'Income Producing' },
+      { id: 'PROP-QROUH', code: 'PLOT-11-30-QRH', company: 'Properties', name: '11-30/13 Qrouh Coastal Development Land', cadastry: 'Qrouh (Keserwan)', plot_no: '11-30/13', asset_class: 'Prime Development Land', area_sqm: 18500, units_total: 1, units_occupied: 1, deed_shares: 1200, ownership_pct: 50.0, lgb_gross_usd: 15000000, share_val_usd: 7500000, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Land Bank (LGB Appraised)' },
+      { id: 'PROP-KAAK', code: 'PLOT-KAAK-SNB', company: 'Properties', name: 'Kaakaayit al Snoubar Agricultural & Solar Estate', cadastry: 'Kaakaayit al Snoubar (South)', plot_no: 'KAAK-01', asset_class: 'Estate & Agricultural Plot', area_sqm: 42000, units_total: 2, units_occupied: 2, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 5000000, share_val_usd: 5000000, annual_rent_usd: 28000, annual_noi_usd: 24200, status: 'Income Producing' },
+      { id: 'PROP-776RB', code: 'PLOT-776-HAMRA', company: 'Properties', name: '776 Ras Beirut (Hamra Pavillon)', cadastry: 'Ras Beirut (Hamra)', plot_no: '776', asset_class: 'Commercial & Medical Tower', area_sqm: 1640, units_total: 4, units_occupied: 4, deed_shares: 600, ownership_pct: 25.0, lgb_gross_usd: 4850000, share_val_usd: 1212500, annual_rent_usd: 78000, annual_noi_usd: 66500, status: 'Income Producing' },
+      { id: 'PROP-1354MH', code: 'PLOT-1354-MARINA', company: 'Properties', name: '1354/50 Mina el Hosn (Marina Tower)', cadastry: 'Mina el Hosn (Solidere)', plot_no: '1354/50', asset_class: 'Luxury Waterfront Residence & Retail', area_sqm: 620, units_total: 2, units_occupied: 2, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 4500000, share_val_usd: 4500000, annual_rent_usd: 96000, annual_noi_usd: 84500, status: 'Income Producing' },
+      { id: 'PROP-MAZRAA', code: 'PLOT-915-2557-MZR', company: 'Properties', name: '915 & 2557 Mazraa Commercial Complex', cadastry: 'Mazraa (Beirut)', plot_no: '915 & 2557', asset_class: 'Commercial & Showroom Block', area_sqm: 1480, units_total: 3, units_occupied: 3, deed_shares: 1200, ownership_pct: 50.0, lgb_gross_usd: 3800000, share_val_usd: 1900000, annual_rent_usd: 54000, annual_noi_usd: 46800, status: 'Income Producing' },
+      { id: 'PROP-1388MH', code: 'PLOT-1388-614-MH', company: 'Properties', name: '1388/614 Mina el Hosn Executive Suite', cadastry: 'Mina el Hosn (Beirut)', plot_no: '1388/614', asset_class: 'Prime Residential & Office Unit', area_sqm: 410, units_total: 1, units_occupied: 1, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 3100000, share_val_usd: 3100000, annual_rent_usd: 42000, annual_noi_usd: 37400, status: 'Income Producing' },
+      { id: 'PROP-2154NAB', code: 'PLOT-2154-NAB', company: 'Properties', name: '2154 Nabatieh el Tahta Commercial Hub', cadastry: 'Nabatieh el Tahta', plot_no: '2154', asset_class: 'Regional Commercial Center', area_sqm: 2200, units_total: 3, units_occupied: 2, deed_shares: 700, ownership_pct: 29.17, lgb_gross_usd: 2650000, share_val_usd: 772917, annual_rent_usd: 32000, annual_noi_usd: 26900, status: 'Income Producing' },
+      { id: 'PROP-617SIB', code: 'PLOT-617-SIB', company: 'Properties', name: '617 Sibline Industrial & Logistics Land', cadastry: 'Sibline (Chouf)', plot_no: '617', asset_class: 'Industrial Plot & Yard', area_sqm: 6800, units_total: 2, units_occupied: 2, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 2100000, share_val_usd: 2100000, annual_rent_usd: 30000, annual_noi_usd: 27200, status: 'Income Producing' },
+      { id: 'PROP-2908CH', code: 'PLOT-2908-CHIAH', company: 'Properties', name: '2908 Chiah Minority Co-Owned Plot', cadastry: 'Chiah (Baabda)', plot_no: '2908', asset_class: 'Urban Co-Owned Plot', area_sqm: 890, units_total: 1, units_occupied: 1, deed_shares: 4, ownership_pct: 0.17, lgb_gross_usd: 480000, share_val_usd: 800, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Co-Owned Hold' },
+      { id: 'PROP-CANNES', code: 'INTL-CANNES-01', company: 'Properties', name: 'Cannes Croisette Luxury Residence (France)', cadastry: 'Cannes 06400 (Alpes-Maritimes)', plot_no: 'FR-CAN-42', asset_class: 'International Luxury Residential', area_sqm: 235, units_total: 1, units_occupied: 0, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 3400000, share_val_usd: 3400000, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Under Acquisition' },
+      { id: 'PROP-BAGHDAD', code: 'INTL-BGW-01', company: 'Properties', name: 'Baghdad Mansour Commercial Unit (Iraq)', cadastry: 'Al-Mansour (Baghdad)', plot_no: 'IQ-BGW-18', asset_class: 'International Commercial Showroom', area_sqm: 360, units_total: 1, units_occupied: 1, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 950000, share_val_usd: 950000, annual_rent_usd: 36000, annual_noi_usd: 31800, status: 'Income Producing' }
+    ];
+
+    const units = [
+      { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Unesco Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Mazen (Unesco Pharmacy)', annual_rent_usd: 55500, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Infinitas S.A.L', annual_rent_usd: 77700, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Mohamad Ali Fawz', annual_rent_usd: 99900, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-1C', code: '4235-1C', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1C Executive Wing', floor: 'Floor 1', type: 'Executive Office', area_sqm: 185, tenant: 'Hoda / Maha Harkous', annual_rent_usd: 26000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-2A', code: '4235-2A-CLINIC', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Clinic Suite 2A', floor: 'Floor 2', type: 'Medical Clinic', area_sqm: 140, tenant: 'DR Sara Abed Latif', annual_rent_usd: 24000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-ANX', code: '4235-GF-ANNEX', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Annex Ground Retail', floor: 'Ground Floor', type: 'Retail Unit', area_sqm: 95, tenant: 'Ayman Baz', annual_rent_usd: 18000, occupancy: 'Occupied' },
+      { id: 'UNIT-4235-2E', code: '4235-2E-FITOUT', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Floor 2 East Medical Suite', floor: 'Floor 2', type: 'Medical Office', area_sqm: 210, tenant: 'Vacant (MEP Fit-Out)', annual_rent_usd: 0, occupancy: 'Under Fit-Out' },
+      { id: 'UNIT-MARINA-01', code: 'MH-1354-GF01', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit_name: 'Marina Showroom & Duplex Suite', floor: 'GF & Mezzanine', type: 'Luxury Showroom', area_sqm: 310, tenant: 'Levant Luxury Retail SAL', annual_rent_usd: 96000, occupancy: 'Occupied' },
+      { id: 'UNIT-HAMRA-01', code: 'RB-776-F12', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit_name: 'Hamra Pavillon Floors 1-2', floor: 'Floors 1-2', type: 'Medical & Diagnostics', area_sqm: 540, tenant: 'Hamra Medical & Diagnostics', annual_rent_usd: 78000, occupancy: 'Occupied' },
+      { id: 'UNIT-MAZRAA-01', code: 'MZR-915-HALLA', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit_name: 'Commercial Hall A & Warehouse', floor: 'Ground & Basement', type: 'Commercial Showroom', area_sqm: 480, tenant: 'Mazraa Commercial Logistics', annual_rent_usd: 54000, occupancy: 'Occupied' },
+      { id: 'UNIT-NAB-01', code: 'NAB-2154-S01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit_name: 'South Anchor Retail Unit #1', floor: 'Ground Floor', type: 'Regional Retail', area_sqm: 390, tenant: 'Al-Janoub Medical Supplies', annual_rent_usd: 32000, occupancy: 'Occupied' },
+      { id: 'UNIT-NAB-02', code: 'NAB-2154-S02', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit_name: 'First Floor Office Wing #2', floor: 'Floor 1', type: 'Commercial Office', area_sqm: 260, tenant: 'Available for Lease', annual_rent_usd: 0, occupancy: 'Vacant' },
+      { id: 'UNIT-BGW-01', code: 'BGW-MANSOUR-01', company: 'Properties', property: 'Baghdad Mansour Commercial Unit (Iraq)', unit_name: 'Mansour Main Commercial Showroom', floor: 'Ground Floor', type: 'Commercial Showroom', area_sqm: 360, tenant: 'Baghdad Anchor Trading LLC', annual_rent_usd: 36000, occupancy: 'Occupied' }
+    ];
+
+    const leases = [
+      { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Mazen (Unesco Pharmacy)', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Infinitas S.A.L', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Mohamad Ali Fawz', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
+      { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Hoda / Maha Harkous', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'DR Sara Abed Latif', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
+      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Ayman Baz', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (r45 Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
+      { id: 'LSE-PROP-007', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01 (310 m²)', tenant: 'Levant Luxury Retail SAL', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 24000, vat_rate: 0, ttc_period_usd: 24000, annual_ttc_usd: 96000, deposit_usd: 24000, escalation: '5-Yr Prime Solidere Index', days_to_expiry: 1150, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-PROP-008', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Floors 1-2 (540 m²)', tenant: 'Hamra Medical & Diagnostics', start_date: '2024-07-01', end_date: '2029-06-30', frequency: 'Quarterly', net_period_usd: 19500, vat_rate: 0, ttc_period_usd: 19500, annual_ttc_usd: 78000, deposit_usd: 19500, escalation: '5-Yr Clinical Escalation (+6% Yr 3)', days_to_expiry: 965, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-PROP-009', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit: 'Commercial Hall A (480 m²)', tenant: 'Mazraa Commercial Logistics', start_date: '2025-01-01', end_date: '2027-12-31', frequency: 'Quarterly', net_period_usd: 13500, vat_rate: 0, ttc_period_usd: 13500, annual_ttc_usd: 54000, deposit_usd: 13500, escalation: '3-Yr Commercial Lease', days_to_expiry: 420, unbilled_periods: 0, status: 'Active' },
+      { id: 'LSE-PROP-010', company: 'Properties', property: 'Baghdad Mansour Commercial Unit (Iraq)', unit: 'Mansour Showroom (360 m²)', tenant: 'Baghdad Anchor Trading LLC', start_date: '2025-04-01', end_date: '2028-03-31', frequency: 'Quarterly', net_period_usd: 9000, vat_rate: 0, ttc_period_usd: 9000, annual_ttc_usd: 36000, deposit_usd: 9000, escalation: '3-Yr Regional Anchor', days_to_expiry: 510, unbilled_periods: 0, status: 'Active' }
+    ];
+
+    const invoices = [
+      { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
+      { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
+      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5 (r45 Audit)' },
+      { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
+      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
+      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
+      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q3-FAWZ', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
+      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Hoda / Maha Harkous', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
+      { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
+      { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
+      { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
+    ];
+
+    const receipts = [
+      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 TTC)', status: 'Swap Audit' },
+      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 TTC)', status: 'Swap Audit' },
+      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k r35/r37 ledger)', status: 'Advance Pool' },
+      { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Hoda / Maha Harkous', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
+      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in GL 4191', status: 'Allocated' },
+      { id: 'RCT-PROP-106', date: '2026-07-03', company: 'Properties', tenant: 'Levant Luxury Retail SAL', property: '1354/50 Mina el Hosn (Marina Tower)', type: 'Quarterly Rent Settlement', method: 'Bank Transfer USD', gross_usd: 96000, allocated_inv_usd: 72000, unallocated_adv_usd: 24000, deposit_gl4196_usd: 24000, audit_flag: 'Solidere showroom annual wire', status: 'Allocated' },
+      { id: 'RCT-PROP-107', date: '2026-07-12', company: 'Properties', tenant: 'Hamra Medical & Diagnostics', property: '776 Ras Beirut (Hamra Pavillon)', type: 'Partial Rent Tranche', method: 'Bank Transfer USD', gross_usd: 51000, allocated_inv_usd: 51000, unallocated_adv_usd: 0, deposit_gl4196_usd: 19500, audit_flag: '$7,500 Q3 balance outstanding', status: 'Allocated' }
+    ];
+
+    const sales = [
+      { id: 'RE-SAL-001', date: '2026-03-15', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Skyline Residence Wing B', buyer: 'Khoury International Holding SAL', contract_usd: 1850000, paid_usd: 1480000, balance_usd: 370000, broker_comm_usd: 37000, gl_stage: 'GL 4191 Buyer Deposit (80% Paid)', deed_status: 'Pending Final Deed Transfer' },
+      { id: 'RE-SAL-002', date: '2026-05-20', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', unit: 'Sub-Parcel South Terrace (1,800 m²)', buyer: 'Cedar Coast Developers SAL', contract_usd: 1200000, paid_usd: 1200000, balance_usd: 0, broker_comm_usd: 24000, gl_stage: 'GL 7751 Capital Gain Recognized', deed_status: 'Deed Transferred & Registered' },
+      { id: 'RE-SAL-003', date: '2026-06-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 3 Executive Medical Shell', buyer: 'Beirut Diagnostic Partners LLC', contract_usd: 680000, paid_usd: 340000, balance_usd: 340000, broker_comm_usd: 13600, gl_stage: 'GL 4191 Buyer Deposit (50% Paid)', deed_status: 'Instalment Schedule Active' },
+      { id: 'RE-SAL-004', date: '2026-08-01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit: 'Corner Commercial Lot C', buyer: 'Al-Rida Trading Co.', contract_usd: 420000, paid_usd: 210000, balance_usd: 210000, broker_comm_usd: 8400, gl_stage: 'GL 4191 Buyer Deposit (50% Paid)', deed_status: 'Overdue Milestone #3' }
+    ];
+
+    const instalments = [
+      { id: 'INST-001', due_date: '2026-03-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 1 - Contract Signing (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
+      { id: 'INST-002', due_date: '2026-07-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 2 - Handover Clearance (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
+      { id: 'INST-003', due_date: '2026-11-30', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 3 - Notary Deed Transfer (20%)', scheduled_usd: 370000, collected_usd: 0, open_usd: 370000, gl_account: '4191 -> 7751 On Deed', status: 'Due Soon' },
+      { id: 'INST-004', due_date: '2026-05-20', company: 'Properties', sale_ref: 'RE-SAL-002', buyer: 'Cedar Coast Developers SAL', milestone: 'Full Settlement & Cadastral Transfer (100%)', scheduled_usd: 1200000, collected_usd: 1200000, open_usd: 0, gl_account: '7751 Proceeds on Fixed Assets', status: 'Paid' },
+      { id: 'INST-005', due_date: '2026-06-10', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 1 - Down Payment (50%)', scheduled_usd: 340000, collected_usd: 340000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
+      { id: 'INST-006', due_date: '2026-12-15', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 2 - MEP Delivery & Deed (50%)', scheduled_usd: 340000, collected_usd: 0, open_usd: 340000, gl_account: '4191 -> 7751 On Deed', status: 'Due Soon' },
+      { id: 'INST-007', due_date: '2026-09-15', company: 'Properties', sale_ref: 'RE-SAL-004', buyer: 'Al-Rida Trading Co.', milestone: 'Tranche 2 - Municipal Clearance (50%)', scheduled_usd: 210000, collected_usd: 0, open_usd: 210000, gl_account: '4191 Client Advances', status: 'Overdue' }
+    ];
+
+    const valuations = [
+      { id: 'VAL-LGB-01', val_date: '2024-08-13', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Income & Replacement Cost', gross_val_usd: 10000000, deed_shares: '2400 / 2400', net_share_val_usd: 10000000, implied_cap_pct: 2.68, delta_pct: 4.2 },
+      { id: 'VAL-LGB-02', val_date: '2024-08-13', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Comparable Coastal Land Sales', gross_val_usd: 15000000, deed_shares: '1200 / 2400', net_share_val_usd: 7500000, implied_cap_pct: 0.0, delta_pct: 6.5 },
+      { id: 'VAL-LGB-03', val_date: '2024-08-13', company: 'Properties', property: 'Kaakaayit al Snoubar Agricultural & Solar Estate', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Land & Improvement Valuation', gross_val_usd: 5000000, deed_shares: '2400 / 2400', net_share_val_usd: 5000000, implied_cap_pct: 0.48, delta_pct: 2.1 },
+      { id: 'VAL-LGB-04', val_date: '2024-08-13', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Commercial Tower Capitalization', gross_val_usd: 4850000, deed_shares: '600 / 2400', net_share_val_usd: 1212500, implied_cap_pct: 5.48, delta_pct: 3.8 },
+      { id: 'VAL-LGB-05', val_date: '2024-08-13', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Solidere Prime Comparable', gross_val_usd: 4500000, deed_shares: '2400 / 2400', net_share_val_usd: 4500000, implied_cap_pct: 1.88, delta_pct: 5.0 },
+      { id: 'VAL-LGB-06', val_date: '2024-08-13', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Commercial Income & Land', gross_val_usd: 3800000, deed_shares: '1200 / 2400', net_share_val_usd: 1900000, implied_cap_pct: 2.46, delta_pct: 1.9 },
+      { id: 'VAL-LGB-07', val_date: '2024-08-13', company: 'Properties', property: '1388/614 Mina el Hosn Executive Suite', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Solidere Comparable', gross_val_usd: 3100000, deed_shares: '2400 / 2400', net_share_val_usd: 3100000, implied_cap_pct: 1.21, delta_pct: 3.1 },
+      { id: 'VAL-LGB-08', val_date: '2024-08-13', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Regional Commercial Cap', gross_val_usd: 2650000, deed_shares: '700 / 2400', net_share_val_usd: 772917, implied_cap_pct: 3.48, delta_pct: 0.0 },
+      { id: 'VAL-LGB-09', val_date: '2024-08-13', company: 'Properties', property: '617 Sibline Industrial & Logistics Land', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Industrial Land Benchmark', gross_val_usd: 2100000, deed_shares: '2400 / 2400', net_share_val_usd: 2100000, implied_cap_pct: 1.30, delta_pct: 2.4 }
+    ];
+
+    const ownership = [
+      { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 268400, entitled_noi_usd: 268400, distributed_usd: 220000, retained_reserve_usd: 48400, status: 'Distributed (r38)' },
+      { id: 'OWN-QROUH', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 0, entitled_noi_usd: 0, distributed_usd: 0, retained_reserve_usd: 0, status: 'Land Bank Hold' },
+      { id: 'OWN-776RB', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', holder: 'Bdeir Holding Co-Ownership Pool (25%)', deed_shares: 600, share_pct: 25.0, gross_noi_usd: 66500, entitled_noi_usd: 16625, distributed_usd: 15000, retained_reserve_usd: 1625, status: 'Distributed (r38)' },
+      { id: 'OWN-1354MH', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', holder: 'Bdeir Holding Wholly Owned (100%)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 84500, entitled_noi_usd: 84500, distributed_usd: 75000, retained_reserve_usd: 9500, status: 'Distributed (r38)' },
+      { id: 'OWN-MAZRAA', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 46800, entitled_noi_usd: 23400, distributed_usd: 20000, retained_reserve_usd: 3400, status: 'Distributed (r38)' },
+      { id: 'OWN-2154NAB', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', holder: 'Bdeir Holding Co-Ownership Pool (29.17%)', deed_shares: 700, share_pct: 29.17, gross_noi_usd: 26900, entitled_noi_usd: 7846, distributed_usd: 0, retained_reserve_usd: 7846, status: 'Pending Distribution' }
+    ];
+
+    const workorders = [
+      { id: 'WO-4235-01', date: '2026-08-12', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 2 East Medical Suite', contractor: 'MEP Tech Engineering SAL', category: 'Structural Fit-Out & HVAC (CAPEX)', gl_code: '2131 Building Improvements', budget_usd: 48000, actual_usd: 42500, rechargeable: false, status: 'In Progress' },
+      { id: 'WO-4235-02', date: '2026-09-02', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Common Area & Perkins 250kVA Gen', contractor: 'PowerGen Lebanon LLC', category: 'Generator Overhaul & ATS Sync', gl_code: '6141 Repairs & Maintenance', budget_usd: 8500, actual_usd: 8950, rechargeable: true, status: 'Completed' },
+      { id: 'WO-PROP-03', date: '2026-08-25', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Elevator Shafts #1 & #2', contractor: 'Otis Levant Maintenance', category: 'Elevator Modernization (CAPEX)', gl_code: '2131 Building Improvements', budget_usd: 32000, actual_usd: 32000, rechargeable: false, status: 'Completed' },
+      { id: 'WO-PROP-04', date: '2026-09-14', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01', contractor: 'Solidere Facility Services', category: 'Chilled Water & Facade Glazing', gl_code: '6141 Repairs & Maintenance', budget_usd: 6200, actual_usd: 6400, rechargeable: true, status: 'In Progress' },
+      { id: 'WO-PROP-05', date: '2026-09-19', company: 'Properties', property: 'Cannes Croisette Luxury Residence (France)', unit: 'Croisette Penthouse Suite', contractor: 'Azur Renovation SARL', category: 'Pre-Handover Acoustic & Marble Works', gl_code: '2131 Building Improvements', budget_usd: 65000, actual_usd: 28000, rechargeable: false, status: 'In Progress' }
+    ];
+
+    const recharges = [
+      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share (GL 7062)', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
+      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC (GL 7062)', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' },
+      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge (GL 7062)', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' },
+      { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge (GL 7062)', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
+      { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share (GL 7062)', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' }
+    ];
+
+    const byCo = list => selectedEntityName ? list.filter(r => r.company === selectedEntityName) : list;
+    const fProperties = byCo(properties);
+    const fUnits = byCo(units);
+    const fLeases = byCo(leases);
+    const fInvoices = byCo(invoices);
+    const fReceipts = byCo(receipts);
+    const fSales = byCo(sales);
+    const fInstalments = byCo(instalments);
+    const fValuations = byCo(valuations);
+    const fOwnership = byCo(ownership);
+    const fWorkorders = byCo(workorders);
+    const fRecharges = byCo(recharges);
+
+    const portfolioGrossUsd = fProperties.reduce((s, r) => s + r.lgb_gross_usd, 0);
+    const portfolioShareUsd = fProperties.reduce((s, r) => s + r.share_val_usd, 0);
+    const totalUnits = fProperties.reduce((s, r) => s + r.units_total, 0);
+    const occupiedUnits = fProperties.reduce((s, r) => s + r.units_occupied, 0);
+    const occupancyPct = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
+
+    const contractedAnnualRentUsd = fLeases.reduce((s, r) => s + r.annual_ttc_usd, 0);
+    const totalInvoicedTtcUsd = fInvoices.reduce((s, r) => s + r.amount_ttc_usd, 0);
+    const totalCollectedRentUsd = fInvoices.reduce((s, r) => s + r.collected_usd, 0);
+    const openRentArUsd = fInvoices.reduce((s, r) => s + r.open_ar_usd, 0);
+    const unallocatedAdvancesUsd = fReceipts.reduce((s, r) => s + r.unallocated_adv_usd, 0);
+    const securityDepositsHeldUsd = fReceipts.reduce((s, r) => s + r.deposit_gl4196_usd, 0);
+
+    const salesContractUsd = fSales.reduce((s, r) => s + r.contract_usd, 0);
+    const salesPaidUsd = fSales.reduce((s, r) => s + r.paid_usd, 0);
+    const salesOpenUsd = fSales.reduce((s, r) => s + r.balance_usd, 0);
+
+    const woBudgetUsd = fWorkorders.reduce((s, r) => s + r.budget_usd, 0);
+    const woActualUsd = fWorkorders.reduce((s, r) => s + r.actual_usd, 0);
+    const unrechargedUsd = fRecharges.filter(r => r.status === 'Unrecharged').reduce((s, r) => s + r.total_recharge_usd, 0);
+
+    const expiringLeaseCount = fLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
+    const overdueInstalmentCount = fInstalments.filter(r => r.status === 'Overdue' || r.status === 'Due Soon').length;
+    const vacantUnitCount = Math.max(0, totalUnits - occupiedUnits);
+    const openWorkOrderCount = fWorkorders.filter(r => r.status !== 'Completed').length + fRecharges.filter(r => r.status === 'Unrecharged').length;
+
+    const res = {
+      properties: fProperties,
+      units: fUnits,
+      leases: fLeases,
+      invoices: fInvoices,
+      receipts: fReceipts,
+      sales: fSales,
+      instalments: fInstalments,
+      valuations: fValuations,
+      ownership: fOwnership,
+      workorders: fWorkorders,
+      recharges: fRecharges,
+      expiringLeaseCount,
+      overdueInstalmentCount,
+      vacantUnitCount,
+      openWorkOrderCount,
+      summary: {
+        portfolioGrossUsd,
+        portfolioShareUsd,
+        totalUnits,
+        occupiedUnits,
+        occupancyPct,
+        contractedAnnualRentUsd,
+        totalInvoicedTtcUsd,
+        totalCollectedRentUsd,
+        openRentArUsd,
+        unallocatedAdvancesUsd,
+        securityDepositsHeldUsd,
+        salesContractUsd,
+        salesPaidUsd,
+        salesOpenUsd,
+        woBudgetUsd,
+        woActualUsd,
+        unrechargedUsd
+      }
+    };
+    if (!ignoreSearch) {
+      _reOpsCache = res;
+      _reOpsSig = sig;
+    }
+    return res;
+  }
+
+  function renderRealEstateLeases(submode = 'main') {
+    const data = computeRealEstateOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredLeases = sortRows(data.leases.filter(matchQ), 're_leases');
+    const filteredInv = sortRows(data.invoices.filter(matchQ), 're_invoicing');
+    const filteredRct = sortRows(data.receipts.filter(matchQ), 're_receipts');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Real Estate &amp; Property · Leasing, Rent Roll &amp; Tenant Accounting</div>
+          <h2>${submode === 'invoicing' ? 'Period Rent Invoicing &amp; VAT Sequence Audit' : submode === 'receipts' ? 'Tenant Settlements, Security Deposits &amp; Advance Pool' : 'Leases &amp; Commercial Rent Roll'}</h2>
+        </div>
+        <div class="cockpit-Controls">
+          <div class="seg" role="tablist" aria-label="Leasing Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_leases">Lease Contracts (${data.leases.length})</button>
+            <button type="button" class="${submode === 'invoicing' ? 'active' : ''}" data-nav-jump="re_invoicing">Period Rent Invoicing (${data.invoices.length})</button>
+            <button type="button" class="${submode === 'receipts' ? 'active' : ''}" data-nav-jump="re_receipts">Tenant Receipts &amp; Advances (${data.receipts.length})</button>
+          </div>
+          ${exportBtn(submode === 'invoicing' ? 're_invoicing' : submode === 'receipts' ? 're_receipts' : 're_leases')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Contracted Annual Rent Roll (TTC)</div>
+          <div class="kpi-val mono">${fmtUSD(s.contractedAnnualRentUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(data.leases.length)} active leases · ${fmtPct(s.occupancyPct, 1)} unit occupancy</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Period Rent Invoiced (TTC)</div>
+          <div class="kpi-val mono">${fmtUSD(s.totalInvoicedTtcUsd, 0)}</div>
+          <div class="kpi-sub">Collected: ${fmtUSD(s.totalCollectedRentUsd, 0)} · Open AR: <strong class="crit">${fmtUSD(s.openRentArUsd, 0)}</strong></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Unallocated Tenant Advances (GL 4191)</div>
+          <div class="kpi-val mono">${fmtUSD(s.unallocatedAdvancesUsd, 0)}</div>
+          <div class="kpi-sub">Advance pool before period invoice matching</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Security Deposits Held (GL 4196)</div>
+          <div class="kpi-val mono">${fmtUSD(s.securityDepositsHeldUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(data.expiringLeaseCount)} leases expiring &lt;90d or pending period bill</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'invoicing') {
+      const sumNet = filteredInv.reduce((a, r) => a + r.net_usd, 0);
+      const sumVat = filteredInv.reduce((a, r) => a + r.vat_usd, 0);
+      const sumTtc = filteredInv.reduce((a, r) => a + r.amount_ttc_usd, 0);
+      const sumCol = filteredInv.reduce((a, r) => a + r.collected_usd, 0);
+      const sumAr = filteredInv.reduce((a, r) => a + r.open_ar_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Period Rent Invoices &amp; 4235 Company S.A.L VAT Sequence Ledger ${shownCount('re_invoicing', filteredInv.length, data.invoices.length)}</h3>
+              <p>Plain-label TTC rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 &amp; #7-#8)</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search invoice, tax seq, tenant, period...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_invoicing', 'id', 'Invoice #')}
+                  ${th('re_invoicing', 'date', 'Date')}
+                  ${th('re_invoicing', 'company', 'Entity')}
+                  ${th('re_invoicing', 'tax_seq', 'Official Tax Seq')}
+                  ${th('re_invoicing', 'tenant', 'Tenant')}
+                  ${th('re_invoicing', 'period', 'Billing Period')}
+                  ${th('re_invoicing', 'net_usd', 'Net Rent ($)', 'r')}
+                  ${th('re_invoicing', 'vat_usd', '11% VAT ($)', 'r')}
+                  ${th('re_invoicing', 'amount_ttc_usd', 'Amount ($)', 'r')}
+                  ${th('re_invoicing', 'collected_usd', 'Collected ($)', 'r')}
+                  ${th('re_invoicing', 'open_ar_usd', 'Open AR ($)', 'r')}
+                  ${th('re_invoicing', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredInv.length ? sliceRows('re_invoicing', filteredInv).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.date)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="mono">${esc(r.tax_seq)}</td>
+                    <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
+                    <td>${esc(r.period)}</td>
+                    <td class="r mono">${fmtUSD(r.net_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.vat_usd, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.amount_ttc_usd, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.collected_usd, 2)}</td>
+                    <td class="r mono ${r.open_ar_usd > 0 ? 'crit' : ''}"><strong>${fmtUSD(r.open_ar_usd, 2)}</strong></td>
+                    <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : r.status === 'Partial' ? 'badge-warn' : 'badge-crit'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(12, 'No period rent invoices match current filter')}
+                ${showMoreRow('re_invoicing', filteredInv.length, 12)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL PERIOD RENT INVOICING (${fmtNum(filteredInv.length)} INVOICES)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumNet, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCol, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumAr, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'receipts') {
+      const sumGross = filteredRct.reduce((a, r) => a + r.gross_usd, 0);
+      const sumAlloc = filteredRct.reduce((a, r) => a + r.allocated_inv_usd, 0);
+      const sumAdv = filteredRct.reduce((a, r) => a + r.unallocated_adv_usd, 0);
+      const sumDep = filteredRct.reduce((a, r) => a + r.deposit_gl4196_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Tenant Settlements, Security Deposits (GL 4196) &amp; Advance Pool ${shownCount('re_receipts', filteredRct.length, data.receipts.length)}</h3>
+              <p>Separates invoice-allocated rent collections from unallocated tenant advances and refundable security deposits · Flags cross-tenant amount swaps</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search receipt, tenant, audit note...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_receipts', 'id', 'Receipt #')}
+                  ${th('re_receipts', 'date', 'Date')}
+                  ${th('re_receipts', 'company', 'Entity')}
+                  ${th('re_receipts', 'tenant', 'Tenant')}
+                  ${th('re_receipts', 'property', 'Property')}
+                  ${th('re_receipts', 'method', 'Payment Method')}
+                  ${th('re_receipts', 'gross_usd', 'Gross Receipt ($)', 'r')}
+                  ${th('re_receipts', 'allocated_inv_usd', 'Allocated to Invoices ($)', 'r')}
+                  ${th('re_receipts', 'unallocated_adv_usd', 'Unallocated Advance ($)', 'r')}
+                  ${th('re_receipts', 'deposit_gl4196_usd', 'Security Deposit GL 4196 ($)', 'r')}
+                  ${th('re_receipts', 'status', 'Reconciliation')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRct.length ? sliceRows('re_receipts', filteredRct).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.date)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
+                    <td>${esc(r.property)}</td>
+                    <td>${esc(r.method)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.gross_usd, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.allocated_inv_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.unallocated_adv_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.deposit_gl4196_usd, 2)}</td>
+                    <td><span class="badge ${r.status === 'Allocated' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No tenant receipts match current filter')}
+                ${showMoreRow('re_receipts', filteredRct.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL TENANT RECEIPTS &amp; DEPOSITS (${fmtNum(filteredRct.length)} VOUCHERS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGross, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumAlloc, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumAdv, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumDep, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumNetPeriod = filteredLeases.reduce((a, r) => a + r.net_period_usd, 0);
+    const sumTtcPeriod = filteredLeases.reduce((a, r) => a + r.ttc_period_usd, 0);
+    const sumAnnualTtc = filteredLeases.reduce((a, r) => a + r.annual_ttc_usd, 0);
+    const sumDep = filteredLeases.reduce((a, r) => a + r.deposit_usd, 0);
+    const maxLeaseAnnual = Math.max(1, ...filteredLeases.map(r => r.annual_ttc_usd));
+
+    return `
+      ${bannerHtml}
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Annual Contracted Rent by Commercial Lease (TTC $)</h3>
+              <p>Ranked by annualized TTC rent contribution across 4235 Msaytbeh &amp; Properties portfolio</p>
+            </div>
+          </div>
+          <div style="padding:12px 16px">
+            <svg viewBox="0 0 560 210" style="width:100%;height:195px;display:block" role="img" aria-label="Annual Rent by Lease Chart">
+              ${filteredLeases.slice(0, 6).map((r, idx) => {
+                const y = 12 + idx * 32;
+                const w = Math.max(12, Math.round((r.annual_ttc_usd / maxLeaseAnnual) * 310));
+                const fill = r.company === '4235 Company S.A.L' ? '#0d9488' : '#2563eb';
+                return `
+                  <g transform="translate(0,${y})">
+                    <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc(r.tenant.slice(0, 24))}</text>
+                    <rect x="175" y="3" width="${w}" height="18" rx="4" fill="${fill}" opacity="0.88"></rect>
+                    <text x="${182 + w}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.annual_ttc_usd, 0)}/yr</text>
+                  </g>
+                `;
+              }).join('')}
+            </svg>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Lease Escalation &amp; VAT Compliance Summary</h3>
+              <p>9-Year stepped commercial escalations · 11% VAT effective 2025-11-01 on 4235 Company S.A.L</p>
+            </div>
+          </div>
+          <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-lbl">4235 Company S.A.L Rent Roll</div>
+              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(filteredLeases.filter(x => x.company === '4235 Company S.A.L').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
+              <div class="kpi-sub">6 Msaytbeh commercial leases (11% VAT scope)</div>
+            </div>
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-lbl">Properties Portfolio Rent Roll</div>
+              <div class="kpi-val mono" style="font-size:18px">${fmtUSD(filteredLeases.filter(x => x.company === 'Properties').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
+              <div class="kpi-sub">Marina Tower · Hamra Pavillon · Mazraa · Baghdad</div>
+            </div>
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-lbl">VAT Seq Audit (4235 S.A.L)</div>
+              <div class="kpi-val mono" style="font-size:18px">Seq #1..#6</div>
+              <div class="kpi-sub">Gaps #3-#4 &amp; #7-#8 flagged for physical voucher check</div>
+            </div>
+            <div class="kpi-card" style="margin:0">
+              <div class="kpi-lbl">Cross-Tenant Swap Watch</div>
+              <div class="kpi-val mono" style="font-size:18px">$5,550 Diff</div>
+              <div class="kpi-sub">2026-05-05 Mazen $19,425 vs Infinitas $13,875</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Commercial &amp; Residential Lease Contracts Registry ${shownCount('re_leases', filteredLeases.length, data.leases.length)}</h3>
+            <p>Multi-year stepped rent schedules, grace periods, VAT treatment, and renewal countdowns</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search lease, tenant, property, unit...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('re_leases', 'id', 'Lease ID')}
+                ${th('re_leases', 'company', 'Entity')}
+                ${th('re_leases', 'property', 'Property')}
+                ${th('re_leases', 'unit', 'Building Unit')}
+                ${th('re_leases', 'tenant', 'Tenant')}
+                ${th('re_leases', 'frequency', 'Billing')}
+                ${th('re_leases', 'net_period_usd', 'Net / Period ($)', 'r')}
+                ${th('re_leases', 'ttc_period_usd', 'Rent / Period ($)', 'r')}
+                ${th('re_leases', 'annual_ttc_usd', 'Annual Rent ($)', 'r')}
+                ${th('re_leases', 'deposit_usd', 'Deposit ($)', 'r')}
+                ${th('re_leases', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredLeases.length ? sliceRows('re_leases', filteredLeases).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${esc(r.property)}</td>
+                  <td>${esc(r.unit)}</td>
+                  <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
+                  <td>${esc(r.frequency)}</td>
+                  <td class="r mono">${fmtUSD(r.net_period_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.ttc_period_usd, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(r.annual_ttc_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.deposit_usd, 2)}</td>
+                  <td><span class="badge ${r.status === 'Active' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No lease contracts match current filter')}
+              ${showMoreRow('re_leases', filteredLeases.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL CONTRACTED RENT ROLL (${fmtNum(filteredLeases.length)} LEASES)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumNetPeriod, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumTtcPeriod, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumAnnualTtc, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumDep, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRealEstateSales(submode = 'main') {
+    const data = computeRealEstateOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredSales = sortRows(data.sales.filter(matchQ), 're_sales');
+    const filteredInst = sortRows(data.instalments.filter(matchQ), 're_instalments');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Real Estate &amp; Property · Property Disposals &amp; Buyer Schedules</div>
+          <h2>${submode === 'instalments' ? 'Buyer Instalment Schedules &amp; Deed Transfer Staging (GL 4191 to 7751)' : 'Property &amp; Unit Sales Contracts'}</h2>
+        </div>
+        <div class="cockpit-Controls">
+          <div class="seg" role="tablist" aria-label="Property Sales Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_sales">Property Sales Contracts (${data.sales.length})</button>
+            <button type="button" class="${submode === 'instalments' ? 'active' : ''}" data-nav-jump="re_instalments">Buyer Instalments &amp; Deeds (${data.instalments.length})</button>
+          </div>
+          ${exportBtn(submode === 'instalments' ? 're_instalments' : 're_sales')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Contracted Property Sales</div>
+          <div class="kpi-val mono">${fmtUSD(s.salesContractUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(data.sales.length)} active unit &amp; parcel sales contracts</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Collected Buyer Instalments</div>
+          <div class="kpi-val mono">${fmtUSD(s.salesPaidUsd, 0)}</div>
+          <div class="kpi-sub">${fmtPct(s.salesContractUsd > 0 ? (s.salesPaidUsd / s.salesContractUsd) * 100 : 0, 1)} of contracted value settled</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Remaining Buyer Balance</div>
+          <div class="kpi-val mono">${fmtUSD(s.salesOpenUsd, 0)}</div>
+          <div class="kpi-sub">Held in GL 4191 until final notary deed transfer</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Instalment Milestones Watch</div>
+          <div class="kpi-val mono">${fmtNum(data.overdueInstalmentCount)}</div>
+          <div class="kpi-sub">Tranches due soon or past milestone deadline</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'instalments') {
+      const sumSched = filteredInst.reduce((a, r) => a + r.scheduled_usd, 0);
+      const sumCol = filteredInst.reduce((a, r) => a + r.collected_usd, 0);
+      const sumOpen = filteredInst.reduce((a, r) => a + r.open_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Buyer Instalment Schedule &amp; Notary Deed Recognition Ledger ${shownCount('re_instalments', filteredInst.length, data.instalments.length)}</h3>
+              <p>Instalments post to GL 4191 (Client Advances) until notary title transfer recognizes disposal proceeds in GL 7751</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search instalment, buyer, milestone...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_instalments', 'id', 'Tranche ID')}
+                  ${th('re_instalments', 'due_date', 'Due Date')}
+                  ${th('re_instalments', 'company', 'Entity')}
+                  ${th('re_instalments', 'sale_ref', 'Sale Contract')}
+                  ${th('re_instalments', 'buyer', 'Buyer')}
+                  ${th('re_instalments', 'milestone', 'Milestone Description')}
+                  ${th('re_instalments', 'gl_account', 'GL Treatment')}
+                  ${th('re_instalments', 'scheduled_usd', 'Scheduled ($)', 'r')}
+                  ${th('re_instalments', 'collected_usd', 'Collected ($)', 'r')}
+                  ${th('re_instalments', 'open_usd', 'Open Balance ($)', 'r')}
+                  ${th('re_instalments', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredInst.length ? sliceRows('re_instalments', filteredInst).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.due_date)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="mono">${esc(r.sale_ref)}</td>
+                    <td><strong>${esc(r.buyer)}</strong></td>
+                    <td>${esc(r.milestone)}</td>
+                    <td class="mono">${esc(r.gl_account)}</td>
+                    <td class="r mono">${fmtUSD(r.scheduled_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.collected_usd, 2)}</td>
+                    <td class="r mono ${r.open_usd > 0 ? 'crit' : ''}"><strong>${fmtUSD(r.open_usd, 2)}</strong></td>
+                    <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : r.status === 'Due Soon' ? 'badge-warn' : 'badge-crit'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No buyer instalments match current filter')}
+                ${showMoreRow('re_instalments', filteredInst.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="7"><strong>TOTAL BUYER INSTALMENT SCHEDULE (${fmtNum(filteredInst.length)} TRANCHES)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumSched, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCol, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumOpen, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumContract = filteredSales.reduce((a, r) => a + r.contract_usd, 0);
+    const sumPaid = filteredSales.reduce((a, r) => a + r.paid_usd, 0);
+    const sumBal = filteredSales.reduce((a, r) => a + r.balance_usd, 0);
+    const sumComm = filteredSales.reduce((a, r) => a + r.broker_comm_usd, 0);
+    const maxSaleVal = Math.max(1, ...filteredSales.map(r => r.contract_usd));
+
+    return `
+      ${bannerHtml}
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <div>
+            <h3>Contracted Sale Value vs Collected Instalments by Buyer ($)</h3>
+            <p>Paid-to-date progress bar vs remaining deed transfer balance</p>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <svg viewBox="0 0 680 165" style="width:100%;height:155px;display:block" role="img" aria-label="Property Sales Progress Chart">
+            ${filteredSales.map((r, idx) => {
+              const y = 10 + idx * 36;
+              const wTotal = Math.max(20, Math.round((r.contract_usd / maxSaleVal) * 360));
+              const wPaid = Math.round((r.paid_usd / Math.max(1, r.contract_usd)) * wTotal);
+              return `
+                <g transform="translate(0,${y})">
+                  <text x="4" y="16" font-size="11" font-weight="600" fill="currentColor">${esc(r.buyer.slice(0, 28))}</text>
+                  <rect x="210" y="3" width="${wTotal}" height="18" rx="4" fill="rgba(148,163,184,0.25)"></rect>
+                  <rect x="210" y="3" width="${wPaid}" height="18" rx="4" fill="#10b981"></rect>
+                  <text x="${218 + wTotal}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.paid_usd, 0)} / ${fmtUSD(r.contract_usd, 0)}</text>
+                </g>
+              `;
+            }).join('')}
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Property &amp; Unit Sales Contracts ${shownCount('re_sales', filteredSales.length, data.sales.length)}</h3>
+            <p>Tracks buyer sales agreements, collected instalments, broker commissions, and Lebanese CoA recognition stage</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search sale contract, buyer, property...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('re_sales', 'id', 'Contract #')}
+                ${th('re_sales', 'date', 'Contract Date')}
+                ${th('re_sales', 'company', 'Entity')}
+                ${th('re_sales', 'property', 'Property')}
+                ${th('re_sales', 'unit', 'Unit / Parcel Sold')}
+                ${th('re_sales', 'buyer', 'Buyer')}
+                ${th('re_sales', 'contract_usd', 'Contract Value ($)', 'r')}
+                ${th('re_sales', 'paid_usd', 'Paid to Date ($)', 'r')}
+                ${th('re_sales', 'balance_usd', 'Remaining Balance ($)', 'r')}
+                ${th('re_sales', 'broker_comm_usd', 'Broker Comm ($)', 'r')}
+                ${th('re_sales', 'deed_status', 'Deed Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredSales.length ? sliceRows('re_sales', filteredSales).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(r.date)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${esc(r.property)}</td>
+                  <td>${esc(r.unit)}</td>
+                  <td><strong>${esc(r.buyer)}</strong><div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
+                  <td class="r mono"><strong>${fmtUSD(r.contract_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.paid_usd, 2)}</td>
+                  <td class="r mono ${r.balance_usd > 0 ? 'crit' : ''}"><strong>${fmtUSD(r.balance_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.broker_comm_usd, 2)}</td>
+                  <td><span class="badge ${r.balance_usd === 0 ? 'badge-good' : 'badge-warn'}">${esc(r.deed_status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No property sales contracts match current filter')}
+              ${showMoreRow('re_sales', filteredSales.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL PROPERTY SALES CONTRACTS (${fmtNum(filteredSales.length)} CONTRACTS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumContract, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumBal, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumComm, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRealEstateProperties(submode = 'main') {
+    const data = computeRealEstateOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredProps = sortRows(data.properties.filter(matchQ), 're_properties');
+    const filteredUnits = sortRows(data.units.filter(matchQ), 're_units');
+    const filteredVals = sortRows(data.valuations.filter(matchQ), 're_valuations');
+    const filteredOwn = sortRows(data.ownership.filter(matchQ), 're_ownership');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Real Estate &amp; Property · Portfolio Registry, Cadastral Deeds &amp; LGB Valuations</div>
+          <h2>${submode === 'units' ? 'Building Units &amp; Occupancy Matrix' : submode === 'valuations' ? 'LGB Certified Appraisal &amp; Market Valuations' : submode === 'ownership' ? 'Co-Ownership Shares (/2400) &amp; NOI Distributions' : 'Portfolio &amp; Cadastral Plot Registry'}</h2>
+        </div>
+        <div class="cockpit-Controls">
+          <div class="seg" role="tablist" aria-label="Portfolio Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_properties">Properties &amp; Plots (${data.properties.length})</button>
+            <button type="button" class="${submode === 'units' ? 'active' : ''}" data-nav-jump="re_units">Building Units (${data.units.length})</button>
+            <button type="button" class="${submode === 'valuations' ? 'active' : ''}" data-nav-jump="re_valuations">LGB Valuations (${data.valuations.length})</button>
+            <button type="button" class="${submode === 'ownership' ? 'active' : ''}" data-nav-jump="re_ownership">Co-Ownership /2400 (${data.ownership.length})</button>
+          </div>
+          ${exportBtn(submode === 'units' ? 're_units' : submode === 'valuations' ? 're_valuations' : submode === 'ownership' ? 're_ownership' : 're_properties')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Gross Portfolio Market Value</div>
+          <div class="kpi-val mono">${fmtUSD(s.portfolioGrossUsd, 0)}</div>
+          <div class="kpi-sub">LGB Certified Appraisal ($51.48M) + Intl Assets</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Group Share-Adjusted Value (/2400)</div>
+          <div class="kpi-val mono">${fmtUSD(s.portfolioShareUsd, 0)}</div>
+          <div class="kpi-sub">Weighted by Lebanese cadastral title deed shares</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Unit Occupancy Rate</div>
+          <div class="kpi-val mono">${fmtPct(s.occupancyPct, 1)}</div>
+          <div class="kpi-sub">${fmtNum(s.occupiedUnits)} occupied of ${fmtNum(s.totalUnits)} rentable units</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Portfolio Annual NOI</div>
+          <div class="kpi-val mono">${fmtUSD(data.properties.reduce((a, r) => a + r.annual_noi_usd, 0), 0)}</div>
+          <div class="kpi-sub">Net operating income across income-producing assets</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'units') {
+      const sumArea = filteredUnits.reduce((a, r) => a + r.area_sqm, 0);
+      const sumRent = filteredUnits.reduce((a, r) => a + r.annual_rent_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Building Units &amp; Rentable Space Inventory ${shownCount('re_units', filteredUnits.length, data.units.length)}</h3>
+              <p>Sub-property blocks across 4235 Msaytbeh (Blocks 0A, 0B, Main GF, 1A, 1B, 1C, 2A, 2E) and regional commercial assets</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search unit code, property, tenant, occupancy...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_units', 'code', 'Unit Code')}
+                  ${th('re_units', 'company', 'Entity')}
+                  ${th('re_units', 'property', 'Property')}
+                  ${th('re_units', 'unit_name', 'Unit / Block Name')}
+                  ${th('re_units', 'floor', 'Floor')}
+                  ${th('re_units', 'type', 'Usage Type')}
+                  ${th('re_units', 'area_sqm', 'Area (m²)', 'r')}
+                  ${th('re_units', 'tenant', 'Current Tenant')}
+                  ${th('re_units', 'annual_rent_usd', 'Annual Rent ($)', 'r')}
+                  ${th('re_units', 'occupancy', 'Occupancy')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredUnits.length ? sliceRows('re_units', filteredUnits).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.code)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${esc(r.property)}</td>
+                    <td><strong>${esc(r.unit_name)}</strong></td>
+                    <td>${esc(r.floor)}</td>
+                    <td>${esc(r.type)}</td>
+                    <td class="r mono">${fmtNum(r.area_sqm)}</td>
+                    <td>${esc(r.tenant)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.annual_rent_usd, 0)}</strong></td>
+                    <td><span class="badge ${r.occupancy === 'Occupied' ? 'badge-good' : 'badge-warn'}">${esc(r.occupancy)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(10, 'No building units match current filter')}
+                ${showMoreRow('re_units', filteredUnits.length, 10)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL BUILDING UNITS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
+                  <td class="r mono"><strong>${fmtNum(sumArea)} m²</strong></td>
+                  <td></td>
+                  <td class="r mono"><strong>${fmtUSD(sumRent, 0)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'valuations') {
+      const sumGross = filteredVals.reduce((a, r) => a + r.gross_val_usd, 0);
+      const sumNetVal = filteredVals.reduce((a, r) => a + r.net_share_val_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>LGB Bank Certified Appraisal &amp; Market Valuation Ledger ${shownCount('re_valuations', filteredVals.length, data.valuations.length)}</h3>
+              <p>Dated 2024-08-13 certified appraisal baseline ($51.48M gross / $28.78M share-adjusted) with implied capitalization rates</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search valuation, property, appraiser...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_valuations', 'id', 'Valuation ID')}
+                  ${th('re_valuations', 'val_date', 'Appraisal Date')}
+                  ${th('re_valuations', 'company', 'Entity')}
+                  ${th('re_valuations', 'property', 'Property')}
+                  ${th('re_valuations', 'appraiser', 'Certified Appraiser')}
+                  ${th('re_valuations', 'basis', 'Methodology')}
+                  ${th('re_valuations', 'gross_val_usd', '100% Gross Value ($)', 'r')}
+                  ${th('re_valuations', 'deed_shares', 'Deed Shares')}
+                  ${th('re_valuations', 'net_share_val_usd', 'Group Share Value ($)', 'r')}
+                  ${th('re_valuations', 'implied_cap_pct', 'Implied Cap (%)', 'r')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredVals.length ? sliceRows('re_valuations', filteredVals).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.val_date)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.property)}</strong></td>
+                    <td>${esc(r.appraiser)}</td>
+                    <td>${esc(r.basis)}</td>
+                    <td class="r mono">${fmtUSD(r.gross_val_usd, 0)}</td>
+                    <td class="mono">${esc(r.deed_shares)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.net_share_val_usd, 0)}</strong></td>
+                    <td class="r mono">${fmtPct(r.implied_cap_pct, 2)}</td>
+                  </tr>
+                `).join('') : emptyRow(10, 'No property valuations match current filter')}
+                ${showMoreRow('re_valuations', filteredVals.length, 10)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL CERTIFIED VALUATIONS (${fmtNum(filteredVals.length)} APPRAISALS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGross, 0)}</strong></td>
+                  <td></td>
+                  <td class="r mono"><strong>${fmtUSD(sumNetVal, 0)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'ownership') {
+      const sumGrossNoi = filteredOwn.reduce((a, r) => a + r.gross_noi_usd, 0);
+      const sumEntNoi = filteredOwn.reduce((a, r) => a + r.entitled_noi_usd, 0);
+      const sumDist = filteredOwn.reduce((a, r) => a + r.distributed_usd, 0);
+      const sumRet = filteredOwn.reduce((a, r) => a + r.retained_reserve_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Lebanese Cadastral Co-Ownership Shares (/2400) &amp; NOI Distribution Ledger ${shownCount('re_ownership', filteredOwn.length, data.ownership.length)}</h3>
+              <p>Computes group-entitled Net Operating Income by /2400 title deed share and tracks partner distributions vs capital reserves</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search property, co-owner, share...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_ownership', 'id', 'Deed Ref')}
+                  ${th('re_ownership', 'company', 'Entity')}
+                  ${th('re_ownership', 'property', 'Property')}
+                  ${th('re_ownership', 'holder', 'Title Holder / Co-Ownership Pool')}
+                  ${th('re_ownership', 'deed_shares', 'Shares (/2400)', 'r')}
+                  ${th('re_ownership', 'share_pct', 'Ownership (%)', 'r')}
+                  ${th('re_ownership', 'gross_noi_usd', '100% Property NOI ($)', 'r')}
+                  ${th('re_ownership', 'entitled_noi_usd', 'Entitled Share NOI ($)', 'r')}
+                  ${th('re_ownership', 'distributed_usd', 'Distributed ($)', 'r')}
+                  ${th('re_ownership', 'retained_reserve_usd', 'Retained Reserve ($)', 'r')}
+                  ${th('re_ownership', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredOwn.length ? sliceRows('re_ownership', filteredOwn).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${esc(r.property)}</strong></td>
+                    <td>${esc(r.holder)}</td>
+                    <td class="r mono">${fmtNum(r.deed_shares)} / 2400</td>
+                    <td class="r mono">${fmtPct(r.share_pct, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.gross_noi_usd, 0)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.entitled_noi_usd, 0)}</strong></td>
+                    <td class="r mono">${fmtUSD(r.distributed_usd, 0)}</td>
+                    <td class="r mono">${fmtUSD(r.retained_reserve_usd, 0)}</td>
+                    <td><span class="badge ${r.status.includes('Distributed') ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No co-ownership records match current filter')}
+                ${showMoreRow('re_ownership', filteredOwn.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL CO-OWNERSHIP NOI LEDGER (${fmtNum(filteredOwn.length)} DEED POOLS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumGrossNoi, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumEntNoi, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumDist, 0)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumRet, 0)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumArea = filteredProps.reduce((a, r) => a + r.area_sqm, 0);
+    const sumGross = filteredProps.reduce((a, r) => a + r.lgb_gross_usd, 0);
+    const sumShare = filteredProps.reduce((a, r) => a + r.share_val_usd, 0);
+    const sumRent = filteredProps.reduce((a, r) => a + r.annual_rent_usd, 0);
+    const sumNoi = filteredProps.reduce((a, r) => a + r.annual_noi_usd, 0);
+    const maxPropVal = Math.max(1, ...filteredProps.map(r => r.lgb_gross_usd));
+
+    return `
+      ${bannerHtml}
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <div>
+            <h3>Top Portfolio Assets: 100% Gross Valuation vs Group Share-Adjusted Value ($)</h3>
+            <p>Reflecting Lebanese cadastral /2400 co-ownership shares across Beirut, Keserwan, South Lebanon, Cannes &amp; Baghdad</p>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <svg viewBox="0 0 680 215" style="width:100%;height:200px;display:block" role="img" aria-label="Portfolio Valuation Bar Chart">
+            ${filteredProps.slice(0, 6).map((r, idx) => {
+              const y = 10 + idx * 32;
+              const wGross = Math.max(18, Math.round((r.lgb_gross_usd / maxPropVal) * 340));
+              const wShare = Math.max(6, Math.round((r.share_val_usd / maxPropVal) * 340));
+              return `
+                <g transform="translate(0,${y})">
+                  <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc(r.name.slice(0, 30))}</text>
+                  <rect x="220" y="3" width="${wGross}" height="18" rx="4" fill="rgba(37,99,235,0.22)"></rect>
+                  <rect x="220" y="3" width="${wShare}" height="18" rx="4" fill="#2563eb"></rect>
+                  <text x="${228 + wGross}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.share_val_usd, 0)} (${fmtNum(r.deed_shares)}/2400)</text>
+                </g>
+              `;
+            }).join('')}
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Master Property &amp; Cadastral Plot Registry ${shownCount('re_properties', filteredProps.length, data.properties.length)}</h3>
+            <p>12 portfolio assets encompassing 13 LGB certified Lebanese plots plus Cannes Croisette and Baghdad Mansour commercial units</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search property, plot #, cadastry, asset class...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('re_properties', 'code', 'Plot Code')}
+                ${th('re_properties', 'company', 'Entity')}
+                ${th('re_properties', 'name', 'Property Name')}
+                ${th('re_properties', 'cadastry', 'Cadastral Region')}
+                ${th('re_properties', 'area_sqm', 'Area (m²)', 'r')}
+                ${th('re_properties', 'deed_shares', 'Deed (/2400)', 'r')}
+                ${th('re_properties', 'lgb_gross_usd', '100% Gross Value ($)', 'r')}
+                ${th('re_properties', 'share_val_usd', 'Share Value ($)', 'r')}
+                ${th('re_properties', 'annual_rent_usd', 'Annual Rent ($)', 'r')}
+                ${th('re_properties', 'annual_noi_usd', 'Annual NOI ($)', 'r')}
+                ${th('re_properties', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredProps.length ? sliceRows('re_properties', filteredProps).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.code)}</strong></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${esc(r.name)}</strong><div class="muted" style="font-size:11px">${esc(r.asset_class)} · Plot ${esc(r.plot_no)}</div></td>
+                  <td>${esc(r.cadastry)}</td>
+                  <td class="r mono">${fmtNum(r.area_sqm)}</td>
+                  <td class="r mono">${fmtNum(r.deed_shares)} (${fmtPct(r.ownership_pct, 1)})</td>
+                  <td class="r mono">${fmtUSD(r.lgb_gross_usd, 0)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.share_val_usd, 0)}</strong></td>
+                  <td class="r mono">${fmtUSD(r.annual_rent_usd, 0)}</td>
+                  <td class="r mono"><strong>${fmtUSD(r.annual_noi_usd, 0)}</strong></td>
+                  <td><span class="badge ${r.status === 'Income Producing' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No portfolio properties match current filter')}
+              ${showMoreRow('re_properties', filteredProps.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="4"><strong>TOTAL PORTFOLIO REGISTRY (${fmtNum(filteredProps.length)} PROPERTIES)</strong></td>
+                <td class="r mono"><strong>${fmtNum(sumArea)} m²</strong></td>
+                <td></td>
+                <td class="r mono"><strong>${fmtUSD(sumGross, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumShare, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumRent, 0)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumNoi, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRealEstateWorkOrders(submode = 'main') {
+    const data = computeRealEstateOperations();
+    const s = data.summary;
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const filteredWo = sortRows(data.workorders.filter(matchQ), 're_workorders');
+    const filteredRch = sortRows(data.recharges.filter(matchQ), 're_recharges');
+
+    const bannerHtml = `
+      <div class="cockpit-banner">
+        <div class="cockpit-title-block sr-only">
+          <div class="eyebrow">Real Estate &amp; Property · Fit-Out CAPEX, Facility Maintenance &amp; Tenant Recharges</div>
+          <h2>${submode === 'recharges' ? 'Tenant Utility &amp; Common-Area Recharges (GL 7062)' : 'Work Orders, MEP Fit-Out &amp; Structural CAPEX'}</h2>
+        </div>
+        <div class="cockpit-Controls">
+          <div class="seg" role="tablist" aria-label="Work Orders Sub-Views">
+            <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="re_workorders">Work Orders &amp; Fit-Out (${data.workorders.length})</button>
+            <button type="button" class="${submode === 'recharges' ? 'active' : ''}" data-nav-jump="re_recharges">Tenant Recharges &amp; Utilities (${data.recharges.length})</button>
+          </div>
+          ${exportBtn(submode === 'recharges' ? 're_recharges' : 're_workorders')}
+        </div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-lbl">Approved Fit-Out &amp; Maintenance Budget</div>
+          <div class="kpi-val mono">${fmtUSD(s.woBudgetUsd, 0)}</div>
+          <div class="kpi-sub">${fmtNum(data.workorders.length)} active &amp; completed work orders</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Actual Spend Incurred</div>
+          <div class="kpi-val mono">${fmtUSD(s.woActualUsd, 0)}</div>
+          <div class="kpi-sub">CAPEX (GL 2131) &amp; Routine Maintenance (GL 6141)</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Unrecharged Tenant Expenses</div>
+          <div class="kpi-val mono crit">${fmtUSD(s.unrechargedUsd, 0)}</div>
+          <div class="kpi-sub">Flagged Rechargeable = Yes awaiting tenant invoice</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-lbl">Total Recoverable Recharges (GL 7062)</div>
+          <div class="kpi-val mono">${fmtUSD(data.recharges.reduce((a, r) => a + r.total_recharge_usd, 0), 0)}</div>
+          <div class="kpi-sub">Generator diesel, chilled water &amp; municipal shares</div>
+        </div>
+      </div>
+    `;
+
+    if (submode === 'recharges') {
+      const sumCost = filteredRch.reduce((a, r) => a + r.cost_usd, 0);
+      const sumMark = filteredRch.reduce((a, r) => a + r.markup_usd, 0);
+      const sumTot = filteredRch.reduce((a, r) => a + r.total_recharge_usd, 0);
+      return `
+        ${bannerHtml}
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Tenant Utility, Generator Diesel &amp; Common-Area Recharges (GL 7062) ${shownCount('re_recharges', filteredRch.length, data.recharges.length)}</h3>
+              <p>Tracks recoverable landlord expenses and flags unbilled tenant recharges before period close</p>
+            </div>
+            <div class="panel-actions">${searchBox('Search recharge, tenant, property, expense ref...')}</div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  ${th('re_recharges', 'id', 'Recharge #')}
+                  ${th('re_recharges', 'date', 'Date')}
+                  ${th('re_recharges', 'company', 'Entity')}
+                  ${th('re_recharges', 'property', 'Property')}
+                  ${th('re_recharges', 'tenant', 'Tenant')}
+                  ${th('re_recharges', 'category', 'Recoverable Expense Category')}
+                  ${th('re_recharges', 'cost_usd', 'Cost Incurred ($)', 'r')}
+                  ${th('re_recharges', 'markup_usd', 'Admin Markup ($)', 'r')}
+                  ${th('re_recharges', 'total_recharge_usd', 'Total Recharge ($)', 'r')}
+                  ${th('re_recharges', 'linked_invoice', 'Linked Invoice')}
+                  ${th('re_recharges', 'status', 'Status')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredRch.length ? sliceRows('re_recharges', filteredRch).map(r => `
+                  <tr>
+                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                    <td class="mono">${esc(r.date)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${esc(r.property)}</td>
+                    <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">Ref: ${esc(r.expense_ref)}</div></td>
+                    <td>${esc(r.category)}</td>
+                    <td class="r mono">${fmtUSD(r.cost_usd, 2)}</td>
+                    <td class="r mono">${fmtUSD(r.markup_usd, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.total_recharge_usd, 2)}</strong></td>
+                    <td class="mono">${esc(r.linked_invoice)}</td>
+                    <td><span class="badge ${r.status === 'Settled' || r.status === 'Invoiced' ? 'badge-good' : 'badge-crit'}">${esc(r.status)}</span></td>
+                  </tr>
+                `).join('') : emptyRow(11, 'No tenant recharges match current filter')}
+                ${showMoreRow('re_recharges', filteredRch.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL TENANT RECHARGES (${fmtNum(filteredRch.length)} ITEMS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumCost, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumMark, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sumBudget = filteredWo.reduce((a, r) => a + r.budget_usd, 0);
+    const sumActual = filteredWo.reduce((a, r) => a + r.actual_usd, 0);
+    const maxWo = Math.max(1, ...filteredWo.map(r => Math.max(r.budget_usd, r.actual_usd)));
+
+    return `
+      ${bannerHtml}
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <div>
+            <h3>Work Order Budget vs Actual Spend by Property ($)</h3>
+            <p>Structural improvements capitalized to GL 2131 vs routine facility repairs in GL 6141</p>
+          </div>
+        </div>
+        <div style="padding:12px 16px">
+          <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Work Orders Budget vs Actual Chart">
+            ${filteredWo.map((r, idx) => {
+              const y = 10 + idx * 33;
+              const wBud = Math.max(14, Math.round((r.budget_usd / maxWo) * 340));
+              const wAct = Math.max(10, Math.round((r.actual_usd / maxWo) * 340));
+              return `
+                <g transform="translate(0,${y})">
+                  <text x="4" y="15" font-size="11" font-weight="600" fill="currentColor">${esc((r.id + ' · ' + r.unit).slice(0, 30))}</text>
+                  <rect x="220" y="2" width="${wBud}" height="9" rx="3" fill="rgba(148,163,184,0.45)"></rect>
+                  <rect x="220" y="13" width="${wAct}" height="9" rx="3" fill="${r.actual_usd > r.budget_usd ? '#ef4444' : '#0d9488'}"></rect>
+                  <text x="${228 + Math.max(wBud, wAct)}" y="16" font-size="11" font-family="monospace" font-weight="700" fill="currentColor">${fmtUSD(r.actual_usd, 0)} / ${fmtUSD(r.budget_usd, 0)}</text>
+                </g>
+              `;
+            }).join('')}
+          </svg>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Work Orders, Fit-Out &amp; Facility Maintenance Ledger ${shownCount('re_workorders', filteredWo.length, data.workorders.length)}</h3>
+            <p>Tracks contractor scope, GL capitalization vs expense routing, and tenant recharge eligibility</p>
+          </div>
+          <div class="panel-actions">${searchBox('Search work order, property, unit, contractor...')}</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                ${th('re_workorders', 'id', 'WO #')}
+                ${th('re_workorders', 'date', 'Date')}
+                ${th('re_workorders', 'company', 'Entity')}
+                ${th('re_workorders', 'property', 'Property')}
+                ${th('re_workorders', 'unit', 'Unit / Area')}
+                ${th('re_workorders', 'contractor', 'Contractor')}
+                ${th('re_workorders', 'gl_code', 'GL Routing')}
+                ${th('re_workorders', 'budget_usd', 'Budget ($)', 'r')}
+                ${th('re_workorders', 'actual_usd', 'Actual Spend ($)', 'r')}
+                ${th('re_workorders', 'rechargeable', 'Rechargeable')}
+                ${th('re_workorders', 'status', 'Status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredWo.length ? sliceRows('re_workorders', filteredWo).map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <td class="mono">${esc(r.date)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${esc(r.property)}</td>
+                  <td><strong>${esc(r.unit)}</strong><div class="muted" style="font-size:11px">${esc(r.category)}</div></td>
+                  <td>${esc(r.contractor)}</td>
+                  <td class="mono">${esc(r.gl_code)}</td>
+                  <td class="r mono">${fmtUSD(r.budget_usd, 2)}</td>
+                  <td class="r mono ${r.actual_usd > r.budget_usd ? 'crit' : ''}"><strong>${fmtUSD(r.actual_usd, 2)}</strong></td>
+                  <td><span class="badge ${r.rechargeable ? 'badge-warn' : 'badge-good'}">${r.rechargeable ? 'Yes (GL 7062)' : 'Landlord'}</span></td>
+                  <td><span class="badge ${r.status === 'Completed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(11, 'No work orders match current filter')}
+              ${showMoreRow('re_workorders', filteredWo.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="7"><strong>TOTAL WORK ORDERS &amp; FIT-OUT (${fmtNum(filteredWo.length)} ORDERS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumBudget, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumActual, 2)}</strong></td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHubAnalyticsView(modKey) {
     const title = VIEW_TITLES[modKey] || 'Module Analytics';
     return `
@@ -44261,7 +45750,11 @@
       if (footEl) footEl.innerHTML = '';
       return;
     }
+    const expCoNow = val('f_company') || defaultEntryCompany();
+    const isSupIva = isSupplierIvaForCompany(val('f_supplier'), expCoNow);
+    const vatMult = isSupIva ? 1.11 : 1;
     let sumQty = 0;
+    let sumPreVat = 0;
     let sumAmt = 0;
     let eqLines = 0;
     let whLines = 0;
@@ -44281,9 +45774,11 @@
       const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
       const q = (it.qty !== '' && it.qty != null && isFinite(Number(it.qty))) ? Number(it.qty) : 0;
       const uc = pricePending ? 0 : (Number(it.unit_cost) || 0);
-      const lt = round2(q * uc);
+      const ltPreVat = round2(q * uc);
+      const lt = round2(ltPreVat * vatMult);
       sumQty = round2(sumQty + q);
-      sumAmt = round2(sumAmt + lt);
+      sumPreVat = round2(sumPreVat + ltPreVat);
+      sumAmt = round2(sumPreVat * vatMult);
       if (dest === 'warehouse') whLines++;
       else if (dest === 'equipment') eqLines++;
       else genLines++;
@@ -44317,11 +45812,23 @@
           cInp.placeholder = pricePending ? 'Pending' : (dest === 'general' && !isMulti ? 'Optional rate' : '0.00');
           cInp.classList.toggle('pa-locked-input', pricePending);
         }
+        if (!isMulti && idx === 0) {
+          const cLbl0 = wrap.querySelector('#lbl_exi_cost_0');
+          if (cLbl0) {
+            cLbl0.textContent = `Unit Price Pre-VAT (${pricePending ? 'Pending' : '$'}) ${pricePending || dest === 'general' ? '' : '*'}`;
+          }
+        }
         wrap.querySelectorAll(`[data-exi-tot="${idx}"]`).forEach(totEl => {
           totEl.textContent = pricePending ? 'Pending' : fmtUSD(lt, 2);
         });
       }
     });
+    if (wrap && isMulti) {
+      const hdrCostEl = wrap.querySelector('#hdr_exi_cost');
+      const hdrAmtEl = wrap.querySelector('#hdr_exi_amt');
+      if (hdrCostEl) hdrCostEl.textContent = `Unit Price Pre-VAT (${pricePending ? 'Pending' : '$'})`;
+      if (hdrAmtEl) hdrAmtEl.textContent = isSupIva ? 'Total (Incl. VAT)' : 'Amount';
+    }
     if ($('f_exp_item_name')) {
       $('f_exp_item_name').value = items[0] && items[0].item_name ? items[0].item_name : '';
     }
@@ -44342,9 +45849,14 @@
       }
     }
     if (footEl) {
-      footEl.innerHTML = isMulti
-        ? `<span class="exp-rollup-meta">Subtotal (${items.length} lines) <strong>${pricePending ? 'Pending ($0.00)' : fmtUSD(sumAmt, 2)}</strong></span>`
-        : '';
+      if (!isMulti) {
+        footEl.innerHTML = '';
+      } else if (isSupIva && !pricePending) {
+        const vatPortion = round2(sumAmt - sumPreVat);
+        footEl.innerHTML = `<span class="exp-rollup-meta">Pre-VAT (${items.length} lines) <strong>${fmtUSD(sumPreVat, 2)}</strong> · +11% VAT <strong>${fmtUSD(vatPortion, 2)}</strong> · Total Incl. VAT <strong>${fmtUSD(sumAmt, 2)}</strong></span>`;
+      } else {
+        footEl.innerHTML = `<span class="exp-rollup-meta">Subtotal (${items.length} lines) <strong>${pricePending ? 'Pending ($0.00)' : fmtUSD(sumAmt, 2)}</strong></span>`;
+      }
     }
   }
 
@@ -44367,13 +45879,8 @@
       if (dest !== 'general' && nm) {
         const isLegacyEditUnmodified = Boolean(STATE.editingRecord && STATE.editingRecord.crKey === 'expenses' && !FORM_UI.expItem0Manual && !isMulti && idx === 0);
         if (!catItem && !isLegacyEditUnmodified) {
-          if (FORM_UI.postAttempted || document.activeElement !== nmInp) {
-            hintEl.textContent = 'Select a Catalog Item (or click + New Item)';
-            hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
-          } else {
-            hintEl.textContent = '';
-            hintEl.className = 'hint';
-          }
+          hintEl.textContent = '✓ New item · will be registered in Items Catalog on post (or click + New Item)';
+          hintEl.className = 'hint ok';
           return;
         }
       }
@@ -44496,7 +46003,7 @@
                 ${dest === 'general' ? '<span class="hint" id="hint_qty"></span>' : ''}
               </div>
               <div class="li-cell exp-item-cell-cost">
-                <label class="exp-item-lbl" for="f_exi_cost_0">Unit Price (${pricePending ? 'Pending' : '$'}) ${pricePending || dest === 'general' ? '' : '*'}</label>
+                <label class="exp-item-lbl" for="f_exi_cost_0" id="lbl_exi_cost_0">Unit Price Pre-VAT (${pricePending ? 'Pending' : '$'}) ${pricePending || dest === 'general' ? '' : '*'}</label>
                 <div class="exp-item-cost-wrap">
                   <span class="exp-cost-prefix">$</span>
                   <input type="number" id="f_exi_cost_0" data-exi-idx="0" data-exi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="${pricePending ? 'Pending' : (dest === 'general' ? 'Optional rate' : '0.00')}"${pricePending ? ' readonly class="pa-locked-input"' : ''}>
@@ -44511,6 +46018,8 @@
       }
     } else {
       const qcIsOpen = Boolean($('expQuickCatalogDrawer') && !$('expQuickCatalogDrawer').hidden);
+      const isSupIvaNow = isSupplierIvaForCompany(val('f_supplier'), curCo);
+      const vatMultNow = isSupIvaNow ? 1.11 : 1;
       wrap.innerHTML = `
         <div class="exp-split-cols-hdr">
           <span class="is-center">#</span>
@@ -44518,8 +46027,8 @@
           <span>Unit / Store *</span>
           <span class="exp-col-hdr-cat"><span>Catalog Item *</span><button type="button" class="exp-inline-new-cat-link${qcIsOpen ? ' active' : ''}" id="toggleQuickCatalogItemBtn" data-toggle-quick-cat="1" data-ui-tip="Register a new item with a permanently frozen Unit">${ic('plus')} <span>New Item</span></button></span>
           <span>Quantity *</span>
-          <span>Unit Price (${pricePending ? 'Pending' : '$'})</span>
-          <span class="is-right">Amount</span>
+          <span id="hdr_exi_cost">Unit Price Pre-VAT (${pricePending ? 'Pending' : '$'})</span>
+          <span class="is-right" id="hdr_exi_amt">${isSupIvaNow ? 'Total (Incl. VAT)' : 'Amount'}</span>
           <span class="exp-col-hdr-act" aria-hidden="true"></span>
         </div>
         <div class="exp-item-cards-list is-multi-list">
@@ -44533,7 +46042,8 @@
             const effUom = it.uom || 'Piece';
             const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
             const ucNum = it.unit_cost !== undefined && it.unit_cost !== '' ? Number(it.unit_cost) : 0;
-            const lineTot = round2((Number(it.qty) || 0) * (pricePending ? 0 : ucNum));
+            const linePreVat = round2((Number(it.qty) || 0) * (pricePending ? 0 : ucNum));
+            const lineTot = round2(linePreVat * vatMultNow);
             const scopedOpts = getScopedExpenseCatalogMeta(it, curCo, expCatNow, expSubNow);
             const dlHtml = `<datalist id="dl_exp_row_items_${idx}">${scopedOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>`;
             const itemPh = buildExpenseRowItemPlaceholder(it, curCo, true);
@@ -45725,9 +47235,9 @@
       : (drvLocked
           ? (activeDriver ? [activeDriver] : [])
           : (isCoFleet
-              ? driversForOwner('', company, true, truckRow)
+              ? uniqSorted(driversForOwner('', company, true, truckRow).concat(driverNames()))
               : (truckOwner
-                  ? driversForOwner(truckOwner, company, false, truckRow)
+                  ? uniqSorted(driversForOwner(truckOwner, company, false, truckRow).concat(driverNames()))
                   : driverNames())));
     if (dlDrv) {
       // Strictly display ONLY the Equipment Log active driver while locked (or owner/company pool under Admin Override)
@@ -48091,8 +49601,10 @@
     const mthEl = $('f_method');
     const amtEl = $('f_amount');
     const qtyInpEl = $('f_qty');
+    const expCoNow = val('f_company') || defaultEntryCompany();
+    const isSupIva = isSupplierIvaForCompany(val('f_supplier'), expCoNow);
+    const vatMult = isSupIva ? 1.11 : 1;
     if (!pendEditRow) {
-      const expCoNow = val('f_company') || defaultEntryCompany();
       if (expCoNow !== FORM_UI.lastExpCompany) {
         const prevDefLoc = defaultWarehouseLocationForCompany(FORM_UI.lastExpCompany || expCoNow);
         const nextDefLoc = defaultWarehouseLocationForCompany(expCoNow);
@@ -48124,7 +49636,8 @@
         const catIt = initNm ? resolveCatalogItem(initNm) : null;
         const initQ = num('f_qty') || 1;
         const initAmt = num('f_amount');
-        const initUc = (initAmt > 0 && initQ > 0) ? round2(initAmt / initQ) : '';
+        const initPreVat = isSupIva ? (initAmt / vatMult) : initAmt;
+        const initUc = (initPreVat > 0 && initQ > 0) ? round2(initPreVat / initQ) : '';
         FORM_UI.expItems = [{
           item_name: initNm,
           allocation_mode: initDest,
@@ -48253,10 +49766,13 @@
         }
       }
       if (isMultiTicketSplit) {
-        const sumAmt = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
+        const sumPreVat = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
+        const sumAmt = round2(sumPreVat * vatMult);
         const sumQty = round2(FORM_UI.expItems.reduce((s, it) => s + ((it.qty !== '' && it.qty != null && isFinite(Number(it.qty))) ? Number(it.qty) : 0), 0));
         if (amtEl) {
-          amtEl.value = sumAmt.toFixed(2);
+          if (!(FORM_UI.hydrating && STATE.editingRecord && num('f_amount') > 0 && Math.abs(num('f_amount') - sumAmt) <= 0.05 * FORM_UI.expItems.length)) {
+            amtEl.value = sumAmt.toFixed(2);
+          }
           amtEl.readOnly = true;
           amtEl.classList.add('pa-locked-input');
         }
@@ -48270,7 +49786,8 @@
         const q0 = (t0.qty !== '' && t0.qty != null && isFinite(Number(t0.qty))) ? Number(t0.qty) : 1;
         const qCalc = q0 > 0 ? q0 : 1;
         const uc0 = Number(t0.unit_cost) || 0;
-        const lineTot0 = round2(qCalc * uc0);
+        const linePreVat0 = round2(qCalc * uc0);
+        const lineTot0 = round2(linePreVat0 * vatMult);
         const cInp0 = $('f_exi_cost_0');
         if (amtEl) {
           amtEl.readOnly = false;
@@ -48281,7 +49798,8 @@
           }
           if (document.activeElement === amtEl) {
             const typedAmt = num('f_amount');
-            t0.unit_cost = typedAmt > 0 ? round2(typedAmt / qCalc) : '';
+            const impliedPreVat = typedAmt > 0 ? (isSupIva ? (typedAmt / vatMult) : typedAmt) : 0;
+            t0.unit_cost = impliedPreVat > 0 ? round2(impliedPreVat / qCalc) : '';
             if (cInp0 && document.activeElement !== cInp0) {
               cInp0.value = t0.unit_cost !== '' ? String(t0.unit_cost) : '';
             }
@@ -48289,9 +49807,12 @@
           } else if (cInp0 && document.activeElement === cInp0) {
             amtEl.value = uc0 > 0 ? lineTot0.toFixed(2) : '';
           } else if (uc0 > 0) {
-            amtEl.value = lineTot0.toFixed(2);
+            if (!(FORM_UI.hydrating && STATE.editingRecord && num('f_amount') > 0 && Math.abs(num('f_amount') - lineTot0) <= 0.05)) {
+              amtEl.value = lineTot0.toFixed(2);
+            }
           } else if (num('f_amount') > 0 && (t0.unit_cost === '' || t0.unit_cost == null || Number(t0.unit_cost) === 0)) {
-            t0.unit_cost = round2(num('f_amount') / qCalc);
+            const impliedPreVat = isSupIva ? (num('f_amount') / vatMult) : num('f_amount');
+            t0.unit_cost = round2(impliedPreVat / qCalc);
             if (cInp0 && document.activeElement !== cInp0) cInp0.value = String(t0.unit_cost);
             syncExpenseItemsSummaryUI();
           }
@@ -48420,7 +49941,7 @@
     const isFuelDiesel = /^diesel$|^mazout$/i.test(subNow) || (/^fuel$/i.test(catNow) && (!subNow || /diesel|mazout/i.test(subNow)));
     const isBulkTankRefill = isFuelDiesel && !hasEquipTarget && !hasWhTarget;
     setText('lbl_exp_qty', isBulkTankRefill ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : (hasEquipTarget || hasWhTarget ? 'Quantity & Unit *' : 'Quantity & Unit')));
-    setText('lbl_exp_amount', pricePending ? 'Total ($)' : 'Total ($) *');
+    setText('lbl_exp_amount', pricePending ? 'Total ($)' : (isSupIva ? 'Total Incl. 11% VAT ($) *' : 'Total ($) *'));
     setHint('hint_subcat', (FORM_UI.postAttempted && !subNow) ? 'Required' : '', (FORM_UI.postAttempted && !subNow) ? 'crit' : '');
     setText('calc_total', pricePending ? 'PENDING ($0.00)' : fmtUSD(amount, 2));
     setText('calc_post', pricePending ? 'Credit · Pending Price' : (method === 'Cash' ? 'Cash' : 'Credit'));
@@ -48440,8 +49961,8 @@
       'hint_supplier',
       !supplier
         ? (pricePending ? 'Required when Price is Pending' : (method === 'Credit' ? 'Required for Credit' : (FORM_UI.postAttempted ? 'Required' : '')))
-        : '',
-      (FORM_UI.postAttempted && !supplier) ? 'crit' : ''
+        : (isSupIva ? 'IVA = Yes · Unit Price is Pre-VAT, Total includes +11% VAT' : ''),
+      (FORM_UI.postAttempted && !supplier) ? 'crit' : (supplier && isSupIva ? 'ok' : '')
     );
     if (pendEditRow) {
       setHint('hint_qty', isBulkTankRefill && qty > 0 ? `${fmtNum(qty, 0)} L already received in ${val('f_company') || 'WTC'} Diesel Tank` : '', 'ok');
@@ -48465,6 +49986,10 @@
     } else if (isMultiTicketSplit) {
       if (amount <= 0 && FORM_UI.postAttempted) {
         setHint('hint_amount', 'Enter unit prices above (or switch to Pending $0)', 'crit');
+      } else if (isSupIva && amount > 0) {
+        const preVatTot = round2(amount / vatMult);
+        const vatPortion = round2(amount - preVatTot);
+        setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total`, 'ok');
       } else {
         setHint('hint_amount', '', '');
       }
@@ -48472,6 +49997,10 @@
       setHint('hint_amount', 'Must be above zero (or switch to Pending $0)', FORM_UI.postAttempted ? 'crit' : 'warn');
     } else if (isBulkTankRefill && !val('f_amount')) {
       setHint('hint_amount', 'Price arriving later? Switch to Pending $0 to log Litres now', '');
+    } else if (isSupIva && amount > 0) {
+      const preVatTot = round2(amount / vatMult);
+      const vatPortion = round2(amount - preVatTot);
+      setHint('hint_amount', `Pre-VAT: ${fmtUSD(preVatTot, 2)} + 11% VAT: ${fmtUSD(vatPortion, 2)} = ${fmtUSD(amount, 2)} Total`, 'ok');
     } else {
       setHint('hint_amount', '', '');
     }
@@ -50661,6 +52190,10 @@
           const prevRow = prevTruck ? equipInfo(prevTruck) : null;
           FORM_UI.lastTruck = curTruck;
           if (tRow) {
+            if (STATE.modalForm === 'equipment' && tRow.type && $('f_category')) $('f_category').value = tRow.type;
+            if (STATE.modalForm === 'equipment' && tRow.ownership && $('f_ownership')) {
+              $('f_ownership').value = /^own/i.test(tRow.ownership) ? 'Owned' : tRow.ownership;
+            }
             if ($('f_plateno') && (!val('f_plateno') || val('f_plateno') === curTruck || (prevRow && val('f_plateno') === (prevRow.plate_no || prevRow.name)))) $('f_plateno').value = tRow.plate_no || tRow.name;
             if (hasCap && tRow.capacity > 0 && $('f_capacity')) $('f_capacity').value = String(tRow.capacity);
             if (hasSup && tRow.supplier && $('f_supplier') && !FORM_UI.ownerManuallyPicked) $('f_supplier').value = tRow.supplier;
@@ -50689,7 +52222,7 @@
           ? (curSup ? driversForOwner(curSup, company, false, tRow) : [])
           : driversForOwner('', company, true, tRow);
         if (dlDrv) {
-          const pool = ownerDrvs.length ? ownerDrvs : driverNames();
+          const pool = ownerDrvs.length ? uniqSorted(ownerDrvs.concat(driverNames())) : driverNames();
           dlDrv.innerHTML = pool.map(d => driverOptionHtml(d, tRow, curSup)).join('');
         }
         setHint('hint_eq_driver', hasSup
@@ -52230,7 +53763,7 @@
           </div>
           <span class="badge badge-ok">Active (${esc(today)}): ${esc(activeTodayDrv)}</span>
         </div>
-        ${canModifyRecord() ? `
+        ${canSwitchEquipmentDriver() ? `
           <div class="form-grid-3" style="padding:10px 12px;background:rgba(196,154,69,0.06);border-bottom:1px solid var(--line)">
             <div class="form-field">
               <label for="f_log_co">Company / BU</label>
@@ -52266,7 +53799,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th>Active Driver</th><th>Owner</th><th class="r">Size</th><th>Status</th>${canModifyRecord() ? '<th></th>' : ''}
+                <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th>Active Driver</th><th>Owner</th><th class="r">Size</th><th>Status</th>${canSwitchEquipmentDriver() ? '<th></th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -52286,7 +53819,7 @@
                     <td>${esc(w.own || targetEq.supplier || defLogOwner || '-')}</td>
                     <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '-'}</td>
                     <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                    ${canModifyRecord() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
+                    ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
                   </tr>
                 `;
               }).join('') : `
@@ -52299,7 +53832,7 @@
                   <td>${esc(targetEq.supplier || defLogOwner || '-')}</td>
                   <td class="r">${Number(targetEq.capacity) > 0 ? `${fmtNum(targetEq.capacity, 1)} m³` : '-'}</td>
                   <td><span class="badge badge-ok">Baseline</span></td>
-                  ${canModifyRecord() ? '<td></td>' : ''}
+                  ${canSwitchEquipmentDriver() ? '<td></td>' : ''}
                 </tr>
               `}
             </tbody>
@@ -52331,7 +53864,7 @@
       });
     }
     const startModalWinEdit = idx => {
-      if (!canModifyRecord() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
+      if (!canSwitchEquipmentDriver() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
       const w = targetEq.adj_windows[idx];
       if (!w) return;
       logBox.dataset.editModalWinIdx = String(idx);
@@ -52387,7 +53920,7 @@
     if (logBtn) {
       logBtn.addEventListener('click', ev => {
         ev.preventDefault();
-        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        if (!canSwitchEquipmentDriver()) { toast('Your seat does not have permission to switch equipment drivers', 'err'); return; }
         const drvVal = val('f_log_driver');
         const ownVal = val('f_log_owner');
         const sVal = val('f_log_start') || todayISO();
@@ -53081,8 +54614,8 @@
         }
         clearTimeout(blurTimer);
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
-          if (el.id === 'f_truckowner') {
-            FORM_UI.adminUnlocked.f_truckowner = true;
+          if (el.id === 'f_truckowner' || (el.id === 'f_driver' && canSwitchEquipmentDriver())) {
+            FORM_UI.adminUnlocked[el.id] = true;
             recalcForm();
             renderMenu(true, true);
             return;
@@ -54842,15 +56375,11 @@
         if (!rawNm) {
           if (hEl) { hEl.textContent = 'Enter the new Item / Part name.'; hEl.className = 'hint crit'; }
           try { $('exp_qc_name')?.focus(); } catch (_) {}
-          return;
+          return false;
         }
         if ((typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(rawNm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(rawNm))) {
           if (hEl) { hEl.textContent = 'Quarry aggregate products belong in Raw Material / Sales Tickets, not the Spare Parts & Items Catalog.'; hEl.className = 'hint crit'; }
-          return;
-        }
-        if (typeof isExpenseSubcategoryOrCategoryName === 'function' && isExpenseSubcategoryOrCategoryName(rawNm) && !CANONICAL_ITEM_KEYS.has(norm(rawNm))) {
-          if (hEl) { hEl.textContent = 'Enter a specific physical item or part name rather than an expense category/subcategory.'; hEl.className = 'hint crit'; }
-          return;
+          return false;
         }
         const catVal = val('exp_qc_cat') || 'Spare Parts';
         const subVal = val('exp_qc_subcat') || val('f_subcategory') || inferItemCatalogSubcategory(rawNm, catVal, '');
@@ -54904,7 +56433,9 @@
         recalcForm();
         const nextFocus = $('f_exi_qty_' + rIdx) || $('f_exi_cost_' + rIdx);
         if (nextFocus) { try { nextFocus.focus({ preventScroll: true }); } catch (_) {} }
+        return true;
       };
+      FORM_UI.commitQuickCatalogItem = commitQuickCatalogItem;
       if (qcCatSel) {
         qcCatSel.addEventListener('change', () => {
           populateQuickCatalogSubcatDatalist(qcCatSel.value);
@@ -55385,6 +56916,10 @@
           FORM_UI.adminUnlocked.f_truckowner = true;
           recalcForm();
           toast('Truck Owner (Hauler) unlocked for sub-charter / payee override', 'ok');
+        } else if (fid === 'f_driver' && canSwitchEquipmentDriver()) {
+          FORM_UI.adminUnlocked.f_driver = true;
+          recalcForm();
+          toast('Driver unlocked for equipment driver switch / override', 'ok');
         } else {
           openAdminUnlockPrompt(fid);
         }
@@ -55418,8 +56953,8 @@
       el.addEventListener('mousedown', ev => {
         if (el.id === 'f_fxrate') return;
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
-          if (el.id === 'f_truckowner') {
-            FORM_UI.adminUnlocked.f_truckowner = true;
+          if (el.id === 'f_truckowner' || (el.id === 'f_driver' && canSwitchEquipmentDriver())) {
+            FORM_UI.adminUnlocked[el.id] = true;
             recalcForm();
             return;
           }
@@ -55663,13 +57198,24 @@
     const dup = v ? findUniversalDuplicate(crKey, v, opts) : null;
     let span = wrap.querySelector('.univ-dup-hint');
     if (dup) {
-      if (!span) {
-        span = document.createElement('span');
-        span.className = 'hint warn univ-dup-hint';
-        wrap.appendChild(span);
-      }
       const existingName = universalMainValue(crKey, dup) || v;
-      span.innerHTML = `${ic('warn')} "${esc(existingName)}" already exists in the Universal ${esc(label)} Registry · duplicates are blocked on post.`;
+      if (crKey === 'equipment' || crKey === 'drivers') {
+        if (!span) {
+          span = document.createElement('span');
+          wrap.appendChild(span);
+        }
+        span.className = 'hint ok univ-dup-hint';
+        span.innerHTML = crKey === 'equipment'
+          ? `✓ Existing unit "${esc(existingName)}" selected · posting will switch/update its active driver assignment.`
+          : `✓ Existing driver "${esc(existingName)}" selected · posting will update their associated equipment/truck.`;
+      } else {
+        if (!span) {
+          span = document.createElement('span');
+          wrap.appendChild(span);
+        }
+        span.className = 'hint warn univ-dup-hint';
+        span.innerHTML = `${ic('warn')} "${esc(existingName)}" already exists in the Universal ${esc(label)} Registry · duplicates are blocked on post.`;
+      }
     } else if (span) {
       span.remove();
     }
@@ -56125,6 +57671,22 @@
       record = { ...base, name: `FUEL ${date} ${c.equipment}${ticket ? ' #' + ticket : ''}`, ticket_no: ticket, rep_date: repDate, fuel_type: c.fuelType, item: resolvedItem, equipment: c.equipment, driver: val('f_driver'), litres: round2(c.litres), odometer: c.type === 'odometer' ? c.reading : null, hours: c.type === 'hours' ? c.reading : null, meter_delta: c.delta };
     } else if (f === 'expense') {
       const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
+      if (!pendEditRow) {
+        const qcDrawerNow = $('expQuickCatalogDrawer');
+        if (qcDrawerNow && !qcDrawerNow.hidden && val('exp_qc_name') && typeof FORM_UI.commitQuickCatalogItem === 'function') {
+          FORM_UI.commitQuickCatalogItem();
+          c = recalcExpense();
+        }
+        const firstTypedItem = val('f_exi_name_0') || (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems[0] ? String(FORM_UI.expItems[0].item_name || '').trim() : '');
+        if (firstTypedItem && !val('f_category') && $('f_category')) {
+          const catMatch = resolveCatalogItem(firstTypedItem);
+          $('f_category').value = (catMatch && catMatch.category) || 'Spare Parts';
+        }
+        if (firstTypedItem && !val('f_subcategory') && $('f_subcategory')) {
+          const catMatch = resolveCatalogItem(firstTypedItem);
+          $('f_subcategory').value = (catMatch && catMatch.subcategory) || inferItemCatalogSubcategory(firstTypedItem, val('f_category') || 'Spare Parts', '');
+        }
+      }
       if (!val('f_category')) addErr('f_category', 'Category is required.');
       if (!val('f_subcategory')) addErr('f_subcategory', 'Subcategory is required.');
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
@@ -56151,6 +57713,8 @@
       } else {
         const rowsNow = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
         const defWhLocSave = defaultWarehouseLocationForCompany(company);
+        const isSupIva = isSupplierIvaForCompany(c.supplier, company);
+        const vatMult = isSupIva ? 1.11 : 1;
         const firstEqRow = rowsNow.find(it => normExpRowDest(it.allocation_mode) === 'equipment');
         const firstEqRaw = firstEqRow ? String(firstEqRow.target_equipment || '').trim() : String(val('f_truck') || '').trim();
         const firstEqUnit = firstEqRaw ? resolveCanonicalEquipmentName(firstEqRaw, company, false, null, false) : '';
@@ -56181,16 +57745,29 @@
             const q = Number(it.qty) || 0;
             const ucRaw = Number(it.unit_cost) || 0;
             const uc = (rowsNow.length === 1 && !(ucRaw > 0) && c.amount > 0)
-              ? round2(c.amount / (q > 0 ? q : 1))
+              ? round2((c.amount / vatMult) / (q > 0 ? q : 1))
               : ucRaw;
             const rawRowEq = String(it.target_equipment || '').trim();
             const rowEq = rawRowEq ? resolveCanonicalEquipmentName(rawRowEq, company, false, null, false) : '';
             const whLoc = String(it.warehouse_location || defWhLocSave).trim() || defWhLocSave;
-            const catIt = nm ? resolveCatalogItem(nm) : null;
+            let catIt = nm ? resolveCatalogItem(nm) : null;
             if (!nm) {
               addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Select a Catalog Item to store in Warehouse.' : `Line ${idx + 1}: Select a Catalog Item.`);
             } else if (mustBeCatalog && !isLegacyUnmodifiedEdit && !catIt) {
-              addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is not in the Items Catalog. Select a catalog item (or click + New Item).`);
+              const isQuarryAgg = (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm));
+              if (isQuarryAgg) {
+                addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is a quarry aggregate product and belongs in Raw Material / Sales Tickets.`);
+              } else {
+                const autoCatRec = ensureItemInCatalog({
+                  name: nm,
+                  category: val('f_category') || 'Spare Parts',
+                  subcategory: subVal || inferItemCatalogSubcategory(nm, val('f_category') || 'Spare Parts', ''),
+                  uom: it.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
+                  default_cost: uc > 0 ? round2(uc) : 0,
+                  default_location: whLoc
+                });
+                catIt = autoCatRec || resolveCatalogItem(nm);
+              }
             }
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Line ${idx + 1}: Quantity must be above zero.`);
             if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Line ${idx + 1}: Unit price cannot be negative.`);
@@ -56199,6 +57776,8 @@
             }
             const lockedUom = (catIt && catIt.uom) ? catIt.uom : (it.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
             const effUnitCost = c.pricePending ? 0 : round2(uc);
+            const linePreVat = c.pricePending ? 0 : round2((q || 1) * effUnitCost);
+            const lineTotTtc = c.pricePending ? 0 : round2(linePreVat * vatMult);
             const savedAllocMode = dest === 'warehouse'
               ? 'warehouse'
               : (dest === 'equipment'
@@ -56211,27 +57790,42 @@
               qty: round2(q || 1),
               uom: lockedUom,
               unit_cost: effUnitCost,
-              line_total: c.pricePending ? 0 : round2((q || 1) * effUnitCost),
+              pre_vat_total: linePreVat,
+              line_total: lineTotTtc,
               allocation_mode: savedAllocMode,
               target_equipment: dest === 'equipment' ? rowEq : '',
               warehouse_location: dest === 'warehouse' ? whLoc : '',
               historical_consumed: 0
             });
           });
-        } else if (isSingleOverhead && FORM_UI.expItem0Manual && String(rowsNow[0].item_name || '').trim()) {
+        } else if (isSingleOverhead && String(rowsNow[0].item_name || '').trim() && (FORM_UI.expItem0Manual || !isExpenseSubcategoryOrCategoryName(String(rowsNow[0].item_name || '').trim()))) {
           const it0 = rowsNow[0];
           const nm0 = String(it0.item_name || '').trim();
           const q0 = Number(it0.qty) > 0 ? Number(it0.qty) : (c.qty > 0 ? c.qty : 1);
-          const catIt0 = resolveCatalogItem(nm0);
-          const uom0 = (catIt0 && catIt0.uom) ? catIt0.uom : (it0.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
           const amt0 = c.pricePending ? 0 : round2(c.amount);
+          const preVatAmt0 = c.pricePending ? 0 : round2(isSupIva ? (amt0 / vatMult) : amt0);
+          const uc0 = q0 > 0 ? round2(preVatAmt0 / q0) : preVatAmt0;
+          let catIt0 = resolveCatalogItem(nm0);
+          const isQuarryAgg0 = (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm0)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(nm0));
+          if (!catIt0 && !isQuarryAgg0 && !isExpenseSubcategoryOrCategoryName(nm0)) {
+            catIt0 = ensureItemInCatalog({
+              name: nm0,
+              category: val('f_category') || 'Spare Parts',
+              subcategory: val('f_subcategory') || inferItemCatalogSubcategory(nm0, val('f_category') || 'Spare Parts', ''),
+              uom: it0.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
+              default_cost: uc0 > 0 ? round2(uc0) : 0,
+              default_location: defWhLocSave
+            }) || resolveCatalogItem(nm0);
+          }
+          const uom0 = (catIt0 && catIt0.uom) ? catIt0.uom : (it0.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
           stagedItems.push({
-            item_name: nm0,
+            item_name: catIt0 ? (catIt0.name || catIt0.item_name) : nm0,
             category: val('f_category'),
             subcategory: val('f_subcategory'),
             qty: round2(q0),
             uom: uom0,
-            unit_cost: q0 > 0 ? round2(amt0 / q0) : amt0,
+            unit_cost: uc0,
+            pre_vat_total: preVatAmt0,
             line_total: amt0,
             allocation_mode: 'general',
             target_equipment: '',
@@ -56485,6 +58079,7 @@
         financial_no: val('f_mof'),
         is_truck_owner: isTo,
         iva: !!($('f_iva') && $('f_iva').checked),
+        vat_registered: !!($('f_iva') && $('f_iva').checked),
         trucks_count: allTruckNames.length,
         trucks: allTruckNames,
         drivers: allDrvNames,
@@ -56600,23 +58195,26 @@
     } else if (f === 'equipment' || f === 'companyequipment') {
       const nm = val('f_truck') || val('f_plateno');
       const pl = val('f_plateno') || nm;
+      let existingDupEq = null;
+      let existingDupCoEq = null;
       if (!nm) addErr('f_truck', 'Unit Code is required.');
       else if (f === 'equipment') {
-        const dup = findUniversalDuplicate('equipment', nm);
-        if (dup) addErr('f_truck', `Equipment / Truck "${universalMainValue('equipment', dup) || nm}" already exists in the Universal Equipment Registry. Duplicate unit codes/plates are not allowed.`);
-        else if (pl && norm(pl) !== norm(nm)) {
+        existingDupEq = findUniversalDuplicate('equipment', nm);
+        if (!existingDupEq && pl && norm(pl) !== norm(nm)) {
           const dupPl = findUniversalDuplicate('equipment', pl, { plateNo: pl });
           if (dupPl) addErr('f_plateno', `Plate Number "${dupPl.plate_no || universalMainValue('equipment', dupPl) || pl}" already exists in the Universal Equipment Registry.`);
         }
       } else if (f === 'companyequipment') {
-        const dupCoEq = (SEED.records.company_equipment || []).find(x => x && !x.voided && norm(x.company) === norm(company) && norm(x.equipment || x.name) === norm(nm));
-        if (dupCoEq) addErr('f_truck', `Equipment "${nm}" is already assigned to ${company}.`);
+        existingDupCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []).find(x => x && !x.voided && norm(x.company) === norm(company) && norm(x.equipment || x.name) === norm(nm));
+        existingDupEq = findUniversalDuplicate('equipment', nm);
       }
-      const eqCat = val('f_category') || 'Truck';
-      const eqOwn = val('f_ownership') || (f === 'companyequipment' ? 'Owned' : 'Subcontractor');
+      const eqCat = val('f_category') || (existingDupEq && existingDupEq.type) || 'Truck';
+      const eqOwn = val('f_ownership') || (existingDupEq && existingDupEq.ownership ? (/^own/i.test(existingDupEq.ownership) ? 'Owned' : existingDupEq.ownership) : (f === 'companyequipment' ? 'Owned' : 'Subcontractor'));
       const eqHasSup = eqOwn !== 'Owned';
-      const effEqOwner = eqHasSup ? val('f_supplier') : (val('f_supplier') || company || defaultEntryCompany() || 'WTC');
-      const eqCap = num('f_capacity') || 0;
+      const effEqOwner = eqHasSup ? (val('f_supplier') || (existingDupEq && existingDupEq.supplier) || '') : (val('f_supplier') || company || defaultEntryCompany() || 'WTC');
+      const eqCap = (!canModifyData() && existingDupEq && Number(existingDupEq.capacity) > 0)
+        ? Number(existingDupEq.capacity)
+        : (num('f_capacity') || (existingDupEq && Number(existingDupEq.capacity)) || 0);
       const effFromRaw = val('f_effdate');
       const effFrom = effFromRaw || date;
       const effEnd = val('f_effend') || '';
@@ -56627,7 +58225,7 @@
       if (effEnd && effEnd < effFrom) addErr('f_effend', 'Effective To Date cannot be before Effective From Date.');
       const existingEqForWin = (editCtx && editCtx.orig && Array.isArray(editCtx.orig.adj_windows))
         ? editCtx.orig
-        : (nm ? (getFleetIndex().eqByName.get(norm(nm)) || null) : null);
+        : (existingDupEq || (nm ? (getFleetIndex().eqByName.get(norm(nm)) || null) : null));
       let nextWins = existingEqForWin && Array.isArray(existingEqForWin.adj_windows)
         ? existingEqForWin.adj_windows.map(w => Object.assign({}, w))
         : [];
@@ -56645,7 +58243,21 @@
         });
         nextWins = tmpEq.adj_windows;
       }
-      record = { ...base, name: nm, equipment: nm, plate_no: pl, type: eqCat, capacity: eqCap, ownership: eqOwn, supplier: effEqOwner, default_driver: val('f_driver'), model: val('f_model'), adj_windows: nextWins };
+      const targetExistingRow = f === 'companyequipment' ? existingDupCoEq : existingDupEq;
+      record = {
+        ...base,
+        ...(targetExistingRow && targetExistingRow.id ? { id: targetExistingRow.id, _updatingExistingId: targetExistingRow.id } : {}),
+        name: (targetExistingRow && targetExistingRow.name) || nm,
+        equipment: (existingDupEq && (existingDupEq.name || existingDupEq.equipment)) || nm,
+        plate_no: pl,
+        type: eqCat,
+        capacity: eqCap,
+        ownership: eqOwn,
+        supplier: effEqOwner,
+        default_driver: val('f_driver'),
+        model: val('f_model') || (targetExistingRow && targetExistingRow.model) || '',
+        adj_windows: nextWins
+      };
     } else if (f === 'driver') {
       const nm = val('f_driver');
       const isCoDrv = !!($('f_iscompanydriver') && $('f_iscompanydriver').checked);
@@ -56655,13 +58267,22 @@
         const trkEq = equipInfo(drvTrk, company || 'WTC');
         if (trkEq && trkEq.supplier) drvOwner = trkEq.supplier;
       }
+      let existingDupDrv = null;
       if (!nm) addErr('f_driver', 'Driver Name is required.');
       else {
-        const dup = findUniversalDuplicate('drivers', nm);
-        if (dup) addErr('f_driver', `Driver "${universalMainValue('drivers', dup) || nm}" already exists in the Universal Driver Registry. Duplicate names are not allowed.`);
+        existingDupDrv = findUniversalDuplicate('drivers', nm);
       }
       if (!isCoDrv && !drvOwner) addErr('f_supplier', 'Truck Owner is required.');
-      record = { ...base, name: nm, driver: nm, truck_owner: isCoDrv ? (drvOwner || company || defaultEntryCompany() || 'WTC') : drvOwner, truck: drvTrk, phone: val('f_phone'), is_company_driver: isCoDrv };
+      record = {
+        ...base,
+        ...(existingDupDrv && existingDupDrv.id ? { id: existingDupDrv.id, _updatingExistingId: existingDupDrv.id } : {}),
+        name: (existingDupDrv && existingDupDrv.name) || nm,
+        driver: (existingDupDrv && (existingDupDrv.driver || existingDupDrv.name)) || nm,
+        truck_owner: isCoDrv ? (drvOwner || company || defaultEntryCompany() || 'WTC') : drvOwner,
+        truck: drvTrk,
+        phone: val('f_phone') || (existingDupDrv && existingDupDrv.phone) || '',
+        is_company_driver: isCoDrv
+      };
     } else if (f === 'staff') {
       crKey = 'staff_members';
       ensureStaffMembersSeeded();
@@ -57715,7 +59336,8 @@
           'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor',
           'f_salary_pending', 'f_paytype', 'f_workdays', 'f_workhours'
         ];
-        const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id));
+        const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id))
+          || Array.from(changedModalIds).some(id => /^f_exi_(qty|cost)_/.test(id));
         const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
         if (!anyPriceDriverEdited && !isDispZeroedEdit) {
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
@@ -58018,6 +59640,16 @@
         const cIdx = STATE.customRecords[crKey].findIndex(r => r && String(r.id) === String(record.id));
         if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
         else STATE.customRecords[crKey].unshift(record);
+      } else if (record._updatingExistingId) {
+        delete record._updatingExistingId;
+        const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
+        sArr.forEach(r => {
+          if (r && String(r.id) === String(record.id)) Object.assign(r, record);
+        });
+        if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+        const cIdx = STATE.customRecords[crKey].findIndex(r => r && String(r.id) === String(record.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
+        else STATE.customRecords[crKey].unshift(Object.assign({}, record));
       } else {
         if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         STATE.customRecords[crKey].unshift(record);
@@ -58058,6 +59690,18 @@
           }
         });
       } else if ((crKey === 'equipment' || crKey === 'company_equipment') && record.default_driver) {
+        if (crKey === 'company_equipment') {
+          const eqUnit = (SEED.records.equipment || []).concat(STATE.customRecords.equipment || []).find(x => x && !x.voided && norm(x.name || x.equipment) === norm(record.equipment || record.name));
+          if (eqUnit) {
+            eqUnit.default_driver = record.default_driver;
+            if (Array.isArray(record.adj_windows)) eqUnit.adj_windows = record.adj_windows;
+            if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
+            const eqCi = STATE.customRecords.equipment.findIndex(x => x && String(x.id) === String(eqUnit.id));
+            if (eqCi >= 0) Object.assign(STATE.customRecords.equipment[eqCi], eqUnit);
+            else STATE.customRecords.equipment.unshift(Object.assign({}, eqUnit));
+            preExtraApiPosts.push(['equipment', Object.assign({}, eqUnit)]);
+          }
+        }
         if (!Array.isArray(STATE.customRecords.drivers)) STATE.customRecords.drivers = [];
         const isCo = /^own/i.test(record.ownership || '');
         const existing = STATE.customRecords.drivers.find(x => !x.voided && norm(x.name || x.driver) === norm(record.default_driver));
@@ -58086,6 +59730,26 @@
             entered_at: record.entered_at,
             voided: false
           });
+        }
+      } else if (crKey === 'drivers' && record.truck) {
+        const eqUnit = (SEED.records.equipment || []).concat(STATE.customRecords.equipment || []).find(x => x && !x.voided && norm(x.name || x.equipment || x.plate_no) === norm(record.truck));
+        if (eqUnit) {
+          eqUnit.default_driver = record.name || record.driver;
+          appendOrUpdateTruckWindow(eqUnit, {
+            co: record.company || 'WTC',
+            side: 'both',
+            s: record.date || todayISO(),
+            e: '',
+            cap: Number(eqUnit.capacity || 0),
+            own: record.truck_owner || eqUnit.supplier || record.company || 'WTC',
+            drv: record.name || record.driver,
+            persistTicketBackfill: true
+          });
+          if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
+          const eqCi = STATE.customRecords.equipment.findIndex(x => x && String(x.id) === String(eqUnit.id));
+          if (eqCi >= 0) Object.assign(STATE.customRecords.equipment[eqCi], eqUnit);
+          else STATE.customRecords.equipment.unshift(Object.assign({}, eqUnit));
+          preExtraApiPosts.push(['equipment', Object.assign({}, eqUnit)]);
         }
       }
       const extraApiPosts = preExtraApiPosts.slice();
@@ -58165,7 +59829,7 @@
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         const seenEi = new Set();
         const voidOldExpItem = it => {
-          if (!it || it.voided || String(it.expense_id || '') !== String(record.id)) return;
+          if (!it || it.voided || !(String(it.expense_id || '') === String(record.id) || (record.name && norm(it.expense_ref) === norm(record.name)))) return;
           it.voided = true;
           it.voided_at = new Date().toISOString();
           if (it.id && !seenEi.has(String(it.id))) {
@@ -58286,9 +59950,9 @@
       if (crKey === 'expenses' && stagedExpenseItems.length) {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         stagedExpenseItems.forEach((it, li) => {
-          if (it.item_name && it.allocation_mode !== 'general' && isValidCatalogItemCandidate(it.item_name, it.category || record.category)) {
-            const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', it.category || record.category || 'Spare Parts', it.unit_cost || 0, it.warehouse_location || 'WTC Main Warehouse', 0);
-            if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
+          if (it.item_name && (it.allocation_mode !== 'general' || isValidCatalogItemCandidate(it.item_name, it.category || record.category))) {
+            const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', it.category || record.category || 'Spare Parts', it.unit_cost || 0, it.warehouse_location || 'WTC Main Warehouse', 0) || resolveCatalogItem(it.item_name);
+            if (newCatItem && newCatItem.id && newCatItem.source === 'app') extraApiPosts.push(['items', newCatItem]);
           }
           const itemRec = {
             id: uid('ei'),
@@ -58305,6 +59969,7 @@
             qty: it.qty,
             uom: it.uom || 'Piece',
             unit_cost: it.unit_cost,
+            ...(it.pre_vat_total !== undefined ? { pre_vat_total: it.pre_vat_total } : {}),
             line_total: it.line_total,
             allocation_mode: it.allocation_mode,
             target_equipment: it.target_equipment || '',
@@ -59858,11 +61523,12 @@
       const childItems = ((STATE.customRecords && STATE.customRecords.expense_items) || [])
         .concat((SEED.records && SEED.records.expense_items) || [])
         .filter(it => {
-          if (!it || it.voided || String(it.expense_id || '') !== String(row.id)) return false;
+          if (!it || it.voided || !(String(it.expense_id || '') === String(row.id) || (row.name && norm(it.expense_ref) === norm(row.name)))) return false;
           if (it.id && seenEi.has(String(it.id))) return false;
           if (it.id) seenEi.add(String(it.id));
           return true;
         });
+      const rowSupIva = isSupplierIvaForCompany(row.supplier, rowCo || defaultEntryCompany());
       if (childItems.length >= 1) {
         const isWhOnly = childItems.every(it => normExpRowDest(it.allocation_mode) === 'warehouse');
         const hasAnyEq = Boolean(row.equipment || row.for_equipment || childItems.some(it => normExpRowDest(it.allocation_mode) === 'equipment'));
@@ -59883,14 +61549,19 @@
           const effTargetEq = uiMode === 'equipment'
             ? (it.target_equipment || (rawMode === 'same_equipment' ? (row.equipment || '') : ''))
             : '';
+          const qVal = Number(it.qty) || 1;
+          let ucVal = it.unit_cost != null ? Number(it.unit_cost) : 0;
+          if (rowSupIva && !it._preVatNormalized && it.pre_vat_total === undefined && childItems.length === 1 && Number(row.amount || 0) > 0 && Math.abs(qVal * ucVal - Number(row.amount || 0)) < 0.05) {
+            ucVal = round2((Number(row.amount || 0) / 1.11) / (qVal > 0 ? qVal : 1));
+          }
           return {
             item_name: effItemNm,
             allocation_mode: uiMode,
             target_equipment: effTargetEq,
             warehouse_location: it.warehouse_location || defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()),
-            qty: Number(it.qty) || 1,
+            qty: qVal,
             uom: (catIt && catIt.uom) || it.uom || (/^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece'),
-            unit_cost: it.unit_cost != null ? it.unit_cost : 0
+            unit_cost: ucVal
           };
         });
         renderExpenseItemsBuilderRows();
@@ -59902,6 +61573,7 @@
         const catIt = fallbackItem ? resolveCatalogItem(fallbackItem) : null;
         const rQty = Number(row.qty) || 1;
         const rAmt = Number(row.amount) || 0;
+        const rPreVat = rAmt > 0 ? (rowSupIva ? round2(rAmt / 1.11) : rAmt) : 0;
         FORM_UI.expItems = [{
           item_name: fallbackItem,
           allocation_mode: isEqExp ? 'equipment' : 'general',
@@ -59909,7 +61581,7 @@
           warehouse_location: defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()),
           qty: rQty,
           uom: (catIt && catIt.uom) || (/^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece'),
-          unit_cost: rAmt > 0 ? (rQty > 0 ? round2(rAmt / rQty) : rAmt) : ''
+          unit_cost: rPreVat > 0 ? (rQty > 0 ? round2(rPreVat / rQty) : rPreVat) : ''
         }];
         renderExpenseItemsBuilderRows();
       }
@@ -64592,7 +66264,7 @@
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
           ${(key === 'employments' && isPendingSalaryEmployment(row) && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
-          ${canModifyRecord() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
+          ${(canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver())) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
           ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
@@ -64743,7 +66415,7 @@
             </div>
             <span class="badge badge-brass" id="inspTwCountBadge">${fmtNum(eqScopedWinCount)} ${esc(inspDefaultTwCo)} Window${eqScopedWinCount === 1 ? '' : 's'}</span>
           </div>
-          ${canModifyRecord() ? `
+          ${canSwitchEquipmentDriver() ? `
             <div class="form-grid-3" style="padding:10px 12px;background:rgba(196,154,69,0.06);border-bottom:1px solid var(--line)">
               <div class="form-field">
                 <label for="insp_tw_co">Company / BU</label>
@@ -64800,7 +66472,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th class="r">Size (m³)</th><th>Truck Owner</th><th>Driver</th><th>Client / Site Scope</th><th>Status</th>${canModifyRecord() ? '<th></th>' : ''}
+                  <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th class="r">Size (m³)</th><th>Truck Owner</th><th>Driver</th><th>Client / Site Scope</th><th>Status</th>${canSwitchEquipmentDriver() ? '<th></th>' : ''}
                 </tr>
               </thead>
               <tbody>
@@ -64823,10 +66495,10 @@
                       <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '-'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
                       <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                      ${canModifyRecord() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
+                      ${canSwitchEquipmentDriver() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
                     </tr>
                   `;
-                }).join('') : `<tr><td colspan="${canModifyRecord() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
+                }).join('') : `<tr><td colspan="${canSwitchEquipmentDriver() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -65312,8 +66984,9 @@
       modLiveCalcEl.hidden = !html;
     };
 
+    const canUseInspModify = canModifyRecord() || ((isEquipInspect || key === 'drivers') && canSwitchEquipmentDriver());
     const openModifyDrawerAndFocus = (focusFieldKey) => {
-      if (!modDrawer || !canModifyRecord()) return;
+      if (!modDrawer || !canUseInspModify) return;
       modDrawer.hidden = false;
       syncModifyLiveSummary();
       const targetInp = focusFieldKey ? $('insp_edit_' + focusFieldKey) : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])');
@@ -65342,7 +67015,7 @@
         else openPendingExpensePriceModal(row.id);
       });
     }
-    if (opts && opts.focusModifyField && modDrawer && canModifyRecord()) {
+    if (opts && opts.focusModifyField && modDrawer && canUseInspModify) {
       openModifyDrawerAndFocus(opts.focusModifyField);
     }
     if (modBtn && modDrawer) {
@@ -65383,8 +67056,8 @@
     const saveModBtn = $('inspSaveModifyBtn');
     if (saveModBtn && modDrawer) {
       saveModBtn.addEventListener('click', () => {
-        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
-        const isSaveWordOnly = canModifyTextOnly();
+        if (!canUseInspModify) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        const isSaveWordOnly = canModifyTextOnly() || (!canModifyRecord() && canUseInspModify);
         const schemaMap = new Map(editSchema.map(f => [f.key, f]));
         const pendingUpdates = {};
         let effFromDate = todayISO();
@@ -65636,6 +67309,27 @@
             }
           }
           if (row.is_company_driver && row.truck_owner) row.truck_owner = '';
+          if ('truck' in pendingUpdates && row.truck) {
+            const eqTarget = (SEED.records.equipment || []).concat(STATE.customRecords.equipment || []).find(x => x && !x.voided && norm(x.name || x.equipment || x.plate_no) === norm(row.truck));
+            if (eqTarget) {
+              eqTarget.default_driver = row.name || row.driver;
+              appendOrUpdateTruckWindow(eqTarget, {
+                co: row.company || 'WTC',
+                side: 'both',
+                s: effFromDate || todayISO(),
+                e: effToDate || '',
+                cap: Number(eqTarget.capacity || 0),
+                own: row.truck_owner || eqTarget.supplier || row.company || 'WTC',
+                drv: row.name || row.driver,
+                persistTicketBackfill: true
+              });
+              if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
+              const eqCi = STATE.customRecords.equipment.findIndex(x => x && String(x.id) === String(eqTarget.id));
+              if (eqCi >= 0) Object.assign(STATE.customRecords.equipment[eqCi], eqTarget);
+              else STATE.customRecords.equipment.unshift(Object.assign({}, eqTarget));
+              postRecordToLocalApi('equipment', eqTarget);
+            }
+          }
         } else if (key === 'customers') {
           if ('name' in pendingUpdates) {
             row.Customer = row.name;
@@ -65954,13 +67648,13 @@
             }
           }
           if (row.equipment) row.for_equipment = true;
-          if ('subcategory' in pendingUpdates || 'category' in pendingUpdates || 'equipment' in pendingUpdates || 'qty' in pendingUpdates || 'amount' in pendingUpdates) {
+          if ('subcategory' in pendingUpdates || 'category' in pendingUpdates || 'equipment' in pendingUpdates || 'qty' in pendingUpdates || 'amount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
             if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
             const seenModEi = new Set();
             const linkedItems = STATE.customRecords.expense_items
               .concat((SEED.records && SEED.records.expense_items) || [])
               .filter(it => {
-                if (!it || it.voided || String(it.expense_id || '') !== String(row.id)) return false;
+                if (!it || it.voided || !(String(it.expense_id || '') === String(row.id) || (row.name && norm(it.expense_ref) === norm(row.name)))) return false;
                 if (it.id && seenModEi.has(String(it.id))) return false;
                 if (it.id) seenModEi.add(String(it.id));
                 return true;
@@ -65981,10 +67675,14 @@
               if ('qty' in pendingUpdates && Number(row.qty) > 0) {
                 li0.qty = round2(Number(row.qty));
               }
-              if ('qty' in pendingUpdates || 'amount' in pendingUpdates) {
+              if ('qty' in pendingUpdates || 'amount' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
                 const effQ = Number(li0.qty) || 1;
-                li0.line_total = row.price_pending ? 0 : round2(Number(row.amount || 0));
-                li0.unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(li0.line_total / effQ) : li0.line_total);
+                const isRowIva = isSupplierIvaForCompany(row.supplier, row.company);
+                const ttcAmt = row.price_pending ? 0 : round2(Number(row.amount || 0));
+                const preVatAmt = row.price_pending ? 0 : round2(isRowIva ? (ttcAmt / 1.11) : ttcAmt);
+                li0.pre_vat_total = preVatAmt;
+                li0.line_total = ttcAmt;
+                li0.unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(preVatAmt / effQ) : preVatAmt);
               }
               const destLbl = li0.allocation_mode === 'warehouse' ? 'Warehouse' : (li0.target_equipment || row.equipment || 'General');
               row.item_summary = `${li0.qty || row.qty || 1}x ${li0.item_name} (${destLbl})`;
@@ -65995,6 +67693,8 @@
             } else if (linkedItems.length === 0 && (row.equipment || row.for_equipment)) {
               const effQ = Number(row.qty) || 1;
               const itNm = row.subcategory || row.category || 'Expense';
+              const isRowIva = isSupplierIvaForCompany(row.supplier, row.company);
+              const preVatAmt = row.price_pending ? 0 : round2(isRowIva ? (amt / 1.11) : amt);
               const newLi = {
                 id: `${row.id}-i1`,
                 name: `${row.name || ('EXP ' + (row.date || ''))} · L1 · ${itNm}`,
@@ -66010,7 +67710,8 @@
                 item_name: itNm,
                 qty: round2(effQ),
                 uom: /^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece',
-                unit_cost: row.price_pending ? 0 : round2(amt / (effQ > 0 ? effQ : 1)),
+                unit_cost: row.price_pending ? 0 : round2(preVatAmt / (effQ > 0 ? effQ : 1)),
+                pre_vat_total: preVatAmt,
                 line_total: row.price_pending ? 0 : amt,
                 allocation_mode: 'same_equipment',
                 target_equipment: row.equipment || '',
@@ -66126,9 +67827,16 @@
             window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
           }
           normalizeDistinctSiteCategories(SEED);
-        } else if (key === 'repair_items' || key === 'expense_items') {
+        } else if (key === 'repair_items') {
           if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
             row.line_total = round2(Number(row.qty || 0) * Number(row.unit_cost || 0));
+          }
+        } else if (key === 'expense_items') {
+          if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates || 'supplier' in pendingUpdates || 'company' in pendingUpdates) {
+            const isRowIva = isSupplierIvaForCompany(row.supplier, row.company);
+            const preVatTot = round2(Number(row.qty || 0) * Number(row.unit_cost || 0));
+            row.pre_vat_total = preVatTot;
+            row.line_total = round2(preVatTot * (isRowIva ? 1.11 : 1));
           }
         } else if (key === 'warehouse_movements') {
           if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
@@ -66239,7 +67947,7 @@
       });
     });
     const startInspWinEdit = idx => {
-      if (!canModifyRecord() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
+      if (!canSwitchEquipmentDriver() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const w = targetEqRow.adj_windows[idx];
       if (!w) return;
       twBox.dataset.editTwIdx = String(idx);
@@ -66289,7 +67997,7 @@
     }));
     if (addTwBtn && targetEqRow) {
       addTwBtn.addEventListener('click', () => {
-        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        if (!canSwitchEquipmentDriver()) { toast('Your seat does not have permission to switch equipment drivers', 'err'); return; }
         const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
         const origEditWin = (rawEditIdx >= 0 && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[rawEditIdx] : null;
         const capVal = canModifyData()
@@ -66467,8 +68175,8 @@
   }
 
   function mergeUserRow(existing, incoming) {
-    if (!existing) return Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming);
-    if (!incoming) return existing;
+    if (!existing) return ensureCanonicalMultiIndustrySeat(Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming));
+    if (!incoming) return ensureCanonicalMultiIndustrySeat(existing);
     const exSeatTs = String(existing.seat_updated_at || '');
     const inSeatTs = String(incoming.seat_updated_at || '');
     const preferExistingSeat = !!(exSeatTs && (!inSeatTs || exSeatTs > inSeatTs));
@@ -66514,7 +68222,7 @@
     if (preferExistingSeat && existing.custom_perms != null) out.custom_perms = existing.custom_perms;
     else if (incoming.custom_perms != null) out.custom_perms = incoming.custom_perms;
     else if (existing.custom_perms != null) out.custom_perms = existing.custom_perms;
-    return out;
+    return ensureCanonicalMultiIndustrySeat(out);
   }
 
   function ensureUniversalCanonicalIndex() {
@@ -67528,7 +69236,8 @@
               if (idx >= 0) merged[idx] = mergeUserRow(merged[idx], u);
               else merged.push(mergeUserRow(null, u));
             });
-            STATE.users = merged;
+            STATE.users = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
+            applyUserRlsAndPermissions();
           }
         }
         const ctrlSr = new AbortController();
@@ -67600,6 +69309,7 @@
       let changed = false;
 
       if (Array.isArray(remote.users) && remote.users.length) {
+        const rawRemoteCos = JSON.stringify(remote.users.map(u => u && u.companies));
         const merged = remote.users.filter(u => u && u.email).map(u => Object.assign({}, u));
         if (pushChanges) {
           STATE.users.forEach(u => {
@@ -67617,12 +69327,14 @@
             else merged[idx] = mergeUserRow(u, merged[idx]);
           });
         }
-        const next = merged;
+        const next = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
         if (JSON.stringify(next) !== JSON.stringify(STATE.users)) { changed = true; }
+        if (JSON.stringify(next.map(u => u && u.companies)) !== rawRemoteCos) { pushChanges = true; }
         const myEmail = norm(activeUser().email);
         STATE.users = next;
         const idx = STATE.users.findIndex(u => norm(u.email) === myEmail);
         if (idx >= 0) STATE.activeUserIdx = idx;
+        applyUserRlsAndPermissions();
         if (!STATE.authed) { renderQuickSeatsInAuthGate(); updateAuthFaceUi(); }
       }
 
@@ -68264,8 +69976,16 @@
   }
 
   async function authFaceTick() {
+    const kioskOrModalCamActive = () => Boolean(
+      FACE_STATE.enrolCamActive ||
+      KIOSK_ATT_STATE.camActive ||
+      KIOSK_ATT_STATE.camStarting ||
+      KIOSK_ADMIN_MODAL_STATE.camActive ||
+      STAFF_FACE_MODAL_STATE.camActive ||
+      (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked)
+    );
     if (STATE.authed || !FACE_STATE.camActive) {
-      if (STATE.authed && !FACE_STATE.enrolCamActive) stopFaceCamera();
+      if (STATE.authed && !kioskOrModalCamActive()) stopFaceCamera();
       return;
     }
     const videoEl = $('authFaceVideo');
@@ -68279,12 +69999,12 @@
       try {
         await ensureFaceModelsLoaded();
         if (STATE.authed || !FACE_STATE.camActive) {
-          if (STATE.authed && !FACE_STATE.enrolCamActive) stopFaceCamera();
+          if (STATE.authed && !kioskOrModalCamActive()) stopFaceCamera();
           return;
         }
         const det = await window.Face.detectOne(videoEl, false);
         if (STATE.authed || !FACE_STATE.camActive) {
-          if (STATE.authed && !FACE_STATE.enrolCamActive) stopFaceCamera();
+          if (STATE.authed && !kioskOrModalCamActive()) stopFaceCamera();
           return;
         }
         if (overlayEl && window.Face.drawOverlay) {
@@ -70230,6 +71950,18 @@
     trd_stock: 'Spare Parts & Warehouse Valuation (T4)',
     trd_movements: 'Stock Movements & IC Transfers (t44)',
     trd_recon: 'Parallel Stock & P&L Recon (t27 / t57g)',
+    // Real Estate & Property sub-views (Phase 4)
+    re_leases: 'Leases, Multi-Unit Links & 3-Year Escalations (7z-chrono)',
+    re_invoicing: 'Period Rent Invoices & VAT Sequence (r33 / r41b)',
+    re_receipts: 'Tenant Settlements, Security Deposits (4196) & Advances (r37)',
+    re_sales: 'Property & Unit Sales Contracts (r01 / r44)',
+    re_instalments: 'Buyer Instalment Schedules & Paid-to-Date (r35)',
+    re_properties: 'Portfolio Properties, Photon Map & Yields (r42 / $51.48M)',
+    re_units: 'Building Units, Floors, Occupancy & Vacancy (r30)',
+    re_valuations: 'LGB Bank Appraisal & Market Valuations (r07 / r44)',
+    re_ownership: 'Co-Ownership Deed Shares (/2400) & NOI Distributions (r38)',
+    re_workorders: 'Repairs, Fit-Out Work Orders & Cost Variance (r44)',
+    re_recharges: 'Tenant Recharge Invoices & Contractor Attribution (P4)',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -70323,6 +72055,17 @@
     trd_stock: 'Spare Parts & Stock',
     trd_movements: 'Moves & IC Transfers',
     trd_recon: 'Parallel Recon',
+    re_leases: 'Leases & Rent Roll',
+    re_invoicing: 'Rent Invoices (r33)',
+    re_receipts: 'Receipts & Advances',
+    re_sales: 'Property & Unit Sales',
+    re_instalments: 'Buyer Instalments',
+    re_properties: 'Portfolio & Yields',
+    re_units: 'Units & Vacancy',
+    re_valuations: 'LGB Valuations',
+    re_ownership: 'Deed Shares (/2400)',
+    re_workorders: 'Work Orders & Fit-Out',
+    re_recharges: 'Tenant Recharges',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -70338,7 +72081,9 @@
     voile: 'Voile Beach',
     platinum: 'Platinum',
     korriauto: 'Korri Auto',
-    shacman: 'Shacman'
+    shacman: 'Shacman',
+    properties: 'Properties',
+    '4235company': '4235 Company SAL'
   };
 
   // Dynamic Multi-Industry Sidebar Specification (Fixed Spine + Swappable Middle Operational Groups)
@@ -70385,12 +72130,12 @@
     },
     'Real Estate & Property': {
       grp1: 'Leasing, Sales & Billing',
-      grp2: 'Portfolio, Facilities & Staff',
+      grp2: 'Portfolio, Works & Workforce',
       slots: [
-        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
-        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
-        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
-        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+        { hub: 're_leases', view: 're_leases', label: 'Leases & Rent Roll', pillId: '' },
+        { hub: 're_sales', view: 're_sales', label: 'Property Sales & Buyers', pillId: 'navCountRaw' },
+        { hub: 're_properties', view: 're_properties', label: 'Portfolio & Valuations', pillId: 'navCountFleet' },
+        { hub: 're_workorders', view: 're_workorders', label: 'Work Orders & Fit-Out', pillId: '' }
       ]
     },
     'Insurance & Brokerage': {
@@ -70562,6 +72307,14 @@
           e.stopPropagation();
           const pickedInd = tabBtn.getAttribute('data-ep-ind') || 'all';
           STATE.companySwitchIndFilter = pickedInd;
+          if (pickedInd !== 'all' && getActiveIndustry(STATE.company) !== pickedInd) {
+            const grp = allowedIndGroups.find(g => g.id === pickedInd);
+            const targetKey = pickedInd === 'Manufacturing'
+              ? (allowedCos.includes('manufacturing-group') ? 'manufacturing-group' : (grp && grp.permittedCos[0] ? grp.permittedCos[0].key : 'wtc'))
+              : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${pickedInd}`);
+            selectCompanyScope(targetKey, false);
+            return;
+          }
           syncCompanySwitchUi();
         });
       });
@@ -70573,10 +72326,10 @@
 
     const mfgAllowedCount = STATE.enterpriseScalePreview
       ? allowedNames.length
-      : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum)$/i.test(n)).length;
+      : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(n)).length;
     const mfgCatalogCount = STATE.enterpriseScalePreview
       ? catalog.length
-      : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum'].includes(c.key)).length;
+      : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company'].includes(c.key)).length;
 
     let visibleBtnCount = 0;
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
@@ -70610,7 +72363,13 @@
       } else {
         const btnInd = btn.getAttribute('data-ind') || 'Manufacturing';
         const hay = btn.getAttribute('data-co-search') || btn.textContent.toLowerCase();
-        const matchInd = indFilter === 'all' || key === 'manufacturing-group' || btnInd === indFilter;
+        let matchInd = indFilter === 'all' ? true : (key === 'manufacturing-group' ? indFilter === 'Manufacturing' : btnInd === indFilter);
+        if (key === 'industry:Manufacturing' && allowedCos.includes('manufacturing-group') && !STATE.enterpriseScalePreview && STATE.company !== key) {
+          matchInd = false;
+        } else if (key.startsWith('industry:') && !STATE.enterpriseScalePreview && STATE.company !== key) {
+          const grp = allowedIndGroups.find(g => g.id === key.slice(9));
+          if (!grp || grp.permittedCos.length < 2) matchInd = false;
+        }
         const matchQ = !q || hay.includes(q);
         btn.hidden = !(matchInd && matchQ);
         if (!btn.hidden) visibleBtnCount += 1;
@@ -70632,12 +72391,12 @@
       const indName = String(STATE.company).slice(9);
       const grp = allowedIndGroups.find(g => g.id === indName);
       const cnt = grp ? grp.permittedCos.length : 0;
-      trigInd = indName === 'Holding & Treasury' ? 'Holding' : (indName === 'Hospitality & Resorts' ? 'Hospitality' : indName);
-      trigCo = `All ${indName.split(' ')[0]} (${cnt})`;
+      trigInd = indName === 'Holding & Treasury' ? 'Holding' : (indName === 'Hospitality & Resorts' ? 'Hospitality' : (indName === 'Automotive & Heavy Trading' ? 'Trading' : (indName === 'Real Estate & Property' ? 'Real Estate' : indName)));
+      trigCo = `All ${indName === 'Real Estate & Property' ? 'Real Estate' : indName.split(' ')[0]} (${cnt})`;
     } else {
       const coMeta = catalog.find(c => c.key === STATE.company);
       const rawInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
-      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : rawInd);
+      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : (rawInd === 'Hospitality & Resorts' ? 'Hospitality' : (rawInd === 'Automotive & Heavy Trading' ? 'Trading' : (rawInd === 'Real Estate & Property' ? 'Real Estate' : rawInd)));
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
     if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
@@ -70731,16 +72490,13 @@
         STATE.enterpriseScalePreview = !STATE.enterpriseScalePreview;
         STATE.enterprisePreviewCompanies = STATE.enterpriseScalePreview ? buildEnterprisePreviewCatalog() : [];
         STATE.companySwitchIndFilter = 'all';
-        if (!STATE.enterpriseScalePreview && !['manufacturing-group', 'wtc', 'bbconstruction', 'lionstransport'].includes(STATE.company)) {
-          STATE.company = 'manufacturing-group';
-        }
         applyUserRlsAndPermissions();
         if (STATE.view === 'users') {
           updateSeatEditorDom();
         }
         toast(STATE.enterpriseScalePreview
           ? '⚡ Enterprise Scale Preview active: 10 Industries × 15 Companies (150 Companies) loaded'
-          : 'Restored live 3-company Manufacturing catalog (WTC · BBConstruction · Lions Transport)');
+          : 'Restored live BHFIRMS multi-industry catalog (5 Industries · 13 Companies)');
       });
     }
     if (offBtn) {
@@ -70795,8 +72551,8 @@
     syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
-    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman)$/i.test(n));
-    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman'].includes(c.key)).length;
+    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^(bdeir\s*holding|blanca|la\s*una|palms|voile|platinum|korri\s*auto|shacman|properties|4235\s*company(\s*s\.?a\.?l\.?)?)$/i.test(n));
+    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => !['bdeirholding', 'blanca', 'launa', 'palms', 'voile', 'platinum', 'korriauto', 'shacman', 'properties', '4235company'].includes(c.key)).length;
     COMPANY_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
       ? `All Manufacturing Group (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`
       : `Assigned Entities (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`;
@@ -71105,20 +72861,28 @@
     document.body.classList.remove('locked');
     setAuthStreak(0, 3);
     resetLivenessState();
+    const shouldKeepNonAuthCam = () => Boolean(
+      FACE_STATE.enrolCamActive ||
+      KIOSK_ATT_STATE.camActive ||
+      KIOSK_ATT_STATE.camStarting ||
+      KIOSK_ADMIN_MODAL_STATE.camActive ||
+      STAFF_FACE_MODAL_STATE.camActive ||
+      (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked)
+    );
     if (IS_AUTOMATED_TEST) {
-      stopFaceCamera();
+      if (!shouldKeepNonAuthCam()) stopFaceCamera();
       updateAuthFaceUi();
     } else if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => {
         setTimeout(() => {
-          if (STATE.authed && !FACE_STATE.enrolCamActive) {
+          if (STATE.authed && !shouldKeepNonAuthCam()) {
             stopFaceCamera();
             updateAuthFaceUi();
           }
         }, 0);
       });
     } else {
-      stopFaceCamera();
+      if (!shouldKeepNonAuthCam()) stopFaceCamera();
       updateAuthFaceUi();
     }
     const keep = new URLSearchParams();
@@ -71328,6 +73092,10 @@
       trd_purchases: 'raw', trd_landed: 'expense', trd_grn: 'warehousestock',
       trd_trucks: 'equipment', trd_warranty: 'repair',
       trd_stock: 'item', trd_movements: 'warehousestock', trd_recon: 'warehousestock',
+      re_leases: 'pricerule', re_invoicing: 'sales', re_receipts: 'receipt',
+      re_sales: 'sales', re_instalments: 'receipt',
+      re_properties: 'site', re_units: 'product', re_valuations: 'site', re_ownership: 'jv',
+      re_workorders: 'repair', re_recharges: 'expense',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_staff: 'staff', reg_roles: 'staffrole', reg_sites: 'site', reg_regions: 'region',
@@ -74911,7 +76679,7 @@
     KIOSK_ATT_STATE.lastWatchdogReason = String(reason || 'watchdog');
     if (KIOSK_ATT_STATE.camStarting || KIOSK_ATT_STATE.watchdogTimer) return true;
     const elapsed = Date.now() - (KIOSK_ATT_STATE.lastRestartAt || 0);
-    const delayMs = Math.max(250, 2200 - elapsed);
+    const delayMs = Math.max(800, 8000 - elapsed);
     KIOSK_ATT_STATE.watchdogTimer = setTimeout(() => {
       KIOSK_ATT_STATE.watchdogTimer = null;
       if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
@@ -74937,6 +76705,13 @@
     }
     if (KIOSK_ATT_STATE.camStarting) return false;
     if (!opts.forceRestart && KIOSK_ATT_STATE.camActive && streamAlive()) {
+      ['authFaceVideo', 'enrolFaceVideo', 'ksaAdminFaceVideo'].forEach(id => {
+        const ov = $(id);
+        if (ov && ov.srcObject) {
+          try { ov.pause(); } catch (_) {}
+          ov.srcObject = null;
+        }
+      });
       const existingVid = $('kioskAttVideo');
       if (existingVid) {
         if (existingVid.srcObject !== FACE_STATE.stream) existingVid.srcObject = FACE_STATE.stream;
@@ -74956,26 +76731,39 @@
     clearTimeout(KIOSK_ATT_STATE.loopTimer);
     KIOSK_ATT_STATE.loopTimer = null;
     try {
-      stopFaceCamera();
-      const prevVid = $('kioskAttVideo');
-      if (prevVid && prevVid.srcObject) {
-        try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+      let reusableStream = null;
+      if (!opts.forceRestart && streamAlive()) {
+        reusableStream = FACE_STATE.stream;
+      } else if (!opts.forceRestart && window.Face && typeof window.Face.consumeEarlyStream === 'function') {
+        try {
+          const early = await window.Face.consumeEarlyStream();
+          if (early && early.getVideoTracks && early.getVideoTracks().some(t => t.readyState === 'live')) {
+            reusableStream = early;
+          }
+        } catch (_) {}
+      }
+      if (!reusableStream) {
+        stopFaceCamera();
+        const prevVid = $('kioskAttVideo');
+        if (prevVid && prevVid.srcObject) {
+          try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+          prevVid.srcObject = null;
+        }
       }
       if (!opts.silentWatchdog) {
         KIOSK_ATT_STATE.lastScanResult = null;
       }
       KIOSK_ATT_STATE.camPausedByUser = false;
       const modelsP = ensureFaceModelsLoaded();
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const stream = reusableStream || await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width: { ideal: 640, max: 960 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 24 }
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         },
         audio: false
       }).catch(() => navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { facingMode: 'user' },
         audio: false
       }));
       if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) {
@@ -74987,11 +76775,14 @@
         window.Face.trackStream(stream);
       }
       stream.getVideoTracks().forEach(track => {
-        track.addEventListener('ended', () => {
-          if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
-            scheduleKioskAttCameraWatchdogRestart('track-ended');
-          }
-        });
+        if (!track.__kioskEndedWired) {
+          track.__kioskEndedWired = true;
+          track.addEventListener('ended', () => {
+            if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+              scheduleKioskAttCameraWatchdogRestart('track-ended');
+            }
+          });
+        }
       });
       FACE_STATE.stream = stream;
       KIOSK_ATT_STATE.camActive = true;
@@ -74999,12 +76790,18 @@
       KIOSK_ATT_STATE.busy = false;
       KIOSK_ATT_STATE.missedFrames = 0;
       KIOSK_ATT_STATE.unknownStreak = 0;
-      KIOSK_ATT_STATE.lastVideoTime = -1;
-      KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
+      KIOSK_ATT_STATE.softRebindAt = 0;
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
         ? 'Look inside the oval guide to clock in or out'
         : 'Camera live: look straight ahead inside the oval guide';
       KIOSK_ATT_STATE.statusCls = 'ok';
+      ['authFaceVideo', 'enrolFaceVideo', 'ksaAdminFaceVideo'].forEach(id => {
+        const ov = $(id);
+        if (ov && ov.srcObject) {
+          try { ov.pause(); } catch (_) {}
+          ov.srcObject = null;
+        }
+      });
       let v = $('kioskAttVideo');
       if (STATE.view === 'kiosks') {
         if (v && (STATE.kioskLocked || syncKioskAttLiveUiInPlace())) {
@@ -75017,8 +76814,21 @@
       if (v) {
         if (v.srcObject !== stream) v.srcObject = stream;
         await v.play().catch(() => {});
+        if (v.readyState < 2 || !v.videoWidth) {
+          await new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            v.addEventListener('loadeddata', finish, { once: true });
+            v.addEventListener('playing', finish, { once: true });
+            setTimeout(finish, 1200);
+          });
+          await v.play().catch(() => {});
+        }
       }
       await modelsP;
+      v = $('kioskAttVideo') || v;
+      KIOSK_ATT_STATE.lastVideoTime = (v && typeof v.currentTime === 'number') ? v.currentTime : -1;
+      KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
       clearTimeout(KIOSK_ATT_STATE.loopTimer);
       KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 40);
       return true;
@@ -75167,16 +76977,28 @@
     } else if (v.paused) {
       v.play().catch(() => {});
     }
+    const hasDimensions = v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0;
     const curTime = typeof v.currentTime === 'number' ? v.currentTime : -1;
-    const frameAdvanced = curTime >= 0 && curTime !== KIOSK_ATT_STATE.lastVideoTime;
+    const frameAdvanced = hasDimensions && curTime >= 0 && (curTime !== KIOSK_ATT_STATE.lastVideoTime || KIOSK_ATT_STATE.lastVideoTime < 0);
     if (frameAdvanced) {
       KIOSK_ATT_STATE.lastVideoTime = curTime;
       KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
-    } else if (KIOSK_ATT_STATE.lastTimeMoveAt > 0 && document.visibilityState === 'visible') {
+      KIOSK_ATT_STATE.softRebindAt = 0;
+    } else if (!KIOSK_ATT_STATE.busy && KIOSK_ATT_STATE.lastTimeMoveAt > 0 && document.visibilityState === 'visible') {
       const stuckMs = Date.now() - KIOSK_ATT_STATE.lastTimeMoveAt;
-      if (stuckMs > 1800 && stuckMs <= 3600) {
+      if (stuckMs > 2200 && stuckMs <= 5500) {
         v.play().catch(() => {});
-      } else if (stuckMs > 3600) {
+      } else if (stuckMs > 5500 && stuckMs <= 12000) {
+        if (Date.now() - (KIOSK_ATT_STATE.softRebindAt || 0) > 4000) {
+          KIOSK_ATT_STATE.softRebindAt = Date.now();
+          try {
+            v.pause();
+            v.srcObject = null;
+            v.srcObject = FACE_STATE.stream;
+            v.play().catch(() => {});
+          } catch (_) {}
+        }
+      } else if (stuckMs > 12000) {
         scheduleKioskAttCameraWatchdogRestart('frame-frozen');
         return;
       }
@@ -75195,7 +77017,7 @@
         stEl.className = 'kiosk-att-status ok';
       }
     }
-    if (frameAdvanced && v.readyState >= 2 && !KIOSK_ATT_STATE.busy && window.Face) {
+    if (frameAdvanced && hasDimensions && !KIOSK_ATT_STATE.busy && window.Face) {
       KIOSK_ATT_STATE.busy = true;
       try {
         const det = await Promise.race([
@@ -75208,11 +77030,14 @@
           stEl.textContent = KIOSK_ATT_STATE.statusText;
           stEl.className = 'kiosk-att-status ' + (KIOSK_ATT_STATE.statusCls || '');
         }
-      } catch (_) {}
-      KIOSK_ATT_STATE.busy = false;
+      } catch (_) {
+      } finally {
+        KIOSK_ATT_STATE.lastTimeMoveAt = Date.now();
+        KIOSK_ATT_STATE.busy = false;
+      }
     }
     if (KIOSK_ATT_STATE.camActive && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance') {
-      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 85);
+      KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 110);
     }
   }
 
@@ -79045,6 +80870,17 @@
       case 'trd_stock': wsHtml = renderTradingStock('main'); break;
       case 'trd_movements': wsHtml = renderTradingStock('movements'); break;
       case 'trd_recon': wsHtml = renderTradingStock('recon'); break;
+      case 're_leases': wsHtml = renderRealEstateLeases('main'); break;
+      case 're_invoicing': wsHtml = renderRealEstateLeases('invoicing'); break;
+      case 're_receipts': wsHtml = renderRealEstateLeases('receipts'); break;
+      case 're_sales': wsHtml = renderRealEstateSales('main'); break;
+      case 're_instalments': wsHtml = renderRealEstateSales('instalments'); break;
+      case 're_properties': wsHtml = renderRealEstateProperties('main'); break;
+      case 're_units': wsHtml = renderRealEstateProperties('units'); break;
+      case 're_valuations': wsHtml = renderRealEstateProperties('valuations'); break;
+      case 're_ownership': wsHtml = renderRealEstateProperties('ownership'); break;
+      case 're_workorders': wsHtml = renderRealEstateWorkOrders('main'); break;
+      case 're_recharges': wsHtml = renderRealEstateWorkOrders('recharges'); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
@@ -79134,7 +80970,16 @@
     }
     if (_uiTipObserver) _uiTipObserver.disconnect();
     try {
+      const liveKioskVid = (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance') ? $('kioskAttVideo') : null;
+      const keepLiveKioskVid = Boolean(liveKioskVid && liveKioskVid.srcObject && streamAlive());
       setContainerHtmlPreservingActiveInput(container, wsHtml);
+      if (keepLiveKioskVid) {
+        const nextKioskVid = $('kioskAttVideo');
+        if (nextKioskVid && nextKioskVid !== liveKioskVid && nextKioskVid.parentNode) {
+          nextKioskVid.parentNode.replaceChild(liveKioskVid, nextKioskVid);
+          if (liveKioskVid.paused) liveKioskVid.play().catch(() => {});
+        }
+      }
       wireWorkspace(container, user);
     } finally {
       stripNativeTitles(document);
@@ -83738,6 +85583,14 @@
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
+  };
+  window.MFG_REALESTATE = {
+    computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
+    getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
+    selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
+    setView: typeof setView === 'function' ? setView : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
 

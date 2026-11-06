@@ -133,12 +133,13 @@ const Face = (() => {
 
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
-    // If booting directly into a provisioned Kiosk station (?kiosk=attendance|sales|raw|fuel) with a saved station seat,
-    // warm up the neural models & WebGL shaders immediately without opening #authFaceVideo first (prevents back-to-back camera HAL churn).
+    // If booting into a Kiosk station (?kiosk=attendance|sales|raw|fuel or Android Kiosk wrapper),
+    // warm up the neural models & WebGL shaders immediately without opening #authFaceVideo first
+    // (prevents dual-<video> SurfaceTexture black-screen on Android and back-to-back camera HAL churn).
     try {
       const sp = new URLSearchParams(window.location.search || "");
       const kParam = String(sp.get("kiosk") || "").toLowerCase();
-      if ((kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel") && localStorage.getItem("isabi_mfg_kiosk_station_seat")) {
+      if (kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel" || /ISABIKiosk\//i.test(navigator.userAgent || "")) {
         load().catch(() => {});
         return;
       }
@@ -202,10 +203,20 @@ const Face = (() => {
 
   async function consumeEarlyStream() {
     earlyCancelled = false;
+    const detachAuthVideo = (streamToDetach) => {
+      try {
+        const vNow = typeof document !== "undefined" ? document.getElementById("authFaceVideo") : null;
+        if (vNow && (!streamToDetach || vNow.srcObject === streamToDetach)) {
+          try { vNow.pause(); } catch (_) {}
+          vNow.srcObject = null;
+        }
+      } catch (_) {}
+    };
     if (earlyStreamObj && earlyStreamObj.getVideoTracks && earlyStreamObj.getVideoTracks().some(t => t.readyState === "live")) {
       const s = earlyStreamObj;
       earlyStreamObj = null;
       earlyStreamPromise = null;
+      detachAuthVideo(s);
       trackStream(s);
       return s;
     }
@@ -215,9 +226,11 @@ const Face = (() => {
       const s = await p;
       earlyStreamObj = null;
       if (!earlyCancelled && s && s.getVideoTracks && s.getVideoTracks().some(t => t.readyState === "live")) {
+        detachAuthVideo(s);
         trackStream(s);
         return s;
       }
+      detachAuthVideo(s);
       if (s) stopStreamTracks(s);
     }
     return null;
@@ -337,7 +350,11 @@ const Face = (() => {
     cv._offsetY = sy;
     cv._scaleX = sw / cw;
     cv._scaleY = sh / ch;
-    cv.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
+    try {
+      cv.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
+    } catch (_) {
+      return null;
+    }
     return cv;
   }
 
@@ -464,18 +481,26 @@ const Face = (() => {
           }
         } catch (_) {}
         preferBoostPass = false;
-        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        if (r) {
-          liveMissCount = 0;
-          return pack(r, frame, false);
+        try {
+          const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          if (r) {
+            liveMissCount = 0;
+            return pack(r, frame, false);
+          }
+        } catch (_) {
+          return null;
         }
         liveMissCount += 1;
         return null;
       } else {
-        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        if (r) {
-          liveMissCount = 0;
-          return pack(r, frame, false);
+        try {
+          const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          if (r) {
+            liveMissCount = 0;
+            return pack(r, frame, false);
+          }
+        } catch (_) {
+          return null;
         }
         liveMissCount += 1;
         if ((liveMissCount % 6) === 0) {
