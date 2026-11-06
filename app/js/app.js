@@ -30635,6 +30635,7 @@
       };
       return `
         ${bannerHtml}
+        ${STATE.payrollPolicyOpen ? renderPayrollBiometricPolicySectionHtml() : ''}
         <div class="panel-card" id="payAttPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -30809,7 +30810,7 @@
 
         ${driverOtPanelHtml}
 
-        ${renderPayrollBiometricPolicySectionHtml()}
+        ${!STATE.payrollPolicyOpen ? renderPayrollBiometricPolicySectionHtml() : ''}
       `;
     }
 
@@ -69149,12 +69150,19 @@
   }
 
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
+    const prevScrollTop = container ? container.scrollTop : 0;
+    const restoreScroll = () => {
+      if (container && prevScrollTop > 0 && container.scrollTop !== prevScrollTop) {
+        container.scrollTop = prevScrollTop;
+      }
+    };
     const active = document.activeElement;
     const preserveId = (active && container.contains(active) && (active.id === 'tableSearchInput' || active.id === 'regionsSearchInput' || active.id === 'geoRegionSearch' || active.id === 'pbiSlicerSearch' || active.id === 'alertRulesSearchInput' || active.id === 'kioskAttRosterSearch'))
       ? active.id
       : '';
     if (!preserveId) {
       container.innerHTML = newHtml;
+      restoreScroll();
       return;
     }
     const tpl = document.createElement('template');
@@ -69162,6 +69170,7 @@
     const incoming = tpl.content.querySelector('#' + preserveId);
     if (!incoming) {
       container.innerHTML = newHtml;
+      restoreScroll();
       return;
     }
     const liveChain = [];
@@ -69178,6 +69187,7 @@
     }
     if (!liveChain.length || liveChain.length !== newChain.length || liveChain.some((el, idx) => el.tagName !== newChain[idx].tagName)) {
       container.innerHTML = newHtml;
+      restoreScroll();
       return;
     }
     for (let i = 0; i < liveChain.length; i++) {
@@ -69206,6 +69216,7 @@
         liveParent.appendChild(newNode.nextSibling);
       }
     }
+    restoreScroll();
   }
 
   let syncInFlight = null;

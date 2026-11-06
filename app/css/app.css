@@ -20036,8 +20036,9 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     border-bottom: 1px solid var(--line);
   }
   .top-left {
-    flex: 1 1 auto;
+    flex: 1 1 0%;
     min-width: 0;
+    overflow: hidden;
     gap: 7px;
   }
   /* Hide duplicate "Hide Menu" text when sidebar is already open; show "Show Menu" pill when collapsed */
@@ -20071,14 +20072,16 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     border: 0 !important;
   }
   .crumb {
+    flex: 1 1 0%;
     min-width: 0;
+    overflow: hidden;
   }
   .crumb b {
     font-size: 13.5px;
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.2;
-    max-width: 150px;
+    max-width: 100%;
   }
   .tools {
     flex: 0 0 auto;
@@ -20119,8 +20122,8 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     background: rgba(255, 255, 255, 0.08);
   }
   .entity-picker-trigger .ep-seg-ind {
-    flex: 0 1 auto;
-    max-width: 84px;
+    flex: 0 0 auto;
+    max-width: 104px;
   }
   .entity-picker-trigger .ep-seg-ind strong {
     font-size: 9.8px;
@@ -20129,7 +20132,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   }
   .entity-picker-trigger .ep-seg-co {
     flex: 1 1 auto;
-    min-width: 108px;
+    min-width: 92px;
   }
   .entity-picker-trigger .ep-seg-co strong {
     font-size: 11px;
