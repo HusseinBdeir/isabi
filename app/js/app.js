@@ -2278,6 +2278,9 @@
   }
 
   function resolveModelKeyFromObj(m) {
+    if (m && m._industry && m._industry !== 'Manufacturing') {
+      return m._coKey || ('industry:' + m._industry);
+    }
     const mdls = (SEED && SEED.models) || {};
     if (m) {
       for (const [mk, mv] of Object.entries(mdls)) {
@@ -2355,7 +2358,7 @@
 
     for (let i = 0; i < sales.length; i++) {
       const s = sales[i];
-      if (!s || s.voided || !isCoAllowed(s.company)) continue;
+      if (!s || s.voided || s._multiIndustrySeed || !isCoAllowed(s.company)) continue;
       if (offScope && !isOfficialRecord(s, 'sales_tickets')) continue;
       const sgn = ticketSign(s);
       if (sgn === 0) continue;
@@ -2386,7 +2389,7 @@
 
     for (let i = 0; i < rcpts.length; i++) {
       const r = rcpts[i];
-      if (!r || r.voided || !r.customer || !isCoAllowed(r.company)) continue;
+      if (!r || r.voided || r._multiIndustrySeed || !r.customer || !isCoAllowed(r.company)) continue;
       if (offScope && !isOfficialRecord(r, 'receipts')) continue;
       const amt = Number(r.amount || 0) + Number(r.discount || 0);
       const settlesAr = isArSettlingReceipt(r);
@@ -2407,7 +2410,7 @@
 
     for (let i = 0; i < raws.length; i++) {
       const r = raws[i];
-      if (!r || r.voided || isRemovedTicket(r) || !isCoAllowed(r.company)) continue;
+      if (!r || r.voided || r._multiIndustrySeed || isRemovedTicket(r) || !isCoAllowed(r.company)) continue;
       if (offScope && !isOfficialRecord(r, 'raw_purchases')) continue;
       const rSgn = rawSign(r);
       if (rSgn === 0) continue;
@@ -2434,7 +2437,7 @@
 
     for (let i = 0; i < exps.length; i++) {
       const x = exps[i];
-      if (!x || x.voided || !isCoAllowed(x.company)) continue;
+      if (!x || x.voided || x._multiIndustrySeed || !isCoAllowed(x.company)) continue;
       if (offScope && !isOfficialRecord(x, 'expenses')) continue;
       const sgn = expenseSign(x);
       if (sgn === 0) continue;
@@ -3791,6 +3794,7 @@
   }
 
   function computeThreeLegPayablesBreakdown(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
     const recs = SEED.records || {};
     const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
     const allowed = allowedCompanyNames();
@@ -3801,6 +3805,10 @@
     const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}`;
     if (!opts._noMemo && _threeLegApCacheKey === cacheKey && _threeLegApCacheVal) return _threeLegApCacheVal;
 
+    const indTargetSet = targetCo.startsWith('industry:')
+      ? new Set(getCompanyCatalog().filter(x => (x.industry || 'Manufacturing') === targetCo.slice(9)).map(x => x.name))
+      : null;
+    const buTarget = COMPANY_BU_MATCH[targetCo] || null;
     const isCoInScope = co => {
       const c = String(co || 'WTC');
       if (allowed.length && !allowed.includes(c)) return false;
@@ -3808,6 +3816,8 @@
       if (targetCo === 'bbconstruction') return c === 'BBConstruction';
       if (targetCo === 'lionstransport') return c === 'Lions Transport';
       if (targetCo === 'manufacturing-group') return c === 'WTC' || c === 'BBConstruction' || c === 'Lions Transport';
+      if (indTargetSet) return indTargetSet.has(c);
+      if (buTarget) return c === buTarget;
       return norm(c) === norm(targetCo);
     };
     const inRange = (dTx, dRep) => {
@@ -5857,26 +5867,32 @@
   const _colFilterOptsCache = new Map();
 
   function filterRecords(list, opts = {}) {
+    ensureMultiIndustrySpineSeeded();
     if (!Array.isArray(list) || !list.length) return [];
     const scopeKey = String(opts.company || STATE.company || 'manufacturing-group');
     const isIndustryScope = scopeKey.startsWith('industry:');
     const indTarget = isIndustryScope ? scopeKey.slice(9) : '';
+    const activeInd = isIndustryScope
+      ? indTarget
+      : (opts.company ? getIndustryForCompanyKey(opts.company) : getActiveIndustry());
     const allowedCos = (opts.ignoreCompany || opts.ignoreRls) ? null : allowedCompanyNames(opts.user);
     const qRaw = opts.ignoreSearch ? '' : STATE.search.trim();
     const qTokens = qRaw ? parseSearchTokens(qRaw) : [];
     const range = opts.ignorePeriod ? null : periodRange(STATE.period);
     const basis = opts.basis || STATE.basis;
     const offScope = !opts.ignoreBookScope && isOfficialScopeActive(opts.user);
+    const exclMultiInd = Boolean(opts.excludeMultiIndustrySeed || activeInd === 'Manufacturing');
+    const hasMultiSeed = Boolean(list._hasMultiIndustrySeed);
 
     let listCache = null;
     let fastKey = '';
     if (!qTokens.length) {
-      fastKey = `${scopeKey}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.ignoreRls)}|${offScope ? 'OFF' : 'ALL'}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
+      fastKey = `${scopeKey}|${activeInd}|${exclMultiInd ? 1 : 0}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.includeGroupMfg)}|${Boolean(opts.includeAllIndustries)}|${Boolean(opts.ignoreRls)}|${offScope ? 'OFF' : 'ALL'}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
       listCache = _filterRecordsWeakCache.get(list);
       if (listCache && listCache.has(fastKey)) return listCache.get(fastKey);
     }
 
-    const isHoldingRootScope = !opts.strictBu && (scopeKey === 'bdeirholding' || scopeKey === 'industry:Holding & Treasury');
+    const isHoldingRootScope = Boolean(opts.includeGroupMfg);
     const indCoSet = (!opts.ignoreCompany && isIndustryScope && !isHoldingRootScope)
       ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === indTarget).map(c => c.name))
       : null;
@@ -5889,6 +5905,10 @@
 
     const out = list.filter(r => {
       if (!r || r.voided) return false;
+      if (exclMultiInd && r._multiIndustrySeed) return false;
+      if (!exclMultiInd && hasMultiSeed && opts.ignoreCompany && !opts.includeGroupMfg && !opts.includeAllIndustries) {
+        if ((r._industry || 'Manufacturing') !== activeInd) return false;
+      }
       if (bu && r.company && r.company !== bu) return false;
       if (excludeNonMfgInMfgGroup && r.company && !/^(wtc|bbconstruction|lions\s*transport)$/i.test(r.company)) return false;
       if (indCoSet && r.company && !indCoSet.has(r.company)) return false;
