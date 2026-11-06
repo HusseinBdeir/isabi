@@ -1614,6 +1614,7 @@
   }
 
   function getModel(coOverride) {
+    ensureMultiIndustrySpineSeeded();
     const rawKey = coOverride || STATE.company;
     const effKey = resolveEffectiveModelKey(rawKey);
     const base = SEED.models[effKey] || SEED.models['manufacturing-group'] || {
@@ -5874,7 +5875,7 @@
     const indTarget = isIndustryScope ? scopeKey.slice(9) : '';
     const activeInd = isIndustryScope
       ? indTarget
-      : (opts.company ? getIndustryForCompanyKey(opts.company) : getActiveIndustry());
+      : (opts.company ? getActiveIndustry(opts.company) : getActiveIndustry());
     const allowedCos = (opts.ignoreCompany || opts.ignoreRls) ? null : allowedCompanyNames(opts.user);
     const qRaw = opts.ignoreSearch ? '' : STATE.search.trim();
     const qTokens = qRaw ? parseSearchTokens(qRaw) : [];
@@ -24287,6 +24288,10 @@
         </div>
       </div>
 
+      ${(window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.renderCockpitHtml === 'function')
+        ? window.MFG_FLEET_PNL.renderCockpitHtml({ containerId: 'fleetRevCostCockpit' })
+        : ''}
+
       <div class="panel-card" id="equipPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -25139,6 +25144,7 @@
             <div class="chip-bar">${chip('all', `All Drivers (${drvBase.length})`)}${chip('company', `Company Drivers (${coDrvActiveCount})`)}${chip('third', `3rd-Party (${Math.max(0, drvBase.length - coDrvActiveCount)})`)}${chip('ot', `With Overtime (${otDrvCount})`)}${chip('fleet', 'Own-Fleet Hauls')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-fpnl-jump="overtime">${ic('fleet_equip')} Bdeir Fleet P&amp;L &amp; 172 OT Log</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Daily Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_drivers">${ic('reg_drivers')} Drivers Registry (All BUs)</button>
             ${exportBtn('driversOtPanel', 'Drivers_Overtime')}
@@ -28094,6 +28100,884 @@
       </div>
 
       ${recurVisualsHtml}
+    `;
+  }
+
+  // ==========================================================================
+  // VIEW 08C: DOCUMENT & RECEIPT VAULT + PER-RECORD ATTACHMENT ENGINE
+  // ==========================================================================
+  function buildSampleDocSvgDataUrl(spec) {
+    const title = String(spec.title || 'DOCUMENT').replace(/[<>&"]/g, '');
+    const docNo = String(spec.name || 'DOC-001').replace(/[<>&"]/g, '');
+    const company = String(spec.company || 'WTC').replace(/[<>&"]/g, '');
+    const party = String(spec.counterparty || 'Vendor').replace(/[<>&"]/g, '');
+    const date = String(spec.date || '2026-10-01').replace(/[<>&"]/g, '');
+    const ref = String(spec.reference || 'REF-100').replace(/[<>&"]/g, '');
+    const amt = fmtUSD(Number(spec.amount || 0), 2);
+    const kind = String(spec.doc_type || 'Invoice & Bill').replace(/[<>&"]/g, '');
+    const linked = String(spec.parent_label || 'Standalone Vault').replace(/[<>&"]/g, '');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="680" height="460" viewBox="0 0 680 460">` +
+      `<rect width="680" height="460" rx="12" fill="#FAF8F5" stroke="#D8CFC2" stroke-width="2"/>` +
+      `<rect x="24" y="24" width="632" height="68" rx="8" fill="#F2ECE1" stroke="#C89D54" stroke-width="1.5"/>` +
+      `<text x="44" y="54" font-family="Arial,sans-serif" font-size="18" font-weight="bold" fill="#281D15">ISABI ARCHIVED DOCUMENT · ${company}</text>` +
+      `<text x="44" y="76" font-family="Arial,sans-serif" font-size="13" fill="#6E5A48">${kind} · Ref ${ref} · ${date}</text>` +
+      `<text x="636" y="62" text-anchor="end" font-family="monospace" font-size="16" font-weight="bold" fill="#9A7332">${docNo}</text>` +
+      `<line x1="40" y1="118" x2="640" y2="118" stroke="#E2D9CC" stroke-width="1.5"/>` +
+      `<text x="44" y="150" font-family="Arial,sans-serif" font-size="13" fill="#6E5A48">DOCUMENT SUBJECT</text>` +
+      `<text x="44" y="174" font-family="Arial,sans-serif" font-size="17" font-weight="bold" fill="#281D15">${title}</text>` +
+      `<text x="44" y="218" font-family="Arial,sans-serif" font-size="13" fill="#6E5A48">COUNTERPARTY</text>` +
+      `<text x="44" y="242" font-family="Arial,sans-serif" font-size="15" font-weight="bold" fill="#281D15">${party}</text>` +
+      `<text x="360" y="218" font-family="Arial,sans-serif" font-size="13" fill="#6E5A48">LINKED RECORD</text>` +
+      `<text x="360" y="242" font-family="monospace" font-size="15" font-weight="bold" fill="#1D4ED8">${linked}</text>` +
+      `<rect x="40" y="276" width="600" height="84" rx="8" fill="#FFFFFF" stroke="#D8CFC2" stroke-width="1.5"/>` +
+      `<text x="64" y="312" font-family="Arial,sans-serif" font-size="13" fill="#6E5A48">VERIFIED DOCUMENT AMOUNT (USD)</text>` +
+      `<text x="64" y="342" font-family="monospace" font-size="24" font-weight="bold" fill="#166534">${amt}</text>` +
+      `<rect x="470" y="298" width="146" height="38" rx="19" fill="#ECFDF5" stroke="#10B981" stroke-width="1.5"/>` +
+      `<text x="543" y="322" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="#065F46">VERIFIED SCAN</text>` +
+      `<text x="44" y="406" font-family="Arial,sans-serif" font-size="12" fill="#6E5A48">Stored in ISABI Document &amp; Receipt Vault · Synced to Local Device &amp; Cloud Ledger</text>` +
+      `</svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
+
+  function inferDocTypeFromCrKey(crKey) {
+    switch (crKey) {
+      case 'expenses':
+      case 'recurring_expenses':
+      case 'raw_purchases':
+      case 'equipment_repairs':
+        return 'Invoice & Bill';
+      case 'receipts':
+      case 'settlements':
+      case 'salaries':
+        return 'Receipt & Payment Voucher';
+      case 'vat_invoices':
+        return 'Tax & MoF Filing';
+      case 'sales_tickets':
+      case 'fuel_intakes':
+        return 'Delivery & Weighbridge Slip';
+      case 'employments':
+      case 'price_rules':
+      case 'credit_terms':
+      case 'jv_partnerships':
+        return 'Contract & Agreement';
+      case 'external_movements':
+      case 'loans':
+      case 'loan_settlements':
+      case 'conversions':
+        return 'Bank & Transfer Slip';
+      default:
+        return 'General Document';
+    }
+  }
+
+  function ensureDocumentsVaultSeeded() {
+    if (!SEED || !SEED.records) return [];
+    if (!Array.isArray(SEED.records.documents)) SEED.records.documents = [];
+    if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
+
+    if (!SEED.records._documentsSeeded) {
+      SEED.records._documentsSeeded = true;
+      const exps = (SEED.records.expenses || []).filter(r => r && !r.voided);
+      const raws = (SEED.records.raw_purchases || []).filter(r => r && !r.voided);
+      const vats = (SEED.records.vat_invoices || []).filter(r => r && !r.voided);
+      const sets = (SEED.records.settlements || []).filter(r => r && !r.voided);
+      const recs = (SEED.records.receipts || []).filter(r => r && !r.voided);
+
+      const e0 = exps[0] || { id: 'exp-seed-1', name: 'EXP-2026-0001', company: 'WTC', date: '2026-10-12', supplier: 'IPT Diesel Supply', amount: 4850, category: 'Fuel', reference: 'INV-88412' };
+      const r0 = raws[0] || { id: 'raw-seed-1', ticket_no: '44210', name: 'RAW-44210', company: 'WTC', date: '2026-10-14', site_owner: 'Dahr El Baidar Quarry', total: 1620 };
+      const v0 = vats[0] || { id: 'vat-seed-1', invoice_no: 'VAT-2026-0108', name: 'VAT-2026-0108', company: 'WTC', date: '2026-10-15', customer: 'MAN Enterprise', total_ttc: 6993 };
+      const s0 = sets[0] || { id: 'set-seed-1', name: 'SET-2026-0041', company: 'BBConstruction', date: '2026-10-18', supplier: 'Holcim Liban', amount: 5200, reference: 'BNK-99201' };
+      const c0 = recs[0] || { id: 'rec-seed-1', name: 'REC-2026-0082', company: 'Lions Transport', date: '2026-10-20', customer: 'Arabian Construction Co.', amount: 3400, reference: 'RV-3049' };
+
+      const defaults = [
+        {
+          id: 'doc-seed-001',
+          name: 'DOC-2026-0001',
+          date: String(e0.date || '2026-10-12').slice(0, 10),
+          rep_date: String(e0.rep_date || e0.date || '2026-10-12').slice(0, 10),
+          company: e0.company || 'WTC',
+          doc_type: 'Invoice & Bill',
+          title: `Supplier Tax Invoice · ${e0.supplier || 'Industrial Parts & Fuel'}`,
+          counterparty: e0.supplier || 'Industrial Parts & Fuel',
+          reference: e0.reference || 'INV-88412',
+          parent_table: 'expenses',
+          parent_id: String(e0.id || ''),
+          parent_label: e0.name || 'EXP-2026-0001',
+          amount: round2(Number(e0.amount || 4850)),
+          file_name: `${(e0.name || 'EXP-2026-0001').replace(/[^A-Za-z0-9_-]/g, '_')}_Invoice.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 48200,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: 'Scanned supplier invoice attached to expense voucher'
+        },
+        {
+          id: 'doc-seed-002',
+          name: 'DOC-2026-0002',
+          date: String(r0.date || '2026-10-14').slice(0, 10),
+          rep_date: String(r0.rep_date || r0.date || '2026-10-14').slice(0, 10),
+          company: r0.company || 'WTC',
+          doc_type: 'Delivery & Weighbridge Slip',
+          title: `Quarry Weighbridge Ticket #${r0.ticket_no || '44210'}`,
+          counterparty: r0.site_owner || r0.truck_owner || 'Quarry Supplier',
+          reference: `WB-${r0.ticket_no || '44210'}`,
+          parent_table: 'raw_purchases',
+          parent_id: String(r0.id || ''),
+          parent_label: r0.ticket_no ? `#${r0.ticket_no}` : (r0.name || 'RAW-44210'),
+          amount: round2(Number(r0.total || r0.cost || 1620)),
+          file_name: `Weighbridge_Slip_${r0.ticket_no || '44210'}.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 39400,
+          capture_method: 'Camera Scan',
+          status: 'Verified & Filed',
+          notes: 'Signed physical pad slip & scale weight verification'
+        },
+        {
+          id: 'doc-seed-003',
+          name: 'DOC-2026-0003',
+          date: String(v0.date || '2026-10-15').slice(0, 10),
+          rep_date: String(v0.rep_date || v0.date || '2026-10-15').slice(0, 10),
+          company: v0.company || 'WTC',
+          doc_type: 'Tax & MoF Filing',
+          title: `Statutory 11% VAT Tax Invoice ${v0.invoice_no || v0.name || 'VAT-2026-0108'}`,
+          counterparty: v0.customer || 'MAN Enterprise',
+          reference: v0.invoice_no || v0.name || 'VAT-2026-0108',
+          parent_table: 'vat_invoices',
+          parent_id: String(v0.id || ''),
+          parent_label: v0.invoice_no || v0.name || 'VAT-2026-0108',
+          amount: round2(Number(v0.total_ttc || v0.net_amount || 6993)),
+          file_name: `MoF_VAT_Invoice_${(v0.invoice_no || 'VAT_0108').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 54100,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: 'Official stamped VAT invoice copy for quarterly MoF declaration'
+        },
+        {
+          id: 'doc-seed-004',
+          name: 'DOC-2026-0004',
+          date: String(s0.date || '2026-10-18').slice(0, 10),
+          rep_date: String(s0.rep_date || s0.date || '2026-10-18').slice(0, 10),
+          company: s0.company || 'BBConstruction',
+          doc_type: 'Receipt & Payment Voucher',
+          title: `Supplier Settlement Payment Receipt · ${s0.supplier || 'Vendor AP'}`,
+          counterparty: s0.supplier || 'Vendor AP',
+          reference: s0.reference || 'PV-2026-441',
+          parent_table: 'settlements',
+          parent_id: String(s0.id || ''),
+          parent_label: s0.name || 'SET-2026-0041',
+          amount: round2(Number(s0.amount || 5200)),
+          file_name: `Payment_Voucher_${(s0.name || 'SET_0041').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 41800,
+          capture_method: 'Camera Scan',
+          status: 'Verified & Filed',
+          notes: 'Signed supplier settlement receipt & bank transfer advice'
+        },
+        {
+          id: 'doc-seed-005',
+          name: 'DOC-2026-0005',
+          date: String(c0.date || '2026-10-20').slice(0, 10),
+          rep_date: String(c0.rep_date || c0.date || '2026-10-20').slice(0, 10),
+          company: c0.company || 'Lions Transport',
+          doc_type: 'Bank & Transfer Slip',
+          title: `Customer Collection Receipt · ${c0.customer || 'Client AR'}`,
+          counterparty: c0.customer || 'Client AR',
+          reference: c0.reference || 'RV-3049',
+          parent_table: 'receipts',
+          parent_id: String(c0.id || ''),
+          parent_label: c0.name || 'REC-2026-0082',
+          amount: round2(Number(c0.amount || 3400)),
+          file_name: `Collection_Receipt_${(c0.name || 'REC_0082').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 38900,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: 'Customer cash/cheque collection voucher'
+        },
+        {
+          id: 'doc-seed-006',
+          name: 'DOC-2026-0006',
+          date: '2026-10-01',
+          rep_date: '2026-10-01',
+          company: 'WTC',
+          doc_type: 'Contract & Agreement',
+          title: 'Annual Plant Insurance & Third-Party Fleet Liability Policy 2026',
+          counterparty: 'Bankers Assurance SAL',
+          reference: 'POL-2026-WTC-09',
+          parent_table: '',
+          parent_id: '',
+          parent_label: '',
+          amount: 14500,
+          file_name: 'WTC_Plant_Fleet_Insurance_Policy_2026.svg',
+          mime_type: 'image/svg+xml',
+          file_size: 96400,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: 'Standalone company policy certificate stored in Document Vault'
+        }
+      ];
+
+      const existingIds = new Set(SEED.records.documents.map(d => d && String(d.id)));
+      defaults.forEach(d => {
+        d.data_url = buildSampleDocSvgDataUrl(d);
+        if (!existingIds.has(String(d.id))) {
+          SEED.records.documents.push(d);
+        }
+      });
+    }
+    return SEED.records.documents;
+  }
+
+  function formatFileSizeShort(bytes) {
+    const b = Number(bytes || 0);
+    if (!(b > 0)) return '—';
+    if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(b / 1024))} KB`;
+  }
+
+  function readAndCompressAttachmentFile(file, captureMethod = 'File Upload') {
+    return new Promise((resolve, reject) => {
+      if (!file) { reject(new Error('No file selected')); return; }
+      const maxRawBytes = 8 * 1024 * 1024;
+      if (file.size > maxRawBytes && !/^image\//i.test(file.type || '')) {
+        reject(new Error('File exceeds 8 MB limit. Please upload a smaller PDF or image.'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.onload = () => {
+        const rawDataUrl = String(reader.result || '');
+        if (/^image\/(jpeg|png|webp|bmp)$/i.test(file.type || '') && typeof Image !== 'undefined') {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const maxDim = 1400;
+              let w = img.naturalWidth || img.width || 800;
+              let h = img.naturalHeight || img.height || 600;
+              if (w > maxDim || h > maxDim) {
+                if (w >= h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                else { w = Math.round((w * maxDim) / h); h = maxDim; }
+              }
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+              const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+              const approxBytes = Math.round((compressedUrl.length * 3) / 4);
+              resolve({
+                id: uid('at'),
+                file_name: file.name || `Scan_${todayISO()}.jpg`,
+                mime_type: 'image/jpeg',
+                file_size: approxBytes || file.size || 45000,
+                capture_method: captureMethod,
+                uploaded_at: nowStamp(),
+                uploaded_by: activeUser().full_name,
+                data_url: compressedUrl
+              });
+            } catch (_) {
+              resolve({
+                id: uid('at'),
+                file_name: file.name || `Attachment_${todayISO()}`,
+                mime_type: file.type || 'image/jpeg',
+                file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+                capture_method: captureMethod,
+                uploaded_at: nowStamp(),
+                uploaded_by: activeUser().full_name,
+                data_url: rawDataUrl
+              });
+            }
+          };
+          img.onerror = () => {
+            resolve({
+              id: uid('at'),
+              file_name: file.name || `Attachment_${todayISO()}`,
+              mime_type: file.type || 'application/octet-stream',
+              file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+              capture_method: captureMethod,
+              uploaded_at: nowStamp(),
+              uploaded_by: activeUser().full_name,
+              data_url: rawDataUrl
+            });
+          };
+          img.src = rawDataUrl;
+        } else {
+          resolve({
+            id: uid('at'),
+            file_name: file.name || `Document_${todayISO()}.pdf`,
+            mime_type: file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream'),
+            file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+            capture_method: captureMethod,
+            uploaded_at: nowStamp(),
+            uploaded_by: activeUser().full_name,
+            data_url: rawDataUrl
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function getRecordAttachmentsList(crKey, row) {
+    if (!row) return [];
+    ensureDocumentsVaultSeeded();
+    const out = [];
+    const seen = new Set();
+    const addAtt = att => {
+      if (!att || (!att.data_url && !att.file_name)) return;
+      const sig = `${norm(att.id || '')}|${norm(att.file_name || '')}`;
+      const nameKey = norm(att.file_name || att.title || att.id || '');
+      if ((att.id && seen.has(String(att.id))) || (nameKey && seen.has('nm:' + nameKey))) return;
+      if (att.id) seen.add(String(att.id));
+      if (nameKey) seen.add('nm:' + nameKey);
+      seen.add(sig);
+      out.push(att);
+    };
+
+    if (crKey === 'documents') {
+      if (row.data_url || row.file_name) {
+        addAtt({
+          id: row.id,
+          doc_id: row.id,
+          file_name: row.file_name || `${row.name || 'Document'}.svg`,
+          title: row.title || row.name,
+          mime_type: row.mime_type || 'image/svg+xml',
+          file_size: row.file_size || 42000,
+          capture_method: row.capture_method || 'File Upload',
+          uploaded_at: row.entered_at || row.date || '',
+          uploaded_by: row.entered_by || '',
+          data_url: row.data_url || buildSampleDocSvgDataUrl(row)
+        });
+      }
+      if (Array.isArray(row.attachments)) row.attachments.forEach(addAtt);
+      return out;
+    }
+
+    if (Array.isArray(row.attachments)) {
+      row.attachments.forEach(addAtt);
+    }
+
+    const rowId = String(row.id || '').trim();
+    const rowLabels = new Set(
+      [row.name, row.ticket_no, row.ticket_no ? `#${row.ticket_no}` : '', row.invoice_no]
+        .map(x => norm(x || ''))
+        .filter(Boolean)
+    );
+    const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
+    docsPool.forEach(d => {
+      if (!d || d.voided) return;
+      if (d.parent_table && norm(d.parent_table) !== norm(crKey)) return;
+      const matchId = Boolean(rowId && d.parent_id && String(d.parent_id) === rowId);
+      const matchLbl = Boolean(d.parent_label && rowLabels.has(norm(d.parent_label)));
+      if (!matchId && !matchLbl) return;
+      addAtt({
+        id: d.att_id || d.id,
+        doc_id: d.id,
+        doc_name: d.name,
+        file_name: d.file_name || `${d.name || 'Document'}.svg`,
+        title: d.title || d.name,
+        mime_type: d.mime_type || 'image/svg+xml',
+        file_size: d.file_size || 42000,
+        capture_method: d.capture_method || 'File Upload',
+        uploaded_at: d.entered_at || d.date || '',
+        uploaded_by: d.entered_by || '',
+        data_url: d.data_url || buildSampleDocSvgDataUrl(d)
+      });
+    });
+    return out;
+  }
+
+  function getRecordAttachmentCount(crKey, row) {
+    if (!row || row.voided) return 0;
+    const directCnt = Array.isArray(row.attachments) ? row.attachments.length : 0;
+    ensureDocumentsVaultSeeded();
+    const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
+    if (!docsPool.length) return directCnt;
+    const list = getRecordAttachmentsList(crKey, row);
+    return list.length;
+  }
+
+  function syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts) {
+    if (!record || !crKey) return;
+    ensureDocumentsVaultSeeded();
+    if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
+    if (!Array.isArray(SEED.records.documents)) SEED.records.documents = [];
+
+    if (crKey === 'documents') {
+      if (!record.data_url) {
+        if (Array.isArray(record.attachments) && record.attachments[0] && record.attachments[0].data_url) {
+          const a0 = record.attachments[0];
+          record.data_url = a0.data_url;
+          record.file_name = record.file_name || a0.file_name;
+          record.mime_type = record.mime_type || a0.mime_type;
+          record.file_size = record.file_size || a0.file_size;
+          record.capture_method = record.capture_method || a0.capture_method;
+        } else {
+          record.data_url = buildSampleDocSvgDataUrl(record);
+          record.file_name = record.file_name || `${(record.name || 'DOC').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`;
+          record.mime_type = record.mime_type || 'image/svg+xml';
+          record.file_size = record.file_size || 42000;
+        }
+      }
+      if (record.parent_table && (record.parent_id || record.parent_label)) {
+        const pKey = record.parent_table;
+        const pPool = (STATE.customRecords[pKey] || []).concat((SEED.records && SEED.records[pKey]) || []);
+        const pLblNorm = norm(record.parent_label || '').replace(/^#/, '');
+        const pHit = pPool.find(x => x && !x.voided && (
+          (record.parent_id && String(x.id) === String(record.parent_id)) ||
+          (pLblNorm && (norm(x.name) === pLblNorm || norm(x.ticket_no) === pLblNorm || norm(x.invoice_no) === pLblNorm))
+        ));
+        if (pHit) {
+          record.parent_id = String(pHit.id);
+          record.parent_label = pHit.ticket_no ? `#${pHit.ticket_no}` : (pHit.invoice_no || pHit.name || String(pHit.id));
+          if (!Array.isArray(pHit.attachments)) pHit.attachments = [];
+          const attItem = {
+            id: record.id,
+            doc_id: record.id,
+            file_name: record.file_name,
+            title: record.title || record.name,
+            mime_type: record.mime_type,
+            file_size: record.file_size,
+            capture_method: record.capture_method || 'File Upload',
+            uploaded_at: record.entered_at || nowStamp(),
+            uploaded_by: record.entered_by || activeUser().full_name,
+            data_url: record.data_url
+          };
+          const exIdx = pHit.attachments.findIndex(a => a && (String(a.id) === String(attItem.id) || norm(a.file_name) === norm(attItem.file_name)));
+          if (exIdx >= 0) pHit.attachments[exIdx] = attItem;
+          else pHit.attachments.push(attItem);
+          pHit.attachment_count = pHit.attachments.length;
+        }
+      }
+      return;
+    }
+
+    const atts = Array.isArray(record.attachments) ? record.attachments : [];
+    if (!atts.length) return;
+    const parentLabel = record.ticket_no
+      ? `#${record.ticket_no}`
+      : (record.invoice_no || record.name || String(record.id));
+    const counterparty = record.supplier || record.customer || record.site_owner || record.truck_owner || record.counterparty || record.staff || record.driver || '';
+    const refNo = record.reference || record.external_invoice || record.vat_invoice || record.ticket_no || record.invoice_no || '';
+    const amt = round2(Number(record.total_ttc || record.total || record.amount || record.total_cost_usd || record.cost_usd || 0));
+
+    atts.forEach((att, idx) => {
+      if (!att || (!att.data_url && !att.file_name)) return;
+      const docId = att.doc_id || `doc-${String(record.id)}-${idx + 1}`;
+      att.doc_id = docId;
+      const existingDoc = STATE.customRecords.documents.find(d => d && (String(d.id) === String(docId) || (String(d.parent_id) === String(record.id) && norm(d.file_name) === norm(att.file_name))));
+      const seqNum = String((SEED.records.documents.length + STATE.customRecords.documents.length + idx + 1)).padStart(4, '0');
+      const docRow = {
+        id: existingDoc ? existingDoc.id : docId,
+        att_id: att.id || docId,
+        name: existingDoc ? existingDoc.name : `DOC-${String(record.date || todayISO()).slice(0, 4)}-${seqNum}`,
+        date: String(record.date || todayISO()).slice(0, 10),
+        rep_date: String(record.rep_date || record.date || todayISO()).slice(0, 10),
+        company: record.company || defaultEntryCompany() || 'WTC',
+        doc_type: inferDocTypeFromCrKey(crKey),
+        title: att.title || `${(CR_LABEL[crKey] || 'Record').replace(/^./, c => c.toUpperCase())} ${parentLabel} · ${att.file_name || 'Attachment'}`,
+        counterparty,
+        reference: refNo,
+        parent_table: crKey,
+        parent_id: String(record.id),
+        parent_label: parentLabel,
+        amount: amt,
+        file_name: att.file_name || `Receipt_${seqNum}.jpg`,
+        mime_type: att.mime_type || 'image/jpeg',
+        file_size: Number(att.file_size || 45000),
+        capture_method: att.capture_method || 'File Upload',
+        status: 'Verified & Filed',
+        data_url: att.data_url,
+        notes: record.notes || `Attached to ${(CR_LABEL[crKey] || crKey)} ${parentLabel}`,
+        source: 'app',
+        entered_by: record.entered_by || activeUser().full_name,
+        entered_by_email: record.entered_by_email || activeUser().email,
+        entered_at: att.uploaded_at || record.entered_at || nowStamp(),
+        voided: false
+      };
+      const cIdx = STATE.customRecords.documents.findIndex(d => d && String(d.id) === String(docRow.id));
+      if (cIdx >= 0) STATE.customRecords.documents[cIdx] = docRow;
+      else STATE.customRecords.documents.unshift(docRow);
+
+      const sIdx = SEED.records.documents.findIndex(d => d && String(d.id) === String(docRow.id));
+      if (sIdx >= 0) SEED.records.documents[sIdx] = docRow;
+      else SEED.records.documents.unshift(docRow);
+
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push(['documents', docRow]);
+    });
+  }
+
+  function ensureDocPreviewModalDom() {
+    let modal = $('docPreviewModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'docPreviewModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="modal-card doc-preview-card" role="dialog" aria-modal="true" aria-labelledby="docPrevTitle">
+        <div class="modal-head">
+          <div>
+            <div class="modal-eyebrow" id="docPrevEyebrow">ISABI DOCUMENT &amp; RECEIPT VAULT · VERIFIED ATTACHMENT</div>
+            <h3 id="docPrevTitle">Document Preview</h3>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <a id="docPrevDownloadBtn" class="btn btn-brass btn-sm" download="document" href="#">${ic('download')} Download File</a>
+            <button type="button" class="modal-close" id="docPrevCloseBtn" aria-label="Close preview">✕</button>
+          </div>
+        </div>
+        <div class="modal-body" id="docPrevBody"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closePrev = () => { modal.hidden = true; };
+    const cBtn = $('docPrevCloseBtn');
+    if (cBtn) cBtn.addEventListener('click', closePrev);
+    modal.addEventListener('click', e => { if (e.target === modal) closePrev(); });
+    return modal;
+  }
+
+  function openDocumentPreviewModal(docOrAtt, contextMeta = {}) {
+    if (!docOrAtt) return;
+    const modal = ensureDocPreviewModalDom();
+    const titleEl = $('docPrevTitle');
+    const eyeEl = $('docPrevEyebrow');
+    const bodyEl = $('docPrevBody');
+    const dlBtn = $('docPrevDownloadBtn');
+
+    const allAtts = Array.isArray(contextMeta.allAttachments) && contextMeta.allAttachments.length
+      ? contextMeta.allAttachments
+      : [docOrAtt];
+    const activeIdx = Math.max(0, Math.min(allAtts.length - 1, Number(contextMeta.activeIdx || 0)));
+    const cur = allAtts[activeIdx] || docOrAtt;
+
+    const title = cur.title || cur.file_name || contextMeta.title || 'Saved Document & Receipt';
+    const fileName = cur.file_name || `${(cur.name || 'Document').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`;
+    const mime = String(cur.mime_type || '').toLowerCase();
+    const dataUrl = cur.data_url || buildSampleDocSvgDataUrl(cur);
+    const co = cur.company || contextMeta.company || '';
+    const dt = cur.date || contextMeta.date || (cur.uploaded_at ? String(cur.uploaded_at).slice(0, 10) : '');
+    const docType = cur.doc_type || contextMeta.doc_type || 'Receipt & Supporting Document';
+    const party = cur.counterparty || contextMeta.counterparty || '';
+    const parentTbl = cur.parent_table || contextMeta.parent_table || '';
+    const parentId = cur.parent_id || contextMeta.parent_id || '';
+    const parentLbl = cur.parent_label || contextMeta.parent_label || '';
+
+    if (titleEl) titleEl.textContent = title;
+    if (eyeEl) eyeEl.textContent = `ISABI DOCUMENT & RECEIPT VAULT · ${co || 'ALL ENTITIES'}${dt ? ' · ' + fmtDateDMY(dt) : ''}`;
+    if (dlBtn) {
+      dlBtn.href = dataUrl;
+      dlBtn.setAttribute('download', fileName);
+    }
+
+    const isPdf = mime.includes('pdf') || /\.pdf$/i.test(fileName) || /^data:application\/pdf/i.test(dataUrl);
+    const isImage = !isPdf && (mime.startsWith('image/') || /^data:image\//i.test(dataUrl) || /\.(svg|png|jpe?g|webp|gif|bmp)$/i.test(fileName));
+
+    const switcherHtml = allAtts.length > 1 ? `
+      <div class="doc-prev-switcher">
+        <span>Attached Files (${allAtts.length}):</span>
+        ${allAtts.map((a, idx) => `<button type="button" class="filter-chip ${idx === activeIdx ? 'active' : ''}" data-doc-prev-idx="${idx}">${esc(a.file_name || `File #${idx + 1}`)}</button>`).join('')}
+      </div>
+    ` : '';
+
+    bodyEl.innerHTML = `
+      ${switcherHtml}
+      <div class="doc-prev-meta-strip">
+        ${co ? `<div><small>Entity</small><b>${coBadge(co)}</b></div>` : ''}
+        <div><small>Category</small><b>${esc(docType)}</b></div>
+        ${party ? `<div><small>Counterparty</small><b>${esc(party)}</b></div>` : ''}
+        ${parentLbl ? `<div><small>Linked Record</small><b><button type="button" class="btn-link-inline mono" id="docPrevJumpParentBtn">${esc(parentLbl)}</button></b></div>` : ''}
+        <div><small>File Name</small><b class="mono">${esc(fileName)}</b></div>
+        <div><small>Size &amp; Source</small><b>${esc(formatFileSizeShort(cur.file_size))} · ${esc(cur.capture_method || 'File Upload')}</b></div>
+      </div>
+      <div class="doc-prev-stage">
+        ${isImage
+          ? `<img src="${esc(dataUrl)}" alt="${esc(title)}" class="doc-prev-img">`
+          : (isPdf
+            ? `<iframe src="${esc(dataUrl)}" class="doc-prev-pdf" title="${esc(title)}"></iframe>`
+            : `<div class="doc-prev-fallback"><p><b>${esc(fileName)}</b> (${esc(formatFileSizeShort(cur.file_size))})</p><p class="mu">Click <b>Download File</b> above to open this attachment on your device.</p></div>`)}
+      </div>
+    `;
+
+    bodyEl.querySelectorAll('[data-doc-prev-idx]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const nextIdx = Number(btn.getAttribute('data-doc-prev-idx') || 0);
+        openDocumentPreviewModal(allAtts[nextIdx], Object.assign({}, contextMeta, { allAttachments: allAtts, activeIdx: nextIdx }));
+      });
+    });
+
+    const jumpBtn = $('docPrevJumpParentBtn');
+    if (jumpBtn && parentTbl && (parentId || parentLbl)) {
+      jumpBtn.addEventListener('click', () => {
+        modal.hidden = true;
+        showRecordInspector(parentTbl, parentId || String(parentLbl).replace(/^#/, ''));
+      });
+    }
+
+    modal.hidden = false;
+  }
+
+  async function attachFilesDirectlyToRecord(crKey, rowId, fileList, captureMethod = 'File Upload') {
+    if (!crKey || !rowId || !fileList || !fileList.length) return;
+    const targetRow = resolveInspectorRecord(crKey, rowId);
+    if (!targetRow) { toast('Record not found', 'err'); return; }
+    try {
+      const added = [];
+      for (const file of Array.from(fileList)) {
+        const att = await readAndCompressAttachmentFile(file, captureMethod);
+        added.push(att);
+      }
+      if (!added.length) return;
+      if (crKey === 'documents') {
+        const a0 = added[0];
+        targetRow.file_name = a0.file_name;
+        targetRow.mime_type = a0.mime_type;
+        targetRow.file_size = a0.file_size;
+        targetRow.capture_method = a0.capture_method;
+        targetRow.data_url = a0.data_url;
+      }
+      if (!Array.isArray(targetRow.attachments)) targetRow.attachments = [];
+      added.forEach(a => targetRow.attachments.push(a));
+      targetRow.attachment_count = targetRow.attachments.length;
+
+      if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+      const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(targetRow.id));
+      if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], targetRow);
+      else STATE.customRecords[crKey].unshift(Object.assign({}, targetRow));
+
+      const extraPosts = [];
+      syncRecordAttachmentsToDocumentVault(crKey, targetRow, extraPosts);
+      applyCustomRecordsToSeed();
+      saveLocalAuthAndRecords();
+      postRecordToLocalApi(crKey, targetRow);
+      extraPosts.forEach(([ek, er]) => postRecordToLocalApi(ek, er));
+      syncWithCloud(true);
+      toast(`Attached ${added.length} file${added.length === 1 ? '' : 's'} to ${targetRow.ticket_no ? '#' + targetRow.ticket_no : (targetRow.name || 'record')}`, 'ok');
+      const insp = $('recordInspector');
+      if (insp && !insp.hidden && STATE.inspectorKey === crKey) {
+        showRecordInspector(crKey, targetRow.id || rowId, { preserveScroll: true });
+      }
+      renderApp();
+    } catch (err) {
+      toast((err && err.message) || 'Could not attach file', 'err');
+    }
+  }
+
+  function renderDocumentVault() {
+    ensureDocumentsVaultSeeded();
+    const docsAll = filterRecords(SEED.records.documents || [], { ignoreSearch: true });
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
+    const dChipKey = STATE.docChipFilter || 'all';
+    const dChip = (key, label) => `<button type="button" class="filter-chip ${dChipKey === key ? 'active' : ''}" data-doc-chip="${esc(key)}">${label}</button>`;
+
+    const invDocs = docsAll.filter(d => /invoice|bill|tax|mof/i.test(d.doc_type || ''));
+    const recDocs = docsAll.filter(d => /receipt|voucher|bank|transfer|slip/i.test(d.doc_type || ''));
+    const linkedDocs = docsAll.filter(d => Boolean(d.parent_label || d.parent_id));
+    const standaloneDocs = docsAll.filter(d => !d.parent_label && !d.parent_id);
+    const totalVaultUsd = docsAll.reduce((s, d) => s + Number(d.amount || 0), 0);
+
+    const filteredDocs = sortRows('documents', applyColFilters('documents', docsAll.filter(d => {
+      if (dChipKey === 'invoices' && !/invoice|bill|tax|mof/i.test(d.doc_type || '')) return false;
+      if (dChipKey === 'receipts' && !/receipt|voucher|bank|transfer/i.test(d.doc_type || '')) return false;
+      if (dChipKey === 'slips' && !/delivery|weighbridge|contract|equipment/i.test(d.doc_type || '')) return false;
+      if (dChipKey === 'linked' && !(d.parent_label || d.parent_id)) return false;
+      if (dChipKey === 'standalone' && (d.parent_label || d.parent_id)) return false;
+      return matchQ([d.date, d.name, d.company, d.doc_type, d.title, d.counterparty, d.reference, d.parent_label, d.file_name, d.status, d.notes]);
+    }), d => ({
+      date: d.date || '',
+      name: d.name || '',
+      company: d.company || '',
+      doc_type: d.doc_type || '',
+      title: d.title || '',
+      counterparty: d.counterparty || '',
+      reference: d.reference || '',
+      parent_label: d.parent_label || 'Standalone',
+      file_name: d.file_name || '',
+      status: d.status || 'Verified & Filed'
+    })));
+
+    const shownDocs = filteredDocs.slice(0, shownCount('documents'));
+    const sumFilteredUsd = filteredDocs.reduce((s, d) => s + Number(d.amount || 0), 0);
+    const sumFilteredBytes = filteredDocs.reduce((s, d) => s + Number(d.file_size || 0), 0);
+
+    const byTypeMap = new Map();
+    docsAll.forEach(d => {
+      const k = d.doc_type || 'General Document';
+      const cur = byTypeMap.get(k) || { label: k, count: 0, amount: 0 };
+      cur.count += 1;
+      cur.amount = round2(cur.amount + Number(d.amount || 0));
+      byTypeMap.set(k, cur);
+    });
+    const byType = Array.from(byTypeMap.values())
+      .map(r => Object.assign(r, { sub: `${fmtNum(r.count)} file${r.count === 1 ? '' : 's'} · ${fmtUSD(r.amount, 0)} documented` }))
+      .sort((a, b) => b.count - a.count || b.amount - a.amount);
+
+    const byPartyMap = new Map();
+    docsAll.forEach(d => {
+      const k = d.counterparty || d.company || 'General Archive';
+      const cur = byPartyMap.get(k) || { label: k, count: 0, amount: 0, linked: 0 };
+      cur.count += 1;
+      cur.amount = round2(cur.amount + Number(d.amount || 0));
+      if (d.parent_label || d.parent_id) cur.linked += 1;
+      byPartyMap.set(k, cur);
+    });
+    const byParty = Array.from(byPartyMap.values())
+      .map(r => Object.assign(r, { sub: `${fmtNum(r.count)} doc${r.count === 1 ? '' : 's'}${r.linked ? ` · ${r.linked} linked to ledger` : ' · Standalone'}` }))
+      .sort((a, b) => b.amount - a.amount || b.count - a.count);
+
+    const docsVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderDocumentsVisualsSection === 'function')
+      ? window.MFG_PBI.renderDocumentsVisualsSection({ byType, byParty })
+      : '';
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">DOCUMENT &amp; RECEIPT VAULT · PER-RECORD ATTACHMENTS &amp; COMPANY ARCHIVE</div>
+          <div class="cockpit-title">Document &amp; Receipt Vault</div>
+          <div class="cockpit-sub">Store standalone invoices, payment receipts, tax filings, contracts, and weighbridge slips, or attach supporting scans directly to any operational record.</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Total Saved Documents',
+            badge: `${fmtNum(docsAll.length)} Filed`,
+            badgeCls: 'brass',
+            val: `${fmtNum(docsAll.length)} Files`,
+            valCls: 'brass',
+            pct: 100,
+            sub: `<b>${fmtUSD(totalVaultUsd, 0)}</b> documented value · <b>${esc(formatFileSizeShort(docsAll.reduce((s, d) => s + Number(d.file_size || 0), 0)))}</b> stored`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Invoices, Bills & Tax',
+            badge: `${fmtNum(invDocs.length)} Invoices`,
+            badgeCls: 'good',
+            val: fmtUSD(invDocs.reduce((s, d) => s + Number(d.amount || 0), 0), 0),
+            valCls: 'steel',
+            pct: docsAll.length ? Math.round((invDocs.length / docsAll.length) * 100) : 50,
+            sub: `<span class="insight-drill" data-doc-chip="invoices">Filter ${fmtNum(invDocs.length)} supplier bills &amp; MoF VAT invoices</span>`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Receipts & Vouchers',
+            badge: `${fmtNum(recDocs.length)} Receipts`,
+            badgeCls: 'good',
+            val: fmtUSD(recDocs.reduce((s, d) => s + Number(d.amount || 0), 0), 0),
+            valCls: 'emerald',
+            pct: docsAll.length ? Math.round((recDocs.length / docsAll.length) * 100) : 50,
+            sub: `<span class="insight-drill" data-doc-chip="receipts">Filter ${fmtNum(recDocs.length)} payment &amp; bank vouchers</span>`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Linked vs Standalone',
+            badge: `${fmtNum(linkedDocs.length)} Linked`,
+            badgeCls: 'brass',
+            val: `${fmtNum(linkedDocs.length)} / ${fmtNum(standaloneDocs.length)}`,
+            valCls: 'amber',
+            pct: docsAll.length ? Math.round((linkedDocs.length / docsAll.length) * 100) : 60,
+            sub: `<span class="insight-drill" data-doc-chip="linked"><b>${fmtNum(linkedDocs.length)}</b> linked to transactions</span> · <span class="insight-drill" data-doc-chip="standalone"><b>${fmtNum(standaloneDocs.length)}</b> standalone</span>`,
+            tone: 'amber'
+          })}
+        </div>
+      </div>
+
+      ${canEnterForm('document') ? `
+      <div class="doc-vault-dropzone" id="docVaultQuickDropzone">
+        <div class="doc-vault-dz-left">
+          <span class="doc-vault-dz-ico">${ic('receipt')}</span>
+          <div>
+            <strong>Quick Save Invoice, Receipt, Contract or Scan</strong>
+            <span>Drag &amp; drop a PDF or photo here, snap a camera photo of a paper receipt, or attach files directly inside any Expense, Ticket, or Settlement form.</span>
+          </div>
+        </div>
+        <div class="doc-vault-dz-actions">
+          <input type="file" id="docVaultQuickFileInput" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
+          <input type="file" id="docVaultQuickCamInput" accept="image/*" capture="environment" hidden>
+          <button type="button" class="btn btn-outline-bar" id="docVaultQuickUploadBtn">${ic('upload')} Upload File / PDF</button>
+          <button type="button" class="btn btn-outline-bar" id="docVaultQuickCamBtn">${ic('camera')} Snap Receipt Photo</button>
+          <button type="button" class="btn btn-brass" data-open-modal="document">+ Save Document / Receipt</button>
+        </div>
+      </div>
+      ` : ''}
+
+      <div class="panel-card" id="documentsPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>SAVED DOCUMENTS, INVOICES &amp; RECEIPTS VAULT (${fmtNum(filteredDocs.length)})</span></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div class="chip-bar">
+              ${dChip('all', `All (${docsAll.length})`)}
+              ${dChip('invoices', `Invoices & Tax (${invDocs.length})`)}
+              ${dChip('receipts', `Receipts & Vouchers (${recDocs.length})`)}
+              ${dChip('linked', `Linked to Ledger (${linkedDocs.length})`)}
+              ${dChip('standalone', `Standalone (${standaloneDocs.length})`)}
+            </div>
+            ${searchBox('Search document title, invoice #, vendor, linked ticket, or notes...')}
+            <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+              ${canEnterForm('document') ? `<button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" data-open-modal="document">+ Save Document / Receipt</button>` : ''}
+              ${exportBtn('documentsPanel', 'Document_And_Receipt_Vault')}
+            </span>
+          </div>
+        </div>
+        ${renderColFilterBar('documents')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('documents', 'Date', 'date')}${th('documents', 'Doc #', 'name')}${th('documents', 'Entity', 'company')}
+                ${th('documents', 'Category', 'doc_type')}${th('documents', 'Document Title / Subject', 'title')}
+                ${th('documents', 'Counterparty', 'counterparty')}${th('documents', 'Ref #', 'reference')}
+                ${th('documents', 'Linked Record', 'parent_label')}${th('documents', 'File', 'file_name')}
+                ${th('documents', 'Amount ($)', 'amount', 'r')}${th('documents', 'Status', 'status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownDocs.map(d => {
+                const pTbl = d.parent_table || '';
+                const pId = d.parent_id || (d.parent_label ? String(d.parent_label).replace(/^#/, '') : '');
+                const linkedCell = (pTbl && d.parent_label)
+                  ? relLink(pTbl, pId, d.parent_label, true)
+                  : `<span class="badge badge-neutral">Standalone Vault</span>`;
+                const statusCls = /verified|filed/i.test(d.status || '') ? 'badge-ok' : (/pending/i.test(d.status || '') ? 'badge-warn' : 'badge-info');
+                return `
+                  <tr class="rrow" data-rkey="documents" data-rid="${esc(d.id)}">
+                    <td class="mono">${esc(fmtDateDMY(d.date))}${repDateShiftBadge(d)}${appCell(d, 'documents')}</td>
+                    <td class="mono"><strong>${esc(d.name || '—')}</strong></td>
+                    <td>${coBadge(d.company || 'WTC')}</td>
+                    <td><span class="badge badge-brass">${esc(d.doc_type || 'General Document')}</span></td>
+                    <td><strong>${esc(d.title || d.name || '—')}</strong>${d.notes ? `<div class="mu" style="font-size:11px">${esc(d.notes)}</div>` : ''}</td>
+                    <td>${d.counterparty ? esc(d.counterparty) : '<span class="mu">—</span>'}</td>
+                    <td class="mono">${esc(d.reference || '—')}</td>
+                    <td>${linkedCell}</td>
+                    <td>
+                      <button type="button" class="att-file-table-pill" data-preview-doc-id="${esc(d.id)}" data-ui-tip="Click to preview or download ${esc(d.file_name || 'document')}">
+                        ${ic('receipt')}
+                        <span class="mono">${esc(d.file_name || 'Document.svg')}</span>
+                        <small>(${esc(formatFileSizeShort(d.file_size))})</small>
+                      </button>
+                    </td>
+                    <td class="r">${Number(d.amount || 0) > 0 ? `<strong>${fmtUSD(d.amount, 2)}</strong>` : '<span class="mu">—</span>'}</td>
+                    <td><span class="badge ${statusCls}">${esc(d.status || 'Verified & Filed')}</span></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(11, 'No saved documents or receipts match the active filter.')}
+              ${showMoreRow('documents', filteredDocs.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="8"><b>TOTAL (${fmtNum(filteredDocs.length)} DOCUMENTS · ${fmtNum(filteredDocs.filter(d => d.parent_label || d.parent_id).length)} LINKED TO TRANSACTIONS)</b></td>
+                <td><b>${esc(formatFileSizeShort(sumFilteredBytes))}</b></td>
+                <td class="r"><b>${fmtUSD(sumFilteredUsd, 2)}</b></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      ${docsVisualsHtml}
     `;
   }
 
@@ -36642,6 +37526,8 @@
 
     const scoped = filterRecords(extList, {
       ignoreCompany: true,
+      includeGroupMfg: true,
+      excludeMultiIndustrySeed: true,
       ignoreSearch,
       basis: STATE.basis
     });
@@ -36974,11 +37860,113 @@
     const openCount = openRows.length;
     const reconRatePct = totalCount > 0 ? round2((matchedCount / totalCount) * 100) : 100;
 
+    // Bilateral Repayment & Net Lending Engine (Given vs. Paid Back & Who Owes Whom)
+    const byBilateralMap = new Map();
+    interactions.forEach(x => {
+      const [coA, coB] = [x.fromCo, x.toCo].sort();
+      const bKey = `${coA} ↔ ${coB}`;
+      const bCur = byBilateralMap.get(bKey) || {
+        bilateralKey: bKey,
+        coA,
+        coB,
+        aToBUsd: 0,
+        bToAUsd: 0,
+        aToBCount: 0,
+        bToACount: 0,
+        totalCount: 0,
+        matchedCount: 0,
+        openCount: 0,
+        matchedUsd: 0,
+        openUsd: 0,
+        lastDate: ''
+      };
+      bCur.totalCount += 1;
+      if (x.fromCo === coA) {
+        bCur.aToBUsd = round2(bCur.aToBUsd + x.usd);
+        bCur.aToBCount += 1;
+      } else {
+        bCur.bToAUsd = round2(bCur.bToAUsd + x.usd);
+        bCur.bToACount += 1;
+      }
+      if (x.status === 'Reconciled') {
+        bCur.matchedCount += 1;
+        bCur.matchedUsd = round2(bCur.matchedUsd + x.usd);
+      } else {
+        bCur.openCount += 1;
+        bCur.openUsd = round2(bCur.openUsd + x.usd);
+      }
+      if (x.date && (!bCur.lastDate || x.date > bCur.lastDate)) bCur.lastDate = x.date;
+      byBilateralMap.set(bKey, bCur);
+    });
+
+    const byBilateral = Array.from(byBilateralMap.values()).map(b => {
+      const aIsLender = b.aToBUsd >= b.bToAUsd;
+      const lenderCo = aIsLender ? b.coA : b.coB;
+      const borrowerCo = aIsLender ? b.coB : b.coA;
+      const givenUsd = round2(aIsLender ? b.aToBUsd : b.bToAUsd);
+      const paidBackUsd = round2(aIsLender ? b.bToAUsd : b.aToBUsd);
+      const givenCount = aIsLender ? b.aToBCount : b.bToACount;
+      const paidBackCount = aIsLender ? b.bToACount : b.aToBCount;
+      const netUnpaidUsd = round2(Math.max(0, givenUsd - paidBackUsd));
+      const repayPct = givenUsd > 0 ? round2(Math.min(100, (paidBackUsd / givenUsd) * 100)) : 100;
+      const repayStatus = repayPct >= 80
+        ? 'Actively Paying Back'
+        : (repayPct >= 15 ? 'Partial Repayment' : 'Not Paying Back');
+      const repayBadgeCls = repayPct >= 80
+        ? 'badge-good'
+        : (repayPct >= 15 ? 'badge-warn' : 'badge-crit');
+      const corridorLabel = `${lenderCo} ↔ ${borrowerCo}`;
+      const enriched = Object.assign(b, {
+        lenderCo,
+        borrowerCo,
+        corridorLabel,
+        givenUsd,
+        paidBackUsd,
+        givenCount,
+        paidBackCount,
+        netUnpaidUsd,
+        repayPct,
+        repayStatus,
+        repayBadgeCls
+      });
+      byBilateralMap.set(b.bilateralKey, enriched);
+      return enriched;
+    }).sort((a, b) => b.givenUsd - a.givenUsd);
+
+    // Annotate each interaction chronologically with Given vs. Paid Back & Running Sister Debt
+    const runningMap = new Map();
+    for (let i = interactions.length - 1; i >= 0; i--) {
+      const x = interactions[i];
+      const bCor = byBilateralMap.get(x.bilateralKey);
+      const isGiven = !bCor || x.fromCo === bCor.lenderCo;
+      x.lenderCo = bCor ? bCor.lenderCo : x.fromCo;
+      x.borrowerCo = bCor ? bCor.borrowerCo : x.toCo;
+      x.corridorLabel = bCor ? bCor.corridorLabel : x.bilateralKey;
+      x.corridorRepayPct = bCor ? bCor.repayPct : 0;
+      x.corridorStatus = bCor ? bCor.repayStatus : 'Not Paying Back';
+      x.corridorBadgeCls = bCor ? bCor.repayBadgeCls : 'badge-crit';
+      x.repayRole = isGiven ? 'given' : 'repaid';
+      x.givenUsd = isGiven ? x.usd : 0;
+      x.paidBackUsd = isGiven ? 0 : x.usd;
+      x.netDeltaUsd = isGiven ? x.usd : -x.usd;
+      const nextBal = round2((runningMap.get(x.bilateralKey) || 0) + x.netDeltaUsd);
+      runningMap.set(x.bilateralKey, nextBal);
+      x.runningBalanceUsd = nextBal;
+    }
+
+    const totalGivenUsd = round2(byBilateral.reduce((s, c) => s + c.givenUsd, 0));
+    const totalPaidBackUsd = round2(byBilateral.reduce((s, c) => s + c.paidBackUsd, 0));
+    const totalNetUnpaidUsd = round2(byBilateral.reduce((s, c) => s + c.netUnpaidUsd, 0));
+    const overallRepayPct = totalGivenUsd > 0 ? round2((totalPaidBackUsd / totalGivenUsd) * 100) : 100;
+    const settlingCorridorCount = byBilateral.filter(c => c.repayPct >= 80).length;
+    const unpaidCorridorCount = byBilateral.filter(c => c.repayPct < 80 && c.netUnpaidUsd > 1).length;
+
     const res = {
       interactions,
       matchedRows,
       openRows,
       byPair,
+      byBilateral,
       byPendingCo,
       totalCount,
       matchedCount,
@@ -36986,7 +37974,13 @@
       reconRatePct,
       totalMatchedUsd,
       totalOpenUsd,
-      netImbalanceUsd
+      netImbalanceUsd,
+      totalGivenUsd,
+      totalPaidBackUsd,
+      totalNetUnpaidUsd,
+      overallRepayPct,
+      settlingCorridorCount,
+      unpaidCorridorCount
     };
     _icInteractionsSig = sig;
     _icInteractionsCache = res;
@@ -37400,7 +38394,14 @@
     const icRes = computeIntercompanyInteractions({ ignoreSearch: false });
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
+    const givenRowsCount = icRes.interactions.filter(x => x.repayRole === 'given').length;
+    const repaidRowsCount = icRes.interactions.filter(x => x.repayRole === 'repaid').length;
+    const unpaidCorridorRowsCount = icRes.interactions.filter(x => (x.corridorRepayPct || 0) < 15).length;
+
     const filteredRows = icRes.interactions.filter(x => {
+      if (STATE.chipFilter === 'given') return x.repayRole === 'given';
+      if (STATE.chipFilter === 'repaid') return x.repayRole === 'repaid';
+      if (STATE.chipFilter === 'unpaid_corridors') return (x.corridorRepayPct || 0) < 15;
       if (STATE.chipFilter === 'reconciled') return x.status === 'Reconciled';
       if (STATE.chipFilter === 'open') return x.status === 'Open';
       if (STATE.chipFilter === '1to1') return x.matchType === '1-to-1';
@@ -37410,79 +38411,92 @@
       return true;
     });
 
-    const maxPairUsd = Math.max(1, ...icRes.byPair.map(p => p.matchedUsd + p.openUsd));
-    const pairSvgH = Math.max(120, 32 + icRes.byPair.slice(0, 5).length * 36);
+    const topBilateral = (icRes.byBilateral || []).slice(0, 6);
+    const maxBilatUsd = Math.max(1, ...topBilateral.map(c => c.givenUsd));
+    const pairSvgH = Math.max(120, 28 + topBilateral.length * 36);
     const pairChartSvg = `
-      <svg viewBox="0 0 760 ${pairSvgH}" width="100%" height="${pairSvgH}" role="img" aria-label="Intercompany Bilateral Reconciliation Chart" style="display:block;overflow:visible">
-        ${icRes.byPair.slice(0, 5).map((p, idx) => {
-          const y = 12 + idx * 34;
-          const mW = Math.round((p.matchedUsd / maxPairUsd) * 380);
-          const oW = Math.round((p.openUsd / maxPairUsd) * 380);
+      <svg viewBox="0 0 820 ${pairSvgH}" width="100%" height="${pairSvgH}" role="img" aria-label="Sister Company Repayment: Given vs Paid Back & Net Owed Chart" style="display:block;overflow:visible">
+        ${topBilateral.map((c, idx) => {
+          const y = 10 + idx * 34;
+          const totalW = Math.max(8, Math.round((c.givenUsd / maxBilatUsd) * 250));
+          const paidW = c.givenUsd > 0 ? Math.min(totalW, Math.round((c.paidBackUsd / c.givenUsd) * totalW)) : 0;
+          const unpaidW = Math.max(0, totalW - paidW);
+          const oweLabel = c.repayPct >= 80
+            ? `${c.repayPct.toFixed(1)}% Settled (${fmtUSDk(c.netUnpaidUsd)} net)`
+            : `${c.borrowerCo} owes ${fmtUSD(c.netUnpaidUsd, 0)}`;
+          const oweColor = c.repayPct >= 80 ? 'var(--good)' : (c.repayPct >= 15 ? 'var(--warn)' : 'var(--crit)');
           return `
             <g transform="translate(0,${y})">
-              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(p.pairKey)} (${fmtNum(p.totalCount)})</text>
-              <rect x="220" y="2" width="380" height="18" rx="4" fill="var(--surface-2)" />
-              <rect x="220" y="2" width="${mW}" height="18" rx="4" fill="#059669" />
-              ${oW > 0 ? `<rect x="${220 + mW}" y="2" width="${Math.max(4, oW)}" height="18" rx="4" fill="#d97706" />` : ''}
-              <text x="612" y="15" fill="var(--ink)" font-size="11.5" font-weight="700" font-family="var(--font-mono)">${esc(fmtUSD(p.matchedUsd, 0))} matched</text>
-              <text x="755" y="15" text-anchor="end" fill="${p.openUsd > 0 ? 'var(--warn)' : 'var(--ink-2)'}" font-size="11" font-family="var(--font-mono)">${p.openUsd > 0 ? esc(fmtUSD(p.openUsd, 0) + ' open') : '0 open'}</text>
+              <text x="0" y="15" fill="var(--ink)" font-size="11.5" font-weight="600">${esc(c.corridorLabel)} (${fmtNum(c.totalCount)})</text>
+              <rect x="195" y="2" width="250" height="18" rx="4" fill="var(--surface-2)" />
+              ${paidW > 0 ? `<rect x="195" y="2" width="${Math.max(3, paidW)}" height="18" rx="${unpaidW === 0 ? 4 : 0}" fill="#059669" />` : ''}
+              ${unpaidW > 0 ? `<rect x="${195 + paidW}" y="2" width="${Math.max(3, unpaidW)}" height="18" rx="${paidW === 0 ? 4 : 0}" fill="#d97706" />` : ''}
+              <text x="458" y="15" fill="var(--ink)" font-size="11" font-weight="600" font-family="var(--font-mono)">Paid ${esc(fmtUSD(c.paidBackUsd, 0))} of ${esc(fmtUSD(c.givenUsd, 0))} (${c.repayPct.toFixed(1)}%)</text>
+              <text x="815" y="15" text-anchor="end" fill="${oweColor}" font-size="11" font-weight="700" font-family="var(--font-mono)">${esc(oweLabel)}</text>
             </g>
           `;
         }).join('')}
       </svg>
     `;
 
+    const topUnpaidSummary = (icRes.byBilateral || [])
+      .filter(c => c.repayPct < 80 && c.netUnpaidUsd >= 1000)
+      .slice(0, 5)
+      .map(c => `${c.borrowerCo}: ${fmtUSDk(c.netUnpaidUsd)} (${c.repayPct.toFixed(0)}%)`)
+      .join(' · ') || 'All sister corridors settled';
+
     const kpiHeader = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_interactions">
-          <div class="kpi-label">TOTAL IC INTERACTIONS</div>
-          <div class="kpi-val">${fmtNum(icRes.totalCount)}</div>
-          <div class="kpi-sub">Across <b>${fmtNum(icRes.byPair.length)}</b> directed entity corridors</div>
+          <div class="kpi-label">TOTAL GIVEN TO SISTERS ($)</div>
+          <div class="kpi-val">${fmtUSD(icRes.totalGivenUsd, 0)}</div>
+          <div class="kpi-sub">Across <b>${fmtNum(icRes.byBilateral.length)}</b> sister pairs (${fmtNum(icRes.totalCount)} transfers)</div>
         </div>
         <div class="kpi-card" data-jump-view="hld_interactions">
-          <div class="kpi-label">RECONCILED PAIRS</div>
-          <div class="kpi-val good">${fmtNum(icRes.matchedCount)}</div>
-          <div class="kpi-sub">Rate: <b>${icRes.reconRatePct.toFixed(1)}%</b> auto-paired (±3d window)</div>
-        </div>
-        <div class="kpi-card" data-jump-view="hld_interactions">
-          <div class="kpi-label">RECONCILED VOLUME ($)</div>
-          <div class="kpi-val">${fmtUSD(icRes.totalMatchedUsd, 0)}</div>
-          <div class="kpi-sub">Eliminated on Group Consolidation</div>
-        </div>
-        <div class="kpi-card" data-jump-view="hld_open_recon">
-          <div class="kpi-label">OPEN UNMATCHED LEGS</div>
-          <div class="kpi-val ${icRes.openCount > 0 ? 'warn' : 'good'}">${fmtNum(icRes.openCount)}</div>
-          <div class="kpi-sub">Single-sided entries awaiting mirror</div>
-        </div>
-        <div class="kpi-card" data-jump-view="hld_open_recon">
-          <div class="kpi-label">OPEN RECONCILIATION EXPOSURE</div>
-          <div class="kpi-val ${icRes.totalOpenUsd > 0 ? 'warn' : 'good'}">${fmtUSD(icRes.totalOpenUsd, 0)}</div>
-          <div class="kpi-sub">${icRes.byPendingCo.map(c => `${c.company}: ${fmtNum(c.count)}`).join(' · ') || 'All cleared'}</div>
+          <div class="kpi-label">TOTAL PAID BACK ($)</div>
+          <div class="kpi-val good">${fmtUSD(icRes.totalPaidBackUsd, 0)}</div>
+          <div class="kpi-sub">Repayment Rate: <b>${icRes.overallRepayPct.toFixed(1)}%</b> paid back overall</div>
         </div>
         <div class="kpi-card" data-jump-view="hld_due_matrix">
-          <div class="kpi-label">NET BILATERAL IMBALANCE</div>
-          <div class="kpi-val ${Math.abs(icRes.netImbalanceUsd) > 1 ? 'warn' : 'good'}">${fmtSignedUSD(icRes.netImbalanceUsd, 0)}</div>
-          <div class="kpi-sub">Total Out minus Total In across group</div>
+          <div class="kpi-label">NET UNPAID SISTER BALANCE ($)</div>
+          <div class="kpi-val ${icRes.totalNetUnpaidUsd > 1 ? 'warn' : 'good'}">${fmtUSD(icRes.totalNetUnpaidUsd, 0)}</div>
+          <div class="kpi-sub">${esc(topUnpaidSummary)}</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_due_matrix">
+          <div class="kpi-label">REPAYMENT BEHAVIOR</div>
+          <div class="kpi-val ${icRes.unpaidCorridorCount > 0 ? 'warn' : 'good'}">${fmtNum(icRes.unpaidCorridorCount)} Not Paying</div>
+          <div class="kpi-sub"><b>${fmtNum(icRes.settlingCorridorCount)}</b> actively settling (≥80%) · <b>${fmtNum(icRes.unpaidCorridorCount)}</b> unpaid</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_interactions">
+          <div class="kpi-label">2-SIDED BOOKED PAIRS</div>
+          <div class="kpi-val good">${fmtNum(icRes.matchedCount)}</div>
+          <div class="kpi-sub"><b>${fmtUSD(icRes.totalMatchedUsd, 0)}</b> verified in both books (±3d)</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_open_recon">
+          <div class="kpi-label">MISSING MIRROR ENTRIES</div>
+          <div class="kpi-val ${icRes.openCount > 0 ? 'warn' : 'good'}">${fmtNum(icRes.openCount)}</div>
+          <div class="kpi-sub">${icRes.byPendingCo.slice(0, 5).map(c => `${c.company}: ${fmtNum(c.count)}`).join(' · ') || 'All cleared'}</div>
         </div>
       </div>
 
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('hld_interactions')} BILATERAL INTERCOMPANY CORRIDORS (MATCHED VS OPEN EXPOSURE)</span></div>
-          <span class="panel-meta">Rule 1: 1-to-1 (±3d) · Rule 2: Split 1-to-n (±3d) · Rule 3: Within $1.00</span>
+          <div class="panel-title"><span>${ic('hld_interactions')} SISTER COMPANY REPAYMENT: GIVEN VS. PAID BACK &amp; NET OWED</span></div>
+          <span class="panel-meta">Green = Paid Back ($) · Amber = Unpaid Balance Still Owed ($)</span>
         </div>
         ${pairChartSvg}
       </div>
     `;
 
     if (submode === 'due_matrix') {
+      const bList = icRes.byBilateral || [];
       return `
         ${kpiHeader}
         <div class="panel-card" id="hldDueMatrixPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('hld_due_matrix')} BILATERAL DUE FROM / DUE TO MATRIX (${icRes.byPair.length} CORRIDORS)</span></div>
+            <div class="panel-title"><span>${ic('hld_due_matrix')} SISTER COMPANY REPAYMENT &amp; DUE FROM / DUE TO MATRIX (${bList.length} PAIRS)</span></div>
             <div style="display:flex;gap:6px;align-items:center">
-              ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Due_Matrix')}
+              ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Repayment_Matrix')}
               ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
             </div>
           </div>
@@ -37490,42 +38504,42 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>From Company (Sender)</th>
-                  <th>To Company (Receiver)</th>
-                  <th class="r">Total Interactions</th>
-                  <th class="r">Reconciled Pairs</th>
-                  <th class="r">Open Legs</th>
-                  <th class="r">Sender Out ($)</th>
-                  <th class="r">Receiver In ($)</th>
-                  <th class="r">Reconciled ($)</th>
-                  <th class="r">Open Variance ($)</th>
+                  <th>Net Lender (Gave Funds)</th>
+                  <th>Net Borrower (Received)</th>
+                  <th class="r">Transfers (Gave / Repaid)</th>
+                  <th class="r">Total Given ($)</th>
+                  <th class="r">Total Paid Back ($)</th>
+                  <th class="r">Paid Back (%)</th>
+                  <th class="r">Net Still Owed ($)</th>
+                  <th>Repayment Status &amp; Who Owes Whom</th>
+                  <th class="r">2-Sided Booked</th>
                 </tr>
               </thead>
               <tbody>
-                ${icRes.byPair.length ? icRes.byPair.map(p => `
+                ${bList.length ? bList.map(c => `
                   <tr class="rrow">
-                    <td>${coBadge(p.fromCo)} <strong>${esc(p.fromCo)}</strong></td>
-                    <td>${coBadge(p.toCo)} <strong>${esc(p.toCo)}</strong></td>
-                    <td class="r mono">${fmtNum(p.totalCount)}</td>
-                    <td class="r mono good">${fmtNum(p.matchedCount)}</td>
-                    <td class="r mono ${p.openCount > 0 ? 'warn' : ''}">${fmtNum(p.openCount)}</td>
-                    <td class="r mono">${fmtUSD(p.outUsd, 2)}</td>
-                    <td class="r mono">${fmtUSD(p.inUsd, 2)}</td>
-                    <td class="r mono good"><strong>${fmtUSD(p.matchedUsd, 2)}</strong></td>
-                    <td class="r mono ${Math.abs(p.netVarianceUsd) > 1 ? 'warn' : ''}"><strong>${fmtSignedUSD(p.netVarianceUsd, 2)}</strong></td>
+                    <td>${coBadge(c.lenderCo)} <strong>${esc(c.lenderCo)}</strong></td>
+                    <td>${coBadge(c.borrowerCo)} <strong>${esc(c.borrowerCo)}</strong></td>
+                    <td class="r mono">${fmtNum(c.givenCount)} given · ${fmtNum(c.paidBackCount)} repaid</td>
+                    <td class="r mono">${fmtUSD(c.givenUsd, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(c.paidBackUsd, 2)}</strong></td>
+                    <td class="r mono"><span class="badge ${c.repayBadgeCls}">${c.repayPct.toFixed(1)}% Repaid</span></td>
+                    <td class="r mono ${c.repayPct >= 80 ? 'good' : 'warn'}"><strong>${fmtUSD(c.netUnpaidUsd, 2)}</strong></td>
+                    <td><span class="badge ${c.repayBadgeCls}">${esc(c.repayStatus)}</span> <small class="mu">${esc(c.borrowerCo)} owes ${esc(c.lenderCo)} <b>${fmtUSD(c.netUnpaidUsd, 0)}</b></small></td>
+                    <td class="r mono">${fmtNum(c.matchedCount)} / ${fmtNum(c.totalCount)}</td>
                   </tr>
-                `).join('') : emptyRow(9, 'No intercompany corridors in selected period')}
+                `).join('') : emptyRow(9, 'No intercompany pairs in selected period')}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="2"><strong>TOTAL BILATERAL CORRIDORS (${icRes.byPair.length})</strong></td>
-                  <td class="r mono"><strong>${fmtNum(icRes.totalCount)}</strong></td>
-                  <td class="r mono"><strong>${fmtNum(icRes.matchedCount)}</strong></td>
-                  <td class="r mono"><strong>${fmtNum(icRes.openCount)}</strong></td>
-                  <td class="r mono"><strong>${fmtUSD(icRes.byPair.reduce((s, p) => s + p.outUsd, 0), 2)}</strong></td>
-                  <td class="r mono"><strong>${fmtUSD(icRes.byPair.reduce((s, p) => s + p.inUsd, 0), 2)}</strong></td>
-                  <td class="r mono"><strong>${fmtUSD(icRes.totalMatchedUsd, 2)}</strong></td>
-                  <td class="r mono"><strong>${fmtSignedUSD(icRes.netImbalanceUsd, 2)}</strong></td>
+                  <td colspan="2"><strong>TOTAL SISTER REPAYMENT MATRIX (${bList.length} PAIRS)</strong></td>
+                  <td class="r mono"><strong>${fmtNum(icRes.totalCount)} transfers</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(icRes.totalGivenUsd, 2)}</strong></td>
+                  <td class="r mono good"><strong>${fmtUSD(icRes.totalPaidBackUsd, 2)}</strong></td>
+                  <td class="r mono"><strong>${icRes.overallRepayPct.toFixed(1)}%</strong></td>
+                  <td class="r mono warn"><strong>${fmtUSD(icRes.totalNetUnpaidUsd, 2)}</strong></td>
+                  <td><strong>Net Unpaid Across Group</strong></td>
+                  <td class="r mono"><strong>${fmtNum(icRes.matchedCount)} / ${fmtNum(icRes.totalCount)}</strong></td>
                 </tr>
               </tfoot>
             </table>
@@ -37553,7 +38567,7 @@
         </div>
         <div class="panel-card" id="hldOpenReconPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('hld_open_recon')} OPEN INTERCOMPANY RECONCILIATION QUEUE (${fmtNum(openList.length)} UNMATCHED)</span></div>
+            <div class="panel-title"><span>${ic('hld_open_recon')} OPEN BOOKKEEPING QUEUE — AWAITING MIRROR ENTRY (${fmtNum(openList.length)} UNMATCHED)</span></div>
             <div style="display:flex;gap:6px;align-items:center">
               ${searchBox('Search unmatched date, company, notes...')}
               ${exportBtn('hldOpenReconPanel', 'Holding_Open_Intercompany_Queue')}
@@ -37608,7 +38622,7 @@
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL OPEN RECONCILIATION QUEUE (${fmtNum(openList.length)} LEGS)</strong></td>
+                  <td colspan="6"><strong>TOTAL OPEN BOOKKEEPING QUEUE (${fmtNum(openList.length)} LEGS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(openList.reduce((s, x) => s + x.usd, 0), 2)}</strong></td>
                   <td colspan="2"></td>
                 </tr>
@@ -37620,29 +38634,29 @@
     }
 
     const shownMain = filteredRows.slice(0, shownCount('hld_interactions'));
-    const sumOut = round2(filteredRows.reduce((s, x) => s + x.outUsd, 0));
-    const sumIn = round2(filteredRows.reduce((s, x) => s + x.inUsd, 0));
-    const sumVar = round2(filteredRows.reduce((s, x) => s + x.varianceUsd, 0));
+    const sumGiven = round2(filteredRows.reduce((s, x) => s + (x.givenUsd || 0), 0));
+    const sumPaidBack = round2(filteredRows.reduce((s, x) => s + (x.paidBackUsd || 0), 0));
+    const sumNetUnpaid = round2(sumGiven - sumPaidBack);
 
     return `
       ${kpiHeader}
       <div class="panel-card" id="hldInteractionsPanel">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div class="panel-title"><span>${ic('hld_interactions')} INTERCOMPANY INTERACTIONS REGISTER (${fmtNum(filteredRows.length)})</span></div>
+            <div class="panel-title"><span>${ic('hld_interactions')} INTERCOMPANY TRANSFERS &amp; REPAYMENT LEDGER (${fmtNum(filteredRows.length)})</span></div>
             <div class="chip-bar">
               ${chip('all', `All (${fmtNum(icRes.totalCount)})`)}
-              ${chip('reconciled', `Reconciled (${fmtNum(icRes.matchedCount)})`)}
-              ${chip('open', `Open (${fmtNum(icRes.openCount)})`)}
-              ${chip('1to1', '1-to-1')}
-              ${chip('split', 'Split (1 to n)')}
-              ${chip('tol1', 'Within $1.00')}
-              ${chip('wtc_bbc', 'WTC ↔ BBC')}
+              ${chip('given', `Given / Funded (${fmtNum(givenRowsCount)})`)}
+              ${chip('repaid', `Paid Back (${fmtNum(repaidRowsCount)})`)}
+              ${chip('unpaid_corridors', `Not Paying Back (${fmtNum(unpaidCorridorRowsCount)})`)}
+              ${chip('wtc_bbc', 'WTC ↔ BBC (98% Settled)')}
+              ${chip('reconciled', `2-Sided Booked (${fmtNum(icRes.matchedCount)})`)}
+              ${chip('open', `1-Sided Book (${fmtNum(icRes.openCount)})`)}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search company, IC ref, notes...')}
-            ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Interactions')}
+            ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Repayment_Ledger')}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
         </div>
@@ -37654,30 +38668,36 @@
                 <th>Date</th>
                 <th>From Co.</th>
                 <th>To Co.</th>
-                <th>Match Rule</th>
-                <th>Status</th>
-                <th class="r">Out ($)</th>
-                <th class="r">In ($)</th>
-                <th class="r">Variance ($)</th>
+                <th>Repayment Flow</th>
+                <th class="r">Given ($)</th>
+                <th class="r">Paid Back ($)</th>
+                <th class="r">Running Sister Debt ($)</th>
+                <th>Bookkeeping</th>
                 <th>Notes</th>
               </tr>
             </thead>
             <tbody>
               ${shownMain.length ? shownMain.map(x => {
                 const r = x.primaryRow || {};
-                const stCls = x.status === 'Reconciled' ? 'badge-good' : 'badge-warn';
+                const isRepaid = x.repayRole === 'repaid';
+                const flowBadge = isRepaid
+                  ? `<span class="badge badge-good">Paid Back (−Debt)</span>`
+                  : `<span class="badge badge-warn">Given (+Debt)</span>`;
+                const bkBadge = x.status === 'Reconciled'
+                  ? `<span class="badge badge-info">2-Sided (${esc(x.matchType)})</span>`
+                  : `<span class="badge badge-warn">1-Sided (${esc(x.fromCo)})</span>`;
                 return `
                   <tr class="rrow" data-rkey="external_movements" data-rid="${esc(r.id || '')}">
                     <td class="mono"><strong>${esc(x.code)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(x.date))}${x.dayGap ? ` <small class="mu">(+${x.dayGap}d)</small>` : ''}</td>
                     <td>${coBadge(x.fromCo)}</td>
                     <td>${coBadge(x.toCo)}</td>
-                    <td><span class="badge badge-info">${esc(x.matchType)}</span></td>
-                    <td><span class="badge ${stCls}">${esc(x.status)}</span></td>
-                    <td class="r mono">${fmtUSD(x.outUsd, 2)}</td>
-                    <td class="r mono">${fmtUSD(x.inUsd, 2)}</td>
-                    <td class="r mono ${Math.abs(x.varianceUsd) > 0.05 ? 'warn' : 'good'}"><strong>${fmtSignedUSD(x.varianceUsd, 2)}</strong></td>
-                    <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
+                    <td>${flowBadge}</td>
+                    <td class="r mono">${x.givenUsd > 0 ? fmtUSD(x.givenUsd, 2) : '—'}</td>
+                    <td class="r mono ${x.paidBackUsd > 0 ? 'good' : ''}">${x.paidBackUsd > 0 ? `<strong>${fmtUSD(x.paidBackUsd, 2)}</strong>` : '—'}</td>
+                    <td class="r mono ${x.corridorRepayPct >= 80 ? 'good' : 'warn'}"><strong>${fmtUSD(Math.abs(x.runningBalanceUsd || 0), 2)}</strong> <small class="mu">${esc(x.borrowerCo)} owes ${esc(x.lenderCo)}</small></td>
+                    <td>${bkBadge}</td>
+                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
                   </tr>
                 `;
               }).join('') : emptyRow(10, 'No intercompany interactions match the current filter')}
@@ -37685,11 +38705,11 @@
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL INTERCOMPANY INTERACTIONS (${fmtNum(filteredRows.length)} ROWS)</strong></td>
-                <td class="r mono"><strong>${fmtUSD(sumOut, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtUSD(sumIn, 2)}</strong></td>
-                <td class="r mono"><strong>${fmtSignedUSD(sumVar, 2)}</strong></td>
-                <td></td>
+                <td colspan="5"><strong>TOTAL INTERCOMPANY TRANSFERS (${fmtNum(filteredRows.length)} ROWS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumGiven, 2)}</strong></td>
+                <td class="r mono good"><strong>${fmtUSD(sumPaidBack, 2)}</strong></td>
+                <td class="r mono warn"><strong>${fmtSignedUSD(sumNetUnpaid, 2)} Net Unpaid</strong></td>
+                <td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
@@ -37700,9 +38720,9 @@
 
   function renderHoldingPartners(submode = 'main') {
     const u = activeUser();
-    const extList = filterRecords(SEED.records.external_movements || [], { ignoreCompany: true });
-    const jvRules = filterRecords(SEED.records.jv_partnerships || [], { ignoreCompany: true, ignorePeriod: true });
-    const jvDists = filterRecords(SEED.records.jv_distributions || [], { ignoreCompany: true });
+    const extList = filterRecords(SEED.records.external_movements || [], { ignoreCompany: true, includeGroupMfg: true });
+    const jvRules = filterRecords(SEED.records.jv_partnerships || [], { ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
+    const jvDists = filterRecords(SEED.records.jv_distributions || [], { ignoreCompany: true, includeGroupMfg: true });
 
     // Non-intercompany partner & shareholder treasury movements
     const partnerMoves = extList.filter(r => {
@@ -37913,9 +38933,9 @@
 
   function renderHoldingLoans(submode = 'main') {
     const u = activeUser();
-    const loansList = filterRecords(SEED.records.loans || [], { ignoreCompany: true, ignorePeriod: true });
-    const settleList = filterRecords(SEED.records.loan_settlements || [], { ignoreCompany: true });
-    const allExps = filterRecords(SEED.records.expenses || [], { ignoreCompany: true });
+    const loansList = filterRecords(SEED.records.loans || [], { ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
+    const settleList = filterRecords(SEED.records.loan_settlements || [], { ignoreCompany: true, includeGroupMfg: true });
+    const allExps = filterRecords(SEED.records.expenses || [], { ignoreCompany: true, includeGroupMfg: true });
     const assetExps = allExps.filter(x => /capex|asset|land|building|equipment|vehicle|invest|legal|audit|holding/i.test(`${x.category || ''} ${x.subcategory || ''} ${x.notes || ''}`));
 
     let givenUsd = 0, takenUsd = 0;
@@ -39498,7 +40518,7 @@
       { id: 'INV-SH-2026-017', book: 'BK-SH-2026-01', seq: 17, date: '2026-10-19', company: 'Shacman', customer: 'Cedar Infrastructure & Roads', category: 'Fleet Parts & Kits', item: 'Weichai WP12 Overhaul & Cummins Turbo Kit', chassis: 'PARTS-WH-BCHAMOUN', qty: 6, net_usd: 28500, vat_usd: 3135, ttc_usd: 31635, cost_usd: 19800, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-KA-2026-033', book: 'BK-KA-2026-02', seq: 33, date: '2026-10-29', company: 'Korri Auto', customer: 'South Coast Auto Fleet', category: 'Spare Parts & Tyres', item: 'Heavy Radial Truck Tyres 315/80R22.5 (18PR)', chassis: 'WH-AL-GHAZIEH', qty: 24, net_usd: 8640, vat_usd: 950.40, ttc_usd: 9590.40, cost_usd: 6480, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
-      { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder (t74)', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-T74', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
+      { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
     ].map(r => {
       const margin_usd = round2(r.ttc_usd - r.cost_usd);
@@ -39507,7 +40527,7 @@
       return { ...r, margin_usd, margin_pct, is_gap };
     });
 
-    // 2. Receivables, Customer Advances & Collection Promises (t79 Gross AR vs Customer Advances, t46 Promises)
+    // 2. Receivables, Customer Advances & Collection Promises
     const rawReceivableRows = [
       { id: 'AR-SH-001', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', invoiced_ttc: 615400, settled_usd: 194800, gross_ar_usd: 420600, advance_usd: 0, dso_days: 148.4, promise_date: '2026-11-12', promise_usd: 125000, status: 'Active Promise' },
       { id: 'AR-SH-002', company: 'Shacman', customer: 'Mediterranean Haulage Group', invoiced_ttc: 488200, settled_usd: 132000, gross_ar_usd: 356200, advance_usd: 0, dso_days: 142.0, promise_date: '2026-11-18', promise_usd: 95000, status: 'Active Promise' },
@@ -39521,7 +40541,7 @@
       net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
     }));
 
-    // 3. Monthly Sales Targets (t45) & Chronological Price Lists (7z-chrono)
+    // 3. Monthly Sales Targets & Chronological Price Lists
     const rawTargetRows = [
       { id: 'TGT-SH-2026-10', month: '2026-10', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 / M3000 Heavy Trucks', target_ttc: 480000, actual_ttc: 513375, price_list: 'PL-SH-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 78500, status: 'Target Exceeded' },
       { id: 'TGT-SH-2026-09', month: '2026-09', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'Heavy Chassis & Mixer Units', target_ttc: 450000, actual_ttc: 441200, price_list: 'PL-SH-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 77900, status: '98.0% Attained' },
@@ -39532,22 +40552,22 @@
       attainment_pct: r.target_ttc > 0 ? round2((r.actual_ttc / r.target_ttc) * 100) : 0
     }));
 
-    // 4. Import Files, Purchase Orders & Backorders (t49)
+    // 4. Import Files, Purchase Orders & Backorders
     const rawImportRows = [
       { id: 'IMP-SH-2026-014', date: '2026-10-12', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Xi\'an / Qingdao Port', container_bl: 'COSU6891204410 · 6 Ro-Ro Units', ordered_qty: 6, received_qty: 6, backorder_qty: 0, fob_usd: 384000, landed_add_usd: 34800, total_landed_usd: 418800, status: 'Cleared & Costed' },
-      { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc (T5)' },
+      { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc' },
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
-      { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc (T5)' }
+      { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
     ];
 
-    // 5. Landed Cost Allocations (t16 / t52 + Rule T5 Unallocated Landed Cost Watchdog)
+    // 5. Landed Cost Allocations
     const rawLandedRows = [
       { id: 'LC-SH-2026-014', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', freight_usd: 16800, customs_usd: 11200, clearance_usd: 4400, insurance_usd: 2400, total_landed_add: 34800, allocated_usd: 34800, unallocated_usd: 0, basis: 'By CIF Value & Chassis Weight', status: '100% Allocated to Units' },
-      { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: 'Rule T5: $2,650 Unallocated' },
+      { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: '$2,650 Unallocated' },
       { id: 'LC-SH-2026-016', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', freight_usd: 11200, customs_usd: 7400, clearance_usd: 2600, insurance_usd: 1200, total_landed_add: 22400, allocated_usd: 22400, unallocated_usd: 0, basis: 'By Chassis CIF Value', status: '100% Allocated to Units' },
       { id: 'LC-KA-2026-021', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', freight_usd: 2800, customs_usd: 1820, clearance_usd: 680, insurance_usd: 320, total_landed_add: 5620, allocated_usd: 5620, unallocated_usd: 0, basis: 'By Cubic Meter & Value', status: '100% Allocated to Stock' },
-      { id: 'LC-KA-2026-022', import_file: 'IMP-KA-2026-022', date: '2026-10-29', company: 'Korri Auto', freight_usd: 1480, customs_usd: 1050, clearance_usd: 450, insurance_usd: 200, total_landed_add: 3180, allocated_usd: 1980, unallocated_usd: 1200, basis: 'By Line Value (Weighted Avg)', status: 'Rule T5: $1,200 Unallocated' }
+      { id: 'LC-KA-2026-022', import_file: 'IMP-KA-2026-022', date: '2026-10-29', company: 'Korri Auto', freight_usd: 1480, customs_usd: 1050, clearance_usd: 450, insurance_usd: 200, total_landed_add: 3180, allocated_usd: 1980, unallocated_usd: 1200, basis: 'By Line Value (Weighted Avg)', status: '$1,200 Unallocated' }
     ];
 
     // 6. Goods Receipt Notes & Lines (GRNs across 5 warehouses)
@@ -39598,27 +40618,27 @@
     ].map(r => {
       const stock_val_usd = round2(r.on_hand * r.wac_usd);
       const is_low = r.on_hand <= r.reorder_min;
-      return { ...r, stock_val_usd, is_low, status: is_low ? 'Rule T4: Reorder Alert' : 'Optimal Stock' };
+      return { ...r, stock_val_usd, is_low, status: is_low ? 'Reorder Alert' : 'Optimal Stock' };
     });
 
-    // 10. Stock Movements & Inter-Company Transfers (t44 Shacman <-> Korri Auto)
+    // 10. Stock Movements & Inter-Company Transfers
     const rawMovementRows = [
-      { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer (t44)', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
-      { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer (t44)', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
+      { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
+      { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
       { id: 'MOV-SH-2026-104', date: '2026-10-30', company: 'Shacman', type: 'Warehouse Transfer', from_wh: 'Bonded Yard', to_wh: 'Main Showroom', item_code: 'LZGJLDR44PX019301', item_name: 'Shacman F3000 6x4 Dump Truck 340HP', qty: 1, unit_cost_usd: 69200, total_usd: 69200, status: 'Posted' },
       { id: 'MOV-SH-2026-103', date: '2026-10-28', company: 'Shacman', type: 'Workshop Issue', from_wh: 'Bchamoun Yard', to_wh: 'Workshop Bay 1', item_code: '12JS200T-1701', item_name: 'Fast 12-Speed Synchronizer Assembly', qty: 2, unit_cost_usd: 1120, total_usd: 2240, status: 'Issued to Job' },
       { id: 'MOV-KA-2026-089', date: '2026-10-30', company: 'Korri Auto', type: 'Customer Dispatch', from_wh: 'Al Ghazieh', to_wh: 'Customer Delivery', item_code: 'FLT-LF9009', item_name: 'Fleetguard LF9009 Heavy Filter Service Pack', qty: 40, unit_cost_usd: 48, total_usd: 1920, status: 'Dispatched' }
     ];
 
-    // 11. Parallel Stock & P&L Reconciliation (t27 / t50 / t57g — 1,077 Stock Position rows & 268 Monthly P&L rows)
+    // 11. Parallel Stock & P&L Reconciliation (1,077 Stock Position rows & 268 Monthly P&L rows)
     const rawReconRows = [
-      { id: 'REC-TRD-01', company: 'Korri Auto', domain: 'Sales Revenue TTC (t82)', period: '2026 YTD', rows_checked: 34, live_app_usd: 45017.81, parallel_book_usd: 45017.81, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
-      { id: 'REC-TRD-02', company: 'Korri Auto', domain: 'Gross Receivables & Advances (t79)', period: '2026 YTD', rows_checked: 65, live_app_usd: 13632.99, parallel_book_usd: 13632.99, variance_usd: 0, status: 'Tied $0.00 (Advances $3.29)' },
+      { id: 'REC-TRD-01', company: 'Korri Auto', domain: 'Sales Revenue', period: '2026 YTD', rows_checked: 34, live_app_usd: 45017.81, parallel_book_usd: 45017.81, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
+      { id: 'REC-TRD-02', company: 'Korri Auto', domain: 'Gross Receivables & Advances', period: '2026 YTD', rows_checked: 65, live_app_usd: 13632.99, parallel_book_usd: 13632.99, variance_usd: 0, status: 'Tied $0.00 (Advances $3.29)' },
       { id: 'REC-TRD-03', company: 'Korri Auto', domain: 'Parallel Stock Valuation (593 SKU Catalog)', period: '2026-10 Close', rows_checked: 642, live_app_usd: 57010, parallel_book_usd: 57010, variance_usd: 0, status: 'Tied $0.00 (642 Stock Rows)' },
-      { id: 'REC-TRD-04', company: 'Shacman', domain: 'Heavy Truck & Parts Sales TTC (t82)', period: '2026 YTD', rows_checked: 20, live_app_usd: 2642577.78, parallel_book_usd: 2642577.78, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
-      { id: 'REC-TRD-05', company: 'Shacman', domain: 'Gross Receivables & Advances (t79)', period: '2026 YTD', rows_checked: 48, live_app_usd: 1030916.37, parallel_book_usd: 1030916.37, variance_usd: 0, status: 'Tied $0.00 (Advances $37,500)' },
-      { id: 'REC-TRD-06', company: 'Shacman', domain: 'Showroom Chassis & Parts Stock (t27/t50)', period: '2026-10 Close', rows_checked: 435, live_app_usd: 534020, parallel_book_usd: 534020, variance_usd: 0, status: 'Tied $0.00 (435 Stock Rows)' },
-      { id: 'REC-TRD-07', company: 'Shacman', domain: 'Monthly P&L & Landed COGS Parity (t57g)', period: '2025–2026 (268 Rows)', rows_checked: 268, live_app_usd: 468452.97, parallel_book_usd: 468452.97, variance_usd: 0, status: 'Tied $0.00 (268 P&L Rows)' }
+      { id: 'REC-TRD-04', company: 'Shacman', domain: 'Heavy Truck & Parts Sales Revenue', period: '2026 YTD', rows_checked: 20, live_app_usd: 2642577.78, parallel_book_usd: 2642577.78, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
+      { id: 'REC-TRD-05', company: 'Shacman', domain: 'Gross Receivables & Advances', period: '2026 YTD', rows_checked: 48, live_app_usd: 1030916.37, parallel_book_usd: 1030916.37, variance_usd: 0, status: 'Tied $0.00 (Advances $37,500)' },
+      { id: 'REC-TRD-06', company: 'Shacman', domain: 'Showroom Chassis & Parts Stock', period: '2026-10 Close', rows_checked: 435, live_app_usd: 534020, parallel_book_usd: 534020, variance_usd: 0, status: 'Tied $0.00 (435 Stock Rows)' },
+      { id: 'REC-TRD-07', company: 'Shacman', domain: 'Monthly P&L & Landed COGS Parity', period: '2025–2026 (268 Rows)', rows_checked: 268, live_app_usd: 468452.97, parallel_book_usd: 468452.97, variance_usd: 0, status: 'Tied $0.00 (268 P&L Rows)' }
     ];
 
     const salesRows = rawSalesRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.book, r.company, r.customer, r.category, r.item, r.chassis, r.vat_flag));
@@ -39723,6 +40743,8 @@
     const u = activeUser();
     const trd = computeTradingOperations();
     const s = trd.summary;
+    const hideCo = trd.scopedCompanies.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
@@ -39750,7 +40772,7 @@
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
-          <div class="kpi-lbl">Sales Revenue (TTC Plain-Label)</div>
+          <div class="kpi-lbl">Sales Revenue</div>
           <div class="kpi-val">${fmtUSD(s.totalSalesTtc, 2)}</div>
           <div class="kpi-sub">Net ${fmtUSD(s.totalSalesNet, 0)} + 11% VAT ${fmtUSD(s.totalSalesVat, 0)}</div>
         </div>
@@ -39762,7 +40784,7 @@
         <div class="kpi-card">
           <div class="kpi-lbl">Gross Receivables (Invoiced &gt; Paid)</div>
           <div class="kpi-val">${fmtUSD(s.grossArUsd, 2)}</div>
-          <div class="kpi-sub">DSO ${s.weightedDsoDays.toFixed(1)}d across active credit accounts (t79)</div>
+          <div class="kpi-sub">DSO ${s.weightedDsoDays.toFixed(1)}d across active credit accounts</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Customer Advances (Unallocated)</div>
@@ -39770,12 +40792,12 @@
           <div class="kpi-sub">Tracked separately from Gross AR (never netted)</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Active Collection Promises (t46)</div>
+          <div class="kpi-lbl">Active Collection Promises</div>
           <div class="kpi-val">${fmtUSD(s.activePromisesUsd, 0)}</div>
           <div class="kpi-sub">${fmtNum(trd.receivableRows.filter(r => r.promise_usd > 0).length)} scheduled customer follow-ups</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Invoice Books Sequence Check (t74)</div>
+          <div class="kpi-lbl">Invoice Books Sequence Check</div>
           <div class="kpi-val ${s.invoiceGapCount > 0 ? 'warn' : 'good'}">${s.invoiceGapCount > 0 ? `${s.invoiceGapCount} Gap (PH-KA-2026-D02)` : '0 Missing Serials'}</div>
           <div class="kpi-sub">Korri 34 entered (1 gap) · Shacman 20/20 clean</div>
         </div>
@@ -39802,8 +40824,8 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_receivables')} GROSS RECEIVABLES VS. CUSTOMER ADVANCES &amp; COLLECTION PROMISES (t79 / t46)</span></div>
-            <span class="panel-meta">Blue:Invoice TTC ($) · Green:Landed Cost COGS ($)</span>
+            <div class="panel-title"><span>${ic('trd_receivables')} GROSS RECEIVABLES VS. CUSTOMER ADVANCES &amp; COLLECTION PROMISES</span></div>
+            <span class="panel-meta">Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Receivables & Margin Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39834,9 +40856,9 @@
               <thead>
                 <tr>
                   <th>Account Ref</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Customer</th>
-                  <th class="r">Invoiced TTC ($)</th>
+                  <th class="r">Invoiced Amount ($)</th>
                   <th class="r">Settled ($)</th>
                   <th class="r">Gross AR ($)</th>
                   <th class="r">Customer Advance ($)</th>
@@ -39848,9 +40870,9 @@
               </thead>
               <tbody>
                 ${shownAr.length ? shownAr.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.customer)}</strong></td>
                     <td class="r mono">${fmtUSD(r.invoiced_ttc, 2)}</td>
                     <td class="r mono">${fmtUSD(r.settled_usd, 2)}</td>
@@ -39861,12 +40883,12 @@
                     <td class="r mono">${r.promise_usd > 0 ? fmtUSD(r.promise_usd, 2) : '—'}</td>
                     <td><span class="badge ${r.advance_usd > 0 ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No receivable or advance accounts match current filter')}
-                ${showMoreRow('trd_receivables', filteredAr.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No receivable or advance accounts match current filter')}
+                ${showMoreRow('trd_receivables', filteredAr.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="3"><strong>TOTAL RECEIVABLES &amp; ADVANCES (${fmtNum(filteredAr.length)} ACCOUNTS)</strong></td>
+                  <td colspan="${hideCo ? 2 : 3}"><strong>TOTAL RECEIVABLES &amp; ADVANCES (${fmtNum(filteredAr.length)} ACCOUNTS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumInv, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumSet, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGross, 2)}</strong></td>
@@ -39899,8 +40921,8 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_targets')} MONTHLY SALES TARGETS (t45) &amp; CHRONOLOGICAL EFFECTIVE-DATED PRICE LISTS (7z-chrono)</span></div>
-            <span class="panel-meta">Blue:Invoice TTC ($) · Green:Landed Cost COGS ($)</span>
+            <div class="panel-title"><span>${ic('trd_targets')} MONTHLY SALES TARGETS &amp; CHRONOLOGICAL EFFECTIVE-DATED PRICE LISTS</span></div>
+            <span class="panel-meta">Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Targets Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -39930,23 +40952,23 @@
                 <tr>
                   <th>Target ID</th>
                   <th>Month</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Sales Desk / Representative</th>
                   <th>Product Segment</th>
-                  <th>Active Price List Window (7z-chrono)</th>
+                  <th>Active Price List Window</th>
                   <th class="r">Floor List ($)</th>
-                  <th class="r">Target TTC ($)</th>
-                  <th class="r">Actual TTC ($)</th>
+                  <th class="r">Monthly Target ($)</th>
+                  <th class="r">Actual Sales ($)</th>
                   <th class="r">Attainment %</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 ${shownTgt.length ? shownTgt.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.month)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.rep)}</strong></td>
                     <td>${esc(r.segment)}</td>
                     <td class="mono">${esc(r.price_list)}</td>
@@ -39956,12 +40978,12 @@
                     <td class="r mono ${r.attainment_pct >= 100 ? 'good' : 'warn'}"><strong>${r.attainment_pct.toFixed(1)}%</strong></td>
                     <td><span class="badge ${r.attainment_pct >= 100 ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No sales target or price list rows match current filter')}
-                ${showMoreRow('trd_targets', filteredTgt.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No sales target or price list rows match current filter')}
+                ${showMoreRow('trd_targets', filteredTgt.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL SALES TARGETS &amp; ATTAINMENT (${fmtNum(filteredTgt.length)} PERIODS)</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL SALES TARGETS &amp; ATTAINMENT (${fmtNum(filteredTgt.length)} PERIODS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumTgt, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumAct, 2)}</strong></td>
                   <td class="r mono"><strong>${totAttPct.toFixed(1)}%</strong></td>
@@ -39994,8 +41016,8 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_sales')} TRADING SALES INVOICES (TTC PLAIN-LABEL) VS LANDED COST COGS &amp; GROSS MARGIN</span></div>
-          <span class="panel-meta">Blue:Sales TTC ($) · Green:Landed Cost COGS ($)</span>
+          <div class="panel-title"><span>${ic('trd_sales')} TRADING SALES INVOICES VS LANDED COST COGS &amp; GROSS MARGIN</span></div>
+          <span class="panel-meta">Blue:Sales Revenue ($) · Green:Landed Cost COGS ($)</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Trading Sales Invoices vs Landed Cost Chart">
           <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -40026,9 +41048,9 @@
             <thead>
               <tr>
                 <th>Invoice / Serial</th>
-                <th>Book (t74)</th>
+                <th>Book</th>
                 <th>Date</th>
-                <th>Entity</th>
+                <th${coStyle}>Entity</th>
                 <th>Customer</th>
                 <th>Item / Chassis Model</th>
                 <th class="r">Qty</th>
@@ -40042,11 +41064,11 @@
             </thead>
             <tbody>
               ${shownSales.length ? shownSales.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.book)} #${r.seq}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.customer)}</strong></td>
                   <td>${esc(r.item)} <span class="mono" style="font-size:11px;color:var(--mu)">(${esc(r.chassis)})</span></td>
                   <td class="r mono">${fmtNum(r.qty)}</td>
@@ -40057,12 +41079,12 @@
                   <td class="r mono ${r.is_gap ? 'warn' : 'good'}"><strong>${r.is_gap ? '—' : `${fmtUSD(r.margin_usd, 2)} (${r.margin_pct.toFixed(1)}%)`}</strong></td>
                   <td><span class="badge ${r.is_gap ? 'badge-crit' : 'badge-good'}">${esc(r.book_status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(13, 'No trading sales invoices match current filter')}
-              ${showMoreRow('trd_sales', filteredSales.length, 13)}
+              `).join('') : emptyRow(hideCo ? 12 : 13, 'No trading sales invoices match current filter')}
+              ${showMoreRow('trd_sales', filteredSales.length, hideCo ? 12 : 13)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL TRADING SALES INVOICES (${fmtNum(filteredSales.length)} ROWS)</strong></td>
+                <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL TRADING SALES INVOICES (${fmtNum(filteredSales.length)} ROWS)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumQty)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumNet, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
@@ -40082,6 +41104,8 @@
     const u = activeUser();
     const trd = computeTradingOperations();
     const s = trd.summary;
+    const hideCo = trd.scopedCompanies.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
@@ -40094,7 +41118,7 @@
       const hFob = Math.max(6, Math.round((r.fob_usd / maxImp) * 120));
       const hTot = Math.max(6, Math.round((r.total_landed_usd / maxImp) * 120));
       const baseY = 150;
-      const hasUnalloc = r.status.includes('T5');
+      const hasUnalloc = r.status.includes('Pending');
       return `
         <g>
           <rect x="${gx}" y="${baseY - hFob}" width="${barW}" height="${hFob}" rx="3" fill="#3B82F6"/>
@@ -40115,7 +41139,7 @@
           <div class="kpi-sub">${fmtNum(trd.importRows.length)} overseas shipments (Xi'an, Qingdao, Hamburg)</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Freight, Customs &amp; Clearance (t52)</div>
+          <div class="kpi-lbl">Freight, Customs &amp; Clearance</div>
           <div class="kpi-val">${fmtUSD(s.totalLandedAddUsd, 0)}</div>
           <div class="kpi-sub">${landedPct.toFixed(1)}% landed uplift over supplier FOB</div>
         </div>
@@ -40125,12 +41149,12 @@
           <div class="kpi-sub">Capitalized into Serial Chassis &amp; Parts WAC</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Rule T5 Unallocated Landed Cost</div>
+          <div class="kpi-lbl">Unallocated Landed Cost</div>
           <div class="kpi-val ${s.unallocatedLandedCount > 0 ? 'warn' : 'good'}">${fmtUSD(s.unallocatedLandedUsd, 0)}</div>
           <div class="kpi-sub">${s.unallocatedLandedCount} import files awaiting final clearance split</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Open Supplier Backorders (t49)</div>
+          <div class="kpi-lbl">Open Supplier Backorders</div>
           <div class="kpi-val ${s.totalBackorderQty > 0 ? 'warn' : 'good'}">${fmtNum(s.totalBackorderQty)} Units</div>
           <div class="kpi-sub">Ordered vs. GRN received balance tracked per line</div>
         </div>
@@ -40162,8 +41186,8 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_landed')} LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE &amp; INSURANCE (RULE T5)</span></div>
-            <span class="panel-meta">Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Rule T5 Allocation</span>
+            <div class="panel-title"><span>${ic('trd_landed')} LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE &amp; INSURANCE</span></div>
+            <span class="panel-meta">Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Allocation</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Landed Cost Allocations Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -40176,7 +41200,7 @@
               <div class="panel-title"><span>${ic('trd_landed')} LANDED COST VOUCHERS &amp; UNIT COST ALLOCATION (${fmtNum(filteredLc.length)})</span></div>
               <div class="chip-bar">
                 ${chip('all', `All Landed Files (${fmtNum(trd.landedRows.length)})`)}
-                ${chip('unallocated', `Rule T5 Unallocated (${fmtNum(s.unallocatedLandedCount)})`)}
+                ${chip('unallocated', `Unallocated (${fmtNum(s.unallocatedLandedCount)})`)}
                 ${chip('allocated', '100% Allocated')}
                 ${chip('shacman', 'Shacman')}
                 ${chip('korri', 'Korri Auto')}
@@ -40195,7 +41219,7 @@
                   <th>Landed ID</th>
                   <th>Import File</th>
                   <th>Date</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th class="r">Sea Freight ($)</th>
                   <th class="r">Customs Duty ($)</th>
                   <th class="r">Port Clearance ($)</th>
@@ -40203,16 +41227,16 @@
                   <th class="r">Total Landed ($)</th>
                   <th class="r">Unallocated ($)</th>
                   <th>Allocation Basis</th>
-                  <th>Rule T5 Status</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 ${shownLc.length ? shownLc.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.import_file)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="r mono">${fmtUSD(r.freight_usd, 2)}</td>
                     <td class="r mono">${fmtUSD(r.customs_usd, 2)}</td>
                     <td class="r mono">${fmtUSD(r.clearance_usd, 2)}</td>
@@ -40222,12 +41246,12 @@
                     <td>${esc(r.basis)}</td>
                     <td><span class="badge ${r.unallocated_usd > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(12, 'No landed cost allocation vouchers match current filter')}
-                ${showMoreRow('trd_landed', filteredLc.length, 12)}
+                `).join('') : emptyRow(hideCo ? 11 : 12, 'No landed cost allocation vouchers match current filter')}
+                ${showMoreRow('trd_landed', filteredLc.length, hideCo ? 11 : 12)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="4"><strong>TOTAL LANDED COST ALLOCATIONS (${fmtNum(filteredLc.length)} FILES)</strong></td>
+                  <td colspan="${hideCo ? 3 : 4}"><strong>TOTAL LANDED COST ALLOCATIONS (${fmtNum(filteredLc.length)} FILES)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumFrt, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCus, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumClr, 2)}</strong></td>
@@ -40290,7 +41314,7 @@
                   <th>GRN No.</th>
                   <th>Import File</th>
                   <th>Date</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Receiving Warehouse</th>
                   <th>Supplier</th>
                   <th>Received Items / Chassis</th>
@@ -40303,11 +41327,11 @@
               </thead>
               <tbody>
                 ${shownGrn.length ? shownGrn.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.import_file)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.warehouse)}</strong></td>
                     <td>${esc(r.supplier)}</td>
                     <td>${esc(r.items_desc)}</td>
@@ -40317,12 +41341,12 @@
                     <td class="r mono good"><strong>${fmtUSD(r.landed_cost_usd, 2)}</strong></td>
                     <td><span class="badge badge-good">${esc(r.inspection)}</span></td>
                   </tr>
-                `).join('') : emptyRow(12, 'No goods receipt notes match current filter')}
-                ${showMoreRow('trd_grn', filteredGrn.length, 12)}
+                `).join('') : emptyRow(hideCo ? 11 : 12, 'No goods receipt notes match current filter')}
+                ${showMoreRow('trd_grn', filteredGrn.length, hideCo ? 11 : 12)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL GOODS RECEIPT NOTES (${fmtNum(filteredGrn.length)} GRNS)</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL GOODS RECEIPT NOTES (${fmtNum(filteredGrn.length)} GRNS)</strong></td>
                   <td class="r mono"><strong>${fmtNum(sumLines)}</strong></td>
                   <td class="r mono"><strong>${fmtNum(sumRecQty)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumFob, 2)}</strong></td>
@@ -40338,7 +41362,7 @@
 
     const filteredImp = trd.importRows.filter(r => {
       if (f === 'backorder') return r.backorder_qty > 0;
-      if (f === 't5_pending') return r.status.includes('T5');
+      if (f === 't5_pending') return r.status.includes('Pending');
       if (f === 'shacman') return r.company === 'Shacman';
       if (f === 'korri') return r.company === 'Korri Auto';
       return true;
@@ -40355,7 +41379,7 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_purchases')} OVERSEAS IMPORT FILES: SUPPLIER FOB VS. CAPITALIZED LANDED COST (t16 / t49)</span></div>
+          <div class="panel-title"><span>${ic('trd_purchases')} OVERSEAS IMPORT FILES: SUPPLIER FOB VS. CAPITALIZED LANDED COST</span></div>
           <span class="panel-meta">Blue:Supplier FOB ($) · Green:Cleared Landed Cost · Amber:Pending Landed Allocation</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Import Files & Landed Cost Chart">
@@ -40387,7 +41411,7 @@
               <tr>
                 <th>Import File</th>
                 <th>Date</th>
-                <th>Entity</th>
+                <th${coStyle}>Entity</th>
                 <th>Overseas Supplier</th>
                 <th>Port / Container &amp; B/L</th>
                 <th class="r">Ordered</th>
@@ -40401,10 +41425,10 @@
             </thead>
             <tbody>
               ${shownImp.length ? shownImp.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.supplier)}</strong></td>
                   <td class="mono" style="font-size:11.5px">${esc(r.origin)} · ${esc(r.container_bl)}</td>
                   <td class="r mono">${fmtNum(r.ordered_qty)}</td>
@@ -40413,14 +41437,14 @@
                   <td class="r mono">${fmtUSD(r.fob_usd, 2)}</td>
                   <td class="r mono">${fmtUSD(r.landed_add_usd, 2)}</td>
                   <td class="r mono"><strong>${fmtUSD(r.total_landed_usd, 2)}</strong></td>
-                  <td><span class="badge ${r.status.includes('T5') || r.backorder_qty > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.status.includes('Pending') || r.backorder_qty > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(12, 'No import files or purchase orders match current filter')}
-              ${showMoreRow('trd_purchases', filteredImp.length, 12)}
+              `).join('') : emptyRow(hideCo ? 11 : 12, 'No import files or purchase orders match current filter')}
+              ${showMoreRow('trd_purchases', filteredImp.length, hideCo ? 11 : 12)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL IMPORT FILES &amp; BACKORDERS (${fmtNum(filteredImp.length)} FILES)</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL IMPORT FILES &amp; BACKORDERS (${fmtNum(filteredImp.length)} FILES)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumOrd)}</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumRec)}</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumBo)}</strong></td>
@@ -40440,6 +41464,8 @@
     const u = activeUser();
     const trd = computeTradingOperations();
     const s = trd.summary;
+    const hideCo = trd.scopedCompanies.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
@@ -40483,7 +41509,7 @@
           <div class="kpi-sub">FOB + allocated sea freight, customs &amp; clearance</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Showroom TTC List Valuation</div>
+          <div class="kpi-lbl">Showroom List Valuation</div>
           <div class="kpi-val good">${fmtUSD(s.totalUnitsListUsd, 0)}</div>
           <div class="kpi-sub">${fmtUSD(totUnitGm, 0)} embedded showroom gross margin</div>
         </div>
@@ -40551,7 +41577,7 @@
                 <tr>
                   <th>Job / Claim ID</th>
                   <th>Date</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Chassis VIN</th>
                   <th>Truck / Equipment Model</th>
                   <th>Job Type</th>
@@ -40564,10 +41590,10 @@
               </thead>
               <tbody>
                 ${shownWar.length ? shownWar.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.chassis_vin)}</td>
                     <td><strong>${esc(r.model)}</strong></td>
                     <td>${esc(r.job_type)}</td>
@@ -40577,12 +41603,12 @@
                     <td class="r mono good"><strong>${fmtUSD(r.claim_recovery_usd, 2)}</strong></td>
                     <td><span class="badge ${r.status === 'Completed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No workshop, PDI, or warranty jobs match current filter')}
-                ${showMoreRow('trd_warranty', filteredWar.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No workshop, PDI, or warranty jobs match current filter')}
+                ${showMoreRow('trd_warranty', filteredWar.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL WORKSHOP, PDI &amp; WARRANTY JOBS (${fmtNum(filteredWar.length)})</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL WORKSHOP, PDI &amp; WARRANTY JOBS (${fmtNum(filteredWar.length)})</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumParts, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumLabor, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumRec, 2)}</strong></td>
@@ -40614,7 +41640,7 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_trucks')} SHOWROOM &amp; SERIAL UNITS BY CHASSIS VIN: LANDED COST VS. TTC SELLING PRICE</span></div>
+          <div class="panel-title"><span>${ic('trd_trucks')} SHOWROOM &amp; SERIAL UNITS BY CHASSIS VIN: LANDED COST VS. SELLING PRICE</span></div>
           <span class="panel-meta">Slate:Capitalized Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold &amp; Delivered</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Showroom Serial Units Chart">
@@ -40646,7 +41672,7 @@
             <thead>
               <tr>
                 <th>Unit ID</th>
-                <th>Entity</th>
+                <th${coStyle}>Entity</th>
                 <th>Heavy Truck / Commercial Model</th>
                 <th>Chassis / VIN</th>
                 <th>Engine Serial</th>
@@ -40654,16 +41680,16 @@
                 <th class="r">FOB ($)</th>
                 <th class="r">Landed Add ($)</th>
                 <th class="r">Landed Cost ($)</th>
-                <th class="r">Selling TTC ($)</th>
+                <th class="r">Selling Price ($)</th>
                 <th class="r">Margin ($)</th>
                 <th>Status &amp; Allocation</th>
               </tr>
             </thead>
             <tbody>
               ${shownUnits.length ? shownUnits.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.model)}</strong></td>
                   <td class="mono">${esc(r.chassis_vin)}</td>
                   <td class="mono" style="font-size:11px">${esc(r.engine_no)}</td>
@@ -40675,12 +41701,12 @@
                   <td class="r mono good"><strong>${fmtUSD(r.margin_usd, 0)} (${r.margin_pct.toFixed(1)}%)</strong></td>
                   <td><span class="badge ${r.status === 'Sold & Delivered' ? 'badge-good' : (r.status === 'Reserved' ? 'badge-warn' : 'badge-info')}">${esc(r.status)}</span> <span style="font-size:11px;color:var(--mu)">${esc(r.buyer)}</span></td>
                 </tr>
-              `).join('') : emptyRow(12, 'No serial units or chassis match current filter')}
-              ${showMoreRow('trd_trucks', filteredUnits.length, 12)}
+              `).join('') : emptyRow(hideCo ? 11 : 12, 'No serial units or chassis match current filter')}
+              ${showMoreRow('trd_trucks', filteredUnits.length, hideCo ? 11 : 12)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL SERIAL UNITS &amp; CHASSIS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
+                <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL SERIAL UNITS &amp; CHASSIS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumFob, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumAdd, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumLanded, 0)}</strong></td>
@@ -40699,6 +41725,8 @@
     const u = activeUser();
     const trd = computeTradingOperations();
     const s = trd.summary;
+    const hideCo = trd.scopedCompanies.length === 1;
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
@@ -40734,22 +41762,22 @@
           <div class="kpi-sub">Al Ghazieh, Main Showroom, Bchamoun, Bonded &amp; Workshop</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Rule T4 Reorder Alerts</div>
+          <div class="kpi-lbl">Low-Stock Reorder Alerts</div>
           <div class="kpi-val ${s.reorderAlertCount > 0 ? 'warn' : 'good'}">${fmtNum(s.reorderAlertCount)} Low Stock</div>
           <div class="kpi-sub">Items at or below minimum warehouse safety stock</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Inter-Company Transfers (t44)</div>
+          <div class="kpi-lbl">Inter-Company Transfers</div>
           <div class="kpi-val">${fmtUSD(s.icTransferUsd, 0)}</div>
           <div class="kpi-sub">Mirrored Shacman &lt;-&gt; Korri Auto stock transfers</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Parallel Stock Recon (t27 / t50)</div>
+          <div class="kpi-lbl">Parallel Stock Recon</div>
           <div class="kpi-val good">1,077 Rows Tied</div>
           <div class="kpi-sub">$0.00 variance vs historical parallel stock book</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Monthly P&amp;L Recon (t57g)</div>
+          <div class="kpi-lbl">Monthly P&amp;L Recon</div>
           <div class="kpi-val good">268 Rows Tied</div>
           <div class="kpi-sub">$0.00 variance across Korri Auto &amp; Shacman P&amp;L</div>
         </div>
@@ -40771,8 +41799,8 @@
         ${kpiHtml}
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('trd_movements')} WAREHOUSE STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS (t44)</span></div>
-            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+            <div class="panel-title"><span>${ic('trd_movements')} WAREHOUSE STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS</span></div>
+            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Stock Movements Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -40785,7 +41813,7 @@
               <div class="panel-title"><span>${ic('trd_movements')} STOCK MOVEMENTS &amp; INTER-COMPANY TRANSFERS (${fmtNum(filteredMov.length)})</span></div>
               <div class="chip-bar">
                 ${chip('all', `All Movements (${fmtNum(trd.movementRows.length)})`)}
-                ${chip('ic', 'Inter-Company Transfers (t44)')}
+                ${chip('ic', 'Inter-Company Transfers')}
                 ${chip('shacman', 'Shacman')}
                 ${chip('korri', 'Korri Auto')}
               </div>
@@ -40802,7 +41830,7 @@
                 <tr>
                   <th>Movement ID</th>
                   <th>Date</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Movement Type</th>
                   <th>From Warehouse</th>
                   <th>To Warehouse</th>
@@ -40815,10 +41843,10 @@
               </thead>
               <tbody>
                 ${shownMov.length ? shownMov.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.type)}</strong></td>
                     <td>${esc(r.from_wh)}</td>
                     <td>${esc(r.to_wh)}</td>
@@ -40828,12 +41856,12 @@
                     <td class="r mono"><strong>${fmtUSD(r.total_usd, 2)}</strong></td>
                     <td><span class="badge badge-good">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No stock movements or IC transfers match current filter')}
-                ${showMoreRow('trd_movements', filteredMov.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No stock movements or IC transfers match current filter')}
+                ${showMoreRow('trd_movements', filteredMov.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL STOCK MOVEMENTS &amp; IC TRANSFERS (${fmtNum(filteredMov.length)})</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL STOCK MOVEMENTS &amp; IC TRANSFERS (${fmtNum(filteredMov.length)})</strong></td>
                   <td class="r mono"><strong>${fmtNum(sumQty)}</strong></td>
                   <td></td>
                   <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
@@ -40863,7 +41891,7 @@
         <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
             <div class="panel-title"><span>${ic('trd_recon')} PARALLEL STOCK POSITION (1,077 ROWS) &amp; MONTHLY P&amp;L (268 ROWS) RECONCILIATION</span></div>
-            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+            <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
           </div>
           <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Parallel Stock & P&L Reconciliation Chart">
             <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -40890,7 +41918,7 @@
               <thead>
                 <tr>
                   <th>Recon ID</th>
-                  <th>Entity</th>
+                  <th${coStyle}>Entity</th>
                   <th>Reconciliation Domain</th>
                   <th>Period Window</th>
                   <th class="r">Verified Rows</th>
@@ -40902,9 +41930,9 @@
               </thead>
               <tbody>
                 ${shownRec.length ? shownRec.map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.domain)}</strong></td>
                     <td class="mono">${esc(r.period)}</td>
                     <td class="r mono">${fmtNum(r.rows_checked)}</td>
@@ -40913,12 +41941,12 @@
                     <td class="r mono good"><strong>${fmtUSD(r.variance_usd, 2)}</strong></td>
                     <td><span class="badge badge-good">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(9, 'No parallel reconciliation rows match current filter')}
-                ${showMoreRow('trd_recon', filteredRec.length, 9)}
+                `).join('') : emptyRow(hideCo ? 8 : 9, 'No parallel reconciliation rows match current filter')}
+                ${showMoreRow('trd_recon', filteredRec.length, hideCo ? 8 : 9)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="4"><strong>TOTAL PARALLEL-RUN RECONCILIATION (${fmtNum(filteredRec.length)} DOMAINS)</strong></td>
+                  <td colspan="${hideCo ? 3 : 4}"><strong>TOTAL PARALLEL-RUN RECONCILIATION (${fmtNum(filteredRec.length)} DOMAINS)</strong></td>
                   <td class="r mono"><strong>${fmtNum(sumRows)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumLive, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumPar, 2)}</strong></td>
@@ -40947,8 +41975,8 @@
       ${kpiHtml}
       <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
         <div class="panel-head" style="margin-bottom:8px">
-          <div class="panel-title"><span>${ic('trd_stock')} MULTI-WAREHOUSE SPARE PARTS &amp; TYRES VALUATION (WEIGHTED-AVG COST &amp; RULE T4 REORDER GUARD)</span></div>
-          <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Rule T4 Low-Stock Reorder Alert</span>
+          <div class="panel-title"><span>${ic('trd_stock')} MULTI-WAREHOUSE SPARE PARTS &amp; TYRES VALUATION (WEIGHTED-AVG COST &amp; REORDER GUARD)</span></div>
+          <span class="panel-meta">Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert</span>
         </div>
         <svg viewBox="0 0 ${chartW} ${chartH}" style="width:100%;height:190px;display:block" role="img" aria-label="Spare Parts Stock Valuation Chart">
           <line x1="40" y1="150" x2="${chartW - 20}" y2="150" stroke="var(--bd)" stroke-width="1"/>
@@ -40961,7 +41989,7 @@
             <div class="panel-title"><span>${ic('trd_stock')} SPARE PARTS &amp; MULTI-WAREHOUSE STOCK BALANCES (${fmtNum(filteredStk.length)})</span></div>
             <div class="chip-bar">
               ${chip('all', `All Catalog SKUs (${fmtNum(trd.stockRows.length)})`)}
-              ${chip('low_stock', `Rule T4 Reorder Alerts (${fmtNum(s.reorderAlertCount)})`)}
+              ${chip('low_stock', `Low-Stock Reorder Alerts (${fmtNum(s.reorderAlertCount)})`)}
               ${chip('shacman', 'Shacman')}
               ${chip('korri', 'Korri Auto')}
             </div>
@@ -40977,7 +42005,7 @@
             <thead>
               <tr>
                 <th>Part Code (SKU)</th>
-                <th>Entity</th>
+                <th${coStyle}>Entity</th>
                 <th>Warehouse</th>
                 <th>Spare Part / Tyre Description</th>
                 <th>Category</th>
@@ -40986,14 +42014,14 @@
                 <th class="r">Weighted-Avg Cost ($)</th>
                 <th class="r">Retail List ($)</th>
                 <th class="r">Stock Valuation ($)</th>
-                <th>Rule T4 Status</th>
+                <th>Stock Status</th>
               </tr>
             </thead>
             <tbody>
               ${shownStk.length ? shownStk.map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.code)}</strong></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.warehouse)}</strong></td>
                   <td>${esc(r.name)}</td>
                   <td>${esc(r.category)}</td>
@@ -41004,12 +42032,12 @@
                   <td class="r mono"><strong>${fmtUSD(r.stock_val_usd, 2)}</strong></td>
                   <td><span class="badge ${r.is_low ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No spare parts or warehouse stock balances match current filter')}
-              ${showMoreRow('trd_stock', filteredStk.length, 11)}
+              `).join('') : emptyRow(hideCo ? 10 : 11, 'No spare parts or warehouse stock balances match current filter')}
+              ${showMoreRow('trd_stock', filteredStk.length, hideCo ? 10 : 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="5"><strong>TOTAL SPARE PARTS &amp; WAREHOUSE VALUATION (${fmtNum(filteredStk.length)} SKUS)</strong></td>
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL SPARE PARTS &amp; WAREHOUSE VALUATION (${fmtNum(filteredStk.length)} SKUS)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumOnHand)}</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumReorder)}</strong></td>
                 <td colspan="2"></td>
@@ -41082,7 +42110,7 @@
       { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Mohamad Ali Fawz', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
       { id: 'LSE-4235-004', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1C (185 m²)', tenant: 'Hoda / Maha Harkous', start_date: '2025-03-01', end_date: '2028-02-29', frequency: 'Quarterly', net_period_usd: 6500, vat_rate: 0, ttc_period_usd: 6500, annual_ttc_usd: 26000, deposit_usd: 6000, escalation: 'Yr 1 $24k -> Yr 2 $26k (5m Grace)', days_to_expiry: 480, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-4235-005', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Clinic Suite 2A (140 m²)', tenant: 'DR Sara Abed Latif', start_date: '2024-01-01', end_date: '2026-12-31', frequency: 'Quarterly', net_period_usd: 6000, vat_rate: 0, ttc_period_usd: 6000, annual_ttc_usd: 24000, deposit_usd: 6000, escalation: '3-Yr Fixed Medical Lease', days_to_expiry: 55, unbilled_periods: 0, status: 'Expiring < 90d' },
-      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Ayman Baz', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (r45 Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
+      { id: 'LSE-4235-006', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Annex Ground Retail (95 m²)', tenant: 'Ayman Baz', start_date: '2023-06-01', end_date: '2026-11-30', frequency: 'Quarterly', net_period_usd: 4500, vat_rate: 0, ttc_period_usd: 4500, annual_ttc_usd: 18000, deposit_usd: 4500, escalation: 'Registered Contract PDF (Renewal Audit)', days_to_expiry: 24, unbilled_periods: 1, status: 'Renewal Audit' },
       { id: 'LSE-PROP-007', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01 (310 m²)', tenant: 'Levant Luxury Retail SAL', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 24000, vat_rate: 0, ttc_period_usd: 24000, annual_ttc_usd: 96000, deposit_usd: 24000, escalation: '5-Yr Prime Solidere Index', days_to_expiry: 1150, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-008', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Floors 1-2 (540 m²)', tenant: 'Hamra Medical & Diagnostics', start_date: '2024-07-01', end_date: '2029-06-30', frequency: 'Quarterly', net_period_usd: 19500, vat_rate: 0, ttc_period_usd: 19500, annual_ttc_usd: 78000, deposit_usd: 19500, escalation: '5-Yr Clinical Escalation (+6% Yr 3)', days_to_expiry: 965, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-009', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit: 'Commercial Hall A (480 m²)', tenant: 'Mazraa Commercial Logistics', start_date: '2025-01-01', end_date: '2027-12-31', frequency: 'Quarterly', net_period_usd: 13500, vat_rate: 0, ttc_period_usd: 13500, annual_ttc_usd: 54000, deposit_usd: 13500, escalation: '3-Yr Commercial Lease', days_to_expiry: 420, unbilled_periods: 0, status: 'Active' },
@@ -41092,42 +42120,42 @@
     const invoices = [
       { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
       { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
-      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5 (r45 Audit)' },
+      { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
       { id: 'INV-4235-006', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#006', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q1 (Feb-Apr)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #6' },
-      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
-      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
-      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q3-FAWZ', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
-      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'R33-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Hoda / Maha Harkous', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
-      { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
-      { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
-      { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'R33-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
+      { id: 'INV-4235-009', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-MZN', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q2 (May-Jul)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #7-#8 Pending Physical Voucher Match' },
+      { id: 'INV-4235-010', date: '2026-05-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q2-INF', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2026-Q2 (May-Jul)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 13875, open_ar_usd: 5550, status: 'Partial', audit_note: 'Cross-Tenant Swap Diff $5,550 (2026-05-05)' },
+      { id: 'INV-4235-011', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-FAWZ', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', period: '2026-Q3 (Aug-Oct)', net_usd: 22500, vat_usd: 2475, amount_ttc_usd: 24975, collected_usd: 15000, open_ar_usd: 9975, status: 'Overdue', audit_note: 'Balance $9,975 past 30d grace' },
+      { id: 'INV-4235-012', date: '2026-08-01', company: '4235 Company S.A.L', tax_seq: 'INV-2026-Q3-HRK', property: '4235 Msaytbeh Commercial Center', tenant: 'Hoda / Maha Harkous', period: '2026-Q3 (Aug-Oct)', net_usd: 6500, vat_usd: 0, amount_ttc_usd: 6500, collected_usd: 6500, open_ar_usd: 0, status: 'Paid', audit_note: 'Year 2 Stepped Rate ($26k/yr)' },
+      { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
+      { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
+      { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
     ];
 
     const receipts = [
-      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 TTC)', status: 'Swap Audit' },
-      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 TTC)', status: 'Swap Audit' },
-      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k r35/r37 ledger)', status: 'Advance Pool' },
+      { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 invoice)', status: 'Swap Audit' },
+      { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
       { id: 'RCT-4235-104', date: '2026-03-10', company: '4235 Company S.A.L', tenant: 'Hoda / Maha Harkous', property: '4235 Msaytbeh Commercial Center', type: 'Period Rent & Deposit', method: 'Cash USD Till', gross_usd: 26000, allocated_inv_usd: 19500, unallocated_adv_usd: 6500, deposit_gl4196_usd: 6000, audit_flag: 'Yr 2 stepped rent advance settled', status: 'Allocated' },
-      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in GL 4191', status: 'Allocated' },
+      { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
       { id: 'RCT-PROP-106', date: '2026-07-03', company: 'Properties', tenant: 'Levant Luxury Retail SAL', property: '1354/50 Mina el Hosn (Marina Tower)', type: 'Quarterly Rent Settlement', method: 'Bank Transfer USD', gross_usd: 96000, allocated_inv_usd: 72000, unallocated_adv_usd: 24000, deposit_gl4196_usd: 24000, audit_flag: 'Solidere showroom annual wire', status: 'Allocated' },
       { id: 'RCT-PROP-107', date: '2026-07-12', company: 'Properties', tenant: 'Hamra Medical & Diagnostics', property: '776 Ras Beirut (Hamra Pavillon)', type: 'Partial Rent Tranche', method: 'Bank Transfer USD', gross_usd: 51000, allocated_inv_usd: 51000, unallocated_adv_usd: 0, deposit_gl4196_usd: 19500, audit_flag: '$7,500 Q3 balance outstanding', status: 'Allocated' }
     ];
 
     const sales = [
-      { id: 'RE-SAL-001', date: '2026-03-15', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Skyline Residence Wing B', buyer: 'Khoury International Holding SAL', contract_usd: 1850000, paid_usd: 1480000, balance_usd: 370000, broker_comm_usd: 37000, gl_stage: 'GL 4191 Buyer Deposit (80% Paid)', deed_status: 'Pending Final Deed Transfer' },
-      { id: 'RE-SAL-002', date: '2026-05-20', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', unit: 'Sub-Parcel South Terrace (1,800 m²)', buyer: 'Cedar Coast Developers SAL', contract_usd: 1200000, paid_usd: 1200000, balance_usd: 0, broker_comm_usd: 24000, gl_stage: 'GL 7751 Capital Gain Recognized', deed_status: 'Deed Transferred & Registered' },
-      { id: 'RE-SAL-003', date: '2026-06-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 3 Executive Medical Shell', buyer: 'Beirut Diagnostic Partners LLC', contract_usd: 680000, paid_usd: 340000, balance_usd: 340000, broker_comm_usd: 13600, gl_stage: 'GL 4191 Buyer Deposit (50% Paid)', deed_status: 'Instalment Schedule Active' },
-      { id: 'RE-SAL-004', date: '2026-08-01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit: 'Corner Commercial Lot C', buyer: 'Al-Rida Trading Co.', contract_usd: 420000, paid_usd: 210000, balance_usd: 210000, broker_comm_usd: 8400, gl_stage: 'GL 4191 Buyer Deposit (50% Paid)', deed_status: 'Overdue Milestone #3' }
+      { id: 'RE-SAL-001', date: '2026-03-15', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Skyline Residence Wing B', buyer: 'Khoury International Holding SAL', contract_usd: 1850000, paid_usd: 1480000, balance_usd: 370000, broker_comm_usd: 37000, gl_stage: 'Buyer Deposit Held (80% Paid)', deed_status: 'Pending Final Deed Transfer' },
+      { id: 'RE-SAL-002', date: '2026-05-20', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', unit: 'Sub-Parcel South Terrace (1,800 m²)', buyer: 'Cedar Coast Developers SAL', contract_usd: 1200000, paid_usd: 1200000, balance_usd: 0, broker_comm_usd: 24000, gl_stage: 'Capital Gain Recognized on Deed', deed_status: 'Deed Transferred & Registered' },
+      { id: 'RE-SAL-003', date: '2026-06-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 3 Executive Medical Shell', buyer: 'Beirut Diagnostic Partners LLC', contract_usd: 680000, paid_usd: 340000, balance_usd: 340000, broker_comm_usd: 13600, gl_stage: 'Buyer Deposit Held (50% Paid)', deed_status: 'Instalment Schedule Active' },
+      { id: 'RE-SAL-004', date: '2026-08-01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit: 'Corner Commercial Lot C', buyer: 'Al-Rida Trading Co.', contract_usd: 420000, paid_usd: 210000, balance_usd: 210000, broker_comm_usd: 8400, gl_stage: 'Buyer Deposit Held (50% Paid)', deed_status: 'Overdue Milestone #3' }
     ];
 
     const instalments = [
-      { id: 'INST-001', due_date: '2026-03-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 1 - Contract Signing (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
-      { id: 'INST-002', due_date: '2026-07-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 2 - Handover Clearance (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
-      { id: 'INST-003', due_date: '2026-11-30', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 3 - Notary Deed Transfer (20%)', scheduled_usd: 370000, collected_usd: 0, open_usd: 370000, gl_account: '4191 -> 7751 On Deed', status: 'Due Soon' },
-      { id: 'INST-004', due_date: '2026-05-20', company: 'Properties', sale_ref: 'RE-SAL-002', buyer: 'Cedar Coast Developers SAL', milestone: 'Full Settlement & Cadastral Transfer (100%)', scheduled_usd: 1200000, collected_usd: 1200000, open_usd: 0, gl_account: '7751 Proceeds on Fixed Assets', status: 'Paid' },
-      { id: 'INST-005', due_date: '2026-06-10', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 1 - Down Payment (50%)', scheduled_usd: 340000, collected_usd: 340000, open_usd: 0, gl_account: '4191 Client Advances', status: 'Paid' },
-      { id: 'INST-006', due_date: '2026-12-15', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 2 - MEP Delivery & Deed (50%)', scheduled_usd: 340000, collected_usd: 0, open_usd: 340000, gl_account: '4191 -> 7751 On Deed', status: 'Due Soon' },
-      { id: 'INST-007', due_date: '2026-09-15', company: 'Properties', sale_ref: 'RE-SAL-004', buyer: 'Al-Rida Trading Co.', milestone: 'Tranche 2 - Municipal Clearance (50%)', scheduled_usd: 210000, collected_usd: 0, open_usd: 210000, gl_account: '4191 Client Advances', status: 'Overdue' }
+      { id: 'INST-001', due_date: '2026-03-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 1 - Contract Signing (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
+      { id: 'INST-002', due_date: '2026-07-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 2 - Handover Clearance (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
+      { id: 'INST-003', due_date: '2026-11-30', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 3 - Notary Deed Transfer (20%)', scheduled_usd: 370000, collected_usd: 0, open_usd: 370000, gl_account: 'Recognize Proceeds on Deed', status: 'Due Soon' },
+      { id: 'INST-004', due_date: '2026-05-20', company: 'Properties', sale_ref: 'RE-SAL-002', buyer: 'Cedar Coast Developers SAL', milestone: 'Full Settlement & Cadastral Transfer (100%)', scheduled_usd: 1200000, collected_usd: 1200000, open_usd: 0, gl_account: 'Proceeds on Fixed Asset Disposal', status: 'Paid' },
+      { id: 'INST-005', due_date: '2026-06-10', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 1 - Down Payment (50%)', scheduled_usd: 340000, collected_usd: 340000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
+      { id: 'INST-006', due_date: '2026-12-15', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 2 - MEP Delivery & Deed (50%)', scheduled_usd: 340000, collected_usd: 0, open_usd: 340000, gl_account: 'Recognize Proceeds on Deed', status: 'Due Soon' },
+      { id: 'INST-007', due_date: '2026-09-15', company: 'Properties', sale_ref: 'RE-SAL-004', buyer: 'Al-Rida Trading Co.', milestone: 'Tranche 2 - Municipal Clearance (50%)', scheduled_usd: 210000, collected_usd: 0, open_usd: 210000, gl_account: 'Client Advances (Pre-Deed)', status: 'Overdue' }
     ];
 
     const valuations = [
@@ -41143,28 +42171,28 @@
     ];
 
     const ownership = [
-      { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 268400, entitled_noi_usd: 268400, distributed_usd: 220000, retained_reserve_usd: 48400, status: 'Distributed (r38)' },
+      { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 268400, entitled_noi_usd: 268400, distributed_usd: 220000, retained_reserve_usd: 48400, status: 'Distributed' },
       { id: 'OWN-QROUH', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 0, entitled_noi_usd: 0, distributed_usd: 0, retained_reserve_usd: 0, status: 'Land Bank Hold' },
-      { id: 'OWN-776RB', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', holder: 'Bdeir Holding Co-Ownership Pool (25%)', deed_shares: 600, share_pct: 25.0, gross_noi_usd: 66500, entitled_noi_usd: 16625, distributed_usd: 15000, retained_reserve_usd: 1625, status: 'Distributed (r38)' },
-      { id: 'OWN-1354MH', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', holder: 'Bdeir Holding Wholly Owned (100%)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 84500, entitled_noi_usd: 84500, distributed_usd: 75000, retained_reserve_usd: 9500, status: 'Distributed (r38)' },
-      { id: 'OWN-MAZRAA', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 46800, entitled_noi_usd: 23400, distributed_usd: 20000, retained_reserve_usd: 3400, status: 'Distributed (r38)' },
+      { id: 'OWN-776RB', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', holder: 'Bdeir Holding Co-Ownership Pool (25%)', deed_shares: 600, share_pct: 25.0, gross_noi_usd: 66500, entitled_noi_usd: 16625, distributed_usd: 15000, retained_reserve_usd: 1625, status: 'Distributed' },
+      { id: 'OWN-1354MH', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', holder: 'Bdeir Holding Wholly Owned (100%)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 84500, entitled_noi_usd: 84500, distributed_usd: 75000, retained_reserve_usd: 9500, status: 'Distributed' },
+      { id: 'OWN-MAZRAA', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 46800, entitled_noi_usd: 23400, distributed_usd: 20000, retained_reserve_usd: 3400, status: 'Distributed' },
       { id: 'OWN-2154NAB', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', holder: 'Bdeir Holding Co-Ownership Pool (29.17%)', deed_shares: 700, share_pct: 29.17, gross_noi_usd: 26900, entitled_noi_usd: 7846, distributed_usd: 0, retained_reserve_usd: 7846, status: 'Pending Distribution' }
     ];
 
     const workorders = [
-      { id: 'WO-4235-01', date: '2026-08-12', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 2 East Medical Suite', contractor: 'MEP Tech Engineering SAL', category: 'Structural Fit-Out & HVAC (CAPEX)', gl_code: '2131 Building Improvements', budget_usd: 48000, actual_usd: 42500, rechargeable: false, status: 'In Progress' },
-      { id: 'WO-4235-02', date: '2026-09-02', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Common Area & Perkins 250kVA Gen', contractor: 'PowerGen Lebanon LLC', category: 'Generator Overhaul & ATS Sync', gl_code: '6141 Repairs & Maintenance', budget_usd: 8500, actual_usd: 8950, rechargeable: true, status: 'Completed' },
-      { id: 'WO-PROP-03', date: '2026-08-25', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Elevator Shafts #1 & #2', contractor: 'Otis Levant Maintenance', category: 'Elevator Modernization (CAPEX)', gl_code: '2131 Building Improvements', budget_usd: 32000, actual_usd: 32000, rechargeable: false, status: 'Completed' },
-      { id: 'WO-PROP-04', date: '2026-09-14', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01', contractor: 'Solidere Facility Services', category: 'Chilled Water & Facade Glazing', gl_code: '6141 Repairs & Maintenance', budget_usd: 6200, actual_usd: 6400, rechargeable: true, status: 'In Progress' },
-      { id: 'WO-PROP-05', date: '2026-09-19', company: 'Properties', property: 'Cannes Croisette Luxury Residence (France)', unit: 'Croisette Penthouse Suite', contractor: 'Azur Renovation SARL', category: 'Pre-Handover Acoustic & Marble Works', gl_code: '2131 Building Improvements', budget_usd: 65000, actual_usd: 28000, rechargeable: false, status: 'In Progress' }
+      { id: 'WO-4235-01', date: '2026-08-12', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 2 East Medical Suite', contractor: 'MEP Tech Engineering SAL', category: 'Structural Fit-Out & HVAC (CAPEX)', gl_code: 'Building Improvements (CAPEX)', budget_usd: 48000, actual_usd: 42500, rechargeable: false, status: 'In Progress' },
+      { id: 'WO-4235-02', date: '2026-09-02', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Common Area & Perkins 250kVA Gen', contractor: 'PowerGen Lebanon LLC', category: 'Generator Overhaul & ATS Sync', gl_code: 'Repairs & Maintenance', budget_usd: 8500, actual_usd: 8950, rechargeable: true, status: 'Completed' },
+      { id: 'WO-PROP-03', date: '2026-08-25', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Elevator Shafts #1 & #2', contractor: 'Otis Levant Maintenance', category: 'Elevator Modernization (CAPEX)', gl_code: 'Building Improvements (CAPEX)', budget_usd: 32000, actual_usd: 32000, rechargeable: false, status: 'Completed' },
+      { id: 'WO-PROP-04', date: '2026-09-14', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01', contractor: 'Solidere Facility Services', category: 'Chilled Water & Facade Glazing', gl_code: 'Repairs & Maintenance', budget_usd: 6200, actual_usd: 6400, rechargeable: true, status: 'In Progress' },
+      { id: 'WO-PROP-05', date: '2026-09-19', company: 'Properties', property: 'Cannes Croisette Luxury Residence (France)', unit: 'Croisette Penthouse Suite', contractor: 'Azur Renovation SARL', category: 'Pre-Handover Acoustic & Marble Works', gl_code: 'Building Improvements (CAPEX)', budget_usd: 65000, actual_usd: 28000, rechargeable: false, status: 'In Progress' }
     ];
 
     const recharges = [
-      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share (GL 7062)', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
-      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC (GL 7062)', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' },
-      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge (GL 7062)', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' },
-      { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge (GL 7062)', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
-      { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share (GL 7062)', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled (r44 Alert)', status: 'Unrecharged' }
+      { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
+      { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
+      { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
+      { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
     ];
 
     const byCo = list => selectedEntityName ? list.filter(r => r.company === selectedEntityName) : list;
@@ -41207,6 +42235,7 @@
     const openWorkOrderCount = fWorkorders.filter(r => r.status !== 'Completed').length + fRecharges.filter(r => r.status === 'Unrecharged').length;
 
     const res = {
+      isSingleEntity: Boolean(selectedEntityName),
       properties: fProperties,
       units: fUnits,
       leases: fLeases,
@@ -41252,6 +42281,8 @@
   function renderRealEstateLeases(submode = 'main') {
     const data = computeRealEstateOperations();
     const s = data.summary;
+    const hideCo = Boolean(data.isSingleEntity);
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
     const filteredLeases = sortRows(data.leases.filter(matchQ), 're_leases');
@@ -41276,22 +42307,22 @@
 
       <div class="kpi-row">
         <div class="kpi-card">
-          <div class="kpi-lbl">Contracted Annual Rent Roll (TTC)</div>
+          <div class="kpi-lbl">Contracted Annual Rent Roll</div>
           <div class="kpi-val mono">${fmtUSD(s.contractedAnnualRentUsd, 0)}</div>
           <div class="kpi-sub">${fmtNum(data.leases.length)} active leases · ${fmtPct(s.occupancyPct, 1)} unit occupancy</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Period Rent Invoiced (TTC)</div>
+          <div class="kpi-lbl">Period Rent Invoiced</div>
           <div class="kpi-val mono">${fmtUSD(s.totalInvoicedTtcUsd, 0)}</div>
           <div class="kpi-sub">Collected: ${fmtUSD(s.totalCollectedRentUsd, 0)} · Open AR: <strong class="crit">${fmtUSD(s.openRentArUsd, 0)}</strong></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Unallocated Tenant Advances (GL 4191)</div>
+          <div class="kpi-lbl">Unallocated Tenant Advances</div>
           <div class="kpi-val mono">${fmtUSD(s.unallocatedAdvancesUsd, 0)}</div>
           <div class="kpi-sub">Advance pool before period invoice matching</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Security Deposits Held (GL 4196)</div>
+          <div class="kpi-lbl">Security Deposits Held</div>
           <div class="kpi-val mono">${fmtUSD(s.securityDepositsHeldUsd, 0)}</div>
           <div class="kpi-sub">${fmtNum(data.expiringLeaseCount)} leases expiring &lt;90d or pending period bill</div>
         </div>
@@ -41310,7 +42341,7 @@
           <div class="panel-head">
             <div>
               <h3>Period Rent Invoices &amp; 4235 Company S.A.L VAT Sequence Ledger ${shownCount('re_invoicing', filteredInv.length, data.invoices.length)}</h3>
-              <p>Plain-label TTC rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 &amp; #7-#8)</p>
+              <p>Period rent invoices · 11% VAT breakdown on 4235 Company S.A.L commercial leases · Sequence gap audit (#3-#4 &amp; #7-#8)</p>
             </div>
             <div class="panel-actions">${searchBox('Search invoice, tax seq, tenant, period...')}</div>
           </div>
@@ -41320,7 +42351,7 @@
                 <tr>
                   ${th('re_invoicing', 'id', 'Invoice #')}
                   ${th('re_invoicing', 'date', 'Date')}
-                  ${th('re_invoicing', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_invoicing', 'company', 'Entity')}
                   ${th('re_invoicing', 'tax_seq', 'Official Tax Seq')}
                   ${th('re_invoicing', 'tenant', 'Tenant')}
                   ${th('re_invoicing', 'period', 'Billing Period')}
@@ -41334,10 +42365,10 @@
               </thead>
               <tbody>
                 ${filteredInv.length ? sliceRows('re_invoicing', filteredInv).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.date)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.tax_seq)}</td>
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_note)}</div></td>
                     <td>${esc(r.period)}</td>
@@ -41348,12 +42379,12 @@
                     <td class="r mono ${r.open_ar_usd > 0 ? 'crit' : ''}"><strong>${fmtUSD(r.open_ar_usd, 2)}</strong></td>
                     <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : r.status === 'Partial' ? 'badge-warn' : 'badge-crit'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(12, 'No period rent invoices match current filter')}
-                ${showMoreRow('re_invoicing', filteredInv.length, 12)}
+                `).join('') : emptyRow(hideCo ? 11 : 12, 'No period rent invoices match current filter')}
+                ${showMoreRow('re_invoicing', filteredInv.length, hideCo ? 11 : 12)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL PERIOD RENT INVOICING (${fmtNum(filteredInv.length)} INVOICES)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL PERIOD RENT INVOICING (${fmtNum(filteredInv.length)} INVOICES)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumNet, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumVat, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumTtc, 2)}</strong></td>
@@ -41378,7 +42409,7 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Tenant Settlements, Security Deposits (GL 4196) &amp; Advance Pool ${shownCount('re_receipts', filteredRct.length, data.receipts.length)}</h3>
+              <h3>Tenant Settlements, Security Deposits &amp; Advance Pool ${shownCount('re_receipts', filteredRct.length, data.receipts.length)}</h3>
               <p>Separates invoice-allocated rent collections from unallocated tenant advances and refundable security deposits · Flags cross-tenant amount swaps</p>
             </div>
             <div class="panel-actions">${searchBox('Search receipt, tenant, audit note...')}</div>
@@ -41389,23 +42420,23 @@
                 <tr>
                   ${th('re_receipts', 'id', 'Receipt #')}
                   ${th('re_receipts', 'date', 'Date')}
-                  ${th('re_receipts', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_receipts', 'company', 'Entity')}
                   ${th('re_receipts', 'tenant', 'Tenant')}
                   ${th('re_receipts', 'property', 'Property')}
                   ${th('re_receipts', 'method', 'Payment Method')}
                   ${th('re_receipts', 'gross_usd', 'Gross Receipt ($)', 'r')}
                   ${th('re_receipts', 'allocated_inv_usd', 'Allocated to Invoices ($)', 'r')}
                   ${th('re_receipts', 'unallocated_adv_usd', 'Unallocated Advance ($)', 'r')}
-                  ${th('re_receipts', 'deposit_gl4196_usd', 'Security Deposit GL 4196 ($)', 'r')}
+                  ${th('re_receipts', 'deposit_gl4196_usd', 'Security Deposit ($)', 'r')}
                   ${th('re_receipts', 'status', 'Reconciliation')}
                 </tr>
               </thead>
               <tbody>
                 ${filteredRct.length ? sliceRows('re_receipts', filteredRct).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.date)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
                     <td>${esc(r.property)}</td>
                     <td>${esc(r.method)}</td>
@@ -41415,12 +42446,12 @@
                     <td class="r mono">${fmtUSD(r.deposit_gl4196_usd, 2)}</td>
                     <td><span class="badge ${r.status === 'Allocated' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No tenant receipts match current filter')}
-                ${showMoreRow('re_receipts', filteredRct.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No tenant receipts match current filter')}
+                ${showMoreRow('re_receipts', filteredRct.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL TENANT RECEIPTS &amp; DEPOSITS (${fmtNum(filteredRct.length)} VOUCHERS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL TENANT RECEIPTS &amp; DEPOSITS (${fmtNum(filteredRct.length)} VOUCHERS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGross, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumAlloc, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumAdv, 2)}</strong></td>
@@ -41446,8 +42477,8 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Annual Contracted Rent by Commercial Lease (TTC $)</h3>
-              <p>Ranked by annualized TTC rent contribution across 4235 Msaytbeh &amp; Properties portfolio</p>
+              <h3>Annual Contracted Rent by Commercial Lease ($)</h3>
+              <p>Ranked by annualized rent contribution across 4235 Msaytbeh &amp; Properties portfolio</p>
             </div>
           </div>
           <div style="padding:12px 16px">
@@ -41512,7 +42543,7 @@
             <thead>
               <tr>
                 ${th('re_leases', 'id', 'Lease ID')}
-                ${th('re_leases', 'company', 'Entity')}
+                ${hideCo ? '' : th('re_leases', 'company', 'Entity')}
                 ${th('re_leases', 'property', 'Property')}
                 ${th('re_leases', 'unit', 'Building Unit')}
                 ${th('re_leases', 'tenant', 'Tenant')}
@@ -41526,9 +42557,9 @@
             </thead>
             <tbody>
               ${filteredLeases.length ? sliceRows('re_leases', filteredLeases).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
                   <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.escalation)}</div></td>
@@ -41539,12 +42570,12 @@
                   <td class="r mono">${fmtUSD(r.deposit_usd, 2)}</td>
                   <td><span class="badge ${r.status === 'Active' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No lease contracts match current filter')}
-              ${showMoreRow('re_leases', filteredLeases.length, 11)}
+              `).join('') : emptyRow(hideCo ? 10 : 11, 'No lease contracts match current filter')}
+              ${showMoreRow('re_leases', filteredLeases.length, hideCo ? 10 : 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL CONTRACTED RENT ROLL (${fmtNum(filteredLeases.length)} LEASES)</strong></td>
+                <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL CONTRACTED RENT ROLL (${fmtNum(filteredLeases.length)} LEASES)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumNetPeriod, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumTtcPeriod, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumAnnualTtc, 2)}</strong></td>
@@ -41561,6 +42592,8 @@
   function renderRealEstateSales(submode = 'main') {
     const data = computeRealEstateOperations();
     const s = data.summary;
+    const hideCo = Boolean(data.isSingleEntity);
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
     const filteredSales = sortRows(data.sales.filter(matchQ), 're_sales');
@@ -41570,7 +42603,7 @@
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
           <div class="eyebrow">Real Estate &amp; Property · Property Disposals &amp; Buyer Schedules</div>
-          <h2>${submode === 'instalments' ? 'Buyer Instalment Schedules &amp; Deed Transfer Staging (GL 4191 to 7751)' : 'Property &amp; Unit Sales Contracts'}</h2>
+          <h2>${submode === 'instalments' ? 'Buyer Instalment Schedules &amp; Deed Transfer Staging' : 'Property &amp; Unit Sales Contracts'}</h2>
         </div>
         <div class="cockpit-Controls">
           <div class="seg" role="tablist" aria-label="Property Sales Sub-Views">
@@ -41595,7 +42628,7 @@
         <div class="kpi-card">
           <div class="kpi-lbl">Remaining Buyer Balance</div>
           <div class="kpi-val mono">${fmtUSD(s.salesOpenUsd, 0)}</div>
-          <div class="kpi-sub">Held in GL 4191 until final notary deed transfer</div>
+          <div class="kpi-sub">Held in Client Advances until final notary deed transfer</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Instalment Milestones Watch</div>
@@ -41615,7 +42648,7 @@
           <div class="panel-head">
             <div>
               <h3>Buyer Instalment Schedule &amp; Notary Deed Recognition Ledger ${shownCount('re_instalments', filteredInst.length, data.instalments.length)}</h3>
-              <p>Instalments post to GL 4191 (Client Advances) until notary title transfer recognizes disposal proceeds in GL 7751</p>
+              <p>Instalments post to Client Advances until notary title transfer recognizes disposal proceeds</p>
             </div>
             <div class="panel-actions">${searchBox('Search instalment, buyer, milestone...')}</div>
           </div>
@@ -41625,11 +42658,11 @@
                 <tr>
                   ${th('re_instalments', 'id', 'Tranche ID')}
                   ${th('re_instalments', 'due_date', 'Due Date')}
-                  ${th('re_instalments', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_instalments', 'company', 'Entity')}
                   ${th('re_instalments', 'sale_ref', 'Sale Contract')}
                   ${th('re_instalments', 'buyer', 'Buyer')}
                   ${th('re_instalments', 'milestone', 'Milestone Description')}
-                  ${th('re_instalments', 'gl_account', 'GL Treatment')}
+                  ${th('re_instalments', 'gl_account', 'Accounting Stage')}
                   ${th('re_instalments', 'scheduled_usd', 'Scheduled ($)', 'r')}
                   ${th('re_instalments', 'collected_usd', 'Collected ($)', 'r')}
                   ${th('re_instalments', 'open_usd', 'Open Balance ($)', 'r')}
@@ -41638,10 +42671,10 @@
               </thead>
               <tbody>
                 ${filteredInst.length ? sliceRows('re_instalments', filteredInst).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.due_date)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.sale_ref)}</td>
                     <td><strong>${esc(r.buyer)}</strong></td>
                     <td>${esc(r.milestone)}</td>
@@ -41651,12 +42684,12 @@
                     <td class="r mono ${r.open_usd > 0 ? 'crit' : ''}"><strong>${fmtUSD(r.open_usd, 2)}</strong></td>
                     <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : r.status === 'Due Soon' ? 'badge-warn' : 'badge-crit'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No buyer instalments match current filter')}
-                ${showMoreRow('re_instalments', filteredInst.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No buyer instalments match current filter')}
+                ${showMoreRow('re_instalments', filteredInst.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL BUYER INSTALMENT SCHEDULE (${fmtNum(filteredInst.length)} TRANCHES)</strong></td>
+                  <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL BUYER INSTALMENT SCHEDULE (${fmtNum(filteredInst.length)} TRANCHES)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumSched, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCol, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumOpen, 2)}</strong></td>
@@ -41707,7 +42740,7 @@
         <div class="panel-head">
           <div>
             <h3>Property &amp; Unit Sales Contracts ${shownCount('re_sales', filteredSales.length, data.sales.length)}</h3>
-            <p>Tracks buyer sales agreements, collected instalments, broker commissions, and Lebanese CoA recognition stage</p>
+            <p>Tracks buyer sales agreements, collected instalments, broker commissions, and deed recognition stage</p>
           </div>
           <div class="panel-actions">${searchBox('Search sale contract, buyer, property...')}</div>
         </div>
@@ -41717,7 +42750,7 @@
               <tr>
                 ${th('re_sales', 'id', 'Contract #')}
                 ${th('re_sales', 'date', 'Contract Date')}
-                ${th('re_sales', 'company', 'Entity')}
+                ${hideCo ? '' : th('re_sales', 'company', 'Entity')}
                 ${th('re_sales', 'property', 'Property')}
                 ${th('re_sales', 'unit', 'Unit / Parcel Sold')}
                 ${th('re_sales', 'buyer', 'Buyer')}
@@ -41730,10 +42763,10 @@
             </thead>
             <tbody>
               ${filteredSales.length ? sliceRows('re_sales', filteredSales).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.date)}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
                   <td><strong>${esc(r.buyer)}</strong><div class="muted" style="font-size:11px">${esc(r.gl_stage)}</div></td>
@@ -41743,12 +42776,12 @@
                   <td class="r mono">${fmtUSD(r.broker_comm_usd, 2)}</td>
                   <td><span class="badge ${r.balance_usd === 0 ? 'badge-good' : 'badge-warn'}">${esc(r.deed_status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No property sales contracts match current filter')}
-              ${showMoreRow('re_sales', filteredSales.length, 11)}
+              `).join('') : emptyRow(hideCo ? 10 : 11, 'No property sales contracts match current filter')}
+              ${showMoreRow('re_sales', filteredSales.length, hideCo ? 10 : 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL PROPERTY SALES CONTRACTS (${fmtNum(filteredSales.length)} CONTRACTS)</strong></td>
+                <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL PROPERTY SALES CONTRACTS (${fmtNum(filteredSales.length)} CONTRACTS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumContract, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumBal, 2)}</strong></td>
@@ -41765,6 +42798,8 @@
   function renderRealEstateProperties(submode = 'main') {
     const data = computeRealEstateOperations();
     const s = data.summary;
+    const hideCo = Boolean(data.isSingleEntity);
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
     const filteredProps = sortRows(data.properties.filter(matchQ), 're_properties');
@@ -41831,7 +42866,7 @@
               <thead>
                 <tr>
                   ${th('re_units', 'code', 'Unit Code')}
-                  ${th('re_units', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_units', 'company', 'Entity')}
                   ${th('re_units', 'property', 'Property')}
                   ${th('re_units', 'unit_name', 'Unit / Block Name')}
                   ${th('re_units', 'floor', 'Floor')}
@@ -41844,9 +42879,9 @@
               </thead>
               <tbody>
                 ${filteredUnits.length ? sliceRows('re_units', filteredUnits).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.code)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td>${esc(r.property)}</td>
                     <td><strong>${esc(r.unit_name)}</strong></td>
                     <td>${esc(r.floor)}</td>
@@ -41856,12 +42891,12 @@
                     <td class="r mono"><strong>${fmtUSD(r.annual_rent_usd, 0)}</strong></td>
                     <td><span class="badge ${r.occupancy === 'Occupied' ? 'badge-good' : 'badge-warn'}">${esc(r.occupancy)}</span></td>
                   </tr>
-                `).join('') : emptyRow(10, 'No building units match current filter')}
-                ${showMoreRow('re_units', filteredUnits.length, 10)}
+                `).join('') : emptyRow(hideCo ? 9 : 10, 'No building units match current filter')}
+                ${showMoreRow('re_units', filteredUnits.length, hideCo ? 9 : 10)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL BUILDING UNITS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL BUILDING UNITS (${fmtNum(filteredUnits.length)} UNITS)</strong></td>
                   <td class="r mono"><strong>${fmtNum(sumArea)} m²</strong></td>
                   <td></td>
                   <td class="r mono"><strong>${fmtUSD(sumRent, 0)}</strong></td>
@@ -41893,7 +42928,7 @@
                 <tr>
                   ${th('re_valuations', 'id', 'Valuation ID')}
                   ${th('re_valuations', 'val_date', 'Appraisal Date')}
-                  ${th('re_valuations', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_valuations', 'company', 'Entity')}
                   ${th('re_valuations', 'property', 'Property')}
                   ${th('re_valuations', 'appraiser', 'Certified Appraiser')}
                   ${th('re_valuations', 'basis', 'Methodology')}
@@ -41905,10 +42940,10 @@
               </thead>
               <tbody>
                 ${filteredVals.length ? sliceRows('re_valuations', filteredVals).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.val_date)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.property)}</strong></td>
                     <td>${esc(r.appraiser)}</td>
                     <td>${esc(r.basis)}</td>
@@ -41917,12 +42952,12 @@
                     <td class="r mono"><strong>${fmtUSD(r.net_share_val_usd, 0)}</strong></td>
                     <td class="r mono">${fmtPct(r.implied_cap_pct, 2)}</td>
                   </tr>
-                `).join('') : emptyRow(10, 'No property valuations match current filter')}
-                ${showMoreRow('re_valuations', filteredVals.length, 10)}
+                `).join('') : emptyRow(hideCo ? 9 : 10, 'No property valuations match current filter')}
+                ${showMoreRow('re_valuations', filteredVals.length, hideCo ? 9 : 10)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL CERTIFIED VALUATIONS (${fmtNum(filteredVals.length)} APPRAISALS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL CERTIFIED VALUATIONS (${fmtNum(filteredVals.length)} APPRAISALS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGross, 0)}</strong></td>
                   <td></td>
                   <td class="r mono"><strong>${fmtUSD(sumNetVal, 0)}</strong></td>
@@ -41955,7 +42990,7 @@
               <thead>
                 <tr>
                   ${th('re_ownership', 'id', 'Deed Ref')}
-                  ${th('re_ownership', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_ownership', 'company', 'Entity')}
                   ${th('re_ownership', 'property', 'Property')}
                   ${th('re_ownership', 'holder', 'Title Holder / Co-Ownership Pool')}
                   ${th('re_ownership', 'deed_shares', 'Shares (/2400)', 'r')}
@@ -41969,9 +43004,9 @@
               </thead>
               <tbody>
                 ${filteredOwn.length ? sliceRows('re_ownership', filteredOwn).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.property)}</strong></td>
                     <td>${esc(r.holder)}</td>
                     <td class="r mono">${fmtNum(r.deed_shares)} / 2400</td>
@@ -41982,12 +43017,12 @@
                     <td class="r mono">${fmtUSD(r.retained_reserve_usd, 0)}</td>
                     <td><span class="badge ${r.status.includes('Distributed') ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No co-ownership records match current filter')}
-                ${showMoreRow('re_ownership', filteredOwn.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No co-ownership records match current filter')}
+                ${showMoreRow('re_ownership', filteredOwn.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL CO-OWNERSHIP NOI LEDGER (${fmtNum(filteredOwn.length)} DEED POOLS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL CO-OWNERSHIP NOI LEDGER (${fmtNum(filteredOwn.length)} DEED POOLS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGrossNoi, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumEntNoi, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumDist, 0)}</strong></td>
@@ -42049,7 +43084,7 @@
             <thead>
               <tr>
                 ${th('re_properties', 'code', 'Plot Code')}
-                ${th('re_properties', 'company', 'Entity')}
+                ${hideCo ? '' : th('re_properties', 'company', 'Entity')}
                 ${th('re_properties', 'name', 'Property Name')}
                 ${th('re_properties', 'cadastry', 'Cadastral Region')}
                 ${th('re_properties', 'area_sqm', 'Area (m²)', 'r')}
@@ -42063,9 +43098,9 @@
             </thead>
             <tbody>
               ${filteredProps.length ? sliceRows('re_properties', filteredProps).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.code)}</strong></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.name)}</strong><div class="muted" style="font-size:11px">${esc(r.asset_class)} · Plot ${esc(r.plot_no)}</div></td>
                   <td>${esc(r.cadastry)}</td>
                   <td class="r mono">${fmtNum(r.area_sqm)}</td>
@@ -42076,12 +43111,12 @@
                   <td class="r mono"><strong>${fmtUSD(r.annual_noi_usd, 0)}</strong></td>
                   <td><span class="badge ${r.status === 'Income Producing' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No portfolio properties match current filter')}
-              ${showMoreRow('re_properties', filteredProps.length, 11)}
+              `).join('') : emptyRow(hideCo ? 10 : 11, 'No portfolio properties match current filter')}
+              ${showMoreRow('re_properties', filteredProps.length, hideCo ? 10 : 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="4"><strong>TOTAL PORTFOLIO REGISTRY (${fmtNum(filteredProps.length)} PROPERTIES)</strong></td>
+                <td colspan="${hideCo ? 3 : 4}"><strong>TOTAL PORTFOLIO REGISTRY (${fmtNum(filteredProps.length)} PROPERTIES)</strong></td>
                 <td class="r mono"><strong>${fmtNum(sumArea)} m²</strong></td>
                 <td></td>
                 <td class="r mono"><strong>${fmtUSD(sumGross, 0)}</strong></td>
@@ -42100,6 +43135,8 @@
   function renderRealEstateWorkOrders(submode = 'main') {
     const data = computeRealEstateOperations();
     const s = data.summary;
+    const hideCo = Boolean(data.isSingleEntity);
+    const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
     const filteredWo = sortRows(data.workorders.filter(matchQ), 're_workorders');
@@ -42109,7 +43146,7 @@
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
           <div class="eyebrow">Real Estate &amp; Property · Fit-Out CAPEX, Facility Maintenance &amp; Tenant Recharges</div>
-          <h2>${submode === 'recharges' ? 'Tenant Utility &amp; Common-Area Recharges (GL 7062)' : 'Work Orders, MEP Fit-Out &amp; Structural CAPEX'}</h2>
+          <h2>${submode === 'recharges' ? 'Tenant Utility &amp; Common-Area Recharges' : 'Work Orders, MEP Fit-Out &amp; Structural CAPEX'}</h2>
         </div>
         <div class="cockpit-Controls">
           <div class="seg" role="tablist" aria-label="Work Orders Sub-Views">
@@ -42129,7 +43166,7 @@
         <div class="kpi-card">
           <div class="kpi-lbl">Actual Spend Incurred</div>
           <div class="kpi-val mono">${fmtUSD(s.woActualUsd, 0)}</div>
-          <div class="kpi-sub">CAPEX (GL 2131) &amp; Routine Maintenance (GL 6141)</div>
+          <div class="kpi-sub">Structural CAPEX &amp; Routine Facility Maintenance</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Unrecharged Tenant Expenses</div>
@@ -42137,7 +43174,7 @@
           <div class="kpi-sub">Flagged Rechargeable = Yes awaiting tenant invoice</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Total Recoverable Recharges (GL 7062)</div>
+          <div class="kpi-lbl">Total Recoverable Recharges</div>
           <div class="kpi-val mono">${fmtUSD(data.recharges.reduce((a, r) => a + r.total_recharge_usd, 0), 0)}</div>
           <div class="kpi-sub">Generator diesel, chilled water &amp; municipal shares</div>
         </div>
@@ -42153,7 +43190,7 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Tenant Utility, Generator Diesel &amp; Common-Area Recharges (GL 7062) ${shownCount('re_recharges', filteredRch.length, data.recharges.length)}</h3>
+              <h3>Tenant Utility, Generator Diesel &amp; Common-Area Recharges ${shownCount('re_recharges', filteredRch.length, data.recharges.length)}</h3>
               <p>Tracks recoverable landlord expenses and flags unbilled tenant recharges before period close</p>
             </div>
             <div class="panel-actions">${searchBox('Search recharge, tenant, property, expense ref...')}</div>
@@ -42164,7 +43201,7 @@
                 <tr>
                   ${th('re_recharges', 'id', 'Recharge #')}
                   ${th('re_recharges', 'date', 'Date')}
-                  ${th('re_recharges', 'company', 'Entity')}
+                  ${hideCo ? '' : th('re_recharges', 'company', 'Entity')}
                   ${th('re_recharges', 'property', 'Property')}
                   ${th('re_recharges', 'tenant', 'Tenant')}
                   ${th('re_recharges', 'category', 'Recoverable Expense Category')}
@@ -42177,10 +43214,10 @@
               </thead>
               <tbody>
                 ${filteredRch.length ? sliceRows('re_recharges', filteredRch).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.date)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td${coStyle}>${coBadge(r.company)}</td>
                     <td>${esc(r.property)}</td>
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">Ref: ${esc(r.expense_ref)}</div></td>
                     <td>${esc(r.category)}</td>
@@ -42190,12 +43227,12 @@
                     <td class="mono">${esc(r.linked_invoice)}</td>
                     <td><span class="badge ${r.status === 'Settled' || r.status === 'Invoiced' ? 'badge-good' : 'badge-crit'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No tenant recharges match current filter')}
-                ${showMoreRow('re_recharges', filteredRch.length, 11)}
+                `).join('') : emptyRow(hideCo ? 10 : 11, 'No tenant recharges match current filter')}
+                ${showMoreRow('re_recharges', filteredRch.length, hideCo ? 10 : 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="6"><strong>TOTAL TENANT RECHARGES (${fmtNum(filteredRch.length)} ITEMS)</strong></td>
+                  <td colspan="${hideCo ? 5 : 6}"><strong>TOTAL TENANT RECHARGES (${fmtNum(filteredRch.length)} ITEMS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCost, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumMark, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumTot, 2)}</strong></td>
@@ -42218,7 +43255,7 @@
         <div class="panel-head">
           <div>
             <h3>Work Order Budget vs Actual Spend by Property ($)</h3>
-            <p>Structural improvements capitalized to GL 2131 vs routine facility repairs in GL 6141</p>
+            <p>Structural improvements capitalized to Building Improvements vs routine facility repairs</p>
           </div>
         </div>
         <div style="padding:12px 16px">
@@ -42244,7 +43281,7 @@
         <div class="panel-head">
           <div>
             <h3>Work Orders, Fit-Out &amp; Facility Maintenance Ledger ${shownCount('re_workorders', filteredWo.length, data.workorders.length)}</h3>
-            <p>Tracks contractor scope, GL capitalization vs expense routing, and tenant recharge eligibility</p>
+            <p>Tracks contractor scope, capitalization vs expense routing, and tenant recharge eligibility</p>
           </div>
           <div class="panel-actions">${searchBox('Search work order, property, unit, contractor...')}</div>
         </div>
@@ -42254,11 +43291,11 @@
               <tr>
                 ${th('re_workorders', 'id', 'WO #')}
                 ${th('re_workorders', 'date', 'Date')}
-                ${th('re_workorders', 'company', 'Entity')}
+                ${hideCo ? '' : th('re_workorders', 'company', 'Entity')}
                 ${th('re_workorders', 'property', 'Property')}
                 ${th('re_workorders', 'unit', 'Unit / Area')}
                 ${th('re_workorders', 'contractor', 'Contractor')}
-                ${th('re_workorders', 'gl_code', 'GL Routing')}
+                ${th('re_workorders', 'gl_code', 'Accounting Classification')}
                 ${th('re_workorders', 'budget_usd', 'Budget ($)', 'r')}
                 ${th('re_workorders', 'actual_usd', 'Actual Spend ($)', 'r')}
                 ${th('re_workorders', 'rechargeable', 'Rechargeable')}
@@ -42267,25 +43304,25 @@
             </thead>
             <tbody>
               ${filteredWo.length ? sliceRows('re_workorders', filteredWo).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.date)}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td><strong>${esc(r.unit)}</strong><div class="muted" style="font-size:11px">${esc(r.category)}</div></td>
                   <td>${esc(r.contractor)}</td>
                   <td class="mono">${esc(r.gl_code)}</td>
                   <td class="r mono">${fmtUSD(r.budget_usd, 2)}</td>
                   <td class="r mono ${r.actual_usd > r.budget_usd ? 'crit' : ''}"><strong>${fmtUSD(r.actual_usd, 2)}</strong></td>
-                  <td><span class="badge ${r.rechargeable ? 'badge-warn' : 'badge-good'}">${r.rechargeable ? 'Yes (GL 7062)' : 'Landlord'}</span></td>
+                  <td><span class="badge ${r.rechargeable ? 'badge-warn' : 'badge-good'}">${r.rechargeable ? 'Yes (Tenant Recharge)' : 'Landlord'}</span></td>
                   <td><span class="badge ${r.status === 'Completed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No work orders match current filter')}
-              ${showMoreRow('re_workorders', filteredWo.length, 11)}
+              `).join('') : emptyRow(hideCo ? 10 : 11, 'No work orders match current filter')}
+              ${showMoreRow('re_workorders', filteredWo.length, hideCo ? 10 : 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="7"><strong>TOTAL WORK ORDERS &amp; FIT-OUT (${fmtNum(filteredWo.length)} ORDERS)</strong></td>
+                <td colspan="${hideCo ? 6 : 7}"><strong>TOTAL WORK ORDERS &amp; FIT-OUT (${fmtNum(filteredWo.length)} ORDERS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumBudget, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumActual, 2)}</strong></td>
                 <td colspan="2"></td>
@@ -44042,7 +45079,7 @@
   const INDUSTRY_PBI_PAGES_SPEC = {
     'Holding & Treasury': [
       { id: 'p01_overview', num: '01', label: 'Group Pulse', title: 'Consolidated 6-Industry Revenue, Operating Profit & Liquidity', view: 'hld_consolidation' },
-      { id: 'p02_interactions', num: '02', label: 'Intercompany (h29)', title: '2-Sided Sister Transfers, Match Rules & Open Mirror Queue', view: 'hld_interactions' },
+      { id: 'p02_interactions', num: '02', label: 'Intercompany & Repayment', title: 'Sister Company Given vs. Paid Back, Net Owed & Bookkeeping Audit', view: 'hld_interactions' },
       { id: 'p03_partners', num: '03', label: 'Partner Splits', title: '10-Slot Default Splits, Chronological Agreements & GL 4515', view: 'hld_partners' },
       { id: 'p04_loans', num: '04', label: 'Loans & Capital', title: 'Central Borrowing Facilities (4281/1689/181) & Fixed Assets', view: 'hld_loans' },
       { id: 'p05_expenses', num: '05', label: 'Holding Overhead', title: 'HQ Shared Services, Recurring Schedules & Supplier AP', view: 'expenses' },
@@ -44087,7 +45124,7 @@
     if (ind === 'Holding & Treasury') {
       const icData = computeIntercompanyInteractions({ ignoreSearch: true });
       const entRows = entRollup.entities || [];
-      const pairRows = (icData.byPair || []).slice(0, 12);
+      const bilRows = (icData.byBilateral || []).slice(0, 12);
       const icRows = (icData.interactions || []).slice(0, 15);
       const indBars = [
         { label: 'Manufacturing (3)', val: entRollup.byIndustry.mfg.sales_ttc, sub: `Op Profit ${fmtUSD(entRollup.byIndustry.mfg.operating_profit, 0)}` },
@@ -44101,23 +45138,23 @@
           { label: 'Consolidated Revenue (TTC)', val: fmtUSD(entRollup.totals.sales_ttc, 0), sub: `${fmtNum(entRollup.totals.loads)} group transactions`, cls: 'good' },
           { label: 'Consolidated Gross Margin', val: fmtUSD(entRollup.totals.gross_margin, 0), sub: `${((entRollup.totals.gross_margin / Math.max(1, entRollup.totals.sales_ttc)) * 100).toFixed(1)}% group margin`, cls: 'good' },
           { label: 'Consolidated Net Profit', val: fmtUSD(entRollup.totals.operating_profit, 0), sub: 'Across all 14 entities & 6 verticals', cls: 'good' },
-          { label: 'Matched Intercompany (h29)', val: fmtUSD(icData.totalMatchedUsd, 0), sub: `${fmtNum(icData.matchedCount)} paired sister transfers`, cls: 'brass' },
-          { label: 'Open Mirror Queue (H1)', val: fmtUSD(icData.totalOpenUsd, 0), sub: `${fmtNum(icData.openCount)} one-sided items to book`, cls: 'warn' },
+          { label: 'Given to Sisters ($)', val: fmtUSD(icData.totalGivenUsd, 0), sub: `Paid Back ${fmtUSD(icData.totalPaidBackUsd, 0)} (${(icData.overallRepayPct || 0).toFixed(1)}%)`, cls: 'brass' },
+          { label: 'Net Unpaid Sister Debt', val: fmtUSD(icData.totalNetUnpaidUsd, 0), sub: `${fmtNum(icData.unpaidCorridorCount)} corridors not paying back`, cls: 'warn' },
           { label: 'Consolidated Cash & Bank', val: fmtUSD(entRollup.totals.cash_till, 0), sub: `Net AR ${fmtUSD(entRollup.totals.ar_balance, 0)}`, cls: 'good' }
         ],
         chartTitle: 'Consolidated Revenue & Operating Profit by Industry Vertical ($)',
         bars: indBars,
-        secondTitle: 'Intercompany Transfers by Sister Pair (Matched vs Open $)',
-        secondBars: pairRows.slice(0, 6).map(p => ({ label: p.pairKey, val: Number(p.matchedUsd || 0) + Number(p.openUsd || 0), sub: `Matched ${fmtUSD(p.matchedUsd, 0)} · Open ${fmtUSD(p.openUsd, 0)}` })),
-        tableTitle: pageIdx === 1 ? 'Intercompany Sister Transfer & Mirror Queue Register (h29)' : 'Consolidated 14-Entity Group Performance Ledger',
+        secondTitle: 'Sister Company Repayment: Given vs. Paid Back & Net Owed ($)',
+        secondBars: bilRows.slice(0, 7).map(b => ({ label: b.corridorLabel, val: Number(b.givenUsd || 0), sub: `Paid ${fmtUSD(b.paidBackUsd, 0)} (${b.repayPct.toFixed(1)}%) · ${b.borrower} owes ${fmtUSD(b.netUnpaidUsd, 0)}` })),
+        tableTitle: pageIdx === 1 ? 'Intercompany Sister Repayment & Transfer Ledger' : 'Consolidated 14-Entity Group Performance Ledger',
         headers: (pageIdx === 1 && icRows.length > 0)
-          ? ['Date', 'From Sister', 'To Sister', 'Voucher #', 'Pairing Rule', 'Status', 'Amount ($)']
+          ? ['Date', 'From Sister', 'To Sister', 'Repayment Flow', 'Given ($)', 'Paid Back ($)', 'Running Debt ($)']
           : ['Entity', 'Industry Vertical', 'Transactions', 'Revenue TTC ($)', 'Gross Margin ($)', 'Expenses ($)', 'Operating Profit ($)'],
         rows: (pageIdx === 1 && icRows.length > 0)
-          ? icRows.map(r => [r.date, r.fromCo, r.toCo, r.id, r.matchType, r.status, fmtUSD(r.usd, 2)])
+          ? icRows.map(r => [r.date, r.fromCo, r.toCo, r.repayRole === 'repaid' ? 'Paid Back (−Debt)' : 'Given (+Debt)', r.repayRole === 'given' ? fmtUSD(r.givenUsd, 2) : '—', r.repayRole === 'repaid' ? fmtUSD(r.paidBackUsd, 2) : '—', fmtUSD(r.runningBalanceUsd, 2)])
           : entRows.map(e => [e.name, e.industry, fmtNum(e.k.loads || 0), fmtUSD(e.k.sales_ttc, 0), fmtUSD(e.k.gross_margin, 0), fmtUSD(e.k.expenses, 0), fmtUSD(e.k.operating_profit, 0)]),
         totals: (pageIdx === 1 && icRows.length > 0)
-          ? ['Total Intercompany', `${fmtNum(icData.totalCount)} transfers`, '-', `${fmtNum(icData.matchedCount)} paired`, `${fmtNum(icData.openCount)} open`, 'GL 181 Tied', fmtUSD(icData.totalMatchedUsd + icData.totalOpenUsd, 2)]
+          ? ['Total Sister Repayment', `${fmtNum(icData.totalCount)} transfers`, `${(icData.overallRepayPct || 0).toFixed(1)}% repaid`, 'Net Unpaid', fmtUSD(icData.totalGivenUsd, 2), fmtUSD(icData.totalPaidBackUsd, 2), fmtUSD(icData.totalNetUnpaidUsd, 2)]
           : ['Consolidated Group Total', '6 Industries (14 Entities)', fmtNum(entRollup.totals.loads), fmtUSD(entRollup.totals.sales_ttc, 0), fmtUSD(entRollup.totals.gross_margin, 0), fmtUSD(entRollup.totals.expenses, 0), fmtUSD(entRollup.totals.operating_profit, 0)]
       };
     }
@@ -44661,7 +45698,8 @@
   }
 
   function ensureMultiIndustrySpineSeeded() {
-    if (!SEED || !SEED.records || SEED._multiIndustrySpineSeeded) return;
+    if (!SEED || !SEED.records || !SEED._recordsReady) return;
+    if (SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed && SEED.records.customers && SEED.records.customers._hasMultiIndustrySeed) return;
     SEED._multiIndustrySpineSeeded = true;
     const recs = SEED.records;
     const ensureArr = k => {
@@ -45599,11 +46637,13 @@
     _PAYROLL_INTEL_CACHE = null;
     _threeLegApCacheKey = '';
     _canonCpCacheKey = '';
+    _filterRecordsWeakCache = new WeakMap();
+    if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
   }
 
   function getIndustryGlModel(ind, rawKey, baseModel) {
     ensureMultiIndustrySpineSeeded();
-    const cacheKey = `${ind}|${rawKey}|${SEED._customRev || 0}`;
+    const cacheKey = `${ind}|${rawKey}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
 
     const kSnap = getIndustryKpiSnapshot(ind, rawKey, {});
@@ -49155,7 +50195,8 @@
     staff: 'New Staff Member (Universal Registry)',
     staffrole: 'New Staff Role (Universal Registry)',
     staffassignment: 'Log Staff Role & Equipment Assignment',
-    workshift: 'New Shift & Clock Timing'
+    workshift: 'New Shift & Clock Timing',
+    document: 'Save Document, Invoice or Receipt'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES) || {});
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
@@ -49164,7 +50205,7 @@
     warehousestock: 'warehouse_movements', settlement: 'settlements',
     repair: 'equipment_repairs', oillog: 'equipment_oil_logs', item: 'items',
     staff: 'staff_members', staffrole: 'staff_roles', staffassignment: 'staff_assignments',
-    workshift: 'work_shifts'
+    workshift: 'work_shifts', document: 'documents'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
   function secHdr(title, sub, opts = {}) {
@@ -50817,7 +51858,7 @@
     priceManual: false, transManual: false, methodManual: false, uomManual: false, meterTypeManual: false,
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
     ownerManuallyPicked: false, driverManual: false, settleLegManual: false, postAttempted: false,
-    stagedOwnerDrivers: [], expItems: [], repairItems: [],
+    stagedOwnerDrivers: [], expItems: [], repairItems: [], attachments: [],
     lastCompany: '', lastDate: '', lastCategory: null, lastSubcategory: '', initialSubcategory: '', expItem0Manual: false, catCache: null,
     lastTruck: '', lastExpTruck: '', lastWhItem: '', lastOilUnit: '', lastOilType: '',
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
@@ -50825,6 +51866,94 @@
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
+
+  function renderEntryAttachmentsBarHtml(fType) {
+    const isDocForm = fType === 'document';
+    return `
+      <div class="entry-attachments-bar${isDocForm ? ' is-doc-primary' : ''}" id="entryAttachmentsBar">
+        <div class="entry-att-head">
+          <div class="entry-att-title">
+            <span class="entry-att-ico">${ic('receipt')}</span>
+            <div>
+              <strong>${isDocForm ? 'Upload or Snap Document, Invoice or Receipt File *' : 'Attach Receipt, Invoice or Supporting Document (Optional)'}</strong>
+              <small>${isDocForm ? 'Attach a PDF, photo, or scan of the invoice/receipt, or snap a live camera photo.' : 'Attach paper invoice scans, payment receipts, weighbridge slips, or photos to this record (auto-saved in Document Vault).'}</small>
+            </div>
+          </div>
+          <div class="entry-att-actions">
+            <span class="badge badge-neutral" id="entryAttCountBadge">0 attached</span>
+            <input type="file" id="f_entry_att_file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
+            <input type="file" id="f_entry_att_cam" accept="image/*" capture="environment" hidden>
+            <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttUpload">${ic('upload')} Upload File / PDF</button>
+            <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttCamera">${ic('camera')} Snap Photo</button>
+          </div>
+        </div>
+        <div class="entry-att-list" id="entryAttListWrap" hidden></div>
+      </div>
+    `;
+  }
+
+  function renderEntryAttachmentsListUI() {
+    const listWrap = document.getElementById('entryAttListWrap');
+    const badgeEl = document.getElementById('entryAttCountBadge');
+    const atts = Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments : [];
+    if (badgeEl) {
+      badgeEl.textContent = `${atts.length} attached`;
+      badgeEl.className = atts.length > 0 ? 'badge badge-ok' : 'badge badge-neutral';
+    }
+    if (!listWrap) return;
+    if (!atts.length) {
+      listWrap.hidden = true;
+      listWrap.innerHTML = '';
+      return;
+    }
+    listWrap.hidden = false;
+    listWrap.innerHTML = atts.map((a, idx) => {
+      const isImg = /^image\//i.test(a.mime_type || '') || /^data:image\//i.test(a.data_url || '');
+      return `
+        <div class="att-file-chip" data-att-chip-idx="${idx}">
+          ${isImg && a.data_url
+            ? `<img src="${esc(a.data_url)}" alt="${esc(a.file_name || 'Receipt')}" class="att-chip-thumb" data-entry-att-preview="${idx}">`
+            : `<span class="att-chip-ico" data-entry-att-preview="${idx}">${ic('receipt')}</span>`}
+          <div class="att-chip-meta" data-entry-att-preview="${idx}">
+            <strong class="mono">${esc(a.file_name || `Attachment_${idx + 1}`)}</strong>
+            <small>${esc(formatFileSizeShort(a.file_size))} · ${esc(a.capture_method || 'File Upload')}</small>
+          </div>
+          <button type="button" class="btn btn-ghost-bar btn-sm" data-entry-att-preview="${idx}">Preview</button>
+          <button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" aria-label="Remove attachment">✕</button>
+        </div>
+      `;
+    }).join('');
+    listWrap.querySelectorAll('[data-entry-att-preview]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(el.getAttribute('data-entry-att-preview') || 0);
+        const item = atts[idx];
+        if (item) {
+          openDocumentPreviewModal(item, {
+            allAttachments: atts,
+            activeIdx: idx,
+            company: val('f_company') || defaultEntryCompany(),
+            date: val('f_date') || todayISO(),
+            doc_type: val('f_doc_type') || inferDocTypeFromCrKey(FORM_CR_KEY[STATE.modalForm] || 'expenses')
+          });
+        }
+      });
+    });
+    listWrap.querySelectorAll('[data-entry-att-remove]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = Number(btn.getAttribute('data-entry-att-remove') || 0);
+        if (Array.isArray(FORM_UI.attachments)) {
+          FORM_UI.attachments.splice(idx, 1);
+          FORM_UI.userInteracted = true;
+          renderEntryAttachmentsListUI();
+          recalcForm();
+        }
+      });
+    });
+  }
   const $ = id => document.getElementById(id);
   const qtyEl = () => document.getElementById('f_qty');
   const val = id => { const el = $(id); return el ? String(el.value == null ? '' : el.value).trim() : ''; };
@@ -58764,6 +59893,22 @@
         renderAdminLockBar();
         return {};
       }
+      if (STATE.modalForm === 'document') {
+        ensureDocumentsVaultSeeded();
+        const docType = val('f_doc_type') || 'Supplier Invoice';
+        const amt = num('f_amount');
+        const pTbl = val('f_parent_table');
+        const pLbl = val('f_parent_label');
+        const attCnt = Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.length : 0;
+        const totSz = (FORM_UI.attachments || []).reduce((s, a) => s + Number(a.size || 0), 0);
+        setText('calc_doc_type', docType);
+        setText('calc_doc_files', attCnt > 0 ? `${attCnt} file${attCnt === 1 ? '' : 's'} (${formatFileSizeShort(totSz)})` : '0 files (Add below)');
+        setText('calc_doc_link', pLbl ? `${pLbl}${pTbl ? ' · ' + (CR_LABEL[pTbl] || pTbl) : ''}` : (pTbl ? (CR_LABEL[pTbl] || pTbl) : 'Standalone Vault Document'));
+        setText('calc_doc_amt', amt > 0 ? fmtUSD(amt, 2) : '-');
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return {};
+      }
       switch (STATE.modalForm) {
         case 'sales': return recalcSales();
         case 'raw': return recalcRaw();
@@ -61205,6 +62350,7 @@
     FORM_UI.repairItems = STATE.modalForm === 'repair'
       ? [{ item_name: '', source: 'warehouse', qty: 1, uom: 'Piece', unit_cost: '', costManual: false }]
       : [];
+    FORM_UI.attachments = [];
     FORM_UI.adminUnlocked = {}; FORM_UI.unlockTargetField = ''; FORM_UI.unlockNote = '';
     FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.lastSubcategory = val('f_subcategory'); FORM_UI.initialSubcategory = val('f_subcategory'); FORM_UI.expItem0Manual = false; FORM_UI.catCache = null;
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastExpTruck = val('f_truck'); FORM_UI.lastWhItem = ''; FORM_UI.lastOilUnit = ''; FORM_UI.lastOilType = '';
@@ -63055,6 +64201,44 @@
     });
     recalcForm();
     wireModalSuggestions(body);
+    renderEntryAttachmentsListUI();
+    const attBar = $('entryAttachmentsBar');
+    if (attBar && attBar.dataset.attWired !== '1') {
+      attBar.dataset.attWired = '1';
+      const fileInp = $('f_entry_att_file');
+      const camInp = $('f_entry_att_cam');
+      const upBtn = $('btnEntryAttUpload');
+      const camBtn = $('btnEntryAttCamera');
+      const handleFiles = async fileList => {
+        const arr = Array.from(fileList || []).filter(Boolean);
+        if (!arr.length) return;
+        for (const f of arr) {
+          const item = await readAndCompressAttachmentFile(f);
+          if (item) {
+            if (!Array.isArray(FORM_UI.attachments)) FORM_UI.attachments = [];
+            FORM_UI.attachments.push(item);
+          }
+        }
+        FORM_UI.userInteracted = true;
+        if (STATE.modalForm === 'document' && $('f_doc_title') && !val('f_doc_title') && FORM_UI.attachments[0]) {
+          $('f_doc_title').value = String(FORM_UI.attachments[0].name || '').replace(/\.[^.]+$/, '');
+        }
+        renderEntryAttachmentsListUI();
+        recalcForm();
+        toast(`Attached ${arr.length} file${arr.length === 1 ? '' : 's'} to this record`, 'ok');
+      };
+      if (upBtn && fileInp) upBtn.addEventListener('click', () => fileInp.click());
+      if (camBtn && camInp) camBtn.addEventListener('click', () => camInp.click());
+      if (fileInp) fileInp.addEventListener('change', async () => { await handleFiles(fileInp.files); fileInp.value = ''; });
+      if (camInp) camInp.addEventListener('change', async () => { await handleFiles(camInp.files); camInp.value = ''; });
+      attBar.addEventListener('dragover', ev => { ev.preventDefault(); attBar.classList.add('drag-over'); });
+      attBar.addEventListener('dragleave', () => attBar.classList.remove('drag-over'));
+      attBar.addEventListener('drop', async ev => {
+        ev.preventDefault();
+        attBar.classList.remove('drag-over');
+        if (ev.dataTransfer && ev.dataTransfer.files) await handleFiles(ev.dataTransfer.files);
+      });
+    }
     if (window.MFG_GEO && (STATE.modalForm === 'site' || STATE.modalForm === 'region')) {
       window.MFG_GEO.wireModalSiteOrRegionMap(body, STATE.modalForm, SEED);
     }
@@ -65317,6 +66501,73 @@
         interval_days: Math.max(0, num('f_int_days')),
         cost_usd: costUsd
       };
+    } else if (f === 'document') {
+      ensureDocumentsVaultSeeded();
+      const docType = val('f_doc_type') || 'Supplier Invoice';
+      const title = val('f_doc_title') || (Array.isArray(FORM_UI.attachments) && FORM_UI.attachments[0] ? String(FORM_UI.attachments[0].name || '').replace(/\.[^.]+$/, '') : '');
+      const cp = val('f_counterparty') || '';
+      const refNo = val('f_reference') || '';
+      const amt = round2(num('f_amount'));
+      let pTbl = val('f_parent_table') || '';
+      const pRaw = val('f_parent_label') || '';
+      let pId = '';
+      let pLbl = pRaw;
+      if (pRaw) {
+        const pNameToken = pRaw.split('·')[0].trim();
+        const searchKeys = pTbl ? [pTbl] : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'employments', 'equipment_repairs', 'loans'];
+        for (const k of searchKeys) {
+          const hit = ((SEED.records && SEED.records[k]) || []).find(r => r && !r.voided && (String(r.name || '') === pNameToken || String(r.id || '') === pNameToken || String(r.invoice_no || '') === pNameToken || String(r.reference || '') === pNameToken));
+          if (hit) {
+            pTbl = pTbl || k;
+            pId = String(hit.id || '');
+            pLbl = String(hit.name || hit.invoice_no || hit.reference || hit.id || pNameToken);
+            break;
+          }
+        }
+      }
+      if (!title) addErr('f_doc_title', 'Document Title / Description is required.');
+      const editOrigDoc = (editCtx && editCtx.crKey === 'documents' && editCtx.orig) ? editCtx.orig : null;
+      const attList = (Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length)
+        ? FORM_UI.attachments.map(a => Object.assign({}, a))
+        : (editOrigDoc && Array.isArray(editOrigDoc.attachments) ? editOrigDoc.attachments : []);
+      const firstAtt = attList[0] || null;
+      const seq = String(((SEED.records.documents || []).length + (STATE.customRecords.documents || []).length) + 1).padStart(4, '0');
+      crKey = 'documents';
+      record = {
+        ...base,
+        name: editOrigDoc && editOrigDoc.name ? editOrigDoc.name : `DOC-${date.slice(0, 4)}-${seq}`,
+        doc_type: docType,
+        title: title || 'Document',
+        counterparty: cp,
+        reference: refNo || (editOrigDoc && editOrigDoc.reference) || `DOC-${date.slice(0, 4)}-${seq}`,
+        amount: amt,
+        parent_table: pTbl,
+        parent_id: pId || (editOrigDoc && editOrigDoc.parent_id) || '',
+        parent_label: pLbl,
+        file_name: (firstAtt && firstAtt.name) || (editOrigDoc && editOrigDoc.file_name) || `${(title || 'Document').replace(/[^A-Za-z0-9_-]+/g, '_')}.svg`,
+        file_type: (firstAtt && firstAtt.type) || (editOrigDoc && editOrigDoc.file_type) || 'image/svg+xml',
+        file_size: (firstAtt && firstAtt.size) || (editOrigDoc && editOrigDoc.file_size) || 2048,
+        data_url: (firstAtt && firstAtt.data_url) || (editOrigDoc && editOrigDoc.data_url) || buildSampleDocSvgDataUrl({
+          badge: docType.toUpperCase(),
+          no: refNo || `DOC-${date.slice(0, 4)}-${seq}`,
+          date,
+          party: cp || company,
+          title: title || docType,
+          amount: amt > 0 ? fmtUSD(amt, 2) : 'On File',
+          co: company,
+          accent: '#1e3a8a'
+        }),
+        attachments: attList,
+        attachment_count: Math.max(1, attList.length),
+        status: val('f_status') || 'Verified'
+      };
+    }
+    if (record && f !== 'document' && Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length) {
+      record.attachments = FORM_UI.attachments.map(a => Object.assign({}, a));
+      record.attachment_count = record.attachments.length;
+    } else if (record && f !== 'document' && editCtx && editCtx.orig && Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length === 0 && Array.isArray(editCtx.orig.attachments) && editCtx.orig.attachments.length > 0) {
+      record.attachments = [];
+      record.attachment_count = 0;
     }
     if (record && editCtx && editCtx.orig) {
       const orig = editCtx.orig;
@@ -66211,6 +67462,9 @@
       if (isEffModalTbl && record.start_date) {
         syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
       }
+      if (crKey !== 'documents' && record && Array.isArray(record.attachments) && record.attachments.length) {
+        syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts);
+      }
       applyCustomRecordsToSeed();
       if (isEffModalTbl || crKey === 'products') {
         backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts);
@@ -66908,7 +68162,7 @@
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
         : '';
-      body.innerHTML = renderEntryModalBody() + `
+      body.innerHTML = renderEntryModalBody() + renderEntryAttachmentsBarHtml(form) + `
         <div class="modal-foot">
           <span class="form-note">${footNoteHtml}</span>
           <div${canVoidCurrent && (seatCanSaveEdit || isTicketEdit) ? ' class="has-void"' : ''}>
@@ -67250,6 +68504,14 @@
       }
       if (prefill.cost != null && prefill.cost !== '' && $('f_new_cost')) $('f_new_cost').value = prefill.cost;
       if (prefill.notes && $('f_notes')) $('f_notes').value = prefill.notes;
+      if (prefill.docType && $('f_doc_type')) $('f_doc_type').value = prefill.docType;
+      if (prefill.title && $('f_doc_title')) $('f_doc_title').value = prefill.title;
+      if (prefill.parentTable && $('f_parent_table')) $('f_parent_table').value = prefill.parentTable;
+      if (prefill.parentLabel && $('f_parent_label')) $('f_parent_label').value = prefill.parentLabel;
+      if (Array.isArray(prefill.attachments) && prefill.attachments.length) {
+        FORM_UI.attachments = prefill.attachments.map(a => Object.assign({}, a));
+        renderEntryAttachmentsListUI();
+      }
       recalcForm();
     }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
@@ -68069,6 +69331,21 @@
       setModalControlVal('f_center_lng', row.center_lng != null && row.center_lng !== '' ? row.center_lng : '');
       setModalControlVal('f_zone_geojson', row.zone_geojson ? (typeof row.zone_geojson === 'string' ? row.zone_geojson : JSON.stringify(row.zone_geojson)) : '');
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    } else if (form === 'document') {
+      setModalControlVal('f_doc_type', row.doc_type || 'Supplier Invoice');
+      setModalControlVal('f_doc_title', row.title || row.name || '');
+      setModalControlVal('f_counterparty', row.counterparty || '');
+      setModalControlVal('f_reference', row.reference || row.name || '');
+      if (row.amount != null && Number(row.amount) > 0) setModalControlVal('f_amount', row.amount);
+      setModalControlVal('f_parent_table', row.parent_table || '');
+      setModalControlVal('f_parent_label', row.parent_label || '');
+      setModalControlVal('f_status', row.status || 'Verified');
+      if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
+    }
+    const existingAtts = getRecordAttachmentsList(crKey, row);
+    if (existingAtts.length) {
+      FORM_UI.attachments = existingAtts.map(a => Object.assign({}, a));
+      renderEntryAttachmentsListUI();
     }
 
     // Sync FORM_UI.last* trackers to hydrated values so initial recalcForm() never overwrites saved values with defaults
@@ -68169,6 +69446,8 @@
         return crKey === 'external_movements' ? 'external' : 'treasury';
       case 'conversions':
         return 'conversion';
+      case 'documents':
+        return 'document';
       default:
         return '';
     }
@@ -68296,7 +69575,8 @@
     gl_accounts: 'GL Account & Automation Rule',
     expense_items: 'Expense Invoice Item', warehouse_movements: 'Warehouse Stock Movement',
     equipment_repairs: 'Equipment Repair', repair_items: 'Repair Item Used',
-    equipment_oil_logs: 'Oil & Service Log', items: 'Warehouse Item & Part Master'
+    equipment_oil_logs: 'Oil & Service Log', items: 'Warehouse Item & Part Master',
+    documents: 'Document & Receipt'
   };
 
   const INSPECT_DVN = {
@@ -68319,7 +69599,8 @@
     currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate', gl_accounts: 'bhf_glaccount',
     expense_items: 'bhf_expenseitem', warehouse_movements: 'bhf_warehousemovement',
     equipment_repairs: 'bhf_equipmentrepair', repair_items: 'bhf_repairitem',
-    equipment_oil_logs: 'bhf_equipmentoillog', items: 'bhf_item'
+    equipment_oil_logs: 'bhf_equipmentoillog', items: 'bhf_item',
+    documents: 'bhf_document'
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
@@ -70716,6 +71997,17 @@
         { key: 'approved_by', label: 'Approved / Verified By', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'notes', label: 'Notes & Custody Remarks', type: 'text', sec: 3, span: true }
       ],
+      documents: [
+        { key: 'date', label: 'Document Date *', type: 'date', sec: 1 },
+        { key: 'doc_type', label: 'Document Category *', type: 'select', options: ['Supplier Invoice', 'Expense Receipt', 'Customer Tax Invoice', 'Weighbridge & Delivery Slip', 'Payment Receipt / Bank Swift', 'Contract & Agreement', 'Permit, License & Insurance', 'Fleet Registration & Inspection', 'Other Important Document'], sec: 1 },
+        { key: 'title', label: 'Document Title *', type: 'text', sec: 1 },
+        { key: 'counterparty', label: 'Supplier / Customer / Authority', type: 'combo', dl: 'dl_insp_counterparties', sec: 2 },
+        { key: 'reference', label: 'External Invoice / Ref #', type: 'text', sec: 2 },
+        { key: 'amount', label: 'Document Amount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'parent_label', label: 'Linked Record', type: 'text', sec: 2 },
+        { key: 'status', label: 'Verification Status', type: 'select', options: ['Verified', 'Pending Review', 'Archived'], sec: 1 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
       currencies: [
         { key: 'code', label: 'Currency Code (ISO 4217) *', type: 'text', sec: 1, placeholder: 'e.g. LBP, EUR' },
         { key: 'name', label: 'Currency Name *', type: 'text', sec: 1, placeholder: 'e.g. Lebanese Pound' },
@@ -72731,6 +74023,61 @@
         </div>
       ` : ''}
 
+      <!-- Attached Receipts, Invoices & Supporting Documents (360° Inspector) -->
+      ${(() => {
+        const recAtts = getRecordAttachmentsList(key, row);
+        const canUploadAtt = !row.voided && canModifyData();
+        return `
+          <div class="pa-subgrid-box" id="inspAttachmentsBox" style="margin-bottom:14px">
+            <div class="pa-subgrid-hdr">
+              <div>
+                <strong>${ic('receipt')} Attached Receipts, Invoices &amp; Supporting Documents</strong>
+                <span class="pa-subgrid-sub">Scanned invoices, thermal slips, PDFs, or photos linked to <b>${esc(row.name || row.invoice_no || row.ticket_no || row.id)}</b>. Any file uploaded here is also indexed in the Document Vault.</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span class="badge ${recAtts.length ? 'badge-ok' : 'badge-neutral'}" id="inspAttCountBadge">${recAtts.length} ${recAtts.length === 1 ? 'File' : 'Files'}</span>
+                ${canUploadAtt ? `
+                  <input type="file" id="inspAttFileInput" accept="image/*,application/pdf,.pdf,.png,.jpg,.jpeg,.webp" multiple hidden>
+                  <input type="file" id="inspAttCamInput" accept="image/*" capture="environment" hidden>
+                  <button type="button" class="btn btn-sm btn-primary" id="inspBtnUploadAtt">${ic('plus')} Upload File / PDF</button>
+                  <button type="button" class="btn btn-sm" id="inspBtnSnapAtt">${ic('eye')} Snap Photo</button>
+                ` : ''}
+              </div>
+            </div>
+            <div style="padding:12px">
+              ${recAtts.length ? `
+                <div class="insp-att-grid">
+                  ${recAtts.map((a, idx) => {
+                    const isPdf = /pdf/i.test(String(a.type || '')) || /\.pdf$/i.test(String(a.name || ''));
+                    return `
+                      <div class="att-file-chip insp-att-card">
+                        <div class="att-chip-thumb" data-insp-preview-att-idx="${idx}" role="button" tabindex="0">
+                          ${!isPdf && a.data_url ? `<img src="${esc(a.data_url)}" alt="${esc(a.name || 'Attachment')}">` : `<span class="att-pdf-badge">${isPdf ? 'PDF' : 'DOC'}</span>`}
+                        </div>
+                        <div class="att-chip-meta" data-insp-preview-att-idx="${idx}" role="button" tabindex="0">
+                          <strong class="att-chip-name">${esc(a.name || `Attachment ${idx + 1}`)}</strong>
+                          <small class="att-chip-sub">${esc(formatFileSizeShort(a.size || 0))}${a.uploaded_by ? ' · ' + esc(a.uploaded_by) : ''}</small>
+                        </div>
+                        <div class="att-chip-actions">
+                          <button type="button" class="btn btn-sm" data-insp-preview-att-idx="${idx}">Preview</button>
+                          ${a.data_url ? `<a class="btn btn-sm" href="${esc(a.data_url)}" download="${esc(a.name || 'document')}">Download</a>` : ''}
+                          ${canUploadAtt && key !== 'documents' ? `<button type="button" class="btn btn-sm" data-insp-del-att-idx="${idx}" aria-label="Remove attachment">✕</button>` : ''}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : `
+                <div class="mu" style="padding:10px 4px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                  <span>No receipt scan, supplier invoice, or photo is attached to this record yet.</span>
+                  ${canUploadAtt ? `<span style="color:var(--ink-soft)">Click <b>+ Upload File / PDF</b> or <b>Snap Photo</b> above to attach one now.</span>` : ''}
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+      })()}
+
       <!-- Interactive Related Subgrids (bhf_related_subgrids.py parity) -->
       <div class="pa-subgrids-wrap" id="inspSubgridsWrap">
         ${subgrids.map(renderSubgridBoxHtml).join('')}
@@ -74165,6 +75512,49 @@
     }
 
     const twBox = $('subgrid_truck_windows');
+    const inspAttBox = $('inspAttachmentsBox');
+    if (inspAttBox) {
+      const fInp = $('inspAttFileInput');
+      const cInp = $('inspAttCamInput');
+      const uBtn = $('inspBtnUploadAtt');
+      const sBtn = $('inspBtnSnapAtt');
+      if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
+      if (sBtn && cInp) sBtn.addEventListener('click', () => cInp.click());
+      if (fInp) fInp.addEventListener('change', async () => {
+        if (fInp.files && fInp.files.length) await attachFilesDirectlyToRecord(key, row, fInp.files);
+        fInp.value = '';
+      });
+      if (cInp) cInp.addEventListener('change', async () => {
+        if (cInp.files && cInp.files.length) await attachFilesDirectlyToRecord(key, row, cInp.files);
+        cInp.value = '';
+      });
+      inspAttBox.querySelectorAll('[data-insp-preview-att-idx]').forEach(el => {
+        el.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const idx = Number(el.getAttribute('data-insp-preview-att-idx') || 0);
+          openDocumentPreviewModal({ crKey: key, id: row.id || idOrName, attIdx: idx });
+        });
+      });
+      inspAttBox.querySelectorAll('[data-insp-del-att-idx]').forEach(el => {
+        el.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const idx = Number(el.getAttribute('data-insp-del-att-idx'));
+          if (Array.isArray(row.attachments) && idx >= 0 && idx < row.attachments.length) {
+            row.attachments.splice(idx, 1);
+            row.attachment_count = row.attachments.length;
+            if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
+            const cIdx = STATE.customRecords[key].findIndex(x => x && String(x.id) === String(row.id));
+            if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
+            else STATE.customRecords[key].push(Object.assign({}, row));
+            applyCustomRecordsToSeed();
+            saveLocalAuthAndRecords();
+            toast('Attachment removed from record', 'ok');
+            showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, preserveScroll: true });
+            renderApp();
+          }
+        });
+      });
+    }
     const addTwBtn = $('inspAddTruckWinBtn');
     const cancelTwBtn = $('inspCancelTruckWinEditBtn');
     const syncInspTwCoFilter = () => {
@@ -78360,6 +79750,7 @@
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
     recurring_expenses: 'Recurring Schedules',
+    documents: 'Document & Receipt Vault',
     warehouse: 'Warehouse Stock & Moves',
     warehouse_parts: 'Parts & Item Usage',
     payroll: 'Payroll & Workforce',
@@ -78478,6 +79869,7 @@
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
     recurring_expenses: 'Recurring Schedules',
+    documents: 'Document & Receipt Vault',
     warehouse: 'Warehouse Stock & Moves',
     warehouse_parts: 'Parts & Item Usage',
     payroll: 'Payroll & Workforce',
@@ -79810,7 +81202,7 @@
       external: 'external', conversions: 'conversion',
       customers: 'receipt', ar: 'receipt',
       suppliers: 'settlement', ap: 'settlement',
-      expenses: 'expense', expenses_analytics: 'expense', recurring_expenses: 'recurringexpense',
+      expenses: 'expense', expenses_analytics: 'expense', recurring_expenses: 'recurringexpense', documents: 'document',
       warehouse: 'warehousestock', warehouse_parts: 'repair',
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_allowances: 'logistics', payroll_contracts: 'employment', payroll_analytics: 'salary',
       hld_consolidation: 'external', hld_entities: 'external', hld_interactions: 'external', hld_open_recon: 'external', hld_due_matrix: 'external',
@@ -89408,7 +90800,7 @@
       case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
       case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
       case 'pbi': wsHtml = renderIndustryContextBanner('pbi') + ((activeInd && activeInd !== 'Manufacturing') ? renderIndustryPbiStudio(activeInd) : '') + (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
-      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
+      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
@@ -89439,6 +90831,7 @@
       case 'expenses_analytics':
       case 'expenses': wsHtml = renderExpenses(); break;
       case 'recurring_expenses': wsHtml = renderRecurringExpenses(); break;
+      case 'documents': wsHtml = renderDocumentVault(); break;
       case 'warehouse': wsHtml = renderWarehouse(); break;
       case 'warehouse_parts': wsHtml = renderWarehouseParts(); break;
       case 'payroll':
@@ -89916,6 +91309,23 @@
             window.MFG_PRINT.openThermalPreviewModal(rec, { docType, ...(priceMode ? { priceMode } : {}) });
           }
         }
+        return;
+      }
+
+      const previewDocBtn = t.closest('[data-preview-doc-id]');
+      if (previewDocBtn && container.contains(previewDocBtn)) {
+        e.stopPropagation();
+        const docId = previewDocBtn.getAttribute('data-preview-doc-id') || '';
+        if (docId) openDocumentPreviewModal({ docId });
+        return;
+      }
+
+      const previewRecAttBtn = t.closest('[data-preview-rec-att]');
+      if (previewRecAttBtn && container.contains(previewRecAttBtn)) {
+        e.stopPropagation();
+        const recKey = previewRecAttBtn.getAttribute('data-preview-rec-att') || '';
+        const recId = previewRecAttBtn.getAttribute('data-preview-rec-id') || '';
+        if (recKey && recId) openDocumentPreviewModal({ crKey: recKey, id: recId, attIdx: 0 });
         return;
       }
 
@@ -91893,6 +93303,45 @@
         renderApp();
       });
     });
+    container.querySelectorAll('[data-doc-chip]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STATE.docChipFilter = btn.getAttribute('data-doc-chip') || 'all';
+        STATE.shown.documents = PAGE;
+        renderApp();
+      });
+    });
+    const docVaultDropzone = container.querySelector('#docVaultQuickDropzone');
+    if (docVaultDropzone) {
+      const fInp = container.querySelector('#docVaultQuickFileInput');
+      const cInp = container.querySelector('#docVaultQuickCamInput');
+      const uBtn = container.querySelector('#docVaultQuickUploadBtn');
+      const sBtn = container.querySelector('#docVaultQuickCamBtn');
+      const openModalWithFiles = async fileList => {
+        const arr = Array.from(fileList || []).filter(Boolean);
+        if (!arr.length) return;
+        const items = [];
+        for (const f of arr) {
+          const item = await readAndCompressAttachmentFile(f);
+          if (item) items.push(item);
+        }
+        if (items.length) {
+          const firstTitle = String(items[0].name || '').replace(/\.[^.]+$/, '');
+          openEntryModal('document', { attachments: items, title: firstTitle });
+        }
+      };
+      if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
+      if (sBtn && cInp) sBtn.addEventListener('click', () => cInp.click());
+      if (fInp) fInp.addEventListener('change', async () => { await openModalWithFiles(fInp.files); fInp.value = ''; });
+      if (cInp) cInp.addEventListener('change', async () => { await openModalWithFiles(cInp.files); cInp.value = ''; });
+      docVaultDropzone.addEventListener('dragover', ev => { ev.preventDefault(); docVaultDropzone.classList.add('drag-over'); });
+      docVaultDropzone.addEventListener('dragleave', () => docVaultDropzone.classList.remove('drag-over'));
+      docVaultDropzone.addEventListener('drop', async ev => {
+        ev.preventDefault();
+        docVaultDropzone.classList.remove('drag-over');
+        if (ev.dataTransfer && ev.dataTransfer.files) await openModalWithFiles(ev.dataTransfer.files);
+      });
+    }
     container.querySelectorAll('[data-open-diesel-sale]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -94427,6 +95876,7 @@
     ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
+    computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
