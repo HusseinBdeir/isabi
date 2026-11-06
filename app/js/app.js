@@ -28368,22 +28368,33 @@
               ctx.drawImage(img, 0, 0, w, h);
               const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
               const approxBytes = Math.round((compressedUrl.length * 3) / 4);
+              const fName = file.name || `Scan_${todayISO()}.jpg`;
+              const fSize = approxBytes || file.size || 45000;
               resolve({
                 id: uid('at'),
-                file_name: file.name || `Scan_${todayISO()}.jpg`,
+                file_name: fName,
+                name: fName,
                 mime_type: 'image/jpeg',
-                file_size: approxBytes || file.size || 45000,
+                type: 'image/jpeg',
+                file_size: fSize,
+                size: fSize,
                 capture_method: captureMethod,
                 uploaded_at: nowStamp(),
                 uploaded_by: activeUser().full_name,
                 data_url: compressedUrl
               });
             } catch (_) {
+              const fName = file.name || `Attachment_${todayISO()}`;
+              const fType = file.type || 'image/jpeg';
+              const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
               resolve({
                 id: uid('at'),
-                file_name: file.name || `Attachment_${todayISO()}`,
-                mime_type: file.type || 'image/jpeg',
-                file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+                file_name: fName,
+                name: fName,
+                mime_type: fType,
+                type: fType,
+                file_size: fSize,
+                size: fSize,
                 capture_method: captureMethod,
                 uploaded_at: nowStamp(),
                 uploaded_by: activeUser().full_name,
@@ -28392,11 +28403,17 @@
             }
           };
           img.onerror = () => {
+            const fName = file.name || `Attachment_${todayISO()}`;
+            const fType = file.type || 'application/octet-stream';
+            const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
             resolve({
               id: uid('at'),
-              file_name: file.name || `Attachment_${todayISO()}`,
-              mime_type: file.type || 'application/octet-stream',
-              file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+              file_name: fName,
+              name: fName,
+              mime_type: fType,
+              type: fType,
+              file_size: fSize,
+              size: fSize,
               capture_method: captureMethod,
               uploaded_at: nowStamp(),
               uploaded_by: activeUser().full_name,
@@ -28405,11 +28422,17 @@
           };
           img.src = rawDataUrl;
         } else {
+          const fName = file.name || `Document_${todayISO()}.pdf`;
+          const fType = file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream');
+          const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
           resolve({
             id: uid('at'),
-            file_name: file.name || `Document_${todayISO()}.pdf`,
-            mime_type: file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream'),
-            file_size: file.size || Math.round((rawDataUrl.length * 3) / 4),
+            file_name: fName,
+            name: fName,
+            mime_type: fType,
+            type: fType,
+            file_size: fSize,
+            size: fSize,
             capture_method: captureMethod,
             uploaded_at: nowStamp(),
             uploaded_by: activeUser().full_name,
@@ -28427,14 +28450,25 @@
     const out = [];
     const seen = new Set();
     const addAtt = att => {
-      if (!att || (!att.data_url && !att.file_name)) return;
-      const sig = `${norm(att.id || '')}|${norm(att.file_name || '')}`;
-      const nameKey = norm(att.file_name || att.title || att.id || '');
-      if ((att.id && seen.has(String(att.id))) || (nameKey && seen.has('nm:' + nameKey))) return;
-      if (att.id) seen.add(String(att.id));
+      if (!att || (!att.data_url && !att.file_name && !att.name)) return;
+      const fName = att.file_name || att.name || att.title || '';
+      const fType = att.mime_type || att.type || 'image/svg+xml';
+      const fSize = Number(att.file_size || att.size || 0);
+      const normAtt = Object.assign({}, att, {
+        file_name: fName,
+        name: fName,
+        mime_type: fType,
+        type: fType,
+        file_size: fSize,
+        size: fSize
+      });
+      const sig = `${norm(normAtt.id || '')}|${norm(fName)}`;
+      const nameKey = norm(fName || normAtt.id || '');
+      if ((normAtt.id && seen.has(String(normAtt.id))) || (nameKey && seen.has('nm:' + nameKey))) return;
+      if (normAtt.id) seen.add(String(normAtt.id));
       if (nameKey) seen.add('nm:' + nameKey);
       seen.add(sig);
-      out.push(att);
+      out.push(normAtt);
     };
 
     if (crKey === 'documents') {
@@ -28768,7 +28802,11 @@
 
   function renderDocumentVault() {
     ensureDocumentsVaultSeeded();
-    const docsAll = filterRecords(SEED.records.documents || [], { ignoreSearch: true });
+    const docsAll = filterRecords(SEED.records.documents || [], {
+      ignoreSearch: true,
+      tableKey: 'documents',
+      cols: ['date', 'name', 'company', 'doc_type', 'title', 'counterparty', 'reference', 'parent_label', 'file_name', 'status', 'notes']
+    });
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
     const dChipKey = STATE.docChipFilter || 'all';
@@ -28780,25 +28818,14 @@
     const standaloneDocs = docsAll.filter(d => !d.parent_label && !d.parent_id);
     const totalVaultUsd = docsAll.reduce((s, d) => s + Number(d.amount || 0), 0);
 
-    const filteredDocs = sortRows('documents', applyColFilters('documents', docsAll.filter(d => {
+    const filteredDocs = sortRows('documents', docsAll.filter(d => {
       if (dChipKey === 'invoices' && !/invoice|bill|tax|mof/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'receipts' && !/receipt|voucher|bank|transfer/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'slips' && !/delivery|weighbridge|contract|equipment/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'linked' && !(d.parent_label || d.parent_id)) return false;
       if (dChipKey === 'standalone' && (d.parent_label || d.parent_id)) return false;
       return matchQ([d.date, d.name, d.company, d.doc_type, d.title, d.counterparty, d.reference, d.parent_label, d.file_name, d.status, d.notes]);
-    }), d => ({
-      date: d.date || '',
-      name: d.name || '',
-      company: d.company || '',
-      doc_type: d.doc_type || '',
-      title: d.title || '',
-      counterparty: d.counterparty || '',
-      reference: d.reference || '',
-      parent_label: d.parent_label || 'Standalone',
-      file_name: d.file_name || '',
-      status: d.status || 'Verified & Filed'
-    })));
+    }));
 
     const shownDocs = filteredDocs.slice(0, shownCount('documents'));
     const sumFilteredUsd = filteredDocs.reduce((s, d) => s + Number(d.amount || 0), 0);
@@ -43340,15 +43367,15 @@
   function computeInsuranceOperations() {
     const co = 'Insurance Company';
     const policies = [
-      { id: 'MGF-MED-2026-52077', company: co, date: '2026-01-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (250 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Corporate Group Medical In/Out', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 12500000, gross_prem_usd: 185000, comm_rate_pct: 10.5, gross_comm_usd: 19425, discount_usd: 750, discount_reason: 'Multi-policy corporate rebate (i41)', net_comm_usd: 18675, policy_fee_usd: 125, net_payable_4017_usd: 165575, status: 'Active' },
-      { id: 'BNK-PRP-2026-08510', company: co, date: '2026-02-01', expiry: '2027-01-31', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Property All Risks (PAR) Commercial', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 18400000, gross_prem_usd: 32000, comm_rate_pct: 17.5, gross_comm_usd: 5600, discount_usd: 500, discount_reason: 'Zero-claim renewal discount (i41)', net_comm_usd: 5100, policy_fee_usd: 75, net_payable_4017_usd: 26400, status: 'Active' },
-      { id: 'ALZ-MOT-2026-12801', company: co, date: '2026-02-18', expiry: '2027-02-17', client: 'Transmed Distribution Fleet (18 Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Commercial Fleet All-Risk Gold', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 640000, gross_prem_usd: 24000, comm_rate_pct: 18.0, gross_comm_usd: 4320, discount_usd: 400, discount_reason: 'Fleet volume commercial concession (i41)', net_comm_usd: 3920, policy_fee_usd: 60, net_payable_4017_usd: 19680, status: 'Active' },
+      { id: 'MGF-MED-2026-52077', company: co, date: '2026-01-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (250 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Corporate Group Medical In/Out', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 12500000, gross_prem_usd: 185000, comm_rate_pct: 10.5, gross_comm_usd: 19425, discount_usd: 750, discount_reason: 'Multi-policy corporate rebate', net_comm_usd: 18675, policy_fee_usd: 125, net_payable_4017_usd: 165575, status: 'Active' },
+      { id: 'BNK-PRP-2026-08510', company: co, date: '2026-02-01', expiry: '2027-01-31', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Property All Risks (PAR) Commercial', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 18400000, gross_prem_usd: 32000, comm_rate_pct: 17.5, gross_comm_usd: 5600, discount_usd: 500, discount_reason: 'Zero-claim renewal discount', net_comm_usd: 5100, policy_fee_usd: 75, net_payable_4017_usd: 26400, status: 'Active' },
+      { id: 'ALZ-MOT-2026-12801', company: co, date: '2026-02-18', expiry: '2027-02-17', client: 'Transmed Distribution Fleet (18 Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Commercial Fleet All-Risk Gold', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 640000, gross_prem_usd: 24000, comm_rate_pct: 18.0, gross_comm_usd: 4320, discount_usd: 400, discount_reason: 'Fleet volume commercial concession', net_comm_usd: 3920, policy_fee_usd: 60, net_payable_4017_usd: 19680, status: 'Active' },
       { id: 'AXA-ENG-2026-44102', company: co, date: '2026-03-10', expiry: '2027-03-09', client: 'MAN Enterprise Contracting S.A.L.', carrier: 'AXA Middle East', line: 'ENG · Engineering', product: 'Contractors All Risks (CAR) & TPL', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 8500000, gross_prem_usd: 21500, comm_rate_pct: 14.0, gross_comm_usd: 3010, discount_usd: 0, discount_reason: '', net_comm_usd: 3010, policy_fee_usd: 50, net_payable_4017_usd: 18490, status: 'Active' },
-      { id: 'AXA-MAR-2026-31044', company: co, date: '2026-04-04', expiry: '2027-04-03', client: 'Khalil Fattal & Fils (Open Cover)', carrier: 'AXA Middle East', line: 'MAR · Marine', product: 'Marine Cargo Open Cover (ICC A)', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 4200000, gross_prem_usd: 16800, comm_rate_pct: 15.0, gross_comm_usd: 2520, discount_usd: 170, discount_reason: 'Annual open-cover loyalty rebate (i41)', net_comm_usd: 2350, policy_fee_usd: 45, net_payable_4017_usd: 14280, status: 'Active' },
+      { id: 'AXA-MAR-2026-31044', company: co, date: '2026-04-04', expiry: '2027-04-03', client: 'Khalil Fattal & Fils (Open Cover)', carrier: 'AXA Middle East', line: 'MAR · Marine', product: 'Marine Cargo Open Cover (ICC A)', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 4200000, gross_prem_usd: 16800, comm_rate_pct: 15.0, gross_comm_usd: 2520, discount_usd: 170, discount_reason: 'Annual open-cover loyalty rebate', net_comm_usd: 2350, policy_fee_usd: 45, net_payable_4017_usd: 14280, status: 'Active' },
       { id: 'LBS-LIAB-2026-19008', company: co, date: '2026-04-22', expiry: '2027-04-21', client: 'Phoenicia Hospitality Partners', carrier: 'Libano-Suisse', line: 'LIAB · Liability', product: 'Comprehensive General & Hotel TPL', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 5000000, gross_prem_usd: 12400, comm_rate_pct: 16.0, gross_comm_usd: 1984, discount_usd: 0, discount_reason: '', net_comm_usd: 1984, policy_fee_usd: 35, net_payable_4017_usd: 10416, status: 'Active' },
       { id: 'BNK-WC-2026-07741', company: co, date: '2026-05-12', expiry: '2027-05-11', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', product: 'Industrial Workmen Compensation', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 2400000, gross_prem_usd: 11200, comm_rate_pct: 15.0, gross_comm_usd: 1680, discount_usd: 0, discount_reason: '', net_comm_usd: 1680, policy_fee_usd: 30, net_payable_4017_usd: 9520, status: 'Active' },
       { id: 'ALZ-LIFE-2026-60215', company: co, date: '2026-06-01', expiry: '2027-05-31', client: 'Bdeir Executive Key-Man Protection', carrier: 'Allianz SNA', line: 'LIFE · Life', product: 'Corporate Key-Person Term Life', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 3000000, gross_prem_usd: 9600, comm_rate_pct: 12.0, gross_comm_usd: 1152, discount_usd: 0, discount_reason: '', net_comm_usd: 1152, policy_fee_usd: 25, net_payable_4017_usd: 8448, status: 'Active' },
-      { id: 'ARP-MOT-2026-10912', company: co, date: '2026-06-19', expiry: '2027-06-18', client: 'Dr. Nabil Khoury (Porsche Cayenne)', carrier: 'Arope Insurance', line: 'MOT · Motor', product: 'Motor All-Risk Prestige VIP', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 135000, gross_prem_usd: 4250, comm_rate_pct: 20.0, gross_comm_usd: 850, discount_usd: 75, discount_reason: 'VIP medical+motor bundle courtesy (i41)', net_comm_usd: 775, policy_fee_usd: 20, net_payable_4017_usd: 3400, status: 'Active' },
+      { id: 'ARP-MOT-2026-10912', company: co, date: '2026-06-19', expiry: '2027-06-18', client: 'Dr. Nabil Khoury (Porsche Cayenne)', carrier: 'Arope Insurance', line: 'MOT · Motor', product: 'Motor All-Risk Prestige VIP', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 135000, gross_prem_usd: 4250, comm_rate_pct: 20.0, gross_comm_usd: 850, discount_usd: 75, discount_reason: 'VIP medical+motor bundle courtesy', net_comm_usd: 775, policy_fee_usd: 20, net_payable_4017_usd: 3400, status: 'Active' },
       { id: 'POL-20251105-RAMISAAB-001', company: co, date: '2025-11-28', expiry: '2026-11-28', client: 'Rami Saab (BMW X5 xDrive40i)', carrier: 'AXA Middle East', line: 'MOT · Motor', product: 'Motor All-Risk Gold + Agency Repair', producer: 'Joseph Khalil', type: 'Policy (Expiring 22d)', sum_insured_usd: 92000, gross_prem_usd: 3150, comm_rate_pct: 18.0, gross_comm_usd: 567, discount_usd: 0, discount_reason: '', net_comm_usd: 567, policy_fee_usd: 15, net_payable_4017_usd: 2583, status: 'Due for renewal' },
       { id: 'END-2026-MGF-52077-A', company: co, date: '2026-07-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (+14 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Endorsement · Mid-Term Census Addition', producer: 'Carla Moubarak', type: 'Endorsement (+)', sum_insured_usd: 700000, gross_prem_usd: 6400, comm_rate_pct: 10.5, gross_comm_usd: 672, discount_usd: 0, discount_reason: '', net_comm_usd: 672, policy_fee_usd: 10, net_payable_4017_usd: 5728, status: 'Endorsed' },
       { id: 'END-2026-BNK-08510-A', company: co, date: '2026-08-05', expiry: '2027-01-31', client: 'Unipak Tissue Mill (Solar Roof Ext.)', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Endorsement · 1.2MW Solar Array Cover', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 950000, gross_prem_usd: 2850, comm_rate_pct: 17.5, gross_comm_usd: 499, discount_usd: 0, discount_reason: '', net_comm_usd: 499, policy_fee_usd: 15, net_payable_4017_usd: 2351, status: 'Endorsed' },
@@ -43390,20 +43417,20 @@
     ];
 
     const remittances = [
-      { id: 'REM-2026-MGF-01', carrier: 'MedGulf', company: co, gl_payable: '4017 · MedGulf Payable', gross_prem_usd: 191400, broker_comm_7063_usd: 20097, settled_to_carrier_usd: 109203, net_payable_4017_usd: 62100, client_cash_held_usd: 64800, settlement_mode: 'Net of Commission (Bordereau)', next_due: '2026-11-15', status: 'Covered by Cash' },
-      { id: 'REM-2026-BNK-01', carrier: 'Bankers Assurance', company: co, gl_payable: '4017 · Bankers Payable', gross_prem_usd: 46050, broker_comm_7063_usd: 7779, settled_to_carrier_usd: 20271, net_payable_4017_usd: 18000, client_cash_held_usd: 19100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-20', status: 'Covered by Cash' },
-      { id: 'REM-2026-ALZ-01', carrier: 'Allianz SNA', company: co, gl_payable: '4017 · Allianz SNA Payable', gross_prem_usd: 36700, broker_comm_7063_usd: 6030, settled_to_carrier_usd: 14470, net_payable_4017_usd: 16200, client_cash_held_usd: 15900, settlement_mode: 'Net of Commission (Quarterly)', next_due: '2026-11-25', status: 'Stmt Recon Hold' },
-      { id: 'REM-2026-AXA-01', carrier: 'AXA Middle East', company: co, gl_payable: '4017 · AXA Payable', gross_prem_usd: 40650, broker_comm_7063_usd: 5977, settled_to_carrier_usd: 22973, net_payable_4017_usd: 11700, client_cash_held_usd: 12100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-18', status: 'Covered by Cash' },
-      { id: 'REM-2026-LBS-01', carrier: 'Libano-Suisse', company: co, gl_payable: '4017 · Libano-Suisse Payable', gross_prem_usd: 12400, broker_comm_7063_usd: 1984, settled_to_carrier_usd: 5116, net_payable_4017_usd: 5300, client_cash_held_usd: 5500, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' },
-      { id: 'REM-2026-ARP-01', carrier: 'Arope Insurance', company: co, gl_payable: '4017 · Arope Payable', gross_prem_usd: 4250, broker_comm_7063_usd: 850, settled_to_carrier_usd: 600, net_payable_4017_usd: 2800, client_cash_held_usd: 3000, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' }
+      { id: 'REM-2026-MGF-01', carrier: 'MedGulf', company: co, gl_payable: 'MedGulf Carrier Account', gross_prem_usd: 191400, broker_comm_7063_usd: 20097, settled_to_carrier_usd: 109203, net_payable_4017_usd: 62100, client_cash_held_usd: 64800, settlement_mode: 'Net of Commission (Bordereau)', next_due: '2026-11-15', status: 'Covered by Cash' },
+      { id: 'REM-2026-BNK-01', carrier: 'Bankers Assurance', company: co, gl_payable: 'Bankers Carrier Account', gross_prem_usd: 46050, broker_comm_7063_usd: 7779, settled_to_carrier_usd: 20271, net_payable_4017_usd: 18000, client_cash_held_usd: 19100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-20', status: 'Covered by Cash' },
+      { id: 'REM-2026-ALZ-01', carrier: 'Allianz SNA', company: co, gl_payable: 'Allianz SNA Carrier Account', gross_prem_usd: 36700, broker_comm_7063_usd: 6030, settled_to_carrier_usd: 14470, net_payable_4017_usd: 16200, client_cash_held_usd: 15900, settlement_mode: 'Net of Commission (Quarterly)', next_due: '2026-11-25', status: 'Stmt Recon Hold' },
+      { id: 'REM-2026-AXA-01', carrier: 'AXA Middle East', company: co, gl_payable: 'AXA Carrier Account', gross_prem_usd: 40650, broker_comm_7063_usd: 5977, settled_to_carrier_usd: 22973, net_payable_4017_usd: 11700, client_cash_held_usd: 12100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-18', status: 'Covered by Cash' },
+      { id: 'REM-2026-LBS-01', carrier: 'Libano-Suisse', company: co, gl_payable: 'Libano-Suisse Carrier Account', gross_prem_usd: 12400, broker_comm_7063_usd: 1984, settled_to_carrier_usd: 5116, net_payable_4017_usd: 5300, client_cash_held_usd: 5500, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' },
+      { id: 'REM-2026-ARP-01', carrier: 'Arope Insurance', company: co, gl_payable: 'Arope Carrier Account', gross_prem_usd: 4250, broker_comm_7063_usd: 850, settled_to_carrier_usd: 600, net_payable_4017_usd: 2800, client_cash_held_usd: 3000, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' }
     ];
 
     const statements = [
-      { id: 'STM-AXA-2026-08', period: '2026-08', company: co, carrier: 'AXA Middle East', policies_count: 8, expected_comm_4117_usd: 5977, statement_comm_usd: 5977, variance_usd: 0, note: '100% matched across CAR, Marine & Motor lines (i32)', status: 'Matched' },
-      { id: 'STM-ALZ-2026-09', period: '2026-09', company: co, carrier: 'Allianz SNA', policies_count: 7, expected_comm_4117_usd: 6030, statement_comm_usd: 6005, variance_usd: -25, note: 'Flagged -$25.00 rate rounding diff on ALZ-MOT-2026-00419 (i32)', status: 'Discrepancy' },
+      { id: 'STM-AXA-2026-08', period: '2026-08', company: co, carrier: 'AXA Middle East', policies_count: 8, expected_comm_4117_usd: 5977, statement_comm_usd: 5977, variance_usd: 0, note: '100% matched across CAR, Marine & Motor lines', status: 'Matched' },
+      { id: 'STM-ALZ-2026-09', period: '2026-09', company: co, carrier: 'Allianz SNA', policies_count: 7, expected_comm_4117_usd: 6030, statement_comm_usd: 6005, variance_usd: -25, note: 'Flagged -$25.00 rate rounding diff on ALZ-MOT-2026-00419', status: 'Discrepancy' },
       { id: 'STM-MGF-2026-09', period: '2026-09', company: co, carrier: 'MedGulf', policies_count: 6, expected_comm_4117_usd: 20097, statement_comm_usd: 20097, variance_usd: 0, note: 'Group Medical Q1–Q3 commission settled in full ($0 diff)', status: 'Settled' },
       { id: 'STM-BNK-2026-10', period: '2026-10', company: co, carrier: 'Bankers Assurance', policies_count: 9, expected_comm_4117_usd: 7779, statement_comm_usd: 7779, variance_usd: 0, note: 'PAR & Workmen Comp bordereau verified', status: 'Matched' },
-      { id: 'STM-LBS-2026-10', period: '2026-10', company: co, carrier: 'Libano-Suisse', policies_count: 5, expected_comm_4117_usd: 1984, statement_comm_usd: 1984, variance_usd: 0, note: 'Hospitality Liability commission cleared against 4017', status: 'Settled' },
+      { id: 'STM-LBS-2026-10', period: '2026-10', company: co, carrier: 'Libano-Suisse', policies_count: 5, expected_comm_4117_usd: 1984, statement_comm_usd: 1984, variance_usd: 0, note: 'Hospitality Liability commission cleared against carrier account', status: 'Settled' },
       { id: 'STM-ARP-2026-10', period: '2026-10', company: co, carrier: 'Arope Insurance', policies_count: 3, expected_comm_4117_usd: 850, statement_comm_usd: 810, variance_usd: -40, note: 'Accessory endorsement commission pending carrier credit note', status: 'Discrepancy' }
     ];
 
@@ -43431,14 +43458,14 @@
     ];
 
     const agreements = [
-      { id: 'AGR-MGF-MED-2026', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 10.5, renewal_pct: 10.5, override_bonus_pct: 2.0, prior_rate_pct: 10.0, backfill_status: '7z-chrono Active · 6 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-BNK-PRP-2026', carrier: 'Bankers Assurance', line: 'PROP · Property', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 17.5, renewal_pct: 17.5, override_bonus_pct: 2.5, prior_rate_pct: 16.5, backfill_status: '7z-chrono Active · 5 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-ALZ-MOT-2026', carrier: 'Allianz SNA', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 18.0, renewal_pct: 17.5, override_bonus_pct: 2.0, prior_rate_pct: 17.0, backfill_status: '7z-chrono Active · 8 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-AXA-ENG-2026', carrier: 'AXA Middle East', line: 'ENG · Engineering', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 14.0, renewal_pct: 14.0, override_bonus_pct: 1.5, prior_rate_pct: 13.5, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-AXA-MAR-2026', carrier: 'AXA Middle East', line: 'MAR · Marine', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 15.0, renewal_pct: 15.0, override_bonus_pct: 1.5, prior_rate_pct: 15.0, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-LBS-LIAB-2026', carrier: 'Libano-Suisse', line: 'LIAB · Liability', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 16.0, renewal_pct: 16.0, override_bonus_pct: 2.0, prior_rate_pct: 15.0, backfill_status: '7z-chrono Active · 3 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-ARP-MOT-2026', carrier: 'Arope Insurance', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 20.0, renewal_pct: 18.5, override_bonus_pct: 2.5, prior_rate_pct: 18.5, backfill_status: '7z-chrono Active · 4 Policies Synced', status: 'Active (Open)' },
-      { id: 'AGR-MGF-MED-2025', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2025-01-01', end_date: '2025-12-31', new_bus_pct: 10.0, renewal_pct: 10.0, override_bonus_pct: 1.5, prior_rate_pct: 9.5, backfill_status: 'Auto-Closed at 2025-12-31 (prevDayISO)', status: 'Closed Window' }
+      { id: 'AGR-MGF-MED-2026', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 10.5, renewal_pct: 10.5, override_bonus_pct: 2.0, prior_rate_pct: 10.0, backfill_status: 'Chrono Active · 6 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-BNK-PRP-2026', carrier: 'Bankers Assurance', line: 'PROP · Property', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 17.5, renewal_pct: 17.5, override_bonus_pct: 2.5, prior_rate_pct: 16.5, backfill_status: 'Chrono Active · 5 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-ALZ-MOT-2026', carrier: 'Allianz SNA', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 18.0, renewal_pct: 17.5, override_bonus_pct: 2.0, prior_rate_pct: 17.0, backfill_status: 'Chrono Active · 8 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-AXA-ENG-2026', carrier: 'AXA Middle East', line: 'ENG · Engineering', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 14.0, renewal_pct: 14.0, override_bonus_pct: 1.5, prior_rate_pct: 13.5, backfill_status: 'Chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-AXA-MAR-2026', carrier: 'AXA Middle East', line: 'MAR · Marine', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 15.0, renewal_pct: 15.0, override_bonus_pct: 1.5, prior_rate_pct: 15.0, backfill_status: 'Chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-LBS-LIAB-2026', carrier: 'Libano-Suisse', line: 'LIAB · Liability', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 16.0, renewal_pct: 16.0, override_bonus_pct: 2.0, prior_rate_pct: 15.0, backfill_status: 'Chrono Active · 3 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-ARP-MOT-2026', carrier: 'Arope Insurance', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 20.0, renewal_pct: 18.5, override_bonus_pct: 2.5, prior_rate_pct: 18.5, backfill_status: 'Chrono Active · 4 Policies Synced', status: 'Active (Open)' },
+      { id: 'AGR-MGF-MED-2025', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2025-01-01', end_date: '2025-12-31', new_bus_pct: 10.0, renewal_pct: 10.0, override_bonus_pct: 1.5, prior_rate_pct: 9.5, backfill_status: 'Auto-Closed at 2025-12-31', status: 'Closed Window' }
     ];
 
     const gwpUsd = policies.reduce((a, r) => a + r.gross_prem_usd, 0);
@@ -43500,7 +43527,7 @@
     const bannerHtml = `
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
-          <div class="eyebrow">Insurance &amp; Brokerage · Production, Endorsements, Client Discounts (GL 7065) &amp; Renewal Pipeline</div>
+          <div class="eyebrow">Insurance &amp; Brokerage · Production, Endorsements, Client Discounts &amp; Renewal Pipeline</div>
           <h2>${submode === 'renewals' ? '30 / 60 / 90-Day Policy Renewal Queue &amp; Retention' : (submode === 'items' ? 'Insured Items, Vehicles, Group Census &amp; Industrial Assets' : 'Master Policy Register, Endorsements &amp; Net Brokerage Yield')}</h2>
         </div>
         <div class="cockpit-controls">
@@ -43520,14 +43547,14 @@
           <div class="kpi-sub">${fmtNum(s.totalPolicyCount)} active policies + ${fmtNum(s.endorsementCount)} endorsements across ${fmtNum(s.carriersCount)} carriers</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Gross Commission (GL 7063)</div>
+          <div class="kpi-lbl">Gross Brokerage Commission</div>
           <div class="kpi-val mono">${fmtUSD(s.grossComm7063Usd, 0)}</div>
-          <div class="kpi-sub">12.15% blended carrier commission + ${fmtUSD(s.policyFees7064Usd, 0)} fees (GL 7064)</div>
+          <div class="kpi-sub">12.15% blended carrier commission + ${fmtUSD(s.policyFees7064Usd, 0)} policy fees</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Net Commission After Discounts</div>
           <div class="kpi-val mono">${fmtUSD(s.netCommUsd, 0)}</div>
-          <div class="kpi-sub">Less ${fmtUSD(s.discount7065Usd, 0)} client discounts granted (GL 7065 · 5 policies)</div>
+          <div class="kpi-sub">Less ${fmtUSD(s.discount7065Usd, 0)} client discounts granted (5 policies)</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">90-Day Renewal Pipeline</div>
@@ -43545,7 +43572,7 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>30 / 60 / 90-Day Policy Renewal Queue &amp; Lapsed Policy Tracker (i31) ${shownCount('ins_renewals', filteredRen.length, data.renewals.length)}</h3>
+              <h3>30 / 60 / 90-Day Policy Renewal Queue &amp; Lapsed Policy Tracker ${shownCount('ins_renewals', filteredRen.length, data.renewals.length)}</h3>
               <p>Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion</p>
             </div>
             <div class="panel-actions">${searchBox('Search renewal, client, carrier, bucket...')}</div>
@@ -43555,7 +43582,6 @@
               <thead>
                 <tr>
                   ${th('ins_renewals', 'policy_no', 'Expiring Policy #')}
-                  ${th('ins_renewals', 'company', 'Entity')}
                   ${th('ins_renewals', 'client', 'Insured Client')}
                   ${th('ins_renewals', 'carrier', 'Carrier')}
                   ${th('ins_renewals', 'line', 'Line')}
@@ -43570,9 +43596,9 @@
               </thead>
               <tbody>
                 ${filteredRen.length ? sliceRows('ins_renewals', filteredRen).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.policy_no)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">Producer: ${esc(r.producer)}</div></td>
                     <td>${esc(r.carrier)}</td>
                     <td>${esc(r.line)}</td>
@@ -43584,12 +43610,12 @@
                     <td>${esc(r.stage)}</td>
                     <td><span class="badge ${r.status.includes('Expired') ? 'badge-crit' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(12, 'No renewal records match current filter')}
-                ${showMoreRow('ins_renewals', filteredRen.length, 12)}
+                `).join('') : emptyRow(11, 'No renewal records match current filter')}
+                ${showMoreRow('ins_renewals', filteredRen.length, 11)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="8"><strong>TOTAL RENEWAL PIPELINE (${fmtNum(filteredRen.length)} POLICIES)</strong></td>
+                  <td colspan="7"><strong>TOTAL RENEWAL PIPELINE (${fmtNum(filteredRen.length)} POLICIES)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumExp, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumQuo, 0)}</strong></td>
                   <td colspan="2"></td>
@@ -43609,7 +43635,7 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Insured Items, Vehicles (VIN/Plate), Medical Census &amp; Commercial Locations (i05) ${shownCount('ins_items', filteredItm.length, data.items.length)}</h3>
+              <h3>Insured Items, Vehicles (VIN/Plate), Medical Census &amp; Commercial Locations ${shownCount('ins_items', filteredItm.length, data.items.length)}</h3>
               <p>Granular risk schedule linked to underlying policies for motor certificates, group medical censuses, and property surveys</p>
             </div>
             <div class="panel-actions">${searchBox('Search VIN, plate, location, census, policy...')}</div>
@@ -43620,7 +43646,6 @@
                 <tr>
                   ${th('ins_items', 'id', 'Item ID')}
                   ${th('ins_items', 'policy_no', 'Policy #')}
-                  ${th('ins_items', 'company', 'Entity')}
                   ${th('ins_items', 'client', 'Insured Client')}
                   ${th('ins_items', 'category', 'Risk Category')}
                   ${th('ins_items', 'identifier', 'Insured Asset / Census')}
@@ -43633,10 +43658,10 @@
               </thead>
               <tbody>
                 ${filteredItm.length ? sliceRows('ins_items', filteredItm).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.policy_no)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.client)}</strong></td>
                     <td>${esc(r.category)}</td>
                     <td><strong>${esc(r.identifier)}</strong></td>
@@ -43646,12 +43671,12 @@
                     <td class="r mono"><strong>${fmtUSD(r.annual_prem_usd, 0)}</strong></td>
                     <td><span class="badge ${r.status === 'Covered' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No insured items match current filter')}
-                ${showMoreRow('ins_items', filteredItm.length, 11)}
+                `).join('') : emptyRow(10, 'No insured items match current filter')}
+                ${showMoreRow('ins_items', filteredItm.length, 10)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="7"><strong>TOTAL INSURED RISK SCHEDULE (${fmtNum(filteredItm.length)} SCHEDULES)</strong></td>
+                  <td colspan="6"><strong>TOTAL INSURED RISK SCHEDULE (${fmtNum(filteredItm.length)} SCHEDULES)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumSi, 0)}</strong></td>
                   <td></td>
                   <td class="r mono"><strong>${fmtUSD(sumPr, 0)}</strong></td>
@@ -43677,7 +43702,7 @@
         <div class="panel-head">
           <div>
             <h3>Gross Written Premium vs Net Brokerage Commission by Policy &amp; Carrier ($)</h3>
-            <p>Carrier Payable (GL 4017) stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker revenue via GL 7065</p>
+            <p>Carrier Payable stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker commission yield only</p>
           </div>
         </div>
         <div style="padding:12px 16px">
@@ -43702,8 +43727,8 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>Master Policies, Mid-Term Endorsements &amp; Client Discounts Ledger (GL 7063 / 7065 / 4017) ${shownCount('ins_policies', filteredPol.length, data.policies.length)}</h3>
-            <p>Full policy lifecycle with Gross Commission (7063), Broker-Funded Client Discounts (7065), Policy Admin Fees (7064), and Net Carrier Payable (4017)</p>
+            <h3>Master Policies, Mid-Term Endorsements &amp; Client Discounts Ledger ${shownCount('ins_policies', filteredPol.length, data.policies.length)}</h3>
+            <p>Full policy lifecycle with Gross Commission, Broker-Funded Client Discounts, Policy Admin Fees, and Net Carrier Payable</p>
           </div>
           <div class="panel-actions">${searchBox('Search policy #, client, carrier, line, producer...')}</div>
         </div>
@@ -43712,24 +43737,23 @@
             <thead>
               <tr>
                 ${th('ins_policies', 'id', 'Policy / End. #')}
-                ${th('ins_policies', 'company', 'Entity')}
                 ${th('ins_policies', 'client', 'Insured Client')}
                 ${th('ins_policies', 'carrier', 'Carrier')}
                 ${th('ins_policies', 'line', 'Line')}
                 ${th('ins_policies', 'expiry', 'Expiry')}
                 ${th('ins_policies', 'gross_prem_usd', 'Gross Prem ($)', 'r')}
-                ${th('ins_policies', 'gross_comm_usd', 'Gross Comm 7063 ($)', 'r')}
-                ${th('ins_policies', 'discount_usd', 'Discount 7065 ($)', 'r')}
+                ${th('ins_policies', 'gross_comm_usd', 'Gross Comm ($)', 'r')}
+                ${th('ins_policies', 'discount_usd', 'Client Discount ($)', 'r')}
                 ${th('ins_policies', 'net_comm_usd', 'Net Comm ($)', 'r')}
-                ${th('ins_policies', 'net_payable_4017_usd', 'Carrier 4017 ($)', 'r')}
+                ${th('ins_policies', 'net_payable_4017_usd', 'Carrier Payable ($)', 'r')}
                 ${th('ins_policies', 'status', 'Status')}
               </tr>
             </thead>
             <tbody>
               ${filteredPol.length ? sliceRows('ins_policies', filteredPol).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong><div class="muted" style="font-size:11px">${esc(r.type)}</div></td>
-                  <td>${coBadge(r.company)}</td>
+                  <td style="display:none">${coBadge(r.company)}</td>
                   <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.product)} · ${esc(r.producer)}</div></td>
                   <td>${esc(r.carrier)}</td>
                   <td>${esc(r.line)}</td>
@@ -43741,12 +43765,12 @@
                   <td class="r mono">${fmtUSD(r.net_payable_4017_usd, 0)}</td>
                   <td><span class="badge ${r.status === 'Active' || r.status === 'Endorsed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(12, 'No insurance policies match current filter')}
-              ${showMoreRow('ins_policies', filteredPol.length, 12)}
+              `).join('') : emptyRow(11, 'No insurance policies match current filter')}
+              ${showMoreRow('ins_policies', filteredPol.length, 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL PRODUCTION LEDGER (${fmtNum(s.totalPolicyCount)} POLICIES + ${fmtNum(s.endorsementCount)} ENDORSEMENTS)</strong></td>
+                <td colspan="5"><strong>TOTAL PRODUCTION LEDGER (${fmtNum(s.totalPolicyCount)} POLICIES + ${fmtNum(s.endorsementCount)} ENDORSEMENTS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumGwp, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumGrossComm, 0)}</strong></td>
                 <td class="r mono"><strong>-${fmtUSD(sumDisc, 0)}</strong></td>
@@ -43773,8 +43797,8 @@
     const bannerHtml = `
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
-          <div class="eyebrow">Insurance &amp; Brokerage · Premium Instalments, Insurer Remittances (GL 4017) &amp; Statement Recon</div>
-          <h2>${submode === 'remittances' ? 'Insurer Net Premium Remittances &amp; Fiduciary Cash Coverage' : (submode === 'statements' ? 'Monthly Carrier Commission Statement Reconciliation (i32)' : 'Premium Instalments, Client Receipts &amp; Open AR (GL 4112)')}</h2>
+          <div class="eyebrow">Insurance &amp; Brokerage · Premium Instalments, Insurer Remittances &amp; Statement Recon</div>
+          <h2>${submode === 'remittances' ? 'Insurer Net Premium Remittances &amp; Fiduciary Cash Coverage' : (submode === 'statements' ? 'Monthly Carrier Commission Statement Reconciliation' : 'Premium Instalments, Client Receipts &amp; Open AR')}</h2>
         </div>
         <div class="cockpit-controls">
           <div class="seg" role="tablist" aria-label="Billing & Recon Sub-Views">
@@ -43788,19 +43812,19 @@
 
       <div class="kpi-row">
         <div class="kpi-card">
-          <div class="kpi-lbl">Open Client Premium AR (GL 4112)</div>
+          <div class="kpi-lbl">Open Client Premium AR</div>
           <div class="kpi-val mono warn">${fmtUSD(s.openClientAr4112Usd, 0)}</div>
-          <div class="kpi-sub">43 instalments billed · 27 client receipts linked (i36)</div>
+          <div class="kpi-sub">43 instalments billed · 27 client receipts linked</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-lbl">Net Payable to Carriers (GL 4017)</div>
+          <div class="kpi-lbl">Net Payable to Carriers</div>
           <div class="kpi-val mono">${fmtUSD(s.payableToCarriers4017Usd, 0)}</div>
           <div class="kpi-sub">Across 6 carriers under Net-of-Commission settlement</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Fiduciary Cash &amp; Bank Coverage</div>
           <div class="kpi-val mono">${fmtUSD(s.cashHeldUsd, 0)}</div>
-          <div class="kpi-sub">103.7% coverage vs GL 4017 carrier obligations</div>
+          <div class="kpi-sub">103.7% coverage vs carrier obligations</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Carrier Statement Discrepancies</div>
@@ -43821,23 +43845,22 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Insurer Net Premium Remittance Bordereaux &amp; Cash-vs-Payable Guard (GL 4017) ${shownCount('ins_remittances', filteredRem.length, data.remittances.length)}</h3>
-              <p>Tracks Gross Premium, Broker Commission retained at source (GL 7063), cumulative carrier remittances, and fiduciary cash coverage</p>
+              <h3>Insurer Net Premium Remittance Bordereaux &amp; Cash-vs-Payable Guard ${shownCount('ins_remittances', filteredRem.length, data.remittances.length)}</h3>
+              <p>Tracks Gross Premium, Broker Commission retained at source, cumulative carrier remittances, and fiduciary cash coverage</p>
             </div>
-            <div class="panel-actions">${searchBox('Search carrier, GL 4017 account, status...')}</div>
+            <div class="panel-actions">${searchBox('Search carrier, payable account, status...')}</div>
           </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
                   ${th('ins_remittances', 'id', 'Bordereau #')}
-                  ${th('ins_remittances', 'company', 'Entity')}
                   ${th('ins_remittances', 'carrier', 'Insurance Carrier')}
-                  ${th('ins_remittances', 'gl_payable', 'GL 4017 Sub-Account')}
+                  ${th('ins_remittances', 'gl_payable', 'Carrier Account')}
                   ${th('ins_remittances', 'gross_prem_usd', 'Gross Prem ($)', 'r')}
-                  ${th('ins_remittances', 'broker_comm_7063_usd', 'Commission 7063 ($)', 'r')}
+                  ${th('ins_remittances', 'broker_comm_7063_usd', 'Retained Comm ($)', 'r')}
                   ${th('ins_remittances', 'settled_to_carrier_usd', 'Remitted to Date ($)', 'r')}
-                  ${th('ins_remittances', 'net_payable_4017_usd', 'Open 4017 Payable ($)', 'r')}
+                  ${th('ins_remittances', 'net_payable_4017_usd', 'Open Carrier Payable ($)', 'r')}
                   ${th('ins_remittances', 'client_cash_held_usd', 'Cash Held ($)', 'r')}
                   ${th('ins_remittances', 'next_due', 'Next Bordereau')}
                   ${th('ins_remittances', 'status', 'Status')}
@@ -43845,9 +43868,9 @@
               </thead>
               <tbody>
                 ${filteredRem.length ? sliceRows('ins_remittances', filteredRem).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td>${coBadge(r.company)}</td>
+                    <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.carrier)}</strong><div class="muted" style="font-size:11px">${esc(r.settlement_mode)}</div></td>
                     <td class="mono">${esc(r.gl_payable)}</td>
                     <td class="r mono">${fmtUSD(r.gross_prem_usd, 0)}</td>
@@ -43858,12 +43881,12 @@
                     <td class="mono">${esc(r.next_due)}</td>
                     <td><span class="badge ${r.status === 'Covered by Cash' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(11, 'No insurer remittances match current filter')}
-                ${showMoreRow('ins_remittances', filteredRem.length, 11)}
+                `).join('') : emptyRow(10, 'No insurer remittances match current filter')}
+                ${showMoreRow('ins_remittances', filteredRem.length, 10)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="4"><strong>TOTAL CARRIER REMITTANCE LEDGER (${fmtNum(filteredRem.length)} CARRIERS)</strong></td>
+                  <td colspan="3"><strong>TOTAL CARRIER REMITTANCE LEDGER (${fmtNum(filteredRem.length)} CARRIERS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumGp, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumCm, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumSt, 0)}</strong></td>
@@ -43887,7 +43910,7 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Monthly Carrier Commission Statement Reconciliation Engine (i32 · GL 4117) ${shownCount('ins_statements', filteredStm.length, data.statements.length)}</h3>
+              <h3>Monthly Carrier Commission Statement Reconciliation Engine ${shownCount('ins_statements', filteredStm.length, data.statements.length)}</h3>
               <p>Matches carrier commission statements line-by-line against expected agreement rates and isolates rounding or rate discrepancies</p>
             </div>
             <div class="panel-actions">${searchBox('Search statement #, carrier, period, status...')}</div>
@@ -43898,10 +43921,9 @@
                 <tr>
                   ${th('ins_statements', 'id', 'Statement #')}
                   ${th('ins_statements', 'period', 'Period')}
-                  ${th('ins_statements', 'company', 'Entity')}
                   ${th('ins_statements', 'carrier', 'Carrier')}
                   ${th('ins_statements', 'policies_count', 'Policies', 'r')}
-                  ${th('ins_statements', 'expected_comm_4117_usd', 'Expected 4117 ($)', 'r')}
+                  ${th('ins_statements', 'expected_comm_4117_usd', 'Expected Comm ($)', 'r')}
                   ${th('ins_statements', 'statement_comm_usd', 'Carrier Stmt ($)', 'r')}
                   ${th('ins_statements', 'variance_usd', 'Variance ($)', 'r')}
                   ${th('ins_statements', 'note', 'Reconciliation Audit Note')}
@@ -43910,10 +43932,10 @@
               </thead>
               <tbody>
                 ${filteredStm.length ? sliceRows('ins_statements', filteredStm).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.period)}</td>
-                    <td>${coBadge(r.company)}</td>
+                    <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.carrier)}</strong></td>
                     <td class="r mono">${fmtNum(r.policies_count)}</td>
                     <td class="r mono">${fmtUSD(r.expected_comm_4117_usd, 2)}</td>
@@ -43922,12 +43944,12 @@
                     <td>${esc(r.note)}</td>
                     <td><span class="badge ${r.status === 'Discrepancy' ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
                   </tr>
-                `).join('') : emptyRow(10, 'No commission statements match current filter')}
-                ${showMoreRow('ins_statements', filteredStm.length, 10)}
+                `).join('') : emptyRow(9, 'No commission statements match current filter')}
+                ${showMoreRow('ins_statements', filteredStm.length, 9)}
               </tbody>
               <tfoot>
                 <tr class="totals-row">
-                  <td colspan="5"><strong>TOTAL STATEMENT RECONCILIATION (${fmtNum(filteredStm.length)} STATEMENTS)</strong></td>
+                  <td colspan="4"><strong>TOTAL STATEMENT RECONCILIATION (${fmtNum(filteredStm.length)} STATEMENTS)</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumExp, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumStm, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(sumVar, 2)}</strong></td>
@@ -43949,8 +43971,8 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>Premium Instalment Invoices, Client Receipts &amp; Open Receivables (i33 / i36 · GL 4112) ${shownCount('ins_billing', filteredBil.length, data.billing.length)}</h3>
-            <p>Client receivable (GL 4112) equals Gross Premium minus Client Discount (7065) plus Policy Admin Fee (7064); receipts auto-link via bhf_premiumLink</p>
+            <h3>Premium Instalment Invoices, Client Receipts &amp; Open Receivables ${shownCount('ins_billing', filteredBil.length, data.billing.length)}</h3>
+            <p>Client receivable equals Gross Premium minus Client Discount plus Policy Admin Fee; receipts auto-link on settlement</p>
           </div>
           <div class="panel-actions">${searchBox('Search invoice #, policy #, client, receipt ref...')}</div>
         </div>
@@ -43960,23 +43982,22 @@
               <tr>
                 ${th('ins_billing', 'id', 'Debit Note #')}
                 ${th('ins_billing', 'due_date', 'Due Date')}
-                ${th('ins_billing', 'company', 'Entity')}
                 ${th('ins_billing', 'policy_no', 'Policy #')}
                 ${th('ins_billing', 'client', 'Client')}
                 ${th('ins_billing', 'carrier', 'Carrier')}
-                ${th('ins_billing', 'client_billed_4112_usd', 'Net Billed 4112 ($)', 'r')}
+                ${th('ins_billing', 'client_billed_4112_usd', 'Net Billed ($)', 'r')}
                 ${th('ins_billing', 'collected_usd', 'Collected ($)', 'r')}
                 ${th('ins_billing', 'open_ar_4112_usd', 'Open AR ($)', 'r')}
-                ${th('ins_billing', 'receipt_ref', 'Linked Receipt (i36)')}
+                ${th('ins_billing', 'receipt_ref', 'Linked Receipt')}
                 ${th('ins_billing', 'status', 'Status')}
               </tr>
             </thead>
             <tbody>
               ${filteredBil.length ? sliceRows('ins_billing', filteredBil).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.due_date)}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
                   <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.instalment)}</div></td>
                   <td>${esc(r.carrier)}</td>
@@ -43986,12 +44007,12 @@
                   <td class="mono">${esc(r.receipt_ref)}</td>
                   <td><span class="badge ${r.status === 'Paid' ? 'badge-good' : (r.status.includes('Overdue') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(11, 'No premium billing records match current filter')}
-              ${showMoreRow('ins_billing', filteredBil.length, 11)}
+              `).join('') : emptyRow(10, 'No premium billing records match current filter')}
+              ${showMoreRow('ins_billing', filteredBil.length, 10)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="6"><strong>TOTAL PREMIUM BILLING &amp; RECEIPTS (${fmtNum(filteredBil.length)} SCHEDULES)</strong></td>
+                <td colspan="5"><strong>TOTAL PREMIUM BILLING &amp; RECEIPTS (${fmtNum(filteredBil.length)} SCHEDULES)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumBilled, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumColl, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumOpen, 0)}</strong></td>
@@ -44020,7 +44041,7 @@
     return `
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
-          <div class="eyebrow">Insurance &amp; Brokerage · First Notice of Loss (FNOL), Surveyor Reserves &amp; Carrier Settlements (i34)</div>
+          <div class="eyebrow">Insurance &amp; Brokerage · First Notice of Loss (FNOL), Surveyor Reserves &amp; Carrier Settlements</div>
           <h2>Claims Register, Loss Adjuster Tracking &amp; Client Indemnity Recoveries</h2>
         </div>
         <div class="cockpit-controls">
@@ -44083,7 +44104,7 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>FNOL Claims, Loss Adjusters &amp; Carrier Indemnity Settlement Ledger (i34) ${shownCount('ins_claims', filteredClm.length, data.claims.length)}</h3>
+            <h3>FNOL Claims, Loss Adjusters &amp; Carrier Indemnity Settlement Ledger ${shownCount('ins_claims', filteredClm.length, data.claims.length)}</h3>
             <p>Tracks claim notifications, expert assignment, policy deductible application, and insurer settlement status</p>
           </div>
           <div class="panel-actions">${searchBox('Search claim #, policy #, client, adjuster, peril...')}</div>
@@ -44094,7 +44115,6 @@
               <tr>
                 ${th('ins_claims', 'id', 'Claim #')}
                 ${th('ins_claims', 'loss_date', 'Loss Date')}
-                ${th('ins_claims', 'company', 'Entity')}
                 ${th('ins_claims', 'policy_no', 'Policy #')}
                 ${th('ins_claims', 'client', 'Insured Client')}
                 ${th('ins_claims', 'carrier', 'Carrier')}
@@ -44108,10 +44128,10 @@
             </thead>
             <tbody>
               ${filteredClm.length ? sliceRows('ins_claims', filteredClm).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.loss_date)}</td>
-                  <td>${coBadge(r.company)}</td>
+                  <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
                   <td><strong>${esc(r.client)}</strong><div class="muted" style="font-size:11px">${esc(r.line)}</div></td>
                   <td>${esc(r.carrier)}</td>
@@ -44122,12 +44142,12 @@
                   <td class="r mono">${fmtUSD(r.paid_by_insurer_usd, 0)}</td>
                   <td><span class="badge ${r.status === 'Settled' ? 'badge-good' : (r.status.includes('FNOL') ? 'badge-crit' : 'badge-warn')}">${esc(r.status)}</span></td>
                 </tr>
-              `).join('') : emptyRow(12, 'No insurance claims match current filter')}
-              ${showMoreRow('ins_claims', filteredClm.length, 12)}
+              `).join('') : emptyRow(11, 'No insurance claims match current filter')}
+              ${showMoreRow('ins_claims', filteredClm.length, 11)}
             </tbody>
             <tfoot>
               <tr class="totals-row">
-                <td colspan="7"><strong>TOTAL CLAIMS REGISTER (${fmtNum(filteredClm.length)} CLAIMS)</strong></td>
+                <td colspan="6"><strong>TOTAL CLAIMS REGISTER (${fmtNum(filteredClm.length)} CLAIMS)</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumClaimed, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumDed, 0)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumAppr, 0)}</strong></td>
@@ -44153,12 +44173,12 @@
       <div class="cockpit-banner">
         <div class="cockpit-title-block sr-only">
           <div class="eyebrow">Insurance &amp; Brokerage · 12 Insurance Lines, 52 Carrier Products &amp; Chronological Commission Agreements</div>
-          <h2>${submode === 'agreements' ? 'Chronological Carrier Commission Rate Agreements (7z-chrono)' : 'Insurance Lines &amp; Carrier Product Catalogue (i07)'}</h2>
+          <h2>${submode === 'agreements' ? 'Chronological Carrier Commission Rate Agreements' : 'Insurance Lines &amp; Carrier Product Catalogue'}</h2>
         </div>
         <div class="cockpit-controls">
           <div class="seg" role="tablist" aria-label="Catalogue & Rates Sub-Views">
             <button type="button" class="${submode === 'main' ? 'active' : ''}" data-nav-jump="ins_catalogue">Lines &amp; Products (${s.linesCount} Lines · ${s.productsCount} Products)</button>
-            <button type="button" class="${submode === 'agreements' ? 'active' : ''}" data-nav-jump="ins_agreements">Commission Agreements (${s.agreementsCount} Rules · 7z-chrono)</button>
+            <button type="button" class="${submode === 'agreements' ? 'active' : ''}" data-nav-jump="ins_agreements">Commission Agreements (${s.agreementsCount} Rules)</button>
           </div>
           ${exportBtn(submode === 'agreements' ? 'ins_agreements' : 'ins_catalogue')}
         </div>
@@ -44173,17 +44193,17 @@
         <div class="kpi-card">
           <div class="kpi-lbl">Underwritten Carrier Products</div>
           <div class="kpi-val mono">${fmtNum(s.productsCount)} Products</div>
-          <div class="kpi-sub">Across 6 Lebanese &amp; regional insurance carriers (i07)</div>
+          <div class="kpi-sub">Across 6 Lebanese &amp; regional insurance carriers</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Chronological Rate Agreements</div>
           <div class="kpi-val mono">${fmtNum(s.agreementsCount)} Active Rules</div>
-          <div class="kpi-sub">Forward start-date guard &amp; retroactive policy backfill (7z-chrono)</div>
+          <div class="kpi-sub">Forward start-date guard &amp; retroactive policy backfill</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Blended Contractual Yield</div>
           <div class="kpi-val mono">10.5% – 25.0%</div>
-          <div class="kpi-sub">Auto-computes Gross Commission (GL 7063) on policy entry</div>
+          <div class="kpi-sub">Auto-computes Gross Commission on policy entry</div>
         </div>
       </div>
     `;
@@ -44196,8 +44216,8 @@
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h3>Chronological Carrier Commission Rate Agreements &amp; Retroactive Backfill (7z-chrono) ${shownCount('ins_agreements', filteredAgr.length, data.agreements.length)}</h3>
-              <p>Enforces strict forward effective dates, auto-closes prior Open rate windows at prevDayISO, and backfills affected policy commissions</p>
+              <h3>Chronological Carrier Commission Rate Agreements &amp; Retroactive Backfill ${shownCount('ins_agreements', filteredAgr.length, data.agreements.length)}</h3>
+              <p>Enforces strict forward effective dates, auto-closes prior Open rate windows, and backfills affected policy commissions</p>
             </div>
             <div class="panel-actions">${searchBox('Search agreement #, carrier, line, effective date...')}</div>
           </div>
@@ -44220,7 +44240,7 @@
               </thead>
               <tbody>
                 ${filteredAgr.length ? sliceRows('ins_agreements', filteredAgr).map(r => `
-                  <tr>
+                  <tr class="rrow">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td><strong>${esc(r.carrier)}</strong></td>
                     <td>${esc(r.line)}</td>
@@ -44258,7 +44278,7 @@
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h3>12 Insurance Lines &amp; Carrier Product Catalogue (i07) ${shownCount('ins_catalogue', filteredCat.length, data.catalogue.length)}</h3>
+            <h3>12 Insurance Lines &amp; Carrier Product Catalogue ${shownCount('ins_catalogue', filteredCat.length, data.catalogue.length)}</h3>
             <p>Standardized product hierarchy across Motor, Medical, Property, Engineering, Marine, Liability, Workmen Comp, Life, PA, Travel &amp; Fidelity</p>
           </div>
           <div class="panel-actions">${searchBox('Search product code, line, carrier, product name...')}</div>
@@ -44281,7 +44301,7 @@
             </thead>
             <tbody>
               ${filteredCat.length ? sliceRows('ins_catalogue', filteredCat).map(r => `
-                <tr>
+                <tr class="rrow">
                   <td class="mono"><strong>${esc(r.code)}</strong></td>
                   <td class="mono"><span class="badge badge-good">${esc(r.line_code)}</span></td>
                   <td><strong>${esc(r.line_name)}</strong></td>
@@ -44329,9 +44349,9 @@
       return [
         {
           id: 'H1',
-          code: 'Rule #H1 · Intercompany (h29)',
+          code: 'Rule #H1 · Intercompany Pairing',
           title: 'Unmatched One-Sided Sister Transfers (> 3-Day Window)',
-          detail: `${fmtNum(openLegs)} single-sided intercompany leg${openLegs === 1 ? '' : 's'} (${fmtUSD(openUsd, 2)}) awaiting mirror counter-entry across sister companies after Rule 1-3 pairing.`,
+          detail: `${fmtNum(openLegs)} single-sided intercompany leg${openLegs === 1 ? '' : 's'} (${fmtUSD(openUsd, 2)}) awaiting mirror counter-entry across sister companies after 3-tier pairing.`,
           severity: openLegs > 0 ? 'warn' : 'ok',
           badge: openLegs > 0 ? `${fmtNum(openLegs)} OPEN (${fmtUSD(openUsd, 0)})` : '100% PAIRED',
           company: 'Bdeir Holding · Group',
@@ -44344,7 +44364,7 @@
         {
           id: 'H2',
           code: 'Rule #H2 · Sister Corridor Drift',
-          title: 'Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Rule 3)',
+          title: 'Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Tolerance)',
           detail: `Reconciled volume ${fmtUSD(icRes.totalMatchedUsd, 2)} across ${fmtNum(icRes.matchedCount)} pairs (${icRes.reconRatePct.toFixed(1)}%) · Net bilateral Out-minus-In imbalance: ${fmtUSD(netImb, 2)}.`,
           severity: netImb > 1 ? 'warn' : 'ok',
           badge: netImb > 1 ? `DRIFT ${fmtUSD(netImb, 0)}` : 'IN TOLERANCE',
@@ -44371,9 +44391,9 @@
         },
         {
           id: 'H4',
-          code: 'Rule #H4 · Central Loans (4281/1689)',
+          code: 'Rule #H4 · Central Loans',
           title: 'Active Central Loan Agreements vs Scheduled Repayments',
-          detail: `${fmtNum(loans.length || 6)} central loan & facility agreements monitored across partner current accounts (4515), sister facilities (181), and long-term borrowings (1689).`,
+          detail: `${fmtNum(loans.length || 6)} central loan & facility agreements monitored across partner current accounts, sister facilities, and long-term borrowings.`,
           severity: 'ok',
           badge: `${fmtNum(loans.length || 6)} FACILITIES`,
           company: 'Bdeir Holding',
@@ -44385,11 +44405,11 @@
         },
         {
           id: 'H5',
-          code: 'Rule #H5 · GL 181 Tie-Out',
-          title: 'Consolidated Group Trial Balance & GL 181 Sister Sub-Account Tie-Out',
+          code: 'Rule #H5 · Sister Sub-Account Tie-Out',
+          title: 'Consolidated Group Trial Balance & Sister Sub-Account Tie-Out',
           detail: `All ${fmtNum(icRes.byPair.length)} directed sister-company corridors reconciled against Lebanese CoA Class 1-7 double-entry control accounts.`,
           severity: 'ok',
-          badge: 'GL 181 TIED',
+          badge: '100% TIED',
           company: 'Bdeir Holding · Group',
           rawMetric: 0,
           rawSecondary: 0,
@@ -44409,8 +44429,8 @@
         {
           id: 'R1',
           code: 'Rule #R1 · Venue Entry Cut-Off',
-          title: 'Back-Dated Venue Entry & Daily Revenue Close Queue (bhf_dateflagdays)',
-          detail: `${fmtNum(hsp.venueRows.length)} daily venue revenue sheets (${fmtUSD(s.totalRevenueTtc, 0)} TTC across ${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)} chalets & F&B outlets) verified within cut-off window.`,
+          title: 'Back-Dated Venue Entry & Daily Revenue Close Queue',
+          detail: `${fmtNum(hsp.venueRows.length)} daily venue revenue sheets (${fmtUSD(s.totalRevenueTtc, 0)} across ${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)} chalets & F&B outlets) verified within cut-off window.`,
           severity: 'ok',
           badge: `${fmtNum(hsp.venueRows.length)} SHEETS OK`,
           company: scopeLabel,
@@ -44423,10 +44443,10 @@
         {
           id: 'R2',
           code: 'Rule #R2 · POS Till Parity',
-          title: 'POS Till Z-Read Close vs Booked Daily Venue Revenue Variance',
+          title: 'POS Till Daily Close vs Booked Daily Venue Revenue Variance',
           detail: `${fmtNum(hsp.posRows.length)} POS till closes audited across resort cashiers · ${fmtNum(posVarRows.length)} drawer variance${posVarRows.length === 1 ? '' : 's'} totaling ${fmtUSD(posVarUsd, 2)}.`,
           severity: posVarRows.length > 0 ? 'warn' : 'ok',
-          badge: posVarRows.length > 0 ? `${fmtNum(posVarRows.length)} TILL VAR (${fmtUSD(posVarUsd, 0)})` : 'Z-READS MATCHED',
+          badge: posVarRows.length > 0 ? `${fmtNum(posVarRows.length)} TILL VAR (${fmtUSD(posVarUsd, 0)})` : 'TILLS MATCHED',
           company: scopeLabel,
           rawMetric: posVarRows.length,
           rawSecondary: Math.round(posVarUsd),
@@ -44465,7 +44485,7 @@
         {
           id: 'R5',
           code: 'Rule #R5 · Memberships & Shifts',
-          title: 'Seasonal Membership Arrears & Contract Rollover Guard (step249)',
+          title: 'Seasonal Membership Arrears & Contract Rollover Guard',
           detail: `${fmtUSD(s.totalMemArrears, 0)} open balance across ${fmtNum(s.overdueMemCount)} seasonal cabana/beach membership${s.overdueMemCount === 1 ? '' : 's'} (${fmtUSD(s.totalMemPaid, 0)} collected of ${fmtUSD(s.totalMemContract, 0)}).`,
           severity: s.overdueMemCount > 0 ? 'warn' : 'ok',
           badge: s.overdueMemCount > 0 ? `${fmtNum(s.overdueMemCount)} ARREARS (${fmtUSD(s.totalMemArrears, 0)})` : 'ALL PAID',
@@ -44487,7 +44507,7 @@
       return [
         {
           id: 'T1',
-          code: 'Rule #T1 · Invoice Books (t74)',
+          code: 'Rule #T1 · Invoice Books',
           title: 'Invoice Book Sequence Gap & Missing Physical Pad Serial Guard',
           detail: `${fmtNum(s.invoiceGapCount)} missing invoice serial gap${s.invoiceGapCount === 1 ? '' : 's'} detected across physical invoice books (PH-KA-2026-D02 serial #32 between #31 and #33).`,
           severity: s.invoiceGapCount > 0 ? 'warn' : 'ok',
@@ -44503,7 +44523,7 @@
           id: 'T2',
           code: 'Rule #T2 · Landed Margin Guard',
           title: 'Below-Floor / Low-Margin Heavy Truck & Parts Sale Watchdog',
-          detail: `Realized gross margin ${fmtUSD(s.totalSalesMargin, 0)} (${s.avgMarginPct.toFixed(1)}% of TTC) against ${fmtUSD(s.totalSalesCost, 0)} capitalized landed cost · ${fmtNum(lowMarginRows.length)} invoice${lowMarginRows.length === 1 ? '' : 's'} below 16% floor.`,
+          detail: `Realized gross margin ${fmtUSD(s.totalSalesMargin, 0)} (${s.avgMarginPct.toFixed(1)}% of sales) against ${fmtUSD(s.totalSalesCost, 0)} capitalized landed cost · ${fmtNum(lowMarginRows.length)} invoice${lowMarginRows.length === 1 ? '' : 's'} below 16% floor.`,
           severity: lowMarginRows.length > 0 ? 'warn' : 'ok',
           badge: lowMarginRows.length > 0 ? `${fmtNum(lowMarginRows.length)} LOW MARGIN` : `${s.avgMarginPct.toFixed(1)}% MARGIN`,
           company: scopeLabel,
@@ -44515,7 +44535,7 @@
         },
         {
           id: 'T3',
-          code: 'Rule #T3 · Receivables & Advances (t79)',
+          code: 'Rule #T3 · Receivables & Advances',
           title: 'Overdue Collection Promises & Gross AR vs Unallocated Advances Guard',
           detail: `Gross AR ${fmtUSD(s.grossArUsd, 0)} (weighted DSO ${s.weightedDsoDays.toFixed(1)}d) · Unallocated customer advances ${fmtUSD(s.customerAdvancesUsd, 0)} kept separate · ${fmtUSD(s.activePromisesUsd, 0)} in active collection promises.`,
           severity: overdueArRows.length > 0 ? 'warn' : 'ok',
@@ -44543,7 +44563,7 @@
         },
         {
           id: 'T5',
-          code: 'Rule #T5 · Landed Cost Allocation (t52)',
+          code: 'Rule #T5 · Landed Cost Allocation',
           title: 'Unallocated Freight, Customs & Clearance on Received Import Containers',
           detail: `${fmtUSD(s.unallocatedLandedUsd, 0)} unallocated landed cost across ${fmtNum(s.unallocatedLandedCount)} import file${s.unallocatedLandedCount === 1 ? '' : 's'} out of ${fmtUSD(s.totalLandedAddUsd, 0)} total freight/customs additions.`,
           severity: s.unallocatedLandedCount > 0 ? 'warn' : 'ok',
@@ -44579,7 +44599,7 @@
         },
         {
           id: 'P2',
-          code: 'Rule #P2 · Period Rent Billing (r33)',
+          code: 'Rule #P2 · Period Rent Billing',
           title: 'Unbilled Active Lease Periods & Open Rent Invoice Receivables',
           detail: `${fmtNum(unbilledLeases.length)} active lease${unbilledLeases.length === 1 ? '' : 's'} with unbilled current period · ${fmtUSD(s.openRentArUsd, 0)} open billed rent AR (${fmtUSD(s.totalCollectedRentUsd, 0)} collected).`,
           severity: (unbilledLeases.length > 0 || s.openRentArUsd > 0) ? 'warn' : 'ok',
@@ -44607,7 +44627,7 @@
         },
         {
           id: 'P4',
-          code: 'Rule #P4 · Tenant-Fault Recharges (r44)',
+          code: 'Rule #P4 · Tenant-Fault Recharges',
           title: 'Completed Tenant-Fault Work Orders Pending Recharge Invoice',
           detail: `${fmtUSD(s.unrechargedUsd, 0)} in completed tenant-recoverable fit-out and repair work orders awaiting tenant recharge billing (${fmtNum(re.openWorkOrderCount)} open work orders).`,
           severity: s.unrechargedUsd > 0 ? 'warn' : 'ok',
@@ -44621,7 +44641,7 @@
         },
         {
           id: 'P5',
-          code: 'Rule #P5 · Unit Occupancy & Overlap (r41)',
+          code: 'Rule #P5 · Unit Occupancy & Overlap',
           title: 'Vacant Units & Double-Leased Unit Overlap Guard (/2400 Deed Shares)',
           detail: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalUnits)} building units occupied (${s.occupancyPct.toFixed(1)}%) · ${fmtNum(re.vacantUnitCount)} vacant/fit-out unit${re.vacantUnitCount === 1 ? '' : 's'} · 0 overlapping active leases.`,
           severity: re.vacantUnitCount > 0 ? 'warn' : 'ok',
@@ -44656,8 +44676,8 @@
         },
         {
           id: 'I2',
-          code: 'Rule #I2 · Carrier Commission Recon (i32)',
-          title: 'Insurer Commission Statement Discrepancies vs Agreement Rates (7z-chrono)',
+          code: 'Rule #I2 · Carrier Commission Recon',
+          title: 'Insurer Commission Statement Discrepancies vs Agreement Rates',
           detail: `${fmtNum(s.stmtDiscrepancyCount)} carrier commission statement${s.stmtDiscrepancyCount === 1 ? '' : 's'} carrying a negative commission variance against chronological carrier agreement rates.`,
           severity: s.stmtDiscrepancyCount > 0 ? 'warn' : 'ok',
           badge: s.stmtDiscrepancyCount > 0 ? `${fmtNum(s.stmtDiscrepancyCount)} STMT VARIANCE` : 'STATEMENTS TIED',
@@ -44670,11 +44690,11 @@
         },
         {
           id: 'I3',
-          code: 'Rule #I3 · Carrier Remittance (4112 vs 4017)',
+          code: 'Rule #I3 · Carrier Remittance',
           title: 'Collected Client Premiums Held Pending Carrier Remittance',
-          detail: `Open client premium AR (4112) ${fmtUSD(s.openClientAr4112Usd, 0)} · Net carrier payable (4017) ${fmtUSD(s.payableToCarriers4017Usd, 0)} · Collected fiduciary cash held ${fmtUSD(s.cashHeldUsd, 0)}.`,
+          detail: `Open client premium AR ${fmtUSD(s.openClientAr4112Usd, 0)} · Net carrier payable ${fmtUSD(s.payableToCarriers4017Usd, 0)} · Collected fiduciary cash held ${fmtUSD(s.cashHeldUsd, 0)}.`,
           severity: s.payableToCarriers4017Usd > 0 ? 'warn' : 'ok',
-          badge: `${fmtUSD(s.payableToCarriers4017Usd, 0)} PAYABLE (4017)`,
+          badge: `${fmtUSD(s.payableToCarriers4017Usd, 0)} PAYABLE`,
           company: scopeLabel,
           rawMetric: Math.round(s.payableToCarriers4017Usd),
           rawSecondary: Math.round(s.openClientAr4112Usd),
@@ -44684,9 +44704,9 @@
         },
         {
           id: 'I4',
-          code: 'Rule #I4 · Discount Margin Guard (i41)',
-          title: 'Client Discount (7065) vs Gross Brokerage Commission (7063) Guard',
-          detail: `Client discounts ${fmtUSD(s.discount7065Usd, 0)} (4.4% of gross commission ${fmtUSD(s.grossComm7063Usd, 0)}) · Net earned commission ${fmtUSD(s.netCommUsd, 0)} + policy fees ${fmtUSD(s.policyFees7064Usd, 0)} · 0 policies where 7065 > 7063.`,
+          code: 'Rule #I4 · Discount Margin Guard',
+          title: 'Client Discount vs Gross Brokerage Commission Guard',
+          detail: `Client discounts ${fmtUSD(s.discount7065Usd, 0)} (4.4% of gross commission ${fmtUSD(s.grossComm7063Usd, 0)}) · Net earned commission ${fmtUSD(s.netCommUsd, 0)} + policy fees ${fmtUSD(s.policyFees7064Usd, 0)} · 0 policies where Discount > Gross Commission.`,
           severity: 'ok',
           badge: '0 MARGIN BREACHES',
           company: scopeLabel,
@@ -44827,7 +44847,7 @@
       const noi = round2(s.contractedAnnualRentUsd - s.woActualUsd);
       kpis = [
         { jump: 're_leases', k: 'Contracted Annual Rent Roll', v: fmtUSD(s.contractedAnnualRentUsd, 0), d: `Portfolio Value: ${fmtUSD(s.portfolioGrossUsd, 0)} · Occupancy ${s.occupancyPct.toFixed(1)}%`, cls: 'good' },
-        { jump: 're_properties', k: 'Net Operating Income (NOI)', v: fmtUSD(noi, 0), d: `Billed TTC: ${fmtUSD(s.totalInvoicedTtcUsd, 0)} · Fit-Out & Repairs: ${fmtUSD(s.woActualUsd, 0)}`, cls: 'good' },
+        { jump: 're_properties', k: 'Net Operating Income (NOI)', v: fmtUSD(noi, 0), d: `Billed Rent: ${fmtUSD(s.totalInvoicedTtcUsd, 0)} · Fit-Out & Repairs: ${fmtUSD(s.woActualUsd, 0)}`, cls: 'good' },
         { jump: 're_sales', k: 'Property Sales & Deposits', v: fmtUSD(s.salesContractUsd, 0), d: `Collected: ${fmtUSD(s.salesPaidUsd, 0)} · Security Deposits: ${fmtUSD(s.securityDepositsHeldUsd, 0)}`, cls: 'good' },
         { jump: 're_invoicing', k: 'Open Rent & Buyer AR', v: fmtUSD(s.openRentArUsd + s.salesOpenUsd, 0), d: `Rent AR: ${fmtUSD(s.openRentArUsd, 0)} · Buyer Balance: ${fmtUSD(s.salesOpenUsd, 0)}`, cls: 'good' }
       ];
@@ -44935,7 +44955,7 @@
               </thead>
               <tbody>
                 ${indEntities.map(e => `
-                  <tr class="clickable-row ${STATE.company === e.key ? 'is-active-co' : ''}" data-jump-co="${esc(e.key)}">
+                  <tr class="clickable-row rrow ${STATE.company === e.key ? 'is-active-co' : ''}" data-jump-co="${esc(e.key)}">
                     <td><b>${esc(e.name)}</b></td>
                     <td class="n">${fmtUSD(e.k.sales_ttc || 0, 0)}</td>
                     <td class="n hide-xs">${fmtNum(e.k.loads || 0)}</td>
@@ -44972,7 +44992,7 @@
       const kioskMap = {
         'Holding & Treasury': [
           { mode: 'sales', view: 'hld_interactions', title: 'Intercompany Voucher Desk', sub: '2-Sided Sister Transfer & Counter-Entry Terminal' },
-          { mode: 'raw', view: 'hld_loans', title: 'Central Loan & Facility Desk', sub: 'Borrowing Drawdowns & Repayment Vouchers (4281/1689)' },
+          { mode: 'raw', view: 'hld_loans', title: 'Central Loan & Facility Desk', sub: 'Borrowing Drawdowns & Repayment Vouchers' },
           { mode: 'fuel', view: 'hld_partners', title: 'Partner Distribution Desk', sub: '10-Slot Partner Split & Dividend Sign-Off' },
           { mode: 'attendance', view: 'payroll_attendance', title: 'HQ Biometric Attendance', sub: '128-d Face ID Liveness & Executive Shift Clock' }
         ],
@@ -44989,14 +45009,14 @@
           { mode: 'attendance', view: 'payroll_attendance', title: 'Showroom & Workshop Attendance', sub: 'Biometric Face ID Clock for Technicians & Sales Reps' }
         ],
         'Real Estate & Property': [
-          { mode: 'sales', view: 're_receipts', title: 'Tenant Rent & Deposit Till', sub: 'Instant Rent Receipt, Security Deposit (4196) & Thermal Slip' },
+          { mode: 'sales', view: 're_receipts', title: 'Tenant Rent & Deposit Till', sub: 'Instant Rent Receipt, Security Deposit & Thermal Slip' },
           { mode: 'raw', view: 're_properties', title: 'Building Concierge & Visitor Desk', sub: '4235 Msaytbeh & Commercial Tower Unit Access & Lease Lookup' },
           { mode: 'fuel', view: 're_workorders', title: 'Field Fit-Out & Work Order Kiosk', sub: 'Before/After Defect Photos, MEP Contractor Sign-Off & Recharges' },
           { mode: 'attendance', view: 'payroll_attendance', title: 'Building Staff & Guards Clock', sub: 'Biometric Face ID Attendance for Concierges & Maintenance' }
         ],
         'Insurance & Brokerage': [
-          { mode: 'sales', view: 'ins_policies', title: 'Motor & Medical Policy Desk', sub: 'Instant Quote, Endorsement & Client Discount (7065) Issuance' },
-          { mode: 'raw', view: 'ins_billing', title: 'Client Premium Cashier Till', sub: 'Instalment Collection (4112) & Fiduciary Receipt Printing' },
+          { mode: 'sales', view: 'ins_policies', title: 'Motor & Medical Policy Desk', sub: 'Instant Quote, Endorsement & Client Discount Issuance' },
+          { mode: 'raw', view: 'ins_billing', title: 'Client Premium Cashier Till', sub: 'Instalment Collection & Fiduciary Receipt Printing' },
           { mode: 'fuel', view: 'ins_claims', title: 'Claims FNOL Intake Terminal', sub: 'First Notice of Loss, Expert Assignment & Survey Photo Upload' },
           { mode: 'attendance', view: 'payroll_attendance', title: 'Brokerage Office & Producers Clock', sub: 'Biometric Face ID Attendance for Producers & Back-Office' }
         ]
@@ -45080,25 +45100,25 @@
     'Holding & Treasury': [
       { id: 'p01_overview', num: '01', label: 'Group Pulse', title: 'Consolidated 6-Industry Revenue, Operating Profit & Liquidity', view: 'hld_consolidation' },
       { id: 'p02_interactions', num: '02', label: 'Intercompany & Repayment', title: 'Sister Company Given vs. Paid Back, Net Owed & Bookkeeping Audit', view: 'hld_interactions' },
-      { id: 'p03_partners', num: '03', label: 'Partner Splits', title: '10-Slot Default Splits, Chronological Agreements & GL 4515', view: 'hld_partners' },
-      { id: 'p04_loans', num: '04', label: 'Loans & Capital', title: 'Central Borrowing Facilities (4281/1689/181) & Fixed Assets', view: 'hld_loans' },
+      { id: 'p03_partners', num: '03', label: 'Partner Splits', title: '10-Slot Default Splits, Chronological Agreements & Partner Accounts', view: 'hld_partners' },
+      { id: 'p04_loans', num: '04', label: 'Loans & Capital', title: 'Central Borrowing Facilities & Fixed Assets', view: 'hld_loans' },
       { id: 'p05_expenses', num: '05', label: 'Holding Overhead', title: 'HQ Shared Services, Recurring Schedules & Supplier AP', view: 'expenses' },
       { id: 'p06_financial', num: '06', label: 'Consolidated GL', title: '6-Industry Elimination Schedule & Double-Entry Trial Balance', view: 'hld_entities' }
     ],
     'Hospitality & Resorts': [
-      { id: 'p01_overview', num: '01', label: 'Resort Pulse', title: '5-Resort Revenue TTC, Occupancy, Covers & Operating Margin', view: 'hsp_revenue' },
-      { id: 'p02_revenue', num: '02', label: 'POS & Chalets', title: 'Gate Admissions, Chalet Rooms, POS Till Close (R2) & VAT', view: 'hsp_pos' },
-      { id: 'p03_memberships', num: '03', label: 'Memberships & Splits', title: 'Seasonal Contracts, Remaining Arrears & Partner Pools (7z-chrono)', view: 'hsp_memberships' },
-      { id: 'p04_stock', num: '04', label: 'Kitchen & Cellar', title: 'Commissary Stock, Consumption Ratio (R3) & Recipe BOM Margin', view: 'hsp_stock' },
-      { id: 'p05_energy', num: '05', label: 'Generators & Solar', title: 'Diesel Burn L/hr Watchdog (R4), Solar Offset & Maintenance', view: 'hsp_energy' },
-      { id: 'p06_financial', num: '06', label: 'Resort P&L & Staff', title: 'Seasonal & Freelance Payroll (step249), Suppliers & Resort GL', view: 'payroll' }
+      { id: 'p01_overview', num: '01', label: 'Resort Pulse', title: '5-Resort Revenue, Occupancy, Covers & Operating Margin', view: 'hsp_revenue' },
+      { id: 'p02_revenue', num: '02', label: 'POS & Chalets', title: 'Gate Admissions, Chalet Rooms, POS Till Close & VAT', view: 'hsp_pos' },
+      { id: 'p03_memberships', num: '03', label: 'Memberships & Splits', title: 'Seasonal Contracts, Remaining Arrears & Partner Pools', view: 'hsp_memberships' },
+      { id: 'p04_stock', num: '04', label: 'Kitchen & Cellar', title: 'Commissary Stock, Consumption Ratio & Recipe BOM Margin', view: 'hsp_stock' },
+      { id: 'p05_energy', num: '05', label: 'Generators & Solar', title: 'Diesel Burn L/hr Watchdog, Solar Offset & Maintenance', view: 'hsp_energy' },
+      { id: 'p06_financial', num: '06', label: 'Resort P&L & Staff', title: 'Seasonal & Freelance Payroll, Suppliers & Resort GL', view: 'payroll' }
     ],
     'Automotive & Heavy Trading': [
-      { id: 'p01_overview', num: '01', label: 'Trading Pulse', title: 'Korri Auto & Shacman Revenue TTC, Gross Margin & Brand Mix', view: 'trd_sales' },
-      { id: 'p02_sales', num: '02', label: 'Invoicing & AR', title: 'Pre-Printed Invoice Books (t74) & Gross AR vs Advances (t79)', view: 'trd_receivables' },
-      { id: 'p03_imports', num: '03', label: 'Imports & Landed', title: 'Import Shipments, Customs/Freight Allocation (T5) & LCs', view: 'trd_purchases' },
+      { id: 'p01_overview', num: '01', label: 'Trading Pulse', title: 'Korri Auto & Shacman Revenue, Gross Margin & Brand Mix', view: 'trd_sales' },
+      { id: 'p02_sales', num: '02', label: 'Invoicing & AR', title: 'Pre-Printed Invoice Books & Gross AR vs Advances', view: 'trd_receivables' },
+      { id: 'p03_imports', num: '03', label: 'Imports & Landed', title: 'Import Shipments, Customs/Freight Allocation & LCs', view: 'trd_purchases' },
       { id: 'p04_trucks', num: '04', label: 'Serial Units (VIN)', title: '44 Heavy Truck & Commercial Serial Units, PDI & Warranty', view: 'trd_trucks' },
-      { id: 'p05_stock', num: '05', label: '5-Warehouse Stock', title: 'Spare Parts Valuation, Reorder Alerts (T4) & Branch Transfers', view: 'trd_stock' },
+      { id: 'p05_stock', num: '05', label: '5-Warehouse Stock', title: 'Spare Parts Valuation, Reorder Alerts & Branch Transfers', view: 'trd_stock' },
       { id: 'p06_financial', num: '06', label: 'Parallel Recon & GL', title: '1,077 Stock Rows & 268 P&L Rows Tied $0.00 + Trading GL', view: 'trd_recon' }
     ],
     'Real Estate & Property': [
@@ -45110,10 +45130,10 @@
       { id: 'p06_financial', num: '06', label: 'Distributions & P&L', title: 'Owner NOI Distributions, Contractor Payables & Property GL', view: 're_ownership' }
     ],
     'Insurance & Brokerage': [
-      { id: 'p01_overview', num: '01', label: 'Brokerage Pulse', title: '$331.5k GWP, $40.9k Gross Commission (7063) & Net Profit', view: 'ins_policies' },
-      { id: 'p02_policies', num: '02', label: 'Policies & Discounts', title: '38 Policies, 4 Endorsements & Client Discounts (i41 GL 7065)', view: 'ins_policies' },
+      { id: 'p01_overview', num: '01', label: 'Brokerage Pulse', title: '$331.5k GWP, $40.9k Gross Commission & Net Profit', view: 'ins_policies' },
+      { id: 'p02_policies', num: '02', label: 'Policies & Discounts', title: '38 Policies, 4 Endorsements & Client Discounts', view: 'ins_policies' },
       { id: 'p03_renewals', num: '03', label: '90-Day Renewals', title: '30/60/90-Day Expiry Queue, 88.2% Retention & Insured Risks', view: 'ins_renewals' },
-      { id: 'p04_billing', num: '04', label: 'AR & Carrier Recon', title: 'Client AR (4112), Carrier Payable (4017) & Statement Recon (i32)', view: 'ins_billing' },
+      { id: 'p04_billing', num: '04', label: 'AR & Carrier Recon', title: 'Client Premium AR, Carrier Payable & Statement Recon', view: 'ins_billing' },
       { id: 'p05_claims', num: '05', label: 'Claims & Loss Ratio', title: 'Motor, Medical & Property Claims, Surveyors & Settlements', view: 'ins_claims' },
       { id: 'p06_catalogue', num: '06', label: 'Lines & Agreements', title: '12 Insurance Lines, 52 Products & Chronological Commission Rates', view: 'ins_catalogue' }
     ]
@@ -45135,7 +45155,7 @@
       ];
       return {
         kpis: [
-          { label: 'Consolidated Revenue (TTC)', val: fmtUSD(entRollup.totals.sales_ttc, 0), sub: `${fmtNum(entRollup.totals.loads)} group transactions`, cls: 'good' },
+          { label: 'Consolidated Revenue', val: fmtUSD(entRollup.totals.sales_ttc, 0), sub: `${fmtNum(entRollup.totals.loads)} group transactions`, cls: 'good' },
           { label: 'Consolidated Gross Margin', val: fmtUSD(entRollup.totals.gross_margin, 0), sub: `${((entRollup.totals.gross_margin / Math.max(1, entRollup.totals.sales_ttc)) * 100).toFixed(1)}% group margin`, cls: 'good' },
           { label: 'Consolidated Net Profit', val: fmtUSD(entRollup.totals.operating_profit, 0), sub: 'Across all 14 entities & 6 verticals', cls: 'good' },
           { label: 'Given to Sisters ($)', val: fmtUSD(icData.totalGivenUsd, 0), sub: `Paid Back ${fmtUSD(icData.totalPaidBackUsd, 0)} (${(icData.overallRepayPct || 0).toFixed(1)}%)`, cls: 'brass' },
@@ -45149,9 +45169,9 @@
         tableTitle: pageIdx === 1 ? 'Intercompany Sister Repayment & Transfer Ledger' : 'Consolidated 14-Entity Group Performance Ledger',
         headers: (pageIdx === 1 && icRows.length > 0)
           ? ['Date', 'From Sister', 'To Sister', 'Repayment Flow', 'Given ($)', 'Paid Back ($)', 'Running Debt ($)']
-          : ['Entity', 'Industry Vertical', 'Transactions', 'Revenue TTC ($)', 'Gross Margin ($)', 'Expenses ($)', 'Operating Profit ($)'],
+          : ['Entity', 'Industry Vertical', 'Transactions', 'Revenue ($)', 'Gross Margin ($)', 'Expenses ($)', 'Operating Profit ($)'],
         rows: (pageIdx === 1 && icRows.length > 0)
-          ? icRows.map(r => [r.date, r.fromCo, r.toCo, r.repayRole === 'repaid' ? 'Paid Back (−Debt)' : 'Given (+Debt)', r.repayRole === 'given' ? fmtUSD(r.givenUsd, 2) : '—', r.repayRole === 'repaid' ? fmtUSD(r.paidBackUsd, 2) : '—', fmtUSD(r.runningBalanceUsd, 2)])
+          ? icRows.map(r => [r.date, r.fromCo, r.toCo, r.repayRole === 'repaid' ? 'Paid Back (−Debt)' : 'Given (+Debt)', r.repayRole === 'given' ? fmtUSD(r.givenUsd, 2) : '-', r.repayRole === 'repaid' ? fmtUSD(r.paidBackUsd, 2) : '-', fmtUSD(r.runningBalanceUsd, 2)])
           : entRows.map(e => [e.name, e.industry, fmtNum(e.k.loads || 0), fmtUSD(e.k.sales_ttc, 0), fmtUSD(e.k.gross_margin, 0), fmtUSD(e.k.expenses, 0), fmtUSD(e.k.operating_profit, 0)]),
         totals: (pageIdx === 1 && icRows.length > 0)
           ? ['Total Sister Repayment', `${fmtNum(icData.totalCount)} transfers`, `${(icData.overallRepayPct || 0).toFixed(1)}% repaid`, 'Net Unpaid', fmtUSD(icData.totalGivenUsd, 2), fmtUSD(icData.totalPaidBackUsd, 2), fmtUSD(icData.totalNetUnpaidUsd, 2)]
@@ -45169,7 +45189,7 @@
       const vRows = hsp.venueRows || [];
       return {
         kpis: [
-          { label: 'Venue & Chalet Revenue (TTC)', val: fmtUSD(totRev, 0), sub: `${fmtNum(vRows.length)} venue & POS closes · ${fmtNum(s.totalCovers || 0)} covers`, cls: 'good' },
+          { label: 'Venue & Chalet Revenue', val: fmtUSD(totRev, 0), sub: `${fmtNum(vRows.length)} venue & POS closes · ${fmtNum(s.totalCovers || 0)} covers`, cls: 'good' },
           { label: 'Chalet & Cabana Rooms', val: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)}`, sub: `RevPAR ${fmtUSD(s.revParUsd, 0)} · F&B + Gate + Lodging`, cls: 'brass' },
           { label: 'Seasonal Memberships', val: fmtUSD(s.totalMemContract, 0), sub: `Collected ${fmtUSD(s.totalMemPaid, 0)} · Arrears ${fmtUSD(s.totalMemArrears, 0)}`, cls: 'warn' },
           { label: 'Kitchen & Cellar Stock', val: fmtUSD(s.totalStockClosing, 0), sub: `Usage ${fmtUSD(s.totalStockUsage, 0)} · Food Cost ${s.avgFoodCostPct.toFixed(1)}%`, cls: 'good' },
@@ -45181,7 +45201,7 @@
         secondTitle: 'Top Venue Outlets & Seasonal Membership Streams ($)',
         secondBars: vRows.slice(0, 6).map(r => ({ label: `${r.company} · ${r.outlet}`, val: r.ttc_usd, sub: `${r.category} · ${fmtNum(r.covers)} covers · ${r.method}` })),
         tableTitle: 'Multi-Resort Venue Revenue, POS Till Close & Chalet Occupancy Register',
-        headers: ['Date', 'Resort', 'Revenue Stream', 'Outlet / Chalet', 'Covers', 'Payment Method', 'Amount TTC ($)'],
+        headers: ['Date', 'Resort', 'Revenue Stream', 'Outlet / Chalet', 'Covers', 'Payment Method', 'Amount ($)'],
         rows: vRows.slice(0, 16).map(r => [r.date, r.company, r.category, r.outlet, fmtNum(r.covers || 0), r.method, fmtUSD(r.ttc_usd, 0)]),
         totals: ['Total Resort Revenue', `${hsp.activeResorts.length} Resorts`, `${vRows.length} Closes`, 'All Venue Outlets', fmtNum(vRows.reduce((a, r) => a + Number(r.covers || 0), 0)), 'Cash + POS + Credit', fmtUSD(s.totalRevenueTtc, 0)]
       };
@@ -45193,19 +45213,19 @@
       const validSales = (trd.salesRows || []).filter(r => !r.is_gap);
       return {
         kpis: [
-          { label: 'Invoiced Sales (TTC)', val: fmtUSD(s.totalSalesTtc, 0), sub: `${fmtNum(validSales.length)} invoices across Korri Auto & Shacman`, cls: 'good' },
+          { label: 'Invoiced Sales', val: fmtUSD(s.totalSalesTtc, 0), sub: `${fmtNum(validSales.length)} invoices across Korri Auto & Shacman`, cls: 'good' },
           { label: 'Gross Trading Margin', val: fmtUSD(s.totalSalesMargin, 0), sub: `${s.avgMarginPct.toFixed(1)}% realized margin over landed cost`, cls: 'good' },
-          { label: 'Gross AR vs Advances (t79)', val: fmtUSD(s.grossArUsd, 0), sub: `Advances ${fmtUSD(s.customerAdvancesUsd, 0)} · DSO ${s.weightedDsoDays.toFixed(0)}d`, cls: 'warn' },
+          { label: 'Gross AR vs Advances', val: fmtUSD(s.grossArUsd, 0), sub: `Advances ${fmtUSD(s.customerAdvancesUsd, 0)} · DSO ${s.weightedDsoDays.toFixed(0)}d`, cls: 'warn' },
           { label: 'Imports & Landed Cost', val: fmtUSD(s.totalFobUsd + s.totalLandedAddUsd, 0), sub: `FOB ${fmtUSD(s.totalFobUsd, 0)} + Landed ${fmtUSD(s.totalLandedAddUsd, 0)}`, cls: 'brass' },
           { label: 'Showroom Serial Units', val: `${fmtNum(s.showroomUnitsCount)} In Stock`, sub: `${fmtNum(s.soldUnitsCount)} sold · Heavy Truck VINs`, cls: 'good' },
-          { label: '5-Warehouse Spare Parts', val: fmtUSD(s.totalStockValUsd, 0), sub: `${fmtNum(s.reorderAlertCount)} SKUs at/below reorder (T4)`, cls: 'warn' }
+          { label: '5-Warehouse Spare Parts', val: fmtUSD(s.totalStockValUsd, 0), sub: `${fmtNum(s.reorderAlertCount)} SKUs at/below reorder`, cls: 'warn' }
         ],
         chartTitle: 'Sales & Gross Margin by Commercial Invoice ($)',
         bars: validSales.slice(0, 6).map(r => ({ label: `${r.company} · ${r.id}`, val: r.ttc_usd, sub: `${r.customer} · Margin ${fmtUSD(r.margin_usd, 0)} (${r.margin_pct.toFixed(1)}%)` })),
         secondTitle: 'Spare Parts & Truck Stock Valuation by Warehouse ($)',
         secondBars: (trd.stockRows || []).slice(0, 6).map(w => ({ label: `${w.warehouse} · ${w.code || w.sku}`, val: w.stock_val_usd, sub: `${w.name} · Qty ${fmtNum(w.on_hand != null ? w.on_hand : w.on_hand_qty)}` })),
         tableTitle: 'Commercial Vehicles & Heavy Spare Parts Invoicing Register',
-        headers: ['Date', 'Company', 'Invoice # (Book)', 'Customer', 'Item / Truck VIN', 'Qty', 'Total TTC ($)', 'Gross Margin ($)'],
+        headers: ['Date', 'Company', 'Invoice # (Book)', 'Customer', 'Item / Truck VIN', 'Qty', 'Total ($)', 'Gross Margin ($)'],
         rows: validSales.slice(0, 16).map(r => [r.date, r.company, `${r.id} (${r.book})`, r.customer, r.item, fmtNum(r.qty), fmtUSD(r.ttc_usd, 0), fmtUSD(r.margin_usd, 0)]),
         totals: ['Total Trading Sales', 'Korri Auto + Shacman', `${validSales.length} Invoices`, 'All Trading Clients', 'Trucks + Spare Parts', fmtNum(validSales.reduce((a, r) => a + Number(r.qty || 0), 0)), fmtUSD(s.totalSalesTtc, 0), fmtUSD(s.totalSalesMargin, 0)]
       };
@@ -45218,7 +45238,7 @@
       return {
         kpis: [
           { label: 'Portfolio Valuation (Gross)', val: fmtUSD(s.portfolioGrossUsd, 0), sub: `Share-Adj (/2400) ${fmtUSD(s.portfolioShareUsd, 0)}`, cls: 'good' },
-          { label: 'Annualized Rent Roll (TTC)', val: fmtUSD(s.contractedAnnualRentUsd, 0), sub: `${fmtNum(re.leases.length)} active leases · ${s.occupancyPct.toFixed(1)}% occupancy`, cls: 'good' },
+          { label: 'Annualized Rent Roll', val: fmtUSD(s.contractedAnnualRentUsd, 0), sub: `${fmtNum(re.leases.length)} active leases · ${s.occupancyPct.toFixed(1)}% occupancy`, cls: 'good' },
           { label: '4235 VAT Rent Invoiced', val: fmtUSD(s.totalInvoicedTtcUsd, 0), sub: `Collected ${fmtUSD(s.totalCollectedRentUsd, 0)} · Sequence #1..#6 OK`, cls: 'brass' },
           { label: 'Tenant Rent & Inst. Arrears', val: fmtUSD(s.openRentArUsd + s.salesOpenUsd, 0), sub: `Rent AR ${fmtUSD(s.openRentArUsd, 0)} · Buyer Open ${fmtUSD(s.salesOpenUsd, 0)}`, cls: 'warn' },
           { label: 'Property Deed Sales', val: fmtUSD(s.salesContractUsd, 0), sub: `Collected ${fmtUSD(s.salesPaidUsd, 0)} across ${fmtNum(re.sales.length)} deeds`, cls: 'good' },
@@ -45229,7 +45249,7 @@
         secondTitle: 'Active Leases & Rent Roll by Commercial Tenant ($)',
         secondBars: (re.leases || []).slice(0, 6).map(l => ({ label: `${l.tenant} (${l.unit})`, val: l.annual_ttc_usd, sub: `${l.property} · Exp ${l.end_date}` })),
         tableTitle: 'Active Commercial & Residential Leases & 4235 S.A.L Rent Roll Register',
-        headers: ['Lease Code', 'Entity / Legal', 'Property & Unit', 'Tenant', 'Term', 'Annual Base ($)', '11% VAT ($)', 'Annual TTC ($)'],
+        headers: ['Lease Code', 'Entity / Legal', 'Property & Unit', 'Tenant', 'Term', 'Annual Base ($)', '11% VAT ($)', 'Annual Rent ($)'],
         rows: (re.leases || []).map(l => {
           const ttc = Number(l.annual_ttc_usd || 0);
           const vat = l.annual_vat_usd != null ? Number(l.annual_vat_usd) : (l.vat_11_pct ? round2(ttc - ttc / 1.11) : 0);
@@ -45254,11 +45274,11 @@
     return {
       kpis: [
         { label: 'Gross Written Premium (GWP)', val: fmtUSD(s.gwpUsd, 0), sub: `${fmtNum(s.totalPolicyCount)} policies + ${fmtNum(s.endorsementCount)} endorsements`, cls: 'good' },
-        { label: 'Gross Commission (GL 7063)', val: fmtUSD(s.grossComm7063Usd, 0), sub: `Policy Fees (7064) ${fmtUSD(s.policyFees7064Usd, 0)}`, cls: 'good' },
-        { label: 'Client Discounts (i41 GL 7065)', val: fmtUSD(s.discount7065Usd, 0), sub: `Net Commission ${fmtUSD(s.netCommUsd, 0)}`, cls: 'brass' },
+        { label: 'Gross Commission', val: fmtUSD(s.grossComm7063Usd, 0), sub: `Policy Fees ${fmtUSD(s.policyFees7064Usd, 0)}`, cls: 'good' },
+        { label: 'Client Discounts', val: fmtUSD(s.discount7065Usd, 0), sub: `Net Commission ${fmtUSD(s.netCommUsd, 0)}`, cls: 'brass' },
         { label: '90-Day Renewal Pipeline', val: `${fmtNum(s.dueRenewals90dCount)} Policies`, sub: `${s.retentionPct.toFixed(1)}% portfolio retention`, cls: 'warn' },
-        { label: 'Client Premium AR (GL 4112)', val: fmtUSD(s.openClientAr4112Usd, 0), sub: `${fmtNum(ins.billing.length)} instalment invoices tracked`, cls: 'warn' },
-        { label: 'Carrier Payable (GL 4017)', val: fmtUSD(s.payableToCarriers4017Usd, 0), sub: `Fiduciary Cash Held ${fmtUSD(s.cashHeldUsd, 0)}`, cls: 'good' }
+        { label: 'Client Premium AR', val: fmtUSD(s.openClientAr4112Usd, 0), sub: `${fmtNum(ins.billing.length)} instalment invoices tracked`, cls: 'warn' },
+        { label: 'Carrier Payable', val: fmtUSD(s.payableToCarriers4017Usd, 0), sub: `Fiduciary Cash Held ${fmtUSD(s.cashHeldUsd, 0)}`, cls: 'good' }
       ],
       chartTitle: 'Gross Written Premium (GWP) & Net Commission by Carrier Statement ($)',
       bars: (ins.statements || []).slice(0, 6).map(c => {
@@ -45269,8 +45289,8 @@
       }),
       secondTitle: 'Production Mix by Insurance Line (Motor, Medical, Property, Marine & Life $)',
       secondBars: (ins.catalogue || []).slice(0, 6).map(l => ({ label: `${l.line_code} · ${l.line_name}`, val: l.gwp_usd, sub: `${fmtNum(l.active_policies)} policies · Base Comm ${l.base_comm_pct}%` })),
-      tableTitle: 'Brokerage Policy Production, Client Discounts (GL 7065) & Carrier Net Payable Register',
-      headers: ['Policy #', 'Client', 'Insurer', 'Line / Product', 'Expiry', 'GWP ($)', 'Gross Comm ($)', 'Client Disc (7065)', 'Net Comm ($)'],
+      tableTitle: 'Brokerage Policy Production, Client Discounts & Carrier Net Payable Register',
+      headers: ['Policy #', 'Client', 'Insurer', 'Line / Product', 'Expiry', 'GWP ($)', 'Gross Comm ($)', 'Client Disc ($)', 'Net Comm ($)'],
       rows: (ins.policies || []).map(p => [p.id, p.client || p.insured, p.carrier, `${p.line} · ${p.product}`, p.expiry || p.end_date, fmtUSD(p.gross_prem_usd != null ? p.gross_prem_usd : p.gwp_usd, 0), fmtUSD(p.gross_comm_usd, 0), fmtUSD(p.discount_usd != null ? p.discount_usd : p.discount_7065_usd, 0), fmtUSD(p.net_comm_usd, 0)]),
       totals: [`Total Portfolio (${(ins.policies || []).length} Policies)`, 'All Brokerage Clients', `${s.carriersCount} Carriers`, `${s.linesCount} Insurance Lines`, 'Active Book', fmtUSD(s.gwpUsd, 0), fmtUSD(s.grossComm7063Usd, 0), fmtUSD(s.discount7065Usd, 0), fmtUSD(s.netCommUsd, 0)]
     };
@@ -45499,8 +45519,8 @@
     const tableTabsByInd = {
       'Holding & Treasury': [
         { key: 'hld_entities_tbl', label: '14-Entity Group Scorecard', view: 'hld_entities' },
-        { key: 'hld_open_ic_tbl', label: 'Intercompany Open Queue (h29)', view: 'hld_open_recon' },
-        { key: 'hld_pairs_tbl', label: 'Sister Pair Matrix (GL 181)', view: 'hld_due_matrix' },
+        { key: 'hld_open_ic_tbl', label: 'Intercompany Open Queue', view: 'hld_open_recon' },
+        { key: 'hld_pairs_tbl', label: 'Sister Pair Matrix', view: 'hld_due_matrix' },
         { key: 'hld_partners_tbl', label: 'Partner Splits & Agreements', view: 'hld_partners' }
       ],
       'Hospitality & Resorts': [
@@ -45510,10 +45530,10 @@
         { key: 'hsp_gen_tbl', label: 'Generators, Diesel & Solar Logs', view: 'hsp_energy' }
       ],
       'Automotive & Heavy Trading': [
-        { key: 'trd_inv_tbl', label: 'Sales Invoices & Books (t74)', view: 'trd_sales' },
-        { key: 'trd_imp_tbl', label: 'Imports & Landed Cost (T5)', view: 'trd_purchases' },
+        { key: 'trd_inv_tbl', label: 'Sales Invoices & Books', view: 'trd_sales' },
+        { key: 'trd_imp_tbl', label: 'Imports & Landed Cost', view: 'trd_purchases' },
         { key: 'trd_vin_tbl', label: 'Showroom Serial Units (VINs)', view: 'trd_trucks' },
-        { key: 'trd_wh_tbl', label: '5-Warehouse Spare Parts (T4)', view: 'trd_stock' }
+        { key: 'trd_wh_tbl', label: '5-Warehouse Spare Parts', view: 'trd_stock' }
       ],
       'Real Estate & Property': [
         { key: 're_leases_tbl', label: 'Active Leases & Rent Roll', view: 're_leases' },
@@ -45522,9 +45542,9 @@
         { key: 're_wo_tbl', label: 'Fit-Out Work Orders & Recharges', view: 're_workorders' }
       ],
       'Insurance & Brokerage': [
-        { key: 'ins_pol_tbl', label: 'Live Policies & Discounts (7065)', view: 'ins_policies' },
+        { key: 'ins_pol_tbl', label: 'Live Policies & Discounts', view: 'ins_policies' },
         { key: 'ins_ren_tbl', label: '30/60/90-Day Renewal Queue', view: 'ins_renewals' },
-        { key: 'ins_stm_tbl', label: 'Carrier Statement Recon (i32)', view: 'ins_statements' },
+        { key: 'ins_stm_tbl', label: 'Carrier Statement Recon', view: 'ins_statements' },
         { key: 'ins_clm_tbl', label: 'Claims & Recovery Register', view: 'ins_claims' }
       ]
     };
@@ -45547,7 +45567,7 @@
                 ${esc(t.label)}
               </button>
             `).join('')}
-            <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activeTab.view)}">Open ${esc(activeTab.label)} Hub ▸</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activeTab.view)}">Open ${esc(activeTab.label)} Hub</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -45649,20 +45669,20 @@
     if (ind === 'Holding & Treasury') {
       const ic = computeIntercompanyInteractions({ ignoreSearch: true });
       (ic.interactions || []).slice(0, 8).forEach((r, idx) => {
-        addMv(`hld-mv-${idx + 1}`, r.date || '2026-10-28', 'Bdeir Holding', 'ext', 'Intercompany Sister Transfer (GL 181)', `${r.fromCo} / ${r.toCo}`, `${r.matchType} · ${r.notes || 'Sister treasury clearing'}`, r.id || `IC-${100 + idx}`, 'Bank Wire', idx % 2 === 0 ? r.usd : -r.usd);
+        addMv(`hld-mv-${idx + 1}`, r.date || '2026-10-28', 'Bdeir Holding', 'ext', 'Intercompany Sister Transfer', `${r.fromCo} / ${r.toCo}`, `${r.matchType} · ${r.notes || 'Sister treasury clearing'}`, r.id || `IC-${100 + idx}`, 'Bank Wire', idx % 2 === 0 ? r.usd : -r.usd);
       });
-      addMv('hld-mv-9', '2026-10-30', 'Bdeir Holding', 'loan', 'Partner Distribution Pool (GL 4515)', 'Shareholder Pool (10 Slots)', 'Monthly group treasury settlement', 'HLD-4515-10', 'Bank Transfer', 42500);
+      addMv('hld-mv-9', '2026-10-30', 'Bdeir Holding', 'loan', 'Partner Distribution Pool', 'Shareholder Pool (10 Slots)', 'Monthly group treasury settlement', 'HLD-4515-10', 'Bank Transfer', 42500);
       addMv('hld-mv-10', '2026-10-29', 'Bdeir Holding', 'exp', 'Corporate Shared Services', 'Bdeir Holding HQ', 'Group audit, legal & cloud infrastructure', 'HLD-EXP-22', 'Cash', -14200);
     } else if (ind === 'Hospitality & Resorts') {
       const hsp = computeHospitalityOperations({ ignoreSearch: true });
       (hsp.venueRows || []).slice(0, 6).forEach((r, idx) => {
-        addMv(`hsp-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `${r.category} Close`, r.outlet, `${r.covers || 0} covers · POS Z-Read Tied`, r.id, r.method || 'Cash', r.ttc_usd);
+        addMv(`hsp-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `${r.category} Close`, r.outlet, `${r.covers || 0} covers · POS Till Close Tied`, r.id, r.method || 'Cash', r.ttc_usd);
       });
       (hsp.membershipRows || []).slice(0, 3).forEach((m, idx) => {
         addMv(`hsp-mem-${idx + 1}`, m.due_date || '2026-10-25', m.company, 'sales', 'Seasonal Membership Collection', m.member, `${m.unit} (${m.season})`, m.id, 'Cash', m.paid_usd);
       });
       (hsp.stockRows || []).slice(0, 3).forEach((st, idx) => {
-        addMv(`hsp-stk-${idx + 1}`, '2026-10-26', st.company, 'exp', 'Commissary & Cellar Replenishment', st.store, `Purchases In (${st.r3_ratio.toFixed(2)}x R3 ratio)`, st.id, 'Cash', -round2(st.purchases_in_usd * 0.45));
+        addMv(`hsp-stk-${idx + 1}`, '2026-10-26', st.company, 'exp', 'Commissary & Cellar Replenishment', st.store, `Purchases In (${st.r3_ratio.toFixed(2)}x usage ratio)`, st.id, 'Cash', -round2(st.purchases_in_usd * 0.45));
       });
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = computeTradingOperations({ ignoreSearch: true });
@@ -45670,7 +45690,7 @@
         addMv(`trd-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, r.payment_term === 'Cash' ? 'Cash' : 'Cheque / Wire', r.ttc_usd);
       });
       (trd.importRows || []).slice(0, 4).forEach((im, idx) => {
-        addMv(`trd-imp-${idx + 1}`, im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight (T5)', im.supplier, `${im.container_ref} · ${im.origin_port}`, im.id, 'LC / Wire', -round2(im.customs_usd + im.freight_usd + im.clearance_usd));
+        addMv(`trd-imp-${idx + 1}`, im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_ref} · ${im.origin_port}`, im.id, 'LC / Wire', -round2(im.customs_usd + im.freight_usd + im.clearance_usd));
       });
     } else if (ind === 'Real Estate & Property') {
       const re = computeRealEstateOperations({ ignoreSearch: true });
@@ -45683,10 +45703,10 @@
     } else {
       const ins = computeInsuranceOperations();
       (ins.billing || []).slice(0, 6).forEach((b, idx) => {
-        addMv(`ins-mv-${idx + 1}`, b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection (GL 4112)', b.client, `Policy ${b.policy_id} · ${b.carrier}`, b.id, 'Cash / Wire', b.paid_usd || b.gross_prem_usd);
+        addMv(`ins-mv-${idx + 1}`, b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection', b.client, `Policy ${b.policy_id} · ${b.carrier}`, b.id, 'Cash / Wire', b.paid_usd || b.gross_prem_usd);
       });
       (ins.statements || []).slice(0, 4).forEach((st, idx) => {
-        addMv(`ins-st-${idx + 1}`, '2026-10-24', 'Insurance Company', 'exp', 'Carrier Net Premium Remittance (GL 4017)', st.carrier, `Bordereau ${st.period} (${st.policies_count} policies)`, st.id, 'Bank Wire', -round2(st.net_payable_4017_usd * 0.6));
+        addMv(`ins-st-${idx + 1}`, '2026-10-24', 'Insurance Company', 'exp', 'Carrier Net Premium Remittance', st.carrier, `Bordereau ${st.period} (${st.policies_count} policies)`, st.id, 'Bank Wire', -round2(st.net_payable_4017_usd * 0.6));
       });
     }
 
@@ -46028,8 +46048,8 @@
         ind: 'Insurance & Brokerage', co: 'Insurance Company', code: 'INS', region: 'Sin El Fil Financial', corridor: 'Metn Highway Financial District', lat: 33.8765, lng: 35.5378,
         partner: 'Brokerage Fiduciary Partners', extIn: 56000, extOut: 21500, loanTaken: 85000,
         suppliers: [
-          { name: 'Bankers Assurance S.A.L. (Carrier 4017)', role: 'Underwriting Carrier (4017)', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100118-601', phone: '+961 1 485 200', expAmt: 28400, recAmt: 3400, recItem: 'Monthly Carrier Bordereau & Reinsurance Treaty Clearing' },
-          { name: 'LIA Assurex S.A.L. (Carrier 4017)', role: 'Underwriting Carrier (4017)', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100229-601', phone: '+961 1 982 000', expAmt: 19600, recAmt: 2600, recItem: 'Motor & Medical Fleet Underwriting Bordereau' },
+          { name: 'Bankers Assurance S.A.L.', role: 'Underwriting Carrier', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100118-601', phone: '+961 1 485 200', expAmt: 28400, recAmt: 3400, recItem: 'Monthly Carrier Bordereau & Reinsurance Treaty Clearing' },
+          { name: 'LIA Assurex S.A.L.', role: 'Underwriting Carrier', cat: 'Insurance', subcat: 'Carrier Net Remittance', iva: false, mof: '100229-601', phone: '+961 1 982 000', expAmt: 19600, recAmt: 2600, recItem: 'Motor & Medical Fleet Underwriting Bordereau' },
           { name: 'MedNet Third-Party Claims Administration', role: 'Claims TPA & Surveyors', cat: 'Licences and Fees', subcat: 'Claims Survey & TPA', iva: true, mof: '401829-601', phone: '+961 1 504 700', expAmt: 6800, recAmt: 1150, recItem: '24/7 FNOL Call Center & Medical Claims TPA' }
         ],
         customers: [
@@ -46700,20 +46720,20 @@
       const cash = round2(Math.max(310000, kSnap.cash_till || 0));
       rawTb = [
         { code: '101', name: 'Group Share Capital & Holding Equity', cls: '1', debit: 0, credit: 620000, source_module: 'Holding Capital Registry', debit_rule: 'Capital reduction', credit_rule: 'Paid-in group share capital across 14 BUs' },
-        { code: '1689', name: 'Central Long-Term Borrowings & Facilities', cls: '1', debit: 0, credit: 185000, source_module: 'Central Loans (h07)', debit_rule: 'Principal repayments', credit_rule: 'Drawdowns on group credit facilities' },
-        { code: '181', name: 'Intercompany Liaison & Sister Clearing (h29)', cls: '1', debit: matched + openIc, credit: matched, source_module: 'Intercompany Pairing Engine (h29)', debit_rule: 'Transfers Out to sister BUs (WTC, BBC, Resorts, Trading)', credit_rule: 'Paired mirror receipts In from sister BUs' },
-        { code: '261', name: 'Investments in Group Subsidiaries (14 Entities)', cls: '2', debit: 540000, credit: 0, source_module: 'Group Consolidation (h01)', debit_rule: 'Equity stakes in Manufacturing, Hospitality, Trading, RE & Insurance', credit_rule: 'Disposal or capital return' },
+        { code: '1689', name: 'Central Long-Term Borrowings & Facilities', cls: '1', debit: 0, credit: 185000, source_module: 'Central Loans', debit_rule: 'Principal repayments', credit_rule: 'Drawdowns on group credit facilities' },
+        { code: '181', name: 'Intercompany Liaison & Sister Clearing', cls: '1', debit: matched + openIc, credit: matched, source_module: 'Intercompany Pairing Engine', debit_rule: 'Transfers Out to sister BUs (WTC, BBC, Resorts, Trading)', credit_rule: 'Paired mirror receipts In from sister BUs' },
+        { code: '261', name: 'Investments in Group Subsidiaries (14 Entities)', cls: '2', debit: 540000, credit: 0, source_module: 'Group Consolidation', debit_rule: 'Equity stakes in Manufacturing, Hospitality, Trading, RE & Insurance', credit_rule: 'Disposal or capital return' },
         { code: '4011', name: 'Holding Advisory & Shared-Service Suppliers AP', cls: '4', debit: 14200, credit: 29800, source_module: 'Holding Expenses', debit_rule: 'Supplier settlements', credit_rule: 'Audit, tax & corporate advisory invoices' },
-        { code: '4281', name: 'Accrued Partner Profit-Share Pool', cls: '4', debit: 45000, credit: 112000, source_module: 'Partner Splits (7z-chrono)', debit_rule: 'Partner draw settlements', credit_rule: 'Monthly profit-share accruals across 10 partner slots' },
+        { code: '4281', name: 'Accrued Partner Profit-Share Pool', cls: '4', debit: 45000, credit: 112000, source_module: 'Partner Splits', debit_rule: 'Partner draw settlements', credit_rule: 'Monthly profit-share accruals across 10 partner slots' },
         { code: '4515', name: 'Partner Current Accounts (10-Slot Matrix)', cls: '4', debit: 68000, credit: 142000, source_module: 'Partner Splits & Treasury', debit_rule: 'Partner cash withdrawals & advances', credit_rule: 'Partner capital injections & profit allocations' },
         { code: '5121', name: 'Central Treasury Bank Accounts (USD & LBP)', cls: '5', debit: cash + 84000, credit: 84000, source_module: 'Holding Treasury & Cashbook', debit_rule: 'Sister inflows, dividends & facility drawdowns', credit_rule: 'Sister funding wires & overhead payouts' },
         { code: '622', name: 'Corporate Legal, Audit & Shared Overhead', cls: '6', debit: hqExp, credit: 0, source_module: 'Holding Expenses', debit_rule: 'HQ legal, audit & executive administration', credit_rule: 'Intercompany management fee recharge' },
         { code: '751', name: 'Group Management Fees & Subsidiary Dividends', cls: '7', debit: 0, credit: 215000, source_module: 'Group Consolidation', debit_rule: 'Elimination adjustments', credit_rule: 'Management fees & dividend distributions from operating BUs' }
       ];
       soaStream = [].concat(
-        makeVoucherPair('2026-10-30', 'Bdeir Holding', 'IC-H29-01', '181', 'Intercompany Liaison & Sister Clearing (h29)', '5121', 'Central Treasury Bank Accounts (USD & LBP)', 'WTC ↔ Bdeir Holding', 'Rule 1 Exact Voucher intercompany funding transfer', 65000),
-        makeVoucherPair('2026-10-29', 'Bdeir Holding', 'IC-H29-02', '5121', 'Central Treasury Bank Accounts (USD & LBP)', '181', 'Intercompany Liaison & Sister Clearing (h29)', 'BBConstruction ↔ Bdeir Holding', 'Rule 2 Same-Day sister treasury sweep', 48500),
-        makeVoucherPair('2026-10-28', 'Bdeir Holding', 'PRT-4515-01', '4281', 'Accrued Partner Profit-Share Pool', '4515', 'Partner Current Accounts (10-Slot Matrix)', 'Shareholder Pool (10 Slots)', 'Chronological partner split allocation (7z-chrono)', 52000),
+        makeVoucherPair('2026-10-30', 'Bdeir Holding', 'IC-CLR-01', '181', 'Intercompany Liaison & Sister Clearing', '5121', 'Central Treasury Bank Accounts (USD & LBP)', 'WTC / Bdeir Holding', 'Exact Voucher intercompany funding transfer', 65000),
+        makeVoucherPair('2026-10-29', 'Bdeir Holding', 'IC-CLR-02', '5121', 'Central Treasury Bank Accounts (USD & LBP)', '181', 'Intercompany Liaison & Sister Clearing', 'BBConstruction / Bdeir Holding', 'Same-Day sister treasury sweep', 48500),
+        makeVoucherPair('2026-10-28', 'Bdeir Holding', 'PRT-4515-01', '4281', 'Accrued Partner Profit-Share Pool', '4515', 'Partner Current Accounts (10-Slot Matrix)', 'Shareholder Pool (10 Slots)', 'Chronological partner split allocation', 52000),
         makeVoucherPair('2026-10-27', 'Bdeir Holding', 'DIV-751-01', '5121', 'Central Treasury Bank Accounts (USD & LBP)', '751', 'Group Management Fees & Subsidiary Dividends', 'Hospitality & Trading BUs', 'Quarterly subsidiary management fee & dividend sweep', 85000),
         makeVoucherPair('2026-10-25', 'Bdeir Holding', 'HQ-EXP-09', '622', 'Corporate Legal, Audit & Shared Overhead', '4011', 'Holding Advisory & Shared-Service Suppliers AP', 'Group Statutory Auditors', 'Consolidated 6-industry statutory audit & legal retainer', hqExp),
         makeVoucherPair('2026-10-23', 'Bdeir Holding', 'LN-1689-04', '1689', 'Central Long-Term Borrowings & Facilities', '5121', 'Central Treasury Bank Accounts (USD & LBP)', 'Corporate Banking Facility', 'Scheduled central facility principal & interest settlement', 32000)
@@ -46728,22 +46748,22 @@
       rawTb = [
         { code: '101', name: 'Resort Property Capital & Retained Earnings', cls: '1', debit: 0, credit: 420000, source_module: 'Resort Equity', debit_rule: 'Partner distributions', credit_rule: 'Resort capital across Blanca, La Una, Palms, Voile & Platinum' },
         { code: '213', name: 'Beachfront Chalets, Pools, Solar & Generators', cls: '2', debit: 385000, credit: 0, source_module: 'Resort Fixed Assets', debit_rule: 'Chalet refurbishment, solar arrays & marine deck capex', credit_rule: 'Depreciation' },
-        { code: '311', name: 'Kitchen, Cellar & Bar Commissary Stock (R3)', cls: '3', debit: stkClose + bomUse, credit: bomUse, source_module: 'Kitchen & Cellar Stock', debit_rule: 'Commissary F&B and cellar purchases in', credit_rule: 'Recipe BOM depletion from POS & banquet covers' },
+        { code: '311', name: 'Kitchen, Cellar & Bar Commissary Stock', cls: '3', debit: stkClose + bomUse, credit: bomUse, source_module: 'Kitchen & Cellar Stock', debit_rule: 'Commissary F&B and cellar purchases in', credit_rule: 'Recipe BOM depletion from POS & banquet covers' },
         { code: '4011', name: 'F&B, Beverage & Diesel Suppliers Payable', cls: '4', debit: 34000, credit: 76000, source_module: 'Resort Purchasing & AP', debit_rule: 'Supplier cash/bank settlements', credit_rule: 'Cellar, kitchen & generator fuel deliveries' },
-        { code: '4111', name: 'Seasonal Membership & Event Receivables (R1)', cls: '4', debit: round2(s.totalMemContract || 95000), credit: round2(s.totalMemPaid || 68000), source_module: 'Seasonal Memberships', debit_rule: 'Seasonal chalet & beach club membership contracts', credit_rule: 'Member installment collections' },
+        { code: '4111', name: 'Seasonal Membership & Event Receivables', cls: '4', debit: round2(s.totalMemContract || 95000), credit: round2(s.totalMemPaid || 68000), source_module: 'Seasonal Memberships', debit_rule: 'Seasonal chalet & beach club membership contracts', credit_rule: 'Member installment collections' },
         { code: '4427', name: '11% Hospitality Output VAT Payable', cls: '4', debit: 0, credit: vatOut, source_module: 'Venue POS & Chalet Billing', debit_rule: 'Quarterly MoF VAT remittance', credit_rule: '11% VAT on F&B, lodging & gate admissions' },
-        { code: '4515', name: 'Resort Partner Profit-Share Pool (7z-chrono)', cls: '4', debit: 28000, credit: round2(Math.max(64000, s.totalPartnerPool || 64000)), source_module: 'Resort Partner Splits', debit_rule: 'Partner profit payouts', credit_rule: 'Chronological resort partner pool allocation' },
-        { code: '5300', name: 'Resort POS Till & Bank Accounts (R2)', cls: '5', debit: round2(s.totalRevenueTtc + s.totalMemPaid), credit: 92000, source_module: 'POS Till Close & Treasury', debit_rule: 'Daily Z-Read POS cash/card closes & membership receipts', credit_rule: 'Supplier settlements & seasonal payroll payouts' },
-        { code: '601', name: 'Recipe BOM Food, Beverage & Generator Fuel Cost', cls: '6', debit: round2(bomUse + s.totalMaintUsd), credit: 0, source_module: 'Menu Engineering & Energy (R3/R4)', debit_rule: 'Recipe BOM consumption + generator diesel burn', credit_rule: 'Inventory count adjustments' },
+        { code: '4515', name: 'Resort Partner Profit-Share Pool', cls: '4', debit: 28000, credit: round2(Math.max(64000, s.totalPartnerPool || 64000)), source_module: 'Resort Partner Splits', debit_rule: 'Partner profit payouts', credit_rule: 'Chronological resort partner pool allocation' },
+        { code: '5300', name: 'Resort POS Till & Bank Accounts', cls: '5', debit: round2(s.totalRevenueTtc + s.totalMemPaid), credit: 92000, source_module: 'POS Till Close & Treasury', debit_rule: 'Daily POS cash/card closes & membership receipts', credit_rule: 'Supplier settlements & seasonal payroll payouts' },
+        { code: '601', name: 'Recipe BOM Food, Beverage & Generator Fuel Cost', cls: '6', debit: round2(bomUse + s.totalMaintUsd), credit: 0, source_module: 'Menu Engineering & Energy', debit_rule: 'Recipe BOM consumption + generator diesel burn', credit_rule: 'Inventory count adjustments' },
         { code: '701', name: 'Venue F&B, Gate Admissions, Chalets & Memberships', cls: '7', debit: 0, credit: revHt, source_module: 'Venue Revenue & Memberships', debit_rule: 'Complimentary/voided covers', credit_rule: 'Daily venue revenue HT + seasonal membership contracts' }
       ];
       soaStream = [].concat(
-        makeVoucherPair('2026-10-30', coLbl, 'POS-Z-101', '5300', 'Resort POS Till & Bank Accounts (R2)', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', 'La Una & Blanca POS Tills', 'Daily POS Z-Read F&B and beachfront admissions close', 38400),
-        makeVoucherPair('2026-10-29', coLbl, 'MEM-2026-14', '4111', 'Seasonal Membership & Event Receivables (R1)', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', 'Seasonal Cabana & Chalet Members', 'Seasonal membership contracts billed (Rule R1 guard)', 46000),
-        makeVoucherPair('2026-10-28', coLbl, 'BOM-R3-08', '601', 'Recipe BOM Food, Beverage & Generator Fuel Cost', '311', 'Kitchen, Cellar & Bar Commissary Stock (R3)', 'Central Kitchen & Sunset Cellar', 'Automated recipe BOM depletion on covers sold (Rule R3)', 29500),
-        makeVoucherPair('2026-10-27', coLbl, 'VAT-4427-10', '5300', 'Resort POS Till & Bank Accounts (R2)', '4427', '11% Hospitality Output VAT Payable', '11% Statutory Hospitality VAT', 'Output VAT collected on venue & lodging closes', vatOut),
-        makeVoucherPair('2026-10-26', coLbl, 'GEN-R4-05', '601', 'Recipe BOM Food, Beverage & Generator Fuel Cost', '4011', 'F&B, Beverage & Diesel Suppliers Payable', 'Resort Power & Solar Hybrid Plant', 'Generator diesel consumption & preventive maintenance (Rule R4)', 14800),
-        makeVoucherPair('2026-10-25', coLbl, 'HSP-4515-03', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', '4515', 'Resort Partner Profit-Share Pool (7z-chrono)', 'Resort Co-Investors Pool', 'Monthly resort net operating profit split allocation', 36000)
+        makeVoucherPair('2026-10-30', coLbl, 'POS-CLS-101', '5300', 'Resort POS Till & Bank Accounts', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', 'La Una & Blanca POS Tills', 'Daily POS F&B and beachfront admissions close', 38400),
+        makeVoucherPair('2026-10-29', coLbl, 'MEM-2026-14', '4111', 'Seasonal Membership & Event Receivables', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', 'Seasonal Cabana & Chalet Members', 'Seasonal membership contracts billed', 46000),
+        makeVoucherPair('2026-10-28', coLbl, 'BOM-STK-08', '601', 'Recipe BOM Food, Beverage & Generator Fuel Cost', '311', 'Kitchen, Cellar & Bar Commissary Stock', 'Central Kitchen & Sunset Cellar', 'Automated recipe BOM depletion on covers sold', 29500),
+        makeVoucherPair('2026-10-27', coLbl, 'VAT-4427-10', '5300', 'Resort POS Till & Bank Accounts', '4427', '11% Hospitality Output VAT Payable', '11% Statutory Hospitality VAT', 'Output VAT collected on venue & lodging closes', vatOut),
+        makeVoucherPair('2026-10-26', coLbl, 'GEN-ENG-05', '601', 'Recipe BOM Food, Beverage & Generator Fuel Cost', '4011', 'F&B, Beverage & Diesel Suppliers Payable', 'Resort Power & Solar Hybrid Plant', 'Generator diesel consumption & preventive maintenance', 14800),
+        makeVoucherPair('2026-10-25', coLbl, 'HSP-4515-03', '701', 'Venue F&B, Gate Admissions, Chalets & Memberships', '4515', 'Resort Partner Profit-Share Pool', 'Resort Co-Investors Pool', 'Monthly resort net operating profit split allocation', 36000)
       );
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = computeTradingOperations({ ignoreSearch: true });
@@ -46755,23 +46775,23 @@
       rawTb = [
         { code: '101', name: 'Trading Share Capital & Statutory Reserves', cls: '1', debit: 0, credit: 580000, source_module: 'Trading Equity', debit_rule: 'Dividend payouts', credit_rule: 'Korri Auto & Shacman capital & retained reserves' },
         { code: '218', name: 'Showroom, Heavy Workshop & PDI Bays', cls: '2', debit: 265000, credit: 0, source_module: 'Showroom & Workshop Assets', debit_rule: 'Diagnostic bays, cranes & showroom fixtures', credit_rule: 'Accumulated depreciation' },
-        { code: '3701', name: 'Heavy Truck & Commercial Serial Stock (VINs)', cls: '3', debit: 490000, credit: 175000, source_module: 'Showroom Serial Units (VINs)', debit_rule: 'Landed Shacman & commercial truck arrivals (FOB + T5)', credit_rule: 'Serial VIN cost released on delivery' },
-        { code: '3702', name: '5-Warehouse OEM Spare Parts Inventory (WAC)', cls: '3', debit: whVal + 120000, credit: 120000, source_module: '5-Warehouse Stock (T4)', debit_rule: 'Import container capitalization across 5 warehouses', credit_rule: 'Weighted-average cost (WAC) issued on parts invoices' },
-        { code: '4011', name: 'Foreign OEMs, Letters of Credit & Customs AP', cls: '4', debit: 145000, credit: 310000, source_module: 'Imports & Landed Cost (T5)', debit_rule: 'LC settlements & customs broker payments', credit_rule: 'FOB shipments + freight, customs & port clearance' },
-        { code: '4111', name: 'Customer Trade Receivables — Gross AR (t79)', cls: '4', debit: round2(s.totalSalesTtc || 442000), credit: round2((s.totalSalesTtc || 442000) - (s.grossArUsd || 118000)), source_module: 'Trading AR & Ageing (t79)', debit_rule: 'Pre-printed book sales invoices (t74)', credit_rule: 'Customer cash, cheque & wire settlements' },
-        { code: '4191', name: 'Customer Advances & Unapplied Deposits (t79)', cls: '4', debit: 0, credit: round2(Math.max(34500, s.customerAdvancesUsd || 34500)), source_module: 'Customer Advances (t79)', debit_rule: 'Applied against final vehicle delivery invoice', credit_rule: 'Down-payments & truck reservation deposits (never netted into 4111)' },
-        { code: '4427', name: '11% Output VAT on Pre-Printed Invoice Books (t74)', cls: '4', debit: 0, credit: salesVat, source_module: 'Sales Invoicing (t74)', debit_rule: 'VAT returns filed', credit_rule: '11% output VAT on Korri Auto & Shacman tax invoices' },
+        { code: '3701', name: 'Heavy Truck & Commercial Serial Stock (VINs)', cls: '3', debit: 490000, credit: 175000, source_module: 'Showroom Serial Units (VINs)', debit_rule: 'Landed Shacman & commercial truck arrivals (FOB + Landed)', credit_rule: 'Serial VIN cost released on delivery' },
+        { code: '3702', name: '5-Warehouse OEM Spare Parts Inventory (WAC)', cls: '3', debit: whVal + 120000, credit: 120000, source_module: '5-Warehouse Stock', debit_rule: 'Import container capitalization across 5 warehouses', credit_rule: 'Weighted-average cost (WAC) issued on parts invoices' },
+        { code: '4011', name: 'Foreign OEMs, Letters of Credit & Customs AP', cls: '4', debit: 145000, credit: 310000, source_module: 'Imports & Landed Cost', debit_rule: 'LC settlements & customs broker payments', credit_rule: 'FOB shipments + freight, customs & port clearance' },
+        { code: '4111', name: 'Customer Trade Receivables — Gross AR', cls: '4', debit: round2(s.totalSalesTtc || 442000), credit: round2((s.totalSalesTtc || 442000) - (s.grossArUsd || 118000)), source_module: 'Trading AR & Ageing', debit_rule: 'Pre-printed book sales invoices', credit_rule: 'Customer cash, cheque & wire settlements' },
+        { code: '4191', name: 'Customer Advances & Unapplied Deposits', cls: '4', debit: 0, credit: round2(Math.max(34500, s.customerAdvancesUsd || 34500)), source_module: 'Customer Advances', debit_rule: 'Applied against final vehicle delivery invoice', credit_rule: 'Down-payments & truck reservation deposits (never netted into 4111)' },
+        { code: '4427', name: '11% Output VAT on Pre-Printed Invoice Books', cls: '4', debit: 0, credit: salesVat, source_module: 'Sales Invoicing', debit_rule: 'VAT returns filed', credit_rule: '11% output VAT on Korri Auto & Shacman tax invoices' },
         { code: '5121', name: 'Showroom Cash Till & Trade Bank Accounts', cls: '5', debit: 395000, credit: 148000, source_module: 'Trading Treasury', debit_rule: 'Customer collections & advance deposits', credit_rule: 'Import LC wires, customs duties & showroom payroll' },
-        { code: '607', name: 'Cost of Goods Sold — Landed Vehicles & Parts', cls: '6', debit: cogs, credit: 0, source_module: 'Sales & Landed Cost (T5)', debit_rule: 'Landed WAC cost of trucks & spare parts sold', credit_rule: 'Sales return restocking' },
-        { code: '707', name: 'Commercial Vehicles & OEM Spare Parts Sales', cls: '7', debit: 0, credit: salesNet, source_module: 'Sales Invoicing (t74)', debit_rule: 'Credit notes & returns', credit_rule: 'Net HT sales across Korri Auto & Shacman invoice books' }
+        { code: '607', name: 'Cost of Goods Sold — Landed Vehicles & Parts', cls: '6', debit: cogs, credit: 0, source_module: 'Sales & Landed Cost', debit_rule: 'Landed WAC cost of trucks & spare parts sold', credit_rule: 'Sales return restocking' },
+        { code: '707', name: 'Commercial Vehicles & OEM Spare Parts Sales', cls: '7', debit: 0, credit: salesNet, source_module: 'Sales Invoicing', debit_rule: 'Credit notes & returns', credit_rule: 'Net HT sales across Korri Auto & Shacman invoice books' }
       ];
       soaStream = [].concat(
-        makeVoucherPair('2026-10-30', coLbl, 'INV-SH-2401', '4111', 'Customer Trade Receivables — Gross AR (t79)', '707', 'Commercial Vehicles & OEM Spare Parts Sales', 'Shacman Fleet Buyer', 'Shacman X3000 6x4 Tractor Head VIN delivery (Book SH-A)', 98500),
+        makeVoucherPair('2026-10-30', coLbl, 'INV-SH-2401', '4111', 'Customer Trade Receivables — Gross AR', '707', 'Commercial Vehicles & OEM Spare Parts Sales', 'Shacman Fleet Buyer', 'Shacman X3000 6x4 Tractor Head VIN delivery (Book SH-A)', 98500),
         makeVoucherPair('2026-10-30', coLbl, 'COGS-SH-2401', '607', 'Cost of Goods Sold — Landed Vehicles & Parts', '3701', 'Heavy Truck & Commercial Serial Stock (VINs)', 'Shacman Showroom Yard', 'Release landed VIN cost on Shacman X3000 sale', 76200),
-        makeVoucherPair('2026-10-29', coLbl, 'INV-KA-8812', '4111', 'Customer Trade Receivables — Gross AR (t79)', '707', 'Commercial Vehicles & OEM Spare Parts Sales', 'Korri Auto Wholesale Client', 'Weichai engine overhaul kits & air suspension parts (Book KA-1)', 42800),
-        makeVoucherPair('2026-10-28', coLbl, 'IMP-T5-109', '3702', '5-Warehouse OEM Spare Parts Inventory (WAC)', '4011', 'Foreign OEMs, Letters of Credit & Customs AP', 'Qingdao OEM Export + Beirut Port', 'Capitalized FOB + customs + freight landed cost allocation (Rule T5)', 64500),
-        makeVoucherPair('2026-10-27', coLbl, 'ADV-T79-18', '5121', 'Showroom Cash Till & Trade Bank Accounts', '4191', 'Customer Advances & Unapplied Deposits (t79)', 'Heavy Mixer Fleet Customer', 'Unapplied truck reservation advance tracked separately in GL 4191 (t79)', round2(Math.max(34500, s.customerAdvancesUsd || 34500))),
-        makeVoucherPair('2026-10-26', coLbl, 'VAT-T74-10', '4111', 'Customer Trade Receivables — Gross AR (t79)', '4427', '11% Output VAT on Pre-Printed Invoice Books (t74)', '11% Statutory VAT', 'Output VAT posted from pre-printed invoice books', salesVat)
+        makeVoucherPair('2026-10-29', coLbl, 'INV-KA-8812', '4111', 'Customer Trade Receivables — Gross AR', '707', 'Commercial Vehicles & OEM Spare Parts Sales', 'Korri Auto Wholesale Client', 'Weichai engine overhaul kits & air suspension parts (Book KA-1)', 42800),
+        makeVoucherPair('2026-10-28', coLbl, 'IMP-LC-109', '3702', '5-Warehouse OEM Spare Parts Inventory (WAC)', '4011', 'Foreign OEMs, Letters of Credit & Customs AP', 'Qingdao OEM Export + Beirut Port', 'Capitalized FOB + customs + freight landed cost allocation', 64500),
+        makeVoucherPair('2026-10-27', coLbl, 'ADV-DEP-18', '5121', 'Showroom Cash Till & Trade Bank Accounts', '4191', 'Customer Advances & Unapplied Deposits', 'Heavy Mixer Fleet Customer', 'Unapplied truck reservation advance tracked separately in GL 4191', round2(Math.max(34500, s.customerAdvancesUsd || 34500))),
+        makeVoucherPair('2026-10-26', coLbl, 'VAT-INV-10', '4111', 'Customer Trade Receivables — Gross AR', '4427', '11% Output VAT on Pre-Printed Invoice Books', '11% Statutory VAT', 'Output VAT posted from pre-printed invoice books', salesVat)
       );
     } else if (ind === 'Real Estate & Property') {
       const re = computeRealEstateOperations({ ignoreSearch: true });
@@ -46783,13 +46803,13 @@
       rawTb = [
         { code: '101', name: 'Property Portfolio Equity & Mulk (/2400) Capital', cls: '1', debit: 0, credit: 1850000, source_module: 'Co-Ownership Register (/2400)', debit_rule: 'Owner capital redemptions', credit_rule: 'Share-adjusted property equity across 13 assets & 4235 S.A.L' },
         { code: '213', name: 'Investment Land Plots & Commercial Buildings', cls: '2', debit: 2150000, credit: 0, source_module: 'Properties & Valuation (LGB)', debit_rule: 'Commercial towers, Msaytbeh 4235 Center & land bank', credit_rule: 'Deed title transfer cost release' },
-        { code: '4011', name: 'Fit-Out Contractors & Building Maintenance AP', cls: '4', debit: 22000, credit: 56000, source_module: 'Work Orders (r44)', debit_rule: 'Contractor payment settlements', credit_rule: 'MEP, facade & tenant fit-out contractor bills' },
-        { code: '4111', name: 'Tenant Rent & Property Buyer Instalment AR', cls: '4', debit: round2(s.totalInvoicedTtcUsd + s.salesContractUsd), credit: round2(s.totalCollectedRentUsd + s.salesPaidUsd), source_module: 'Rent Roll & Deed Sales (r33)', debit_rule: 'Period rent invoices & deed sale instalment schedules', credit_rule: 'Tenant rent receipts & buyer instalment collections' },
-        { code: '4196', name: 'Tenant Security Deposits & Deferred Rent', cls: '4', debit: 0, credit: round2(Math.max(68000, s.securityDepositsHeldUsd)), source_module: 'Lease Contracts (r41)', debit_rule: 'Deposit refund or damage offset at lease exit', credit_rule: 'Refundable security deposits held across 18 active leases' },
+        { code: '4011', name: 'Fit-Out Contractors & Building Maintenance AP', cls: '4', debit: 22000, credit: 56000, source_module: 'Work Orders', debit_rule: 'Contractor payment settlements', credit_rule: 'MEP, facade & tenant fit-out contractor bills' },
+        { code: '4111', name: 'Tenant Rent & Property Buyer Instalment AR', cls: '4', debit: round2(s.totalInvoicedTtcUsd + s.salesContractUsd), credit: round2(s.totalCollectedRentUsd + s.salesPaidUsd), source_module: 'Rent Roll & Deed Sales', debit_rule: 'Period rent invoices & deed sale instalment schedules', credit_rule: 'Tenant rent receipts & buyer instalment collections' },
+        { code: '4196', name: 'Tenant Security Deposits & Deferred Rent', cls: '4', debit: 0, credit: round2(Math.max(68000, s.securityDepositsHeldUsd)), source_module: 'Lease Contracts', debit_rule: 'Deposit refund or damage offset at lease exit', credit_rule: 'Refundable security deposits held across 18 active leases' },
         { code: '4427', name: '4235 Company S.A.L Official 11% Output VAT (#1..#6)', cls: '4', debit: 0, credit: vat4235, source_module: '4235 S.A.L VAT Register', debit_rule: 'Quarterly VAT declaration payment', credit_rule: '11% VAT on 4235 Company S.A.L sequential tax invoices #1..#6' },
         { code: '4515', name: 'Co-Owner NOI Distribution Accounts (/2400 Shares)', cls: '4', debit: 95000, credit: 210000, source_module: 'Owner Distributions', debit_rule: 'Quarterly NOI cash payouts to co-owners', credit_rule: 'Net operating income allocated by /2400 Mulk deed shares' },
         { code: '5121', name: 'Property Escrow & Rent Collection Bank Accounts', cls: '5', debit: round2(s.totalCollectedRentUsd + deedPaid), credit: 145000, source_module: 'Real Estate Treasury', debit_rule: 'Rent collections & buyer deed instalments received', credit_rule: 'Contractor payouts & co-owner NOI distributions' },
-        { code: '614', name: 'Building Fit-Out, MEP Repairs & Municipal Taxes', cls: '6', debit: woCost, credit: 0, source_module: 'Work Orders & Recharges (r44)', debit_rule: 'Landlord maintenance & fit-out work orders', credit_rule: 'Tenant-fault repair recharges (Rule P4)' },
+        { code: '614', name: 'Building Fit-Out, MEP Repairs & Municipal Taxes', cls: '6', debit: woCost, credit: 0, source_module: 'Work Orders & Recharges', debit_rule: 'Landlord maintenance & fit-out work orders', credit_rule: 'Tenant-fault repair recharges' },
         { code: '706', name: 'Commercial & Residential Lease Rent & Deed Revenue', cls: '7', debit: 0, credit: round2(rentBase + deedPaid), source_module: 'Leases & Property Sales', debit_rule: 'Rent concessions', credit_rule: 'Recognized lease rental income + property sale revenue' }
       ];
       soaStream = [].concat(
@@ -46797,7 +46817,7 @@
         makeVoucherPair('2026-10-30', '4235 Company S.A.L', 'VAT-4235-06V', '4111', 'Tenant Rent & Property Buyer Instalment AR', '4427', '4235 Company S.A.L Official 11% Output VAT (#1..#6)', '4235 Msaytbeh Anchor Tenants', '11% Output VAT on 4235 S.A.L official tax invoices', vat4235),
         makeVoucherPair('2026-10-28', 'Properties', 'RCPT-RE-112', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4111', 'Tenant Rent & Property Buyer Instalment AR', 'Commercial Tower & Plaza Tenants', 'Collected lease rent & buyer deed instalments', round2(s.totalCollectedRentUsd || 245000)),
         makeVoucherPair('2026-10-26', 'Properties', 'DEP-4196-08', '5121', 'Property Escrow & Rent Collection Bank Accounts', '4196', 'Tenant Security Deposits & Deferred Rent', 'Active Lease Tenants (18 Leases)', 'Security deposits held in escrow across active leases', round2(Math.max(68000, s.securityDepositsHeldUsd))),
-        makeVoucherPair('2026-10-24', 'Properties', 'WO-R44-19', '614', 'Building Fit-Out, MEP Repairs & Municipal Taxes', '4011', 'Fit-Out Contractors & Building Maintenance AP', 'MEP & Facade Contractors', 'Completed building maintenance & tenant fit-out work orders', woCost),
+        makeVoucherPair('2026-10-24', 'Properties', 'WO-MNT-19', '614', 'Building Fit-Out, MEP Repairs & Municipal Taxes', '4011', 'Fit-Out Contractors & Building Maintenance AP', 'MEP & Facade Contractors', 'Completed building maintenance & tenant fit-out work orders', woCost),
         makeVoucherPair('2026-10-22', 'Properties', 'NOI-2400-04', '4515', 'Co-Owner NOI Distribution Accounts (/2400 Shares)', '5121', 'Property Escrow & Rent Collection Bank Accounts', 'Mulk Co-Owners (/2400 Shares)', 'Quarterly Net Operating Income distribution by deed share', 95000)
       );
     } else {
@@ -46814,22 +46834,22 @@
       rawTb = [
         { code: '101', name: 'Brokerage Share Capital & Statutory Reserves', cls: '1', debit: 0, credit: 165000, source_module: 'Brokerage Equity', debit_rule: 'Partner distributions', credit_rule: 'Ministry of Economy brokerage capital & statutory reserves' },
         { code: '218', name: 'Brokerage Head Office & Underwriting Systems', cls: '2', debit: 118000, credit: 0, source_module: 'Brokerage Fixed Assets', debit_rule: 'Office equipment & policy management infrastructure', credit_rule: 'Accumulated depreciation' },
-        { code: '4017', name: 'Insurance Carriers Payable — Net Premium (i32)', cls: '4', debit: remittedCarrier, credit: netCarrier4017, source_module: 'Carrier Bordereaux & Recon (i32)', debit_rule: 'Bank wire remittances to 6 insurance carriers', credit_rule: 'Net technical premium due to carriers (GWP minus 7063 commission)' },
+        { code: '4017', name: 'Insurance Carriers Payable — Net Premium', cls: '4', debit: remittedCarrier, credit: netCarrier4017, source_module: 'Carrier Bordereaux & Recon', debit_rule: 'Bank wire remittances to 6 insurance carriers', credit_rule: 'Net technical premium due to carriers (GWP minus 7063 commission)' },
         { code: '4112', name: 'Policyholder Premium Receivables — Client AR', cls: '4', debit: round2(gwp + fees7064 - disc7065), credit: collectedCash, source_module: 'Policy Billing & Instalments', debit_rule: 'Policy & endorsement gross premium + fees minus 7065 discount', credit_rule: 'Client instalment receipts collected' },
         { code: '421', name: 'Producers, Sub-Agents & Adjuster Payables', cls: '4', debit: 8400, credit: 16900, source_module: 'Brokerage Payroll & Producers', debit_rule: 'Producer commission settlements', credit_rule: 'Sub-agent commission splits & claim surveyor fees' },
-        { code: '5121', name: 'Fiduciary Premium Bank & Brokerage Cashier Till', cls: '5', debit: collectedCash + 62000, credit: remittedCarrier + 19800, source_module: 'Brokerage Fiduciary Treasury', debit_rule: 'Policyholder premium collections (Rule I3)', credit_rule: 'Carrier bordereau remittances (4017) & office expenses' },
+        { code: '5121', name: 'Fiduciary Premium Bank & Brokerage Cashier Till', cls: '5', debit: collectedCash + 62000, credit: remittedCarrier + 19800, source_module: 'Brokerage Fiduciary Treasury', debit_rule: 'Policyholder premium collections', credit_rule: 'Carrier bordereau remittances (4017) & office expenses' },
         { code: '622', name: 'Brokerage Staff Payroll, Licensing & Office OpEx', cls: '6', debit: 19800, credit: 0, source_module: 'Brokerage Overhead', debit_rule: 'Underwriting staff salaries, MoE licensing & office overhead', credit_rule: 'Expense reimbursements' },
-        { code: '7063', name: 'Gross Brokerage Commission Earned (i41)', cls: '7', debit: 0, credit: comm7063, source_module: 'Policy Issuance & Rate Agreements', debit_rule: 'Cancellation clawbacks', credit_rule: 'Contractual carrier commission (10.5%–25.0%) on GWP' },
+        { code: '7063', name: 'Gross Brokerage Commission Earned', cls: '7', debit: 0, credit: comm7063, source_module: 'Policy Issuance & Rate Agreements', debit_rule: 'Cancellation clawbacks', credit_rule: 'Contractual carrier commission (10.5%–25.0%) on GWP' },
         { code: '7064', name: 'Policy Issuance, Advisory & Inspection Fees', cls: '7', debit: 0, credit: fees7064, source_module: 'Policy Billing', debit_rule: 'Fee waivers', credit_rule: 'Brokerage policy issuance & risk advisory fees' },
-        { code: '7065', name: 'Client Commission Discounts Granted — Contra-Rev (i41)', cls: '7', debit: disc7065, credit: 0, source_module: 'Discount Margin Guard (i41)', debit_rule: 'Commission rebates granted to clients (never netted silently into 7063)', credit_rule: 'Endorsement discount reversals' }
+        { code: '7065', name: 'Client Commission Discounts Granted — Contra-Rev', cls: '7', debit: disc7065, credit: 0, source_module: 'Discount Margin Guard', debit_rule: 'Commission rebates granted to clients (never netted silently into 7063)', credit_rule: 'Endorsement discount reversals' }
       ];
       soaStream = [].concat(
-        makeVoucherPair('2026-10-30', 'Insurance Company', 'POL-I41-01', '4112', 'Policyholder Premium Receivables — Client AR', '4017', 'Insurance Carriers Payable — Net Premium (i32)', 'All-Lines Policyholders (38 Policies)', 'Net technical premium payable to 6 carriers on issued policies', netCarrier4017),
-        makeVoucherPair('2026-10-30', 'Insurance Company', 'COM-7063-01', '4112', 'Policyholder Premium Receivables — Client AR', '7063', 'Gross Brokerage Commission Earned (i41)', '6 Carrier Rate Agreements (7z-chrono)', 'Gross brokerage commission earned across 12 insurance lines', comm7063),
+        makeVoucherPair('2026-10-30', 'Insurance Company', 'POL-ISS-01', '4112', 'Policyholder Premium Receivables — Client AR', '4017', 'Insurance Carriers Payable — Net Premium', 'All-Lines Policyholders (38 Policies)', 'Net technical premium payable to 6 carriers on issued policies', netCarrier4017),
+        makeVoucherPair('2026-10-30', 'Insurance Company', 'COM-7063-01', '4112', 'Policyholder Premium Receivables — Client AR', '7063', 'Gross Brokerage Commission Earned', '6 Carrier Rate Agreements', 'Gross brokerage commission earned across 12 insurance lines', comm7063),
         makeVoucherPair('2026-10-29', 'Insurance Company', 'FEE-7064-01', '4112', 'Policyholder Premium Receivables — Client AR', '7064', 'Policy Issuance, Advisory & Inspection Fees', 'Policy Issuance Desk', 'Brokerage policy issuance & certificate fees', fees7064),
-        makeVoucherPair('2026-10-29', 'Insurance Company', 'DSC-7065-01', '7065', 'Client Commission Discounts Granted — Contra-Rev (i41)', '4112', 'Policyholder Premium Receivables — Client AR', 'VIP Corporate Policyholders', 'Explicit contra-revenue client discount leg (Rule I4 · 0 breaches)', disc7065),
+        makeVoucherPair('2026-10-29', 'Insurance Company', 'DSC-7065-01', '7065', 'Client Commission Discounts Granted — Contra-Rev', '4112', 'Policyholder Premium Receivables — Client AR', 'VIP Corporate Policyholders', 'Explicit contra-revenue client discount leg (0 breaches)', disc7065),
         makeVoucherPair('2026-10-27', 'Insurance Company', 'COL-4112-12', '5121', 'Fiduciary Premium Bank & Brokerage Cashier Till', '4112', 'Policyholder Premium Receivables — Client AR', 'Policyholder Instalment Receipts', 'Collected client insurance premiums into fiduciary bank', collectedCash),
-        makeVoucherPair('2026-10-25', 'Insurance Company', 'REM-4017-08', '4017', 'Insurance Carriers Payable — Net Premium (i32)', '5121', 'Fiduciary Premium Bank & Brokerage Cashier Till', 'Bankers, Allianz SNA, AXA, Medgulf, Fidelity, LIA', 'Settled carrier bordereau remittances after statement recon (i32)', remittedCarrier)
+        makeVoucherPair('2026-10-25', 'Insurance Company', 'REM-4017-08', '4017', 'Insurance Carriers Payable — Net Premium', '5121', 'Fiduciary Premium Bank & Brokerage Cashier Till', 'Bankers, Allianz SNA, AXA, Medgulf, Fidelity, LIA', 'Settled carrier bordereau remittances after statement reconciliation', remittedCarrier)
       );
     }
 
@@ -46975,33 +46995,33 @@
 
   const INDUSTRY_QUICK_ENTRY_TEMPLATES = {
     'Holding & Treasury': [
-      { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer (h29)', title: 'New Intercompany Sister Transfer (GL 181)', prefill: { party: 'WTC', notes: 'Intercompany transfer (Rule 1 voucher match)' } },
-      { id: 'hld_split', form: 'treasury', label: 'Partner Split / Draw (4515)', title: 'New Partner Split & Current Account Entry (GL 4515)', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
-      { id: 'hld_loan', form: 'loan', label: 'Central Loan Facility (1689)', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
+      { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer', title: 'New Intercompany Sister Transfer', prefill: { party: 'WTC', notes: 'Intercompany transfer (voucher match)' } },
+      { id: 'hld_split', form: 'treasury', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
+      { id: 'hld_loan', form: 'loan', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
       { id: 'hld_exp', form: 'expense', label: 'Holding Shared Expense', title: 'New Holding Corporate Overhead Voucher', prefill: { notes: 'HQ shared services & statutory advisory' } }
     ],
     'Hospitality & Resorts': [
-      { id: 'hsp_pos', form: 'sales', label: 'Venue POS / Chalet Close', title: 'New Resort Venue POS Z-Read & Chalet Close', prefill: { notes: 'Daily venue POS & beachfront admission close (Rule R2)' } },
-      { id: 'hsp_mem', form: 'receipt', label: 'Seasonal Membership Receipt', title: 'New Seasonal Cabana / Chalet Membership Receipt', prefill: { notes: 'Seasonal membership installment collection (Rule R1)' } },
-      { id: 'hsp_stk', form: 'raw', label: 'Kitchen & Cellar Intake', title: 'New Commissary, Kitchen & Cellar Purchase Intake', prefill: { notes: 'F&B commissary & cellar stock delivery (Rule R3)' } },
-      { id: 'hsp_gen', form: 'fuel', label: 'Generator Diesel & Solar Log', title: 'New Resort Generator Fuel & Solar Runtime Log', prefill: { notes: 'Generator diesel refill & runtime hours (Rule R4)' } }
+      { id: 'hsp_pos', form: 'sales', label: 'Venue POS / Chalet Close', title: 'New Resort Venue POS & Chalet Close', prefill: { notes: 'Daily venue POS & beachfront admission close' } },
+      { id: 'hsp_mem', form: 'receipt', label: 'Seasonal Membership Receipt', title: 'New Seasonal Cabana / Chalet Membership Receipt', prefill: { notes: 'Seasonal membership installment collection' } },
+      { id: 'hsp_stk', form: 'raw', label: 'Kitchen & Cellar Intake', title: 'New Commissary, Kitchen & Cellar Purchase Intake', prefill: { notes: 'F&B commissary & cellar stock delivery' } },
+      { id: 'hsp_gen', form: 'fuel', label: 'Generator Diesel & Solar Log', title: 'New Resort Generator Fuel & Solar Runtime Log', prefill: { notes: 'Generator diesel refill & runtime hours' } }
     ],
     'Automotive & Heavy Trading': [
-      { id: 'trd_inv', form: 'sales', label: 'Vehicle / Spare Parts Invoice', title: 'New Commercial Truck VIN or Spare Parts Invoice (t74)', prefill: { notes: 'Pre-printed invoice book sale (Korri Auto / Shacman)' } },
-      { id: 'trd_imp', form: 'raw', label: 'Import Shipment & Landed Cost', title: 'New Import Container & Landed Cost Voucher (T5)', prefill: { notes: 'FOB + customs duty + ocean freight allocation (Rule T5)' } },
-      { id: 'trd_rcpt', form: 'receipt', label: 'Customer AR / Advance (t79)', title: 'New Trading Customer Receipt or Advance Deposit (GL 4111/4191)', prefill: { notes: 'Customer trade collection or unapplied reservation deposit' } },
-      { id: 'trd_wh', form: 'partmove', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement (Rule T4)', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
+      { id: 'trd_inv', form: 'sales', label: 'Vehicle / Spare Parts Invoice', title: 'New Commercial Truck VIN or Spare Parts Invoice', prefill: { notes: 'Pre-printed invoice book sale (Korri Auto / Shacman)' } },
+      { id: 'trd_imp', form: 'raw', label: 'Import Shipment & Landed Cost', title: 'New Import Container & Landed Cost Voucher', prefill: { notes: 'FOB + customs duty + ocean freight allocation' } },
+      { id: 'trd_rcpt', form: 'receipt', label: 'Customer AR / Advance', title: 'New Trading Customer Receipt or Advance Deposit', prefill: { notes: 'Customer trade collection or unapplied reservation deposit' } },
+      { id: 'trd_wh', form: 'partmove', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
     ],
     'Real Estate & Property': [
       { id: 're_rent', form: 'sales', label: 'Rent Invoice (4235 VAT)', title: 'New Period Lease Rent Invoice (Properties / 4235 S.A.L)', prefill: { notes: 'Scheduled lease rent billing (11% VAT sequence check)' } },
       { id: 're_rcpt', form: 'receipt', label: 'Tenant Rent / Buyer Instalment', title: 'New Tenant Rent or Deed Sale Instalment Receipt', prefill: { notes: 'Collected lease rent or property sale buyer instalment' } },
-      { id: 're_wo', form: 'expense', label: 'Fit-Out / Repair Work Order', title: 'New Building Fit-Out & Maintenance Work Order (r44)', prefill: { notes: 'Building maintenance or tenant-rechargeable work order' } },
+      { id: 're_wo', form: 'expense', label: 'Fit-Out / Repair Work Order', title: 'New Building Fit-Out & Maintenance Work Order', prefill: { notes: 'Building maintenance or tenant-rechargeable work order' } },
       { id: 're_dist', form: 'treasury', label: 'Co-Owner NOI Distribution', title: 'New Mulk (/2400 Shares) Co-Owner NOI Distribution', prefill: { notes: 'Owner net operating income payout by /2400 deed share' } }
     ],
     'Insurance & Brokerage': [
-      { id: 'ins_pol', form: 'sales', label: 'Policy / Endorsement (i41)', title: 'New Brokerage Policy or Endorsement Schedule (GL 7063/7065)', prefill: { notes: 'Policy issuance with Gross Comm (7063) & Client Discount (7065)' } },
-      { id: 'ins_col', form: 'receipt', label: 'Policyholder Premium Receipt', title: 'New Policyholder Premium Instalment Collection (GL 4112)', prefill: { notes: 'Fiduciary client premium instalment collection' } },
-      { id: 'ins_rem', form: 'settlement', label: 'Carrier Bordereau Remittance', title: 'New Insurance Carrier Net Premium Remittance (GL 4017)', prefill: { notes: 'Carrier statement reconciliation & net remittance (i32)' } },
+      { id: 'ins_pol', form: 'sales', label: 'Policy / Endorsement', title: 'New Brokerage Policy or Endorsement Schedule', prefill: { notes: 'Policy issuance with Gross Commission & Client Discount' } },
+      { id: 'ins_col', form: 'receipt', label: 'Policyholder Premium Receipt', title: 'New Policyholder Premium Instalment Collection', prefill: { notes: 'Fiduciary client premium instalment collection' } },
+      { id: 'ins_rem', form: 'settlement', label: 'Carrier Bordereau Remittance', title: 'New Insurance Carrier Net Premium Remittance', prefill: { notes: 'Carrier statement reconciliation & net remittance' } },
       { id: 'ins_clm', form: 'expense', label: 'Claim FNOL & Surveyor Log', title: 'New Insurance Claim FNOL & Expert Survey Registration', prefill: { notes: 'First Notice of Loss (FNOL) & adjuster assignment' } }
     ]
   };
@@ -47027,21 +47047,83 @@
     `;
   }
 
+  function getIndustryRowEditStore() {
+    if (!STATE.industryRowEdits) {
+      try {
+        const raw = localStorage.getItem('isabi_mfg_ind_row_edits_v1');
+        STATE.industryRowEdits = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        STATE.industryRowEdits = {};
+      }
+    }
+    return STATE.industryRowEdits;
+  }
+
+  function saveIndustryRowEditStore(store) {
+    STATE.industryRowEdits = store || {};
+    try {
+      localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
+    } catch (_) {}
+  }
+
+  function makeIndustryRowEditKey(ind, tableTitle, primaryId) {
+    const cleanTbl = String(tableTitle || '').replace(/\(\d+[^)]*\)/g, '').trim().slice(0, 60);
+    return `${ind || 'IND'}::${cleanTbl}::${String(primaryId || '').trim()}`;
+  }
+
+  function applyIndustryDomRowEdits(root) {
+    if (!root || getActiveIndustry(STATE.company) === 'Manufacturing') return;
+    const store = getIndustryRowEditStore();
+    if (!store || !Object.keys(store).length) return;
+    const ind = getActiveIndustry(STATE.company);
+    root.querySelectorAll('table tbody tr').forEach(tr => {
+      if (tr.hasAttribute('data-rid') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) return;
+      const tds = Array.from(tr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+      if (tds.length < 2) return;
+      const primaryId = (tds[0].textContent || '').trim();
+      const cardEl = tr.closest('.panel-card, .panel');
+      const titleNode = cardEl ? cardEl.querySelector('.panel-title, h3') : null;
+      const tableTitle = titleNode ? (titleNode.textContent || '').trim() : (VIEW_TITLES[STATE.view] || 'Domain Register');
+      const key = makeIndustryRowEditKey(ind, tableTitle, primaryId);
+      const saved = store[key];
+      if (!saved) return;
+      if (saved.voided) {
+        tr.style.display = 'none';
+        return;
+      }
+      if (Array.isArray(saved.cells)) {
+        saved.cells.forEach((val, idx) => {
+          if (tds[idx] && val != null && String(val) !== (tds[idx].textContent || '').trim()) {
+            const strong = tds[idx].querySelector('strong, b, .badge');
+            if (strong && tds[idx].children.length === 1) strong.textContent = String(val);
+            else tds[idx].textContent = String(val);
+          }
+        });
+      }
+    });
+  }
+
   function openIndustryDomainInspector(opts = {}) {
     const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
     const headers = Array.isArray(opts.headers) && opts.headers.length ? opts.headers : ['Field', 'Value'];
-    const cells = Array.isArray(opts.cells) && opts.cells.length ? opts.cells : ['Record', COMPANY_LABELS[STATE.company] || ind];
+    const rawCells = Array.isArray(opts.cells) && opts.cells.length ? opts.cells : ['Record', COMPANY_LABELS[STATE.company] || ind];
     const tableTitle = opts.tableTitle || `${ind} Operational Register`;
-    const primaryId = String(cells[0] || 'REC-01').trim();
+    const primaryId = String(rawCells[0] || 'REC-01').trim();
+    const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
+    const editStore = getIndustryRowEditStore();
+    const savedEntry = editStore[editKey];
+    const cells = (savedEntry && Array.isArray(savedEntry.cells) && savedEntry.cells.length === rawCells.length)
+      ? savedEntry.cells.slice()
+      : rawCells.slice();
     const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
     const amountCell = cells.slice().reverse().find(c => /\$|\d/.test(String(c))) || '$0.00';
 
     const stmtMap = {
-      'Holding & Treasury': { id: '23', label: 'Print RDL-23 Intercompany & Partner Statement', glDr: '181 · Intercompany Liaison', glCr: '5121 · Central Treasury Bank', form: 'external' },
-      'Hospitality & Resorts': { id: '24', label: 'Print RDL-24 Venue & Membership Statement', glDr: '5300 · Resort POS Till & Bank', glCr: '701 · Venue & Chalet Revenue', form: 'sales' },
-      'Automotive & Heavy Trading': { id: '25', label: 'Print RDL-25 Trading Invoice & Stock Statement', glDr: '4111 · Customer Gross AR (t79)', glCr: '707 · Commercial Vehicles & Parts Sales', form: 'sales' },
-      'Real Estate & Property': { id: '26', label: 'Print RDL-26 Official 4235 VAT Rent Roll', glDr: '4111 · Tenant Lease Rent AR', glCr: '706 · Lease Rent & 4427 VAT (11%)', form: 'sales' },
-      'Insurance & Brokerage': { id: '27', label: 'Print RDL-27 Policy & Carrier Recon Statement', glDr: '4112 · Policyholder Premium AR', glCr: '7063 · Gross Commission & 4017 Carrier AP', form: 'sales' }
+      'Holding & Treasury': { id: '23', label: 'Print RDL-23 Intercompany & Partner Statement', glDr: '181 · Intercompany Liaison', glCr: '5121 · Central Treasury Bank', form: 'external', ruleHint: '3-Tier Intercompany Auto-Pairing & Chronological Partner Split Guard' },
+      'Hospitality & Resorts': { id: '24', label: 'Print RDL-24 Venue & Membership Statement', glDr: '5300 · Resort POS Till & Bank', glCr: '701 · Venue & Chalet Revenue', form: 'sales', ruleHint: 'Zero-VAT on Diesel & Staff Tips · Recipe BOM Depletion · Generator L/hr Guard' },
+      'Automotive & Heavy Trading': { id: '25', label: 'Print RDL-25 Trading Invoice & Stock Statement', glDr: '4111 · Customer Gross AR', glCr: '707 · Commercial Vehicles & Parts Sales', form: 'sales', ruleHint: 'Serial VIN Qty = 1 Lock · Landed Cost Allocation · Customer Advances Separated' },
+      'Real Estate & Property': { id: '26', label: 'Print RDL-26 Official 4235 VAT Rent Roll', glDr: '4111 · Tenant Lease Rent AR', glCr: '706 · Lease Rent & 4427 VAT (11%)', form: 'sales', ruleHint: '11% VAT Auto-Calc on 4235 Company S.A.L vs 0% VAT on Properties · /2400 Deed Shares' },
+      'Insurance & Brokerage': { id: '27', label: 'Print RDL-27 Policy & Carrier Recon Statement', glDr: '4112 · Policyholder Premium AR', glCr: '7063 · Gross Commission & 4017 Carrier AP', form: 'sales', ruleHint: 'Gross Comm = GWP × Rate% · Client Discount <= Gross Comm Guard · Carrier Payable = GWP − Gross Comm' }
     };
     const meta = stmtMap[ind] || stmtMap['Holding & Treasury'];
 
@@ -47059,16 +47141,18 @@
     const eyeEl = $('inspectorEyebrow');
     const titleEl = $('inspectorTitle');
     const bodyEl = $('inspectorBody');
-    if (eyeEl) eyeEl.textContent = `360° DOMAIN RECORD INSPECTOR · ${ind.toUpperCase()} · ${tableTitle.toUpperCase()}`;
+    if (eyeEl) eyeEl.textContent = `360° RECORD INSPECTOR & MODIFY DRAWER · ${ind.toUpperCase()} · ${tableTitle.toUpperCase()}`;
     if (titleEl) titleEl.textContent = `${primaryId} · ${secondaryLbl}`;
 
-    const pairsHtml = headers.map((h, idx) => {
-      const val = cells[idx] != null && String(cells[idx]).trim() !== '' ? String(cells[idx]).trim() : '-';
+    const editableFieldsHtml = headers.map((h, idx) => {
+      const val = cells[idx] != null && String(cells[idx]).trim() !== '' ? String(cells[idx]).trim() : '';
+      const hClean = String(h || `Column ${idx + 1}`).trim();
+      const isReadOnlyId = idx === 0;
       return `
-        <div style="padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
-          <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)">${esc(h || `Column ${idx + 1}`)}</div>
-          <div style="font-size:13px;font-weight:600;color:var(--ink);margin-top:2px" class="mono">${esc(val)}</div>
-        </div>
+        <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
+          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)">${esc(hClean)}${isReadOnlyId ? ' (Primary Key)' : ''}</span>
+          <input type="text" class="ind-domain-edit-input mono" data-ind-edit-idx="${idx}" data-ind-edit-col="${esc(hClean.toLowerCase())}" value="${esc(val)}" ${isReadOnlyId ? 'readonly style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"' : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'} />
+        </label>
       `;
     }).join('');
 
@@ -47088,7 +47172,7 @@
             </div>
             <div class="kpi-card">
               <div class="kpi-label">Audited Amount / Metric</div>
-              <div class="kpi-val good mono" style="font-size:15px">${esc(amountCell)}</div>
+              <div class="kpi-val good mono" id="indInspLiveAmountKpi" style="font-size:15px">${esc(amountCell)}</div>
               <div class="kpi-sub">Tied to Lebanese PCG Ledger</div>
             </div>
             <div class="kpi-card">
@@ -47099,13 +47183,17 @@
           </div>
 
           <div class="panel-card" style="padding:12px 14px">
-            <div class="panel-head" style="margin-bottom:8px">
-              <div class="panel-title"><span>360° RECORD ATTRIBUTES (${headers.length} FIELDS)</span></div>
-              <span class="badge badge-good">Verified Cloud Ledger</span>
+            <div class="panel-head" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
+              <div>
+                <div class="panel-title"><span>MODIFY RECORD ATTRIBUTES (${headers.length} FIELDS)</span></div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(meta.ruleHint)}</div>
+              </div>
+              <span class="badge badge-good" id="indInspRuleStatusBadge">Live Domain Guardrails Active</span>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
-              ${pairsHtml}
+            <div id="indDomainModifyForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:8px">
+              ${editableFieldsHtml}
             </div>
+            <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
           </div>
 
           <div class="panel-card" style="padding:12px 14px">
@@ -47123,7 +47211,7 @@
                     <td><b>DEBIT</b></td>
                     <td class="mono">${esc(meta.glDr)}</td>
                     <td>${esc(secondaryLbl)}</td>
-                    <td class="num mono"><b>${esc(amountCell)}</b></td>
+                    <td class="num mono"><b id="indInspGlDrVal">${esc(amountCell)}</b></td>
                     <td class="num mono">$0.00</td>
                   </tr>
                   <tr>
@@ -47131,7 +47219,7 @@
                     <td class="mono">${esc(meta.glCr)}</td>
                     <td>${esc(primaryId)}</td>
                     <td class="num mono">$0.00</td>
-                    <td class="num mono"><b>${esc(amountCell)}</b></td>
+                    <td class="num mono"><b id="indInspGlCrVal">${esc(amountCell)}</b></td>
                   </tr>
                 </tbody>
               </table>
@@ -47140,14 +47228,153 @@
 
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-top:4px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="btn btn-primary" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
+              <button type="button" class="btn btn-primary" id="indInspSaveChangesBtn">Save Changes</button>
+              <button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn" data-open-form="${esc(meta.form)}">Open in Smart Entry</button>
+              <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
-              <button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn" data-open-form="${esc(meta.form)}">+ New Domain Entry</button>
+              <button type="button" class="btn btn-ghost-bar" id="indInspVoidRowBtn" style="color:var(--crit,#DC2626)">Void / Delete Row</button>
             </div>
             <button type="button" class="btn btn-ghost-bar" id="indInspCloseFooterBtn">Close Inspector</button>
           </div>
         </div>
       `;
+
+      const parseNumVal = v => {
+        const n = parseFloat(String(v || '').replace(/[^0-9.-]/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+      const inputs = Array.from(bodyEl.querySelectorAll('.ind-domain-edit-input'));
+      const findInp = rx => inputs.find(el => rx.test(el.getAttribute('data-ind-edit-col') || ''));
+      const msgEl = $('indInspValidationMsg');
+      const badgeEl = $('indInspRuleStatusBadge');
+
+      const wireDomainRules = () => {
+        if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
+        if (badgeEl) { badgeEl.className = 'badge badge-good'; badgeEl.textContent = 'Live Domain Guardrails Active'; }
+
+        if (ind === 'Insurance & Brokerage') {
+          const gwpInp = findInp(/gross prem|gwp/);
+          const rateInp = findInp(/comm %|base comm/);
+          const gCommInp = findInp(/gross comm/);
+          const discInp = findInp(/discount|client disc/);
+          const nCommInp = findInp(/net comm/);
+          const payInp = findInp(/carrier payable|payable/);
+          if (gwpInp && gCommInp) {
+            const gwp = parseNumVal(gwpInp.value);
+            const rate = rateInp ? parseNumVal(rateInp.value) : 0;
+            const gComm = rate > 0 ? round2(gwp * (rate / 100)) : parseNumVal(gCommInp.value);
+            if (rate > 0 && document.activeElement !== gCommInp) gCommInp.value = fmtUSD(gComm, 0);
+            const disc = discInp ? parseNumVal(discInp.value) : 0;
+            if (disc > gComm && gComm > 0) {
+              if (msgEl) {
+                msgEl.style.display = 'block';
+                msgEl.style.background = 'rgba(220,38,38,0.1)';
+                msgEl.style.color = 'var(--crit,#DC2626)';
+                msgEl.textContent = `Domain Guardrail: Client Discount (${fmtUSD(disc, 0)}) cannot exceed Gross Commission (${fmtUSD(gComm, 0)}).`;
+              }
+              if (badgeEl) { badgeEl.className = 'badge badge-crit'; badgeEl.textContent = 'Discount > Gross Commission Blocked'; }
+            } else {
+              if (nCommInp && document.activeElement !== nCommInp) nCommInp.value = fmtUSD(Math.max(0, gComm - disc), 0);
+              if (payInp && document.activeElement !== payInp) payInp.value = fmtUSD(Math.max(0, gwp - gComm), 0);
+            }
+          }
+        } else if (ind === 'Real Estate & Property') {
+          const entInp = findInp(/entity|legal/);
+          const baseInp = findInp(/base/);
+          const vatInp = findInp(/vat/);
+          const totInp = findInp(/annual rent|billed rent|total/);
+          if (baseInp && vatInp && totInp) {
+            const base = parseNumVal(baseInp.value);
+            const entTxt = entInp ? entInp.value : (COMPANY_LABELS[STATE.company] || '');
+            const is4235 = /4235/i.test(entTxt);
+            const vat = is4235 ? round2(base * 0.11) : 0;
+            if (document.activeElement !== vatInp) vatInp.value = fmtUSD(vat, 0);
+            if (document.activeElement !== totInp) totInp.value = fmtUSD(base + vat, 0);
+          }
+        } else if (ind === 'Hospitality & Resorts') {
+          const catInp = findInp(/category|stream|item/);
+          const vatInp = findInp(/11% vat|vat/);
+          if (catInp && vatInp && /diesel|tip/i.test(catInp.value)) {
+            vatInp.value = '$0';
+            if (msgEl) {
+              msgEl.style.display = 'block';
+              msgEl.style.background = 'rgba(13,148,136,0.1)';
+              msgEl.style.color = '#0d9488';
+              msgEl.textContent = 'Hospitality Rule: Diesel & Staff Tips are strictly Zero-VAT ($0.00).';
+            }
+          }
+        } else if (ind === 'Automotive & Heavy Trading') {
+          const vinInp = findInp(/vin|chassis/);
+          const qtyInp = findInp(/^qty/);
+          if (vinInp && qtyInp && vinInp.value.trim().length >= 6 && parseNumVal(qtyInp.value) !== 1) {
+            qtyInp.value = '1';
+            if (msgEl) {
+              msgEl.style.display = 'block';
+              msgEl.style.background = 'rgba(13,148,136,0.1)';
+              msgEl.style.color = '#0d9488';
+              msgEl.textContent = 'Trading Serial VIN Rule: Serialized Heavy Truck & Vehicle VIN rows enforce Qty = 1.';
+            }
+          }
+        }
+
+        const updatedCells = inputs.map(el => el.value.trim());
+        const latestAmt = updatedCells.slice().reverse().find(c => /\$|\d/.test(String(c))) || amountCell;
+        const kpiAmt = $('indInspLiveAmountKpi');
+        const drAmt = $('indInspGlDrVal');
+        const crAmt = $('indInspGlCrVal');
+        if (kpiAmt) kpiAmt.textContent = latestAmt;
+        if (drAmt) drAmt.textContent = latestAmt;
+        if (crAmt) crAmt.textContent = latestAmt;
+      };
+
+      inputs.forEach(inp => inp.addEventListener('input', wireDomainRules));
+
+      const saveBtn = $('indInspSaveChangesBtn');
+      if (saveBtn) saveBtn.onclick = () => {
+        if (ind === 'Insurance & Brokerage') {
+          const gCommInp = findInp(/gross comm/);
+          const discInp = findInp(/discount|client disc/);
+          if (gCommInp && discInp && parseNumVal(discInp.value) > parseNumVal(gCommInp.value) && parseNumVal(gCommInp.value) > 0) {
+            toast('Cannot save: Client Discount cannot exceed Gross Brokerage Commission', 'err');
+            return;
+          }
+        }
+        const nextCells = inputs.map(el => el.value.trim());
+        const store = getIndustryRowEditStore();
+        store[editKey] = {
+          ind,
+          tableTitle,
+          primaryId,
+          headers,
+          cells: nextCells,
+          updatedAt: new Date().toISOString()
+        };
+        saveIndustryRowEditStore(store);
+        if (opts.trEl && opts.trEl.isConnected) {
+          const tds = Array.from(opts.trEl.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
+          nextCells.forEach((val, idx) => {
+            if (tds[idx]) {
+              const strong = tds[idx].querySelector('strong, b, .badge');
+              if (strong && tds[idx].children.length === 1) strong.textContent = val;
+              else tds[idx].textContent = val;
+            }
+          });
+        }
+        applyIndustryDomRowEdits($('workspace'));
+        closeRecordInspector();
+        toast(`Saved changes to ${primaryId}`);
+      };
+
+      const voidBtn = $('indInspVoidRowBtn');
+      if (voidBtn) voidBtn.onclick = () => {
+        const store = getIndustryRowEditStore();
+        store[editKey] = { ind, tableTitle, primaryId, voided: true, updatedAt: new Date().toISOString() };
+        saveIndustryRowEditStore(store);
+        if (opts.trEl && opts.trEl.isConnected) opts.trEl.style.display = 'none';
+        closeRecordInspector();
+        toast(`Voided record ${primaryId}`);
+      };
+
       const pBtn = $('indInspPrintStmtBtn');
       if (pBtn) pBtn.onclick = () => {
         closeRecordInspector();
@@ -47162,8 +47389,15 @@
       };
       const nBtn = $('indInspNewEntryBtn');
       if (nBtn) nBtn.onclick = () => {
+        const curCells = inputs.map(el => el.value.trim());
+        const curAmt = curCells.slice().reverse().find(c => /\$/.test(String(c))) || '';
+        const cleanUsd = curAmt ? String(parseNumVal(curAmt) || '') : '';
         closeRecordInspector();
-        openEntryModal(meta.form, { notes: `Follow-up entry for ${primaryId} (${secondaryLbl})` });
+        openEntryModal(meta.form, {
+          party: secondaryLbl,
+          usd: cleanUsd,
+          notes: `${primaryId} · ${secondaryLbl}`
+        });
       };
       const cBtn = $('indInspCloseFooterBtn');
       if (cBtn) cBtn.onclick = () => closeRecordInspector();
@@ -91589,8 +91823,8 @@
       if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
         if (t.closest('[data-rel-key], button, a, input, select, label')) return;
         const tbl = indRow.closest('table');
-        const headers = tbl ? Array.from(tbl.querySelectorAll('thead tr:first-child th')).map(thEl => (thEl.textContent || '').replace(/[▲▼▾▴]/g, '').trim()) : [];
-        const cells = Array.from(indRow.querySelectorAll('td')).map(tdEl => (tdEl.textContent || '').trim());
+        const headers = tbl ? Array.from(tbl.querySelectorAll('thead tr:first-child th')).filter(thEl => thEl.style.display !== 'none').map(thEl => (thEl.textContent || '').replace(/[▲▼▾▴]/g, '').trim()) : [];
+        const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(tdEl => (tdEl.textContent || '').trim());
         if (cells.length >= 2) {
           const cardEl = indRow.closest('.panel-card, .panel');
           const titleNode = cardEl ? cardEl.querySelector('.panel-title, h3') : null;
@@ -91599,7 +91833,8 @@
             ind: getActiveIndustry(STATE.company),
             headers,
             cells,
-            tableTitle
+            tableTitle,
+            trEl: indRow
           });
         }
       }
@@ -91609,6 +91844,7 @@
   function wireWorkspace(container, activeUserRow) {
     wireWorkspaceDelegatedOnce(container);
     wireModalSuggestions(container);
+    applyIndustryDomRowEdits(container);
     if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
       window.MFG_GEO.wireGeoStudio(container, {
         SEED,
