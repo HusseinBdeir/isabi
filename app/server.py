@@ -53,6 +53,8 @@ ALLOWED_TABLES = {
     "expense_subcategories",
     "employments",
     "attendance",
+    "work_shifts",
+    "staff_assignments",
     "freelance_entries",
     "logistics_allowances",
     "overtime_rates",
@@ -95,8 +97,8 @@ APP_AUDIT_COLUMNS = (
 )
 
 DEFAULT_USERS = [
-    ("u1", "Hussein Bdeir", "husseinbdeir@bhfirms.com", "1111", "Full Access (Owner)", "WTC,BBConstruction,Lions Transport", "full", "full", "Active", ""),
-    ("u2", "Zeinab Rkein", "zeinabrkein@bhfirms.com", "2222", "Supervisor + Entry", "WTC,BBConstruction,Lions Transport", "full", "full", "Active", ""),
+    ("u1", "Hussein Bdeir", "husseinbdeir@bhfirms.com", "1111", "Full Access (Owner)", "WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L", "full", "full", "Active", ""),
+    ("u2", "Zeinab Rkein", "zeinabrkein@bhfirms.com", "2222", "Supervisor + Entry", "WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L", "full", "full", "Active", ""),
     ("u3", "Sabah Kassab", "sabahkassab@bhfirms.com", "3333", "Entry", "WTC", "partial", "partial", "Active", ""),
     ("u4", "WTC Plant Weighbridge 1", "scale1.wtc@bhfirms.com", "4444", "Entry", "WTC", "none", "partial", "Active", ""),
     ("u5", "WTC Site Dispatch", "quarry.wtc@bhfirms.com", "4545", "Entry", "WTC", "none", "none", "Active", ""),
@@ -300,6 +302,8 @@ def ensure_auth_schema():
             if cur_id != uid and cur_id in ("u-hussein", "u-zeinab", "u-sabah"):
                 cur.execute("UPDATE users SET id=? WHERE id=?", (uid, cur_id))
                 cur_id = uid
+            if uid in ("u1", "u2"):
+                cur.execute("UPDATE users SET companies=? WHERE id=?", (comps, cur_id))
             # Never overwrite a seat the owner has edited in the web app (PIN / role / scope / suspension) on a
             # server restart — only back-fill a seat that still carries the schema placeholder PIN and has never
             # signed in (a fresh build inserts users without a PIN, so the column default '1111' lands on everyone).

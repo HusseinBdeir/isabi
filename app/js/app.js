@@ -445,6 +445,57 @@
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
   if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(u => ({ ...u }));
+  const SEED_VOIDED_ARCHIVE = {};
+  const SEED_ORIG_ARCHIVE = {};
+  function captureSeedOrigSnapshot(crKey, origRow) {
+    if (!origRow || !origRow.id) return null;
+    const sid = String(origRow.id);
+    if (crKey) {
+      if (!SEED_ORIG_ARCHIVE[crKey]) SEED_ORIG_ARCHIVE[crKey] = new Map();
+      if (!SEED_ORIG_ARCHIVE[crKey].has(sid)) {
+        const snap = Object.assign({}, origRow._seed_orig || origRow);
+        delete snap._seed_orig;
+        SEED_ORIG_ARCHIVE[crKey].set(sid, snap);
+      }
+      return SEED_ORIG_ARCHIVE[crKey].get(sid);
+    }
+    return origRow._seed_orig || origRow;
+  }
+  function buildSeedOrigMeta(origSnap) {
+    if (!origSnap || typeof origSnap !== 'object') return null;
+    return {
+      id: origSnap.id,
+      name: origSnap.name,
+      ticket_no: origSnap.ticket_no,
+      date: origSnap.date,
+      rep_date: origSnap.rep_date,
+      company: origSnap.company,
+      customer: origSnap.customer,
+      supplier: origSnap.supplier,
+      counterparty: origSnap.counterparty,
+      staff: origSnap.staff,
+      method: origSnap.method,
+      type: origSnap.type,
+      direction: origSnap.direction,
+      flow: origSnap.flow,
+      kind: origSnap.kind,
+      amount: origSnap.amount,
+      usd_amount: origSnap.usd_amount,
+      lbp_amount: origSnap.lbp_amount,
+      discount: origSnap.discount,
+      principal: origSnap.principal,
+      total: origSnap.total,
+      total_ttc: origSnap.total_ttc,
+      vat: origSnap.vat,
+      tally: origSnap.tally,
+      from_currency: origSnap.from_currency,
+      to_currency: origSnap.to_currency,
+      from_amount: origSnap.from_amount,
+      to_amount: origSnap.to_amount,
+      exchange_rate: origSnap.exchange_rate,
+      fx_rate: origSnap.fx_rate
+    };
+  }
 
   const BASE_COMPANY_DIRECTORY = [
     { key: 'wtc', name: 'WTC', label: 'WTC (World Trading & Construction)', industry: 'Manufacturing', sector: 'Concrete, Aggregates & Batching' },
@@ -2728,8 +2779,14 @@
     return Object.assign({}, resKpi);
   }
 
+  function hasLiveCustomDelta(tk) {
+    const arr = STATE.customRecords && STATE.customRecords[tk];
+    if (!Array.isArray(arr) || !arr.length) return false;
+    return arr.some(r => r && (!r.voided || !isAppRecord(r)));
+  }
+
   // A single calendar month on the transaction basis: overlay the exact DAX monthly figures on the headline totals.
-  function applyMonthlyDax(k, m, range) {
+  function applyMonthlyDax(k, m, range, txRaw) {
     let ymStr = '';
     if (String(STATE.period).startsWith('month:')) {
       ymStr = String(STATE.period).slice(6, 13);
@@ -2754,6 +2811,54 @@
     k.ap_haulage = round2(Number(k.raw_haulage || 0));
     k.ap_expense = round2(Number(k.credit_expenses || 0));
     k.ap_on_credit = round2(k.ap_material + k.ap_haulage + k.ap_expense);
+    if (txRaw && SEED._recordsReady) {
+      const hasSalesMod = hasLiveCustomDelta('sales_tickets');
+      const hasRawMod = hasLiveCustomDelta('raw_purchases');
+      const hasExpMod = hasLiveCustomDelta('expenses');
+      const hasRcptMod = hasLiveCustomDelta('receipts');
+      const hasSettleMod = hasLiveCustomDelta('settlements');
+      const hasSalMod = hasLiveCustomDelta('salaries');
+      if (hasSalesMod) {
+        ['sales_ttc', 'gross_sales', 'net_sales', 'trans_rev', 'sales_vat', 'cash_sales', 'credit_sales', 'cash_sales_ttc', 'credit_sales_ttc', 'loads', 'delivery_loads', 'pickup_loads', 'tons_sold', 'commission_due'].forEach(fk => {
+          if (txRaw[fk] != null) k[fk] = txRaw[fk];
+        });
+      }
+      if (hasRawMod) {
+        ['raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'ap_material'].forEach(fk => {
+          if (txRaw[fk] != null) k[fk] = txRaw[fk];
+        });
+      }
+      if (hasSalesMod || hasRawMod) {
+        if (txRaw.ap_haulage != null) k.ap_haulage = txRaw.ap_haulage;
+        if (txRaw.gross_margin != null) k.gross_margin = txRaw.gross_margin;
+      }
+      if (hasExpMod) {
+        ['expenses', 'expenses_ex_vat', 'cash_expenses', 'credit_expenses', 'ap_expense'].forEach(fk => {
+          if (txRaw[fk] != null) k[fk] = txRaw[fk];
+        });
+      }
+      if (hasSalesMod || hasRawMod || hasExpMod) {
+        if (txRaw.operating_profit != null) k.operating_profit = txRaw.operating_profit;
+        k.ap_on_credit = round2(Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0));
+      }
+      if (hasRcptMod) {
+        if (txRaw.receipts != null) k.receipts = txRaw.receipts;
+        if (txRaw.ar_settled != null) k.ar_settled = txRaw.ar_settled;
+      }
+      if (hasSalesMod || hasRcptMod) {
+        if (txRaw.ar_balance != null) k.ar_balance = txRaw.ar_balance;
+      }
+      if (hasSettleMod) {
+        if (txRaw.settlements_paid != null) k.settlements_paid = txRaw.settlements_paid;
+        if (txRaw.ap_settled != null) k.ap_settled = txRaw.ap_settled;
+      }
+      if (hasRawMod || hasSalesMod || hasExpMod || hasSettleMod) {
+        if (txRaw.ap_balance != null) k.ap_balance = txRaw.ap_balance;
+      }
+      if (hasSalMod && txRaw.salaries_paid != null) {
+        k.salaries_paid = txRaw.salaries_paid;
+      }
+    }
     return finishKpiRatios(k);
   }
 
@@ -2775,11 +2880,40 @@
     return finishKpiRatios(out);
   }
 
+  function resolveSeedOrigRow(key, r) {
+    if (!r) return null;
+    const rid = String(r.id == null ? '' : r.id);
+    const origMap = SEED_ORIG_ARCHIVE[key];
+    if (origMap && origMap.has(rid)) return origMap.get(rid);
+    const voidMap = SEED_VOIDED_ARCHIVE[key];
+    if (voidMap && voidMap.has(rid)) return voidMap.get(rid);
+    if (r._seed_orig && typeof r._seed_orig === 'object') return r._seed_orig;
+    return r;
+  }
+
+  function forEachCashCustomDelta(key, matchCoFn, applyRowFn) {
+    const arr = (STATE.customRecords && STATE.customRecords[key]) || [];
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      if (!r) continue;
+      if (isAppRecord(r)) {
+        if (!r.voided && matchCoFn(r)) applyRowFn(r, 1);
+      } else {
+        const orig = resolveSeedOrigRow(key, r);
+        if (r.voided) {
+          if (orig && matchCoFn(orig)) applyRowFn(orig, -1);
+        } else {
+          if (orig && matchCoFn(orig)) applyRowFn(orig, -1);
+          if (matchCoFn(r)) applyRowFn(r, 1);
+        }
+      }
+    }
+  }
+
   function computeCustomCashDeltas(coKey, range) {
-    const cr = STATE.customRecords || {};
     const allowed = allowedCompanyNames();
     const matchCo = r => {
-      if (!r || r.voided) return false;
+      if (!r) return false;
       const c = String(r.company || 'WTC');
       if (allowed.length && !allowed.includes(c)) return false;
       if (coKey === 'wtc') return c === 'WTC';
@@ -2799,59 +2933,60 @@
     let liveInU = 0, liveOutU = 0, liveInL = 0, liveOutL = 0;
     let perInU = 0, perOutU = 0, perInL = 0, perOutL = 0;
     let endNetU = 0, endNetL = 0;
-    const addMove = (dt, iu, ou, il, ol) => {
-      liveInU += iu; liveOutU += ou; liveInL += il; liveOutL += ol;
-      if (inWin(dt)) { perInU += iu; perOutU += ou; perInL += il; perOutL += ol; }
-      if (upToEnd(dt)) { endNetU += (iu - ou); endNetL += (il - ol); }
+    const addMove = (dt, iu, ou, il, ol, mult = 1) => {
+      const sIu = iu * mult, sOu = ou * mult, sIl = il * mult, sOl = ol * mult;
+      liveInU += sIu; liveOutU += sOu; liveInL += sIl; liveOutL += sOl;
+      if (inWin(dt)) { perInU += sIu; perOutU += sOu; perInL += sIl; perOutL += sOl; }
+      if (upToEnd(dt)) { endNetU += (sIu - sOu); endNetL += (sIl - sOl); }
     };
-    (cr.sales_tickets || []).filter(matchCo).forEach(s => {
+    forEachCashCustomDelta('sales_tickets', matchCo, (s, mult) => {
       if (isCashSaleTicket(s)) {
         const sgn = ticketSign(s);
         const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
         const vat = Number(s.vat || 0) * sgn;
-        addMove(s.date, net >= 0 ? net : 0, net < 0 ? -net : 0, vat >= 0 ? Math.round(vat * 89500) : 0, vat < 0 ? Math.round(-vat * 89500) : 0);
+        addMove(s.date, net >= 0 ? net : 0, net < 0 ? -net : 0, vat >= 0 ? Math.round(vat * 89500) : 0, vat < 0 ? Math.round(-vat * 89500) : 0, mult);
       }
     });
-    (cr.receipts || []).filter(matchCo).forEach(r => {
+    forEachCashCustomDelta('receipts', matchCo, (r, mult) => {
       const mth = String(r.method || '').trim();
       const knd = receiptKind(r);
       const isRentComm = mth === 'Rent' || mth === 'VATRent';
       if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
       if (mth === 'VATRent') {
         const lbp = Math.round(Number(r.lbp_amount || ((Number(r.amount || 0) + Number(r.discount || 0)) * 89500)));
-        addMove(r.date, 0, 0, 0, lbp);
+        addMove(r.date, 0, 0, 0, lbp, mult);
       } else if (mth === 'Rent') {
         const usd = Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
-        addMove(r.date, 0, usd, 0, 0);
+        addMove(r.date, 0, usd, 0, 0, mult);
       } else if (knd === 'VAT received') {
         const lbp = Math.round(Number(r.lbp_amount || (Number(r.amount || 0) * 89500)));
-        addMove(r.date, 0, 0, lbp, 0);
+        addMove(r.date, 0, 0, lbp, 0, mult);
       } else {
         const lbp = Math.round(Number(r.lbp_amount || 0));
         const usd = r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0);
-        addMove(r.date, usd, 0, lbp, 0);
+        addMove(r.date, usd, 0, lbp, 0, mult);
       }
     });
-    (cr.expenses || []).filter(matchCo).forEach(x => {
+    forEachCashCustomDelta('expenses', matchCo, (x, mult) => {
       const sgn = expenseSign(x);
       if (sgn === 0 || !isCashExpense(x)) return;
       const lbp = Number(x.lbp_amount || 0) * sgn;
       const usd = (x.lbp_amount ? Number(x.usd_amount || 0) : Number(x.usd_amount != null ? x.usd_amount : x.amount || 0)) * sgn;
-      addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0);
+      addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
     });
-    (cr.settlements || []).filter(matchCo).forEach(s => {
+    forEachCashCustomDelta('settlements', matchCo, (s, mult) => {
       const knd = settlementKind(s);
       const lbp = Number(s.lbp_amount || 0);
       const usd = lbp ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
-      if (knd === 'Payment') addMove(s.date, 0, usd, 0, lbp);
-      else if (knd === 'VAT paid') addMove(s.date, 0, 0, 0, lbp || Math.round(Number(s.amount || 0) * 89500));
+      if (knd === 'Payment') addMove(s.date, 0, usd, 0, lbp, mult);
+      else if (knd === 'VAT paid') addMove(s.date, 0, 0, 0, lbp || Math.round(Number(s.amount || 0) * 89500), mult);
     });
-    (cr.salaries || []).filter(matchCo).forEach(s => {
+    forEachCashCustomDelta('salaries', matchCo, (s, mult) => {
       const lbp = Math.round(Number(s.lbp_amount || 0));
       const usd = s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0);
-      addMove(s.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0);
+      addMove(s.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0, mult);
     });
-    (cr.attendance || []).filter(matchCo).forEach(at => {
+    forEachCashCustomDelta('attendance', matchCo, (at, mult) => {
       const tp = String(at.type || '');
       if (!/^Config\s+(USD|LBP)$/i.test(tp)) return;
       const tally = Number(at.tally || 0);
@@ -2859,40 +2994,40 @@
       const isLbp = /LBP/i.test(tp);
       const u = isLbp ? 0 : round2(-tally);
       const l = isLbp ? -Math.round(tally) : 0;
-      addMove(at.date, u > 0 ? u : 0, u < 0 ? -u : 0, l > 0 ? l : 0, l < 0 ? -l : 0);
+      addMove(at.date, u > 0 ? u : 0, u < 0 ? -u : 0, l > 0 ? l : 0, l < 0 ? -l : 0, mult);
     });
-    (cr.external_movements || []).filter(matchCo).forEach(ex => {
+    forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
       const flowStr = String(ex.flow || ex.method || '').trim();
       const isCfg = /^config$/i.test(flowStr);
       const lbpRaw = Number(ex.lbp_amount || 0);
       const usdRaw = lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0);
       if (isCfg) {
-        addMove(ex.date, usdRaw > 0 ? usdRaw : 0, usdRaw < 0 ? -usdRaw : 0, lbpRaw > 0 ? lbpRaw : 0, lbpRaw < 0 ? -lbpRaw : 0);
+        addMove(ex.date, usdRaw > 0 ? usdRaw : 0, usdRaw < 0 ? -usdRaw : 0, lbpRaw > 0 ? lbpRaw : 0, lbpRaw < 0 ? -lbpRaw : 0, mult);
       } else {
         const isOut = /out|expense/i.test(String(ex.direction || flowStr));
         const usdMag = Math.abs(usdRaw);
         const lbpMag = Math.abs(lbpRaw);
-        addMove(ex.date, isOut ? 0 : usdMag, isOut ? usdMag : 0, isOut ? 0 : lbpMag, isOut ? lbpMag : 0);
+        addMove(ex.date, isOut ? 0 : usdMag, isOut ? usdMag : 0, isOut ? 0 : lbpMag, isOut ? lbpMag : 0, mult);
       }
     });
-    (cr.loans || []).filter(matchCo).forEach(ln => {
+    forEachCashCustomDelta('loans', matchCo, (ln, mult) => {
       const dt = String(ln.date || ln.start_date || '').slice(0, 10);
       if (!dt) return;
       const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
       const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
       const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
-      addMove(dt, isBorrowIn ? usdMag : 0, isBorrowIn ? 0 : usdMag, isBorrowIn ? lbpMag : 0, isBorrowIn ? 0 : lbpMag);
+      addMove(dt, isBorrowIn ? usdMag : 0, isBorrowIn ? 0 : usdMag, isBorrowIn ? lbpMag : 0, isBorrowIn ? 0 : lbpMag, mult);
     });
-    (cr.loan_settlements || []).filter(matchCo).forEach(ls => {
+    forEachCashCustomDelta('loan_settlements', matchCo, (ls, mult) => {
       const lbp = Number(ls.lbp_amount || 0);
       const usd = lbp ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0);
       const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
-      addMove(ls.date, isIn ? usd : 0, isIn ? 0 : usd, isIn ? lbp : 0, isIn ? 0 : lbp);
+      addMove(ls.date, isIn ? usd : 0, isIn ? 0 : usd, isIn ? lbp : 0, isIn ? 0 : lbp, mult);
     });
-    (cr.conversions || []).filter(matchCo).forEach(cv => {
+    forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
       const d = convSignedDeltas(cv);
-      if (d.u2l) addMove(cv.date, 0, d.usdMag, d.lbpMag, 0);
-      else addMove(cv.date, d.usdMag, 0, 0, d.lbpMag);
+      if (d.u2l) addMove(cv.date, 0, d.usdMag, d.lbpMag, 0, mult);
+      else addMove(cv.date, d.usdMag, 0, 0, d.lbpMag, mult);
     });
     return { liveInU, liveOutU, liveInL, liveOutL, perInU, perOutU, perInL, perOutL, endNetU, endNetL };
   }
@@ -3018,6 +3153,13 @@
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
+    const hasSalesMod = hasLiveCustomDelta('sales_tickets');
+    const hasRawMod = hasLiveCustomDelta('raw_purchases');
+    const hasExpMod = hasLiveCustomDelta('expenses');
+    const hasRcptMod = hasLiveCustomDelta('receipts');
+    const hasSettleMod = hasLiveCustomDelta('settlements');
+    const hasSalMod = hasLiveCustomDelta('salaries');
+    const hasAnyFinMod = hasSalesMod || hasRawMod || hasExpMod || hasRcptMod || hasSettleMod || hasSalMod;
     if (anchor) {
       anchor.qty_sold = txRaw.qty_sold;
       anchor.raw_qty = txRaw.raw_qty;
@@ -3034,6 +3176,43 @@
         anchor.ap_expense = txRaw.ap_expense;
         anchor.ap_on_credit = txRaw.ap_on_credit;
         anchor.ap_settled = txRaw.ap_settled;
+        if (hasSalesMod) {
+          ['sales_ttc', 'gross_sales', 'net_sales', 'trans_rev', 'sales_vat', 'cash_sales', 'credit_sales', 'loads', 'delivery_loads', 'pickup_loads', 'tons_sold'].forEach(fk => {
+            if (txRaw[fk] != null) anchor[fk] = txRaw[fk];
+          });
+        }
+        if (hasRawMod) {
+          ['raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads'].forEach(fk => {
+            if (txRaw[fk] != null) anchor[fk] = txRaw[fk];
+          });
+        }
+        if (hasSalesMod || hasRawMod) {
+          if (txRaw.gross_margin != null) anchor.gross_margin = txRaw.gross_margin;
+        }
+        if (hasExpMod) {
+          ['expenses', 'cash_expenses', 'credit_expenses'].forEach(fk => {
+            if (txRaw[fk] != null) anchor[fk] = txRaw[fk];
+          });
+        }
+        if (hasSalesMod || hasRawMod || hasExpMod) {
+          if (txRaw.operating_profit != null) anchor.operating_profit = txRaw.operating_profit;
+        }
+        if (hasRcptMod) {
+          if (txRaw.receipts != null) anchor.receipts = txRaw.receipts;
+          if (txRaw.ar_settled != null) anchor.ar_settled = txRaw.ar_settled;
+        }
+        if (hasSalesMod || hasRcptMod) {
+          if (txRaw.ar_balance != null) anchor.ar_balance = txRaw.ar_balance;
+        }
+        if (hasSettleMod && txRaw.settlements_paid != null) {
+          anchor.settlements_paid = txRaw.settlements_paid;
+        }
+        if (hasRawMod || hasSalesMod || hasExpMod || hasSettleMod) {
+          if (txRaw.ap_balance != null) anchor.ap_balance = txRaw.ap_balance;
+        }
+        if (hasSalMod && txRaw.salaries_paid != null) {
+          anchor.salaries_paid = txRaw.salaries_paid;
+        }
       } else if (range) {
         anchor.ap_material = round2(Number(anchor.raw_mat_cost != null ? anchor.raw_mat_cost : txRaw.raw_mat_cost || 0));
         anchor.ap_haulage = round2(Number(txRaw.ap_haulage != null ? txRaw.ap_haulage : (anchor.raw_haulage != null ? anchor.raw_haulage : txRaw.raw_haulage || 0)));
@@ -3051,8 +3230,8 @@
     }
     const txFinal = anchor
       ? Object.assign({}, anchor, { sales_rep_date: anchor.sales_ttc, raw_rep_date: anchor.raw_cost, exp_rep_date: anchor.expenses, op_profit_rep_date: anchor.operating_profit, basis: STATE.basis })
-      : (offScope ? Object.assign({}, txRaw) : applyMonthlyDax(Object.assign({}, txRaw), m, range));
-    const computed = (STATE.basis === 'rep' && (offScope || range || (STATE.customRecords.sales_tickets || []).length))
+      : (offScope ? Object.assign({}, txRaw) : applyMonthlyDax(Object.assign({}, txRaw), m, range, txRaw));
+    const computed = (STATE.basis === 'rep' && (offScope || range || hasAnyFinMod))
       ? bridgeKpiToBasis(txFinal, txRaw, computeLocalKPI(m, range, 'rep', coKey))
       : txFinal;
     if (offScope) {
@@ -3755,12 +3934,13 @@
         continue;
       }
       const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const isStdPayMth = mth === 'Payment' || mth === 'Barter' || mth === 'Config' || (isAppRecord(sp) && (mth === 'Cash' || mth === 'Bank Transfer' || mth === 'Cheque' || mth === 'Credit Discount' || mth === 'Credit Return'));
       if (leg === 'quarry') {
-        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.quarry_pd += totV;
+        if (isStdPayMth) rSp.quarry_pd += totV;
       } else if (leg === 'transportation') {
-        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.trans_pd += totV;
+        if (isStdPayMth) rSp.trans_pd += totV;
       } else {
-        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.exp_pd_usd += totV;
+        if (isStdPayMth) rSp.exp_pd_usd += totV;
         else if (mth === 'VAT' || mth === 'VATConfig') {
           rSp.exp_vat_pd_usd += totV;
           if (isIva(rSp.key, sp.company)) rSp.exp_vat_pd_lbp += totV * vRate(sp.company, dRep);
@@ -31586,6 +31766,162 @@
             </table>
           </div>
         </div>
+
+        ${(() => {
+          ensureWorkShiftsSeeded();
+          const allWs = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
+            .filter(r => r && !r.voided)
+            .map(r => hydrateWorkShiftRowComputed(r));
+          const scopedWs = filterRecords(allWs, { ignorePeriod: true });
+          const sortedWs = sortRows(scopedWs, 'pay_work_shifts', 'start_date', 'desc');
+          const shownWs = sortedWs.slice(0, shownCount('pay_work_shifts'));
+          const activeWs = sortedWs.filter(r => !r.end_date);
+          const maxHrs = Math.max(10, ...activeWs.map(r => Number(r.scheduled_hours || 8)));
+          const maxStaff = Math.max(1, ...activeWs.map(r => Number(r.associated_staff_count || 0)));
+          const sumWsStaff = sortedWs.reduce((a, r) => a + Number(r.associated_staff_count || 0), 0);
+          const avgWsHrs = sortedWs.length ? (sortedWs.reduce((a, r) => a + Number(r.scheduled_hours || 0), 0) / sortedWs.length) : 8;
+          const liveShiftTypes = getShiftTypes();
+          return `
+            <div class="grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
+              <div class="panel-card">
+                <div class="panel-head">
+                  <div>
+                    <div class="panel-title"><span>${ic('clock')} SHIFT HOURS &amp; DAY-SPECIFIC TIMINGS BY BU</span></div>
+                    <span class="ph-sub">Regular weekday hours vs Saturday / day-specific shift hours across active BU shifts</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+                  ${activeWs.slice(0, 8).map(ws => {
+                    const regH = Number(ws.scheduled_hours || 8);
+                    const satObj = ws.day_timings && ws.day_timings['6'];
+                    const satH = satObj ? (computeShiftWorkedHours(satObj.start_time, satObj.end_time) || regH) : (ws.sat_diff_enabled ? (computeShiftWorkedHours(ws.sat_start_time, ws.sat_end_time) || regH) : regH);
+                    const pctReg = Math.min(100, Math.round((regH / maxHrs) * 100));
+                    const pctSat = Math.min(100, Math.round((satH / maxHrs) * 100));
+                    return `
+                      <div style="display:flex;flex-direction:column;gap:3px">
+                        <div style="display:flex;justify-content:space-between;font-size:12px">
+                          <span>${coBadge(ws.company)} <b>${esc(ws.shift_name)}</b> ${ws.is_bu_default ? '<span class="badge badge-brass" style="font-size:10px">BU Default</span>' : ''}</span>
+                          <span class="mono">${esc(ws.start_time)}-${esc(ws.end_time)} (${fmtNum(regH, 1)}h)${satH !== regH ? ` · Sat ${fmtNum(satH, 1)}h` : ''}</span>
+                        </div>
+                        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden;display:flex;gap:2px">
+                          <div style="width:${pctReg}%;background:var(--brass);border-radius:4px"></div>
+                          ${satH !== regH ? `<div style="width:${Math.max(8, pctSat)}%;background:var(--info);border-radius:4px"></div>` : ''}
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+              <div class="panel-card">
+                <div class="panel-head">
+                  <div>
+                    <div class="panel-title"><span>${ic('payroll')} ASSOCIATED STAFF BY SHIFT &amp; BU DEFAULT</span></div>
+                    <span class="ph-sub">Active staff automatically backfilled when a shift timing changes from its Effective Date</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+                  ${activeWs.slice(0, 8).map(ws => {
+                    const cnt = Number(ws.associated_staff_count || 0);
+                    const pct = Math.min(100, Math.max(4, Math.round((cnt / maxStaff) * 100)));
+                    return `
+                      <div style="display:flex;flex-direction:column;gap:3px">
+                        <div style="display:flex;justify-content:space-between;font-size:12px">
+                          <span>${coBadge(ws.company)} <b>${esc(ws.shift_name)}</b> <small class="muted">(${esc(ws.day_schedule_summary || 'Same Every Workday')})</small></span>
+                          <span class="mono"><b>${fmtNum(cnt)} staff</b> · Eff. ${esc(fmtDateDMY(ws.start_date))}</span>
+                        </div>
+                        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden">
+                          <div style="width:${pct}%;height:100%;background:${ws.is_bu_default ? 'var(--brass)' : 'var(--ok)'};border-radius:4px"></div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-card" id="payShiftTimingsPanel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-title"><span>${ic('clock')} REGULAR SHIFT &amp; CLOCK TIMINGS (BU DEFAULTS, EFFECTIVE DATES &amp; DAY-SPECIFIC HOURS)</span></div>
+                  <span class="ph-sub">Configure default shifts per BU (WTC, BBConstruction, Lions Transport), add new shifts, set Saturday / day-specific hours, and change shift timings with an Effective Date to automatically backfill associated staff</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  ${exportBtn('payShiftTimingsPanel', 'Regular_Shift_Timings')}
+                  ${canEnterForm('workshift') ? `<button type="button" class="btn btn-primary" data-open-modal="workshift">+ New Shift &amp; Clock Timing</button>` : ''}
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:10px 14px;background:var(--bg-elev);border-bottom:1px solid var(--line)" id="payBuDefaultBar">
+                ${['WTC', 'BBConstruction', 'Lions Transport'].map(bu => {
+                  const curDef = getBuDefaultShift(bu);
+                  const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+                  return `
+                    <div class="ssm-field" style="margin:0">
+                      <label style="font-size:11.5px;display:flex;align-items:center;gap:6px">${coBadge(bu)} <b>Default Regular Shift</b></label>
+                      <select class="kiosk-select" data-pay-bu-default="${esc(bu)}" data-plain-options="1">
+                        ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                      </select>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+              ${renderColFilterBar('pay_work_shifts')}
+              <div class="table-wrap">
+                <table class="ledger-table" id="payShiftTimingsTable" data-keep-co="1">
+                  <thead>
+                    <tr>
+                      ${th('pay_work_shifts', 'Shift Code', 'shift_code')}
+                      ${th('pay_work_shifts', 'Co.', 'company')}
+                      ${th('pay_work_shifts', 'Shift Name', 'shift_name')}
+                      ${th('pay_work_shifts', 'BU Default', 'is_bu_default')}
+                      ${th('pay_work_shifts', 'Effective From', 'start_date')}
+                      ${th('pay_work_shifts', 'Effective To', 'end_date')}
+                      ${th('pay_work_shifts', 'Start (24h)', 'start_time')}
+                      ${th('pay_work_shifts', 'End (24h)', 'end_time')}
+                      ${th('pay_work_shifts', 'Hrs', 'scheduled_hours', 'r')}
+                      ${th('pay_work_shifts', 'Workdays', 'workdays_label')}
+                      ${th('pay_work_shifts', 'Day-Specific Timing', 'day_schedule_summary')}
+                      ${th('pay_work_shifts', 'IN Grace', 'grace_min', 'r')}
+                      ${th('pay_work_shifts', 'OUT Grace', 'early_leave_grace_min', 'r')}
+                      ${th('pay_work_shifts', 'Staff', 'associated_staff_count', 'r')}
+                      ${th('pay_work_shifts', 'Notes', 'notes')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${shownWs.map(ws => `
+                      <tr class="rrow" data-rkey="work_shifts" data-rid="${esc(ws.id)}">
+                        <td class="mono">${esc(ws.shift_code || ws.id)}${appCell(ws, 'work_shifts')}</td>
+                        <td>${coBadge(ws.company || 'WTC')}</td>
+                        <td><strong>${esc(ws.shift_name)}</strong></td>
+                        <td>${ws.is_bu_default ? '<span class="badge badge-brass">BU Default</span>' : '<span class="mu">Optional</span>'}</td>
+                        <td class="mono">${esc(fmtDateDMY(ws.start_date))}</td>
+                        <td class="mono">${ws.end_date ? esc(fmtDateDMY(ws.end_date)) : '<span class="badge badge-ok">Open</span>'}</td>
+                        <td class="mono"><b>${esc(ws.start_time)}</b></td>
+                        <td class="mono"><b>${esc(ws.end_time)}</b></td>
+                        <td class="r mono"><b>${fmtNum(ws.scheduled_hours || 8, 1)}h</b></td>
+                        <td>${esc(ws.workdays_label || 'Mon-Sat')}</td>
+                        <td><span class="badge ${ws.day_schedule_summary && ws.day_schedule_summary !== 'Same Every Workday' ? 'badge-info' : ''}">${esc(ws.day_schedule_summary || 'Same Every Workday')}</span></td>
+                        <td class="r mono">${fmtNum(ws.grace_min != null ? ws.grace_min : 10, 0)}m</td>
+                        <td class="r mono">${fmtNum(ws.early_leave_grace_min != null ? ws.early_leave_grace_min : 10, 0)}m</td>
+                        <td class="r mono"><b>${fmtNum(ws.associated_staff_count || 0)}</b></td>
+                        <td class="mu">${esc(ws.notes || '-')}</td>
+                      </tr>
+                    `).join('') || emptyRow(15, 'No shift timing rows match filter')}
+                    ${showMoreRow('pay_work_shifts', sortedWs.length, 15)}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="8"><b>TOTAL (${fmtNum(sortedWs.length)} SHIFT TIMING ROWS)</b></td>
+                      <td class="r"><b>Avg ${fmtNum(avgWsHrs, 1)}h</b></td>
+                      <td colspan="4"></td>
+                      <td class="r"><b>${fmtNum(sumWsStaff, 0)} staff</b></td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          `;
+        })()}
 
         ${driverOtPanelHtml}
 
@@ -62435,8 +62771,6 @@
     return null;
   }
 
-  const SEED_VOIDED_ARCHIVE = {};
-
   function restoreVoidedRecord(crKey, id) {
     if (!canVoid()) { toast('Only Supervisor, Admin, or authorized Custom seats can void or restore records', 'err'); return; }
     const q = String(id == null ? '' : id).trim();
@@ -80241,6 +80575,13 @@
       ? rule.custom_days.slice()
       : (activeShiftObj ? activeShiftObj.days.slice() : [1, 2, 3, 4, 5, 6]);
     let draftUseCustomDays = Boolean(rule.use_custom_days);
+    let draftSatDiff = Boolean(rule.sat_diff_enabled || (activeShiftObj && activeShiftObj.sat_diff_enabled));
+    let draftSatStart = normalize24hClockTime(rule.sat_start_time || (activeShiftObj && activeShiftObj.sat_start_time) || '07:00', '07:00');
+    let draftSatEnd = normalize24hClockTime(rule.sat_end_time || (activeShiftObj && activeShiftObj.sat_end_time) || '14:00', '14:00');
+    let draftDayTimings = normalizeDayTimingsMap(rule.day_timings || (activeShiftObj && activeShiftObj.day_timings), draftSatDiff, draftSatStart, draftSatEnd);
+    let draftUseCustomDayTimings = Boolean(rule.use_custom_day_timings);
+    let draftExpandAllDays = false;
+    let draftShowShiftTable = opts.openShiftTable != null ? Boolean(opts.openShiftTable) : true;
     let draftOtMode = rule.ot_mode || 'none';
     let draftOtMaxHours = Number(rule.ot_max_hours != null ? rule.ot_max_hours : 2);
     let draftOtWinStart = rule.ot_window_start || '';
@@ -80260,6 +80601,8 @@
     }
 
     const renderModalInner = () => {
+      ensureWorkShiftsSeeded();
+      const liveShiftTypes = getShiftTypes();
       const prevBodyEl = modal.querySelector('.staff-sched-modal-body');
       const prevCardEl = modal.querySelector('.staff-sched-modal-card');
       const prevBodyTop = prevBodyEl ? prevBodyEl.scrollTop : 0;
@@ -80274,10 +80617,16 @@
       const initials = String(entry.name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || 'ST';
       const cDur = computeShiftWorkedHours(draftCustomStart, draftCustomEnd) || 8.0;
       const cOvernight = Boolean(parseClockMinutes(draftCustomEnd) != null && parseClockMinutes(draftCustomStart) != null && parseClockMinutes(draftCustomEnd) <= parseClockMinutes(draftCustomStart));
+      const satDur = computeShiftWorkedHours(draftSatStart, draftSatEnd) || 7.0;
       const dayOrder = [1, 2, 3, 4, 5, 6, 0];
       const curShiftObj = draftShiftId === 'custom'
         ? { name: draftCustomName || 'Custom Shift', start_time: draftCustomStart, end_time: draftCustomEnd, hours: cDur }
-        : (shiftTypes.find(t => t.id === draftShiftId) || shiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
+        : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
+      const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
+        .filter(r => r && !r.voided && !r.end_date)
+        .map(r => hydrateWorkShiftRowComputed(r));
+      const buCompanies = ['WTC', 'BBConstruction', 'Lions Transport'];
+      const dayTimingsSummaryTxt = formatDayTimingsSummary(draftDayTimings, draftSatDiff, draftSatStart, draftSatEnd);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
       const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
       const endMinVal = endMinRaw <= startMinVal ? (endMinRaw + 1440) : endMinRaw;
@@ -80331,7 +80680,7 @@
               <div class="ssm-live-pills">
                 <div class="ssm-live-kpi">
                   <span class="ssm-lk-lbl">Shift Window</span>
-                  <strong class="mono">${esc(curShiftObj.start_time)} - ${esc(curShiftObj.end_time)} (${fmtNum(curShiftObj.hours || cDur, 1)}h)</strong>
+                  <strong class="mono">${esc(curShiftObj.start_time)} - ${esc(curShiftObj.end_time)} (${fmtNum(curShiftObj.hours || cDur, 1)}h)${draftSatDiff ? ` · Sat ${esc(draftSatStart)}-${esc(draftSatEnd)}` : ''}</strong>
                 </div>
                 <div class="ssm-live-kpi">
                   <span class="ssm-lk-lbl">IN &amp; OUT Cutoffs (${draftGrace}m / ${draftEarlyGrace}m)</span>
@@ -80359,20 +80708,32 @@
 
             <!-- SECTION 1: REGULAR SHIFT TIMING -->
             <div class="ssm-section">
-              <div class="ssm-sec-head">
-                <strong>1. Regular Shift &amp; Clock Timing</strong>
-                <span class="muted">Arrival lateness and shift completion are measured against this exact window</span>
+              <div class="ssm-sec-head" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+                <div>
+                  <strong>1. Regular Shift &amp; Clock Timing</strong>
+                  <span class="muted" style="margin-left:8px">Arrival lateness and shift completion are measured against this exact window</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <button type="button" class="btn kiosk-mini-btn ${draftShowShiftTable ? 'btn-primary' : ''}" id="ssmToggleShiftTableBtn">
+                    ${ic('clock')} ${draftShowShiftTable ? 'Hide BU Shift Table' : 'BU Defaults &amp; Shift Table'} (${workShiftRows.length})
+                  </button>
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmOpenNewShiftModalBtn">+ New Shift</button>
+                </div>
               </div>
               <div class="ssm-shift-cards">
-                ${shiftTypes.map(st => `
+                ${liveShiftTypes.map(st => {
+                  const isBuDefForCo = Boolean(getBuDefaultShift(entry.company)?.shift_code === st.id);
+                  const stDaySum = formatDayTimingsSummary(st.day_timings, st.sat_diff_enabled, st.sat_start_time, st.sat_end_time);
+                  return `
                   <button type="button" class="ssm-shift-card ${draftShiftId === st.id ? 'active' : ''}" data-tone="${esc(st.tone)}" data-ssm-shift="${esc(st.id)}">
                     <span class="ssm-sc-top">
-                      <b>${esc(st.name)}</b>
+                      <b>${esc(st.name)}${isBuDefForCo ? ` <span class="badge badge-brass" style="font-size:9.5px;padding:1px 5px;margin-left:3px">${esc(entry.company)} Default</span>` : ''}</b>
                       <span class="ssm-sc-hrs mono">${fmtNum(st.hours, 1)}h</span>
                     </span>
-                    <span class="ssm-sc-win mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}</span>
+                    <span class="ssm-sc-win mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}${stDaySum !== 'Same Every Workday' ? ` · ${esc(stDaySum)}` : ''}</span>
                   </button>
-                `).join('')}
+                `;
+                }).join('')}
                 <button type="button" class="ssm-shift-card ${draftShiftId === 'custom' ? 'active' : ''}" data-tone="emerald" data-ssm-shift="custom">
                   <span class="ssm-sc-top">
                     <b>Custom Timing</b>
@@ -80419,6 +80780,200 @@
                   <input type="number" id="ssmGraceMin" min="0" max="120" step="5" value="${draftGrace}" style="width:74px">
                 </div>
               </div>
+
+              <!-- DAY-SPECIFIC SHIFT TIMING (SATURDAY EARLY START / EARLY LEAVE + PER-WEEKDAY) -->
+              <div class="ssm-ot-subpanel" id="ssmDaySpecificPanel" style="margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:12.5px;margin:0">
+                    <input type="checkbox" id="ssmSatDiffChk" ${draftSatDiff ? 'checked' : ''}>
+                    <span>Different timing by day (e.g. Saturday start earlier &amp; leave earlier)</span>
+                  </label>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <span class="badge ${draftSatDiff ? 'badge-brass' : ''}" id="ssmDayTimingBadge">${esc(dayTimingsSummaryTxt)}</span>
+                    ${draftSatDiff ? `
+                      <button type="button" class="btn kiosk-mini-btn" id="ssmToggleWeekdayGridBtn">
+                        ${draftExpandAllDays ? 'Hide Mon-Sun Grid' : 'All Weekdays (Mon-Sun)'}
+                      </button>
+                    ` : ''}
+                  </div>
+                </div>
+                ${draftSatDiff ? `
+                  <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px">
+                    <div class="ssm-field">
+                      <label for="ssmSatStart">Saturday Start (24h)</label>
+                      <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="07:00" class="pa-time24-input mono" id="ssmSatStart" value="${esc(draftSatStart)}" style="width:92px">
+                    </div>
+                    <div class="ssm-field">
+                      <label for="ssmSatEnd">Saturday End (24h)</label>
+                      <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="14:00" class="pa-time24-input mono" id="ssmSatEnd" value="${esc(draftSatEnd)}" style="width:92px">
+                    </div>
+                    <div class="ssm-field">
+                      <label>Saturday Hours</label>
+                      <div class="ssm-calc-pill mono" id="ssmSatDurPill">${fmtNum(satDur, 1)}h · Early Saturday</div>
+                    </div>
+                    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding-bottom:2px">
+                      <span class="muted" style="font-size:11.5px">Presets:</span>
+                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:00' && draftSatEnd === '14:00' ? 'active' : ''}" data-ssm-sat-preset="07:00|14:00">Sat 07:00-14:00 (7h)</button>
+                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:00' && draftSatEnd === '13:00' ? 'active' : ''}" data-ssm-sat-preset="07:00|13:00">Sat 07:00-13:00 (6h)</button>
+                      <button type="button" class="kiosk-qchip ${draftSatStart === '07:30' && draftSatEnd === '14:30' ? 'active' : ''}" data-ssm-sat-preset="07:30|14:30">Sat 07:30-14:30 (7h)</button>
+                      <button type="button" class="kiosk-qchip ${draftSatStart === '06:00' && draftSatEnd === '13:00' ? 'active' : ''}" data-ssm-sat-preset="06:00|13:00">Sat 06:00-13:00 (7h)</button>
+                    </div>
+                  </div>
+                  ${draftExpandAllDays ? `
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
+                      ${dayOrder.map(dIdx => {
+                        const dtObj = draftDayTimings && draftDayTimings[String(dIdx)] ? draftDayTimings[String(dIdx)] : (dIdx === 6 ? { start_time: draftSatStart, end_time: draftSatEnd } : null);
+                        return `
+                          <div class="ssm-field" style="background:var(--bg);padding:6px;border-radius:6px;border:1px solid var(--line)">
+                            <label style="font-size:11px;font-weight:700">${ATT_WEEKDAYS[dIdx]} Override (Optional)</label>
+                            <div style="display:flex;gap:4px;align-items:center">
+                              <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-in="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.start_time)}" value="${esc(dtObj ? dtObj.start_time : '')}" style="width:62px;font-size:11.5px;padding:3px 5px">
+                              <span class="muted">-</span>
+                              <input type="text" data-time24="1" data-optional-time="1" data-ssm-day-out="${dIdx}" class="pa-time24-input mono" placeholder="${esc(curShiftObj.end_time)}" value="${esc(dtObj ? dtObj.end_time : '')}" style="width:62px;font-size:11.5px;padding:3px 5px">
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  ` : ''}
+                ` : ''}
+              </div>
+
+              <!-- BU SHIFT DEFAULTS & SHIFT TIMINGS TABLE (INSERT BU DEFAULTS, ADD SHIFTS, EFFECTIVE DATE & BACKFILL) -->
+              ${draftShowShiftTable ? `
+                <div class="ssm-ot-subpanel" id="ssmShiftTableWrap" style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
+                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                    <div>
+                      <strong style="font-size:12.5px">${ic('clock')} BU Shift Defaults &amp; Shift Timings Table</strong>
+                      <div class="muted" style="font-size:11.5px">Set each BU's default shift, add new shifts, or change shift timings with an Effective Date to automatically backfill all associated people</div>
+                    </div>
+                  </div>
+                  <!-- BU DEFAULT SELECTOR BAR -->
+                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px" id="ssmBuDefaultBar">
+                    ${buCompanies.map(bu => {
+                      const curDef = getBuDefaultShift(bu);
+                      const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+                      return `
+                        <div class="ssm-field" style="margin:0">
+                          <label style="font-size:11px;display:flex;align-items:center;gap:5px">${coBadge(bu)} <span>Default Shift</span></label>
+                          <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:30px;font-size:12px">
+                            ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                          </select>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                  <!-- SHIFT TIMINGS TABLE WITH EFFECTIVE DATE & BACKFILL -->
+                  <div class="table-wrap" style="max-height:260px">
+                    <table class="ledger-table" id="ssmShiftTimingsTable" style="font-size:12px">
+                      <thead>
+                        <tr>
+                          <th>BU</th>
+                          <th>Shift Name</th>
+                          <th>BU Default</th>
+                          <th>Regular Start / End</th>
+                          <th>Saturday / Day Timing</th>
+                          <th>Effective Date</th>
+                          <th class="r">Staff</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${workShiftRows.map(ws => {
+                          const hasSat = Boolean(ws.sat_diff_enabled || (ws.day_timings && ws.day_timings['6']));
+                          const satS = ws.sat_start_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].start_time) || '07:00';
+                          const satE = ws.sat_end_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].end_time) || '14:00';
+                          return `
+                            <tr data-ssm-ws-row="${esc(ws.id)}">
+                              <td>${coBadge(ws.company || 'WTC')}</td>
+                              <td>
+                                <strong>${esc(ws.shift_name)}</strong>
+                                <div class="muted mono" style="font-size:10.5px">${esc(ws.workdays_label || 'Mon-Sat')} · ${fmtNum(ws.scheduled_hours || 8, 1)}h</div>
+                              </td>
+                              <td>
+                                <button type="button" class="kiosk-qchip ${ws.is_bu_default ? 'active' : ''}" data-ssm-row-set-def="${esc(ws.id)}" style="font-size:11px;padding:2px 7px">
+                                  ${ws.is_bu_default ? '★ BU Default' : 'Set Default'}
+                                </button>
+                              </td>
+                              <td>
+                                <div style="display:flex;gap:4px;align-items:center">
+                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-start="${esc(ws.id)}" value="${esc(ws.start_time || '08:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                                  <span>-</span>
+                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-end="${esc(ws.id)}" value="${esc(ws.end_time || '16:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                                </div>
+                              </td>
+                              <td>
+                                <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                                  <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
+                                    <input type="checkbox" data-ssm-row-sat-chk="${esc(ws.id)}" ${hasSat ? 'checked' : ''}>
+                                    <span>Sat</span>
+                                  </label>
+                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-start="${esc(ws.id)}" value="${esc(satS)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
+                                  <span>-</span>
+                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-end="${esc(ws.id)}" value="${esc(satE)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
+                                </div>
+                              </td>
+                              <td>
+                                <input type="date" data-ssm-row-effdate="${esc(ws.id)}" value="${esc(ws.start_date || today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
+                              </td>
+                              <td class="r mono"><b>${fmtNum(ws.associated_staff_count || 0)}</b></td>
+                              <td>
+                                <button type="button" class="btn kiosk-mini-btn btn-primary" data-ssm-save-shift-row="${esc(ws.id)}" style="font-size:11px;padding:3px 8px">
+                                  Save &amp; Backfill
+                                </button>
+                              </td>
+                            </tr>
+                          `;
+                        }).join('')}
+                        <!-- INLINE ADD NEW SHIFT ROW -->
+                        <tr id="ssmNewShiftInlineRow" style="background:var(--bg)">
+                          <td>
+                            <select id="ssmNewShiftCo" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11.5px;padding:2px 4px">
+                              ${buCompanies.map(bu => `<option value="${esc(bu)}" ${bu === entry.company ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+                            </select>
+                          </td>
+                          <td>
+                            <input type="text" id="ssmNewShiftName" placeholder="New shift name..." style="height:26px;font-size:11.5px;padding:2px 6px;width:125px">
+                          </td>
+                          <td>
+                            <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;cursor:pointer">
+                              <input type="checkbox" id="ssmNewShiftDef">
+                              <span>BU Default</span>
+                            </label>
+                          </td>
+                          <td>
+                            <div style="display:flex;gap:4px;align-items:center">
+                              <input type="text" data-time24="1" id="ssmNewShiftStart" class="pa-time24-input mono" value="08:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                              <span>-</span>
+                              <input type="text" data-time24="1" id="ssmNewShiftEnd" class="pa-time24-input mono" value="16:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                            </div>
+                          </td>
+                          <td>
+                            <div style="display:flex;gap:4px;align-items:center">
+                              <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
+                                <input type="checkbox" id="ssmNewShiftSatChk">
+                                <span>Sat</span>
+                              </label>
+                              <input type="text" data-time24="1" id="ssmNewShiftSatStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                              <span>-</span>
+                              <input type="text" data-time24="1" id="ssmNewShiftSatEnd" class="pa-time24-input mono" value="14:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                            </div>
+                          </td>
+                          <td>
+                            <input type="date" id="ssmNewShiftEffDate" value="${esc(today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
+                          </td>
+                          <td class="r muted">New</td>
+                          <td>
+                            <button type="button" class="btn kiosk-mini-btn btn-primary" id="ssmAddShiftRowBtn" style="font-size:11px;padding:3px 8px">
+                              + Add Shift
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ` : ''}
             </div>
 
             <!-- SECTION 2: LATENESS TOLERANCE, WHEN LATENESS OCCURS & PUNISHMENT RULES -->
@@ -80711,6 +81266,33 @@
           const rawWe = String($('ssmOtWinEnd').value || '').trim();
           draftOtWinEnd = rawWe ? normalize24hClockTime(rawWe, '') : '';
         }
+        if ($('ssmSatDiffChk')) {
+          draftSatDiff = Boolean($('ssmSatDiffChk').checked);
+          draftUseCustomDayTimings = true;
+        }
+        if ($('ssmSatStart')) draftSatStart = normalize24hClockTime($('ssmSatStart').value, draftSatStart || '07:00');
+        if ($('ssmSatEnd')) draftSatEnd = normalize24hClockTime($('ssmSatEnd').value, draftSatEnd || '14:00');
+        const nextDtMap = Object.assign({}, draftDayTimings || {});
+        if (draftSatDiff) {
+          nextDtMap['6'] = { start_time: draftSatStart, end_time: draftSatEnd };
+        } else {
+          delete nextDtMap['6'];
+        }
+        modal.querySelectorAll('[data-ssm-day-in]').forEach(inp => {
+          const dIdxStr = String(inp.getAttribute('data-ssm-day-in') || '');
+          const outInp = modal.querySelector(`[data-ssm-day-out="${dIdxStr}"]`);
+          const rawIn = String(inp.value || '').trim();
+          const rawOut = String((outInp && outInp.value) || '').trim();
+          if (rawIn && rawOut) {
+            nextDtMap[dIdxStr] = {
+              start_time: normalize24hClockTime(rawIn, '08:00'),
+              end_time: normalize24hClockTime(rawOut, '16:00')
+            };
+          } else if (dIdxStr !== '6') {
+            delete nextDtMap[dIdxStr];
+          }
+        });
+        draftDayTimings = nextDtMap;
       };
 
       $('ssmCloseBtn')?.addEventListener('click', closeStaffScheduleModal);
@@ -80725,6 +81307,214 @@
         closeStaffScheduleModal();
         openStaffFaceEnrolModal(entry.name);
       });
+      $('ssmToggleShiftTableBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        draftShowShiftTable = !draftShowShiftTable;
+        renderModalInner();
+      });
+      $('ssmOpenNewShiftModalBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        draftShowShiftTable = true;
+        renderModalInner();
+        setTimeout(() => {
+          const nmInp = $('ssmNewShiftName');
+          if (nmInp) {
+            nmInp.scrollIntoView({ block: 'nearest' });
+            try { nmInp.focus({ preventScroll: true }); } catch (_) {}
+          }
+        }, 25);
+      });
+      $('ssmSatDiffChk')?.addEventListener('change', e => {
+        draftSatDiff = Boolean(e.target.checked);
+        draftUseCustomDayTimings = true;
+        if (draftSatDiff) {
+          draftDayTimings = Object.assign({}, draftDayTimings || {}, { '6': { start_time: draftSatStart, end_time: draftSatEnd } });
+        } else {
+          draftDayTimings = {};
+        }
+        renderModalInner();
+      });
+      $('ssmToggleWeekdayGridBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        draftExpandAllDays = !draftExpandAllDays;
+        renderModalInner();
+      });
+      modal.querySelectorAll('[data-ssm-sat-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const [ps, pe] = String(btn.getAttribute('data-ssm-sat-preset') || '07:00|14:00').split('|');
+          draftSatDiff = true;
+          draftUseCustomDayTimings = true;
+          draftSatStart = normalize24hClockTime(ps, '07:00');
+          draftSatEnd = normalize24hClockTime(pe, '14:00');
+          draftDayTimings = Object.assign({}, draftDayTimings || {}, { '6': { start_time: draftSatStart, end_time: draftSatEnd } });
+          renderModalInner();
+        });
+      });
+      ['ssmSatStart', 'ssmSatEnd'].forEach(id => {
+        $(id)?.addEventListener('change', () => {
+          syncLiveInputs();
+          renderModalInner();
+        });
+      });
+      modal.querySelectorAll('[data-ssm-day-in], [data-ssm-day-out]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          syncLiveInputs();
+          renderModalInner();
+        });
+      });
+      modal.querySelectorAll('[data-ssm-bu-default]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          syncLiveInputs();
+          const bu = sel.getAttribute('data-ssm-bu-default') || entry.company;
+          const shiftCode = sel.value || 'day_8_4';
+          const stObj = getShiftTypes().find(t => t.id === shiftCode);
+          ensureWorkShiftsSeeded();
+          const wsPool = (SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [];
+          let targetRow = wsPool.find(r => r && !r.voided && !r.end_date && norm(r.company) === norm(bu) && norm(r.shift_code) === norm(shiftCode));
+          if (!targetRow && stObj) {
+            const saved = saveShiftType(Object.assign({}, stObj, {
+              company: bu,
+              is_bu_default: true,
+              start_date: today,
+              backfill: true
+            }));
+            if (saved && saved.ok) {
+              toast(`Set ${stObj.name} as default shift for ${bu} and backfilled associated staff`, 'ok');
+              renderModalInner();
+              return;
+            }
+          }
+          if (targetRow) {
+            setBuDefaultShift(bu, targetRow.id);
+            backfillShiftTimingChange(targetRow, { fromDate: today });
+            toast(`Set ${targetRow.shift_name} as default shift for ${bu}`, 'ok');
+          }
+          renderModalInner();
+        });
+      });
+      modal.querySelectorAll('[data-ssm-row-set-def]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const wsId = btn.getAttribute('data-ssm-row-set-def') || '';
+          const wsPool = (SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [];
+          const row = wsPool.find(r => r && String(r.id) === String(wsId));
+          if (!row) return;
+          setBuDefaultShift(row.company || entry.company, row.id);
+          backfillShiftTimingChange(row, { fromDate: row.start_date || today });
+          toast(`${row.shift_name} is now the default shift for ${row.company || entry.company}`, 'ok');
+          renderModalInner();
+        });
+      });
+      modal.querySelectorAll('[data-ssm-row-sat-chk]').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const wsId = chk.getAttribute('data-ssm-row-sat-chk') || '';
+          const sInp = modal.querySelector(`[data-ssm-row-sat-start="${wsId}"]`);
+          const eInp = modal.querySelector(`[data-ssm-row-sat-end="${wsId}"]`);
+          if (sInp) sInp.disabled = !chk.checked;
+          if (eInp) eInp.disabled = !chk.checked;
+        });
+      });
+      modal.querySelectorAll('[data-ssm-save-shift-row]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const wsId = btn.getAttribute('data-ssm-save-shift-row') || '';
+          const wsPool = (SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [];
+          const orig = wsPool.find(r => r && String(r.id) === String(wsId));
+          if (!orig) return;
+          const stInp = modal.querySelector(`[data-ssm-row-start="${wsId}"]`);
+          const etInp = modal.querySelector(`[data-ssm-row-end="${wsId}"]`);
+          const satChk = modal.querySelector(`[data-ssm-row-sat-chk="${wsId}"]`);
+          const satSInp = modal.querySelector(`[data-ssm-row-sat-start="${wsId}"]`);
+          const satEInp = modal.querySelector(`[data-ssm-row-sat-end="${wsId}"]`);
+          const effInp = modal.querySelector(`[data-ssm-row-effdate="${wsId}"]`);
+          const newStart = normalize24hClockTime(stInp ? stInp.value : orig.start_time, orig.start_time || '08:00');
+          const newEnd = normalize24hClockTime(etInp ? etInp.value : orig.end_time, orig.end_time || '16:00');
+          const newSatDiff = Boolean(satChk && satChk.checked);
+          const newSatS = normalize24hClockTime(satSInp ? satSInp.value : '07:00', '07:00');
+          const newSatE = normalize24hClockTime(satEInp ? satEInp.value : '14:00', '14:00');
+          const effDate = String((effInp && effInp.value) || orig.start_date || today).slice(0, 10);
+          const nextDayMap = normalizeDayTimingsMap(orig.day_timings, newSatDiff, newSatS, newSatE);
+          if (!newSatDiff) delete nextDayMap['6'];
+          const res = saveShiftType({
+            id: orig.shift_code || orig.id,
+            name: orig.shift_name,
+            short: orig.shift_short || orig.shift_name.split(/\s+/)[0],
+            company: orig.company || entry.company,
+            is_bu_default: Boolean(orig.is_bu_default),
+            start_date: effDate,
+            start_time: newStart,
+            end_time: newEnd,
+            days: Array.isArray(orig.days) ? orig.days : parseWorkdaysArrayFromLabel(orig.workdays_label || 'Mon-Sat'),
+            grace_min: orig.grace_min != null ? orig.grace_min : 10,
+            early_leave_grace_min: orig.early_leave_grace_min != null ? orig.early_leave_grace_min : 10,
+            sat_diff_enabled: newSatDiff,
+            sat_start_time: newSatS,
+            sat_end_time: newSatE,
+            day_timings: nextDayMap,
+            tone: orig.tone || 'amber',
+            backfill: true
+          });
+          if (res && res.ok) {
+            const bf = res.backfill || { updatedRules: 0, updatedAtt: 0, updatedPunches: 0 };
+            if (draftShiftId === (orig.shift_code || orig.id)) {
+              draftSatDiff = newSatDiff;
+              draftSatStart = newSatS;
+              draftSatEnd = newSatE;
+              draftDayTimings = nextDayMap;
+            }
+            toast(`Updated ${orig.shift_name} (${newStart}-${newEnd}${newSatDiff ? ` · Sat ${newSatS}-${newSatE}` : ''}) effective ${fmtDateDMY(effDate)} · Backfilled ${bf.updatedRules || 0} staff & ${(bf.updatedAtt || 0) + (bf.updatedPunches || 0)} attendance logs`, 'ok');
+            renderModalInner();
+          }
+        });
+      });
+      $('ssmAddShiftRowBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const coVal = $('ssmNewShiftCo')?.value || entry.company || 'WTC';
+        const nmVal = String($('ssmNewShiftName')?.value || '').trim();
+        if (!nmVal) {
+          toast('Enter a name for the new shift', 'warn');
+          $('ssmNewShiftName')?.focus();
+          return;
+        }
+        const isDef = Boolean($('ssmNewShiftDef')?.checked);
+        const stVal = normalize24hClockTime($('ssmNewShiftStart')?.value || '08:00', '08:00');
+        const etVal = normalize24hClockTime($('ssmNewShiftEnd')?.value || '16:00', '16:00');
+        const satDiffVal = Boolean($('ssmNewShiftSatChk')?.checked);
+        const satSVal = normalize24hClockTime($('ssmNewShiftSatStart')?.value || '07:00', '07:00');
+        const satEVal = normalize24hClockTime($('ssmNewShiftSatEnd')?.value || '14:00', '14:00');
+        const effVal = String($('ssmNewShiftEffDate')?.value || today).slice(0, 10);
+        const newCode = nmVal.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || uid('shf');
+        const res = saveShiftType({
+          id: newCode,
+          name: nmVal,
+          short: nmVal.split(/\s+/)[0].slice(0, 10),
+          company: coVal,
+          is_bu_default: isDef,
+          start_date: effVal,
+          start_time: stVal,
+          end_time: etVal,
+          days: [1, 2, 3, 4, 5, 6],
+          grace_min: draftGrace || 10,
+          early_leave_grace_min: draftEarlyGrace || 10,
+          sat_diff_enabled: satDiffVal,
+          sat_start_time: satSVal,
+          sat_end_time: satEVal,
+          day_timings: satDiffVal ? { '6': { start_time: satSVal, end_time: satEVal } } : {},
+          tone: 'emerald',
+          backfill: true
+        });
+        if (res && res.ok) {
+          draftShiftId = res.shiftType.id;
+          draftSatDiff = satDiffVal;
+          draftSatStart = satSVal;
+          draftSatEnd = satEVal;
+          draftDayTimings = satDiffVal ? { '6': { start_time: satSVal, end_time: satEVal } } : {};
+          toast(`Added shift "${nmVal}" for ${coVal}${isDef ? ' (set as BU Default)' : ''} effective ${fmtDateDMY(effVal)}`, 'ok');
+          renderModalInner();
+        }
+      });
+
       const saveModalQuickPin = () => {
         const pinInp = $('ssmQuickPinInput');
         const rawPin = String(pinInp ? pinInp.value : '').replace(/\D+/g, '').slice(0, 4);
@@ -80749,7 +81539,7 @@
       });
       $('ssmResetBtn')?.addEventListener('click', () => {
         resetStaffWorkRule(entry.name);
-        toast(`Reset ${entry.name} to default Day Shift (08:00-16:00), 10m Grace & No Overtime`, 'ok');
+        toast(`Reset ${entry.name} to default shift, 10m Grace & No Overtime`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -80779,9 +81569,17 @@
         btn.addEventListener('click', () => {
           syncLiveInputs();
           draftShiftId = btn.getAttribute('data-ssm-shift') || 'day_8_4';
-          if (draftShiftId !== 'custom' && !draftUseCustomDays) {
-            const st = shiftTypes.find(t => t.id === draftShiftId);
-            if (st) draftDays = st.days.slice();
+          if (draftShiftId !== 'custom') {
+            const st = getShiftTypes().find(t => t.id === draftShiftId);
+            if (st) {
+              if (!draftUseCustomDays) draftDays = st.days.slice();
+              if (!draftUseCustomDayTimings) {
+                draftSatDiff = Boolean(st.sat_diff_enabled);
+                draftSatStart = st.sat_start_time || '07:00';
+                draftSatEnd = st.sat_end_time || '14:00';
+                draftDayTimings = normalizeDayTimingsMap(st.day_timings, draftSatDiff, draftSatStart, draftSatEnd);
+              }
+            }
           }
           renderModalInner();
         });
@@ -80994,6 +81792,11 @@
           custom_end: draftCustomEnd,
           custom_days: draftDays,
           use_custom_days: draftUseCustomDays || draftShiftId === 'custom',
+          sat_diff_enabled: draftSatDiff,
+          sat_start_time: draftSatStart,
+          sat_end_time: draftSatEnd,
+          day_timings: draftDayTimings,
+          use_custom_day_timings: draftUseCustomDayTimings || draftSatDiff || Object.keys(draftDayTimings || {}).length > 0,
           grace_min: draftGrace,
           early_leave_grace_min: draftEarlyGrace,
           late_when: draftLateWhen,
@@ -81009,7 +81812,7 @@
           ot_passes: draftPasses,
           shift_overrides: draftOverrides
         });
-        toast(`Saved shift, lateness & overtime rules for ${entry.name}`, 'ok');
+        toast(`Saved shift, day timings, lateness & overtime rules for ${entry.name}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -81039,11 +81842,18 @@
     if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
   }
 
-  function openShiftTypeModal(shiftId = '') {
+  function openShiftTypeModal(shiftId = '', opts = {}) {
+    ensureWorkShiftsSeeded();
     const types = getShiftTypes();
     const existing = shiftId ? types.find(t => t.id === shiftId) : null;
+    const defCo = opts.company || (existing && existing.company) || (COMPANY_BU_MATCH[STATE.company] || 'WTC');
     let draftDays = existing ? existing.days.slice() : [1, 2, 3, 4, 5, 6];
     let draftTone = existing ? existing.tone : 'emerald';
+    const initSatDiff = Boolean(existing && (existing.sat_diff_enabled || (existing.day_timings && existing.day_timings['6'])));
+    const initSatStart = (existing && (existing.sat_start_time || (existing.day_timings && existing.day_timings['6'] && existing.day_timings['6'].start_time))) || '07:00';
+    const initSatEnd = (existing && (existing.sat_end_time || (existing.day_timings && existing.day_timings['6'] && existing.day_timings['6'].end_time))) || '14:00';
+    const initEffDate = (existing && existing.start_date) || todayISO();
+    const initIsBuDef = Boolean(existing && existing.is_bu_default);
 
     let modal = $('shiftTypeModal');
     if (!modal) {
@@ -81057,16 +81867,22 @@
     }
 
     modal.innerHTML = `
-      <div class="modal-card" style="max-width:540px">
+      <div class="modal-card" style="max-width:600px">
         <div class="modal-head">
           <div>
-            <div class="modal-title">${ic('clock')} ${existing ? `Edit ${esc(existing.name)}` : 'New Shift Type'}</div>
-            <div class="modal-sub">Define reusable shift start and end hours (supports overnight cross-midnight shifts)</div>
+            <div class="modal-title">${ic('clock')} ${existing ? `Edit ${esc(existing.name)}` : 'New Shift &amp; Clock Timing'}</div>
+            <div class="modal-sub">Configure BU default shift, regular &amp; day-specific clock hours, effective date, and automatic staff backfill</div>
           </div>
           <button type="button" class="icon-btn" id="stmCloseBtn" aria-label="Close">✕</button>
         </div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
-          <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:1.1fr 1.4fr 0.8fr;gap:10px">
+            <div class="ssm-field">
+              <label for="stmCompany">Business Unit (BU)</label>
+              <select id="stmCompany" class="kiosk-select" data-plain-options="1">
+                ${['WTC', 'BBConstruction', 'Lions Transport', 'All BUs'].map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+              </select>
+            </div>
             <div class="ssm-field">
               <label for="stmName">Shift Name</label>
               <input type="text" id="stmName" value="${esc(existing ? existing.name : '')}" placeholder="e.g. Early Batching / Split Shift">
@@ -81076,38 +81892,77 @@
               <input type="text" id="stmShort" maxlength="10" value="${esc(existing ? existing.short : '')}" placeholder="e.g. Early">
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
             <div class="ssm-field">
-              <label for="stmStart">Start Time (24h)</label>
-              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmStart" value="${esc(normalize24hClockTime(existing ? existing.start_time : '06:00', '06:00'))}">
+              <label for="stmStart">Regular Start (24h)</label>
+              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmStart" value="${esc(normalize24hClockTime(existing ? existing.start_time : '08:00', '08:00'))}">
             </div>
             <div class="ssm-field">
-              <label for="stmEnd">End Time (24h)</label>
-              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmEnd" value="${esc(normalize24hClockTime(existing ? existing.end_time : '14:00', '14:00'))}">
+              <label for="stmEnd">Regular End (24h)</label>
+              <input type="text" data-time24="1" inputmode="numeric" maxlength="5" placeholder="HH:MM" class="pa-time24-input mono" id="stmEnd" value="${esc(normalize24hClockTime(existing ? existing.end_time : '16:00', '16:00'))}">
             </div>
             <div class="ssm-field">
               <label for="stmGrace">Arrival Grace (min)</label>
               <input type="number" id="stmGrace" min="0" max="60" step="5" value="${existing ? existing.grace_min : 10}">
             </div>
+            <div class="ssm-field">
+              <label for="stmStartDate">Effective Date</label>
+              <input type="date" id="stmStartDate" value="${esc(initEffDate)}">
+            </div>
           </div>
           <div class="ssm-field">
             <label>Active Workdays</label>
-            <div class="ssm-day-pills" id="stmDaysBar">
-              ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
-                <button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
-              `).join('')}
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div class="ssm-day-pills" id="stmDaysBar">
+                ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
+                  <button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
+                `).join('')}
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
+                <input type="checkbox" id="stmBuDefault" ${initIsBuDef ? 'checked' : ''}>
+                <span>Set as BU Default Shift</span>
+              </label>
             </div>
           </div>
-          <div class="ssm-field">
-            <label>Badge Color</label>
-            <div style="display:flex;gap:8px" id="stmToneBar">
-              ${[
-                { id: 'amber', lbl: 'Day Gold' },
-                { id: 'indigo', lbl: 'Night Indigo' },
-                { id: 'sapphire', lbl: 'Blue' },
-                { id: 'emerald', lbl: 'Custom Green' }
-              ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-stm-tone="${t.id}">${t.lbl}</button>`).join('')}
+          <div style="padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;cursor:pointer;margin:0">
+              <input type="checkbox" id="stmSatDiff" ${initSatDiff ? 'checked' : ''}>
+              <span>Different timing on Saturday / specific days (e.g. Saturday early start &amp; early leave)</span>
+            </label>
+            <div id="stmSatRow" style="display:${initSatDiff ? 'grid' : 'none'};grid-template-columns:1fr 1fr 1.2fr;gap:10px;margin-top:8px">
+              <div class="ssm-field">
+                <label for="stmSatStart">Saturday Start (24h)</label>
+                <input type="text" data-time24="1" class="pa-time24-input mono" id="stmSatStart" value="${esc(normalize24hClockTime(initSatStart, '07:00'))}">
+              </div>
+              <div class="ssm-field">
+                <label for="stmSatEnd">Saturday End (24h)</label>
+                <input type="text" data-time24="1" class="pa-time24-input mono" id="stmSatEnd" value="${esc(normalize24hClockTime(initSatEnd, '14:00'))}">
+              </div>
+              <div class="ssm-field">
+                <label>Quick Preset</label>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">
+                  <button type="button" class="kiosk-qchip" data-stm-sat-preset="07:00|14:00">07:00-14:00</button>
+                  <button type="button" class="kiosk-qchip" data-stm-sat-preset="07:00|13:00">07:00-13:00</button>
+                </div>
+              </div>
             </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div class="ssm-field" style="margin:0">
+              <label>Badge Color</label>
+              <div style="display:flex;gap:8px" id="stmToneBar">
+                ${[
+                  { id: 'amber', lbl: 'Day Gold' },
+                  { id: 'indigo', lbl: 'Night Indigo' },
+                  { id: 'sapphire', lbl: 'Blue' },
+                  { id: 'emerald', lbl: 'Custom Green' }
+                ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-stm-tone="${t.id}">${t.lbl}</button>`).join('')}
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
+              <input type="checkbox" id="stmBackfill" checked>
+              <span>Backfill associated staff &amp; attendance from Effective Date</span>
+            </label>
           </div>
         </div>
         <div class="modal-foot" style="justify-content:space-between">
@@ -81116,7 +81971,7 @@
           </div>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn" id="stmCancelBtn">Cancel</button>
-            <button type="button" class="btn btn-primary" id="stmSaveBtn">Save Shift Type</button>
+            <button type="button" class="btn btn-primary" id="stmSaveBtn">Save Shift &amp; Backfill</button>
           </div>
         </div>
       </div>
@@ -81128,6 +81983,19 @@
 
     $('stmCloseBtn')?.addEventListener('click', closeShiftTypeModal);
     $('stmCancelBtn')?.addEventListener('click', closeShiftTypeModal);
+    $('stmSatDiff')?.addEventListener('change', e => {
+      const rEl = $('stmSatRow');
+      if (rEl) rEl.style.display = e.target.checked ? 'grid' : 'none';
+    });
+    modal.querySelectorAll('[data-stm-sat-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [ps, pe] = String(btn.getAttribute('data-stm-sat-preset') || '07:00|14:00').split('|');
+        if ($('stmSatDiff')) $('stmSatDiff').checked = true;
+        if ($('stmSatRow')) $('stmSatRow').style.display = 'grid';
+        if ($('stmSatStart')) $('stmSatStart').value = ps;
+        if ($('stmSatEnd')) $('stmSatEnd').value = pe;
+      });
+    });
     modal.querySelectorAll('[data-stm-day]').forEach(btn => {
       btn.addEventListener('click', () => {
         const d = Number(btn.getAttribute('data-stm-day'));
@@ -81155,25 +82023,41 @@
     $('stmSaveBtn')?.addEventListener('click', () => {
       const nm = String($('stmName')?.value || '').trim();
       const sh = String($('stmShort')?.value || '').trim();
+      const co = String($('stmCompany')?.value || 'WTC').trim();
       const st = normalize24hClockTime($('stmStart')?.value, '08:00');
       const et = normalize24hClockTime($('stmEnd')?.value, '16:00');
       const gr = Number($('stmGrace')?.value || 10);
+      const effDt = String($('stmStartDate')?.value || todayISO()).slice(0, 10);
+      const isBuDef = Boolean($('stmBuDefault')?.checked);
+      const satDiff = Boolean($('stmSatDiff')?.checked);
+      const satStart = normalize24hClockTime($('stmSatStart')?.value || '07:00', '07:00');
+      const satEnd = normalize24hClockTime($('stmSatEnd')?.value || '14:00', '14:00');
+      const doBackfill = Boolean($('stmBackfill')?.checked);
       if (!nm) {
         toast('Enter a shift type name', 'warn');
         return;
       }
       const res = saveShiftType({
-        id: existing ? existing.id : uid('shf'),
+        id: existing ? existing.id : (nm.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || uid('shf')),
         name: nm,
         short: sh || nm.split(/\s+/)[0],
+        company: co,
+        is_bu_default: isBuDef,
+        start_date: effDt,
         start_time: st,
         end_time: et,
         days: draftDays,
         grace_min: gr,
-        tone: draftTone
+        sat_diff_enabled: satDiff,
+        sat_start_time: satStart,
+        sat_end_time: satEnd,
+        day_timings: satDiff ? { '6': { start_time: satStart, end_time: satEnd } } : {},
+        tone: draftTone,
+        backfill: doBackfill
       });
       if (res.ok) {
-        toast(`Saved shift type: ${res.shiftType.name} (${res.shiftType.start_time} - ${res.shiftType.end_time})`, 'ok');
+        const bf = res.backfill || { updatedRules: 0, updatedAtt: 0, updatedPunches: 0 };
+        toast(`Saved shift: ${res.shiftType.name} (${res.shiftType.start_time}-${res.shiftType.end_time}${satDiff ? ` · Sat ${satStart}-${satEnd}` : ''}) effective ${fmtDateDMY(effDt)}${doBackfill ? ` · Backfilled ${bf.updatedRules || 0} staff` : ''}`, 'ok');
         closeShiftTypeModal();
       } else {
         toast(res.error || 'Could not save shift type', 'err');
@@ -82631,6 +83515,29 @@
       btn.addEventListener('click', e => {
         e.stopPropagation();
         openStaffFaceEnrolModal(btn.getAttribute('data-enrol-staff-face') || '');
+      });
+    });
+    container.querySelectorAll('[data-pay-bu-default]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const bu = sel.getAttribute('data-pay-bu-default') || 'WTC';
+        const shiftCode = sel.value || 'day_8_4';
+        ensureWorkShiftsSeeded();
+        const wsPool = (SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [];
+        let targetRow = wsPool.find(r => r && !r.voided && !r.end_date && norm(r.company) === norm(bu) && norm(r.shift_code) === norm(shiftCode));
+        const stObj = getShiftTypes().find(t => t.id === shiftCode);
+        if (!targetRow && stObj) {
+          saveShiftType(Object.assign({}, stObj, {
+            company: bu,
+            is_bu_default: true,
+            start_date: todayISO(),
+            backfill: true
+          }));
+        } else if (targetRow) {
+          setBuDefaultShift(bu, targetRow.id);
+          backfillShiftTimingChange(targetRow, { fromDate: todayISO() });
+        }
+        toast(`Set ${(stObj && stObj.name) || shiftCode} as default shift for ${bu}`, 'ok');
+        renderApp();
       });
     });
     const feedCard = $('kioskAttFeedCard');
