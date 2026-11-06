@@ -83784,7 +83784,7 @@
         ? { name: draftCustomName || 'Custom Shift', start_time: draftCustomStart, end_time: draftCustomEnd, hours: cDur }
         : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
-        .filter(r => r && !r.voided && !r.end_date)
+        .filter(r => r && !r.voided)
         .map(r => hydrateWorkShiftRowComputed(r));
       const buCompanies = ['WTC', 'BBConstruction', 'Lions Transport'];
       const dayTimingsSummaryTxt = formatDayTimingsSummary(draftDayTimings, draftSatDiff, draftSatStart, draftSatEnd);
@@ -85443,7 +85443,21 @@
       STATE.kioskAttSite = attSites[0] || 'WTC Main Plant';
     }
 
-    const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+    const allEmpRecords = (SEED.records.employments || []).concat(STATE.customRecords.employments || []);
+    const rawScopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const rawCoHasEmps = rawScopedCo
+      ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
+      : true;
+    const effectiveScopedCo = rawCoHasEmps ? rawScopedCo : '';
+    const staffStatusFilter = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter)
+      ? STATE.kioskStaffStatusFilter
+      : 'all';
+    const fullStaffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
+    const activeStaffTotal = fullStaffDir.filter(s => !s.isEndedContract).length;
+    const endedStaffTotal = fullStaffDir.filter(s => s.isEndedContract).length;
+    const staffDir = staffStatusFilter === 'active'
+      ? fullStaffDir.filter(s => !s.isEndedContract)
+      : (staffStatusFilter === 'inactive' ? fullStaffDir.filter(s => s.isEndedContract) : fullStaffDir);
     const allowedFeedModes = ['roster', 'lateness', 'schedule', 'onsite', 'all'];
     const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : 'roster';
     const rosterQuery = norm(STATE.kioskAttRosterSearch || '');
@@ -85553,11 +85567,28 @@
       return true;
     });
 
-    const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all';
+    const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all';
     const fCnt = n => `<span class="kf-cnt ${Number(n) === 0 ? 'is-zero' : ''}">${fmtNum(n)}</span>`;
     const staffInitials = nm => String(nm || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || 'ST';
     const lateFilterBarHtml = `
       <div class="kiosk-late-filter-bar" id="kioskLateFilterBar">
+        <div class="sched-filter-group kiosk-filter-pod">
+          <span class="kiosk-bar-lbl">Staff Status</span>
+          <div class="kiosk-filter-chips">
+            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'all' ? 'active' : ''}" data-kiosk-staff-status="all">All Staff ${fCnt(fullStaffDir.length)}</button>
+            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'active' ? 'active' : ''}" data-kiosk-staff-status="active">Active ${fCnt(activeStaffTotal)}</button>
+            <button type="button" class="kiosk-qchip ${staffStatusFilter === 'inactive' ? 'active' : ''}" data-kiosk-staff-status="inactive">Inactive / Ended ${fCnt(endedStaffTotal)}</button>
+          </div>
+        </div>
+        <div class="sched-filter-group kiosk-filter-pod">
+          <span class="kiosk-bar-lbl">Business Unit</span>
+          <div class="kiosk-filter-chips">
+            <button type="button" class="kiosk-qchip ${!effectiveScopedCo ? 'active' : ''}" data-kiosk-policy-co="manufacturing-group">All BUs</button>
+            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'WTC' ? 'active' : ''}" data-kiosk-policy-co="wtc">WTC</button>
+            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'BBConstruction' ? 'active' : ''}" data-kiosk-policy-co="bbconstruction">BBConstruction</button>
+            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'Lions Transport' ? 'active' : ''}" data-kiosk-policy-co="lionstransport">Lions Transport</button>
+          </div>
+        </div>
         <div class="sched-filter-group kiosk-filter-pod">
           <span class="kiosk-bar-lbl">Tolerance (IN &amp; OUT)</span>
           <div class="kiosk-filter-chips">
@@ -85612,21 +85643,21 @@
       </div>
     `;
 
-    const scopeTitleLabel = scopedCo || 'All Companies';
-    const showCoCol = !scopedCo;
+    const scopeTitleLabel = effectiveScopedCo || 'All Workforce (WTC & BBConstruction)';
+    const showCoCol = !effectiveScopedCo;
 
     return `
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard" data-policy-host="${host}">
             <div class="panel-head kiosk-feed-head">
               <div class="panel-title">
-                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Lateness Tolerances (IN &amp; OUT), Single-Punch &amp; Overtime Rules' : 'Active Staff, Biometrics &amp; Daily Clock Log')}</span>
-                <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(filteredRoster.length)} of ${fmtNum(staffDir.length)} Active Staff · Station: ${esc(STATE.kioskAttSite)}</small>
+                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Lateness Tolerances (IN &amp; OUT), Single-Punch &amp; Overtime Rules' : 'Staff Roster, Biometrics &amp; Daily Clock Log')}</span>
+                <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(filteredRoster.length)} of ${fmtNum(fullStaffDir.length)} Staff (${fmtNum(activeStaffTotal)} Active · ${fmtNum(endedStaffTotal)} Inactive/Ended) · Station: ${esc(STATE.kioskAttSite)}</small>
               </div>
               <div class="kiosk-feed-tools">
                 <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, role, shift, overtime, or penalty rule..." value="${esc(STATE.kioskAttRosterSearch || '')}">
                 <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
-                    Active Staff (${fmtNum(filteredRoster.length)})
+                    Staff Roster (${fmtNum(filteredRoster.length)})
                   </button>
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'lateness' ? 'active' : ''}" data-tone="rose" data-att-feed-filter="lateness">
                     Lateness &amp; Penalties
@@ -85721,9 +85752,10 @@
                                 <div class="kiosk-staff-id-txt">
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
+                                    ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
                                     <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
-                                  <div class="drv-sub">${esc(s.role)}</div>
+                                  <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
@@ -85882,9 +85914,10 @@
                                 <div class="kiosk-staff-id-txt">
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
+                                    ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
                                     <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
-                                  <div class="drv-sub">${esc(s.role)}</div>
+                                  <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
@@ -86002,9 +86035,10 @@
                                 <div class="kiosk-staff-id-txt">
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
+                                    ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
                                     <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
-                                  <div class="drv-sub">${esc(s.role)}</div>
+                                  <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
@@ -86943,6 +86977,26 @@
         }
       });
     });
+    feedCard.querySelectorAll('[data-kiosk-staff-status]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const st = btn.getAttribute('data-kiosk-staff-status') || 'all';
+        STATE.kioskStaffStatusFilter = ['all', 'active', 'inactive'].includes(st) ? st : 'all';
+        STATE.payrollStaffStatus = STATE.kioskStaffStatusFilter;
+        renderApp();
+      });
+    });
+    feedCard.querySelectorAll('[data-kiosk-policy-co]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const coKey = btn.getAttribute('data-kiosk-policy-co') || 'manufacturing-group';
+        STATE.industry = 'manufacturing';
+        STATE.company = coKey;
+        const indSel = $('industrySelect');
+        if (indSel) indSel.value = 'manufacturing';
+        const coSel = $('companySelect');
+        if (coSel) coSel.value = coKey;
+        renderApp();
+      });
+    });
     feedCard.querySelectorAll('[data-late-pen-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         STATE.kioskLatePenFilter = btn.getAttribute('data-late-pen-filter') || 'all';
@@ -86974,6 +87028,7 @@
       });
     });
     $('kioskClearLateFiltersBtn')?.addEventListener('click', () => {
+      STATE.kioskStaffStatusFilter = 'all';
       STATE.kioskLatePenFilter = 'all';
       STATE.kioskLateTolFilter = 'all';
       STATE.kioskLateWhenFilter = 'all';
