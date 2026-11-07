@@ -30708,6 +30708,10 @@
       });
     }
 
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.mountOnDocumentPreviewModal === 'function') {
+      window.MFG_SMART_SCAN.mountOnDocumentPreviewModal(cur, contextMeta);
+    }
+
     modal.hidden = false;
   }
 
@@ -74047,6 +74051,10 @@
       }
       recalcForm();
     }
+    if (window.MFG_SMART_SCAN) {
+      if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') window.MFG_SMART_SCAN.resetModalState();
+      if (typeof window.MFG_SMART_SCAN.mountOnEntryModal === 'function') window.MFG_SMART_SCAN.mountOnEntryModal();
+    }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(modal || document.body);
@@ -74065,6 +74073,9 @@
     hideEntryUnsavedPrompt();
     FORM_UI.userInteracted = false;
     FORM_UI.initialModalSig = '';
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
+      window.MFG_SMART_SCAN.resetModalState();
+    }
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -98769,6 +98780,9 @@
         }
       }
       wireWorkspace(container, user);
+      if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.syncWorkspaceButtons === 'function') {
+        window.MFG_SMART_SCAN.syncWorkspaceButtons();
+      }
       if (wsScrollSnap) {
         restoreScrollSnapshot(container, wsScrollSnap);
         if (!($('entryModal') && !$('entryModal').hidden) && !($('recordInspector') && !$('recordInspector').hidden)) {
@@ -102685,6 +102699,38 @@
         fmtLBP,
         fmtNum,
         esc
+      });
+    }
+    if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.init === 'function') {
+      window.MFG_SMART_SCAN.init({
+        STATE,
+        SEED,
+        COMPANY_KEY_BY_NAME,
+        getFormUi: () => FORM_UI,
+        getFreqIndex,
+        getLbpFxRate,
+        todayISO,
+        allowedCompanyNames,
+        defaultEntryCompany,
+        defaultWarehouseLocationForCompany,
+        ensureMultiIndustrySpineSeeded,
+        getActiveIndustry,
+        selectCompanyScope,
+        contextFormForView,
+        canEnterForm,
+        openEntryModal,
+        recalcForm,
+        readAndCompressAttachmentFile,
+        openDocumentCameraCapture,
+        resolveDocDataUrl,
+        renderEntryAttachmentsListUI,
+        renderExpenseItemsBuilderRows,
+        renderRepairItemsBuilderRows,
+        openQuickExpenseCatalogDrawer,
+        resolveCanonicalEquipmentName,
+        resolveCatalogItem,
+        isSupplierIvaForCompany,
+        toast
       });
     }
 
