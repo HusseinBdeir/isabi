@@ -162,17 +162,22 @@ def main():
         print("JS SYNTAX ERROR:", res.stderr, file=sys.stderr)
         sys.exit(1)
 
-    # Sync Command Center bundle into /isabi/app/ unless skipped or mfg-web has uncommitted WIP
+    # Sync Command Center bundle into /isabi/app/ unless skipped or isabi-app has uncommitted WIP
     if '--skip-app-sync' in sys.argv or os.environ.get('ISABI_SKIP_APP_SYNC') == '1':
         print("INFO: Skipped sync_command_app() (--skip-app-sync)")
     else:
-        mfg_dir = os.path.join(os.path.dirname(ROOT), 'mfg-web')
-        mfg_dirty = False
-        if os.path.isdir(mfg_dir) and '--force-app-sync' not in sys.argv:
-            st = subprocess.run(['git', '-C', mfg_dir, 'status', '--porcelain'], capture_output=True, text=True)
-            mfg_dirty = bool(st.returncode == 0 and st.stdout.strip())
-        if mfg_dirty:
-            print("WARN: Skipped sync_command_app() because mfg-web has uncommitted WIP (pass --force-app-sync to override)")
+        parent_dir = os.path.dirname(ROOT)
+        app_src_dir = (
+            os.path.join(parent_dir, 'isabi-app')
+            if os.path.isdir(os.path.join(parent_dir, 'isabi-app'))
+            else os.path.join(parent_dir, 'mfg-web')
+        )
+        app_src_dirty = False
+        if os.path.isdir(app_src_dir) and '--force-app-sync' not in sys.argv:
+            st = subprocess.run(['git', '-C', app_src_dir, 'status', '--porcelain'], capture_output=True, text=True)
+            app_src_dirty = bool(st.returncode == 0 and st.stdout.strip())
+        if app_src_dirty:
+            print("WARN: Skipped sync_command_app() because isabi-app has uncommitted WIP (pass --force-app-sync to override)")
         else:
             sync_command_app()
 
