@@ -11,6 +11,8 @@
 (function () {
   'use strict';
 
+  if (/[?&](phone_scan|ps)=[a-zA-Z0-9_.-]+/i.test(window.location.search || '')) return;
+
   const ic = (name, cls) => (window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
   const SEED_MANIFEST = window.__MFG_SEED_MANIFEST || {};
@@ -30214,6 +30216,10 @@
   }
 
   function closeDocumentCameraModal() {
+    if (window.MFG_DOC_SCANNER && typeof window.MFG_DOC_SCANNER.close === 'function') {
+      window.MFG_DOC_SCANNER.close();
+      return;
+    }
     _docCamState.open = false;
     _docCamState.onCapture = null;
     _docCamState.capturedFile = null;
@@ -30661,6 +30667,11 @@
   }
 
   function openDocumentCameraCapture(onCaptureFiles, opts = {}) {
+    if (window.MFG_DOC_SCANNER && typeof window.MFG_DOC_SCANNER.open === 'function') {
+      window.MFG_DOC_SCANNER._toast = toast;
+      const mergedOpts = Object.assign({ preset: resolveDefaultDocCamPreset() }, opts || {});
+      return window.MFG_DOC_SCANNER.open(onCaptureFiles, mergedOpts);
+    }
     const modal = ensureDocCameraModalDom();
     revokeAllDocCamPreviews();
     _docCamState.open = true;
@@ -86975,6 +86986,7 @@
   }
 
   async function startAuthFaceScanner(forceStart = false) {
+    if (PARAMS.get('phone_scan') || PARAMS.get('ps')) return false;
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
       stopFaceCamera();
       updateAuthFaceUi();

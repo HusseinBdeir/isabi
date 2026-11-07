@@ -1,0 +1,559 @@
+/* ============================================================================
+ * ISABI Document-Only Camera Scanner & Instant Phone QR Handoff (css/doc_scanner.css)
+ * Gallery-Alabaster Light Mode + Warm Espresso Dark Mode (zero navy fills).
+ * ============================================================================ */
+
+html.phone-scan-companion .app-shell,
+html.phone-scan-companion #authGate,
+html.phone-scan-companion #aiDrawer {
+  display: none !important;
+}
+
+html.phone-scan-companion,
+html.phone-scan-companion body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  background: var(--bg, #FAF9F6);
+}
+
+#docCameraModal .doc-cam-card {
+  width: min(820px, calc(100vw - 24px));
+  max-width: 820px;
+  max-height: min(93dvh, 790px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--line-strong, #D8D2C5);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+:root[data-theme="dark"] #docCameraModal .doc-cam-card {
+  background: #211A14;
+  border-color: #3D3126;
+}
+
+#docCameraModal .modal-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line, #E6E1D6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#docCameraModal .modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.doc-cam-top-deck {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-cam-preset-bar,
+.doc-cam-tools-bar,
+.doc-cam-enhance-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.doc-cam-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  min-height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong, #D5CFC2);
+  background: var(--surface-2, #F6F4EE);
+  color: var(--ink, #231D18);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  white-space: nowrap;
+}
+
+.doc-cam-pill-btn:hover {
+  border-color: var(--brass, #C89D54);
+}
+
+.doc-cam-pill-btn.active {
+  background: var(--brass, #C89D54);
+  border-color: var(--brass, #C89D54);
+  color: #1E1710;
+  font-weight: 700;
+}
+
+.doc-cam-pill-btn.is-emerald.active {
+  background: #ECFDF5;
+  border-color: #1F7A4C;
+  color: #145334;
+}
+
+:root[data-theme="dark"] .doc-cam-pill-btn {
+  background: #2B221B;
+  border-color: #46382C;
+  color: #F5F0E6;
+}
+
+:root[data-theme="dark"] .doc-cam-pill-btn.active {
+  background: #C89D54;
+  border-color: #C89D54;
+  color: #1B140F;
+}
+
+:root[data-theme="dark"] .doc-cam-pill-btn.is-emerald.active {
+  background: rgba(31, 122, 76, 0.22);
+  border-color: #34D399;
+  color: #A7F3D0;
+}
+
+.doc-cam-zoom-group {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2, #F6F4EE);
+  border: 1px solid var(--line-strong, #D5CFC2);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+:root[data-theme="dark"] .doc-cam-zoom-group {
+  background: #2B221B;
+  border-color: #46382C;
+}
+
+.doc-cam-zoom-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted, #645B50);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  min-height: 24px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+:root[data-theme="dark"] .doc-cam-zoom-btn {
+  color: #C9BFA9;
+}
+
+.doc-cam-zoom-btn.active {
+  background: var(--brass, #C89D54);
+  color: #1B140F;
+}
+
+/* Stage & Privacy Curtain */
+#docCameraModal .doc-cam-stage,
+.psc-cam-stage {
+  position: relative;
+  width: 100%;
+  min-height: 260px;
+  max-height: min(48vh, 410px);
+  aspect-ratio: 16 / 10;
+  border-radius: 12px;
+  border: 1.5px solid var(--line-strong, #D5CFC2);
+  background: #F4F2EE;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+:root[data-theme="dark"] #docCameraModal .doc-cam-stage,
+:root[data-theme="dark"] .psc-cam-stage {
+  background: #1B140F;
+  border-color: #3D3126;
+}
+
+#docCameraModal .doc-cam-video,
+.psc-cam-stage .doc-cam-video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  transform-origin: center center;
+  transition: transform 0.14s ease-out;
+  display: block;
+}
+
+#docCameraModal .doc-cam-preview-img,
+.psc-cam-stage .doc-cam-preview-img {
+  max-width: calc(100% - 20px);
+  max-height: calc(100% - 20px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 6px 22px rgba(28, 22, 16, 0.14);
+  border: 1px solid var(--line, #E2DDD2);
+  background: #FFFFFF;
+  z-index: 4;
+}
+
+.doc-cam-overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.doc-cam-overlay-canvas.is-interactive {
+  pointer-events: auto;
+  cursor: crosshair;
+  z-index: 6;
+}
+
+/* Scanner Target Window + Opaque Privacy Mask outside target */
+#docCameraModal .doc-cam-guide,
+.psc-cam-stage .doc-cam-guide {
+  position: absolute;
+  inset: 12px 10%;
+  border: 2px dashed rgba(200, 157, 84, 0.88);
+  border-radius: 10px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  z-index: 2;
+  box-shadow: 0 0 0 2400px rgba(244, 242, 238, 0.56);
+  transition: inset 0.18s ease, border-color 0.16s ease, box-shadow 0.18s ease;
+}
+
+#docCameraModal .doc-cam-guide.has-privacy-mask,
+.psc-cam-stage .doc-cam-guide.has-privacy-mask {
+  box-shadow: 0 0 0 2400px rgba(244, 242, 238, 0.96);
+}
+
+:root[data-theme="dark"] #docCameraModal .doc-cam-guide,
+:root[data-theme="dark"] .psc-cam-stage .doc-cam-guide {
+  box-shadow: 0 0 0 2400px rgba(27, 20, 15, 0.62);
+}
+
+:root[data-theme="dark"] #docCameraModal .doc-cam-guide.has-privacy-mask,
+:root[data-theme="dark"] .psc-cam-stage .doc-cam-guide.has-privacy-mask {
+  box-shadow: 0 0 0 2400px rgba(27, 20, 15, 0.96);
+}
+
+#docCameraModal .doc-cam-guide.is-doc-locked,
+.psc-cam-stage .doc-cam-guide.is-doc-locked {
+  border-color: #1F7A4C;
+  border-style: solid;
+}
+
+#docCameraModal .doc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide,
+.psc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide {
+  inset: 10px 21%;
+}
+
+#docCameraModal .doc-cam-stage[data-doc-preset="document"] .doc-cam-guide,
+.psc-cam-stage[data-doc-preset="document"] .doc-cam-guide {
+  inset: 10px 11%;
+}
+
+#docCameraModal .doc-cam-stage[data-doc-preset="card"] .doc-cam-guide,
+.psc-cam-stage[data-doc-preset="card"] .doc-cam-guide {
+  inset: 17% 16%;
+}
+
+@media (max-width: 640px) {
+  #docCameraModal .doc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide,
+  .psc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide {
+    inset: 10px 11%;
+  }
+  #docCameraModal .doc-cam-stage[data-doc-preset="document"] .doc-cam-guide,
+  .psc-cam-stage[data-doc-preset="document"] .doc-cam-guide {
+    inset: 10px 6%;
+  }
+  #docCameraModal .doc-cam-stage[data-doc-preset="card"] .doc-cam-guide,
+  .psc-cam-stage[data-doc-preset="card"] .doc-cam-guide {
+    inset: 19% 7%;
+  }
+}
+
+.doc-cam-privacy-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #145334;
+  border: 1px solid rgba(31, 122, 76, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] .doc-cam-privacy-tag {
+  background: rgba(36, 28, 22, 0.94);
+  color: #A7F3D0;
+  border-color: rgba(52, 211, 153, 0.4);
+}
+
+.doc-cam-enhance-deck {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--surface-2, #F6F4EE);
+  border: 1px solid var(--line, #E5E0D5);
+}
+
+:root[data-theme="dark"] .doc-cam-enhance-deck {
+  background: #282019;
+  border-color: #3D3126;
+}
+
+.doc-cam-enhance-deck[hidden],
+.doc-cam-qr-panel[hidden],
+.doc-cam-top-deck[hidden] {
+  display: none !important;
+}
+
+/* Instant Phone QR Handoff Panel */
+.doc-cam-qr-panel {
+  display: grid;
+  grid-template-columns: 204px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--surface-2, #FAF8F2);
+  border: 1.5px solid var(--line-strong, #D8D2C5);
+}
+
+:root[data-theme="dark"] .doc-cam-qr-panel {
+  background: #261E17;
+  border-color: #423529;
+}
+
+.doc-cam-qr-box {
+  width: 204px;
+  height: 204px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2DDD2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(28, 22, 16, 0.07);
+  box-sizing: border-box;
+}
+
+.doc-cam-qr-box svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.doc-cam-qr-info {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.doc-cam-qr-info h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink, #1E1B18);
+}
+
+.doc-cam-qr-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink, #2A241E);
+}
+
+:root[data-theme="dark"] .doc-cam-qr-info h3,
+:root[data-theme="dark"] .doc-cam-qr-steps {
+  color: #F5F0E6;
+}
+
+.doc-cam-qr-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.doc-cam-qr-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #F59E0B;
+}
+
+.doc-cam-qr-status-pill.is-connected,
+.doc-cam-qr-status-pill.is-ready {
+  background: #ECFDF5;
+  color: #145334;
+  border-color: #1F7A4C;
+}
+
+:root[data-theme="dark"] .doc-cam-qr-status-pill {
+  background: rgba(217, 119, 6, 0.2);
+  color: #FDE68A;
+  border-color: #D97706;
+}
+
+:root[data-theme="dark"] .doc-cam-qr-status-pill.is-connected,
+:root[data-theme="dark"] .doc-cam-qr-status-pill.is-ready {
+  background: rgba(31, 122, 76, 0.24);
+  color: #A7F3D0;
+  border-color: #34D399;
+}
+
+@media (max-width: 640px) {
+  .doc-cam-qr-panel {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: left;
+    padding: 12px;
+  }
+  .doc-cam-qr-box {
+    width: 176px;
+    height: 176px;
+  }
+}
+
+/* Dedicated Mobile Companion Scanner (?ps=... / ?phone_scan=...) */
+.psc-shell {
+  min-height: 100vh;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px 14px 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg, #FAF9F6);
+  color: var(--ink, #1E1B18);
+}
+
+:root[data-theme="dark"] .psc-shell {
+  background: #1B140F;
+  color: #F5F0E6;
+}
+
+.psc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line, #E5E0D5);
+}
+
+.psc-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.psc-brand small {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brass-strong, #9E6F21);
+}
+
+.psc-brand strong {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.psc-cam-stage {
+  aspect-ratio: 3 / 4;
+  min-height: 310px;
+  max-height: min(56vh, 480px);
+}
+
+.psc-sent-banner {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #ECFDF5;
+  border: 1px solid #1F7A4C;
+  color: #145334;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.psc-sent-banner[hidden] {
+  display: none !important;
+}
+
+:root[data-theme="dark"] .psc-sent-banner {
+  background: rgba(31, 122, 76, 0.22);
+  border-color: #34D399;
+  color: #A7F3D0;
+}
+
+.psc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+@media (max-width: 768px) {
+  #docCameraModal button,
+  .psc-shell button,
+  #docCameraModal input,
+  .psc-shell input {
+    touch-action: manipulation;
+  }
+}
+
+@media (max-height: 540px) {
+  #docCameraModal .doc-cam-stage {
+    min-height: 165px;
+    max-height: 36dvh;
+  }
+}

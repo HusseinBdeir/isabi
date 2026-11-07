@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.200';
+const SHELL_CACHE = 'isabi-mfg-v19.6.201';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,37 +6,39 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.200',
-  './css/geo_dispatch.css?v=19.6.200',
-  './css/daily_ops.css?v=19.6.200',
-  './css/ask_isabi.css?v=19.6.200',
-  './css/fleet_pnl.css?v=19.6.200',
-  './css/smart_scan.css?v=19.6.200',
-  './js/face.js?v=19.6.200',
-  './js/endpoints.js?v=19.6.200',
-  './js/seed_manifest.js?v=19.6.200',
-  './js/icons.js?v=19.6.200',
-  './js/geo_dispatch.js?v=19.6.200',
-  './js/forms_engine.js?v=19.6.200',
-  './js/pbi_pages.js?v=19.6.200',
-  './js/rdl_reports.js?v=19.6.200',
-  './js/kiosk_print.js?v=19.6.200',
-  './js/table_columns.js?v=19.6.200',
-  './js/daily_ops.js?v=19.6.200',
-  './js/i18n.js?v=19.6.200',
-  './js/ask_isabi.js?v=19.6.200',
-  './js/fleet_pnl.js?v=19.6.200',
-  './js/smart_scan.js?v=19.6.200',
-  './js/app.js?v=19.6.200',
-  './manifest.json?v=19.6.200',
-  './favicon.ico?v=19.6.200',
-  './favicon-dark.ico?v=19.6.200',
-  './icon.svg?v=19.6.200',
-  './icon-dark.svg?v=19.6.200',
-  './icon-180.png?v=19.6.200',
-  './icon-192.png?v=19.6.200',
-  './icon-512.png?v=19.6.200',
-  './icon-512-maskable.png?v=19.6.200'
+  './css/app.css?v=19.6.201',
+  './css/geo_dispatch.css?v=19.6.201',
+  './css/daily_ops.css?v=19.6.201',
+  './css/ask_isabi.css?v=19.6.201',
+  './css/fleet_pnl.css?v=19.6.201',
+  './css/smart_scan.css?v=19.6.201',
+  './css/doc_scanner.css?v=19.6.201',
+  './js/face.js?v=19.6.201',
+  './js/endpoints.js?v=19.6.201',
+  './js/seed_manifest.js?v=19.6.201',
+  './js/icons.js?v=19.6.201',
+  './js/geo_dispatch.js?v=19.6.201',
+  './js/forms_engine.js?v=19.6.201',
+  './js/pbi_pages.js?v=19.6.201',
+  './js/rdl_reports.js?v=19.6.201',
+  './js/kiosk_print.js?v=19.6.201',
+  './js/table_columns.js?v=19.6.201',
+  './js/daily_ops.js?v=19.6.201',
+  './js/i18n.js?v=19.6.201',
+  './js/ask_isabi.js?v=19.6.201',
+  './js/fleet_pnl.js?v=19.6.201',
+  './js/doc_scanner.js?v=19.6.201',
+  './js/smart_scan.js?v=19.6.201',
+  './js/app.js?v=19.6.201',
+  './manifest.json?v=19.6.201',
+  './favicon.ico?v=19.6.201',
+  './favicon-dark.ico?v=19.6.201',
+  './icon.svg?v=19.6.201',
+  './icon-dark.svg?v=19.6.201',
+  './icon-180.png?v=19.6.201',
+  './icon-192.png?v=19.6.201',
+  './icon-512.png?v=19.6.201',
+  './icon-512-maskable.png?v=19.6.201'
 ];
 
 const VENDOR_ASSETS = [
@@ -82,7 +84,7 @@ self.addEventListener('install', event => {
                 .catch(() => null);
             });
           }
-          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.200' : url;
+          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.201' : url;
           return fetchDedup(fetchUrl, { cache: 'reload' })
             .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
             .catch(() => null);
@@ -184,7 +186,7 @@ self.addEventListener('fetch', event => {
           const res = await fetch(new Request(event.request, { cache: 'no-store' }));
           if (res && res.status === 200) {
             if (url.pathname.endsWith('/js/i18n.js')) {
-              cache.put('./js/i18n.js?v=19.6.200', res.clone());
+              cache.put('./js/i18n.js?v=19.6.201', res.clone());
             }
             return res;
           }
@@ -219,7 +221,7 @@ self.addEventListener('fetch', event => {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 3000);
-          const navUrl = new URL('./index.html?v=19.6.200', self.location.href).href;
+          const navUrl = new URL('./index.html?v=19.6.201', self.location.href).href;
           const res = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
           clearTimeout(timer);
           if (res && res.status === 200) {

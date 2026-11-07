@@ -138,6 +138,7 @@ const Face = (() => {
     // (prevents dual-<video> SurfaceTexture black-screen on Android and back-to-back camera HAL churn).
     try {
       const sp = new URLSearchParams(window.location.search || "");
+      if (sp.get("phone_scan") || sp.get("ps")) return;
       const kParam = String(sp.get("kiosk") || "").toLowerCase();
       if (kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel" || /ISABIKiosk\//i.test(navigator.userAgent || "")) {
         load().catch(() => {});
