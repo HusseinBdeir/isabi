@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.187';
+const SHELL_CACHE = 'isabi-mfg-v19.6.189';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,37 +6,37 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.187',
-  './css/geo_dispatch.css?v=19.6.187',
-  './css/daily_ops.css?v=19.6.187',
-  './css/ask_isabi.css?v=19.6.187',
-  './css/fleet_pnl.css?v=19.6.187',
-  './css/smart_scan.css?v=19.6.187',
-  './js/face.js?v=19.6.187',
-  './js/endpoints.js?v=19.6.187',
-  './js/seed_manifest.js?v=19.6.187',
-  './js/icons.js?v=19.6.187',
-  './js/geo_dispatch.js?v=19.6.187',
-  './js/forms_engine.js?v=19.6.187',
-  './js/pbi_pages.js?v=19.6.187',
-  './js/rdl_reports.js?v=19.6.187',
-  './js/kiosk_print.js?v=19.6.187',
-  './js/table_columns.js?v=19.6.187',
-  './js/daily_ops.js?v=19.6.187',
-  './js/i18n.js?v=19.6.187',
-  './js/ask_isabi.js?v=19.6.187',
-  './js/fleet_pnl.js?v=19.6.187',
-  './js/smart_scan.js?v=19.6.187',
-  './js/app.js?v=19.6.187',
-  './manifest.json?v=19.6.187',
-  './favicon.ico?v=19.6.187',
-  './favicon-dark.ico?v=19.6.187',
-  './icon.svg?v=19.6.187',
-  './icon-dark.svg?v=19.6.187',
-  './icon-180.png?v=19.6.187',
-  './icon-192.png?v=19.6.187',
-  './icon-512.png?v=19.6.187',
-  './icon-512-maskable.png?v=19.6.187'
+  './css/app.css?v=19.6.189',
+  './css/geo_dispatch.css?v=19.6.189',
+  './css/daily_ops.css?v=19.6.189',
+  './css/ask_isabi.css?v=19.6.189',
+  './css/fleet_pnl.css?v=19.6.189',
+  './css/smart_scan.css?v=19.6.189',
+  './js/face.js?v=19.6.189',
+  './js/endpoints.js?v=19.6.189',
+  './js/seed_manifest.js?v=19.6.189',
+  './js/icons.js?v=19.6.189',
+  './js/geo_dispatch.js?v=19.6.189',
+  './js/forms_engine.js?v=19.6.189',
+  './js/pbi_pages.js?v=19.6.189',
+  './js/rdl_reports.js?v=19.6.189',
+  './js/kiosk_print.js?v=19.6.189',
+  './js/table_columns.js?v=19.6.189',
+  './js/daily_ops.js?v=19.6.189',
+  './js/i18n.js?v=19.6.189',
+  './js/ask_isabi.js?v=19.6.189',
+  './js/fleet_pnl.js?v=19.6.189',
+  './js/smart_scan.js?v=19.6.189',
+  './js/app.js?v=19.6.189',
+  './manifest.json?v=19.6.189',
+  './favicon.ico?v=19.6.189',
+  './favicon-dark.ico?v=19.6.189',
+  './icon.svg?v=19.6.189',
+  './icon-dark.svg?v=19.6.189',
+  './icon-180.png?v=19.6.189',
+  './icon-192.png?v=19.6.189',
+  './icon-512.png?v=19.6.189',
+  './icon-512-maskable.png?v=19.6.189'
 ];
 
 const VENDOR_ASSETS = [
@@ -82,7 +82,8 @@ self.addEventListener('install', event => {
                 .catch(() => null);
             });
           }
-          return fetchDedup(url, { cache: 'reload' })
+          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.189' : url;
+          return fetchDedup(fetchUrl, { cache: 'reload' })
             .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
             .catch(() => null);
         })
@@ -116,6 +117,12 @@ self.addEventListener('activate', event => {
         }
       }
       await self.clients.claim();
+      try {
+        const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const c of allClients) {
+          c.postMessage({ type: 'SW_UPDATED', ver: SHELL_CACHE });
+        }
+      } catch (_) {}
     })()
   );
 });
@@ -169,11 +176,30 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Versioned UI shell assets (?v=...): cache-first in SHELL_CACHE
+  // Explicit cache-busting hot-reload (?cb=...): network-first bypassing Fastly CDN edge cache
+  if (!isNav && url.searchParams.has('cb')) {
+    event.respondWith(
+      caches.open(SHELL_CACHE).then(async cache => {
+        try {
+          const res = await fetch(new Request(event.request, { cache: 'no-store' }));
+          if (res && res.status === 200) {
+            if (url.pathname.endsWith('/js/i18n.js')) {
+              cache.put('./js/i18n.js?v=19.6.189', res.clone());
+            }
+            return res;
+          }
+        } catch (_) {}
+        return (await cache.match(event.request, { ignoreSearch: true })) || fetch(event.request);
+      })
+    );
+    return;
+  }
+
+  // Versioned UI shell assets (?v=...): cache-first in SHELL_CACHE with ignoreSearch fallback
   if (!isNav && url.searchParams.has('v')) {
     event.respondWith(
       caches.open(SHELL_CACHE).then(async cache => {
-        const cached = await cache.match(event.request);
+        const cached = (await cache.match(event.request)) || (await cache.match(event.request, { ignoreSearch: true }));
         if (cached) return cached;
         const res = await fetchDedup(event.request);
         if (res && res.status === 200) {
@@ -193,7 +219,8 @@ self.addEventListener('fetch', event => {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 3000);
-          const res = await fetch(new Request(event.request, { cache: 'no-cache' }), { signal: ctrl.signal });
+          const navUrl = new URL('./index.html?v=19.6.189', self.location.href).href;
+          const res = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
           clearTimeout(timer);
           if (res && res.status === 200) {
             cache.put('./index.html', res.clone());

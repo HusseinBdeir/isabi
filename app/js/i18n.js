@@ -118,7 +118,7 @@
       "Manufacturing Operations": "العمليات الصناعية",
       "Holding & Treasury": "القابضة والخزينة",
       "Hospitality & Resorts": "الضيافة والمنتجعات",
-      "Automotive & Heavy Trading": "تجارة الآليات والشاحنات",
+      "Automotive & Heavy Trading": "السيارات والتجارة الثقيلة",
       "Real Estate & Property": "العقارات والأملاك",
       "Insurance & Brokerage": "التأمين والوساطة",
       "Double-Entry Ledger": "دفتر القيد المزدوج",
@@ -1170,7 +1170,7 @@
       "Sunset": "تراس الغروب",
       "Sommelier": "البار والمشروبات",
       "Main": "الرئيسي",
-      "Showroom VINs": "آليات المعرض (VIN)",
+      "Showroom VINs": "شاحنات صالة العرض (VIN)",
       "Import Files": "ملفات الاستيراد",
       "Import File": "ملف الاستيراد",
       "5-Whse Parts": "قطع غيار (5 مستودعات)",
@@ -3205,12 +3205,12 @@
       "Holding & Treasury watchdogs & ledger integrity": "رقابة القابضة والخزينة وسلامة الدفاتر",
       "Holding Shared-Services Overhead & Credit Expense Settlement Guard": "رقابة مصاريف الخدمات المشتركة وتسوية الذمم للقابضة",
       "Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Tolerance)": "رقابة فروقات المطابقة البينية بين الشركات الشقيقة (< $1.00)",
-      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "تحويلات بينية من طرف واحد غير مطابقة (> 3 أيام)",
+      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "تحويلات شقيقة أحادية الجانب غير مطابقة (> نافذة 3 أيام)",
       "Net group cash": "صافي نقد المجموعة",
       "Quarry, F&B & Landed": "الكسارات والأغذية والتكلفة الواصلة",
-      "Bilateral intercompany funding & repayment": "التمويل والتسديد المتبادل بين الشركات الشقيقة",
-      "Group Rollup": "تجميع المجموعة",
-      "Revenue share & profit contribution by vertical": "حصة الإيرادات ومساهمة الأرباح حسب القطاع",
+      "Bilateral intercompany funding & repayment": "التمويل والتسديد الثنائي بين الشركات الشقيقة",
+      "Group Rollup": "التجميع الموحد",
+      "Revenue share & profit contribution by vertical": "حصة الإيرادات والمساهمة في الأرباح حسب القطاع",
       "Consolidated Resort P&L Value Bridge (Ex-VAT)": "جسر الأرباح والخسائر الموحّد للمنتجع (دون الضريبة)",
       "Dept GM": "مجمل ربح الأقسام",
       "Energy/OpEx": "الطاقة والمصاريف",
@@ -3223,9 +3223,9 @@
       "Recipe BOM usage": "استهلاك الوصفات المعيارية",
       "Resort Revenue, Kitchen Cost & Profit Trajectory": "مسار إيرادات المنتجع وتكلفة المطبخ والربحية",
       "Seasonal Membership Arrears & Contract Rollover Guard": "رقابة متأخرات الاشتراكات الموسمية وتجديد العقود",
-      "Top seasonal chalet & cabana contracts": "أبرز عقود الشاليهات والكابانا الموسمية",
+      "Top seasonal chalet & cabana contracts": "أكبر عقود الشاليهات والكابانا الموسمية",
       "Menu Matrix": "مصفوفة القائمة",
-      "Top F&B & banquet margin contributors": "أعلى أصناف المطاعم والحفلات مساهمةً بالهامش",
+      "Top F&B & banquet margin contributors": "أعلى أصناف المطاعم والحفلات مساهمة في الهامش",
       "Blanca Beach Resort · Daily Venue Revenue, Memberships & F&B Cost": "منتجع بلانكا · الإيرادات اليومية والاشتراكات وتكلفة المطاعم",
       "Automotive & Heavy Trading watchdogs & ledger integrity": "رقابة تجارة الآليات والشاحنات وسلامة الدفاتر",
       "Below-Reorder Spare Parts Stock & 5-Warehouse WAC Parity Guard": "رقابة حد إعادة الطلب لقطع الغيار ومطابقة المتوسط المرجح (5 مستودعات)",
@@ -3239,8 +3239,8 @@
       "Overdue Collection Promises & Gross AR vs Unallocated Advances Guard": "رقابة وعود التحصيل المتأخرة ومطابقة الذمم مع السلف غير الموزعة",
       "Showroom": "صالة العرض",
       "Receivables": "الذمم المدينة",
-      "Top truck & parts accounts by AR exposure": "أكبر حسابات الشاحنات وقطع الغيار حسب الذمم المفتوحة",
-      "Flagship heavy truck models & embedded margin": "طرازات الشاحنات الثقيلة الرئيسية والهامش المتضمن",
+      "Top truck & parts accounts by AR exposure": "أكبر حسابات الشاحنات وقطع الغيار حسب انكشاف الذمم المدينة",
+      "Flagship heavy truck models & embedded margin": "طرازات الشاحنات الثقيلة الرئيسية والهامش الضمني",
       "Korri Auto SAL · Shacman Heavy Trucks & Korri Auto Parts": "كوري أوتو ش.م.ل · شاحنات Shacman الثقيلة وقطع غيار Korri Auto",
       "Admin/Tax": "إدارة وضرائب",
       "Annual Rent Roll, Fit-Out & NOI by Property": "جدول الإيجارات السنوي والتجهيزات وصافي الدخل التشغيلي لكل عقار",
@@ -3254,8 +3254,8 @@
       "Real Estate & Property watchdogs & ledger integrity": "رقابة العقارات والأملاك وسلامة الدفاتر",
       "Rent Roll": "جدول الإيجارات",
       "Unbilled Active Lease Periods & Open Rent Invoice Receivables": "فترات إيجار نشطة غير مفوترة وذمم فواتير الإيجار المفتوحة",
-      "All Leases": "جميع العقود",
-      "Anchor commercial & residential leaseholders": "أبرز المستأجرين التجاريين والسكنيين",
+      "All Leases": "كل عقود الإيجار",
+      "Anchor commercial & residential leaseholders": "كبار المستأجرين التجاريين والسكنيين",
       "Annual rent roll & NOI by deeded asset": "الإيجار السنوي وصافي الدخل التشغيلي حسب العقار المملوك",
       "+ Sales tranches": "+ دفعات البيع",
       "Brokerage Commission & Fiduciary P&L Value Bridge": "جسر عمولات الوساطة والأرباح والخسائر الائتمانية",
@@ -3272,9 +3272,9 @@
       "Policies Expiring in 30/60/90 Days & Lapsed Unrenewed Policy Watchdog": "بوالص تنتهي خلال 30/60/90 يوماً ورقابة البوالص المنتهية غير المجددة",
       "Rebates": "الحسومات الممنوحة",
       "Written Premium, Carrier Net & Commission by Carrier": "الأقساط المكتتبة وصافي الشركات والعمولات حسب شركة التأمين",
-      "Largest corporate & fleet policies by GWP": "أكبر بوالص الشركات والأساطيل حسب إجمالي الأقساط المكتتبة",
-      "Catalogue": "دليل البوالص",
-      "GWP & commission yield by insurance line": "الأقساط المكتتبة وعائد العمولة حسب فرع التأمين",
+      "Largest corporate & fleet policies by GWP": "أكبر بوالص الشركات والأسطول حسب إجمالي الأقساط المكتتبة",
+      "Catalogue": "دليل المنتجات",
+      "GWP & commission yield by insurance line": "إجمالي الأقساط وعائد العمولة حسب فرع التأمين",
       "+ New Team Login": "+ إضافة حساب مستخدم",
       "128-D live neural face descriptors with blink/turn liveness": "بصمة وجه عصبية حية (128 بُعداً) مع التحقق الحيوي بالرمش وحركة الرأس",
       "Active Web Seats": "المقاعد النشطة على الويب",
@@ -3488,7 +3488,7 @@
       "Back-Dated Entry Explanation Guard": "حاجز تبرير القيود المؤرخة بأثر رجعي",
       "Critical Down-Unit & Unnotified Part Custody": "رقابة الآليات المتوقفة وعهدة القطع المستبدلة بدون بلاغ عطل",
       "Daily Chassis & Plant Greasing Benchmark": "معيار التشحيم اليومي للشاحنات والمصنع",
-      "Diesel Malfunction vs Company Consumption Watchdog": "رقابة فروقات وأعطال المازوت نسبةً لاستهلاك الشركة",
+      "Diesel Malfunction vs Company Consumption Watchdog": "رقابة أعطال المازوت مقارنة باستهلاك الشركة",
       "Diesel Tank Physical vs Ledger Watchdog": "رقابة مطابقة رصيد خزان المازوت الفعلي مع الدفتري",
       "Duplicate Ticket Serial Number Guard": "حاجز منع تكرار أرقام إيصالات القبان",
       "Engine Oil 15W-40 Early Drain & Overdue Service": "رقابة التغيير المبكر أو المتأخر لزيت المحرك 15W-40",
@@ -3497,11 +3497,11 @@
       "Hydraulic Oil 68 Leak Watch (30-Day & Excess)": "رقابة تسريب الزيت الهيدروليكي 68 (خلال 30 يوماً)",
       "Kiosk Anti-Double-Punch Debounce Guard": "حاجز منع ازدواجية بصمة الحضور على الكشك",
       "Odometer & Hour-Meter Jump & Ceiling Guard": "حاجز قفزات وسقف عدادات الكيلومترات والساعات",
-      "Price Agreement & Lapsed Contract Watchdog": "رقابة الالتزام باتفاقيات الأسعار والعقود المنتهية",
+      "Price Agreement & Lapsed Contract Watchdog": "رقابة اتفاقيات الأسعار والعقود المنتهية",
       "Reporting Date vs Transaction Date Guard": "حاجز فرق تاريخ التقرير عن تاريخ العملية",
       "Salary Payments Without Active Contract": "رقابة دفعات الرواتب بدون عقد عمل نشط",
       "Transaction vs Reporting Date Parity Audit": "تدقيق مطابقة تاريخ العملية مع تاريخ التقرير والفواتير الضريبية",
-      "Weighbridge Ticket Pad & Skipped Serial Audit": "تدقيق دفاتر القبان (25 إيصال) والأرقام المتخطاة",
+      "Weighbridge Ticket Pad & Skipped Serial Audit": "تدقيق دفاتر القبان والأرقام المتخطاة",
       "Weighbridge Ton Estimate Corridor": "نطاق التحقق من الوزن بالطن مقابل سعة الشاحنة",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "ينبّه الإدارة عندما تصل فروقات العدادات أو إيصالات المازوت غير الموزعة أو فروقات الخزان إلى 5% أو أكثر من إجمالي استهلاك الشركة في الفترة المحددة.",
       "Audits historical vouchers shifted across months (Transaction Date vs Reporting Date) and spots statutory VAT invoices not linked to weighbridge tickets.": "يدقق السندات المرحّلة بين الأشهر (تاريخ العملية مقابل تاريخ التقرير) ويكشف فواتير الضريبة الرسمية غير المرتبطة بإيصالات القبان.",
@@ -5837,7 +5837,38 @@
       "Register & Enrol New Staff Member": "إضافة وتسجيل بصمة موظف جديد",
       "Save & Capture Face ID": "حفظ والتقاط بصمة الوجه",
       "Staff Enrolment Face ID": "بصمة الوجه لتسجيل الموظفين",
-      "Station Admin & Enrolment Face ID": "بصمة المشرف أو مدخل البيانات"
+      "Station Admin & Enrolment Face ID": "بصمة المشرف أو مدخل البيانات",
+      "Lions Transport · FLEET OPERATIONS": "Lions Transport · عمليات الأسطول",
+      "No standalone financial ledger is published yet for Lions Transport. Switch to": "لم يُنشر دفتر مالي مستقل لشركة Lions Transport بعد. انتقل إلى",
+      ", or": "، أو",
+      "All Group": "كامل المجموعة",
+      "in the entity selector to view consolidated financial scorecards.": "في محدّد الشركات لعرض بطاقات الأداء المالي الموحّدة.",
+      "Zero Unpriced Expense or Quarry Queues": "صفر مصاريف أو نقلات كسارات غير مسعّرة",
+      "All dispatched quarry loads and plant bills carry approved rates": "جميع نقلات الكسارات وفواتير المصنع تحمل أسعاراً معتمدة",
+      "Receivables Aging: 100% Within Credit Terms": "أعمار الذمم المدينة: 100% ضمن شروط الائتمان",
+      "All 11 Audit Sentinels Passing": "جميع المراقبين الآليين الـ 11 بحالة سليمة",
+      "Price corridors, serial pads, fuel burn & payroll contracts verified": "تم التحقق من نطاقات الأسعار ودفاتر الإيصالات واستهلاك الوقود وعقود الرواتب",
+      "Active credit & cash clients": "العملاء النشطون بالآجل والنقد",
+      "All Clear": "سليم بالكامل",
+      "Inspect TB": "معاينة الميزان",
+      "Customer Receivables Overdue > 60 Days": "ذمم العملاء المتأخرة لأكثر من 60 يوماً",
+      "Unpriced Expenses & Raw Purchases": "مصاريف ومشتريات مواد غير مسعّرة",
+      "Salary Disbursements vs Active Employment Contracts": "دفعات الرواتب مقابل عقود العمل النشطة",
+      "Transaction Date vs Reporting Date Parity & Unlinked VAT": "مطابقة تاريخ العملية وتاريخ التقرير وفواتير الضريبة",
+      "Joint Venture 50/50 Stock Entitlement vs Partner Payouts": "استحقاق مخزون الشراكة 50/50 مقابل دفعات الشريك",
+      "Critical Equipment Defects & Unnotified Spare Part Swaps": "أعطال الآليات الحرجة واستبدال القطع دون إشعار",
+      "Bilateral Sister Amount Drift Watchdog (< $1.00 Tolerance)": "رقابة فروقات المبالغ الثنائية بين الشركات الشقيقة (< هامش $1.00)",
+      "Bilateral Sister Amount Drift Watchdog": "رقابة فروقات المبالغ الثنائية بين الشركات الشقيقة",
+      "Unmatched One-Sided Sister Transfers": "تحويلات شقيقة أحادية الجانب غير مطابقة",
+      "Policies Expiring in <= 90 Days & Lapsed Unrenewed Policy Watchdog": "البوالص المنتهية خلال <= 90 يوماً ورقابة البوالص غير المجددة",
+      "Leases Expiring in <= 90 Days & Stepped Escalation Watchdog": "عقود الإيجار المنتهية خلال <= 90 يوماً ورقابة الزيادات المتدرجة",
+      "Resorts (5)": "المنتجعات (5)",
+      "Properties": "العقارات",
+      "Multi-carrier": "متعدد الشركات",
+      "All Policies": "كل البوالص",
+      "0 LL": "0 ل.ل.",
+      "LL 0": "0 ل.ل.",
+      "Manufacturing & Construction": "التصنيع والإنشاءات"
     },
     fr: {
       "ISABI Systems": "ISABI Systems",
@@ -5933,7 +5964,7 @@
       "Manufacturing Operations": "Opérations Industrielles",
       "Holding & Treasury": "Holding & Trésorerie",
       "Hospitality & Resorts": "Hôtellerie & Resorts",
-      "Automotive & Heavy Trading": "Négoce Auto & Poids Lourds",
+      "Automotive & Heavy Trading": "Auto & Négoce Poids Lourds",
       "Real Estate & Property": "Immobilier & Patrimoine",
       "Insurance & Brokerage": "Assurance & Courtage",
       "Double-Entry Ledger": "Comptabilité en Partie Double",
@@ -6985,7 +7016,7 @@
       "Sunset": "Terrasse Sunset",
       "Sommelier": "Sommelier & Cave",
       "Main": "Principal",
-      "Showroom VINs": "Parc Showroom (VIN)",
+      "Showroom VINs": "VINs Showroom",
       "Import Files": "Dossiers d'Import",
       "Import File": "Dossier d'Import",
       "5-Whse Parts": "Pièces (5 Dépôts)",
@@ -7567,7 +7598,7 @@
       "Use in Repair": "Utiliser en Réparation",
       "Venue Revenue Entry": "Saisie Revenu Site",
       "Building Units": "Lots & Unités",
-      "Due Matrix": "Matrice Interco",
+      "Due Matrix": "Matrice des Soldes",
       "Generators": "Groupes Électrogènes",
       "IC Queue": "File Interco",
       "Instalments": "Échéances",
@@ -8364,7 +8395,7 @@
       "Quantity & Unit": "Quantité & Unité",
       "Box": "Boîte",
       "Unit Price Pre-VAT ($)": "Prix Unitaire HT ($)",
-      "Priced": "Chiffré",
+      "Priced": "Valorisé",
       "Pending $0": "En Attente 0 $",
       "Recurring Item": "Charge Récurrente",
       "Billing Cycle": "Périodicité",
@@ -9020,12 +9051,12 @@
       "Holding & Treasury watchdogs & ledger integrity": "Sentinelles Holding & Trésorerie et intégrité comptable",
       "Holding Shared-Services Overhead & Credit Expense Settlement Guard": "Contrôle des Frais Généraux Holding & Règlements Fournisseurs",
       "Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Tolerance)": "Contrôle d'Écart Bilatéral Inter-Sociétés (Tolérance < 1,00 $)",
-      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "Transferts Inter-Sociétés Unilatéraux Non Appairés (> 3 jours)",
+      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "Transferts Inter-Sociétés Unilatéraux Non Lettrés (> 3 Jours)",
       "Net group cash": "Trésorerie nette groupe",
       "Quarry, F&B & Landed": "Carrières, F&B & Coût Rendu",
-      "Bilateral intercompany funding & repayment": "Financement et remboursement bilatéral inter-sociétés",
+      "Bilateral intercompany funding & repayment": "Financement & remboursement bilatéral inter-sociétés",
       "Group Rollup": "Consolidation Groupe",
-      "Revenue share & profit contribution by vertical": "Part du chiffre d'affaires et contribution au profit par secteur",
+      "Revenue share & profit contribution by vertical": "Part du chiffre et contribution au résultat par secteur",
       "Consolidated Resort P&L Value Bridge (Ex-VAT)": "Pont de Résultat Consolidé du Resort (HT)",
       "Dept GM": "Marge Brute Dépt.",
       "Energy/OpEx": "Énergie / OpEx",
@@ -9039,7 +9070,7 @@
       "Resort Revenue, Kitchen Cost & Profit Trajectory": "Trajectoire Revenus, Coût Cuisine & Profit du Resort",
       "Seasonal Membership Arrears & Contract Rollover Guard": "Contrôle des Arriérés d'Abonnements Saisonniers & Renouvellements",
       "Top seasonal chalet & cabana contracts": "Principaux contrats saisonniers chalets & cabanas",
-      "Menu Matrix": "Matrice Menu",
+      "Menu Matrix": "Matrice du Menu",
       "Top F&B & banquet margin contributors": "Principaux contributeurs à la marge F&B & banquets",
       "Blanca Beach Resort · Daily Venue Revenue, Memberships & F&B Cost": "Blanca Beach Resort · Recettes du Jour, Abonnements & Coût F&B",
       "Automotive & Heavy Trading watchdogs & ledger integrity": "Sentinelles Négoce Auto & Poids Lourds et intégrité comptable",
@@ -9055,7 +9086,7 @@
       "Showroom": "Showroom",
       "Receivables": "Créances",
       "Top truck & parts accounts by AR exposure": "Principaux comptes camions & pièces par exposition client",
-      "Flagship heavy truck models & embedded margin": "Modèles phares poids lourds & marge intégrée",
+      "Flagship heavy truck models & embedded margin": "Modèles phares de camions lourds & marge intégrée",
       "Korri Auto SAL · Shacman Heavy Trucks & Korri Auto Parts": "Korri Auto SAL · Poids Lourds Shacman & Pièces Korri Auto",
       "Admin/Tax": "Admin / Taxes",
       "Annual Rent Roll, Fit-Out & NOI by Property": "Loyers Annuels, Aménagements & NOI par Immeuble",
@@ -9071,7 +9102,7 @@
       "Unbilled Active Lease Periods & Open Rent Invoice Receivables": "Périodes de Bail Non Facturées & Créances de Loyers Ouvertes",
       "All Leases": "Tous les Baux",
       "Anchor commercial & residential leaseholders": "Principaux locataires commerciaux et résidentiels",
-      "Annual rent roll & NOI by deeded asset": "Loyer annuel et NOI par bien titré",
+      "Annual rent roll & NOI by deeded asset": "Loyers annuels et NOI par actif immobilier",
       "+ Sales tranches": "+ Tranches de vente",
       "Brokerage Commission & Fiduciary P&L Value Bridge": "Pont des Commissions de Courtage & Résultat Fiduciaire",
       "Brokerage OpEx": "OpEx Courtage",
@@ -9087,9 +9118,9 @@
       "Policies Expiring in 30/60/90 Days & Lapsed Unrenewed Policy Watchdog": "Polices Échéant à 30/60/90 Jours & Contrôle des Polices Non Renouvelées",
       "Rebates": "Remises",
       "Written Premium, Carrier Net & Commission by Carrier": "Primes Émises, Net Compagnie & Commissions par Assureur",
-      "Largest corporate & fleet policies by GWP": "Principales polices entreprises & flottes par primes brutes",
-      "Catalogue": "Catalogue",
-      "GWP & commission yield by insurance line": "Primes brutes & rendement de commission par branche",
+      "Largest corporate & fleet policies by GWP": "Principales polices entreprises et flottes par primes émises",
+      "Catalogue": "Catalogue Produits",
+      "GWP & commission yield by insurance line": "Primes émises et rendement de commission par branche",
       "+ New Team Login": "+ Nouvel Accès Équipe",
       "128-D live neural face descriptors with blink/turn liveness": "Empreinte faciale neuronale 128-D avec détection du vivant (clignement/rotation)",
       "Active Web Seats": "Postes Web Actifs",
@@ -9303,7 +9334,7 @@
       "Back-Dated Entry Explanation Guard": "Garde de Justification des Écritures Antidatées",
       "Critical Down-Unit & Unnotified Part Custody": "Contrôle Engins à l'Arrêt & Pièces Remplacées sans Alerte Panne",
       "Daily Chassis & Plant Greasing Benchmark": "Référentiel de Graissage Quotidien Châssis & Centrale",
-      "Diesel Malfunction vs Company Consumption Watchdog": "Contrôle des Écarts Gasoil vs Consommation Totale",
+      "Diesel Malfunction vs Company Consumption Watchdog": "Sentinelle Écarts Gasoil vs Consommation Société",
       "Diesel Tank Physical vs Ledger Watchdog": "Rapprochement Stock Physique vs Comptable de la Cuve Gasoil",
       "Duplicate Ticket Serial Number Guard": "Garde Anti-Doublon des Numéros de Bons",
       "Engine Oil 15W-40 Early Drain & Overdue Service": "Contrôle Vidange Précoce ou Échue Huile Moteur 15W-40",
@@ -9312,11 +9343,11 @@
       "Hydraulic Oil 68 Leak Watch (30-Day & Excess)": "Surveillance Fuites Huile Hydraulique 68 (30 Jours & Excès)",
       "Kiosk Anti-Double-Punch Debounce Guard": "Garde Anti-Double Pointage sur Borne",
       "Odometer & Hour-Meter Jump & Ceiling Guard": "Garde de Saut et Plafond Kilométrique / Horaire",
-      "Price Agreement & Lapsed Contract Watchdog": "Contrôle des Accords Tarifaires & Contrats Expirés",
+      "Price Agreement & Lapsed Contract Watchdog": "Sentinelle Accords Tarifaires & Contrats Échus",
       "Reporting Date vs Transaction Date Guard": "Garde d'Écart Date de Reporting vs Date d'Opération",
       "Salary Payments Without Active Contract": "Paiements de Salaires sans Contrat Actif",
       "Transaction vs Reporting Date Parity Audit": "Audit de Parité Date d'Opération vs Date de Reporting",
-      "Weighbridge Ticket Pad & Skipped Serial Audit": "Audit des Carnets de Bascule (25 Bons) & Sauts de Série",
+      "Weighbridge Ticket Pad & Skipped Serial Audit": "Audit Carnets de Bascule & Numéros Sautés",
       "Weighbridge Ton Estimate Corridor": "Corridor de Cohérence Tonnage Pesé vs Capacité Camion",
       "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "Alerte la direction dès que les écarts compteurs, bons non imputés ou écarts de cuve atteignent 5 % ou plus du gasoil consommé sur la période.",
       "Audits historical vouchers shifted across months (Transaction Date vs Reporting Date) and spots statutory VAT invoices not linked to weighbridge tickets.": "Audite les pièces décalées entre mois (date opération vs reporting) et détecte les factures TVA non liées aux bons de bascule.",
@@ -11652,7 +11683,38 @@
       "Register & Enrol New Staff Member": "Inscrire & Enrôler un Nouveau Collaborateur",
       "Save & Capture Face ID": "Enregistrer & Capturer Face ID",
       "Staff Enrolment Face ID": "Face ID Enrôlement du Personnel",
-      "Station Admin & Enrolment Face ID": "Face ID Admin & Opérateur de Saisie"
+      "Station Admin & Enrolment Face ID": "Face ID Admin & Opérateur de Saisie",
+      "Lions Transport · FLEET OPERATIONS": "Lions Transport · OPÉRATIONS DE FLOTTE",
+      "No standalone financial ledger is published yet for Lions Transport. Switch to": "Aucun grand livre autonome n'est encore publié pour Lions Transport. Basculez vers",
+      ", or": ", ou",
+      "All Group": "Tout le Groupe",
+      "in the entity selector to view consolidated financial scorecards.": "dans le sélecteur d'entité pour afficher les tableaux financiers consolidés.",
+      "Zero Unpriced Expense or Quarry Queues": "Zéro Charge ou Bon Carrière Non Valorisé en Attente",
+      "All dispatched quarry loads and plant bills carry approved rates": "Tous les voyages carrière et factures centrale portent des tarifs approuvés",
+      "Receivables Aging: 100% Within Credit Terms": "Balance Âgée : 100 % dans les Conditions de Crédit",
+      "All 11 Audit Sentinels Passing": "Les 11 Sentinelles d'Audit sont Conformes",
+      "Price corridors, serial pads, fuel burn & payroll contracts verified": "Corridors de prix, carnets séquentiels, carburant & contrats de paie vérifiés",
+      "Active credit & cash clients": "Clients actifs comptant & crédit",
+      "All Clear": "Conforme",
+      "Inspect TB": "Inspecter Balance",
+      "Customer Receivables Overdue > 60 Days": "Créances Clients Échues > 60 Jours",
+      "Unpriced Expenses & Raw Purchases": "Charges & Achats Matières Non Valorisés",
+      "Salary Disbursements vs Active Employment Contracts": "Paiements de Salaires vs Contrats de Travail Actifs",
+      "Transaction Date vs Reporting Date Parity & Unlinked VAT": "Parité Date d'Opération vs Date de Reporting & TVA",
+      "Joint Venture 50/50 Stock Entitlement vs Partner Payouts": "Droits Stock JV 50/50 vs Versements Partenaire",
+      "Critical Equipment Defects & Unnotified Spare Part Swaps": "Pannes Critiques & Remplacements de Pièces sans Notification",
+      "Bilateral Sister Amount Drift Watchdog (< $1.00 Tolerance)": "Sentinelle d'Écart Bilatéral Inter-Sociétés (Tolérance < 1,00 $)",
+      "Bilateral Sister Amount Drift Watchdog": "Sentinelle d'Écart Bilatéral Inter-Sociétés",
+      "Unmatched One-Sided Sister Transfers": "Transferts Inter-Sociétés Unilatéraux Non Lettrés",
+      "Policies Expiring in <= 90 Days & Lapsed Unrenewed Policy Watchdog": "Polices Expirant à <= 90 Jours & Sentinelle des Polices Échues",
+      "Leases Expiring in <= 90 Days & Stepped Escalation Watchdog": "Baux Expirant à <= 90 Jours & Sentinelle d'Indexation",
+      "Resorts (5)": "Hôtellerie (5)",
+      "Properties": "Immeubles",
+      "Multi-carrier": "Multi-compagnies",
+      "All Policies": "Toutes les Polices",
+      "0 LL": "0 LL",
+      "LL 0": "0 LL",
+      "Manufacturing & Construction": "Industrie & Construction"
     }
   };
 
@@ -12394,17 +12456,17 @@
     }
 
     // 3. Executive Overview KPI Pills, Footers, Value Bridge & Pulse Items Across All 6 Industries
-    m = trimmed.match(/^Avg\s+([+-]?\$[\d.,]+[kMB]?)\/(mo|yr|day|load|trip|m³|t|unit)$/i);
+    m = trimmed.match(/^Avg:?\s+([+-]?\$[\d.,]+[kMB]?)\/(mo|yr|day|load|trip|m³|t|unit)$/i);
     if (m) {
       const u = m[2].toLowerCase();
       const uAr = u === 'mo' ? 'شهر' : u === 'yr' ? 'سنة' : u === 'day' ? 'يوم' : (u === 'load' || u === 'trip') ? 'نقلة' : u === 'm³' ? 'م³' : u === 't' ? 'طن' : 'وحدة';
       const uFr = u === 'mo' ? 'mois' : u === 'yr' ? 'an' : u === 'day' ? 'j' : (u === 'load' || u === 'trip') ? 'voyage' : u;
       return lang === 'ar' ? `المتوسط ${m[1]}/${uAr}` : `Moy. ${m[1]}/${uFr}`;
     }
-    m = trimmed.match(/^Avg\s+([+-]?\$[\d.,]+[kMB]?)$/i);
+    m = trimmed.match(/^Avg:?\s+([+-]?\$[\d.,]+[kMB]?)$/i);
     if (m) return lang === 'ar' ? `المتوسط ${m[1]}` : `Moy. ${m[1]}`;
 
-    m = trimmed.match(/^Peak\s+([A-Za-z]+\s+'?\d{2,4})\s*\(([^)]+)\)$/i);
+    m = trimmed.match(/^Peak:?\s+([A-Za-z]+\s+'?\d{2,4})\s*\(([^)]+)\)$/i);
     if (m) {
       const d = translateDatePhrase(m[1], lang) || translateMonthTokens(m[1], lang);
       return lang === 'ar' ? `الذروة ${d} (${m[2]})` : `Pic ${d} (${m[2]})`;
@@ -12443,7 +12505,7 @@
         : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
     }
 
-    m = trimmed.match(/^(Cash|Credit|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm)\s+([+-]?\$[\d.,]+[kMB]?|[\d.,]+%)$/i);
+    m = trimmed.match(/^(Cash|Credit|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|Gross AR|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|Ex-VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Landed|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Customer Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm|NOI)\s+([+-]?\$[\d.,]+[kMB]?|[\d.,]+%)$/i);
     if (m) {
       const kRaw = m[1].trim();
       const val = m[2];
@@ -12461,6 +12523,7 @@
         'ap open': ['ذمم دائنة مفتوحة', 'Dettes Fourn.'],
         'open ar': ['ذمم مدينة مفتوحة', 'Créances Clients'],
         'ar open': ['ذمم مدينة مفتوحة', 'Créances Clients'],
+        'gross ar': ['إجمالي الذمم المدينة', 'Créances Brutes'],
         'ar collected': ['المحصل من الذمم', 'Créances Encaissées'],
         'paid': ['المدفوع', 'Payé'],
         'paid back': ['المسدّد', 'Remboursé'],
@@ -12487,11 +12550,13 @@
         'fees': ['الرسوم', 'Frais'],
         'disc': ['الحسم', 'Remise'],
         'landed cogs': ['تكلفة البضاعة الواصلة', 'Coût des Ventes Rendu'],
+        'landed': ['واصل', 'Rendu'],
         'freight & customs': ['الشحن والجمارك', 'Fret & Douane'],
         'chassis': ['الشاسيهات', 'Châssis'],
         'spare parts wac': ['قطع الغيار (WAC)', 'Pièces (CUMP)'],
         'promises': ['وعود التحصيل', 'Promesses'],
         'unallocated advances': ['سلف غير موزعة', 'Avances Non Imputées'],
+        'customer advances': ['سلف العملاء', 'Avances Clients'],
         'portfolio gross': ['إجمالي المحفظة', 'Patrimoine Brut'],
         'rent ar': ['ذمم الإيجارات', 'Créances Loyers'],
         'unbilled buyer tranches': ['أقساط مشترين متبقية', 'Tranches Acheteurs'],
@@ -12525,14 +12590,31 @@
         'variance': ['الفرق', 'Écart'],
         'base comm': ['العمولة الأساسية', 'Comm. de Base'],
         '11% vat': ['ضريبة 11%', 'TVA 11 %'],
+        'ex-vat': ['دون الضريبة', 'HT'],
         'vat': ['الضريبة', 'TVA'],
         'settled': ['المسدّد', 'Réglé'],
         'gwp': ['إجمالي الأقساط', 'Primes Brutes'],
-        'net comm': ['صافي العمولة', 'Comm. Nette']
+        'net comm': ['صافي العمولة', 'Comm. Nette'],
+        'noi': ['صافي الدخل', 'NOI']
       };
       const pair = lblDict[kRaw.toLowerCase()];
       if (pair) return `${lang === 'ar' ? pair[0] : pair[1]} ${val}`;
     }
+
+    m = trimmed.match(/^([\d.,]+%)\s+F&B\s+Cost$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تكلفة الأغذية والمشروبات` : `${m[1]} Coût F&B`;
+
+    m = trimmed.match(/^([\d,]+)\s*L\s+diesel$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ليتر مازوت` : `${m[1]} L gasoil`;
+
+    m = trimmed.match(/^DSO\s+([\d.]+)d$/i);
+    if (m) return lang === 'ar' ? `متوسط التحصيل ${m[1]} يوم` : `DSO ${m[1]}j`;
+
+    m = trimmed.match(/^(\d+)\s+open\s+PDI\/war(?:ranty)?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فحص/كفالة مفتوحة` : `${m[1]} PDI/gar. ouvert(s)`;
+
+    m = trimmed.match(/^(\d+)\s+active claims? under advocacy$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مطالبات نشطة قيد المتابعة` : `${m[1]} sinistres actifs suivis`;
 
     m = trimmed.match(/^(Cash|Credit|Mfg|Paid|Paid Back|Op\.?\s*Profit)\s+([+-]?\$[\d.,]+[kMB]?)\s*\(([\d.,]+%)\)$/i);
     if (m) {
@@ -12608,15 +12690,41 @@
     m = trimmed.match(/^Top\s+(\d+)\s+grades drive\s+([\d.,]+%)\s+of sales$/i);
     if (m) return lang === 'ar' ? `أعلى ${m[1]} أصناف تشكل ${m[2]} من المبيعات` : `Les ${m[1]} premiers produits génèrent ${m[2]} des ventes`;
 
+    m = trimmed.match(/^Total\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `الإجمالي (${m[1]})` : `Total (${m[1]})`;
+
+    m = trimmed.match(/^Total\s*\((\d+)\s+entit(?:y|ies)\)$/i);
+    if (m) return lang === 'ar' ? `الإجمالي (${m[1]} شركات)` : `Total (${m[1]} entités)`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+(NOI|GWP|cost|repaid|collected)$/i);
+    if (m) {
+      const k = m[2].toLowerCase();
+      const ar = k === 'noi' ? 'صافي دخل' : k === 'gwp' ? 'من الأقساط' : k === 'cost' ? 'تكلفة' : k === 'repaid' ? 'مسدّد' : 'محصّل';
+      const fr = k === 'noi' ? 'NOI' : k === 'gwp' ? 'des primes' : k === 'cost' ? 'coût' : k === 'repaid' ? 'remboursé' : 'encaissé';
+      return `${m[1]} ${lang === 'ar' ? ar : fr}`;
+    }
+
+    m = trimmed.match(/^(\$[\d.,]+[kMB]?)\s+collected$/i);
+    if (m) return lang === 'ar' ? `حُصّل ${m[1]}` : `${m[1]} encaissés`;
+
+    m = trimmed.match(/^([+-]?\$[\d.,]+[kMB]?)\s+unit$/i);
+    if (m) return lang === 'ar' ? `${m[1]} للوحدة` : `${m[1]} / unité`;
+
+    m = trimmed.match(/^Open AR\s+(\$[\d.,]+)\s+across\s+([\d,]+)\s+active credit accounts$/i);
+    if (m) return lang === 'ar' ? `الذمم المدينة المفتوحة ${m[1]} عبر ${m[2]} حساب ذمم نشط` : `Créances clients ouvertes ${m[1]} sur ${m[2]} comptes actifs`;
+
     // 4. Industry Overview & Sentinel Dynamic Details
     m = trimmed.match(/^Consolidated performance across\s+(\d+)\s+industries\s*&\s*(\d+)\s+operating entities$/i);
     if (m) return lang === 'ar' ? `الأداء الموحّد عبر ${m[1]} قطاعات و${m[2]} شركة عاملة` : `Performance consolidée sur ${m[1]} secteurs & ${m[2]} sociétés`;
 
-    m = trimmed.match(/^([\d,]+)\s+single-sided intercompany legs\s*\(([^)]+)\)\s*awaiting mirror counter-entry across sister companies after 3-tier pairing\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} قيود بينية من طرف واحد (${m[2]}) بانتظار القيد المقابل لدى الشركات الشقيقة بعد المطابقة الثلاثية.` : `${m[1]} écritures inter-sociétés unilatérales (${m[2]}) en attente de contrepartie après appairage à 3 niveaux.`;
+    m = trimmed.match(/^([\d,]+)\s+single-sided intercompany legs?\s*\(([^)]+)\)\s*awaiting mirror counter-entry across sister companies(?:\s+after 3-tier pairing)?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قيود بينية من طرف واحد (${m[2]}) بانتظار القيد المقابل لدى الشركات الشقيقة.` : `${m[1]} écritures inter-sociétés unilatérales (${m[2]}) en attente de contrepartie.`;
 
-    m = trimmed.match(/^(\d+)\s+Holding expense vouchers totaling\s+(\$[\d.,]+)\s+tracked for corporate overhead and shared group services\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} سندات مصاريف للقابضة بإجمالي ${m[2]} مسجلة للمصاريف الإدارية والخدمات المشتركة للمجموعة.` : `${m[1]} pièces de charges Holding totalisant ${m[2]} suivies au titre des services partagés du groupe.`;
+    m = trimmed.match(/^(\d+)\s+Holding expense vouchers?\s+totaling\s+(\$[\d.,]+)\s+(?:tracked for corporate overhead and shared group services|against\s+(\$[\d.,]+)\s+ceiling)\.?$/i);
+    if (m) {
+      if (m[3]) return lang === 'ar' ? `${m[1]} سندات مصاريف للقابضة بإجمالي ${m[2]} مقابل سقف ${m[3]}.` : `${m[1]} pièces de charges Holding totalisant ${m[2]} (plafond ${m[3]}).`;
+      return lang === 'ar' ? `${m[1]} سندات مصاريف للقابضة بإجمالي ${m[2]} مسجلة للمصاريف الإدارية والخدمات المشتركة للمجموعة.` : `${m[1]} pièces de charges Holding totalisant ${m[2]} suivies au titre des services partagés du groupe.`;
+    }
 
     m = trimmed.match(/^Reconciled volume\s+(\$[\d.,]+)\s+across\s+([\d,]+)\s+pairs\s*\(([^)]+)\)\s*·\s*Net bilateral Out-minus-In imbalance:\s*(\$[\d.,]+)\.?$/i);
     if (m) return lang === 'ar' ? `الحجم المطابق ${m[1]} عبر ${m[2]} أزواج (${m[3]}) · صافي الفارق البيني (الصادر ناقص الوارد): ${m[4]}.` : `Volume rapproché ${m[1]} sur ${m[2]} paires (${m[3]}) · Déséquilibre net bilatéral : ${m[4]}.`;
@@ -12627,11 +12735,14 @@
     m = trimmed.match(/^(\d+)\s+industry verticals consolidated under\s+(.+)$/i);
     if (m) return lang === 'ar' ? `${m[1]} قطاعات تشغيلية موحّدة تحت مظلة ${m[2]}` : `${m[1]} secteurs d'activité consolidés sous ${m[2]}`;
 
-    m = trimmed.match(/^(\$[\d.,]+)\s+open balance across\s+(\d+)\s+seasonal cabana\/beach memberships?\s*\(([^)]+)\s+collected of\s+([^)]+)\)\.?$/i);
-    if (m) return lang === 'ar' ? `رصيد مفتوح ${m[1]} عبر ${m[2]} اشتراكات شاليهات/شاطئ موسمية (حُصّل ${m[3]} من أصل ${m[4]}).` : `Solde ouvert de ${m[1]} sur ${m[2]} abonnements saisonniers (${m[3]} encaissés sur ${m[4]}).`;
+    m = trimmed.match(/^(\$[\d.,]+)\s+open balance across\s+(\d+)\s+seasonal cabana\/beach memberships?\s*(?:\(([^)]+)\s+collected of\s+([^)]+)\)|above\s+(\$[\d.,]+))\.?$/i);
+    if (m) {
+      if (m[5]) return lang === 'ar' ? `رصيد مفتوح ${m[1]} عبر ${m[2]} اشتراكات شاليهات/شاطئ موسمية تتجاوز ${m[5]}.` : `Solde ouvert de ${m[1]} sur ${m[2]} abonnements saisonniers (> ${m[5]}).`;
+      return lang === 'ar' ? `رصيد مفتوح ${m[1]} عبر ${m[2]} اشتراكات شاليهات/شاطئ موسمية (حُصّل ${m[3]} من أصل ${m[4]}).` : `Solde ouvert de ${m[1]} sur ${m[2]} abonnements saisonniers (${m[3]} encaissés sur ${m[4]}).`;
+    }
 
-    m = trimmed.match(/^(\d+)\s+POS till closes audited across resort cashiers\s*·\s*(\d+)\s+drawer variances? totaling\s+(\$[\d.,]+)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} إقفالات صندوق كاشير مدققة عبر صناديق المنتجع · ${m[2]} فروقات جرد بإجمالي ${m[3]}.` : `${m[1]} clôtures de caisse POS auditées · ${m[2]} écart(s) de caisse totalisant ${m[3]}.`;
+    m = trimmed.match(/^(\d+)\s+POS till closes audited across resort cashiers\s*·\s*(\d+)\s+drawer variances?(?:\s+above\s+(\$[\d.,]+))?\s+totaling\s+(\$[\d.,]+)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إقفالات صندوق كاشير مدققة عبر صناديق المنتجع · ${m[2]} فروقات جرد بإجمالي ${m[4]}.` : `${m[1]} clôtures de caisse POS auditées · ${m[2]} écart(s) de caisse totalisant ${m[4]}.`;
 
     m = trimmed.match(/^(\d+)\s+daily venue revenue sheets\s*\(([^)]+)\s+across\s+([\d/]+)\s+chalets & F&B outlets\)\s*verified within cut-off window\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} كشوفات إيرادات يومية (${m[2]} عبر ${m[3]} شاليه ومنفذ مطاعم) مطابقة ضمن مهلة الإقفال.` : `${m[1]} feuilles de recettes journalières (${m[2]} sur ${m[3]} chalets & points F&B) vérifiées dans le délai de clôture.`;
@@ -12639,14 +12750,14 @@
     m = trimmed.match(/^(\d+)\s+engineered menu items\s*·\s*([\d.,]+%)\s+blended cost$/i);
     if (m) return lang === 'ar' ? `${m[1]} أصناف قائمة مسعّرة هندسياً · ${m[2]} متوسط التكلفة` : `${m[1]} articles de carte modélisés · ${m[2]} coût matière moyen`;
 
-    m = trimmed.match(/^(\d+)\s+SKU lines? below minimum reorder point across\s+(\$[\d.,]+)\s+weighted-average warehouse inventory\s*\((\d+)\s+units\)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} أصناف دون حد إعادة الطلب الأدنى ضمن مخزون المستودعات بالمتوسط المرجح ${m[2]} (${m[3]} وحدة).` : `${m[1]} références sous le seuil de réapprovisionnement sur ${m[2]} de stock CUMP (${m[3]} unités).`;
+    m = trimmed.match(/^(\d+)\s+SKU lines?\s+(?:at\/)?below (?:minimum )?reorder point across\s+(\$[\d.,]+)\s+weighted-average warehouse inventory(?:\s*\((\d+)\s+units\))?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أصناف دون حد إعادة الطلب الأدنى ضمن مخزون المستودعات بالمتوسط المرجح ${m[2]}${m[3] ? ' (' + m[3] + ' وحدة)' : ''}.` : `${m[1]} références sous le seuil de réapprovisionnement sur ${m[2]} de stock CUMP${m[3] ? ' (' + m[3] + ' unités)' : ''}.`;
 
-    m = trimmed.match(/^(\d+)\s+missing invoice serial gaps? detected across physical invoice books\s*\((.+)\)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} فجوات تسلسل مفقودة مرصودة في دفاتر الفواتير الورقية (${m[2]}).` : `${m[1]} saut(s) de numérotation détecté(s) dans les carnets de factures physiques (${m[2]}).`;
+    m = trimmed.match(/^(\d+)\s+missing invoice serial gaps?\s+detected across physical invoice books(?:\s*\((.+)\))?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فجوات تسلسل مفقودة مرصودة في دفاتر الفواتير الورقية${m[2] ? ' (' + m[2] + ')' : ''}.` : `${m[1]} saut(s) de numérotation détecté(s) dans les carnets de factures physiques${m[2] ? ' (' + m[2] + ')' : ''}.`;
 
-    m = trimmed.match(/^Gross AR\s+(\$[\d.,]+)\s*\(weighted DSO\s+([\d.]+)d\)\s*·\s*Unallocated customer advances\s+(\$[\d.,]+)\s+kept separate\s*·\s*(\$[\d.,]+)\s+in active collection promises\.?$/i);
-    if (m) return lang === 'ar' ? `إجمالي الذمم المدينة ${m[1]} (متوسط التحصيل ${m[2]} يوم) · سلف عملاء غير موزعة ${m[3]} محفوظة بشكل منفصل · ${m[4]} وعود تحصيل نشطة.` : `Créances brutes ${m[1]} (DSO pondéré ${m[2]}j) · Avances clients non imputées ${m[3]} séparées · ${m[4]} de promesses actives.`;
+    m = trimmed.match(/^Gross AR\s+(\$[\d.,]+)\s*\(weighted DSO\s+([\d.]+)d\)\s*·\s*Unallocated customer advances\s+(\$[\d.,]+)\s+kept separate(?:\s*·\s*(\$[\d.,]+)\s+in active collection promises)?\.?$/i);
+    if (m) return lang === 'ar' ? `إجمالي الذمم المدينة ${m[1]} (متوسط التحصيل ${m[2]} يوم) · سلف عملاء غير موزعة ${m[3]} محفوظة بشكل منفصل${m[4] ? ' · ' + m[4] + ' وعود تحصيل نشطة' : ''}.` : `Créances brutes ${m[1]} (DSO pondéré ${m[2]}j) · Avances clients non imputées ${m[3]} séparées${m[4] ? ' · ' + m[4] + ' de promesses actives' : ''}.`;
 
     m = trimmed.match(/^Capitalized FOB\s+(\$[\d.,kM]+)\s*\+\s*Freight\/Customs\s+(\$[\d.,kM]+)\s*·\s*100% Parallel Parity$/i);
     if (m) return lang === 'ar' ? `تكلفة FOB المرسملة ${m[1]} + الشحن والجمارك ${m[2]} · مطابقة موازية 100%` : `FOB capitalisé ${m[1]} + Fret/Douane ${m[2]} · Parité 100 %`;
@@ -12654,14 +12765,14 @@
     m = trimmed.match(/^(\d+)\s+tracked VINs\s*\+\s*(\d+)\s+flagship part lines$/i);
     if (m) return lang === 'ar' ? `${m[1]} شاحنات مرقّمة (VIN) + ${m[2]} خطوط قطع غيار رئيسية` : `${m[1]} châssis VIN suivis + ${m[2]} familles de pièces phares`;
 
-    m = trimmed.match(/^(\$[\d.,]+)\s+in completed tenant-recoverable fit-out and repair work orders awaiting tenant recharge billing\s*\((\d+)\s+open work orders\)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} أوامر عمل وتصليحات منجزة قابلة للتحميل على المستأجر بانتظار إعادة الفوترة (${m[2]} أوامر عمل مفتوحة).` : `${m[1]} de travaux imputables aux locataires terminés en attente de refacturation (${m[2]} bons ouverts).`;
+    m = trimmed.match(/^(\$[\d.,]+)\s+in completed tenant-recoverable fit-out and (?:repair work orders|utility shares) awaiting tenant recharge billing(?:\s*\((\d+)\s+open work orders\))?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أعمال تجهيز وصيانة منجزة قابلة للتحميل على المستأجر بانتظار إعادة الفوترة${m[2] ? ' (' + m[2] + ' أوامر عمل مفتوحة)' : ''}.` : `${m[1]} de travaux imputables aux locataires terminés en attente de refacturation${m[2] ? ' (' + m[2] + ' bons ouverts)' : ''}.`;
 
-    m = trimmed.match(/^(\d+)\s+active leases with unbilled current period\s*·\s*(\$[\d.,]+)\s+open billed rent AR\s*\(([^)]+)\s+collected\)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار نشطة غير مفوترة للفترة الحالية · ${m[2]} ذمم إيجارات مفوترة مفتوحة (${m[3]} محصّل).` : `${m[1]} baux actifs non facturés sur la période · ${m[2]} de loyers facturés ouverts (${m[3]} encaissés).`;
+    m = trimmed.match(/^(\d+)\s+active leases? with unbilled current period\s*·\s*(\$[\d.,]+)\s+open billed rent AR(?:\s*\(([^)]+)\s+collected\))?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار نشطة غير مفوترة للفترة الحالية · ${m[2]} ذمم إيجارات مفوترة مفتوحة${m[3] ? ' (' + m[3] + ' محصّل)' : ''}.` : `${m[1]} baux actifs non facturés sur la période · ${m[2]} de loyers facturés ouverts${m[3] ? ' (' + m[3] + ' encaissés)' : ''}.`;
 
-    m = trimmed.match(/^(\d+)\s+buyer sale instalments overdue\/pending across\s+(\$[\d.,]+)\s+open buyer balance\s*\(([^)]+)\s+collected of\s+([^)]+)\)\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} أقساط بيع عقاري مستحقة/قيد الانتظار ضمن رصيد مشترين مفتوح ${m[2]} (حُصّل ${m[3]} من أصل ${m[4]}).` : `${m[1]} échéances acheteurs en attente sur ${m[2]} de solde ouvert (${m[3]} encaissés sur ${m[4]}).`;
+    m = trimmed.match(/^(\d+)\s+buyer sale instalments?\s+(?:overdue\/pending|above\s+\$[\d.,]+)\s+across\s+(\$[\d.,]+)\s+open buyer balance(?:\s*\(([^)]+)\s+collected of\s+([^)]+)\))?\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أقساط بيع عقاري مستحقة/قيد الانتظار ضمن رصيد مشترين مفتوح ${m[2]}${m[3] ? ' (حُصّل ' + m[3] + ' من أصل ' + m[4] + ')' : ''}.` : `${m[1]} échéances acheteurs en attente sur ${m[2]} de solde ouvert${m[3] ? ' (' + m[3] + ' encaissés sur ' + m[4] + ')' : ''}.`;
 
     m = trimmed.match(/^Portfolio Valuation\s+(\$[\d.,kM]+)\s*·\s*([\d/]+)\s+units leased\s*\(\/2400 shares verified\)$/i);
     if (m) return lang === 'ar' ? `تقييم المحفظة العقارية ${m[1]} · ${m[2]} وحدة مؤجرة (حصص /2400 مدققة)` : `Valorisation patrimoine ${m[1]} · ${m[2]} unités louées (quotes-parts /2400 vérifiées)`;
@@ -12669,8 +12780,8 @@
     m = trimmed.match(/^(\d+)\s+deeded properties across Beirut & coast$/i);
     if (m) return lang === 'ar' ? `${m[1]} عقاراً مملوكاً بصكوك رسمية في بيروت والساحل` : `${m[1]} biens titrés à Beyrouth et sur le littoral`;
 
-    m = trimmed.match(/^(\d+)\s+carrier commission statements carrying a negative commission variance against chronological carrier agreement rates\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} كشوفات عمولات لشركات تأمين تحمل فرق عمولة سالباً مقارنةً بنسب الاتفاقيات الزمنية المعتمدة.` : `${m[1]} bordereaux compagnies présentant un écart de commission négatif par rapport aux taux convenus.`;
+    m = trimmed.match(/^(\d+)\s+carrier commission statements?\s+carrying (?:a negative commission )?variance(?:\s+above\s+\$[\d.,]+)?\s+against chronological carrier agreement rates\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} كشوفات عمولات لشركات تأمين تحمل فرق عمولة مقارنةً بنسب الاتفاقيات الزمنية المعتمدة.` : `${m[1]} bordereaux compagnies présentant un écart de commission par rapport aux taux convenus.`;
 
     m = trimmed.match(/^(\d+)\s+policies due for renewal within 90 days\s*·\s*(\d+)\s+expired unrenewed policies\s*·\s*Portfolio retention\s+([\d.,]+%)\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} بوالص تستحق التجديد خلال 90 يوماً · ${m[2]} بوالص منتهية غير مجددة · نسبة الاحتفاظ بالمحفظة ${m[3]}.` : `${m[1]} polices à renouveler sous 90 jours · ${m[2]} polices expirées non renouvelées · Rétention ${m[3]}.`;
@@ -12739,20 +12850,26 @@
     m = trimmed.match(/^All\s+(\d+)\s+directed sister-company corridors reconciled against Lebanese CoA Class 1-7 double-entry control accounts\.?$/i);
     if (m) return lang === 'ar' ? `جميع مسارات الذمم البينية الـ ${m[1]} بين الشركات الشقيقة مطابقة مع حسابات المراقبة في شجرة الحسابات اللبنانية (الأصناف 1–7).` : `Les ${m[1]} corridors inter-sociétés sont rapprochés des comptes de contrôle du Plan Comptable Libanais (Classes 1–7).`;
 
-    m = trimmed.match(/^([\d,]+)\s*L burned across\s+(\d+)\s+generator hrs\s*\(([^)]+)\s+solar offset\)\s*·\s*(\d+)\s+L\/hr burn spikes flagged\.?$/i);
+    m = trimmed.match(/^([\d,]+)\s*L burned across\s+([\d,]+)\s+generator hrs\s*\(([^)]+)\s+solar offset\)\s*·\s*(\d+)\s+L\/hr burn spikes?(?:\s+flagged|\s*>\s*\+?([\d.,]+%))\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} ليتر مستهلك عبر ${m[2]} ساعة تشغيل مولدات (${m[3]} وفر طاقة شمسية) · ${m[4]} طفرات استهلاك مرصودة.` : `${m[1]} L consommés sur ${m[2]} h groupes (${m[3]} apport solaire) · ${m[4]} pics L/h signalés.`;
 
-    m = trimmed.match(/^Average F&B recipe food cost\s+([\d.,]+%)\s*·\s*(\d+)\s+stock consumption lines above target theoretical recipe usage\.?$/i);
+    m = trimmed.match(/^Average F&B recipe food cost\s+([\d.,]+%)\s*·\s*(\d+)\s+stock consumption lines?\s+above\s+(?:target theoretical recipe usage|([\d.]+x)\s+ratio)\.?$/i);
     if (m) return lang === 'ar' ? `متوسط تكلفة الوصفات للأغذية والمشروبات ${m[1]} · ${m[2]} بنود استهلاك مخزون تتجاوز المعدل المعياري للوصفة.` : `Coût matière moyen recettes F&B ${m[1]} · ${m[2]} lignes dépassant la consommation théorique.`;
 
     m = trimmed.match(/^(\d+)\s+active claim files under carrier survey\/adjustment across Medical, Motor, Property, Engineering, Marine & Liability lines\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} ملفات مطالبات نشطة قيد الكشف والتسوية لدى شركات التأمين عبر فروع الاستشفاء والسيارات والممتلكات والهندسي والبحري والمسؤولية.` : `${m[1]} dossiers sinistres actifs en cours d'expertise sur les branches Santé, Auto, Dommages, Risques Tech., Transport & RC.`;
 
-    m = trimmed.match(/^Client discounts\s+(\$[\d.,]+)\s*\(([^)]+)\s+of gross commission\s+(\$[\d.,]+)\)\s*·\s*Net earned commission\s+(\$[\d.,]+)\s*\+\s*policy fees\s+(\$[\d.,]+)\s*·\s*(\d+)\s+policies where Discount > Gross Commission\.?$/i);
-    if (m) return lang === 'ar' ? `حسومات العملاء ${m[1]} (${m[2]} من إجمالي العمولة ${m[3]}) · صافي العمولة المكتسبة ${m[4]} + رسوم البوالص ${m[5]} · ${m[6]} بوالص يتجاوز فيها الحسم إجمالي العمولة.` : `Remises clients ${m[1]} (${m[2]} de la commission brute ${m[3]}) · Commission nette ${m[4]} + frais ${m[5]} · ${m[6]} polices avec Remise > Commission.`;
+    m = trimmed.match(/^Client discounts\s+(\$[\d.,]+)(?:\s*\(([^)]+)\s+of gross commission\s+(\$[\d.,]+)\))?\s*·\s*Net earned commission\s+(\$[\d.,]+)\s*\+\s*policy fees\s+(\$[\d.,]+)\s*·\s*(\d+)\s+policies (?:where Discount > Gross Commission|above\s+([\d.,]+%)\s+cap)\.?$/i);
+    if (m) {
+      if (m[2]) return lang === 'ar' ? `حسومات العملاء ${m[1]} (${m[2]} من إجمالي العمولة ${m[3]}) · صافي العمولة المكتسبة ${m[4]} + رسوم البوالص ${m[5]} · ${m[6]} بوالص يتجاوز فيها الحسم إجمالي العمولة.` : `Remises clients ${m[1]} (${m[2]} de la commission brute ${m[3]}) · Commission nette ${m[4]} + frais ${m[5]} · ${m[6]} polices avec Remise > Commission.`;
+      return lang === 'ar' ? `حسومات العملاء ${m[1]} · صافي العمولة المكتسبة ${m[4]} + رسوم البوالص ${m[5]} · ${m[6]} بوالص تتجاوز السقف (${m[7]}).` : `Remises clients ${m[1]} · Commission nette ${m[4]} + frais ${m[5]} · ${m[6]} polices au-dessus du plafond (${m[7]}).`;
+    }
 
-    m = trimmed.match(/^(\$[\d.,]+)\s+unallocated landed cost across\s+(\d+)\s+import files? out of\s+(\$[\d.,]+)\s+total freight\/customs additions\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} تكلفة شحن وجمارك غير موزعة عبر ${m[2]} ملف استيراد من أصل ${m[3]} إجمالي مصاريف الاستيراد.` : `${m[1]} de frais d'approche non répartis sur ${m[2]} dossier(s) import sur ${m[3]} de fret/douane.`;
+    m = trimmed.match(/^(\$[\d.,]+)\s+unallocated landed cost across\s+(\d+)\s+import files?\s+(?:out of\s+(\$[\d.,]+)\s+total freight\/customs additions|above\s+(\$[\d.,]+))\.?$/i);
+    if (m) {
+      if (m[3]) return lang === 'ar' ? `${m[1]} تكلفة شحن وجمارك غير موزعة عبر ${m[2]} ملف استيراد من أصل ${m[3]} إجمالي مصاريف الاستيراد.` : `${m[1]} de frais d'approche non répartis sur ${m[2]} dossier(s) import sur ${m[3]} de fret/douane.`;
+      return lang === 'ar' ? `${m[1]} تكلفة شحن وجمارك غير موزعة عبر ${m[2]} ملفات استيراد.` : `${m[1]} de frais d'approche non répartis sur ${m[2]} dossiers d'importation.`;
+    }
 
     m = trimmed.match(/^Realized gross margin\s+(\$[\d.,]+)\s*\(([^)]+)\s+of sales\) against\s+(\$[\d.,]+)\s+capitalized landed cost\s*·\s*(\d+)\s+invoices below\s+([\d.,]+%)\s+floor\.?$/i);
     if (m) return lang === 'ar' ? `مجمل الربح المحقق ${m[1]} (${m[2]} من المبيعات) مقابل ${m[3]} تكلفة واصلة مرسملة · ${m[4]} فواتير دون الحد الأدنى (${m[5]}).` : `Marge brute réalisée ${m[1]} (${m[2]} des ventes) sur ${m[3]} de coût rendu · ${m[4]} factures sous le seuil de ${m[5]}.`;
@@ -12846,11 +12963,11 @@
     if (m) return lang === 'ar' ? `${m[1]}–${m[2]} يوماً` : `${m[1]}–${m[2]} Jours`;
 
     // 7. Fleet P&L, Kiosks, Users, Statements & Operational Badges
-    m = trimmed.match(/^([+-]?\$[\d.,]+)\/(trip|raw trip|sales trip|mo|yr|load|unit)$/i);
+    m = trimmed.match(/^([+-]?\$[\d.,]+[kMB]?)\/(trip|raw trip|sales trip|mo|yr|load|unit|ton|t|m³)$/i);
     if (m) {
       const u = m[2].toLowerCase();
-      const uAr = u === 'trip' ? 'نقلة' : u === 'raw trip' ? 'نقلة مواد' : u === 'sales trip' ? 'نقلة مبيعات' : u === 'mo' ? 'شهر' : u === 'yr' ? 'سنة' : u === 'load' ? 'نقلة' : 'وحدة';
-      const uFr = u === 'trip' ? 'voyage' : u === 'raw trip' ? 'voyage mat.' : u === 'sales trip' ? 'voyage vente' : u === 'mo' ? 'mois' : u === 'yr' ? 'an' : u === 'load' ? 'voyage' : 'unité';
+      const uAr = u === 'trip' ? 'نقلة' : u === 'raw trip' ? 'نقلة مواد' : u === 'sales trip' ? 'نقلة مبيعات' : u === 'mo' ? 'شهر' : u === 'yr' ? 'سنة' : u === 'load' ? 'نقلة' : (u === 'ton' || u === 't') ? 'طن' : u === 'm³' ? 'م³' : 'وحدة';
+      const uFr = u === 'trip' ? 'voyage' : u === 'raw trip' ? 'voyage mat.' : u === 'sales trip' ? 'voyage vente' : u === 'mo' ? 'mois' : u === 'yr' ? 'an' : u === 'load' ? 'voyage' : (u === 'ton' || u === 't') ? 'tonne' : u === 'm³' ? 'm³' : 'unité';
       return `${m[1]}/${lang === 'ar' ? uAr : uFr}`;
     }
     m = trimmed.match(/^([\d.,]+)\s*m³\/trip$/i);
@@ -13281,6 +13398,8 @@
 
     if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|L|L\/hr|L\/100km|hrs?|h|d|KB|MB|TB))?$/i.test(trimmed)) {
       if (/^LL\s+\d/i.test(trimmed)) return translateParametricErp(trimmed, lang, depth) || trimmed;
+      if (/^\d[\d,]*\s+LL$/i.test(trimmed)) return lang === 'ar' ? trimmed.replace(/\s+LL$/i, ' ل.ل.') : trimmed;
+      if (lang === 'ar' && /\/m³$/i.test(trimmed)) return trimmed.replace(/\/m³$/i, '/م³');
       return trimmed;
     }
     if (/^(https?:\/\/|\S+@\S+\.\S+)$/i.test(trimmed) || /^[A-Z]{2,5}-[A-Z0-9-]*\d[A-Z0-9-]*$/.test(trimmed)) return trimmed;
@@ -13799,6 +13918,9 @@
 
   function ensureDomObserver() {
     if (_domObserver || typeof MutationObserver === 'undefined' || !document.body) return;
+    if (window.__MFG_I18N_DOM_OBS) {
+      try { window.__MFG_I18N_DOM_OBS.disconnect(); } catch (_) {}
+    }
     _domObserver = new MutationObserver(mutations => {
       if (_isApplying || _activeLang === 'en') return;
       for (let i = 0; i < mutations.length; i++) {
@@ -13819,6 +13941,7 @@
     _domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
     const titleEl = document.querySelector && document.querySelector('title');
     if (titleEl) _domObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+    window.__MFG_I18N_DOM_OBS = _domObserver;
   }
 
   function syncLangSwitchersDom() {
@@ -13894,19 +14017,22 @@
   }
 
   function wireGlobalLangDelegation() {
+    if (window.__MFG_I18N_CLICK_WIRED) return;
+    window.__MFG_I18N_CLICK_WIRED = true;
     document.addEventListener('click', e => {
+      const api = window.MFG_I18N;
       const langBtn = e.target.closest && e.target.closest('[data-lang-btn]');
       if (langBtn) {
         e.preventDefault();
         e.stopPropagation();
-        setLang(langBtn.getAttribute('data-lang-btn'));
+        if (api && api.setLang) api.setLang(langBtn.getAttribute('data-lang-btn'));
         return;
       }
       const mobBtn = e.target.closest && e.target.closest('#mobileLangBtn');
       if (mobBtn) {
         e.preventDefault();
         e.stopPropagation();
-        cycleLang();
+        if (api && api.cycleLang) api.cycleLang();
       }
     });
   }
@@ -13916,6 +14042,17 @@
     ensureDomObserver();
     syncLangSwitchersDom();
     if (_activeLang !== 'en') translateDom(document.body);
+    if (!window.__MFG_I18N_FRESH_FETCHED && typeof location !== 'undefined' && location.protocol === 'https:' && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      window.__MFG_I18N_FRESH_FETCHED = true;
+      setTimeout(() => {
+        try {
+          const s = document.createElement('script');
+          s.src = './js/i18n.js?cb=' + Math.floor(Date.now() / 60000);
+          s.async = true;
+          document.head.appendChild(s);
+        } catch (_) {}
+      }, 150);
+    }
   }
 
   if (document.readyState === 'loading') {
