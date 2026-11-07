@@ -189,7 +189,7 @@
       "Subcategory": "الفئة الفرعية",
       "Site": "الموقع / الورشة",
       "Region": "المنطقة",
-      "Equipment": "الآلية / الشاحنة",
+      "Equipment": "الآليات",
       "Driver": "السائق",
       "Staff Member": "الموظف",
       "Role": "الوظيفة / الدور",
@@ -547,7 +547,7 @@
       "Closing AP": "رصيد الذمم الدائنة الختامي",
       "Closing AP Balance": "الرصيد الختامي للموردين",
       "AP Settlements": "تسديدات الموردين",
-      "Open Payable": "الذمم الدائنة المستحقة",
+      "Open Payable": "الذمم المستحقة المفتوحة",
       "Payable Leg": "شق الذمة الدائنة",
       "Owed For (AP Leg)": "مستحق مقابل (شق AP)",
       "Credit AP": "ذمم موردين (آجل)",
@@ -995,7 +995,7 @@
       "Fuel & Lube Items": "المحروقات والزيوت",
       "Oils & Lubricants": "الزيوت والشحوم",
       "Tools & Consumables": "العدد والمستهلكات",
-      "Spare Parts": "قطع الغيار",
+      "Spare Parts": "قطع غيار",
       "Part / Subsystem": "القطعة / النظام الفرعي",
       "Item": "الصنف / القطعة",
       "Items": "الأصناف",
@@ -1497,7 +1497,7 @@
       "LBP → USD": "من الليرة إلى الدولار (LBP → USD)",
       "LBP (LL)": "الليرة اللبنانية (ل.ل)",
       "Sales by material + Top…": "المبيعات حسب المادة + الأعلى…",
-      "Monthly P&L, Marg…": "الأرباح والخسائر الشهرية والهامش…",
+      "Monthly P&L, Marg…": "الأرباح والخسائر والهوامش الشهرية…",
       "+ deducts from tank (used / shortage) · − adds to tank (surplus)": "+ يخصم من الخزان (استهلاك / عجز) · − يضيف للخزان (فائض)",
       "3-letter ISO 4217 currency code.": "رمز العملة المكون من 3 أحرف (ISO 4217).",
       "Alert when shelf drops to or below this qty": "تنبيه عند انخفاض رصيد الرف إلى هذه الكمية أو أقل",
@@ -1600,7 +1600,7 @@
       "Driver / Operator": "سائق / مشغّل",
       "On Shift": "في الدوام",
       "Fuel & Lubricant Intakes": "إدخالات المحروقات والزيوت",
-      "General Equipment Repair": "تصليح آليات عام",
+      "General Equipment Repair": "تصليح عام للآليات",
       "Lebanese CoA Class": "صنف شجرة الحسابات اللبنانية",
       "Raw Material Purchases": "مشتريات المواد الأولية",
       "SOA Journal Stream": "مسار قيود كشف الحساب",
@@ -1615,7 +1615,7 @@
       "Cash Position & Net Flow": "المركز النقدي وصافي التدفق",
       "Receivables & Payables (AR / AP)": "الذمم المدينة والدائنة (AR / AP)",
       "Click any entity to focus workspace": "اضغط على أي شركة للتركيز عليها",
-      "Crusher, Plant & Fabrication Maintenance": "صيانة الكسارة والمصنع والحدادة",
+      "Crusher, Plant & Fabrication Maintenance": "صيانة الكسارة والمصنع والتصنيع",
       "Customer Receipts": "مقبوضات العملاء",
       "Customer Receipts (AR)": "مقبوضات العملاء (AR)",
       "Customer Credit Terms": "شروط ائتمان العملاء",
@@ -1802,7 +1802,7 @@
       "Shift": "الوردية",
       "Audit": "التدقيق",
       "Bills": "الفواتير",
-      "Categories": "الفئات",
+      "Categories": "التصنيفات",
       "Ext": "خارجي",
       "FX/Ln": "صرف/قروض",
       "AR/AP": "ذمم مدينة/دائنة",
@@ -2429,8 +2429,8 @@
       "Trans Unit Price": "سعر وحدة النقل",
       "80mm Standard": "قياسي 80 مم",
       "58mm Handheld": "محمول 58 مم",
-      "RawBT Bluetooth": "بلوتوث RawBT",
-      "Web Bluetooth (Direct BLE)": "بلوتوث مباشر (BLE)",
+      "RawBT Bluetooth": "بلوتوث RawBT الحراري",
+      "Web Bluetooth (Direct BLE)": "بلوتوث الويب المباشر (BLE)",
       "Browser Print": "طباعة المتصفح",
       "Sales Weighbridge & Dispatch": "قبان المبيعات والتسليم",
       "Post Only (No Print)": "ترحيل فقط (بدون طباعة)",
@@ -2606,7 +2606,7 @@
       "Ghassanieh (House / Generator Supply)": "مخصص السكن / المولد الداخلي",
       "Kilograms (kg)": "كيلوغرام (kg)",
       "Kilogram (kg)": "كيلوغرام (kg)",
-      "Boxes (Box)": "صناديق (Box)",
+      "Boxes (Box)": "صناديق (صندوق)",
       "Metres (m)": "أمتار (m)",
       "Meter (m)": "متر (m)",
       "Cubic Metres (m³)": "متر مكعب (m³)",
@@ -2665,7 +2665,7 @@
       "Service Date": "تاريخ الخدمة",
       "Service Type": "نوع الخدمة / الزيت",
       "Gear / Transmission Oil 90": "زيت علبة سرعة 90",
-      "ATF / Torque Converter Oil": "زيت أوتوماتيك ATF",
+      "ATF / Torque Converter Oil": "زيت أوتوماتيك وعلبة التروس (ATF)",
       "Differential / Axle Oil 85W-140": "زيت دفرنس ومحاور 85W-140",
       "Oil & Fuel Filter Service": "تبديل فلاتر الزيت والوقود",
       "Service Action": "نوع الإجراء",
@@ -3140,8 +3140,2699 @@
       "Full legal / trade name": "الاسم القانوني / التجاري الكامل",
       "Ministry of Finance #": "الرقم المالي لدى وزارة المالية",
       "Driver name": "اسم السائق",
-      "Full staff member name": "الاسم الكامل للموظف"
-},
+      "Full staff member name": "الاسم الكامل للموظف",
+      "New": "جديد",
+      "Live": "مباشر",
+      "Never": "أبداً",
+      "you": "أنت",
+      "Enter": "أدخل",
+      "Posting": "ترحيل",
+      "Posting:": "الترحيل:",
+      "Run": "نفّذ",
+      "Frequent": "متكرر",
+      "and": "و",
+      "or": "أو",
+      "at": "بسعر",
+      "past": "بعد",
+      "or above": "أو أكثر من",
+      "avg": "المتوسط",
+      "Open Customer AR": "ذمم العملاء المدينة المفتوحة",
+      "Current Open AR": "الذمم المدينة المفتوحة الحالية",
+      "Open AR before": "الذمم المدينة قبل السند",
+      "Open AR after": "الذمم المدينة بعد السند",
+      "3-Leg Open AP": "الذمم الدائنة المفتوحة (3 شقوق)",
+      "Open AP to supplier": "الذمم الدائنة للمورّد",
+      "Open AP before": "الذمم الدائنة قبل الدفع",
+      "Open AP after": "الذمم الدائنة بعد الدفع",
+      "Open IC": "المعاملات البينية المفتوحة",
+      "Open Queue": "قائمة الانتظار المفتوحة",
+      "Open Arrears": "المتأخرات المفتوحة",
+      "Open Payees": "المستفيدون المفتوحون",
+      "Open Backorders": "الطلبات المؤجلة المفتوحة",
+      "Open Claim": "مطالبة مفتوحة",
+      "Open Claims": "المطالبات المفتوحة",
+      "Open Loan": "قرض مفتوح",
+      "Open Loan Before": "رصيد القرض قبل القيد",
+      "Open PDI": "فحص ما قبل التسليم المفتوح",
+      "Open Issues": "الأعطال المفتوحة",
+      "Prior Open Issues": "الأعطال المفتوحة السابقة",
+      "Open Facility": "تسهيل ائتماني مفتوح",
+      "Open Exposure": "التعرّض الائتماني المفتوح",
+      "Open Balance": "الرصيد المفتوح",
+      "Open Balances": "الأرصدة المفتوحة",
+      "Total Open": "إجمالي الرصيد المفتوح",
+      "Open AI Sentinels": "فتح الرقابة الذكية",
+      "Open Attendance & OT Analysis": "فتح تحليل الحضور والإضافي",
+      "or open a demo workspace": "أو افتح مساحة عمل تجريبية",
+      "All Manufacturing Group": "كامل مجموعة الصناعة والخرسانة",
+      "All Entities": "جميع الشركات",
+      "All Entities (Shared)": "جميع الشركات (مشترك)",
+      "All BUs": "جميع الوحدات",
+      "All BUs (Universal)": "جميع الوحدات (سجل موحّد)",
+      "Universal Catalog": "الدليل الموحّد",
+      "open Sentinel alert. Ask anything in English, العربية, or Français, record a voice note, or attach a file.": "تنبيه رقابي مفتوح. اسأل بأي لغة (العربية أو English أو Français) أو سجّل ملاحظة صوتية أو أرفق ملفاً.",
+      "Fleet": "الأسطول",
+      "Fleet Active": "أسطول نشط",
+      "Realized spread": "الهامش المحقق",
+      "Net cash profit": "صافي الربح النقدي",
+      "Collect AR": "تحصيل الذمم",
+      "Double-Entry Books: Balanced ($0.00 Variance)": "دفاتر القيد المزدوج: متوازنة ($0.00 فرق)",
+      "6-Industry Revenue & Profit Trajectory": "مسار الإيرادات والأرباح عبر القطاعات الستة",
+      "COGS": "تكلفة المبيعات",
+      "Direct Cost": "التكلفة المباشرة",
+      "Group AR": "ذمم المجموعة المدينة",
+      "Group spread": "هامش المجموعة",
+      "Holding & Treasury watchdogs & ledger integrity": "رقابة القابضة والخزينة وسلامة الدفاتر",
+      "Holding Shared-Services Overhead & Credit Expense Settlement Guard": "رقابة مصاريف الخدمات المشتركة وتسوية الذمم للقابضة",
+      "Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Tolerance)": "رقابة فروقات المطابقة البينية بين الشركات الشقيقة (< $1.00)",
+      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "تحويلات بينية من طرف واحد غير مطابقة (> 3 أيام)",
+      "Net group cash": "صافي نقد المجموعة",
+      "Quarry, F&B & Landed": "الكسارات والأغذية والتكلفة الواصلة",
+      "Bilateral intercompany funding & repayment": "التمويل والتسديد المتبادل بين الشركات الشقيقة",
+      "Group Rollup": "تجميع المجموعة",
+      "Revenue share & profit contribution by vertical": "حصة الإيرادات ومساهمة الأرباح حسب القطاع",
+      "Consolidated Resort P&L Value Bridge (Ex-VAT)": "جسر الأرباح والخسائر الموحّد للمنتجع (دون الضريبة)",
+      "Dept GM": "مجمل ربح الأقسام",
+      "Energy/OpEx": "الطاقة والمصاريف",
+      "F&B + Chalet spread": "هامش المطاعم والشاليهات",
+      "F&B Cost": "تكلفة الأغذية والمشروبات",
+      "Hospitality & Resorts watchdogs & ledger integrity": "رقابة الضيافة والمنتجعات وسلامة الدفاتر",
+      "Net operating cash": "صافي النقد التشغيلي",
+      "POS Till Daily Close vs Booked Daily Venue Revenue Variance": "فرق إغلاق صندوق الكاشير مقابل إيرادات الفرع اليومية المسجلة",
+      "Back-Dated Venue Entry & Daily Revenue Close Queue": "طابور القيود المؤرخة بأثر رجعي وإقفال الإيرادات اليومية",
+      "Recipe BOM usage": "استهلاك الوصفات المعيارية",
+      "Resort Revenue, Kitchen Cost & Profit Trajectory": "مسار إيرادات المنتجع وتكلفة المطبخ والربحية",
+      "Seasonal Membership Arrears & Contract Rollover Guard": "رقابة متأخرات الاشتراكات الموسمية وتجديد العقود",
+      "Top seasonal chalet & cabana contracts": "أبرز عقود الشاليهات والكابانا الموسمية",
+      "Menu Matrix": "مصفوفة القائمة",
+      "Top F&B & banquet margin contributors": "أعلى أصناف المطاعم والحفلات مساهمةً بالهامش",
+      "Blanca Beach Resort · Daily Venue Revenue, Memberships & F&B Cost": "منتجع بلانكا · الإيرادات اليومية والاشتراكات وتكلفة المطاعم",
+      "Automotive & Heavy Trading watchdogs & ledger integrity": "رقابة تجارة الآليات والشاحنات وسلامة الدفاتر",
+      "Below-Reorder Spare Parts Stock & 5-Warehouse WAC Parity Guard": "رقابة حد إعادة الطلب لقطع الغيار ومطابقة المتوسط المرجح (5 مستودعات)",
+      "Consolidated Trading P&L Bridge (Landed Cost Economics)": "جسر أرباح وخسائر التجارة الموحّد (اقتصاديات التكلفة الواصلة)",
+      "FOB + CIF duty": "تكلفة الشحن والجمارك FOB+CIF",
+      "Gross AR": "إجمالي الذمم المدينة",
+      "Gross GM": "مجمل الربح",
+      "Heavy Truck & Parts Revenue, Landed Cost & Margin": "إيرادات الشاحنات وقطع الغيار والتكلفة الواصلة والهامش",
+      "Invoice Book Sequence Gap & Missing Physical Pad Serial Guard": "رقابة تسلسل دفاتر الفواتير وكشف الأرقام المفقودة",
+      "Invoiced": "مفوتر",
+      "Overdue Collection Promises & Gross AR vs Unallocated Advances Guard": "رقابة وعود التحصيل المتأخرة ومطابقة الذمم مع السلف غير الموزعة",
+      "Showroom": "صالة العرض",
+      "Receivables": "الذمم المدينة",
+      "Top truck & parts accounts by AR exposure": "أكبر حسابات الشاحنات وقطع الغيار حسب الذمم المفتوحة",
+      "Flagship heavy truck models & embedded margin": "طرازات الشاحنات الثقيلة الرئيسية والهامش المتضمن",
+      "Korri Auto SAL · Shacman Heavy Trucks & Korri Auto Parts": "كوري أوتو ش.م.ل · شاحنات Shacman الثقيلة وقطع غيار Korri Auto",
+      "Admin/Tax": "إدارة وضرائب",
+      "Annual Rent Roll, Fit-Out & NOI by Property": "جدول الإيجارات السنوي والتجهيزات وصافي الدخل التشغيلي لكل عقار",
+      "Asset NOI": "صافي دخل العقار",
+      "Completed Tenant-Fault Work Orders Pending Recharge Invoice": "أوامر عمل منجزة على حساب المستأجر بانتظار إعادة الفوترة",
+      "Consolidated Real Estate Income & NOI Bridge": "جسر الإيرادات العقارية وصافي الدخل التشغيلي الموحّد",
+      "Deed & registry": "سندات الملكية والسجل",
+      "Fit-Out": "التجهيزات والصيانة",
+      "Net NOI": "صافي الدخل التشغيلي",
+      "Overdue Property Sale Buyer Instalments & Title Deed Transfer Guard": "رقابة أقساط المشترين المتأخرة وضمان عدم نقل الملكية قبل السداد",
+      "Real Estate & Property watchdogs & ledger integrity": "رقابة العقارات والأملاك وسلامة الدفاتر",
+      "Rent Roll": "جدول الإيجارات",
+      "Unbilled Active Lease Periods & Open Rent Invoice Receivables": "فترات إيجار نشطة غير مفوترة وذمم فواتير الإيجار المفتوحة",
+      "All Leases": "جميع العقود",
+      "Anchor commercial & residential leaseholders": "أبرز المستأجرين التجاريين والسكنيين",
+      "Annual rent roll & NOI by deeded asset": "الإيجار السنوي وصافي الدخل التشغيلي حسب العقار المملوك",
+      "+ Sales tranches": "+ دفعات البيع",
+      "Brokerage Commission & Fiduciary P&L Value Bridge": "جسر عمولات الوساطة والأرباح والخسائر الائتمانية",
+      "Brokerage OpEx": "مصاريف الوساطة",
+      "Carrier Net": "صافي شركة التأمين",
+      "Client AR": "ذمم العملاء",
+      "Collected Client Premiums Held Pending Carrier Remittance": "أقساط العملاء المحصّلة والمحتجزة بانتظار التحويل لشركات التأمين",
+      "Comm": "العمولة",
+      "Comm + fees": "العمولات والرسوم",
+      "Desk OpEx": "مصاريف المكتب",
+      "Insurance & Brokerage watchdogs & ledger integrity": "رقابة التأمين والوساطة وسلامة الدفاتر",
+      "Insurer Commission Statement Discrepancies vs Agreement Rates": "فروقات كشوفات عمولات شركات التأمين مقابل النسب التعاقدية",
+      "Net Rev": "صافي الإيراد",
+      "Policies Expiring in 30/60/90 Days & Lapsed Unrenewed Policy Watchdog": "بوالص تنتهي خلال 30/60/90 يوماً ورقابة البوالص المنتهية غير المجددة",
+      "Rebates": "الحسومات الممنوحة",
+      "Written Premium, Carrier Net & Commission by Carrier": "الأقساط المكتتبة وصافي الشركات والعمولات حسب شركة التأمين",
+      "Largest corporate & fleet policies by GWP": "أكبر بوالص الشركات والأساطيل حسب إجمالي الأقساط المكتتبة",
+      "Catalogue": "دليل البوالص",
+      "GWP & commission yield by insurance line": "الأقساط المكتتبة وعائد العمولة حسب فرع التأمين",
+      "+ New Team Login": "+ إضافة حساب مستخدم",
+      "128-D live neural face descriptors with blink/turn liveness": "بصمة وجه عصبية حية (128 بُعداً) مع التحقق الحيوي بالرمش وحركة الرأس",
+      "Active Web Seats": "المقاعد النشطة على الويب",
+      "Active across phones, tablets & laptops at": "يعمل عبر الهواتف والأجهزة اللوحية والحواسيب على",
+      "; on the LAN host": "؛ وعلى الخادم المحلي",
+      "also writes every entry into": "يكتب أيضاً كل قيد تلقائياً في",
+      ". Syncs seats, PINs, sessions and app entries with 0 licenses.": ". يزامن المقاعد والرموز السرية والجلسات والقيود بصفر تراخيص خارجية.",
+      "in a Supabase project and paste the URL & anon key. The keys are kept on this device only; the Postgres writer ships in a later build.": "في مشروع Supabase والصق الرابط والمفتاح العام. تُحفظ المفاتيح على هذا الجهاز فقط.",
+      "Click for Live Verify or Retake": "اضغط للتحقق الحي أو إعادة الالتقاط",
+      "Client Website": "موقع العملاء",
+      "Client Website:": "موقع العملاء:",
+      "Cloud Relay Status": "حالة المزامنة السحابية",
+      "Custom Setup + Per-Seat": "تأسيس مخصص + باقة لكل مقعد",
+      "Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite": "المحرك 1: سحابة المزامنة متعددة الأجهزة + قاعدة بيانات SQLite محلية",
+      "Driver 2: Dedicated Supabase / PostgreSQL Cloud (Optional)": "المحرك 2: سحابة PostgreSQL / Supabase مخصصة (اختياري)",
+      "Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and tailored setup + per-seat plans.": "استعرض المنصة العامة لأنظمة ISABI، والنماذج التفاعلية للقطاعات المتعددة ولوحات القيادة التنفيذية، والجولات الحية وباقات التأسيس والمقاعد.",
+      "Face ID Biometric 2FA": "التحقق الحيوي ببصمة الوجه (2FA)",
+      "Face ID Enrolment": "تسجيل بصمة الوجه",
+      "ISABI App:": "تطبيق ISABI:",
+      "ISABI Systems Public Showcase & Architecture Blueprints": "الواجهة العامة لأنظمة ISABI ومخططات البنية المؤسسية",
+      "LOCAL ONLY": "محلي فقط",
+      "Live Camera & Recognition": "الكاميرا الحية والتعرف الفوري",
+      "Local Cache": "ذاكرة محلية",
+      "Multi-Device RLS": "عزل صلاحيات متعدد الأجهزة (RLS)",
+      "NOT CONFIGURED": "غير مفعّل",
+      "Pose Saved": "تم حفظ الوضعية",
+      "Real-time seat, PIN & entry synchronization across devices": "مزامنة لحظية للمستخدمين والرموز السرية والقيود عبر الأجهزة",
+      "Retake ↻": "إعادة التقاط ↻",
+      "Scoped across phones, tablets & laptops with BU Row-Level Security": "محكوم بصلاحيات الشركات (RLS) عبر الهواتف والأجهزة اللوحية والحواسيب",
+      "Slight Left": "التفات يساراً قليلاً",
+      "Slight Right": "التفات يميناً قليلاً",
+      "Straight": "نظر للأمام",
+      "Team Seat Inspector & Multi-Device Access Editor": "فاحص حسابات الفريق ومحرر الصلاحيات متعدد الأجهزة",
+      "Workspace Sign-In & Liveness Policy": "سياسة تسجيل الدخول والتحقق الحيوي للوجه",
+      "✓ SAVED": "✓ محفوظ",
+      "Blink or 3D Head Turn (Default)": "رمشة عين أو التفات ثلاثي الأبعاد (افتراضي)",
+      "PIN Only (Disable Face Login)": "رمز سري فقط (إيقاف دخول الوجه)",
+      "Configure Shifts, Lateness & Face ID": "إعداد الورديات والتأخير وبصمة الوجه",
+      "Face ID Clock-In": "تسجيل الحضور ببصمة الوجه",
+      "Hands-Free Face Recognition": "التعرف على الوجه بدون لمس",
+      "Keep the terminal focused on fast clocking. Manage shift schedules, lateness penalties, overtime rules, and payroll logs in Payroll & Workforce, or expand inline setup.": "حافظ على شاشة الكشك مخصصة لتسجيل الحضور السريع. يمكنك إدارة جداول الورديات وقواعد التأخير والعمل الإضافي في وحدة الرواتب وشؤون الموظفين، أو فتح الإعداد السريع أدناه.",
+      "Look inside the oval guide to clock in or out.": "انظر داخل الإطار البيضاوي لتسجيل الدخول أو الخروج.",
+      "Shifts, Lateness Rules & Attendance Analysis": "الورديات وقواعد التأخير وتحليل الحضور",
+      "Start Face Camera": "تشغيل كاميرا الوجه",
+      "Start the front camera to clock enrolled staff in or out, or lock this tablet for wall mounting.": "شغّل الكاميرا الأمامية لتسجيل دخول وخروج الموظفين المسجلين، أو اقفل الجهاز اللوحي للتثبيت الجداري.",
+      "Supervisor Override": "تجاوز المشرف",
+      "Select active staff member...": "اختر الموظف النشط...",
+      "Main Dispatch Yard": "ساحة الإرسال الرئيسية",
+      "WTC Main Plant": "مصنع WTC الرئيسي",
+      "WTC Crusher & Yard": "كسارة وساحة WTC",
+      "BBConstruction Batching Plant": "محطة جبل BBConstruction",
+      "BBConstruction Yard": "ساحة BBConstruction",
+      "Lions Transport Garage": "مرآب Lions Transport",
+      "Halat JV Quarry": "كسارة شراكة حالات (JV)",
+      "Jiyeh JV Quarry": "كسارة شراكة الجية (JV)",
+      "1-Tap Grade:": "اختيار سريع للصنف:",
+      "Date / Time": "التاريخ / الوقت",
+      "Dispatch Mode:": "طريقة التسليم:",
+      "Driver Signature": "توقيع السائق",
+      "ISABI WEIGHBRIDGE & KIOSK SUITE · 80MM ESC/POS": "منظومة القبان والأكشاك ISABI · طباعة حرارية 80مم",
+      "MATERIAL & LOAD QUANTITY": "المادة وكمية النقلة",
+      "Material Subtotal": "مجموع المادة",
+      "Net Quantity": "الكمية الصافية",
+      "Operator": "المشغّل",
+      "Operator:": "المشغّل:",
+      "PRICED SALES INVOICE · 80MM": "فاتورة مبيعات مسعّرة · 80مم",
+      "SALES & DISPATCH INVOICE": "فاتورة مبيعات وإرسالية",
+      "Scale / Gate Stamp": "ختم القبان / البوابة",
+      "Select Product": "اختر المنتج / الصنف",
+      "TOTAL USD": "الإجمالي بالدولار",
+      "Top Customers:": "أبرز العملاء:",
+      "Truck Plate": "لوحة الشاحنة",
+      "Walk-In / Customer": "عميل نقدي / مباشر",
+      "1. Fuel Type, Dates & Equipment": "1. نوع الوقود والتواريخ والآلية",
+      "2. Intake Quantity & Meter Reading": "2. الكمية المصروفة وقراءة العداد",
+      "80mm Pump Slip": "إيصال مضخة 80مم",
+      "Bulk Tank Refill / Oils": "تعبئة خزان جملة / زيوت",
+      "DIESEL ISSUE · 80MM": "صرف مازوت · 80مم",
+      "Daily Grease (kg)": "تشحيم يومي (كغ)",
+      "Dispense to Unit": "صرف لآلية",
+      "Distance / hours since": "المسافة / الساعات منذ آخر تعبئة",
+      "FUEL & LUBRICANT PUMP SLIP": "إيصال صرف محروقات وزيوت",
+      "Fuel / Lubricant": "محروقات / زيوت",
+      "Fuel Operation:": "نوع عملية الوقود:",
+      "Fuel, Diesel & Lubricant Dispense": "صرف المازوت والمحروقات والزيوت",
+      "LITRES ISSUED": "الليترات المصروفة",
+      "Malfunction / Variance": "عطل عداد / فرق جرد",
+      "Optional — leave blank for an unnumbered intake": "اختياري — اتركه فارغاً للإدخال غير المرقّم",
+      "PASS": "مطابق",
+      "Petrol": "بنزين",
+      "Pick an Equipment / Truck first — active driver auto-fills & locks from Equipment Log": "اختر الآلية / الشاحنة أولاً — يُعبأ السائق النشط ويُقفل تلقائياً من سجل الآليات",
+      "Previous reading": "القراءة السابقة",
+      "Quick Litres:": "كميات سريعة (ليتر):",
+      "Recent Fuel & Lube Logs": "آخر سجلات الوقود والزيوت",
+      "Select Equipment": "اختر الآلية",
+      "Thermal Ticket Preview (80mm)": "معاينة الإيصال الحراري (80مم)",
+      "Diesel (Plant Tank Issue)": "مازوت (صرف من خزان المصنع)",
+      "1. Material Receipt & Haulage": "1. استلام المواد الأولية والنقل",
+      "2. Quantities & Costs": "2. الكميات والتكاليف",
+      "3. References & Notes": "3. المراجع والملاحظات",
+      "Haulage Fleet:": "أسطول النقل:",
+      "Mat. Unit Cost (m³)": "تكلفة وحدة المادة (م³)",
+      "Pick Truck first — active driver auto-fills & locks from Equipment Log": "اختر الشاحنة أولاً — يُعبأ السائق النشط تلقائياً من سجل الآليات",
+      "Quarry & Raw Material Receiving": "استلام الكسارات والمواد الأولية",
+      "RAW MATERIAL RECEIVED": "مواد أولية مستلمة",
+      "RAW MATERIAL RECEIVING VOUCHER": "سند استلام مواد أولية",
+      "Raw Aggregate": "بحص ورمل خام",
+      "Receipt Outcome": "نتيجة الاستلام",
+      "Received (Load Accepted)": "مستلم (نقلة مقبولة)",
+      "Received Qty": "الكمية المستلمة",
+      "Recent Raw Material Intakes": "آخر إرسالات المواد الأولية",
+      "Settlement Method": "طريقة التسوية",
+      "Site Owner (Mat.)": "مالك الموقع (المادة)",
+      "TOTAL PAYABLE": "إجمالي المستحق",
+      "Total payable": "إجمالي المستحق",
+      "Transport By": "النقل بواسطة",
+      "Truck Owner (Haul)": "مالك الشاحنة (النقل)",
+      "Auto from Site Rule...": "تلقائي من تسعيرة الموقع...",
+      "Supplier / hauler invoice #": "رقم فاتورة المورّد / الناقل",
+      "Smart Scan": "المسح الذكي",
+      "AI Smart Scan": "المسح الذكي بالذكاء الاصطناعي",
+      "AI Smart Scan Upload": "رفع مستند للمسح الذكي",
+      "AI Filled": "معبأ ذكياً",
+      "Camera Smart Scan": "مسح ذكي بالكاميرا",
+      "Clipboard Paste Smart Scan": "مسح ذكي من الحافظة",
+      "Document Vault Smart Scan": "مسح ذكي من خزنة المستندات",
+      "Drag & Drop Smart Scan": "مسح ذكي بالسحب والإفلات",
+      "Sample Smart Scan": "نموذج مسح ذكي",
+      "Scanned Document": "مستند ممسوح ضوئياً",
+      "Scanned Expense Item": "بند مصروف ممسوح ضوئياً",
+      "Side-by-Side Preview": "معاينة المستند جنباً إلى جنب",
+      "Hide Document Preview": "إخفاء معاينة المستند",
+      "Hide side-by-side preview": "إخفاء المعاينة الجانبية",
+      "Smart Scan Document to New Entry": "مسح المستند وتحويله إلى قيد جديد",
+      "Analyzing document and filling fields...": "جارٍ تحليل المستند وتعبئة الحقول تلقائياً...",
+      "Classifying entry tab & matching ISABI registries...": "جارٍ تصنيف نوع القيد ومطابقة سجلات ISABI...",
+      "Extracting text & tables from PDF...": "جارٍ استخراج النصوص والجداول من ملف PDF...",
+      "Reading document and preparing preview...": "جارٍ قراءة المستند وتحضير المعاينة...",
+      "Reading structured Office document...": "جارٍ قراءة مستند Office المهيكل...",
+      "Rendering scanned PDF page for OCR...": "جارٍ معالجة صفحة PDF للتعرف الضوئي...",
+      "Running optical character recognition on image...": "جارٍ التعرف الضوئي على النصوص في الصورة...",
+      "Rotate image 90 degrees": "تدوير الصورة 90 درجة",
+      "Verify": "تحقق",
+      "Capital Expenditures": "نفقات رأسمالية (CAPEX)",
+      "Cash Inflow (Received)": "تدفق نقدي وارد (مقبوض)",
+      "Cash Outflow (Paid)": "تدفق نقدي صادر (مدفوع)",
+      "Day Shift (08:00-16:00 · Sat 07:00-14:00)": "وردية نهارية (08:00-16:00 · السبت 07:00-14:00)",
+      "Extended Day (07:00-16:00 · Sat 07:00-14:00)": "دوام نهاري ممتد (07:00-16:00 · السبت 07:00-14:00)",
+      "Night Shift (19:00-03:00)": "وردية ليلية (19:00-03:00)",
+      "Extended (Reserve / Special)": "موسّع (احتياطي / خاص)",
+      "External (Partner / Sister Co.)": "خارجي (شريك / شركة شقيقة)",
+      "External Cash / Bank Movement": "حركة نقدية / مصرفية خارجية",
+      "FX Currency Conversion": "تحويل عملات (FX)",
+      "Generator / Crusher": "مولّد كهرباء / كسارة",
+      "Insurance, Permits & Taxes": "تأمين ورخص وضرائب",
+      "Loan Repayment / Settlement": "تسديد قرض / تسوية",
+      "Lubricant / Oil": "زيوت وشحوم",
+      "Malfunction (Meter / Physical Variance)": "عطل عداد / فرق جرد فعلي",
+      "Material (Aggregate / Concrete / Block)": "مواد (بحص / خرسانة / خفان)",
+      "Metric Tons (Ton)": "أطنان مترية (طن)",
+      "Mon to Fri (5 Days)": "الإثنين إلى الجمعة (5 أيام)",
+      "Mon to Sat (6 Days)": "الإثنين إلى السبت (6 أيام)",
+      "Mon to Sun (7 Days)": "الإثنين إلى الأحد (7 أيام)",
+      "New / Reconditioned": "جديد / مجدّد",
+      "New JV Site Partnership Setup": "تأسيس شراكة موقع جديدة (JV)",
+      "No (Additional / Optional Shift)": "لا (وردية إضافية / اختيارية)",
+      "No (Same Timing Every Scheduled Workday)": "لا (نفس التوقيت لكل أيام العمل المجدولة)",
+      "Outside Only (External Parts / Workshop)": "شراء خارجي فقط (قطع خارجية / مشغل)",
+      "Partner / Shareholder Loan": "قرض شريك / مساهم",
+      "Search Map Region (Boundary)": "ابحث عن منطقة على الخريطة",
+      "Sets (Set)": "أطقم (طقم)",
+      "Staff & Social Security": "الرواتب والضمان الاجتماعي",
+      "Staff Employment / Contract": "عقد عمل موظف",
+      "Stored in Warehouse / Spare Stock": "مخزّن في المستودع / قطع احتياطية",
+      "Transport & Site Logistics": "النقل ولوجستيات المواقع",
+      "Truck Loads (Truck)": "نقلات شاحنة (نقلة)",
+      "Utilities & Telecom": "كهرباء ومياه واتصالات",
+      "Card / Whish": "بطاقة / Whish",
+      "Cash & Card": "نقدي وبطاقة",
+      "Cash + POS + Credit": "نقدي + نقاط بيع + ذمم",
+      "Yes (Custom Timing for Saturday / Specific Days)": "نعم (توقيت مخصص للسبت / أيام محددة)",
+      "Yes (Default Shift for Selected BU)": "نعم (الوردية الافتراضية للشركة المحددة)",
+      "Yes (Truck or Machine)": "نعم (شاحنة أو آلية)",
+      "Yes — 11% VAT Applies": "نعم — تخضع لضريبة القيمة المضافة 11%",
+      "Active Alerts & Guards": "التنبيهات والحواجز الرقابية النشطة",
+      "All Armed": "مفعّلة بالكامل",
+      "Always On": "مفعّل دائماً",
+      "Always On · Diff < $0.005": "مفعّل دائماً · الفرق < $0.005",
+      "Factory Defaults": "الإعدادات الافتراضية",
+      "Needs Review": "يحتاج مراجعة",
+      "New Custom Alert": "تنبيه مخصّص جديد",
+      "Threshold Overrides": "تعديلات الحدود الرقابية",
+      "Triggered Right Now": "مفعّلة حالياً",
+      "Your Custom Alerts": "تنبيهاتك المخصّصة",
+      "Why": "السبب",
+      "Why:": "السبب:",
+      "Click": "اضغط",
+      "Click any row or": "اضغط على أي سطر أو",
+      "to inspect examples & edit thresholds": "لمعاينة الأمثلة وتعديل الحدود الرقابية",
+      "on any alert row to tune numbers with live preview": "على أي قاعدة لضبط الحدود مع معاينة فورية",
+      "Add custom thresholds with your own": "أضف حدوداً رقابية مخصصة مع خانة",
+      "note so you never forget": "لتوثيق سبب القاعدة دائماً",
+      "Evaluated live across": "تُفحص لحظياً عبر",
+      "save-blocking ·": "حاجز منع حفظ ·",
+      "warnings ·": "تحذيرات ·",
+      "in AI Sentinels.": "في الرقابة الذكية.",
+      "OVERDUE OIL": "تغيير زيت متأخر",
+      "WATCH LEAK": "مراقبة تسريب",
+      "Critical / Down": "حرج / متوقف",
+      "Absent-Driver Machine Fuel & Lube Watchdog": "رقابة صرف الوقود والزيوت لآليات السائقين الغائبين",
+      "Back-Dated Entry Explanation Guard": "حاجز تبرير القيود المؤرخة بأثر رجعي",
+      "Critical Down-Unit & Unnotified Part Custody": "رقابة الآليات المتوقفة وعهدة القطع المستبدلة بدون بلاغ عطل",
+      "Daily Chassis & Plant Greasing Benchmark": "معيار التشحيم اليومي للشاحنات والمصنع",
+      "Diesel Malfunction vs Company Consumption Watchdog": "رقابة فروقات وأعطال المازوت نسبةً لاستهلاك الشركة",
+      "Diesel Tank Physical vs Ledger Watchdog": "رقابة مطابقة رصيد خزان المازوت الفعلي مع الدفتري",
+      "Duplicate Ticket Serial Number Guard": "حاجز منع تكرار أرقام إيصالات القبان",
+      "Engine Oil 15W-40 Early Drain & Overdue Service": "رقابة التغيير المبكر أو المتأخر لزيت المحرك 15W-40",
+      "Fuel Burn Rate & Meter Outlier Watchdog": "رقابة معدلات حرق الوقود وشذوذ قراءات العدادات",
+      "High Material Discount Note Guard": "حاجز تبرير الحسومات المرتفعة على المواد",
+      "Hydraulic Oil 68 Leak Watch (30-Day & Excess)": "رقابة تسريب الزيت الهيدروليكي 68 (خلال 30 يوماً)",
+      "Kiosk Anti-Double-Punch Debounce Guard": "حاجز منع ازدواجية بصمة الحضور على الكشك",
+      "Odometer & Hour-Meter Jump & Ceiling Guard": "حاجز قفزات وسقف عدادات الكيلومترات والساعات",
+      "Price Agreement & Lapsed Contract Watchdog": "رقابة الالتزام باتفاقيات الأسعار والعقود المنتهية",
+      "Reporting Date vs Transaction Date Guard": "حاجز فرق تاريخ التقرير عن تاريخ العملية",
+      "Salary Payments Without Active Contract": "رقابة دفعات الرواتب بدون عقد عمل نشط",
+      "Transaction vs Reporting Date Parity Audit": "تدقيق مطابقة تاريخ العملية مع تاريخ التقرير والفواتير الضريبية",
+      "Weighbridge Ticket Pad & Skipped Serial Audit": "تدقيق دفاتر القبان (25 إيصال) والأرقام المتخطاة",
+      "Weighbridge Ton Estimate Corridor": "نطاق التحقق من الوزن بالطن مقابل سعة الشاحنة",
+      "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "ينبّه الإدارة عندما تصل فروقات العدادات أو إيصالات المازوت غير الموزعة أو فروقات الخزان إلى 5% أو أكثر من إجمالي استهلاك الشركة في الفترة المحددة.",
+      "Audits historical vouchers shifted across months (Transaction Date vs Reporting Date) and spots statutory VAT invoices not linked to weighbridge tickets.": "يدقق السندات المرحّلة بين الأشهر (تاريخ العملية مقابل تاريخ التقرير) ويكشف فواتير الضريبة الرسمية غير المرتبطة بإيصالات القبان.",
+      "Catches extra-zero odometer typos, backwards meter entries, and missed fuel vouchers before they corrupt fleet L/100km and L/h burn analytics.": "يكشف أخطاء الأصفار الزائدة وقراءات العدادات العكسية وإيصالات الوقود الساقطة قبل أن تشوّه تحليلات استهلاك الأسطول (ليتر/100كم وليتر/ساعة).",
+      "Catches ghost diesel/lubricant issues booked to a machine on days when its assigned operator was marked Absent, Sick, or On Leave without a logged substitute driver.": "يكشف عمليات صرف المازوت والزيوت المسجلة على آلية في أيام غياب سائقها المعيّن أو إجازته دون تسجيل سائق بديل.",
+      "Catches loads billed below the signed customer agreement rate and highlights customers still buying on expired price agreements that need renewal.": "يكشف النقلات المفوترة بأقل من السعر التعاقدي المعتمد وينبّه للعملاء المستمرين بالشراء على اتفاقيات منتهية الصلاحية تحتاج للتجديد.",
+      "Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.": "الضمانة المحاسبية الأساسية: يتحقق من تساوي إجمالي المدين مع إجمالي الدائن عبر الأصناف 1 إلى 7 في التصميم المحاسبي اللبناني لتطابق الميزانية والأرباح والخسائر حتى السنت.",
+      "Detects missing or torn paper vouchers inside 25-leaf weighbridge books, duplicate serials, and unnumbered tickets so no load goes unbilled.": "يكشف الإيصالات الورقية المفقودة أو الممزقة داخل دفاتر القبان (25 ورقة) والأرقام المكررة وغير المرقمة لضمان فوترة كل نقلة.",
+      "Ensures bulk diesel deliveries are booked properly before dispensing and alerts early when plant tank stock runs low or awaits supplier invoice pricing.": "يضمن قيد توريدات المازوت بالجملة قبل الصرف وينبّه مبكراً عند انخفاض مخزون الخزان أو وجود توريدات بانتظار تسعير فاتورة المورّد.",
+      "Hydraulic circuits are sealed; repeated Hydraulic 68 top-ups mean a weeping cylinder seal, PTO pump leak, or blown hose wasting expensive oil and risking downtime.": "الدوائر الهيدروليكية مغلقة بطبيعتها؛ تكرار تعبئة زيت هيدروليك 68 يعني تهريب مانعة التسرب أو مضخة أو خرطوم مما يهدر الزيت ويعرّض الآلية للتوقف.",
+      "Keeps operational P&L statements aligned with cash flow by requiring a clear reason whenever a voucher is assigned to a far-away reporting month.": "يحافظ على توافق بيانات الأرباح والخسائر مع التدفق النقدي عبر إلزام المستخدم بتوضيح السبب عند ترحيل سند إلى شهر تقرير بعيد.",
+      "Prevents ghost payroll disbursements or paying staff outside their hired employment window without an active contract on file.": "يمنع صرف رواتب وهمية أو الدفع لموظفين خارج فترة التعاقد المعتمدة دون وجود عقد عمل نشط في السجل.",
+      "Prevents premature 15W-40 oil drains (pilferage or wasted oil before service interval) AND catches trucks or loaders running overdue past safe engine service limits.": "يمنع تغيير زيت المحرك 15W-40 قبل موعده (هدر أو سحب غير مبرر) ويكشف الشاحنات والآليات التي تجاوزت حد الصيانة الآمن للمحرك.",
+      "Prevents scale typos and wrong UoM entries (such as typing m3 instead of weighed Tons, or missing a digit) before the ticket hits Customer AR or Supplier AP.": "يمنع أخطاء القبان وإدخال وحدة قياس خاطئة (مثل كتابة م³ بدلاً من الطن الموزون أو نسيان رقم) قبل ترحيل الإيصال إلى ذمم العملاء أو الموردين.",
+      "Prevents unapproved price giveaways or typing a dollar total into the discount box without leaving an audit explanation in Notes.": "يمنع منح حسومات غير معتمدة أو كتابة المبلغ الإجمالي بالخطأ في خانة الحسم دون توثيق سبب التدقيق في الملاحظات.",
+      "Protects closed monthly figures and daily cash till balances from silent retroactive edits by forcing a written explanation on late vouchers.": "يحمي الأرقام الشهرية المقفلة وأرصدة الصندوق اليومية من التعديلات الصامتة بأثر رجعي عبر إلزام تدوين سبب خطي للسندات المتأخرة.",
+      "Protects kingpins, fifth wheels, bucket pins, and crusher bearings from dry-wear seizure by pre-filling daily kg targets and highlighting under-greased active units.": "يحمي المحاور والصينية ومفصلات الجرافات ورولمانات الكسارة من التآكل الجاف عبر تعبئة كميات التشحيم اليومية المستهدفة وتنبيه الآليات العاملة غير المشحّمة.",
+      "Spots possible diesel siphoning, leaking fuel lines, or broken odometers by comparing each truck and yellow-iron unit against severe-duty quarry burn ceilings.": "يكشف احتمالات سحب المازوت أو تهريب خطوط الوقود أو تعطل العدادات عبر مقارنة كل شاحنة وآلية ثقيلة بسقوف الاستهلاك المعيارية.",
+      "Stops accidental double-taps or looking at the tablet camera within 5 minutes of clocking IN or OUT from re-triggering a snapshot or flipping the worker punch.": "يمنع اللمس المزدوج غير المقصود أو النظر مجدداً لكاميرا الكشك خلال 5 دقائق من تسجيل الدخول أو الخروج من قلب حركة الموظف.",
+      "Stops clerks from double-entering the same paper weighbridge voucher twice on the same shift while allowing legitimate pad resets from older months with a yellow warning.": "يمنع تكرار إدخال نفس إيصال القبان الورقي مرتين في نفس الوردية مع السماح بإعادة تسلسل الدفاتر القديمة مع تنبيه أصفر.",
+      "Stops dispatchers from sending out a truck with an open Critical safety defect and ensures no spare part is replaced or scrapped without a prior logged defect notice.": "يمنع إرسال أي شاحنة عليها عطل سلامة حرج مفتوح ويضمن عدم استبدال أو إتلاف أي قطعة غيار دون بلاغ عطل مسجل مسبقاً.",
+      "Surfaces slow-paying credit accounts right on the Sales Ticket screen before dispatching more material on credit, and tracks aged 60+ day balances after FIFO receipts.": "يُظهر الحسابات الآجلة المتأخرة بالسداد مباشرةً على شاشة إيصال المبيعات قبل إرسال مواد إضافية بالدين، ويتتبع الذمم المتجاوزة 60 يوماً بعد تخصيص المقبوضات FIFO.",
+      "(5.0 min) unless the worker explicitly taps Switch Direction.": "(5.0 دقائق) ما لم يضغط الموظف صراحةً على تبديل الاتجاه.",
+      "(critical at": "(حرج عند",
+      "(or credit limit), and lists accounts >": "(أو حد الائتمان)، ويدرج الحسابات المتجاوزة",
+      "(over >= 100 km) and loaders/excavators burning more than": "(لمسافة >= 100 كم) والجرافات/الحفارات التي تستهلك أكثر من",
+      "(over >= 20 h), plus meter anomalies.": "(لفترة >= 20 ساعة)، إضافةً لشذوذ العدادات.",
+      ", and escalates AI Sentinels to critical below": "، ويصعّد الرقابة الذكية إلى حالة حرجة دون",
+      ", and flags AI Sentinels when open Down units exist or unnotified part swaps reach": "، وينبّه الرقابة الذكية عند وجود آليات متوقفة أو وصول استبدال القطع بدون بلاغ إلى",
+      ", and warns when reused within": "، ويحذّر عند إعادة استخدام الرقم خلال",
+      ", blocks BBConstruction intakes below": "، ويحظر إدخالات BBConstruction دون",
+      ", plus lapsed contracts.": "، إضافةً للعقود المنتهية.",
+      ", plus unlinked VAT invoices.": "، إضافةً لفواتير الضريبة غير المرتبطة.",
+      ". Warns and requires a Note when a single interval jumps over": ". يحذّر ويلزم بملاحظة عندما تقفز القراءة الواحدة بأكثر من",
+      "Audits 25-ticket physical voucher books for missing serial numbers, duplicates, and unnumbered loads. Treats serial gaps separated by more than": "يدقق دفاتر الإيصالات الورقية (25 ورقة) لكشف الأرقام المفقودة والمكررة وغير المرقمة، ويعامل الفجوات المفصولة بأكثر من",
+      "Audits every Sales Ticket against date-effective Customer x Product agreements. Flags unit rates more than": "يدقق كل إيصال مبيعات مقابل اتفاقيات الأسعار السارية للعميل والمنتج، ويرصد أسعار الوحدة الأقل بأكثر من",
+      "Auto-presets daily grease issue (": "يضبط تلقائياً كمية التشحيم اليومية (",
+      "Blocks a second Face ID or PIN clock punch for the same worker within": "يمنع تسجيل بصمة وجه أو رمز ثانية لنفس الموظف خلال",
+      "Blocks backwards meter readings and typos above": "يمنع قراءات العدادات العكسية وأخطاء الإدخال الأعلى من",
+      "Checks Total Debits minus Total Credits across all SOA journal legs (sales, quarry, haulage, expenses, 11% VAT, receipts, settlements). Escalates to critical if variance >=": "يفحص إجمالي المدين ناقص إجمالي الدائن عبر جميع قيود اليومية (المبيعات، الكسارات، النقل، المصاريف، الضريبة 11%، المقبوضات، التسديدات). يصعّد لحالة حرجة إذا بلغ الفرق >=",
+      "Checks if the ticket serial already exists in the same entity and table. Blocks save when used within": "يتحقق مما إذا كان رقم الإيصال مستخدماً مسبقاً في نفس الشركة والجدول. يمنع الحفظ إذا استُخدم خلال",
+      "Checks the gap between Transaction Date (cash/till date) and Reporting Date (statement period). Requires a Note when the gap exceeds": "يفحص الفارق بين تاريخ العملية وتاريخ التقرير، ويلزم بتدوين ملاحظة عندما يتجاوز الفارق",
+      "Compares weighed Tons against truck m3 capacity x product density. Blocks save below": "يقارن الوزن بالطن مع سعة الشاحنة بالمتر المكعب × كثافة المادة. يمنع الحفظ دون",
+      "Evaluates gross diesel malfunction litres divided by total company diesel used in the selected date range. Raises an alert banner, sidebar badge, and AI Sentinels flag at": "يحتسب نسبة ليترات أعطال المازوت إلى إجمالي استهلاك الشركة في الفترة المحددة، ويرفع تنبيهاً رقابياً عند",
+      "Flags any Sales Ticket discount exceeding": "يرصد أي حسم على إيصال المبيعات يتجاوز",
+      "Flags road trucks burning more than": "يرصد الشاحنات التي تستهلك أكثر من",
+      "Highlights the live Customer AR strip in amber on Sales Tickets when 60+ day overdue balance exceeds": "يُبرز شريط ذمم العميل باللون الكهرماني على إيصال المبيعات عندما تتجاوز الذمم المتأخرة (+60 يوماً)",
+      "Matches every monthly salary payment against active staff employment start/end windows. Flags AI Sentinels when unmatched salary payments exceed": "يطابق كل دفعة راتب شهري مع عقود العمل السارية للموظفين، وينبّه الرقابة الذكية عندما تتجاوز الدفعات غير المغطاة",
+      "Reconciles Opening + Purchased minus Issued minus Malfunction/Discrepancy minus Sold diesel. Shows a low-stock warning on the Fuel form below": "يطابق الرصيد الافتتاحي + المشتريات ناقص المصروف والأعطال والمباع من المازوت، ويعرض تنبيه انخفاض المخزون دون",
+      "Scans Sales, Quarry, and Expense ledgers for rows where Reporting Date differs from Transaction Date by more than": "يفحص دفاتر المبيعات والكسارات والمصاريف للقيود التي يختلف فيها تاريخ التقرير عن تاريخ العملية بأكثر من",
+      "Shows a live red absent-driver alert pill on the Fuel & Lube form when the operator is marked Absent on that date, and flags AI Sentinels at": "يعرض شارة تنبيه حمراء فورية على نموذج الوقود والزيوت عندما يكون السائق غائباً في ذلك التاريخ، وينبّه الرقابة الذكية عند",
+      "Warns immediately on Sales Dispatch when a selected unit is marked": "يحذّر فوراً عند إرسال المبيعات إذا كانت الآلية المختارة بوضعية",
+      "Warns live on the Lubricant form when a unit exceeds": "يحذّر فورياً على نموذج الزيوت عندما تتجاوز الآلية",
+      "Warns on any Sales, Quarry, Receipt, Fuel, Expense, or Settlement entry dated more than": "يحذّر على أي قيد مبيعات أو كسارات أو قبض أو وقود أو مصروف أو تسديد مؤرخ قبل أكثر من",
+      "Warns on full 15W-40 oil changes logged below": "يحذّر عند تسجيل غيار زيت 15W-40 كامل دون",
+      "absent-driver or unattributed machine entries.": "قيود لآليات بسائق غائب أو بدون مشغّل.",
+      "as a separate pad series.": "كسلسلة دفتر مستقلة.",
+      "before today and blocks save until Notes explain why.": "قبل تاريخ اليوم ويمنع الحفظ حتى توضيح السبب في الملاحظات.",
+      "below agreed price when cumulative shortfall exceeds": "أقل من السعر المتفق عليه عندما يتجاوز الفارق التراكمي",
+      "excess and": "فائض و",
+      "excess on Fleet Lubrication Benchmarks.": "تجاوزاً على معايير تشحيم وزيوت الأسطول.",
+      "greased days.": "من أيام التشحيم.",
+      "loader/excavator,": "جرافة/حفارة،",
+      "of Hydraulic 68 in 30 days. Flags": "من زيت هيدروليك 68 خلال 30 يوماً. يرصد",
+      "of diesel burn target (": "من مستهدف استهلاك المازوت (",
+      "of estimated tons, and warns outside": "من الوزن التقديري بالطن، ويحذّر خارج نطاق",
+      "of the material subtotal and requires a written explanation in Notes before saving.": "من قيمة المادة ويلزم بتوضيح خطي في الملاحظات قبل الحفظ.",
+      "plant) and highlights active units (>= 10 workdays) below": "مصنع) ويُبرز الآليات العاملة (>= 10 أيام عمل) الأقل من",
+      "truck,": "شاحنة،",
+      "trucks /": "شاحنات /",
+      "when truck size is unknown).": "عندما تكون سعة الشاحنة غير محددة).",
+      "yellow iron), and flags": "معدات ثقيلة)، ويرصد",
+      "ENFORCED": "مُطبّق",
+      "GUARD ACTIVE": "الحاجز نشط",
+      "IN SYNC": "متطابق",
+      "BURN NORMAL": "استهلاك طبيعي",
+      "COMPLIANT": "ملتزم",
+      "PASS · $0.00 DIFF": "مطابق · $0.00 فرق",
+      "Active Central Loan Agreements vs Scheduled Repayments": "اتفاقيات القروض المركزية النشطة مقابل جداول السداد",
+      "Consolidated Group Trial Balance & Sister Sub-Account Tie-Out": "ميزان المراجعة الموحّد للمجموعة ومطابقة الحسابات الفرعية للشركات الشقيقة",
+      "Generator Diesel L/hr Burn Spike & Solar Offset Watchdog": "رقابة طفرات استهلاك مازوت المولدات (ليتر/ساعة) ومساهمة الطاقة الشمسية",
+      "Active Claims Under Carrier Review & Subrogation Recovery Queue": "المطالبات النشطة قيد مراجعة شركات التأمين وطابور الاسترداد",
+      "Client Discount vs Gross Brokerage Commission Guard": "رقابة حسومات العملاء مقابل إجمالي عمولة الوساطة",
+      "Unallocated Freight, Customs & Clearance on Received Import Containers": "مصاريف شحن وجمارك وتخليص غير موزعة على حاويات استيراد مستلمة",
+      "Vacant Units & Double-Leased Unit Overlap Guard (/2400 Deed Shares)": "رقابة الوحدات الشاغرة ومنع تداخل عقود الإيجار (/2400 حصة عقارية)",
+      "Absent-Driver Diesel, Lubricant & Grease Machine Watchdog": "رقابة المازوت والزيوت والتشحيم للآليات أثناء غياب السائق",
+      "Action Items & Exception Queue, Skipped/Duplicate Weighbridge Serials (m116), Daily Totals Ledger & Tx vs Reporting Date Parity": "طابور الاستثناءات والإجراءات، تدقيق تسلسل دفاتر القبان، سجل الإجماليات اليومية ومطابقة التواريخ",
+      "Amber row = agreement End date has passed while customer continues lifting material (m202)": "السطر الكهرماني = انتهى تاريخ الاتفاقية بينما يستمر العميل بسحب المواد",
+      "Click any rule to inspect flagged rows": "اضغط على أي قاعدة لمعاينة السطور المرصودة",
+      "Consumption outliers": "شذوذ معدلات الاستهلاك",
+      "Contract Price Compliance": "الالتزام بالأسعار التعاقدية",
+      "Customer Receivables Overdue > 60 Days (FIFO Allocated)": "ذمم العملاء المتأخرة لأكثر من 60 يوماً (مخصّصة FIFO)",
+      "Customer Settlements": "تحصيلات العملاء",
+      "Customer pricing exceptions — sold below agreed price": "استثناءات تسعير العملاء — بيع بأقل من السعر المتفق عليه",
+      "Customers with past-due open tickets as at the period end, ranked by overdue amount": "العملاء ذوو الإيصالات المفتوحة المستحقة في نهاية الفترة مرتبين حسب المبلغ المتأخر",
+      "Daily totals ledger": "دفتر الإجماليات اليومية",
+      "Daily totals snapshot ledger": "سجل لقطات الإجماليات اليومية",
+      "Diesel Tank Physical vs Ledger Reconciliation": "مطابقة رصيد خزان المازوت الفعلي مع الدفتري",
+      "Diesel tank balance": "رصيد خزان المازوت",
+      "Double-Entry Trial Balance Integrity (Lebanese CoA)": "سلامة ميزان المراجعة للقيد المزدوج (شجرة الحسابات اللبنانية)",
+      "Driver pay unallocated": "رواتب سائقين غير موزعة",
+      "Duplicate & Unnumbered Tickets in the Books": "الإيصالات المكررة وغير المرقمة في الدفاتر",
+      "Duplicate Ticket Numbers": "أرقام الإيصالات المكررة",
+      "Duplicate ticket serials": "أرقام متسلسلة مكررة",
+      "Excludes paired returns": "يستثني المرتجعات المقترنة",
+      "Executive Action Items, Ticket Serial Hygiene, Change Log & Date-Basis Parity Bridge": "بنود المتابعة التنفيذية وسلامة تسلسل الإيصالات وجسر مطابقة التواريخ",
+      "Fleet & Payroll Hygiene": "سلامة بيانات الأسطول والرواتب",
+      "Fleet lubrication & hydraulic leak exceptions": "استثناءات تشحيم الأسطول وتسريب الهيدروليك",
+      "Follows latest dated ticket of pad": "يتبع أحدث إيصال مؤرخ في الدفتر",
+      "Fuel Litres": "ليترات الوقود",
+      "Fuel consumption & meter reading outliers (m142)": "شذوذ استهلاك الوقود وقراءات العدادات",
+      "Gross Sales": "إجمالي المبيعات",
+      "Headers without tickets": "فواتير بدون إيصالات مرتبطة",
+      "Historical operational reports group backdated tickets and expenses by ExpectedDate (Reporting Date); Δ = Reporting Date − Transaction Date": "تُجمّع التقارير التشغيلية الإيصالات والمصاريف حسب تاريخ التقرير؛ الفرق Δ = تاريخ التقرير − تاريخ العملية",
+      "IVA customers — VAT receivable & uninvoiced exposure": "عملاء الضريبة (IVA) — ضريبة القيمة المضافة المستحقة والرصيد غير المفوتر",
+      "Incomplete ticket books": "دفاتر إيصالات غير مكتملة",
+      "Ledger & Trial Balance": "الأستاذ العام وميزان المراجعة",
+      "Meter readings to check": "قراءات عدادات للمراجعة",
+      "Negative = unbooked bulk purchase": "السالب = توريد جملة غير مسجّل كشراء وقود",
+      "Next Suggested Ticket #": "رقم الإيصال المقترح التالي",
+      "No matching rows for the selected filters": "لا توجد سطور مطابقة للفلاتر المحددة",
+      "Odometer & Hour-Meter Tolerance Watchdog": "رقابة التفاوت المسموح لعدادات الكيلومترات والساعات",
+      "One row per 25-ticket pad book run across Sales, Raw & Fuel streams": "سطر واحد لكل دفتر من 25 إيصال عبر المبيعات والمواد الأولية والوقود",
+      "Operational weighbridge date": "تاريخ القبان التشغيلي",
+      "Overdue customer balances & credit exposure": "أرصدة العملاء المتأخرة والتعرّض الائتماني",
+      "Overdue receivables (>30d)": "ذمم مدينة متأخرة (>30 يوماً)",
+      "Own units idle 30+ days": "آليات الشركة المتوقفة +30 يوماً",
+      "Payments whose staff and payroll month no employment contract covers · add/extend contract on P12": "دفعات رواتب لا يغطيها عقد عمل سارٍ لذلك الشهر · أضف أو مدّد العقد في وحدة الرواتب",
+      "Pre-Replacement Defect Notice & Removed Parts Custody": "إشعار العطل المسبق وعهدة القطع المستبدلة",
+      "Raw Pad": "دفتر المواد الأولية",
+      "Recent weighbridge ticket serial audit (Sales, Raw & Fuel pads)": "تدقيق التسلسل الأخير لإيصالات القبان (دفاتر المبيعات والمواد والوقود)",
+      "Red = last ticket priced below active customer price agreement": "الأحمر = آخر إيصال مسعّر بأقل من اتفاقية سعر العميل السارية",
+      "Requires explanation on entry": "يتطلب توضيح السبب عند الإدخال",
+      "Returned Loads to Plant": "نقلات مرتجعة إلى المصنع",
+      "Salary Payments Without an Employment Contract": "دفعات رواتب بدون عقد عمل",
+      "Salary payments without an employment contract (m220)": "دفعات رواتب بدون عقد عمل سارٍ",
+      "Salary without contract": "راتب بدون عقد",
+      "Sales below agreed price": "مبيعات أقل من السعر المتفق عليه",
+      "Sentinel Health Score": "مؤشر السلامة الرقابية",
+      "Shared across Sales, Raw & Fuel 25-ticket pads (excludes >6-digit external scale refs)": "مشترك عبر دفاتر 25 إيصال للمبيعات والمواد والوقود (يستثني أرقام القبان الخارجية)",
+      "Skipped & Duplicate Ticket Serials (m116 — Find Each Skipped Number Between Its Neighbours)": "الأرقام المتخطاة والمكررة في دفاتر الإيصالات (تحديد كل رقم مفقود بين جيرانه)",
+      "Skipped Serial Gaps": "فجوات التسلسل المتخطاة",
+      "Snapshot Rows Logged": "سطور اللقطات اليومية المسجلة",
+      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance $0.00.": "إجمالي المدين مقابل إجمالي الدائن عبر كافة قيود اليومية (المبيعات، المواد، النقل، المصاريف، الضريبة 11%، المقبوضات، التسديدات): الفرق $0.00.",
+      "Tx vs Reporting date drift": "انحراف تاريخ العملية عن تاريخ التقرير",
+      "Units exceeding hydraulic Oil 68 benchmarks, overdue for 15W-40 oil service, or drained early": "الآليات المتجاوزة لمعيار زيت هيدروليك 68 أو المتأخرة عن غيار زيت 15W-40 أو المفرغة مبكراً",
+      "Units exceeding tolerance thresholds (>80 L/100km for trucks or >25 L/hr for yellow iron)": "الآليات المتجاوزة لسقف الاستهلاك (>80 ليتر/100كم للشاحنات أو >25 ليتر/ساعة للمعدات الثقيلة)",
+      "Unlinked VAT invoices": "فواتير ضريبية غير مرتبطة",
+      "VAT-registered customers carrying unpaid 11% output VAT in their open balance (m254)": "العملاء المسجلون بالضريبة الذين يحملون ضريبة مخرجات 11% غير مسددة ضمن رصيدهم المفتوح",
+      "25-Ticket Books Count Table (Tickets Used / 25, Stream Breakdown, Missing Gaps, Unused Slots & Last Ticket in Series)": "جدول جرد دفاتر الـ 25 إيصال (المستخدم من 25، التوزيع، الفجوات المفقودة، الخانات المتبقية وآخر إيصال)",
+      "25-Ticket Books Tracked": "دفاتر 25 إيصال متتبعة",
+      "1 · Daily Totals Snapshot Ledger & Transaction vs Reporting Date Bridge": "1 · سجل الإجماليات اليومية وجسر مطابقة تاريخ العملية مع تاريخ التقرير",
+      "1 · Weighbridge 25-Ticket Pad Hygiene, 25-Ticket Books Count, Removed Tickets (0 KM) & Returned Loads (Round-Trip KM)": "1 · تدقيق دفاتر القبان (25 إيصال) وجرد الدفاتر والإيصالات الملغاة (0 كم) والنقلات المرتجعة",
+      "Ticket Books": "دفاتر الإيصالات",
+      "Fuel & Meters": "الوقود والعدادات",
+      "Diesel Tank": "خزان المازوت",
+      "Diesel Watchdog": "رقابة المازوت",
+      "Payroll Contracts": "عقود الرواتب",
+      "Workforce & Fleet": "الموظفون والأسطول",
+      "Intercompany Pairing": "المطابقة البينية",
+      "Sister Corridor Drift": "فروقات الذمم البينية",
+      "Holding Payables": "ذمم القابضة الدائنة",
+      "Central Loans": "القروض المركزية",
+      "Sister Sub-Account Tie-Out": "مطابقة الحسابات الشقيقة",
+      "Venue Entry Cut-Off": "إقفال إيرادات الفرع",
+      "POS Till Parity": "مطابقة صندوق الكاشير",
+      "Kitchen & Cellar Cost": "تكلفة المطبخ والبار",
+      "Resort Generators": "مولدات المنتجع",
+      "Memberships & Shifts": "الاشتراكات والورديات",
+      "Invoice Books": "دفاتر الفواتير",
+      "Landed Margin Guard": "حاجز هامش التكلفة الواصلة",
+      "Receivables & Advances": "الذمم والسلف",
+      "Warehouse Stock & WAC": "المخزون والمتوسط المرجح",
+      "Landed Cost Allocation": "توزيع التكلفة الواصلة",
+      "Lease Renewals & Escalation": "تجديد العقود والزيادات",
+      "Period Rent Billing": "فوترة إيجارات الفترة",
+      "Buyer Sale Instalments": "أقساط المشترين",
+      "Tenant-Fault Recharges": "تحميلات المستأجرين",
+      "Unit Occupancy & Overlap": "الإشغال وتداخل العقود",
+      "Renewal Pipeline": "مسار التجديدات",
+      "Carrier Commission Recon": "مطابقة عمولات الشركات",
+      "Carrier Remittance": "تحويلات شركات التأمين",
+      "Discount Margin Guard": "حاجز هامش الحسومات",
+      "Accrued Partner Profit-Share Pool": "مجمع حصص أرباح الشركاء المستحقة",
+      "Central Long-Term Borrowings & Facilities": "القروض والتسهيلات المركزية طويلة الأجل",
+      "Central Treasury Bank Accounts (USD & LBP)": "الحسابات المصرفية للخزينة المركزية (USD و LBP)",
+      "Consolidated Group Total": "إجمالي المجموعة الموحّد",
+      "Corporate Legal, Audit & Shared Overhead": "المصاريف القانونية والتدقيق والخدمات المشتركة",
+      "Group Management Fees & Subsidiary Dividends": "رسوم إدارة المجموعة وتوزيعات أرباح الشركات التابعة",
+      "Group Share Capital & Holding Equity": "رأس مال المجموعة وحقوق ملكية القابضة",
+      "Holding Advisory & Shared-Service Suppliers AP": "ذمم موردي الاستشارات والخدمات المشتركة للقابضة",
+      "Intercompany Liaison & Sister Clearing": "حسابات الارتباط والمقاصة بين الشركات الشقيقة",
+      "Partner Current Accounts (10-Slot Matrix)": "الحسابات الجارية للشركاء (مصفوفة 10 شركاء)",
+      "11% Hospitality Output VAT Payable": "ضريبة القيمة المضافة المحصّلة للضيافة 11%",
+      "All Venue Outlets": "جميع منافذ وصالات الفرع",
+      "Beachfront Chalets, Pools, Solar & Generators": "الشاليهات البحرية والمسابح والطاقة الشمسية والمولدات",
+      "F&B, Beverage & Diesel Suppliers Payable": "ذمم موردي الأغذية والمشروبات والمازوت",
+      "Kitchen, Cellar & Bar Commissary Stock": "مخزون المطبخ والقبو والبار المركزي",
+      "Recipe BOM Food, Beverage & Generator Fuel Cost": "تكلفة الوصفات المعيارية للأغذية والمشروبات ووقود المولدات",
+      "Resort POS Till & Bank Accounts": "صناديق نقاط البيع والحسابات المصرفية للمنتجع",
+      "Resort Partner Profit-Share Pool": "مجمع توزيع أرباح شركاء المنتجع",
+      "Resort Property Capital & Retained Earnings": "رأس مال المنتجع والأرباح المدوّرة",
+      "Seasonal Membership & Event Receivables": "ذمم الاشتراكات الموسمية والمناسبات",
+      "Total Resort Revenue": "إجمالي إيرادات المنتجع",
+      "Venue F&B, Gate Admissions, Chalets & Memberships": "إيرادات المطاعم ورسوم الدخول والشاليهات والاشتراكات",
+      "11% Output VAT on Pre-Printed Invoice Books": "ضريبة المخرجات 11% على دفاتر الفواتير المطبوعة",
+      "5-Warehouse OEM Spare Parts Inventory (WAC)": "مخزون قطع الغيار الأصلية في المستودعات الخمسة (WAC)",
+      "All Trading Clients": "جميع عملاء التجارة",
+      "Commercial Vehicles & OEM Spare Parts Sales": "مبيعات الآليات التجارية وقطع الغيار الأصلية",
+      "Cost of Goods Sold — Landed Vehicles & Parts": "تكلفة البضاعة المباعة — الآليات والقطع الواصلة",
+      "Customer Advances & Unapplied Deposits": "سلف العملاء والدفعات المقدمة غير الموزعة",
+      "Customer Trade Receivables — Gross AR": "الذمم التجارية للعملاء — إجمالي الذمم المدينة",
+      "Foreign OEMs, Letters of Credit & Customs AP": "ذمم المصانع الأجنبية والاعتمادات المستندية والجمارك",
+      "Heavy Truck & Commercial Serial Stock (VINs)": "مخزون الشاحنات الثقيلة والآليات المرقّمة (VIN)",
+      "Showroom Cash Till & Trade Bank Accounts": "صندوق صالة العرض والحسابات المصرفية التجارية",
+      "Showroom, Heavy Workshop & PDI Bays": "صالة العرض ومشغل الصيانة الثقيلة وساحات الفحص PDI",
+      "Total Trading Sales": "إجمالي مبيعات التجارة",
+      "Trading Share Capital & Statutory Reserves": "رأس مال التجارة والاحتياطيات القانونية",
+      "Trucks + Spare Parts": "الشاحنات + قطع الغيار",
+      "All Tenants": "جميع المستأجرين",
+      "Building Fit-Out, MEP Repairs & Municipal Taxes": "تجهيزات المباني وصيانة الميكانيك والكهرباء والرسوم البلدية",
+      "Co-Owner NOI Distribution Accounts (/2400 Shares)": "حسابات توزيع صافي الدخل للشركاء المالكين (/2400 حصة)",
+      "Commercial & Residential Lease Rent & Deed Revenue": "إيرادات الإيجارات التجارية والسكنية وعمليات البيع العقاري",
+      "Fit-Out Contractors & Building Maintenance AP": "ذمم مقاولي التجهيزات وصيانة المباني",
+      "Investment Land Plots & Commercial Buildings": "العقارات الاستثمارية والأراضي والمباني التجارية",
+      "Property Escrow & Rent Collection Bank Accounts": "حسابات الضمان العقاري وتحصيل الإيجارات المصرفية",
+      "Property Portfolio Equity & Mulk (/2400) Capital": "حقوق ملكية المحفظة العقارية ورأس مال الملك (/2400)",
+      "Tenant Rent & Property Buyer Instalment AR": "ذمم إيجارات المستأجرين وأقساط مشتري العقارات",
+      "Tenant Security Deposits & Deferred Rent": "تأمينات المستأجرين والإيجارات المؤجلة",
+      "Total Rent Roll": "إجمالي جدول الإيجارات",
+      "Active Book": "المحفظة النشطة",
+      "All Brokerage Clients": "جميع عملاء الوساطة",
+      "Brokerage Head Office & Underwriting Systems": "المقر الرئيسي للوساطة وأنظمة الاكتتاب",
+      "Brokerage Share Capital & Statutory Reserves": "رأس مال شركة الوساطة والاحتياطيات القانونية",
+      "Brokerage Staff Payroll, Licensing & Office OpEx": "رواتب موظفي الوساطة والتراخيص والمصاريف الإدارية",
+      "Client Commission Discounts Granted — Contra-Rev": "حسومات العمولات الممنوحة للعملاء — مقابل الإيراد",
+      "Fiduciary Premium Bank & Brokerage Cashier Till": "الحساب المصرفي الائتماني للأقساط وصندوق الوساطة",
+      "Gross Brokerage Commission Earned": "إجمالي عمولات الوساطة المكتسبة",
+      "Gross Written Premium (GWP)": "إجمالي الأقساط المكتتبة (GWP)",
+      "Insurance Carriers Payable — Net Premium": "ذمم شركات التأمين الدائنة — صافي الأقساط",
+      "Policy Issuance, Advisory & Inspection Fees": "رسوم إصدار البوالص والاستشارات والمعاينة",
+      "Policyholder Premium Receivables — Client AR": "ذمم أقساط حملة البوالص — ذمم العملاء",
+      "Producers, Sub-Agents & Adjuster Payables": "ذمم المنتجين والوسطاء الفرعيين وخبراء الكشف",
+      "ENG · Engineering & CAR": "ENG · الهندسي وأخطار المقاولين",
+      "MAR · Marine Cargo & Hull": "MAR · النقل البحري والبضائع",
+      "MED · Medical & Health": "MED · الاستشفاء والتأمين الصحي",
+      "MOT · Motor Insurance": "MOT · تأمين السيارات والأساطيل",
+      "PROP · Property & Fire": "PROP · الممتلكات والحريق",
+      "1 · Sales & Revenue (Click any card to drill into its page)": "1 · المبيعات والإيرادات (اضغط على أي بطاقة لفتح صفحتها التفصيلية)",
+      "2 · Direct Costs, Expenses, Payroll & Margins": "2 · التكاليف المباشرة والمصاريف والرواتب والهوامش",
+      "3 · Receivables (FIFO), 3-Leg Payables & Cash Till": "3 · الذمم المدينة (FIFO) والذمم الدائنة (3 شقوق) والصندوق",
+      "4 · Fleet, Diesel Tank & Trial Balance Integrity": "4 · الأسطول وخزان المازوت وسلامة ميزان المراجعة",
+      "1 · Fleet Utilization, Running Costs, Driver Allocation & Cost per Ton": "1 · تشغيل الأسطول وتكاليف التشغيل وتوزيع السائقين والتكلفة لكل طن",
+      "1 · Lebanese General Chart of Accounts (Classes 1–7) & Double-Entry Audit": "1 · التصميم المحاسبي العام اللبناني (الأصناف 1–7) وتدقيق القيد المزدوج",
+      "AR Overdue (>30d / 60+)": "الذمم المتأخرة (>30 / +60 يوماً)",
+      "Active Equipment": "الآليات النشطة",
+      "Active Equipment Units": "وحدات الآليات النشطة",
+      "All cash inflows (cash sales, receipts, external in) vs outflows (settlements, cash expenses, salaries)": "جميع التدفقات النقدية الواردة (مبيعات نقدية، مقبوضات، وارد خارجي) مقابل الصادرة (تسديدات، مصاريف نقدية، رواتب)",
+      "Applied against 3 legs": "مخصّصة على الشقوق الثلاثة",
+      "Cash Till": "صندوق النقد",
+      "Commission Due": "العمولات المستحقة",
+      "Company fleet haulage": "نقل بأسطول الشركة",
+      "Diesel Issued": "المازوت المصروف",
+      "Diesel in Tank": "المازوت في الخزان",
+      "Executive P&L, Margin, AR/AP & Fleet": "الأرباح والخسائر والهوامش والذمم والأسطول",
+      "Full monthly progression from weighbridge revenue to operating profit and cash collections": "التدرج الشهري الكامل من إيرادات القبان إلى الربح التشغيلي والتحصيلات النقدية",
+      "Lebanese CoA Tied ($0.00)": "مطابق لشجرة الحسابات اللبنانية ($0.00)",
+      "Monthly P&L, Margin, Volumes & Cash Summary": "ملخص الأرباح والخسائر الشهرية والهوامش والكميات والنقد",
+      "Monthly Total Sales vs Raw Material Cost & Operating Expenses with Operating Profit line": "إجمالي المبيعات الشهرية مقابل تكلفة المواد الأولية والمصاريف التشغيلية مع خط الربح التشغيلي",
+      "Own-Fleet Loads": "نقلات أسطول الشركة",
+      "Ranked by total revenue ($)": "مرتبة حسب إجمالي الإيرادات ($)",
+      "Ranked by total sales in selected period": "مرتبة حسب إجمالي المبيعات في الفترة المحددة",
+      "Sales vs costs by month": "المبيعات مقابل التكاليف شهرياً",
+      "Top customers by sales & open AR": "أكبر العملاء حسب المبيعات والذمم المفتوحة",
+      "Allocated Driver Cost": "تكلفة السائقين الموزعة",
+      "Click any truck chip above to isolate a single truck or click [+] to compare specific trucks side by side": "اضغط على أي شاحنة أعلاه لعزلها منفردةً أو اضغط [+] لمقارنة شاحنات محددة جنباً إلى جنب",
+      "Company Split (WTC / BBC)": "التوزيع بين الشركتين (WTC / BBC)",
+      "Cost by equipment unit (Running + Driver)": "التكلفة حسب الآلية (التشغيل + السائق)",
+      "Equipment economics — trips, fuel, running cost, driver pay & cost per ton": "اقتصاديات الآليات — النقلات والوقود وتكلفة التشغيل ورواتب السائقين والتكلفة للطن",
+      "Filter down to any single truck, compare specific trucks side by side, or switch between the audited Aug 24 - Oct 23, 2026 Bdeir Fleet cutover (999 Trips · 28,440.2 m³) and Live Dynamic Fleet records across all trucks.": "صفِّ النتائج لأي شاحنة منفردة، أو قارن شاحنات محددة جنباً إلى جنب، أو بدّل بين فترة تدقيق أسطول بدير المعتمدة (24 آب - 23 ت1 2026 · 999 نقلة · 28,440.2 م³) وسجلات الأسطول الحية لجميع الشاحنات.",
+      "Fleet Cohort:": "مجموعة الأسطول:",
+      "Fleet Cost": "تكلفة الأسطول",
+      "Fleet Cost / Ton Hauled": "تكلفة الأسطول / طن منقول",
+      "Fleet cost by month (Equipment & maintenance)": "تكلفة الأسطول شهرياً (الآليات والصيانة)",
+      "Fuel, spare parts, tires & maintenance": "الوقود وقطع الغيار والإطارات والصيانة",
+      "Pale navy row = Own company fleet unit · Includes direct maintenance expenses, diesel issued, and allocated driver payroll": "السطر المظلل = آلية مملوكة للشركة · يشمل مصاريف الصيانة المباشرة والمازوت المصروف ورواتب السائقين الموزعة",
+      "Reconciles Paid vs. Zero-Haulage ($0.00) trips across sister plants for TB1, Tb7, Tb9": "يطابق النقلات المدفوعة مقابل النقلات المسجلة بصفر ($0.00) عبر المصانع الشقيقة للشاحنات TB1 و Tb7 و Tb9",
+      "Repairs, Parts, Insurance & Lubes": "التصليحات والقطع والتأمين والزيوت",
+      "Running & Repair Cost": "تكلفة التشغيل والتصليح",
+      "Running + Driver combined": "التشغيل + السائق معاً",
+      "Salaries + overtime attributed": "الرواتب والعمل الإضافي الموزع",
+      "Selected Net Profit & Margin": "صافي الربح والهامش للمختار",
+      "Showing All 3 Cohort Trucks": "عرض جميع شاحنات المجموعة الثلاث",
+      "Specific Truck:": "شاحنة محددة:",
+      "TRUCK FLEET REVENUE & COST AUDIT · SPECIFIC-TRUCK & COHORT PROFITABILITY": "تدقيق إيرادات وتكاليف أسطول الشاحنات · ربحية كل شاحنة والمجموعة",
+      "Top cost-bearing plant and fleet units in the selected period": "أعلى وحدات المصنع والأسطول تكلفةً في الفترة المحددة",
+      "Total Fleet Cost": "إجمالي تكلفة الأسطول",
+      "Transportation Revenue": "إيرادات النقل",
+      "Truck Income Statement (TB1 · Tb7 · Tb9 | WTC + BBConstruction)": "بيان دخل الشاحنات (TB1 · Tb7 · Tb9 | WTC + BBConstruction)",
+      "Trucks Dispatched": "الشاحنات المرسلة",
+      "Utilization, Running Cost & Cost per Ton": "التشغيل وتكلفة الصيانة والتكلفة لكل طن",
+      "Zero-Haulage ($0.00) Trips": "نقلات بدون أجرة نقل ($0.00)",
+      "Customer Sales Deliveries": "تسليمات مبيعات العملاء",
+      "Raw Material Intake": "توريد المواد الأولية",
+      "Amounts due to staff": "ذمم مستحقة للمستخدمين والموظفين",
+      "Audited voucher postings": "قيود سندات مدققة",
+      "Balanced double-entry legs": "شقوق قيد مزدوج متوازنة",
+      "Banks": "المصارف",
+      "Casual labourers": "أجور عمال مياومين",
+      "Commissions and brokerage": "عمولات وسمسرة",
+      "Consumable materials and supplies": "مواد ولوازم استهلاكية",
+      "Current accounts with related companies": "الحسابات الجارية مع الشركات الشقيقة",
+      "Discounts allowed on goods": "حسومات ممنوحة على المبيعات",
+      "Discounts received": "حسومات مكتسبة من الموردين",
+      "Every operational transaction posts balanced Debit & Credit legs in real time": "ترحّل كل عملية تشغيلية شقّي مدين ودائن متوازنين لحظياً",
+      "Foreign exchange gains": "أرباح فروقات أسعار الصرف",
+      "Foreign exchange losses": "خسائر فروقات أسعار الصرف",
+      "Full SOA voucher postings, Partner Loans, Repayments, External Treasury Movements, and USD ↔ LBP FX Conversions now live inside General Ledger & SOA.": "جميع قيود اليومية المزدوجة وقروض الشركاء والتسديدات وحركات الخزينة الخارجية وتحويلات العملات USD ↔ LBP متاحة بالكامل داخل وحدة الأستاذ العام وشجرة الحسابات.",
+      "Haulage on purchases (raw material transport)": "نقل المشتريات (شحن المواد الأولية)",
+      "Income Statement, Balance Sheet & Trial Balance": "بيان الدخل والميزانية العمومية وميزان المراجعة",
+      "Industrial equipment": "معدات وآليات صناعية",
+      "Insurance premiums": "أقساط التأمين",
+      "Internal transfers": "تحويلات داخلية بين الصناديق",
+      "Loans and advances to staff": "قروض وسلف الموظفين",
+      "Maintenance products and workshop consumables": "مواد الصيانة ومستهلكات المشغل",
+      "Office and computer equipment": "معدات مكتبية ومعلوماتية",
+      "Operating tools and supplies": "أدوات ولوازم تشغيل",
+      "Other amounts due to partners": "ذمم أخرى مستحقة للشركاء",
+      "Other external services": "خدمات خارجية أخرى",
+      "Other purchase charges": "مصاريف مشتريات أخرى",
+      "Other taxes and fees": "ضرائب ورسوم أخرى",
+      "Partners' share of results (joint operations)": "حصة الشركاء من نتائج العمليات المشتركة (JV)",
+      "Postage and telecommunications": "بريد واتصالات",
+      "Profits brought forward": "أرباح مدوّرة",
+      "Purchase of goods for resale": "مشتريات بضائع برسم البيع",
+      "Purchases from sub-contractors": "مشتريات ومقاولات ثانوية",
+      "Purchases of raw materials (F&B)": "مشتريات المواد الأولية (أغذية ومشروبات)",
+      "Registration fees and stamps": "رسوم التسجيل والطوابع المالية",
+      "Rental income": "إيرادات الإيجارات العقارية",
+      "Sales of goods (resale)": "مبيعات البضائع التجارية",
+      "Services revenue": "إيرادات الخدمات والأعمال",
+      "Social security charges": "اشتراكات الضمان الاجتماعي",
+      "Stationery and office supplies": "قرطاسية ولوازم مكتبية",
+      "Suppliers": "الموردون",
+      "TOTAL SALES REVENUE (EX-VAT)": "إجمالي إيرادات المبيعات (دون الضريبة)",
+      "Total GL Credits": "إجمالي الدائن في الأستاذ العام",
+      "Total GL Debits": "إجمالي المدين في الأستاذ العام",
+      "Trade customers": "الزبائن والعملاء التجاريون",
+      "Trade suppliers – goods": "موردو البضائع والمواد",
+      "Transport and ancillary charges invoiced": "نقل ومصاريف متممة مفوترة للعملاء",
+      "Transport of goods": "نقل البضائع والمبيعات",
+      "VAT on expenses (deductible)": "ضريبة القيمة المضافة على المصاريف (قابلة للحسم)",
+      "VAT on purchases (deductible)": "ضريبة القيمة المضافة على المشتريات (قابلة للحسم)",
+      "VAT on sales (collected)": "ضريبة القيمة المضافة المحصّلة على المبيعات",
+      "1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics → Lebanese CoA GL → 22 A4 PDF Statements)": "1 · جسر المطابقة الشامل بين اللوحات التنفيذية والأستاذ العام اللبناني و22 كشفاً مطبوعاً (A4 PDF)",
+      "22 Printable A4 Statements & Paginated Reports Launcher": "منصة الكشوفات المالية والتشغيلية المطبوعة (22 تقريراً A4)",
+      "Click any statement below to open its A4 printable sheet (including #19 Staff Payroll & #15 Driver Overtime)": "اضغط على أي كشف أدناه لفتح نسخته المطبوعة بحجم A4 (بما في ذلك #19 مسير الرواتب و#15 إضافي السائقين)",
+      "Concrete Volume": "حجم الخرسانة والمواد",
+      "Counterparty Statement Reconciliation Bridge": "جسر مطابقة كشوفات حسابات العملاء والموردين",
+      "Executive P&L & Ledger Reconciliation Bridge": "جسر مطابقة الأرباح والخسائر مع الأستاذ العام",
+      "Gross Billing": "إجمالي الفوترة",
+      "OPEX + RM Intake": "المصاريف + المواد الأولية",
+      "Report Sections": "أقسام التقرير",
+      "Walk from Gross Sales TTC through Output VAT, Net Sales, Raw Cost, Gross Margin and Operating Profit": "التدرج الكامل من إجمالي المبيعات شاملة الضريبة إلى الضريبة وصافي المبيعات وتكلفة المواد ومجمل الربح والربح التشغيلي",
+      "HOLDING & TREASURY PRINTABLE STATEMENTS & STATUTORY PACKS": "الكشوفات المطبوعة والتقارير القانونية للقابضة والخزينة",
+      "HOSPITALITY & RESORTS PRINTABLE STATEMENTS & STATUTORY PACKS": "الكشوفات المطبوعة والتقارير القانونية للضيافة والمنتجعات",
+      "AUTOMOTIVE & HEAVY TRADING PRINTABLE STATEMENTS & STATUTORY PACKS": "الكشوفات المطبوعة والتقارير القانونية لتجارة الآليات والشاحنات",
+      "REAL ESTATE & PROPERTY PRINTABLE STATEMENTS & STATUTORY PACKS": "الكشوفات المطبوعة والتقارير القانونية للعقارات والأملاك",
+      "INSURANCE & BROKERAGE PRINTABLE STATEMENTS & STATUTORY PACKS": "الكشوفات المطبوعة والتقارير القانونية للتأمين والوساطة",
+      "Intercompany & Partner Split Register": "سجل الذمم البينية وتوزيع حصص الشركاء",
+      "RDL-23 Intercompany & Partner Split Register": "RDL-23 سجل الذمم البينية وتوزيع حصص الشركاء",
+      "Venue Revenue, POS Till & Membership Register": "سجل إيرادات الفروع وصندوق الكاشير والاشتراكات",
+      "RDL-24 Venue Revenue, POS Till & Membership Register": "RDL-24 سجل إيرادات الفروع وصندوق الكاشير والاشتراكات",
+      "Invoice Books, Serial VIN & Stock Valuation": "دفاتر الفواتير وسجل الشاحنات VIN وتقييم المخزون",
+      "RDL-25 Invoice Books, Serial VIN & Stock Valuation": "RDL-25 دفاتر الفواتير وسجل الشاحنات VIN وتقييم المخزون",
+      "Official 4235 VAT Rent Roll & Lease Expiry": "جدول إيجارات 4235 الخاضعة للضريبة واستحقاق العقود",
+      "RDL-26 Official 4235 VAT Rent Roll & Lease Expiry": "RDL-26 جدول إيجارات 4235 الرسمي واستحقاق العقود",
+      "Policy Schedule, Renewal Queue & Carrier Recon": "جدول البوالص وطابور التجديدات ومطابقة شركات التأمين",
+      "RDL-27 Policy Schedule, Renewal Queue & Carrier Recon": "RDL-27 جدول البوالص والتجديدات ومطابقة شركات التأمين",
+      "RDL-01 Daily Operations": "RDL-01 التقرير التشغيلي اليومي",
+      "1. Bilateral Intercompany Due-From / Due-To Matrix (جدول الذمم المتبادلة بين الشركات)": "1. جدول الذمم المتبادلة بين الشركات الشقيقة",
+      "2. Shareholder & Partner Split Ledger · Account 165 (توزيع حصص الشركاء - حساب 165)": "2. دفتر توزيع حصص الشركاء والمساهمين · حساب 165",
+      "1. Venue Revenue & RawBT POS Till Register (سجل إيرادات الصالات وصندوق الكاشير)": "1. سجل إيرادات الصالات وصندوق الكاشير (POS)",
+      "2. Seasonal Cabana, Pool & Gym Memberships (اشتراكات الشاليهات والنادي الصحي)": "2. اشتراكات الشاليهات والمسابح والنادي الصحي الموسمية",
+      "1. Multi-Book Commercial Invoice Register · N / S / IS / IN (سجل دفاتر الفواتير التجارية)": "1. سجل دفاتر الفواتير التجارية متعددة الدفاتر (N / S / IS / IN)",
+      "2. Serialized Heavy Truck & VIN Unit Registry (سجل الشاحنات وأرقام الشاصي VIN)": "2. سجل الشاحنات الثقيلة وأرقام الشاسيه (VIN)",
+      "1. Active Commercial & Residential Lease Roll (جدول عقود الإيجار الفعالة)": "1. جدول عقود الإيجار التجارية والسكنية الفعالة",
+      "2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)": "2. فواتير الإيجار الضريبية الرسمية ومتأخرات المستأجرين",
+      "1. Active Policy Schedule & 30/60/90-Day Renewal Pipeline (جدول البوالص والتجديدات)": "1. جدول البوالص النشطة ومسار التجديدات (30 / 60 / 90 يوماً)",
+      "2. Underwriter Carrier Bordereau Reconciliation (مطابقة حسابات شركات التأمين)": "2. مطابقة كشوفات حسابات شركات التأمين (Bordereaux)",
+      "Group Chief Financial Officer / المدير المالي للمجموعة": "المدير المالي للمجموعة",
+      "Managing Shareholder / الشريك المفوض": "الشريك المفوّض",
+      "Hospitality Controller / المراقب المالي": "المراقب المالي للضيافة",
+      "Resort General Manager / مدير المنتجع": "مدير عام المنتجع",
+      "Commercial Director / المدير التجاري": "المدير التجاري",
+      "Parts & Customs Controller / مراقب المخزون والجمارك": "مراقب المخزون والجمارك",
+      "4235 S.A.L Legal Signatory / المفوض بالتوقيع": "المفوّض بالتوقيع عن شركة 4235 ش.م.ل",
+      "Property Portfolio Director / مدير العقارات": "مدير المحفظة العقارية",
+      "Carrier Accounting Recon / محاسبة شركات التأمين": "محاسبة ومطابقة شركات التأمين",
+      "Principal Insurance Broker / الوسيط التأميني المعتمد": "الوسيط التأميني المعتمد",
+      "Allocated Overhead ($)": "المصاريف المشتركة الموزعة ($)",
+      "Closing Current Account ($)": "الرصيد الختامي للحساب الجاري ($)",
+      "Distributions / Draws ($)": "التوزيعات والمسحوبات ($)",
+      "Due From ($)": "لنا عليها ($)",
+      "Due To ($)": "علينا لها ($)",
+      "Equity Role": "صفة الشراكة",
+      "Equity Share %": "حصة الملكية %",
+      "From Entity": "من شركة",
+      "To Entity": "إلى شركة",
+      "Opening Capital ($)": "رأس المال الافتتاحي ($)",
+      "Pair Code": "رمز الزوج البيني",
+      "Partner / Shareholder": "الشريك / المساهم",
+      "Nature / Description": "الطبيعة / البيان",
+      "Channel": "القناة",
+      "Guest / Walk-in": "الضيف / الزائر",
+      "Member Code": "رمز العضو",
+      "Member Name": "اسم العضو",
+      "Outlet / Zone": "المنفذ / المنطقة",
+      "Package ($)": "قيمة الباقة ($)",
+      "Receipt #": "رقم الإيصال",
+      "Tier / Package": "الفئة / الباقة",
+      "Valid Window": "فترة الصلاحية",
+      "Venue": "الفرع / المنتجع",
+      "Buyer / Yard": "المشتري / الساحة",
+      "Customer / Dealer": "العميل / الوكيل",
+      "Customs Declaration": "البيان الجمركي",
+      "Sale Price ($)": "سعر البيع ($)",
+      "VIN / Chassis": "رقم الشاسيه VIN",
+      "Annual TTC ($)": "الإيجار السنوي شامل الضريبة ($)",
+      "Base Rent ($)": "الإيجار الأساسي ($)",
+      "Landlord Entity": "الشركة المالكة",
+      "Lease #": "رقم العقد",
+      "Term Window": "مدة العقد",
+      "Balance Due ($)": "الرصيد المستحق ($)",
+      "Brokerage Comm ($)": "عمولة الوساطة ($)",
+      "Carrier / Underwriter": "شركة التأمين / المكتتب",
+      "Gross Written Prem ($)": "القسط الإجمالي المكتتب ($)",
+      "Net Carrier Payable ($)": "صافي المستحق لشركة التأمين ($)",
+      "Remitted ($)": "المحوّل لشركة التأمين ($)",
+      "Unpaid Prem ($)": "القسط غير المسدد ($)",
+      "Group Treasury & Consolidation": "خزينة المجموعة والتوحيد المالي",
+      "Bdeir Holding Group Treasury & Shared Overhead": "خزينة مجموعة بدير القابضة والخدمات المشتركة",
+      "Blanca Beach Resort & Hospitality Operations": "منتجع بلانكا بيتش وعمليات الضيافة",
+      "Hospitality Operations": "عمليات الضيافة والمنتجعات",
+      "Automotive & Parts Division": "قطاع تجارة الآليات وقطع الغيار",
+      "Korri Auto Trading & Spare Parts S.A.R.L": "شركة كوري أوتو للتجارة وقطع الغيار ش.م.م",
+      "Property Management & Lease Portfolio": "إدارة العقارات ومحفظة الإيجارات",
+      "Real Estate Operations": "العمليات العقارية",
+      "Bdeir Real Estate & Property Portfolio (Properties BU)": "محفظة بدير العقارية وإدارة الأملاك",
+      "Bdeir Insurance Brokerage & Risk Advisory": "بدير للوساطة التأمينية واستشارات المخاطر",
+      "Insurance Operations": "عمليات التأمين والوساطة",
+      "Beirut, Lebanon": "بيروت، لبنان",
+      "South Coast Highway, Lebanon": "الأوتوستراد الساحلي الجنوبي، لبنان",
+      "Industrial Highway, Beirut, Lebanon": "الأوتوستراد الصناعي، بيروت، لبنان",
+      "Ras Beirut & Riad El Solh, Beirut, Lebanon": "رأس بيروت ورياض الصلح، بيروت، لبنان",
+      "Ras Beirut, Hamra Street 776, Beirut, Lebanon": "رأس بيروت، شارع الحمرا عقار 776، بيروت، لبنان",
+      "$0.00 (Standard Shift)": "$0.00 (وردية اعتيادية)",
+      "Classification": "التصنيف",
+      "Full Shift (On Time)": "وردية كاملة (بالوقت المحدد)",
+      "Payroll Impact": "الأثر على الراتب",
+      "Rate Basis": "أساس الاحتساب",
+      "Regular Shift (Contract)": "وردية اعتيادية (حسب العقد)",
+      "Shift / Duration": "الوردية / المدة",
+      "Sunday / Call-Out (100% OT)": "أحد / استدعاء طارئ (إضافي 100%)",
+      "1. Company Fleet Unit Assignment (BU-Specific)": "1. تخصيص آلية ضمن أسطول الشركة",
+      "2. Owner & Active Driver Assignment": "2. المالك وتعيين السائق النشط",
+      "1. Driver Identity & Truck Assignment (Universal Registry · All BUs)": "1. بيانات السائق والشاحنة المعيّنة (السجل الموحّد · جميع الوحدات)",
+      "1. Equipment Identity & Capacity (Universal Registry · All BUs)": "1. تعريف الآلية وسعتها (السجل الموحّد · جميع الوحدات)",
+      "Select Truck Owner first to filter its drivers, or type an active driver name": "اختر مالك الشاحنة أولاً لتصفية سائقيه، أو اكتب اسم السائق النشط",
+      "Auto-filled from Truck Plate (or select truck owner)...": "يُعبأ تلقائياً من لوحة الشاحنة (أو اختر مالك الشاحنة)...",
+      "Select or type truck plate...": "اختر أو اكتب لوحة الشاحنة...",
+      "e.g. 360676 (optional if entered above)": "مثال: 360676 (اختياري إذا أُدخل أعلاه)",
+      "e.g. TB1 or 353387": "مثال: TB1 أو 353387",
+      "Mercedes, Volvo, Shacman, CAT": "مرسيدس، فولفو، Shacman، كاتربيلر",
+      ". Editing both amounts computes the live effective rate against the 5% / 10% / 50% corridor guard.": ". تعديل المبلغين معاً يحتسب سعر الصرف الفعلي فوراً مقابل نطاق الحماية (5% / 10% / 50%).",
+      "Auto-calculates from USD × Rate, or enter LBP to compute implied rate": "يُحتسب تلقائياً من الدولار × السعر، أو أدخل الليرة لاحتساب السعر الضمني",
+      "Conversion Leg": "شق التحويل",
+      "Drawer USD decreases and Drawer LBP increases": "ينخفض رصيد صندوق الدولار ويرتفع رصيد صندوق الليرة",
+      "Drawer LBP decreases and Drawer USD increases": "ينخفض رصيد صندوق الليرة ويرتفع رصيد صندوق الدولار",
+      "Effective FX Rate": "سعر الصرف الفعلي",
+      "Enter USD amount or click a frequent amount above to auto-calculate LBP": "أدخل المبلغ بالدولار أو اضغط مبلغاً سريعاً أعلاه لاحتساب الليرة تلقائياً",
+      "Frozen (>50%)": "مجمّد (>50%)",
+      "Interactive FX Calculator:": "حاسبة الصرف التفاعلية:",
+      "LBP Drawer Delta": "صافي تغير صندوق الليرة",
+      "USD Drawer Delta": "صافي تغير صندوق الدولار",
+      "Normal (≤5%)": "طبيعي (≤5%)",
+      "SYSTEM FX RATE PARITY": "مطابق لسعر صرف النظام",
+      "Supervisor Lock (10%-50%)": "قفل مشرف (10%-50%)",
+      "System Rate:": "سعر النظام:",
+      "Warning (5%-10%)": "تنبيه (5%-10%)",
+      "to auto-calculate at": "للجمع والاحتساب تلقائياً عند",
+      "· Effective:": "· الفعلي:",
+      "Auto-calculates from USD × Rate...": "يُحتسب تلقائياً من الدولار × السعر...",
+      "Enter USD or pick frequent amount...": "أدخل مبلغ الدولار أو اختر مبلغاً شائعاً...",
+      "1. Global Currency Exchange Rate Window (Universal Registry · All BUs)": "1. نافذة سعر صرف العملات الموحد (السجل الموحّد · جميع الوحدات)",
+      "Currency Pair": "زوج العملات",
+      "Effective To =": "سارٍ حتى =",
+      "Exchange Rate (per $1.00 USD) *": "سعر الصرف (لكل $1.00 دولار) *",
+      "Existing LBP Exchange Rate Windows:": "فترات سعر صرف الليرة اللبنانية المسجلة:",
+      "Prior Window": "الفترة السابقة",
+      "automatically sets": "يضبط تلقائياً",
+      "Optional central bank circular, board resolution, or rate note...": "مرجع تعميم مصرف لبنان أو قرار الإدارة أو ملاحظة السعر (اختياري)...",
+      "1. Currency Definition (Universal Registry · All BUs)": "1. تعريف العملة (السجل الموحّد · جميع الوحدات)",
+      "Optional settlement or rounding notes...": "ملاحظات التسوية أو التقريب (اختياري)...",
+      "e.g. Euro, Pound Sterling, UAE Dirham": "مثال: يورو، جنيه إسترليني، درهم إماراتي",
+      "e.g. Foreign Trade & Settlement Currency": "مثال: عملة استيراد وتسويات خارجية",
+      "Account Status": "حالة الحساب",
+      "Available Headroom": "الهامش الائتماني المتاح",
+      "Within Limit": "ضمن الحد المسموح",
+      "11% Statutory VAT": "ضريبة القيمة المضافة القانونية 11%",
+      "Customer VAT Status": "الوضع الضريبي للعميل",
+      "Statutory VAT %": "نسبة الضريبة القانونية %",
+      "MoF LBP VAT Rate": "سعر صرف الضريبة (وزارة المالية ل.ل.)",
+      "$100.00 Net HT Sample": "عينة صافي $100.00 قبل الضريبة",
+      "1. Statutory VAT Rate & Ministry of Finance LBP Rate (Universal Registry · All BUs)": "1. نسبة الضريبة وسعر صرف وزارة المالية بالليرة (السجل الموحّد · جميع الوحدات)",
+      "Optional statutory law or MoF circular reference...": "مرجع القانون الضريبي أو تعميم وزارة المالية (اختياري)...",
+      "1. Equipment Unit & Warning Notice": "1. الآلية وإشعار العطل المبكر",
+      "2. Affected Part, Warning Level & Status": "2. القطعة المتأثرة ومستوى الخطورة والحالة",
+      "Flag Grave or Mild equipment issues and specify the affected part before failure": "سجّل الأعطال الحرجة أو البسيطة للآلية وحدد القطعة المتأثرة قبل تعطلها الكامل",
+      "Logged Before Repair": "مسجّل قبل التصليح",
+      "Pre-Notification": "الإبلاغ المسبق",
+      "Describe symptom, leak, noise, warning light, or worn component...": "صف العارض أو التهريب أو الصوت أو ضوء التحذير أو القطعة المتآكلة...",
+      "Parts to check in warehouse, vendor inspection, or target repair date...": "القطع المطلوب فحصها بالمستودع أو كشف الميكانيكي أو موعد التصليح...",
+      "Select driver, operator, or mechanic...": "اختر السائق أو المشغّل أو الميكانيكي...",
+      "Select truck, mixer, loader, crusher...": "اختر الشاحنة أو الخلاطة أو الجرافة أو الكسارة...",
+      "Select truck, mixer, loader, generator...": "اختر الشاحنة أو الخلاطة أو الجرافة أو المولد...",
+      "e.g. Hydraulic Pump, Alternator, Brake Drum...": "مثال: مضخة هيدروليك، دينامو، طنبور فرامل...",
+      "1. Equipment & Preventive Oil Service": "1. الآلية وخدمة تغيير الزيت الوقائية",
+      "2. Meter Readings at Service & Next Change Intervals (Hours / Km / Days)": "2. قراءة العداد عند الغيار وفواصل الصيانة القادمة (ساعات / كم / أيام)",
+      "Change Every Time (Days)": "فترة التغيير الدورية (أيام)",
+      "Next Due (Date)": "الاستحقاق القادم (التاريخ)",
+      "Next Due (Hours)": "الاستحقاق القادم (ساعات)",
+      "Next Due (Km)": "الاستحقاق القادم (كم)",
+      "Plant Lube Bay": "حفرة تشحيم وغيار زيت المصنع",
+      "Track oil changes and next service thresholds by Hours worked, Km driven, or Days elapsed": "تتبّع غيارات الزيت ومواعيد الصيانة القادمة حسب ساعات العمل أو الكيلومترات أو الأيام",
+      "Warehouse Impact": "الأثر على المستودع",
+      "Filter brand, oil grade note, or mechanic...": "ماركة الفلتر أو عيار الزيت أو اسم الميكانيكي...",
+      "1. Unit, Pre-Defect Verification & Part Piece Identity": "1. الآلية والتحقق من بلاغ العطل وهوية القطعة",
+      "2. Piece Custody, Disposition & Financials": "2. عهدة القطعة المخلوعة والتصرف والأثر المالي",
+      "Net Cash Impact": "صافي الأثر النقدي",
+      "New Replacement Part Cost ($)": "تكلفة القطعة البديلة الجديدة ($)",
+      "Outlay (New + Repair)": "التكلفة (الجديدة + التصليح)",
+      "Pending Unit": "بانتظار اختيار الآلية",
+      "Piece Custody": "عهدة القطعة",
+      "Select an": "اختر",
+      "unit below to check whether a defect was reported beforehand.": "أدناه للتحقق مما إذا كان قد سُجّل بلاغ عطل مسبق لها.",
+      "Warehouse shelf / spare bin where piece is stored": "رف المستودع / خانة الحفظ للقطعة المستبدلة",
+      "Optional OEM code, serial, or brand": "رمز المصنع الأصلي OEM أو الرقم التسلسلي أو الماركة (اختياري)",
+      "Select store, site, or target truck...": "اختر المستودع أو الموقع أو الشاحنة المستهدفة...",
+      "Select supervisor or approver...": "اختر المشرف أو المعتمد...",
+      "Select workshop vendor or scrap buyer...": "اختر المشغل الخارجي أو مشتري الخردة...",
+      "Shelf bin, workshop job card #, buyer receipt #, or mounting notes...": "رقم الرف أو بطاقة عمل المشغل أو إيصال البيع أو ملاحظات التركيب...",
+      "e.g. Dynamo, Starter Motor, Hydraulic Pump...": "مثال: دينامو، ديمارور، مضخة هيدروليك...",
+      "1. Equipment Unit, Linked Warning & Repair Source": "1. الآلية وبلاغ العطل المرتبط ومصدر التصليح",
+      "3. External Labor & Notes": "3. أجور اليد العاملة الخارجية والملاحظات",
+      "Item / Part Used *": "الصنف / القطعة المستخدمة *",
+      "Item Source *": "مصدر القطعة *",
+      "Line Cost": "تكلفة البند",
+      "Outside Parts + Labor": "قطع خارجية + يد عاملة",
+      "Pick a stored Warehouse item": "اختر صنفاً مخزّناً في المستودع",
+      "Select whether items came from Warehouse (-Stock), Outside, or Partially Both": "حدّد ما إذا كانت القطع مسحوبة من المستودع (-مخزون) أو مشتراة من الخارج أو كليهما",
+      "Total Repair Cost": "إجمالي تكلفة التصليح",
+      "Warehouse Stock Used": "المسحوب من مخزون المستودع",
+      "Warehouse items decrease stored inventory automatically; Qty defaults to 1": "الأصناف المسحوبة من المستودع تخفّض الرصيد المخزني تلقائياً؛ الكمية الافتراضية 1",
+      "Describe repair work performed, mechanic name, or warranty note...": "صف أعمال التصليح المنفذة أو اسم الميكانيكي أو ملاحظة الكفالة...",
+      "Optional outside workshop or parts vendor...": "المشغل الخارجي أو مورّد القطع (اختياري)...",
+      "+ Add to Shelf (+Stock)": "+ إضافة للرف (+مخزون)",
+      "+ Buy & Store (Expense)": "+ شراء وتخزين (مصروف)",
+      "+ Use on Machine (Repair)": "+ صرف لآلية (تصليح)",
+      "+Add to Shelf": "+إضافة للرف",
+      "Adds items onto your Warehouse shelf without creating a supplier bill": "يضيف الأصناف إلى رف المستودع دون إنشاء فاتورة مورّد جديدة",
+      "Current On Shelf": "الرصيد الحالي على الرف",
+      "Items already sitting on your shelves (no new Cash or Supplier AP bill created)": "أصناف موجودة فعلياً على رفوف المستودع (لا ينشئ قيد نقد أو ذمة مورّد)",
+      "New Shelf Balance": "رصيد الرف الجديد",
+      "Physical Shelf Stock & Adjustments": "الجرد الفعلي للرفوف والتسويات المخزنية",
+      "Shelf Value (No Bill)": "قيمة الرف (دون فاتورة)",
+      "Use this for existing shelf stock, returned spares, or damaged/missing counts (no supplier bill).": "استخدم هذا للجرد الافتتاحي أو القطع المرتجعة للرف أو تسويات التالف/الناقص (دون فاتورة مورّد).",
+      "Shelf bin, physical stocktake reference, or return note...": "رقم الرف أو مرجع الجرد الفعلي أو ملاحظة الإرجاع...",
+      "Warehouse or store shelf...": "المستودع أو رف التخزين...",
+      "1. Item, Dates & Discrepancy Classification": "1. الصنف والتواريخ وتصنيف الفرق أو العطل",
+      "Locked to L for Diesel": "مثبّت بالليتر (L) للمازوت",
+      "Month Malfunction % (5% Watchdog)": "نسبة أعطال الشهر % (حد الرقابة 5%)",
+      "Quantity (Litres L) *": "الكمية (ليتر L) *",
+      "Tank After Entry": "رصيد الخزان بعد القيد",
+      "Tank Before Entry": "رصيد الخزان قبل القيد",
+      "Tank Impact": "الأثر على الخزان",
+      "Explain variance, leak source, dip calibration, or count note...": "اشرح سبب الفرق أو التهريب أو معايرة الخزان أو ملاحظة الجرد...",
+      "Select fuel, lubricant, grease, part, or aggregate...": "اختر الوقود أو الزيت أو الشحم أو القطعة أو المادة...",
+      "e.g. 50 or -50": "مثال: 50 أو -50",
+      "WTC Plant Tank": "خزان مصنع WTC",
+      "0 files (Add below)": "0 ملفات (أضف أدناه)",
+      "1. Document Classification, Entity & Counterparty": "1. تصنيف المستند والشركة والطرف المقابل",
+      "Attach a PDF, photo, or scan of the invoice/receipt, snap a live camera photo, or drag & drop / Ctrl+V paste.": "أرفق ملف PDF أو صورة للفاتورة/الإيصال، أو التقط صورة بالكاميرا، أو اسحب وأفلت / الصق عبر Ctrl+V.",
+      "Attached Files": "الملفات المرفقة",
+      "Counterparty (Supplier / Customer / Authority)": "الطرف المقابل (المورّد / العميل / الجهة الرسمية)",
+      "Document Amount": "قيمة المستند",
+      "Document Amount ($ · Optional)": "قيمة المستند ($ · اختياري)",
+      "Link this document to an Expense, Raw Ticket, Sales Ticket, Settlement, or keep it as a standalone vault file": "اربط هذا المستند بمصروف أو إيصال مواد أو مبيعات أو سند دفع، أو احفظه كملف مستقل في الخزنة",
+      "Linked Ticket / Voucher #": "رقم الإيصال / السند المرتبط",
+      "Save standalone invoices, receipts, tax filings, contracts, or link supporting scans directly to any operational record": "احفظ الفواتير والإيصالات والتصاريح الضريبية والعقود أو اربط المستندات الممسوحة مباشرةً بأي سجل تشغيلي",
+      "Standalone Vault Document": "مستند مستقل في الخزنة",
+      "Upload or Snap Document, Invoice or Receipt File *": "ارفع أو صوّر ملف المستند أو الفاتورة أو الإيصال *",
+      "Optional notes, folder tag, audit remark, or physical binder location...": "ملاحظات أو وسم المجلد أو ملاحظة التدقيق أو موقع الحفظ الورقي (اختياري)...",
+      "Optional ticket or voucher # (e.g. EXP-2026-0001 or #44210)...": "رقم الإيصال أو السند المرتبط اختيارياً (مثال: EXP-2026-0001 أو #44210)...",
+      "Paper invoice #, voucher #, or slip ref...": "رقم الفاتورة الورقية أو السند أو المرجع...",
+      "e.g. Supplier Invoice #4812, Diesel Receipt, MoF VAT Q3...": "مثال: فاتورة مورّد #4812، إيصال مازوت، تصريح ضريبة الربع الثالث...",
+      "Credit (AP)": "آجل / ذمم دائنة (AP)",
+      "General Overhead": "مصاريف عامة وإدارية",
+      "Item / Detail": "الصنف / التفصيل",
+      "Optional detail or bulk item (e.g. Diesel)...": "تفصيل إضافي أو مادة بالجملة (مثال: مازوت)...",
+      "Optional invoice or approval note (required if back-dated)...": "ملاحظة الفاتورة أو الاعتماد (إلزامية للقيود المؤرخة بأثر رجعي)...",
+      "1. Expense Taxonomy Identity (Universal Registry · All BUs)": "1. تعريف فئة المصاريف (السجل الموحّد · جميع الوحدات)",
+      "New Universal Expense Category (All BUs)": "فئة مصاريف موحّدة جديدة (جميع الوحدات)",
+      "Optional accounting classification or usage guidance...": "التصنيف المحاسبي أو إرشادات الاستخدام (اختياري)...",
+      "e.g. Plant Maintenance, Crusher Consumables...": "مثال: صيانة المصنع، مستهلكات الكسارة...",
+      "Elapsed Cycles": "الدورات المنقضية",
+      "End Date (Blank = Open)": "تاريخ الانتهاء (فارغ = مفتوح)",
+      "LBP Amount (L.L. / cycle)": "المبلغ بالليرة (ل.ل. / دورة)",
+      "USD Amount ($ / cycle)": "المبلغ بالدولار ($ / دورة)",
+      "Open-ended standing schedule": "جدول دوري مستمر مفتوح المدة",
+      "Pick a Category first": "اختر الفئة الرئيسية أولاً",
+      "Schedule Status": "حالة الجدول الدوري",
+      "Total Accrued": "إجمالي المستحق المتراكم",
+      "None (Plant / General Overhead)": "بدون آلية (المصنع / مصاريف عامة)",
+      "Optional contract reference, landlord, or billing note...": "مرجع العقد أو المؤجر أو ملاحظة الفوترة (اختياري)...",
+      "e.g. Rent, Internet, Security, Tips, Telephone...": "مثال: إيجار، إنترنت، حراسة، إكراميات، هاتف...",
+      "Allocation": "التخصيص",
+      "FIFO oldest ticket first": "تخصيص FIFO للأقدم أولاً",
+      "Receipt + discount": "المقبوض + الحسم",
+      "Select a": "اختر",
+      "Written off against the oldest ticket": "يُحسم من أقدم إيصال مفتوح",
+      "to inspect open Credit Tickets & live FIFO receipt allocation.": "لمعاينة الإيصالات الآجلة المفتوحة وتوزيع سند القبض تلقائياً حسب الأقدمية (FIFO).",
+      "Difference / Discount ($)": "الفرق / الحسم المكتسب ($)",
+      "Paid + discount": "المدفوع + الحسم",
+      "to inspect open 3-Leg Payables (Material Leg · Haulage Leg · Credit Expense Leg) & live FIFO settlement allocation.": "لمعاينة الذمم الدائنة المفتوحة بشقوقها الثلاثة (المواد · النقل · المصاريف الآجلة) وتخصيص الدفعة FIFO.",
+      "External Inflow": "تدفق نقدي وارد خارجي",
+      "Inflow Now": "الوارد الحالي",
+      "Net Position After": "صافي المركز بعد القيد",
+      "Prior Net Position": "صافي المركز السابق",
+      "Treasury Leg": "شق الخزينة",
+      "Borrower (Receiving Loan) *": "المقترض (مستلم القرض) *",
+      "Loan Balance After": "رصيد القرض بعد القيد",
+      "Loan Given Now": "قيمة القرض الممنوح الآن",
+      "Which type of new loan are you recording?": "ما نوع القرض الجديد الذي تقوم بتسجيله؟",
+      "Optional settlement or loan remarks...": "ملاحظات القرض أو التسوية (اختياري)...",
+      "Optional voucher or loan ref...": "مرجع السند أو القرض (اختياري)...",
+      "Select or type borrower receiving the loan...": "اختر أو اكتب اسم المقترض المستلم للقرض...",
+      "1. Catalog Item Identity & Locked Unit (Universal Catalog · All BUs)": "1. تعريف صنف الدليل ووحدة القياس المثبتة (الدليل الموحّد · جميع الوحدات)",
+      "Catalog Scope": "نطاق الدليل",
+      "Frozen Unit": "الوحدة المثبّتة",
+      "Frozen Unit (UoM) *": "وحدة القياس المثبّتة *",
+      "Piece (Permanent)": "قطعة (دائمة)",
+      "Reference Price": "السعر المرجعي",
+      "Default store or shelf...": "المستودع أو الرف الافتراضي...",
+      "Optional OEM part code, storage shelf, or supplier note...": "رمز القطعة الأصلي OEM أو الرف أو ملاحظة المورّد (اختياري)...",
+      "e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt...": "مثال: فلتر مازوت، زيت هيدروليك 68، قشاط...",
+      "Default Unit (UoM) *": "وحدة القياس الافتراضية *",
+      "e.g. Sand 0-4mm, Gravel 10-20mm": "مثال: رمل 0-4 مم، بحص 10-20 مم",
+      "1. Sales Agreement Scope & Customer": "1. نطاق اتفاقية البيع والعميل",
+      "2. Pricing & Volume Tiers": "2. الأسعار وشرائح الكميات",
+      "Base Rate (Mat + Trans)": "السعر الأساسي (المادة + النقل)",
+      "Headline Rate": "السعر المعتمد",
+      "Target Truck Plate (Optional)": "لوحة الشاحنة المحددة (اختياري)",
+      "Tier 2 Sample": "عينة الشريحة الثانية",
+      "Unit Equivalence": "معادلة الوحدة",
+      "Select specific truck to adjust its m³...": "اختر شاحنة محددة لضبط سعتها بالمتر المكعب...",
+      "e.g. 14 or 20 m³": "مثال: 14 أو 20 م³",
+      "50% Accrued Share": "حصة 50% المستحقة",
+      "Already Distributed": "الموزّع سابقاً",
+      "JV Status": "حالة الشراكة",
+      "Remaining After Entry": "المتبقي بعد القيد",
+      "Select JV Site": "اختر موقع الشراكة (JV)",
+      "Daily LBP (L.L. / day)": "الأجر اليومي بالليرة (ل.ل. / يوم)",
+      "Daily USD ($ / day)": "الأجر اليومي بالدولار ($ / يوم)",
+      "Max Window (Tallied)": "أقصى فترة (محتسبة)",
+      "Scheduled Days *": "الأيام المجدولة *",
+      "Scheduled Window": "الفترة المجدولة",
+      "Work Proof in Window": "إثبات العمل خلال الفترة",
+      "Optional excavator, loader, truck...": "حفارة أو جرافة أو شاحنة (اختياري)...",
+      "Optional site task or note...": "مهمة الموقع أو ملاحظة (اختياري)...",
+      "1. Geographic Region & Map Zone (Universal Registry · All BUs)": "1. المنطقة الجغرافية ونطاق الخريطة (السجل الموحّد · جميع الوحدات)",
+      "Search Map Region": "بحث منطقة الخريطة",
+      "Search Zone Shape": "نطاق حدود المنطقة",
+      "Search a city or district above (e.g. Beirut, Saida, Metn) or pick a quick chip:": "ابحث عن مدينة أو قضاء أعلاه (مثل بيروت، صيدا، المتن) أو اختر شريحة سريعة:",
+      "Auto-detected from map...": "يُحدّد تلقائياً من الخريطة...",
+      "Auto-estimated from WTC Hub": "مقدّر تلقائياً من مركز WTC",
+      "Locked to Search Map Region...": "مرتبط بمنطقة الخريطة المحددة...",
+      "Optional corridor notes, toll/checkpoint info, or zone scope...": "ملاحظات المسار أو الحواجز أو نطاق المنطقة (اختياري)...",
+      "Search Beirut, Saida, Tripoli, Metn, Zahle...": "ابحث عن بيروت، صيدا، طرابلس، المتن، زحلة...",
+      "Chouf": "الشوف",
+      "Keserwan": "كسروان",
+      "Metn": "المتن",
+      "Saida": "صيدا",
+      "Tripoli": "طرابلس",
+      "Tyre": "صور",
+      "Zahle": "زحلة",
+      "Click map or select Region to estimate KM": "اضغط على الخريطة أو اختر المنطقة لتقدير المسافة بالكم",
+      "Click on the map, drag the pin, or select a Region above to set or modify where this site is": "اضغط على الخريطة أو اسحب الدبوس أو اختر المنطقة أعلاه لتحديد أو تعديل موقع الورشة",
+      "Must be located inside the selected Region.": "يجب أن يقع داخل حدود المنطقة الجغرافية المختارة.",
+      "New Site (All BUs)": "موقع / ورشة جديدة (جميع الوحدات)",
+      "Raw material delivered to plant in supplier unit price; region & internal transport split unknown ($0 separate haulage)": "مواد أولية واصلة للمصنع ضمن سعر المورّد؛ النقل مشمول بالسعر ($0 أجرة نقل منفصلة)",
+      "Select the geographic Region first or click inside a zone on the map.": "اختر المنطقة الجغرافية أولاً أو اضغط داخل منطقة على الخريطة.",
+      "Site Location:": "إحداثيات الموقع:",
+      "Auto from map / region": "تلقائي من الخريطة / المنطقة",
+      "Paste lat, lng or Maps link": "الصق الإحداثيات أو رابط الخريطة",
+      "Select region or click map zone...": "اختر المنطقة أو اضغط على الخريطة...",
+      "Site name inside selected region...": "اسم الموقع داخل المنطقة المختارة...",
+      "Auto-fills Region from site...": "يملأ المنطقة تلقائياً من الموقع...",
+      "Auto-generated if left blank...": "يُولّد تلقائياً إذا تُرك فارغاً...",
+      "e.g. Beirut, Sibline, Excluded...": "مثال: بيروت، سبلين، مستثنى...",
+      "1. Staff Identity (Universal Registry · All BUs)": "1. بيانات الموظف (السجل الموحّد · جميع الوحدات)",
+      "2. Initial Role & Equipment Assignment (Logged by Effective Date)": "2. الوظيفة والآلية الابتدائية (تُسجّل بتاريخ سريان)",
+      "Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract": "تُتتبّع التغييرات المستقبلية للوظيفة والآلية والعقد زمنياً في سجل الوظائف وعقود العمل",
+      "Shared across all corporations (WTC, BBConstruction, Lions Transport). Future role, equipment, and contract changes are tracked chronologically under": "مشترك عبر جميع شركات المجموعة. تُتتبّع التغييرات اللاحقة للوظيفة والآلية والعقد زمنياً ضمن",
+      "Universal Staff Profile:": "ملف موظف موحّد:",
+      "Civil ID, NSSF or work permit #...": "رقم الهوية أو الضمان الاجتماعي أو إجازة العمل...",
+      "Optional assigned truck or machine...": "الشاحنة أو الآلية المعيّنة (اختياري)...",
+      "Skills, shift notes or emergency contact...": "المهارات أو ملاحظات الدوام أو رقم الطوارئ...",
+      "1. Effective-Dated Role & Equipment Assignment": "1. تعيين الوظيفة والآلية حسب تاريخ السريان",
+      "Logs role and machine changes over time; prior Open assignment closes automatically on Start Date minus 1 day": "يسجّل تغييرات الوظيفة والآلية زمنياً؛ ويُغلق التعيين المفتوح السابق تلقائياً في اليوم السابق لتاريخ البدء الجديد",
+      "Prior Assignment": "التعيين السابق",
+      "Optional assigned truck, loader, crusher...": "الشاحنة أو الجرافة أو الكسارة المعيّنة (اختياري)...",
+      "Reason for role or machine transfer, shift change, or site note...": "سبب نقل الوظيفة أو الآلية أو تعديل الوردية أو ملاحظة الموقع...",
+      "1. Staff Role & Linked Category (Universal Registry · All BUs)": "1. المسمّى الوظيفي والفئة المرتبطة (السجل الموحّد · جميع الوحدات)",
+      "Linked Category": "الفئة الوظيفية المرتبطة",
+      "Registry Scope": "نطاق السجل",
+      "Shared across all entities; selecting this Role automatically locks Role Category on staff profiles, logs, and contracts": "مشترك عبر جميع الشركات؛ اختيار هذه الوظيفة يضبط تلقائياً الفئة الوظيفية في ملفات الموظفين والعقود",
+      "Responsibilities, shift scope, or licensing notes...": "المسؤوليات أو نطاق الدوام أو متطلبات الرخصة...",
+      "e.g. Crusher Operator, Fleet Driver, Mechanic...": "مثال: مشغّل كسارة، سائق أسطول، ميكانيكي...",
+      "Daily & Hourly": "اليومي وبالساعة",
+      "Monthly Package": "الراتب الشهري الإجمالي",
+      "Transp. / Reimb. ($/mo)": "بدل نقل / تعويضات ($/شهر)",
+      "1. Regular Shift, BU Default & Effective Window": "1. الوردية الاعتيادية والافتراضية للشركة وفترة السريان",
+      "2. Day-Specific Shift Timings (Saturday / Weekday Overrides)": "2. مواقيت خاصة حسب اليوم (دوام السبت / استثناءات الأيام)",
+      "3. Retroactive Backfill & Notes": "3. التحديث الرجعي التلقائي والملاحظات",
+      "Configure regular clock timings, set the default shift for the selected BU, or log a new effective-dated shift timing change": "اضبط مواقيت الدوام الاعتيادي، أو عيّن الوردية الافتراضية للشركة، أو سجّل تعديلاً جديداً بتاريخ سريان",
+      "Effective Window": "فترة السريان",
+      "Regular End Time (OUT) *": "وقت الانصراف الاعتيادي (خروج) *",
+      "Regular Start Time (IN) *": "وقت الحضور الاعتيادي (دخول) *",
+      "Regular Window": "الدوام الاعتيادي",
+      "Set different start and leave times for Saturday or other weekdays (for example starting earlier and leaving earlier on Saturday)": "حدّد وقت حضور وانصراف مختلفاً ليوم السبت أو لأيام محددة (مثل البدء والانصراف مبكراً يوم السبت)",
+      "When shift timings change, associated staff schedules and attendance records from Effective Start Date onward are automatically updated": "عند تعديل مواقيت الوردية، تُحدَّث جداول الموظفين وسجلات الحضور المرتبطة اعتباراً من تاريخ السريان تلقائياً",
+      "Reason for shift timing update, seasonal Saturday schedule, or BU policy note...": "سبب تعديل توقيت الوردية أو دوام السبت الموسمي أو ملاحظة الإدارة...",
+      "e.g. Day Shift, Extended Day, Night Shift...": "مثال: وردية نهارية، دوام ممتد، وردية ليلية...",
+      "e.g. Day, Ext Day, Night": "مثال: نهاري، ممتد، ليلي",
+      "Already Paid (Month)": "المدفوع مسبقاً (الشهر)",
+      "Month Net Earned": "صافي المستحق للشهر",
+      "Payment Classification": "تصنيف الدفعة",
+      "Pending Staff": "بانتظار اختيار الموظف",
+      "Remaining After Payment": "المتبقي بعد الدفعة",
+      "Select Staff": "اختر الموظف",
+      "above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.": "أعلاه لعرض راتب العقد الشهري والإضافي/الحسومات والمبلغ المدفوع والرصيد المتبقي أو السلفة.",
+      "Optional payroll note, bonus reason, or voucher ref...": "ملاحظة الراتب أو سبب المكافأة أو مرجع السند (اختياري)...",
+      "1. Supplier Identity (Universal Registry · All BUs)": "1. بيانات المورّد / الناقل (السجل الموحّد · جميع الوحدات)",
+      "2. Hauler Fleet & Drivers (Auto-Enabled when Hauler / Truck Owner is Selected)": "2. أسطول وسائقو الناقل (يُفعّل تلقائياً عند اختيار ناقل / مالك شاحنات)",
+      "Enter the Supplier / Hauler name above, then add one or more drivers for this hauler.": "أدخل اسم المورّد / الناقل أعلاه، ثم أضف سائقاً واحداً أو أكثر لهذا الناقل.",
+      "Hauler Fleet & Drivers active below": "أسطول وسائقو الناقل مفعّلون أدناه",
+      "Assign default truck...": "تعيين الشاحنة الافتراضية...",
+      "Enter driver name to link or add...": "أدخل اسم السائق للربط أو الإضافة...",
+      "Tax / MOF registration #": "الرقم الضريبي / التسجيل المالي (وزارة المالية)",
+      "Void / Delete this record (click once to arm, click again to confirm)": "إلغاء / حذف هذا السجل (اضغط مرة للتفعيل ومرة ثانية للتأكيد)",
+      "Void or delete this record (2-click confirmation)": "إلغاء أو حذف هذا السجل (تأكيد بنقرتين)",
+      "Void / Delete Record": "إلغاء / حذف السجل",
+      "Narrow column (−24px)": "تضييق العمود (−24 بكسل)",
+      "Widen column (+24px)": "توسيع العمود (+24 بكسل)",
+      "Hide this column": "إخفاء هذا العمود",
+      "Drag left or right to narrow or widen column · Double-click to revert to default width": "اسحب يميناً أو يساراً لتغيير عرض العمود · انقر مرتين لاستعادة العرض الافتراضي",
+      "Switch Light Paper / Dark Ink": "تبديل المظهر الفاتح / الداكن",
+      "Hide or show columns & widen or narrow column widths": "إظهار أو إخفاء الأعمدة وتعديل عرضها",
+      "Click to inspect row details": "اضغط لمعاينة تفاصيل السطر",
+      "Hide left navigation sidebar to expand main view": "إخفاء القائمة الجانبية لتوسيع مساحة العرض",
+      "Lock this session and switch team login": "قفل الجلسة الحالية وتبديل حساب المستخدم",
+      "Drag left or right to make sidebar wider or narrower · Double-click to reset": "اسحب لتوسيع أو تضييق القائمة الجانبية · انقر مرتين لإعادة الضبط",
+      "Hide / show left navigation sidebar": "إخفاء / إظهار القائمة الجانبية",
+      "Open Ask ISABI Intelligence": "فتح المساعد الذكي اسأل ISABI",
+      "Open Ask ISABI System Intelligence": "فتح ذكاء النظام اسأل ISABI",
+      "Switch Language (English / العربية / Français)": "تغيير اللغة (English / العربية / Français)",
+      "Switch Industry & Operating Company (10 Industries · 200+ Companies Ready)": "تبديل القطاع والشركة العاملة (10 قطاعات · جاهزية لأكثر من 200 شركة)",
+      "Click to browse all 6 industries": "اضغط لاستعراض القطاعات الستة",
+      "Preset & All-Time Periods": "الفترات الجاهزة وكامل الفترة",
+      "From Day — click for Calendar or ↑/↓ to step ±1 day": "من يوم — اضغط للتقويم أو ↑/↓ للتنقل بمقدار ±1 يوم",
+      "From Month — click for Month Picker or ↑/↓ to step ±1 month": "من شهر — اضغط لاختيار الشهر أو ↑/↓ للتنقل بمقدار ±1 شهر",
+      "From Year — click for Year Picker or ↑/↓ to step ±1 year": "من سنة — اضغط لاختيار السنة أو ↑/↓ للتنقل بمقدار ±1 سنة",
+      "Open interactive Date & Period Facilitator (From)": "فتح محدد التاريخ والفترة التفاعلي (من)",
+      "To Day — click for Calendar or ↑/↓ to step ±1 day": "إلى يوم — اضغط للتقويم أو ↑/↓ للتنقل بمقدار ±1 يوم",
+      "To Month — click for Month Picker or ↑/↓ to step ±1 month": "إلى شهر — اضغط لاختيار الشهر أو ↑/↓ للتنقل بمقدار ±1 شهر",
+      "To Year — click for Year Picker or ↑/↓ to step ±1 year": "إلى سنة — اضغط لاختيار السنة أو ↑/↓ للتنقل بمقدار ±1 سنة",
+      "Open interactive Date & Period Facilitator (To)": "فتح محدد التاريخ والفترة التفاعلي (إلى)",
+      "Statutory Reporting Date": "تاريخ التقرير المحاسبي المعتمد",
+      "Operational Transaction Date": "تاريخ العملية التشغيلية الفعلي",
+      "Calendar Year": "السنة التقويمية",
+      "Calendar Month": "الشهر التقويمي",
+      "Monday–Sunday Week": "الأسبوع (الإثنين–الأحد)",
+      "Specific Day": "يوم محدد",
+      "From": "من",
+      "To": "إلى",
+      "Attach receipt photo, CSV/Excel sheet, PDF, or document (or drag & drop / paste)": "إرفاق صورة إيصال أو ملف CSV/Excel أو PDF أو مستند (أو سحب وإفلات / لصق)",
+      "Record voice question or note (EN / العربية / Français)": "تسجيل سؤال أو ملاحظة صوتية (EN / العربية / Français)",
+      "Record voice question or note (EN / العربية / FR)": "تسجيل سؤال أو ملاحظة صوتية (EN / العربية / FR)",
+      "Download the rows shown as CSV (Excel, UTF-8)": "تنزيل السطور المعروضة بصيغة CSV (متوافق مع Excel، UTF-8)",
+      "Search any text or type column:value (e.g. type:Truck, method:Cash, cap:>=25)": "ابحث عن أي نص أو اكتب عمود:قيمة (مثال: type:Truck أو method:Cash)",
+      "Rows per page": "السطور في الصفحة",
+      "First Page": "الصفحة الأولى",
+      "Previous Page": "الصفحة السابقة",
+      "Next Page": "الصفحة التالية",
+      "Last Page": "الصفحة الأخيرة",
+      "Click to jump to itemized records": "اضغط للانتقال إلى السجلات التفصيلية",
+      "See why this alert exists and edit its threshold": "اطّلع على سبب هذا التنبيه وعدّل حدّه الرقابي",
+      "Jump straight to this form or module": "الانتقال المباشر إلى هذا النموذج أو الوحدة",
+      "Open Expenses & P&L Breakdown": "فتح تفصيل المصاريف والأرباح والخسائر",
+      "Open Receivables & Payables": "فتح الذمم المدينة والدائنة",
+      "Switch between Full Operational Ledger and Official Fiscal Books Only": "التبديل بين الدفتر التشغيلي الكامل والدفاتر الضريبية الرسمية فقط",
+      "Toggle 10 Industries × 15 Companies (150 Companies) enterprise scale preview": "تبديل معاينة نطاق المؤسسات الكبرى (10 قطاعات × 15 شركة = 150 شركة)",
+      "Show all 14 permitted companies across 6 industries": "عرض كافة الشركات الـ 14 المتاحة عبر القطاعات الستة",
+      "Supabase anon key...": "مفتاح المزامنة السحابية...",
+      "open Sentinel alerts. Ask anything in English, العربية, or Français, record a voice note, or attach a file.": "تنبيهات رقابية مفتوحة. اسأل أي سؤال بالعربية أو الإنجليزية أو الفرنسية، أو سجّل ملاحظة صوتية أو أرفق ملفاً.",
+      "All Business Units": "جميع وحدات الأعمال",
+      "Group Treasury & JV": "خزينة المجموعة والشراكات",
+      "Buzwair & Bdeir Real Estate": "بزوير وبدير العقارية",
+      "Bdeir Insurance Brokerage": "بدير لوساطة التأمين",
+      "Insurance Company": "شركة التأمين",
+      "World Trading & Construction": "وورلد للتجارة والمقاولات",
+      "WTC · WORLD TRADING & CONSTRUCTION": "WTC · وورلد للتجارة والمقاولات",
+      "WTC (World Trading)": "WTC (وورلد للتجارة)",
+      "Pending GPS": "بانتظار الإحداثيات",
+      "Incl. in Mat": "مشمول بالمواد",
+      "Roster": "الجدول",
+      "WTC Main Warehouse": "مستودع WTC الرئيسي",
+      "Main Warehouse": "المستودع الرئيسي",
+      "Nothing flagged": "لا توجد ملاحظات",
+      "Closed payroll period · paid in workbook": "فترة رواتب مقفلة · مسددة في السجل",
+      "No Operator on Ticket": "بدون مشغّل على الإيصال",
+      "Reported Snapshot": "لقطة مرصودة",
+      "Never logged": "غير مسجّل مسبقاً",
+      "Landed": "واصل",
+      "Sick Leave": "إجازة مرضية",
+      "Paid Vacation": "إجازة مدفوعة",
+      "Paid Leave": "إجازة مدفوعة",
+      "Sale Ticket": "إيصال مبيعات",
+      "Sale": "مبيعات",
+      "fill": "تعبئة",
+      "Maintenance": "صيانة",
+      "Unassigned": "غير معيّن",
+      "Ext In": "وارد خارجي",
+      "Ext Out": "صادر خارجي",
+      "AR In": "قبض ذمم",
+      "AP Out": "دفع موردين",
+      "Cash Exp": "مصروف نقدي",
+      "Repay In": "استرداد قرض",
+      "Loan In": "قرض وارد",
+      "Loan Out": "قرض صادر",
+      "Loan Lent": "إقراض صادر",
+      "Net In": "صافي وارد",
+      "Net Out": "صافي صادر",
+      "Salary Out": "دفع رواتب",
+      "Salary Paid": "راتب مسدد",
+      "AP Settlement": "تسديد مورد",
+      "AR Collection": "تحصيل عميل",
+      "Payment Settlement": "سند دفع",
+      "- · Payment Settlement": "- · سند دفع",
+      "Payment Receipt": "سند قبض",
+      "VAT Receipt": "قبض ضريبة VAT",
+      "VAT Settlement": "تسديد ضريبة VAT",
+      "- · VAT Settlement": "- · تسديد ضريبة VAT",
+      "Treasury Loan": "قرض خزينة",
+      "Borrowing Repayment In": "استرداد قرض وارد",
+      "Borrowing Out": "إقراض صادر",
+      "Lend Out": "إقراض صادر",
+      "Extended Out": "صادر موسّع",
+      "Extended Outflow": "تدفق صادر موسّع",
+      "Customer account receipt": "سند قبض من حساب عميل",
+      "External Revenue": "إيراد خارجي",
+      "External Expense": "مصروف خارجي",
+      "External Revenue (In)": "إيراد خارجي (وارد)",
+      "External Expense (Out)": "مصروف خارجي (صادر)",
+      "External treasury expense / outflow": "مصروف خزينة خارجي / صادر",
+      "External treasury revenue / inflow": "إيراد خزينة خارجي / وارد",
+      "11% VAT collection in LBP": "تحصيل ضريبة القيمة المضافة 11% بالليرة",
+      "Settlement difference — discount received": "فرق تسوية — حسم مكتسب",
+      "VAT paid to supplier": "ضريبة قيمة مضافة مدفوعة للمورد",
+      "On Acct": "دفعة على الحساب",
+      "Standard List": "السعر المعلن القياسي",
+      "No Rule": "بدون اتفاقية",
+      "(Direct Delivery)": "(توصيل مباشر)",
+      "Source + 3P Haul": "المصدر + نقل خارجي",
+      "Partner Entitlement": "استحقاق الشريك",
+      "Driver Trip Only": "بدل نقلة سائق فقط",
+      "Hours Tally": "حصر الساعات",
+      "Interest": "فوائد",
+      "(no number)": "(بدون رقم)",
+      "(no site on ticket)": "(بدون موقع على الإيصال)",
+      "Sales Ex-VAT": "المبيعات دون الضريبة",
+      "USD to LBP": "دولار إلى ليرة",
+      "LBP to USD": "ليرة إلى دولار",
+      "Till": "الصندوق",
+      "Till:": "الصندوق:",
+      "Tank": "الخزان",
+      "Tank (L)": "الخزان (لتر)",
+      "Pick": "استلام",
+      "Quarry ·": "الكسارة ·",
+      "load ·": "نقلة ·",
+      "loads ·": "نقلات ·",
+      "/ ton": "/ طن",
+      "/ load": "/ نقلة",
+      "/ trip": "/ نقلة",
+      "/ pay": "/ دفعة",
+      "Rate Compliance & VAT": "التزام الأسعار والضريبة",
+      "Active Workforce": "القوى العاملة النشطة",
+      "Master & Governance": "السجلات والحوكمة",
+      "Pay & Comm": "الرواتب والعمولات",
+      "WTC Tank Closing": "إقفال خزان WTC",
+      "Tank Closing": "إقفال الخزان",
+      "Payroll": "الرواتب",
+      "Click any row to edit or inspect 360° Details": "اضغط على أي سطر للتعديل أو معاينة بطاقة 360°",
+      "Click any row to edit": "اضغط على أي سطر للتعديل",
+      "Strict Transaction Date Basis": "أساس تاريخ العملية الفعلي الحصري",
+      "Haulage Split (Own vs 3P)": "توزيع النقل (أسطول الشركة مقابل الخارجي)",
+      "Overtime shift load": "نقلة دوام إضافي",
+      "Overnight shift finishing next morning": "مناوبة ليلية تنتهي صباح اليوم التالي",
+      "Reporting / تاريخ الاحتساب (actual attendance day)": "تاريخ الاحتساب المحاسبي (يوم الحضور الفعلي)",
+      "تاريخ العملية (entry date)": "تاريخ العملية (تاريخ القيد)",
+      "Open all sentinels": "فتح كل المراقبين",
+      "Open all sentinels →": "فتح كل المراقبين ←",
+      "Material Sales Revenue (Ex-VAT)": "إيرادات مبيعات المواد (دون الضريبة)",
+      "Delivery Transport Revenue": "إيرادات نقل التوصيل",
+      "Transport Revenue": "إيرادات النقل",
+      "Subcontracted Raw Haulage (Leg 2)": "نقل المواد الأولية المتعاقد عليه (الشق 2)",
+      "Operating, Fleet & Plant Expenses": "مصاريف التشغيل والأسطول والمصنع",
+      "Operating Expenses": "المصاريف التشغيلية",
+      "Staff Salaries & Overtime Paid": "رواتب الموظفين والعمل الإضافي المدفوعة",
+      "Staff Salaries Paid": "الرواتب المدفوعة للموظفين",
+      "Audited SOA Double-Entry Journal Stream & Partner Treasury / Loans": "سجل قيود اليومية المزدوجة المدقق وحسابات الخزينة وقروض الشركاء",
+      "Income Statement (Lebanese CoA Class 7 & Class 6)": "بيان الدخل (شجرة الحسابات اللبنانية — الصنف 7 والصنف 6)",
+      "WTC Sales TTC": "مبيعات WTC شاملة الضريبة",
+      "BBConstruction Sales TTC": "مبيعات BBConstruction شاملة الضريبة",
+      "WTC Operating Profit": "الربح التشغيلي WTC",
+      "BBC Operating Profit": "الربح التشغيلي BBC",
+      "Group Open AR / AP": "صافي الذمم المدينة / الدائنة للمجموعة",
+      "Group TB Variance": "فرق ميزان المراجعة للمجموعة",
+      "All entities tied to $0.00": "كافة الشركات مطابقة بفرق $0.00",
+      "Monthly Sales TTC — WTC vs BBConstruction": "المبيعات الشهرية شاملة الضريبة — WTC مقابل BBConstruction",
+      "Monthly Operating Profit — WTC vs BBConstruction": "الربح التشغيلي الشهري — WTC مقابل BBConstruction",
+      "WTC Profit": "ربح WTC",
+      "BBC Profit": "ربح BBC",
+      "Consolidated Multi-Entity Financial & Operational Matrix": "المصفوفة المالية والتشغيلية الموحّدة متعددة الشركات",
+      "Sales incl. VAT (TTC)": "المبيعات شاملة الضريبة (TTC)",
+      "Total Sales ex-VAT (Mat + Trans)": "إجمالي المبيعات دون الضريبة (مواد + نقل)",
+      "Material Sales ex-VAT": "مبيعات المواد دون الضريبة",
+      "Output VAT 11% (4427)": "ضريبة المخرجات 11% (4427)",
+      "Weighbridge Loads": "نقلات القبان",
+      "— Material Leg (Site Owners)": "— شق المواد (أصحاب المواقع)",
+      "— Haulage Leg (3rd-Party Trucks)": "— شق النقل (شاحنات الغير)",
+      "Entity Comparison — WTC vs BBConstruction vs Lions Transport": "مقارنة الشركات — WTC مقابل BBConstruction مقابل Lions Transport",
+      "OPERATING PROFIT · TB CHECK ($0.00 TIED)": "الربح التشغيلي · مطابقة ميزان المراجعة ($0.00)",
+      "Heavy Fleet & Haulage": "الأسطول الثقيل والنقل",
+      "Beach Resort, Chalets & F&B": "منتجع شاطئي وشاليهات ومطاعم",
+      "Executive Suites & Ballroom Events": "أجنحة فندقية وقاعات مناسبات",
+      "4235 Msaytbeh Commercial Center": "مركز المصيطبة التجاري 4235",
+      "Commercial Towers, Land Bank & Intl": "أبراج تجارية ومحفظة عقارية ودولية",
+      "Heavy Trucks, Mixers & Showroom": "شاحنات ثقيلة وخلاطات وصالة عرض",
+      "OEM Spare Parts, Tyres & Lubricants": "قطع غيار أصلية وإطارات وزيوت",
+      "Group Treasury, Shared Services & JV": "خزينة المجموعة والخدمات المشتركة والشراكات",
+      "Side-by-Side Entity Performance & Margins": "مقارنة أداء الشركات وهوامش الربحية جنباً إلى جنب",
+      "rules flagged for review · Evaluated": "قواعد مرصودة للمراجعة · تم تقييم",
+      "$0.00 Variance": "$0.00 فرق",
+      "Double-Entry Variance $0.00": "فرق القيد المزدوج $0.00",
+      "Lebanese CoA Classes 1-7 double-entry parity across": "تطابق القيد المزدوج للأصناف 1–7 في شجرة الحسابات اللبنانية عبر",
+      "lapsed agreements trading": "اتفاقيات منتهية لا تزال تتداول",
+      "diesel outliers": "حالات شذوذ مازوت",
+      "staff without contract": "موظف بدون عقد",
+      "Diesel Malfunction Watchdog (5.0% of Company Consumption)": "مراقب أعطال وفروقات المازوت (سقف 5.0% من استهلاك الشركة)",
+      "Date gaps > 31 days": "فجوات تاريخ > 31 يوماً",
+      "Date Gaps > 31 Days": "فجوات التاريخ > 31 يوماً",
+      "Customer sales on ended agreements (amber) or priced below the agreed / list price (red)": "مبيعات عملاء على اتفاقيات منتهية (كهرماني) أو مسعّرة دون السعر المتفق عليه / المعلن (أحمر)",
+      "0.0 km · $0 · Supervisor only": "0.0 كم · $0 · بإشراف المسؤول فقط",
+      "0.0 km Round-Trip (2x KM)": "0.0 كم ذهاباً وإياباً (2× كم)",
+      "Flagged by Sentinel S8": "مرصود بواسطة المراقب S8",
+      "60-Day Gap Guard": "حاجز فجوة 60 يوماً",
+      "Removed Tickets (In 25-Book)": "إيصالات ملغاة (ضمن دفتر 25)",
+      "Weighbridge loads by month — Sales vs Raw pads": "نقلات القبان شهرياً — دفاتر المبيعات مقابل المواد الأولية",
+      "Sales (Tx Date Basis)": "المبيعات (أساس تاريخ العملية)",
+      "Sales (Rep Date Basis)": "المبيعات (أساس تاريخ التقرير)",
+      "Raw Cost (Tx vs Rep)": "تكلفة الخام (العملية مقابل التقرير)",
+      "Transaction date vs reporting date parity bridge": "جسر مطابقة تاريخ العملية مقابل تاريخ التقرير المحاسبي",
+      "Transaction vs reporting date gaps > 31 days (Sentinel S8)": "فجوات تاريخ العملية مقابل التقرير المحاسبي > 31 يوماً (المراقب S8)",
+      "Customer & Supplier Sub-Account Reconciliation vs Trial Balance": "مطابقة الحسابات الفرعية للعملاء والموردين مقابل ميزان المراجعة",
+      "P&L Sales Ex-VAT": "مبيعات بيان الدخل دون الضريبة",
+      "Output VAT 11%": "ضريبة المخرجات 11%",
+      "FIFO Open AR": "ذمم العملاء المفتوحة (FIFO)",
+      "5 Till": "5 (الصندوق)",
+      "Top Customer Sub-Account Reconciliation (Tickets vs Receipts vs Closing AR)": "مطابقة أكبر حسابات العملاء الفرعية (الإيصالات مقابل المقبوضات مقابل الرصيد الختامي)",
+      "Top Supplier Sub-Account Reconciliation (3-Leg Accruals vs Settlements vs Closing AP)": "مطابقة أكبر حسابات الموردين الفرعية (الاستحقاقات ثلاثية الشقوق مقابل التسديدات مقابل الرصيد الختامي)",
+      "Discount > 20% needs Note": "حسم > 20% يتطلب ملاحظة",
+      "Tol $0.01/u · Min > $0": "سماحية $0.01/وحدة · الحد الأدنى > $0",
+      "25-leaf pads · Split > 60d": "دفاتر 25 إيصالاً · تباعد > 60 يوماً",
+      "Back-dated > 30d needs Note": "رجعي > 30 يوماً يتطلب ملاحظة",
+      "Gap > 60d needs Note": "فجوة > 60 يوماً تتطلب ملاحظة",
+      "Audit gap > 31d + Unlinked VAT": "فجوة تدقيق > 31 يوماً + ضريبة غير مربوطة",
+      "Trucks > 80 L/100km · Machines > 25 L/h": "الشاحنات > 80 ل/100كم · الآليات > 25 ل/ساعة",
+      "Low < 1,500 L · Crit < -1,000 L": "منخفض < 1,500 ل · حرج < -1,000 ل",
+      "30d > 40 L · Watch +30 L · Crit +80 L": "30 يوم > 40 ل · مراقبة +30 ل · حرج +80 ل",
+      "Early <85% · Overdue >14,000/6,500 L": "مبكر <85% · متأخر >14,000/6,500 ل",
+      "< 25% compliance · 0.15/0.30/0.60 kg": "التزام < 25% · 0.15/0.30/0.60 كغ",
+      "Any Down unit · >= 1 unnotified part": "أي آلية متوقفة · >= 1 قطعة غير مبلّغ عنها",
+      "Form > $1,000 · Audit > $0.01": "النموذج > $1,000 · التدقيق > $0.01",
+      "Unmatched > $0": "غير مطابق > $0",
+      ">= 1 absent-driver entry": ">= 1 حركة لسائق غائب",
+      "85% to 125%": "85% إلى 125%",
+      "1. Operational Volume & Trip Coverage": "1. الحجم التشغيلي وتغطية النقلات",
+      "Total Volume Transported (m³)": "إجمالي الحجم المنقول (م³)",
+      "Customer Sales Delivery Transport Revenue": "إيراد نقل توصيل مبيعات العملاء",
+      "Raw Material Inbound Haulage Revenue": "إيراد نقل توريد المواد الأولية",
+      "TOTAL TRANSPORTATION REVENUE": "إجمالي إيرادات النقل",
+      "Motor Oil, Hydraulic Oil & Lubricants": "زيت المحرك والزيت الهيدروليكي والشحوم",
+      "NET PROFIT / (LOSS) & OPERATING MARGIN": "صافي الربح / (الخسارة) والهامش التشغيلي",
+      "Live Active Slicer": "محدد التصفية الحي",
+      "All Trucks": "جميع الشاحنات",
+      "Selected Trips": "النقلات المحددة",
+      "Paid Trips": "نقلات مدفوعة الأجر",
+      "Full 2-Month Period": "كامل فترة الشهرين",
+      "active units ·": "آلية نشطة ·",
+      "company-fleet loads": "نقلة بأسطول الشركة",
+      "Total Fleet Running Cost": "إجمالي تكلفة تشغيل الأسطول",
+      "Fuel, tires & repairs": "الوقود والإطارات والتصليحات",
+      "· Allocated driver pay": "· رواتب السائقين المحمّلة",
+      "Fleet Ownership Mix": "توزيع ملكية الأسطول",
+      "Company units:": "آليات الشركة:",
+      "BU Fleet & Health Status": "أسطول الشركة والحالة الفنية",
+      "Parts Custody:": "عهدة القطع:",
+      "Monthly Fleet Running Cost vs. General Expenses ($)": "تكلفة تشغيل الأسطول الشهرية مقابل المصاريف العامة ($)",
+      "Monthly equipment fuel, repair & allocated driver cost": "تكلفة وقود وتصليحات ورواتب سائقي الآليات الشهرية",
+      "Monthly equipment fuel, repair & allocated driver cost vs general overhead": "تكلفة وقود وتصليحات ورواتب السائقين الشهرية مقابل المصاريف العامة",
+      "Cost by Equipment Unit — Running + Driver ($)": "التكلفة حسب الآلية — التشغيل + السائق ($)",
+      "Running + Driver": "التشغيل + السائق",
+      "FIFO Collection Rate": "نسبة التحصيل وفق الوارد أولاً (FIFO)",
+      "AR Aging Health": "سلامة أعمار الذمم المدينة",
+      "· VAT rec.": "· مقبوضات ضريبة",
+      "Jump to Tax Invoices ↓": "الانتقال إلى الفواتير الضريبية ↓",
+      "Jump to Tax Invoices": "الانتقال إلى الفواتير الضريبية",
+      "Customer Credit Exposure": "التعرض الائتماني للعملاء",
+      "FIFO AR Aging by Bucket ($)": "أعمار الذمم المدينة حسب الشريحة الزمنية ($)",
+      "Monthly credit billings vs customer settlements collected · Months where Receipts exceed Credit Sales reduce Open AR": "الفوترة الآجلة الشهرية مقابل تحصيلات العملاء · الأشهر التي تتجاوز فيها المقبوضات المبيعات الآجلة تخفّض الذمم المفتوحة",
+      "Monthly Credit Sales": "المبيعات الآجلة الشهرية",
+      "Monthly Credit Sales vs. Customer Receipts ($)": "المبيعات الآجلة الشهرية مقابل مقبوضات العملاء ($)",
+      "Net Sales": "صافي المبيعات",
+      "60+ Overdue": "متأخر +60 يوماً",
+      "Pick-up Loads": "نقلات تسليم أرض المصنع",
+      "Earned Ex-VAT": "المكتسب دون الضريبة",
+      "Open Payable Ex-VAT": "المستحق المفتوح دون الضريبة",
+      "Avg Raw Cost / m³": "متوسط تكلفة الخام / م³",
+      "Top Purchased Items, Spare Parts & Oils ($)": "أعلى الأصناف وقطع الغيار والزيوت شراءً ($)",
+      "Itemized Spend by Item Group & Locked UoM ($)": "الإنفاق التفصيلي حسب مجموعة الصنف ووحدة القياس المعتمدة ($)",
+      "Spend breakdown across Spare Parts (Piece/Set), Oils & Lubricants (Litre/kg), Tools, and Consumables": "توزيع الإنفاق عبر قطع الغيار (قطعة/طقم) والزيوت والشحوم (لتر/كغ) والعدد والمستهلكات",
+      "Locked Unit (UoM)": "وحدة القياس المعتمدة",
+      "Locked Unit": "وحدة القياس المعتمدة",
+      "Security": "الأمن والحراسة",
+      "Haulage Share %": "حصة النقل %",
+      "Monthly bulk diesel purchases vs fleet issues and tank balance trajectory": "مشتريات المازوت بالجملة شهرياً مقابل الصرف للأسطول ومسار رصيد الخزان",
+      "Top fuel-consuming trucks, loaders, excavators and plant generators": "أعلى الشاحنات والجرافات والحفارات ومولدات المصنع استهلاكاً للوقود",
+      "Auto-updating OEM severe-duty quarry benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)": "معايير المصنّع للخدمة الشاقة المحدثة تلقائياً: زيت 15W-40 كل 15,000 كم / 250 ساعة · سماحية هيدروليك 68 · تشحيم يومي للشاسيه والمحاور (كغ)",
+      "Excess Hydraulic Oil": "فائض استهلاك الزيت الهيدروليكي",
+      "Estimated Leak Loss": "الفاقد التقديري من التسرب",
+      "Grease Issued & Bought": "الشحم المصروف والمشترى",
+      "Daily Greasing Compliance": "الالتزام بالتشحيم اليومي",
+      "Hydraulic Oil 68 issued vs normal benchmark by unit (L)": "الزيت الهيدروليكي 68 المصروف مقابل المعيار الطبيعي لكل آلية (لتر)",
+      "Red bar exceeding slate benchmark flags blown hydraulic hoses, cylinder rod seals or PTO pump leaks": "العمود الأحمر المتجاوز للمعيار يرصد تلف خراطيم الهيدروليك أو مانعات الأسطوانات أو تسرب المضخة",
+      "Normal Benchmark (L)": "المعيار الطبيعي (لتر)",
+      "Engine Oil 15W-40 issued vs service benchmark by unit (L)": "زيت المحرك 15W-40 المصروف مقابل معيار الصيانة لكل آلية (لتر)",
+      "Expected = 32 L per 12,000 L diesel on trucks (15,000 km) or 28 L per 5,000 L diesel on yellow iron (250 hrs)": "المتوقع = 32 لتر لكل 12,000 لتر مازوت للشاحنات (15,000 كم) أو 28 لتر لكل 5,000 لتر للآليات الثقيلة (250 ساعة)",
+      "Equipment lubrication, oil-change intervals & hydraulic leak audit": "تدقيق تزييت الآليات وفترات غيار الزيت وتسربات الهيدروليك",
+      "Amber row = hydraulic leak (>30 L excess), overdue 15W-40 service, or early oil drain · click any row for 360° Equipment Inspector": "السطر الكهرماني = تسرب هيدروليك (فائض >30 لتر) أو تأخر غيار 15W-40 أو غيار مبكر · اضغط أي سطر لبطاقة الآلية 360°",
+      "Daily greasing compliance & grease usage by active unit (kg)": "الالتزام بالتشحيم اليومي واستهلاك الشحم لكل آلية نشطة (كغ)",
+      "Target: 0.15 kg/day per working truck (fifth wheel, kingpins, S-cams, U-joints), 0.30 kg/day per loader/excavator, 0.60 kg/day per plant": "المعيار المستهدف: 0.15 كغ/يوم للشاحنة العاملة، 0.30 كغ/يوم للجرافة/الحفارة، 0.60 كغ/يوم للمصنع",
+      "Overtime pay": "بدل العمل الإضافي",
+      "Included inside Earnings": "مشمول ضمن الاستحقاقات",
+      "USD Cash Till ($)": "صندوق النقد بالدولار ($)",
+      "LBP Cash Till (LL)": "صندوق النقد بالليرة (ل.ل.)",
+      "Cash Sales & AR Receipts flow": "تتدفق المبيعات النقدية ومقبوضات العملاء",
+      "while Cash Expenses, AP Settlements & Payroll flow": "بينما تتدفق المصاريف النقدية وتسديدات الموردين والرواتب",
+      "; daily": "؛ وتقوم",
+      "transfer net cash to/from central treasury so physical cash on hand stays near": "اليومية بتحويل صافي النقد من/إلى الخزينة المركزية ليبقى رصيد الصندوق الفعلي قريباً من",
+      "Till Balance View": "عرض رصيد الصندوق",
+      "Op. Cash In (Sales+AR)": "وارد تشغيلي (مبيعات+عملاء)",
+      "Treasury / FX In": "وارد خزينة / صرافة",
+      "Op. Cash Out (Exp+AP+Sal)": "صادر تشغيلي (مصاريف+موردين+رواتب)",
+      "Sweeps / FX Out": "تحويلات خزينة / صرافة صادرة",
+      "Closing Cash Till — Month-End Balance ($)": "رصيد إقفال الصندوق — نهاية الشهر ($)",
+      "Month-end physical drawer balance anchored at $0 (no flow overlay) · Hover for USD + LBP split": "رصيد الصندوق الفعلي في نهاية الشهر مثبت عند $0 · مرّر المؤشر لتفصيل الدولار والليرة",
+      "Monthly Cash Inflows vs Outflows — Operating vs Treasury Sweeps": "التدفقات النقدية الشهرية الواردة مقابل الصادرة — التشغيل مقابل تحويلات الخزينة",
+      "Net:": "الصافي:",
+      "Sales VAT (LL)": "ضريبة المبيعات (ل.ل.)",
+      "Expense VAT (LL)": "ضريبة المصاريف (ل.ل.)",
+      "Supplier-Site Haul": "نقل من موقع المورد",
+      "Raw Total": "إجمالي الخام",
+      "Operating Co.": "الشركة المشغّلة",
+      "Diesel Sold (-)": "مازوت مباع (-)",
+      "Tank Remaining (=)": "المتبقي في الخزان (=)",
+      "Leave / Absent": "إجازة / غياب",
+      "Standard All Days": "دوام موحّد كل الأيام",
+      "(Standard All Days)": "(دوام موحّد كل الأيام)",
+      "Sun Off": "الأحد عطلة",
+      "Call-Out": "استدعاء طارئ",
+      "Plant Cash Flow & Till": "التدفق النقدي وصندوق المصنع",
+      "Reconciled total": "الإجمالي المطابق",
+      "Net External ($)": "صافي الخارجي ($)",
+      "1 · External Treasury Flows & Partner Loan Position": "1 · تدفقات الخزينة الخارجية ومركز قروض الشركاء",
+      "Treasury inflows (sample)": "التدفقات الواردة للخزينة",
+      "Treasury outflows (sample)": "التدفقات الصادرة من الخزينة",
+      "External Net": "صافي الحركة الخارجية",
+      "Revenue − Expense": "الإيراد − المصروف",
+      "Loans Principal": "أصل القروض",
+      "Loan Settlements": "تسديدات القروض",
+      "Loans Outstanding (owes +)": "رصيد القروض القائم (+ التزام)",
+      "Principal − Repaid": "الأصل − المسدد",
+      "Avg Rate USD → LBP": "متوسط الصرف دولار ← ليرة",
+      "External Movements": "الحركات الخارجية",
+      "Non-ticket treasury entries": "قيود خزينة غير مرتبطة بإيصالات",
+      "Counterparties Active": "الأطراف المقابلة النشطة",
+      "External & loan parties": "أطراف الخزينة والقروض",
+      "Barter Customers": "عملاء المقاصة",
+      "Cross-settled accounts": "حسابات مقاصة متبادلة",
+      "Barter Suppliers": "موردو المقاصة",
+      "Cross-settled suppliers": "موردون بمقاصة متبادلة",
+      "External net by counterparty": "صافي الخارجي حسب الطرف المقابل",
+      "Net external treasury position by counterparty (+ net inflow, − net outflow)": "صافي مركز الخزينة الخارجي حسب الطرف المقابل (+ صافي وارد، − صافي صادر)",
+      "Gross external inflows vs outflows per counterparty": "إجمالي التدفقات الخارجية الواردة مقابل الصادرة لكل طرف مقابل",
+      "External revenue vs expense by counterparty": "الإيراد الخارجي مقابل المصروف حسب الطرف المقابل",
+      "Loans — principal, repayments, outstanding (+ = the company owes, − = owed to the company)": "القروض — الأصل والتسديدات والرصيد القائم (+ = التزام على الشركة، − = مستحق للشركة)",
+      "Loan transactions (latest first; + in / − out)": "حركات القروض (الأحدث أولاً؛ + وارد / − صادر)",
+      "External movements (latest first; + in / − out)": "الحركات الخارجية (الأحدث أولاً؛ + وارد / − صادر)",
+      "Model TB check": "مطابقة ميزان المراجعة",
+      "Trial Balance Parity": "تطابق ميزان المراجعة",
+      "FX Conversions & Multi-Currency Till": "عمليات الصرافة والصندوق متعدد العملات",
+      "Cash & Treasury": "النقدية والخزينة",
+      "QUICK VIEW": "معاينة سريعة",
+      "TRUCK & FLEET": "الشاحنة والأسطول",
+      "OPEN FIFO AR BALANCE": "رصيد الذمم المدينة المفتوح (FIFO)",
+      "ACTIVE AR": "ذمم نشطة",
+      "VAT Status: Standard": "الوضع الضريبي: خاضع (11%)",
+      "VAT Status: Non-VAT": "الوضع الضريبي: غير خاضع",
+      "LIFETIME SALES & LOADS": "إجمالي المبيعات والنقلات",
+      "RECEIPTS COLLECTED": "المقبوضات المحصّلة",
+      "Oldest-First FIFO Relief": "إطفاء الأقدم أولاً (FIFO)",
+      "Default Method: Cash": "طريقة الدفع الافتراضية: نقدي",
+      "Default Method: Credit": "طريقة الدفع الافتراضية: ذمم",
+      "Primary key, dates, business unit & counterparty links": "المعرّف الأساسي والتواريخ ووحدة الأعمال والروابط المقابلة",
+      "Official / Legal Name": "الاسم الرسمي / القانوني",
+      "Phone / Contact Number": "رقم الهاتف / التواصل",
+      "VAT 11% Registered": "مسجّل في الضريبة 11%",
+      "2 · Dispatch, Site, Fleet & Operational Attributes": "2 · بيانات التسليم والموقع والأسطول والخصائص التشغيلية",
+      "Connected sites, grades, trucks, drivers & operational parameters": "المواقع والأصناف والشاحنات والسائقون والمعايير التشغيلية المرتبطة",
+      "Customer-Declared Qty on Tickets": "اعتماد الكمية المصرّح بها من العميل",
+      "Requires External Invoice #": "يتطلب رقم فاتورة خارجية",
+      "3 · Quantities, Contractual Pricing, VAT & Settlement": "3 · الكميات والتسعير التعاقدي والضريبة والتسوية",
+      "Financial legs, unit economics & ledger settlement": "الشقوق المالية واقتصاديات الوحدة والتسوية الدفترية",
+      "Notes & Special Instructions": "ملاحظات وتعليمات خاصة",
+      "Attached Receipts, Invoices & Supporting Documents": "الإيصالات والفواتير والمستندات الثبوتية المرفقة",
+      "Scanned invoices, thermal slips, PDFs, or photos linked to": "الفواتير الممسوحة أو الإيصالات الحرارية أو ملفات PDF أو الصور المرتبطة بـ",
+      ". Any file uploaded here is also indexed in the Document Vault.": ". أي ملف يُرفع هنا يُفهرس تلقائياً في خزينة المستندات.",
+      "No receipt scan, supplier invoice, or photo is attached to this record yet.": "لا يوجد إيصال ممسوح أو فاتورة مورد أو صورة مرفقة بهذا السجل بعد.",
+      "above to attach one now.": "أعلاه لإرفاق مستند الآن.",
+      "No linked rows in": "لا توجد سجلات مرتبطة في",
+      "for this record in the current snapshot.": "لهذا السجل في النطاق الحالي.",
+      "Click any blue lookup pill or related subgrid row to navigate across connected relational records.": "اضغط على أي شارة زرقاء أو سطر في الجداول الفرعية للتنقل عبر السجلات المترابطة.",
+      "Plant Tank Issue": "صرف من خزان المصنع",
+      "Disable Face Login": "إيقاف الدخول ببصمة الوجه",
+      "Additional / Optional Shift": "وردية إضافية / اختيارية",
+      "Default Shift for Selected BU": "الوردية الافتراضية للشركة المحددة",
+      "Same Timing Every Scheduled Workday": "نفس التوقيت في كل أيام العمل المجدولة",
+      "Custom Timing for Saturday / Specific Days": "توقيت مخصص ليوم السبت / أيام محددة",
+      "Mon to Sat": "الإثنين إلى السبت",
+      "Mon to Fri": "الإثنين إلى الجمعة",
+      "Mon to Sun": "الإثنين إلى الأحد",
+      "Metric Tons": "أطنان مترية",
+      "Truck Loads": "نقلات شاحنة",
+      "Cash Inflow": "تدفق نقدي وارد",
+      "Cash Outflow": "تدفق نقدي صادر",
+      "Reserve / Special": "احتياطي / خاص",
+      "11% VAT Applies": "تطبّق ضريبة 11%",
+      "Truck or Machine": "شاحنة أو آلية",
+      "Physical Variance": "فارق فعلي",
+      "Shareholder Loan": "قرض شريك / مساهم",
+      "Loan Repayment": "تسديد قرض",
+      "Staff Employment": "توظيف موظف",
+      "JV Site Partnership Setup": "إعداد شراكة موقع مناصفة (JV)",
+      "Spare Stock": "مخزون قطع الغيار",
+      "External Parts": "قطع خارجية",
+      "Map Region (Boundary)": "منطقة جغرافية على الخريطة (نطاق)",
+      "1,000,000 Units in USD": "قيمة 1,000,000 وحدة بالدولار",
+      "Statutory Lebanese MoF VAT Schedule (6 windows):": "جدول نسب الضريبة الرسمي لوزارة المالية اللبنانية (6 فترات):",
+      "27 company fleet drivers — active Equipment Log driver is auto-filled & locked onto tickets": "27 سائقاً في أسطول الشركة — يُعبّأ السائق الفعّال من سجل الآليات تلقائياً ويُقفل على الإيصالات",
+      "Automatically linked to the selected Role": "مرتبط تلقائياً بالوظيفة المختارة",
+      "High-Tensile Bolts & Hardware": "براغي وعزق فولاذية عالية المتانة",
+      "Hand & Power Tools": "عدد يدوية وكهربائية",
+      "Electrical Tools": "عدد ومعدات كهربائية",
+      "Mechanical & Garage Labor": "أجور ميكانيك وكاراج",
+      "Electrical & A/C Labor": "أجور كهرباء وتكييف",
+      "Tire, Wheel & Undercarriage Service": "خدمة الإطارات والدواليب والهيكل السفلي",
+      "Parts": "قطع غيار",
+      "Driver Tips & Road Allowances": "إكراميات السائقين وبدلات الطريق",
+      "Taxes, Stamps & Notary Fees": "ضرائب وطوابع ورسوم كاتب عدل",
+      "Polyurethane Crusher Screen": "شبك غربال بولي يوريثان للكسارة",
+      "Crusher Screen Mesh": "شبك غربال الكسارة",
+      "Rubber Screen Mesh": "شبك غربال مطاطي",
+      "Heavy Power Cable & Lugs": "كابلات كهرباء ضغط عالٍ ومرابط",
+      "High-Pressure Hydraulic Hose": "خرطوم هيدروليك ضغط عالٍ",
+      "Heavy Truck / Loader Tire": "إطار شاحنة ثقيلة / جرافة",
+      "Engine, Cooling & Mechanical Parts": "قطع محرك وتبريد وميكانيك",
+      "Equipment Filter": "فلتر آليات ثقيلة",
+      "Fuel Filter": "فلتر وقود",
+      "Engine Oil Filter": "فلتر زيت محرك",
+      "Fuel Water Separator Filter": "فلتر فاصل الماء عن الوقود",
+      "Engine Water Pump": "طرمبة مياه المحرك",
+      "Hydraulic Main Pump": "المضخة الهيدروليكية الرئيسية",
+      "Hydraulic Control Valve": "صمام تحكم هيدروليكي",
+      "Diesel Fuel Injector / Lift Pump": "بخاخ مازوت / مضخة تغذية",
+      "Heavy Truck Clutch Kit (Plateau)": "طقم دبرياج شاحنة ثقيلة (بلاتو)",
+      "Tire Repair & Patching": "تصليح ورقعة إطارات",
+      "Heavy-Duty Truck Battery": "بطارية شاحنة خدمة شاقة",
+      "Vibrating Screen Coil Spring": "نابض حلزوني للغربال الهزاز",
+      "Crusher Jaw / Manganese Plate Set": "طقم فكوك كسارة / صفائح منغنيز",
+      "General Labour": "عامل عام",
+      "4235 Statutory Lease & VAT Controller": "مراقب عقود الإيجار والضريبة — 4235",
+      "Chief Bonded Warehouse & Parts Lead": "رئيس المستودع الجمركي وقطع الغيار",
+      "Commercial Fleet Sales Executive": "مسؤول مبيعات الأسطول التجاري",
+      "Executive Chauffeur & Security Lead": "مسؤول السائقين التنفيذيين والأمن",
+      "Executive Housekeeping Lead": "رئيس قسم التدبير الفندقي",
+      "Executive Sous-Chef": "الشيف التنفيذي المساعد",
+      "Floor & POS Operations Manager": "مدير الصالة وعمليات نقاط البيع",
+      "Group CFO & Treasury Director": "المدير المالي ومدير خزينة المجموعة",
+      "Guest Relations & Cabana Host": "مسؤول علاقات الضيوف والشاليهات",
+      "Head Sommelier & Bar Lead": "رئيس السقاة ومسؤول البار",
+      "Heavy Truck PDI & Warranty Chief": "رئيس الفحص قبل التسليم (PDI) والكفالات",
+      "Motor & Medical Claims FNOL Manager": "مدير مطالبات المركبات والطبابة (FNOL)",
+      "Portfolio & Fit-Out Project Manager": "مدير المحفظة العقارية ومشاريع التجهيز",
+      "Resort Chief Engineer & Solar Tech": "كبير مهندسي المنتجع والطاقة الشمسية",
+      "Senior Field Loss Adjuster & Surveyor": "خبير معاينة وتقدير أضرار أول",
+      "Showroom & Import Operations Director": "مدير صالة العرض وعمليات الاستيراد",
+      "Tower Security & BMS Plant Operator": "مشغّل أمن الأبراج وأنظمة إدارة المباني",
+      "Bulldozer Operator": "سائق جرافة (بلدوزر)",
+      "Crusher Operator": "مشغّل كسارة",
+      "Excavator Operator": "سائق حفارة (باغر)",
+      "Loader Operator": "سائق جرافة دولاب (لودر)",
+      "Operations Manager": "مدير العمليات",
+      "Plant Operator": "مشغّل مصنع",
+      "Site Supervisor": "مشرف موقع",
+      "Revenue, Price Trends, Transport & Site Mix": "الإيرادات واتجاهات الأسعار والنقل وتوزيع المواقع",
+      "1 · Sales Revenue, Volumes & Payment Mix": "1 · إيرادات المبيعات والكميات ومزيج التحصيل",
+      "Aggregate grade value": "قيمة أصناف البحص والرمل",
+      "Delivery haulage billed": "أجور نقل التوصيل المفوترة",
+      "Active Customers": "العملاء النشطون",
+      "Billed in selected period": "مفوترون في الفترة المختارة",
+      "2 · Weighbridge Loads, Tonnage & Unit Realisation": "2 · نقلات القبان والأطنان ومتوسط سعر الوحدة",
+      "Quantity Sold (m³)": "الكمية المباعة (م³)",
+      "Converted to m³ (1 Truck = 27 m³)": "محوّلة إلى م³ (1 شاحنة = 27 م³)",
+      "Volume converted to m³ (1 Truck = 27 m³)": "الحجم محوّل إلى م³ (1 شاحنة = 27 م³)",
+      "Using grade ton_factor": "وفق معامل التحويل الوزني للصنف",
+      "Avg Realised Price": "متوسط السعر المحقق",
+      "Customer delivery haulage billed on company trucks vs third-party haulers and own-fleet share %": "أجور توصيل العملاء على شاحنات الشركة مقابل شاحنات الغير ونسبة أسطول الشركة %",
+      "3rd-Party Pass-Through": "نقل خارجي محمّل",
+      "Own-Fleet %": "نسبة أسطول الشركة %",
+      "Monthly weighbridge dispatches split between delivered customer loads and plant pick-up loads": "حركة القبان الشهرية موزعة بين نقلات التوصيل للعملاء والاستلام من أرض المصنع",
+      "Quantity sold by material (m³)": "الكمية المباعة حسب المادة (م³)",
+      "Sales by material (Top aggregate grades)": "المبيعات حسب المادة (أهم أصناف البحص والرمل)",
+      "Top aggregate grades": "أهم أصناف البحص والرمل",
+      "Average price per m³ by material": "متوسط السعر لكل م³ حسب المادة",
+      "Realised unit price ($/m³)": "سعر الوحدة المحقق ($/م³)",
+      "Products · volume, revenue, list vs realised price": "الأصناف · الحجم والإيراد والسعر المعلن مقابل المحقق",
+      "Complete aggregate grade breakdown with inline revenue bars": "تفصيل شامل لكافة أصناف المواد مع مؤشرات الإيرادات",
+      "Customer destination sites · loads, tonnage, transport & revenue": "مواقع تسليم العملاء · النقلات والأطنان والنقل والإيراد",
+      "Customer delivery destination sites and plant pick-up dispatches (excludes raw material quarry source sites)": "مواقع تسليم العملاء والاستلام من المصنع (باستثناء مواقع الكسارات المورّدة للمواد الأولية)",
+      "Pick-up at Plant (No delivery site)": "استلام من أرض المصنع (بدون موقع توصيل)",
+      "Weighbridge Sales Tickets Register & Ticket Serial Hygiene": "سجل إيصالات مبيعات القبان وسلامة التسلسل الدفتري",
+      "Individual sales tickets live in Sales & Deliveries; skipped & duplicate 25-ticket pad serial audit lives in AI Sentinels & Audit.": "إيصالات المبيعات التفصيلية متوفرة في المبيعات والتسليم؛ وتدقيق الأرقام المفقودة والمكررة لدفاتر الـ 25 إيصالاً في الرقابة الذكية.",
+      "Agreements, Spreads, Shortfalls & Commissions": "الاتفاقيات والفروقات السعرية والعمولات",
+      "1 · Price Agreement Coverage, Realised vs Agreed & Below-Agreed Governance": "1 · تغطية اتفاقيات الأسعار والسعر المحقق مقابل المتفق عليه",
+      "Active Price Agreements": "اتفاقيات الأسعار النشطة",
+      "Weighted Agreed Price": "متوسط السعر التعاقدي المرجح",
+      "Per m³ agreed corridor": "نطاق السعر التعاقدي لكل م³",
+      "Actual Realised Price": "السعر الفعلي المحقق",
+      "Ex-VAT across aggregate m³": "دون الضريبة عبر إجمالي م³",
+      "Sold Below Agreed ($)": "مباع دون السعر التعاقدي ($)",
+      "Lapsed Pairs Still Trading": "اتفاقيات منتهية لا تزال تتداول",
+      "Trading after End date": "تعاملات بعد تاريخ الانتهاء",
+      "Per-Truck Delivery Rules": "اتفاقيات توصيل مقطوعة بالشاحنة",
+      "Unit = Truck flat rate": "الوحدة = مقطوعية النقلة",
+      "2 · Commissions, Delivery Transport & Quarry Purchase / Haulage Rules": "2 · العمولات ونقل التوصيل واتفاقيات شراء ونقل الكسارات",
+      "Commission Earned (Ex-VAT)": "العمولة المكتسبة (دون الضريبة)",
+      "Commission Payable (Ex-VAT)": "العمولة المستحقة الدفع (دون الضريبة)",
+      "Customer Sales Rules": "اتفاقيات مبيعات العملاء",
+      "List Price Revisions": "تعديلات الأسعار المعلنة",
+      "Site Purchase & Haul Rules": "اتفاقيات شراء ونقل المواقع",
+      "Quarry Over-Agreed Pairs": "مواقع مفوترة أعلى من الاتفاقية",
+      "Billed above site / haul rate": "مفوتر أعلى من سعر الموقع / النقل",
+      "List price evolution over time ($/m³ by grade)": "تطور السعر المعلن عبر الزمن ($/م³ حسب الصنف)",
+      "List Price Evolution Over Time ($/m³) by Grade": "تطور السعر المعلن عبر الزمن ($/م³) حسب الصنف",
+      "Monthly standard list price trajectory across dated revision steps by aggregate grade": "مسار السعر المعلن القياسي شهرياً عبر خطوات التعديل المؤرخة حسب الصنف",
+      "Monthly standard list price trajectory across dated revision agreements": "مسار السعر المعلن القياسي شهرياً عبر اتفاقيات التعديل المؤرخة",
+      "Comparison of average agreed price, actual realised net price, and standard list price per unit": "مقارنة متوسط السعر التعاقدي والسعر الصافي الفعلي المحقق والسعر المعلن للوحدة",
+      "Spread by product · lowest, highest and list price": "نطاق الأسعار حسب الصنف · الأدنى والأعلى والسعر المعلن",
+      "Price Corridor by Grade · Lowest Agreed, Highest Agreed & List Price": "نطاق الأسعار حسب الصنف · الأدنى والأعلى التعاقدي والسعر المعلن",
+      "Price corridor across active customer agreements vs. standard list price": "نطاق الأسعار عبر اتفاقيات العملاء النشطة مقابل السعر المعلن",
+      "Price corridor across active customer agreements vs. standard list price ($/m³)": "نطاق الأسعار عبر اتفاقيات العملاء النشطة مقابل السعر المعلن ($/م³)",
+      "Customer delivery transportation rate by site ($/m³)": "سعر نقل توصيل العملاء حسب الموقع ($/م³)",
+      "Agreed delivery transport rate vs. last billed and period average across top customer × destination pairs": "سعر نقل التوصيل المتفق عليه مقابل آخر إيصال ومتوسط الفترة لأهم مواقع العملاء",
+      "Quarry raw material purchase rate by site ($/m³)": "سعر شراء المواد الأولية من الكسارة حسب الموقع ($/م³)",
+      "Site purchase agreement rate vs. last received unit cost and period average by quarry source": "سعر اتفاقية الشراء من الموقع مقابل آخر تكلفة مستلمة ومتوسط الفترة لكل كسارة",
+      "Quarry transportation rate by hauler & site ($/Truck Load)": "سعر نقل المواد من الكسارة حسب الناقل والموقع ($/نقلة)",
+      "Agreed 3rd-party quarry haulage rate vs. last haul ticket and period average": "أجرة نقل الكسارة المتفق عليها للغير مقابل آخر إيصال ومتوسط الفترة",
+      "Sales commission & selling-price corridor by product": "عمولة المبيعات ونطاق سعر البيع حسب الصنف",
+      "Per-unit commission rate, qualifying weighbridge tonnage/m³, accrued commission, and selling rate net of commission": "معدل العمولة للوحدة، الكمية المؤهلة على القبان، العمولة المستحقة، وصافي سعر البيع بعد العمولة",
+      "Monthly commission accrual, settlement & open payable ledger": "سجل استحقاق العمولات الشهري والتسديدات والرصيد المفتوح",
+      "Amber row = agreement End date has passed · Red variance = billed below customer agreement or delivery transport rate": "السطر الكهرماني = انتهى تاريخ الاتفاقية · الفارق الأحمر = مفوتر دون سعر اتفاقية العميل أو النقل",
+      "Customer × product price performance & below-agreed exceptions": "أداء أسعار العميل × الصنف واستثناءات البيع دون المتفق عليه",
+      "Pairs where tickets were billed below the customer agreement price": "الأزواج التي فوترت إيصالاتها دون سعر اتفاقية العميل",
+      "Commercial Sales, Delivery & Commission Agreements": "اتفاقيات المبيعات التجارية والتوصيل والعمولات",
+      "Quarry Raw Material & Site Haulage Agreements": "اتفاقيات المواد الأولية ونقل مواقع الكسارات",
+      "Customer Balances, 5-Bucket Aging & Ledger": "أرصدة العملاء وأعمار الذمم (5 شرائح) وكشف الحساب",
+      "1 · Customer Receivables & FIFO Aging Position": "1 · ذمم العملاء المدينة ومركز أعمار الديون (FIFO)",
+      "Customers owing": "عملاء عليهم أرصدة مستحقة",
+      "Gross receivables": "إجمالي الذمم المدينة",
+      "Customers with debit balance": "العملاء ذوو الرصيد المدين",
+      "Customer advances": "سلف ودفعات العملاء المقدمة",
+      "Unapplied on-account credit": "دفعات دائنة على الحساب غير موزعة",
+      "Past due (>30 days)": "متأخرة (>30 يوماً)",
+      "31 to 60d + 60+d buckets": "شريحتا 31–60 يوماً و+60 يوماً",
+      "Over 60 days": "أكثر من 60 يوماً",
+      "FIFO oldest unpaid tickets": "أقدم الإيصالات غير المسددة (FIFO)",
+      "2 · Credit Sales, Collections, DSO & Credit Limits": "2 · المبيعات الآجلة والتحصيلات وفترة التحصيل والسقوف الائتمانية",
+      "Ticketed TTC on account": "مفوتر شامل الضريبة على الحساب",
+      "Applied oldest ticket first": "مسدد للأقدم أولاً (FIFO)",
+      "Collected %": "نسبة التحصيل %",
+      "Avg days to collect": "متوسط أيام التحصيل",
+      "Days Sales Outstanding (DSO)": "متوسط فترة التحصيل (DSO)",
+      "Customer credit limits": "السقوف الائتمانية للعملاء",
+      "11% VAT remaining in open AR": "ضريبة 11% المتبقية ضمن الذمم المفتوحة",
+      "Monthly credit billings vs customer cash/check collections": "الفوترة الآجلة الشهرية مقابل تحصيلات العملاء نقداً وبشيكات",
+      "Customers owing at month end — gross, advances, net": "ذمم العملاء في نهاية الشهر — الإجمالي والسلف والصافي",
+      "Gross owing vs customer advances (on account) and Net AR trajectory": "إجمالي الذمم مقابل سلف العملاء ومسار صافي الذمم المدينة",
+      "Gross": "الإجمالي",
+      "Net": "الصافي",
+      "AR aging": "أعمار الذمم المدينة",
+      "FIFO open receivables by aging bucket · On account (unapplied customer advances) shown below zero": "الذمم المفتوحة حسب الشريحة الزمنية (FIFO) · الدفعات على الحساب تظهر تحت الصفر",
+      "Current–30d": "جاري–30 يوم",
+      "Top customer balances as at period end (FIFO allocated)": "أكبر أرصدة العملاء في نهاية الفترة (موزعة وفق FIFO)",
+      "Customer balances & aging": "أرصدة العملاء وأعمار الديون",
+      "Customer receipts register": "سجل مقبوضات العملاء",
+      "Customer Credit Terms, Limits & 11% VAT Tax Invoices": "شروط وسقوف ائتمان العملاء وفواتير ضريبة 11%",
+      "Material, Haulage & Expense Payables": "ذمم المواد الأولية والنقل والمصاريف الدائنة",
+      "Net Open AP Balance": "صافي رصيد الذمم الدائنة المفتوح",
+      "Leg 3 · Credit Expenses": "الشق 3 · المصاريف الآجلة",
+      "Supplier Settlements Paid": "تسديدات الموردين المدفوعة",
+      "Cash, check & bank wires": "نقداً وشيكات وحوالات مصرفية",
+      "Active Suppliers & Haulers": "الموردون والناقلون النشطون",
+      "With ledger activity": "ذوو حركة في الدفتر",
+      "2 · Operating Expenses & Cost Class Breakdown": "2 · المصاريف التشغيلية وتفصيل فئات التكلفة",
+      "Total General Expenses": "إجمالي المصاريف العامة",
+      "Paid from Till": "مدفوع من الصندوق",
+      "Credit Expenses": "مصاريف آجلة",
+      "Booked to Supplier AP Leg 3": "مرحّل إلى ذمم الموردين (الشق 3)",
+      "Total Raw Material Cost": "إجمالي تكلفة المواد الأولية",
+      "Material + haulage per m³": "المواد + النقل لكل م³",
+      "Production · OpEx · CapEx": "إنتاج · تشغيل · رأسمالي",
+      "Monthly supplier accruals (raw material + haulage + credit expenses) vs supplier settlements paid": "استحقاقات الموردين الشهرية (مواد + نقل + مصاريف آجلة) مقابل التسديدات المدفوعة",
+      "Accrued (Raw + Credit Exp)": "المستحق (خام + مصاريف آجلة)",
+      "Top expense categories in the selected period": "أعلى فئات المصاريف في الفترة المحددة",
+      "Payables by supplier / hauler": "الذمم الدائنة حسب المورد / الناقل",
+      "Net closing AP balance (+ owed by company, − advance to supplier)": "صافي الذمم الدائنة الختامي (+ مستحق على الشركة، − سلفة للمورد)",
+      "Raw material & haulage volume by supplier": "حجم المواد الأولية والنقل حسب المورد",
+      "Total raw material + haulage accrued": "إجمالي استحقاق المواد الأولية + النقل",
+      "Supplier 3-leg payables & settlements schedule": "جدول ذمم الموردين ثلاثي الشقوق والتسديدات",
+      "3 · Items, Spare Parts & Oils Purchased (Locked UoM Catalog)": "3 · الأصناف وقطع الغيار والزيوت المشتراة (دليل الوحدات المعتمد)",
+      "Catalog Items Tracked": "أصناف الدليل المتتبعة",
+      "Itemized Expense Tickets": "فواتير المصاريف المفصّلة بالأصناف",
+      "Linked to locked-UoM catalog": "مرتبطة بدليل وحدات القياس المعتمدة",
+      "Top Purchased Item": "الصنف الأعلى شراءً",
+      "Items & Spare Parts Spend & Locked UoM Schedule": "جدول إنفاق الأصناف وقطع الغيار ووحدات القياس المعتمدة",
+      "4 · Standing Recurring Expense Schedules (Rent, Telecom, Security & Retainers)": "4 · جداول المصاريف الدورية الثابتة (إيجارات، اتصالات، حراسة وبدلات)",
+      "Active Monthly Run-Rate ($/mo)": "المعدل الشهري النشط ($/شهر)",
+      "Active Monthly Run-Rate": "المعدل الشهري النشط",
+      "Projected 12-month standing run-rate": "الالتزام السنوي التقديري لـ 12 شهراً",
+      "Cumulative Schedule Accrued ($)": "الاستحقاق التراكمي للجداول ($)",
+      "Top Standing Commitment": "أكبر التزام دوري ثابت",
+      "Top Standing Vendor": "أكبر مورد دوري",
+      "Standing Recurring Expense Schedules & Accrued Run-Rate": "جداول المصاريف الدورية الثابتة والاستحقاق المتراكم",
+      "Raw Intake, Unit Economics & Cost Split": "توريد المواد الأولية واقتصاديات الوحدة وتفصيل التكلفة",
+      "1 · Raw Material Intake, Tonnage & Two-Leg Cost Split": "1 · توريد المواد الأولية والأطنان وتفصيل التكلفة ثنائي الشق",
+      "Raw Tons Purchased": "الأطنان الخام المشتراة",
+      "Aggregate Unit Spread": "هامش ربح الوحدة الصافي",
+      "Unit economics by month · raw cost vs selling price ($/m³)": "اقتصاديات الوحدة شهرياً · تكلفة الخام مقابل سعر البيع ($/م³)",
+      "Raw intake cost split by month · material vs 3rd-party haulage ($)": "توزيع تكلفة الخام شهرياً · المواد مقابل النقل الخارجي ($)",
+      "Raw material families · bought in vs sold out as finished grades": "عائلات المواد الأولية · المشترى مقابل المباع كأصناف جاهزة",
+      "Tank Balance, Burn Rates & Meter Audit": "رصيد الخزان ومعدلات الاستهلاك وتدقيق العدادات",
+      "1 · Diesel Tank Reconciliation, Malfunction Watchdog & Meter Guard": "1 · مطابقة خزان المازوت ومراقب الفروقات وحارس العدادات",
+      "Diesel Purchased": "المازوت المشترى",
+      "Diesel Issued to Fleet": "المازوت المصروف للأسطول",
+      "Diesel Sold on Tickets": "المازوت المباع بموجب إيصالات",
+      "Remaining in Tank": "المتبقي في الخزان",
+      "= Remaining in Tank": "= المتبقي في الخزان",
+      "Unbooked bulk invoice history": "سجل فواتير الجملة قيد التسعير",
+      "Outliers & Meter Guard": "حالات الشذوذ وحارس العدادات",
+      "Diesel bought, issued and sold by month with balance in tank": "المازوت المشترى والمصروف والمباع شهرياً مع رصيد الخزان",
+      "Monthly diesel consumption, malfunction reconciliation & remaining tank ledger": "سجل استهلاك المازوت الشهري ومطابقة الفروقات والرصيد المتبقي",
+      "Equipment fuel efficiency · Litres, km run & L / 100 km": "كفاءة استهلاك وقود الآليات · اللترات والكيلومترات ولتر / 100 كم",
+      "Payroll Earnings, Attendance & Allowances": "استحقاقات الرواتب والحضور والبدلات",
+      "1 · Payroll Earnings, Base Salaries, Overtime & Disbursements": "1 · استحقاقات الرواتب والأساسي والإضافي والمدفوعات",
+      "Staff on payroll": "الموظفون على جدول الرواتب",
+      "Base & transp. reimb.": "الأساسي وبدل النقل",
+      "Total earnings": "إجمالي الاستحقاقات",
+      "Base + Reimb + OT + Site - Ded": "الأساسي + البدل + الإضافي + المواقع − الحسميات",
+      "2 · Remaining Payment, Advances, Hours & Contract Hygiene": "2 · الرصيد المتبقي والسلف والساعات وسلامة العقود",
+      "Remaining payment": "الرصيد المتبقي للدفع",
+      "Staff Remaining Payment": "المتبقي للموظفين",
+      "Post-cutoff advances": "سلف بعد تاريخ الإقفال",
+      "Future payroll-month payouts": "دفعات محسوبة على أشهر قادمة",
+      "Overtime hours": "ساعات العمل الإضافي",
+      "Logged on attendance sheets": "مسجلة في جداول الحضور",
+      "Lateness hours": "ساعات التأخير",
+      "Deducted at hourly rate": "محسومة وفق أجر الساعة",
+      "Absence days": "أيام الغياب",
+      "Recorded unpaid absence days": "أيام غياب غير مدفوعة مسجلة",
+      "Payments without contract": "دفعات بدون عقد سارٍ",
+      "3 · All-Time Salary Disbursements & Workforce Ratios": "3 · إجمالي الرواتب المدفوعة ومؤشرات القوى العاملة",
+      "Staff paid": "موظفون تم الدفع لهم",
+      "Avg salary payment": "متوسط دفعة الراتب",
+      "Per disbursement voucher": "لكل سند صرف راتب",
+      "Staff cost % of sales": "نسبة تكلفة الموظفين من المبيعات %",
+      "Salaries ÷ Net sales": "الرواتب ÷ صافي المبيعات",
+      "Avg earnings per staff": "متوسط الاستحقاق للموظف",
+      "Across selected roster": "عبر الكادر المحدد",
+      "Overtime % of earnings": "نسبة الإضافي من الاستحقاقات %",
+      "Overtime share of pay": "حصة العمل الإضافي من الأجر",
+      "Overtime and lateness hours by month": "ساعات العمل الإضافي والتأخير شهرياً",
+      "Monthly Overtime vs. Lateness Hours": "ساعات الإضافي مقابل التأخير شهرياً",
+      "Top Staff Members by Logged Overtime Hours": "أعلى الموظفين تسجيلاً لساعات العمل الإضافي",
+      "Staff on site transport": "موظفون يتقاضون بدل انتقال مواقع",
+      "Confirmed on-site days": "أيام حضور مؤكدة في المواقع",
+      "Site transport earned by staff member": "بدل انتقال المواقع المكتسب حسب الموظف",
+      "Balance due": "الرصيد المستحق",
+      "Earned − Paid": "المكتسب − المدفوع",
+      "Freelance & daily rate contracts": "عقود المياومة والعمل الحر",
+      "No Freelance-type contracts filtered": "لا توجد عقود عمل حر مطابقة للتصفية",
+      "Inflows vs Outflows, Daily Till & Mix": "الوارد مقابل الصادر والصندوق اليومي",
+      "1 · Cash Flow & Daily Plant Till": "1 · التدفق النقدي وصندوق المصنع اليومي",
+      "Closing Cash Till": "رصيد إقفال الصندوق",
+      "Combined Cash Till": "رصيد الصندوق الموحّد",
+      "Combined USD + LBP book till": "رصيد الصندوق الدفتري الموحد (دولار + ليرة)",
+      "Op. Sales/AR + Treasury/FX in": "مبيعات/تحصيلات + خزينة/صرافة واردة",
+      "Op. Exp/AP/Payroll + Sweeps out": "مصاريف/موردون/رواتب + تحويلات صادرة",
+      "Inflows − Outflows in period": "الوارد − الصادر خلال الفترة",
+      "Monthly Cash Flow & Till Progression": "التدفق النقدي الشهري وتطور رصيد الصندوق",
+      "Cash Till Entries Explorer": "مستكشف حركات صندوق النقد",
+      "Selected Period Cash Flow": "التدفق النقدي للفترة المحددة",
+      "Commercial Coverage": "التغطية التجارية",
+      "Avg Agreement Rates": "متوسط أسعار الاتفاقيات",
+      "Realized Selling Rate": "متوسط سعر البيع المحقق",
+      "Sales Commission Earned": "عمولة المبيعات المكتسبة",
+      "Agreed Min–Max Corridor & Benchmark": "نطاق الحد الأدنى–الأعلى المتفق عليه والمعيار",
+      "Material & Haulage Accrued": "استحقاق المواد والنقل",
+      "Supplier Sites": "مواقع الموردين",
+      "Quarry & Transport Remaining": "المتبقي للكسارات والنقل",
+      "Unit Landed Economics": "اقتصاديات تكلفة الوحدة الواصلة",
+      "Bundled Quarry Delivery Note:": "ملاحظة توريد الكسارات الشامل للنقل:",
+      "Material Cost includes Transportation": "تكلفة المواد تشمل النقل",
+      "Mat + Haul landed rates": "أسعار المواد + النقل الواصلة",
+      "Quarry & Haulage Coverage": "تغطية اتفاقيات الكسارات والنقل",
+      "Avg Site Material Rate": "متوسط سعر مواد الموقع",
+      "Avg Quarry Transport Rate": "متوسط أجرة نقل الكسارة",
+      "Over-Rate Pairs": "أزواج متجاوزة للسعر",
+      "JV 50/50 Stock Entitlement": "استحقاق مخزون الشراكة 50/50",
+      "JV Distributions Paid": "توزيعات الشراكة المدفوعة",
+      "Net Stock Position": "صافي مركز المخزون",
+      "Settled / Advance": "مسدّد / دفعة مقدمة",
+      "JV Partnership Contracts": "عقود الشراكة (JV)",
+      "50% / 50% Split": "مناصفة 50% / 50%",
+      "Monthly JV Partner Distributions ($)": "التوزيعات الشهرية لشركاء المواقع ($)",
+      "Revenue Basis": "أساس الإيراد",
+      "Stock Basis": "أساس المخزون",
+      "Avg Expense Voucher": "متوسط سند المصروف",
+      "Overhead intensity": "كثافة المصاريف التشغيلية",
+      "Rem Ex-VAT": "المتبقي دون الضريبة",
+      "Items & Parts Catalog": "دليل الأصناف وقطع الغيار",
+      "Top Spend Category": "الفئة الأعلى إنفاقاً",
+      "Credit Leg 3 AP": "ذمم المصاريف الآجلة (الشق 3)",
+      "+ New Expense Ticket": "+ فاتورة مصروف جديدة",
+      "+ New Raw Receipt": "+ إيصال مواد أولية جديد",
+      "+ New Site Agreement": "+ اتفاقية موقع جديدة",
+      "+ New JV Entry": "+ قيد شراكة جديد",
+      "+ New Fuel Ticket": "+ إيصال وقود جديد",
+      "+ New Treasury / Loan": "+ حركة خزينة / قرض",
+      "AP Settlement Ratio": "نسبة تسديد الذمم الدائنة",
+      "3-Leg Remaining Payables": "صافي الذمم الدائنة المتبقية (3 شقوق)",
+      "Avg Supplier Payment": "متوسط دفعة المورد",
+      "Active Counterparty Reach": "نطاق الموردين والناقلين النشطين",
+      "Payables by Supplier, Hauler & Vendor ($)": "الذمم الدائنة حسب المورد والناقل ($)",
+      "Total Saved Documents": "إجمالي المستندات المحفوظة",
+      "Invoices, Bills & Tax": "الفواتير والإشعارات والضرائب",
+      "Quick Save Invoice, Receipt, Contract or Scan": "حفظ سريع لفاتورة أو إيصال أو عقد أو صورة ضوئية",
+      "Saved Documents & Receipts by Category (Count & $ Value)": "المستندات والإيصالات المحفوظة حسب الفئة (العدد والقيمة $)",
+      "Document Vault Volume by Counterparty & Linked Module ($)": "حجم خزينة المستندات حسب الطرف المقابل والوحدة ($)",
+      "Tank Unreconciled": "فارق الخزان غير المطابق",
+      "Lubricants & Fuel Mix": "مزيج الوقود والزيوت والشحوم",
+      "Fueled Fleet & Ownership Split": "الأسطول المزوّد بالوقود وتوزيع الملكية",
+      "Meter Tolerance Guard": "حارس سماحية العدادات",
+      "Opening Tank": "رصيد الخزان الافتتاحي",
+      "All-time opening anchor": "الرصيد الافتتاحي المرجعي",
+      "- Fleet & Hauler Used": "- استهلاك الأسطول والناقلين",
+      "- Diesel Sold": "- المازوت المباع",
+      "Variance (+Out / -In)": "الفارق (+صادر / -وارد)",
+      "Equipment / Slip": "الآلية / الإيصال",
+      "Monthly Diesel Bought, Issued & Sold with Tank Balance (L)": "المازوت المشترى والمصروف والمباع شهرياً مع رصيد الخزان (لتر)",
+      "Fleet Operational Readiness": "الجاهزية التشغيلية للأسطول",
+      "Equipment Warnings (Grave vs Mild)": "تنبيهات الآليات (حرجة مقابل طفيفة)",
+      "Repair Cost": "تكلفة التصليحات",
+      "Preventive Oil Service Schedule": "جدول الصيانة الوقائية وغيار الزيت",
+      "On Time": "في الموعد",
+      "Monthly Repair & Spare Spend ($)": "الإنفاق الشهري على التصليحات وقطع الغيار ($)",
+      "Oils & Tools": "الزيوت والعدد",
+      "Maintenance & Spare Spend by Subsystem ($)": "إنفاق الصيانة وقطع الغيار حسب المنظومة ($)",
+      "Workshop Repairs": "تصليحات المشغل",
+      "Tools, Welding & Body": "العدد واللحام والحدادة",
+      "Engine & Mech. Parts": "قطع المحرك والميكانيك",
+      "Dispatched Driver Trips": "نقلات السائقين المنفّذة",
+      "Co. Drivers": "سائقو الشركة",
+      "Overtime Rules & BU Roster": "قواعد الإضافي وكادر الشركة",
+      "Monthly Overtime Bonus ($) vs. Dispatched Loads": "مكافآت الإضافي الشهرية ($) مقابل النقلات المنفّذة",
+      "Dispatched Trips by Driver (Sales + Raw)": "النقلات المنفّذة حسب السائق (مبيعات + خام)",
+      "Stored SKUs in Stock": "الأصناف المخزّنة المتوفرة",
+      "Active SKUs": "أصناف نشطة",
+      "Total Units On Hand": "إجمالي الوحدات المتوفرة",
+      "Warehouse Stock Value": "قيمة مخزون المستودع",
+      "Weighted Avg Cost": "المتوسط المرجح للتكلفة",
+      "Repair Uses": "صرف للتصليح",
+      "Top Warehouse Items & Spare Parts by Valuation / Spend ($)": "أعلى أصناف المستودع وقطع الغيار قيمةً وإنفاقاً ($)",
+      "Warehouse Catalog & Stock by Item Category ($)": "دليل ومخزون المستودع حسب فئة الصنف ($)",
+      "Workshop Repair Parts": "قطع تصليحات المشغل",
+      "Part Lines": "بنود قطع",
+      "Purchased Item Lines": "بنود الأصناف المشتراة",
+      "Machines & Units Served": "الآليات والوحدات المخدومة",
+      "Combined Parts & Oils": "إجمالي القطع والزيوت",
+      "Top Consumed & Issued Spare Parts, Tyres & Oils ($)": "أعلى قطع الغيار والإطارات والزيوت استهلاكاً وصرفاً ($)",
+      "Routing / Equipment": "التوجيه / الآلية",
+      "Contract Coverage": "تغطية العقود",
+      "Payroll Match Audit": "تدقيق مطابقة الرواتب",
+      "Monthly Staff Earnings vs. Salary Disbursements ($)": "استحقاقات الموظفين الشهرية مقابل الرواتب المدفوعة ($)",
+      "Staff Earnings": "استحقاقات الموظفين",
+      "Top Staff Members by Earnings ($)": "أعلى الموظفين حسب إجمالي الاستحقاق ($)",
+      "No Contract on File": "بدون عقد مسجّل",
+      "In the Plant Today": "في المصنع اليوم",
+      "In Plant": "في المصنع",
+      "Absent / On Leave Today": "غائب / مجاز اليوم",
+      "Full Roster": "الكادر مكتمل",
+      "Grease, Oil & Diesel Audit": "تدقيق الشحم والزيت والمازوت",
+      "Crusher, Washer & Power Generators": "الكسارة والمغسلة ومولدات الطاقة",
+      "Standby Fleet Drivers in Plant Yard": "سائقو الأسطول المناوبون في ساحة المصنع",
+      "Plant, Weighbridge & Office Roster On Shift": "مناوبة المصنع والقبان والمكتب",
+      "Next Alert Day": "يوم التنبيه التالي",
+      "Service / Intake": "الصيانة / الصرف",
+      "Oil & Lube Expense": "مصروف زيوت وشحوم",
+      "Machines (Operated / Assigned)": "الآليات (المشغّلة / المعيّنة)",
+      "Overtime Hours Logged": "ساعات العمل الإضافي المسجّلة",
+      "Lateness & Deductions": "التأخير والحسميات",
+      "Attendance Register Scope": "نطاق سجل الحضور",
+      "Site Transport Earned": "بدل انتقال المواقع المكتسب",
+      "On-Site Paid Days": "أيام العمل الميداني المدفوعة",
+      "Verified Site Coverage": "تغطية المواقع المؤكدة",
+      "Verified Site & Machine Output": "إنتاجية المواقع والآليات المؤكدة",
+      "Site Transport & Verified On-Site Days by Staff ($)": "بدل انتقال المواقع وأيام الحضور الميداني المؤكدة حسب الموظف ($)",
+      "At Plant / Ded.": "في المصنع / محسوم",
+      "Active Contract Coverage": "تغطية العقود النشطة",
+      "Contracted Monthly Payroll": "كتلة الرواتب الشهرية المتعاقد عليها",
+      "Regional Trip & OT Rules": "قواعد بدل النقلات والإضافي حسب المنطقة",
+      "Total / Mo ($)": "الإجمالي / شهر ($)",
+      "Monthly Compensation by Staff Contract ($)": "التعويض الشهري حسب عقد الموظف ($)",
+      "Borrowing & Staff Advances": "القروض وسلف الموظفين",
+      "Salary & Workforce Payments": "مدفوعات الرواتب والأجور",
+      "NET FX CONVERSION IMPACT": "صافي أثر تحويل العملات",
+      "External Cash In (Injections)": "النقد الخارجي الوارد (تمويلات)",
+      "External Cash Out (Sweeps)": "النقد الخارجي الصادر (سحوبات خزينة)",
+      "Net External Movement": "صافي الحركة الخارجية",
+      "External & Extended Stakeholder Treasury Analytics": "تحليلات الخزينة للأطراف الخارجية والشركاء",
+      "Partner Injections, Withdrawals, Inter-Account Transfers & Extended Stakeholder Movements": "تمويلات الشركاء والمسحوبات والتحويلات بين الحسابات وحركات الأطراف الموسّعة",
+      "Total Facilities & Recovery": "إجمالي التسهيلات والاسترداد",
+      "Partner Treasury, Loans & USD ↔ LBP FX Conversions": "خزينة الشركاء والقروض وعمليات الصرافة دولار ↔ ليرة",
+      "Partner Loans, Repayments, External Movements & USD ↔ LBP Exchange Position": "قروض الشركاء والتسديدات والحركات الخارجية ومركز الصرافة دولار ↔ ليرة",
+      "Total FX Volume": "إجمالي حجم الصرافة",
+      "Net USD Drawer Impact": "صافي الأثر على صندوق الدولار",
+      "USD Inflow": "وارد دولار",
+      "Net LBP Drawer Impact": "صافي الأثر على صندوق الليرة",
+      "LBP Outflow": "صادر ليرة",
+      "Average Exchange Rate": "متوسط سعر الصرف",
+      "Market Rate": "سعر السوق",
+      "Global LBP Accounting & Payroll Rate": "سعر صرف الليرة المحاسبي الموحّد للنظام والرواتب",
+      "USD ↔ LBP Currency Desk & Till Analytics": "مكتب صرافة الدولار ↔ الليرة وتحليلات الصندوق",
+      "Active Chart of Accounts": "شجرة الحسابات النشطة",
+      "Working Capital Posture": "مركز رأس المال العامل",
+      "Active GL Accounts": "حسابات الأستاذ العام النشطة",
+      "Total Gross Debits": "إجمالي المدين",
+      "Double-Entry Dr": "مدين مزدوج",
+      "Total Gross Credits": "إجمالي الدائن",
+      "Double-Entry Cr": "دائن مزدوج",
+      "Class Parity Check": "فحص تطابق الأصناف المحاسبية",
+      "Direct Formula Rules": "قواعد المعادلات المباشرة",
+      "Ticket & Rate Driven": "مدفوعة بالإيصالات والأسعار",
+      "Category Auto-Mapped": "مربوطة تلقائياً بالفئات",
+      "Active Register": "السجل النشط",
+      "Governance Scope": "نطاق الحوكمة",
+      "Active view:": "العرض النشط:",
+      "Filter & View Yield": "نتائج التصفية والعرض",
+      "Matching rows in active scope": "السطور المطابقة في النطاق النشط",
+      "Click any row for 360° Inspector & Subgrids": "اضغط على أي سطر لفتح بطاقة 360° والجداول المرتبطة",
+      "1 · Sales, Pricing & Receivables": "1 · المبيعات والتسعير والذمم المدينة",
+      "2 · Purchases, Expenses & Payables": "2 · المشتريات والمصاريف والذمم الدائنة",
+      "3 · Fleet, Fuel, Maintenance & Drivers": "3 · الأسطول والوقود والصيانة والسائقون",
+      "4 · Payroll, Attendance & Workforce": "4 · الرواتب والحضور والقوى العاملة",
+      "5 · Cash Flow, Treasury & FX": "5 · التدفق النقدي والخزينة والصرافة",
+      "Shared Treasury & Sister Clearing (GL 181)": "الخزينة المشتركة ومقاصة الشركات الشقيقة (حساب 181)",
+      "Open Leg": "شق مفتوح",
+      "Statement Code": "رمز الكشف",
+      "Reporting Window": "فترة التقرير",
+      "undefined to undefined": "كامل الفترة",
+      "Shared Holding Overhead": "المصاريف المشتركة للقابضة",
+      "Net Intercompany Clearing": "صافي المقاصة بين الشركات الشقيقة",
+      "Principal Partner": "الشريك الرئيسي",
+      "AR Open": "ذمم مدينة مفتوحة",
+      "· Verified ledger tie-out": "· مطابقة دفترية مؤكدة",
+      "Active contracts & direct operational cost": "العقود النشطة والتكلفة التشغيلية المباشرة",
+      "· 11% VAT tracked": "· ضريبة 11% متتبعة",
+      "Net Contribution": "صافي المساهمة",
+      "Double-entry Lebanese PCG tied ($0 variance)": "مطابق وفق النظام المحاسبي اللبناني المزدوج ($0 فرق)",
+      "Biometric logs": "سجلات البصمة الحيوية",
+      "· Active contracts": "· عقود نشطة",
+      "Supplier / Vault Scan": "المورد / المستند الممسوح",
+      "Counterparty / Facility": "الطرف المقابل / التسهيل",
+      "Unit / Operational Asset": "الوحدة / الأصل التشغيلي",
+      "Staff / Control Watchdog": "الموظف / الرقابة الآلية",
+      "Investments in Group Subsidiaries": "الاستثمارات في الشركات التابعة للمجموعة",
+      "Repayment Rate:": "نسبة السداد:",
+      "paid back overall": "مسدد إجمالاً",
+      "verified in both books (±3d)": "مطابق في دفتري الشركتين (±3 أيام)",
+      "Green = Paid Back ($) · Amber = Unpaid Balance Still Owed ($)": "أخضر = مسدد ($) · كهرماني = رصيد غير مسدد لا يزال مستحقاً ($)",
+      "Specific Facility / Counterparty:": "تسهيل / طرف مقابل محدد:",
+      "External facilities & partner credit": "تسهيلات خارجية وائتمان شركاء",
+      "Full double-entry SOA integration": "تكامل كامل مع كشف الحساب بالقيد المزدوج",
+      "Intercompany Sister Repayment & Transfer Ledger": "سجل التحويلات والتسديدات بين الشركات الشقيقة",
+      "To Sister": "إلى الشركة الشقيقة",
+      "Total Sister Repayment": "إجمالي تسديدات الشركات الشقيقة",
+      "Net Unpaid": "صافي غير المسدد",
+      "Net Unpaid Across Group": "صافي الرصيد غير المسدد عبر المجموعة",
+      "Net Base:": "صافي الأساس:",
+      "Margin Rate:": "نسبة الهامش:",
+      "of Net Base": "من صافي الأساس",
+      "Gross Billed Revenue / GWP": "إجمالي الإيراد المفوتر / الأقساط المكتتبة",
+      "Net Operating Revenue / Earned Comm": "صافي الإيراد التشغيلي / العمولة المكتسبة",
+      "Gross Operating Margin / Net Brokerage": "مجمل الربح التشغيلي / صافي الوساطة",
+      "Plant, Venue, Showroom & Office Expenses": "مصاريف المصانع والمنتجعات وصالات العرض والمكاتب",
+      "Payroll, Salaries & Site Transport": "الرواتب والأجور وبدلات انتقال المواقع",
+      "NET CONSOLIDATED OPERATING CONTRIBUTION": "صافي المساهمة التشغيلية الموحّدة",
+      "Interactions Register": "سجل المعاملات البينية",
+      "+ Intercompany Entry": "+ قيد بيني جديد",
+      "+ Capital / Asset Voucher": "+ سند أصل / رأسمالي",
+      "Category / Asset Class": "الفئة / صنف الأصل",
+      "Net Lender (Gave Funds)": "المموّل الصافي (مانح السيولة)",
+      "Transfers (Gave / Repaid)": "التحويلات (منح / استرداد)",
+      "Total Given ($)": "إجمالي الممنوح ($)",
+      "Net Still Owed ($)": "صافي المستحق المتبقي ($)",
+      "Repayment Status & Who Owes Whom": "حالة السداد واتجاه المديونية",
+      "Actively Paying Back": "يسدد بانتظام",
+      "Partial Repayment": "سداد جزئي",
+      "PARTNER DRAWINGS / OUT ($)": "مسحوبات وتوزيعات الشركاء ($)",
+      "Shareholder injections & receipts": "تمويلات ومقبوضات المساهمين",
+      "Distributions, settlements & drawings": "التوزيعات والتسويات والمسحوبات",
+      "Capital In minus Drawings Out": "رأس المال الوارد ناقص المسحوبات",
+      "Beach & Pool Gate": "بوابة الشاطئ والمسبح",
+      "Chalet Rental": "تأجير الشاليهات",
+      "30.5% FOOD COST": "30.5% تكلفة الأغذية",
+      "Kitchen, Bar & Cellar Consumption vs F&B Sales Cost Ratio Watchdog": "مراقب نسبة استهلاك المطبخ والبار والقبو إلى مبيعات المطاعم",
+      "Day-pass admissions & sunbed packages": "تذاكر الدخول اليومية وباقات الشاطئ",
+      "Gross Venue Revenue": "إجمالي إيرادات المنتجع",
+      "Gate day-passes, banquets & VIP valet": "دخوليات البوابة والحفلات وخدمة الركن VIP",
+      "POS Shift Close": "إقفال وردية نقاط البيع",
+      "+ POS Shift Close": "+ إقفال وردية كاشير",
+      "Resort VAT & Tax Guard": "حارس الضريبة والالتزام الضريبي للمنتجع",
+      "POS Shift Close & Bill Variance": "إقفال ورديات الكاشير وفروقات الفواتير",
+      "Commissary & Cellar Purchases": "مشتريات المستودع الغذائي والقبو",
+      "Depleted via POS & banquet covers": "مستهلك عبر نقاط البيع والحفلات",
+      "Closing Cellar & Cold Stock": "مخزون الإقفال للقبو والتبريد",
+      "Purchase-to-Usage Ratio": "نسبة المشتريات إلى الاستهلاك",
+      "Menu Food & Pour Cost %": "نسبة تكلفة الأغذية والمشروبات %",
+      "Engineered Menu Items": "أصناف القائمة المسعّرة هندسياً",
+      "Menu Engineering & Food Cost %": "هندسة القائمة ونسبة تكلفة الأغذية %",
+      "Unit Margin ($)": "هامش الوحدة ($)",
+      "Active Memberships": "الاشتراكات النشطة",
+      "Venue Revenue & Chalets": "إيرادات المرافق والشاليهات",
+      "POS SHIFT CLOSE & BILL-TO-COLLECTION RECONCILIATION": "إقفال ورديات الكاشير ومطابقة الفواتير مع التحصيل",
+      "Close Variance": "فارق الإقفال",
+      "Close Variance ($)": "فارق الإقفال ($)",
+      "Shift Ref": "مرجع الوردية",
+      "Terminal & Shift": "الجهاز والوردية",
+      "Cashier": "أمين الصندوق (الكاشير)",
+      "POS Billed ($)": "المفوتر عبر POS ($)",
+      "Seasonal Membership Contracts": "عقود الاشتراكات الموسمية",
+      "Collected Membership Cash": "المحصّل النقدي من الاشتراكات",
+      "Remaining Member Arrears": "متأخرات المشتركين المتبقية",
+      "Partner Split Revenue Pool": "مجمع الإيرادات الخاضع لتوزيع الشركاء",
+      "Bdeir Holding Group Share": "حصة مجموعة بدير القابضة",
+      "Retained resort equity share": "حصة الملكية المحتجزة للمنتجع",
+      "Open Partner Payable": "مستحقات الشركاء المفتوحة",
+      "Pending distribution settlement": "بانتظار تسوية التوزيعات",
+      "MENU ENGINEERING, RECIPE BOM COST & GROSS MARGIN CONTRIBUTION": "هندسة القائمة وتكلفة الوصفات المعيارية ومساهمة مجمل الربح",
+      "Stars (High Margin)": "نجوم القائمة (هامش مرتفع)",
+      "+ Menu Price / BOM": "+ تسعير صنف / وصفة",
+      "Menu Item / Package": "صنف القائمة / الباقة",
+      "Outlet Category": "فئة المنفذ",
+      "Menu Price ($)": "سعر القائمة ($)",
+      "Food Cost %": "تكلفة الغذاء %",
+      "Units Sold": "الوحدات المباعة",
+      "Menu Engineering Class": "تصنيف هندسة القائمة",
+      "Plowhorse (High Vol · Watch Cost)": "سحب عالٍ · راقب التكلفة",
+      "Star (High Margin · High Vol)": "نجم (هامش عالٍ · مبيع عالٍ)",
+      "Specific Generator / Facility Plant:": "مولد / مرفق طاقة محدد:",
+      "Resort Diesel Tank Reserves": "احتياطي خزانات مازوت المنتجع",
+      "Generator Burn & Run Hours": "استهلاك وساعات عمل المولدات",
+      "Generator Burn Rate Guard": "حارس معدل استهلاك المولدات",
+      "All Within Curve": "ضمن المنحنى المعياري",
+      "Venue Repairs & Preventive Maintenance": "تصليحات المرافق والصيانة الوقائية",
+      "Open Facility Work Orders": "أوامر عمل المرافق المفتوحة",
+      "Normal Burn": "استهلاك طبيعي",
+      "Below-Floor / Low-Margin Heavy Truck & Parts Sale Watchdog": "مراقب بيع الشاحنات الثقيلة وقطع الغيار دون السعر الأدنى أو بهامش منخفض",
+      "Delivered": "مسلّم",
+      "Optimal Stock": "مخزون مثالي",
+      "Reorder Alert": "تنبيه إعادة طلب",
+      "In Showroom": "في صالة العرض",
+      "Sales Revenue": "إيرادات المبيعات",
+      "Gross Margin & Realized Markup": "مجمل الربح ونسبة الهامش المحقق",
+      "Gross Receivables (Invoiced > Paid)": "إجمالي الذمم المدينة (المفوتر > المسدد)",
+      "Customer Advances (Unallocated)": "سلف العملاء (غير الموزعة)",
+      "Tracked separately from Gross AR (never netted)": "متتبعة بشكل منفصل عن إجمالي الذمم (لا تُقاص تلقائياً)",
+      "Active Collection Promises": "وعود التحصيل النشطة",
+      "Invoice Books Sequence Check": "فحص تسلسل دفاتر الفواتير",
+      "Active Import Files (FOB Value)": "ملفات الاستيراد النشطة (قيمة FOB)",
+      "Total Capitalized Landed Cost": "إجمالي التكلفة الواصلة المرسملة",
+      "Capitalized into Serial Chassis & Parts WAC": "مرسملة ضمن تكلفة الشاسيهات ومتوسط تكلفة القطع",
+      "Unallocated Landed Cost": "مصاريف استيراد غير موزعة",
+      "Open Supplier Backorders": "طلبيات الموردين المؤجلة المفتوحة",
+      "Warehouse Goods Receipts (GRNs)": "سندات استلام البضائع المخزنية (GRN)",
+      "Specific Chassis / Serial Unit:": "شاسيه / آلية مرقمة محددة:",
+      "Tracked Serial Units & Chassis": "الآليات والشاسيهات المتتبعة بالأرقام التسلسلية",
+      "Available Showroom & Yard Units": "الوحدات المتاحة في صالة العرض والساحة",
+      "Capitalized Chassis Landed Cost": "التكلفة الواصلة المرسملة للشاسيهات",
+      "Showroom List Valuation": "تقييم صالة العرض بالأسعار المعلنة",
+      "Open PDI & Warranty Claims": "أوامر فحص التسليم (PDI) ومطالبات الكفالة المفتوحة",
+      "OEM Warranty Recovery": "استردادات كفالة المصنّع الأصلي (OEM)",
+      "Workshop, PDI & OEM Warranty": "المشغل وفحص التسليم (PDI) وكفالات المصنّع",
+      "Commercial Revenue (TTC)": "الإيراد التجاري شامل الضريبة (TTC)",
+      "Heavy Trucks Delivered": "الشاحنات الثقيلة المسلّمة",
+      "FIFO Stock Valuation": "تقييم المخزون (FIFO)",
+      "Sequence Gap Placeholder": "حجز فجوة تسلسل دفتري",
+      "Sales Invoices & Lines": "فواتير وبنود المبيعات",
+      "GROSS RECEIVABLES VS. CUSTOMER ADVANCES & COLLECTION PROMISES": "إجمالي الذمم المدينة مقابل سلف العملاء ووعود التحصيل",
+      "Gross Receivables": "إجمالي الذمم المدينة",
+      "Customer Advances": "سلف العملاء",
+      "Collection Promises": "وعود التحصيل",
+      "+ Customer Settlement": "+ سند قبض عميل",
+      "Invoiced Amount ($)": "المبلغ المفوتر ($)",
+      "Customer Advance ($)": "سلفة العميل ($)",
+      "Promise Date": "تاريخ الوعد",
+      "Promise Amount ($)": "مبلغ الوعد ($)",
+      "Active Promise": "وعد نشط",
+      "Import Files & Backorders": "ملفات الاستيراد والطلبيات المؤجلة",
+      "LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE & INSURANCE": "توزيع التكلفة الواصلة: الشحن والجمارك والتخليص والتأمين",
+      "+ Landed Cost Voucher": "+ سند تكلفة واصلة",
+      "Landed ID": "رقم ملف التكلفة",
+      "Port Clearance ($)": "تخليص المرفأ ($)",
+      "Unallocated ($)": "غير موزع ($)",
+      "By Cubic Meter & Value": "حسب الحجم (م³) والقيمة",
+      "100% Allocated to Stock": "موزّع 100% على المخزون",
+      "By Line Value (Weighted Avg)": "حسب قيمة البند (المتوسط المرجح)",
+      "Serial Units & Chassis": "الوحدات المرقمة والشاسيهات",
+      "PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE & OEM WARRANTY RECOVERY": "الفحص قبل التسليم (PDI) وخدمة المشغل واسترداد الكفالات",
+      "Pre-Delivery Inspection": "الفحص قبل التسليم (PDI)",
+      "OEM Warranty Claims": "مطالبات كفالة المصنّع",
+      "+ PDI / Warranty Job": "+ أمر عمل فحص / كفالة",
+      "Job / Claim ID": "رقم أمر العمل / المطالبة",
+      "Truck / Equipment Model": "طراز الشاحنة / الآلية",
+      "Job Type": "نوع العمل",
+      "Service Bay & Tech": "حارة الخدمة والفني",
+      "Parts ($)": "القطع ($)",
+      "Labor ($)": "الأجور ($)",
+      "Recovery / Billed ($)": "المسترد / المفوتر ($)",
+      "Spare Parts & Tyres Valuation (WAC)": "تقييم قطع الغيار والإطارات (المتوسط المرجح)",
+      "On-Hand Spare Parts Units": "وحدات قطع الغيار المتوفرة",
+      "Inter-Company Transfers": "التحويلات المخزنية بين الشركات",
+      "Parallel Stock Recon": "مطابقة المخزون الموازية",
+      "Monthly P&L Recon": "مطابقة الأرباح والخسائر الشهرية",
+      "+ New Spare Part SKU": "+ صنف قطعة غيار جديد",
+      "LGB Bank Official Certified Appraisal": "التخمين الرسمي المعتمد من بنك LGB",
+      "Leases Expiring in 30/60/90 Days & 3-Year Stepped Escalation Watchdog": "مراقب عقود الإيجار المنتهية خلال 30/60/90 يوماً والزيادة التدريجية كل 3 سنوات",
+      "LEASES CURRENT": "عقود الإيجار سارية",
+      "Contracted Annual Rent Roll": "جدول الإيجارات السنوية المتعاقد عليها",
+      "Period Rent Invoiced": "إيجارات الفترة المفوترة",
+      "Unallocated Tenant Advances": "دفعات المستأجرين المقدمة غير الموزعة",
+      "Advance pool before period invoice matching": "رصيد السلف قبل ربط فواتير الفترة",
+      "Security Deposits Held": "تأمينات الإيجار المحتجزة",
+      "Period Rent Invoices & VAT Sequence": "فواتير إيجار الفترة والتسلسل الضريبي",
+      "Specific Property / Plot:": "عقار / عقار مساحي محدد:",
+      "Gross Portfolio Market Value": "القيمة السوقية الإجمالية للمحفظة",
+      "Group Share-Adjusted Value (/2400)": "قيمة حصة المجموعة المعدّلة (/2400 سهم)",
+      "Weighted by Lebanese cadastral title deed shares": "مرجحة بالأسهم العقارية اللبنانية من أصل 2400 سهم",
+      "Unit Occupancy Rate": "نسبة إشغال الوحدات",
+      "Portfolio Annual NOI": "صافي الدخل التشغيلي السنوي للمحفظة (NOI)",
+      "Net operating income across income-producing assets": "صافي الدخل التشغيلي عبر العقارات المدرة للدخل",
+      "Bank Appraisal & Market Valuations": "التخمينات المصرفية والتقييمات السوقية",
+      "In Progress": "قيد التنفيذ",
+      "Contracted Annual Rent (TTC)": "الإيجار السنوي التعاقدي شامل الضريبة",
+      "Portfolio Occupancy": "إشغال المحفظة العقارية",
+      "Properties Portfolio Rent Roll": "سجل إيجارات المحفظة العقارية",
+      "Cross-Tenant Swap Watch": "مراقبة تداخل دفعات المستأجرين",
+      "Net / Period ($)": "الصافي / الفترة ($)",
+      "Leases, Units & Escalations": "العقود والوحدات والزيادات التعاقدية",
+      "Official Tax Seq": "التسلسل الضريبي الرسمي",
+      "Billing Period": "فترة الفوترة",
+      "Net Rent ($)": "صافي الإيجار ($)",
+      "Settled via Bank Wire": "مسدد بحوالة مصرفية",
+      "Cleared against tenant advance": "مقاص من سلفة المستأجر",
+      "Contracted Property Sales": "مبيعات العقارات المتعاقد عليها",
+      "Collected Buyer Instalments": "أقساط المشترين المحصّلة",
+      "Remaining Buyer Balance": "رصيد المشترين المتبقي",
+      "Instalment Milestones Watch": "مراقبة استحقاقات دفعات المشترين",
+      "Unit / Parcel Sold": "الوحدة / العقار المباع",
+      "Pending Final Deed Transfer": "بانتظار الفراغ النهائي لسند الملكية",
+      "Capital Gain Recognized on Deed": "ربح رأسمالي محقق عند الفراغ",
+      "Deed Transferred & Registered": "تم الفراغ والتسجيل العقاري",
+      "Co-Owned Hold": "ملكية مشتركة محتفظ بها",
+      "Under Acquisition": "قيد الاستحواذ",
+      "Land Bank (LGB Appraised)": "محفظة أراضٍ (مخمّنة لدى LGB)",
+      "Properties, Map & Yields": "العقارات والخريطة والعوائد",
+      "Appraisal Date": "تاريخ التخمين",
+      "Group Share Value ($)": "قيمة حصة المجموعة ($)",
+      "Approved Fit-Out & Maintenance Budget": "موازنة التجهيز والصيانة المعتمدة",
+      "Structural CAPEX & Routine Facility Maintenance": "التحسينات الرأسمالية والصيانة الدورية للمباني",
+      "Unrecharged Tenant Expenses": "مصاريف مستأجرين بانتظار إعادة الفوترة",
+      "Total Recoverable Recharges": "إجمالي المصاريف القابلة للاسترداد",
+      "Due for renewal": "مستحق للتجديد",
+      "Policy (Renewal)": "بوليصة (تجديد)",
+      "Policy (New)": "بوليصة (جديدة)",
+      "Covered by Cash": "مغطى بالسيولة النقدية",
+      "Net Payable to Carriers": "صافي المستحق لشركات التأمين",
+      "Across 6 carriers under Net-of-Commission settlement": "عبر 6 شركات تأمين بنظام الصافي بعد حسم العمولة",
+      "Fiduciary Cash & Bank Coverage": "تغطية السيولة والحسابات الائتمانية",
+      "Carrier Statement Discrepancies": "فروقات كشوفات عمولات شركات التأمين",
+      "Gross Brokerage Commission": "إجمالي عمولة الوساطة",
+      "Net Commission After Discounts": "صافي العمولة بعد حسومات العملاء",
+      "30/60/90-Day Renewal Queue & Retention": "طابور التجديدات (30/60/90 يوماً) ونسبة الاحتفاظ",
+      "Expired (>0d Past)": "منتهية (>0 يوم)",
+      "Expired — not renewed": "منتهية — غير مجددة",
+      "Carrier Commission Statement Reconciliation": "مطابقة كشوفات عمولات شركات التأمين",
+      "Premium Invoices & Receipts": "فواتير ومقبوضات الأقساط",
+      "Insurer Net Premium Remittances & Fiduciary Cash": "تحويلات صافي الأقساط لشركات التأمين والسيولة الائتمانية",
+      "Net of Commission": "صافي بعد العمولة",
+      "Net of Commission (Bordereau)": "صافي بعد العمولة (جدول التحويل)",
+      "Motor Insurance": "تأمين المركبات",
+      "Medical & Health": "التأمين الطبي والصحي",
+      "Property & Fire": "تأمين الممتلكات والحريق",
+      "Third-Party Liability": "المسؤولية المدنية تجاه الغير",
+      "Life & Key-Man": "تأمين الحياة والشخصيات الرئيسية",
+      "Brokerage Commission Earned": "عمولة الوساطة المكتسبة",
+      "Net Carrier Payable (401)": "صافي ذمم شركات التأمين (401)",
+      "Return Prem": "مرتجع قسط",
+      "Live Policies, Endorsements & Discounts": "البوالص السارية والملاحق والحسومات",
+      "Expiring Policy #": "رقم البوليصة المنتهية",
+      "Expiry Date": "تاريخ الانتهاء",
+      "Days Left": "الأيام المتبقية",
+      "Expiring Prem ($)": "القسط المنتهي ($)",
+      "Renewal Quote ($)": "عرض التجديد ($)",
+      "Renewal Stage": "مرحلة التجديد",
+      "FNOL Claims, Reserves & Insurer Settlements": "مطالبات الحوادث (FNOL) والاحتياطيات وتسويات الشركات",
+      "Total Reported Claims (FNOL)": "إجمالي المطالبات المبلّغ عنها (FNOL)",
+      "Gross Claimed Estimate": "إجمالي المطالبات التقديرية",
+      "Adjuster Approved Indemnity": "التعويض المعتمد من الخبير",
+      "Paid by Carriers to Date": "المسدد من شركات التأمين حتى تاريخه",
+      "Under Assessment": "قيد التقدير والمعاينة",
+      "FNOL · Survey Open": "بلاغ حادث · معاينة مفتوحة",
+      "Partial AR": "محصّل جزئياً",
+      "Statement #": "رقم الكشف",
+      "Expected Comm ($)": "العمولة المتوقعة ($)",
+      "Variance ($)": "الفارق ($)",
+      "Reconciliation Audit Note": "ملاحظة تدقيق المطابقة",
+      "Insurance Carrier": "شركة التأمين",
+      "Retained Comm ($)": "العمولة المحتجزة ($)",
+      "Remitted to Date ($)": "المحوّل حتى تاريخه ($)",
+      "Cash Held ($)": "النقد المحتجز ($)",
+      "Next Bordereau": "الجدول القادم",
+      "Stmt Recon Hold": "معلّق للمطابقة",
+      "Standardized Insurance Lines": "فروع التأمين المعيارية",
+      "Chronological Rate Agreements": "اتفاقيات نسب العمولة الزمنية",
+      "Blended Contractual Yield": "متوسط العائد التعاقدي المرجح",
+      "1 · Income Statement + Leba…": "1 · بيان الدخل + شجرة الحسابات…",
+      "1 · Sales vs costs by… + Ca…": "1 · المبيعات والتكاليف… + النقد…",
+      "2 · Monthly Sales TTC… + Mo…": "2 · المبيعات الشهرية… + الأداء…",
+      "2 · Delivery transpor… + Di…": "2 · أجور التوصيل… + الحسم…",
+      "3 · Sales by material + Qua…": "3 · المبيعات حسب الصنف + الكمية…",
+      "1 · Sales commissions by product, m…": "1 · عمولات المبيعات حسب الصنف والشهر…",
+      "2 · Commercial sales & customer del…": "2 · اتفاقيات البيع وتوصيل العملاء…",
+      "3 · Quarry raw material purchase &…": "3 · اتفاقيات شراء المواد والنقل…",
+      "2 · AR aging + Balance by c…": "2 · أعمار الذمم + الرصيد حسب العميل…",
+      "3 · Customer balances…": "3 · أرصدة العملاء…",
+      "4 · Customer statemen…": "4 · كشف حساب العميل…",
+      "2 · Payables by suppl… + Ra…": "2 · ذمم الموردين… + المواد…",
+      "3 · Supplier 3-leg pa…": "3 · ذمم الموردين ثلاثية الشقوق…",
+      "4 · Top Purchased Ite… + It…": "4 · أعلى الأصناف شراءً…",
+      "5 · Items & Spare Par…": "5 · الأصناف وقطع الغيار…",
+      "1 · Unit economics by… + Ra…": "1 · اقتصاديات الوحدة… + المواد…",
+      "2 · Monthly diesel co…": "2 · استهلاك المازوت الشهري…",
+      "3 · Equipment fuel ef…": "3 · كفاءة وقود الآليات…",
+      "2 · Equipment economi…": "2 · اقتصاديات الآليات…",
+      "2 · Monthly Cash Infl… + Cl…": "2 · التدفقات النقدية الشهرية…",
+      "3 · Monthly Cash Flow…": "3 · حركة الصندوق الشهرية…",
+      "4 · Cash Till Entries…": "4 · قيود الصندوق النقدي…",
+      "All Manufacturing Group (WTC · BBConstruction · Lions Transport)": "كامل مجموعة الصناعة والخرسانة (WTC · BBConstruction · Lions Transport)",
+      "Plant, Weighbridge & Office Staff": "موظفو المصنع والقبان والإدارة",
+      "Crusher, Washer (Maghsal), Power Generators, Yard Loaders & Plant Staff": "الكسارة والمغسلة والمولدات والجرافات وموظفو المصنع",
+      "Absent Staff, Assigned Machine Status & Unexplained Grease/Diesel Watch": "الموظفون الغائبون وحالة الآليات ورقابة التشحيم والمازوت غير المبرر",
+      "Every active employee mapped across Main Plant Stations, Outbound Customer Factories & Quarries, and Absent / Leave Machine Coverage": "توزيع كافة الموظفين النشطين عبر محطات المصنع الرئيسي والمصانع والكسارات الخارجية وتغطية آليات الغائبين",
+      "Click any employee or machine badge for 360° operational history": "اضغط على أي موظف أو آلية لعرض السجل التشغيلي الشامل 360°",
+      "Flags machines where Grease, Oil, Maintenance or Diesel was added while the assigned driver was absent without a substitute, or with no operator recorded on the ticket": "يرصد الآليات التي صُرف لها تشحيم أو زيت أو صيانة أو مازوت أثناء غياب سائقها المعيّن دون بديل، أو دون تسجيل اسم المشغّل على الإيصال",
+      "above to inspect external contractor trucks.": "أعلاه لمعاينة شاحنات المتعهدين الخارجيين.",
+      "above or click any flagged day pill in the 14-day strip to inspect absent-driver machine alerts.": "أعلاه أو اضغط على أي يوم مرصود في شريط الـ 14 يوماً لمعاينة تنبيهات آليات السائقين الغائبين.",
+      "Previous operational day": "اليوم التشغيلي السابق",
+      "Next operational day": "اليوم التشغيلي التالي",
+      "Cycle through dates where Diesel, Lubricant or Grease was added to an absent driver's machine": "التنقل بين التواريخ التي أُضيف فيها مازوت أو زيت أو تشحيم لآلية سائق غائب",
+      "Ex-Quarry material only; haulage in own trucks or 3rd-party peers tracked separately (Region + Site required)": "سعر مواد أرض الكسارة فقط؛ يُتتبع النقل بشاحنات الشركة أو الناقلين الخارجيين بشكل منفصل (المنطقة والموقع مطلوبان)",
+      "Supplier provides raw material + transport in one delivered price; Region optional until hauled by own fleet or 3rd-party peers": "المورّد يؤمّن المواد الأولية والنقل معاً بسعر واصل موحّد؛ المنطقة اختيارية ما لم يتم النقل بأسطولنا أو بناقل خارجي",
+      "Delivered quarry agreement: Material Price includes supplier-provided transportation (internal split unknown)": "اتفاقية كسارة واصل: سعر المواد يشمل النقل المؤمّن من المورّد (التوزيع الداخلي للنقل غير مفصول)",
+      "Supplier provides both Raw Material and Transportation in Material Price ($); internal split unknown": "المورّد يؤمّن المواد الأولية والنقل معاً ضمن سعر المواد ($)؛ حصة النقل الداخلية غير مفصولة",
+      "Supplier provides both Raw Material and Transportation in Material Cost; internal transport split unknown": "المورّد يؤمّن المواد الأولية والنقل معاً ضمن تكلفة المواد؛ حصة النقل الداخلية غير مفصولة",
+      "Included in Material Cost ($0.00 separate haulage; internal transport split unknown)": "مشمول ضمن تكلفة المواد ($0.00 نقل منفصل؛ حصة النقل الداخلية غير مفصولة)",
+      "Ex-Quarry material rate only; transportation is provided separately by our fleet or paid 3rd-party haulers": "سعر مواد أرض الكسارة فقط؛ يتم تأمين النقل بشكل منفصل عبر أسطول الشركة أو ناقلين خارجيين",
+      "Supplier provides both Raw Material and Transportation in one delivered price; internal haulage split unknown": "المورّد يؤمّن المواد الأولية والنقل معاً بسعر واصل واحد؛ حصة النقل الداخلية غير مفصولة",
+      "Delivered rate already includes transportation; internal split unknown": "السعر الواصل يشمل النقل مسبقاً؛ التوزيع الداخلي غير مفصول",
+      "Material Credit includes supplier-provided transportation; internal split unknown": "ذمم المواد تشمل النقل المؤمّن من المورّد؛ التوزيع الداخلي غير مفصول",
+      "Supplier provides raw material + transportation in one delivered price; internal transport split unknown": "المورّد يؤمّن المواد الأولية والنقل معاً بسعر واصل موحّد؛ التوزيع الداخلي غير مفصول",
+      "Transportation is included inside Material ($); internal transport split unknown": "النقل مشمول ضمن قيمة المواد ($)؛ التوزيع الداخلي غير مفصول",
+      "Delivered rate (material + supplier transport combined; internal transport split unknown)": "سعر واصل (المواد + نقل المورّد معاً؛ التوزيع الداخلي غير مفصول)",
+      "Net payable owed to supplier": "صافي الذمم المستحقة للمورّد",
+      "Net advance / overpayment credit with supplier": "صافي سلفة / دفعة زائدة لصالحنا لدى المورّد",
+      "Why Bundled Quarry Sites Show Higher Material Rates:": "لماذا تُظهر مواقع الكسارات الواصلة أسعار مواد أعلى:",
+      "quarry receipts come from supplier-delivered sites where": "من إيصالات الكسارات تأتي من مواقع تسليم واصل حيث",
+      "(neither our trucks nor paid 3rd-party haulers transport the load; internal transport split is unknown). Compare against Ex-Quarry": "(لا شاحناتنا ولا الناقلون الخارجيون ينقلون الحمولة؛ حصة النقل الداخلية غير مفصولة). قارنها مع التكلفة الواصلة لأرض الكسارة",
+      "rather than Material Cost alone.": "بدلاً من تكلفة المواد وحدها.",
+      "site × material pairs are marked": "أزواج (موقع × مادة) مصنّفة",
+      "because the supplier provides both raw material and transportation in one delivered price (neither our fleet nor paid 3rd-party haulers haul the load, so the internal transport split is unknown). Compare their rate against the": "لأن المورّد يؤمّن المواد الأولية والنقل معاً بسعر واصل واحد (دون نقل بأسطولنا أو بناقل خارجي). قارن سعرها مع عمود",
+      "column of Ex-Quarry sites.": "لمواقع أرض الكسارة.",
+      "Agrimount per-unit plant commission rules reconciled to GL 6222 ($368,113.91 Ex-VAT paid) and GL 449 ($40,482.90 11% VAT paid)": "قواعد عمولة المصنع للوحدة (Agrimount) مطابقة مع حـ/ 6222 ($368,113.91 مدفوع بدون ضريبة) وحـ/ 449 ($40,482.90 ضريبة 11% مدفوعة)",
+      "Chronological monthly commission accrued vs. Agrimount Rent (GL 6222) and 11% VATRent (GL 449) payouts": "العمولة الشهرية المستحقة زمنياً مقابل دفعات إيجار Agrimount (حـ/ 6222) وضريبة الإيجار 11% (حـ/ 449)",
+      "Customer × site delivery haulage rate comparison across active weighbridge delivery tickets": "مقارنة تعرفة توصيل (العميل × الموقع) عبر إيصالات تسليم القبان النشطة",
+      "Purchase Price (Site) agreements vs. actual raw material intake unit and flat-truck costs": "اتفاقيات سعر الشراء (الموقع) مقابل التكلفة الفعلية للوحدة أو النقلة المقطوعة",
+      "Transport Price (Site) agreements vs. actual 3rd-party quarry haulage intake tickets": "اتفاقيات سعر النقل (الموقع) مقابل إيصالات نقل الكسارات الفعلية للغير",
+      "Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.": "اتفاقيات بيع العملاء (تسليم مصنع / توصيل) والأسعار المعلنة وقواعد عمولات البيع موجودة في المبيعات والذمم ▸ التسعير والعمولات.",
+      "Purchase Price (Site) and Transport Price (Site) agreements and haulage comparisons live in Purchases, Expenses & Payables · Quarry & Haulage Rates.": "اتفاقيات سعر الشراء والنقل للمواقع ومقارنات النقل موجودة في المشتريات والمصاريف والذمم · أسعار الكسارات والنقل.",
+      "Receipts are applied to the oldest open ticket first (FIFO) · Balance = Current + 1-10 + 11-30 + 31-60 + 60+ + On account": "تُخصّص المقبوضات لأقدم إيصال مفتوح أولاً (FIFO) · الرصيد = جاري + 1-10 + 11-30 + 31-60 + +60 + دفعات على الحساب",
+      "Select a Customer in the top slicer to inspect their chronological ticket & receipt sub-ledger": "اختر عميلاً من المصفّي العلوي لمعاينة دفتر الإيصالات والمقبوضات الزمني الخاص به",
+      "Customer credit policies, MOF 11% VAT tax headers, quarterly VAT positions, and VAT-tagged receipts now live inside Customers & Receivables.": "سياسات ائتمان العملاء وفواتير ضريبة 11% الرسمية ومواقف الضريبة الفصلية موجودة داخل العملاء والذمم المدينة.",
+      "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "الشق 1 (مواد لصاحب الموقع) + الشق 2 (نقل لصاحب الشاحنة) + الشق 3 (مصاريف آجلة) = إجمالي الآجل · إجمالي الآجل − المسدد = رصيد الذمم الدائنة الختامي",
+      "Highest-spend catalog items, spare parts, tyres, filters, and lubricants with locked UoM quantities": "أعلى أصناف الدليل وقطع الغيار والإطارات والفلاتر والزيوت إنفاقاً مع كميات وحدة القياس المعتمدة",
+      "Highest-spend items, spare parts, filters, tyres, and lubricants with locked UoM quantities": "أعلى الأصناف وقطع الغيار والفلاتر والإطارات والزيوت إنفاقاً مع كميات وحدة القياس المعتمدة",
+      "Click any item on Expenses & Overhead or Universal Catalog to inspect full purchase history and locked unit of measure": "اضغط على أي صنف في المصاريف العامة أو الدليل الموحد لمعاينة سجل الشراء الكامل ووحدة القياس المعتمدة",
+      "Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Recurring Schedules": "اتفاقيات الموردين الدورية المستمرّة · يمكنك إدارة أو إضافة الجداول من تبويب المصاريف الدورية",
+      "General & Fleet Expenses Register + Cost-Class Analytics": "سجل المصاريف العامة والأسطول + تحليلات فئات التكلفة",
+      "Itemized expense vouchers and Production / OpEx / CapEx category breakdowns now live directly inside Expenses & Overhead.": "سندات المصاريف التفصيلية وتوزيعات الإنتاج والتشغيل والرأسمالي موجودة مباشرة داخل المصاريف والنفقات العامة.",
+      "Supplier Settlements & 3-Leg Payable Ledger": "تسديدات الموردين ودفتر الذمم الدائنة ثلاثي الشقوق",
+      "Full supplier payment vouchers (Material, Haulage & Expense legs) live directly inside Suppliers & Payables.": "سندات دفع الموردين الكاملة (شقوق المواد والنقل والمصاريف) موجودة مباشرة داخل الموردين والذمم الدائنة.",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost": "الهامش الشهري ($/م³) بين سعر البيع الصافي المحقق بدون ضريبة وتكلفة استلام المواد الأولية",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered Mat+Trans quarry loads)": "الهامش الشهري ($/م³) بين سعر البيع الصافي المحقق وتكلفة استلام المواد الأولية (شاملاً الحمولات الواصلة)",
+      "Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %": "تكلفة مواد صاحب الموقع (الشق 1) مقابل نقل الشاحنات الخارجية (الشق 2) ونسبة النقل الشهرية %",
+      "Site-owner material cost (Leg 1, incl. bundled supplier-delivered loads where internal transport split is unknown) vs 3rd-party haulage (Leg 2)": "تكلفة مواد صاحب الموقع (الشق 1، شاملاً الحمولات الواصلة) مقابل النقل الخارجي (الشق 2)",
+      "Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material + Leg 2 haulage); Mat+Trans sites include supplier-delivered transport inside Material ($) where internal transport split is unknown": "مواقع الكسارات والحفر مرتبة حسب إجمالي تكلفة المواد الواردة (الشق 1 مواد + الشق 2 نقل)؛ تشمل مواقع الواصل تكلفة النقل ضمن قيمة المواد ($)",
+      "Aggregate material families linking raw quarry intake (e.g. Ramel Mrml, Sakher) to finished crushed/washed grades sold (excludes equipment & fuel)": "عائلات البحص والرمل التي تربط المواد الخام الواردة بالأصناف المكسّرة والمغسولة المباعة (باستثناء الآليات والوقود)",
+      "Raw Material Purchases Register & Joint Venture 50/50 Ledger": "سجل مشتريات المواد الأولية ودفتر شراكات المناصفة 50/50",
+      "Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, and source quarry intakes live in Quarry & Haulage, while JV 50/50 sites and distributions live in JV & Partnerships.": "إيصالات المواد ثنائية الشق والنقل الخارجي لمواقع العملاء موجودة في الكسارات والنقل، بينما مواقع وتوزيعات المناصفة 50/50 موجودة في الشراكات.",
+      "Opening Tank + Bulk Bought - Fleet Used - Malfunction/Discrepancy - Diesel Sold = Remaining in Tank (5% Malfunction Watchdog)": "رصيد الخزان الافتتاحي + المشترى بالجملة − استهلاك الأسطول − الأعطال/الفروقات − المباع = المتبقي في الخزان (رقابة 5%)",
+      "Pale navy row = Own company fleet unit": "السطر المظلّل = آلية مملوكة لأسطول الشركة",
+      "Diesel & Lubricant Intakes Register + Driver Overtime": "سجل استلام وصرف المازوت والزيوت + إضافي السائقين",
+      "Individual diesel & lubricant fill tickets (with odometer/hour-meter guard and daily greasing presets) live inside Diesel & Lubricants, and Driver Trips & Overtime live inside Drivers & Overtime.": "إيصالات تعبئة المازوت والزيوت (مع رقابة العدادات والتشحيم اليومي) موجودة داخل المازوت والزيوت، ونقلات وإضافي السائقين داخل السائقين والإضافي.",
+      "Monthly salary earnings, shift & driver overtime, deductions, remaining payment, and post-cutoff advances": "استحقاقات الرواتب الشهرية وإضافي الورديات والسائقين والحسومات والمتبقي والسلف بعد الإقفال",
+      "Book Class 641 / 421 total": "إجمالي دفاتر الصنف 641 / 421",
+      "Monthly staff earnings (base + overtime + site transport) vs salary cash disbursements": "استحقاقات الموظفين الشهرية (أساسي + إضافي + انتقال مواقع) مقابل دفعات الرواتب النقدية",
+      "Monthly staff earnings (base + overtime + site transport + extras) vs salary cash disbursements": "استحقاقات الموظفين الشهرية (أساسي + إضافي + انتقال مواقع + إضافات) مقابل دفعات الرواتب النقدية",
+      "Top staff members ranked by total earnings in period": "أعلى الموظفين ترتيباً حسب إجمالي الاستحقاقات خلال الفترة",
+      "Top staff members ranked by total earnings in the active period": "أعلى الموظفين ترتيباً حسب إجمالي الاستحقاقات في الفترة النشطة",
+      "Staff ranked by earned site transport & overtime": "الموظفون مرتبون حسب بدلات انتقال المواقع والإضافي المستحق",
+      "Contract transportation/reimbursement, site transport & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances": "بدل النقل التعاقدي وانتقال المواقع وإضافي النقلات الليلية مشمولة ضمن الاستحقاقات · الدفعات بعد الإقفال تظهر في السلف",
+      "Driver night-trip overtime by driver · sales & quarry trips": "إضافي النقلات الليلية حسب السائق · نقلات المبيعات والكسارات",
+      "Dated regional night-trip rates ($5 / $7 / $10 / $14) · Contracted drivers are included in Driver OT on Staff Payroll": "تعرفات النقلات الليلية الإقليمية المؤرخة ($5 / $7 / $10 / $14) · يُدرج السائقون المتعاقدون ضمن إضافي السائقين في الرواتب",
+      "Employment Contracts, Attendance Sheets, Salary Vouchers & Driver OT": "عقود العمل وسجلات الحضور وسندات الرواتب وإضافي السائقين",
+      "Operational staff contracts, daily attendance logs, salary disbursement vouchers, and driver overtime tables now live directly in Payroll & Workforce.": "عقود الموظفين وسجلات الحضور اليومية وسندات صرف الرواتب وجداول إضافي السائقين موجودة مباشرة في الرواتب وشؤون الموظفين.",
+      "Payments whose staff and month no contract covers · fix the contract (add / extend) or the payment month": "دفعات رواتب لموظفين وأشهر لا يغطيها عقد سارٍ · عالج العقد (إضافة / تمديد) أو عدّل شهر الدفعة",
+      "Daily transport pay when staff commute to an external site instead of the main plant · paid with salary": "بدل انتقال يومي عند توجه الموظف إلى موقع خارجي بدلاً من المصنع الرئيسي · يُصرف مع الراتب",
+      "Ticket, fuel or attendance log": "إيصال قبان أو وقود أو سجل حضور",
+      "FIFO salary before site transport": "تخصيص الراتب أولاً (FIFO) قبل بدل الانتقال",
+      "Earned minus Paid at period end": "المستحق ناقص المدفوع في نهاية الفترة",
+      "Earned daily site transport by posted staff member": "بدل الانتقال اليومي المستحق حسب الموظف",
+      "Activity = a ticket, fuel intake or attendance entry on a counted day · paid = payments applied oldest month first, salary before site transport": "النشاط = إيصال أو تعبئة وقود أو حضور في يوم محتسب · المدفوع = الدفعات المطبقة للأشهر الأقدم أولاً (الراتب قبل الانتقال)",
+      "Site transport arrangements · who, where, on which unit & daily rate": "ترتيبات انتقال المواقع · الموظف والموقع والآلية والبدل اليومي",
+      "Amber shaded row = the arrangement has ended · an arrangement without an end date runs until today · latest first": "السطر الكهرماني = ترتيب منتهٍ · الترتيب بدون تاريخ انتهاء يسري حتى اليوم · الأحدث أولاً",
+      "Shift work by freelancers · earned from the entries, paid from the payments · the rate comes from a Freelance employment": "ورديات المياومين · المستحق من سجلات العمل والمدفوع من سندات الصرف · الأجر يُحتسب من عقد مياومة",
+      "With Freelance / Daily contract": "بعقد مياومة / يومي",
+      "Shifts": "الورديات",
+      "Logged freelance shifts": "ورديات مياومة مسجلة",
+      "Regular + extra hours": "ساعات عادية + إضافية",
+      "From freelance work entries": "من سجلات عمل المياومين",
+      "Click any bar or month to inspect its entries below.": "اضغط على أي عمود أو شهر لمعاينة قيوده أدناه.",
+      "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود أدناه",
+      "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "العمود الأيمن = المقبوضات · العمود الأيسر = المدفوعات · اضغط أي شهر لتصفية القيود",
+      "Operating Cash + Treasury Sweeps/FX reconcile 100% to Total Cash In & Out · Click any month to filter the Cash Till Entries Explorer below": "النقد التشغيلي + تحويلات الخزينة والعملات تطابق 100% إجمالي المقبوضات والمدفوعات · اضغط أي شهر لتصفية مستكشف قيود الصندوق أدناه",
+      "Inspect every cash inflow, outflow, treasury sweep, salary, loan & FX slip · Click any row for 360° Record Form": "معاينة كل مقبوض ومدفوع وتحويل خزينة وراتب وقرض وصرف عملة · اضغط أي سطر لفتح بطاقة السجل 360°",
+      "Total Production Mix": "إجمالي مزيج الإنتاج",
+      "Average active customer agreement rate vs. realised material net price ($/m³) and standard list price": "متوسط سعر اتفاقيات العملاء النشطة مقابل صافي سعر البيع المحقق ($/م³) والسعر المعلن",
+      "Agreed customer delivery rate vs. last billed ticket and period average across top delivery sites": "تعرفة توصيل العميل المتفق عليها مقابل آخر إيصال مفوتر ومتوسط الفترة لأبرز مواقع التسليم",
+      "Purchase Price (Site) agreement vs. last receipt and period average; (Mat+Trans) sites include supplier-delivered transport in one landed rate (internal transport split unknown)": "اتفاقية سعر الشراء (الموقع) مقابل آخر استلام ومتوسط الفترة؛ مواقع (مواد+نقل) تشمل النقل ضمن سعر واصل موحّد",
+      "Transport Price (Site) agreement rate vs. last 3rd-party quarry haulage intake ticket and period average": "تعرفة اتفاقية سعر النقل (الموقع) مقابل آخر إيصال نقل كسارة خارجي ومتوسط الفترة",
+      "Volume and partner 50% stock entitlement comparison across Joint Venture quarry sites": "مقارنة الكميات واستحقاق الشريك 50% من المخزون عبر مواقع كسارات المناصفة",
+      "Monthly Joint Venture profit & stock distributions paid to site partners": "توزيعات أرباح ومخزون شراكات المناصفة الشهرية المدفوعة لشركاء المواقع",
+      "Partner share × JV site raw intake cost": "حصة الشريك × تكلفة المواد الخام الواردة لموقع الشراكة",
+      "Quantity is active in stock at $0.00 Credit AP until priced": "الكمية فعّالة في المخزون بذمم دائنة $0.00 ريثما يتم تسعيرها",
+      "Monthly direct cash operating expenses vs credit Leg 3 payables and posted voucher volume": "المصاريف التشغيلية النقدية المباشرة الشهرية مقابل ذمم الشق 3 الآجلة وعدد السندات المرحّلة",
+      "Top operating, production (60/61), and capital (22) expense categories in the active period": "أعلى فئات المصاريف التشغيلية والإنتاجية (60/61) والرأسمالية (22) في الفترة النشطة",
+      "Exact Ex-VAT Credit ($/LL), Payments ($/LL), Remaining Payment ($/LL), 11% VAT Credit/Payment/Rem, and Total Remaining TTC": "تفصيل دقيق للآجل بدون ضريبة ($/ل.ل.) والمدفوع والمتبقي وضريبة 11% وإجمالي المتبقي شامل الضريبة",
+      "Master catalog of purchased spare parts, filters, tires, oils, and tools with locked Unit of Measure (UoM), purchase spend, and live Warehouse stock": "الدليل الرئيسي لقطع الغيار والفلاتر والإطارات والزيوت والعدد المشتراة مع وحدة القياس المعتمدة وقيمة المشتريات ومخزون المستودع الحي",
+      "Every single-item and multi-item expense ticket line with locked Unit of Measure, unit cost, and Equipment or Warehouse routing": "كافة بنود فواتير المصاريف المفردة والمتعددة مع وحدة القياس المعتمدة وتكلفة الوحدة وتوجيه الآلية أو المستودع",
+      "Projected 12-month standing commitment across active vendor agreements": "الالتزام السنوي المتوقع (12 شهراً) عبر اتفاقيات الموردين الدورية النشطة",
+      "Standing rent, internet, telecom, security, and road-allowance agreements from the Recurring Expense register with chronological auto-closure": "اتفاقيات الإيجار والإنترنت والاتصالات والحراسة وبدلات الطريق الدورية مع الإغلاق الزمني التلقائي",
+      "Standing Recurring Commitments by Vendor ($ Accrued & Active Run-Rate)": "الالتزامات الدورية المستمرة حسب المورّد (المستحق التراكمي والمعدل الشهري النشط)",
+      "Cumulative schedule accrual by vendor with active monthly run-rate highlighted in warm brass": "الاستحقاق التراكمي حسب المورّد مع إبراز المعدل الشهري النشط باللون النحاسي",
+      "Standing lease, telecom, security, and site tip schedules grouped by expense category": "جداول الإيجار والاتصالات والحراسة وإكراميات المواقع مصنّفة حسب فئة المصروف",
+      "Largest open 3-leg supplier, quarry, hauler, and vendor payable balances ($)": "أكبر أرصدة الذمم الدائنة المفتوحة ثلاثية الشقوق للموردين والكسارات والناقلين ($)",
+      "Drag & drop a PDF or photo here, snap a camera photo of a paper receipt, or attach files directly inside any Expense, Ticket, or Settlement form.": "اسحب وأفلت ملف PDF أو صورة هنا، أو التقط صورة بالكاميرا للإيصال الورقي، أو أرفق الملفات مباشرة داخل أي نموذج مصروف أو إيصال أو تسديد.",
+      "Customer cash/cheque collection voucher": "سند قبض عميل نقدي / بشيك",
+      "Signed supplier settlement receipt & bank transfer advice": "إيصال تسديد مورّد موقّع وإشعار تحويل مصرفي",
+      "Official stamped VAT invoice copy for quarterly MoF declaration": "نسخة فاتورة ضريبية رسمية مختومة للتصريح الفصلي لوزارة المالية",
+      "Signed physical pad slip & scale weight verification": "قسيمة القبان الورقية الموقّعة وتأكيد الوزن",
+      "Scanned supplier invoice attached to expense voucher": "فاتورة مورّد ممسوحة ضوئياً مرفقة بسند المصروف",
+      "Standalone company policy certificate stored in Document Vault": "شهادة بوليصة تأمين الشركة محفوظة في خزنة المستندات",
+      "Archived invoices, payment receipts, statutory tax filings, contracts, and weighbridge slips by category": "الفواتير وإيصالات الدفع والتصاريح الضريبية والعقود وقسائم القبان المؤرشفة حسب الفئة",
+      "Documented transaction value by vendor, customer, or authority with linked transaction count": "قيمة العمليات الموثّقة حسب المورّد أو العميل أو الجهة الرسمية مع عدد القيود المرتبطة",
+      "Tank Equation: Bought - Fleet Used - Malfunction/Adj - Sold = Remaining": "معادلة الخزان: المشترى − استهلاك الأسطول − الأعطال/التسويات − المباع = المتبقي",
+      "Bought - Used - Malf - Sold": "مشترى − مستهلك − أعطال − مباع",
+      "Bought - Used - Sold": "مشترى − مستهلك − مباع",
+      "Unified physical variances, meter discrepancies, hose leaks & calibrations across Fuel, Lubricants & Grease, Spare Parts & Materials": "الفروقات الفعلية الموحدة واختلافات العدادات والتسريبات والمعايرات عبر الوقود والزيوت والتشحيم وقطع الغيار والمواد",
+      "Repairs, spare parts & oils vs monthly vouchers": "التصليحات وقطع الغيار والزيوت مقابل السندات الشهرية",
+      "Repair, spare-part, screen, tire & oil outlay": "إنفاق التصليحات وقطع الغيار والغرابيل والإطارات والزيوت",
+      "Monthly dispatch loads vs accrued company-fleet driver overtime bonus ($)": "نقلات التوصيل الشهرية مقابل مكافآت الإضافي المستحقة لسائقي أسطول الشركة ($)",
+      "Top drivers by dispatched trips in the active period": "أعلى السائقين حسب عدد النقلات المنفذة في الفترة النشطة",
+      "Live running balance across stored parts, filters, tires & lubricants": "الرصيد التشغيلي الحي لقطع الغيار والفلاتر والإطارات والزيوت المخزنة",
+      "Valued automatically from stored supplier expense invoices & opening stock": "مقوّم تلقائياً من فواتير مشتريات الموردين المخزنة والرصيد الافتتاحي",
+      "Shelf valuation and historical spend by item with locked unit of measure (Piece, Litre, Set, kg)": "تقييم الرف والإنفاق التاريخي حسب الصنف مع وحدة القياس المعتمدة (قطعة، ليتر، طقم، كغ)",
+      "On-hand shelf value and catalog item count across Spare Parts, Oils & Lubricants, Tools, and Consumables": "قيمة المخزون المتوفر وعدد الأصناف عبر قطع الغيار والزيوت والعدد والمستهلكات",
+      "Master items registry with locked Unit of Measure (UoM), default shelf location, reorder alert threshold, and 1-click stock adjustment": "سجل الأصناف الرئيسي مع وحدة القياس المعتمدة وموقع الرف وحد إعادة الطلب وتعديل المخزون بنقرة واحدة",
+      "Trucks, loaders, crushers & generators receiving parts or lubricants": "الشاحنات والجرافات والكسارات والمولدات المستلمة لقطع الغيار أو الزيوت",
+      "Open Shared Items & Spare Parts Catalog": "فتح الدليل المشترك للأصناف وقطع الغيار",
+      "Combined workshop repair parts issued and purchased equipment/warehouse items with locked UoM": "إجمالي قطع تصليح المشغل المصروفة ومشتريات الآليات والمستودع بوحدة القياس المعتمدة",
+      "Spend routing across Warehouse Shelf Stock (+IN), Direct Equipment Allocation, and Workshop Repairs": "توجيه الإنفاق عبر مخزون المستودع (+وارد) والتخصيص المباشر للآليات وتصليحات المشغل",
+      "Every itemized supplier purchase routed directly to an equipment unit, into Warehouse stock, or to general plant operations": "كل عملية شراء تفصيلية موجّهة مباشرة لآلية محددة أو لمخزون المستودع أو لتشغيل المصنع العام",
+      "Contract reimb., site transport & driver OT included in Earnings · LBP ÷ 89,500 LL/$ · Remaining = Earnings minus Paid · Post-cutoff in Advances": "بدل النقل التعاقدي وانتقال المواقع وإضافي السائقين مشمولة في الاستحقاقات · ل.ل. ÷ 89,500 · المتبقي = المستحق ناقص المدفوع · ما بعد الإقفال في السلف",
+      "Consolidated from Workforce Analytics (P12) & Sentinel S7 · Salary vouchers paid on staff-months without an active employment or freelance contract window": "مجمّع من تحليلات القوى العاملة (P12) والمراقب S7 · سندات رواتب مدفوعة لأشهر موظفين دون نافذة عقد عمل أو مياومة سارية",
+      "Monthly logged overtime hours vs lateness / tardy hours on attendance sheets": "ساعات العمل الإضافي المسجلة شهرياً مقابل ساعات التأخير في سجلات الحضور",
+      "Employees ranked by total logged overtime hours in the active period": "الموظفون مرتبون حسب إجمالي ساعات الإضافي المسجلة في الفترة النشطة",
+      "Shift overtime valued at contract multiplier · Driver night-trip overtime valued at regional trip rates ($5 / $7 / $10 / $14) · Click any employee to inspect 360° profile": "إضافي الورديات مقوّم بمضاعف العقد · إضافي النقلات الليلية مقوّم بالتعرفات الإقليمية ($5 / $7 / $10 / $14) · اضغط أي موظف لمعاينة ملفه 360°",
+      "Regular weekday hours vs Saturday / day-specific shift hours across active BU shifts": "ساعات الدوام العادية لأيام الأسبوع مقابل ساعات السبت / الأيام الخاصة عبر الورديات النشطة",
+      "Active staff automatically backfilled when a shift timing changes from its Effective Date": "يُحدَّث سجل الموظفين النشطين تلقائياً بأثر رجعي عند تعديل توقيت الوردية من تاريخ سريانها",
+      "Configure default shifts per BU (WTC, BBConstruction, Lions Transport), add new shifts, set Saturday / day-specific hours, and change shift timings with an Effective Date to automatically backfill associated staff": "إعداد الورديات الافتراضية لكل شركة، وإضافة ورديات جديدة، وتحديد دوام السبت، وتعديل التوقيت مع تاريخ سريان لتحديث الموظفين تلقائياً",
+      "Configure Day / Night / Custom shifts, arrival & departure grace windows, single-punch rules, overtime passes, 3-pose Face ID, and 4-digit PINs here so wall tablets stay clean for staff clocking": "إعداد الورديات النهارية والليلية والمخصصة، وفترات السماح، وقواعد البصمة المفردة، وتصاريح الإضافي، وبصمة الوجه ثلاثية الزوايا، والرمز السري الرباعي",
+      "Monthly site transport earned on confirmed on-site days vs FIFO paid inside salary disbursements": "بدل انتقال المواقع الشهري المستحق عن أيام التواجد المؤكدة مقابل المسدد FIFO ضمن دفعات الرواتب",
+      "Staff ranked by earned site transport ($) with verified on-site day coverage": "الموظفون مرتبون حسب بدل انتقال المواقع المستحق ($) مع تغطية أيام التواجد المؤكدة",
+      "Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site transport": "اضغط على شارة العمل المؤكد لأي موظف لمعاينة واحتساب سجله اليومي أعلاه · تخصيص الرواتب FIFO مقابل بدل الانتقال المستحق",
+      "Range & open schedules start at $0 until tallied On Site above · Single-day site entries count immediately": "الجداول المفتوحة أو الممتدة تبدأ بـ $0 حتى يتم احتساب التواجد بالموقع أعلاه · قيود اليوم الواحد تُحتسب فوراً",
+      "Chronological effective-dated log of staff roles, linked role categories, and assigned trucks or machines across time": "السجل الزمني المؤرخ لتطور المسميات الوظيفية وفئات الأدوار والشاحنات أو الآليات المعيّنة عبر الزمن",
+      "Active staff contracts ranked by monthly compensation (base salary + transportation/reimbursement)": "عقود الموظفين النشطة مرتبة حسب التعويض الشهري (الراتب الأساسي + بدل النقل/الاسترداد)",
+      "Regional driver trip and night overtime rate schedule ($ per trip)": "جدول تعرفات نقلات السائقين والإضافي الليلي حسب المنطقة ($ للنقلة)",
+      "Principal repayments & closures across both sides": "تسديدات أصل القروض والإقفالات عبر الطرفين (لنا وعلينا)",
+      "Physical USD till delta from currency exchange": "صافي تغير صندوق الدولار الفعلي من عمليات الصرافة",
+      "Physical LBP till delta from currency exchange": "صافي تغير صندوق الليرة الفعلي من عمليات الصرافة",
+      "USD ↔ LBP Exchange Rate Spread, Drawer Impact & Daily Cash Till Position": "هامش سعر صرف الدولار ↔ الليرة وأثر الصندوق والمركز النقدي اليومي",
+      "Real-time double-entry postings from tickets, receipts & vouchers": "قيود القيد المزدوج الفورية المرحّلة من الإيصالات والمقبوضات والسندات",
+      "Matched 1-to-1 against operational sub-ledgers": "مطابقة 1 إلى 1 مع دفاتر الأستاذ المساعدة التشغيلية",
+      "Zero manual GL entry on operational forms or registries": "صفر إدخال يدوي لحسابات الأستاذ في النماذج أو السجلات التشغيلية",
+      "Sales, VAT windows, 3-Leg AP, Cash Till, FX & Payroll": "المبيعات، نوافذ الضريبة، الذمم ثلاثية الشقوق، الصندوق، الصرافة والرواتب",
+      "Expense Categories, Fuel, Spare Parts & Capex": "فئات المصاريف، الوقود، قطع الغيار والنفقات الرأسمالية",
+      "USD & LBP Cash Till (FX Rates)": "صندوق الدولار والليرة (أسعار الصرف)",
+      "External Movements & Inter-BU": "الحركات الخارجية وبين الشركات الشقيقة",
+      "3-Leg AP & Supplier Settlements": "الذمم الدائنة ثلاثية الشقوق وتسديدات الموردين",
+      "Payroll, Freelance & Site Transport": "الرواتب والمياومة وانتقال المواقع",
+      "Partner Loans & JV Distributions": "قروض الشركاء وتوزيعات شراكات المناصفة",
+      "Bank & Cheque Receipts / Settlements": "مقبوضات وتسديدات المصارف والشيكات",
+      "Raw Material Tickets (Leg 1)": "إيصالات المواد الأولية (الشق 1)",
+      "Raw Material Tickets (Leg 2)": "إيصالات المواد الأولية (الشق 2)",
+      "NSSF settlement adjustments": "تسويات اشتراكات الضمان الاجتماعي",
+      "Fee refunds or reclassifications": "استرداد رسوم أو إعادة تصنيف",
+      "Tax assessment credits": "إشعارات دائنة للتكليف الضريبي",
+      "Customer Receipts & Sales Discounts": "مقبوضات العملاء وحسومات المبيعات",
+      "Discount reversal": "عكس حسم ممنوح",
+      "External & Fleet Service Revenue": "إيرادات الخدمات الخارجية وخدمات الأسطول",
+      "Service credit notes": "إشعارات دائنة للخدمات",
+      "Trade suppliers - goods": "موردو البضائع والسلع التجارية",
+      "Quarry Purchases & Settlements": "مشتريات وتسديدات الكسارات",
+      "Sales Tickets, VAT Invoices & Receipts": "إيصالات المبيعات والفواتير الضريبية والمقبوضات",
+      "Payroll Post-Cutoff Advances": "سلف الرواتب بعد تاريخ الإقفال",
+      "VAT Rates & IVA Expense Vouchers": "نسب الضريبة وسندات المصاريف الخاضعة للضريبة",
+      "VAT Rates & IVA Quarry / AP Purchases": "نسب الضريبة ومشتريات الكسارات والذمم الخاضعة",
+      "VAT Rates, Sales Tickets & VAT Invoices": "نسب الضريبة وإيصالات المبيعات والفواتير الضريبية",
+      "Purchases of raw materials": "مشتريات المواد الأولية",
+      "Supplier credit notes or stock returns": "إشعارات الموردين الدائنة أو مرتجعات المخزون",
+      "Sales Commission Rules & Rent Receipts": "قواعد عمولات البيع وإيصالات الإيجار",
+      "Commission reversals or volume adjustments": "عكس عمولات أو تسويات كميات",
+      "Warranty recoveries or vendor credits": "تعويضات الكفالة أو إشعارات الموردين الدائنة",
+      "Service fee credits or reversals": "إشعارات دائنة أو عكس رسوم خدمات",
+      "Payroll & Salary Vouchers": "الرواتب وسندات الصرف",
+      "External & Equipment Rental": "تأجير المعدات والخدمات الخارجية",
+      "Rental credit notes": "إشعارات دائنة للتأجير",
+      "Plant, site, or equipment rental revenue": "إيراد تأجير المصنع أو الموقع أو الآليات",
+      "Supplier rebate reversal": "عكس حسم مكتسب من المورّد",
+      "Fuel vendor price adjustments or credits": "تعديلات أسعار أو إشعارات دائنة لموردي الوقود",
+      "Tool recovery or vendor credit notes": "استرداد عدد أو إشعارات دائنة للموردين",
+      "Expense reversals or refunds": "عكس مصاريف أو مبالغ مستردة",
+      "Utility deposit refunds or adjustments": "استرداد أو تسوية تأمينات المرافق",
+      "Labor voucher adjustments": "تسويات سندات اليد العاملة",
+      "Top Customers by Open AR Balance ($)": "أكبر العملاء حسب رصيد الذمم المدينة المفتوح ($)",
+      "Top Customers by Delivered Loads": "أكبر العملاء حسب عدد النقلات المسلّمة",
+      "Click a region's Sites pill to see all member sites inline and filter the Sites table below": "اضغط على شارة مواقع أي منطقة لعرض كافة مواقعها وتصفية جدول المواقع أدناه",
+      "Quarry / Raw Sites": "مواقع الكسارات والمواد الخام",
+      "Regions Ranked by Sites Inside": "المناطق مرتبة حسب عدد المواقع فيها",
+      "Active operational sites grouped by region across all business units": "المواقع التشغيلية النشطة مجمّعة حسب المنطقة عبر كافة وحدات الأعمال",
+      "Top Operational Sites by Load Volume": "أعلى المواقع التشغيلية حسب حجم النقلات",
+      "Combined quarry intake and customer delivery loads": "إجمالي نقلات استلام الكسارات وتوصيل العملاء",
+      "Top Catalog Items & Spare Parts by Total Spend ($)": "أعلى الأصناف وقطع الغيار حسب إجمالي الإنفاق ($)",
+      "Catalog Items by Category & Locked UoM Spend ($)": "أصناف الدليل حسب الفئة والإنفاق بوحدة القياس المعتمدة ($)",
+      "Top Expense Categories by Total Spend ($)": "أعلى فئات المصاريف حسب إجمالي الإنفاق ($)",
+      "Expense Categories by Cost Class / Parent Category ($)": "فئات المصاريف حسب تصنيف التكلفة / الفئة الرئيسية ($)",
+      "Top Staff Members by Remaining Payment ($)": "أعلى الموظفين حسب الرصيد المتبقي للدفع ($)",
+      "Staff Registry by Pay Status": "سجل الموظفين حسب حالة السداد",
+      "Staff Roles by Assigned Workforce Headcount": "المسميات الوظيفية حسب عدد الموظفين المعيّنين",
+      "Staff Headcount by Linked Role Category": "عدد الموظفين حسب فئة الدور المرتبطة",
+      "· Consolidated 6-Industry Revenue, Operating Profit & Liquidity": "· الإيرادات الموحدة والربح التشغيلي والسيولة عبر القطاعات الـ 6",
+      "· Sister Company Given vs. Paid Back, Net Owed & Bookkeeping Audit": "· الممنوح مقابل المسدد بين الشركات الشقيقة وصافي الذمم وتدقيق الدفاتر",
+      "· 10-Slot Default Splits, Chronological Agreements & Partner Accounts": "· حصص التوزيع العشر والاتفاقيات الزمنية وحسابات الشركاء",
+      "· Central Borrowing Facilities & Fixed Assets": "· تسهيلات الاقتراض المركزية والأصول الثابتة",
+      "· HQ Shared Services, Recurring Schedules & Supplier AP": "· الخدمات المشتركة للإدارة العامة والجداول الدورية وذمم الموردين",
+      "· 6-Industry Elimination Schedule & Double-Entry Trial Balance": "· جدول استبعاد المعاملات البينية للقطاعات الـ 6 وميزان المراجعة المزدوج",
+      "· 5-Resort Revenue, Occupancy, Covers & Operating Margin": "· إيرادات المنتجعات الـ 5 والإشغال والرواد وهامش التشغيل",
+      "· Gate Admissions, Chalet Rooms, POS Till Close & VAT": "· دخوليات البوابة والشاليهات وإقفالات صناديق الكاشير والضريبة",
+      "· Seasonal Contracts, Remaining Arrears & Partner Pools": "· العقود الموسمية والمتأخرات المتبقية ومجمعات الشركاء",
+      "· Commissary Stock, Consumption Ratio & Recipe BOM Margin": "· مخزون المستودع المركزي ونسبة الاستهلاك وهامش الوصفات المعياري",
+      "· Diesel Burn L/hr Watchdog, Solar Offset & Maintenance": "· رقابة استهلاك المازوت (ليتر/ساعة) ووفر الطاقة الشمسية والصيانة",
+      "· Seasonal & Freelance Payroll, Suppliers & Resort GL": "· رواتب الموسميين والمياومين والموردين والأستاذ العام للمنتجع",
+      "· Korri Auto & Shacman Revenue, Gross Margin & Brand Mix": "· إيرادات كوري أوتو وشاكمان ومجمل الربح ومزيج العلامات",
+      "· Import Shipments, Customs/Freight Allocation & LCs": "· شحنات الاستيراد وتوزيع الجمارك والشحن والاعتمادات المستندية",
+      "· 44 Heavy Truck & Commercial Serial Units, PDI & Warranty": "· 44 شاحنة ثقيلة وآلية مرقّمة وفحص ما قبل التسليم والكفالات",
+      "· Spare Parts Valuation, Reorder Alerts & Branch Transfers": "· تقييم قطع الغيار وتنبيهات إعادة الطلب والتحويلات بين الفروع",
+      "· 1,077 Stock Rows & 268 P&L Rows Tied $0.00 + Trading GL": "· 1,077 بند مخزون و268 بند أرباح وخسائر مطابقة بفارق $0.00 + أستاذ التجارة",
+      "· $55.83M Gross / $40.44M Share-Adjusted Portfolio & NOI Yield": "· محفظة بقيمة $55.83M إجمالي / $40.44M معدّلة بالحصص وعائد صافي الدخل التشغيلي",
+      "· Deed Sales Contracts, Buyer Instalments & Title Transfers": "· عقود البيع العقاري وأقساط المشترين ونقل الملكية",
+      "· 13 Properties, 32 Units, LGB Valuations & Co-Ownership Stakes": "· 13 عقاراً و32 وحدة وتخمينات معتمدة وحصص الملكية المشتركة",
+      "· Maintenance Work Orders, Cost Variance & Tenant Recharges": "· أوامر عمل الصيانة وفروقات التكلفة وإعادة الفوترة للمستأجرين",
+      "· Owner NOI Distributions, Contractor Payables & Property GL": "· توزيعات صافي الدخل للمالكين وذمم المقاولين والأستاذ العقاري",
+      "· $331.5k GWP, $40.9k Gross Commission & Net Profit": "· $331.5k إجمالي الأقساط المكتتبة و$40.9k إجمالي العمولات وصافي الربح",
+      "· 38 Policies, 4 Endorsements & Client Discounts": "· 38 بوليصة و4 ملاحق وحسومات العملاء",
+      "· 30/60/90-Day Expiry Queue, 88.2% Retention & Insured Risks": "· قائمة التجديد (30/60/90 يوماً) ونسبة احتفاظ 88.2% والمخاطر المؤمّنة",
+      "· Client Premium AR, Carrier Payable & Statement Recon": "· ذمم أقساط العملاء ومستحقات شركات التأمين ومطابقة الكشوفات",
+      "· Motor, Medical & Property Claims, Surveyors & Settlements": "· مطالبات السيارات والاستشفاء والممتلكات والخبراء والتسويات",
+      "· 12 Insurance Lines, 52 Products & Chronological Commission Rates": "· 12 فرع تأمين و52 منتجاً وجداول نسب العمولات الزمنية",
+      "Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock & Usage Ratio": "أزرق: المشتريات الواردة · أخضر: استهلاك الوصفات · سماوي/كهرماني: المخزون الختامي ونسبة الاستهلاك",
+      "Blue:Chalets & Suites · Green:Restaurant & Shisha · Amber:Beach Gate & Weddings": "أزرق: الشاليهات والأجنحة · أخضر: المطعم والأركيلة · كهرماني: بوابة الشاطئ والأعراس",
+      "Blue:Contract Value · Green:Paid Cash · Amber:Remaining Arrears": "أزرق: قيمة العقد · أخضر: المدفوع نقداً · كهرماني: المتأخرات المتبقية",
+      "Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Burn Spike (>15% Over Rated)": "أزرق: المعدل المعياري (ل/ساعة) · أخضر: استهلاك طبيعي · أحمر: طفرة استهلاك (>15% فوق المعياري)",
+      "Blue:Sales Revenue ($) · Green:Landed Cost COGS ($)": "أزرق: إيراد المبيعات ($) · أخضر: تكلفة البضاعة الواصلة ($)",
+      "Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)": "أزرق: قيمة الفاتورة ($) · أخضر: تكلفة البضاعة الواصلة ($)",
+      "Blue:Supplier FOB ($) · Green:Cleared Landed Cost · Amber:Pending Landed Allocation": "أزرق: قيمة المورّد FOB ($) · أخضر: تكلفة واصلة مخلّصة · كهرماني: بانتظار توزيع الشحن والجمارك",
+      "Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Allocation": "أزرق: قيمة المورّد FOB ($) · أخضر: تكلفة واصلة موزعة 100% · كهرماني: بانتظار التوزيع",
+      "Slate:Capitalized Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold & Delivered": "رمادي: التكلفة الواصلة المرسملة ($) · أزرق: صالة العرض · كهرماني: محجوز · أخضر: مباع ومسلّم",
+      "Slate:Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold & Delivered": "رمادي: التكلفة الواصلة ($) · أزرق: صالة العرض · كهرماني: محجوز · أخضر: مباع ومسلّم",
+      "Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert": "أزرق: تقييم المخزون الأمثل ($) · أحمر: تنبيه مخزون دون الحد الأدنى",
+      "La Una RawBT till + resort dining terraces": "صندوق كاشير La Una الحراري + صالات مطاعم المنتجعات",
+      "Flags actual L/hr > 15% over rated curve": "يرصد الاستهلاك الفعلي (ليتر/ساعة) المتجاوز للمنحنى المعياري بأكثر من 15%",
+      "Items at or below minimum warehouse safety stock": "أصناف عند أو دون الحد الأدنى لمخزون الأمان في المستودع",
+      "Mirrored Shacman <-> Korri Auto stock transfers": "تحويلات مخزنية متقابلة بين شاكمان وكوري أوتو",
+      "Reimbursed by Shaanxi / Weichai & component OEMs": "مستردة من مصانع Shaanxi / Weichai ومصنّعي القطع الأصليين",
+      "Ranked by annualized rent contribution across 4235 Msaytbeh & Properties portfolio": "مرتبة حسب المساهمة الإيجارية السنوية عبر عقارات المصيطبة 4235 ومحفظة العقارات",
+      "9-Year stepped commercial escalations · 11% VAT effective 2025-11-01 on 4235 Company S.A.L": "زيادات إيجارية تجارية متدرجة لـ 9 سنوات · ضريبة 11% سارية من 01-11-2025 على شركة 4235 ش.م.ل",
+      "Multi-year stepped rent schedules, grace periods, VAT treatment, and renewal countdowns": "جداول الإيجارات المتدرجة متعددة السنوات وفترات السماح والمعالجة الضريبية والعد التنازلي للتجديد",
+      "Held in Client Advances until final notary deed transfer": "محتجزة في سلف المشترين لحين الفراغ النهائي لسند الملكية لدى الكاتب العدل",
+      "Tranches due soon or past milestone deadline": "دفعات مستحقة قريباً أو متجاوزة لموعد استحقاق المرحلة",
+      "Paid-to-date progress bar vs remaining deed transfer balance": "نسبة المسدد حتى تاريخه مقابل الرصيد المتبقي لنقل سند الملكية",
+      "Tracks buyer sales agreements, collected instalments, broker commissions, and deed recognition stage": "يتتبع عقود بيع المشترين والأقساط المحصّلة وعمولات الوساطة ومرحلة نقل الملكية",
+      "Reflecting Lebanese cadastral /2400 co-ownership shares across Beirut, Keserwan, South Lebanon, Cannes & Baghdad": "يعكس حصص الملكية العقارية اللبنانية من أصل 2400 سهم في بيروت وكسروان والجنوب وكان وبغداد",
+      "12 portfolio assets encompassing 13 LGB certified Lebanese plots plus Cannes Croisette and Baghdad Mansour commercial units": "12 أصلاً عقارياً تشمل 13 عقاراً لبنانياً مخمّناً رسمياً إضافة إلى وحدات كان وبغداد التجارية",
+      "Dated 2024-08-13 certified appraisal baseline ($51.48M gross / $28.78M share-adjusted) with implied capitalization rates": "خط أساس التخمين المعتمد بتاريخ 13-08-2024 ($51.48M إجمالي / $28.78M معدّل بالحصص) مع معدلات الرسملة الضمنية",
+      "Flagged Rechargeable = Yes awaiting tenant invoice": "معلّم كقابل لإعادة الفوترة = نعم بانتظار إصدار فاتورة المستأجر",
+      "Generator diesel, chilled water & municipal shares": "مازوت المولدات والمياه المبرّدة وحصص الرسوم البلدية",
+      "Structural improvements capitalized to Building Improvements vs routine facility repairs": "التحسينات الإنشائية المرسملة في تحسينات المباني مقابل تصليحات المرافق الدورية",
+      "Tracks contractor scope, capitalization vs expense routing, and tenant recharge eligibility": "يتتبع نطاق عمل المقاول والتوجيه بين الرسملة والمصاريف وقابلية التحميل على المستأجر",
+      "Carrier Payable stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker commission yield only": "يبقى المستحق لشركة التأمين مساوياً لإجمالي القسط ناقص إجمالي العمولة؛ حسومات العملاء تُخفّض صافي عمولة الوسيط فقط",
+      "Full policy lifecycle with Gross Commission, Broker-Funded Client Discounts, Policy Admin Fees, and Net Carrier Payable": "دورة حياة البوليصة الكاملة مع إجمالي العمولة وحسومات العملاء الممولة من الوسيط ورسوم الإصدار وصافي مستحق شركة التأمين",
+      "Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion": "المسح اليومي التلقائي يرصد البوالص قبل 90 و60 و30 يوماً من انتهائها ويتتبع تحويل عروض التجديد",
+      "Brokerage advocacy tracks surveyor assessment from First Notice of Loss (FNOL) through carrier discharge voucher": "متابعة الوساطة لتقدير الخبير من الإشعار الأول بالحادث (FNOL) حتى سند المخالصة والتسديد",
+      "Tracks claim notifications, expert assignment, policy deductible application, and insurer settlement status": "يتتبع إشعارات الحوادث وتعيين الخبراء وتطبيق التحمّل وحالة تسوية شركة التأمين",
+      "Client receivable equals Gross Premium minus Client Discount plus Policy Admin Fee; receipts auto-link on settlement": "ذمة العميل تساوي إجمالي القسط ناقص حسم العميل زائد رسوم البوليصة؛ ترتبط المقبوضات تلقائياً عند السداد",
+      "Matches carrier commission statements line-by-line against expected agreement rates and isolates rounding or rate discrepancies": "يطابق كشوفات عمولات شركات التأمين سطراً بسطر مع نسب الاتفاقيات المتوقعة ويعزل فروقات النسب أو التقريب",
+      "Tracks Gross Premium, Broker Commission retained at source, cumulative carrier remittances, and fiduciary cash coverage": "يتتبع إجمالي الأقساط وعمولة الوسيط المحتجزة عند المنبع والتحويلات التراكمية لشركات التأمين وتغطية السيولة الائتمانية",
+      "Across 6 Lebanese & regional insurance carriers": "عبر 6 شركات تأمين لبنانية وإقليمية",
+      "Forward start-date guard & retroactive policy backfill": "حماية التسلسل الزمني لتاريخ السريان وتحديث البوالص بأثر رجعي",
+      "Auto-computes Gross Commission on policy entry": "يحتسب إجمالي العمولة تلقائياً فور إدخال البوليصة",
+      "Standardized product hierarchy across Motor, Medical, Property, Engineering, Marine, Liability, Workmen Comp, Life, PA, Travel & Fidelity": "هيكلية منتجات موحّدة عبر السيارات والاستشفاء والممتلكات والهندسي والبحري والمسؤولية وطوارئ العمل والحياة والحوادث والسفر وخيانة الأمانة",
+      "None": "لا يوجد",
+      "Full": "كامل",
+      "Full Day": "يوم كامل",
+      "Sunset Shift": "وردية المساء",
+      "Flags": "تنبيهات",
+      "loan facilities": "تسهيلات قروض",
+      "recorded repayments": "تسديدات مسجلة",
+      "capital/equipment/asset vouchers": "سندات أصول ومعدات واستثمارات",
+      "external partner entries": "قيود شركاء خارجيين",
+      "Active quarry, transport & holding JVs": "شراكات كسارات ونقل وقابضة نشطة",
+      "recorded profit-split settlements": "تسويات توزيع أرباح مسجلة",
+      "Open Defects & Parts Custody Ledger": "دفتر الأعطال المفتوحة وعهدة قطع الغيار",
+      "Add or update a Raw Material Site Cost or Site Haulage Rate agreement": "إضافة أو تحديث اتفاقية سعر مواد موقع أو تعرفة نقل كسارة",
+      "Jump to Price Agreement Exceptions": "الانتقال إلى استثناءات اتفاقيات الأسعار",
+      "Jump to Unmatched Salary Payments": "الانتقال إلى دفعات الرواتب غير المطابقة للعقود",
+      "Jump to Grease, Lubricant & Diesel Machine-Driver Audit": "الانتقال إلى تدقيق التشحيم والزيوت والمازوت لآليات الغائبين",
+      "Jump to Sales Commissions by Product": "الانتقال إلى عمولات المبيعات حسب الصنف",
+      "Next sequential 25-ticket pad serial (excludes >6-digit external scale numbers)": "الرقم التسلسلي التالي في دفتر الـ 25 إيصالاً (يستثني أرقام القبان الخارجي المؤلفة من أكثر من 6 خانات)",
+      "Joint Venture (50/50 Partnership Site)": "شراكة مناصفة (موقع شراكة 50/50)",
+      "Open Consolidated Rollup": "فتح التجميع المالي الموحّد",
+      "Open Group P&L Schedule": "فتح جدول الأرباح والخسائر للمجموعة",
+      "Open Group Treasury": "فتح خزينة المجموعة",
+      "Open Sister Interactions": "فتح المعاملات بين الشركات الشقيقة",
+      "Open Daily Venue Revenue": "فتح إيرادات الفروع اليومية",
+      "Open POS Till Closes": "فتح إقفالات صناديق الكاشير",
+      "Open Lease Registry": "فتح سجل عقود الإيجار",
+      "Open Property Portfolio": "فتح المحفظة العقارية",
+      "Open Property Sales & Deeds": "فتح المبيعات العقارية وسندات الملكية",
+      "Open Rent Invoicing": "فتح فوترة الإيجارات",
+      "Open Production Ledger": "فتح سجل إنتاج البوالص",
+      "Open Statement Reconciliation": "فتح مطابقة كشوفات العمولات",
+      "Open Carrier Remittances": "فتح تحويلات شركات التأمين",
+      "Open AR Overdue (>30d / 60+)": "فتح الذمم المدينة المتأخرة (>30 / +60 يوماً)",
+      "Open 3-Leg Open AP": "فتح الذمم الدائنة المفتوحة ثلاثية الشقوق",
+      "Open Weighbridge 25-Ticket Books & Pad Tally Table": "فتح جدول دفاتر القبان (25 إيصالاً) وجرد الدفاتر",
+      "Open Raw Material Purchase & Site Haulage Agreements in Purchases, Expenses & Payables": "فتح اتفاقيات شراء المواد ونقل المواقع في المشتريات والمصاريف",
+      "Open Customer Sales & Commission Agreements": "فتح اتفاقيات مبيعات العملاء والعمولات",
+      "Open Master Sites & Regions Registry": "فتح السجل الرئيسي للمواقع والمناطق",
+      "Open Quarry & Haulage Tickets": "فتح إيصالات الكسارات والنقل",
+      "Open Expenses & Overhead Vouchers": "فتح سندات المصاريف والنفقات العامة",
+      "Open Master Suppliers & Haulers Registry": "فتح السجل الرئيسي للموردين والناقلين",
+      "Open voucher and enter final supplier invoice price": "فتح السند وإدخال سعر فاتورة المورّد النهائي",
+      "Create a per-unit Sales Commission rule for a plant owner": "إنشاء قاعدة عمولة بيع للوحدة لصاحب المصنع",
+      "Add or step a per-unit Sales Commission rule by Product, Date Window & Unit (m³ / Ton)": "إضافة أو تعديل شريحة عمولة بيع للوحدة حسب الصنف والفترة والوحدة (م³ / طن)",
+      "Bluetooth Thermal Print / Preview Fuel Slip #": "طباعة حرارية بلوتوث / معاينة قسيمة الوقود #",
+      "Auto-populated when a Truck with a registered owner is selected; open when truck has no preset owner": "يُملأ تلقائياً عند اختيار شاحنة ذات مالك مسجل؛ ومتاح للإدخال عند عدم وجود مالك مسبق",
+      "Always anchored to physical Transaction Date regardless of whether the global system filter is set to Reporting Date or Transaction Date.": "مرتبط دائماً بتاريخ العملية الفعلي بغض النظر عما إذا كان مصفّي النظام مضبوطاً على تاريخ التقرير أو تاريخ العملية.",
+      "Open discrete Day Records Drawer to search and inspect individual entries across all tables.": "فتح درج سجلات اليوم للبحث ومعاينة القيود الفردية عبر كافة الجداول.",
+      "New Sales Dispatch Ticket": "إيصال تسليم مبيعات جديد",
+      "Inspect quarry & agreement records": "معاينة سجلات الكسارات والاتفاقيات",
+      "Inspect expense bills & stock purchases": "معاينة فواتير المصاريف ومشتريات المخزون",
+      "New Expense / Stock Bill": "فاتورة مصروف / مخزون جديدة",
+      "Inspect treasury, external, FX & loan records": "معاينة سجلات الخزينة والحركات الخارجية والصرافة والقروض",
+      "New Treasury / External Movement": "حركة خزينة / خارجية جديدة",
+      "Inspect diesel, lubricant & maintenance logs": "معاينة سجلات المازوت والزيوت والصيانة",
+      "New Diesel / Lube Issue": "صرف مازوت / زيوت جديد",
+      "Inspect attendance, salaries & master records": "معاينة الحضور والرواتب والسجلات الرئيسية",
+      "New Attendance / Shift Entry": "قيد حضور / وردية جديد",
+      "Distributions paid in advance / above raw-cost stock entitlement": "توزيعات مدفوعة مقدماً / تتجاوز استحقاق مخزون المواد الخام",
+      "Salary payment without an employment contract": "دفعة راتب بدون عقد عمل سارٍ",
+      "No overtime allowance on this load — click to register overtime": "لا يوجد بدل إضافي على هذه النقلة — اضغط لتسجيل عمل إضافي",
+      "Unlocked (Site has no active single supplier agreement)": "متاح للتعديل (لا توجد اتفاقية مورّد وحيد نشطة للموقع)",
+      "Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments": "مقفل على تاريخ الإدخال لدقة التدفق النقدي — استخدم تاريخ التقرير لتعديلات التقارير",
+      "Locked to default (Credit)": "مقفل على القيمة الافتراضية (ذمم آجلة)",
+      "Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity": "يُملأ تلقائياً من سعة الشاحنة (م³)؛ افتح القفل كمدير لإدخال كمية يدوية",
+      "Locked to active Price Agreement or List Price on Pickup & Delivery": "مقفل على اتفاقية السعر النشطة أو السعر المعلن للتسليم والتوصيل",
+      "Material Total = Qty × Unit Price + Tier Adj − Discount": "إجمالي المواد = الكمية × سعر الوحدة + فرق الشريحة − الحسم",
+      "Total (USD) = Material Total + Transport Total": "الإجمالي (USD) = إجمالي المواد + إجمالي النقل",
+      "Tier 1 / Tier 2 Truck Size": "حجم الشاحنة — الشريحة 1 / الشريحة 2",
+      "Tier 1 Truck Size": "حجم الشاحنة — الشريحة 1",
+      "Raw Material & Site Haulage Price Agreements": "اتفاقيات أسعار المواد الأولية ونقل المواقع",
+      "Ties to Class 5 Till": "يطابق حساب الصندوق (الصنف 5)",
+      "CUSTOMER AR AGING & CREDIT TERMS SUB-LEDGER": "دفتر أعمار ذمم العملاء وشروط الائتمان",
+      "11% OUTPUT VAT TAX INVOICES & MOF REGISTER": "فواتير ضريبة المخرجات 11% وسجل وزارة المالية",
+      "WEIGHBRIDGE 25-TICKET BOOK AUDIT: SKIPPED, DUPLICATE, REMOVED (0 KM) & RETURNED LOADS": "تدقيق دفاتر القبان (25 إيصالاً): الأرقام المتخطاة والمكررة والملغاة (0 كم) والمرتجعة",
+      "PURCHASED PARTS, OILS & CONSUMABLES ROUTING": "توجيه قطع الغيار والزيوت والمستهلكات المشتراة",
+      "Total Portfolio": "إجمالي المحفظة",
+      "Comparable Coastal Land Sales": "مبيعات أراضٍ ساحلية مماثلة",
+      "Land & Improvement Valuation": "تخمين الأرض والتحسينات",
+      "Commercial Income & Land": "الرسملة الإيجارية التجارية والأرض",
+      "Industrial Land Benchmark": "معيار الأراضي الصناعية واللوجستية",
+      "Quote Sent · WhatsApp Follow-Up": "تم إرسال العرض · متابعة واتساب",
+      "Renewal Terms Requested": "طُلبت شروط التجديد",
+      "Early Renewal Census Prep": "تحضير كشف المؤمّن عليهم للتجديد المبكر",
+      "Auto-Renewal Slotted": "مجدول للتجديد التلقائي",
+      "Client Relocated Abroad": "انتقل العميل إلى الخارج",
+      "Vehicle Sold by Insured": "بيعت المركبة من قبل المؤمّن له",
+      "PAR & Workmen Comp bordereau verified": "تم تدقيق كشف الممتلكات وطوارئ العمل",
+      "Customer Workshop Job & Alignment": "أمر شغل مشغل عميل وميزان",
+      "Supplier Warranty Replacement": "استبدال على كفالة المورّد",
+      "Filters & Consumables": "فلاتر ومواد استهلاكية",
+      "Spirits, Mixers & Draft": "مشروبات ومكملات وبيرة برميل",
+      "2 · Sales by material + Top…": "2 · المبيعات حسب المادة + الأعلى…",
+      "3 · Monthly P&L, Marg…": "3 · الأرباح والخسائر والهوامش الشهرية…",
+      "Qty / Spend": "الكمية / الإنفاق",
+      "Staff Studio": "استوديو الموظفين",
+      "Customers": "العملاء",
+      "Products": "الأصناف",
+      "Drivers": "السائقون",
+      "Scan & Auto-Fill Entry": "مسح ضوئي وتعبئة تلقائية",
+      "Try Sample ▾": "تجربة نموذج ▾",
+      "Try Sample": "تجربة نموذج",
+      "Live Camera Smart Scan": "مسح ذكي مباشر بالكاميرا",
+      "ISABI Vision Engine": "محرك الرؤية الذكي ISABI",
+      "ISABI Smart Parser + Frequency Grounding": "المحلل الذكي ISABI + المطابقة بالتكرار",
+      "ISABI Cloud AI + Ledger Grounding": "ذكاء ISABI السحابي + مطابقة الدفاتر",
+      "Manufacturing · Multi-Line Spare Parts Tax Invoice": "التصنيع · فاتورة ضريبية متعددة البنود لقطع الغيار",
+      "Manufacturing · Unpriced Quarry Weighbridge Slip": "التصنيع · إيصال قبان كسارة غير مسعّر",
+      "Holding & Treasury · Intercompany Bank Wire Advice": "القابضة والخزينة · إشعار تحويل مصرفي بين الشركات",
+      "Hospitality & Resorts · Cellar Commissary Bill (TTC)": "الضيافة والمنتجعات · فاتورة تموين ومشروبات شاملة الضريبة",
+      "Automotive & Trading · Heavy Truck VIN Sales Invoice": "السيارات والتجارة · فاتورة بيع شاحنة ثقيلة برقم الهيكل",
+      "Real Estate & Property · 4235 Tower Lease Rent Invoice": "العقارات والأملاك · فاتورة إيجار برج 4235 التجاري",
+      "Insurance & Brokerage · Cargo & CAR Policy Schedule": "التأمين والوساطة · جدول بوليصة شحن بحري وأخطار مقاولين",
+      "Mfg": "التصنيع",
+      "Resorts": "المنتجعات",
+      "Real Est": "العقارات",
+      "Insur.": "التأمين",
+      "Rep Diff": "فروق تاريخ التقرير"
+    },
     fr: {
       "ISABI Systems": "ISABI Systems",
       "ISABI SYSTEMS": "ISABI SYSTEMS",
@@ -3254,8 +5945,8 @@
       "Day": "Jour",
       "Rep Date": "Date Compta",
       "Tx Date": "Date Opér.",
-      "Reporting Date Basis": "Base Date Comptable",
-      "Transaction Date Basis": "Base Date Opérationnelle",
+      "Reporting Date Basis": "Base Date de Reporting",
+      "Transaction Date Basis": "Base Date d'Opération",
       "All-Time": "Toutes Périodes",
       "Today": "Aujourd'hui",
       "Yesterday": "Hier",
@@ -3267,7 +5958,7 @@
       "Year to Date (YTD)": "Cumul Annuel (YTD)",
       "All BUs · Shared Registry": "Toutes Sociétés · Registre Partagé",
       "Universal Registry": "Registre Universel",
-      "Live Plant Terminals": "Terminaux Terrain en Direct",
+      "Live Plant Terminals": "Terminaux d'Usine en Direct",
       "Starting Face ID…": "Démarrage de Face ID…",
       "Tap for Face ID": "Appuyer pour Face ID",
       "Pause Camera": "Pause Caméra",
@@ -3307,7 +5998,7 @@
       "Subcategory": "Sous-catégorie",
       "Site": "Chantier / Site",
       "Region": "Région",
-      "Equipment": "Engin / Camion",
+      "Equipment": "Équipements",
       "Driver": "Chauffeur",
       "Staff Member": "Collaborateur",
       "Role": "Fonction / Rôle",
@@ -3665,7 +6356,7 @@
       "Closing AP": "Solde Fournisseurs Clôture",
       "Closing AP Balance": "Solde Clôture Fournisseurs",
       "AP Settlements": "Règlements Fournisseurs",
-      "Open Payable": "Dettes à Payer",
+      "Open Payable": "Dette Ouverte",
       "Payable Leg": "Volet Dette (AP)",
       "Owed For (AP Leg)": "Nature Dette (AP)",
       "Credit AP": "Dette Fournisseur",
@@ -3998,7 +6689,7 @@
       "Aggregate Grades": "Granulats & Sables",
       "Grades": "Qualités",
       "Family": "Famille",
-      "Sites": "Chantiers",
+      "Sites": "Sites",
       "Active Sites": "Chantiers actifs",
       "Destination Site": "Chantier de Livraison",
       "Set Destination": "Définir destination",
@@ -4246,7 +6937,7 @@
       "Operations": "Opérations",
       "Accounts Receivable Collector": "Chargé de Recouvrement",
       "Diesel & Garage Officer": "Responsable Gasoil & Garage",
-      "Lions Transport Fleet Controller": "Contrôleur Flotte Lions Transport",
+      "Lions Transport Fleet Controller": "Contrôleur de Flotte Lions Transport",
       "Management & Admin": "Direction & Administration",
       "Plant & Production": "Centrale & Production",
       "Maintenance & Workshop": "Maintenance & Atelier",
@@ -4614,8 +7305,8 @@
       "USD → LBP": "USD → LBP",
       "LBP → USD": "LBP → USD",
       "LBP (LL)": "Livre Libanaise (LL)",
-      "Sales by material + Top…": "Ventes par matière + Top…",
-      "Monthly P&L, Marg…": "Résultat mensuel & Marge…",
+      "Sales by material + Top…": "Ventes par matériau + Top…",
+      "Monthly P&L, Marg…": "Compte de résultat & marges mensuels…",
       "+ deducts from tank (used / shortage) · − adds to tank (surplus)": "+ déduit de la cuve (conso. / manque) · − ajoute à la cuve (surplus)",
       "3-letter ISO 4217 currency code.": "Code devise ISO 4217 à 3 lettres.",
       "Alert when shelf drops to or below this qty": "Alerter lorsque le stock descend à ce seuil ou en dessous",
@@ -4718,7 +7409,7 @@
       "Driver / Operator": "Chauffeur / Opérateur",
       "On Shift": "En Poste",
       "Fuel & Lubricant Intakes": "Entrées Carburant & Lubrifiants",
-      "General Equipment Repair": "Réparation Générale Engins",
+      "General Equipment Repair": "Réparation Générale d'Équipements",
       "Lebanese CoA Class": "Classe du Plan Comptable",
       "Raw Material Purchases": "Achats Matières Premières",
       "SOA Journal Stream": "Flux Journal SOA",
@@ -5724,7 +8415,7 @@
       "Ghassanieh (House / Generator Supply)": "Groupe Électrogène / Interne",
       "Kilograms (kg)": "Kilogrammes (kg)",
       "Kilogram (kg)": "Kilogramme (kg)",
-      "Boxes (Box)": "Boîtes (Box)",
+      "Boxes (Box)": "Boîtes (Boîte)",
       "Metres (m)": "Mètres (m)",
       "Meter (m)": "Mètre (m)",
       "Cubic Metres (m³)": "Mètres Cubes (m³)",
@@ -5783,7 +8474,7 @@
       "Service Date": "Date d'Entretien",
       "Service Type": "Type d'Entretien",
       "Gear / Transmission Oil 90": "Huile de Boîte 90",
-      "ATF / Torque Converter Oil": "Huile ATF / Convertisseur",
+      "ATF / Torque Converter Oil": "Huile ATF / Convertisseur de Couple",
       "Differential / Axle Oil 85W-140": "Huile de Pont 85W-140",
       "Oil & Fuel Filter Service": "Remplacement Filtres Huile & Carburant",
       "Service Action": "Nature de l'Intervention",
@@ -6258,15 +8949,2706 @@
       "Full legal / trade name": "Raison sociale / nom commercial",
       "Ministry of Finance #": "N° Ministère des Finances",
       "Driver name": "Nom du chauffeur",
-      "Full staff member name": "Nom complet du collaborateur"
-}
+      "Full staff member name": "Nom complet du collaborateur",
+      "New": "Nouveau",
+      "Live": "En direct",
+      "Never": "Jamais",
+      "you": "vous",
+      "Enter": "Saisissez",
+      "Posting": "Comptabilisation",
+      "Posting:": "Comptabilisation :",
+      "Run": "Exécuter",
+      "Frequent": "Fréquent",
+      "and": "et",
+      "or": "ou",
+      "at": "à",
+      "past": "au-delà de",
+      "or above": "ou au-dessus de",
+      "avg": "moy.",
+      "Open Customer AR": "Créances Clients Ouvertes",
+      "Current Open AR": "Encours Client Actuel",
+      "Open AR before": "Créances avant reçu",
+      "Open AR after": "Créances après reçu",
+      "3-Leg Open AP": "Dettes Fournisseurs (3 volets)",
+      "Open AP to supplier": "Dette ouverte envers le fournisseur",
+      "Open AP before": "Dette avant règlement",
+      "Open AP after": "Dette après règlement",
+      "Open IC": "Intercos Ouverts",
+      "Open Queue": "File d'Attente Ouverte",
+      "Open Arrears": "Arriérés Ouverts",
+      "Open Payees": "Bénéficiaires Ouverts",
+      "Open Backorders": "Reliquats Ouverts",
+      "Open Claim": "Sinistre Ouvert",
+      "Open Claims": "Sinistres Ouverts",
+      "Open Loan": "Prêt Ouvert",
+      "Open Loan Before": "Encours Prêt Avant",
+      "Open PDI": "PDI Ouverts",
+      "Open Issues": "Anomalies Ouvertes",
+      "Prior Open Issues": "Anomalies Ouvertes Antérieures",
+      "Open Facility": "Ligne de Crédit Ouverte",
+      "Open Exposure": "Exposition Ouverte",
+      "Open Balance": "Solde Ouvert",
+      "Open Balances": "Soldes Ouverts",
+      "Total Open": "Total Ouvert",
+      "Open AI Sentinels": "Ouvrir les Sentinelles IA",
+      "Open Attendance & OT Analysis": "Ouvrir l'Analyse Présence & HS",
+      "or open a demo workspace": "ou ouvrir un espace démo",
+      "All Manufacturing Group": "Tout le Groupe Industrie",
+      "All Entities": "Toutes les Entités",
+      "All Entities (Shared)": "Toutes les Entités (Partagé)",
+      "All BUs": "Toutes les Sociétés",
+      "All BUs (Universal)": "Toutes les Sociétés (Universel)",
+      "Universal Catalog": "Catalogue Universel",
+      "open Sentinel alert. Ask anything in English, العربية, or Français, record a voice note, or attach a file.": "alerte Sentinelle ouverte. Posez vos questions en Français, English ou العربية, enregistrez une note vocale ou joignez un fichier.",
+      "Fleet": "Flotte",
+      "Fleet Active": "Flotte Active",
+      "Realized spread": "Marge réalisée",
+      "Net cash profit": "Profit net de trésorerie",
+      "Collect AR": "Recouvrer",
+      "Double-Entry Books: Balanced ($0.00 Variance)": "Livres en Partie Double : Équilibrés (Écart 0,00 $)",
+      "6-Industry Revenue & Profit Trajectory": "Trajectoire des Revenus & Profits des 6 Secteurs",
+      "COGS": "Coût des Ventes",
+      "Direct Cost": "Coût Direct",
+      "Group AR": "Créances Groupe",
+      "Group spread": "Marge du Groupe",
+      "Holding & Treasury watchdogs & ledger integrity": "Sentinelles Holding & Trésorerie et intégrité comptable",
+      "Holding Shared-Services Overhead & Credit Expense Settlement Guard": "Contrôle des Frais Généraux Holding & Règlements Fournisseurs",
+      "Bilateral Sister Amount Drift & Tolerance Watchdog (< $1.00 Tolerance)": "Contrôle d'Écart Bilatéral Inter-Sociétés (Tolérance < 1,00 $)",
+      "Unmatched One-Sided Sister Transfers (> 3-Day Window)": "Transferts Inter-Sociétés Unilatéraux Non Appairés (> 3 jours)",
+      "Net group cash": "Trésorerie nette groupe",
+      "Quarry, F&B & Landed": "Carrières, F&B & Coût Rendu",
+      "Bilateral intercompany funding & repayment": "Financement et remboursement bilatéral inter-sociétés",
+      "Group Rollup": "Consolidation Groupe",
+      "Revenue share & profit contribution by vertical": "Part du chiffre d'affaires et contribution au profit par secteur",
+      "Consolidated Resort P&L Value Bridge (Ex-VAT)": "Pont de Résultat Consolidé du Resort (HT)",
+      "Dept GM": "Marge Brute Dépt.",
+      "Energy/OpEx": "Énergie / OpEx",
+      "F&B + Chalet spread": "Marge F&B + Chalets",
+      "F&B Cost": "Coût F&B",
+      "Hospitality & Resorts watchdogs & ledger integrity": "Sentinelles Hôtellerie & Resorts et intégrité comptable",
+      "Net operating cash": "Flux net d'exploitation",
+      "POS Till Daily Close vs Booked Daily Venue Revenue Variance": "Écart Clôture Caisse POS vs Recettes Journalières Comptabilisées",
+      "Back-Dated Venue Entry & Daily Revenue Close Queue": "Écritures Antidatées & File de Clôture des Recettes du Jour",
+      "Recipe BOM usage": "Consommation Recettes BOM",
+      "Resort Revenue, Kitchen Cost & Profit Trajectory": "Trajectoire Revenus, Coût Cuisine & Profit du Resort",
+      "Seasonal Membership Arrears & Contract Rollover Guard": "Contrôle des Arriérés d'Abonnements Saisonniers & Renouvellements",
+      "Top seasonal chalet & cabana contracts": "Principaux contrats saisonniers chalets & cabanas",
+      "Menu Matrix": "Matrice Menu",
+      "Top F&B & banquet margin contributors": "Principaux contributeurs à la marge F&B & banquets",
+      "Blanca Beach Resort · Daily Venue Revenue, Memberships & F&B Cost": "Blanca Beach Resort · Recettes du Jour, Abonnements & Coût F&B",
+      "Automotive & Heavy Trading watchdogs & ledger integrity": "Sentinelles Négoce Auto & Poids Lourds et intégrité comptable",
+      "Below-Reorder Spare Parts Stock & 5-Warehouse WAC Parity Guard": "Alerte Seuil de Réapprovisionnement Pièces & Parité CUMP (5 Dépôts)",
+      "Consolidated Trading P&L Bridge (Landed Cost Economics)": "Pont de Résultat Négoce Consolidé (Économie du Coût Rendu)",
+      "FOB + CIF duty": "Coût FOB + Douane CIF",
+      "Gross AR": "Créances Brutes",
+      "Gross GM": "Marge Brute",
+      "Heavy Truck & Parts Revenue, Landed Cost & Margin": "Revenus Camions & Pièces, Coût Rendu & Marge",
+      "Invoice Book Sequence Gap & Missing Physical Pad Serial Guard": "Contrôle des Sauts de Séries de Carnets de Factures",
+      "Invoiced": "Facturé",
+      "Overdue Collection Promises & Gross AR vs Unallocated Advances Guard": "Promesses de Recouvrement Échues & Créances vs Avances Non Imputées",
+      "Showroom": "Showroom",
+      "Receivables": "Créances",
+      "Top truck & parts accounts by AR exposure": "Principaux comptes camions & pièces par exposition client",
+      "Flagship heavy truck models & embedded margin": "Modèles phares poids lourds & marge intégrée",
+      "Korri Auto SAL · Shacman Heavy Trucks & Korri Auto Parts": "Korri Auto SAL · Poids Lourds Shacman & Pièces Korri Auto",
+      "Admin/Tax": "Admin / Taxes",
+      "Annual Rent Roll, Fit-Out & NOI by Property": "Loyers Annuels, Aménagements & NOI par Immeuble",
+      "Asset NOI": "NOI Actif",
+      "Completed Tenant-Fault Work Orders Pending Recharge Invoice": "Bons de Travaux Imputables au Locataire en Attente de Refacturation",
+      "Consolidated Real Estate Income & NOI Bridge": "Pont des Revenus Immobiliers & NOI Consolidé",
+      "Deed & registry": "Titres & Cadastre",
+      "Fit-Out": "Aménagements",
+      "Net NOI": "NOI Net",
+      "Overdue Property Sale Buyer Instalments & Title Deed Transfer Guard": "Échéances Acheteurs en Retard & Garde de Transfert de Titre Foncier",
+      "Real Estate & Property watchdogs & ledger integrity": "Sentinelles Immobilier & Patrimoine et intégrité comptable",
+      "Rent Roll": "État Locatif",
+      "Unbilled Active Lease Periods & Open Rent Invoice Receivables": "Périodes de Bail Non Facturées & Créances de Loyers Ouvertes",
+      "All Leases": "Tous les Baux",
+      "Anchor commercial & residential leaseholders": "Principaux locataires commerciaux et résidentiels",
+      "Annual rent roll & NOI by deeded asset": "Loyer annuel et NOI par bien titré",
+      "+ Sales tranches": "+ Tranches de vente",
+      "Brokerage Commission & Fiduciary P&L Value Bridge": "Pont des Commissions de Courtage & Résultat Fiduciaire",
+      "Brokerage OpEx": "OpEx Courtage",
+      "Carrier Net": "Net Compagnie",
+      "Client AR": "Créances Clients",
+      "Collected Client Premiums Held Pending Carrier Remittance": "Primes Clients Encaissées en Attente de Reversement aux Compagnies",
+      "Comm": "Comm.",
+      "Comm + fees": "Comm. + frais",
+      "Desk OpEx": "Frais Bureau",
+      "Insurance & Brokerage watchdogs & ledger integrity": "Sentinelles Assurance & Courtage et intégrité comptable",
+      "Insurer Commission Statement Discrepancies vs Agreement Rates": "Écarts de Bordereaux Commissions Compagnies vs Taux Convenus",
+      "Net Rev": "Revenu Net",
+      "Policies Expiring in 30/60/90 Days & Lapsed Unrenewed Policy Watchdog": "Polices Échéant à 30/60/90 Jours & Contrôle des Polices Non Renouvelées",
+      "Rebates": "Remises",
+      "Written Premium, Carrier Net & Commission by Carrier": "Primes Émises, Net Compagnie & Commissions par Assureur",
+      "Largest corporate & fleet policies by GWP": "Principales polices entreprises & flottes par primes brutes",
+      "Catalogue": "Catalogue",
+      "GWP & commission yield by insurance line": "Primes brutes & rendement de commission par branche",
+      "+ New Team Login": "+ Nouvel Accès Équipe",
+      "128-D live neural face descriptors with blink/turn liveness": "Empreinte faciale neuronale 128-D avec détection du vivant (clignement/rotation)",
+      "Active Web Seats": "Postes Web Actifs",
+      "Active across phones, tablets & laptops at": "Actif sur téléphones, tablettes et ordinateurs sur",
+      "; on the LAN host": " ; sur l'hôte local LAN",
+      "also writes every entry into": "enregistre également chaque écriture dans",
+      ". Syncs seats, PINs, sessions and app entries with 0 licenses.": ". Synchronise comptes, codes PIN, sessions et écritures sans frais de licence tiers.",
+      "in a Supabase project and paste the URL & anon key. The keys are kept on this device only; the Postgres writer ships in a later build.": "dans un projet Supabase et collez l'URL et la clé publique. Les clés restent stockées localement sur cet appareil.",
+      "Click for Live Verify or Retake": "Cliquer pour vérifier en direct ou reprendre",
+      "Client Website": "Site Client",
+      "Client Website:": "Site Client :",
+      "Cloud Relay Status": "Statut du Relais Cloud",
+      "Custom Setup + Per-Seat": "Déploiement Sur Mesure + Par Poste",
+      "Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite": "Pilote 1 : Relais Cloud Multi-Appareils + Base SQLite Locale",
+      "Driver 2: Dedicated Supabase / PostgreSQL Cloud (Optional)": "Pilote 2 : Cloud PostgreSQL / Supabase Dédié (Optionnel)",
+      "Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and tailored setup + per-seat plans.": "Découvrez la vitrine publique ISABI Systems, les architectures ERP multi-secteurs, les démonstrations interactives et les formules sur mesure.",
+      "Face ID Biometric 2FA": "Biométrie Faciale 2FA",
+      "Face ID Enrolment": "Enrôlement Reconnaissance Faciale",
+      "ISABI App:": "Application ISABI :",
+      "ISABI Systems Public Showcase & Architecture Blueprints": "Vitrine Publique ISABI Systems & Architectures Métier",
+      "LOCAL ONLY": "LOCAL UNIQUEMENT",
+      "Live Camera & Recognition": "Caméra en Direct & Reconnaissance",
+      "Local Cache": "Cache Local",
+      "Multi-Device RLS": "Sécurité RLS Multi-Appareils",
+      "NOT CONFIGURED": "NON CONFIGURÉ",
+      "Pose Saved": "Pose Enregistrée",
+      "Real-time seat, PIN & entry synchronization across devices": "Synchronisation temps réel des comptes, PIN et écritures",
+      "Retake ↻": "Reprendre ↻",
+      "Scoped across phones, tablets & laptops with BU Row-Level Security": "Cloisonné par société (RLS) sur mobiles, tablettes et ordinateurs",
+      "Slight Left": "Légèrement à gauche",
+      "Slight Right": "Légèrement à droite",
+      "Straight": "De face",
+      "Team Seat Inspector & Multi-Device Access Editor": "Inspecteur des Comptes & Éditeur d'Accès Multi-Appareils",
+      "Workspace Sign-In & Liveness Policy": "Politique de Connexion & Détection du Vivant",
+      "✓ SAVED": "✓ ENREGISTRÉ",
+      "Blink or 3D Head Turn (Default)": "Clignement ou rotation 3D de la tête (Par défaut)",
+      "PIN Only (Disable Face Login)": "Code PIN uniquement (Désactiver Visage)",
+      "Configure Shifts, Lateness & Face ID": "Configurer Postes, Retards & Reconnaissance Faciale",
+      "Face ID Clock-In": "Pointage par Reconnaissance Faciale",
+      "Hands-Free Face Recognition": "Reconnaissance Faciale Sans Contact",
+      "Keep the terminal focused on fast clocking. Manage shift schedules, lateness penalties, overtime rules, and payroll logs in Payroll & Workforce, or expand inline setup.": "Gardez le terminal dédié au pointage rapide. Gérez les horaires, retards, heures sup. et paies dans Paie & Effectifs, ou ouvrez la configuration rapide.",
+      "Look inside the oval guide to clock in or out.": "Regardez dans le cadre ovale pour pointer l'entrée ou la sortie.",
+      "Shifts, Lateness Rules & Attendance Analysis": "Postes, Règles de Retard & Analyse de Présence",
+      "Start Face Camera": "Démarrer la Caméra Faciale",
+      "Start the front camera to clock enrolled staff in or out, or lock this tablet for wall mounting.": "Activez la caméra frontale pour pointer les collaborateurs enrôlés, ou verrouillez la tablette en mode mural.",
+      "Supervisor Override": "Dérogation Superviseur",
+      "Select active staff member...": "Sélectionner un collaborateur actif...",
+      "Main Dispatch Yard": "Cour d'Expédition Principale",
+      "WTC Main Plant": "Centrale Principale WTC",
+      "WTC Crusher & Yard": "Concasseur & Cour WTC",
+      "BBConstruction Batching Plant": "Centrale à Béton BBConstruction",
+      "BBConstruction Yard": "Cour BBConstruction",
+      "Lions Transport Garage": "Garage Lions Transport",
+      "Halat JV Quarry": "Carrière JV Halat",
+      "Jiyeh JV Quarry": "Carrière JV Jiyeh",
+      "1-Tap Grade:": "Sélection Rapide :",
+      "Date / Time": "Date / Heure",
+      "Dispatch Mode:": "Mode d'Expédition :",
+      "Driver Signature": "Signature Chauffeur",
+      "ISABI WEIGHBRIDGE & KIOSK SUITE · 80MM ESC/POS": "SUITE PONT-BASCULE & BORNES ISABI · 80MM ESC/POS",
+      "MATERIAL & LOAD QUANTITY": "MATIÈRE & QUANTITÉ CHARGÉE",
+      "Material Subtotal": "Sous-total Matière",
+      "Net Quantity": "Quantité Nette",
+      "Operator": "Opérateur",
+      "Operator:": "Opérateur :",
+      "PRICED SALES INVOICE · 80MM": "FACTURE DE VENTE CHIFFRÉE · 80MM",
+      "SALES & DISPATCH INVOICE": "FACTURE DE VENTE & BON D'EXPÉDITION",
+      "Scale / Gate Stamp": "Cachet Bascule / Portail",
+      "Select Product": "Choisir le Produit",
+      "TOTAL USD": "TOTAL USD",
+      "Top Customers:": "Principaux Clients :",
+      "Truck Plate": "Plaque Camion",
+      "Walk-In / Customer": "Client Comptoir / Direct",
+      "1. Fuel Type, Dates & Equipment": "1. Type de Carburant, Dates & Engin",
+      "2. Intake Quantity & Meter Reading": "2. Quantité & Relevé Compteur",
+      "80mm Pump Slip": "Bon Pompe 80mm",
+      "Bulk Tank Refill / Oils": "Empotage Cuve / Huiles",
+      "DIESEL ISSUE · 80MM": "SORTIE GASOIL · 80MM",
+      "Daily Grease (kg)": "Graissage Quotidien (kg)",
+      "Dispense to Unit": "Distribution Engin",
+      "Distance / hours since": "Distance / heures depuis",
+      "FUEL & LUBRICANT PUMP SLIP": "BON DE POMPE CARBURANT & LUBRIFIANTS",
+      "Fuel / Lubricant": "Carburant / Lubrifiant",
+      "Fuel Operation:": "Opération Carburant :",
+      "Fuel, Diesel & Lubricant Dispense": "Distribution Gasoil, Carburant & Huiles",
+      "LITRES ISSUED": "LITRES DISTRIBUÉS",
+      "Malfunction / Variance": "Anomalie / Écart",
+      "Optional — leave blank for an unnumbered intake": "Optionnel — laisser vide si sans numéro",
+      "PASS": "CONFORME",
+      "Petrol": "Essence",
+      "Pick an Equipment / Truck first — active driver auto-fills & locks from Equipment Log": "Sélectionnez d'abord l'engin / camion — le chauffeur actif est rempli automatiquement",
+      "Previous reading": "Relevé précédent",
+      "Quick Litres:": "Litres Rapides :",
+      "Recent Fuel & Lube Logs": "Derniers Relevés Carburant & Huiles",
+      "Select Equipment": "Sélectionner l'Engin",
+      "Thermal Ticket Preview (80mm)": "Aperçu Ticket Thermique (80mm)",
+      "Diesel (Plant Tank Issue)": "Gasoil (Sortie Cuve Centrale)",
+      "1. Material Receipt & Haulage": "1. Réception Matières & Transport",
+      "2. Quantities & Costs": "2. Quantités & Coûts",
+      "3. References & Notes": "3. Références & Notes",
+      "Haulage Fleet:": "Flotte de Transport :",
+      "Mat. Unit Cost (m³)": "Coût Unitaire Mat. (m³)",
+      "Pick Truck first — active driver auto-fills & locks from Equipment Log": "Choisissez d'abord le camion — chauffeur actif rempli automatiquement",
+      "Quarry & Raw Material Receiving": "Réception Carrières & Matières Premières",
+      "RAW MATERIAL RECEIVED": "MATIÈRE PREMIÈRE REÇUE",
+      "RAW MATERIAL RECEIVING VOUCHER": "BON DE RÉCEPTION MATIÈRES PREMIÈRES",
+      "Raw Aggregate": "Granulats Bruts",
+      "Receipt Outcome": "Statut de Réception",
+      "Received (Load Accepted)": "Reçu (Chargement Accepté)",
+      "Received Qty": "Qté Reçue",
+      "Recent Raw Material Intakes": "Dernières Réceptions Matières",
+      "Settlement Method": "Mode de Règlement",
+      "Site Owner (Mat.)": "Propriétaire Carrière (Mat.)",
+      "TOTAL PAYABLE": "TOTAL À PAYER",
+      "Total payable": "Total à payer",
+      "Transport By": "Transporté Par",
+      "Truck Owner (Haul)": "Propriétaire Camion (Transp.)",
+      "Auto from Site Rule...": "Auto depuis le tarif du site...",
+      "Supplier / hauler invoice #": "N° facture fournisseur / transporteur",
+      "Smart Scan": "Scan Intelligent",
+      "AI Smart Scan": "Scan Intelligent IA",
+      "AI Smart Scan Upload": "Import Scan Intelligent IA",
+      "AI Filled": "Pré-rempli IA",
+      "Camera Smart Scan": "Scan Intelligent Caméra",
+      "Clipboard Paste Smart Scan": "Scan Intelligent Presse-papiers",
+      "Document Vault Smart Scan": "Scan Intelligent Coffre Documentaire",
+      "Drag & Drop Smart Scan": "Scan Intelligent Glisser-Déposer",
+      "Sample Smart Scan": "Exemple de Scan Intelligent",
+      "Scanned Document": "Document Scanné",
+      "Scanned Expense Item": "Ligne de Charge Scannée",
+      "Side-by-Side Preview": "Aperçu Côte à Côte",
+      "Hide Document Preview": "Masquer l'Aperçu du Document",
+      "Hide side-by-side preview": "Masquer l'aperçu côte à côte",
+      "Smart Scan Document to New Entry": "Scanner un Document vers Nouvelle Saisie",
+      "Analyzing document and filling fields...": "Analyse du document et pré-remplissage des champs...",
+      "Classifying entry tab & matching ISABI registries...": "Classification de l'onglet et rapprochement des référentiels ISABI...",
+      "Extracting text & tables from PDF...": "Extraction du texte et des tableaux du PDF...",
+      "Reading document and preparing preview...": "Lecture du document et préparation de l'aperçu...",
+      "Reading structured Office document...": "Lecture du document bureautique structuré...",
+      "Rendering scanned PDF page for OCR...": "Rendu de la page PDF pour l'OCR...",
+      "Running optical character recognition on image...": "Reconnaissance optique des caractères en cours...",
+      "Rotate image 90 degrees": "Pivoter l'image de 90°",
+      "Verify": "Vérifier",
+      "Capital Expenditures": "Investissements (CAPEX)",
+      "Cash Inflow (Received)": "Entrée de Trésorerie (Encaissé)",
+      "Cash Outflow (Paid)": "Sortie de Trésorerie (Payé)",
+      "Day Shift (08:00-16:00 · Sat 07:00-14:00)": "Poste de Jour (08:00-16:00 · Sam 07:00-14:00)",
+      "Extended Day (07:00-16:00 · Sat 07:00-14:00)": "Journée Étendue (07:00-16:00 · Sam 07:00-14:00)",
+      "Night Shift (19:00-03:00)": "Poste de Nuit (19:00-03:00)",
+      "Extended (Reserve / Special)": "Étendu (Réserve / Spécial)",
+      "External (Partner / Sister Co.)": "Externe (Associé / Société Sœur)",
+      "External Cash / Bank Movement": "Mouvement Caisse / Banque Externe",
+      "FX Currency Conversion": "Conversion de Devises (FX)",
+      "Generator / Crusher": "Groupe Électrogène / Concasseur",
+      "Insurance, Permits & Taxes": "Assurances, Permis & Taxes",
+      "Loan Repayment / Settlement": "Remboursement de Prêt / Règlement",
+      "Lubricant / Oil": "Lubrifiant / Huile",
+      "Malfunction (Meter / Physical Variance)": "Anomalie (Compteur / Écart Physique)",
+      "Material (Aggregate / Concrete / Block)": "Matériaux (Granulats / Béton / Blocs)",
+      "Metric Tons (Ton)": "Tonnes Métriques (Tonne)",
+      "Mon to Fri (5 Days)": "Lun au Ven (5 Jours)",
+      "Mon to Sat (6 Days)": "Lun au Sam (6 Jours)",
+      "Mon to Sun (7 Days)": "Lun au Dim (7 Jours)",
+      "New / Reconditioned": "Neuf / Reconditionné",
+      "New JV Site Partnership Setup": "Nouveau Partenariat de Site (JV)",
+      "No (Additional / Optional Shift)": "Non (Poste Supplémentaire / Optionnel)",
+      "No (Same Timing Every Scheduled Workday)": "Non (Même Horaire Chaque Jour Ouvré)",
+      "Outside Only (External Parts / Workshop)": "Externe Uniquement (Pièces / Atelier Externe)",
+      "Partner / Shareholder Loan": "Prêt Associé / Actionnaire",
+      "Search Map Region (Boundary)": "Rechercher une région sur la carte",
+      "Sets (Set)": "Jeux / Kits (Kit)",
+      "Staff & Social Security": "Personnel & Sécurité Sociale",
+      "Staff Employment / Contract": "Contrat de Travail Collaborateur",
+      "Stored in Warehouse / Spare Stock": "Stocké au Magasin / Pièces de Rechange",
+      "Transport & Site Logistics": "Transport & Logistique Chantiers",
+      "Truck Loads (Truck)": "Chargements Camion (Voyage)",
+      "Utilities & Telecom": "Énergie, Eau & Télécoms",
+      "Card / Whish": "Carte / Whish",
+      "Cash & Card": "Espèces & Carte",
+      "Cash + POS + Credit": "Espèces + TPE + Crédit",
+      "Yes (Custom Timing for Saturday / Specific Days)": "Oui (Horaire Spécifique Samedi / Jours)",
+      "Yes (Default Shift for Selected BU)": "Oui (Poste par Défaut de la Société)",
+      "Yes (Truck or Machine)": "Oui (Camion ou Engin)",
+      "Yes — 11% VAT Applies": "Oui — Soumis à la TVA 11 %",
+      "Active Alerts & Guards": "Alertes & Garde-Fous Actifs",
+      "All Armed": "Toutes Actives",
+      "Always On": "Toujours Actif",
+      "Always On · Diff < $0.005": "Toujours Actif · Écart < 0,005 $",
+      "Factory Defaults": "Valeurs d'Usine",
+      "Needs Review": "À Vérifier",
+      "New Custom Alert": "Nouvelle Alerte Personnalisée",
+      "Threshold Overrides": "Seuils Personnalisés",
+      "Triggered Right Now": "Déclenchées Actuellement",
+      "Your Custom Alerts": "Vos Alertes Personnalisées",
+      "Why": "Motif",
+      "Why:": "Motif :",
+      "Click": "Cliquez sur",
+      "Click any row or": "Cliquez sur une ligne ou",
+      "to inspect examples & edit thresholds": "pour inspecter les exemples et ajuster les seuils",
+      "on any alert row to tune numbers with live preview": "sur une règle pour ajuster les seuils en direct",
+      "Add custom thresholds with your own": "Ajoutez vos propres seuils avec une note",
+      "note so you never forget": "pour toujours documenter la règle",
+      "Evaluated live across": "Évalué en direct sur",
+      "save-blocking ·": "blocage saisie ·",
+      "warnings ·": "avertissements ·",
+      "in AI Sentinels.": "dans les Sentinelles IA.",
+      "OVERDUE OIL": "VIDANGE ÉCHUE",
+      "WATCH LEAK": "SURVEILLER FUITE",
+      "Critical / Down": "Critique / À l'Arrêt",
+      "Absent-Driver Machine Fuel & Lube Watchdog": "Contrôle Carburant & Huiles sur Engins de Chauffeurs Absents",
+      "Back-Dated Entry Explanation Guard": "Garde de Justification des Écritures Antidatées",
+      "Critical Down-Unit & Unnotified Part Custody": "Contrôle Engins à l'Arrêt & Pièces Remplacées sans Alerte Panne",
+      "Daily Chassis & Plant Greasing Benchmark": "Référentiel de Graissage Quotidien Châssis & Centrale",
+      "Diesel Malfunction vs Company Consumption Watchdog": "Contrôle des Écarts Gasoil vs Consommation Totale",
+      "Diesel Tank Physical vs Ledger Watchdog": "Rapprochement Stock Physique vs Comptable de la Cuve Gasoil",
+      "Duplicate Ticket Serial Number Guard": "Garde Anti-Doublon des Numéros de Bons",
+      "Engine Oil 15W-40 Early Drain & Overdue Service": "Contrôle Vidange Précoce ou Échue Huile Moteur 15W-40",
+      "Fuel Burn Rate & Meter Outlier Watchdog": "Contrôle des Taux de Consommation & Anomalies Compteurs",
+      "High Material Discount Note Guard": "Garde de Justification des Remises Élevées",
+      "Hydraulic Oil 68 Leak Watch (30-Day & Excess)": "Surveillance Fuites Huile Hydraulique 68 (30 Jours & Excès)",
+      "Kiosk Anti-Double-Punch Debounce Guard": "Garde Anti-Double Pointage sur Borne",
+      "Odometer & Hour-Meter Jump & Ceiling Guard": "Garde de Saut et Plafond Kilométrique / Horaire",
+      "Price Agreement & Lapsed Contract Watchdog": "Contrôle des Accords Tarifaires & Contrats Expirés",
+      "Reporting Date vs Transaction Date Guard": "Garde d'Écart Date de Reporting vs Date d'Opération",
+      "Salary Payments Without Active Contract": "Paiements de Salaires sans Contrat Actif",
+      "Transaction vs Reporting Date Parity Audit": "Audit de Parité Date d'Opération vs Date de Reporting",
+      "Weighbridge Ticket Pad & Skipped Serial Audit": "Audit des Carnets de Bascule (25 Bons) & Sauts de Série",
+      "Weighbridge Ton Estimate Corridor": "Corridor de Cohérence Tonnage Pesé vs Capacité Camion",
+      "Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.": "Alerte la direction dès que les écarts compteurs, bons non imputés ou écarts de cuve atteignent 5 % ou plus du gasoil consommé sur la période.",
+      "Audits historical vouchers shifted across months (Transaction Date vs Reporting Date) and spots statutory VAT invoices not linked to weighbridge tickets.": "Audite les pièces décalées entre mois (date opération vs reporting) et détecte les factures TVA non liées aux bons de bascule.",
+      "Catches extra-zero odometer typos, backwards meter entries, and missed fuel vouchers before they corrupt fleet L/100km and L/h burn analytics.": "Détecte les fautes de frappe compteur, relevés inversés et bons manquants avant qu'ils ne faussent les analyses L/100km et L/h.",
+      "Catches ghost diesel/lubricant issues booked to a machine on days when its assigned operator was marked Absent, Sick, or On Leave without a logged substitute driver.": "Détecte les sorties de gasoil/huile imputées à un engin lorsque son chauffeur attitré est absent ou en congé sans remplaçant enregistré.",
+      "Catches loads billed below the signed customer agreement rate and highlights customers still buying on expired price agreements that need renewal.": "Détecte les livraisons facturées sous le tarif convenu et signale les clients achetant sur des accords expirés à renouveler.",
+      "Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.": "Garantie comptable fondamentale : vérifie l'égalité Débit = Crédit sur les classes 1 à 7 du plan comptable libanais au centime près.",
+      "Detects missing or torn paper vouchers inside 25-leaf weighbridge books, duplicate serials, and unnumbered tickets so no load goes unbilled.": "Détecte les bons manquants dans les carnets de 25 feuilles, les doublons et les bons sans numéro afin qu'aucun voyage ne reste non facturé.",
+      "Ensures bulk diesel deliveries are booked properly before dispensing and alerts early when plant tank stock runs low or awaits supplier invoice pricing.": "Garantit l'enregistrement des livraisons de gasoil en vrac avant distribution et alerte en cas de stock bas ou de prix fournisseur en attente.",
+      "Hydraulic circuits are sealed; repeated Hydraulic 68 top-ups mean a weeping cylinder seal, PTO pump leak, or blown hose wasting expensive oil and risking downtime.": "Les circuits hydrauliques étant fermés, des appoints répétés d'huile 68 signalent une fuite de vérin, pompe ou flexible.",
+      "Keeps operational P&L statements aligned with cash flow by requiring a clear reason whenever a voucher is assigned to a far-away reporting month.": "Maintient l'alignement entre résultat opérationnel et trésorerie en exigeant un motif lorsqu'une pièce est rattachée à un mois éloigné.",
+      "Prevents ghost payroll disbursements or paying staff outside their hired employment window without an active contract on file.": "Empêche les décaissements de paie fictifs ou hors période d'embauche sans contrat de travail actif au dossier.",
+      "Prevents premature 15W-40 oil drains (pilferage or wasted oil before service interval) AND catches trucks or loaders running overdue past safe engine service limits.": "Prévient les vidanges 15W-40 prématurées et détecte les camions ou chargeuses ayant dépassé l'échéance d'entretien moteur.",
+      "Prevents scale typos and wrong UoM entries (such as typing m3 instead of weighed Tons, or missing a digit) before the ticket hits Customer AR or Supplier AP.": "Empêche les erreurs de pesée et d'unité (m³ saisi au lieu de tonnes) avant comptabilisation en créances clients ou dettes fournisseurs.",
+      "Prevents unapproved price giveaways or typing a dollar total into the discount box without leaving an audit explanation in Notes.": "Empêche les remises non autorisées ou erreurs de saisie dans le champ remise sans note justificative d'audit.",
+      "Protects closed monthly figures and daily cash till balances from silent retroactive edits by forcing a written explanation on late vouchers.": "Protège les clôtures mensuelles et soldes de caisse contre les saisies rétroactives silencieuses en imposant une justification écrite.",
+      "Protects kingpins, fifth wheels, bucket pins, and crusher bearings from dry-wear seizure by pre-filling daily kg targets and highlighting under-greased active units.": "Protège pivots, sellettes, axes de godet et roulements de concasseur contre l'usure sèche en suivant les cibles quotidiennes de graissage.",
+      "Spots possible diesel siphoning, leaking fuel lines, or broken odometers by comparing each truck and yellow-iron unit against severe-duty quarry burn ceilings.": "Repère les siphonnages potentiels, fuites carburant ou compteurs défectueux en comparant chaque unité aux plafonds d'exploitation.",
+      "Stops accidental double-taps or looking at the tablet camera within 5 minutes of clocking IN or OUT from re-triggering a snapshot or flipping the worker punch.": "Empêche un double passage devant la caméra dans les 5 minutes suivant un pointage d'inverser accidentellement l'entrée/sortie.",
+      "Stops clerks from double-entering the same paper weighbridge voucher twice on the same shift while allowing legitimate pad resets from older months with a yellow warning.": "Empêche la double saisie d'un même bon papier sur un poste tout en autorisant les nouvelles séries anciennes avec avertissement.",
+      "Stops dispatchers from sending out a truck with an open Critical safety defect and ensures no spare part is replaced or scrapped without a prior logged defect notice.": "Bloque l'expédition d'un camion ayant une panne critique ouverte et exige un avis de défaut préalable avant tout remplacement de pièce.",
+      "Surfaces slow-paying credit accounts right on the Sales Ticket screen before dispatching more material on credit, and tracks aged 60+ day balances after FIFO receipts.": "Affiche les comptes en retard directement sur l'écran Bon de Vente avant toute nouvelle livraison à crédit et suit les soldes > 60j FIFO.",
+      "(5.0 min) unless the worker explicitly taps Switch Direction.": "(5,0 min) sauf si l'employé appuie explicitement sur Changer de Sens.",
+      "(critical at": "(critique à",
+      "(or credit limit), and lists accounts >": "(ou plafond de crédit), et liste les comptes >",
+      "(over >= 100 km) and loaders/excavators burning more than": "(sur >= 100 km) et chargeuses/pelles consommant plus de",
+      "(over >= 20 h), plus meter anomalies.": "(sur >= 20 h), ainsi que les anomalies compteurs.",
+      ", and escalates AI Sentinels to critical below": ", et passe les Sentinelles IA en critique sous",
+      ", and flags AI Sentinels when open Down units exist or unnotified part swaps reach": ", et alerte les Sentinelles IA en cas d'engin à l'arrêt ou de pièces sans avis dès",
+      ", and warns when reused within": ", et avertit en cas de réutilisation sous",
+      ", blocks BBConstruction intakes below": ", bloque les réceptions BBConstruction sous",
+      ", plus lapsed contracts.": ", ainsi que les contrats expirés.",
+      ", plus unlinked VAT invoices.": ", plus les factures TVA non liées.",
+      ". Warns and requires a Note when a single interval jumps over": ". Avertit et exige une note si un intervalle saute de plus de",
+      "Audits 25-ticket physical voucher books for missing serial numbers, duplicates, and unnumbered loads. Treats serial gaps separated by more than": "Audite les carnets physiques de 25 bons (manquants, doublons, sans numéro) et traite les écarts séparés de plus de",
+      "Audits every Sales Ticket against date-effective Customer x Product agreements. Flags unit rates more than": "Audite chaque bon de vente par rapport aux tarifs client x produit en vigueur et signale les écarts >",
+      "Auto-presets daily grease issue (": "Pré-remplit la sortie quotidienne de graisse (",
+      "Blocks a second Face ID or PIN clock punch for the same worker within": "Bloque un second pointage visage ou PIN du même collaborateur sous",
+      "Blocks backwards meter readings and typos above": "Bloque les relevés compteurs inversés et erreurs supérieures à",
+      "Checks Total Debits minus Total Credits across all SOA journal legs (sales, quarry, haulage, expenses, 11% VAT, receipts, settlements). Escalates to critical if variance >=": "Vérifie Total Débits moins Total Crédits sur toutes les écritures GL et passe en critique si l'écart >=",
+      "Checks if the ticket serial already exists in the same entity and table. Blocks save when used within": "Vérifie si le numéro de bon existe déjà dans la même société et bloque la sauvegarde sous",
+      "Checks the gap between Transaction Date (cash/till date) and Reporting Date (statement period). Requires a Note when the gap exceeds": "Vérifie l'écart entre date d'opération et date de reporting et exige une note au-delà de",
+      "Compares weighed Tons against truck m3 capacity x product density. Blocks save below": "Compare le tonnage pesé à la capacité m³ x densité et bloque la sauvegarde sous",
+      "Evaluates gross diesel malfunction litres divided by total company diesel used in the selected date range. Raises an alert banner, sidebar badge, and AI Sentinels flag at": "Évalue le ratio d'écarts gasoil sur la consommation totale de la période et déclenche une alerte dès",
+      "Flags any Sales Ticket discount exceeding": "Signale toute remise sur bon de vente dépassant",
+      "Flags road trucks burning more than": "Signale les camions routiers consommant plus de",
+      "Highlights the live Customer AR strip in amber on Sales Tickets when 60+ day overdue balance exceeds": "Colore en ambre le bandeau client sur le bon de vente lorsque l'arriéré > 60 jours dépasse",
+      "Matches every monthly salary payment against active staff employment start/end windows. Flags AI Sentinels when unmatched salary payments exceed": "Rapproche chaque salaire payé des périodes de contrat actives et alerte dès que l'écart dépasse",
+      "Reconciles Opening + Purchased minus Issued minus Malfunction/Discrepancy minus Sold diesel. Shows a low-stock warning on the Fuel form below": "Rapproche stock initial + achats - sorties - écarts - ventes de gasoil et affiche une alerte stock bas sous",
+      "Scans Sales, Quarry, and Expense ledgers for rows where Reporting Date differs from Transaction Date by more than": "Analyse les ventes, carrières et dépenses dont la date de reporting diffère de la date d'opération de plus de",
+      "Shows a live red absent-driver alert pill on the Fuel & Lube form when the operator is marked Absent on that date, and flags AI Sentinels at": "Affiche une alerte rouge sur le formulaire Carburant si le chauffeur est absent à cette date et alerte dès",
+      "Warns immediately on Sales Dispatch when a selected unit is marked": "Avertit immédiatement à l'expédition lorsqu'un engin sélectionné est marqué",
+      "Warns live on the Lubricant form when a unit exceeds": "Avertit en direct sur le formulaire Lubrifiants lorsqu'un engin dépasse",
+      "Warns on any Sales, Quarry, Receipt, Fuel, Expense, or Settlement entry dated more than": "Avertit sur toute écriture de vente, carrière, reçu, carburant, dépense ou règlement antérieure de plus de",
+      "Warns on full 15W-40 oil changes logged below": "Avertit sur les vidanges complètes 15W-40 enregistrées sous",
+      "absent-driver or unattributed machine entries.": "écritures engin avec chauffeur absent ou sans opérateur.",
+      "as a separate pad series.": "comme une série de carnet distincte.",
+      "before today and blocks save until Notes explain why.": "avant aujourd'hui et bloque la sauvegarde sans justification dans Notes.",
+      "below agreed price when cumulative shortfall exceeds": "sous le prix convenu lorsque l'écart cumulé dépasse",
+      "excess and": "d'excès et",
+      "excess on Fleet Lubrication Benchmarks.": "d'excès sur les référentiels de lubrification flotte.",
+      "greased days.": "de jours graissés.",
+      "loader/excavator,": "chargeuse/pelle,",
+      "of Hydraulic 68 in 30 days. Flags": "d'huile hydraulique 68 sur 30 jours. Signale",
+      "of diesel burn target (": "de la cible de gasoil consommé (",
+      "of estimated tons, and warns outside": "du tonnage estimé, et avertit hors de",
+      "of the material subtotal and requires a written explanation in Notes before saving.": "du sous-total matière et exige une explication dans Notes avant sauvegarde.",
+      "plant) and highlights active units (>= 10 workdays) below": "centrale) et signale les unités actives (>= 10 jours ouvrés) sous",
+      "truck,": "camion,",
+      "trucks /": "camions /",
+      "when truck size is unknown).": "lorsque la capacité du camion est inconnue).",
+      "yellow iron), and flags": "engins lourds), et signale",
+      "ENFORCED": "APPLIQUÉ",
+      "GUARD ACTIVE": "GARDE ACTIVE",
+      "IN SYNC": "SYNCHRONISÉ",
+      "BURN NORMAL": "CONSO NORMALE",
+      "COMPLIANT": "CONFORME",
+      "PASS · $0.00 DIFF": "CONFORME · ÉCART 0,00 $",
+      "Active Central Loan Agreements vs Scheduled Repayments": "Contrats de Prêts Centraux Actifs vs Échéanciers",
+      "Consolidated Group Trial Balance & Sister Sub-Account Tie-Out": "Balance Générale Consolidée & Rapprochement des Sous-Comptes Sœurs",
+      "Generator Diesel L/hr Burn Spike & Solar Offset Watchdog": "Contrôle des Pics Gasoil Groupes Électrogènes (L/h) & Apport Solaire",
+      "Active Claims Under Carrier Review & Subrogation Recovery Queue": "Sinistres Actifs en Expertise Compagnie & File de Recours",
+      "Client Discount vs Gross Brokerage Commission Guard": "Garde Remises Clients vs Commission Brute de Courtage",
+      "Unallocated Freight, Customs & Clearance on Received Import Containers": "Fret, Douane & Transit Non Répartis sur Conteneurs Import Reçus",
+      "Vacant Units & Double-Leased Unit Overlap Guard (/2400 Deed Shares)": "Contrôle des Unités Vacantes & Non-Chevauchement des Baux (/2400 Parts)",
+      "Absent-Driver Diesel, Lubricant & Grease Machine Watchdog": "Contrôle Gasoil, Huiles & Graisse sur Engins avec Chauffeur Absent",
+      "Action Items & Exception Queue, Skipped/Duplicate Weighbridge Serials (m116), Daily Totals Ledger & Tx vs Reporting Date Parity": "File d'Exceptions, Audit des Séries de Bascule, Totaux Journaliers & Parité des Dates",
+      "Amber row = agreement End date has passed while customer continues lifting material (m202)": "Ligne ambre = accord expiré alors que le client continue d'enlever des matériaux",
+      "Click any rule to inspect flagged rows": "Cliquez sur une règle pour inspecter les lignes signalées",
+      "Consumption outliers": "Anomalies de consommation",
+      "Contract Price Compliance": "Conformité aux Prix Contractuels",
+      "Customer Receivables Overdue > 60 Days (FIFO Allocated)": "Créances Clients Échues > 60 Jours (Allocation FIFO)",
+      "Customer Settlements": "Règlements Clients",
+      "Customer pricing exceptions — sold below agreed price": "Exceptions tarifaires clients — vendu sous le prix convenu",
+      "Customers with past-due open tickets as at the period end, ranked by overdue amount": "Clients ayant des bons échus non réglés en fin de période, classés par arriéré",
+      "Daily totals ledger": "Journal des totaux quotidiens",
+      "Daily totals snapshot ledger": "Registre quotidien des totaux",
+      "Diesel Tank Physical vs Ledger Reconciliation": "Rapprochement Cuve Gasoil Physique vs Comptable",
+      "Diesel tank balance": "Solde cuve gasoil",
+      "Double-Entry Trial Balance Integrity (Lebanese CoA)": "Intégrité de la Balance en Partie Double (Plan Comptable Libanais)",
+      "Driver pay unallocated": "Paie chauffeurs non imputée",
+      "Duplicate & Unnumbered Tickets in the Books": "Bons en Doublon & Non Numérotés dans les Carnets",
+      "Duplicate Ticket Numbers": "Numéros de Bons en Doublon",
+      "Duplicate ticket serials": "Séries de bons en doublon",
+      "Excludes paired returns": "Hors retours appairés",
+      "Executive Action Items, Ticket Serial Hygiene, Change Log & Date-Basis Parity Bridge": "Actions Exécutives, Intégrité des Séries de Bons & Pont de Parité des Dates",
+      "Fleet & Payroll Hygiene": "Intégrité Flotte & Paie",
+      "Fleet lubrication & hydraulic leak exceptions": "Exceptions de lubrification flotte & fuites hydrauliques",
+      "Follows latest dated ticket of pad": "Suit le dernier bon daté du carnet",
+      "Fuel Litres": "Litres de Carburant",
+      "Fuel consumption & meter reading outliers (m142)": "Anomalies de consommation carburant & relevés compteurs",
+      "Gross Sales": "Ventes Brutes",
+      "Headers without tickets": "Factures sans bons liés",
+      "Historical operational reports group backdated tickets and expenses by ExpectedDate (Reporting Date); Δ = Reporting Date − Transaction Date": "Les rapports opérationnels groupent les pièces par Date de Reporting ; Δ = Date Reporting − Date Opération",
+      "IVA customers — VAT receivable & uninvoiced exposure": "Clients TVA — TVA à recevoir & encours non facturé",
+      "Incomplete ticket books": "Carnets de bons incomplets",
+      "Ledger & Trial Balance": "Grand Livre & Balance Générale",
+      "Meter readings to check": "Relevés compteurs à vérifier",
+      "Negative = unbooked bulk purchase": "Négatif = achat en vrac non comptabilisé en carburant",
+      "Next Suggested Ticket #": "Prochain N° de Bon Suggéré",
+      "No matching rows for the selected filters": "Aucune ligne ne correspond aux filtres sélectionnés",
+      "Odometer & Hour-Meter Tolerance Watchdog": "Contrôle de Tolérance Compteurs Km & Heures",
+      "One row per 25-ticket pad book run across Sales, Raw & Fuel streams": "Une ligne par carnet de 25 bons (Ventes, Carrières & Carburant)",
+      "Operational weighbridge date": "Date opérationnelle de pesée",
+      "Overdue customer balances & credit exposure": "Soldes clients échus & exposition crédit",
+      "Overdue receivables (>30d)": "Créances échues (>30j)",
+      "Own units idle 30+ days": "Engins propres inactifs 30+ jours",
+      "Payments whose staff and payroll month no employment contract covers · add/extend contract on P12": "Paiements de salaires sans contrat actif couvrant le mois · ajoutez/prolongez le contrat",
+      "Pre-Replacement Defect Notice & Removed Parts Custody": "Avis de Panne Préalable & Garde des Pièces Déposées",
+      "Raw Pad": "Carnet Matières",
+      "Recent weighbridge ticket serial audit (Sales, Raw & Fuel pads)": "Audit récent des séries de bons (Ventes, Matières & Carburant)",
+      "Red = last ticket priced below active customer price agreement": "Rouge = dernier bon facturé sous le tarif client actif",
+      "Requires explanation on entry": "Exige une justification à la saisie",
+      "Returned Loads to Plant": "Chargements Retournés à la Centrale",
+      "Salary Payments Without an Employment Contract": "Salaires Payés sans Contrat de Travail",
+      "Salary payments without an employment contract (m220)": "Paiements de salaires sans contrat actif",
+      "Salary without contract": "Salaire sans contrat",
+      "Sales below agreed price": "Ventes sous le prix convenu",
+      "Sentinel Health Score": "Score de Santé Sentinelles",
+      "Shared across Sales, Raw & Fuel 25-ticket pads (excludes >6-digit external scale refs)": "Partagé sur les carnets de 25 bons Ventes, Matières & Carburant",
+      "Skipped & Duplicate Ticket Serials (m116 — Find Each Skipped Number Between Its Neighbours)": "Numéros de Bons Sautés & Doublons (Repérage Entre Voisins)",
+      "Skipped Serial Gaps": "Sauts de Numérotation",
+      "Snapshot Rows Logged": "Lignes d'Instantanés Enregistrées",
+      "Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance $0.00.": "Total Débits vs Total Crédits sur toutes les lignes du journal (ventes, matières, transport, charges, TVA 11 %, reçus, règlements) : écart 0,00 $.",
+      "Tx vs Reporting date drift": "Décalage date opération vs reporting",
+      "Units exceeding hydraulic Oil 68 benchmarks, overdue for 15W-40 oil service, or drained early": "Engins dépassant le seuil hydraulique 68, en retard de vidange 15W-40 ou vidangés trop tôt",
+      "Units exceeding tolerance thresholds (>80 L/100km for trucks or >25 L/hr for yellow iron)": "Unités dépassant les plafonds (>80 L/100km camions ou >25 L/h engins lourds)",
+      "Unlinked VAT invoices": "Factures TVA non liées",
+      "VAT-registered customers carrying unpaid 11% output VAT in their open balance (m254)": "Clients assujettis TVA ayant de la TVA collectée 11 % impayée dans leur solde ouvert",
+      "25-Ticket Books Count Table (Tickets Used / 25, Stream Breakdown, Missing Gaps, Unused Slots & Last Ticket in Series)": "Tableau de Suivi des Carnets de 25 Bons (Utilisés / 25, Flux, Sauts, Restants & Dernier Bon)",
+      "25-Ticket Books Tracked": "Carnets de 25 Bons Suivis",
+      "1 · Daily Totals Snapshot Ledger & Transaction vs Reporting Date Bridge": "1 · Journal des Totaux Quotidiens & Pont Date Opération vs Reporting",
+      "1 · Weighbridge 25-Ticket Pad Hygiene, 25-Ticket Books Count, Removed Tickets (0 KM) & Returned Loads (Round-Trip KM)": "1 · Audit des Carnets de 25 Bons, Décompte, Bons Annulés (0 km) & Retours",
+      "Ticket Books": "Carnets de Bons",
+      "Fuel & Meters": "Carburant & Compteurs",
+      "Diesel Tank": "Cuve Gasoil",
+      "Diesel Watchdog": "Sentinelle Gasoil",
+      "Payroll Contracts": "Contrats de Paie",
+      "Workforce & Fleet": "Effectifs & Flotte",
+      "Intercompany Pairing": "Appairage Interco",
+      "Sister Corridor Drift": "Écart Corridors Sœurs",
+      "Holding Payables": "Dettes Holding",
+      "Central Loans": "Prêts Centraux",
+      "Sister Sub-Account Tie-Out": "Rapprochement Comptes Sœurs",
+      "Venue Entry Cut-Off": "Clôture Recettes Site",
+      "POS Till Parity": "Parité Caisse POS",
+      "Kitchen & Cellar Cost": "Coût Cuisine & Cave",
+      "Resort Generators": "Groupes du Resort",
+      "Memberships & Shifts": "Abonnements & Postes",
+      "Invoice Books": "Carnets de Factures",
+      "Landed Margin Guard": "Garde Marge Coût Rendu",
+      "Receivables & Advances": "Créances & Avances",
+      "Warehouse Stock & WAC": "Stock & CUMP",
+      "Landed Cost Allocation": "Répartition Coût Rendu",
+      "Lease Renewals & Escalation": "Renouvellements & Indexation",
+      "Period Rent Billing": "Facturation des Loyers",
+      "Buyer Sale Instalments": "Échéances Acheteurs",
+      "Tenant-Fault Recharges": "Refacturations Locataires",
+      "Unit Occupancy & Overlap": "Occupation & Chevauchement",
+      "Renewal Pipeline": "Pipeline Renouvellements",
+      "Carrier Commission Recon": "Rapprochement Commissions",
+      "Carrier Remittance": "Reversements Compagnies",
+      "Discount Margin Guard": "Garde Marge Remises",
+      "Accrued Partner Profit-Share Pool": "Pool de Partage des Bénéfices Associés",
+      "Central Long-Term Borrowings & Facilities": "Emprunts & Facilités Centrales Long Terme",
+      "Central Treasury Bank Accounts (USD & LBP)": "Comptes Bancaires Trésorerie Centrale (USD & LBP)",
+      "Consolidated Group Total": "Total Groupe Consolidé",
+      "Corporate Legal, Audit & Shared Overhead": "Frais Juridiques, Audit & Services Partagés",
+      "Group Management Fees & Subsidiary Dividends": "Frais de Gestion Groupe & Dividendes Filiales",
+      "Group Share Capital & Holding Equity": "Capital Social Groupe & Capitaux Propres Holding",
+      "Holding Advisory & Shared-Service Suppliers AP": "Fournisseurs Conseil & Services Partagés Holding",
+      "Intercompany Liaison & Sister Clearing": "Comptes de Liaison & Compensation Inter-Sociétés",
+      "Partner Current Accounts (10-Slot Matrix)": "Comptes Courants d'Associés (Matrice 10 Postes)",
+      "11% Hospitality Output VAT Payable": "TVA Collectée Hôtellerie 11 % à Payer",
+      "All Venue Outlets": "Tous les Points de Vente",
+      "Beachfront Chalets, Pools, Solar & Generators": "Chalets Plage, Piscines, Solaire & Groupes",
+      "F&B, Beverage & Diesel Suppliers Payable": "Dettes Fournisseurs F&B, Boissons & Gasoil",
+      "Kitchen, Cellar & Bar Commissary Stock": "Stock Économat Cuisine, Cave & Bar",
+      "Recipe BOM Food, Beverage & Generator Fuel Cost": "Coût Matières Recettes BOM & Carburant Groupes",
+      "Resort POS Till & Bank Accounts": "Caisses POS & Comptes Bancaires du Resort",
+      "Resort Partner Profit-Share Pool": "Pool de Résultat des Associés du Resort",
+      "Resort Property Capital & Retained Earnings": "Capital Social & Résultats Reportés du Resort",
+      "Seasonal Membership & Event Receivables": "Créances Abonnements Saisonniers & Événements",
+      "Total Resort Revenue": "Total Revenus du Resort",
+      "Venue F&B, Gate Admissions, Chalets & Memberships": "Recettes F&B, Entrées Plage, Chalets & Abonnements",
+      "11% Output VAT on Pre-Printed Invoice Books": "TVA Collectée 11 % sur Carnets Pré-imprimés",
+      "5-Warehouse OEM Spare Parts Inventory (WAC)": "Stock Pièces d'Origine 5 Dépôts (CUMP)",
+      "All Trading Clients": "Tous les Clients Négoce",
+      "Commercial Vehicles & OEM Spare Parts Sales": "Ventes Véhicules Industriels & Pièces OEM",
+      "Cost of Goods Sold — Landed Vehicles & Parts": "Coût des Ventes — Véhicules & Pièces Rendus",
+      "Customer Advances & Unapplied Deposits": "Avances Clients & Acomptes Non Imputés",
+      "Customer Trade Receivables — Gross AR": "Créances Clients Commerciales — Brut",
+      "Foreign OEMs, Letters of Credit & Customs AP": "Fournisseurs OEM Étrangers, Crédits Doc. & Douanes",
+      "Heavy Truck & Commercial Serial Stock (VINs)": "Stock Camions Poids Lourds & Châssis (VIN)",
+      "Showroom Cash Till & Trade Bank Accounts": "Caisse Showroom & Comptes Bancaires Négoce",
+      "Showroom, Heavy Workshop & PDI Bays": "Showroom, Atelier Poids Lourds & Baies PDI",
+      "Total Trading Sales": "Total Ventes Négoce",
+      "Trading Share Capital & Statutory Reserves": "Capital Social Négoce & Réserves Légales",
+      "Trucks + Spare Parts": "Camions + Pièces de Rechange",
+      "All Tenants": "Tous les Locataires",
+      "Building Fit-Out, MEP Repairs & Municipal Taxes": "Aménagements, Maintenance MEP & Taxes Municipales",
+      "Co-Owner NOI Distribution Accounts (/2400 Shares)": "Comptes de Répartition NOI Copropriétaires (/2400 Parts)",
+      "Commercial & Residential Lease Rent & Deed Revenue": "Revenus Locatifs Commerciaux/Résidentiels & Ventes",
+      "Fit-Out Contractors & Building Maintenance AP": "Fournisseurs Travaux d'Aménagement & Maintenance",
+      "Investment Land Plots & Commercial Buildings": "Terrains d'Investissement & Immeubles Commerciaux",
+      "Property Escrow & Rent Collection Bank Accounts": "Comptes Séquestres & Banques d'Encaissement Loyers",
+      "Property Portfolio Equity & Mulk (/2400) Capital": "Capitaux Propres Patrimoine & Capital Foncier (/2400)",
+      "Tenant Rent & Property Buyer Instalment AR": "Créances Loyers Locataires & Échéances Acheteurs",
+      "Tenant Security Deposits & Deferred Rent": "Dépôts de Garantie Locataires & Loyers Différés",
+      "Total Rent Roll": "Total État Locatif",
+      "Active Book": "Portefeuille Actif",
+      "All Brokerage Clients": "Tous les Clients Courtage",
+      "Brokerage Head Office & Underwriting Systems": "Siège de Courtage & Systèmes de Souscription",
+      "Brokerage Share Capital & Statutory Reserves": "Capital Social Courtage & Réserves Légales",
+      "Brokerage Staff Payroll, Licensing & Office OpEx": "Paie Courtage, Agréments & Frais de Bureau",
+      "Client Commission Discounts Granted — Contra-Rev": "Remises de Commission Accordées aux Clients",
+      "Fiduciary Premium Bank & Brokerage Cashier Till": "Compte Bancaire Fiduciaire Primes & Caisse Courtage",
+      "Gross Brokerage Commission Earned": "Commissions Brutes de Courtage Acquises",
+      "Gross Written Premium (GWP)": "Primes Brutes Émises (GWP)",
+      "Insurance Carriers Payable — Net Premium": "Compagnies d'Assurance à Payer — Primes Nettes",
+      "Policy Issuance, Advisory & Inspection Fees": "Frais d'Émission de Police, Conseil & Inspection",
+      "Policyholder Premium Receivables — Client AR": "Créances Primes Assurés — Comptes Clients",
+      "Producers, Sub-Agents & Adjuster Payables": "Producteurs, Sous-Agents & Experts à Payer",
+      "ENG · Engineering & CAR": "ENG · Risques Techniques & TRC",
+      "MAR · Marine Cargo & Hull": "MAR · Transport Maritime & Corps",
+      "MED · Medical & Health": "MED · Santé & Médical",
+      "MOT · Motor Insurance": "MOT · Assurance Automobile",
+      "PROP · Property & Fire": "PROP · Dommages aux Biens & Incendie",
+      "1 · Sales & Revenue (Click any card to drill into its page)": "1 · Ventes & Revenus (Cliquez sur une carte pour ouvrir sa page)",
+      "2 · Direct Costs, Expenses, Payroll & Margins": "2 · Coûts Directs, Charges, Paie & Marges",
+      "3 · Receivables (FIFO), 3-Leg Payables & Cash Till": "3 · Créances (FIFO), Dettes (3 Volets) & Caisse",
+      "4 · Fleet, Diesel Tank & Trial Balance Integrity": "4 · Flotte, Cuve Gasoil & Intégrité de la Balance",
+      "1 · Fleet Utilization, Running Costs, Driver Allocation & Cost per Ton": "1 · Utilisation Flotte, Coûts d'Exploitation, Chauffeurs & Coût/Tonne",
+      "1 · Lebanese General Chart of Accounts (Classes 1–7) & Double-Entry Audit": "1 · Plan Comptable Général Libanais (Classes 1–7) & Audit Partie Double",
+      "AR Overdue (>30d / 60+)": "Créances Échues (>30j / 60+)",
+      "Active Equipment": "Engins Actifs",
+      "Active Equipment Units": "Unités d'Équipement Actives",
+      "All cash inflows (cash sales, receipts, external in) vs outflows (settlements, cash expenses, salaries)": "Tous les encaissements (ventes comptant, reçus, entrées externes) vs décaissements (règlements, frais, salaires)",
+      "Applied against 3 legs": "Imputé sur les 3 volets",
+      "Cash Till": "Caisse Espèces",
+      "Commission Due": "Commissions Dues",
+      "Company fleet haulage": "Transport flotte propre",
+      "Diesel Issued": "Gasoil Distribué",
+      "Diesel in Tank": "Gasoil en Cuve",
+      "Executive P&L, Margin, AR/AP & Fleet": "Résultat Exécutif, Marges, Tiers & Flotte",
+      "Full monthly progression from weighbridge revenue to operating profit and cash collections": "Progression mensuelle complète des ventes bascule au profit opérationnel et encaissements",
+      "Lebanese CoA Tied ($0.00)": "Rapproché Plan Comptable Libanais (0,00 $)",
+      "Monthly P&L, Margin, Volumes & Cash Summary": "Synthèse Mensuelle Résultat, Marges, Volumes & Trésorerie",
+      "Monthly Total Sales vs Raw Material Cost & Operating Expenses with Operating Profit line": "Ventes Mensuelles vs Coût Matières & Charges d'Exploitation avec courbe de Profit Opérationnel",
+      "Own-Fleet Loads": "Voyages Flotte Propre",
+      "Ranked by total revenue ($)": "Classé par chiffre d'affaires total ($)",
+      "Ranked by total sales in selected period": "Classé par ventes totales sur la période",
+      "Sales vs costs by month": "Ventes vs coûts par mois",
+      "Top customers by sales & open AR": "Principaux clients par ventes & créances ouvertes",
+      "Allocated Driver Cost": "Coût Chauffeurs Imputé",
+      "Click any truck chip above to isolate a single truck or click [+] to compare specific trucks side by side": "Cliquez sur une puce camion pour l'isoler ou sur [+] pour comparer plusieurs camions côte à côte",
+      "Company Split (WTC / BBC)": "Répartition Société (WTC / BBC)",
+      "Cost by equipment unit (Running + Driver)": "Coût par unité d'équipement (Exploitation + Chauffeur)",
+      "Equipment economics — trips, fuel, running cost, driver pay & cost per ton": "Économie des engins — voyages, carburant, entretien, paie chauffeur & coût/tonne",
+      "Filter down to any single truck, compare specific trucks side by side, or switch between the audited Aug 24 - Oct 23, 2026 Bdeir Fleet cutover (999 Trips · 28,440.2 m³) and Live Dynamic Fleet records across all trucks.": "Filtrez sur un camion unique, comparez plusieurs camions côte à côte, ou basculez entre l'audit Flotte Bdeir (24 août - 23 oct. 2026 · 999 voyages · 28 440,2 m³) et le flux dynamique complet.",
+      "Fleet Cohort:": "Cohorte Flotte :",
+      "Fleet Cost": "Coût Flotte",
+      "Fleet Cost / Ton Hauled": "Coût Flotte / Tonne Transportée",
+      "Fleet cost by month (Equipment & maintenance)": "Coût flotte par mois (Engins & maintenance)",
+      "Fuel, spare parts, tires & maintenance": "Carburant, pièces, pneus & maintenance",
+      "Pale navy row = Own company fleet unit · Includes direct maintenance expenses, diesel issued, and allocated driver payroll": "Ligne teintée = unité flotte propre · inclut maintenance directe, gasoil distribué et paie chauffeur imputée",
+      "Reconciles Paid vs. Zero-Haulage ($0.00) trips across sister plants for TB1, Tb7, Tb9": "Rapproche les voyages rémunérés vs à 0,00 $ entre centrales sœurs pour TB1, Tb7 et Tb9",
+      "Repairs, Parts, Insurance & Lubes": "Réparations, Pièces, Assurance & Huiles",
+      "Running & Repair Cost": "Coût d'Exploitation & Réparation",
+      "Running + Driver combined": "Exploitation + Chauffeur combinés",
+      "Salaries + overtime attributed": "Salaires + heures sup. imputés",
+      "Selected Net Profit & Margin": "Profit Net & Marge Sélectionnés",
+      "Showing All 3 Cohort Trucks": "Affichage des 3 Camions de la Cohorte",
+      "Specific Truck:": "Camion Spécifique :",
+      "TRUCK FLEET REVENUE & COST AUDIT · SPECIFIC-TRUCK & COHORT PROFITABILITY": "AUDIT REVENUS & COÛTS FLOTTE CAMIONS · RENTABILITÉ PAR CAMION & COHORTE",
+      "Top cost-bearing plant and fleet units in the selected period": "Unités centrale et flotte les plus coûteuses sur la période",
+      "Total Fleet Cost": "Coût Total Flotte",
+      "Transportation Revenue": "Revenus de Transport",
+      "Truck Income Statement (TB1 · Tb7 · Tb9 | WTC + BBConstruction)": "Compte de Résultat Camions (TB1 · Tb7 · Tb9 | WTC + BBConstruction)",
+      "Trucks Dispatched": "Camions Expédiés",
+      "Utilization, Running Cost & Cost per Ton": "Utilisation, Coût d'Exploitation & Coût/Tonne",
+      "Zero-Haulage ($0.00) Trips": "Voyages à Tarif Nul (0,00 $)",
+      "Customer Sales Deliveries": "Livraisons Ventes Clients",
+      "Raw Material Intake": "Réception Matières Premières",
+      "Amounts due to staff": "Rémunérations dues au personnel",
+      "Audited voucher postings": "Écritures de pièces auditées",
+      "Balanced double-entry legs": "Lignes en partie double équilibrées",
+      "Banks": "Banques",
+      "Casual labourers": "Main-d'œuvre occasionnelle",
+      "Commissions and brokerage": "Commissions et courtages",
+      "Consumable materials and supplies": "Matières et fournitures consommables",
+      "Current accounts with related companies": "Comptes courants sociétés apparentées",
+      "Discounts allowed on goods": "Rabais, remises et ristournes accordés",
+      "Discounts received": "Rabais, remises et ristournes obtenus",
+      "Every operational transaction posts balanced Debit & Credit legs in real time": "Chaque opération comptabilise en temps réel des lignes Débit et Crédit équilibrées",
+      "Foreign exchange gains": "Gains de change",
+      "Foreign exchange losses": "Pertes de change",
+      "Full SOA voucher postings, Partner Loans, Repayments, External Treasury Movements, and USD ↔ LBP FX Conversions now live inside General Ledger & SOA.": "Toutes les écritures GL, prêts associés, remboursements, flux externes et conversions USD ↔ LBP sont disponibles dans Grand Livre & Plan Comptable.",
+      "Haulage on purchases (raw material transport)": "Transports sur achats (matières premières)",
+      "Income Statement, Balance Sheet & Trial Balance": "Compte de Résultat, Bilan & Balance Générale",
+      "Industrial equipment": "Matériel et outillage industriel",
+      "Insurance premiums": "Primes d'assurance",
+      "Internal transfers": "Virements internes de fonds",
+      "Loans and advances to staff": "Prêts et avances au personnel",
+      "Maintenance products and workshop consumables": "Produits d'entretien et consommables d'atelier",
+      "Office and computer equipment": "Matériel de bureau et informatique",
+      "Operating tools and supplies": "Outillage et fournitures d'exploitation",
+      "Other amounts due to partners": "Autres sommes dues aux associés",
+      "Other external services": "Autres services extérieurs",
+      "Other purchase charges": "Autres frais accessoires d'achat",
+      "Other taxes and fees": "Autres impôts et taxes",
+      "Partners' share of results (joint operations)": "Quote-part des associés sur opérations communes (JV)",
+      "Postage and telecommunications": "Frais postaux et de télécommunications",
+      "Profits brought forward": "Report à nouveau créditeur",
+      "Purchase of goods for resale": "Achats de marchandises",
+      "Purchases from sub-contractors": "Achats de sous-traitance",
+      "Purchases of raw materials (F&B)": "Achats de matières premières (F&B)",
+      "Registration fees and stamps": "Droits d'enregistrement et de timbre",
+      "Rental income": "Revenus locatifs",
+      "Sales of goods (resale)": "Ventes de marchandises",
+      "Services revenue": "Prestations de services",
+      "Social security charges": "Charges de sécurité sociale",
+      "Stationery and office supplies": "Fournitures de bureau et papeterie",
+      "Suppliers": "Fournisseurs",
+      "TOTAL SALES REVENUE (EX-VAT)": "TOTAL CHIFFRE D'AFFAIRES (HT)",
+      "Total GL Credits": "Total Crédits GL",
+      "Total GL Debits": "Total Débits GL",
+      "Trade customers": "Clients",
+      "Trade suppliers – goods": "Fournisseurs d'exploitation",
+      "Transport and ancillary charges invoiced": "Ports et frais accessoires facturés",
+      "Transport of goods": "Transports sur ventes",
+      "VAT on expenses (deductible)": "TVA déductible sur autres biens et services",
+      "VAT on purchases (deductible)": "TVA déductible sur achats",
+      "VAT on sales (collected)": "TVA collectée sur les ventes",
+      "1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics → Lebanese CoA GL → 22 A4 PDF Statements)": "1 · Pont de Rapprochement Intégral (Tableaux Exécutifs → Grand Livre Libanais → 22 États A4 PDF)",
+      "22 Printable A4 Statements & Paginated Reports Launcher": "Lanceur des 22 États Imprimables A4 & Rapports Paginés",
+      "Click any statement below to open its A4 printable sheet (including #19 Staff Payroll & #15 Driver Overtime)": "Cliquez sur un état ci-dessous pour ouvrir sa feuille A4 imprimable (dont #19 Paie & #15 Heures Sup. Chauffeurs)",
+      "Concrete Volume": "Volume Béton & Matériaux",
+      "Counterparty Statement Reconciliation Bridge": "Pont de Rapprochement des Relevés Tiers",
+      "Executive P&L & Ledger Reconciliation Bridge": "Pont de Rapprochement Résultat & Grand Livre",
+      "Gross Billing": "Facturation Brute",
+      "OPEX + RM Intake": "Charges OpEx + Matières",
+      "Report Sections": "Sections du Rapport",
+      "Walk from Gross Sales TTC through Output VAT, Net Sales, Raw Cost, Gross Margin and Operating Profit": "Cheminement complet des ventes TTC vers TVA collectée, ventes HT, coût matières, marge brute et profit opérationnel",
+      "HOLDING & TREASURY PRINTABLE STATEMENTS & STATUTORY PACKS": "ÉTATS IMPRIMABLES & LIASSES HOLDING & TRÉSORERIE",
+      "HOSPITALITY & RESORTS PRINTABLE STATEMENTS & STATUTORY PACKS": "ÉTATS IMPRIMABLES & LIASSES HÔTELLERIE & RESORTS",
+      "AUTOMOTIVE & HEAVY TRADING PRINTABLE STATEMENTS & STATUTORY PACKS": "ÉTATS IMPRIMABLES & LIASSES NÉGOCE AUTO & POIDS LOURDS",
+      "REAL ESTATE & PROPERTY PRINTABLE STATEMENTS & STATUTORY PACKS": "ÉTATS IMPRIMABLES & LIASSES IMMOBILIER & PATRIMOINE",
+      "INSURANCE & BROKERAGE PRINTABLE STATEMENTS & STATUTORY PACKS": "ÉTATS IMPRIMABLES & LIASSES ASSURANCE & COURTAGE",
+      "Intercompany & Partner Split Register": "Registre Inter-Sociétés & Quotes-Parts Associés",
+      "RDL-23 Intercompany & Partner Split Register": "RDL-23 Registre Inter-Sociétés & Partage Associés",
+      "Venue Revenue, POS Till & Membership Register": "Registre Recettes Sites, Caisse POS & Abonnements",
+      "RDL-24 Venue Revenue, POS Till & Membership Register": "RDL-24 Registre Recettes, Caisse POS & Abonnements",
+      "Invoice Books, Serial VIN & Stock Valuation": "Carnets de Factures, Châssis VIN & Valorisation Stock",
+      "RDL-25 Invoice Books, Serial VIN & Stock Valuation": "RDL-25 Carnets de Factures, Châssis VIN & Valorisation Stock",
+      "Official 4235 VAT Rent Roll & Lease Expiry": "État Locatif Officiel TVA 4235 & Échéancier des Baux",
+      "RDL-26 Official 4235 VAT Rent Roll & Lease Expiry": "RDL-26 État Locatif Officiel TVA 4235 & Échéances",
+      "Policy Schedule, Renewal Queue & Carrier Recon": "Échéancier Polices, File de Renouvellement & Rapprochement Compagnies",
+      "RDL-27 Policy Schedule, Renewal Queue & Carrier Recon": "RDL-27 Polices, Renouvellements & Rapprochement Compagnies",
+      "RDL-01 Daily Operations": "RDL-01 Opérations Quotidiennes",
+      "1. Bilateral Intercompany Due-From / Due-To Matrix (جدول الذمم المتبادلة بين الشركات)": "1. Matrice Bilatérale des Soldes Inter-Sociétés",
+      "2. Shareholder & Partner Split Ledger · Account 165 (توزيع حصص الشركاء - حساب 165)": "2. Grand Livre de Répartition des Associés · Compte 165",
+      "1. Venue Revenue & RawBT POS Till Register (سجل إيرادات الصالات وصندوق الكاشير)": "1. Registre des Recettes & Clôtures de Caisse POS",
+      "2. Seasonal Cabana, Pool & Gym Memberships (اشتراكات الشاليهات والنادي الصحي)": "2. Abonnements Saisonniers Cabanas, Piscine & Club",
+      "1. Multi-Book Commercial Invoice Register · N / S / IS / IN (سجل دفاتر الفواتير التجارية)": "1. Registre Multi-Carnets des Factures Commerciales (N / S / IS / IN)",
+      "2. Serialized Heavy Truck & VIN Unit Registry (سجل الشاحنات وأرقام الشاصي VIN)": "2. Registre des Poids Lourds & Numéros de Châssis (VIN)",
+      "1. Active Commercial & Residential Lease Roll (جدول عقود الإيجار الفعالة)": "1. État des Baux Commerciaux & Résidentiels Actifs",
+      "2. Official MoF Rent Invoices & Tenant Arrears (فواتير الإيجار الرسمية والذمم)": "2. Factures Officielles de Loyer & Arriérés Locataires",
+      "1. Active Policy Schedule & 30/60/90-Day Renewal Pipeline (جدول البوالص والتجديدات)": "1. Portefeuille des Polices Actives & Pipeline 30/60/90 Jours",
+      "2. Underwriter Carrier Bordereau Reconciliation (مطابقة حسابات شركات التأمين)": "2. Rapprochement des Bordereaux Compagnies d'Assurance",
+      "Group Chief Financial Officer / المدير المالي للمجموعة": "Directeur Financier Groupe",
+      "Managing Shareholder / الشريك المفوض": "Associé Gérant",
+      "Hospitality Controller / المراقب المالي": "Contrôleur Financier Hôtellerie",
+      "Resort General Manager / مدير المنتجع": "Directeur Général du Resort",
+      "Commercial Director / المدير التجاري": "Directeur Commercial",
+      "Parts & Customs Controller / مراقب المخزون والجمارك": "Contrôleur Stocks & Douanes",
+      "4235 S.A.L Legal Signatory / المفوض بالتوقيع": "Signataire Légal 4235 S.A.L",
+      "Property Portfolio Director / مدير العقارات": "Directeur du Patrimoine Immobilier",
+      "Carrier Accounting Recon / محاسبة شركات التأمين": "Comptabilité & Rapprochement Compagnies",
+      "Principal Insurance Broker / الوسيط التأميني المعتمد": "Courtier Principal Agréé",
+      "Allocated Overhead ($)": "Frais Généraux Répartis ($)",
+      "Closing Current Account ($)": "Solde Clôture Compte Courant ($)",
+      "Distributions / Draws ($)": "Distributions / Prélèvements ($)",
+      "Due From ($)": "À Recevoir ($)",
+      "Due To ($)": "À Payer ($)",
+      "Equity Role": "Qualité d'Associé",
+      "Equity Share %": "Quote-Part %",
+      "From Entity": "Entité Source",
+      "To Entity": "Entité Cible",
+      "Opening Capital ($)": "Capital d'Ouverture ($)",
+      "Pair Code": "Code Paire",
+      "Partner / Shareholder": "Associé / Actionnaire",
+      "Nature / Description": "Nature / Libellé",
+      "Channel": "Canal",
+      "Guest / Walk-in": "Client / Passage",
+      "Member Code": "Code Membre",
+      "Member Name": "Nom du Membre",
+      "Outlet / Zone": "Point de Vente / Zone",
+      "Package ($)": "Forfait ($)",
+      "Receipt #": "N° Reçu",
+      "Tier / Package": "Formule / Forfait",
+      "Valid Window": "Période de Validité",
+      "Venue": "Établissement",
+      "Buyer / Yard": "Acheteur / Parc",
+      "Customer / Dealer": "Client / Concessionnaire",
+      "Customs Declaration": "Déclaration en Douane",
+      "Sale Price ($)": "Prix de Vente ($)",
+      "VIN / Chassis": "Châssis / VIN",
+      "Annual TTC ($)": "Loyer Annuel TTC ($)",
+      "Base Rent ($)": "Loyer de Base ($)",
+      "Landlord Entity": "Société Bailleresse",
+      "Lease #": "N° Bail",
+      "Term Window": "Période du Bail",
+      "Balance Due ($)": "Solde Dû ($)",
+      "Brokerage Comm ($)": "Comm. Courtage ($)",
+      "Carrier / Underwriter": "Compagnie / Assureur",
+      "Gross Written Prem ($)": "Prime Brute Émise ($)",
+      "Net Carrier Payable ($)": "Net Compagnie à Payer ($)",
+      "Remitted ($)": "Reversé ($)",
+      "Unpaid Prem ($)": "Prime Impayée ($)",
+      "Group Treasury & Consolidation": "Trésorerie Groupe & Consolidation",
+      "Bdeir Holding Group Treasury & Shared Overhead": "Trésorerie Groupe Bdeir Holding & Services Partagés",
+      "Blanca Beach Resort & Hospitality Operations": "Blanca Beach Resort & Opérations Hôtelières",
+      "Hospitality Operations": "Opérations Hôtelières",
+      "Automotive & Parts Division": "Division Véhicules & Pièces",
+      "Korri Auto Trading & Spare Parts S.A.R.L": "Korri Auto Trading & Spare Parts S.A.R.L",
+      "Property Management & Lease Portfolio": "Gestion Immobilière & Portefeuille Locatif",
+      "Real Estate Operations": "Opérations Immobilières",
+      "Bdeir Real Estate & Property Portfolio (Properties BU)": "Patrimoine Immobilier Bdeir (Unité Properties)",
+      "Bdeir Insurance Brokerage & Risk Advisory": "Bdeir Courtage d'Assurance & Conseil en Risques",
+      "Insurance Operations": "Opérations d'Assurance",
+      "Beirut, Lebanon": "Beyrouth, Liban",
+      "South Coast Highway, Lebanon": "Autoroute Côtière Sud, Liban",
+      "Industrial Highway, Beirut, Lebanon": "Zone Industrielle, Beyrouth, Liban",
+      "Ras Beirut & Riad El Solh, Beirut, Lebanon": "Ras Beyrouth & Riad El Solh, Beyrouth, Liban",
+      "Ras Beirut, Hamra Street 776, Beirut, Lebanon": "Ras Beyrouth, Rue Hamra 776, Beyrouth, Liban",
+      "$0.00 (Standard Shift)": "0,00 $ (Poste Standard)",
+      "Classification": "Classification",
+      "Full Shift (On Time)": "Poste Complet (À l'Heure)",
+      "Payroll Impact": "Impact Paie",
+      "Rate Basis": "Base de Calcul",
+      "Regular Shift (Contract)": "Poste Régulier (Contrat)",
+      "Shift / Duration": "Poste / Durée",
+      "Sunday / Call-Out (100% OT)": "Dimanche / Astreinte (100 % HS)",
+      "1. Company Fleet Unit Assignment (BU-Specific)": "1. Affectation d'Engin à la Flotte Société",
+      "2. Owner & Active Driver Assignment": "2. Propriétaire & Chauffeur Actif",
+      "1. Driver Identity & Truck Assignment (Universal Registry · All BUs)": "1. Identité Chauffeur & Camion Assigné (Registre Universel)",
+      "1. Equipment Identity & Capacity (Universal Registry · All BUs)": "1. Identité & Capacité de l'Engin (Registre Universel)",
+      "Select Truck Owner first to filter its drivers, or type an active driver name": "Choisissez d'abord le propriétaire du camion, ou saisissez le nom du chauffeur",
+      "Auto-filled from Truck Plate (or select truck owner)...": "Rempli auto. depuis la plaque (ou choisir le propriétaire)...",
+      "Select or type truck plate...": "Choisir ou saisir la plaque camion...",
+      "e.g. 360676 (optional if entered above)": "ex. 360676 (optionnel si saisi ci-dessus)",
+      "e.g. TB1 or 353387": "ex. TB1 ou 353387",
+      "Mercedes, Volvo, Shacman, CAT": "Mercedes, Volvo, Shacman, CAT",
+      ". Editing both amounts computes the live effective rate against the 5% / 10% / 50% corridor guard.": ". Modifier les deux montants calcule le taux effectif par rapport aux seuils de contrôle (5 % / 10 % / 50 %).",
+      "Auto-calculates from USD × Rate, or enter LBP to compute implied rate": "Calculé auto. (USD × Taux), ou saisir LBP pour calculer le taux implicite",
+      "Conversion Leg": "Volet de Conversion",
+      "Drawer USD decreases and Drawer LBP increases": "La caisse USD diminue et la caisse LBP augmente",
+      "Drawer LBP decreases and Drawer USD increases": "La caisse LBP diminue et la caisse USD augmente",
+      "Effective FX Rate": "Taux de Change Effectif",
+      "Enter USD amount or click a frequent amount above to auto-calculate LBP": "Saisissez le montant USD ou cliquez sur un montant fréquent pour calculer en LBP",
+      "Frozen (>50%)": "Bloqué (>50 %)",
+      "Interactive FX Calculator:": "Calculateur de Change Interactif :",
+      "LBP Drawer Delta": "Variation Caisse LBP",
+      "USD Drawer Delta": "Variation Caisse USD",
+      "Normal (≤5%)": "Normal (≤5 %)",
+      "SYSTEM FX RATE PARITY": "PARITÉ TAUX SYSTÈME",
+      "Supervisor Lock (10%-50%)": "Verrou Superviseur (10 %-50 %)",
+      "System Rate:": "Taux Système :",
+      "Warning (5%-10%)": "Avertissement (5 %-10 %)",
+      "to auto-calculate at": "pour calculer automatiquement à",
+      "· Effective:": "· Effectif :",
+      "Auto-calculates from USD × Rate...": "Calculé automatiquement (USD × Taux)...",
+      "Enter USD or pick frequent amount...": "Saisir USD ou choisir un montant fréquent...",
+      "1. Global Currency Exchange Rate Window (Universal Registry · All BUs)": "1. Fenêtre de Taux de Change Global (Registre Universel)",
+      "Currency Pair": "Paire de Devises",
+      "Effective To =": "Valide jusqu'au =",
+      "Exchange Rate (per $1.00 USD) *": "Taux de Change (pour 1,00 $ USD) *",
+      "Existing LBP Exchange Rate Windows:": "Périodes de Taux LBP Enregistrées :",
+      "Prior Window": "Période Précédente",
+      "automatically sets": "définit automatiquement",
+      "Optional central bank circular, board resolution, or rate note...": "Référence circulaire, décision ou note sur le taux (optionnel)...",
+      "1. Currency Definition (Universal Registry · All BUs)": "1. Définition de la Devise (Registre Universel)",
+      "Optional settlement or rounding notes...": "Notes de règlement ou d'arrondi (optionnel)...",
+      "e.g. Euro, Pound Sterling, UAE Dirham": "ex. Euro, Livre Sterling, Dirham EAU",
+      "e.g. Foreign Trade & Settlement Currency": "ex. Devise de Commerce Extérieur & Règlement",
+      "Account Status": "Statut du Compte",
+      "Available Headroom": "Marge de Crédit Disponible",
+      "Within Limit": "Dans la Limite",
+      "11% Statutory VAT": "TVA Légale 11 %",
+      "Customer VAT Status": "Statut TVA Client",
+      "Statutory VAT %": "Taux TVA Légal %",
+      "MoF LBP VAT Rate": "Taux LBP TVA (Ministère des Finances)",
+      "$100.00 Net HT Sample": "Exemple 100,00 $ HT",
+      "1. Statutory VAT Rate & Ministry of Finance LBP Rate (Universal Registry · All BUs)": "1. Taux de TVA Légal & Taux LBP Ministère des Finances (Registre Universel)",
+      "Optional statutory law or MoF circular reference...": "Référence légale ou circulaire fiscale (optionnel)...",
+      "1. Equipment Unit & Warning Notice": "1. Engin & Avis d'Alerte Précoce",
+      "2. Affected Part, Warning Level & Status": "2. Pièce Concernée, Niveau d'Alerte & Statut",
+      "Flag Grave or Mild equipment issues and specify the affected part before failure": "Signalez les anomalies graves ou légères et précisez la pièce avant panne",
+      "Logged Before Repair": "Déclaré Avant Réparation",
+      "Pre-Notification": "Pré-Notification",
+      "Describe symptom, leak, noise, warning light, or worn component...": "Décrire le symptôme, fuite, bruit, voyant ou pièce usée...",
+      "Parts to check in warehouse, vendor inspection, or target repair date...": "Pièces à vérifier en stock, diagnostic atelier ou date cible...",
+      "Select driver, operator, or mechanic...": "Choisir chauffeur, opérateur ou mécanicien...",
+      "Select truck, mixer, loader, crusher...": "Choisir camion, malaxeur, chargeuse, concasseur...",
+      "Select truck, mixer, loader, generator...": "Choisir camion, malaxeur, chargeuse, groupe...",
+      "e.g. Hydraulic Pump, Alternator, Brake Drum...": "ex. Pompe hydraulique, Alternateur, Tambour de frein...",
+      "1. Equipment & Preventive Oil Service": "1. Engin & Vidange Préventive",
+      "2. Meter Readings at Service & Next Change Intervals (Hours / Km / Days)": "2. Relevé Compteur & Échéances Prochaine Vidange (Heures / Km / Jours)",
+      "Change Every Time (Days)": "Intervalle Calendaire (Jours)",
+      "Next Due (Date)": "Prochaine Échéance (Date)",
+      "Next Due (Hours)": "Prochaine Échéance (Heures)",
+      "Next Due (Km)": "Prochaine Échéance (Km)",
+      "Plant Lube Bay": "Baie de Graissage Centrale",
+      "Track oil changes and next service thresholds by Hours worked, Km driven, or Days elapsed": "Suivez les vidanges et seuils d'entretien par heures, kilomètres ou jours",
+      "Warehouse Impact": "Impact Stock Magasin",
+      "Filter brand, oil grade note, or mechanic...": "Marque de filtre, grade d'huile ou mécanicien...",
+      "1. Unit, Pre-Defect Verification & Part Piece Identity": "1. Engin, Vérification Avis de Panne & Identité Pièce",
+      "2. Piece Custody, Disposition & Financials": "2. Garde de la Pièce, Destination & Coûts",
+      "Net Cash Impact": "Impact Trésorerie Net",
+      "New Replacement Part Cost ($)": "Coût de la Pièce Neuve ($)",
+      "Outlay (New + Repair)": "Débours (Neuf + Réparation)",
+      "Pending Unit": "Engin en Attente",
+      "Piece Custody": "Garde de la Pièce",
+      "Select an": "Sélectionnez un",
+      "unit below to check whether a defect was reported beforehand.": "ci-dessous pour vérifier si une panne a été déclarée au préalable.",
+      "Warehouse shelf / spare bin where piece is stored": "Rayon magasin où la pièce est entreposée",
+      "Optional OEM code, serial, or brand": "Code OEM, N° de série ou marque (optionnel)",
+      "Select store, site, or target truck...": "Choisir magasin, site ou camion cible...",
+      "Select supervisor or approver...": "Choisir le superviseur ou approbateur...",
+      "Select workshop vendor or scrap buyer...": "Choisir l'atelier externe ou acheteur ferraille...",
+      "Shelf bin, workshop job card #, buyer receipt #, or mounting notes...": "Rayon, N° fiche atelier, reçu acheteur ou notes de montage...",
+      "e.g. Dynamo, Starter Motor, Hydraulic Pump...": "ex. Alternateur, Démarreur, Pompe hydraulique...",
+      "1. Equipment Unit, Linked Warning & Repair Source": "1. Engin, Alerte Liée & Source de Réparation",
+      "3. External Labor & Notes": "3. Main-d'Œuvre Externe & Notes",
+      "Item / Part Used *": "Article / Pièce Utilisée *",
+      "Item Source *": "Origine de la Pièce *",
+      "Line Cost": "Coût Ligne",
+      "Outside Parts + Labor": "Pièces Externes + Main-d'Œuvre",
+      "Pick a stored Warehouse item": "Choisir un article en stock magasin",
+      "Select whether items came from Warehouse (-Stock), Outside, or Partially Both": "Indiquez si les pièces proviennent du Magasin (-Stock), de l'Externe, ou des Deux",
+      "Total Repair Cost": "Coût Total de Réparation",
+      "Warehouse Stock Used": "Stock Magasin Utilisé",
+      "Warehouse items decrease stored inventory automatically; Qty defaults to 1": "Les articles magasin déduisent automatiquement le stock ; Qté par défaut = 1",
+      "Describe repair work performed, mechanic name, or warranty note...": "Décrire la réparation effectuée, le mécanicien ou la garantie...",
+      "Optional outside workshop or parts vendor...": "Atelier externe ou fournisseur de pièces (optionnel)...",
+      "+ Add to Shelf (+Stock)": "+ Ajouter au Rayon (+Stock)",
+      "+ Buy & Store (Expense)": "+ Acheter & Stocker (Dépense)",
+      "+ Use on Machine (Repair)": "+ Utiliser sur Engin (Réparation)",
+      "+Add to Shelf": "+Ajout Rayon",
+      "Adds items onto your Warehouse shelf without creating a supplier bill": "Ajoute des articles au stock magasin sans créer de facture fournisseur",
+      "Current On Shelf": "Stock Actuel en Rayon",
+      "Items already sitting on your shelves (no new Cash or Supplier AP bill created)": "Articles déjà présents en rayon (aucune écriture caisse ou dette fournisseur)",
+      "New Shelf Balance": "Nouveau Solde en Rayon",
+      "Physical Shelf Stock & Adjustments": "Stock Physique en Rayon & Ajustements",
+      "Shelf Value (No Bill)": "Valeur Stock (Sans Facture)",
+      "Use this for existing shelf stock, returned spares, or damaged/missing counts (no supplier bill).": "À utiliser pour le stock existant, retours en rayon ou écarts d'inventaire (sans facture).",
+      "Shelf bin, physical stocktake reference, or return note...": "Emplacement rayon, réf. inventaire ou note de retour...",
+      "Warehouse or store shelf...": "Magasin ou emplacement rayon...",
+      "1. Item, Dates & Discrepancy Classification": "1. Article, Dates & Nature de l'Écart",
+      "Locked to L for Diesel": "Fixé en Litres (L) pour le Gasoil",
+      "Month Malfunction % (5% Watchdog)": "% d'Écarts du Mois (Seuil 5 %)",
+      "Quantity (Litres L) *": "Quantité (Litres L) *",
+      "Tank After Entry": "Cuve Après Saisie",
+      "Tank Before Entry": "Cuve Avant Saisie",
+      "Tank Impact": "Impact Cuve",
+      "Explain variance, leak source, dip calibration, or count note...": "Expliquer l'écart, fuite, jaugeage ou note de comptage...",
+      "Select fuel, lubricant, grease, part, or aggregate...": "Choisir carburant, huile, graisse, pièce ou granulat...",
+      "e.g. 50 or -50": "ex. 50 ou -50",
+      "WTC Plant Tank": "Cuve Centrale WTC",
+      "0 files (Add below)": "0 fichier (Ajouter ci-dessous)",
+      "1. Document Classification, Entity & Counterparty": "1. Classification, Société & Tiers",
+      "Attach a PDF, photo, or scan of the invoice/receipt, snap a live camera photo, or drag & drop / Ctrl+V paste.": "Joignez un PDF ou photo de la pièce, prenez une photo caméra, ou glissez-déposez / Ctrl+V.",
+      "Attached Files": "Fichiers Joints",
+      "Counterparty (Supplier / Customer / Authority)": "Tiers (Fournisseur / Client / Administration)",
+      "Document Amount": "Montant du Document",
+      "Document Amount ($ · Optional)": "Montant du Document ($ · Optionnel)",
+      "Link this document to an Expense, Raw Ticket, Sales Ticket, Settlement, or keep it as a standalone vault file": "Liez ce document à une dépense, un bon ou un règlement, ou conservez-le comme archive autonome",
+      "Linked Ticket / Voucher #": "N° Bon / Pièce Liée",
+      "Save standalone invoices, receipts, tax filings, contracts, or link supporting scans directly to any operational record": "Archivez factures, reçus, déclarations fiscales et contrats ou liez-les à toute écriture opérationnelle",
+      "Standalone Vault Document": "Document d'Archive Autonome",
+      "Upload or Snap Document, Invoice or Receipt File *": "Importer ou Photographier le Document / Facture / Reçu *",
+      "Optional notes, folder tag, audit remark, or physical binder location...": "Notes, dossier, remarque d'audit ou classeur physique (optionnel)...",
+      "Optional ticket or voucher # (e.g. EXP-2026-0001 or #44210)...": "N° de bon ou pièce lié optionnel (ex. EXP-2026-0001 ou #44210)...",
+      "Paper invoice #, voucher #, or slip ref...": "N° facture papier, pièce ou référence...",
+      "e.g. Supplier Invoice #4812, Diesel Receipt, MoF VAT Q3...": "ex. Facture Fournisseur #4812, Bon Gasoil, Déclaration TVA T3...",
+      "Credit (AP)": "Crédit (Dette Fournisseur)",
+      "General Overhead": "Frais Généraux",
+      "Item / Detail": "Article / Détail",
+      "Optional detail or bulk item (e.g. Diesel)...": "Détail ou article en vrac (ex. Gasoil)...",
+      "Optional invoice or approval note (required if back-dated)...": "Note de facture ou d'approbation (obligatoire si antidaté)...",
+      "1. Expense Taxonomy Identity (Universal Registry · All BUs)": "1. Catégorie de Dépenses (Registre Universel)",
+      "New Universal Expense Category (All BUs)": "Nouvelle Catégorie de Dépenses Universelle",
+      "Optional accounting classification or usage guidance...": "Classification comptable ou consigne d'usage (optionnel)...",
+      "e.g. Plant Maintenance, Crusher Consumables...": "ex. Maintenance Centrale, Consommables Concasseur...",
+      "Elapsed Cycles": "Périodes Écoulées",
+      "End Date (Blank = Open)": "Date de Fin (Vide = Ouvert)",
+      "LBP Amount (L.L. / cycle)": "Montant LBP (L.L. / période)",
+      "USD Amount ($ / cycle)": "Montant USD ($ / période)",
+      "Open-ended standing schedule": "Échéancier périodique permanent",
+      "Pick a Category first": "Choisissez d'abord une catégorie",
+      "Schedule Status": "Statut de l'Échéancier",
+      "Total Accrued": "Total Couru",
+      "None (Plant / General Overhead)": "Aucun (Centrale / Frais Généraux)",
+      "Optional contract reference, landlord, or billing note...": "Référence contrat, bailleur ou note de facturation (optionnel)...",
+      "e.g. Rent, Internet, Security, Tips, Telephone...": "ex. Loyer, Internet, Gardiennage, Téléphone...",
+      "Allocation": "Allocation",
+      "FIFO oldest ticket first": "FIFO du bon le plus ancien",
+      "Receipt + discount": "Encaissement + remise",
+      "Select a": "Sélectionnez un",
+      "Written off against the oldest ticket": "Imputé sur le bon ouvert le plus ancien",
+      "to inspect open Credit Tickets & live FIFO receipt allocation.": "pour inspecter les bons à crédit ouverts et l'allocation FIFO en direct.",
+      "Difference / Discount ($)": "Écart / Remise Obtenue ($)",
+      "Paid + discount": "Payé + remise",
+      "to inspect open 3-Leg Payables (Material Leg · Haulage Leg · Credit Expense Leg) & live FIFO settlement allocation.": "pour inspecter les dettes à 3 volets (Matière · Transport · Charges à crédit) et l'allocation FIFO.",
+      "External Inflow": "Entrée Externe",
+      "Inflow Now": "Entrée Actuelle",
+      "Net Position After": "Position Nette Après",
+      "Prior Net Position": "Position Nette Avant",
+      "Treasury Leg": "Volet Trésorerie",
+      "Borrower (Receiving Loan) *": "Emprunteur (Bénéficiaire) *",
+      "Loan Balance After": "Solde du Prêt Après",
+      "Loan Given Now": "Montant Prêté",
+      "Which type of new loan are you recording?": "Quel type de nouveau prêt enregistrez-vous ?",
+      "Optional settlement or loan remarks...": "Remarques sur le prêt ou règlement (optionnel)...",
+      "Optional voucher or loan ref...": "Référence pièce ou prêt (optionnel)...",
+      "Select or type borrower receiving the loan...": "Choisir ou saisir l'emprunteur...",
+      "1. Catalog Item Identity & Locked Unit (Universal Catalog · All BUs)": "1. Identité Article & Unité Verrouillée (Catalogue Universel)",
+      "Catalog Scope": "Portée du Catalogue",
+      "Frozen Unit": "Unité Verrouillée",
+      "Frozen Unit (UoM) *": "Unité de Mesure Verrouillée *",
+      "Piece (Permanent)": "Pièce (Permanent)",
+      "Reference Price": "Prix de Référence",
+      "Default store or shelf...": "Magasin ou rayon par défaut...",
+      "Optional OEM part code, storage shelf, or supplier note...": "Code OEM, rayon ou note fournisseur (optionnel)...",
+      "e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt...": "ex. Filtre gasoil, Huile hydraulique 68, Courroie...",
+      "Default Unit (UoM) *": "Unité par Défaut (UoM) *",
+      "e.g. Sand 0-4mm, Gravel 10-20mm": "ex. Sable 0-4mm, Gravier 10-20mm",
+      "1. Sales Agreement Scope & Customer": "1. Portée de l'Accord Tarifaire & Client",
+      "2. Pricing & Volume Tiers": "2. Tarification & Paliers de Volume",
+      "Base Rate (Mat + Trans)": "Tarif de Base (Mat. + Transp.)",
+      "Headline Rate": "Tarif Principal",
+      "Target Truck Plate (Optional)": "Plaque Camion Spécifique (Optionnel)",
+      "Tier 2 Sample": "Exemple Palier 2",
+      "Unit Equivalence": "Équivalence d'Unité",
+      "Select specific truck to adjust its m³...": "Choisir un camion spécifique pour ajuster ses m³...",
+      "e.g. 14 or 20 m³": "ex. 14 ou 20 m³",
+      "50% Accrued Share": "Quote-Part Courue 50 %",
+      "Already Distributed": "Déjà Distribué",
+      "JV Status": "Statut JV",
+      "Remaining After Entry": "Solde Restant Après",
+      "Select JV Site": "Choisir le Site JV",
+      "Daily LBP (L.L. / day)": "Forfait Jour LBP (L.L. / jour)",
+      "Daily USD ($ / day)": "Forfait Jour USD ($ / jour)",
+      "Max Window (Tallied)": "Fenêtre Max (Pointée)",
+      "Scheduled Days *": "Jours Planifiés *",
+      "Scheduled Window": "Période Planifiée",
+      "Work Proof in Window": "Justificatif d'Activité",
+      "Optional excavator, loader, truck...": "Pelle, chargeuse, camion (optionnel)...",
+      "Optional site task or note...": "Tâche chantier ou note (optionnel)...",
+      "1. Geographic Region & Map Zone (Universal Registry · All BUs)": "1. Région Géographique & Zone Carte (Registre Universel)",
+      "Search Map Region": "Rechercher une Région",
+      "Search Zone Shape": "Forme de la Zone",
+      "Search a city or district above (e.g. Beirut, Saida, Metn) or pick a quick chip:": "Recherchez une ville ou un district ci-dessus (ex. Beyrouth, Saïda, Metn) ou cliquez :",
+      "Auto-detected from map...": "Détecté automatiquement sur la carte...",
+      "Auto-estimated from WTC Hub": "Estimé auto. depuis la centrale WTC",
+      "Locked to Search Map Region...": "Lié à la région sélectionnée...",
+      "Optional corridor notes, toll/checkpoint info, or zone scope...": "Notes d'itinéraire ou périmètre de zone (optionnel)...",
+      "Search Beirut, Saida, Tripoli, Metn, Zahle...": "Rechercher Beyrouth, Saïda, Tripoli, Metn, Zahlé...",
+      "Chouf": "Chouf",
+      "Keserwan": "Kesrouan",
+      "Metn": "Metn",
+      "Saida": "Saïda",
+      "Tripoli": "Tripoli",
+      "Tyre": "Tyr",
+      "Zahle": "Zahlé",
+      "Click map or select Region to estimate KM": "Cliquez sur la carte ou choisissez la région pour estimer les km",
+      "Click on the map, drag the pin, or select a Region above to set or modify where this site is": "Cliquez sur la carte, déplacez l'épingle ou choisissez une région pour localiser ce site",
+      "Must be located inside the selected Region.": "Doit se situer dans la région sélectionnée.",
+      "New Site (All BUs)": "Nouveau Chantier / Site (Toutes Sociétés)",
+      "Raw material delivered to plant in supplier unit price; region & internal transport split unknown ($0 separate haulage)": "Matière rendue centrale incluse dans le prix fournisseur (0 $ de transport séparé)",
+      "Select the geographic Region first or click inside a zone on the map.": "Sélectionnez d'abord la région ou cliquez dans une zone sur la carte.",
+      "Site Location:": "Localisation du Site :",
+      "Auto from map / region": "Auto depuis carte / région",
+      "Paste lat, lng or Maps link": "Coller lat, lng ou lien Maps",
+      "Select region or click map zone...": "Choisir une région ou cliquer sur la carte...",
+      "Site name inside selected region...": "Nom du site dans la région choisie...",
+      "Auto-fills Region from site...": "Remplit auto. la région depuis le site...",
+      "Auto-generated if left blank...": "Généré auto. si laissé vide...",
+      "e.g. Beirut, Sibline, Excluded...": "ex. Beyrouth, Sibline, Exclu...",
+      "1. Staff Identity (Universal Registry · All BUs)": "1. Identité Collaborateur (Registre Universel)",
+      "2. Initial Role & Equipment Assignment (Logged by Effective Date)": "2. Fonction & Engin Initial (Historisé par Date d'Effet)",
+      "Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract": "Les changements futurs de poste, d'engin et de contrat sont suivis chronologiquement",
+      "Shared across all corporations (WTC, BBConstruction, Lions Transport). Future role, equipment, and contract changes are tracked chronologically under": "Partagé entre toutes les sociétés. Les évolutions de poste, d'engin et de contrat sont suivies dans",
+      "Universal Staff Profile:": "Fiche Collaborateur Universelle :",
+      "Civil ID, NSSF or work permit #...": "N° d'identité, CNSS ou permis de travail...",
+      "Optional assigned truck or machine...": "Camion ou engin assigné (optionnel)...",
+      "Skills, shift notes or emergency contact...": "Compétences, notes d'horaire ou contact d'urgence...",
+      "1. Effective-Dated Role & Equipment Assignment": "1. Affectation Poste & Engin à Date d'Effet",
+      "Logs role and machine changes over time; prior Open assignment closes automatically on Start Date minus 1 day": "Historise les changements de poste/engin ; clôture auto. l'affectation précédente à J-1",
+      "Prior Assignment": "Affectation Précédente",
+      "Optional assigned truck, loader, crusher...": "Camion, chargeuse ou concasseur assigné (optionnel)...",
+      "Reason for role or machine transfer, shift change, or site note...": "Motif de changement de poste/engin, d'horaire ou note...",
+      "1. Staff Role & Linked Category (Universal Registry · All BUs)": "1. Fonction & Catégorie Associée (Registre Universel)",
+      "Linked Category": "Catégorie Liée",
+      "Registry Scope": "Portée du Registre",
+      "Shared across all entities; selecting this Role automatically locks Role Category on staff profiles, logs, and contracts": "Partagé entre sociétés ; verrouille automatiquement la catégorie sur les fiches et contrats",
+      "Responsibilities, shift scope, or licensing notes...": "Responsabilités, horaires ou permis requis...",
+      "e.g. Crusher Operator, Fleet Driver, Mechanic...": "ex. Opérateur concasseur, Chauffeur flotte, Mécanicien...",
+      "Daily & Hourly": "Journalier & Horaire",
+      "Monthly Package": "Forfait Mensuel",
+      "Transp. / Reimb. ($/mo)": "Transport / Indemnités ($/mois)",
+      "1. Regular Shift, BU Default & Effective Window": "1. Horaire Régulier, Défaut Société & Période d'Effet",
+      "2. Day-Specific Shift Timings (Saturday / Weekday Overrides)": "2. Horaires Spécifiques par Jour (Samedi / Jours Ouvrés)",
+      "3. Retroactive Backfill & Notes": "3. Recalcul Rétroactif & Notes",
+      "Configure regular clock timings, set the default shift for the selected BU, or log a new effective-dated shift timing change": "Configurez les horaires normaux, le poste par défaut ou un changement d'horaire à date d'effet",
+      "Effective Window": "Période d'Effet",
+      "Regular End Time (OUT) *": "Heure de Sortie Normale (OUT) *",
+      "Regular Start Time (IN) *": "Heure d'Entrée Normale (IN) *",
+      "Regular Window": "Plage Horaire Normale",
+      "Set different start and leave times for Saturday or other weekdays (for example starting earlier and leaving earlier on Saturday)": "Définissez des horaires distincts pour le samedi ou certains jours ouvrés",
+      "When shift timings change, associated staff schedules and attendance records from Effective Start Date onward are automatically updated": "Lors d'un changement d'horaire, les pointages à partir de la date d'effet sont recalculés automatiquement",
+      "Reason for shift timing update, seasonal Saturday schedule, or BU policy note...": "Motif du changement d'horaire, horaire samedi ou note interne...",
+      "e.g. Day Shift, Extended Day, Night Shift...": "ex. Poste de Jour, Journée Étendue, Poste de Nuit...",
+      "e.g. Day, Ext Day, Night": "ex. Jour, Étendu, Nuit",
+      "Already Paid (Month)": "Déjà Payé (Mois)",
+      "Month Net Earned": "Net Acquis du Mois",
+      "Payment Classification": "Nature du Paiement",
+      "Pending Staff": "Collaborateur en Attente",
+      "Remaining After Payment": "Reste à Payer Après",
+      "Select Staff": "Sélectionner le Collaborateur",
+      "above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.": "ci-dessus pour afficher le salaire mensuel, heures sup./retenues, acomptes versés et solde.",
+      "Optional payroll note, bonus reason, or voucher ref...": "Note de paie, motif de prime ou réf. pièce (optionnel)...",
+      "1. Supplier Identity (Universal Registry · All BUs)": "1. Identité Fournisseur / Transporteur (Registre Universel)",
+      "2. Hauler Fleet & Drivers (Auto-Enabled when Hauler / Truck Owner is Selected)": "2. Flotte & Chauffeurs du Transporteur (Activé auto. si Transporteur)",
+      "Enter the Supplier / Hauler name above, then add one or more drivers for this hauler.": "Saisissez le nom du fournisseur / transporteur ci-dessus, puis ajoutez ses chauffeurs.",
+      "Hauler Fleet & Drivers active below": "Flotte & chauffeurs du transporteur actifs ci-dessous",
+      "Assign default truck...": "Assigner le camion par défaut...",
+      "Enter driver name to link or add...": "Saisir le nom du chauffeur à lier ou ajouter...",
+      "Tax / MOF registration #": "N° d'enregistrement fiscal / TVA",
+      "Void / Delete this record (click once to arm, click again to confirm)": "Annuler / Supprimer cet enregistrement (cliquer une fois pour armer, une seconde fois pour confirmer)",
+      "Void or delete this record (2-click confirmation)": "Annuler ou supprimer cet enregistrement (confirmation en 2 clics)",
+      "Void / Delete Record": "Annuler / Supprimer",
+      "Narrow column (−24px)": "Réduire la colonne (−24 px)",
+      "Widen column (+24px)": "Élargir la colonne (+24 px)",
+      "Hide this column": "Masquer cette colonne",
+      "Drag left or right to narrow or widen column · Double-click to revert to default width": "Glisser à gauche ou à droite pour ajuster la largeur · Double-cliquer pour réinitialiser",
+      "Switch Light Paper / Dark Ink": "Basculer Mode Clair / Mode Sombre",
+      "Hide or show columns & widen or narrow column widths": "Afficher ou masquer des colonnes et ajuster leur largeur",
+      "Click to inspect row details": "Cliquer pour inspecter les détails de la ligne",
+      "Hide left navigation sidebar to expand main view": "Masquer la barre latérale pour agrandir l'affichage principal",
+      "Lock this session and switch team login": "Verrouiller la session et changer d'utilisateur",
+      "Drag left or right to make sidebar wider or narrower · Double-click to reset": "Glisser pour ajuster la largeur du menu latéral · Double-cliquer pour réinitialiser",
+      "Hide / show left navigation sidebar": "Masquer / afficher le menu latéral",
+      "Open Ask ISABI Intelligence": "Ouvrir l'assistant intelligent Ask ISABI",
+      "Open Ask ISABI System Intelligence": "Ouvrir l'intelligence système Ask ISABI",
+      "Switch Language (English / العربية / Français)": "Changer de langue (English / العربية / Français)",
+      "Switch Industry & Operating Company (10 Industries · 200+ Companies Ready)": "Changer de secteur et de société (10 secteurs · prêt pour 200+ sociétés)",
+      "Click to browse all 6 industries": "Cliquer pour parcourir les 6 secteurs",
+      "Preset & All-Time Periods": "Périodes prédéfinies & toutes périodes",
+      "From Day — click for Calendar or ↑/↓ to step ±1 day": "Jour de début — cliquer pour le calendrier ou ↑/↓ pour ±1 jour",
+      "From Month — click for Month Picker or ↑/↓ to step ±1 month": "Mois de début — cliquer pour choisir le mois ou ↑/↓ pour ±1 mois",
+      "From Year — click for Year Picker or ↑/↓ to step ±1 year": "Année de début — cliquer pour choisir l'année ou ↑/↓ pour ±1 an",
+      "Open interactive Date & Period Facilitator (From)": "Ouvrir le sélecteur interactif de période (Début)",
+      "To Day — click for Calendar or ↑/↓ to step ±1 day": "Jour de fin — cliquer pour le calendrier ou ↑/↓ pour ±1 jour",
+      "To Month — click for Month Picker or ↑/↓ to step ±1 month": "Mois de fin — cliquer pour choisir le mois ou ↑/↓ pour ±1 mois",
+      "To Year — click for Year Picker or ↑/↓ to step ±1 year": "Année de fin — cliquer pour choisir l'année ou ↑/↓ pour ±1 an",
+      "Open interactive Date & Period Facilitator (To)": "Ouvrir le sélecteur interactif de période (Fin)",
+      "Statutory Reporting Date": "Date de reporting comptable",
+      "Operational Transaction Date": "Date d'opération réelle",
+      "Calendar Year": "Année civile",
+      "Calendar Month": "Mois civil",
+      "Monday–Sunday Week": "Semaine (lundi–dimanche)",
+      "Specific Day": "Jour précis",
+      "From": "Début",
+      "To": "Fin",
+      "Attach receipt photo, CSV/Excel sheet, PDF, or document (or drag & drop / paste)": "Joindre photo de reçu, fichier CSV/Excel, PDF ou document (ou glisser-déposer / coller)",
+      "Record voice question or note (EN / العربية / Français)": "Enregistrer une question ou note vocale (EN / العربية / Français)",
+      "Record voice question or note (EN / العربية / FR)": "Enregistrer une question ou note vocale (EN / العربية / FR)",
+      "Download the rows shown as CSV (Excel, UTF-8)": "Télécharger les lignes affichées en CSV (Excel, UTF-8)",
+      "Search any text or type column:value (e.g. type:Truck, method:Cash, cap:>=25)": "Rechercher un texte ou saisir colonne:valeur (ex. type:Truck, method:Cash)",
+      "Rows per page": "Lignes par page",
+      "First Page": "Première page",
+      "Previous Page": "Page précédente",
+      "Next Page": "Page suivante",
+      "Last Page": "Dernière page",
+      "Click to jump to itemized records": "Cliquer pour accéder aux écritures détaillées",
+      "See why this alert exists and edit its threshold": "Voir la raison de cette alerte et modifier son seuil",
+      "Jump straight to this form or module": "Accéder directement à ce formulaire ou module",
+      "Open Expenses & P&L Breakdown": "Ouvrir le détail des charges & P&L",
+      "Open Receivables & Payables": "Ouvrir les créances & dettes",
+      "Switch between Full Operational Ledger and Official Fiscal Books Only": "Basculer entre le livre opérationnel complet et les livres fiscaux officiels",
+      "Toggle 10 Industries × 15 Companies (150 Companies) enterprise scale preview": "Basculer l'aperçu grand groupe 10 secteurs × 15 sociétés (150 sociétés)",
+      "Show all 14 permitted companies across 6 industries": "Afficher les 14 sociétés autorisées sur les 6 secteurs",
+      "Supabase anon key...": "Clé publique Cloud Relay...",
+      "open Sentinel alerts. Ask anything in English, العربية, or Français, record a voice note, or attach a file.": "alertes Sentinelles ouvertes. Posez toute question en français, arabe ou anglais, dictez une note vocale ou joignez un fichier.",
+      "All Business Units": "Toutes les Sociétés",
+      "Group Treasury & JV": "Trésorerie Groupe & JV",
+      "Buzwair & Bdeir Real Estate": "Buzwair & Bdeir Immobilier",
+      "Bdeir Insurance Brokerage": "Bdeir Courtage d'Assurance",
+      "Insurance Company": "Compagnie d'Assurance",
+      "World Trading & Construction": "World Trading & Construction",
+      "WTC · WORLD TRADING & CONSTRUCTION": "WTC · WORLD TRADING & CONSTRUCTION",
+      "WTC (World Trading)": "WTC (World Trading)",
+      "Pending GPS": "GPS en attente",
+      "Incl. in Mat": "Incl. matière",
+      "Roster": "Effectif",
+      "WTC Main Warehouse": "Entrepôt Principal WTC",
+      "Main Warehouse": "Entrepôt Principal",
+      "Nothing flagged": "Aucune anomalie",
+      "Closed payroll period · paid in workbook": "Période de paie clôturée · réglée au livre",
+      "No Operator on Ticket": "Sans opérateur sur le bon",
+      "Reported Snapshot": "Instantané déclaré",
+      "Never logged": "Jamais saisi",
+      "Landed": "Rendu",
+      "Sick Leave": "Congé maladie",
+      "Paid Vacation": "Congé payé",
+      "Paid Leave": "Congé payé",
+      "Sale Ticket": "Bon de vente",
+      "Sale": "Vente",
+      "fill": "plein",
+      "Maintenance": "Maintenance",
+      "Unassigned": "Non affecté",
+      "Ext In": "Entrée ext.",
+      "Ext Out": "Sortie ext.",
+      "AR In": "Enc. client",
+      "AP Out": "Règl. fourn.",
+      "Cash Exp": "Charge esp.",
+      "Repay In": "Remb. reçu",
+      "Loan In": "Prêt reçu",
+      "Loan Out": "Prêt versé",
+      "Loan Lent": "Prêt accordé",
+      "Net In": "Entrée nette",
+      "Net Out": "Sortie nette",
+      "Salary Out": "Paie versée",
+      "Salary Paid": "Salaire payé",
+      "AP Settlement": "Règlement fourn.",
+      "AR Collection": "Encaissement client",
+      "Payment Settlement": "Règlement",
+      "- · Payment Settlement": "- · Règlement",
+      "Payment Receipt": "Reçu d'encaissement",
+      "VAT Receipt": "Encaissement TVA",
+      "VAT Settlement": "Règlement TVA",
+      "- · VAT Settlement": "- · Règlement TVA",
+      "Treasury Loan": "Prêt trésorerie",
+      "Borrowing Repayment In": "Remboursement d'emprunt reçu",
+      "Borrowing Out": "Prêt décaissé",
+      "Lend Out": "Prêt accordé",
+      "Extended Out": "Sortie étendue",
+      "Extended Outflow": "Décaissement étendu",
+      "Customer account receipt": "Encaissement compte client",
+      "External Revenue": "Produit externe",
+      "External Expense": "Charge externe",
+      "External Revenue (In)": "Produit externe (Entrée)",
+      "External Expense (Out)": "Charge externe (Sortie)",
+      "External treasury expense / outflow": "Charge de trésorerie externe / sortie",
+      "External treasury revenue / inflow": "Produit de trésorerie externe / entrée",
+      "11% VAT collection in LBP": "Encaissement TVA 11 % en LBP",
+      "Settlement difference — discount received": "Écart de règlement — remise obtenue",
+      "VAT paid to supplier": "TVA payée au fournisseur",
+      "On Acct": "Acompte",
+      "Standard List": "Tarif Catalogue",
+      "No Rule": "Sans tarif",
+      "(Direct Delivery)": "(Livraison directe)",
+      "Source + 3P Haul": "Source + Transp. tiers",
+      "Partner Entitlement": "Quote-part associé",
+      "Driver Trip Only": "Prime voyage seul",
+      "Hours Tally": "Pointage heures",
+      "Interest": "Intérêts",
+      "(no number)": "(sans numéro)",
+      "(no site on ticket)": "(sans site sur le bon)",
+      "Sales Ex-VAT": "Ventes HT",
+      "USD to LBP": "USD vers LBP",
+      "LBP to USD": "LBP vers USD",
+      "Till": "Caisse",
+      "Till:": "Caisse :",
+      "Tank": "Cuve",
+      "Tank (L)": "Cuve (L)",
+      "Pick": "Enlèv.",
+      "Quarry ·": "Carrière ·",
+      "load ·": "voyage ·",
+      "loads ·": "voyages ·",
+      "/ ton": "/ tonne",
+      "/ load": "/ voyage",
+      "/ trip": "/ voyage",
+      "/ pay": "/ paiement",
+      "Rate Compliance & VAT": "Conformité Tarifs & TVA",
+      "Active Workforce": "Effectif Actif",
+      "Master & Governance": "Référentiels & Gouvernance",
+      "Pay & Comm": "Paie & Comm.",
+      "WTC Tank Closing": "Clôture Cuve WTC",
+      "Tank Closing": "Clôture Cuve",
+      "Payroll": "Paie",
+      "Click any row to edit or inspect 360° Details": "Cliquer sur une ligne pour modifier ou inspecter la fiche 360°",
+      "Click any row to edit": "Cliquer sur une ligne pour modifier",
+      "Strict Transaction Date Basis": "Base stricte date d'opération",
+      "Haulage Split (Own vs 3P)": "Répartition Transport (Propre vs Tiers)",
+      "Overtime shift load": "Voyage en heures supplémentaires",
+      "Overnight shift finishing next morning": "Poste de nuit se terminant le lendemain matin",
+      "Reporting / تاريخ الاحتساب (actual attendance day)": "Date de reporting (jour de présence réel)",
+      "تاريخ العملية (entry date)": "Date d'opération (date de saisie)",
+      "Open all sentinels": "Ouvrir toutes les sentinelles",
+      "Open all sentinels →": "Ouvrir toutes les sentinelles →",
+      "Material Sales Revenue (Ex-VAT)": "Chiffre d'affaires matériaux (HT)",
+      "Delivery Transport Revenue": "Revenus de transport livraison",
+      "Transport Revenue": "Revenus de transport",
+      "Subcontracted Raw Haulage (Leg 2)": "Transport matières sous-traité (Volet 2)",
+      "Operating, Fleet & Plant Expenses": "Charges d'exploitation, flotte & usine",
+      "Operating Expenses": "Charges d'exploitation",
+      "Staff Salaries & Overtime Paid": "Salaires & heures supplémentaires payés",
+      "Staff Salaries Paid": "Salaires versés",
+      "Audited SOA Double-Entry Journal Stream & Partner Treasury / Loans": "Journal audité en partie double (SOA) & trésorerie / prêts associés",
+      "Income Statement (Lebanese CoA Class 7 & Class 6)": "Compte de Résultat (Plan Comptable Libanais Classes 7 & 6)",
+      "WTC Sales TTC": "Ventes TTC WTC",
+      "BBConstruction Sales TTC": "Ventes TTC BBConstruction",
+      "WTC Operating Profit": "Résultat d'Exploitation WTC",
+      "BBC Operating Profit": "Résultat d'Exploitation BBC",
+      "Group Open AR / AP": "Créances / Dettes Ouvertes Groupe",
+      "Group TB Variance": "Écart Balance Groupe",
+      "All entities tied to $0.00": "Toutes les sociétés rapprochées à 0,00 $",
+      "Monthly Sales TTC — WTC vs BBConstruction": "Ventes Mensuelles TTC — WTC vs BBConstruction",
+      "Monthly Operating Profit — WTC vs BBConstruction": "Profit Opérationnel Mensuel — WTC vs BBConstruction",
+      "WTC Profit": "Profit WTC",
+      "BBC Profit": "Profit BBC",
+      "Consolidated Multi-Entity Financial & Operational Matrix": "Matrice Financière & Opérationnelle Consolidée Multi-Sociétés",
+      "Sales incl. VAT (TTC)": "Ventes TTC",
+      "Total Sales ex-VAT (Mat + Trans)": "Total Ventes HT (Mat. + Transp.)",
+      "Material Sales ex-VAT": "Ventes Matériaux HT",
+      "Output VAT 11% (4427)": "TVA Collectée 11 % (4427)",
+      "Weighbridge Loads": "Pesées Bascule",
+      "— Material Leg (Site Owners)": "— Volet Matières (Propriétaires de sites)",
+      "— Haulage Leg (3rd-Party Trucks)": "— Volet Transport (Camions tiers)",
+      "Entity Comparison — WTC vs BBConstruction vs Lions Transport": "Comparaison des Sociétés — WTC vs BBConstruction vs Lions Transport",
+      "OPERATING PROFIT · TB CHECK ($0.00 TIED)": "RÉSULTAT OPÉRATIONNEL · CONTRÔLE BALANCE (0,00 $)",
+      "Heavy Fleet & Haulage": "Flotte Lourde & Transport",
+      "Beach Resort, Chalets & F&B": "Resort Balnéaire, Chalets & Restauration",
+      "Executive Suites & Ballroom Events": "Suites Exécutives & Salles de Réception",
+      "4235 Msaytbeh Commercial Center": "Centre Commercial Msaytbeh 4235",
+      "Commercial Towers, Land Bank & Intl": "Tours Commerciales, Foncier & International",
+      "Heavy Trucks, Mixers & Showroom": "Poids Lourds, Malaxeurs & Showroom",
+      "OEM Spare Parts, Tyres & Lubricants": "Pièces d'Origine OEM, Pneus & Lubrifiants",
+      "Group Treasury, Shared Services & JV": "Trésorerie Groupe, Services Partagés & JV",
+      "Side-by-Side Entity Performance & Margins": "Performance & Marges Comparées par Société",
+      "rules flagged for review · Evaluated": "règles signalées pour révision · Évalué sur",
+      "$0.00 Variance": "Écart 0,00 $",
+      "Double-Entry Variance $0.00": "Écart Partie Double 0,00 $",
+      "Lebanese CoA Classes 1-7 double-entry parity across": "Parité en partie double des classes 1–7 du PCG libanais sur",
+      "lapsed agreements trading": "accords expirés encore actifs",
+      "diesel outliers": "anomalies gasoil",
+      "staff without contract": "collaborateurs sans contrat",
+      "Diesel Malfunction Watchdog (5.0% of Company Consumption)": "Sentinelle Écarts Gasoil (seuil 5,0 % de la consommation)",
+      "Date gaps > 31 days": "Écarts de date > 31 jours",
+      "Date Gaps > 31 Days": "Écarts de Date > 31 Jours",
+      "Customer sales on ended agreements (amber) or priced below the agreed / list price (red)": "Ventes sur accords expirés (ambre) ou facturées sous le tarif convenu / catalogue (rouge)",
+      "0.0 km · $0 · Supervisor only": "0,0 km · 0 $ · Superviseur uniquement",
+      "0.0 km Round-Trip (2x KM)": "0,0 km Aller-Retour (2× km)",
+      "Flagged by Sentinel S8": "Signalé par la Sentinelle S8",
+      "60-Day Gap Guard": "Garde d'Écart 60 Jours",
+      "Removed Tickets (In 25-Book)": "Bons Annulés (Carnet de 25)",
+      "Weighbridge loads by month — Sales vs Raw pads": "Pesées mensuelles — Carnets Ventes vs Matières",
+      "Sales (Tx Date Basis)": "Ventes (Base Date Opér.)",
+      "Sales (Rep Date Basis)": "Ventes (Base Date Rep.)",
+      "Raw Cost (Tx vs Rep)": "Coût Matières (Opér. vs Rep.)",
+      "Transaction date vs reporting date parity bridge": "Pont de parité date d'opération vs date de reporting",
+      "Transaction vs reporting date gaps > 31 days (Sentinel S8)": "Écarts date d'opération vs reporting > 31 jours (Sentinelle S8)",
+      "Customer & Supplier Sub-Account Reconciliation vs Trial Balance": "Rapprochement des Comptes Auxiliaires Clients & Fournisseurs vs Balance",
+      "P&L Sales Ex-VAT": "Ventes P&L HT",
+      "Output VAT 11%": "TVA Collectée 11 %",
+      "FIFO Open AR": "Créances Clients FIFO",
+      "5 Till": "5 (Caisse)",
+      "Top Customer Sub-Account Reconciliation (Tickets vs Receipts vs Closing AR)": "Rapprochement Principaux Comptes Clients (Bons vs Encaissements vs Solde Final)",
+      "Top Supplier Sub-Account Reconciliation (3-Leg Accruals vs Settlements vs Closing AP)": "Rapprochement Principaux Fournisseurs (Charges à 3 Volets vs Règlements vs Solde Final)",
+      "Discount > 20% needs Note": "Remise > 20 % exige une note",
+      "Tol $0.01/u · Min > $0": "Tol. 0,01 $/u · Min > 0 $",
+      "25-leaf pads · Split > 60d": "Carnets 25 bons · Écart > 60j",
+      "Back-dated > 30d needs Note": "Antidaté > 30j exige une note",
+      "Gap > 60d needs Note": "Écart > 60j exige une note",
+      "Audit gap > 31d + Unlinked VAT": "Écart audit > 31j + TVA non liée",
+      "Trucks > 80 L/100km · Machines > 25 L/h": "Camions > 80 L/100km · Engins > 25 L/h",
+      "Low < 1,500 L · Crit < -1,000 L": "Bas < 1 500 L · Crit. < -1 000 L",
+      "30d > 40 L · Watch +30 L · Crit +80 L": "30j > 40 L · Veille +30 L · Crit. +80 L",
+      "Early <85% · Overdue >14,000/6,500 L": "Précoce <85 % · Retard >14 000/6 500 L",
+      "< 25% compliance · 0.15/0.30/0.60 kg": "Conformité < 25 % · 0,15/0,30/0,60 kg",
+      "Any Down unit · >= 1 unnotified part": "Engin à l'arrêt · >= 1 pièce non notifiée",
+      "Form > $1,000 · Audit > $0.01": "Form. > 1 000 $ · Audit > 0,01 $",
+      "Unmatched > $0": "Non rapproché > 0 $",
+      ">= 1 absent-driver entry": ">= 1 saisie chauffeur absent",
+      "85% to 125%": "85 % à 125 %",
+      "1. Operational Volume & Trip Coverage": "1. Volume Opérationnel & Couverture des Voyages",
+      "Total Volume Transported (m³)": "Volume Total Transporté (m³)",
+      "Customer Sales Delivery Transport Revenue": "Revenu Transport Livraison Clients",
+      "Raw Material Inbound Haulage Revenue": "Revenu Transport Approvisionnement Matières",
+      "TOTAL TRANSPORTATION REVENUE": "TOTAL REVENUS DE TRANSPORT",
+      "Motor Oil, Hydraulic Oil & Lubricants": "Huile Moteur, Hydraulique & Lubrifiants",
+      "NET PROFIT / (LOSS) & OPERATING MARGIN": "RÉSULTAT NET / (PERTE) & MARGE OPÉRATIONNELLE",
+      "Live Active Slicer": "Filtre Actif en Direct",
+      "All Trucks": "Tous les Camions",
+      "Selected Trips": "Voyages Sélectionnés",
+      "Paid Trips": "Voyages Rémunérés",
+      "Full 2-Month Period": "Période Complète de 2 Mois",
+      "active units ·": "unités actives ·",
+      "company-fleet loads": "voyages flotte propre",
+      "Total Fleet Running Cost": "Coût Total d'Exploitation Flotte",
+      "Fuel, tires & repairs": "Carburant, pneus & réparations",
+      "· Allocated driver pay": "· Salaires chauffeurs imputés",
+      "Fleet Ownership Mix": "Répartition de Propriété Flotte",
+      "Company units:": "Unités société :",
+      "BU Fleet & Health Status": "Flotte par Société & État Technique",
+      "Parts Custody:": "Garde des pièces :",
+      "Monthly Fleet Running Cost vs. General Expenses ($)": "Coût Mensuel d'Exploitation Flotte vs Charges Générales ($)",
+      "Monthly equipment fuel, repair & allocated driver cost": "Coût mensuel carburant, réparations & chauffeurs imputés",
+      "Monthly equipment fuel, repair & allocated driver cost vs general overhead": "Coût mensuel carburant, réparations & chauffeurs vs frais généraux",
+      "Cost by Equipment Unit — Running + Driver ($)": "Coût par Engin — Exploitation + Chauffeur ($)",
+      "Running + Driver": "Exploitation + Chauffeur",
+      "FIFO Collection Rate": "Taux d'Encaissement FIFO",
+      "AR Aging Health": "Santé de la Balance Âgée Clients",
+      "· VAT rec.": "· Enc. TVA",
+      "Jump to Tax Invoices ↓": "Aller aux Factures Fiscales ↓",
+      "Jump to Tax Invoices": "Aller aux Factures Fiscales",
+      "Customer Credit Exposure": "Exposition Crédit Clients",
+      "FIFO AR Aging by Bucket ($)": "Balance Âgée Clients FIFO par Tranche ($)",
+      "Monthly credit billings vs customer settlements collected · Months where Receipts exceed Credit Sales reduce Open AR": "Facturation à crédit mensuelle vs encaissements clients · Les mois où les reçus excèdent les ventes réduisent l'encours",
+      "Monthly Credit Sales": "Ventes à Crédit Mensuelles",
+      "Monthly Credit Sales vs. Customer Receipts ($)": "Ventes à Crédit Mensuelles vs Encaissements Clients ($)",
+      "Net Sales": "Ventes Nettes",
+      "60+ Overdue": "Échu 60j+",
+      "Pick-up Loads": "Enlèvements Usine",
+      "Earned Ex-VAT": "Acquis HT",
+      "Open Payable Ex-VAT": "Solde à Payer HT",
+      "Avg Raw Cost / m³": "Coût Brut Moyen / m³",
+      "Top Purchased Items, Spare Parts & Oils ($)": "Principaux Articles, Pièces & Huiles Achetés ($)",
+      "Itemized Spend by Item Group & Locked UoM ($)": "Dépenses par Famille d'Articles & Unité Verrouillée ($)",
+      "Spend breakdown across Spare Parts (Piece/Set), Oils & Lubricants (Litre/kg), Tools, and Consumables": "Répartition des achats : Pièces (Pièce/Kit), Huiles & Lubrifiants (Litre/kg), Outillage et Consommables",
+      "Locked Unit (UoM)": "Unité Verrouillée (UdM)",
+      "Locked Unit": "Unité Verrouillée",
+      "Security": "Sécurité",
+      "Haulage Share %": "Part Transport %",
+      "Monthly bulk diesel purchases vs fleet issues and tank balance trajectory": "Achats mensuels de gasoil en vrac vs sorties flotte et trajectoire du stock cuve",
+      "Top fuel-consuming trucks, loaders, excavators and plant generators": "Principaux camions, chargeuses, pelles et groupes électrogènes consommateurs de carburant",
+      "Auto-updating OEM severe-duty quarry benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)": "Référentiels constructeur service sévère : 15W-40 tous les 15 000 km / 250 h · Tolérance hydraulique 68 · Graissage quotidien (kg)",
+      "Excess Hydraulic Oil": "Excédent d'Huile Hydraulique",
+      "Estimated Leak Loss": "Perte Estimée par Fuite",
+      "Grease Issued & Bought": "Graisse Sortie & Achetée",
+      "Daily Greasing Compliance": "Conformité Graissage Quotidien",
+      "Hydraulic Oil 68 issued vs normal benchmark by unit (L)": "Huile hydraulique 68 sortie vs seuil normal par engin (L)",
+      "Red bar exceeding slate benchmark flags blown hydraulic hoses, cylinder rod seals or PTO pump leaks": "La barre rouge dépassant le seuil signale une fuite de flexible, joint de vérin ou pompe PDF",
+      "Normal Benchmark (L)": "Seuil Normal (L)",
+      "Engine Oil 15W-40 issued vs service benchmark by unit (L)": "Huile moteur 15W-40 sortie vs seuil d'entretien par engin (L)",
+      "Expected = 32 L per 12,000 L diesel on trucks (15,000 km) or 28 L per 5,000 L diesel on yellow iron (250 hrs)": "Attendu = 32 L par 12 000 L gasoil sur camions (15 000 km) ou 28 L par 5 000 L sur engins (250 h)",
+      "Equipment lubrication, oil-change intervals & hydraulic leak audit": "Audit lubrification engins, intervalles de vidange & fuites hydrauliques",
+      "Amber row = hydraulic leak (>30 L excess), overdue 15W-40 service, or early oil drain · click any row for 360° Equipment Inspector": "Ligne ambre = fuite hydraulique (>30 L), vidange 15W-40 en retard ou anticipée · cliquer pour la fiche engin 360°",
+      "Daily greasing compliance & grease usage by active unit (kg)": "Conformité graissage quotidien & consommation de graisse par engin actif (kg)",
+      "Target: 0.15 kg/day per working truck (fifth wheel, kingpins, S-cams, U-joints), 0.30 kg/day per loader/excavator, 0.60 kg/day per plant": "Cible : 0,15 kg/j par camion actif, 0,30 kg/j par chargeuse/pelle, 0,60 kg/j par installation",
+      "Overtime pay": "Heures supplémentaires",
+      "Included inside Earnings": "Inclus dans la rémunération",
+      "USD Cash Till ($)": "Caisse Espèces USD ($)",
+      "LBP Cash Till (LL)": "Caisse Espèces LBP (LL)",
+      "Cash Sales & AR Receipts flow": "Les ventes espèces & encaissements clients entrent",
+      "while Cash Expenses, AP Settlements & Payroll flow": "tandis que charges espèces, règlements fournisseurs & paie sortent",
+      "; daily": " ; les",
+      "transfer net cash to/from central treasury so physical cash on hand stays near": "quotidiens transfèrent le solde vers la trésorerie centrale pour maintenir l'encaisse proche de",
+      "Till Balance View": "Vue Solde de Caisse",
+      "Op. Cash In (Sales+AR)": "Entrées Opér. (Ventes+Clients)",
+      "Treasury / FX In": "Entrées Trésorerie / Change",
+      "Op. Cash Out (Exp+AP+Sal)": "Sorties Opér. (Charges+Fourn.+Paie)",
+      "Sweeps / FX Out": "Transferts Trésorerie / Change Sortants",
+      "Closing Cash Till — Month-End Balance ($)": "Solde de Caisse Clôture Fin de Mois ($)",
+      "Month-end physical drawer balance anchored at $0 (no flow overlay) · Hover for USD + LBP split": "Solde physique de fin de mois ancré à 0 $ · Survoler pour le détail USD + LBP",
+      "Monthly Cash Inflows vs Outflows — Operating vs Treasury Sweeps": "Entrées vs Sorties Mensuelles de Trésorerie — Exploitation vs Virements Trésorerie",
+      "Net:": "Net :",
+      "Sales VAT (LL)": "TVA Ventes (LBP)",
+      "Expense VAT (LL)": "TVA Charges (LBP)",
+      "Supplier-Site Haul": "Transport départ site",
+      "Raw Total": "Total Matières",
+      "Operating Co.": "Société exploitante",
+      "Diesel Sold (-)": "Gasoil Vendu (-)",
+      "Tank Remaining (=)": "Reste en Cuve (=)",
+      "Leave / Absent": "Congé / Absent",
+      "Standard All Days": "Horaire standard tous les jours",
+      "(Standard All Days)": "(Horaire standard tous les jours)",
+      "Sun Off": "Dim. Repos",
+      "Call-Out": "Astreinte",
+      "Plant Cash Flow & Till": "Flux de Trésorerie & Caisse Usine",
+      "Reconciled total": "Total rapproché",
+      "Net External ($)": "Net Externe ($)",
+      "1 · External Treasury Flows & Partner Loan Position": "1 · Flux de Trésorerie Externes & Position des Prêts Associés",
+      "Treasury inflows (sample)": "Entrées de trésorerie",
+      "Treasury outflows (sample)": "Sorties de trésorerie",
+      "External Net": "Solde Externe Net",
+      "Revenue − Expense": "Produits − Charges",
+      "Loans Principal": "Principal des Prêts",
+      "Loan Settlements": "Remboursements de Prêts",
+      "Loans Outstanding (owes +)": "Encours des Prêts (+ dû)",
+      "Principal − Repaid": "Principal − Remboursé",
+      "Avg Rate USD → LBP": "Taux Moyen USD → LBP",
+      "External Movements": "Mouvements Externes",
+      "Non-ticket treasury entries": "Écritures de trésorerie hors bons",
+      "Counterparties Active": "Contreparties Actives",
+      "External & loan parties": "Parties externes & prêts",
+      "Barter Customers": "Clients Compensation",
+      "Cross-settled accounts": "Comptes compensés",
+      "Barter Suppliers": "Fournisseurs Compensation",
+      "Cross-settled suppliers": "Fournisseurs compensés",
+      "External net by counterparty": "Solde externe net par contrepartie",
+      "Net external treasury position by counterparty (+ net inflow, − net outflow)": "Position nette externe par contrepartie (+ entrée nette, − sortie nette)",
+      "Gross external inflows vs outflows per counterparty": "Entrées vs sorties externes brutes par contrepartie",
+      "External revenue vs expense by counterparty": "Produits vs charges externes par contrepartie",
+      "Loans — principal, repayments, outstanding (+ = the company owes, − = owed to the company)": "Prêts — principal, remboursements, encours (+ = dû par la société, − = dû à la société)",
+      "Loan transactions (latest first; + in / − out)": "Opérations de prêt (plus récentes ; + entrée / − sortie)",
+      "External movements (latest first; + in / − out)": "Mouvements externes (plus récents ; + entrée / − sortie)",
+      "Model TB check": "Contrôle Balance",
+      "Trial Balance Parity": "Parité de la Balance",
+      "FX Conversions & Multi-Currency Till": "Opérations de Change & Caisse Multi-Devises",
+      "Cash & Treasury": "Trésorerie & Caisse",
+      "QUICK VIEW": "APERÇU RAPIDE",
+      "TRUCK & FLEET": "CAMION & FLOTTE",
+      "OPEN FIFO AR BALANCE": "SOLDE CLIENT FIFO OUVERT",
+      "ACTIVE AR": "CRÉANCES ACTIVES",
+      "VAT Status: Standard": "Statut TVA : Standard",
+      "VAT Status: Non-VAT": "Statut TVA : Hors TVA",
+      "LIFETIME SALES & LOADS": "VENTES & VOYAGES CUMULÉS",
+      "RECEIPTS COLLECTED": "ENCAISSEMENTS REÇUS",
+      "Oldest-First FIFO Relief": "Imputation FIFO (plus ancien d'abord)",
+      "Default Method: Cash": "Mode par défaut : Espèces",
+      "Default Method: Credit": "Mode par défaut : Crédit",
+      "Primary key, dates, business unit & counterparty links": "Clé primaire, dates, société et liens tiers",
+      "Official / Legal Name": "Raison Sociale / Nom Légal",
+      "Phone / Contact Number": "Téléphone / Contact",
+      "VAT 11% Registered": "Assujetti TVA 11 %",
+      "2 · Dispatch, Site, Fleet & Operational Attributes": "2 · Expédition, Site, Flotte & Attributs Opérationnels",
+      "Connected sites, grades, trucks, drivers & operational parameters": "Sites, produits, camions, chauffeurs & paramètres opérationnels liés",
+      "Customer-Declared Qty on Tickets": "Quantité déclarée par le client sur bon",
+      "Requires External Invoice #": "Exige un n° de facture externe",
+      "3 · Quantities, Contractual Pricing, VAT & Settlement": "3 · Quantités, Tarification Contractuelle, TVA & Règlement",
+      "Financial legs, unit economics & ledger settlement": "Volets financiers, coûts unitaires & règlement comptable",
+      "Notes & Special Instructions": "Notes & Instructions Spéciales",
+      "Attached Receipts, Invoices & Supporting Documents": "Reçus, Factures & Pièces Justificatives Jointes",
+      "Scanned invoices, thermal slips, PDFs, or photos linked to": "Factures numérisées, tickets thermiques, PDF ou photos liés à",
+      ". Any file uploaded here is also indexed in the Document Vault.": ". Tout fichier déposé ici est également indexé dans le Coffre Documentaire.",
+      "No receipt scan, supplier invoice, or photo is attached to this record yet.": "Aucun reçu, facture fournisseur ou photo n'est encore joint à cet enregistrement.",
+      "above to attach one now.": "ci-dessus pour en joindre un maintenant.",
+      "No linked rows in": "Aucune ligne liée dans",
+      "for this record in the current snapshot.": "pour cet enregistrement dans la sélection active.",
+      "Click any blue lookup pill or related subgrid row to navigate across connected relational records.": "Cliquer sur une pastille bleue ou une ligne liée pour naviguer entre les fiches connectées.",
+      "Plant Tank Issue": "Sortie Cuve Usine",
+      "Disable Face Login": "Désactiver la reconnaissance faciale",
+      "Additional / Optional Shift": "Poste supplémentaire / optionnel",
+      "Default Shift for Selected BU": "Poste par défaut pour la société",
+      "Same Timing Every Scheduled Workday": "Même horaire chaque jour ouvré",
+      "Custom Timing for Saturday / Specific Days": "Horaire spécifique samedi / jours dédiés",
+      "Mon to Sat": "Lun au Sam",
+      "Mon to Fri": "Lun au Ven",
+      "Mon to Sun": "Lun au Dim",
+      "Metric Tons": "Tonnes métriques",
+      "Truck Loads": "Voyages camion",
+      "Cash Inflow": "Entrée d'espèces",
+      "Cash Outflow": "Sortie d'espèces",
+      "Reserve / Special": "Réserve / Spécial",
+      "11% VAT Applies": "TVA 11 % applicable",
+      "Truck or Machine": "Camion ou engin",
+      "Physical Variance": "Écart physique",
+      "Shareholder Loan": "Prêt d'actionnaire",
+      "Loan Repayment": "Remboursement de prêt",
+      "Staff Employment": "Embauche collaborateur",
+      "JV Site Partnership Setup": "Configuration Partenariat Site JV",
+      "Spare Stock": "Stock pièces de rechange",
+      "External Parts": "Pièces externes",
+      "Map Region (Boundary)": "Région Cartographique (Périmètre)",
+      "1,000,000 Units in USD": "Valeur de 1 000 000 d'unités en USD",
+      "Statutory Lebanese MoF VAT Schedule (6 windows):": "Barème officiel TVA Ministère des Finances libanais (6 périodes) :",
+      "27 company fleet drivers — active Equipment Log driver is auto-filled & locked onto tickets": "27 chauffeurs flotte société — le chauffeur actif du journal engins est pré-rempli et verrouillé",
+      "Automatically linked to the selected Role": "Lié automatiquement à la fonction sélectionnée",
+      "High-Tensile Bolts & Hardware": "Boulonnerie & Visserie Haute Résistance",
+      "Hand & Power Tools": "Outillage à Main & Électroportatif",
+      "Electrical Tools": "Outillage Électrique",
+      "Mechanical & Garage Labor": "Main-d'œuvre Mécanique & Garage",
+      "Electrical & A/C Labor": "Main-d'œuvre Électricité & Climatisation",
+      "Tire, Wheel & Undercarriage Service": "Service Pneus, Roues & Train Roulant",
+      "Parts": "Pièces",
+      "Driver Tips & Road Allowances": "Pourboires Chauffeurs & Indemnités Route",
+      "Taxes, Stamps & Notary Fees": "Taxes, Timbres & Frais de Notaire",
+      "Polyurethane Crusher Screen": "Grille de Crible Polyuréthane",
+      "Crusher Screen Mesh": "Toile de Criblage Concasseur",
+      "Rubber Screen Mesh": "Toile de Criblage Caoutchouc",
+      "Heavy Power Cable & Lugs": "Câbles Électriques Forte Puissance & Cosses",
+      "High-Pressure Hydraulic Hose": "Flexible Hydraulique Haute Pression",
+      "Heavy Truck / Loader Tire": "Pneu Poids Lourd / Chargeuse",
+      "Engine, Cooling & Mechanical Parts": "Pièces Moteur, Refroidissement & Mécanique",
+      "Equipment Filter": "Filtre d'Équipement",
+      "Fuel Filter": "Filtre à Carburant",
+      "Engine Oil Filter": "Filtre à Huile Moteur",
+      "Fuel Water Separator Filter": "Filtre Séparateur Eau/Carburant",
+      "Engine Water Pump": "Pompe à Eau Moteur",
+      "Hydraulic Main Pump": "Pompe Hydraulique Principale",
+      "Hydraulic Control Valve": "Distributeur Hydraulique",
+      "Diesel Fuel Injector / Lift Pump": "Injecteur Diesel / Pompe d'Alimentation",
+      "Heavy Truck Clutch Kit (Plateau)": "Kit d'Embrayage Poids Lourd (Plateau)",
+      "Tire Repair & Patching": "Réparation & Vulcanisation Pneus",
+      "Heavy-Duty Truck Battery": "Batterie Poids Lourd Haute Capacité",
+      "Vibrating Screen Coil Spring": "Ressort Hélicoïdal de Crible Vibrant",
+      "Crusher Jaw / Manganese Plate Set": "Jeu de Mâchoires Concasseur Manganèse",
+      "General Labour": "Ouvrier Polyvalent",
+      "4235 Statutory Lease & VAT Controller": "Contrôleur Baux & TVA — 4235",
+      "Chief Bonded Warehouse & Parts Lead": "Chef d'Entrepôt Sous Douane & Pièces",
+      "Commercial Fleet Sales Executive": "Responsable Ventes Flotte Commerciale",
+      "Executive Chauffeur & Security Lead": "Chef Chauffeurs Direction & Sécurité",
+      "Executive Housekeeping Lead": "Chef Gouvernant Exécutif",
+      "Executive Sous-Chef": "Sous-Chef Exécutif",
+      "Floor & POS Operations Manager": "Responsable Salle & Opérations POS",
+      "Group CFO & Treasury Director": "Directeur Financier & Trésorerie Groupe",
+      "Guest Relations & Cabana Host": "Chargé Relations Hôtes & Cabanas",
+      "Head Sommelier & Bar Lead": "Chef Sommelier & Responsable Bar",
+      "Heavy Truck PDI & Warranty Chief": "Chef PDI Poids Lourds & Garantie",
+      "Motor & Medical Claims FNOL Manager": "Responsable Sinistres Auto & Santé",
+      "Portfolio & Fit-Out Project Manager": "Chef de Projets Patrimoine & Aménagement",
+      "Resort Chief Engineer & Solar Tech": "Ingénieur en Chef Resort & Solaire",
+      "Senior Field Loss Adjuster & Surveyor": "Expert Sinistres & Inspecteur Principal",
+      "Showroom & Import Operations Director": "Directeur Showroom & Importations",
+      "Tower Security & BMS Plant Operator": "Opérateur Sécurité Tours & GTB",
+      "Bulldozer Operator": "Opérateur Bulldozer",
+      "Crusher Operator": "Opérateur Concasseur",
+      "Excavator Operator": "Opérateur Pelle Hydraulique",
+      "Loader Operator": "Opérateur Chargeuse",
+      "Operations Manager": "Directeur des Opérations",
+      "Plant Operator": "Opérateur Centrale",
+      "Site Supervisor": "Superviseur de Chantier",
+      "Revenue, Price Trends, Transport & Site Mix": "Revenus, Tendances de Prix, Transport & Sites",
+      "1 · Sales Revenue, Volumes & Payment Mix": "1 · Chiffre d'Affaires, Volumes & Mix Paiements",
+      "Aggregate grade value": "Valeur des granulats vendus",
+      "Delivery haulage billed": "Transport de livraison facturé",
+      "Active Customers": "Clients Actifs",
+      "Billed in selected period": "Facturés sur la période",
+      "2 · Weighbridge Loads, Tonnage & Unit Realisation": "2 · Pesées Bascule, Tonnage & Prix Réalisé",
+      "Quantity Sold (m³)": "Quantité Vendue (m³)",
+      "Converted to m³ (1 Truck = 27 m³)": "Converti en m³ (1 camion = 27 m³)",
+      "Volume converted to m³ (1 Truck = 27 m³)": "Volume converti en m³ (1 camion = 27 m³)",
+      "Using grade ton_factor": "Selon le facteur tonne du produit",
+      "Avg Realised Price": "Prix Moyen Réalisé",
+      "Customer delivery haulage billed on company trucks vs third-party haulers and own-fleet share %": "Transport livraison facturé sur flotte propre vs transporteurs tiers et part flotte %",
+      "3rd-Party Pass-Through": "Transport Tiers Refacturé",
+      "Own-Fleet %": "Part Flotte Propre %",
+      "Monthly weighbridge dispatches split between delivered customer loads and plant pick-up loads": "Expéditions mensuelles ventilées entre livraisons clients et enlèvements usine",
+      "Quantity sold by material (m³)": "Quantité vendue par matériau (m³)",
+      "Sales by material (Top aggregate grades)": "Ventes par matériau (principaux granulats)",
+      "Top aggregate grades": "Principaux granulats",
+      "Average price per m³ by material": "Prix moyen au m³ par matériau",
+      "Realised unit price ($/m³)": "Prix unitaire réalisé ($/m³)",
+      "Products · volume, revenue, list vs realised price": "Produits · volume, CA, prix catalogue vs réalisé",
+      "Complete aggregate grade breakdown with inline revenue bars": "Détail complet par produit avec barres de revenus",
+      "Customer destination sites · loads, tonnage, transport & revenue": "Sites clients · voyages, tonnage, transport & CA",
+      "Customer delivery destination sites and plant pick-up dispatches (excludes raw material quarry source sites)": "Sites de livraison clients et enlèvements usine (hors carrières fournisseurs)",
+      "Pick-up at Plant (No delivery site)": "Enlèvement Usine (sans site de livraison)",
+      "Weighbridge Sales Tickets Register & Ticket Serial Hygiene": "Registre des Bons de Vente Bascule & Contrôle Séries",
+      "Individual sales tickets live in Sales & Deliveries; skipped & duplicate 25-ticket pad serial audit lives in AI Sentinels & Audit.": "Les bons individuels figurent dans Ventes & Livraisons ; l'audit des carnets de 25 bons figure dans Sentinelles IA & Audit.",
+      "Agreements, Spreads, Shortfalls & Commissions": "Accords Tarifaires, Écarts & Commissions",
+      "1 · Price Agreement Coverage, Realised vs Agreed & Below-Agreed Governance": "1 · Couverture Tarifaire, Prix Réalisé vs Convenu & Gouvernance",
+      "Active Price Agreements": "Accords Tarifaires Actifs",
+      "Weighted Agreed Price": "Prix Convenu Pondéré",
+      "Per m³ agreed corridor": "Corridor convenu au m³",
+      "Actual Realised Price": "Prix Réellement Réalisé",
+      "Ex-VAT across aggregate m³": "HT sur l'ensemble des m³",
+      "Sold Below Agreed ($)": "Vendu Sous le Tarif Convenu ($)",
+      "Lapsed Pairs Still Trading": "Paires Expirées Toujours Actives",
+      "Trading after End date": "Opérations après la date de fin",
+      "Per-Truck Delivery Rules": "Tarifs Forfaitaires par Camion",
+      "Unit = Truck flat rate": "Unité = Forfait camion",
+      "2 · Commissions, Delivery Transport & Quarry Purchase / Haulage Rules": "2 · Commissions, Transport Livraison & Accords Carrières",
+      "Commission Earned (Ex-VAT)": "Commission Acquise (HT)",
+      "Commission Payable (Ex-VAT)": "Commission à Payer (HT)",
+      "Customer Sales Rules": "Règles de Vente Clients",
+      "List Price Revisions": "Révisions du Tarif Catalogue",
+      "Site Purchase & Haul Rules": "Règles d'Achat & Transport Sites",
+      "Quarry Over-Agreed Pairs": "Paires Carrières Au-Dessus du Tarif",
+      "Billed above site / haul rate": "Facturé au-dessus du tarif convenu",
+      "List price evolution over time ($/m³ by grade)": "Évolution du tarif catalogue ($/m³ par produit)",
+      "List Price Evolution Over Time ($/m³) by Grade": "Évolution du Tarif Catalogue ($/m³) par Produit",
+      "Monthly standard list price trajectory across dated revision steps by aggregate grade": "Trajectoire mensuelle du tarif catalogue à travers les révisions datées",
+      "Monthly standard list price trajectory across dated revision agreements": "Trajectoire mensuelle du tarif catalogue selon les révisions datées",
+      "Comparison of average agreed price, actual realised net price, and standard list price per unit": "Comparaison du prix moyen convenu, du prix net réalisé et du tarif catalogue",
+      "Spread by product · lowest, highest and list price": "Fourchette par produit · min, max et tarif catalogue",
+      "Price Corridor by Grade · Lowest Agreed, Highest Agreed & List Price": "Corridor de Prix par Produit · Min, Max & Catalogue",
+      "Price corridor across active customer agreements vs. standard list price": "Fourchette des accords clients actifs vs tarif catalogue",
+      "Price corridor across active customer agreements vs. standard list price ($/m³)": "Fourchette des accords actifs vs tarif catalogue ($/m³)",
+      "Customer delivery transportation rate by site ($/m³)": "Tarif transport livraison client par site ($/m³)",
+      "Agreed delivery transport rate vs. last billed and period average across top customer × destination pairs": "Tarif transport convenu vs dernier bon et moyenne sur les principaux sites clients",
+      "Quarry raw material purchase rate by site ($/m³)": "Tarif d'achat matières premières par carrière ($/m³)",
+      "Site purchase agreement rate vs. last received unit cost and period average by quarry source": "Tarif d'achat convenu vs dernier coût reçu et moyenne par carrière",
+      "Quarry transportation rate by hauler & site ($/Truck Load)": "Tarif transport carrière par transporteur & site ($/voyage)",
+      "Agreed 3rd-party quarry haulage rate vs. last haul ticket and period average": "Tarif transport tiers convenu vs dernier bon et moyenne de la période",
+      "Sales commission & selling-price corridor by product": "Commission de vente & corridor tarifaire par produit",
+      "Per-unit commission rate, qualifying weighbridge tonnage/m³, accrued commission, and selling rate net of commission": "Taux de commission unitaire, volume éligible, commission courue et prix net de commission",
+      "Monthly commission accrual, settlement & open payable ledger": "Journal mensuel des commissions courues, réglées & solde dû",
+      "Amber row = agreement End date has passed · Red variance = billed below customer agreement or delivery transport rate": "Ligne ambre = accord expiré · Écart rouge = facturé sous le tarif client ou transport convenu",
+      "Customer × product price performance & below-agreed exceptions": "Performance prix Client × Produit & ventes sous tarif convenu",
+      "Pairs where tickets were billed below the customer agreement price": "Paires facturées en dessous du tarif convenu avec le client",
+      "Commercial Sales, Delivery & Commission Agreements": "Accords Commerciaux de Vente, Livraison & Commissions",
+      "Quarry Raw Material & Site Haulage Agreements": "Accords d'Achat Matières & Transport Carrières",
+      "Customer Balances, 5-Bucket Aging & Ledger": "Soldes Clients, Balance Âgée (5 Tranches) & Grand Livre",
+      "1 · Customer Receivables & FIFO Aging Position": "1 · Créances Clients & Balance Âgée FIFO",
+      "Customers owing": "Clients débiteurs",
+      "Gross receivables": "Créances brutes",
+      "Customers with debit balance": "Clients présentant un solde débiteur",
+      "Customer advances": "Avances clients",
+      "Unapplied on-account credit": "Acomptes créditeurs non imputés",
+      "Past due (>30 days)": "Échues (>30 jours)",
+      "31 to 60d + 60+d buckets": "Tranches 31–60j + 60j+",
+      "Over 60 days": "Plus de 60 jours",
+      "FIFO oldest unpaid tickets": "Plus anciens bons impayés (FIFO)",
+      "2 · Credit Sales, Collections, DSO & Credit Limits": "2 · Ventes à Crédit, Encaissements, DSO & Plafonds",
+      "Ticketed TTC on account": "Facturé TTC en compte",
+      "Applied oldest ticket first": "Imputé sur le bon le plus ancien",
+      "Collected %": "% Encaissé",
+      "Avg days to collect": "Délai moyen d'encaissement",
+      "Days Sales Outstanding (DSO)": "Délai Moyen de Paiement Clients (DSO)",
+      "Customer credit limits": "Plafonds de crédit clients",
+      "11% VAT remaining in open AR": "TVA 11 % incluse dans l'encours client",
+      "Monthly credit billings vs customer cash/check collections": "Facturation crédit mensuelle vs encaissements espèces/chèques",
+      "Customers owing at month end — gross, advances, net": "Encours clients fin de mois — brut, avances, net",
+      "Gross owing vs customer advances (on account) and Net AR trajectory": "Créances brutes vs avances clients et trajectoire nette",
+      "Gross": "Brut",
+      "Net": "Net",
+      "AR aging": "Balance âgée clients",
+      "FIFO open receivables by aging bucket · On account (unapplied customer advances) shown below zero": "Créances ouvertes FIFO par tranche d'âge · Les acomptes clients apparaissent sous zéro",
+      "Current–30d": "Courant–30j",
+      "Top customer balances as at period end (FIFO allocated)": "Principaux soldes clients en fin de période (FIFO)",
+      "Customer balances & aging": "Soldes clients & balance âgée",
+      "Customer receipts register": "Registre des encaissements clients",
+      "Customer Credit Terms, Limits & 11% VAT Tax Invoices": "Conditions de Crédit, Plafonds & Factures TVA 11 %",
+      "Material, Haulage & Expense Payables": "Dettes Fournisseurs Matières, Transport & Charges",
+      "Net Open AP Balance": "Solde Net Fournisseurs Ouvert",
+      "Leg 3 · Credit Expenses": "Volet 3 · Charges à Crédit",
+      "Supplier Settlements Paid": "Règlements Fournisseurs Versés",
+      "Cash, check & bank wires": "Espèces, chèques & virements",
+      "Active Suppliers & Haulers": "Fournisseurs & Transporteurs Actifs",
+      "With ledger activity": "Avec mouvement sur la période",
+      "2 · Operating Expenses & Cost Class Breakdown": "2 · Charges d'Exploitation & Répartition par Classe",
+      "Total General Expenses": "Total Charges Générales",
+      "Paid from Till": "Payé par la caisse",
+      "Credit Expenses": "Charges à crédit",
+      "Booked to Supplier AP Leg 3": "Comptabilisé en dettes fournisseurs Volet 3",
+      "Total Raw Material Cost": "Coût Total Matières Premières",
+      "Material + haulage per m³": "Matière + transport par m³",
+      "Production · OpEx · CapEx": "Production · OpEx · CapEx",
+      "Monthly supplier accruals (raw material + haulage + credit expenses) vs supplier settlements paid": "Charges fournisseurs courues mensuelles vs règlements effectués",
+      "Accrued (Raw + Credit Exp)": "Couru (Matières + Charges à crédit)",
+      "Top expense categories in the selected period": "Principales catégories de charges sur la période",
+      "Payables by supplier / hauler": "Dettes par fournisseur / transporteur",
+      "Net closing AP balance (+ owed by company, − advance to supplier)": "Solde fournisseur final (+ dû par la société, − avance)",
+      "Raw material & haulage volume by supplier": "Volume matières & transport par fournisseur",
+      "Total raw material + haulage accrued": "Total matières + transport couru",
+      "Supplier 3-leg payables & settlements schedule": "Échéancier fournisseurs à 3 volets & règlements",
+      "3 · Items, Spare Parts & Oils Purchased (Locked UoM Catalog)": "3 · Articles, Pièces & Huiles Achetés (Catalogue UdM Verrouillé)",
+      "Catalog Items Tracked": "Articles Catalogue Suivis",
+      "Itemized Expense Tickets": "Pièces de Charges Détaillées",
+      "Linked to locked-UoM catalog": "Liées au catalogue à unité verrouillée",
+      "Top Purchased Item": "Article le Plus Acheté",
+      "Items & Spare Parts Spend & Locked UoM Schedule": "Tableau des Achats Pièces & Articles par Unité",
+      "4 · Standing Recurring Expense Schedules (Rent, Telecom, Security & Retainers)": "4 · Échéanciers de Charges Récurrentes (Loyers, Télécoms, Sécurité)",
+      "Active Monthly Run-Rate ($/mo)": "Rythme Mensuel Actif ($/mois)",
+      "Active Monthly Run-Rate": "Rythme Mensuel Actif",
+      "Projected 12-month standing run-rate": "Projection annuelle sur 12 mois",
+      "Cumulative Schedule Accrued ($)": "Cumul Couru des Échéanciers ($)",
+      "Top Standing Commitment": "Principal Engagement Récurrent",
+      "Top Standing Vendor": "Principal Fournisseur Récurrent",
+      "Standing Recurring Expense Schedules & Accrued Run-Rate": "Échéanciers de Charges Récurrentes & Cumul Couru",
+      "Raw Intake, Unit Economics & Cost Split": "Approvisionnement Matières, Coûts Unitaires & Répartition",
+      "1 · Raw Material Intake, Tonnage & Two-Leg Cost Split": "1 · Réceptions Matières, Tonnage & Coût à 2 Volets",
+      "Raw Tons Purchased": "Tonnes Brutes Achetées",
+      "Aggregate Unit Spread": "Marge Unitaire Granulats",
+      "Unit economics by month · raw cost vs selling price ($/m³)": "Économie unitaire mensuelle · coût brut vs prix de vente ($/m³)",
+      "Raw intake cost split by month · material vs 3rd-party haulage ($)": "Répartition mensuelle coût matières vs transport tiers ($)",
+      "Raw material families · bought in vs sold out as finished grades": "Familles de matériaux · brut acheté vs produits finis vendus",
+      "Tank Balance, Burn Rates & Meter Audit": "Solde Cuve, Taux de Consommation & Audit Compteurs",
+      "1 · Diesel Tank Reconciliation, Malfunction Watchdog & Meter Guard": "1 · Rapprochement Cuve Gasoil, Sentinelle Écarts & Garde Compteurs",
+      "Diesel Purchased": "Gasoil Acheté",
+      "Diesel Issued to Fleet": "Gasoil Sorti pour la Flotte",
+      "Diesel Sold on Tickets": "Gasoil Vendu sur Bons",
+      "Remaining in Tank": "Reste en Cuve",
+      "= Remaining in Tank": "= Reste en Cuve",
+      "Unbooked bulk invoice history": "Historique vrac en attente de facture",
+      "Outliers & Meter Guard": "Anomalies & Garde Compteurs",
+      "Diesel bought, issued and sold by month with balance in tank": "Gasoil acheté, sorti et vendu par mois avec solde cuve",
+      "Monthly diesel consumption, malfunction reconciliation & remaining tank ledger": "Journal mensuel gasoil, écarts et solde restant en cuve",
+      "Equipment fuel efficiency · Litres, km run & L / 100 km": "Efficacité carburant engins · Litres, km parcourus & L / 100 km",
+      "Payroll Earnings, Attendance & Allowances": "Rémunérations, Pointage & Indemnités",
+      "1 · Payroll Earnings, Base Salaries, Overtime & Disbursements": "1 · Salaires de Base, Heures Supp. & Décaissements",
+      "Staff on payroll": "Collaborateurs sur la paie",
+      "Base & transp. reimb.": "Base & indemnité transp.",
+      "Total earnings": "Total rémunération acquise",
+      "Base + Reimb + OT + Site - Ded": "Base + Indem. + HS + Chantier − Retenues",
+      "2 · Remaining Payment, Advances, Hours & Contract Hygiene": "2 · Solde à Payer, Avances, Heures & Conformité Contrats",
+      "Remaining payment": "Solde restant à payer",
+      "Staff Remaining Payment": "Solde Salaires à Payer",
+      "Post-cutoff advances": "Avances post-clôture",
+      "Future payroll-month payouts": "Versements sur mois suivants",
+      "Overtime hours": "Heures supplémentaires",
+      "Logged on attendance sheets": "Saisies sur feuilles de présence",
+      "Lateness hours": "Heures de retard",
+      "Deducted at hourly rate": "Retenues au taux horaire",
+      "Absence days": "Jours d'absence",
+      "Recorded unpaid absence days": "Jours d'absence sans solde",
+      "Payments without contract": "Paiements sans contrat actif",
+      "3 · All-Time Salary Disbursements & Workforce Ratios": "3 · Cumul des Salaires Versés & Ratios RH",
+      "Staff paid": "Collaborateurs payés",
+      "Avg salary payment": "Paiement moyen de salaire",
+      "Per disbursement voucher": "Par pièce de règlement",
+      "Staff cost % of sales": "Masse salariale en % des ventes",
+      "Salaries ÷ Net sales": "Salaires ÷ Ventes nettes",
+      "Avg earnings per staff": "Rémunération moyenne par employé",
+      "Across selected roster": "Sur l'effectif sélectionné",
+      "Overtime % of earnings": "Part des heures supp. %",
+      "Overtime share of pay": "Part HS dans la rémunération",
+      "Overtime and lateness hours by month": "Heures supplémentaires et retards par mois",
+      "Monthly Overtime vs. Lateness Hours": "Heures Supplémentaires vs Retards Mensuels",
+      "Top Staff Members by Logged Overtime Hours": "Principaux Collaborateurs par Heures Supplémentaires",
+      "Staff on site transport": "Collaborateurs en indemnité chantier",
+      "Confirmed on-site days": "Jours sur site confirmés",
+      "Site transport earned by staff member": "Indemnité chantier acquise par collaborateur",
+      "Balance due": "Solde dû",
+      "Earned − Paid": "Acquis − Payé",
+      "Freelance & daily rate contracts": "Contrats journaliers & prestataires",
+      "No Freelance-type contracts filtered": "Aucun contrat freelance dans la sélection",
+      "Inflows vs Outflows, Daily Till & Mix": "Entrées vs Sorties, Caisse Journalière & Mix",
+      "1 · Cash Flow & Daily Plant Till": "1 · Flux de Trésorerie & Caisse Usine",
+      "Closing Cash Till": "Solde de Caisse Clôture",
+      "Combined Cash Till": "Caisse Combinée",
+      "Combined USD + LBP book till": "Solde comptable combiné USD + LBP",
+      "Op. Sales/AR + Treasury/FX in": "Ventes/Clients + Trésorerie/Change entrants",
+      "Op. Exp/AP/Payroll + Sweeps out": "Charges/Fourn./Paie + Virements sortants",
+      "Inflows − Outflows in period": "Entrées − Sorties sur la période",
+      "Monthly Cash Flow & Till Progression": "Flux Mensuels & Progression de la Caisse",
+      "Cash Till Entries Explorer": "Explorateur des Mouvements de Caisse",
+      "Selected Period Cash Flow": "Flux de Trésorerie de la Période",
+      "Commercial Coverage": "Couverture Commerciale",
+      "Avg Agreement Rates": "Tarifs Moyens Convenus",
+      "Realized Selling Rate": "Prix de Vente Moyen Réalisé",
+      "Sales Commission Earned": "Commission de Vente Acquise",
+      "Agreed Min–Max Corridor & Benchmark": "Fourchette Min–Max Convenue & Référence",
+      "Material & Haulage Accrued": "Matières & Transport Courus",
+      "Supplier Sites": "Sites Fournisseurs",
+      "Quarry & Transport Remaining": "Reste à Payer Carrières & Transport",
+      "Unit Landed Economics": "Coût Unitaire Rendu",
+      "Bundled Quarry Delivery Note:": "Note Livraison Carrière Tout Compris :",
+      "Material Cost includes Transportation": "Le Coût Matière inclut le Transport",
+      "Mat + Haul landed rates": "tarifs rendus Matière + Transport",
+      "Quarry & Haulage Coverage": "Couverture Accords Carrières & Transport",
+      "Avg Site Material Rate": "Tarif Moyen Matière par Site",
+      "Avg Quarry Transport Rate": "Tarif Moyen Transport Carrière",
+      "Over-Rate Pairs": "Paires hors tarif",
+      "JV 50/50 Stock Entitlement": "Quote-Part Stock JV 50/50",
+      "JV Distributions Paid": "Distributions JV Versées",
+      "Net Stock Position": "Position Nette Stock",
+      "Settled / Advance": "Réglé / Avance",
+      "JV Partnership Contracts": "Contrats de Partenariat JV",
+      "50% / 50% Split": "Partage 50 % / 50 %",
+      "Monthly JV Partner Distributions ($)": "Distributions Mensuelles aux Associés JV ($)",
+      "Revenue Basis": "Base Revenu",
+      "Stock Basis": "Base Stock",
+      "Avg Expense Voucher": "Pièce de Charge Moyenne",
+      "Overhead intensity": "Intensité des frais généraux",
+      "Rem Ex-VAT": "Reste HT",
+      "Items & Parts Catalog": "Catalogue Articles & Pièces",
+      "Top Spend Category": "Principale Catégorie de Dépenses",
+      "Credit Leg 3 AP": "Dettes Charges à Crédit (Volet 3)",
+      "+ New Expense Ticket": "+ Nouvelle Facture de Charge",
+      "+ New Raw Receipt": "+ Nouveau Bon Matière",
+      "+ New Site Agreement": "+ Nouvel Accord de Site",
+      "+ New JV Entry": "+ Nouvelle Écriture JV",
+      "+ New Fuel Ticket": "+ Nouveau Bon Carburant",
+      "+ New Treasury / Loan": "+ Mouvement Trésorerie / Prêt",
+      "AP Settlement Ratio": "Taux de Règlement Fournisseurs",
+      "3-Leg Remaining Payables": "Dettes Fournisseurs Restantes (3 Volets)",
+      "Avg Supplier Payment": "Paiement Moyen Fournisseur",
+      "Active Counterparty Reach": "Couverture Tiers Actifs",
+      "Payables by Supplier, Hauler & Vendor ($)": "Dettes par Fournisseur & Transporteur ($)",
+      "Total Saved Documents": "Total Documents Archivés",
+      "Invoices, Bills & Tax": "Factures, Reçus & Fiscalité",
+      "Quick Save Invoice, Receipt, Contract or Scan": "Archivage Rapide Facture, Reçu, Contrat ou Scan",
+      "Saved Documents & Receipts by Category (Count & $ Value)": "Documents & Reçus par Catégorie (Nombre & Valeur $)",
+      "Document Vault Volume by Counterparty & Linked Module ($)": "Volume du Coffre par Tiers & Module Lié ($)",
+      "Tank Unreconciled": "Écart Cuve Non Rapproché",
+      "Lubricants & Fuel Mix": "Mix Carburant & Lubrifiants",
+      "Fueled Fleet & Ownership Split": "Flotte Ravitaillée & Propriété",
+      "Meter Tolerance Guard": "Garde de Tolérance Compteurs",
+      "Opening Tank": "Stock Initial Cuve",
+      "All-time opening anchor": "Ancre initiale toutes périodes",
+      "- Fleet & Hauler Used": "- Consommé Flotte & Transporteurs",
+      "- Diesel Sold": "- Gasoil Vendu",
+      "Variance (+Out / -In)": "Écart (+Sortie / -Entrée)",
+      "Equipment / Slip": "Engin / Bon",
+      "Monthly Diesel Bought, Issued & Sold with Tank Balance (L)": "Gasoil Acheté, Sorti & Vendu par Mois avec Solde Cuve (L)",
+      "Fleet Operational Readiness": "Disponibilité Opérationnelle Flotte",
+      "Equipment Warnings (Grave vs Mild)": "Alertes Engins (Graves vs Légères)",
+      "Repair Cost": "Coût des Réparations",
+      "Preventive Oil Service Schedule": "Planning d'Entretien Préventif & Vidanges",
+      "On Time": "À jour",
+      "Monthly Repair & Spare Spend ($)": "Dépenses Mensuelles Réparations & Pièces ($)",
+      "Oils & Tools": "Huiles & Outillage",
+      "Maintenance & Spare Spend by Subsystem ($)": "Dépenses Maintenance & Pièces par Sous-Système ($)",
+      "Workshop Repairs": "Réparations Atelier",
+      "Tools, Welding & Body": "Outillage, Soudure & Carrosserie",
+      "Engine & Mech. Parts": "Pièces Moteur & Mécanique",
+      "Dispatched Driver Trips": "Voyages Chauffeurs Expédiés",
+      "Co. Drivers": "Chauff. Société",
+      "Overtime Rules & BU Roster": "Règles HS & Effectif Société",
+      "Monthly Overtime Bonus ($) vs. Dispatched Loads": "Primes HS Mensuelles ($) vs Voyages Expédiés",
+      "Dispatched Trips by Driver (Sales + Raw)": "Voyages par Chauffeur (Ventes + Matières)",
+      "Stored SKUs in Stock": "Références en Stock",
+      "Active SKUs": "SKU Actifs",
+      "Total Units On Hand": "Total Unités en Stock",
+      "Warehouse Stock Value": "Valeur du Stock Entrepôt",
+      "Weighted Avg Cost": "Coût Moyen Pondéré (CUMP)",
+      "Repair Uses": "Sorties Atelier",
+      "Top Warehouse Items & Spare Parts by Valuation / Spend ($)": "Principaux Articles & Pièces par Valorisation / Dépense ($)",
+      "Warehouse Catalog & Stock by Item Category ($)": "Catalogue & Stock Entrepôt par Catégorie ($)",
+      "Workshop Repair Parts": "Pièces Réparation Atelier",
+      "Part Lines": "Lignes Pièces",
+      "Purchased Item Lines": "Lignes d'Articles Achetés",
+      "Machines & Units Served": "Engins & Unités Desservis",
+      "Combined Parts & Oils": "Total Pièces & Huiles",
+      "Top Consumed & Issued Spare Parts, Tyres & Oils ($)": "Principales Pièces, Pneus & Huiles Consommés ($)",
+      "Routing / Equipment": "Affectation / Engin",
+      "Contract Coverage": "Couverture Contractuelle",
+      "Payroll Match Audit": "Audit de Rapprochement Paie",
+      "Monthly Staff Earnings vs. Salary Disbursements ($)": "Rémunérations Mensuelles Acquises vs Salaires Versés ($)",
+      "Staff Earnings": "Rémunérations Acquises",
+      "Top Staff Members by Earnings ($)": "Principaux Collaborateurs par Rémunération ($)",
+      "No Contract on File": "Sans Contrat au Dossier",
+      "In the Plant Today": "À l'Usine Aujourd'hui",
+      "In Plant": "À l'Usine",
+      "Absent / On Leave Today": "Absent / En Congé Aujourd'hui",
+      "Full Roster": "Effectif Complet",
+      "Grease, Oil & Diesel Audit": "Audit Graisse, Huile & Gasoil",
+      "Crusher, Washer & Power Generators": "Concasseur, Station de Lavage & Groupes",
+      "Standby Fleet Drivers in Plant Yard": "Chauffeurs en Attente dans la Cour",
+      "Plant, Weighbridge & Office Roster On Shift": "Équipe Centrale, Bascule & Bureau en Poste",
+      "Next Alert Day": "Jour d'Alerte Suivant",
+      "Service / Intake": "Entretien / Sortie",
+      "Oil & Lube Expense": "Charge Huiles & Lubrifiants",
+      "Machines (Operated / Assigned)": "Engins (Opérés / Assignés)",
+      "Overtime Hours Logged": "Heures Supplémentaires Pointées",
+      "Lateness & Deductions": "Retards & Retenues",
+      "Attendance Register Scope": "Périmètre du Registre de Présence",
+      "Site Transport Earned": "Indemnité Chantier Acquise",
+      "On-Site Paid Days": "Jours sur Site Rémunérés",
+      "Verified Site Coverage": "Couverture Chantier Vérifiée",
+      "Verified Site & Machine Output": "Production Chantier & Engins Vérifiée",
+      "Site Transport & Verified On-Site Days by Staff ($)": "Indemnités Chantier & Jours Vérifiés par Collaborateur ($)",
+      "At Plant / Ded.": "À l'Usine / Déduit",
+      "Active Contract Coverage": "Couverture des Contrats Actifs",
+      "Contracted Monthly Payroll": "Masse Salariale Mensuelle Contractuelle",
+      "Regional Trip & OT Rules": "Barèmes Régionaux Voyages & HS",
+      "Total / Mo ($)": "Total / Mois ($)",
+      "Monthly Compensation by Staff Contract ($)": "Rémunération Mensuelle par Contrat ($)",
+      "Borrowing & Staff Advances": "Emprunts & Avances au Personnel",
+      "Salary & Workforce Payments": "Paiements Salaires & Main-d'œuvre",
+      "NET FX CONVERSION IMPACT": "IMPACT NET DE CHANGE",
+      "External Cash In (Injections)": "Entrées Externes (Apports)",
+      "External Cash Out (Sweeps)": "Sorties Externes (Transferts Trésorerie)",
+      "Net External Movement": "Mouvement Externe Net",
+      "External & Extended Stakeholder Treasury Analytics": "Analytique Trésorerie Tiers Externes & Associés",
+      "Partner Injections, Withdrawals, Inter-Account Transfers & Extended Stakeholder Movements": "Apports associés, retraits, virements internes & mouvements tiers étendus",
+      "Total Facilities & Recovery": "Total Lignes de Crédit & Recouvrement",
+      "Partner Treasury, Loans & USD ↔ LBP FX Conversions": "Trésorerie Associés, Prêts & Change USD ↔ LBP",
+      "Partner Loans, Repayments, External Movements & USD ↔ LBP Exchange Position": "Prêts associés, remboursements, mouvements externes & position de change USD ↔ LBP",
+      "Total FX Volume": "Volume Total de Change",
+      "Net USD Drawer Impact": "Impact Net Caisse USD",
+      "USD Inflow": "Entrée USD",
+      "Net LBP Drawer Impact": "Impact Net Caisse LBP",
+      "LBP Outflow": "Sortie LBP",
+      "Average Exchange Rate": "Taux de Change Moyen",
+      "Market Rate": "Taux Marché",
+      "Global LBP Accounting & Payroll Rate": "Taux Comptable & Paie LBP Global",
+      "USD ↔ LBP Currency Desk & Till Analytics": "Bureau de Change USD ↔ LBP & Analytique Caisse",
+      "Active Chart of Accounts": "Plan Comptable Actif",
+      "Working Capital Posture": "Position en Fonds de Roulement",
+      "Active GL Accounts": "Comptes Généraux Actifs",
+      "Total Gross Debits": "Total Débits Bruts",
+      "Double-Entry Dr": "Débit Partie Double",
+      "Total Gross Credits": "Total Crédits Bruts",
+      "Double-Entry Cr": "Crédit Partie Double",
+      "Class Parity Check": "Contrôle de Parité par Classe",
+      "Direct Formula Rules": "Règles de Calcul Directes",
+      "Ticket & Rate Driven": "Piloté par Bons & Tarifs",
+      "Category Auto-Mapped": "Mappé Automatiquement par Catégorie",
+      "Active Register": "Registre Actif",
+      "Governance Scope": "Périmètre de Gouvernance",
+      "Active view:": "Vue active :",
+      "Filter & View Yield": "Résultat du Filtre",
+      "Matching rows in active scope": "Lignes correspondantes dans le périmètre",
+      "Click any row for 360° Inspector & Subgrids": "Cliquer sur une ligne pour la fiche 360° & sous-grilles",
+      "1 · Sales, Pricing & Receivables": "1 · Ventes, Tarification & Créances Clients",
+      "2 · Purchases, Expenses & Payables": "2 · Achats, Charges & Dettes Fournisseurs",
+      "3 · Fleet, Fuel, Maintenance & Drivers": "3 · Flotte, Carburant, Maintenance & Chauffeurs",
+      "4 · Payroll, Attendance & Workforce": "4 · Paie, Pointage & Ressources Humaines",
+      "5 · Cash Flow, Treasury & FX": "5 · Trésorerie, Caisse & Change",
+      "Shared Treasury & Sister Clearing (GL 181)": "Trésorerie Partagée & Compensation Sœurs (Compte 181)",
+      "Open Leg": "Volet ouvert",
+      "Statement Code": "Code État",
+      "Reporting Window": "Période de Reporting",
+      "undefined to undefined": "Toutes Périodes",
+      "Shared Holding Overhead": "Frais Partagés Holding",
+      "Net Intercompany Clearing": "Compensation Inter-Sociétés Nette",
+      "Principal Partner": "Associé Principal",
+      "AR Open": "Créances Ouvertes",
+      "· Verified ledger tie-out": "· Rapprochement comptable vérifié",
+      "Active contracts & direct operational cost": "Contrats actifs & coûts directs d'exploitation",
+      "· 11% VAT tracked": "· TVA 11 % suivie",
+      "Net Contribution": "Contribution Nette",
+      "Double-entry Lebanese PCG tied ($0 variance)": "Rapproché au PCG libanais en partie double (écart 0 $)",
+      "Biometric logs": "Pointages biométriques",
+      "· Active contracts": "· Contrats actifs",
+      "Supplier / Vault Scan": "Fournisseur / Pièce Scannée",
+      "Counterparty / Facility": "Contrepartie / Ligne de Crédit",
+      "Unit / Operational Asset": "Unité / Actif Opérationnel",
+      "Staff / Control Watchdog": "Collaborateur / Sentinelle",
+      "Investments in Group Subsidiaries": "Participations dans les Filiales du Groupe",
+      "Repayment Rate:": "Taux de Remboursement :",
+      "paid back overall": "remboursé au global",
+      "verified in both books (±3d)": "vérifié dans les deux livres (±3j)",
+      "Green = Paid Back ($) · Amber = Unpaid Balance Still Owed ($)": "Vert = Remboursé ($) · Ambre = Solde Impayé Dû ($)",
+      "Specific Facility / Counterparty:": "Ligne / Contrepartie Spécifique :",
+      "External facilities & partner credit": "Lignes externes & crédit associés",
+      "Full double-entry SOA integration": "Intégration complète au grand livre en partie double",
+      "Intercompany Sister Repayment & Transfer Ledger": "Grand Livre des Transferts & Remboursements Sœurs",
+      "To Sister": "Vers Société Sœur",
+      "Total Sister Repayment": "Total Remboursements Sœurs",
+      "Net Unpaid": "Solde Net Impayé",
+      "Net Unpaid Across Group": "Solde Net Impayé Groupe",
+      "Net Base:": "Base Nette :",
+      "Margin Rate:": "Taux de Marge :",
+      "of Net Base": "de la base nette",
+      "Gross Billed Revenue / GWP": "Revenu Brut Facturé / PBE",
+      "Net Operating Revenue / Earned Comm": "Revenu Net d'Exploitation / Comm. Acquise",
+      "Gross Operating Margin / Net Brokerage": "Marge Brute d'Exploitation / Courtage Net",
+      "Plant, Venue, Showroom & Office Expenses": "Charges Usines, Resorts, Showrooms & Bureaux",
+      "Payroll, Salaries & Site Transport": "Paie, Salaires & Indemnités Chantier",
+      "NET CONSOLIDATED OPERATING CONTRIBUTION": "CONTRIBUTION OPÉRATIONNELLE CONSOLIDÉE NETTE",
+      "Interactions Register": "Registre des Opérations Inter-Sociétés",
+      "+ Intercompany Entry": "+ Écriture Inter-Sociétés",
+      "+ Capital / Asset Voucher": "+ Pièce Capital / Immobilisation",
+      "Category / Asset Class": "Catégorie / Classe d'Actif",
+      "Net Lender (Gave Funds)": "Prêteur Net (Bailleur)",
+      "Transfers (Gave / Repaid)": "Transferts (Versé / Remboursé)",
+      "Total Given ($)": "Total Versé ($)",
+      "Net Still Owed ($)": "Solde Net Restant Dû ($)",
+      "Repayment Status & Who Owes Whom": "Statut de Remboursement & Solde",
+      "Actively Paying Back": "Remboursement Actif",
+      "Partial Repayment": "Remboursement Partiel",
+      "PARTNER DRAWINGS / OUT ($)": "PRÉLÈVEMENTS & DISTRIBUTIONS ASSOCIÉS ($)",
+      "Shareholder injections & receipts": "Apports & versements d'actionnaires",
+      "Distributions, settlements & drawings": "Distributions, règlements & prélèvements",
+      "Capital In minus Drawings Out": "Apports moins prélèvements",
+      "Beach & Pool Gate": "Entrée Plage & Piscine",
+      "Chalet Rental": "Location de Chalets",
+      "30.5% FOOD COST": "30,5 % COÛT MATIÈRE",
+      "Kitchen, Bar & Cellar Consumption vs F&B Sales Cost Ratio Watchdog": "Sentinelle Ratio Coût Matière Cuisine, Bar & Cave vs Ventes F&B",
+      "Day-pass admissions & sunbed packages": "Entrées journalières & forfaits transats",
+      "Gross Venue Revenue": "Recettes Brutes de l'Établissement",
+      "Gate day-passes, banquets & VIP valet": "Entrées plage, banquets & voiturier VIP",
+      "POS Shift Close": "Clôture de Poste POS",
+      "+ POS Shift Close": "+ Clôture de Poste POS",
+      "Resort VAT & Tax Guard": "Garde TVA & Fiscalité Resort",
+      "POS Shift Close & Bill Variance": "Clôture de Caisse POS & Écarts",
+      "Commissary & Cellar Purchases": "Achats Épicerie Centrale & Cave",
+      "Depleted via POS & banquet covers": "Consommé via ventes POS & banquets",
+      "Closing Cellar & Cold Stock": "Stock Final Cave & Chambres Froides",
+      "Purchase-to-Usage Ratio": "Ratio Achats / Consommation",
+      "Menu Food & Pour Cost %": "% Coût Matière Carte & Boissons",
+      "Engineered Menu Items": "Articles de Carte Modélisés",
+      "Menu Engineering & Food Cost %": "Ingénierie de Carte & Coût Matière %",
+      "Unit Margin ($)": "Marge Unitaire ($)",
+      "Active Memberships": "Abonnements Actifs",
+      "Venue Revenue & Chalets": "Recettes Établissement & Chalets",
+      "POS SHIFT CLOSE & BILL-TO-COLLECTION RECONCILIATION": "CLÔTURE DE CAISSE POS & RAPPROCHEMENT ENCAISSEMENTS",
+      "Close Variance": "Écart de Clôture",
+      "Close Variance ($)": "Écart de Clôture ($)",
+      "Shift Ref": "Réf. Poste",
+      "Terminal & Shift": "Terminal & Poste",
+      "Cashier": "Caissier",
+      "POS Billed ($)": "Facturé POS ($)",
+      "Seasonal Membership Contracts": "Contrats d'Abonnement Saisonnier",
+      "Collected Membership Cash": "Abonnements Encaissés",
+      "Remaining Member Arrears": "Arriérés Membres Restants",
+      "Partner Split Revenue Pool": "Pool de Revenus à Partager",
+      "Bdeir Holding Group Share": "Quote-Part Bdeir Holding",
+      "Retained resort equity share": "Quote-part nette conservée",
+      "Open Partner Payable": "Solde Associés à Payer",
+      "Pending distribution settlement": "En attente de versement",
+      "MENU ENGINEERING, RECIPE BOM COST & GROSS MARGIN CONTRIBUTION": "INGÉNIERIE DE CARTE, COÛT RECETTES BOM & MARGE BRUTE",
+      "Stars (High Margin)": "Stars (Forte Marge)",
+      "+ Menu Price / BOM": "+ Tarif Carte / Recette BOM",
+      "Menu Item / Package": "Article / Forfait",
+      "Outlet Category": "Catégorie Point de Vente",
+      "Menu Price ($)": "Prix Carte ($)",
+      "Food Cost %": "Coût Matière %",
+      "Units Sold": "Unités Vendues",
+      "Menu Engineering Class": "Classe Ingénierie Carte",
+      "Plowhorse (High Vol · Watch Cost)": "Vache à lait (Fort Vol. · Surveiller Coût)",
+      "Star (High Margin · High Vol)": "Star (Forte Marge · Fort Vol.)",
+      "Specific Generator / Facility Plant:": "Groupe / Installation Spécifique :",
+      "Resort Diesel Tank Reserves": "Réserves Cuves Gasoil Resort",
+      "Generator Burn & Run Hours": "Consommation & Heures Groupes",
+      "Generator Burn Rate Guard": "Garde Consommation Horaire Groupes",
+      "All Within Curve": "Conforme à la Courbe",
+      "Venue Repairs & Preventive Maintenance": "Réparations & Maintenance Préventive",
+      "Open Facility Work Orders": "Bons de Travaux Ouverts",
+      "Normal Burn": "Consommation Normale",
+      "Below-Floor / Low-Margin Heavy Truck & Parts Sale Watchdog": "Sentinelle Ventes Camions & Pièces Sous Prix Plancher / Faible Marge",
+      "Delivered": "Livré",
+      "Optimal Stock": "Stock Optimal",
+      "Reorder Alert": "Alerte Réappro.",
+      "In Showroom": "En Showroom",
+      "Sales Revenue": "Chiffre d'Affaires",
+      "Gross Margin & Realized Markup": "Marge Brute & Taux de Marque",
+      "Gross Receivables (Invoiced > Paid)": "Créances Brutes (Facturé > Payé)",
+      "Customer Advances (Unallocated)": "Avances Clients (Non Imputées)",
+      "Tracked separately from Gross AR (never netted)": "Suivies séparément des créances brutes (sans compensation)",
+      "Active Collection Promises": "Promesses de Règlement Actives",
+      "Invoice Books Sequence Check": "Contrôle Séquentiel des Carnets",
+      "Active Import Files (FOB Value)": "Dossiers d'Import Actifs (Valeur FOB)",
+      "Total Capitalized Landed Cost": "Coût Rendu Total Capitalisé",
+      "Capitalized into Serial Chassis & Parts WAC": "Capitalisé dans les châssis & le CUMP pièces",
+      "Unallocated Landed Cost": "Frais d'Approche Non Répartis",
+      "Open Supplier Backorders": "Reliquats Fournisseurs Ouverts",
+      "Warehouse Goods Receipts (GRNs)": "Bons de Réception Entrepôt (GRN)",
+      "Specific Chassis / Serial Unit:": "Châssis / Unité Série Spécifique :",
+      "Tracked Serial Units & Chassis": "Unités & Châssis Suivis par VIN",
+      "Available Showroom & Yard Units": "Unités Disponibles Showroom & Parc",
+      "Capitalized Chassis Landed Cost": "Coût Rendu Capitalisé des Châssis",
+      "Showroom List Valuation": "Valorisation Catalogue Showroom",
+      "Open PDI & Warranty Claims": "Ordres PDI & Réclamations Garantie Ouverts",
+      "OEM Warranty Recovery": "Recouvrement Garantie Constructeur (OEM)",
+      "Workshop, PDI & OEM Warranty": "Atelier, PDI & Garantie Constructeur",
+      "Commercial Revenue (TTC)": "Chiffre d'Affaires Commercial (TTC)",
+      "Heavy Trucks Delivered": "Poids Lourds Livrés",
+      "FIFO Stock Valuation": "Valorisation du Stock FIFO",
+      "Sequence Gap Placeholder": "Emplacement Saut de Série",
+      "Sales Invoices & Lines": "Factures & Lignes de Vente",
+      "GROSS RECEIVABLES VS. CUSTOMER ADVANCES & COLLECTION PROMISES": "CRÉANCES BRUTES VS AVANCES CLIENTS & PROMESSES",
+      "Gross Receivables": "Créances Brutes",
+      "Customer Advances": "Avances Clients",
+      "Collection Promises": "Promesses de Règlement",
+      "+ Customer Settlement": "+ Encaissement Client",
+      "Invoiced Amount ($)": "Montant Facturé ($)",
+      "Customer Advance ($)": "Avance Client ($)",
+      "Promise Date": "Date Promesse",
+      "Promise Amount ($)": "Montant Promis ($)",
+      "Active Promise": "Promesse Active",
+      "Import Files & Backorders": "Dossiers d'Import & Reliquats",
+      "LANDED COST ALLOCATIONS: FREIGHT, CUSTOMS, CLEARANCE & INSURANCE": "RÉPARTITION FRAIS D'APPROCHE : FRET, DOUANE, TRANSIT & ASSURANCE",
+      "+ Landed Cost Voucher": "+ Pièce Frais d'Approche",
+      "Landed ID": "Réf. Dossier",
+      "Port Clearance ($)": "Transit Portuaire ($)",
+      "Unallocated ($)": "Non Réparti ($)",
+      "By Cubic Meter & Value": "Au Cubage (m³) & à la Valeur",
+      "100% Allocated to Stock": "100 % Imputé au Stock",
+      "By Line Value (Weighted Avg)": "À la Valeur (Moyenne Pondérée)",
+      "Serial Units & Chassis": "Unités Série & Châssis",
+      "PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE & OEM WARRANTY RECOVERY": "INSPECTION PRÉ-LIVRAISON (PDI), ATELIER & GARANTIE OEM",
+      "Pre-Delivery Inspection": "Inspection Pré-Livraison (PDI)",
+      "OEM Warranty Claims": "Réclamations Garantie OEM",
+      "+ PDI / Warranty Job": "+ Ordre PDI / Garantie",
+      "Job / Claim ID": "N° Ordre / Réclamation",
+      "Truck / Equipment Model": "Modèle Camion / Engin",
+      "Job Type": "Type d'Intervention",
+      "Service Bay & Tech": "Baie Atelier & Technicien",
+      "Parts ($)": "Pièces ($)",
+      "Labor ($)": "Main-d'œuvre ($)",
+      "Recovery / Billed ($)": "Récupéré / Facturé ($)",
+      "Spare Parts & Tyres Valuation (WAC)": "Valorisation Pièces & Pneus (CUMP)",
+      "On-Hand Spare Parts Units": "Unités Pièces en Stock",
+      "Inter-Company Transfers": "Transferts Inter-Sociétés",
+      "Parallel Stock Recon": "Rapprochement Stock Parallèle",
+      "Monthly P&L Recon": "Rapprochement P&L Mensuel",
+      "+ New Spare Part SKU": "+ Nouvelle Référence Pièce",
+      "LGB Bank Official Certified Appraisal": "Expertise Certifiée Officielle LGB Bank",
+      "Leases Expiring in 30/60/90 Days & 3-Year Stepped Escalation Watchdog": "Sentinelle Baux Expirant à 30/60/90 Jours & Indexation Triennale",
+      "LEASES CURRENT": "BAUX À JOUR",
+      "Contracted Annual Rent Roll": "État Locatif Annuel Contractuel",
+      "Period Rent Invoiced": "Loyers Facturés sur la Période",
+      "Unallocated Tenant Advances": "Avances Locataires Non Imputées",
+      "Advance pool before period invoice matching": "Solde d'avances avant imputation des factures",
+      "Security Deposits Held": "Dépôts de Garantie Détenus",
+      "Period Rent Invoices & VAT Sequence": "Factures de Loyers & Séquence TVA",
+      "Specific Property / Plot:": "Immeuble / Parcelle Spécifique :",
+      "Gross Portfolio Market Value": "Valeur Vénale Brute du Portefeuille",
+      "Group Share-Adjusted Value (/2400)": "Valeur Quote-Part Groupe (/2400 parts)",
+      "Weighted by Lebanese cadastral title deed shares": "Pondérée selon les quotes-parts foncières (/2400)",
+      "Unit Occupancy Rate": "Taux d'Occupation des Unités",
+      "Portfolio Annual NOI": "Revenu Net d'Exploitation Annuel (NOI)",
+      "Net operating income across income-producing assets": "Revenu net d'exploitation des actifs locatifs",
+      "Bank Appraisal & Market Valuations": "Expertises Bancaires & Valorisations",
+      "In Progress": "En Cours",
+      "Contracted Annual Rent (TTC)": "Loyer Annuel Contractuel (TTC)",
+      "Portfolio Occupancy": "Occupation du Portefeuille",
+      "Properties Portfolio Rent Roll": "État Locatif du Portefeuille",
+      "Cross-Tenant Swap Watch": "Surveillance Permutations Locataires",
+      "Net / Period ($)": "Net / Période ($)",
+      "Leases, Units & Escalations": "Baux, Unités & Indexations",
+      "Official Tax Seq": "Séquence Fiscale Officielle",
+      "Billing Period": "Période de Facturation",
+      "Net Rent ($)": "Loyer Net ($)",
+      "Settled via Bank Wire": "Réglé par Virement Bancaire",
+      "Cleared against tenant advance": "Imputé sur avance locataire",
+      "Contracted Property Sales": "Ventes Immobilières Sous Contrat",
+      "Collected Buyer Instalments": "Échéances Acheteurs Encaissées",
+      "Remaining Buyer Balance": "Solde Acheteurs Restant",
+      "Instalment Milestones Watch": "Suivi des Échéances de Vente",
+      "Unit / Parcel Sold": "Unité / Parcelle Vendue",
+      "Pending Final Deed Transfer": "En Attente d'Acte Définitif",
+      "Capital Gain Recognized on Deed": "Plus-Value Constatée à l'Acte",
+      "Deed Transferred & Registered": "Acte Transféré & Enregistré",
+      "Co-Owned Hold": "Détention en Indivision",
+      "Under Acquisition": "En Cours d'Acquisition",
+      "Land Bank (LGB Appraised)": "Réserve Foncière (Expertisée LGB)",
+      "Properties, Map & Yields": "Actifs, Carte & Rendements",
+      "Appraisal Date": "Date d'Expertise",
+      "Group Share Value ($)": "Valeur Quote-Part Groupe ($)",
+      "Approved Fit-Out & Maintenance Budget": "Budget Travaux & Aménagement Approuvé",
+      "Structural CAPEX & Routine Facility Maintenance": "CAPEX Structurel & Maintenance Courante",
+      "Unrecharged Tenant Expenses": "Frais Locataires Non Refacturés",
+      "Total Recoverable Recharges": "Total Charges Récupérables",
+      "Due for renewal": "À renouveler",
+      "Policy (Renewal)": "Police (Renouvellement)",
+      "Policy (New)": "Police (Nouvelle)",
+      "Covered by Cash": "Couvert par Trésorerie",
+      "Net Payable to Carriers": "Net à Reverser aux Compagnies",
+      "Across 6 carriers under Net-of-Commission settlement": "Sur 6 compagnies en règlement net de commission",
+      "Fiduciary Cash & Bank Coverage": "Couverture Fiduciaire Caisse & Banque",
+      "Carrier Statement Discrepancies": "Écarts sur Bordereaux Compagnies",
+      "Gross Brokerage Commission": "Commission de Courtage Brute",
+      "Net Commission After Discounts": "Commission Nette Après Remises",
+      "30/60/90-Day Renewal Queue & Retention": "File de Renouvellement 30/60/90 Jours & Rétention",
+      "Expired (>0d Past)": "Expirée (>0j)",
+      "Expired — not renewed": "Expirée — non renouvelée",
+      "Carrier Commission Statement Reconciliation": "Rapprochement des Bordereaux de Commissions",
+      "Premium Invoices & Receipts": "Factures de Primes & Encaissements",
+      "Insurer Net Premium Remittances & Fiduciary Cash": "Reversements Primes Nettes & Trésorerie Fiduciaire",
+      "Net of Commission": "Net de Commission",
+      "Net of Commission (Bordereau)": "Net de Commission (Bordereau)",
+      "Motor Insurance": "Assurance Automobile",
+      "Medical & Health": "Santé & Médical",
+      "Property & Fire": "Incendie & Dommages aux Biens",
+      "Third-Party Liability": "Responsabilité Civile Générale",
+      "Life & Key-Man": "Vie & Homme-Clé",
+      "Brokerage Commission Earned": "Commission de Courtage Acquise",
+      "Net Carrier Payable (401)": "Solde Net Compagnies (401)",
+      "Return Prem": "Ristourne de Prime",
+      "Live Policies, Endorsements & Discounts": "Polices Actives, Avenants & Remises",
+      "Expiring Policy #": "N° Police Échue",
+      "Expiry Date": "Date d'Échéance",
+      "Days Left": "Jours Restants",
+      "Expiring Prem ($)": "Prime Échue ($)",
+      "Renewal Quote ($)": "Offre Renouv. ($)",
+      "Renewal Stage": "Étape de Renouvellement",
+      "FNOL Claims, Reserves & Insurer Settlements": "Sinistres FNOL, Provisions & Règlements",
+      "Total Reported Claims (FNOL)": "Total Sinistres Déclarés (FNOL)",
+      "Gross Claimed Estimate": "Estimation Brute Réclamée",
+      "Adjuster Approved Indemnity": "Indemnité Agréée par l'Expert",
+      "Paid by Carriers to Date": "Versé par les Compagnies à ce Jour",
+      "Under Assessment": "En Cours d'Expertise",
+      "FNOL · Survey Open": "FNOL · Expertise Ouverte",
+      "Partial AR": "Partiel",
+      "Statement #": "N° Bordereau",
+      "Expected Comm ($)": "Comm. Attendue ($)",
+      "Variance ($)": "Écart ($)",
+      "Reconciliation Audit Note": "Note d'Audit Rapprochement",
+      "Insurance Carrier": "Compagnie d'Assurance",
+      "Retained Comm ($)": "Comm. Retenue ($)",
+      "Remitted to Date ($)": "Reversé à ce Jour ($)",
+      "Cash Held ($)": "Trésorerie Détenue ($)",
+      "Next Bordereau": "Prochain Bordereau",
+      "Stmt Recon Hold": "Retenu pour Rapprochement",
+      "Standardized Insurance Lines": "Branches d'Assurance Standardisées",
+      "Chronological Rate Agreements": "Accords de Taux Chronologiques",
+      "Blended Contractual Yield": "Rendement Contractuel Moyen",
+      "1 · Income Statement + Leba…": "1 · Compte de Résultat + Plan…",
+      "1 · Sales vs costs by… + Ca…": "1 · Ventes vs coûts… + Espèces…",
+      "2 · Monthly Sales TTC… + Mo…": "2 · Ventes mensuelles TTC…",
+      "2 · Delivery transpor… + Di…": "2 · Transport livr.… + Remises…",
+      "3 · Sales by material + Qua…": "3 · Ventes par produit + Qté…",
+      "1 · Sales commissions by product, m…": "1 · Commissions ventes par produit…",
+      "2 · Commercial sales & customer del…": "2 · Accords ventes & livraison…",
+      "3 · Quarry raw material purchase &…": "3 · Accords achat carrière & transp.…",
+      "2 · AR aging + Balance by c…": "2 · Balance âgée + Solde client…",
+      "3 · Customer balances…": "3 · Soldes clients…",
+      "4 · Customer statemen…": "4 · Relevé client…",
+      "2 · Payables by suppl… + Ra…": "2 · Dettes fourn.… + Matières…",
+      "3 · Supplier 3-leg pa…": "3 · Dettes fourn. à 3 volets…",
+      "4 · Top Purchased Ite… + It…": "4 · Principaux articles achetés…",
+      "5 · Items & Spare Par…": "5 · Articles & Pièces…",
+      "1 · Unit economics by… + Ra…": "1 · Économie unitaire… + Matières…",
+      "2 · Monthly diesel co…": "2 · Consommation mensuelle gasoil…",
+      "3 · Equipment fuel ef…": "3 · Efficacité carburant engins…",
+      "2 · Equipment economi…": "2 · Économie des engins…",
+      "2 · Monthly Cash Infl… + Cl…": "2 · Flux mensuels espèces…",
+      "3 · Monthly Cash Flow…": "3 · Trésorerie mensuelle…",
+      "4 · Cash Till Entries…": "4 · Écritures de caisse…",
+      "All Manufacturing Group (WTC · BBConstruction · Lions Transport)": "Tout le Groupe Industrie (WTC · BBConstruction · Lions Transport)",
+      "Plant, Weighbridge & Office Staff": "Personnel Centrale, Bascule & Bureau",
+      "Crusher, Washer (Maghsal), Power Generators, Yard Loaders & Plant Staff": "Concasseur, Lavage, Groupes, Chargeuses & Personnel Centrale",
+      "Absent Staff, Assigned Machine Status & Unexplained Grease/Diesel Watch": "Personnel Absent, État des Engins & Surveillance Graisse/Gasoil",
+      "Every active employee mapped across Main Plant Stations, Outbound Customer Factories & Quarries, and Absent / Leave Machine Coverage": "Affectation de chaque collaborateur actif sur la centrale, les sites externes et les engins sans chauffeur",
+      "Click any employee or machine badge for 360° operational history": "Cliquer sur un collaborateur ou un engin pour ouvrir l'historique 360°",
+      "Flags machines where Grease, Oil, Maintenance or Diesel was added while the assigned driver was absent without a substitute, or with no operator recorded on the ticket": "Signale les engins ayant reçu graisse, huile, maintenance ou gasoil en l'absence du chauffeur attitré sans remplaçant",
+      "above to inspect external contractor trucks.": "ci-dessus pour inspecter les camions sous-traitants.",
+      "above or click any flagged day pill in the 14-day strip to inspect absent-driver machine alerts.": "ci-dessus ou cliquer sur un jour signalé dans la bande 14 jours pour inspecter les alertes.",
+      "Previous operational day": "Jour opérationnel précédent",
+      "Next operational day": "Jour opérationnel suivant",
+      "Cycle through dates where Diesel, Lubricant or Grease was added to an absent driver's machine": "Parcourir les dates où du gasoil, de l'huile ou de la graisse a été ajouté à l'engin d'un chauffeur absent",
+      "Ex-Quarry material only; haulage in own trucks or 3rd-party peers tracked separately (Region + Site required)": "Matière départ carrière uniquement ; transport flotte propre ou tiers suivi séparément (Région + Site requis)",
+      "Supplier provides raw material + transport in one delivered price; Region optional until hauled by own fleet or 3rd-party peers": "Le fournisseur assure matière + transport en un prix rendu unique ; Région facultative",
+      "Delivered quarry agreement: Material Price includes supplier-provided transportation (internal split unknown)": "Accord carrière rendu : le prix matière inclut le transport assuré par le fournisseur",
+      "Supplier provides both Raw Material and Transportation in Material Price ($); internal split unknown": "Le fournisseur assure matière première et transport dans le Prix Matière ($)",
+      "Supplier provides both Raw Material and Transportation in Material Cost; internal transport split unknown": "Le fournisseur assure matière première et transport dans le Coût Matière",
+      "Included in Material Cost ($0.00 separate haulage; internal transport split unknown)": "Inclus dans le Coût Matière (0,00 $ de transport séparé)",
+      "Ex-Quarry material rate only; transportation is provided separately by our fleet or paid 3rd-party haulers": "Tarif matière départ carrière uniquement ; transport assuré séparément par notre flotte ou des tiers",
+      "Supplier provides both Raw Material and Transportation in one delivered price; internal haulage split unknown": "Le fournisseur assure matière et transport en un prix rendu unique",
+      "Delivered rate already includes transportation; internal split unknown": "Le tarif rendu inclut déjà le transport",
+      "Material Credit includes supplier-provided transportation; internal split unknown": "Le crédit matière inclut le transport fournisseur",
+      "Supplier provides raw material + transportation in one delivered price; internal transport split unknown": "Le fournisseur assure matière + transport en un prix rendu unique",
+      "Transportation is included inside Material ($); internal transport split unknown": "Le transport est inclus dans Matière ($)",
+      "Delivered rate (material + supplier transport combined; internal transport split unknown)": "Tarif rendu (matière + transport fournisseur combinés)",
+      "Net payable owed to supplier": "Solde net dû au fournisseur",
+      "Net advance / overpayment credit with supplier": "Avance nette / trop-perçu chez le fournisseur",
+      "Why Bundled Quarry Sites Show Higher Material Rates:": "Pourquoi les carrières rendues affichent un tarif matière supérieur :",
+      "quarry receipts come from supplier-delivered sites where": "des bons carrière proviennent de sites rendus où",
+      "(neither our trucks nor paid 3rd-party haulers transport the load; internal transport split is unknown). Compare against Ex-Quarry": "(ni nos camions ni des transporteurs tiers ne transportent la charge). Comparer au coût rendu départ carrière",
+      "rather than Material Cost alone.": "plutôt qu'au seul coût matière.",
+      "site × material pairs are marked": "paires site × matière sont marquées",
+      "because the supplier provides both raw material and transportation in one delivered price (neither our fleet nor paid 3rd-party haulers haul the load, so the internal transport split is unknown). Compare their rate against the": "car le fournisseur assure matière et transport en un prix rendu unique. Comparer leur tarif à la colonne",
+      "column of Ex-Quarry sites.": "des sites départ carrière.",
+      "Agrimount per-unit plant commission rules reconciled to GL 6222 ($368,113.91 Ex-VAT paid) and GL 449 ($40,482.90 11% VAT paid)": "Règles de commission unitaire Agrimount rapprochées des comptes 6222 et 449",
+      "Chronological monthly commission accrued vs. Agrimount Rent (GL 6222) and 11% VATRent (GL 449) payouts": "Commission mensuelle courue vs paiements loyer Agrimount (6222) et TVA 11 % (449)",
+      "Customer × site delivery haulage rate comparison across active weighbridge delivery tickets": "Comparaison des tarifs de livraison client × site sur les bons de bascule actifs",
+      "Purchase Price (Site) agreements vs. actual raw material intake unit and flat-truck costs": "Accords Prix d'Achat (Site) vs coûts réels unitaires et forfaitaires",
+      "Transport Price (Site) agreements vs. actual 3rd-party quarry haulage intake tickets": "Accords Prix Transport (Site) vs bons de transport carrière tiers réels",
+      "Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.": "Les tarifs clients, prix catalogue et règles de commission se trouvent dans Ventes & Créances ▸ Tarifs & Commissions.",
+      "Purchase Price (Site) and Transport Price (Site) agreements and haulage comparisons live in Purchases, Expenses & Payables · Quarry & Haulage Rates.": "Les accords d'achat carrière et tarifs de transport se trouvent dans Achats, Charges & Dettes · Tarifs Carrières.",
+      "Receipts are applied to the oldest open ticket first (FIFO) · Balance = Current + 1-10 + 11-30 + 31-60 + 60+ + On account": "Les encaissements s'imputent d'abord sur le plus ancien bon ouvert (FIFO)",
+      "Select a Customer in the top slicer to inspect their chronological ticket & receipt sub-ledger": "Sélectionnez un client en haut pour inspecter son grand livre chronologique",
+      "Customer credit policies, MOF 11% VAT tax headers, quarterly VAT positions, and VAT-tagged receipts now live inside Customers & Receivables.": "Les conditions de crédit, factures TVA 11 % et déclarations trimestrielles figurent dans Clients & Créances.",
+      "Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · Total on Credit − Settled = Closing AP Balance": "Volet 1 (Matière) + Volet 2 (Transport) + Volet 3 (Charges à crédit) − Réglé = Solde Fournisseurs",
+      "Highest-spend catalog items, spare parts, tyres, filters, and lubricants with locked UoM quantities": "Articles, pièces, pneus, filtres et lubrifiants à plus forte dépense avec unité verrouillée",
+      "Highest-spend items, spare parts, filters, tyres, and lubricants with locked UoM quantities": "Articles, pièces, filtres, pneus et lubrifiants à plus forte dépense avec unité verrouillée",
+      "Click any item on Expenses & Overhead or Universal Catalog to inspect full purchase history and locked unit of measure": "Cliquer sur un article pour inspecter l'historique complet des achats et l'unité verrouillée",
+      "Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Recurring Schedules": "Contrats fournisseurs récurrents actifs · gérer ou ajouter dans Échéanciers Récurrents",
+      "General & Fleet Expenses Register + Cost-Class Analytics": "Registre des Charges Générales & Flotte + Analytique par Classe",
+      "Itemized expense vouchers and Production / OpEx / CapEx category breakdowns now live directly inside Expenses & Overhead.": "Les pièces de charges détaillées et ventilations Production / OpEx / CapEx figurent dans Charges & Frais Généraux.",
+      "Supplier Settlements & 3-Leg Payable Ledger": "Règlements Fournisseurs & Grand Livre à 3 Volets",
+      "Full supplier payment vouchers (Material, Haulage & Expense legs) live directly inside Suppliers & Payables.": "Les bons de règlement fournisseurs (Matière, Transport & Charges) figurent dans Fournisseurs & Dettes.",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost": "Écart mensuel $/m³ entre le prix de vente HT réalisé et le coût d'entrée matière",
+      "Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered Mat+Trans quarry loads)": "Écart mensuel $/m³ entre le prix de vente HT réalisé et le coût matière rendu",
+      "Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %": "Coût matière propriétaire (Volet 1) vs transport sous-traité (Volet 2) et part mensuelle %",
+      "Site-owner material cost (Leg 1, incl. bundled supplier-delivered loads where internal transport split is unknown) vs 3rd-party haulage (Leg 2)": "Coût matière (Volet 1, charges rendues incluses) vs transport tiers (Volet 2)",
+      "Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material + Leg 2 haulage); Mat+Trans sites include supplier-delivered transport inside Material ($) where internal transport split is unknown": "Sites carrières et terrassement classés par coût total d'entrée (Volet 1 + Volet 2)",
+      "Aggregate material families linking raw quarry intake (e.g. Ramel Mrml, Sakher) to finished crushed/washed grades sold (excludes equipment & fuel)": "Familles de granulats reliant les entrées brutes carrière aux produits finis vendus",
+      "Raw Material Purchases Register & Joint Venture 50/50 Ledger": "Registre des Achats Matières Premières & Grand Livre JV 50/50",
+      "Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, and source quarry intakes live in Quarry & Haulage, while JV 50/50 sites and distributions live in JV & Partnerships.": "Les bons matières à 2 volets figurent dans Carrières & Transport, et les sites JV 50/50 dans JV & Partenariats.",
+      "Opening Tank + Bulk Bought - Fleet Used - Malfunction/Discrepancy - Diesel Sold = Remaining in Tank (5% Malfunction Watchdog)": "Stock initial + Achats vrac − Consommé flotte − Écarts − Vendu = Reste en cuve (Sentinelle 5 %)",
+      "Pale navy row = Own company fleet unit": "Ligne surlignée = Unité propre de la flotte",
+      "Diesel & Lubricant Intakes Register + Driver Overtime": "Registre Carburant & Lubrifiants + Heures Sup. Chauffeurs",
+      "Individual diesel & lubricant fill tickets (with odometer/hour-meter guard and daily greasing presets) live inside Diesel & Lubricants, and Driver Trips & Overtime live inside Drivers & Overtime.": "Les bons gasoil/lubrifiants figurent dans Gasoil & Lubrifiants, et les voyages chauffeurs dans Chauffeurs & Heures Sup.",
+      "Monthly salary earnings, shift & driver overtime, deductions, remaining payment, and post-cutoff advances": "Gains mensuels, heures sup. postes & chauffeurs, retenues, reste à payer et avances post-clôture",
+      "Book Class 641 / 421 total": "Total comptable Classes 641 / 421",
+      "Monthly staff earnings (base + overtime + site transport) vs salary cash disbursements": "Gains mensuels du personnel vs décaissements salaires",
+      "Monthly staff earnings (base + overtime + site transport + extras) vs salary cash disbursements": "Gains mensuels (base + HS + déplacement + primes) vs décaissements salaires",
+      "Top staff members ranked by total earnings in period": "Principaux collaborateurs classés par rémunération totale",
+      "Top staff members ranked by total earnings in the active period": "Principaux collaborateurs classés par rémunération totale sur la période",
+      "Staff ranked by earned site transport & overtime": "Collaborateurs classés par indemnités de déplacement et heures sup.",
+      "Contract transportation/reimbursement, site transport & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances": "Indemnités de transport et heures sup. de nuit incluses dans les Gains · Paiements post-clôture en Avances",
+      "Driver night-trip overtime by driver · sales & quarry trips": "Heures sup. de nuit par chauffeur · voyages ventes & carrières",
+      "Dated regional night-trip rates ($5 / $7 / $10 / $14) · Contracted drivers are included in Driver OT on Staff Payroll": "Tarifs régionaux de nuit datés (5 $ / 7 $ / 10 $ / 14 $) · Chauffeurs sous contrat inclus dans la paie",
+      "Employment Contracts, Attendance Sheets, Salary Vouchers & Driver OT": "Contrats de Travail, Pointages, Bulletins de Paie & HS Chauffeurs",
+      "Operational staff contracts, daily attendance logs, salary disbursement vouchers, and driver overtime tables now live directly in Payroll & Workforce.": "Les contrats, pointages, paiements de salaires et heures sup. figurent directement dans Paie & Effectifs.",
+      "Payments whose staff and month no contract covers · fix the contract (add / extend) or the payment month": "Paiements sans contrat actif sur le mois · ajouter/prolonger le contrat ou corriger le mois",
+      "Daily transport pay when staff commute to an external site instead of the main plant · paid with salary": "Indemnité journalière de déplacement sur site externe · versée avec le salaire",
+      "Ticket, fuel or attendance log": "Bon bascule, carburant ou pointage",
+      "FIFO salary before site transport": "Imputation FIFO salaire avant déplacement",
+      "Earned minus Paid at period end": "Acquis moins Payé en fin de période",
+      "Earned daily site transport by posted staff member": "Indemnités journalières de site acquises par collaborateur",
+      "Activity = a ticket, fuel intake or attendance entry on a counted day · paid = payments applied oldest month first, salary before site transport": "Activité = bon, plein ou pointage sur jour ouvré · Payé = imputation FIFO du mois le plus ancien",
+      "Site transport arrangements · who, where, on which unit & daily rate": "Accords de déplacement site · collaborateur, site, engin & tarif journalier",
+      "Amber shaded row = the arrangement has ended · an arrangement without an end date runs until today · latest first": "Ligne ambre = accord terminé · Sans date de fin = actif jusqu'à aujourd'hui",
+      "Shift work by freelancers · earned from the entries, paid from the payments · the rate comes from a Freelance employment": "Postes journaliers/freelance · acquis sur pointages, payés sur décaissements",
+      "With Freelance / Daily contract": "Sous contrat Freelance / Journalier",
+      "Shifts": "Postes",
+      "Logged freelance shifts": "Postes freelance pointés",
+      "Regular + extra hours": "Heures normales + sup.",
+      "From freelance work entries": "Issu des pointages freelance",
+      "Click any bar or month to inspect its entries below.": "Cliquer sur une barre ou un mois pour inspecter ses écritures ci-dessous.",
+      "Left column = Inflows · Right column = Outflows · Click any month to filter entries below": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
+      "Left column = Inflows · Right column = Outflows · Click any month to filter entries": "Colonne gauche = Entrées · Colonne droite = Sorties · Cliquer sur un mois pour filtrer",
+      "Operating Cash + Treasury Sweeps/FX reconcile 100% to Total Cash In & Out · Click any month to filter the Cash Till Entries Explorer below": "Flux opérationnels + transferts trésorerie/change rapprochés à 100 % · Cliquer sur un mois pour filtrer",
+      "Inspect every cash inflow, outflow, treasury sweep, salary, loan & FX slip · Click any row for 360° Record Form": "Inspecter chaque entrée, sortie, virement, salaire, prêt et change · Cliquer sur une ligne pour la fiche 360°",
+      "Total Production Mix": "Total Mix Production",
+      "Average active customer agreement rate vs. realised material net price ($/m³) and standard list price": "Tarif moyen convenu vs prix net réalisé ($/m³) et prix catalogue",
+      "Agreed customer delivery rate vs. last billed ticket and period average across top delivery sites": "Tarif de livraison convenu vs dernier bon facturé et moyenne période",
+      "Purchase Price (Site) agreement vs. last receipt and period average; (Mat+Trans) sites include supplier-delivered transport in one landed rate (internal transport split unknown)": "Accord Prix d'Achat (Site) vs dernier bon et moyenne période",
+      "Transport Price (Site) agreement rate vs. last 3rd-party quarry haulage intake ticket and period average": "Accord Prix Transport (Site) vs dernier bon transport tiers et moyenne période",
+      "Volume and partner 50% stock entitlement comparison across Joint Venture quarry sites": "Comparaison des volumes et droits stock 50 % partenaire sur les sites JV",
+      "Monthly Joint Venture profit & stock distributions paid to site partners": "Distributions mensuelles de bénéfices et stock JV versées aux partenaires",
+      "Partner share × JV site raw intake cost": "Part partenaire × coût d'entrée matière du site JV",
+      "Quantity is active in stock at $0.00 Credit AP until priced": "Quantité active en stock à 0,00 $ de dette fournisseur jusqu'au chiffrage",
+      "Monthly direct cash operating expenses vs credit Leg 3 payables and posted voucher volume": "Charges mensuelles payées comptant vs dettes Volet 3 à crédit",
+      "Top operating, production (60/61), and capital (22) expense categories in the active period": "Principales catégories de charges d'exploitation, production (60/61) et CapEx (22)",
+      "Exact Ex-VAT Credit ($/LL), Payments ($/LL), Remaining Payment ($/LL), 11% VAT Credit/Payment/Rem, and Total Remaining TTC": "Détail exact Crédit HT ($/LBP), Paiements, Reste, TVA 11 % et Solde TTC",
+      "Master catalog of purchased spare parts, filters, tires, oils, and tools with locked Unit of Measure (UoM), purchase spend, and live Warehouse stock": "Catalogue maître des pièces, filtres, pneus, huiles et outils avec unité verrouillée et stock magasin",
+      "Every single-item and multi-item expense ticket line with locked Unit of Measure, unit cost, and Equipment or Warehouse routing": "Toutes les lignes de charges unitaires et multi-articles avec unité verrouillée et affectation engin/magasin",
+      "Projected 12-month standing commitment across active vendor agreements": "Engagement annuel projeté sur 12 mois pour les contrats récurrents actifs",
+      "Standing rent, internet, telecom, security, and road-allowance agreements from the Recurring Expense register with chronological auto-closure": "Accords récurrents loyers, internet, télécoms, gardiennage et frais de route avec clôture chronologique",
+      "Standing Recurring Commitments by Vendor ($ Accrued & Active Run-Rate)": "Engagements Récurrents par Fournisseur (Cumul Couru & Rythme Mensuel Actif)",
+      "Cumulative schedule accrual by vendor with active monthly run-rate highlighted in warm brass": "Cumul couru par fournisseur avec rythme mensuel actif mis en évidence",
+      "Standing lease, telecom, security, and site tip schedules grouped by expense category": "Échéanciers loyers, télécoms, sécurité et pourboires groupés par catégorie",
+      "Largest open 3-leg supplier, quarry, hauler, and vendor payable balances ($)": "Principaux soldes fournisseurs, carrières et transporteurs ouverts à 3 volets ($)",
+      "Drag & drop a PDF or photo here, snap a camera photo of a paper receipt, or attach files directly inside any Expense, Ticket, or Settlement form.": "Glissez-déposez un PDF ou une photo ici, prenez un reçu en photo ou joignez des fichiers dans tout formulaire.",
+      "Customer cash/cheque collection voucher": "Bon d'encaissement client espèces / chèque",
+      "Signed supplier settlement receipt & bank transfer advice": "Reçu de règlement fournisseur signé & avis de virement",
+      "Official stamped VAT invoice copy for quarterly MoF declaration": "Copie officielle de facture TVA tamponnée pour déclaration trimestrielle",
+      "Signed physical pad slip & scale weight verification": "Bon de bascule papier signé & vérification de pesée",
+      "Scanned supplier invoice attached to expense voucher": "Facture fournisseur numérisée jointe à la pièce de charge",
+      "Standalone company policy certificate stored in Document Vault": "Certificat de police d'assurance conservé dans le coffre documentaire",
+      "Archived invoices, payment receipts, statutory tax filings, contracts, and weighbridge slips by category": "Factures archivées, reçus, déclarations fiscales, contrats et bons de bascule par catégorie",
+      "Documented transaction value by vendor, customer, or authority with linked transaction count": "Valeur documentée par fournisseur, client ou administration avec nombre d'écritures liées",
+      "Tank Equation: Bought - Fleet Used - Malfunction/Adj - Sold = Remaining": "Équation Cuve : Acheté − Consommé Flotte − Écarts − Vendu = Restant",
+      "Bought - Used - Malf - Sold": "Acheté − Consommé − Écarts − Vendu",
+      "Bought - Used - Sold": "Acheté − Consommé − Vendu",
+      "Unified physical variances, meter discrepancies, hose leaks & calibrations across Fuel, Lubricants & Grease, Spare Parts & Materials": "Écarts physiques unifiés, anomalies compteurs, fuites et calibrages sur Carburant, Lubrifiants, Pièces & Matières",
+      "Repairs, spare parts & oils vs monthly vouchers": "Réparations, pièces & huiles vs pièces mensuelles",
+      "Repair, spare-part, screen, tire & oil outlay": "Dépenses réparations, pièces, criblage, pneus & huiles",
+      "Monthly dispatch loads vs accrued company-fleet driver overtime bonus ($)": "Voyages mensuels vs primes d'heures sup. chauffeurs flotte propre ($)",
+      "Top drivers by dispatched trips in the active period": "Principaux chauffeurs par voyages effectués sur la période",
+      "Live running balance across stored parts, filters, tires & lubricants": "Solde en direct des pièces, filtres, pneus & lubrifiants en stock",
+      "Valued automatically from stored supplier expense invoices & opening stock": "Valorisé automatiquement depuis les factures fournisseurs et le stock d'ouverture",
+      "Shelf valuation and historical spend by item with locked unit of measure (Piece, Litre, Set, kg)": "Valorisation rayon et dépenses historiques par article avec unité verrouillée",
+      "On-hand shelf value and catalog item count across Spare Parts, Oils & Lubricants, Tools, and Consumables": "Valeur en stock et nombre d'articles sur Pièces, Huiles, Outils et Consommables",
+      "Master items registry with locked Unit of Measure (UoM), default shelf location, reorder alert threshold, and 1-click stock adjustment": "Registre maître des articles avec unité verrouillée, emplacement, seuil de réappro. et ajustement 1-clic",
+      "Trucks, loaders, crushers & generators receiving parts or lubricants": "Camions, chargeuses, concasseurs & groupes recevant pièces ou lubrifiants",
+      "Open Shared Items & Spare Parts Catalog": "Ouvrir le Catalogue Partagé Articles & Pièces",
+      "Combined workshop repair parts issued and purchased equipment/warehouse items with locked UoM": "Pièces d'atelier sorties et achats engins/magasin combinés avec unité verrouillée",
+      "Spend routing across Warehouse Shelf Stock (+IN), Direct Equipment Allocation, and Workshop Repairs": "Ventilation des dépenses entre Stock Magasin (+ENTRÉE), Affectation Directe Engins et Réparations Atelier",
+      "Every itemized supplier purchase routed directly to an equipment unit, into Warehouse stock, or to general plant operations": "Chaque achat détaillé affecté directement à un engin, au stock magasin ou à l'exploitation centrale",
+      "Contract reimb., site transport & driver OT included in Earnings · LBP ÷ 89,500 LL/$ · Remaining = Earnings minus Paid · Post-cutoff in Advances": "Remb. contrat, déplacement site & HS chauffeurs inclus · LBP ÷ 89 500 · Reste = Gains − Payé",
+      "Consolidated from Workforce Analytics (P12) & Sentinel S7 · Salary vouchers paid on staff-months without an active employment or freelance contract window": "Consolidé depuis Analytique RH (P12) & Sentinelle S7 · Salaires versés sans contrat actif sur le mois",
+      "Monthly logged overtime hours vs lateness / tardy hours on attendance sheets": "Heures supplémentaires mensuelles pointées vs heures de retard",
+      "Employees ranked by total logged overtime hours in the active period": "Collaborateurs classés par total d'heures supplémentaires sur la période",
+      "Shift overtime valued at contract multiplier · Driver night-trip overtime valued at regional trip rates ($5 / $7 / $10 / $14) · Click any employee to inspect 360° profile": "HS postes valorisées au taux contractuel · HS nuit chauffeurs aux tarifs régionaux · Cliquer pour profil 360°",
+      "Regular weekday hours vs Saturday / day-specific shift hours across active BU shifts": "Heures normales semaine vs samedi / horaires spécifiques sur les postes actifs",
+      "Active staff automatically backfilled when a shift timing changes from its Effective Date": "Recalcul rétroactif automatique des collaborateurs actifs dès la date d'effet du changement d'horaire",
+      "Configure default shifts per BU (WTC, BBConstruction, Lions Transport), add new shifts, set Saturday / day-specific hours, and change shift timings with an Effective Date to automatically backfill associated staff": "Configurer les postes par société, horaires du samedi et dates d'effet avec recalcul rétroactif automatique",
+      "Configure Day / Night / Custom shifts, arrival & departure grace windows, single-punch rules, overtime passes, 3-pose Face ID, and 4-digit PINs here so wall tablets stay clean for staff clocking": "Configurer postes Jour/Nuit, tolérances, pointage unique, autorisations HS, Visage 3 poses et code PIN à 4 chiffres",
+      "Monthly site transport earned on confirmed on-site days vs FIFO paid inside salary disbursements": "Indemnités mensuelles de site acquises vs payées en FIFO dans les salaires",
+      "Staff ranked by earned site transport ($) with verified on-site day coverage": "Collaborateurs classés par indemnités de déplacement acquises ($) et jours vérifiés",
+      "Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site transport": "Cliquer sur la pastille Travail Vérifié d'un collaborateur pour inspecter son journal quotidien ci-dessus",
+      "Range & open schedules start at $0 until tallied On Site above · Single-day site entries count immediately": "Les plannings ouverts démarrent à 0 $ jusqu'au pointage Sur Site · Les entrées d'un jour comptent immédiatement",
+      "Chronological effective-dated log of staff roles, linked role categories, and assigned trucks or machines across time": "Journal chronologique des fonctions, catégories de rôles et camions/engins attitrés",
+      "Active staff contracts ranked by monthly compensation (base salary + transportation/reimbursement)": "Contrats actifs classés par rémunération mensuelle (salaire de base + transport)",
+      "Regional driver trip and night overtime rate schedule ($ per trip)": "Barème régional des voyages chauffeurs et heures sup. de nuit ($ par voyage)",
+      "Principal repayments & closures across both sides": "Remboursements en capital et clôtures des deux côtés",
+      "Physical USD till delta from currency exchange": "Variation physique caisse USD issue du change",
+      "Physical LBP till delta from currency exchange": "Variation physique caisse LBP issue du change",
+      "USD ↔ LBP Exchange Rate Spread, Drawer Impact & Daily Cash Till Position": "Écart de Taux USD ↔ LBP, Impact Caisse & Position Journalière",
+      "Real-time double-entry postings from tickets, receipts & vouchers": "Écritures en partie double en temps réel issues des bons, reçus et pièces",
+      "Matched 1-to-1 against operational sub-ledgers": "Rapproché 1 pour 1 avec les sous-journaux opérationnels",
+      "Zero manual GL entry on operational forms or registries": "Zéro saisie manuelle GL sur les formulaires opérationnels",
+      "Sales, VAT windows, 3-Leg AP, Cash Till, FX & Payroll": "Ventes, périodes TVA, dettes 3 volets, caisse, change & paie",
+      "Expense Categories, Fuel, Spare Parts & Capex": "Catégories de charges, carburant, pièces & CapEx",
+      "USD & LBP Cash Till (FX Rates)": "Caisse USD & LBP (Taux de Change)",
+      "External Movements & Inter-BU": "Mouvements Externes & Inter-Sociétés",
+      "3-Leg AP & Supplier Settlements": "Dettes à 3 Volets & Règlements Fournisseurs",
+      "Payroll, Freelance & Site Transport": "Paie, Freelance & Déplacements Site",
+      "Partner Loans & JV Distributions": "Prêts Associés & Distributions JV",
+      "Bank & Cheque Receipts / Settlements": "Encaissements & Règlements Bancaires / Chèques",
+      "Raw Material Tickets (Leg 1)": "Bons Matières Premières (Volet 1)",
+      "Raw Material Tickets (Leg 2)": "Bons Matières Premières (Volet 2)",
+      "NSSF settlement adjustments": "Ajustements cotisations CNSS",
+      "Fee refunds or reclassifications": "Remboursements de frais ou reclassements",
+      "Tax assessment credits": "Avoirs sur impositions fiscales",
+      "Customer Receipts & Sales Discounts": "Encaissements Clients & Remises sur Ventes",
+      "Discount reversal": "Annulation de remise",
+      "External & Fleet Service Revenue": "Revenus Services Externes & Flotte",
+      "Service credit notes": "Avoirs sur prestations",
+      "Trade suppliers - goods": "Fournisseurs d'exploitation - biens",
+      "Quarry Purchases & Settlements": "Achats & Règlements Carrières",
+      "Sales Tickets, VAT Invoices & Receipts": "Bons de Vente, Factures TVA & Encaissements",
+      "Payroll Post-Cutoff Advances": "Avances sur Salaires Post-Clôture",
+      "VAT Rates & IVA Expense Vouchers": "Taux TVA & Pièces de Charges TVA",
+      "VAT Rates & IVA Quarry / AP Purchases": "Taux TVA & Achats Carrières / Fournisseurs",
+      "VAT Rates, Sales Tickets & VAT Invoices": "Taux TVA, Bons de Vente & Factures TVA",
+      "Purchases of raw materials": "Achats de matières premières",
+      "Supplier credit notes or stock returns": "Avoirs fournisseurs ou retours de stock",
+      "Sales Commission Rules & Rent Receipts": "Règles de Commission Ventes & Quittances Loyer",
+      "Commission reversals or volume adjustments": "Extournes de commissions ou ajustements volume",
+      "Warranty recoveries or vendor credits": "Recouvrements garantie ou avoirs fournisseurs",
+      "Service fee credits or reversals": "Avoirs ou extournes sur frais de service",
+      "Payroll & Salary Vouchers": "Paie & Bulletins de Salaire",
+      "External & Equipment Rental": "Location Externe & Engins",
+      "Rental credit notes": "Avoirs sur location",
+      "Plant, site, or equipment rental revenue": "Revenus de location centrale, site ou engins",
+      "Supplier rebate reversal": "Extourne de ristourne fournisseur",
+      "Fuel vendor price adjustments or credits": "Ajustements tarifaires ou avoirs carburant",
+      "Tool recovery or vendor credit notes": "Récupération d'outillage ou avoirs fournisseurs",
+      "Expense reversals or refunds": "Extournes ou remboursements de charges",
+      "Utility deposit refunds or adjustments": "Remboursements de dépôts de garantie services",
+      "Labor voucher adjustments": "Ajustements pièces main-d'œuvre",
+      "Top Customers by Open AR Balance ($)": "Principaux Clients par Solde Créances Ouvert ($)",
+      "Top Customers by Delivered Loads": "Principaux Clients par Voyages Livrés",
+      "Click a region's Sites pill to see all member sites inline and filter the Sites table below": "Cliquer sur la pastille Sites d'une région pour voir ses sites et filtrer la table",
+      "Quarry / Raw Sites": "Sites Carrières / Matières",
+      "Regions Ranked by Sites Inside": "Régions Classées par Nombre de Sites",
+      "Active operational sites grouped by region across all business units": "Sites opérationnels actifs groupés par région sur toutes les sociétés",
+      "Top Operational Sites by Load Volume": "Principaux Sites Opérationnels par Volume",
+      "Combined quarry intake and customer delivery loads": "Total combiné des voyages carrière et livraisons clients",
+      "Top Catalog Items & Spare Parts by Total Spend ($)": "Principaux Articles & Pièces par Dépense Totale ($)",
+      "Catalog Items by Category & Locked UoM Spend ($)": "Articles par Catégorie & Dépense Unité Verrouillée ($)",
+      "Top Expense Categories by Total Spend ($)": "Principales Catégories de Charges par Dépense ($)",
+      "Expense Categories by Cost Class / Parent Category ($)": "Catégories de Charges par Classe de Coût ($)",
+      "Top Staff Members by Remaining Payment ($)": "Principaux Collaborateurs par Reste à Payer ($)",
+      "Staff Registry by Pay Status": "Registre du Personnel par Statut de Paie",
+      "Staff Roles by Assigned Workforce Headcount": "Fonctions par Effectif Affecté",
+      "Staff Headcount by Linked Role Category": "Effectif par Catégorie de Fonction",
+      "· Consolidated 6-Industry Revenue, Operating Profit & Liquidity": "· Chiffre d'Affaires Consolidé 6 Secteurs, Profit Op. & Liquidité",
+      "· Sister Company Given vs. Paid Back, Net Owed & Bookkeeping Audit": "· Avances vs Remboursements Sociétés Sœurs, Solde Net & Audit",
+      "· 10-Slot Default Splits, Chronological Agreements & Partner Accounts": "· Répartitions à 10 Parts, Accords Chronologiques & Comptes Associés",
+      "· Central Borrowing Facilities & Fixed Assets": "· Lignes d'Emprunt Centrales & Immobilisations",
+      "· HQ Shared Services, Recurring Schedules & Supplier AP": "· Services Partagés Siège, Charges Récurrentes & Dettes Fournisseurs",
+      "· 6-Industry Elimination Schedule & Double-Entry Trial Balance": "· Tableau d'Élimination 6 Secteurs & Balance Générale",
+      "· 5-Resort Revenue, Occupancy, Covers & Operating Margin": "· Recettes des 5 Resorts, Occupation, Couverts & Marge Opérationnelle",
+      "· Gate Admissions, Chalet Rooms, POS Till Close & VAT": "· Entrées Plage, Chalets, Clôtures POS & TVA",
+      "· Seasonal Contracts, Remaining Arrears & Partner Pools": "· Contrats Saisonniers, Arriérés & Pools Associés",
+      "· Commissary Stock, Consumption Ratio & Recipe BOM Margin": "· Stock Économat, Ratio de Consommation & Marge Recettes BOM",
+      "· Diesel Burn L/hr Watchdog, Solar Offset & Maintenance": "· Sentinelle Gasoil L/h, Apport Solaire & Maintenance",
+      "· Seasonal & Freelance Payroll, Suppliers & Resort GL": "· Paie Saisonnière & Extra, Fournisseurs & Comptabilité Resort",
+      "· Korri Auto & Shacman Revenue, Gross Margin & Brand Mix": "· Chiffre d'Affaires Korri Auto & Shacman, Marge Brute & Mix Marques",
+      "· Import Shipments, Customs/Freight Allocation & LCs": "· Expéditions Import, Répartition Fret/Douane & Crédits Documentaires",
+      "· 44 Heavy Truck & Commercial Serial Units, PDI & Warranty": "· 44 Camions Lourds & Unités VIN, PDI & Garantie",
+      "· Spare Parts Valuation, Reorder Alerts & Branch Transfers": "· Valorisation Pièces, Alertes Réappro. & Transferts Inter-Agences",
+      "· 1,077 Stock Rows & 268 P&L Rows Tied $0.00 + Trading GL": "· 1 077 Lignes Stock & 268 Lignes P&L Rapprochées à 0,00 $ + GL Négoce",
+      "· $55.83M Gross / $40.44M Share-Adjusted Portfolio & NOI Yield": "· Patrimoine 55,83 M$ Brut / 40,44 M$ Quote-Part & Rendement NOI",
+      "· Deed Sales Contracts, Buyer Instalments & Title Transfers": "· Contrats de Vente sur Titre, Échéances Acheteurs & Transferts",
+      "· 13 Properties, 32 Units, LGB Valuations & Co-Ownership Stakes": "· 13 Immeubles, 32 Unités, Expertises LGB & Quotes-Parts",
+      "· Maintenance Work Orders, Cost Variance & Tenant Recharges": "· Bons de Travaux, Écarts de Coût & Refacturations Locataires",
+      "· Owner NOI Distributions, Contractor Payables & Property GL": "· Distributions NOI Propriétaires, Dettes Entrepreneurs & GL Immobilier",
+      "· $331.5k GWP, $40.9k Gross Commission & Net Profit": "· 331,5 k$ Primes Émises, 40,9 k$ Commission Brute & Résultat Net",
+      "· 38 Policies, 4 Endorsements & Client Discounts": "· 38 Polices, 4 Avenants & Remises Clients",
+      "· 30/60/90-Day Expiry Queue, 88.2% Retention & Insured Risks": "· File d'Échéances 30/60/90j, Rétention 88,2 % & Risques Assurés",
+      "· Client Premium AR, Carrier Payable & Statement Recon": "· Créances Primes Clients, Dettes Compagnies & Rapprochement Bordereaux",
+      "· Motor, Medical & Property Claims, Surveyors & Settlements": "· Sinistres Auto, Santé & Dommages, Experts & Règlements",
+      "· 12 Insurance Lines, 52 Products & Chronological Commission Rates": "· 12 Branches, 52 Produits & Taux de Commission Chronologiques",
+      "Blue:Purchases In · Green:Recipe Usage · Cyan/Amber:Closing Stock & Usage Ratio": "Bleu : Achats · Vert : Consommation Recettes · Cyan/Ambre : Stock Final & Ratio",
+      "Blue:Chalets & Suites · Green:Restaurant & Shisha · Amber:Beach Gate & Weddings": "Bleu : Chalets & Suites · Vert : Restaurant & Chicha · Ambre : Entrées Plage & Mariages",
+      "Blue:Contract Value · Green:Paid Cash · Amber:Remaining Arrears": "Bleu : Valeur Contrat · Vert : Payé · Ambre : Arriérés Restants",
+      "Blue:Rated L/hr Baseline · Green:Normal Burn · Red:Burn Spike (>15% Over Rated)": "Bleu : Courbe Nominale L/h · Vert : Normal · Rouge : Pic (>15 %)",
+      "Blue:Sales Revenue ($) · Green:Landed Cost COGS ($)": "Bleu : Chiffre d'Affaires ($) · Vert : Coût des Ventes Rendu ($)",
+      "Blue:Invoice Amount ($) · Green:Landed Cost COGS ($)": "Bleu : Montant Facture ($) · Vert : Coût des Ventes Rendu ($)",
+      "Blue:Supplier FOB ($) · Green:Cleared Landed Cost · Amber:Pending Landed Allocation": "Bleu : FOB Fournisseur ($) · Vert : Coût Rendu · Ambre : Répartition en Attente",
+      "Blue:Supplier FOB ($) · Green:100% Allocated Landed Cost · Amber:Pending Allocation": "Bleu : FOB Fournisseur ($) · Vert : Coût Rendu 100 % · Ambre : En Attente",
+      "Slate:Capitalized Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold & Delivered": "Ardoise : Coût Rendu ($) · Bleu : Showroom · Ambre : Réservé · Vert : Vendu & Livré",
+      "Slate:Landed Cost ($) · Blue:Showroom · Amber:Reserved · Green:Sold & Delivered": "Ardoise : Coût Rendu ($) · Bleu : Showroom · Ambre : Réservé · Vert : Vendu & Livré",
+      "Blue:Optimal Stock Valuation ($) · Red:Low-Stock Reorder Alert": "Bleu : Valorisation Optimale ($) · Rouge : Alerte Stock Bas",
+      "La Una RawBT till + resort dining terraces": "Caisse thermique La Una + terrasses restaurants des resorts",
+      "Flags actual L/hr > 15% over rated curve": "Signale toute consommation L/h supérieure de +15 % à la courbe nominale",
+      "Items at or below minimum warehouse safety stock": "Articles au niveau ou en dessous du stock de sécurité",
+      "Mirrored Shacman <-> Korri Auto stock transfers": "Transferts de stock miroirs Shacman <-> Korri Auto",
+      "Reimbursed by Shaanxi / Weichai & component OEMs": "Remboursé par Shaanxi / Weichai et équipementiers OEM",
+      "Ranked by annualized rent contribution across 4235 Msaytbeh & Properties portfolio": "Classés par contribution locative annuelle sur le portefeuille 4235 Msaytbeh & Properties",
+      "9-Year stepped commercial escalations · 11% VAT effective 2025-11-01 on 4235 Company S.A.L": "Indexation commerciale par paliers sur 9 ans · TVA 11 % dès le 01-11-2025 sur 4235 S.A.L",
+      "Multi-year stepped rent schedules, grace periods, VAT treatment, and renewal countdowns": "Échéanciers de loyers par paliers, franchises, régime TVA et compte à rebours de renouvellement",
+      "Held in Client Advances until final notary deed transfer": "Conservé en Avances Clients jusqu'au transfert notarié définitif du titre",
+      "Tranches due soon or past milestone deadline": "Échéances proches ou ayant dépassé la date jalon",
+      "Paid-to-date progress bar vs remaining deed transfer balance": "Progression du payé à ce jour vs solde restant avant transfert du titre",
+      "Tracks buyer sales agreements, collected instalments, broker commissions, and deed recognition stage": "Suivi des compromis acheteurs, acomptes encaissés, commissions et transfert de propriété",
+      "Reflecting Lebanese cadastral /2400 co-ownership shares across Beirut, Keserwan, South Lebanon, Cannes & Baghdad": "Reflète les quotes-parts cadastrales /2400 à Beyrouth, Kesrouan, Sud-Liban, Cannes & Bagdad",
+      "12 portfolio assets encompassing 13 LGB certified Lebanese plots plus Cannes Croisette and Baghdad Mansour commercial units": "12 actifs immobiliers regroupant 13 parcelles expertisées au Liban ainsi que Cannes et Bagdad",
+      "Dated 2024-08-13 certified appraisal baseline ($51.48M gross / $28.78M share-adjusted) with implied capitalization rates": "Expertise certifiée du 13-08-2024 (51,48 M$ brut / 28,78 M$ quote-part) et taux de capitalisation",
+      "Flagged Rechargeable = Yes awaiting tenant invoice": "Marqué Refacturable = Oui en attente de facturation locataire",
+      "Generator diesel, chilled water & municipal shares": "Gasoil groupes, eau glacée & quotes-parts municipales",
+      "Structural improvements capitalized to Building Improvements vs routine facility repairs": "Améliorations structurelles capitalisées vs réparations courantes",
+      "Tracks contractor scope, capitalization vs expense routing, and tenant recharge eligibility": "Suivi des travaux entrepreneurs, capitalisation vs charges et refacturation locataire",
+      "Carrier Payable stays strictly at Gross Premium minus Gross Commission; client discounts reduce broker commission yield only": "Le net compagnie reste égal à Prime Brute moins Commission Brute ; les remises clients s'imputent sur la marge courtier",
+      "Full policy lifecycle with Gross Commission, Broker-Funded Client Discounts, Policy Admin Fees, and Net Carrier Payable": "Cycle complet des polices avec Commission Brute, Remises Clients, Frais de Police et Net Compagnie",
+      "Automated daily expiry sweep flags policies at 90, 60, and 30 days prior to expiration and tracks quote conversion": "Balayage quotidien automatique à 90, 60 et 30 jours avant échéance et suivi des renouvellements",
+      "Brokerage advocacy tracks surveyor assessment from First Notice of Loss (FNOL) through carrier discharge voucher": "Suivi courtier de l'expertise depuis la déclaration de sinistre (FNOL) jusqu'à la quittance de règlement",
+      "Tracks claim notifications, expert assignment, policy deductible application, and insurer settlement status": "Suivi des déclarations, experts désignés, franchises et règlements compagnies",
+      "Client receivable equals Gross Premium minus Client Discount plus Policy Admin Fee; receipts auto-link on settlement": "Créance client = Prime Brute − Remise Client + Frais de Police ; lettrage automatique à l'encaissement",
+      "Matches carrier commission statements line-by-line against expected agreement rates and isolates rounding or rate discrepancies": "Rapproche ligne à ligne les bordereaux de commissions compagnies des taux convenus",
+      "Tracks Gross Premium, Broker Commission retained at source, cumulative carrier remittances, and fiduciary cash coverage": "Suivi des Primes Brutes, Commissions retenues, reversements compagnies et couverture fiduciaire",
+      "Across 6 Lebanese & regional insurance carriers": "Auprès de 6 compagnies d'assurance libanaises et régionales",
+      "Forward start-date guard & retroactive policy backfill": "Garde chronologique des dates d'effet et recalcul rétroactif des polices",
+      "Auto-computes Gross Commission on policy entry": "Calcule automatiquement la Commission Brute à la saisie",
+      "Standardized product hierarchy across Motor, Medical, Property, Engineering, Marine, Liability, Workmen Comp, Life, PA, Travel & Fidelity": "Hiérarchie produits standardisée : Auto, Santé, Dommages, Risques Tech., Transport, RC, AT, Vie, IA & Voyage",
+      "None": "Aucun",
+      "Full": "Complet",
+      "Full Day": "Journée Complète",
+      "Sunset Shift": "Poste Coucher de Soleil",
+      "Flags": "Signalements",
+      "loan facilities": "lignes de prêt",
+      "recorded repayments": "remboursements enregistrés",
+      "capital/equipment/asset vouchers": "pièces d'investissement et équipements",
+      "external partner entries": "écritures associés externes",
+      "Active quarry, transport & holding JVs": "JV carrières, transport & holding actives",
+      "recorded profit-split settlements": "règlements de quotes-parts enregistrés",
+      "Open Defects & Parts Custody Ledger": "Registre des Pannes Ouvertes & Garde des Pièces",
+      "Add or update a Raw Material Site Cost or Site Haulage Rate agreement": "Ajouter ou modifier un accord Prix Matière Site ou Tarif Transport",
+      "Jump to Price Agreement Exceptions": "Aller aux exceptions tarifaires",
+      "Jump to Unmatched Salary Payments": "Aller aux salaires sans contrat actif",
+      "Jump to Grease, Lubricant & Diesel Machine-Driver Audit": "Aller à l'audit graisse, huile & gasoil sans chauffeur",
+      "Jump to Sales Commissions by Product": "Aller aux commissions ventes par produit",
+      "Next sequential 25-ticket pad serial (excludes >6-digit external scale numbers)": "Prochain numéro séquentiel du carnet de 25 bons (hors pesées externes >6 chiffres)",
+      "Joint Venture (50/50 Partnership Site)": "Joint-Venture (Site en partenariat 50/50)",
+      "Open Consolidated Rollup": "Ouvrir la Consolidation Groupe",
+      "Open Group P&L Schedule": "Ouvrir le Compte de Résultat Groupe",
+      "Open Group Treasury": "Ouvrir la Trésorerie Groupe",
+      "Open Sister Interactions": "Ouvrir les Opérations Inter-Sociétés",
+      "Open Daily Venue Revenue": "Ouvrir les Recettes Journalières",
+      "Open POS Till Closes": "Ouvrir les Clôtures de Caisse POS",
+      "Open Lease Registry": "Ouvrir le Registre des Baux",
+      "Open Property Portfolio": "Ouvrir le Portefeuille Immobilier",
+      "Open Property Sales & Deeds": "Ouvrir Ventes & Titres Fonciers",
+      "Open Rent Invoicing": "Ouvrir la Facturation des Loyers",
+      "Open Production Ledger": "Ouvrir le Registre de Production",
+      "Open Statement Reconciliation": "Ouvrir le Rapprochement des Bordereaux",
+      "Open Carrier Remittances": "Ouvrir les Reversements Compagnies",
+      "Open AR Overdue (>30d / 60+)": "Ouvrir les Créances Échues (>30j / 60+)",
+      "Open 3-Leg Open AP": "Ouvrir les Dettes Fournisseurs à 3 Volets",
+      "Open Weighbridge 25-Ticket Books & Pad Tally Table": "Ouvrir la Table d'Audit des Carnets de 25 Bons",
+      "Open Raw Material Purchase & Site Haulage Agreements in Purchases, Expenses & Payables": "Ouvrir les Accords d'Achat Matières & Transport dans Achats & Charges",
+      "Open Customer Sales & Commission Agreements": "Ouvrir les Accords Tarifs Clients & Commissions",
+      "Open Master Sites & Regions Registry": "Ouvrir le Registre Maître Sites & Régions",
+      "Open Quarry & Haulage Tickets": "Ouvrir les Bons Carrières & Transport",
+      "Open Expenses & Overhead Vouchers": "Ouvrir les Pièces de Charges & Frais Généraux",
+      "Open Master Suppliers & Haulers Registry": "Ouvrir le Registre Maître Fournisseurs & Transporteurs",
+      "Open voucher and enter final supplier invoice price": "Ouvrir la pièce et saisir le prix facture définitif",
+      "Create a per-unit Sales Commission rule for a plant owner": "Créer une règle de commission unitaire pour propriétaire",
+      "Add or step a per-unit Sales Commission rule by Product, Date Window & Unit (m³ / Ton)": "Ajouter ou échelonner une commission par produit, période et unité (m³ / Tonne)",
+      "Bluetooth Thermal Print / Preview Fuel Slip #": "Impression Thermique Bluetooth / Aperçu Bon Carburant #",
+      "Auto-populated when a Truck with a registered owner is selected; open when truck has no preset owner": "Rempli automatiquement lorsqu'un camion avec propriétaire enregistré est choisi",
+      "Always anchored to physical Transaction Date regardless of whether the global system filter is set to Reporting Date or Transaction Date.": "Toujours ancré sur la Date d'Opération physique quel que soit le filtre global.",
+      "Open discrete Day Records Drawer to search and inspect individual entries across all tables.": "Ouvrir le tiroir des écritures du jour pour rechercher sur toutes les tables.",
+      "New Sales Dispatch Ticket": "Nouveau Bon de Livraison Vente",
+      "Inspect quarry & agreement records": "Inspecter les bons carrière et accords",
+      "Inspect expense bills & stock purchases": "Inspecter les factures de charges et achats stock",
+      "New Expense / Stock Bill": "Nouvelle Facture Charge / Stock",
+      "Inspect treasury, external, FX & loan records": "Inspecter trésorerie, mouvements externes, change & prêts",
+      "New Treasury / External Movement": "Nouveau Mouvement Trésorerie / Externe",
+      "Inspect diesel, lubricant & maintenance logs": "Inspecter les journaux gasoil, lubrifiants & maintenance",
+      "New Diesel / Lube Issue": "Nouvelle Sortie Gasoil / Lubrifiant",
+      "Inspect attendance, salaries & master records": "Inspecter pointages, salaires & fiches maîtres",
+      "New Attendance / Shift Entry": "Nouveau Pointage / Poste",
+      "Distributions paid in advance / above raw-cost stock entitlement": "Distributions versées d'avance / au-delà des droits stock matière",
+      "Salary payment without an employment contract": "Paiement de salaire sans contrat de travail actif",
+      "No overtime allowance on this load — click to register overtime": "Aucune prime HS sur ce voyage — cliquer pour enregistrer",
+      "Unlocked (Site has no active single supplier agreement)": "Déverrouillé (aucun accord fournisseur unique actif pour ce site)",
+      "Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments": "Verrouillé à la date de saisie pour l'exactitude de la caisse — utiliser la Date de Reporting",
+      "Locked to default (Credit)": "Verrouillé par défaut (Crédit)",
+      "Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity": "Rempli automatiquement depuis la capacité camion (m³) ; déverrouiller en Admin",
+      "Locked to active Price Agreement or List Price on Pickup & Delivery": "Verrouillé sur l'Accord Tarifaire actif ou le Prix Catalogue",
+      "Material Total = Qty × Unit Price + Tier Adj − Discount": "Total Matière = Qté × Prix Unitaire + Ajust. Palier − Remise",
+      "Total (USD) = Material Total + Transport Total": "Total (USD) = Total Matière + Total Transport",
+      "Tier 1 / Tier 2 Truck Size": "Taille Camion Palier 1 / Palier 2",
+      "Tier 1 Truck Size": "Taille Camion Palier 1",
+      "Raw Material & Site Haulage Price Agreements": "Accords Tarifaires Matières Premières & Transport Site",
+      "Ties to Class 5 Till": "Rapproché Classe 5 Caisse",
+      "CUSTOMER AR AGING & CREDIT TERMS SUB-LEDGER": "BALANCE ÂGÉE CLIENTS & CONDITIONS DE CRÉDIT",
+      "11% OUTPUT VAT TAX INVOICES & MOF REGISTER": "FACTURES TVA COLLECTÉE 11 % & REGISTRE FISCAL",
+      "WEIGHBRIDGE 25-TICKET BOOK AUDIT: SKIPPED, DUPLICATE, REMOVED (0 KM) & RETURNED LOADS": "AUDIT CARNETS BASCULE (25 BONS) : SAUTS, DOUBLONS, ANNULÉS (0 KM) & RETOURS",
+      "PURCHASED PARTS, OILS & CONSUMABLES ROUTING": "AFFECTATION DES PIÈCES, HUILES & CONSOMMABLES ACHETÉS",
+      "Total Portfolio": "Portefeuille Total",
+      "Comparable Coastal Land Sales": "Ventes Comparables Terrains Côtiers",
+      "Land & Improvement Valuation": "Valorisation Terrain & Constructions",
+      "Commercial Income & Land": "Revenu Commercial & Foncier",
+      "Industrial Land Benchmark": "Référence Foncier Industriel",
+      "Quote Sent · WhatsApp Follow-Up": "Devis Envoyé · Relance WhatsApp",
+      "Renewal Terms Requested": "Conditions de Renouvellement Demandées",
+      "Early Renewal Census Prep": "Préparation Effectifs Renouvellement Anticipé",
+      "Auto-Renewal Slotted": "Renouvellement Automatique Planifié",
+      "Client Relocated Abroad": "Client Relocalisé à l'Étranger",
+      "Vehicle Sold by Insured": "Véhicule Vendu par l'Assuré",
+      "PAR & Workmen Comp bordereau verified": "Bordereau Dommages & AT vérifié",
+      "Customer Workshop Job & Alignment": "Ordre Atelier Client & Géométrie",
+      "Supplier Warranty Replacement": "Remplacement sous Garantie Fournisseur",
+      "Filters & Consumables": "Filtres & Consommables",
+      "Spirits, Mixers & Draft": "Spiritueux, Mixers & Pression",
+      "2 · Sales by material + Top…": "2 · Ventes par matériau + Top…",
+      "3 · Monthly P&L, Marg…": "3 · Compte de résultat & marges…",
+      "Qty / Spend": "Qté / Dépense",
+      "Staff Studio": "Studio du Personnel",
+      "Customers": "Clients",
+      "Products": "Articles",
+      "Drivers": "Chauffeurs",
+      "Scan & Auto-Fill Entry": "Scanner & Pré-remplir",
+      "Try Sample ▾": "Essayer un exemple ▾",
+      "Try Sample": "Essayer un exemple",
+      "Live Camera Smart Scan": "Scan Intelligent Caméra en Direct",
+      "ISABI Vision Engine": "Moteur Visuel ISABI",
+      "ISABI Smart Parser + Frequency Grounding": "Analyseur Intelligent ISABI + Ancrage Fréquentiel",
+      "ISABI Cloud AI + Ledger Grounding": "IA Cloud ISABI + Ancrage Comptable",
+      "Manufacturing · Multi-Line Spare Parts Tax Invoice": "Industrie · Facture TVA Pièces Détachées Multi-Lignes",
+      "Manufacturing · Unpriced Quarry Weighbridge Slip": "Industrie · Bon de Bascule Carrière Non Valorisé",
+      "Holding & Treasury · Intercompany Bank Wire Advice": "Holding & Trésorerie · Avis de Virement Inter-Sociétés",
+      "Hospitality & Resorts · Cellar Commissary Bill (TTC)": "Hôtellerie & Resorts · Facture Économat & Cave (TTC)",
+      "Automotive & Trading · Heavy Truck VIN Sales Invoice": "Auto & Négoce · Facture Vente Camion Poids Lourd (VIN)",
+      "Real Estate & Property · 4235 Tower Lease Rent Invoice": "Immobilier · Facture de Loyer Tour 4235",
+      "Insurance & Brokerage · Cargo & CAR Policy Schedule": "Assurance & Courtage · Bordereau Police Transport & TRC",
+      "Mfg": "Industrie",
+      "Resorts": "Resorts",
+      "Real Est": "Immobilier",
+      "Insur.": "Assur.",
+      "Rep Diff": "Écarts Date Rapp."
+    }
   };
 
-  const LOWER_DICT = {};
-  const STR_CACHE = {};
+  const LOWER_DICT = { ar: {}, fr: {} };
+  const STR_CACHE = { ar: new Map(), fr: new Map() };
 
-  function rebuildLocaleIndex(lang) {
-    const map = DICT[lang];
+  function rebuildLocaleIndex(code) {
+    const map = DICT[code];
     if (!map) return;
     const low = {};
     const keys = Object.keys(map);
@@ -6275,8 +11657,8 @@
       const lk = k.toLowerCase();
       if (low[lk] === undefined) low[lk] = map[k];
     }
-    LOWER_DICT[lang] = low;
-    STR_CACHE[lang] = new Map();
+    LOWER_DICT[code] = low;
+    STR_CACHE[code] = new Map();
   }
   rebuildLocaleIndex('ar');
   rebuildLocaleIndex('fr');
@@ -6402,7 +11784,180 @@
     duplicates: { ar: 'مكرر', fr: 'doublons' },
     full: { ar: 'مكتمل', fr: 'complets' },
     pick: { ar: 'استلام', fr: 'Enlèv.' },
-    deliv: { ar: 'توصيل', fr: 'Livr.' }
+    deliv: { ar: 'توصيل', fr: 'Livr.' },
+    loads: { ar: 'نقلات', fr: 'Voyages' },
+    load: { ar: 'نقلة', fr: 'Voyage' },
+    weighbridgeloads: { ar: 'نقلات قبان', fr: 'Pesées bascule' },
+    batchingloads: { ar: 'نقلات جبل', fr: 'Gâchées centrale' },
+    ownfleetloads: { ar: 'نقلات أسطول الشركة', fr: 'Voyages flotte propre' },
+    trips: { ar: 'نقلات', fr: 'Voyages' },
+    trip: { ar: 'نقلة', fr: 'Voyage' },
+    unpaidtrips: { ar: 'نقلات غير مسعرة', fr: 'Voyages à 0 $' },
+    tickets: { ar: 'إيصالات', fr: 'Bons' },
+    ticket: { ar: 'إيصال', fr: 'Bon' },
+    tkts: { ar: 'إيصالات', fr: 'Bons' },
+    vch: { ar: 'سندات', fr: 'Pièces' },
+    vouchers: { ar: 'سندات', fr: 'Pièces' },
+    voucher: { ar: 'سند', fr: 'Pièce' },
+    invoices: { ar: 'فواتير', fr: 'Factures' },
+    invoice: { ar: 'فاتورة', fr: 'Facture' },
+    deliveries: { ar: 'تسليمات', fr: 'Livraisons' },
+    refills: { ar: 'تعبئات', fr: 'Pleins' },
+    schedules: { ar: 'جداول', fr: 'Échéanciers' },
+    sched: { ar: 'جداول', fr: 'Éch.' },
+    roles: { ar: 'وظائف', fr: 'Fonctions' },
+    files: { ar: 'ملفات', fr: 'Fichiers' },
+    file: { ar: 'ملف', fr: 'Fichier' },
+    rows: { ar: 'سطور', fr: 'Lignes' },
+    row: { ar: 'سطر', fr: 'Ligne' },
+    lines: { ar: 'بنود', fr: 'Lignes' },
+    line: { ar: 'بند', fr: 'Ligne' },
+    units: { ar: 'وحدات', fr: 'Unités' },
+    unit: { ar: 'وحدة', fr: 'Unité' },
+    flaggedunits: { ar: 'آليات مرصودة', fr: 'Unités signalées' },
+    snapshots: { ar: 'لقطات يومية', fr: 'Instantanés' },
+    outliers: { ar: 'حالات شاذة', fr: 'Anomalies' },
+    fueloutliers: { ar: 'شذوذ وقود', fr: 'Écarts carburant' },
+    dieseloutliers: { ar: 'شذوذ مازوت', fr: 'Écarts gasoil' },
+    gaps: { ar: 'فجوات', fr: 'Écarts' },
+    serialgap: { ar: 'فجوة تسلسل', fr: 'Saut de série' },
+    missingserials: { ar: 'أرقام مفقودة', fr: 'Numéros manquants' },
+    ghostalerts: { ar: 'تنبيهات غياب سائق', fr: 'Alertes sans chauffeur' },
+    ivacustomers: { ar: 'عملاء ضريبة (IVA)', fr: 'Clients TVA' },
+    activecoaaccounts: { ar: 'حسابات أستاذ نشطة', fr: 'Comptes GL actifs' },
+    activeaccounts: { ar: 'حسابات نشطة', fr: 'Comptes actifs' },
+    activepricerules: { ar: 'اتفاقيات سعر نشطة', fr: 'Tarifs actifs' },
+    activeleases: { ar: 'عقود إيجار نشطة', fr: 'Baux actifs' },
+    overduecontracts: { ar: 'عقود متأخرة', fr: 'Contrats en retard' },
+    seasonalcontracts: { ar: 'عقود موسمية', fr: 'Contrats saisonniers' },
+    closes: { ar: 'إقفالات', fr: 'Clôtures' },
+    resorts: { ar: 'منتجعات', fr: 'Resorts' },
+    carriers: { ar: 'شركات تأمين', fr: 'Compagnies' },
+    insurancelines: { ar: 'فروع تأمين', fr: 'Branches' },
+    products: { ar: 'منتجات', fr: 'Produits' },
+    rateagreements: { ar: 'اتفاقيات عمولة', fr: 'Accords de taux' },
+    endorsements: { ar: 'ملاحق', fr: 'Avenants' },
+    instalments: { ar: 'أقساط', fr: 'Échéances' },
+    deeds: { ar: 'سندات ملكية', fr: 'Titres fonciers' },
+    vins: { ar: 'شاحنات VIN', fr: 'Châssis VIN' },
+    bus: { ar: 'شركات', fr: 'Sociétés' },
+    bu: { ar: 'شركة', fr: 'Société' },
+    sectors: { ar: 'قطاعات', fr: 'Secteurs' },
+    verticals: { ar: 'قطاعات', fr: 'Secteurs' },
+    facilities: { ar: 'تسهيلات', fr: 'Lignes de crédit' },
+    findings: { ar: 'ملاحظات', fr: 'Constats' },
+    recent: { ar: 'أخيرة', fr: 'Récents' },
+    custommodules: { ar: 'وحدة مخصصة', fr: 'Modules sur mesure' },
+    industryblueprints: { ar: 'نماذج قطاعية', fr: 'Modèles sectoriels' },
+    customrules: { ar: 'قواعد مخصصة', fr: 'Règles personnalisées' },
+    customized: { ar: 'معدّلة', fr: 'Personnalisées' },
+    repaid: { ar: 'مسدد', fr: 'remboursé' },
+    paired: { ar: 'مطابق', fr: 'appairé' },
+    enrolled: { ar: 'مسجّل', fr: 'enrôlé' },
+    occupied: { ar: 'مشغول', fr: 'occupé' },
+    occupancy: { ar: 'إشغال', fr: 'occupation' },
+    retain: { ar: 'احتفاظ', fr: 'rétention' },
+    realization: { ar: 'تحقق', fr: 'réalisation' },
+    yield: { ar: 'عائد', fr: 'rendement' },
+    gm: { ar: 'هامش مجمل', fr: 'MB' },
+    cov: { ar: 'تغطية', fr: 'couv.' },
+    ot: { ar: 'إضافي', fr: 'HS' },
+    instock: { ar: 'في المخزون', fr: 'En stock' },
+    chassissold: { ar: 'شاسيه مباع', fr: 'Châssis vendus' },
+    reorderalerts: { ar: 'تنبيهات إعادة طلب', fr: 'Alertes réappro.' },
+    marginbreaches: { ar: 'تجاوزات هامش', fr: 'Dépassements marge' },
+    stmtvar: { ar: 'فروقات كشف', fr: 'Écarts bordereau' },
+    stmtvariance: { ar: 'فروقات كشف', fr: 'Écarts bordereau' },
+    openic: { ar: 'بيني مفتوح', fr: 'Intercos ouverts' },
+    openwos: { ar: 'أوامر عمل مفتوحة', fr: 'BT ouverts' },
+    drivermonths: { ar: 'أشهر سائقين', fr: 'Mois-chauffeurs' },
+    staffaffected: { ar: 'موظف متأثر', fr: 'Collaborateurs concernés' },
+    grouptransactions: { ar: 'عملية في المجموعة', fr: 'Transactions groupe' },
+    sentinels: { ar: 'مراقبين آليين', fr: 'Sentinelles' },
+    sentinel: { ar: 'مراقب آلي', fr: 'Sentinelle' },
+    pendingrates: { ar: 'بانتظار التسعير', fr: 'Tarifs en attente' },
+    pendingrate: { ar: 'بانتظار التسعير', fr: 'Tarif en attente' },
+    activemonths: { ar: 'شهراً نشطاً', fr: 'Mois actifs' },
+    corridors: { ar: 'مسارات', fr: 'Corridors' },
+    stores: { ar: 'مستودعات', fr: 'Magasins' },
+    shifts: { ar: 'ورديات', fr: 'Postes' },
+    shift: { ar: 'وردية', fr: 'Poste' },
+    jobs: { ar: 'أوامر عمل', fr: 'Ordres' },
+    orders: { ar: 'أوامر', fr: 'Ordres' },
+    appraisals: { ar: 'تخمينات', fr: 'Expertises' },
+    properties: { ar: 'عقارات', fr: 'Immeubles' },
+    policies: { ar: 'بوالص', fr: 'Polices' },
+    skus: { ar: 'أصناف مخزنية', fr: 'Références SKU' },
+    customers: { ar: 'عملاء', fr: 'Clients' },
+    entries: { ar: 'قيود', fr: 'Écritures' },
+    entry: { ar: 'قيد', fr: 'Écriture' },
+    items: { ar: 'أصناف', fr: 'Articles' },
+    books: { ar: 'دفاتر', fr: 'Carnets' },
+    full: { ar: 'مكتمل', fr: 'Complets' },
+    missing: { ar: 'مفقود', fr: 'Manquants' },
+    left: { ar: 'متبقي', fr: 'Restants' },
+    scheduled: { ar: 'مجدول', fr: 'Planifiés' },
+    linked: { ar: 'مرتبط', fr: 'Liés' },
+    stored: { ar: 'مخزّن', fr: 'Archivés' },
+    inflows: { ar: 'تدفقات واردة', fr: 'Entrées' },
+    outflows: { ar: 'تدفقات صادرة', fr: 'Sorties' },
+    stakeholders: { ar: 'أطراف مقابلة', fr: 'Parties prenantes' },
+    drivers: { ar: 'سائقين', fr: 'Chauffeurs' },
+    rules: { ar: 'قواعد', fr: 'Règles' },
+    loans: { ar: 'قروض', fr: 'Prêts' },
+    agreements: { ar: 'اتفاقيات', fr: 'Accords' },
+    lives: { ar: 'مؤمّن عليهم', fr: 'Assurés' },
+    vans: { ar: 'فانات', fr: 'Fourgons' },
+    covers: { ar: 'رواد', fr: 'Couverts' },
+    tranches: { ar: 'دفعات', fr: 'Tranches' },
+    months: { ar: 'أشهر', fr: 'Mois' },
+    activewindows: { ar: 'فترة نشطة', fr: 'Périodes actives' },
+    activeunits: { ar: 'آلية نشطة', fr: 'Unités actives' },
+    fleetunits: { ar: 'آلية أسطول', fr: 'Unités de flotte' },
+    fueledunits: { ar: 'آلية مزوّدة', fr: 'Unités ravitaillées' },
+    overtimerules: { ar: 'قاعدة إضافي', fr: 'Règles HS' },
+    audititems: { ar: 'بند تدقيق', fr: 'Points d\'audit' },
+    skippedgaps: { ar: 'فجوات متخطاة', fr: 'Sauts de série' },
+    duplicates: { ar: 'مكرر', fr: 'Doublons' },
+    removed: { ar: 'ملغى', fr: 'Annulés' },
+    returned: { ar: 'مرتجع', fr: 'Retournés' },
+    shown: { ar: 'معروض', fr: 'Affichés' },
+    billed: { ar: 'مفوتر', fr: 'Facturés' },
+    transfers: { ar: 'تحويلات', fr: 'Transferts' },
+    fees: { ar: 'رسوم', fr: 'Frais' },
+    foodcost: { ar: 'تكلفة الأغذية', fr: 'Coût matière' },
+    variance: { ar: 'فارق', fr: 'Écart' },
+    notpaying: { ar: 'بدون سداد', fr: 'Sans remboursement' },
+    lowstock: { ar: 'مخزون منخفض', fr: 'Stock bas' },
+    due: { ar: 'مستحق', fr: 'Échus' },
+    onschedule: { ar: 'في الموعد', fr: 'À jour' },
+    activerules: { ar: 'قاعدة نشطة', fr: 'Règles actives' },
+    periodflags: { ar: 'تنبيهات الفترة', fr: 'Alertes période' },
+    otlogs: { ar: 'سجل إضافي', fr: 'Pointages HS' },
+    latelogs: { ar: 'سجل تأخير', fr: 'Retards' },
+    leavelogs: { ar: 'سجل إجازة', fr: 'Congés' },
+    stafftracked: { ar: 'موظف متتبع', fr: 'Collaborateurs suivis' },
+    shifttypes: { ar: 'أنواع ورديات', fr: 'Types de postes' },
+    totaltables: { ar: 'إجمالي الجداول', fr: 'Tables totales' },
+    totalschedules: { ar: 'إجمالي الجداول', fr: 'Échéanciers totaux' },
+    '3rdpartyloads': { ar: 'نقلات خارجية', fr: 'Voyages tiers' },
+    perload: { ar: 'بالنقلة', fr: 'Par voyage' },
+    lapsedactive: { ar: 'منتهية نشطة', fr: 'Expirés actifs' },
+    activejvsites: { ar: 'مواقع شراكة نشطة', fr: 'Sites JV actifs' },
+    nightottrips: { ar: 'نقلات ليلية إضافية', fr: 'Voyages de nuit HS' },
+    activedrivers: { ar: 'سائق نشط', fr: 'Chauffeurs actifs' },
+    raterules: { ar: 'قاعدة تسعير', fr: 'Règles tarifaires' },
+    skusissued: { ar: 'أصناف مصروفة', fr: 'SKU sortis' },
+    warehouseskus: { ar: 'أصناف مستودع', fr: 'SKU entrepôt' },
+    attendancelogs: { ar: 'سجل حضور', fr: 'Pointages' },
+    fueltickets: { ar: 'إيصال وقود', fr: 'Bons carburant' },
+    faceidready: { ar: 'جاهز لبصمة الوجه', fr: 'Visages enrôlés' },
+    loanfacilities: { ar: 'تسهيلات قروض', fr: 'Lignes de prêt' },
+    partneraccounts: { ar: 'حساب شريك', fr: 'Comptes associés' },
+    certifiedvaluations: { ar: 'تخمينات معتمدة', fr: 'Expertises certifiées' },
+    portfolioregistry: { ar: 'سجل المحفظة', fr: 'Actifs en portefeuille' },
+    rowstied: { ar: 'سطر مطابق', fr: 'Lignes rapprochées' },
+    openloans: { ar: 'قرض مفتوح', fr: 'Prêts ouverts' },
   };
 
   const SEARCH_TERMS = {
@@ -6535,7 +12090,16 @@
     'line': { ar: 'فرع التأمين', fr: 'branche' },
     'producer': { ar: 'المنتج / الوسيط', fr: 'producteur' },
     'adjuster': { ar: 'الخبير', fr: 'expert' },
-    'peril': { ar: 'الخطر المغطى', fr: 'risque' }
+    'peril': { ar: 'الخطر المغطى', fr: 'risque' },
+    'spare part': { ar: 'قطعة غيار', fr: 'pièce de rechange' },
+    'filter': { ar: 'فلتر', fr: 'filtre' },
+    'belt': { ar: 'قشاط', fr: 'courroie' },
+    'oil': { ar: 'زيت', fr: 'huile' },
+    'bank': { ar: 'المصرف', fr: 'banque' },
+    'authority': { ar: 'الجهة الرسمية', fr: 'administration' },
+    'truck plate': { ar: 'لوحة الشاحنة', fr: 'plaque camion' },
+    'vendor name': { ar: 'اسم المورّد', fr: 'nom du fournisseur' },
+    'borrower receiving the loan': { ar: 'المقترض المستلم للقرض', fr: 'emprunteur bénéficiaire' },
   };
 
   function getInitialLang() {
@@ -6554,14 +12118,63 @@
   let _everTranslated = (_activeLang !== 'en');
   let _isApplying = false;
 
+  const PRESERVE_ACRONYMS = new Set([
+    'USD', 'LBP', 'LL', 'EUR', 'AED', 'GBP', 'SAR', 'IQD',
+    'RLS', '2FA', 'IVA', 'VAT', 'TVA', 'MOF', 'SKU', 'BU', 'BUs',
+    'AR', 'AP', 'IC', 'JV', 'GL', 'COA', 'CoA', 'SOA', 'HT', 'TTC',
+    'MTD', 'QTD', 'YTD', 'GWP', 'NOI', 'CAPEX', 'OPEX', 'WAC', 'CUMP',
+    'FOB', 'CIF', 'DSO', 'FNOL', 'PDI', 'VIN', 'VINs', 'BOM', 'LGB',
+    'OEM', 'MEP', 'ISO', 'BLE', 'POS', 'PIN', 'PDF', 'CSV', 'SQL',
+    'ATF', 'CAR', 'MOT', 'MED', 'PROP', 'ENG', 'MAR', 'LIFE',
+    'WTC', 'BBC', 'KA', 'HB', 'BB', 'BS', 'LT', 'SK', 'WP', 'WS', 'ZR', 'DG', 'AC', 'MK'
+  ]);
+
+  function ensureRtlBidiStyle() {
+    if (typeof document === 'undefined' || !document.head) return;
+    if (document.getElementById('mfg-i18n-rtl-style')) return;
+    const st = document.createElement('style');
+    st.id = 'mfg-i18n-rtl-style';
+    st.textContent = [
+      'html[dir="rtl"] .ceo-bridge-meta,',
+      'html[dir="rtl"] .ceo-kpi-foot .d,',
+      'html[dir="rtl"] .ceo-kpi-subval,',
+      'html[dir="rtl"] .ceo-pr-sub,',
+      'html[dir="rtl"] .ceo-pr-meta,',
+      'html[dir="rtl"] .pbi-panel-sub,',
+      'html[dir="rtl"] .cockpit-pill-sub,',
+      'html[dir="rtl"] .sentinel-detail,',
+      'html[dir="rtl"] .dops-kpi-unit,',
+      'html[dir="rtl"] .recon-tile-sub { unicode-bidi: plaintext; }'
+    ].join('\n');
+    document.head.appendChild(st);
+  }
+
+  function translateMonthTokens(str, lang) {
+    const map = DICT[lang];
+    if (!map) return str;
+    return str
+      .replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\b/gi, m => {
+        const k = m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
+        return map[k] || m;
+      })
+      .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b/g, m => map[m] || m);
+  }
+
   function translateDatePhrase(trimmed, lang) {
     const map = DICT[lang];
     let m = trimmed.match(/^(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+('?\d{2,4})(?:\s*\((MTD|QTD|YTD)\))?$/i);
     if (m) {
       const mKey = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
       const mTr = (map && map[mKey]) || m[1];
-      const tag = m[3] ? ` (${m[3].toUpperCase()})` : '';
+      const tagMap = { MTD: lang === 'ar' ? 'الشهر حتى تاريخه' : 'MTD', QTD: lang === 'ar' ? 'الربع حتى تاريخه' : 'QTD', YTD: lang === 'ar' ? 'السنة حتى تاريخه' : 'YTD' };
+      const tag = m[3] ? ` (${tagMap[m[3].toUpperCase()] || m[3].toUpperCase()})` : '';
       return `${mTr} ${m[2]}${tag}`;
+    }
+    m = trimmed.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s+(\d{2,4}))?$/i);
+    if (m) {
+      const mKey = m[2].charAt(0).toUpperCase() + m[2].slice(1).toLowerCase();
+      const mTr = (map && map[mKey]) || m[2];
+      return `${m[1]} ${mTr}${m[3] ? ' ' + m[3] : ''}`;
     }
     m = trimmed.match(/^All-Time\s*\(([^)]+)\)$/i);
     if (m) {
@@ -6569,12 +12182,14 @@
     }
     m = trimmed.match(/^FY\s+(\d{4})(?:\s*\(([^)]+)\))?$/i);
     if (m) {
-      const suf = m[2] ? ` (${m[2]})` : '';
+      const inner = m[2] === 'YTD' ? (lang === 'ar' ? 'منذ بداية السنة' : 'YTD') : (m[2] || '');
+      const suf = inner ? ` (${inner})` : '';
       return lang === 'ar' ? `السنة المالية ${m[1]}${suf}` : `Exercice ${m[1]}${suf}`;
     }
     m = trimmed.match(/^Q([1-4])\s+(\d{4})(?:\s*\(([^)]+)\))?$/i);
     if (m) {
-      const suf = m[3] ? ` (${m[3]})` : '';
+      const inner = m[3] === 'QTD' ? (lang === 'ar' ? 'الربع حتى تاريخه' : 'QTD') : (m[3] || '');
+      const suf = inner ? ` (${inner})` : '';
       return lang === 'ar' ? `الربع ${m[1]} ${m[2]}${suf}` : `T${m[1]} ${m[2]}${suf}`;
     }
     m = trimmed.match(/^Last\s+(\d+)\s+(Days|Months|Weeks|Hours|hrs|h)$/i);
@@ -6590,14 +12205,12 @@
     m = trimmed.match(/^(Today|Yesterday|This Week|Last Week)\s*\(([^)]+)\)$/i);
     if (m) {
       const head = translateCore(m[1], lang, 2);
-      const inner = m[2].replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, mon => (map && map[mon]) || mon);
+      const inner = translateMonthTokens(m[2], lang);
       return `${head} (${inner})`;
     }
     m = trimmed.match(/^Day Records Ledger\s*·\s*(.+)$/i);
     if (m) {
-      const dStr = m[1]
-        .replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/g, dw => (map && map[dw]) || dw)
-        .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, mon => (map && map[mon]) || mon);
+      const dStr = translateMonthTokens(m[1], lang).replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/g, dw => (map && map[dw]) || dw);
       return lang === 'ar' ? `سجل حركات اليوم · ${dStr}` : `Journal des Opérations du Jour · ${dStr}`;
     }
     m = trimmed.match(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?:\s+(\d{2,4}))?$/i);
@@ -6607,6 +12220,11 @@
       const dwTr = (map && map[dwKey]) || m[1];
       const mnTr = (map && map[mnKey]) || m[3];
       return `${dwTr} ${m[2]} ${mnTr}${m[4] ? ' ' + m[4] : ''}`;
+    }
+    m = trimmed.match(/^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})\s+to\s+(Open|\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})(.*)$/i);
+    if (m) {
+      const rhs = /^open$/i.test(m[2]) ? (lang === 'ar' ? 'مفتوح' : 'Ouvert') : m[2];
+      return lang === 'ar' ? `${m[1]} إلى ${rhs}${m[3]}` : `${m[1]} à ${rhs}${m[3]}`;
     }
     return null;
   }
@@ -6632,11 +12250,12 @@
   }
 
   function translateCountNoun(trimmed, lang) {
-    const m = trimmed.match(/^([+-]?[\d,]+(?:\.\d+)?)\s+([A-Za-z][A-Za-z\s-]{0,24})$/);
+    const m = trimmed.match(/^([+-]?[\d,]+(?:\.\d+)?(?:\/\d+)?%?)\s+([A-Za-z][A-Za-z0-9\s/-]{0,30})$/);
     if (!m) return null;
     const num = m[1];
     const rawWord = m[2].trim();
-    const normKey = rawWord.toLowerCase().replace(/\s+/g, '');
+    if (PRESERVE_ACRONYMS.has(rawWord) && !NOUN_PLURALS[rawWord.toLowerCase()]) return null;
+    const normKey = rawWord.toLowerCase().replace(/[\s-]+/g, '');
     const hit = NOUN_PLURALS[normKey];
     if (hit && hit[lang]) {
       const w = (rawWord === rawWord.toUpperCase() && lang === 'fr' && rawWord.length > 2) ? hit[lang].toUpperCase() : hit[lang];
@@ -6647,31 +12266,1034 @@
     return null;
   }
 
+  function translateParametricErp(trimmed, lang, depth) {
+    let m;
+
+    // 1. Document Titles: "<View> · ISABI Command Center"
+    m = trimmed.match(/^(.+?)\s*·\s*ISABI Command Center$/i);
+    if (m) {
+      const v = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${v} · مركز القيادة ISABI` : `${v} · Centre de Commande ISABI`;
+    }
+
+    m = trimmed.match(/^Rep Diff\s+(\d+)$/i);
+    if (m) {
+      return lang === 'ar' ? `فروق تاريخ التقرير ${m[1]}` : `Écarts Date Rapp. ${m[1]}`;
+    }
+
+    m = trimmed.match(/^All\s+(\d+)\s+Industries(?:\s*\((\d+)\))?$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `جميع القطاعات الـ ${m[1]}${m[2] ? ' (' + m[2] + ')' : ''}`
+        : `Les ${m[1]} Secteurs${m[2] ? ' (' + m[2] + ')' : ''}`;
+    }
+
+    m = trimmed.match(/^Real Est\.?\s*\((\d+)\)?$/i);
+    if (m) return lang === 'ar' ? `العقارات (${m[1]})` : `Immob. (${m[1]})`;
+
+    m = trimmed.match(/^([+-]?\$[\d,.]+[kMB]?)\s+fees$/i);
+    if (m) return lang === 'ar' ? `${m[1]} رسوم` : `${m[1]} frais`;
+
+    // 2. High-frequency Tooltips & Column / Row Action Hints
+    m = trimmed.match(/^Click to open 360° Record\s*·\s*Shift\+Click to filter table by\s+(.+)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `اضغط لفتح بطاقة 360° · Shift+Click لتصفية الجدول حسب ${m[1]}`
+        : `Cliquer pour ouvrir la fiche 360° · Maj+Clic pour filtrer par ${m[1]}`;
+    }
+    m = trimmed.match(/^Click to open 360° Record(.*)$/i);
+    if (m) return lang === 'ar' ? `اضغط لفتح بطاقة السجل الشاملة 360°${m[1]}` : `Cliquer pour ouvrir la fiche 360°${m[1]}`;
+
+    m = trimmed.match(/^Preview\s+([\d,]+)\s+linked records for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `معاينة ${m[1]} سجل مرتبط لـ ${m[2]}` : `Aperçu de ${m[1]} enregistrements liés pour ${m[2]}`;
+
+    m = trimmed.match(/^Bluetooth Thermal Print\s*\/\s*Preview\s+(Raw Ticket|Sales Ticket|Fuel Slip|Ticket)\s*(#\S+)$/i);
+    if (m) {
+      const kindAr = /raw/i.test(m[1]) ? 'إيصال المواد' : /fuel/i.test(m[1]) ? 'إيصال الوقود' : 'الإيصال';
+      const kindFr = /raw/i.test(m[1]) ? 'bon matière' : /fuel/i.test(m[1]) ? 'bon carburant' : 'bon';
+      return lang === 'ar' ? `طباعة حرارية بلوتوث / معاينة ${kindAr} ${m[2]}` : `Impression thermique Bluetooth / Aperçu ${kindFr} ${m[2]}`;
+    }
+    m = trimmed.match(/^Preview\s*\/\s*Print Ticket\s*(#\S+)$/i);
+    if (m) return lang === 'ar' ? `معاينة / طباعة الإيصال ${m[1]}` : `Aperçu / Imprimer le bon ${m[1]}`;
+
+    m = trimmed.match(/^Ticketed:\s*([\d.,]+)\s*Ton\s*→\s*([\d.,]+)\s*m³$/i);
+    if (m) return lang === 'ar' ? `الوزن المسجّل: ${m[1]} طن ← ${m[2]} م³` : `Pesé : ${m[1]} t → ${m[2]} m³`;
+
+    m = trimmed.match(/^Non-material unit\s*\((.+)\)$/i);
+    if (m) return lang === 'ar' ? `وحدة غير حجمية (${m[1]})` : `Unité hors matériau (${m[1]})`;
+
+    m = trimmed.match(/^Ex-Quarry Material Avg\s*\(([^)]+)\)\s*\+\s*Separate 3rd-Party Haul Avg\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `متوسط سعر المادة بأرض الكسارة (${m[1]}) + متوسط النقل الخارجي المنفصل (${m[2]})` : `Moy. matière départ carrière (${m[1]}) + Moy. transport tiers séparé (${m[2]})`;
+
+    m = trimmed.match(/^Show\s+(\S+)\s+on the\s+(\d+)-Zone Map above$/i);
+    if (m) return lang === 'ar' ? `عرض ${m[1]} على خريطة المناطق (${m[2]}) أعلاه` : `Afficher le ${m[1]} sur la carte à ${m[2]} zones ci-dessus`;
+
+    m = trimmed.match(/^Open Equipment Driver Assignment Log for\s+(.+?)\s+on\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `فتح سجل تعيين سائق الآلية ${m[1]} بتاريخ ${m[2]}` : `Ouvrir le journal chauffeur de l'engin ${m[1]} au ${m[2]}`;
+
+    m = trimmed.match(/^Assigned unit\s+(.+?)\s*\(no fuel\/haul ticket today\)$/i);
+    if (m) return lang === 'ar' ? `الآلية المعيّنة ${m[1]} (لا يوجد إيصال وقود/نقل اليوم)` : `Engin assigné ${m[1]} (aucun bon carburant/voyage ce jour)`;
+
+    m = trimmed.match(/^(\d+)\s+critical absent-driver alerts?,\s*(\d+)\s+unattributed fills?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تنبيهات حرجة لسائق غائب، ${m[2]} تعبئات بدون مشغّل` : `${m[1]} alertes chauffeur absent, ${m[2]} pleins sans opérateur`;
+
+    m = trimmed.match(/^Click to inspect all diesel movements in\s+(.+)$/i);
+    if (m) {
+      const d = translateMonthTokens(m[1].trim(), lang);
+      return lang === 'ar' ? `اضغط لمعاينة كافة حركات المازوت في ${d}` : `Cliquer pour inspecter tous les mouvements gasoil de ${d}`;
+    }
+
+    m = trimmed.match(/^Reporting Date differs\s*·\s*Tx Date\s+(\S+)\s*·\s*Reporting Date\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تاريخ التقرير مختلف · تاريخ العملية ${m[1]} · تاريخ التقرير ${m[2]}` : `Date de reporting différente · Date op. ${m[1]} · Date rep. ${m[2]}`;
+
+    m = trimmed.match(/^Click to sort by\s+(.+)$/i);
+    if (m) {
+      const col = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `اضغط للترتيب حسب ${col}` : `Cliquer pour trier par ${col}`;
+    }
+    m = trimmed.match(/^Filter by\s+(.+)$/i);
+    if (m) {
+      const col = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تصفية حسب ${col}` : `Filtrer par ${col}`;
+    }
+    m = trimmed.match(/^Filter\s+(.+?)\s+column$/i);
+    if (m) {
+      const col = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تصفية عمود ${col}` : `Filtrer la colonne ${col}`;
+    }
+    m = trimmed.match(/^Filter entries to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تصفية القيود لتاريخ ${m[1]}` : `Filtrer les écritures au ${m[1]}`;
+
+    m = trimmed.match(/^Filter till sheet to\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تصفية حركة الصندوق لتاريخ ${m[1]}` : `Filtrer la feuille de caisse au ${m[1]}`;
+
+    m = trimmed.match(/^Filter all\s+(.+?)\s+entries for\s+(.+)$/i);
+    if (m) {
+      const tbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تصفية كافة قيود ${tbl} لـ ${m[2]}` : `Filtrer toutes les écritures ${tbl} pour ${m[2]}`;
+    }
+    m = trimmed.match(/^⚡\s*Filter Table by\s+"(.+)"$/i);
+    if (m) return lang === 'ar' ? `⚡ تصفية الجدول حسب "${m[1]}"` : `⚡ Filtrer la table par « ${m[1]} »`;
+
+    m = trimmed.match(/^Click to switch companies in\s+(.+)$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `اضغط لتبديل الشركات ضمن ${ind}` : `Cliquer pour changer de société dans ${ind}`;
+    }
+
+    // 3. Executive Overview KPI Pills, Footers, Value Bridge & Pulse Items Across All 6 Industries
+    m = trimmed.match(/^Avg\s+([+-]?\$[\d.,]+[kMB]?)\/(mo|yr|day|load|trip|m³|t|unit)$/i);
+    if (m) {
+      const u = m[2].toLowerCase();
+      const uAr = u === 'mo' ? 'شهر' : u === 'yr' ? 'سنة' : u === 'day' ? 'يوم' : (u === 'load' || u === 'trip') ? 'نقلة' : u === 'm³' ? 'م³' : u === 't' ? 'طن' : 'وحدة';
+      const uFr = u === 'mo' ? 'mois' : u === 'yr' ? 'an' : u === 'day' ? 'j' : (u === 'load' || u === 'trip') ? 'voyage' : u;
+      return lang === 'ar' ? `المتوسط ${m[1]}/${uAr}` : `Moy. ${m[1]}/${uFr}`;
+    }
+    m = trimmed.match(/^Avg\s+([+-]?\$[\d.,]+[kMB]?)$/i);
+    if (m) return lang === 'ar' ? `المتوسط ${m[1]}` : `Moy. ${m[1]}`;
+
+    m = trimmed.match(/^Peak\s+([A-Za-z]+\s+'?\d{2,4})\s*\(([^)]+)\)$/i);
+    if (m) {
+      const d = translateDatePhrase(m[1], lang) || translateMonthTokens(m[1], lang);
+      return lang === 'ar' ? `الذروة ${d} (${m[2]})` : `Pic ${d} (${m[2]})`;
+    }
+    m = trimmed.match(/^GM\s+([\d.,]+%|[+-]?\$[\d.,]+[kMB]?)$/i);
+    if (m) return lang === 'ar' ? `هامش مجمل ${m[1]}` : `MB ${m[1]}`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+GM$/i);
+    if (m) return lang === 'ar' ? `هامش مجمل ${m[1]}` : `${m[1]} MB`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+Op\.\s*Margin$/i);
+    if (m) return lang === 'ar' ? `هامش تشغيلي ${m[1]}` : `${m[1]} Marge Op.`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+of\s+(Net Sales|Total Sales|Gross Sales)$/i);
+    if (m) {
+      const rhs = translateCore(m[2], lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} من ${rhs}` : `${m[1]} de ${rhs}`;
+    }
+    m = trimmed.match(/^([\d.,]+%)\s+of\s+(.+)$/i);
+    if (m && !/Open AR\s*·\s*Lead account/i.test(m[2]) && !/selected trips booked/i.test(m[2])) {
+      const rhs = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} من ${rhs}` : `${m[1]} de ${rhs}`;
+    }
+    m = trimmed.match(/^([\d.,]+%)\s+(group margin|portfolio retention|solar share|fiduciary cash coverage)$/i);
+    if (m) {
+      const k = m[2].toLowerCase();
+      const ar = k === 'group margin' ? 'هامش المجموعة' : k === 'portfolio retention' ? 'احتفاظ المحفظة' : k === 'solar share' ? 'حصة الطاقة الشمسية' : 'تغطية السيولة الائتمانية';
+      const fr = k === 'group margin' ? 'marge groupe' : k === 'portfolio retention' ? 'rétention portefeuille' : k === 'solar share' ? 'part solaire' : 'couverture fiduciaire';
+      return `${m[1]} ${lang === 'ar' ? ar : fr}`;
+    }
+
+    m = trimmed.match(/^\$([\d.,]+)\/m³\s+sell\s+vs\s+\$([\d.,]+)\/m³\s+raw\s*\(([\d.,]+)x\s+spread\)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `سعر البيع $${m[1]}/م³ مقابل الخام $${m[2]}/م³ (الهامش ${m[3]}×)`
+        : `Vente $${m[1]}/m³ vs brut $${m[2]}/m³ (écart ${m[3]}×)`;
+    }
+
+    m = trimmed.match(/^(Cash|Credit|Gross|Raw|Direct|OpEx & Pay|Billed|Overdue|Current|Open AP|AP Open|Open AR|AR Open|AR Collected|Paid|Paid Back|Repaid|Net Owed|Due|Comm|Base Comm|11% VAT|VAT|Rev|Net|List|Valuation|Rec|Op\.?\s*Profit|Gross Margin|Net AR|Security Deposits|Partner Pool|Policy Fees|Net Commission|Fiduciary Cash Held|Gross Comm|Fees|Disc|Landed COGS|Freight & Customs|Chassis|Spare Parts WAC|Promises|Unallocated Advances|Portfolio Gross|Rent AR|Unbilled Buyer Tranches|Security Deposits Held|Invoiced|Fit-Out & Repairs|Venue|Memberships|Memberships Paid|Solar Offset|Net Margin|Kitchen BOM|Maint|Food & Pour Cost|Generator Solar Offset|IC Eliminated|Open Queue|Group AP|Sister Net Owed|Mfg|Sibling Sectors|Advances|Expected Comm|Stmt|Buyer Open|Annual Rent|Earned|Running|Driver|Collected|Balance|Variance|Settled|GWP|Net Comm)\s+([+-]?\$[\d.,]+[kMB]?|[\d.,]+%)$/i);
+    if (m) {
+      const kRaw = m[1].trim();
+      const val = m[2];
+      const lblDict = {
+        'cash': ['نقدي', 'Espèces'],
+        'credit': ['ذمم', 'Crédit'],
+        'gross': ['المجمل', 'Brut'],
+        'raw': ['المواد الأولية', 'Matières'],
+        'direct': ['المباشر', 'Direct'],
+        'opex & pay': ['المصاريف والرواتب', 'OpEx & Paie'],
+        'billed': ['المفوتر', 'Facturé'],
+        'overdue': ['متأخر', 'Échu'],
+        'current': ['جاري', 'Courant'],
+        'open ap': ['ذمم دائنة مفتوحة', 'Dettes Fourn.'],
+        'ap open': ['ذمم دائنة مفتوحة', 'Dettes Fourn.'],
+        'open ar': ['ذمم مدينة مفتوحة', 'Créances Clients'],
+        'ar open': ['ذمم مدينة مفتوحة', 'Créances Clients'],
+        'ar collected': ['المحصل من الذمم', 'Créances Encaissées'],
+        'paid': ['المدفوع', 'Payé'],
+        'paid back': ['المسدّد', 'Remboursé'],
+        'repaid': ['المسدّد', 'Remboursé'],
+        'net owed': ['صافي المستحق', 'Net Dû'],
+        'due': ['مستحق', 'Dû'],
+        'comm': ['العمولة', 'Comm.'],
+        'rev': ['الإيراد', 'Rev.'],
+        'net': ['الصافي', 'Net'],
+        'list': ['القيمة المعلنة', 'Catalogue'],
+        'valuation': ['التقييم', 'Valorisation'],
+        'rec': ['مسترد', 'Récup.'],
+        'op. profit': ['الربح التشغيلي', 'Profit Op.'],
+        'op profit': ['الربح التشغيلي', 'Profit Op.'],
+        'gross margin': ['مجمل الربح', 'Marge Brute'],
+        'net ar': ['صافي الذمم المدينة', 'Créances Nettes'],
+        'security deposits': ['تأمينات المستأجرين', 'Dépôts de Garantie'],
+        'security deposits held': ['تأمينات محتجزة', 'Dépôts Détenus'],
+        'partner pool': ['مجمع الشركاء', 'Pool Associés'],
+        'policy fees': ['رسوم البوالص', 'Frais de Police'],
+        'net commission': ['صافي العمولة', 'Commission Nette'],
+        'fiduciary cash held': ['النقد الائتماني المحتجز', 'Trésorerie Fiduciaire'],
+        'gross comm': ['العمولة الإجمالية', 'Comm. Brute'],
+        'fees': ['الرسوم', 'Frais'],
+        'disc': ['الحسم', 'Remise'],
+        'landed cogs': ['تكلفة البضاعة الواصلة', 'Coût des Ventes Rendu'],
+        'freight & customs': ['الشحن والجمارك', 'Fret & Douane'],
+        'chassis': ['الشاسيهات', 'Châssis'],
+        'spare parts wac': ['قطع الغيار (WAC)', 'Pièces (CUMP)'],
+        'promises': ['وعود التحصيل', 'Promesses'],
+        'unallocated advances': ['سلف غير موزعة', 'Avances Non Imputées'],
+        'portfolio gross': ['إجمالي المحفظة', 'Patrimoine Brut'],
+        'rent ar': ['ذمم الإيجارات', 'Créances Loyers'],
+        'unbilled buyer tranches': ['أقساط مشترين متبقية', 'Tranches Acheteurs'],
+        'invoiced': ['المفوتر', 'Facturé'],
+        'fit-out & repairs': ['التجهيزات والصيانة', 'Aménagements & Travaux'],
+        'venue': ['إيرادات الفرع', 'Recettes Site'],
+        'memberships': ['الاشتراكات', 'Abonnements'],
+        'memberships paid': ['اشتراكات محصّلة', 'Abonnements Encaissés'],
+        'solar offset': ['مساهمة الطاقة الشمسية', 'Apport Solaire'],
+        'net margin': ['صافي الهامش', 'Marge Nette'],
+        'kitchen bom': ['تكلفة المطبخ المعيارية', 'Coût Cuisine BOM'],
+        'maint': ['الصيانة', 'Maint.'],
+        'food & pour cost': ['تكلفة الأغذية والمشروبات', 'Coût F&B'],
+        'generator solar offset': ['وفر الطاقة الشمسية للمولدات', 'Compensation Solaire Groupes'],
+        'ic eliminated': ['معاملات بينية مستبعدة', 'Intercos Éliminés'],
+        'open queue': ['قيد المطابقة', 'File Ouverte'],
+        'group ap': ['ذمم المجموعة الدائنة', 'Dettes Groupe'],
+        'sister net owed': ['صافي ذمم الشركات الشقيقة', 'Solde Net Sœurs'],
+        'mfg': ['الصناعة', 'Industrie'],
+        'sibling sectors': ['القطاعات الشقيقة', 'Secteurs Sœurs'],
+        'advances': ['السلف', 'Avances'],
+        'expected comm': ['العمولة المتوقعة', 'Comm. Attendue'],
+        'stmt': ['الكشف', 'Bordereau'],
+        'buyer open': ['رصيد المشترين المفتوح', 'Acheteurs Ouvert'],
+        'annual rent': ['الإيجار السنوي', 'Loyer Annuel'],
+        'earned': ['المكتسب', 'Acquis'],
+        'running': ['التشغيل', 'Exploitation'],
+        'driver': ['السائق', 'Chauffeur'],
+        'collected': ['المحصّل', 'Encaissé'],
+        'balance': ['الرصيد', 'Solde'],
+        'variance': ['الفرق', 'Écart'],
+        'base comm': ['العمولة الأساسية', 'Comm. de Base'],
+        '11% vat': ['ضريبة 11%', 'TVA 11 %'],
+        'vat': ['الضريبة', 'TVA'],
+        'settled': ['المسدّد', 'Réglé'],
+        'gwp': ['إجمالي الأقساط', 'Primes Brutes'],
+        'net comm': ['صافي العمولة', 'Comm. Nette']
+      };
+      const pair = lblDict[kRaw.toLowerCase()];
+      if (pair) return `${lang === 'ar' ? pair[0] : pair[1]} ${val}`;
+    }
+
+    m = trimmed.match(/^(Cash|Credit|Mfg|Paid|Paid Back|Op\.?\s*Profit)\s+([+-]?\$[\d.,]+[kMB]?)\s*\(([\d.,]+%)\)$/i);
+    if (m) {
+      const head = translateParametricErp(`${m[1]} ${m[2]}`, lang, depth + 1) || `${m[1]} ${m[2]}`;
+      return `${head} (${m[3]})`;
+    }
+
+    m = trimmed.match(/^>(\d+d)\s+([+-]?\$[\d.,]+[kMB]?)$/i);
+    if (m) {
+      const d = m[1].replace(/d$/i, lang === 'ar' ? ' يوم' : 'j');
+      return `>${d} ${m[2]}`;
+    }
+
+    m = trimmed.match(/^In\s+([+-]?\$[\d.,]+[kMB]?)\s*\/\s*Out\s+([+-]?\$[\d.,]+[kMB]?)$/i);
+    if (m) return lang === 'ar' ? `وارد ${m[1]} / صادر ${m[2]}` : `Entrées ${m[1]} / Sorties ${m[2]}`;
+
+    m = trimmed.match(/^In:?\s+([+-]?\$[\d.,]+[kMB]?)\s*·\s*Out:?\s+([+-]?\$[\d.,]+[kMB]?)$/i);
+    if (m) return lang === 'ar' ? `وارد ${m[1]} · صادر ${m[2]}` : `Entrées ${m[1]} · Sorties ${m[2]}`;
+
+    m = trimmed.match(/^Exp\s+([+-]?\$[\d.,]+[kMB]?)\s*\+\s*Pay(?:\s+([+-]?\$[\d.,]+[kMB]?))?$/i);
+    if (m) {
+      const p2 = m[2] ? ` ${m[2]}` : '';
+      return lang === 'ar' ? `مصاريف ${m[1]} + الرواتب${p2}` : `Charges ${m[1]} + Paie${p2}`;
+    }
+
+    m = trimmed.match(/^Margin:\s*([+-]?[\d.,]+%)\s*·\s*([+-]?\$[\d.,]+)\/trip$/i);
+    if (m) return lang === 'ar' ? `الهامش: ${m[1]} · ${m[2]}/نقلة` : `Marge : ${m[1]} · ${m[2]}/voyage`;
+
+    m = trimmed.match(/^Collected\s+([+-]?\$[\d.,]+[kMB]?)\s+across\s+(.+)$/i);
+    if (m) {
+      const rhs = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `حُصّل ${m[1]} عبر ${rhs}` : `Encaissé ${m[1]} sur ${rhs}`;
+    }
+
+    m = trimmed.match(/^LL\s+([\d,]+(?:\.\d+)?)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ل.ل.` : `${m[1]} LBP`;
+
+    m = trimmed.match(/^Overdue Receivables\s*\(>(\d+)d\):\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `الذمم المدينة المتأخرة (>${m[1]} يوماً): ${m[2]}` : `Créances Clients Échues (>${m[1]}j) : ${m[2]}`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+of\s+(\$[\d.,]+)\s+Open AR\s*·\s*Lead account:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من إجمالي ${m[2]} ذمم مفتوحة · أكبر حساب: ${m[3]}` : `${m[1]} sur ${m[2]} d'encours client · Compte principal : ${m[3]}`;
+
+    m = trimmed.match(/^(\d+)\s+Active Audit & Sentinel Exceptions?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} استثناءات رقابة وتدقيق نشطة` : `${m[1]} Exceptions d'Audit & Sentinelles Actives`;
+
+    m = trimmed.match(/^(\d+)\s+Unpriced Entr(?:y|ies) Awaiting Rate Sign-Off$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قيود غير مسعّرة بانتظار اعتماد السعر` : `${m[1]} Écritures Non Chiffrées en Attente de Tarif`;
+
+    m = trimmed.match(/^(\d+)\s+expense bills?\s*·\s*(\d+)\s+quarry tickets? staged at \$0$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فواتير مصاريف · ${m[2]} إيصالات كسارة مسجلة بسعر $0` : `${m[1]} factures charges · ${m[2]} bons carrière en attente à 0 $`;
+
+    m = trimmed.match(/^Lebanese CoA Classes 1-7 reconciled across\s+(\d+)\s+(?:operating\s+)?entit(?:y|ies)(.*)$/i);
+    if (m) {
+      const tail = m[2] ? translateCore(m[2].replace(/^\s*·\s*/, ''), lang, depth + 1) : '';
+      const sep = tail ? ` · ${tail}` : '';
+      return lang === 'ar'
+        ? `الأصناف 1–7 في شجرة الحسابات اللبنانية مطابقة عبر ${m[1]} شركات عاملة${sep}`
+        : `Classes 1–7 du Plan Comptable Libanais rapprochées sur ${m[1]} entités${sep}`;
+    }
+    m = trimmed.match(/^Trial Balance\s+(\$[\d.,]+)\s+diff$/i);
+    if (m) return lang === 'ar' ? `فرق ميزان المراجعة ${m[1]}` : `Écart Balance ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)\s+open watchdogs?\s*·\s*(\d+)\s+pending rates?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تنبيهات رقابية مفتوحة · ${m[2]} بانتظار التسعير` : `${m[1]} sentinelles ouvertes · ${m[2]} tarifs en attente`;
+
+    m = trimmed.match(/^(\d+)\s+active alerts? across\s+(\d+)\s+domain watchdogs?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تنبيهات نشطة عبر ${m[2]} قواعد رقابية قطاعية` : `${m[1]} alertes actives sur ${m[2]} sentinelles métier`;
+
+    m = trimmed.match(/^Top\s+(\d+)\s+represent\s+([\d.,]+%)\s+of revenue$/i);
+    if (m) return lang === 'ar' ? `أكبر ${m[1]} عملاء يمثلون ${m[2]} من الإيرادات` : `Le Top ${m[1]} représente ${m[2]} du chiffre d'affaires`;
+
+    m = trimmed.match(/^Top\s+(\d+)\s+grades drive\s+([\d.,]+%)\s+of sales$/i);
+    if (m) return lang === 'ar' ? `أعلى ${m[1]} أصناف تشكل ${m[2]} من المبيعات` : `Les ${m[1]} premiers produits génèrent ${m[2]} des ventes`;
+
+    // 4. Industry Overview & Sentinel Dynamic Details
+    m = trimmed.match(/^Consolidated performance across\s+(\d+)\s+industries\s*&\s*(\d+)\s+operating entities$/i);
+    if (m) return lang === 'ar' ? `الأداء الموحّد عبر ${m[1]} قطاعات و${m[2]} شركة عاملة` : `Performance consolidée sur ${m[1]} secteurs & ${m[2]} sociétés`;
+
+    m = trimmed.match(/^([\d,]+)\s+single-sided intercompany legs\s*\(([^)]+)\)\s*awaiting mirror counter-entry across sister companies after 3-tier pairing\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قيود بينية من طرف واحد (${m[2]}) بانتظار القيد المقابل لدى الشركات الشقيقة بعد المطابقة الثلاثية.` : `${m[1]} écritures inter-sociétés unilatérales (${m[2]}) en attente de contrepartie après appairage à 3 niveaux.`;
+
+    m = trimmed.match(/^(\d+)\s+Holding expense vouchers totaling\s+(\$[\d.,]+)\s+tracked for corporate overhead and shared group services\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سندات مصاريف للقابضة بإجمالي ${m[2]} مسجلة للمصاريف الإدارية والخدمات المشتركة للمجموعة.` : `${m[1]} pièces de charges Holding totalisant ${m[2]} suivies au titre des services partagés du groupe.`;
+
+    m = trimmed.match(/^Reconciled volume\s+(\$[\d.,]+)\s+across\s+([\d,]+)\s+pairs\s*\(([^)]+)\)\s*·\s*Net bilateral Out-minus-In imbalance:\s*(\$[\d.,]+)\.?$/i);
+    if (m) return lang === 'ar' ? `الحجم المطابق ${m[1]} عبر ${m[2]} أزواج (${m[3]}) · صافي الفارق البيني (الصادر ناقص الوارد): ${m[4]}.` : `Volume rapproché ${m[1]} sur ${m[2]} paires (${m[3]}) · Déséquilibre net bilatéral : ${m[4]}.`;
+
+    m = trimmed.match(/^(\d+)\s+bilateral sister corridors\s*·\s*([\d.,]+%)\s+repaid$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مسارات بينية بين الشركات الشقيقة · ${m[2]} مسدّد` : `${m[1]} corridors bilatéraux sœurs · ${m[2]} remboursé`;
+
+    m = trimmed.match(/^(\d+)\s+industry verticals consolidated under\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قطاعات تشغيلية موحّدة تحت مظلة ${m[2]}` : `${m[1]} secteurs d'activité consolidés sous ${m[2]}`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+open balance across\s+(\d+)\s+seasonal cabana\/beach memberships?\s*\(([^)]+)\s+collected of\s+([^)]+)\)\.?$/i);
+    if (m) return lang === 'ar' ? `رصيد مفتوح ${m[1]} عبر ${m[2]} اشتراكات شاليهات/شاطئ موسمية (حُصّل ${m[3]} من أصل ${m[4]}).` : `Solde ouvert de ${m[1]} sur ${m[2]} abonnements saisonniers (${m[3]} encaissés sur ${m[4]}).`;
+
+    m = trimmed.match(/^(\d+)\s+POS till closes audited across resort cashiers\s*·\s*(\d+)\s+drawer variances? totaling\s+(\$[\d.,]+)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إقفالات صندوق كاشير مدققة عبر صناديق المنتجع · ${m[2]} فروقات جرد بإجمالي ${m[3]}.` : `${m[1]} clôtures de caisse POS auditées · ${m[2]} écart(s) de caisse totalisant ${m[3]}.`;
+
+    m = trimmed.match(/^(\d+)\s+daily venue revenue sheets\s*\(([^)]+)\s+across\s+([\d/]+)\s+chalets & F&B outlets\)\s*verified within cut-off window\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} كشوفات إيرادات يومية (${m[2]} عبر ${m[3]} شاليه ومنفذ مطاعم) مطابقة ضمن مهلة الإقفال.` : `${m[1]} feuilles de recettes journalières (${m[2]} sur ${m[3]} chalets & points F&B) vérifiées dans le délai de clôture.`;
+
+    m = trimmed.match(/^(\d+)\s+engineered menu items\s*·\s*([\d.,]+%)\s+blended cost$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أصناف قائمة مسعّرة هندسياً · ${m[2]} متوسط التكلفة` : `${m[1]} articles de carte modélisés · ${m[2]} coût matière moyen`;
+
+    m = trimmed.match(/^(\d+)\s+SKU lines? below minimum reorder point across\s+(\$[\d.,]+)\s+weighted-average warehouse inventory\s*\((\d+)\s+units\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أصناف دون حد إعادة الطلب الأدنى ضمن مخزون المستودعات بالمتوسط المرجح ${m[2]} (${m[3]} وحدة).` : `${m[1]} références sous le seuil de réapprovisionnement sur ${m[2]} de stock CUMP (${m[3]} unités).`;
+
+    m = trimmed.match(/^(\d+)\s+missing invoice serial gaps? detected across physical invoice books\s*\((.+)\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فجوات تسلسل مفقودة مرصودة في دفاتر الفواتير الورقية (${m[2]}).` : `${m[1]} saut(s) de numérotation détecté(s) dans les carnets de factures physiques (${m[2]}).`;
+
+    m = trimmed.match(/^Gross AR\s+(\$[\d.,]+)\s*\(weighted DSO\s+([\d.]+)d\)\s*·\s*Unallocated customer advances\s+(\$[\d.,]+)\s+kept separate\s*·\s*(\$[\d.,]+)\s+in active collection promises\.?$/i);
+    if (m) return lang === 'ar' ? `إجمالي الذمم المدينة ${m[1]} (متوسط التحصيل ${m[2]} يوم) · سلف عملاء غير موزعة ${m[3]} محفوظة بشكل منفصل · ${m[4]} وعود تحصيل نشطة.` : `Créances brutes ${m[1]} (DSO pondéré ${m[2]}j) · Avances clients non imputées ${m[3]} séparées · ${m[4]} de promesses actives.`;
+
+    m = trimmed.match(/^Capitalized FOB\s+(\$[\d.,kM]+)\s*\+\s*Freight\/Customs\s+(\$[\d.,kM]+)\s*·\s*100% Parallel Parity$/i);
+    if (m) return lang === 'ar' ? `تكلفة FOB المرسملة ${m[1]} + الشحن والجمارك ${m[2]} · مطابقة موازية 100%` : `FOB capitalisé ${m[1]} + Fret/Douane ${m[2]} · Parité 100 %`;
+
+    m = trimmed.match(/^(\d+)\s+tracked VINs\s*\+\s*(\d+)\s+flagship part lines$/i);
+    if (m) return lang === 'ar' ? `${m[1]} شاحنات مرقّمة (VIN) + ${m[2]} خطوط قطع غيار رئيسية` : `${m[1]} châssis VIN suivis + ${m[2]} familles de pièces phares`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+in completed tenant-recoverable fit-out and repair work orders awaiting tenant recharge billing\s*\((\d+)\s+open work orders\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أوامر عمل وتصليحات منجزة قابلة للتحميل على المستأجر بانتظار إعادة الفوترة (${m[2]} أوامر عمل مفتوحة).` : `${m[1]} de travaux imputables aux locataires terminés en attente de refacturation (${m[2]} bons ouverts).`;
+
+    m = trimmed.match(/^(\d+)\s+active leases with unbilled current period\s*·\s*(\$[\d.,]+)\s+open billed rent AR\s*\(([^)]+)\s+collected\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار نشطة غير مفوترة للفترة الحالية · ${m[2]} ذمم إيجارات مفوترة مفتوحة (${m[3]} محصّل).` : `${m[1]} baux actifs non facturés sur la période · ${m[2]} de loyers facturés ouverts (${m[3]} encaissés).`;
+
+    m = trimmed.match(/^(\d+)\s+buyer sale instalments overdue\/pending across\s+(\$[\d.,]+)\s+open buyer balance\s*\(([^)]+)\s+collected of\s+([^)]+)\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أقساط بيع عقاري مستحقة/قيد الانتظار ضمن رصيد مشترين مفتوح ${m[2]} (حُصّل ${m[3]} من أصل ${m[4]}).` : `${m[1]} échéances acheteurs en attente sur ${m[2]} de solde ouvert (${m[3]} encaissés sur ${m[4]}).`;
+
+    m = trimmed.match(/^Portfolio Valuation\s+(\$[\d.,kM]+)\s*·\s*([\d/]+)\s+units leased\s*\(\/2400 shares verified\)$/i);
+    if (m) return lang === 'ar' ? `تقييم المحفظة العقارية ${m[1]} · ${m[2]} وحدة مؤجرة (حصص /2400 مدققة)` : `Valorisation patrimoine ${m[1]} · ${m[2]} unités louées (quotes-parts /2400 vérifiées)`;
+
+    m = trimmed.match(/^(\d+)\s+deeded properties across Beirut & coast$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقاراً مملوكاً بصكوك رسمية في بيروت والساحل` : `${m[1]} biens titrés à Beyrouth et sur le littoral`;
+
+    m = trimmed.match(/^(\d+)\s+carrier commission statements carrying a negative commission variance against chronological carrier agreement rates\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} كشوفات عمولات لشركات تأمين تحمل فرق عمولة سالباً مقارنةً بنسب الاتفاقيات الزمنية المعتمدة.` : `${m[1]} bordereaux compagnies présentant un écart de commission négatif par rapport aux taux convenus.`;
+
+    m = trimmed.match(/^(\d+)\s+policies due for renewal within 90 days\s*·\s*(\d+)\s+expired unrenewed policies\s*·\s*Portfolio retention\s+([\d.,]+%)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بوالص تستحق التجديد خلال 90 يوماً · ${m[2]} بوالص منتهية غير مجددة · نسبة الاحتفاظ بالمحفظة ${m[3]}.` : `${m[1]} polices à renouveler sous 90 jours · ${m[2]} polices expirées non renouvelées · Rétention ${m[3]}.`;
+
+    m = trimmed.match(/^Open client premium AR\s+(\$[\d.,]+)\s*·\s*Net carrier payable\s+(\$[\d.,]+)\s*·\s*Collected fiduciary cash held\s+(\$[\d.,]+)\.?$/i);
+    if (m) return lang === 'ar' ? `ذمم أقساط العملاء المفتوحة ${m[1]} · صافي المستحق لشركات التأمين ${m[2]} · النقد الائتماني المحصّل المحتجز ${m[3]}.` : `Primes clients à recevoir ${m[1]} · Net à reverser aux compagnies ${m[2]} · Trésorerie fiduciaire détenue ${m[3]}.`;
+
+    m = trimmed.match(/^Payable to Carriers\s+(\$[\d.,]+)\s+across\s+(\d+)\s+instalments$/i);
+    if (m) return lang === 'ar' ? `مستحق لشركات التأمين ${m[1]} عبر ${m[2]} أقساط` : `À payer aux compagnies ${m[1]} sur ${m[2]} échéances`;
+
+    m = trimmed.match(/^Covers\s+(\$[\d.,kM]+)\s+carrier payable\s*·\s*(\d+)\s+renewals\s*<90d$/i);
+    if (m) return lang === 'ar' ? `يغطي ${m[1]} مستحقات شركات التأمين · ${m[2]} تجديدات <90 يوماً` : `Couvre ${m[1]} dus aux compagnies · ${m[2]} renouvellements <90j`;
+
+    m = trimmed.match(/^GWP\s+(\$[\d.,kM]+)\s*·\s*(\d+)\s+policies breaching commission floor\s*·\s*([\d.,]+%)\s+fiduciary cash coverage$/i);
+    if (m) return lang === 'ar' ? `الأقساط المكتتبة ${m[1]} · ${m[2]} بوالص دون حد العمولة الأدنى · ${m[3]} تغطية السيولة الائتمانية` : `GWP ${m[1]} · ${m[2]} polices sous le plancher de commission · ${m[3]} couverture fiduciaire`;
+
+    m = trimmed.match(/^(\d+)\s+policies\s*\+\s*(\d+)\s+endorsements(?:\s+across\s+(\d+)\s+carriers)?$/i);
+    if (m) {
+      const tail = m[3] ? (lang === 'ar' ? ` عبر ${m[3]} شركات تأمين` : ` auprès de ${m[3]} compagnies`) : '';
+      return lang === 'ar' ? `${m[1]} بوليصة + ${m[2]} ملاحق${tail}` : `${m[1]} polices + ${m[2]} avenants${tail}`;
+    }
+
+    // 5. Sentinel Detail Sentences (Manufacturing + Shared)
+    m = trimmed.match(/^Open AR\s+(\$[\d.,]+)\s*\(VAT-inclusive\)\s*·\s*(\$[\d.,]+)\s+aged past\s+(\d+)\s+days after FIFO receipt allocation\s*·\s*DSO\s+(\d+)\s+days\.?$/i);
+    if (m) return lang === 'ar' ? `الذمم المدينة المفتوحة ${m[1]} (شاملة الضريبة) · ${m[2]} متأخرة لأكثر من ${m[3]} يوماً بعد تخصيص المقبوضات FIFO · متوسط فترة التحصيل ${m[4]} يوماً.` : `Créances clients ouvertes ${m[1]} (TTC) · ${m[2]} échues à plus de ${m[3]} jours après allocation FIFO · DSO ${m[4]} jours.`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+sold below the date-effective agreed price across\s+(\d+)\s+customer\s*×\s*product pairs\s*·\s*(\d+)\s+pairs trading on lapsed agreements\s*·\s*(\d+)\s+per-truck delivery rules\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مبيعات بأقل من السعر التعاقدي الساري عبر ${m[2]} أزواج (عميل × صنف) · ${m[3]} أزواج تتعامل باتفاقيات منتهية · ${m[4]} قواعد تسليم حسب الشاحنة.` : `${m[1]} vendus sous le tarif convenu sur ${m[2]} paires client × produit · ${m[3]} accords expirés actifs · ${m[4]} règles par camion.`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+paid across\s+(\d+)\s+staff without an active contract for that month\s*·\s*(\$[\d.,]+)\s+driver payroll unallocated\s*\((\d+)\s+months\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوعة لـ ${m[2]} موظف دون عقد عمل نشط لذلك الشهر · ${m[3]} رواتب سائقين غير موزعة (${m[4]} أشهر).` : `${m[1]} versés à ${m[2]} collaborateurs sans contrat actif sur le mois · ${m[3]} de paie chauffeurs non imputée (${m[4]} mois).`;
+
+    m = trimmed.match(/^([\d,]+)\s+duplicate ticket numbers\s*·\s*([\d,]+)\s+unnumbered tickets\s*·\s*([\d,]+)\s+numbers missing from\s+([\d,]+)\s+incomplete pads\.\s*The entry desk guards repeated serials per entity\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} أرقام إيصالات مكررة · ${m[2]} إيصالات غير مرقمة · ${m[3]} أرقام مفقودة من ${m[4]} دفاتر غير مكتملة. يمنع مكتب الإدخال تكرار الأرقام لكل شركة.` : `${m[1]} numéros de bons en doublon · ${m[2]} bons sans numéro · ${m[3]} numéros manquants sur ${m[4]} carnets incomplets.`;
+
+    m = trimmed.match(/^([\d,]+)\s+machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute\s*·\s*([\d,]+)\s+lubricant or grease entries carry no operator on the ticket\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قيود وقود أو زيوت أو تشحيم سُجّلت في أيام غياب السائق المعيّن دون بديل مسجل · ${m[2]} قيود زيوت أو تشحيم بدون اسم مشغّل على الإيصال.` : `${m[1]} sorties carburant/huile/graisse enregistrées un jour d'absence du chauffeur attitré sans remplaçant · ${m[2]} sorties sans opérateur.`;
+
+    m = trimmed.match(/^(\d+)\s+meter readings to check\s*·\s*(\d+)\s+consumption outliers(.*?)·\s*(\d+)\s+own units idle 30\+ days\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قراءات عدادات للمراجعة · ${m[2]} حالات شذوذ استهلاك${m[3]}· ${m[4]} آليات للشركة متوقفة +30 يوماً.` : `${m[1]} relevés compteurs à vérifier · ${m[2]} anomalies de consommation${m[3]}· ${m[4]} engins propres inactifs 30+ jours.`;
+
+    m = trimmed.match(/^(\d+)\s+rows carry a reporting date more than 31 days from the transaction date\s*·\s*(\d+)\s+VAT invoices not linked to tickets\s*·\s*(\d+)\s+VAT header variances\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سطور يحمل تاريخ تقريرها فارقاً يتجاوز 31 يوماً عن تاريخ العملية · ${m[2]} فواتير ضريبية غير مرتبطة بإيصالات · ${m[3]} فروقات في ترويسة الضريبة.` : `${m[1]} lignes avec écart date reporting > 31 jours · ${m[2]} factures TVA non liées aux bons · ${m[3]} écarts d'entête TVA.`;
+
+    m = trimmed.match(/^(\d+)\s+part replacements logged without a prior reported defect\s*·\s*(\d+)\s+critical units flagged Down \/ Do Not Dispatch\s*·\s*(\d+)\s+stored in warehouse\s*·\s*(\d+)\s+in maintenance\s*·\s*(\d+)\s+sold\s*\(([^)]+)\s+proceeds\)\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عمليات استبدال قطع بدون بلاغ عطل مسبق · ${m[2]} آليات حرجة متوقفة / يمنع إرسالها · ${m[3]} مخزنة بالمستودع · ${m[4]} قيد الصيانة · ${m[5]} مباعة (عائد ${m[6]}).` : `${m[1]} remplacements sans avis de panne préalable · ${m[2]} engins critiques à l'arrêt · ${m[3]} en magasin · ${m[4]} en maintenance · ${m[5]} vendus (${m[6]}).`;
+
+    m = trimmed.match(/^Purchased\s+([\d,]+)\s*L minus issued\s+([\d,]+)\s*L minus malfunction\/discrepancy\s+([\d,]+)\s*L minus sold\s+([\d,]+)\s*L\s*=\s*([+-]?[\d,]+)\s*L in tank\.(.*)$/i);
+    if (m) {
+      let rest = m[6] || '';
+      rest = rest.replace(/·\s*(\d+)\s+delivery voucher\s*\(([^)]+)\)\s*in tank with Pending Invoice Price\s*\(\$0\.00 AP\)\s*awaiting supplier invoice\./i,
+        lang === 'ar' ? '· $1 سند توريد ($2) في الخزان بسعر فاتورة قيد الانتظار ($0.00 ذمم دائنة) بانتظار فاتورة المورّد.' : '· $1 bon de livraison ($2) en cuve avec prix en attente (0,00 $ AP).');
+      rest = rest.replace(/A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel\./i,
+        lang === 'ar' ? 'الرصيد السالب يعني أن فواتير شراء المازوت بالجملة سُجّلت ضمن المصاريف العامة بدلاً من مشتريات الوقود؛ صحّح قيد التوريد التاريخي قبل إدخال مازوت جديد.' : 'Un solde négatif indique que des achats de gasoil en vrac ont été passés en Frais Généraux au lieu d\'Achats Carburant.');
+      return lang === 'ar'
+        ? `المشترى ${m[1]} ليتر ناقص المصروف ${m[2]} ليتر ناقص الفروقات/الأعطال ${m[3]} ليتر ناقص المباع ${m[4]} ليتر = ${m[5]} ليتر في الخزان.${rest}`
+        : `Acheté ${m[1]} L moins distribué ${m[2]} L moins écarts ${m[3]} L moins vendu ${m[4]} L = ${m[5]} L en cuve.${rest}`;
+    }
+
+    m = trimmed.match(/^Gross malfunction volume\s+([\d.,]+)\s*L\s*\((\d+)\s+entries\)\s*vs\s+([\d.,]+)\s*L total company diesel used\s*=\s*([\d.,]+%)\s+in selected period\s*\(threshold\s*>=\s*([\d.,]+%)\)\.\s*Net tank discrepancy across all types:\s*([+-]?[\d.,]+)\s*L\.?$/i);
+    if (m) return lang === 'ar' ? `إجمالي حجم أعطال المازوت ${m[1]} ليتر (${m[2]} قيداً) مقابل ${m[3]} ليتر استهلاك الشركة الكلي = ${m[4]} في الفترة المحددة (الحد الرقابي >= ${m[5]}). صافي فرق الخزان: ${m[6]} ليتر.` : `Volume brut d'écarts gasoil ${m[1]} L (${m[2]} écritures) vs ${m[3]} L consommés = ${m[4]} sur la période (seuil >= ${m[5]}). Écart net cuve : ${m[6]} L.`;
+
+    m = trimmed.match(/^(\d+)\s+central loan & facility agreements monitored across partner current accounts, sister facilities, and long-term borrowings\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} اتفاقيات قروض وتسهيلات مركزية مراقبة عبر الحسابات الجارية للشركاء وتسهيلات الشركات الشقيقة والقروض طويلة الأجل.` : `${m[1]} accords de prêts et facilités suivis sur les comptes courants d'associés, sociétés sœurs et emprunts.`;
+
+    m = trimmed.match(/^All\s+(\d+)\s+directed sister-company corridors reconciled against Lebanese CoA Class 1-7 double-entry control accounts\.?$/i);
+    if (m) return lang === 'ar' ? `جميع مسارات الذمم البينية الـ ${m[1]} بين الشركات الشقيقة مطابقة مع حسابات المراقبة في شجرة الحسابات اللبنانية (الأصناف 1–7).` : `Les ${m[1]} corridors inter-sociétés sont rapprochés des comptes de contrôle du Plan Comptable Libanais (Classes 1–7).`;
+
+    m = trimmed.match(/^([\d,]+)\s*L burned across\s+(\d+)\s+generator hrs\s*\(([^)]+)\s+solar offset\)\s*·\s*(\d+)\s+L\/hr burn spikes flagged\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ليتر مستهلك عبر ${m[2]} ساعة تشغيل مولدات (${m[3]} وفر طاقة شمسية) · ${m[4]} طفرات استهلاك مرصودة.` : `${m[1]} L consommés sur ${m[2]} h groupes (${m[3]} apport solaire) · ${m[4]} pics L/h signalés.`;
+
+    m = trimmed.match(/^Average F&B recipe food cost\s+([\d.,]+%)\s*·\s*(\d+)\s+stock consumption lines above target theoretical recipe usage\.?$/i);
+    if (m) return lang === 'ar' ? `متوسط تكلفة الوصفات للأغذية والمشروبات ${m[1]} · ${m[2]} بنود استهلاك مخزون تتجاوز المعدل المعياري للوصفة.` : `Coût matière moyen recettes F&B ${m[1]} · ${m[2]} lignes dépassant la consommation théorique.`;
+
+    m = trimmed.match(/^(\d+)\s+active claim files under carrier survey\/adjustment across Medical, Motor, Property, Engineering, Marine & Liability lines\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ملفات مطالبات نشطة قيد الكشف والتسوية لدى شركات التأمين عبر فروع الاستشفاء والسيارات والممتلكات والهندسي والبحري والمسؤولية.` : `${m[1]} dossiers sinistres actifs en cours d'expertise sur les branches Santé, Auto, Dommages, Risques Tech., Transport & RC.`;
+
+    m = trimmed.match(/^Client discounts\s+(\$[\d.,]+)\s*\(([^)]+)\s+of gross commission\s+(\$[\d.,]+)\)\s*·\s*Net earned commission\s+(\$[\d.,]+)\s*\+\s*policy fees\s+(\$[\d.,]+)\s*·\s*(\d+)\s+policies where Discount > Gross Commission\.?$/i);
+    if (m) return lang === 'ar' ? `حسومات العملاء ${m[1]} (${m[2]} من إجمالي العمولة ${m[3]}) · صافي العمولة المكتسبة ${m[4]} + رسوم البوالص ${m[5]} · ${m[6]} بوالص يتجاوز فيها الحسم إجمالي العمولة.` : `Remises clients ${m[1]} (${m[2]} de la commission brute ${m[3]}) · Commission nette ${m[4]} + frais ${m[5]} · ${m[6]} polices avec Remise > Commission.`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+unallocated landed cost across\s+(\d+)\s+import files? out of\s+(\$[\d.,]+)\s+total freight\/customs additions\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تكلفة شحن وجمارك غير موزعة عبر ${m[2]} ملف استيراد من أصل ${m[3]} إجمالي مصاريف الاستيراد.` : `${m[1]} de frais d'approche non répartis sur ${m[2]} dossier(s) import sur ${m[3]} de fret/douane.`;
+
+    m = trimmed.match(/^Realized gross margin\s+(\$[\d.,]+)\s*\(([^)]+)\s+of sales\) against\s+(\$[\d.,]+)\s+capitalized landed cost\s*·\s*(\d+)\s+invoices below\s+([\d.,]+%)\s+floor\.?$/i);
+    if (m) return lang === 'ar' ? `مجمل الربح المحقق ${m[1]} (${m[2]} من المبيعات) مقابل ${m[3]} تكلفة واصلة مرسملة · ${m[4]} فواتير دون الحد الأدنى (${m[5]}).` : `Marge brute réalisée ${m[1]} (${m[2]} des ventes) sur ${m[3]} de coût rendu · ${m[4]} factures sous le seuil de ${m[5]}.`;
+
+    m = trimmed.match(/^(\d+)\s+lease contracts within 90-day renewal window across\s+(\$[\d.,]+)\s+contracted annual rent roll\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عقود إيجار ضمن نافذة التجديد (90 يوماً) من إجمالي إيجارات سنوية متعاقد عليها بقيمة ${m[2]}.` : `${m[1]} baux dans la fenêtre de renouvellement à 90 jours sur ${m[2]} de loyers annuels contractuels.`;
+
+    m = trimmed.match(/^([\d/]+)\s+building units occupied\s*\(([^)]+)\)\s*·\s*(\d+)\s+vacant\/fit-out units\s*·\s*(\d+)\s+overlapping active leases\.?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وحدة عقارية مشغولة (${m[2]}) · ${m[3]} وحدات شاغرة/قيد التجهيز · ${m[4]} عقود متداخلة.` : `${m[1]} unités occupées (${m[2]}) · ${m[3]} unités vacantes/en travaux · ${m[4]} chevauchements de baux.`;
+
+    // 6. Sentinel & PBI Headers / Badges / Sub-labels
+    m = trimmed.match(/^Rule\s+(#[A-Z0-9]+)$/i);
+    if (m) return lang === 'ar' ? `قاعدة ${m[1]}` : `Règle ${m[1]}`;
+
+    m = trimmed.match(/^Flagged:\s*(.+)$/i);
+    if (m) {
+      const rhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `مرصود: ${rhs}` : `Signalé : ${rhs}`;
+    }
+    m = trimmed.match(/^(\$[\d.,]+)\s+(AUDITED|PAYABLE|UNALLOCATED|UNRECHARGED|OPEN AR|BELOW|UNMATCHED)$/i);
+    if (m) {
+      const k = m[2].toUpperCase();
+      const ar = k === 'AUDITED' ? 'مدقق' : k === 'PAYABLE' ? 'مستحق الدفع' : k === 'UNALLOCATED' ? 'غير موزّع' : k === 'UNRECHARGED' ? 'غير مفوتر للمستأجر' : k === 'OPEN AR' ? 'ذمم مفتوحة' : k === 'BELOW' ? 'أقل من المتفق' : 'غير مطابق';
+      const fr = k === 'AUDITED' ? 'AUDITÉ' : k === 'PAYABLE' ? 'À PAYER' : k === 'UNALLOCATED' ? 'NON RÉPARTI' : k === 'UNRECHARGED' ? 'NON REFACTURÉ' : k === 'OPEN AR' ? 'CRÉANCES' : k === 'BELOW' ? 'SOUS TARIF' : 'NON COUVERT';
+      return `${m[1]} ${lang === 'ar' ? ar : fr}`;
+    }
+    m = trimmed.match(/^DRIFT\s+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `فارق ${m[1]}` : `ÉCART ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)\s+DUE\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مستحق (${m[2]})` : `${m[1]} ÉCHUS (${m[2]})`;
+
+    m = trimmed.match(/^(\d+)\s+DUE\s*·\s*(\d+)\s+EXPIRED$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مستحق · ${m[2]} منتهي` : `${m[1]} À ÉCHÉANCE · ${m[2]} EXPIRÉS`;
+
+    m = trimmed.match(/^(\d+)\s+AGED\s*>(\d+)D$/i);
+    if (m) return lang === 'ar' ? `${m[1]} متأخر >${m[2]} يوم` : `${m[1]} ÉCHUS >${m[2]}J`;
+
+    m = trimmed.match(/^(\d+)\s+TILL VAR\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فرق صندوق (${m[2]})` : `${m[1]} ÉCART CAISSE (${m[2]})`;
+
+    m = trimmed.match(/^(\d+)\s+SHEETS OK$/i);
+    if (m) return lang === 'ar' ? `${m[1]} كشوفات مطابقة` : `${m[1]} FEUILLES OK`;
+
+    m = trimmed.match(/^(\d+)\s+VACANT\s*\/\s*FIT-OUT$/i);
+    if (m) return lang === 'ar' ? `${m[1]} شاغر / قيد التجهيز` : `${m[1]} VACANTS / TRAVAUX`;
+
+    m = trimmed.match(/^(\d+\/\d+)\s+Clear$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سليم` : `${m[1]} Conforme`;
+
+    m = trimmed.match(/^([\d,]+)\s+rows?\s*·\s*Click row to inspect$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سطر · اضغط على السطر للمعاينة` : `${m[1]} lignes · Cliquer pour inspecter`;
+
+    m = trimmed.match(/^(.+?)\s*·\s*INTERACTIVE EXECUTIVE DASHBOARD SUITE\s*\((\d+)\s+PAGES\)$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${ind} · منظومة لوحات القيادة التنفيذية التفاعلية (${m[2]} صفحات)` : `${ind} · SUITE DE TABLEAUX EXÉCUTIFS INTERACTIFS (${m[2]} PAGES)`;
+    }
+    m = trimmed.match(/^(.+?)\s+DOMAIN AUDIT WATCHDOGS & DRILL-DOWN MATRIX\s*\((\d+)\s+RULES\)$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `قواعد الرقابة والتدقيق القطاعي ومصفوفة الفحص — ${ind} (${m[2]} قواعد)` : `SENTINELLES D'AUDIT MÉTIER & MATRICE DE CONTRÔLE — ${ind} (${m[2]} RÈGLES)`;
+    }
+    m = trimmed.match(/^Live\s+(.+?)\s+operational register, SVG charts & exportable tables$/i);
+    if (m) {
+      const ind = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `السجل التشغيلي الحي لقطاع ${ind} والرسوم البيانية والجداول القابلة للتصدير` : `Registre opérationnel en direct ${ind}, graphiques & tableaux exportables`;
+    }
+    m = trimmed.match(/^Lebanese CoA Trial Balance\s*\((\d+)\s+Active Accounts\)$/i);
+    if (m) return lang === 'ar' ? `ميزان المراجعة لشجرة الحسابات اللبنانية (${m[1]} حساباً نشطاً)` : `Balance Générale Plan Comptable Libanais (${m[1]} Comptes Actifs)`;
+
+    m = trimmed.match(/^TOTAL TRIAL BALANCE\s*\((\d+)\s+ACCOUNTS\)$/i);
+    if (m) return lang === 'ar' ? `إجمالي ميزان المراجعة (${m[1]} حساباً)` : `TOTAL BALANCE GÉNÉRALE (${m[1]} COMPTES)`;
+
+    m = trimmed.match(/^Domain Sentinels\s*\((\d+)\s+Open\)$/i);
+    if (m) return lang === 'ar' ? `الرقابة القطاعية (${m[1]} مفتوح)` : `Sentinelles Métier (${m[1]} Ouvertes)`;
+
+    m = trimmed.match(/^(\d+)\s+Rows\s*·\s*Signed Total Row$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سطور · مع سطر المجموع الموقّع` : `${m[1]} Lignes · Ligne Total Signée`;
+
+    m = trimmed.match(/^Page\s+(\d+):$/i);
+    if (m) return lang === 'ar' ? `صفحة ${m[1]}:` : `Page ${m[1]} :`;
+
+    m = trimmed.match(/^Page\s+(\d+)\s+of\s+(\d+)$/i);
+    if (m) return lang === 'ar' ? `صفحة ${m[1]} من ${m[2]}` : `Page ${m[1]} sur ${m[2]}`;
+
+    m = trimmed.match(/^(\d+)[–-](\d+)\s+of\s+([\d,]+)\s+rows$/i);
+    if (m) return lang === 'ar' ? `${m[1]}–${m[2]} من أصل ${m[3]} سطر` : `${m[1]}–${m[2]} sur ${m[3]} lignes`;
+
+    m = trimmed.match(/^(\d+)[–-](\d+)\s+Days$/i);
+    if (m) return lang === 'ar' ? `${m[1]}–${m[2]} يوماً` : `${m[1]}–${m[2]} Jours`;
+
+    // 7. Fleet P&L, Kiosks, Users, Statements & Operational Badges
+    m = trimmed.match(/^([+-]?\$[\d.,]+)\/(trip|raw trip|sales trip|mo|yr|load|unit)$/i);
+    if (m) {
+      const u = m[2].toLowerCase();
+      const uAr = u === 'trip' ? 'نقلة' : u === 'raw trip' ? 'نقلة مواد' : u === 'sales trip' ? 'نقلة مبيعات' : u === 'mo' ? 'شهر' : u === 'yr' ? 'سنة' : u === 'load' ? 'نقلة' : 'وحدة';
+      const uFr = u === 'trip' ? 'voyage' : u === 'raw trip' ? 'voyage mat.' : u === 'sales trip' ? 'voyage vente' : u === 'mo' ? 'mois' : u === 'yr' ? 'an' : u === 'load' ? 'voyage' : 'unité';
+      return `${m[1]}/${lang === 'ar' ? uAr : uFr}`;
+    }
+    m = trimmed.match(/^([\d.,]+)\s*m³\/trip$/i);
+    if (m) return lang === 'ar' ? `${m[1]} م³/نقلة` : `${m[1]} m³/voyage`;
+
+    m = trimmed.match(/^([+-]?\$[\d.,]+)\s*\(([+-]?\$[\d.,]+)\/trip\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} (${m[2]}/نقلة)` : `${m[1]} (${m[2]}/voyage)`;
+
+    m = trimmed.match(/^(\d+)\s+paid\s*\/\s*(\d+)\s+\$0$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مدفوعة / ${m[2]} بسعر $0` : `${m[1]} payés / ${m[2]} à 0 $`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+at\s+\$0$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بسعر $0` : `${m[1]} à 0 $`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+of selected trips booked at \$0\.00\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${m[1]} من النقلات المحددة مسجلة بسعر $0.00 (${inner})` : `${m[1]} des voyages sélectionnés à 0,00 $ (${inner})`;
+    }
+    m = trimmed.match(/^Diesel Fuel\s*\(([\d,]+)\s*L de-duplicated\)$/i);
+    if (m) return lang === 'ar' ? `وقود المازوت (${m[1]} ليتر بعد منع الازدواجية)` : `Gasoil (${m[1]} L dédoublonnés)`;
+
+    m = trimmed.match(/^Driver Pay \+ Overtime\s*\((\d+)\s*OT\)$/i);
+    if (m) return lang === 'ar' ? `رواتب السائقين + الإضافي (${m[1]} إضافي)` : `Paie Chauffeurs + Heures Sup. (${m[1]} HS)`;
+
+    m = trimmed.match(/^Raw Material Haulage\s*\((\d+)\s*trips\)$/i);
+    if (m) return lang === 'ar' ? `نقل المواد الأولية (${m[1]} نقلة)` : `Transport Matières Premières (${m[1]} voyages)`;
+
+    m = trimmed.match(/^Sales Delivery Revenue\s*\((\d+)\s*trips\)$/i);
+    if (m) return lang === 'ar' ? `إيراد توصيل المبيعات (${m[1]} نقلة)` : `Revenu Livraison Ventes (${m[1]} voyages)`;
+
+    m = trimmed.match(/^WTC vs\. BBConstruction Work Coverage Matrix\s*\((\d+)\s+Trips for Selected\s+(\d+)\s+Trucks\)$/i);
+    if (m) return lang === 'ar' ? `مصفوفة تغطية العمل بين WTC و BBConstruction (${m[1]} نقلة للشاحنات الـ ${m[2]} المحددة)` : `Matrice de Couverture WTC vs BBConstruction (${m[1]} Voyages pour ${m[2]} Camions)`;
+
+    m = trimmed.match(/^ESC\/POS Stream Ready\s*·\s*([\d,]+)\s*bytes\s*·\s*80mm\s*\((\d+)\s*cols\)\s*·\s*(.+)$/i);
+    if (m) {
+      const modeAr = /PRICED/i.test(m[3]) ? 'سند مسعّر' : 'تصريح مرور غير مسعّر';
+      const modeFr = /PRICED/i.test(m[3]) ? 'BON CHIFFRÉ' : 'BON NON CHIFFRÉ';
+      return lang === 'ar'
+        ? `بث الطباعة الحرارية جاهز · ${m[1]} بايت · 80مم (${m[2]} عموداً) · ${modeAr}`
+        : `Flux ESC/POS Prêt · ${m[1]} octets · 80mm (${m[2]} col.) · ${modeFr}`;
+    }
+
+    m = trimmed.match(/^TICKET\s+(#\S+)$/i);
+    if (m) return lang === 'ar' ? `إيصال ${m[1]}` : `BON ${m[1]}`;
+
+    m = trimmed.match(/^Posting to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `الترحيل إلى ${m[1]}` : `Comptabilisation sur ${m[1]}`;
+
+    // Users & Attendance Kiosk Staff Options
+    m = trimmed.match(/^(.+?)\s*·\s*Off Site\s*·\s*Next:\s*(IN|OUT)$/i);
+    if (m) {
+      const dir = m[2].toUpperCase() === 'IN' ? (lang === 'ar' ? 'دخول' : 'ENTRÉE') : (lang === 'ar' ? 'خروج' : 'SORTIE');
+      return lang === 'ar' ? `${m[1]} · خارج الموقع · التالي: ${dir}` : `${m[1]} · Hors Site · Suivant : ${dir}`;
+    }
+    m = trimmed.match(/^(.+?)\s*·\s*On Site\s*·\s*Next:\s*(IN|OUT)$/i);
+    if (m) {
+      const dir = m[2].toUpperCase() === 'IN' ? (lang === 'ar' ? 'دخول' : 'ENTRÉE') : (lang === 'ar' ? 'خروج' : 'SORTIE');
+      return lang === 'ar' ? `${m[1]} · في الموقع · التالي: ${dir}` : `${m[1]} · Sur Site · Suivant : ${dir}`;
+    }
+    if (trimmed === 'no Face ID') return lang === 'ar' ? 'بدون بصمة وجه' : 'sans Visage';
+    m = trimmed.match(/^(\d+\/\d+)\s+poses(?:\s+saved)?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وضعيات محفوظة` : `${m[1]} poses enregistrées`;
+
+    m = trimmed.match(/^FACE ID ACTIVE\s*·\s*(\d+\/\d+)\s+SAVED$/i);
+    if (m) return lang === 'ar' ? `بصمة الوجه مفعّلة · ${m[1]} محفوظة` : `VISAGE ACTIF · ${m[1]} ENREGISTRÉES`;
+
+    m = trimmed.match(/^(\d+\s*\/\s*\d+)\s+Enrolled$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مسجّل` : `${m[1]} Enrôlés`;
+
+    m = trimmed.match(/^All\s+(\d+)\s+poses saved for\s+(.+?)\.\s*Click the camera for live recognition, or click any pose card to retake\.?$/i);
+    if (m) return lang === 'ar' ? `تم حفظ جميع الوضعيات الـ ${m[1]} لـ ${m[2]}. اضغط على الكاميرا للتعرف الحي، أو اضغط أي بطاقة لإعادة الالتقاط.` : `Les ${m[1]} poses sont enregistrées pour ${m[2]}. Cliquez sur la caméra pour tester ou sur une carte pour reprendre.`;
+
+    m = trimmed.match(/^Verify\s+(.+?)\s+in real time or retake any pose$/i);
+    if (m) return lang === 'ar' ? `تحقق من ${m[1]} لحظياً أو أعد التقاط أي وضعية` : `Vérifier ${m[1]} en temps réel ou reprendre une pose`;
+
+    m = trimmed.match(/^\+(\d+)\s+more$/i);
+    if (m) return lang === 'ar' ? `+${m[1]} إضافية` : `+${m[1]} autres`;
+
+    m = trimmed.match(/^(\d+)\s+Plant\s*·\s*(\d+)\s+Out\s*·\s*(\d+)\s+Abs$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بالمصنع · ${m[2]} خارجي · ${m[3]} غياب` : `${m[1]} Centrale · ${m[2]} Ext. · ${m[3]} Abs.`;
+
+    m = trimmed.match(/^Partial\s*·\s*(\$[\d.,]+)\s*rem$/i);
+    if (m) return lang === 'ar' ? `جزئي · متبقٍ ${m[1]}` : `Partiel · reste ${m[1]}`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+Incl\.$/i);
+    if (m) return lang === 'ar' ? `${m[1]} واصل` : `${m[1]} Inclus`;
+
+    m = trimmed.match(/^Deed\s+(\d+\/\d+)\s*·\s*Annual Rent\s+(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `حصة السند ${m[1]} · الإيجار السنوي ${m[2]}` : `Titre ${m[1]} · Loyer Annuel ${m[2]}`;
+
+    m = trimmed.match(/^Exp\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `ينتهي ${m[1]}` : `Exp. ${m[1]}`;
+
+    m = trimmed.match(/^Promise\s+(\$[\d.,kM]+)\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `وعد سداد ${m[1]} (${m[2]})` : `Promesse ${m[1]} (${m[2]})`;
+
+    m = trimmed.match(/^Generated\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*·\s*(.+?)\s*·\s*ISABI Financial & Operational Statements$/i);
+    if (m) return lang === 'ar' ? `صدر بتاريخ ${m[1]} · ${m[2]} · الكشوفات المالية والتشغيلية ISABI` : `Généré le ${m[1]} · ${m[2]} · États Financiers & Opérationnels ISABI`;
+
+    m = trimmed.match(/^(.+?)\s+-\s+(.+?)\s*\/$/);
+    if (m) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1);
+      const rhs = translateCore(m[2].trim(), lang, depth + 1);
+      return `${lhs} - ${rhs} /`;
+    }
+
+    m = trimmed.match(/^Window\s+undefined\s+to\s+undefined$/i);
+    if (m) return lang === 'ar' ? 'كامل الفترة' : 'Toutes Périodes';
+
+    m = trimmed.match(/^(?:Period|Window)\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `الفترة من ${m[1]} إلى ${m[2]}` : `Période du ${m[1]} au ${m[2]}`;
+
+    m = trimmed.match(/^([\d.,]+)\s*m³\s+dispatched$/i);
+    if (m) return lang === 'ar' ? `${m[1]} م³ مرسلة` : `${m[1]} m³ expédiés`;
+
+    m = trimmed.match(/^([\d.,]+)\s*m³\s+sold$/i);
+    if (m) return lang === 'ar' ? `${m[1]} م³ مباعة` : `${m[1]} m³ vendus`;
+
+    m = trimmed.match(/^(Bought|Sold)\s+([\d,]+)\s*L$/i);
+    if (m) {
+      const w = /^bought$/i.test(m[1]) ? (lang === 'ar' ? 'المشترى' : 'Acheté') : (lang === 'ar' ? 'المباع' : 'Vendu');
+      return `${w} ${m[2]} L`;
+    }
+
+    m = trimmed.match(/^Ties to Class\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `يطابق حساب الصنف ${m[1]}` : `Rapproché Classe ${m[1]}`;
+
+    m = trimmed.match(/^(.+?)\s*→\s*Stmt\s*(#[0-9/#]+)$/i);
+    if (m) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${lhs} ← كشف ${m[2]}` : `${lhs} → État ${m[2]}`;
+    }
+
+    m = trimmed.match(/^VAT\s+([\d.,]+%)\s*·\s*([\d,]+)\s*LL\/\$\s*\(from\s+(\S+)\)$/i);
+    if (m) return lang === 'ar' ? `ضريبة ${m[1]} · ${m[2]} ل.ل./$ (منذ ${m[3]})` : `TVA ${m[1]} · ${m[2]} LBP/$ (depuis ${m[3]})`;
+
+    m = trimmed.match(/^Closes\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `يُغلق بتاريخ ${m[1]}` : `Clôture le ${m[1]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+L\s+Available$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ليتر متوفر` : `${m[1]} L Disponibles`;
+
+    m = trimmed.match(/^Est\.\s*Cost\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `التكلفة التقديرية (${m[1]})` : `Coût Estimé (${m[1]})`;
+
+    // 8. Additional Ledger / Operational / 360° Inspector / Tooltip Parametric Rules
+    m = trimmed.match(/^Loan\s+(\d{4}-\d{2}-\d{2})\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `قرض ${m[1]} ${m[2]}` : `Prêt ${m[1]} ${m[2]}`;
+
+    m = trimmed.match(/^CONV\s+(\d{4}-\d{2}-\d{2})\s+(USD to LBP|LBP to USD)\s+(.+)$/i);
+    if (m) {
+      const dir = /USD to LBP/i.test(m[2]) ? (lang === 'ar' ? 'دولار إلى ليرة' : 'USD vers LBP') : (lang === 'ar' ? 'ليرة إلى دولار' : 'LBP vers USD');
+      return lang === 'ar' ? `تحويل ${m[1]} (${dir}) ${m[3]}` : `CONV ${m[1]} (${dir}) ${m[3]}`;
+    }
+    m = trimmed.match(/^SALE\s+(\d{4}-\d{2}-\d{2})\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `مبيع ${m[1]} ${m[2]}` : `VENTE ${m[1]} ${m[2]}`;
+
+    m = trimmed.match(/^EXP\s+(\d{4}-\d{2}-\d{2})\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `مصروف ${m[1]} ${m[2]}` : `CHARGE ${m[1]} ${m[2]}`;
+
+    m = trimmed.match(/^VAT\s+(\d+)\s*·\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `فاتورة ضريبية ${m[1]} · ${m[2]}` : `TVA ${m[1]} · ${m[2]}`;
+
+    m = trimmed.match(/^#(\d+|\(no number\))\s*·\s*Raw\s*·\s*(.+?)\s*\(([^)]+)\)$/i);
+    if (m) {
+      const num = m[1] === '(no number)' ? (lang === 'ar' ? '(بدون رقم)' : '(sans numéro)') : `#${m[1]}`;
+      return lang === 'ar' ? `${num} · مواد أولية · ${m[2]} (${m[3]})` : `${num} · Matières · ${m[2]} (${m[3]})`;
+    }
+    m = trimmed.match(/^#\(no number\)\s*·\s*(.+)$/i);
+    if (m) {
+      const rhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `#(بدون رقم) · ${rhs}` : `#(sans numéro) · ${rhs}`;
+    }
+    m = trimmed.match(/^\[wb:([a-z_]+)#(\d+)\]$/i);
+    if (m) return lang === 'ar' ? `[سجل:${m[1]}#${m[2]}]` : `[reg:${m[1]}#${m[2]}]`;
+
+    m = trimmed.match(/^(.+?)\s+booked Out;\s*awaiting\s+(.+?)\s+In$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سُجّل صادر؛ بانتظار قيد الوارد لدى ${m[2]}` : `${m[1]} comptabilisé en sortie ; en attente d'entrée chez ${m[2]}`;
+
+    m = trimmed.match(/^Sales ticket\s+(\S+)\s*·\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `إيصال مبيع ${m[1]} · ${m[2]}` : `Bon de vente ${m[1]} · ${m[2]}`;
+
+    m = trimmed.match(/^Driver tip on ticket\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `إكرامية سائق على الإيصال ${m[1]}` : `Pourboire chauffeur sur bon ${m[1]}`;
+
+    m = trimmed.match(/^Transport on ticket\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `أجور نقل على الإيصال ${m[1]}` : `Transport sur bon ${m[1]}`;
+
+    m = trimmed.match(/^VAT 11% on sale\s*·\s*ticket\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `ضريبة 11% على المبيع · إيصال ${m[1]}` : `TVA 11 % sur vente · bon ${m[1]}`;
+
+    m = trimmed.match(/^Amount\s+([\d,.]+)\s*\+\s*difference\s+([\d,.]+)$/i);
+    if (m) return lang === 'ar' ? `المبلغ ${m[1]} + الفرق ${m[2]}` : `Montant ${m[1]} + écart ${m[2]}`;
+
+    m = trimmed.match(/^([\d,]+)\s*\/\s*([\d,]+)\s*(km|d|h|hrs)\s*\(([\d,]+)\s*(km|d|h|hrs)\s+left\)$/i);
+    if (m) {
+      const u1 = m[3].toLowerCase() === 'd' ? (lang === 'ar' ? 'يوم' : 'j') : m[3];
+      const u2 = m[5].toLowerCase() === 'd' ? (lang === 'ar' ? 'يوم' : 'j') : m[5];
+      return lang === 'ar' ? `${m[1]} / ${m[2]} ${u1} (متبقٍ ${m[4]} ${u2})` : `${m[1]} / ${m[2]} ${u1} (${m[4]} ${u2} restants)`;
+    }
+    m = trimmed.match(/^(.+?)\s*\(x(\d+)\)$/i);
+    if (m) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1);
+      return `${lhs} (×${m[2]})`;
+    }
+    m = trimmed.match(/^([\d.]+h)\s+base$/i);
+    if (m) return lang === 'ar' ? `${m[1]} دوام أساسي` : `${m[1]} base`;
+
+    m = trimmed.match(/^(Issued|Tank)\s+([\d,]+)\s*L$/i);
+    if (m) {
+      const w = /^issued$/i.test(m[1]) ? (lang === 'ar' ? 'المصروف' : 'Distribué') : (lang === 'ar' ? 'الخزان' : 'Cuve');
+      return `${w} ${m[2]} L`;
+    }
+    m = trimmed.match(/^([\d,]+)\s*L\s+issued$/i);
+    if (m) return lang === 'ar' ? `${m[1]} ليتر مصروف` : `${m[1]} L distribués`;
+
+    m = trimmed.match(/^(.+?):\s*([\d,]+)\s*L\s+fuel$/i);
+    if (m) return lang === 'ar' ? `${m[1]}: ${m[2]} ليتر وقود` : `${m[1]} : ${m[2]} L carburant`;
+
+    m = trimmed.match(/^(.+?):\s*(\d+)\s+loads?\s*\(([\d,]+)\s*m³\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]}: ${m[2]} نقلات (${m[3]} م³)` : `${m[1]} : ${m[2]} voyages (${m[3]} m³)`;
+
+    m = trimmed.match(/^(FILTERED TOTAL|PERIOD TOTAL|CONSOLIDATED SELECTION TOTAL|SELECTED FLEET TOTAL|TOTAL(?:\s+[A-Z0-9 &/.,+-]+)?)\s*\(([^)]+)\)$/i);
+    if (m) {
+      const head = translateCore(m[1].trim(), lang, depth + 1);
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return `${head} (${inner})`;
+    }
+    m = trimmed.match(/^Open\s+(.+?)\s+Hub$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `فتح وحدة ${inner}` : `Ouvrir le Module ${inner}`;
+    }
+    m = trimmed.match(/^(\d+)\s*·\s*(.+?)(?:…|\.\.\.)(.*)$/);
+    if (m) {
+      const inner = translateCore(m[2].trim(), lang, depth + 1);
+      return `${m[1]} · ${inner}…${m[3] || ''}`;
+    }
+    m = trimmed.match(/^RECORD INSPECTOR\s*·\s*(.+)$/i);
+    if (m) {
+      const rhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `معاينة السجل 360° · ${rhs}` : `INSPECTEUR 360° · ${rhs}`;
+    }
+    m = trimmed.match(/^(Customer|Supplier|Equipment|Staff|Driver|Site|Quarry|Account|Contract|Property|Lease|Policy|Carrier|Claim|Partner)\s+360°\s+(Master|Ledger)(?::\s*(.+))?$/i);
+    if (m) {
+      const ent = translateCore(m[1], lang, depth + 1);
+      const kind = /ledger/i.test(m[2]) ? (lang === 'ar' ? 'كشف حساب 360°' : 'Grand Livre 360°') : (lang === 'ar' ? 'البطاقة الشاملة 360°' : 'Fiche Maître 360°');
+      const tail = m[3] ? `: ${m[3]}` : '';
+      return `${kind} — ${ent}${tail}`;
+    }
+    // Dynamic UI Tooltip Templates
+    m = trimmed.match(/^Ex-VAT Rem:\s*([+-]?\$[\d.,]+)\s*[|·]\s*VAT (?:Rem|Due):\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `المتبقي بدون ضريبة: ${m[1]} · متبقي الضريبة: ${m[2]}` : `Reste HT : ${m[1]} · Reste TVA : ${m[2]}`;
+
+    m = trimmed.match(/^Quarry Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Transport Rem:\s*([+-]?\$[\d.,]+)\s*·\s*Expense Ex-VAT:\s*([+-]?\$[\d.,]+)\s*·\s*IVA LBP:\s*([\d.,-]+\s*LL)\s*·\s*Expense Incl\.\s*VAT:\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar'
+      ? `متبقي الكسارة: ${m[1]} · متبقي النقل: ${m[2]} · مصاريف بدون ضريبة: ${m[3]} · ضريبة ل.ل.: ${m[4]} · مصاريف شاملة الضريبة: ${m[5]}`
+      : `Reste Carrière : ${m[1]} · Reste Transp. : ${m[2]} · Charges HT : ${m[3]} · TVA LBP : ${m[4]} · Charges TTC : ${m[5]}`;
+
+    m = trimmed.match(/^Quarry Rem:\s*(\$[\d.,-]+)\s*\|\s*Trans Rem:\s*(\$[\d.,-]+)\s*\|\s*Tip Rem:\s*(\$[\d.,-]+)$/i);
+    if (m) return lang === 'ar' ? `متبقي الكسارة: ${m[1]} | متبقي النقل: ${m[2]} | متبقي الإكرامية: ${m[3]}` : `Reste Carrière : ${m[1]} | Reste Transp. : ${m[2]} | Reste Pourboire : ${m[3]}`;
+
+    m = trimmed.match(/^Base:\s*([+-]?\$[\d.,]+)\s*·\s*Reimb:\s*([+-]?\$[\d.,]+)\s*·\s*Extras:\s*([+-]?\$[\d.,]+)\s*·\s*Reimb Ded:\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar'
+      ? `الأساسي: ${m[1]} · بدل النقل: ${m[2]} · الإضافات: ${m[3]} · حسم النقل: ${m[4]}`
+      : `Base : ${m[1]} · Transport : ${m[2]} · Primes : ${m[3]} · Retenue Transp. : ${m[4]}`;
+
+    m = trimmed.match(/^Base:\s*(\$[\d.,-]+)\s*·\s*Reimb:\s*(\$[\d.,-]+)(.*)$/i);
+    if (m) return lang === 'ar' ? `الأساسي: ${m[1]} · استرداد: ${m[2]}${m[3]}` : `Base : ${m[1]} · Remb. : ${m[2]}${m[3]}`;
+
+    m = trimmed.match(/^Vouchers:\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `السندات: ${m[1]}` : `Pièces : ${m[1]}`;
+
+    m = trimmed.match(/^USD Rem:\s*([+-]?\$[\d.,]+)\s*·\s*LBP Earn:\s*([\d.,-]+\s*LL)\s*·\s*LBP Paid:\s*([\d.,-]+\s*LL)\s*·\s*LBP Rem:\s*(.+)$/i);
+    if (m) return lang === 'ar'
+      ? `متبقي الدولار: ${m[1]} · مستحق ل.ل.: ${m[2]} · مدفوع ل.ل.: ${m[3]} · متبقي ل.ل.: ${m[4]}`
+      : `Reste USD : ${m[1]} · Acquis LBP : ${m[2]} · Payé LBP : ${m[3]} · Reste LBP : ${m[4]}`;
+
+    m = trimmed.match(/^USD Rem:\s*(\$[\d.,-]+)\s*\|\s*LBP Rem:\s*([\d.,-]+\s*LL)$/i);
+    if (m) return lang === 'ar' ? `المتبقي بالدولار: ${m[1]} | المتبقي بالليرة: ${m[2]}` : `Reste USD : ${m[1]} | Reste LBP : ${m[2]}`;
+
+    m = trimmed.match(/^([\d.]+)d\s+recorded absence(?:\s*\((\d+)d\s+contract start\/end gap deducted in Absence \$\))?$/i);
+    if (m) {
+      const gap = m[2] ? (lang === 'ar' ? ` (${m[2]} يوم فرق بداية/نهاية عقد مخصوم ضمن الغياب $)` : ` (${m[2]}j d'écart début/fin de contrat déduit)`) : '';
+      return lang === 'ar' ? `${m[1]} يوم غياب مسجل${gap}` : `${m[1]}j d'absence enregistrée${gap}`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+active contract months(?:\s*·\s*Package Base \+ Reimb:\s*(\$[\d.,]+))?(?:\s*·\s*Rem Vacation:\s*([\d.]+)d)?$/i);
+    if (m) {
+      const pkg = m[2] ? (lang === 'ar' ? ` · إجمالي الأساسي والنقل: ${m[2]}` : ` · Base + Transp. : ${m[2]}`) : '';
+      const vac = m[3] ? (lang === 'ar' ? ` · رصيد الإجازة: ${m[3]} يوم` : ` · Congés restants : ${m[3]}j`) : '';
+      return lang === 'ar' ? `${m[1]} أشهر عقد نشطة${pkg}${vac}` : `${m[1]} mois de contrat actifs${pkg}${vac}`;
+    }
+
+    m = trimmed.match(/^([A-Za-z]+\s+\d{4})\s+Net Earned:\s*(\$[\d.,-]+)\s*\|\s*Paid:\s*(\$[\d.,-]+)\s*\|\s*Rem:\s*(\$[\d.,-]+)$/i);
+    if (m) {
+      const d = translateDatePhrase(m[1], lang) || m[1];
+      return lang === 'ar' ? `${d} صافي المستحق: ${m[2]} | المدفوع: ${m[3]} | المتبقي: ${m[4]}` : `${d} Net acquis : ${m[2]} | Payé : ${m[3]} | Reste : ${m[4]}`;
+    }
+    m = trimmed.match(/^([A-Za-z]+\s+\d{4})\s+Net Earned:\s*(\$[\d.,-]+)\s*·\s*(.+)$/i);
+    if (m) {
+      const d = translateDatePhrase(m[1], lang) || m[1];
+      let tail = m[3].trim();
+      let tm = tail.match(/^Paid in full\s*\(([^)]+)\)$/i);
+      if (tm) tail = lang === 'ar' ? `مدفوع بالكامل (${tm[1]})` : `Payé intégralement (${tm[1]})`;
+      tm = tail.match(/^Paid through this entry:\s*(\$[\d.,-]+)\s*\((\$[\d.,-]+)\s+remaining then\s*·\s*(\$[\d.,-]+)\s+remaining now\)$/i);
+      if (tm) tail = lang === 'ar' ? `المدفوع حتى هذا القيد: ${tm[1]} (المتبقي حينها ${tm[2]} · المتبقي حالياً ${tm[3]})` : `Payé jusqu'à cette écriture : ${tm[1]} (${tm[2]} restant alors · ${tm[3]} restant aujourd'hui)`;
+      tm = tail.match(/^Cumulative paid:\s*(\$[\d.,-]+)\s*\(([+-]?\$[\d.,-]+)\s+above month net\)$/i);
+      if (tm) tail = lang === 'ar' ? `المدفوع التراكمي: ${tm[1]} (${tm[2]} فوق صافي الشهر)` : `Cumul payé : ${tm[1]} (${tm[2]} au-dessus du net mensuel)`;
+      return lang === 'ar' ? `${d} صافي المستحق: ${m[2]} · ${tail}` : `${d} Net acquis : ${m[2]} · ${tail}`;
+    }
+    m = trimmed.match(/^Reporting Date\s+(\S+)\s+differs from Transaction Date\s+(\S+)\s+by\s+(\d+)\s+days?$/i);
+    if (m) return lang === 'ar' ? `تاريخ التقرير ${m[1]} يختلف عن تاريخ العملية ${m[2]} بمقدار ${m[3]} يوماً` : `La date de reporting ${m[1]} diffère de la date d'opération ${m[2]} de ${m[3]} jours`;
+
+    m = trimmed.match(/^Reporting Date differs\s*·\s*(\d+)\s+of\s+(\d+)\s+entr(?:y|ies)\s*\(([^)]+)\)\s*·\s*Tx Date\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تاريخ التقرير مختلف · ${m[1]} من ${m[2]} قيود (${translateMonthTokens(m[3], lang)}) · تاريخ العملية ${m[4]}` : `Date reporting différente · ${m[1]} sur ${m[2]} écritures (${translateMonthTokens(m[3], lang)}) · Date op. ${m[4]}`;
+
+    m = trimmed.match(/^(\d+)\s+entries transacted on\s+(\S+)\s+carry a different Reporting Date\.\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قيود منفذة بتاريخ ${m[2]} تحمل تاريخ تقرير مختلفاً. اضغط لتصفية اللوحات الست على القيود المرحّلة.` : `${m[1]} écritures du ${m[2]} portent une Date de Reporting différente. Cliquer pour filtrer.`;
+
+    m = trimmed.match(/^Switch to related table\s+(.+)$/i);
+    if (m) {
+      const tbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `التبديل إلى الجدول المرتبط: ${tbl}` : `Basculer vers la table liée : ${tbl}`;
+    }
+    m = trimmed.match(/^Preview or download\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `معاينة أو تنزيل ${m[1]}` : `Aperçu ou téléchargement de ${m[1]}`;
+
+    m = trimmed.match(/^Live cross-company analytics for\s+(.+)$/i);
+    if (m) {
+      const tbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `تحليلات حية عابرة للشركات لسجل ${tbl}` : `Analytique inter-sociétés en direct pour ${tbl}`;
+    }
+    m = trimmed.match(/^Click to filter to\s+(.+?)\s+only$/i);
+    if (m) return lang === 'ar' ? `اضغط للتصفية على ${m[1]} فقط` : `Cliquer pour filtrer sur ${m[1]} uniquement`;
+
+    m = trimmed.match(/^Click to filter Cash Till Register above to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اضغط لتصفية سجل الصندوق النقدي أعلاه حسب ${m[1]}` : `Cliquer pour filtrer le registre de caisse sur ${m[1]}`;
+
+    m = trimmed.match(/^Click to filter Daily Operations to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اضغط لتصفية العمليات اليومية حسب العمل الإضافي والورديات` : `Cliquer pour filtrer les opérations sur les heures sup. et postes`;
+
+    m = trimmed.match(/^Click to isolate\s+(.+?)\s*\(or Ctrl\+Click to compare multiple\)$/i);
+    if (m) return lang === 'ar' ? `اضغط لعزل ${m[1]} (أو Ctrl+Click لمقارنة عدة شاحنات)` : `Cliquer pour isoler ${m[1]} (ou Ctrl+Clic pour comparer)`;
+
+    m = trimmed.match(/^Click to preview\s+([\d,]+)\s+linked\s+(.+?)\s+records inline$/i);
+    if (m) {
+      const tbl = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `اضغط لمعاينة ${m[1]} سجلات مرتبطة من ${tbl} مباشرة` : `Cliquer pour prévisualiser ${m[1]} fiches liées (${tbl})`;
+    }
+    m = trimmed.match(/^Click to expand\s+(\d+)\s+(individual entr(?:y|ies)|quarry tickets?|fuel entr(?:y|ies))\s+(?:for|from)\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اضغط لتوسيع ${m[1]} قيود تفصيلية لـ ${m[3]}` : `Cliquer pour développer ${m[1]} écritures pour ${m[3]}`;
+
+    m = trimmed.match(/^Close 360° Inspector and filter the current register by\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `إغلاق معاينة 360° وتصفية السجل الحالي حسب ${m[1]}` : `Fermer l'inspecteur 360° et filtrer sur ${m[1]}`;
+
+    m = trimmed.match(/^Sales Delivery:\s*(\$[\d.,]+)\s*\|\s*Raw Haulage:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `توصيل مبيعات: ${m[1]} | نقل مواد أولية: ${m[2]}` : `Livraison Ventes : ${m[1]} | Transport Matières : ${m[2]}`;
+
+    m = trimmed.match(/^(\S+)\s*·\s*Plate\s+(\S+)\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} · لوحة ${m[2]} (${m[3]})` : `${m[1]} · Plaque ${m[2]} (${m[3]})`;
+
+    m = trimmed.match(/^Driver:\s*(.+)$/i);
+    if (m) {
+      const rhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `السائق: ${rhs}` : `Chauffeur : ${rhs}`;
+    }
+    m = trimmed.match(/^Payroll\s+(\d{4}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `رواتب ${m[1]}` : `Paie ${m[1]}`;
+
+    m = trimmed.match(/^Across all\s+(\d+)\s+entities\s*&\s*(\d+)\s+verticals$/i);
+    if (m) return lang === 'ar' ? `عبر كافة الشركات الـ ${m[1]} والقطاعات الـ ${m[2]}` : `Sur l'ensemble des ${m[1]} sociétés & ${m[2]} secteurs`;
+
+    m = trimmed.match(/^(\d+)\s+corridors not paying back$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مسارات بينية بدون سداد مقابل` : `${m[1]} corridors sans remboursement`;
+
+    m = trimmed.match(/^([+-]?\d+%)\s+vs\s+(\d+)d$/i);
+    if (m) return lang === 'ar' ? `${m[1]} مقابل ${m[2]} أيام` : `${m[1]} vs ${m[2]}j`;
+
+    m = trimmed.match(/^Own\s+(\d+)\s*([·/])\s*3P\s+(\d+)(.*)$/i);
+    if (m) return lang === 'ar' ? `أسطولنا ${m[1]} ${m[2]} خارجي ${m[3]}${m[4]}` : `Propre ${m[1]} ${m[2]} Tiers ${m[3]}${m[4]}`;
+
+    m = trimmed.match(/^(\d+)\s+Active Rules Used$/i);
+    if (m) return lang === 'ar' ? `${m[1]} قواعد تسعير نشطة مستخدمة` : `${m[1]} Règles Actives Utilisées`;
+
+    m = trimmed.match(/^(Suspension \/ Drivetrain Part|Electrical Control \/ Sensor)\s*\((.+)\)$/i);
+    if (m) {
+      const kindAr = /Suspension/i.test(m[1]) ? 'قطعة تعليق / نقل حركة' : 'قطعة كهرباء / حساس';
+      const kindFr = /Suspension/i.test(m[1]) ? 'Pièce Suspension / Transmission' : 'Composant Électrique / Capteur';
+      return `${lang === 'ar' ? kindAr : kindFr} (${m[2]})`;
+    }
+
+    m = trimmed.match(/^Click to (modify|filter|toggle|jump to|inspect|expand|preview|open|isolate|focus|view)\s+(.+)$/i);
+    if (m) {
+      const v = m[1].toLowerCase();
+      const vAr = v === 'modify' ? 'لتعديل' : v === 'filter' ? 'لتصفية' : v === 'toggle' ? 'لتبديل' : v === 'jump to' ? 'للانتقال إلى' : v === 'inspect' ? 'لمعاينة' : v === 'expand' ? 'لتوسيع' : v === 'preview' ? 'لمعاينة' : v === 'isolate' ? 'لعزل' : v === 'focus' ? 'للتركيز على' : 'لعرض';
+      const vFr = v === 'modify' ? 'modifier' : v === 'filter' ? 'filtrer' : v === 'toggle' ? 'basculer' : v === 'jump to' ? 'aller à' : v === 'inspect' ? 'inspecter' : v === 'expand' ? 'développer' : v === 'preview' ? 'prévisualiser' : v === 'isolate' ? 'isoler' : v === 'focus' ? 'cibler' : 'afficher';
+      const rhs = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `اضغط ${vAr} ${rhs}` : `Cliquer pour ${vFr} ${rhs}`;
+    }
+    m = trimmed.match(/^Toggle\s+(.+?)\s+in multi-truck comparison$/i);
+    if (m) return lang === 'ar' ? `تبديل ${m[1]} ضمن مقارنة الشاحنات المتعددة` : `Basculer ${m[1]} dans la comparaison multi-camions`;
+
+    m = trimmed.match(/^Focus Truck Revenue & Cost P&L on\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `تركيز ربحية وتكاليف الشاحنة على ${m[1]}` : `Cibler le compte de résultat camion sur ${m[1]}`;
+
+    m = trimmed.match(/^Inspect all cash till entries in\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `معاينة كافة حركات الصندوق النقدي في ${m[1]}` : `Inspecter toutes les écritures de caisse de ${m[1]}`;
+
+    m = trimmed.match(/^Set or step commission rate & unit \(m³ \/ Ton\) for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `تعيين أو تعديل شريحة العمولة والوحدة (م³ / طن) لـ ${m[1]}` : `Définir le taux et l'unité de commission (m³ / Tonne) pour ${m[1]}`;
+
+    m = trimmed.match(/^(.+?)\s*—\s*Click to open Admin Privilege Unlock Process$/i);
+    if (m) {
+      const lhs = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `${lhs} — اضغط لفتح إجراء تفعيل صلاحية الإدارة` : `${lhs} — Cliquer pour déverrouiller le privilège Admin`;
+    }
+
+    return null;
+  }
+
   function translateCore(trimmed, lang, depth) {
     if (!trimmed || depth > 4) return trimmed;
     const map = DICT[lang];
     const lowMap = LOWER_DICT[lang];
     if (!map) return trimmed;
 
-    if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|L|L\/hr|hrs?|h|d|KB|MB|TB))?$/i.test(trimmed)) return trimmed;
-    if (/^(https?:\/\/|\S+@\S+\.\S+)$/i.test(trimmed) || /^[A-Z]{2,4}-[A-Z0-9-]*\d[A-Z0-9-]*$/.test(trimmed)) return trimmed;
+    if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|L|L\/hr|L\/100km|hrs?|h|d|KB|MB|TB))?$/i.test(trimmed)) {
+      if (/^LL\s+\d/i.test(trimmed)) return translateParametricErp(trimmed, lang, depth) || trimmed;
+      return trimmed;
+    }
+    if (/^(https?:\/\/|\S+@\S+\.\S+)$/i.test(trimmed) || /^[A-Z]{2,5}-[A-Z0-9-]*\d[A-Z0-9-]*$/.test(trimmed)) return trimmed;
 
     // Stage 1: Exact Dictionary Match
     if (map[trimmed] !== undefined) return map[trimmed];
 
-    // Stage 2: Case-Insensitive Dictionary Match
-    const lk = trimmed.toLowerCase();
-    if (lowMap && lowMap[lk] !== undefined) {
-      const val = lowMap[lk];
-      if (lang !== 'ar' && trimmed.length > 3 && trimmed === trimmed.toUpperCase() && /[A-Z]{3}/.test(trimmed)) {
-        return val.toUpperCase();
+    // Stage 2: Case-Insensitive Dictionary Match (guarding 2-3 char ALL-CAPS codes like MAR / IN / KA)
+    if (!(/^[A-Z0-9]{2,3}$/.test(trimmed) || PRESERVE_ACRONYMS.has(trimmed))) {
+      const lk = trimmed.toLowerCase();
+      if (lowMap && lowMap[lk] !== undefined) {
+        const val = lowMap[lk];
+        if (lang !== 'ar' && trimmed.length > 3 && trimmed === trimmed.toUpperCase() && /[A-Z]{3}/.test(trimmed)) {
+          return val.toUpperCase();
+        }
+        return val;
       }
-      return val;
     }
 
-    // Stage 3: Date & Period Grammar + Legacy Scope Badges
+    // Stage 3: Date & Period Grammar + Parametric ERP Engine
     const dateHit = translateDatePhrase(trimmed, lang);
     if (dateHit) return dateHit;
+
+    const erpHit = translateParametricErp(trimmed, lang, depth);
+    if (erpHit) return erpHit;
 
     let m = trimmed.match(/^All Group\s*\((\d+)\)$/i);
     if (m) return lang === 'ar' ? `كل المجموعة (${m[1]})` : `Tout le Groupe (${m[1]})`;
@@ -6679,49 +13301,59 @@
     m = trimmed.match(/^(\d+)\s+Industries?\s*·\s*(\d+)\s+Companies(?:\s+Permitted)?\s*\(?RLS\)?$/i);
     if (m) return lang === 'ar' ? `${m[1]} قطاعات · ${m[2]} شركة متاحة` : `${m[1]} Secteurs · ${m[2]} Sociétés Autorisées`;
 
-    // Stage 4: Affix / Decorator Peeler
-    m = trimmed.match(/^((?:[●•·▲▼▾▴▸◀▶↺↻✓✕×★⇄⚡‹«»]\s*)+)(.+)$/);
-    if (m) {
-      const inner = translateCore(m[2].trim(), lang, depth + 1);
-      if (inner !== m[2].trim()) return m[1] + inner;
-    }
-    m = trimmed.match(/^(.+?)(\s*[▲▼▾▴▶▸↘↗→›»]+|\s*\*|:)$/);
-    if (m) {
-      const inner = translateCore(m[1].trim(), lang, depth + 1);
-      if (inner !== m[1].trim()) return inner + m[2];
-    }
-    m = trimmed.match(/^(\d+\s*[.·])\s+(.+)$/);
-    if (m) {
-      const inner = translateCore(m[2].trim(), lang, depth + 1);
-      if (inner !== m[2].trim()) return `${m[1]} ${inner}`;
-    }
-    m = trimmed.match(/^(#?\d{1,2})\s+([A-Za-z].+)$/);
-    if (m && !NOUN_PLURALS[m[2].trim().toLowerCase().replace(/\s+/g, '')]) {
-      const inner = translateCore(m[2].trim(), lang, depth + 1);
-      if (inner !== m[2].trim()) return `${m[1]} ${inner}`;
-    }
-    m = trimmed.match(/^\+\s*(New\s+)?(.+)$/i);
-    if (m) {
-      if (m[1]) {
+    // Stage 4: Affix / Decorator Peeler (only on single segments without multi-part separators)
+    if (!/\s[·|—]\s/.test(trimmed)) {
+      m = trimmed.match(/^((?:[●•·▲▼▾▴▸◀▶↺↻✓✕×★⇄⚡‹«»]\s*)+)(.+)$/);
+      if (m) {
         const inner = translateCore(m[2].trim(), lang, depth + 1);
-        return lang === 'ar' ? `+ إضافة ${inner}` : `+ Nouveau : ${inner}`;
+        if (inner !== m[2].trim()) return m[1] + inner;
       }
-      const inner = translateCore(m[2].trim(), lang, depth + 1);
-      if (inner !== m[2].trim()) return `+ ${inner}`;
+      m = trimmed.match(/^(.+?)(\s*[▲▼▾▴▶▸↘↗→←↓↑›»↺]+|\s*\*|:)$/);
+      if (m) {
+        const inner = translateCore(m[1].trim(), lang, depth + 1);
+        if (inner !== m[1].trim()) {
+          const sfx = lang === 'ar' ? m[2].replace(/→/g, '←').replace(/›/g, '‹').replace(/»/g, '«') : m[2];
+          return inner + sfx;
+        }
+      }
+      m = trimmed.match(/^(\d+\s*[.·])\s+(.+)$/);
+      if (m) {
+        const inner = translateCore(m[2].trim(), lang, depth + 1);
+        if (inner !== m[2].trim()) return `${m[1]} ${inner}`;
+      }
+      m = trimmed.match(/^(#?\d{1,2})\s+([A-Za-z].+)$/);
+      if (m && !NOUN_PLURALS[m[2].trim().toLowerCase().replace(/[\s-]+/g, '')]) {
+        const inner = translateCore(m[2].trim(), lang, depth + 1);
+        if (inner !== m[2].trim()) return `${m[1]} ${inner}`;
+      }
+      m = trimmed.match(/^\+\s*(New\s+)?(.+)$/);
+      if (m) {
+        if (m[1]) {
+          const inner = translateCore(m[2].trim(), lang, depth + 1);
+          if (inner !== m[2].trim()) {
+            return lang === 'ar' ? `+ ${inner} جديد` : `+ Nouveau : ${inner}`;
+          }
+        }
+        const inner = translateCore(m[2].trim(), lang, depth + 1);
+        if (inner !== m[2].trim()) return `+ ${inner}`;
+      }
     }
 
-    // Stage 5: "<Label>: All" filter <option> pattern
+    // Stage 5: "<Label>: All" or "<Label>: <Value>"
     m = trimmed.match(/^(.+?):\s*All$/i);
     if (m) {
       const lbl = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `${lbl}: الكل` : `${lbl} : Tout`;
     }
 
-    // Stage 6: Parenthetical "(Inner)" or "Base (Inner)" recursive splitter
+    // Stage 6: Parenthetical "(Inner)" or "Base (Inner)" recursive splitter (skipping preserved acronyms)
     m = trimmed.match(/^\(([^()]+)\)$/);
     if (m) {
-      const innerTr = translateCore(m[1].trim(), lang, depth + 1);
-      if (innerTr !== m[1].trim()) return `(${innerTr})`;
+      const iRaw = m[1].trim();
+      if (!PRESERVE_ACRONYMS.has(iRaw)) {
+        const innerTr = translateCore(iRaw, lang, depth + 1);
+        if (innerTr !== iRaw) return `(${innerTr})`;
+      }
     }
     m = trimmed.match(/^(.+?)\s*\(([^()]+)\)$/);
     if (m) {
@@ -6729,7 +13361,7 @@
       const innerRaw = m[2].trim();
       const baseTr = translateCore(baseRaw, lang, depth + 1);
       let innerTr = innerRaw;
-      if (!/^[$€£%]$|^(USD|LBP|LL|EUR|m³|kg|L|t|d|RLS|2FA|IVA|MOF|SKU|BU|AR|AP|HT|TTC|MTD|QTD|YTD|#\d+|\d[\d,.\s/-]*)$/i.test(innerRaw)) {
+      if (!PRESERVE_ACRONYMS.has(innerRaw) && !/^[$€£%]$|^[A-Z0-9&/+-]{2,6}$|^(#\d+|\d[\d,.\s/-]*)$/.test(innerRaw)) {
         innerTr = translateCore(innerRaw, lang, depth + 1);
       }
       if (baseTr !== baseRaw || innerTr !== innerRaw) {
@@ -6750,16 +13382,18 @@
         if (changed) return out.join(sep);
       }
     }
-    if (trimmed.includes(' / ') && !/\d\/\d/.test(trimmed)) {
+    if (trimmed.includes(' / ') && trimmed.length <= 64 && !/\d\/\d/.test(trimmed)) {
       const parts = trimmed.split(' / ');
       if (parts.length <= 4) {
-        let changed = false;
+        let allChanged = true;
         const out = parts.map(p => {
-          const tp = translateCore(p.trim(), lang, depth + 1);
-          if (tp !== p.trim()) changed = true;
+          const clean = p.trim();
+          if (!/[A-Za-z]/.test(clean) || PRESERVE_ACRONYMS.has(clean)) return clean;
+          const tp = translateCore(clean, lang, depth + 1);
+          if (tp === clean) allChanged = false;
           return tp;
         });
-        if (changed) return out.join(' / ');
+        if (allChanged) return out.join(' / ');
       }
     }
     m = trimmed.match(/^(.+?)\s+vs\.?\s+(.+)$/i);
@@ -6791,7 +13425,7 @@
       }
     }
 
-    // Stage 8: Parametric ERP Phrases
+    // Stage 8: Generic ERP Verbs & Noun Plurals (with strict case-sensitivity on Open/New/Edit)
     m = trimmed.match(/^Group by\s+(.+)$/i);
     if (m) {
       const g = translateCore(m[1].trim(), lang, depth + 1);
@@ -6823,6 +13457,9 @@
     m = trimmed.match(/^OT\s+([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `إضافي ${m[1]}` : `HS ${m[1]}`;
 
+    m = trimmed.match(/^OT Bonus:\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `مكافأة الإضافي: ${m[1]}` : `Prime HS : ${m[1]}`;
+
     m = trimmed.match(/^\+(\d+)\s+More Staff$/i);
     if (m) return lang === 'ar' ? `+${m[1]} موظفين إضافيين` : `+${m[1]} Collaborateurs`;
 
@@ -6836,25 +13473,30 @@
     if (m) return lang === 'ar' ? `التركيز على ${m[1]} فقط` : `Cibler ${m[1]} uniquement`;
 
     m = trimmed.match(/^Rep Diff\s+(\d+)$/i);
-    if (m) return lang === 'ar' ? `فرق تاريخ التقرير ${m[1]}` : `Écart Date Rep. ${m[1]}`;
+    if (m) return lang === 'ar' ? `فارق التقرير ${m[1]}` : `Écart Rapport ${m[1]}`;
 
     m = trimmed.match(/^(\d+\/\d+)\s*·\s*PIN\/Face$/i);
     if (m) return lang === 'ar' ? `${m[1]} · رمز/وجه` : `${m[1]} · PIN/Visage`;
-    m = trimmed.match(/^Search\s+(.+?)(\.\.\.|…)?$/i);
+
+    m = trimmed.match(/^Search\s+(?!Map Region|Zone Shape|a city|Beirut)(.+?)(\.\.\.|…)?$/i);
     if (m) {
       const body = translateSearchList(m[1].trim(), lang);
-      const dots = m[2] || '';
-      return lang === 'ar' ? `ابحث في ${body}${dots}` : `Rechercher ${body}${dots}`;
+      if (body !== m[1].trim()) {
+        const dots = m[2] || '';
+        return lang === 'ar' ? `ابحث في ${body}${dots}` : `Rechercher ${body}${dots}`;
+      }
     }
     m = trimmed.match(/^Filter\s+(.+)\s+Only$/i);
     if (m) {
       return lang === 'ar' ? `تصفية ${m[1]} فقط` : `Filtrer ${m[1]} uniquement`;
     }
-    m = trimmed.match(/^Filter\s+(.+?)(\.\.\.|…)?$/i);
+    m = trimmed.match(/^Filter\s+(?!by\b|down\b|to\b|entries\b|till\b|all\b|table\b|brand\b)(.+?)(\.\.\.|…)?$/i);
     if (m) {
       const body = translateSearchList(m[1].trim(), lang);
-      const dots = m[2] || '';
-      return lang === 'ar' ? `تصفية ${body}${dots}` : `Filtrer ${body}${dots}`;
+      if (body !== m[1].trim()) {
+        const dots = m[2] || '';
+        return lang === 'ar' ? `تصفية ${body}${dots}` : `Filtrer ${body}${dots}`;
+      }
     }
     m = trimmed.match(/^Select or type\s+(.+?)(\.\.\.|…)?$/i);
     if (m) {
@@ -6873,39 +13515,43 @@
       const ind = translateCore(m[1].trim(), lang, depth + 1);
       return lang === 'ar' ? `كامل قطاع ${ind}` : `Tout le Secteur ${ind}`;
     }
-    m = trimmed.match(/^All\s+(.+)$/i);
+    m = trimmed.match(/^All\s+([A-Z].+)$/);
     if (m) {
       const rest = translateCore(m[1].trim(), lang, depth + 1);
       if (rest !== m[1].trim()) {
         return lang === 'ar' ? `جميع ${rest}` : `Tous · ${rest}`;
       }
     }
-    m = trimmed.match(/^Open\s+(.+)$/i);
+    // Case-sensitive imperative Open / New / Edit + require inner translation
+    m = trimmed.match(/^Open\s+(?!AR\b|AP\b|IC\b|Queue\b|Arrears\b|Payees\b|Payable\b|Backorders\b|Claim\b|Claims\b|Loan\b|PDI\b|Issues\b|Facility\b|Exposure\b|Balance\b|Balances\b)([A-Z].+)$/);
     if (m) {
       const rest = translateCore(m[1].trim(), lang, depth + 1);
       if (rest !== m[1].trim()) {
         return lang === 'ar' ? `فتح ${rest}` : `Ouvrir ${rest}`;
       }
     }
-    m = trimmed.match(/^New\s+(.+)$/i);
+    m = trimmed.match(/^New\s+([A-Z].+)$/);
     if (m) {
       const inner = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `إضافة ${inner}` : `Nouveau : ${inner}`;
+      if (inner !== m[1].trim()) {
+        return lang === 'ar' ? `${inner} جديد` : `Nouveau : ${inner}`;
+      }
     }
-    m = trimmed.match(/^Edit\s+(.+)$/i);
+    m = trimmed.match(/^Edit\s+([A-Z].+)$/);
     if (m) {
       const inner = translateCore(m[1].trim(), lang, depth + 1);
-      return lang === 'ar' ? `تعديل ${inner}` : `Modifier : ${inner}`;
+      if (inner !== m[1].trim()) {
+        return lang === 'ar' ? `تعديل ${inner}` : `Modifier : ${inner}`;
+      }
+    }
+    m = trimmed.match(/^\+\s*Set\s+(.+)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `+ تعيين ${inner}` : `+ Définir ${inner}`;
     }
 
     m = trimmed.match(/^([\d.,]+%)\s+of total$/i);
     if (m) return lang === 'ar' ? `${m[1]} من الإجمالي` : `${m[1]} du total`;
-
-    m = trimmed.match(/^([\d.,]+%)\s+([A-Za-z]+)$/);
-    if (m) {
-      const w = translateCore(m[2], lang, depth + 1);
-      if (w !== m[2]) return `${m[1]} ${w}`;
-    }
 
     m = trimmed.match(/^Avg\s+(\$[\d.,]+)\s*\/\s*([A-Za-z³]+)$/i);
     if (m) {
@@ -6918,9 +13564,6 @@
 
     m = trimmed.match(/^Next\s+(#\d+)$/i);
     if (m) return lang === 'ar' ? `التالي ${m[1]}` : `Suivant ${m[1]}`;
-
-    m = trimmed.match(/^Click to open 360° Record(.*)$/i);
-    if (m) return lang === 'ar' ? `اضغط لفتح بطاقة السجل الشاملة 360°${m[1]}` : `Cliquer pour ouvrir la fiche 360°${m[1]}`;
 
     m = trimmed.match(/^Jump Directly to\s+(.+?)\s+Hubs$/i);
     if (m) {
@@ -6937,8 +13580,15 @@
     m = trimmed.match(/^Arrears\s+(\$[\d.,kM]+)$/i);
     if (m) return lang === 'ar' ? `متأخرات ${m[1]}` : `Arriérés ${m[1]}`;
 
-    m = trimmed.match(/^(.+?)\s+owes\s+(\$[\d.,kM]+)$/i);
-    if (m) return lang === 'ar' ? `${m[1]} مدينة بـ ${m[2]}` : `${m[1]} doit ${m[2]}`;
+    m = trimmed.match(/^(?:undefined|Counterparty)\s+owes\s+(\$[\d.,kM]+)$/i);
+    if (m) return lang === 'ar' ? `الرصيد المتبقي ${m[1]}` : `Solde dû ${m[1]}`;
+
+    m = trimmed.match(/^(.+?)\s+owes\s+(.+)$/i);
+    if (m) {
+      return /^\$/.test(m[2].trim())
+        ? (lang === 'ar' ? `${m[1]} مدينة بـ ${m[2]}` : `${m[1]} doit ${m[2]}`)
+        : (lang === 'ar' ? `${m[1]} مدينة لـ ${m[2]}` : `${m[1]} doit à ${m[2]}`);
+    }
 
     m = trimmed.match(/^Paid\s+(\$[\d.,]+)\s+of\s+(\$[\d.,]+)(.*)$/i);
     if (m) return lang === 'ar' ? `مدفوع ${m[1]} من أصل ${m[2]}${m[3]}` : `Payé ${m[1]} sur ${m[2]}${m[3]}`;
@@ -6949,11 +13599,8 @@
     m = trimmed.match(/^Advance\s+([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `سلفة ${m[1]}` : `Avance ${m[1]}`;
 
-    m = trimmed.match(/^Rep Diff\s+(\d+)$/i);
-    if (m) return lang === 'ar' ? `فارق التقرير ${m[1]}` : `Écart Rapport ${m[1]}`;
-
     m = trimmed.match(/^(.+?)\s+Cutover Audit$/i);
-    if (m) return lang === 'ar' ? `تدقيق فترة الانتقال (${m[1]})` : `Audit de Bascule (${m[1]})`;
+    if (m) return lang === 'ar' ? `تدقيق فترة الانتقال (${translateMonthTokens(m[1], lang)})` : `Audit de Bascule (${translateMonthTokens(m[1], lang)})`;
 
     m = trimmed.match(/^Bdeir Fleet\s*\((.+)\)$/i);
     if (m) return lang === 'ar' ? `أسطول بدير (${m[1]})` : `Flotte Bdeir (${m[1]})`;
@@ -6984,7 +13631,7 @@
     let coreOut = cache.get(trimmed);
     if (coreOut === undefined) {
       coreOut = translateCore(trimmed, targetLang, 0);
-      if (cache.size > 12000) cache.clear();
+      if (cache.size > 16000) cache.clear();
       cache.set(trimmed, coreOut);
     }
     if (coreOut === trimmed) return str;
@@ -7004,7 +13651,7 @@
     if (el.hasAttribute('data-no-i18n')) return true;
     if (el.tagName === 'OPTION' && el.parentElement && el.parentElement.tagName === 'DATALIST') return true;
     const cl = el.classList;
-    if (cl && ((cl.contains('num') && el.tagName !== 'TH' && !(el.closest && el.closest('tfoot'))) || cl.contains('av') || cl.contains('auth-seat-av') || cl.contains('auth-seat-email'))) return true;
+    if (cl && (cl.contains('av') || cl.contains('auth-seat-av') || cl.contains('auth-seat-email'))) return true;
     if (cl && cl.contains('pa-suggest-label') && el.closest && el.closest('.pa-suggest-wrap:not(.pa-select-wrap)')) return true;
     return false;
   }
@@ -7037,6 +13684,25 @@
     }
   }
 
+  function translateDocumentTitle() {
+    if (typeof document === 'undefined' || typeof document.title !== 'string') return;
+    const cur = document.title;
+    if (!cur) return;
+    if (document.__enTitle === undefined) {
+      document.__enTitle = cur;
+    } else if (_activeLang !== 'en' && cur !== document.__enTitleApplied && cur !== document.__enTitle) {
+      document.__enTitle = cur;
+    }
+    if (_activeLang === 'en') {
+      if (cur !== document.__enTitle) document.title = document.__enTitle;
+      document.__enTitleApplied = document.__enTitle;
+    } else {
+      const next = translateString(document.__enTitle, _activeLang);
+      if (cur !== next) document.title = next;
+      document.__enTitleApplied = next;
+    }
+  }
+
   function translateDom(rootEl) {
     if (_activeLang === 'en' && !_everTranslated) return;
     const root = rootEl || document.body;
@@ -7044,6 +13710,7 @@
 
     _isApplying = true;
     try {
+      translateDocumentTitle();
       if (_activeLang !== 'en' && root.querySelectorAll) {
         if (root.tagName === 'TH') ensureThCleanLabelCached(root);
         root.querySelectorAll('th').forEach(ensureThCleanLabelCached);
@@ -7064,6 +13731,7 @@
       while ((n = walker.nextNode())) {
         const cur = n.nodeValue || '';
         if (!cur.trim()) continue;
+        if (_activeLang !== 'en' && n.__enText === undefined && !/[A-Za-z]/.test(cur)) continue;
         const p = n.parentElement;
         if (p && p.tagName === 'OPTION' && !p.hasAttribute('value')) {
           p.setAttribute('value', p.value);
@@ -7103,6 +13771,7 @@
       _dirtyNodes.clear();
       return;
     }
+    translateDocumentTitle();
     if (_dirtyNodes.has(document.body) || _dirtyNodes.size > 16) {
       _dirtyNodes.clear();
       translateDom(document.body);
@@ -7124,6 +13793,10 @@
         const m = mutations[i];
         const t = m.target;
         if (!t) continue;
+        if (t.nodeName === 'TITLE' || (t.parentElement && t.parentElement.nodeName === 'TITLE')) {
+          translateDocumentTitle();
+          continue;
+        }
         const el = t.nodeType === 1 ? t : t.parentElement;
         if (el) _dirtyNodes.add(el);
       }
@@ -7132,9 +13805,12 @@
       }
     });
     _domObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const titleEl = document.querySelector && document.querySelector('title');
+    if (titleEl) _domObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
   }
 
   function syncLangSwitchersDom() {
+    ensureRtlBidiStyle();
     const loc = LOCALES[_activeLang] || LOCALES.en;
     document.documentElement.setAttribute('lang', loc.code);
     document.documentElement.setAttribute('dir', loc.dir || 'ltr');
