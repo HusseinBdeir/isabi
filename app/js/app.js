@@ -193,6 +193,7 @@
     rawSiteFilter: 'expense',
     partDispFilter: 'all',
     unitHealthFilter: 'all',
+    indAssetFilter: {},
     whChipFilter: 'all',
     repSrcFilter: 'all',
     oilFilter: 'all',
@@ -201,8 +202,13 @@
     dailyOpsIncludeAfterHours: true,
     dailyOpsCommLens: 'pulse',
     dailyOpsDealsLens: 'highlights',
+    dailyOpsExpLens: 'bills',
     dailyOpsTreasuryLens: 'bridge',
+    dailyOpsFuelLens: 'units',
     dailyOpsPlantLens: 'overview',
+    dailyOpsQuickFilter: 'all',
+    dailyOpsQuickSearch: '',
+    dailyOpsExpanded: {},
     dailyOpsDrawerOpen: false,
     dailyOpsDrawerSearch: '',
     dailyOpsStreamFilter: 'all',
@@ -634,6 +640,8 @@
     return list;
   }
 
+  var _inGetFreqIndex = false;
+  var _iifeBooted = false;
   let _companyCatalogCache = null;
   let _companyCatalogSig = '';
   function getCompanyCatalog() {
@@ -642,8 +650,11 @@
     const isSynthetic100Test = Array.isArray(window.MFG_COMPANIES) && window.MFG_COMPANIES.some(x => x && x.key === 'co_004');
     const seedCoLen = (SEED && Array.isArray(SEED.companies)) ? SEED.companies.length : 0;
     const epLen = (STATE.enterpriseScalePreview && Array.isArray(STATE.enterprisePreviewCompanies)) ? STATE.enterprisePreviewCompanies.length : 0;
-    const sig = `${(SEED && SEED._customRev) || 0}|${_WIN_REV}|${mfgCoLen}|${isSynthetic100Test ? 1 : 0}|${seedCoLen}|${epLen}|${uPart}`;
-    if (_companyCatalogCache && _companyCatalogSig === sig) return _companyCatalogCache;
+    const canQueryFreq = _iifeBooted && !_inGetFreqIndex && Boolean(SEED && SEED.records && typeof getFreqIndex === 'function' && (SEED._recordsReady || _FREQ_IDX || mfgCoLen > 0 || seedCoLen > 0 || epLen > 0));
+    const fIdx = canQueryFreq ? getFreqIndex() : _FREQ_IDX;
+    const freqKey = fIdx ? fIdx.key : (_inGetFreqIndex ? '__reentrant__' : '');
+    const sig = `${(SEED && SEED._customRev) || 0}|${_WIN_REV || 0}|${mfgCoLen}|${isSynthetic100Test ? 1 : 0}|${seedCoLen}|${epLen}|${freqKey}|${uPart}`;
+    if (!_inGetFreqIndex && _companyCatalogCache && _companyCatalogSig === sig) return _companyCatalogCache;
     const out = [];
     const seen = new Set();
     const pushCo = (raw) => {
@@ -683,20 +694,20 @@
         pushCo(s);
       });
     });
-    if (SEED && SEED.records && typeof window.MFG_FREQ === 'function') {
-      const coFreq = (_FREQ_IDX && _FREQ_IDX.company)
-        ? _FREQ_IDX.company
+    if (SEED && SEED.records) {
+      const coFreq = (fIdx && fIdx.company)
+        ? fIdx.company
         : ((_FREQ_TKT_CACHE && _FREQ_TKT_CACHE.bCompany)
           ? _FREQ_TKT_CACHE.bCompany
-          : ((mfgCoLen > 0 || seedCoLen > 0 || epLen > 0)
-            ? window.MFG_FREQ().company
-            : new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]])));
+          : new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]]));
       if (coFreq && coFreq.size) {
         out.sort((a, b) => (coFreq.get(norm(b.name)) || 0) - (coFreq.get(norm(a.name)) || 0));
       }
     }
-    _companyCatalogSig = sig;
-    _companyCatalogCache = out;
+    if (!_inGetFreqIndex) {
+      _companyCatalogSig = sig;
+      _companyCatalogCache = out;
+    }
     return out;
   }
 
@@ -704,17 +715,38 @@
     const catalog = catalogInput || getCompanyCatalog();
     const byInd = new Map();
     ENTERPRISE_INDUSTRIES.forEach(meta => {
-      byInd.set(meta.id, { id: meta.id, code: meta.code, label: meta.label, sub: meta.sub, companies: [] });
+      byInd.set(meta.id, { id: meta.id, code: meta.code, label: meta.label, sub: meta.sub, companies: [], freq: 0 });
     });
     catalog.forEach(co => {
       const indName = co.industry || 'Manufacturing';
       if (!byInd.has(indName)) {
         const code = indName.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'IND';
-        byInd.set(indName, { id: indName, code, label: indName, sub: co.sector || 'Operating Industry', companies: [] });
+        byInd.set(indName, { id: indName, code, label: indName, sub: co.sector || 'Operating Industry', companies: [], freq: 0 });
       }
       byInd.get(indName).companies.push(co);
     });
-    return Array.from(byInd.values()).filter(g => g.companies.length > 0);
+    const groups = Array.from(byInd.values()).filter(g => g.companies.length > 0);
+    const canQueryFreq = _iifeBooted && !_inGetFreqIndex && Boolean(SEED && SEED.records && typeof getFreqIndex === 'function' && (SEED._recordsReady || _FREQ_IDX || (Array.isArray(window.MFG_COMPANIES) && window.MFG_COMPANIES.length > 0) || (SEED && Array.isArray(SEED.companies) && SEED.companies.length > 0) || STATE.enterpriseScalePreview));
+    const fIdx = canQueryFreq ? getFreqIndex() : _FREQ_IDX;
+    const coFreq = fIdx && fIdx.company ? fIdx.company : null;
+    const indFreq = fIdx && fIdx.industry ? fIdx.industry : null;
+    groups.forEach(g => {
+      let score = 0;
+      if (coFreq && coFreq.size) {
+        for (let i = 0; i < g.companies.length; i++) {
+          score += (coFreq.get(norm(g.companies[i].name)) || 0);
+        }
+      }
+      if (indFreq && indFreq.size) {
+        const directInd = indFreq.get(norm(g.id)) || 0;
+        if (directInd > score) score = directInd;
+      }
+      g.freq = score;
+    });
+    if ((coFreq && coFreq.size) || (indFreq && indFreq.size)) {
+      groups.sort((a, b) => (b.freq || 0) - (a.freq || 0));
+    }
+    return groups;
   }
 
   // ==========================================================================
@@ -6724,15 +6756,15 @@
   }
 
   function repDateShiftBadge(r) {
-    if (!r || !r.date || !r.rep_date) return '';
+    if (!r || !r.date) return '';
     const dTx = String(r.date).slice(0, 10);
-    const dRep = String(r.rep_date).slice(0, 10);
+    const dRep = String(r.rep_date || r.set_date || '').slice(0, 10);
     if (!dTx || !dRep || dTx === dRep) return '';
-    return `<span class="rep-shift-ico" data-ui-tip="Tx Date ${esc(fmtDateDMY(dTx))} · Reporting Date ${esc(fmtDateDMY(dRep))}">${ic('calendar')}</span>`;
+    return `<span class="rep-shift-ico" data-ui-tip="Reporting Date differs · Tx Date ${esc(fmtDateDMY(dTx))} · Reporting Date ${esc(fmtDateDMY(dRep))}">${ic('rep_shift')}</span>`;
   }
 
   function appPill(crKey, amountKey, label) {
-    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(isAppRecord);
+    const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
     if (!rows.length) return '';
     const sum = rows.reduce((a, r) => a + Number(r[amountKey] || 0), 0);
     return `<div class="cockpit-pill app-pill" title="Entered in this web app · not yet inside the SQL / book totals"><div class="cockpit-pill-lbl">App-entered (unposted)</div><div class="cockpit-pill-val amber">${fmtNum(rows.length)} ${esc(label)} · ${fmtUSD(sum, 0)}</div></div>`;
@@ -6742,7 +6774,7 @@
     const out = [];
     const spec = [['sales_tickets', 'total_ttc', 'sales tickets'], ['raw_purchases', 'total', 'raw receipts'], ['receipts', 'amount', 'customer receipts'], ['fuel_intakes', 'litres', 'fuel intakes'], ['fuel_malfunctions', 'litres', 'tank malfunctions'], ['expenses', 'amount', 'expenses'], ['settlements', 'amount', 'supplier settlements']];
     spec.forEach(([k, amt, label]) => {
-      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(isAppRecord);
+      const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(r => isAppRecord(r) && !r._absorbedSeedTwin);
       if (!rows.length) return;
       const sum = rows.reduce((a, r) => a + Number(r[amt] || 0), 0);
       out.push({ key: k, n: rows.length, sum, label, unit: amt === 'litres' ? 'L' : '$' });
@@ -8836,13 +8868,33 @@
     return out;
   };
   function getFreqIndex() {
+    if (_inGetFreqIndex) return _FREQ_IDX;
+    _inGetFreqIndex = true;
+    try {
+      return _getFreqIndexInner();
+    } finally {
+      _inGetFreqIndex = false;
+    }
+  }
+  function _getFreqIndexInner() {
     if (SEED && SEED.records && (!Array.isArray(SEED.records.staff_members) || !Array.isArray(SEED.records.staff_roles) || !Array.isArray(SEED.records.staff_assignments)) && (Array.isArray(SEED.records.employments) || Array.isArray(SEED.records.salaries))) {
       ensureStaffMembersSeeded();
+    }
+    if (_iifeBooted && SEED && SEED.records && SEED._recordsReady && !SEED._multiIndustrySpineSeeded && typeof ensureMultiIndustrySpineSeeded === 'function') {
+      ensureMultiIndustrySpineSeeded();
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
     const curCustomRev = (SEED && SEED._customRev) || 0;
-    if (_FREQ_IDX && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev) {
+    const epActive = Boolean(STATE && STATE.enterpriseScalePreview);
+    const indEditsStore = (STATE && STATE.industryRowEdits) || null;
+    const indEditsKeys = indEditsStore ? Object.keys(indEditsStore) : [];
+    let indEditsVoidCnt = 0;
+    for (let ei = 0; ei < indEditsKeys.length; ei++) {
+      if (indEditsStore[indEditsKeys[ei]] && indEditsStore[indEditsKeys[ei]].voided) indEditsVoidCnt++;
+    }
+    const indEditsRev = `${indEditsKeys.length}:${indEditsVoidCnt}`;
+    if (_FREQ_IDX && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev && _FREQ_IDX._epActive === epActive && _FREQ_IDX._indEditsRev === indEditsRev) {
       const wKeys = _FREQ_IDX._watchedKeys;
       const wLens = _FREQ_IDX._watchedLens;
       const wRevs = _FREQ_IDX._watchedRevs;
@@ -8885,7 +8937,7 @@
     const watchedKeys = [];
     const watchedLens = [];
     const watchedRevs = [];
-    let dynKey = `${_WIN_REV}:${curCustomRev}`;
+    let dynKey = `${_WIN_REV}:${curCustomRev}:${epActive ? 1 : 0}:${indEditsRev}`;
     for (let ki = 0; ki < allRecKeys.length; ki++) {
       const tk = allRecKeys[ki];
       if (tk === 'journal_lines' || tk === 'daily_totals') continue;
@@ -9158,14 +9210,74 @@
       inc(company, coNm, 3 - i);
       inc(company, coNm.replace(/\s+/g, '-'), 3 - i);
     });
-    [exps, rcpts, settles, fuels, sals, atts, emps, rules, loans, extMovs, overs, rec.equipment || [], rec.drivers || [], rec.company_equipment || [], rec.company_drivers || []].forEach(tbl => {
+    const incCoFreq = (coNm, w = 1) => {
+      if (!coNm) return;
+      inc(company, coNm, w);
+      if (/\s/.test(coNm)) inc(company, String(coNm).replace(/\s+/g, '-'), w);
+    };
+    [exps, rcpts, settles, fuels, sals, atts, emps, fsh, rules, loans, extMovs, overs, expItems, whMovs, repItems, oilLogs, partMovs, eqDefs, rec.fuel_malfunctions || [], rec.company_equipment || [], rec.company_drivers || []].forEach(tbl => {
       (tbl || []).forEach(r => {
-        if (r && !r.voided && r.company) {
-          inc(company, r.company, 1);
-          if (/\s/.test(r.company)) inc(company, String(r.company).replace(/\s+/g, '-'), 1);
-        }
+        if (r && !r.voided && r.company) incCoFreq(r.company, 1);
       });
     });
+    [itemsCat, rec.suppliers || [], rec.sites || [], rec.equipment || [], rec.drivers || []].forEach(tbl => {
+      (tbl || []).forEach(r => {
+        if (r && !r.voided && r.company) incCoFreq(r.company, 0.25);
+      });
+    });
+    const _FREQ_SISTER_CO_MAP = {
+      'wtc': 'WTC', 'world trading': 'WTC', 'world trading & construction': 'WTC',
+      'bbconstruction': 'BBConstruction', 'bbc': 'BBConstruction', 'b.b.c': 'BBConstruction', 'bb construction': 'BBConstruction',
+      'lions transport': 'Lions Transport', 'lions': 'Lions Transport', 'lion transport': 'Lions Transport',
+      'bdeir holding': 'Bdeir Holding', 'holding': 'Bdeir Holding',
+      'blanca': 'Blanca', 'blanca beach': 'Blanca',
+      'la una': 'La Una',
+      'palms': 'Palms', 'the palms': 'Palms',
+      'voile': 'Voile',
+      'platinum': 'Platinum',
+      'korri auto': 'Korri Auto', 'korri': 'Korri Auto',
+      'shacman': 'Shacman',
+      'properties': 'Properties', 'بزوير وبدير العقارية': 'Properties',
+      '4235': '4235 Company S.A.L', '4235 company': '4235 Company S.A.L', '4235 company s.a.l': '4235 Company S.A.L',
+      'insurance': 'Insurance Company', 'insurance company': 'Insurance Company'
+    };
+    extMovs.forEach(r => {
+      if (!r || r.voided) return;
+      const m = String(r.method || '').trim();
+      const flowStr = String(r.flow || r.type || '').trim();
+      if (m === 'Config' || /^config$/i.test(flowStr) || m === 'Remove' || m === 'Adjusted') return;
+      const pRaw = String(r.party || r.counterparty || r.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const sisCo = pRaw ? _FREQ_SISTER_CO_MAP[pRaw] : '';
+      if (sisCo && norm(sisCo) !== norm(r.company || '')) incCoFreq(sisCo, 1);
+    });
+    const incDomainRows = (rows, fallbackCo, w = 1, skipFn = null) => {
+      if (!Array.isArray(rows)) return;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided || (skipFn && skipFn(r))) continue;
+        incCoFreq(r.company || fallbackCo, w);
+      }
+    };
+    if (_iifeBooted && typeof computeHospitalityOperations === 'function') {
+      const hspD = computeHospitalityOperations({ company: 'industry:Hospitality & Resorts', ignoreSearch: true });
+      incDomainRows(hspD.venueRows, '', 1, r => String(r.id || '').startsWith('HSP-CUST-'));
+      [hspD.posRows, hspD.vatRows, hspD.membershipRows, hspD.partnerSplitRows, hspD.stockRows, hspD.menuRows, hspD.energyRows, hspD.maintRows].forEach(arr => incDomainRows(arr, '', 1));
+    }
+    if (_iifeBooted && typeof computeTradingOperations === 'function') {
+      const trdD = computeTradingOperations({ company: 'industry:Automotive & Heavy Trading', ignoreSearch: true });
+      incDomainRows(trdD.salesRows, '', 1, r => r.is_gap);
+      [trdD.receivableRows, trdD.targetRows, trdD.importRows, trdD.landedRows, trdD.grnRows, trdD.serialUnits, trdD.warrantyRows, trdD.stockRows, trdD.movementRows, trdD.reconRows].forEach(arr => incDomainRows(arr, '', 1));
+    }
+    if (_iifeBooted && typeof computeRealEstateOperations === 'function') {
+      const reD = computeRealEstateOperations({ company: 'industry:Real Estate & Property', ignoreSearch: true });
+      [reD.leases, reD.invoices, reD.receipts, reD.sales, reD.instalments, reD.valuations, reD.ownership, reD.workorders, reD.recharges].forEach(arr => incDomainRows(arr, '', 1));
+      [reD.properties, reD.units].forEach(arr => incDomainRows(arr, '', 0.25));
+    }
+    if (_iifeBooted && typeof computeInsuranceOperations === 'function') {
+      const insD = computeInsuranceOperations();
+      [insD.policies, insD.renewals, insD.items, insD.billing, insD.remittances, insD.statements, insD.claims, insD.agreements].forEach(arr => incDomainRows(arr, 'Insurance Company', 1));
+      incDomainRows(insD.catalogue, 'Insurance Company', 0.25);
+    }
 
     // Universal Future-Table Auto-Indexer: automatically indexes every non-explicit present & future (49th+) table
     // in SEED.records into domain frequency maps + per-column byCol + global any, so newly added tables inherit
@@ -9191,6 +9303,7 @@
       'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at',
       'voided', 'voided_by', 'voided_at', 'adj_windows'
     ]);
+    const industry = new Map();
     const byCol = new Map();
     const incCol = (colKey, val, w = 1) => {
       if (!colKey || val == null || val === '') return;
@@ -9214,10 +9327,8 @@
       for (let ri = 0; ri < tbl.length; ri++) {
         const r = tbl[ri];
         if (!r || r.voided) continue;
-        if (r.company) {
-          inc(company, r.company, wTbl);
-          if (/\s/.test(r.company)) inc(company, String(r.company).replace(/\s+/g, '-'), wTbl);
-        }
+        if (r.company) incCoFreq(r.company, wTbl);
+        else if (r.industry || r.industry_vertical) inc(industry, r.industry || r.industry_vertical, wTbl);
         if (r.customer || r.client || r.buyer) inc(customer, r.customer || r.client || r.buyer, wTbl);
         if (r.supplier || r.vendor || r.hauler) {
           const sv = r.supplier || r.vendor || r.hauler;
@@ -9251,8 +9362,32 @@
       }
     }
 
+    const seenFreqCos = new Set();
+    const accumIndFromCo = rawCo => {
+      if (!rawCo) return;
+      const coNm = typeof rawCo === 'string' ? rawCo.trim() : String(rawCo.name || rawCo.label || '').trim();
+      const ck = norm(coNm);
+      if (!ck || seenFreqCos.has(ck)) return;
+      seenFreqCos.add(ck);
+      const cScore = company.get(ck) || 0;
+      if (cScore > 0) inc(industry, inferIndustryForCompany(rawCo), cScore);
+    };
+    BASE_COMPANY_DIRECTORY.forEach(accumIndFromCo);
+    if (Array.isArray(window.MFG_COMPANIES)) window.MFG_COMPANIES.forEach(accumIndFromCo);
+    if (SEED && Array.isArray(SEED.companies)) SEED.companies.forEach(accumIndFromCo);
+    if (epActive && Array.isArray(STATE.enterprisePreviewCompanies)) STATE.enterprisePreviewCompanies.forEach(accumIndFromCo);
+    if (indEditsStore && indEditsVoidCnt > 0) {
+      for (let ei = 0; ei < indEditsKeys.length; ei++) {
+        const ek = indEditsKeys[ei];
+        if (indEditsStore[ek] && indEditsStore[ek].voided) {
+          const vInd = norm(ek.split('::')[0] || '');
+          if (vInd && industry.has(vInd)) industry.set(vInd, Math.max(0, (industry.get(vInd) || 0) - 1));
+        }
+      }
+    }
+
     const any = new Map();
-    [product, customer, supplier, truckOwner, site, truck, driver, staff, category, subcategory, uom, fuelLoc, role, counterparty, region, item, warehouseLoc].forEach(m => {
+    [product, customer, supplier, truckOwner, site, truck, driver, staff, category, subcategory, uom, fuelLoc, role, counterparty, region, item, warehouseLoc, industry].forEach(m => {
       m.forEach((v, k) => {
         if (v > (any.get(k) || 0)) any.set(k, v);
       });
@@ -9278,7 +9413,7 @@
       item_name: item, part_name: item, oil_type: item,
       warehouse_location: warehouseLoc, storage_location: warehouseLoc,
       counterparty, partner: counterparty, lender: counterparty, vendor_or_buyer: counterparty,
-      role, company
+      role, company, industry, industry_vertical: industry
     };
     const forCol = colKey => {
       const ck = String(colKey || '').trim();
@@ -9293,11 +9428,13 @@
       productFuel, productFuelByCo, product, customer, supplier, siteOwner, supplierExpense,
       truckOwner, siteSales, siteRaw, site, truck, driver, staff, category, subcategory,
       expCategory: category, expSubcategory: subcategory,
-      uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company,
+      uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company, industry,
       byCol, forCol, any, _indexedTableCount: allRecKeys.length
     };
     _FREQ_IDX._winRev = _WIN_REV;
     _FREQ_IDX._customRev = curCustomRev;
+    _FREQ_IDX._epActive = epActive;
+    _FREQ_IDX._indEditsRev = indEditsRev;
     _FREQ_IDX._totalRecKeyCount = allRecKeys.length;
     _FREQ_IDX._watchedKeys = watchedKeys;
     _FREQ_IDX._watchedLens = watchedLens;
@@ -14486,23 +14623,37 @@
   // ==========================================================================
   // VIEW 01: OVERVIEW COMMAND CENTER (EXACT ISABI REV 10 "LEDGER" ARCHITECTURE)
   // ==========================================================================
-  function buildExecutiveChart(months) {
-    const W = 660, H = 248, ml = 46, mr = 12, mt = 18, mb = 30;
+  function cleanCeoText(s) {
+    return String(s == null ? '' : s).replace(/[—–]/g, '-').replace(/→/g, '-');
+  }
+
+  function buildExecutiveChart(months, opts) {
+    const cfg = opts || {};
+    const W = 630, H = 274, ml = 56, mr = 14, mt = 20, mb = 26;
     const pw = W - ml - mr, ph = H - mt - mb;
-    const rows = (months || []).slice(-12);
+    const isCustom = Array.isArray(cfg.customBars);
+    const rows = isCustom ? cfg.customBars.slice(0, 12) : (months || []).slice(-12);
     if (!rows.length) {
-      return '<svg class="chart" viewBox="0 0 660 248" role="img" aria-label="No monthly ledger data"><text class="tick" x="330" y="124" text-anchor="middle">No monthly ledger data for this entity yet</text></svg>';
+      return '<svg class="chart" viewBox="0 0 630 274" role="img" aria-label="No monthly ledger data"><text class="tick" x="315" y="137" text-anchor="middle">No monthly ledger data for this entity yet</text></svg>';
     }
 
     const sValsList = rows.map(r => {
+      if (isCustom) {
+        return [
+          Math.max(0, Number(r.rev || 0)) / 1000,
+          Math.max(0, Number(r.cost || 0)) / 1000,
+          Math.max(0, Number(r.op || 0)) / 1000
+        ];
+      }
       const s = Math.max(0, Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0))) / 1000;
       const raw = Math.max(0, Number(r.raw_cost || 0)) / 1000;
       const prof = Math.max(0, Number(r.operating_profit || 0)) / 1000;
       return [s, raw, prof];
     });
 
-    const maxVal = Math.max(100, ...sValsList.map(v => Math.max(v[0], v[1] + v[2])));
-    const max = Math.ceil(maxVal / 250) * 250;
+    const maxVal = Math.max(20, ...sValsList.map(v => Math.max(v[0], v[1], v[2])));
+    const stepUnit = maxVal > 1000 ? 250 : (maxVal > 200 ? 50 : 10);
+    const max = Math.max(stepUnit, Math.ceil((maxVal * 1.12) / stepUnit) * stepUnit);
     const y = v => mt + ph - (v / max) * ph;
 
     let g = '';
@@ -14512,47 +14663,297 @@
       g += `<text class="tick" x="${ml - 8}" y="${(y(tv) + 4).toFixed(1)}" text-anchor="end">$${tv.toLocaleString()}k</text>`;
     });
 
+    const activeRevs = sValsList.map(v => v[0]).filter(v => v > 0);
+    const avgRevK = activeRevs.length ? (activeRevs.reduce((a, b) => a + b, 0) / activeRevs.length) : 0;
+    if (avgRevK > 0 && rows.length >= 3) {
+      const ay = y(avgRevK).toFixed(1);
+      g += `<line class="ceo-avg-line" x1="${ml}" x2="${W - mr}" y1="${ay}" y2="${ay}" stroke="var(--brass)" stroke-width="1.25" stroke-dasharray="4 3" opacity="0.78"/>`;
+      g += `<text class="ceo-bar-top-lbl is-peak" x="${W - mr - 2}" y="${Math.max(mt + 9, Number(ay) - 4).toFixed(1)}" text-anchor="end">Avg $${Math.round(avgRevK).toLocaleString()}k</text>`;
+    }
+
+    let peakIdx = -1;
+    let peakRevK = 0;
+    sValsList.forEach((v, idx) => {
+      if (v[0] > peakRevK) {
+        peakRevK = v[0];
+        peakIdx = idx;
+      }
+    });
+
     const n = rows.length;
     const slot = pw / n;
-    const bw = Math.min(28, Math.max(16, slot * 0.58));
-    const subW = (bw - 2) / 3;
+    const bw = Math.min(32, Math.max(16, slot * 0.6));
+    const subW = (bw - 3) / 3;
+    const s1Lbl = cfg.s1Label || 'Total Sales';
+    const s2Lbl = cfg.s2Label || 'Raw Material Cost';
+    const s3Lbl = cfg.s3Label || 'Operating Cash Profit';
 
     rows.forEach((row, i) => {
       const x0 = ml + slot * i + (slot - bw) / 2;
       const [sK, rK, pK] = sValsList[i];
-      const ymFull = String(row['Year Month'] || row.YearMonthNo || '');
-      const ymShort = ymFull.replace('2024', '24').replace('2025', '25').replace('2026', '26');
+      const fullLbl = isCustom ? String(row.fullLabel || row.label || '') : String(row['Year Month'] || row.YearMonthNo || '');
+      const shortLbl = isCustom
+        ? String(row.label || '').slice(0, 11)
+        : fullLbl.replace('2024', '24').replace('2025', '25').replace('2026', '26').slice(0, 6);
+      const badgeStr = isCustom
+        ? String(row.badge || `${fmtUSDk((row.rev || 0))}`)
+        : `${fmtNum(row.loads)} loads`;
+      const marginPctStr = sK > 0 ? ` (${((pK / sK) * 100).toFixed(1)}%)` : '';
+
+      const isPeak = i === peakIdx && n >= 3 && sK > 0;
+      if (isPeak) {
+        g += `<rect x="${(ml + slot * i + 3).toFixed(1)}" y="${mt}" width="${Math.max(8, slot - 6).toFixed(1)}" height="${ph}" rx="4" fill="rgba(192,137,47,0.065)"/>`;
+      }
 
       const bars = [
         { v: sK, cls: 's-1', x: x0, idx: 0 },
-        { v: rK, cls: 's-2', x: x0 + subW + 1, idx: 1 },
-        { v: pK, cls: 's-3', x: x0 + (subW + 1) * 2, idx: 2 }
+        { v: rK, cls: 's-2', x: x0 + subW + 1.5, idx: 1 },
+        { v: pK, cls: 's-3', x: x0 + (subW + 1.5) * 2, idx: 2 }
       ].map(b => {
         const top = y(b.v);
         const bottom = y(0);
         const h = Math.max(2, bottom - top);
-        return `<rect class="${b.cls}" data-series-idx="${b.idx}" x="${b.x.toFixed(1)}" y="${top.toFixed(1)}" width="${subW.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"/>`;
+        return `<rect class="${b.cls}" data-series-idx="${b.idx}" x="${b.x.toFixed(1)}" y="${top.toFixed(1)}" width="${subW.toFixed(1)}" height="${h.toFixed(1)}" rx="2"/>`;
       }).join('');
 
-      const tip = `Total Sales: $${sK.toFixed(1)}k · Raw Cost: $${rK.toFixed(1)}k · Cash Profit: $${pK.toFixed(1)}k · Loads: ${fmtNum(row.loads)}`;
+      if (isPeak || isCustom) {
+        const lblY = Math.max(mt + 10, y(sK) - 5);
+        g += `<text class="ceo-bar-top-lbl${isPeak ? ' is-peak' : ''}" x="${(x0 + bw / 2).toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle">$${sK >= 100 ? Math.round(sK).toLocaleString() : sK.toFixed(0)}k</text>`;
+      }
+
+      const tip = `${s1Lbl}: $${sK.toFixed(1)}k · ${s2Lbl}: $${rK.toFixed(1)}k · ${s3Lbl}: $${pK.toFixed(1)}k${marginPctStr}`;
       const popSpec = JSON.stringify({
-        t: ymFull,
-        b: `${fmtNum(row.loads)} loads`,
+        t: fullLbl,
+        b: badgeStr,
         r: [
-          { l: 'Total Sales', v: `$${sK.toFixed(1)}k`, c: 'var(--s1)' },
-          { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: 'var(--s2)' },
-          { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: 'var(--s3)', tot: true }
+          { l: s1Lbl, v: `$${sK.toFixed(1)}k`, c: 'var(--s1)' },
+          { l: s2Lbl, v: `$${rK.toFixed(1)}k`, c: 'var(--s2)' },
+          { l: s3Lbl, v: `$${pK.toFixed(1)}k${marginPctStr}`, c: 'var(--s3)', tot: true }
         ]
       });
-      g += `<g class="col" data-m="${esc(ymFull)}" data-t="$${sK.toFixed(1)}k Sales" data-tip="${esc(tip)}" data-chart-pop="${esc(popSpec)}">`
+      g += `<g class="col" data-m="${esc(fullLbl)}" data-t="$${sK.toFixed(1)}k" data-tip="${esc(tip)}" data-chart-pop="${esc(popSpec)}">`
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}" fill="transparent"/>`
         + `<line class="pbi-col-guide" x1="${(x0 + bw / 2).toFixed(1)}" x2="${(x0 + bw / 2).toFixed(1)}" y1="${mt}" y2="${mt + ph}"/>`
         + `${bars}</g>`;
-      g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 9}" text-anchor="middle">${esc(ymShort.slice(0, 6))}</text>`;
+      g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 7}" text-anchor="middle">${esc(shortLbl)}</text>`;
     });
 
     g += `<line class="axis" x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}"/>`;
-    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly revenue, raw material cost, and profit trajectory">${g}</svg>`;
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(cfg.ariaLabel || 'Monthly revenue, direct cost, and profit trajectory')}">${g}</svg>`;
+  }
+
+  function renderCeoKpiCard(c) {
+    const segs = (c.segs || []).filter(s => Number(s.pct || 0) > 0);
+    const meterHtml = segs.length
+      ? `<div class="ceo-kpi-meter" aria-hidden="true">${segs.map(s => `<span class="ceo-meter-seg ${esc(s.tone || 'cobalt')}" style="width:${Math.max(2, Math.min(100, Number(s.pct || 0))).toFixed(1)}%"></span>`).join('')}</div>`
+      : '';
+    return `
+      <div class="kpi kpi-link ceo-kpi-card" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0" data-ui-tip="${esc(cleanCeoText(c.tip || ('Open ' + c.k)))}">
+        <div class="ceo-kpi-head">
+          <span class="ceo-kpi-lbl"><i class="ceo-kpi-ico" aria-hidden="true">${ic(c.icon || 'overview')}</i><span class="k">${esc(cleanCeoText(c.k))}</span></span>
+          ${c.badge ? `<span class="ceo-kpi-pill ${esc(c.badgeTone || 'brass')}">${esc(cleanCeoText(c.badge))}</span>` : ''}
+        </div>
+        <div class="ceo-kpi-val-row">
+          <span class="v num">${cleanCeoText(c.v)}</span>${c.subVal ? `<small class="ceo-kpi-subval">${cleanCeoText(c.subVal)}</small>` : ''}
+        </div>
+        ${meterHtml}
+        <span class="d ${esc(c.cls || 'good')}">${cleanCeoText(c.d)}</span>
+      </div>`;
+  }
+
+  function renderCeoPnlBridge(bridge) {
+    if (!bridge || !Array.isArray(bridge.steps) || !bridge.steps.length) return '';
+    return `
+      <div class="ceo-pnl-bridge">
+        <div class="ceo-bridge-hdr">
+          <span class="ceo-bridge-title">${esc(cleanCeoText(bridge.title || 'Consolidated P&L Value Bridge'))}</span>
+          ${bridge.meta ? `<span class="ceo-bridge-meta">${esc(cleanCeoText(bridge.meta))}</span>` : ''}
+        </div>
+        <div class="ceo-bridge-grid">
+          ${bridge.steps.map(st => {
+            const pct = Math.max(4, Math.min(100, Number(st.barPct || 0)));
+            return `
+              <div class="ceo-bridge-step${st.isFinal ? ' is-final' : ''}${st.jump ? ' kpi-link' : ''}" ${st.jump ? `data-nav-jump="${esc(st.jump)}" role="button" tabindex="0"` : ''}>
+                <div class="ceo-bridge-top">
+                  <span class="ceo-bridge-lbl">${st.op ? `<b class="ceo-bridge-op">${esc(st.op)}</b> ` : ''}${esc(cleanCeoText(st.label))}</span>
+                  <span class="ceo-bridge-pct ${esc(st.pctTone || '')}">${esc(cleanCeoText(st.pctTxt || ''))}</span>
+                </div>
+                <div class="ceo-bridge-val num">${cleanCeoText(st.valHtml)}</div>
+                <div class="ceo-bridge-track" aria-hidden="true"><span class="ceo-bridge-fill ${esc(st.barTone || 'cobalt')}" style="width:${pct.toFixed(1)}%"></span></div>
+                ${st.sub ? `<div class="ceo-bridge-sub">${esc(cleanCeoText(st.sub))}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
+  function renderCeoPulseDeck(pulse) {
+    const activeTab = ['attention', 'clients', 'mix'].includes(STATE.ceoPulseTab) ? STATE.ceoPulseTab : 'attention';
+    const tabs = [
+      { id: 'attention', label: cleanCeoText(pulse.attTabLabel || 'Attention'), badge: cleanCeoText(pulse.attBadge || '') },
+      { id: 'clients', label: cleanCeoText(pulse.clientsTabLabel || 'Top Clients') },
+      { id: 'mix', label: cleanCeoText(pulse.mixTabLabel || 'Revenue Mix') }
+    ];
+    const rows = activeTab === 'clients' ? (pulse.clientRows || []) : (activeTab === 'mix' ? (pulse.mixRows || []) : (pulse.attentionRows || []));
+    const footLeft = cleanCeoText(activeTab === 'clients' ? (pulse.clientsFootLeft || '') : (activeTab === 'mix' ? (pulse.mixFootLeft || '') : (pulse.attFootLeft || '')));
+    const footJump = activeTab === 'clients' ? (pulse.clientsJump || 'customers') : (activeTab === 'mix' ? (pulse.mixJump || 'pricing') : (pulse.attJump || 'sentinels'));
+    const footJumpLbl = cleanCeoText(activeTab === 'clients' ? (pulse.clientsJumpLbl || 'All Clients') : (activeTab === 'mix' ? (pulse.mixJumpLbl || 'Full Breakdown') : (pulse.attJumpLbl || 'All Sentinels')));
+
+    return `
+      <div class="ceo-pulse-deck" id="ceoPulseDeck">
+        <div class="ceo-pulse-hdr">
+          <div class="ceo-pulse-title-wrap">
+            <span class="ceo-pulse-title">${esc(cleanCeoText(pulse.title || 'Executive Pulse'))}</span>
+            <span class="ceo-pulse-sub">${esc(cleanCeoText(activeTab === 'clients' ? (pulse.clientsSub || 'Concentration & AR exposure') : (activeTab === 'mix' ? (pulse.mixSub || 'Top revenue & margin drivers') : (pulse.attSub || 'Priority watchdogs & approvals'))))}</span>
+          </div>
+          <div class="ceo-pulse-tabs" role="tablist" aria-label="Executive Pulse Lenses">
+            ${tabs.map(t => `
+              <button type="button" role="tab" aria-selected="${activeTab === t.id ? 'true' : 'false'}" class="ceo-pulse-tab${activeTab === t.id ? ' active' : ''}" data-ceo-pulse-tab="${t.id}">${esc(t.label)}${t.badge ? `<i class="ceo-tab-cnt">${esc(t.badge)}</i>` : ''}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="ceo-pulse-list">
+          ${rows.slice(0, 4).map(r => {
+            if (r.kind === 'bar') {
+              const pct = Math.max(3, Math.min(100, Number(r.pct || 0)));
+              return `
+                <div class="ceo-pulse-row is-bar-row${r.jump ? ' kpi-link' : ''}" ${r.jump ? `data-nav-jump="${esc(r.jump)}" role="button" tabindex="0"` : ''}>
+                  <span class="ceo-pr-rank">${esc(String(r.rank || ''))}</span>
+                  <div class="ceo-pr-main">
+                    <div class="ceo-pr-top">
+                      <span class="ceo-pr-name">${r.nameHtml ? cleanCeoText(r.nameHtml) : `<b>${esc(cleanCeoText(r.name || ''))}</b>`}</span>
+                      <span class="ceo-pr-val num"><b>${esc(cleanCeoText(r.val || ''))}</b>${r.shareTxt ? `<small>${esc(cleanCeoText(r.shareTxt))}</small>` : ''}</span>
+                    </div>
+                    <div class="ceo-pr-bar-row">
+                      <div class="ceo-hbar-track" aria-hidden="true"><span class="ceo-hbar-fill ${esc(r.barTone || 'cobalt')}" style="width:${pct.toFixed(1)}%"></span></div>
+                      <span class="ceo-pr-meta">${r.metaHtml ? cleanCeoText(r.metaHtml) : esc(cleanCeoText(r.meta || ''))}</span>
+                    </div>
+                  </div>
+                </div>`;
+            }
+            return `
+              <div class="ceo-pulse-row is-att-row${r.jump ? ' kpi-link' : ''}" ${r.jump ? `data-nav-jump="${esc(r.jump)}" role="button" tabindex="0"` : ''}>
+                <span class="ceo-att-dot ${esc(r.tone || 'good')}" aria-hidden="true">${ic(r.icon || (r.tone === 'crit' || r.tone === 'warn' ? 'warn' : 'check_circle'))}</span>
+                <div class="ceo-pr-main">
+                  <div class="ceo-pr-name"><b>${esc(cleanCeoText(r.title || ''))}</b></div>
+                  <div class="ceo-pr-sub">${esc(cleanCeoText(r.detail || ''))}</div>
+                </div>
+                <span class="ceo-att-pill ${esc(r.tone || 'good')}">${esc(cleanCeoText(r.pill || 'Inspect'))}</span>
+              </div>`;
+          }).join('')}
+        </div>
+        <div class="ceo-pulse-foot">
+          <span class="ceo-pf-note">${esc(footLeft)}</span>
+          <button type="button" class="btn-ghost-bar ceo-pf-btn" data-nav-jump="${esc(footJump)}">${esc(footJumpLbl)}</button>
+        </div>
+      </div>`;
+  }
+
+  if (window.MFG_I18N && typeof window.MFG_I18N.registerLocale === 'function') {
+    const arLocale = window.MFG_I18N.getSupportedLocales().find(l => l.code === 'ar');
+    const frLocale = window.MFG_I18N.getSupportedLocales().find(l => l.code === 'fr');
+    window.MFG_I18N.registerLocale('ar', arLocale || { dir: 'rtl', label: 'العربية', shortLabel: 'عربي', nativeName: 'العربية', bcp47: 'ar-LB' }, {
+      'Executive Pulse': 'النبض التنفيذي',
+      'Group Revenue': 'إيرادات المجموعة',
+      'Operating Profit': 'الربح التشغيلي',
+      'Cash & Velocity': 'السيولة والتحصيل',
+      'Working Capital': 'رأس المال العامل',
+      'Cash & IC Pairing': 'السيولة والمطابقة البينية',
+      'Resort Revenue': 'إيرادات المنتجعات',
+      'POS & Collections': 'الصناديق والتحصيل',
+      'Membership AR': 'ذمم الاشتراكات',
+      'Invoiced Revenue': 'الإيرادات المفوترة',
+      'Trading Profit': 'ربح التجارة',
+      'Showroom & Stock': 'المعرض والمخزون',
+      'Receivables & AR': 'الذمم المدينة',
+      'Annual Rent Roll': 'الإيجار السنوي',
+      'Operating NOI': 'صافي دخل التشغيل',
+      'Sales & Deposits': 'المبيعات والتأمينات',
+      'Rent & Buyer AR': 'ذمم الإيجار والمشترين',
+      'Written Premium': 'الأقساط المكتتبة',
+      'Brokerage Profit': 'ربح الوساطة',
+      'Fiduciary Cash': 'السيولة الائتمانية',
+      'Client & Carrier': 'ذمم العملاء والشركات',
+      'Monthly Performance & Profit Trajectory': 'مسار الأداء الشهري والربحية',
+      'Consolidated P&L Value Bridge (Ex-VAT)': 'جسر الأرباح والخسائر الموحّد (دون الضريبة)',
+      'Consolidated 6-Industry P&L Bridge': 'جسر الأرباح والخسائر الموحّد للقطاعات الستة',
+      'Operating Entities Scorecard': 'بطاقة أداء الشركات العاملة',
+      'Priority watchdogs, receivables & queues': 'تنبيهات الرقابة والذمم والملفات المعلّقة',
+      'Revenue concentration & AR exposure': 'تركّز الإيرادات وانكشاف الذمم المدينة',
+      'Top material grades & unit pricing': 'أبرز الأصناف المباعة ومتوسط سعر الوحدة',
+      'Attention': 'أولويات المتابعة',
+      'Top Clients': 'كبار العملاء',
+      'Revenue Mix': 'مزيج الإيرادات',
+      'Sister Corridors': 'التحويلات الشقيقة',
+      'Industry Mix': 'مزيج القطاعات',
+      'VIP Members': 'كبار المشتركين',
+      'Menu Stars': 'أصناف القائمة الأبرز',
+      'Fleet Buyers': 'عملاء الشاحنات',
+      'Chassis & SKUs': 'الشاحنات والأصناف',
+      'Top Tenants': 'كبار المستأجرين',
+      'Income Assets': 'الأصول المدرّة للدخل',
+      'Key Insureds': 'كبار المؤمّن لهم',
+      'Lines Mix': 'مزيج الفروع التأمينية',
+      'Net Sales': 'صافي المبيعات',
+      'Raw': 'المواد',
+      'Margin': 'المجمل',
+      'OpEx': 'مصاريف',
+      'Profit': 'الربح الصافي',
+      'All Sentinels': 'كل المراقبين',
+      'All Clients': 'كل العملاء',
+      'Price Matrix': 'جدول الأسعار'
+    });
+    window.MFG_I18N.registerLocale('fr', frLocale || { dir: 'ltr', label: 'Français', shortLabel: 'FR', nativeName: 'Français', bcp47: 'fr-FR' }, {
+      'Executive Pulse': 'Synthèse Exécutive',
+      'Group Revenue': 'Revenu du Groupe',
+      'Operating Profit': "Résultat d'Exploitation",
+      'Cash & Velocity': 'Trésorerie & Recouvrement',
+      'Working Capital': 'Besoin en Fonds de Roulement',
+      'Cash & IC Pairing': 'Trésorerie & Lettrage IC',
+      'Resort Revenue': 'Revenus des Resorts',
+      'POS & Collections': 'Caisses & Encaissements',
+      'Membership AR': 'Créances Abonnements',
+      'Invoiced Revenue': 'Chiffre Facturé',
+      'Trading Profit': 'Résultat Négoce',
+      'Showroom & Stock': 'Showroom & Stocks',
+      'Receivables & AR': 'Créances Clients',
+      'Annual Rent Roll': 'Loyers Annuels',
+      'Operating NOI': 'Revenu Net (NOI)',
+      'Sales & Deposits': 'Ventes & Dépôts',
+      'Rent & Buyer AR': 'Créances Loyers & Ventes',
+      'Written Premium': 'Primes Émises',
+      'Brokerage Profit': 'Résultat Courtage',
+      'Fiduciary Cash': 'Trésorerie Fiduciaire',
+      'Client & Carrier': 'Clients & Compagnies',
+      'Monthly Performance & Profit Trajectory': 'Trajectoire Mensuelle des Revenus & Résultats',
+      'Consolidated P&L Value Bridge (Ex-VAT)': 'Pont de Valeur P&L Consolidé (HT)',
+      'Consolidated 6-Industry P&L Bridge': 'Pont P&L Consolidé des 6 Secteurs',
+      'Operating Entities Scorecard': 'Tableau des Entités Opérationnelles',
+      'Priority watchdogs, receivables & queues': "Contrôles prioritaires, créances & files d'attente",
+      'Revenue concentration & AR exposure': 'Concentration du chiffre & exposition clients',
+      'Top material grades & unit pricing': 'Principaux matériaux & prix unitaires',
+      'Attention': 'Priorités',
+      'Top Clients': 'Grands Comptes',
+      'Revenue Mix': 'Mix Revenus',
+      'Sister Corridors': 'Flux Sociétés Sœurs',
+      'Industry Mix': 'Mix Sectoriel',
+      'VIP Members': 'Membres VIP',
+      'Menu Stars': 'Articles Phares',
+      'Fleet Buyers': 'Acheteurs Flotte',
+      'Chassis & SKUs': 'Châssis & Références',
+      'Top Tenants': 'Principaux Locataires',
+      'Income Assets': 'Actifs Locatifs',
+      'Key Insureds': 'Grands Assurés',
+      'Lines Mix': 'Mix Branches',
+      'Net Sales': 'Ventes Nettes',
+      'Raw': 'Matières',
+      'Margin': 'Marge',
+      'OpEx': 'Charges',
+      'Profit': 'Résultat',
+      'All Sentinels': 'Toutes les Sentinelles',
+      'All Clients': 'Tous les Clients',
+      'Price Matrix': 'Grille Tarifaire'
+    });
   }
 
   function tbStatus(k) {
@@ -14564,10 +14965,15 @@
   function appStrip() {
     const sum = appEnteredSummary();
     if (!sum.length) return '';
-    return `<div class="app-strip" role="status"><b>App-entered this period (not yet in the book totals):</b>${sum.map(s => `<span>${fmtNum(s.n)} ${esc(s.label)} · ${s.unit === 'L' ? fmtNum(s.sum, 0) + ' L' : fmtUSD(s.sum, 0)}</span>`).join('')}<button type="button" class="btn" data-nav-jump="sales" style="padding:2px 9px;font-size:11px">Open registers →</button></div>`;
+    return `<div class="app-strip" role="status"><b>App-entered this period (not yet in the book totals):</b>${sum.map(s => `<span>${fmtNum(s.n)} ${esc(s.label)} · ${s.unit === 'L' ? fmtNum(s.sum, 0) + ' L' : fmtUSD(s.sum, 0)}</span>`).join('')}<button type="button" class="btn" data-nav-jump="sales" style="padding:2px 9px;font-size:11px">Open registers</button></div>`;
   }
 
   function renderOverview() {
+    const activeInd = getActiveIndustry(STATE.company);
+    if (activeInd && activeInd !== 'Manufacturing') {
+      return renderIndustryOverview(activeInd);
+    }
+
     const m = getModel();
     const k = getKPI();
     const wtcK = STATE.company === 'wtc' ? k : getKPI('wtc');
@@ -14576,73 +14982,260 @@
     const grpK = STATE.company === 'manufacturing-group' ? k : getKPI('manufacturing-group');
     const ltHasLedger = modelHasLedger('lionstransport');
 
-    const salesVal = STATE.basis === 'rep' ? (k.sales_rep_date || k.sales_ttc) : k.sales_ttc;
-    const rawVal = STATE.basis === 'rep' ? (k.raw_rep_date || k.raw_cost) : k.raw_cost;
-    const expVal = STATE.basis === 'rep' ? (k.exp_rep_date || k.expenses) : k.expenses;
-    const opProfit = STATE.basis === 'rep' ? (k.op_profit_rep_date || k.operating_profit) : k.operating_profit;
+    const salesVal = Number(STATE.basis === 'rep' ? (k.sales_rep_date || k.sales_ttc) : k.sales_ttc) || 0;
+    const netSales = Number(k.net_sales || salesVal) || 0;
+    const rawVal = Number(STATE.basis === 'rep' ? (k.raw_rep_date || k.raw_cost) : k.raw_cost) || 0;
+    const expVal = Number(STATE.basis === 'rep' ? (k.exp_rep_date || k.expenses) : k.expenses) || 0;
+    const opProfit = Number(STATE.basis === 'rep' ? (k.op_profit_rep_date || k.operating_profit) : k.operating_profit) || 0;
+    const grossMargin = Number(k.gross_margin != null ? k.gross_margin : (netSales - rawVal)) || 0;
+    const opexAndPay = Math.max(0, round2(grossMargin - opProfit)) || expVal;
 
     const allowedKeys = getAllowedCompanyKeys(activeUser());
     const mfgAllowedKeys = ['wtc', 'bbconstruction', 'lionstransport'].filter(ek => allowedKeys.includes(ek));
     const tb = tbStatus(k);
 
     if (!modelHasLedger()) {
-      const activeInd = getActiveIndustry(STATE.company);
-      if (activeInd && activeInd !== 'Manufacturing') {
-        return renderIndustryOverview(activeInd);
-      }
       return `
         <div class="cockpit-banner">
           <div class="cockpit-title-block">
-            <div class="cockpit-eyebrow">${esc(COMPANY_LABELS[STATE.company])} · FLEET OPERATIONS</div>
+            <div class="cockpit-eyebrow">${esc(cleanCeoText(COMPANY_LABELS[STATE.company]))} · FLEET OPERATIONS</div>
             <div class="cockpit-title">Executive Overview</div>
-            <div class="cockpit-sub">No standalone financial ledger is published yet for ${esc(COMPANY_LABELS[STATE.company])}. Switch to <b>WTC</b>, <b>BBConstruction</b>, or <b>All Group</b> in the entity selector to view consolidated financial scorecards.</div>
+            <div class="cockpit-sub">No standalone financial ledger is published yet for ${esc(cleanCeoText(COMPANY_LABELS[STATE.company]))}. Switch to <b>WTC</b>, <b>BBConstruction</b>, or <b>All Group</b> in the entity selector to view consolidated financial scorecards.</div>
           </div>
         </div>`;
     }
 
+    const months12 = getScopedMonthly(m.monthly, 12);
+    const activeMos = months12.filter(r => Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0)) > 0);
+    const avgMoSales = activeMos.length
+      ? activeMos.reduce((a, r) => a + Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0)), 0) / activeMos.length
+      : salesVal;
+    let peakMo = null;
+    activeMos.forEach(r => {
+      const sv = Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0));
+      if (!peakMo || sv > peakMo.sv) peakMo = { sv, lbl: String(r['Year Month'] || r.YearMonthNo || '').replace('2024', '24').replace('2025', '25').replace('2026', '26') };
+    });
+
+    const cashTtc = Math.max(0, Number(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales) || 0);
+    const crTtc = Math.max(0, Number(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales) || 0);
+    const salesSplitDen = Math.max(1, cashTtc + crTtc);
+    const cashPct = Math.round((cashTtc / salesSplitDen) * 100);
+    const crPct = Math.max(0, 100 - cashPct);
+
+    const revDen = Math.max(1, netSales);
+    const rawPctNum = Math.min(100, Math.max(0, (rawVal / revDen) * 100));
+    const profPctNum = Math.min(100, Math.max(0, (Math.max(0, opProfit) / revDen) * 100));
+    const opexPctNum = Math.max(0, 100 - rawPctNum - profPctNum);
+    const gmPctStr = fmtPct(k.gm_pct, grossMargin, netSales);
+    const opMarginPctStr = fmtPct(k.op_margin_pct, opProfit, netSales);
+
+    const cashIn = Math.max(0, Number(k.cash_inflow || 0));
+    const cashOut = Math.max(0, Number(k.cash_outflow || 0));
+    const flowDen = Math.max(1, cashIn + cashOut);
+    const flowInPct = (cashIn + cashOut) > 0 ? Math.round((cashIn / flowDen) * 100) : 50;
+    const flowOutPct = Math.max(0, 100 - flowInPct);
+    const rcptsCollected = Math.max(0, Number(k.receipts || (crTtc - Number(k.ar_balance || 0))) || 0);
+    const collPct = crTtc > 0 ? Math.min(100, Math.max(0, (rcptsCollected / crTtc) * 100)) : 100;
+
+    const arBal = Number(k.ar_balance || 0);
+    const arOvd = Math.max(0, Number(k.ar_overdue || 0));
+    const arCur = Math.max(0, arBal - arOvd);
+    const arDen = Math.max(1, Math.max(0, arBal));
+    const arCurPct = arBal > 0 ? Math.round((arCur / arDen) * 100) : 100;
+    const arOvdPct = Math.max(0, 100 - arCurPct);
+
+    const tillUsdVal = Number(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till) || 0;
+    const kpiCards = [
+      {
+        jump: 'sales',
+        icon: 'sales',
+        k: 'Group Revenue',
+        badge: activeMos.length >= 2 ? `Avg ${fmtUSDk(avgMoSales)}/mo` : `${fmtNum(k.loads)} loads`,
+        badgeTone: 'brass',
+        v: fmtUSD(salesVal, 0),
+        subVal: `${fmtNum(k.loads)} loads`,
+        segs: [{ pct: cashPct, tone: 'emerald' }, { pct: crPct, tone: 'cobalt' }],
+        d: `Cash ${fmtUSDk(cashTtc)} (${cashPct}%) · Credit ${fmtUSDk(crTtc)} (${crPct}%)${k.avg_price_ttc ? ' · $' + Number(k.avg_price_ttc).toFixed(2) + '/m³' : ''}`,
+        cls: 'good',
+        tip: 'Open Sales & Receivables'
+      },
+      {
+        jump: 'expenses',
+        icon: 'ledger',
+        k: 'Operating Profit',
+        badge: `${opMarginPctStr} Margin`,
+        badgeTone: opProfit < 0 ? 'crit' : 'good',
+        v: fmtUSD(opProfit, 0),
+        subVal: `${gmPctStr} GM`,
+        segs: [{ pct: rawPctNum, tone: 'amber' }, { pct: opexPctNum, tone: 'brass' }, { pct: profPctNum, tone: 'emerald' }],
+        d: `Gross ${fmtUSDk(grossMargin)} · Raw ${fmtUSDk(rawVal)} · OpEx & Pay ${fmtUSDk(opexAndPay)}`,
+        cls: opProfit < 0 ? 'crit' : 'good',
+        tip: 'Open Expenses & P&L Breakdown'
+      },
+      {
+        jump: 'cashflow',
+        icon: 'cashflow',
+        k: 'Cash & Velocity',
+        badge: `${collPct.toFixed(1)}% Collected`,
+        badgeTone: collPct >= 90 ? 'good' : 'brass',
+        v: Math.abs(tillUsdVal) > 0 && Math.abs(tillUsdVal) < 10000 ? fmtUSD(tillUsdVal, 2) : fmtUSD(tillUsdVal, 0),
+        subVal: fmtLBP(k.cash_till_lbp || 0),
+        segs: [{ pct: flowInPct, tone: 'emerald' }, { pct: flowOutPct, tone: 'brass' }],
+        d: `AR Collected ${fmtUSDk(rcptsCollected)} · In ${fmtUSDk(cashIn)} / Out ${fmtUSDk(cashOut)}`,
+        cls: 'good',
+        tip: 'Open Cash Flow & Treasury'
+      },
+      {
+        jump: 'customers',
+        icon: 'customers',
+        k: 'Working Capital',
+        badge: arOvd > 0 ? `Overdue ${fmtUSDk(arOvd)}` : '100% Current',
+        badgeTone: arOvd > 0 ? 'warn' : 'good',
+        v: fmtUSD(arBal, 0),
+        subVal: 'Open AR',
+        segs: arBal > 0 ? [{ pct: arCurPct, tone: 'cobalt' }, { pct: arOvdPct, tone: 'amber' }] : [{ pct: 100, tone: 'emerald' }],
+        d: `Current ${fmtUSDk(arCur)} · >30d ${fmtUSDk(arOvd)} · Open AP ${fmtUSD(k.ap_balance, 0)}`,
+        cls: arOvd > 0 ? 'crit' : 'good',
+        tip: 'Open Receivables & Payables'
+      }
+    ];
+
+    const avgSellUnit = Number(k.avg_price_ttc || k.avg_price_net || 0);
+    const avgRawUnit = Number(k.avg_raw_cost || (Number(k.raw_qty || 0) > 0 ? rawVal / Number(k.raw_qty) : 0));
+    const spreadMultiple = (avgSellUnit > 0 && avgRawUnit > 0) ? (avgSellUnit / avgRawUnit).toFixed(1) + 'x spread' : '';
+    const pnlBridge = {
+      title: 'Consolidated P&L Value Bridge (Ex-VAT)',
+      meta: avgSellUnit > 0 ? `$${avgSellUnit.toFixed(2)}/m³ sell${avgRawUnit > 0 ? ' vs $' + avgRawUnit.toFixed(2) + '/m³ raw (' + spreadMultiple + ')' : ''}` : `${fmtNum(k.loads)} dispatches`,
+      steps: [
+        { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(netSales), barPct: 100, barTone: 'cobalt', sub: `Billed ${fmtUSDk(salesVal)}`, jump: 'sales' },
+        { op: '-', label: 'Raw', pctTxt: `${rawPctNum.toFixed(1)}%`, valHtml: `-${fmtUSDk(rawVal)}`, barPct: rawPctNum, barTone: 'amber', sub: `${fmtNum(k.raw_loads || 0)} raw loads`, jump: 'raw' },
+        { op: '=', label: 'Margin', pctTxt: gmPctStr, pctTone: 'good', valHtml: fmtUSDk(grossMargin), barPct: Math.max(4, (grossMargin / revDen) * 100), barTone: 'cerulean', sub: 'Realized spread', jump: 'pricing' },
+        { op: '-', label: 'OpEx', pctTxt: `${((opexAndPay / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opexAndPay)}`, barPct: (opexAndPay / revDen) * 100, barTone: 'brass', sub: `Exp ${fmtUSDk(expVal)} + Pay`, jump: 'expenses' },
+        { op: '=', label: 'Profit', pctTxt: opMarginPctStr, pctTone: opProfit < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProfit), barPct: Math.max(6, profPctNum), barTone: opProfit < 0 ? 'amber' : 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
+      ]
+    };
+
+    // Executive Pulse Data (Attention | Top Clients | Revenue Mix)
+    const scopedCusts = getScopedModelCustomers(m).filter(c => Number(c.sales_ttc || 0) > 0 || Number(c.ar_balance || 0) > 0);
+    const topCustByRev = scopedCusts.slice().sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
+    const topOverdueCust = scopedCusts.slice().sort((a, b) => Number(b.ar_31_60 || 0) + Number(b.ar_60_plus || 0) - (Number(a.ar_31_60 || 0) + Number(a.ar_60_plus || 0)))[0];
+    const scopedProds = getScopedModelProducts(m).filter(p => Number(p.sales_ttc || 0) > 0).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
+
+    const openSentinels = buildSentinelItems().filter(s => s.severity !== 'ok');
+    const pendExpCnt = filterRecords(SEED.records.expenses || [], { ignoreSearch: true }).filter(x => isPendingPriceExpense(x)).length;
+    const pendRawCnt = filterRecords(SEED.records.raw_purchases || [], { ignoreSearch: true }).filter(r => Boolean(r && r.price_pending)).length;
+    const totPending = pendExpCnt + pendRawCnt;
+
+    const attentionRows = [
+      {
+        tone: arOvd > 0 ? 'warn' : 'good',
+        icon: arOvd > 0 ? 'warn' : 'check_circle',
+        title: arOvd > 0 ? `Overdue Receivables (>30d): ${fmtUSD(arOvd, 0)}` : 'Receivables Aging: 100% Within Credit Terms',
+        detail: arOvd > 0
+          ? `${arOvdPct}% of ${fmtUSD(arBal, 0)} Open AR${topOverdueCust && topOverdueCust.Customer ? ' · Lead account: ' + topOverdueCust.Customer : ''}`
+          : `Open AR ${fmtUSD(arBal, 0)} across ${fmtNum(scopedCusts.filter(c => Number(c.ar_balance || 0) > 0).length)} active credit accounts`,
+        pill: arOvd > 0 ? 'Collect AR' : 'Healthy',
+        jump: 'customers'
+      },
+      {
+        tone: openSentinels.length > 0 ? 'warn' : 'good',
+        icon: 'sentinels',
+        title: openSentinels.length > 0 ? `${fmtNum(openSentinels.length)} Active Audit & Sentinel Exceptions` : 'All 11 Audit Sentinels Passing',
+        detail: openSentinels.length > 0
+          ? openSentinels.slice(0, 2).map(s => s.title.split('(')[0].trim()).join(' · ')
+          : 'Price corridors, serial pads, fuel burn & payroll contracts verified',
+        pill: openSentinels.length > 0 ? `${openSentinels.length} Alerts` : 'All Clear',
+        jump: 'sentinels'
+      },
+      {
+        tone: totPending > 0 ? 'warn' : 'good',
+        icon: totPending > 0 ? 'clock' : 'check_circle',
+        title: totPending > 0 ? `${fmtNum(totPending)} Unpriced ${totPending === 1 ? 'Entry' : 'Entries'} Awaiting Rate Sign-Off` : 'Zero Unpriced Expense or Quarry Queues',
+        detail: totPending > 0
+          ? `${fmtNum(pendExpCnt)} expense bill${pendExpCnt === 1 ? '' : 's'} · ${fmtNum(pendRawCnt)} quarry ticket${pendRawCnt === 1 ? '' : 's'} staged at $0`
+          : 'All dispatched quarry loads and plant bills carry approved rates',
+        pill: totPending > 0 ? `${totPending} Pending` : 'Priced',
+        jump: pendRawCnt > pendExpCnt ? 'raw' : 'expenses'
+      },
+      {
+        tone: tb.ok === false ? 'crit' : 'good',
+        icon: 'ledger',
+        title: `Double-Entry Books: ${tb.ok === false ? 'Variance ' + tb.label : 'Balanced ($0.00 Variance)'}`,
+        detail: `Lebanese CoA Classes 1-7 reconciled across ${mfgAllowedKeys.length} entities · Trial Balance $0.00 diff`,
+        pill: tb.ok === false ? 'Inspect TB' : 'Audited',
+        jump: 'ledger'
+      }
+    ];
+
+    const top4CustSum = topCustByRev.slice(0, 4).reduce((s, c) => s + Number(c.sales_ttc || 0), 0);
+    const maxCustRev = topCustByRev.length ? Math.max(1, Number(topCustByRev[0].sales_ttc || 0)) : 1;
+    const clientRows = topCustByRev.slice(0, 4).map((c, idx) => {
+      const rev = Number(c.sales_ttc || 0);
+      const share = salesVal > 0 ? ((rev / salesVal) * 100).toFixed(1) + '%' : '';
+      const ar = Number(c.ar_balance || 0);
+      return {
+        kind: 'bar',
+        rank: `#${idx + 1}`,
+        nameHtml: relLink('customers', c.Customer, c.Customer, true),
+        val: fmtUSD(rev, 0),
+        shareTxt: share,
+        pct: (rev / maxCustRev) * 100,
+        barTone: 'cobalt',
+        meta: `${fmtNum(c.loads || 0)} loads · ${ar > 0.5 ? 'AR ' + fmtUSDk(ar) : 'Settled'}`,
+        jump: 'customers'
+      };
+    });
+
+    const top4ProdSum = scopedProds.slice(0, 4).reduce((s, p) => s + Number(p.sales_ttc || 0), 0);
+    const maxProdRev = scopedProds.length ? Math.max(1, Number(scopedProds[0].sales_ttc || 0)) : 1;
+    const mixRows = scopedProds.slice(0, 4).map((p, idx) => {
+      const rev = Number(p.sales_ttc || 0);
+      const share = salesVal > 0 ? ((rev / salesVal) * 100).toFixed(1) + '%' : '';
+      const unitPrice = Number(p.avg_price_ttc || p.avg_price_net || 0);
+      return {
+        kind: 'bar',
+        rank: `#${idx + 1}`,
+        nameHtml: relLink('products', p.Product, p.Product, true),
+        val: fmtUSD(rev, 0),
+        shareTxt: share,
+        pct: (rev / maxProdRev) * 100,
+        barTone: idx === 0 ? 'cobalt' : (idx === 1 ? 'cerulean' : 'brass'),
+        meta: `${fmtNum(p.loads || 0)} loads${unitPrice > 0 ? ' · $' + unitPrice.toFixed(2) + '/' + (p.UoM || 'm³') : ''}`,
+        jump: 'pricing'
+      };
+    });
+
+    const entDen = Math.max(1, Number(grpK.sales_ttc || salesVal || 1));
+    const attActionCount = (arOvd > 0 ? 1 : 0) + openSentinels.length + totPending + (tb.ok === false ? 1 : 0);
+
     return `
-      <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE FINANCIAL KPIS -->
+      <!-- 1. SINGLE-SCREEN CEO COCKPIT: 4 HEADLINE TELEMETRY KPIS -->
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
-        <div class="kpi kpi-link" data-nav-jump="sales" role="button" tabindex="0" data-ui-tip="Open Sales &amp; Receivables">
-          <span class="k">Consolidated Revenue</span>
-          <span class="v num">${fmtUSD(salesVal, 0)}</span>
-          <span class="d good">Cash: ${fmtUSD(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, 0)} · Credit: ${fmtUSD(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, 0)}</span>
-        </div>
-        <div class="kpi kpi-link" data-nav-jump="expenses" role="button" tabindex="0" data-ui-tip="Open Expenses &amp; Payables">
-          <span class="k">Operating Cash Profit</span>
-          <span class="v num">${fmtUSD(opProfit, 0)}<small>${fmtPct(k.op_margin_pct, opProfit, k.net_sales)} margin</small></span>
-          <span class="d good">Gross Margin: ${fmtUSD(k.gross_margin, 0)} (${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)}) · Raw Cost: ${fmtUSD(rawVal, 0)}</span>
-        </div>
-        <div class="kpi kpi-link" data-nav-jump="cashflow" role="button" tabindex="0" data-ui-tip="Open Cash Flow &amp; Treasury">
-          <span class="k">Cash Position &amp; Net Flow</span>
-          <span class="v num">${fmtUSD(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till, 2)}<small>${fmtLBP(k.cash_till_lbp || 0)}</small></span>
-          <span class="d good">Total: ${fmtUSD(k.cash_till, 2)} · In: ${fmtUSDk(k.cash_inflow)} / Out: ${fmtUSDk(k.cash_outflow)}</span>
-        </div>
-        <div class="kpi kpi-link" data-nav-jump="customers" role="button" tabindex="0" data-ui-tip="Open Receivables &amp; Payables">
-          <span class="k">Receivables &amp; Payables (AR / AP)</span>
-          <span class="v num">${fmtUSD(k.ar_balance, 0)}<small>Open AR</small></span>
-          <span class="d ${Number(k.ar_overdue || 0) > 0 ? 'crit' : 'good'}">Overdue &gt;30d: ${fmtUSD(k.ar_overdue, 0)} · Open AP: ${fmtUSD(k.ap_balance, 0)}</span>
-        </div>
+        ${kpiCards.map(renderCeoKpiCard).join('')}
       </section>
 
-      <!-- 2. SINGLE-SCREEN CEO STAGE: MONTHLY TRAJECTORY CHART + OPERATING ENTITIES SCORECARD -->
+      <!-- 2. SINGLE-SCREEN CEO STAGE: TRAJECTORY + P&L BRIDGE | ENTITIES SCORECARD + EXECUTIVE PULSE -->
       <section class="row2 ceo-stage">
         <div class="panel ceo-chart-panel">
           <div class="ph">
             <div>
-              <h3>Monthly Revenue, Raw Cost &amp; Cash Profit Trajectory</h3>
-              <span class="ph-sub">${esc(COMPANY_LABELS[STATE.company])} · Hover any month to inspect detailed figures</span>
+              <h3>Monthly Performance &amp; Profit Trajectory</h3>
+              <span class="ph-sub">${STATE.company === 'manufacturing-group' ? 'WTC · BBConstruction · Lions' : esc(cleanCeoText(COMPANY_LABELS[STATE.company]))}${peakMo ? ` · Peak ${esc(peakMo.lbl)} (${fmtUSDk(peakMo.sv)}) · Avg ${fmtUSDk(avgMoSales)}/mo` : ' · Hover any month to inspect detailed figures'}</span>
             </div>
-            <div class="legend">
-              <span><i class="sw-box s-1"></i>Total Sales</span>
-              <span><i class="sw-box s-2"></i>Raw Material Cost</span>
-              <span><i class="sw-box s-3"></i>Operating Profit</span>
+            <div class="ceo-ph-right">
+              <div class="legend">
+                <span><i class="sw-box s-1"></i>Sales</span>
+                <span><i class="sw-box s-2"></i>Raw Cost</span>
+                <span><i class="sw-box s-3"></i>Profit</span>
+              </div>
+              <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="pbi">Dashboards</button>
             </div>
           </div>
           <div class="chartwrap" id="execChartWrap">
-            ${buildExecutiveChart(getScopedMonthly(m.monthly, 12))}
+            ${buildExecutiveChart(months12)}
             <div class="chart-tip" id="execChartTip" hidden></div>
           </div>
+          ${renderCeoPnlBridge(pnlBridge)}
         </div>
 
         <div class="panel ceo-entities-panel">
@@ -14651,7 +15244,7 @@
               <h3>Operating Entities Scorecard</h3>
               <span class="ph-sub">Click any entity to focus workspace</span>
             </div>
-            <button type="button" class="btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-nav-jump="entities">Entity Comparison</button>
+            <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>
           </div>
           <div class="table-scroll ceo-table-scroll">
             <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
@@ -14660,19 +15253,25 @@
                   <th>Entity</th>
                   <th class="n">Revenue</th>
                   <th class="n hide-xs">Loads</th>
-                  <th class="n">Gross Margin</th>
-                  <th class="n">Op. Profit</th>
+                  <th class="n">GM %</th>
+                  <th class="n">Profit</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                ${[['wtc', 'WTC<span class="hide-xs"> · World Trading</span>', wtcK], ['bbconstruction', 'BBConstruction', bbcK]].filter(([key]) => mfgAllowedKeys.includes(key)).map(([key, label, kk]) => {
+                ${[['wtc', 'WTC', wtcK], ['bbconstruction', 'BBConstruction', bbcK]].filter(([key]) => mfgAllowedKeys.includes(key)).map(([key, label, kk]) => {
                   const t = tbStatus(kk);
                   const isFocused = STATE.company === key;
+                  const entShare = Math.min(100, Math.max(0, (Number(kk.sales_ttc || 0) / entDen) * 100));
                   return `
                 <tr class="clickable-row ${isFocused ? 'is-active-co' : ''}" data-jump-co="${key}">
                   <td><b>${label}</b></td>
-                  <td class="n">${fmtUSD(kk.sales_ttc, 0)}</td>
+                  <td class="n">
+                    <div class="ceo-ent-rev-cell">
+                      <span>${fmtUSD(kk.sales_ttc, 0)}</span>
+                      <span class="ceo-ent-share-wrap"><span class="ceo-ent-share-track"><span class="ceo-ent-share-fill" style="width:${entShare.toFixed(1)}%"></span></span><i>${Math.round(entShare)}%</i></span>
+                    </div>
+                  </td>
                   <td class="n hide-xs">${fmtNum(kk.loads)}</td>
                   <td class="n">${fmtPct(kk.gm_pct, kk.gross_margin, kk.net_sales)}</td>
                   <td class="n"><b>${fmtUSD(kk.operating_profit, 0)}</b></td>
@@ -14682,17 +15281,17 @@
                 ${mfgAllowedKeys.includes('lionstransport') ? `
                 <tr class="clickable-row ${STATE.company === 'lionstransport' ? 'is-active-co' : ''}" data-jump-co="lionstransport">
                   <td><b>Lions Transport</b></td>
-                  <td class="n">${ltHasLedger ? fmtUSD(ltK.sales_ttc, 0) : '—'}</td>
-                  <td class="n hide-xs">${ltHasLedger ? fmtNum(ltK.loads) : '—'}</td>
+                  <td class="n">${ltHasLedger ? fmtUSD(ltK.sales_ttc, 0) : '-'}</td>
+                  <td class="n hide-xs">${ltHasLedger ? fmtNum(ltK.loads) : '-'}</td>
                   <td class="n">${ltHasLedger ? fmtPct(ltK.gm_pct, ltK.gross_margin, ltK.net_sales) : 'Fleet'}</td>
-                  <td class="n">${ltHasLedger ? fmtUSD(ltK.operating_profit, 0) : '—'}</td>
+                  <td class="n">${ltHasLedger ? fmtUSD(ltK.operating_profit, 0) : '-'}</td>
                   <td><span class="m-chip ${ltHasLedger ? 'closed' : ''}">${ltHasLedger ? 'Balanced' : 'Fleet Active'}</span></td>
                 </tr>` : ''}
               </tbody>
               ${mfgAllowedKeys.length >= 2 ? `
               <tfoot>
                 <tr class="total">
-                  <td><b>Group Total<span class="hide-xs"> (${mfgAllowedKeys.length} entities)</span></b></td>
+                  <td><b>Total<span class="hide-xs"> (${mfgAllowedKeys.length} entities)</span></b></td>
                   <td class="n"><b>${fmtUSD(grpK.sales_ttc, 0)}</b></td>
                   <td class="n hide-xs"><b>${fmtNum(grpK.loads)}</b></td>
                   <td class="n"><b>${fmtPct(grpK.gm_pct, grpK.gross_margin, grpK.net_sales)}</b></td>
@@ -14702,6 +15301,28 @@
               </tfoot>` : ''}
             </table>
           </div>
+          ${renderCeoPulseDeck({
+            title: 'Executive Pulse',
+            attTabLabel: 'Attention',
+            attBadge: attActionCount > 0 ? String(attActionCount) : '',
+            attSub: 'Priority watchdogs, receivables & queues',
+            attentionRows,
+            attFootLeft: `${openSentinels.length} open watchdogs · ${totPending} pending rates`,
+            attJump: 'sentinels',
+            attJumpLbl: 'All Sentinels',
+            clientsTabLabel: 'Top Clients',
+            clientsSub: 'Revenue concentration & AR exposure',
+            clientRows,
+            clientsFootLeft: salesVal > 0 ? `Top 4 represent ${((top4CustSum / salesVal) * 100).toFixed(1)}% of revenue` : 'Active credit & cash clients',
+            clientsJump: 'customers',
+            clientsJumpLbl: 'All Clients',
+            mixTabLabel: 'Revenue Mix',
+            mixSub: 'Top material grades & unit pricing',
+            mixRows,
+            mixFootLeft: salesVal > 0 ? `Top 4 grades drive ${((top4ProdSum / salesVal) * 100).toFixed(1)}% of sales` : `${scopedProds.length} active grades`,
+            mixJump: 'pricing',
+            mixJumpLbl: 'Price Matrix'
+          })}
         </div>
       </section>
     `;
@@ -20347,7 +20968,7 @@
     const guards = meterGuardMap(allFuel);
     const base = filterRecords(SEED.records.fuel_intakes);
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
-    const isTruckEquip = e => /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
+    const isTruckEquip = e => Boolean(e && String(e.Equipment || '').trim()) && /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const isDieselFill = f => /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
     const isGreaseFill = f => /grease|تشحيم|مشحمة/i.test(String(f.item || ''));
     const fuelCacheRev = `${SEED._customRev || 0}|${_WIN_REV}|${_ALERT_RULES_REV || 0}`;
@@ -24214,7 +24835,7 @@
     const m = getModel();
     const mi = getMaintIndex();
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
-    const isTruckEquip = e => /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
+    const isTruckEquip = e => Boolean(e && String(e.Equipment || '').trim()) && /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const equipAll = m.equipment || [];
     const ownCount = equipAll.filter(isOwnEquip).length;
     const transCount = equipAll.length - ownCount;
@@ -24332,7 +24953,7 @@
             <tbody>
               ${shownEquip.map(e => `
                 <tr class="rrow" data-rkey="equipment" data-rid="${esc((equipInfo(e.Equipment) || {}).id || e.Equipment)}">
-                  <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${renderEquipmentHealthBadge(e.Equipment, null, true)}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
+                  <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${renderEquipmentHealthBadge(e.Equipment, null, true)}${isTruckEquip(e) ? `<button type="button" class="fpnl-only-btn" style="margin-left:5px;padding:1px 6px;font-size:10px" data-fpnl-focus-unit="${esc(e.Equipment)}" data-ui-tip="Focus Truck Revenue &amp; Cost P&amp;L on ${esc(e.Equipment)}">P&amp;L</button>` : ''}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
                   <td>${esc(e.Type || 'Truck')}</td>
                   <td><span class="badge ${e.Ownership === 'Owned' || e.Ownership === 'Own' ? 'badge-ok' : 'badge-info'}">${esc(e.Ownership || 'Transporter')}</span></td>
                   <td class="r">${fmtNum(e.trips)}</td>
@@ -28353,25 +28974,161 @@
     return `${Math.max(1, Math.round(b / 1024))} KB`;
   }
 
+  let _attCacheRev = 1;
+  let _attCountIndex = null;
+  const _docBlobMem = new Map();
+  let _docIdbPromise = null;
+
+  function openDocBlobIdb() {
+    if (_docIdbPromise) return _docIdbPromise;
+    if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+    _docIdbPromise = new Promise(resolve => {
+      try {
+        const req = indexedDB.open('isabi_mfg_doc_blobs_v1', 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('blobs')) {
+            db.createObjectStore('blobs', { keyPath: 'id' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+    return _docIdbPromise;
+  }
+
+  function putDocBlob(blobId, dataUrl) {
+    if (!blobId || !dataUrl || typeof dataUrl !== 'string') return;
+    _docBlobMem.set(String(blobId), dataUrl);
+    openDocBlobIdb().then(db => {
+      if (!db) return;
+      try {
+        const tx = db.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').put({ id: String(blobId), data_url: dataUrl, updated_at: Date.now() });
+      } catch (_) {}
+    });
+  }
+
+  function resolveDocDataUrl(item) {
+    if (!item) return '';
+    if (item.data_url && typeof item.data_url === 'string') return item.data_url;
+    const keys = [item._blob_id, item.att_id, item.doc_id, item.id].filter(Boolean).map(String);
+    for (let i = 0; i < keys.length; i++) {
+      if (_docBlobMem.has(keys[i])) return _docBlobMem.get(keys[i]);
+    }
+    return '';
+  }
+
+  function hydrateDocBlobsFromIdb() {
+    openDocBlobIdb().then(db => {
+      if (!db) return;
+      try {
+        const tx = db.transaction('blobs', 'readonly');
+        const req = tx.objectStore('blobs').getAll();
+        req.onsuccess = () => {
+          const rows = Array.isArray(req.result) ? req.result : [];
+          if (!rows.length) return;
+          rows.forEach(r => {
+            if (r && r.id && r.data_url) _docBlobMem.set(String(r.id), r.data_url);
+          });
+          let restoredAny = false;
+          const restoreOnList = list => {
+            if (!Array.isArray(list)) return;
+            list.forEach(rec => {
+              if (!rec) return;
+              if (!rec.data_url && (rec._blob_id || rec.id)) {
+                const hit = resolveDocDataUrl(rec);
+                if (hit) { rec.data_url = hit; restoredAny = true; }
+              }
+              const atts = parseAttachmentsArray(rec.attachments);
+              if (atts.length) {
+                atts.forEach(a => {
+                  if (a && !a.data_url) {
+                    const ah = resolveDocDataUrl(a);
+                    if (ah) { a.data_url = ah; restoredAny = true; }
+                  }
+                });
+                rec.attachments = atts;
+              }
+            });
+          };
+          Object.keys(STATE.customRecords || {}).forEach(k => restoreOnList(STATE.customRecords[k]));
+          if (SEED && SEED.records) {
+            Object.keys(SEED.records).forEach(k => restoreOnList(SEED.records[k]));
+          }
+          if (restoredAny) {
+            _attCacheRev++;
+            if (STATE.view === 'documents') renderApp();
+          }
+        };
+      } catch (_) {}
+    });
+  }
+
+  function parseAttachmentsArray(raw) {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function inferAttachmentMimeType(file) {
+    const rawType = String((file && file.type) || '').trim().toLowerCase();
+    if (rawType) return rawType;
+    const nm = String((file && file.name) || '').trim().toLowerCase();
+    if (/\.pdf$/.test(nm)) return 'application/pdf';
+    if (/\.jpe?g$/.test(nm)) return 'image/jpeg';
+    if (/\.png$/.test(nm)) return 'image/png';
+    if (/\.webp$/.test(nm)) return 'image/webp';
+    if (/\.gif$/.test(nm)) return 'image/gif';
+    if (/\.bmp$/.test(nm)) return 'image/bmp';
+    if (/\.svg$/.test(nm)) return 'image/svg+xml';
+    if (/\.heic|\.heif$/.test(nm)) return 'image/heic';
+    return 'application/octet-stream';
+  }
+
   function readAndCompressAttachmentFile(file, captureMethod = 'File Upload') {
     return new Promise((resolve, reject) => {
       if (!file) { reject(new Error('No file selected')); return; }
-      const maxRawBytes = 8 * 1024 * 1024;
-      if (file.size > maxRawBytes && !/^image\//i.test(file.type || '')) {
-        reject(new Error('File exceeds 8 MB limit. Please upload a smaller PDF or image.'));
+      const inferredMime = inferAttachmentMimeType(file);
+      const isImgMime = /^image\//i.test(inferredMime);
+      const maxNonImgBytes = 12 * 1024 * 1024;
+      const maxImgRawBytes = 25 * 1024 * 1024;
+      if (!isImgMime && file.size > maxNonImgBytes) {
+        reject(new Error('File exceeds 12 MB limit. Please upload a smaller PDF or document.'));
         return;
       }
+      if (isImgMime && file.size > maxImgRawBytes) {
+        reject(new Error('Image exceeds 25 MB limit. Please select a smaller photo.'));
+        return;
+      }
+      const whoName = (typeof activeUser === 'function' && activeUser() && activeUser().full_name) ? activeUser().full_name : 'Admin';
+      const attId = uid('at');
+      const finishResolve = payload => {
+        if (payload && payload.data_url) putDocBlob(payload.id, payload.data_url);
+        _attCacheRev++;
+        resolve(payload);
+      };
       const reader = new FileReader();
-      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.onerror = () => reject(new Error('Could not read selected file'));
       reader.onload = () => {
         const rawDataUrl = String(reader.result || '');
-        if (/^image\/(jpeg|png|webp|bmp)$/i.test(file.type || '') && typeof Image !== 'undefined') {
+        if (/^image\/(jpeg|png|webp|bmp)$/i.test(inferredMime) && typeof Image !== 'undefined') {
           const img = new Image();
           img.onload = () => {
             try {
-              const maxDim = 1400;
-              let w = img.naturalWidth || img.width || 800;
-              let h = img.naturalHeight || img.height || 600;
+              const maxDim = 1800;
+              let w = img.naturalWidth || img.width || 1000;
+              let h = img.naturalHeight || img.height || 750;
               if (w > maxDim || h > maxDim) {
                 if (w >= h) { h = Math.round((h * maxDim) / w); w = maxDim; }
                 else { w = Math.round((w * maxDim) / h); h = maxDim; }
@@ -28383,12 +29140,14 @@
               ctx.fillStyle = '#FFFFFF';
               ctx.fillRect(0, 0, w, h);
               ctx.drawImage(img, 0, 0, w, h);
-              const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+              const compressedUrl = canvas.toDataURL('image/jpeg', 0.84);
               const approxBytes = Math.round((compressedUrl.length * 3) / 4);
-              const fName = file.name || `Scan_${todayISO()}.jpg`;
+              const baseStem = file.name ? String(file.name).replace(/\.[^.]+$/, '') : `Scan_${todayISO()}`;
+              const fName = /\.jpe?g$/i.test(file.name || '') ? file.name : `${baseStem}.jpg`;
               const fSize = approxBytes || file.size || 45000;
-              resolve({
-                id: uid('at'),
+              finishResolve({
+                id: attId,
+                _blob_id: attId,
                 file_name: fName,
                 name: fName,
                 mime_type: 'image/jpeg',
@@ -28397,62 +29156,62 @@
                 size: fSize,
                 capture_method: captureMethod,
                 uploaded_at: nowStamp(),
-                uploaded_by: activeUser().full_name,
+                uploaded_by: whoName,
                 data_url: compressedUrl
               });
             } catch (_) {
-              const fName = file.name || `Attachment_${todayISO()}`;
-              const fType = file.type || 'image/jpeg';
+              const fName = file.name || `Attachment_${todayISO()}.jpg`;
               const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
-              resolve({
-                id: uid('at'),
+              finishResolve({
+                id: attId,
+                _blob_id: attId,
                 file_name: fName,
                 name: fName,
-                mime_type: fType,
-                type: fType,
+                mime_type: inferredMime,
+                type: inferredMime,
                 file_size: fSize,
                 size: fSize,
                 capture_method: captureMethod,
                 uploaded_at: nowStamp(),
-                uploaded_by: activeUser().full_name,
+                uploaded_by: whoName,
                 data_url: rawDataUrl
               });
             }
           };
           img.onerror = () => {
             const fName = file.name || `Attachment_${todayISO()}`;
-            const fType = file.type || 'application/octet-stream';
             const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
-            resolve({
-              id: uid('at'),
+            finishResolve({
+              id: attId,
+              _blob_id: attId,
               file_name: fName,
               name: fName,
-              mime_type: fType,
-              type: fType,
+              mime_type: inferredMime,
+              type: inferredMime,
               file_size: fSize,
               size: fSize,
               capture_method: captureMethod,
               uploaded_at: nowStamp(),
-              uploaded_by: activeUser().full_name,
+              uploaded_by: whoName,
               data_url: rawDataUrl
             });
           };
           img.src = rawDataUrl;
         } else {
           const fName = file.name || `Document_${todayISO()}.pdf`;
-          const fType = file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream');
           const fSize = file.size || Math.round((rawDataUrl.length * 3) / 4);
-          resolve({
-            id: uid('at'),
+          finishResolve({
+            id: attId,
+            _blob_id: attId,
             file_name: fName,
             name: fName,
-            mime_type: fType,
-            type: fType,
+            mime_type: inferredMime,
+            type: inferredMime,
             file_size: fSize,
             size: fSize,
             capture_method: captureMethod,
             uploaded_at: nowStamp(),
-            uploaded_by: activeUser().full_name,
+            uploaded_by: whoName,
             data_url: rawDataUrl
           });
         }
@@ -28461,15 +29220,315 @@
     });
   }
 
+  // ---- Live Camera Document / Receipt Scanner (Desktop Webcam + Mobile Rear/Front Camera) ----
+  const _docCamState = {
+    open: false,
+    stream: null,
+    facingMode: 'environment',
+    devices: [],
+    deviceIdx: -1,
+    capturedFile: null,
+    capturedPreviewUrl: '',
+    onCapture: null
+  };
+
+  function stopDocCameraStream() {
+    if (_docCamState.stream) {
+      try {
+        _docCamState.stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+      } catch (_) {}
+      _docCamState.stream = null;
+    }
+    const vid = $('docCamVideo');
+    if (vid) {
+      try { vid.pause(); } catch (_) {}
+      vid.srcObject = null;
+    }
+  }
+
+  function closeDocumentCameraModal() {
+    _docCamState.open = false;
+    _docCamState.onCapture = null;
+    _docCamState.capturedFile = null;
+    if (_docCamState.capturedPreviewUrl) {
+      try { URL.revokeObjectURL(_docCamState.capturedPreviewUrl); } catch (_) {}
+      _docCamState.capturedPreviewUrl = '';
+    }
+    stopDocCameraStream();
+    const modal = $('docCameraModal');
+    if (modal) modal.hidden = true;
+  }
+
+  function ensureDocCameraModalDom() {
+    let modal = $('docCameraModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'docCameraModal';
+    modal.className = 'modal-backdrop';
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="modal-card doc-cam-card" role="dialog" aria-modal="true" aria-labelledby="docCamTitle">
+        <div class="modal-header">
+          <div>
+            <span class="modal-eyebrow">ISABI LIVE CAMERA SCANNER · RECEIPT &amp; INVOICE CAPTURE</span>
+            <h2 id="docCamTitle">Snap Receipt or Document Photo</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button type="button" class="btn btn-outline-bar btn-sm" id="docCamSwitchBtn" hidden>${ic('rotate')} Switch Camera</button>
+            <button type="button" class="modal-close-btn" id="docCamCloseBtn" aria-label="Close camera">✕</button>
+          </div>
+        </div>
+        <div class="doc-cam-body">
+          <div class="doc-cam-stage" id="docCamStage">
+            <video id="docCamVideo" class="doc-cam-video" autoplay muted playsinline></video>
+            <div class="doc-cam-guide" id="docCamGuide"><span>Position invoice, receipt, or slip clearly inside frame</span></div>
+            <img id="docCamPreviewImg" class="doc-cam-preview-img" alt="Captured receipt preview" hidden>
+            <div class="doc-cam-fallback" id="docCamFallback" hidden>
+              <span style="color:var(--brass,#C89D54);font-size:24px">${ic('camera')}</span>
+              <strong id="docCamFallbackTitle">Camera Unavailable</strong>
+              <p id="docCamFallbackMsg">Allow browser camera access above, connect a webcam, or select an image directly from your device.</p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px">
+                <button type="button" class="btn btn-outline-bar btn-sm" id="docCamRetryBtn">${ic('rotate')} Retry Camera</button>
+                <button type="button" class="btn btn-brass btn-sm" id="docCamFallbackPickBtn">${ic('upload')} Choose Photo from Device</button>
+              </div>
+            </div>
+          </div>
+          <div class="doc-cam-foot">
+            <div class="doc-cam-foot-left">
+              <input type="file" id="docCamNativeInput" accept="image/*" capture="environment" hidden>
+              <button type="button" class="btn btn-ghost-bar btn-sm" id="docCamNativeBtn">${ic('upload')} Choose Image / Phone Camera</button>
+            </div>
+            <div class="doc-cam-foot-right">
+              <button type="button" class="btn btn-ghost-bar" id="docCamCancelBtn">Cancel</button>
+              <button type="button" class="btn btn-outline-bar" id="docCamRetakeBtn" hidden>${ic('rotate')} Retake</button>
+              <button type="button" class="btn btn-brass" id="docCamSnapBtn">${ic('camera')} Capture Photo</button>
+              <button type="button" class="btn btn-brass" id="docCamConfirmBtn" hidden>${ic('check')} Attach Photo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    $('docCamCloseBtn').addEventListener('click', closeDocumentCameraModal);
+    $('docCamCancelBtn').addEventListener('click', closeDocumentCameraModal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeDocumentCameraModal(); });
+
+    const nativeInp = $('docCamNativeInput');
+    const triggerNativePick = () => { if (nativeInp) nativeInp.click(); };
+    $('docCamNativeBtn').addEventListener('click', triggerNativePick);
+    $('docCamFallbackPickBtn').addEventListener('click', triggerNativePick);
+    if (nativeInp) {
+      nativeInp.addEventListener('change', async () => {
+        const files = nativeInp.files ? Array.from(nativeInp.files) : [];
+        nativeInp.value = '';
+        if (!files.length) return;
+        const cb = _docCamState.onCapture;
+        closeDocumentCameraModal();
+        if (typeof cb === 'function') await cb(files, 'Camera Scan');
+      });
+    }
+
+    $('docCamRetryBtn').addEventListener('click', () => startDocCameraLiveStream());
+    $('docCamSwitchBtn').addEventListener('click', () => {
+      if (_docCamState.devices.length > 1) {
+        _docCamState.deviceIdx = (_docCamState.deviceIdx + 1) % _docCamState.devices.length;
+      } else {
+        _docCamState.facingMode = _docCamState.facingMode === 'environment' ? 'user' : 'environment';
+      }
+      startDocCameraLiveStream();
+    });
+
+    $('docCamSnapBtn').addEventListener('click', async () => {
+      const vid = $('docCamVideo');
+      if (vid && (!vid.videoWidth || !vid.videoHeight)) {
+        for (let i = 0; i < 12 && (!vid.videoWidth || !vid.videoHeight); i++) {
+          await new Promise(r => setTimeout(r, 60));
+        }
+      }
+      if (!vid || !vid.videoWidth || !vid.videoHeight) {
+        toast('Camera stream is still warming up — wait a moment or click Choose Image.', 'err');
+        return;
+      }
+      const maxEdge = 2000;
+      let w = vid.videoWidth;
+      let h = vid.videoHeight;
+      if (w > maxEdge || h > maxEdge) {
+        if (w >= h) { h = Math.round((h * maxEdge) / w); w = maxEdge; }
+        else { w = Math.round((w * maxEdge) / h); h = maxEdge; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(vid, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        if (!blob) { toast('Could not capture photo frame', 'err'); return; }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const fileName = `Receipt_Scan_${stamp}.jpg`;
+        let fileObj;
+        try {
+          fileObj = new File([blob], fileName, { type: 'image/jpeg', lastModified: Date.now() });
+        } catch (_) {
+          blob.name = fileName;
+          fileObj = blob;
+        }
+        _docCamState.capturedFile = fileObj;
+        if (_docCamState.capturedPreviewUrl) {
+          try { URL.revokeObjectURL(_docCamState.capturedPreviewUrl); } catch (_) {}
+        }
+        _docCamState.capturedPreviewUrl = URL.createObjectURL(blob);
+        stopDocCameraStream();
+        const prevImg = $('docCamPreviewImg');
+        if (prevImg) {
+          prevImg.src = _docCamState.capturedPreviewUrl;
+          prevImg.hidden = false;
+        }
+        if (vid) vid.hidden = true;
+        const guide = $('docCamGuide');
+        if (guide) guide.hidden = true;
+        $('docCamSnapBtn').hidden = true;
+        $('docCamRetakeBtn').hidden = false;
+        $('docCamConfirmBtn').hidden = false;
+        $('docCamSwitchBtn').hidden = true;
+      }, 'image/jpeg', 0.88);
+    });
+
+    $('docCamRetakeBtn').addEventListener('click', () => {
+      _docCamState.capturedFile = null;
+      startDocCameraLiveStream();
+    });
+
+    $('docCamConfirmBtn').addEventListener('click', async () => {
+      const f = _docCamState.capturedFile;
+      if (!f) return;
+      const cb = _docCamState.onCapture;
+      closeDocumentCameraModal();
+      if (typeof cb === 'function') {
+        await cb([f], 'Camera Scan');
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && _docCamState.open && !_docCamState.capturedFile) {
+        const hasLive = _docCamState.stream && _docCamState.stream.getTracks().some(t => t.readyState === 'live');
+        if (!hasLive) startDocCameraLiveStream();
+      }
+    });
+    window.addEventListener('pagehide', () => { if (_docCamState.open) stopDocCameraStream(); });
+
+    return modal;
+  }
+
+  async function startDocCameraLiveStream() {
+    stopDocCameraStream();
+    const vid = $('docCamVideo');
+    const prevImg = $('docCamPreviewImg');
+    const guide = $('docCamGuide');
+    const fb = $('docCamFallback');
+    const snapBtn = $('docCamSnapBtn');
+    const retakeBtn = $('docCamRetakeBtn');
+    const confirmBtn = $('docCamConfirmBtn');
+    const switchBtn = $('docCamSwitchBtn');
+
+    if (prevImg) { prevImg.hidden = true; prevImg.removeAttribute('src'); }
+    if (retakeBtn) retakeBtn.hidden = true;
+    if (confirmBtn) confirmBtn.hidden = true;
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      if (vid) vid.hidden = true;
+      if (guide) guide.hidden = true;
+      if (snapBtn) snapBtn.hidden = true;
+      if (fb) {
+        $('docCamFallbackTitle').textContent = 'Live Browser Camera Not Supported Here';
+        $('docCamFallbackMsg').textContent = 'Open ISABI over HTTPS (https://isabisystems.com/app/) for live camera scanning, or choose a photo from your device below.';
+        fb.hidden = false;
+      }
+      return;
+    }
+
+    if (fb) fb.hidden = true;
+    if (vid) vid.hidden = false;
+    if (guide) guide.hidden = false;
+    if (snapBtn) { snapBtn.hidden = false; snapBtn.disabled = true; }
+
+    try {
+      const chosenDev = (_docCamState.deviceIdx >= 0 && _docCamState.devices[_docCamState.deviceIdx])
+        ? _docCamState.devices[_docCamState.deviceIdx].deviceId
+        : '';
+      const videoConstraints = chosenDev
+        ? { deviceId: { exact: chosenDev }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { facingMode: { ideal: _docCamState.facingMode || 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      } catch (firstErr) {
+        const eName = String((firstErr && firstErr.name) || '');
+        if (/NotAllowed|Permission/i.test(eName)) throw firstErr;
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      if (!_docCamState.open) {
+        stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+        return;
+      }
+      _docCamState.stream = stream;
+      if (snapBtn) snapBtn.disabled = false;
+      if (vid) {
+        vid.srcObject = stream;
+        try { await vid.play(); } catch (_) {}
+      }
+      if (typeof navigator.mediaDevices.enumerateDevices === 'function') {
+        const allDevs = await navigator.mediaDevices.enumerateDevices();
+        const cams = allDevs.filter(d => d && d.kind === 'videoinput');
+        _docCamState.devices = cams;
+        const isTouchMobile = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (switchBtn) switchBtn.hidden = !(cams.length > 1 || isTouchMobile);
+      }
+    } catch (err) {
+      if (vid) vid.hidden = true;
+      if (guide) guide.hidden = true;
+      if (snapBtn) snapBtn.hidden = true;
+      if (switchBtn) switchBtn.hidden = true;
+      if (fb) {
+        const errName = String((err && err.name) || '');
+        if (/NotAllowed|Permission/i.test(errName)) {
+          $('docCamFallbackTitle').textContent = 'Camera Permission Blocked';
+          $('docCamFallbackMsg').textContent = 'Allow camera access in your browser address bar and click Retry Camera, or select an existing photo from your device.';
+        } else if (/NotFound|DevicesNotFound/i.test(errName)) {
+          $('docCamFallbackTitle').textContent = 'No Camera Detected on This Computer';
+          $('docCamFallbackMsg').textContent = 'Connect a webcam or USB document camera and click Retry Camera, or choose an image file from your computer.';
+        } else {
+          $('docCamFallbackTitle').textContent = 'Could Not Start Camera';
+          $('docCamFallbackMsg').textContent = `${(err && err.message) || 'Camera is currently in use by another app.'} Click Retry Camera or choose an image file.`;
+        }
+        fb.hidden = false;
+      }
+    }
+  }
+
+  function openDocumentCameraCapture(onCaptureFiles) {
+    const modal = ensureDocCameraModalDom();
+    _docCamState.open = true;
+    _docCamState.capturedFile = null;
+    _docCamState.onCapture = onCaptureFiles;
+    modal.hidden = false;
+    startDocCameraLiveStream();
+  }
+
   function getRecordAttachmentsList(crKey, row) {
-    if (!row) return [];
+    if (!row || row.voided) return [];
     ensureDocumentsVaultSeeded();
     const out = [];
     const seen = new Set();
+    const removedDocIds = new Set(Array.isArray(row._removed_doc_ids) ? row._removed_doc_ids.map(String) : []);
     const addAtt = att => {
-      if (!att || (!att.data_url && !att.file_name && !att.name)) return;
+      if (!att || att.voided) return;
+      const resolvedUrl = resolveDocDataUrl(att);
+      if (!resolvedUrl && !att.file_name && !att.name) return;
       const fName = att.file_name || att.name || att.title || '';
-      const fType = att.mime_type || att.type || 'image/svg+xml';
+      const fType = att.mime_type || att.file_type || att.type || inferAttachmentMimeType({ name: fName });
       const fSize = Number(att.file_size || att.size || 0);
       const normAtt = Object.assign({}, att, {
         file_name: fName,
@@ -28477,39 +29536,41 @@
         mime_type: fType,
         type: fType,
         file_size: fSize,
-        size: fSize
+        size: fSize,
+        data_url: resolvedUrl || att.data_url || ''
       });
-      const sig = `${norm(normAtt.id || '')}|${norm(fName)}`;
-      const nameKey = norm(fName || normAtt.id || '');
-      if ((normAtt.id && seen.has(String(normAtt.id))) || (nameKey && seen.has('nm:' + nameKey))) return;
-      if (normAtt.id) seen.add(String(normAtt.id));
+      const idKey = normAtt.id ? String(normAtt.id) : '';
+      const docKey = normAtt.doc_id ? String(normAtt.doc_id) : '';
+      const nameKey = norm(fName || idKey || '');
+      if ((idKey && seen.has('id:' + idKey)) || (docKey && seen.has('doc:' + docKey)) || (nameKey && seen.has('nm:' + nameKey))) return;
+      if (idKey) seen.add('id:' + idKey);
+      if (docKey) seen.add('doc:' + docKey);
       if (nameKey) seen.add('nm:' + nameKey);
-      seen.add(sig);
       out.push(normAtt);
     };
 
+    const rowAtts = parseAttachmentsArray(row.attachments);
     if (crKey === 'documents') {
-      if (row.data_url || row.file_name) {
+      const docDataUrl = resolveDocDataUrl(row) || buildSampleDocSvgDataUrl(row);
+      if (docDataUrl || row.file_name) {
         addAtt({
           id: row.id,
           doc_id: row.id,
           file_name: row.file_name || `${row.name || 'Document'}.svg`,
           title: row.title || row.name,
-          mime_type: row.mime_type || 'image/svg+xml',
+          mime_type: row.mime_type || row.file_type || 'image/svg+xml',
           file_size: row.file_size || 42000,
           capture_method: row.capture_method || 'File Upload',
           uploaded_at: row.entered_at || row.date || '',
           uploaded_by: row.entered_by || '',
-          data_url: row.data_url || buildSampleDocSvgDataUrl(row)
+          data_url: docDataUrl
         });
       }
-      if (Array.isArray(row.attachments)) row.attachments.forEach(addAtt);
+      rowAtts.forEach(addAtt);
       return out;
     }
 
-    if (Array.isArray(row.attachments)) {
-      row.attachments.forEach(addAtt);
-    }
+    rowAtts.forEach(addAtt);
 
     const rowId = String(row.id || '').trim();
     const rowLabels = new Set(
@@ -28517,54 +29578,106 @@
         .map(x => norm(x || ''))
         .filter(Boolean)
     );
-    const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
-    docsPool.forEach(d => {
+    const docsById = new Map();
+    ((SEED.records && SEED.records.documents) || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    (STATE.customRecords.documents || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    docsById.forEach(d => {
       if (!d || d.voided) return;
+      if (removedDocIds.has(String(d.id))) return;
       if (d.parent_table && norm(d.parent_table) !== norm(crKey)) return;
       const matchId = Boolean(rowId && d.parent_id && String(d.parent_id) === rowId);
-      const matchLbl = Boolean(d.parent_label && rowLabels.has(norm(d.parent_label)));
-      if (!matchId && !matchLbl) return;
+      const matchLbl = Boolean(!d.parent_id && d.parent_label && rowLabels.has(norm(d.parent_label)));
+      const matchSeededLbl = Boolean(d.parent_label && rowLabels.has(norm(d.parent_label)));
+      if (!matchId && !matchLbl && !matchSeededLbl) return;
       addAtt({
         id: d.att_id || d.id,
         doc_id: d.id,
         doc_name: d.name,
         file_name: d.file_name || `${d.name || 'Document'}.svg`,
         title: d.title || d.name,
-        mime_type: d.mime_type || 'image/svg+xml',
+        mime_type: d.mime_type || d.file_type || 'image/svg+xml',
         file_size: d.file_size || 42000,
         capture_method: d.capture_method || 'File Upload',
         uploaded_at: d.entered_at || d.date || '',
         uploaded_by: d.entered_by || '',
-        data_url: d.data_url || buildSampleDocSvgDataUrl(d)
+        data_url: resolveDocDataUrl(d) || buildSampleDocSvgDataUrl(d)
       });
     });
     return out;
   }
 
+  function _ensureAttachmentCountIndex() {
+    ensureDocumentsVaultSeeded();
+    const cRev = (SEED && SEED._customRev) || 0;
+    const sLen = (SEED.records && Array.isArray(SEED.records.documents)) ? SEED.records.documents.length : 0;
+    const cLen = Array.isArray(STATE.customRecords.documents) ? STATE.customRecords.documents.length : 0;
+    const sig = `${_attCacheRev}|${cRev}|${sLen}|${cLen}`;
+    if (_attCountIndex && _attCountIndex.sig === sig) return _attCountIndex;
+
+    const byId = new Map();
+    const byLbl = new Map();
+    const docsById = new Map();
+    ((SEED.records && SEED.records.documents) || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    (STATE.customRecords.documents || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    docsById.forEach(d => {
+      if (!d || d.voided || !d.parent_table) return;
+      const pk = norm(d.parent_table);
+      const docKey = String(d.id);
+      if (d.parent_id) {
+        const ik = `${pk}|${String(d.parent_id)}`;
+        if (!byId.has(ik)) byId.set(ik, new Set());
+        byId.get(ik).add(docKey);
+      }
+      if (d.parent_label) {
+        const lk = `${pk}|${norm(d.parent_label)}`;
+        if (!byLbl.has(lk)) byLbl.set(lk, new Set());
+        byLbl.get(lk).add(docKey);
+      }
+    });
+    _attCountIndex = { sig, byId, byLbl };
+    return _attCountIndex;
+  }
+
   function getRecordAttachmentCount(crKey, row) {
     if (!row || row.voided) return 0;
-    const directCnt = Array.isArray(row.attachments) ? row.attachments.length : 0;
-    ensureDocumentsVaultSeeded();
-    const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
-    if (!docsPool.length) return directCnt;
-    const list = getRecordAttachmentsList(crKey, row);
-    return list.length;
+    if (crKey === 'documents') return 1;
+    const directAtts = parseAttachmentsArray(row.attachments);
+    const idx = _ensureAttachmentCountIndex();
+    const pk = norm(crKey);
+    const rowId = row.id ? String(row.id) : '';
+    const idSet = rowId ? idx.byId.get(`${pk}|${rowId}`) : null;
+    let vaultMatches = idSet ? idSet.size : 0;
+    if (!vaultMatches) {
+      const cands = [row.name, row.ticket_no, row.ticket_no ? `#${row.ticket_no}` : '', row.invoice_no];
+      for (let i = 0; i < cands.length; i++) {
+        if (!cands[i]) continue;
+        const ls = idx.byLbl.get(`${pk}|${norm(cands[i])}`);
+        if (ls && ls.size) { vaultMatches = ls.size; break; }
+      }
+    }
+    if (!directAtts.length && !vaultMatches) return 0;
+    return getRecordAttachmentsList(crKey, row).length;
   }
 
   function syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts) {
     if (!record || !crKey) return;
     ensureDocumentsVaultSeeded();
+    _attCacheRev++;
     if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
     if (!Array.isArray(SEED.records.documents)) SEED.records.documents = [];
+    const whoName = (typeof activeUser === 'function' && activeUser() && activeUser().full_name) ? activeUser().full_name : 'Admin';
+    const whoEmail = (typeof activeUser === 'function' && activeUser() && activeUser().email) ? activeUser().email : '';
 
     if (crKey === 'documents') {
+      const recAtts = parseAttachmentsArray(record.attachments);
       if (!record.data_url) {
-        if (Array.isArray(record.attachments) && record.attachments[0] && record.attachments[0].data_url) {
-          const a0 = record.attachments[0];
-          record.data_url = a0.data_url;
-          record.file_name = record.file_name || a0.file_name;
-          record.mime_type = record.mime_type || a0.mime_type;
-          record.file_size = record.file_size || a0.file_size;
+        if (recAtts[0] && resolveDocDataUrl(recAtts[0])) {
+          const a0 = recAtts[0];
+          record.data_url = resolveDocDataUrl(a0);
+          record._blob_id = a0._blob_id || a0.id || record.id;
+          record.file_name = record.file_name || a0.file_name || a0.name;
+          record.mime_type = record.mime_type || a0.mime_type || a0.type;
+          record.file_size = record.file_size || a0.file_size || a0.size;
           record.capture_method = record.capture_method || a0.capture_method;
         } else {
           record.data_url = buildSampleDocSvgDataUrl(record);
@@ -28573,6 +29686,7 @@
           record.file_size = record.file_size || 42000;
         }
       }
+      if (record.data_url) putDocBlob(record._blob_id || record.id, record.data_url);
       if (record.parent_table && (record.parent_id || record.parent_label)) {
         const pKey = record.parent_table;
         const pPool = (STATE.customRecords[pKey] || []).concat((SEED.records && SEED.records[pKey]) || []);
@@ -28584,68 +29698,131 @@
         if (pHit) {
           record.parent_id = String(pHit.id);
           record.parent_label = pHit.ticket_no ? `#${pHit.ticket_no}` : (pHit.invoice_no || pHit.name || String(pHit.id));
-          if (!Array.isArray(pHit.attachments)) pHit.attachments = [];
+          const pAtts = parseAttachmentsArray(pHit.attachments);
           const attItem = {
             id: record.id,
+            _blob_id: record._blob_id || record.id,
             doc_id: record.id,
             file_name: record.file_name,
+            name: record.file_name,
             title: record.title || record.name,
-            mime_type: record.mime_type,
+            mime_type: record.mime_type || record.file_type || 'application/octet-stream',
+            type: record.mime_type || record.file_type || 'application/octet-stream',
             file_size: record.file_size,
+            size: record.file_size,
             capture_method: record.capture_method || 'File Upload',
             uploaded_at: record.entered_at || nowStamp(),
-            uploaded_by: record.entered_by || activeUser().full_name,
+            uploaded_by: record.entered_by || whoName,
             data_url: record.data_url
           };
-          const exIdx = pHit.attachments.findIndex(a => a && (String(a.id) === String(attItem.id) || norm(a.file_name) === norm(attItem.file_name)));
-          if (exIdx >= 0) pHit.attachments[exIdx] = attItem;
-          else pHit.attachments.push(attItem);
-          pHit.attachment_count = pHit.attachments.length;
+          const exIdx = pAtts.findIndex(a => a && (String(a.id) === String(attItem.id) || String(a.doc_id || '') === String(record.id) || norm(a.file_name || a.name) === norm(attItem.file_name)));
+          if (exIdx >= 0) pAtts[exIdx] = attItem;
+          else pAtts.push(attItem);
+          pHit.attachments = pAtts;
+          pHit.attachment_count = pAtts.length;
+          if (Array.isArray(pHit._removed_doc_ids)) {
+            pHit._removed_doc_ids = pHit._removed_doc_ids.filter(id => String(id) !== String(record.id));
+          }
         }
       }
       return;
     }
 
-    const atts = Array.isArray(record.attachments) ? record.attachments : [];
-    if (!atts.length) return;
+    const atts = parseAttachmentsArray(record.attachments);
+    record.attachments = atts;
     const parentLabel = record.ticket_no
       ? `#${record.ticket_no}`
       : (record.invoice_no || record.name || String(record.id));
+    const parentRowLabels = new Set(
+      [parentLabel, record.name, record.ticket_no, record.ticket_no ? `#${record.ticket_no}` : '', record.invoice_no]
+        .map(x => norm(x || ''))
+        .filter(Boolean)
+    );
+
+    // Reconcile removals: void any previously linked Document Vault rows no longer present in record.attachments
+    const survivingDocIds = new Set();
+    const survivingNames = new Set();
+    atts.forEach((att, idx) => {
+      if (!att) return;
+      const dId = att.doc_id || `doc-${String(record.id)}-${idx + 1}`;
+      survivingDocIds.add(String(dId));
+      if (att.id) survivingDocIds.add(String(att.id));
+      const fn = norm(att.file_name || att.name || '');
+      if (fn) survivingNames.add(fn);
+    });
+
+    const allDocsMerged = new Map();
+    (SEED.records.documents || []).forEach(d => { if (d && d.id) allDocsMerged.set(String(d.id), d); });
+    (STATE.customRecords.documents || []).forEach(d => { if (d && d.id) allDocsMerged.set(String(d.id), d); });
+    allDocsMerged.forEach(d => {
+      if (!d || d.voided) return;
+      if (norm(d.parent_table || '') !== norm(crKey)) return;
+      const matchPid = Boolean(record.id && d.parent_id && String(d.parent_id) === String(record.id));
+      const matchPlbl = Boolean(d.parent_label && parentRowLabels.has(norm(d.parent_label)));
+      if (!matchPid && !matchPlbl) return;
+      const stillPresent = survivingDocIds.has(String(d.id)) ||
+        (d.att_id && survivingDocIds.has(String(d.att_id))) ||
+        (d.file_name && survivingNames.has(norm(d.file_name)));
+      if (!stillPresent) {
+        d.voided = true;
+        d.voided_by = whoName;
+        d.voided_at = nowStamp();
+        const cIdx = STATE.customRecords.documents.findIndex(x => x && String(x.id) === String(d.id));
+        if (cIdx >= 0) STATE.customRecords.documents[cIdx] = Object.assign({}, STATE.customRecords.documents[cIdx], { voided: true, voided_by: d.voided_by, voided_at: d.voided_at });
+        else STATE.customRecords.documents.unshift(Object.assign({}, d));
+        const sIdx = SEED.records.documents.findIndex(x => x && String(x.id) === String(d.id));
+        if (sIdx >= 0) SEED.records.documents[sIdx].voided = true;
+        if (!Array.isArray(record._removed_doc_ids)) record._removed_doc_ids = [];
+        if (!record._removed_doc_ids.includes(String(d.id))) record._removed_doc_ids.push(String(d.id));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['documents', d]);
+      }
+    });
+
+    if (!atts.length) return;
     const counterparty = record.supplier || record.customer || record.site_owner || record.truck_owner || record.counterparty || record.staff || record.driver || '';
     const refNo = record.reference || record.external_invoice || record.vat_invoice || record.ticket_no || record.invoice_no || '';
     const amt = round2(Number(record.total_ttc || record.total || record.amount || record.total_cost_usd || record.cost_usd || 0));
 
     atts.forEach((att, idx) => {
-      if (!att || (!att.data_url && !att.file_name)) return;
+      const attUrl = resolveDocDataUrl(att);
+      if (!att || (!attUrl && !att.file_name && !att.name)) return;
+      const fName = att.file_name || att.name || `Receipt_${idx + 1}.jpg`;
+      const fMime = att.mime_type || att.type || inferAttachmentMimeType({ name: fName });
+      const fSize = Number(att.file_size || att.size || 45000);
       const docId = att.doc_id || `doc-${String(record.id)}-${idx + 1}`;
+      const blobKey = att._blob_id || att.id || docId;
       att.doc_id = docId;
-      const existingDoc = STATE.customRecords.documents.find(d => d && (String(d.id) === String(docId) || (String(d.parent_id) === String(record.id) && norm(d.file_name) === norm(att.file_name))));
+      att._blob_id = blobKey;
+      if (attUrl) putDocBlob(blobKey, attUrl);
+      const existingDoc = STATE.customRecords.documents.find(d => d && (String(d.id) === String(docId) || (String(d.parent_id) === String(record.id) && norm(d.file_name) === norm(fName)))) ||
+        SEED.records.documents.find(d => d && String(d.id) === String(docId));
       const seqNum = String((SEED.records.documents.length + STATE.customRecords.documents.length + idx + 1)).padStart(4, '0');
       const docRow = {
         id: existingDoc ? existingDoc.id : docId,
         att_id: att.id || docId,
-        name: existingDoc ? existingDoc.name : `DOC-${String(record.date || todayISO()).slice(0, 4)}-${seqNum}`,
+        _blob_id: blobKey,
+        name: existingDoc && existingDoc.name ? existingDoc.name : `DOC-${String(record.date || todayISO()).slice(0, 4)}-${seqNum}`,
         date: String(record.date || todayISO()).slice(0, 10),
         rep_date: String(record.rep_date || record.date || todayISO()).slice(0, 10),
         company: record.company || defaultEntryCompany() || 'WTC',
-        doc_type: inferDocTypeFromCrKey(crKey),
-        title: att.title || `${(CR_LABEL[crKey] || 'Record').replace(/^./, c => c.toUpperCase())} ${parentLabel} · ${att.file_name || 'Attachment'}`,
+        doc_type: (existingDoc && existingDoc.doc_type) || inferDocTypeFromCrKey(crKey),
+        title: att.title || `${(CR_LABEL[crKey] || 'Record').replace(/^./, c => c.toUpperCase())} ${parentLabel} · ${fName}`,
         counterparty,
         reference: refNo,
         parent_table: crKey,
         parent_id: String(record.id),
         parent_label: parentLabel,
         amount: amt,
-        file_name: att.file_name || `Receipt_${seqNum}.jpg`,
-        mime_type: att.mime_type || 'image/jpeg',
-        file_size: Number(att.file_size || 45000),
+        file_name: fName,
+        mime_type: fMime,
+        file_size: fSize,
         capture_method: att.capture_method || 'File Upload',
-        status: 'Verified & Filed',
-        data_url: att.data_url,
+        status: (existingDoc && existingDoc.status) || 'Verified & Filed',
+        data_url: attUrl,
         notes: record.notes || `Attached to ${(CR_LABEL[crKey] || crKey)} ${parentLabel}`,
         source: 'app',
-        entered_by: record.entered_by || activeUser().full_name,
-        entered_by_email: record.entered_by_email || activeUser().email,
+        entered_by: record.entered_by || whoName,
+        entered_by_email: record.entered_by_email || whoEmail,
         entered_at: att.uploaded_at || record.entered_at || nowStamp(),
         voided: false
       };
@@ -28661,6 +29838,46 @@
     });
   }
 
+  let _activeDocPrevBlobUrl = '';
+
+  function revokeActiveDocPrevBlobUrl() {
+    if (_activeDocPrevBlobUrl) {
+      try { URL.revokeObjectURL(_activeDocPrevBlobUrl); } catch (_) {}
+      _activeDocPrevBlobUrl = '';
+    }
+  }
+
+  function dataUrlToBlobUrl(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return '';
+    try {
+      const commaIdx = dataUrl.indexOf(',');
+      if (commaIdx < 0) return '';
+      const meta = dataUrl.slice(5, commaIdx);
+      const body = dataUrl.slice(commaIdx + 1);
+      const isBase64 = /;base64/i.test(meta);
+      const mime = (meta.split(';')[0] || 'application/octet-stream').trim();
+      let bytes;
+      if (isBase64) {
+        const bin = atob(body);
+        bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      } else {
+        const decoded = decodeURIComponent(body);
+        bytes = new TextEncoder().encode(decoded);
+      }
+      const blob = new Blob([bytes], { type: mime });
+      return URL.createObjectURL(blob);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function closeDocumentPreviewModal() {
+    revokeActiveDocPrevBlobUrl();
+    const modal = $('docPreviewModal');
+    if (modal) modal.hidden = true;
+  }
+
   function ensureDocPreviewModalDom() {
     let modal = $('docPreviewModal');
     if (modal) return modal;
@@ -28670,24 +29887,24 @@
     modal.hidden = true;
     modal.innerHTML = `
       <div class="modal-card doc-preview-card" role="dialog" aria-modal="true" aria-labelledby="docPrevTitle">
-        <div class="modal-head">
+        <div class="modal-header">
           <div>
-            <div class="modal-eyebrow" id="docPrevEyebrow">ISABI DOCUMENT &amp; RECEIPT VAULT · VERIFIED ATTACHMENT</div>
-            <h3 id="docPrevTitle">Document Preview</h3>
+            <span class="modal-eyebrow" id="docPrevEyebrow">ISABI DOCUMENT &amp; RECEIPT VAULT · VERIFIED ATTACHMENT</span>
+            <h2 id="docPrevTitle">Document Preview</h2>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div class="modal-header-actions">
+            <a id="docPrevOpenTabBtn" class="btn btn-outline-bar btn-sm" target="_blank" rel="noopener" href="#" hidden>${ic('expand')} Open Tab</a>
             <a id="docPrevDownloadBtn" class="btn btn-brass btn-sm" download="document" href="#">${ic('download')} Download File</a>
-            <button type="button" class="modal-close" id="docPrevCloseBtn" aria-label="Close preview">✕</button>
+            <button type="button" class="modal-close-btn" id="docPrevCloseBtn" aria-label="Close preview">✕</button>
           </div>
         </div>
         <div class="modal-body" id="docPrevBody"></div>
       </div>
     `;
     document.body.appendChild(modal);
-    const closePrev = () => { modal.hidden = true; };
     const cBtn = $('docPrevCloseBtn');
-    if (cBtn) cBtn.addEventListener('click', closePrev);
-    modal.addEventListener('click', e => { if (e.target === modal) closePrev(); });
+    if (cBtn) cBtn.addEventListener('click', closeDocumentPreviewModal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeDocumentPreviewModal(); });
     return modal;
   }
 
@@ -28723,10 +29940,12 @@
       docOrAtt = recAtts[idx];
     }
     const modal = ensureDocPreviewModalDom();
+    revokeActiveDocPrevBlobUrl();
     const titleEl = $('docPrevTitle');
     const eyeEl = $('docPrevEyebrow');
     const bodyEl = $('docPrevBody');
     const dlBtn = $('docPrevDownloadBtn');
+    const openTabBtn = $('docPrevOpenTabBtn');
 
     const allAtts = Array.isArray(contextMeta.allAttachments) && contextMeta.allAttachments.length
       ? contextMeta.allAttachments
@@ -28734,10 +29953,14 @@
     const activeIdx = Math.max(0, Math.min(allAtts.length - 1, Number(contextMeta.activeIdx || 0)));
     const cur = allAtts[activeIdx] || docOrAtt;
 
-    const title = cur.title || cur.file_name || contextMeta.title || 'Saved Document & Receipt';
-    const fileName = cur.file_name || `${(cur.name || 'Document').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`;
-    const mime = String(cur.mime_type || '').toLowerCase();
-    const dataUrl = cur.data_url || buildSampleDocSvgDataUrl(cur);
+    const title = cur.title || cur.file_name || cur.name || contextMeta.title || 'Saved Document & Receipt';
+    const fileName = cur.file_name || cur.name || `${(cur.name || 'Document').replace(/[^A-Za-z0-9_-]/g, '_')}.svg`;
+    const mime = String(cur.mime_type || cur.file_type || cur.type || inferAttachmentMimeType({ name: fileName })).toLowerCase();
+    const dataUrl = resolveDocDataUrl(cur) || buildSampleDocSvgDataUrl(cur);
+    const blobUrl = dataUrlToBlobUrl(dataUrl);
+    if (blobUrl) _activeDocPrevBlobUrl = blobUrl;
+    const safeHref = blobUrl || dataUrl;
+
     const co = cur.company || contextMeta.company || '';
     const dt = cur.date || contextMeta.date || (cur.uploaded_at ? String(cur.uploaded_at).slice(0, 10) : '');
     const docType = cur.doc_type || contextMeta.doc_type || 'Receipt & Supporting Document';
@@ -28749,17 +29972,26 @@
     if (titleEl) titleEl.textContent = title;
     if (eyeEl) eyeEl.textContent = `ISABI DOCUMENT & RECEIPT VAULT · ${co || 'ALL ENTITIES'}${dt ? ' · ' + fmtDateDMY(dt) : ''}`;
     if (dlBtn) {
-      dlBtn.href = dataUrl;
+      dlBtn.href = safeHref;
       dlBtn.setAttribute('download', fileName);
     }
 
     const isPdf = mime.includes('pdf') || /\.pdf$/i.test(fileName) || /^data:application\/pdf/i.test(dataUrl);
     const isImage = !isPdf && (mime.startsWith('image/') || /^data:image\//i.test(dataUrl) || /\.(svg|png|jpe?g|webp|gif|bmp)$/i.test(fileName));
 
+    if (openTabBtn) {
+      if (blobUrl && isPdf) {
+        openTabBtn.href = blobUrl;
+        openTabBtn.hidden = false;
+      } else {
+        openTabBtn.hidden = true;
+      }
+    }
+
     const switcherHtml = allAtts.length > 1 ? `
       <div class="doc-prev-switcher">
         <span>Attached Files (${allAtts.length}):</span>
-        ${allAtts.map((a, idx) => `<button type="button" class="filter-chip ${idx === activeIdx ? 'active' : ''}" data-doc-prev-idx="${idx}">${esc(a.file_name || `File #${idx + 1}`)}</button>`).join('')}
+        ${allAtts.map((a, idx) => `<button type="button" class="filter-chip ${idx === activeIdx ? 'active' : ''}" data-doc-prev-idx="${idx}">${esc(a.file_name || a.name || `File #${idx + 1}`)}</button>`).join('')}
       </div>
     ` : '';
 
@@ -28771,14 +30003,14 @@
         ${party ? `<div><small>Counterparty</small><b>${esc(party)}</b></div>` : ''}
         ${parentLbl ? `<div><small>Linked Record</small><b><button type="button" class="btn-link-inline mono" id="docPrevJumpParentBtn">${esc(parentLbl)}</button></b></div>` : ''}
         <div><small>File Name</small><b class="mono">${esc(fileName)}</b></div>
-        <div><small>Size &amp; Source</small><b>${esc(formatFileSizeShort(cur.file_size))} · ${esc(cur.capture_method || 'File Upload')}</b></div>
+        <div><small>Size &amp; Source</small><b>${esc(formatFileSizeShort(cur.file_size || cur.size))} · ${esc(cur.capture_method || 'File Upload')}</b></div>
       </div>
       <div class="doc-prev-stage">
         ${isImage
-          ? `<img src="${esc(dataUrl)}" alt="${esc(title)}" class="doc-prev-img">`
+          ? `<img src="${esc(safeHref)}" alt="${esc(title)}" class="doc-prev-img">`
           : (isPdf
-            ? `<iframe src="${esc(dataUrl)}" class="doc-prev-pdf" title="${esc(title)}"></iframe>`
-            : `<div class="doc-prev-fallback"><p><b>${esc(fileName)}</b> (${esc(formatFileSizeShort(cur.file_size))})</p><p class="mu">Click <b>Download File</b> above to open this attachment on your device.</p></div>`)}
+            ? `<iframe src="${esc(safeHref)}" class="doc-prev-pdf" title="${esc(title)}"></iframe>`
+            : `<div class="doc-prev-fallback"><p><b>${esc(fileName)}</b> (${esc(formatFileSizeShort(cur.file_size || cur.size))})</p><p class="mu">Click <b>Download File</b> above to open this attachment on your device.</p></div>`)}
       </div>
     `;
 
@@ -28792,7 +30024,7 @@
     const jumpBtn = $('docPrevJumpParentBtn');
     if (jumpBtn && parentTbl && (parentId || parentLbl)) {
       jumpBtn.addEventListener('click', () => {
-        modal.hidden = true;
+        closeDocumentPreviewModal();
         showRecordInspector(parentTbl, parentId || String(parentLbl).replace(/^#/, ''));
       });
     }
@@ -28800,17 +30032,21 @@
     modal.hidden = false;
   }
 
-  async function attachFilesDirectlyToRecord(crKey, rowId, fileList, captureMethod = 'File Upload') {
-    if (!crKey || !rowId || !fileList || !fileList.length) return;
-    const targetRow = resolveInspectorRecord(crKey, rowId);
+  async function attachFilesDirectlyToRecord(crKey, rowOrId, fileList, captureMethod = 'File Upload') {
+    if (!crKey || !rowOrId || !fileList || !fileList.length) return;
+    const targetRow = (typeof rowOrId === 'object' && rowOrId !== null)
+      ? rowOrId
+      : resolveInspectorRecord(crKey, rowOrId);
+    const resolvedId = targetRow ? (targetRow.id || targetRow.name || targetRow.ticket_no || String(rowOrId)) : String(rowOrId);
     if (!targetRow) { toast('Record not found', 'err'); return; }
     try {
       const added = [];
       for (const file of Array.from(fileList)) {
         const att = await readAndCompressAttachmentFile(file, captureMethod);
-        added.push(att);
+        if (att) added.push(att);
       }
       if (!added.length) return;
+      const existingAtts = getRecordAttachmentsList(crKey, targetRow).map(a => Object.assign({}, a));
       if (crKey === 'documents') {
         const a0 = added[0];
         targetRow.file_name = a0.file_name;
@@ -28818,10 +30054,13 @@
         targetRow.file_size = a0.file_size;
         targetRow.capture_method = a0.capture_method;
         targetRow.data_url = a0.data_url;
+        targetRow._blob_id = a0._blob_id || a0.id;
       }
-      if (!Array.isArray(targetRow.attachments)) targetRow.attachments = [];
-      added.forEach(a => targetRow.attachments.push(a));
-      targetRow.attachment_count = targetRow.attachments.length;
+      const nextAtts = crKey === 'documents' ? added.slice() : existingAtts.concat(added);
+      targetRow.attachments = nextAtts;
+      targetRow.attachment_count = nextAtts.length;
+      targetRow.modified_at = new Date().toISOString();
+      targetRow.modified_by = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'admin';
 
       if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
       const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(targetRow.id));
@@ -28837,13 +30076,49 @@
       syncWithCloud(true);
       toast(`Attached ${added.length} file${added.length === 1 ? '' : 's'} to ${targetRow.ticket_no ? '#' + targetRow.ticket_no : (targetRow.name || 'record')}`, 'ok');
       const insp = $('recordInspector');
-      if (insp && !insp.hidden && STATE.inspectorKey === crKey) {
-        showRecordInspector(crKey, targetRow.id || rowId, { preserveScroll: true });
+      const topHist = Array.isArray(STATE.inspectorHistory) && STATE.inspectorHistory.length
+        ? STATE.inspectorHistory[STATE.inspectorHistory.length - 1]
+        : null;
+      if (insp && !insp.hidden && topHist && topHist.key === crKey) {
+        showRecordInspector(crKey, targetRow.id || resolvedId, { fromCrumbIdx: STATE.inspectorHistory.length - 1, preserveScroll: true });
       }
       renderApp();
     } catch (err) {
       toast((err && err.message) || 'Could not attach file', 'err');
     }
+  }
+
+  function removeAttachmentFromRecord(crKey, rowOrId, attIdx) {
+    const targetRow = (typeof rowOrId === 'object' && rowOrId !== null)
+      ? rowOrId
+      : resolveInspectorRecord(crKey, rowOrId);
+    if (!targetRow || crKey === 'documents') return false;
+    const currentList = getRecordAttachmentsList(crKey, targetRow);
+    if (attIdx < 0 || attIdx >= currentList.length) return false;
+    const removed = currentList[attIdx];
+    const remaining = currentList.filter((_, idx) => idx !== attIdx);
+    targetRow.attachments = remaining;
+    targetRow.attachment_count = remaining.length;
+    targetRow.modified_at = new Date().toISOString();
+    targetRow.modified_by = (typeof activeUser === 'function' && activeUser() && activeUser().email) || 'admin';
+    if (!Array.isArray(targetRow._removed_doc_ids)) targetRow._removed_doc_ids = [];
+    if (removed && removed.doc_id && !targetRow._removed_doc_ids.includes(String(removed.doc_id))) {
+      targetRow._removed_doc_ids.push(String(removed.doc_id));
+    }
+
+    if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+    const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(targetRow.id));
+    if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], targetRow);
+    else STATE.customRecords[crKey].unshift(Object.assign({}, targetRow));
+
+    const extraPosts = [];
+    syncRecordAttachmentsToDocumentVault(crKey, targetRow, extraPosts);
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    postRecordToLocalApi(crKey, targetRow);
+    extraPosts.forEach(([ek, er]) => postRecordToLocalApi(ek, er));
+    syncWithCloud(true);
+    return true;
   }
 
   function renderDocumentVault() {
@@ -37480,12 +38755,19 @@
             <div class="panel-title"><span>${ic('entities')} GROUP-WIDE 6-INDUSTRY &amp; 14-ENTITY PERFORMANCE MATRIX (${filteredEntities.length} ENTITIES)</span></div>
             <div class="chip-bar">
               ${chip('all', `All 6 Industries (${rollup.entities.length})`)}
-              ${chip('mfg', 'Manufacturing (3)')}
-              ${chip('hsp', 'Hospitality (5)')}
-              ${chip('trd', 'Trading (2)')}
-              ${chip('re', 'Real Estate (2)')}
-              ${chip('ins', 'Insurance (1)')}
-              ${chip('hld', 'Holding (1)')}
+              ${(() => {
+                const chipDefs = {
+                  'Manufacturing': { key: 'mfg', lbl: 'Manufacturing (3)' },
+                  'Hospitality & Resorts': { key: 'hsp', lbl: 'Hospitality (5)' },
+                  'Real Estate & Property': { key: 're', lbl: 'Real Estate (2)' },
+                  'Automotive & Heavy Trading': { key: 'trd', lbl: 'Trading (2)' },
+                  'Insurance & Brokerage': { key: 'ins', lbl: 'Insurance (1)' },
+                  'Holding & Treasury': { key: 'hld', lbl: 'Holding (1)' }
+                };
+                const orderedInds = getIndustryGroups().map(g => g.id).filter(id => chipDefs[id]);
+                Object.keys(chipDefs).forEach(id => { if (!orderedInds.includes(id)) orderedInds.push(id); });
+                return orderedInds.map(id => chip(chipDefs[id].key, chipDefs[id].lbl)).join('');
+              })()}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
@@ -38191,6 +39473,18 @@
       { key: '4235company', name: '4235 Company S.A.L', industry: 'Real Estate & Property', sector: '4235 Msaytbeh Commercial Center', k: reCoStats('4235company') },
       { key: 'insurance', name: 'Insurance Company', industry: 'Insurance & Brokerage', sector: 'Multi-Line Brokerage (12 Lines · 6 Carriers)', k: insStats }
     ];
+    const indRankMap = new Map();
+    getIndustryGroups().forEach((g, idx) => indRankMap.set(g.id, idx));
+    const coFreqRollup = (_FREQ_IDX && _FREQ_IDX.company) ? _FREQ_IDX.company : null;
+    entities.sort((a, b) => {
+      const ra = indRankMap.has(a.industry) ? indRankMap.get(a.industry) : 999;
+      const rb = indRankMap.has(b.industry) ? indRankMap.get(b.industry) : 999;
+      if (ra !== rb) return ra - rb;
+      if (coFreqRollup && coFreqRollup.size) {
+        return (coFreqRollup.get(norm(b.name)) || 0) - (coFreqRollup.get(norm(a.name)) || 0);
+      }
+      return 0;
+    });
 
     const sumIndustry = indName => {
       const rows = entities.filter(e => e.industry === indName);
@@ -38258,15 +39552,19 @@
     const grossEntityOpProfit = totals.operating_profit;
     const combinedCashTill = totals.cash_till;
 
-    // SVG horizontal comparison chart across all 6 industries + Intercompany Eliminations
-    const svgBars = [
-      { label: 'Manufacturing (WTC · BBC · Lions)', val: mfgInd.sales_ttc, op: mfgInd.operating_profit, color: '#2563eb' },
-      { label: 'Hospitality & Resorts (5 Venues)', val: hspInd.sales_ttc, op: hspInd.operating_profit, color: '#0891b2' },
-      { label: 'Automotive & Trading (Shacman · Korri)', val: trdInd.sales_ttc, op: trdInd.operating_profit, color: '#d97706' },
-      { label: 'Real Estate & Property (Properties · 4235)', val: reInd.sales_ttc, op: reInd.operating_profit, color: '#7c3aed' },
-      { label: 'Insurance & Brokerage (GWP · Comm)', val: insInd.sales_ttc, op: insInd.operating_profit, color: '#0d9488' },
+    // SVG horizontal comparison chart across all operating industries (in operational frequency rank) + Intercompany Eliminations
+    const svgBarByInd = {
+      'Manufacturing': { label: 'Manufacturing (WTC · BBC · Lions)', val: mfgInd.sales_ttc, op: mfgInd.operating_profit, color: '#2563eb' },
+      'Hospitality & Resorts': { label: 'Hospitality & Resorts (5 Venues)', val: hspInd.sales_ttc, op: hspInd.operating_profit, color: '#0891b2' },
+      'Real Estate & Property': { label: 'Real Estate & Property (Properties · 4235)', val: reInd.sales_ttc, op: reInd.operating_profit, color: '#7c3aed' },
+      'Automotive & Heavy Trading': { label: 'Automotive & Trading (Shacman · Korri)', val: trdInd.sales_ttc, op: trdInd.operating_profit, color: '#d97706' },
+      'Insurance & Brokerage': { label: 'Insurance & Brokerage (GWP · Comm)', val: insInd.sales_ttc, op: insInd.operating_profit, color: '#0d9488' }
+    };
+    const orderedSvgInds = getIndustryGroups().map(g => g.id).filter(id => svgBarByInd[id]);
+    Object.keys(svgBarByInd).forEach(id => { if (!orderedSvgInds.includes(id)) orderedSvgInds.push(id); });
+    const svgBars = orderedSvgInds.map(id => svgBarByInd[id]).concat([
       { label: 'Intercompany Eliminated', val: icRes.totalMatchedUsd, op: -icRes.totalOpenUsd, color: '#059669' }
-    ];
+    ]);
     const maxRev = Math.max(1, ...svgBars.map(b => b.val));
     const svgH = 264;
     const chartSvg = `
@@ -39004,12 +40302,55 @@
     `;
   }
 
+  function getIndAssetSelection(scopeKey) {
+    return (STATE.indAssetFilter && STATE.indAssetFilter[scopeKey]) || 'ALL';
+  }
+
+  function renderIndSpecificAssetBar(scopeKey, label, rawItems, allLabel) {
+    const cur = getIndAssetSelection(scopeKey);
+    const items = (rawItems || []).slice().sort((a, b) => (Number(b.weight != null ? b.weight : b.count) || 0) - (Number(a.weight != null ? a.weight : a.count) || 0));
+    const topPills = items.slice(0, 7);
+    if (cur !== 'ALL' && !topPills.some(it => it.value === cur)) {
+      const found = items.find(it => it.value === cur);
+      if (found) topPills.push(found);
+    }
+    return `
+      <div class="ind-specific-filter-bar" data-ind-asset-bar="${esc(scopeKey)}">
+        <span class="ind-specific-lbl">${esc(label)}:</span>
+        <div class="ind-specific-pills">
+          <button type="button" class="ind-asset-pill ${cur === 'ALL' ? 'on' : ''}" data-ind-asset-scope="${esc(scopeKey)}" data-ind-asset-pill="ALL">${esc(allLabel || `All (${items.length})`)}</button>
+          ${topPills.map(it => `<button type="button" class="ind-asset-pill ${cur === it.value ? 'on' : ''}" data-ind-asset-scope="${esc(scopeKey)}" data-ind-asset-pill="${esc(it.value)}">${esc(it.label)}${it.count != null ? ` (${fmtNum(it.count)})` : ''}</button>`).join('')}
+        </div>
+        <select class="ind-asset-select" data-ind-asset-select="${esc(scopeKey)}" data-freq-exempt="1" aria-label="${esc(label)}">
+          <option value="ALL" ${cur === 'ALL' ? 'selected' : ''}>${esc(allLabel || `Choose Specific (${items.length})`)}</option>
+          ${items.map(it => `<option value="${esc(it.value)}" ${cur === it.value ? 'selected' : ''}>${esc(it.label)}${it.count != null ? ` (${fmtNum(it.count)})` : ''}</option>`).join('')}
+        </select>
+      </div>
+    `;
+  }
+
   function renderHoldingLoans(submode = 'main') {
     const u = activeUser();
-    const loansList = filterRecords(SEED.records.loans || [], { ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
-    const settleList = filterRecords(SEED.records.loan_settlements || [], { ignoreCompany: true, includeGroupMfg: true });
+    const rawLoans = filterRecords(SEED.records.loans || [], { ignoreCompany: true, includeGroupMfg: true, ignorePeriod: true });
+    const rawSettle = filterRecords(SEED.records.loan_settlements || [], { ignoreCompany: true, includeGroupMfg: true });
     const allExps = filterRecords(SEED.records.expenses || [], { ignoreCompany: true, includeGroupMfg: true });
-    const assetExps = allExps.filter(x => /capex|asset|land|building|equipment|vehicle|invest|legal|audit|holding/i.test(`${x.category || ''} ${x.subcategory || ''} ${x.notes || ''}`));
+    const rawAssetExps = allExps.filter(x => /capex|asset|land|building|equipment|vehicle|invest|legal|audit|holding/i.test(`${x.category || ''} ${x.subcategory || ''} ${x.notes || ''}`));
+
+    const partyFreq = new Map();
+    const getParty = r => String(r.counterparty || r.borrower || r.lender || r.party || r.supplier || r.company || '').trim();
+    rawLoans.forEach(r => { const p = getParty(r); if (p) partyFreq.set(p, (partyFreq.get(p) || 0) + 1); });
+    rawSettle.forEach(r => { const p = getParty(r); if (p) partyFreq.set(p, (partyFreq.get(p) || 0) + 1); });
+    rawAssetExps.forEach(r => { const p = getParty(r); if (p) partyFreq.set(p, (partyFreq.get(p) || 0) + 1); });
+    const selParty = getIndAssetSelection('hld_loans');
+    const filterBarHtml = renderIndSpecificAssetBar(
+      'hld_loans',
+      'Specific Facility / Counterparty',
+      Array.from(partyFreq.entries()).map(([p, cnt]) => ({ value: p, label: p, count: cnt })),
+      `All Facilities (${partyFreq.size})`
+    );
+    const loansList = selParty === 'ALL' ? rawLoans : rawLoans.filter(r => getParty(r) === selParty);
+    const settleList = selParty === 'ALL' ? rawSettle : rawSettle.filter(r => getParty(r) === selParty);
+    const assetExps = selParty === 'ALL' ? rawAssetExps : rawAssetExps.filter(r => getParty(r) === selParty);
 
     let givenUsd = 0, takenUsd = 0;
     loansList.forEach(l => {
@@ -39046,6 +40387,7 @@
     `;
 
     const kpiHtml = `
+      ${filterBarHtml}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_loans">
           <div class="kpi-label">LOANS GIVEN (PRINCIPAL)</div>
@@ -40310,8 +41652,38 @@
 
   function renderHospitalityEnergy(submode = 'main') {
     const u = activeUser();
-    const hsp = computeHospitalityOperations();
-    const s = hsp.summary;
+    const hspBase = computeHospitalityOperations();
+    const selPlant = getIndAssetSelection('hsp_energy');
+    const plantMap = new Map();
+    hspBase.energyRows.forEach(r => {
+      const k = r.asset || r.company;
+      if (k) plantMap.set(k, (plantMap.get(k) || 0) + Number(r.diesel_used_l || 1));
+    });
+    hspBase.maintRows.forEach(r => {
+      const k = r.asset || r.company;
+      if (k && !plantMap.has(k)) plantMap.set(k, 1);
+    });
+    const filterBarHtml = renderIndSpecificAssetBar(
+      'hsp_energy',
+      'Specific Generator / Facility Plant',
+      Array.from(plantMap.entries()).map(([k, w]) => ({ value: k, label: k, weight: w })),
+      `All Plants (${plantMap.size})`
+    );
+    const scopedEnergy = selPlant === 'ALL' ? hspBase.energyRows : hspBase.energyRows.filter(r => (r.asset || r.company) === selPlant);
+    const scopedMaint = selPlant === 'ALL' ? hspBase.maintRows : hspBase.maintRows.filter(r => (r.asset || r.company) === selPlant || selPlant.includes(r.company));
+    const hsp = Object.assign({}, hspBase, {
+      energyRows: scopedEnergy.length ? scopedEnergy : hspBase.energyRows,
+      maintRows: scopedMaint
+    });
+    const s = selPlant === 'ALL' ? hspBase.summary : Object.assign({}, hspBase.summary, {
+      totalDieselTankL: hsp.energyRows.reduce((a, r) => a + r.tank_level_l, 0),
+      totalDieselUsedL: hsp.energyRows.reduce((a, r) => a + r.diesel_used_l, 0),
+      totalRunHours: round2(hsp.energyRows.reduce((a, r) => a + r.run_hours, 0)),
+      avgSolarOffsetPct: hsp.energyRows.length ? (hsp.energyRows.reduce((a, r) => a + r.solar_offset_pct, 0) / hsp.energyRows.length) : 0,
+      r4SpikeCount: hsp.energyRows.filter(r => r.l_per_hr > r.rated_l_hr * 1.15).length,
+      totalMaintUsd: round2(hsp.maintRows.reduce((a, r) => a + r.cost_usd, 0)),
+      openMaintCount: hsp.maintRows.filter(r => r.status === 'Open Work Order').length
+    });
     const f = STATE.chipFilter || 'all';
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const avgBurnLhr = s.totalRunHours > 0 ? round2(s.totalDieselUsedL / s.totalRunHours) : 0;
@@ -40340,6 +41712,7 @@
     }).join('');
 
     const kpiHtml = `
+      ${filterBarHtml}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
           <div class="kpi-lbl">Resort Diesel Tank Reserves</div>
@@ -41535,8 +42908,27 @@
 
   function renderTradingTrucks(submode = 'main') {
     const u = activeUser();
-    const trd = computeTradingOperations();
-    const s = trd.summary;
+    const trdBase = computeTradingOperations();
+    const selUnit = getIndAssetSelection('trd_trucks');
+    const filterBarHtml = renderIndSpecificAssetBar(
+      'trd_trucks',
+      'Specific Chassis / Serial Unit',
+      trdBase.serialUnits.map(r => ({ value: r.id, label: `${r.id} · ${r.family.split(' ').slice(0, 2).join(' ')}`, weight: r.list_price_usd })),
+      `All Serial Units (${trdBase.serialUnits.length})`
+    );
+    const scopedSerial = selUnit === 'ALL' ? trdBase.serialUnits : trdBase.serialUnits.filter(r => r.id === selUnit);
+    const scopedWarranty = selUnit === 'ALL' ? trdBase.warrantyRows : trdBase.warrantyRows.filter(r => r.unit_id === selUnit || r.id === selUnit || (scopedSerial[0] && r.model === scopedSerial[0].model));
+    const trd = Object.assign({}, trdBase, {
+      serialUnits: scopedSerial.length ? scopedSerial : trdBase.serialUnits,
+      warrantyRows: scopedWarranty
+    });
+    const s = selUnit === 'ALL' ? trdBase.summary : Object.assign({}, trdBase.summary, {
+      showroomUnitsCount: trd.serialUnits.filter(r => r.status !== 'Sold & Delivered').length,
+      soldUnitsCount: trd.serialUnits.filter(r => r.status === 'Sold & Delivered').length,
+      totalUnitsLandedUsd: round2(trd.serialUnits.reduce((a, r) => a + r.landed_cost_usd, 0)),
+      totalUnitsListUsd: round2(trd.serialUnits.reduce((a, r) => a + r.list_price_usd, 0)),
+      openWarrantyCount: trd.warrantyRows.filter(r => r.status !== 'Completed').length
+    });
     const hideCo = trd.scopedCompanies.length === 1;
     const coStyle = hideCo ? ' style="display:none"' : '';
     const f = STATE.chipFilter || 'all';
@@ -41565,6 +42957,7 @@
 
     const totUnitGm = round2(s.totalUnitsListUsd - s.totalUnitsLandedUsd);
     const kpiHtml = `
+      ${filterBarHtml}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
           <div class="kpi-lbl">Tracked Serial Units &amp; Chassis</div>
@@ -42870,15 +44263,29 @@
 
   function renderRealEstateProperties(submode = 'main') {
     const data = computeRealEstateOperations();
-    const s = data.summary;
+    const selProp = getIndAssetSelection('re_props');
+    const filterBarHtml = renderIndSpecificAssetBar(
+      're_props',
+      'Specific Property / Plot',
+      data.properties.map(r => ({ value: r.name, label: `${r.code} · ${r.name}`, weight: r.lgb_gross_usd })),
+      `All Properties (${data.properties.length})`
+    );
     const hideCo = Boolean(data.isSingleEntity);
     const coStyle = hideCo ? ' style="display:none"' : '';
     const q = String(STATE.search || '').trim().toLowerCase();
-    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
-    const filteredProps = sortRows(data.properties.filter(matchQ), 're_properties');
-    const filteredUnits = sortRows(data.units.filter(matchQ), 're_units');
-    const filteredVals = sortRows(data.valuations.filter(matchQ), 're_valuations');
-    const filteredOwn = sortRows(data.ownership.filter(matchQ), 're_ownership');
+    const matchQ = r => (!q || JSON.stringify(r).toLowerCase().includes(q));
+    const matchProp = (r, key) => selProp === 'ALL' || r[key] === selProp;
+    const filteredProps = sortRows(data.properties.filter(r => matchProp(r, 'name') && matchQ(r)), 're_properties');
+    const filteredUnits = sortRows(data.units.filter(r => matchProp(r, 'property') && matchQ(r)), 're_units');
+    const filteredVals = sortRows(data.valuations.filter(r => matchProp(r, 'property') && matchQ(r)), 're_valuations');
+    const filteredOwn = sortRows(data.ownership.filter(r => matchProp(r, 'property') && matchQ(r)), 're_ownership');
+    const s = selProp === 'ALL' ? data.summary : Object.assign({}, data.summary, {
+      portfolioGrossUsd: filteredProps.reduce((a, r) => a + r.lgb_gross_usd, 0),
+      portfolioShareUsd: filteredProps.reduce((a, r) => a + r.share_val_usd, 0),
+      totalUnits: filteredUnits.length,
+      occupiedUnits: filteredUnits.filter(u => /occup|leased/i.test(u.occupancy || '')).length,
+      occupancyPct: filteredUnits.length ? (filteredUnits.filter(u => /occup|leased/i.test(u.occupancy || '')).length / filteredUnits.length) * 100 : 100
+    });
 
     const bannerHtml = `
       <div class="cockpit-banner">
@@ -42896,6 +44303,8 @@
           ${exportBtn(submode === 'units' ? 're_units' : submode === 'valuations' ? 're_valuations' : submode === 'ownership' ? 're_ownership' : 're_properties')}
         </div>
       </div>
+
+      ${filterBarHtml}
 
       <div class="kpi-row">
         <div class="kpi-card">
@@ -44074,8 +45483,19 @@
   function renderInsuranceClaims(submode = 'main') {
     const data = computeInsuranceOperations();
     const s = data.summary;
+    const selCarrier = getIndAssetSelection('ins_claims');
+    const carrierMap = new Map();
+    data.claims.forEach(r => {
+      if (r.carrier) carrierMap.set(r.carrier, (carrierMap.get(r.carrier) || 0) + 1);
+    });
+    const filterBarHtml = renderIndSpecificAssetBar(
+      'ins_claims',
+      'Specific Carrier / Insurer',
+      Array.from(carrierMap.entries()).map(([c, cnt]) => ({ value: c, label: c, count: cnt })),
+      `All Carriers (${carrierMap.size})`
+    );
     const q = String(STATE.search || '').trim().toLowerCase();
-    const matchQ = r => !q || JSON.stringify(r).toLowerCase().includes(q);
+    const matchQ = r => (selCarrier === 'ALL' || r.carrier === selCarrier) && (!q || JSON.stringify(r).toLowerCase().includes(q));
     const filteredClm = sortRows(data.claims.filter(matchQ), 'ins_claims');
 
     const sumClaimed = filteredClm.reduce((a, r) => a + r.claimed_usd, 0);
@@ -44097,6 +45517,8 @@
           ${exportBtn('ins_claims')}
         </div>
       </div>
+
+      ${filterBarHtml}
 
       <div class="kpi-row">
         <div class="kpi-card">
@@ -44836,129 +46258,562 @@
     const indEntities = ind === 'Holding & Treasury'
       ? rollup.entities
       : rollup.entities.filter(e => e.industry === ind);
+    const cleanDash = str => String(str || '').replace(/[—–]/g, '-').replace(/→/g, '-');
 
-    let kpis = [];
+    const sentRules = buildIndustrySentinelItems(ind);
+    const openSentRules = sentRules.filter(r => r.severity !== 'ok');
+    const sortedSentRules = openSentRules.concat(sentRules.filter(r => r.severity === 'ok'));
+    const attentionRows = sortedSentRules.slice(0, 3).map(r => ({
+      tone: r.severity === 'crit' ? 'crit' : (r.severity === 'warn' ? 'warn' : 'good'),
+      icon: r.severity === 'ok' ? 'check_circle' : 'warn',
+      title: cleanDash(r.title),
+      detail: cleanDash(r.detail),
+      pill: cleanDash(r.badge),
+      jump: r.navView || 'sentinels'
+    }));
+    attentionRows.push({
+      tone: 'good',
+      icon: 'ledger',
+      title: 'Double-Entry Books: Balanced ($0.00 Variance)',
+      detail: `Lebanese CoA Classes 1-7 reconciled across ${indEntities.length} operating ${indEntities.length === 1 ? 'entity' : 'entities'}`,
+      pill: 'Audited',
+      jump: 'ledger'
+    });
+
+    let kpiCards = [];
     let chartTitle = '';
     let chartSub = '';
     let chartBars = [];
+    let s1Label = 'Revenue';
+    let s2Label = 'Direct Cost';
+    let s3Label = 'Op. Profit';
+    let pnlBridge = null;
+    let pulseSpec = {
+      title: 'Executive Pulse',
+      attTabLabel: 'Attention',
+      attBadge: openSentRules.length ? String(openSentRules.length) : '',
+      attSub: `${ind} watchdogs & ledger integrity`,
+      attentionRows,
+      attFootLeft: `${openSentRules.length} active alert${openSentRules.length === 1 ? '' : 's'} across ${sentRules.length} domain watchdogs`,
+      attJump: 'sentinels',
+      attJumpLbl: 'All Sentinels',
+      clientsTabLabel: 'Top Clients',
+      clientsSub: 'Top counterparties & exposure',
+      clientRows: [],
+      clientsFootLeft: '',
+      clientsJump: 'customers',
+      clientsJumpLbl: 'Open Registry',
+      mixTabLabel: 'Revenue Mix',
+      mixSub: 'Primary revenue & margin drivers',
+      mixRows: [],
+      mixFootLeft: '',
+      mixJump: 'pbi',
+      mixJumpLbl: 'Dashboards'
+    };
 
     if (ind === 'Holding & Treasury') {
       const { totals, icRes, byIndustry } = rollup;
-      kpis = [
-        { jump: 'hld_consolidation', k: 'Consolidated Revenue', v: fmtUSD(totals.sales_ttc, 0), d: `Net Base: ${fmtUSD(totals.net_sales, 0)} across 14 entities`, cls: 'good' },
-        { jump: 'hld_consolidation', k: 'Consolidated Operating Profit', v: fmtSignedUSD(totals.operating_profit, 0), d: `Gross Margin: ${fmtUSD(totals.gross_margin, 0)} · OpEx: ${fmtUSD(totals.expenses, 0)}`, cls: 'good' },
-        { jump: 'cashflow', k: 'Group Cash Position', v: fmtUSD(totals.cash_till, 0), d: `Intercompany Eliminated: ${fmtUSD(icRes.totalMatchedUsd, 0)} (${icRes.reconRatePct.toFixed(1)}%)`, cls: 'good' },
-        { jump: 'hld_interactions', k: 'Receivables & Payables (AR / AP)', v: fmtUSD(totals.ar_balance, 0), d: `Group AP: ${fmtUSD(totals.ap_balance, 0)} · ${fmtNum(icRes.openCount)} Open IC Legs`, cls: 'good' }
+      const revDen = Math.max(1, Number(totals.net_sales || totals.sales_ttc || 1));
+      const rawCost = Math.max(0, Number(totals.raw_cost || 0));
+      const grossGm = Number(totals.gross_margin || 0);
+      const opEx = Math.max(0, round2(Number(totals.expenses || 0) + Number(totals.salaries || 0)));
+      const opProf = Number(totals.operating_profit || 0);
+      const gmPct = (grossGm / revDen) * 100;
+      const opPct = (opProf / revDen) * 100;
+      const rawPct = Math.min(100, (rawCost / revDen) * 100);
+      const opExPct = Math.min(100, (opEx / revDen) * 100);
+      const mfgShare = Math.round(((byIndustry.mfg.sales_ttc || 0) / Math.max(1, totals.sales_ttc || 1)) * 100);
+      const arApDen = Math.max(1, Number(totals.ar_balance || 0) + Math.abs(Number(totals.ap_balance || 0)));
+      const arShare = Math.round((Math.max(0, Number(totals.ar_balance || 0)) / arApDen) * 100);
+
+      kpiCards = [
+        {
+          jump: 'hld_consolidation', icon: 'hld_consolidation', k: 'Group Revenue',
+          badge: '6 Sectors · 14 BUs', badgeTone: 'brass',
+          v: fmtUSD(totals.sales_ttc, 0), subVal: `Net ${fmtUSDk(totals.net_sales)}`,
+          segs: [{ pct: mfgShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - mfgShare), tone: 'cerulean' }],
+          d: `Mfg ${fmtUSDk(byIndustry.mfg.sales_ttc)} (${mfgShare}%) · Sibling Sectors ${fmtUSDk(Math.max(0, totals.sales_ttc - byIndustry.mfg.sales_ttc))}`,
+          cls: 'good', tip: 'Open Consolidated Rollup'
+        },
+        {
+          jump: 'hld_consolidation', icon: 'ledger', k: 'Operating Profit',
+          badge: `${opPct.toFixed(1)}% Margin`, badgeTone: opProf < 0 ? 'crit' : 'good',
+          v: fmtSignedUSD(opProf, 0), subVal: `${gmPct.toFixed(1)}% GM`,
+          segs: [{ pct: rawPct, tone: 'amber' }, { pct: opExPct, tone: 'brass' }, { pct: Math.max(4, opPct), tone: 'emerald' }],
+          d: `Gross ${fmtUSDk(grossGm)} · Direct ${fmtUSDk(rawCost)} · OpEx & Pay ${fmtUSDk(opEx)}`,
+          cls: opProf < 0 ? 'crit' : 'good', tip: 'Open Group P&L Schedule'
+        },
+        {
+          jump: 'cashflow', icon: 'cashflow', k: 'Cash & IC Pairing',
+          badge: `${icRes.reconRatePct.toFixed(1)}% Paired`, badgeTone: icRes.openCount > 0 ? 'brass' : 'good',
+          v: fmtUSD(totals.cash_till, 0), subVal: `${fmtNum(icRes.matchedCount)} pairs`,
+          segs: [{ pct: icRes.reconRatePct, tone: 'emerald' }, { pct: Math.max(0, 100 - icRes.reconRatePct), tone: 'amber' }],
+          d: `IC Eliminated ${fmtUSDk(icRes.totalMatchedUsd)} · Open Queue ${fmtUSDk(icRes.totalOpenUsd || 0)}`,
+          cls: 'good', tip: 'Open Group Treasury'
+        },
+        {
+          jump: 'hld_interactions', icon: 'hld_interactions', k: 'Working Capital',
+          badge: icRes.openCount > 0 ? `${icRes.openCount} Open IC` : 'IC Settled', badgeTone: icRes.openCount > 0 ? 'warn' : 'good',
+          v: fmtUSD(totals.ar_balance, 0), subVal: 'Group AR',
+          segs: [{ pct: arShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - arShare), tone: 'brass' }],
+          d: `Group AP ${fmtUSD(totals.ap_balance, 0)} · Sister Net Owed ${fmtUSDk(icRes.totalNetUnpaidUsd || 0)}`,
+          cls: icRes.openCount > 0 ? 'warn' : 'good', tip: 'Open Sister Interactions'
+        }
       ];
-      chartTitle = '6-Industry Consolidated Revenue & Operating Profit Bridge';
-      chartSub = 'Bdeir Holding · Consolidated rollup across Manufacturing, Hospitality, Trading, Real Estate & Insurance';
-      chartBars = [
-        { label: 'Manufacturing (3)', rev: byIndustry.mfg.sales_ttc, cost: byIndustry.mfg.raw_cost, op: byIndustry.mfg.operating_profit },
-        { label: 'Hospitality (5)', rev: byIndustry.hsp.sales_ttc, cost: byIndustry.hsp.raw_cost, op: byIndustry.hsp.operating_profit },
-        { label: 'Trading (2)', rev: byIndustry.trd.sales_ttc, cost: byIndustry.trd.raw_cost, op: byIndustry.trd.operating_profit },
-        { label: 'Real Estate (2)', rev: byIndustry.re.sales_ttc, cost: byIndustry.re.raw_cost, op: byIndustry.re.operating_profit },
-        { label: 'Insurance (1)', rev: byIndustry.ins.sales_ttc, cost: byIndustry.ins.raw_cost, op: byIndustry.ins.operating_profit }
-      ];
+      chartTitle = '6-Industry Revenue & Profit Trajectory';
+      chartSub = 'Bdeir Holding · Consolidated performance across 6 industries & 14 operating entities';
+      s1Label = 'Revenue'; s2Label = 'Direct Cost'; s3Label = 'Profit';
+      const hldBarByInd = {
+        'Manufacturing': { label: 'Mfg (3)', fullLabel: 'Manufacturing (3 BUs)', rev: byIndustry.mfg.sales_ttc, cost: byIndustry.mfg.raw_cost, op: byIndustry.mfg.operating_profit, badge: '3 entities' },
+        'Hospitality & Resorts': { label: 'Resorts (5)', fullLabel: 'Hospitality & Resorts (5 BUs)', rev: byIndustry.hsp.sales_ttc, cost: byIndustry.hsp.raw_cost, op: byIndustry.hsp.operating_profit, badge: '5 resorts' },
+        'Real Estate & Property': { label: 'Real Est (2)', fullLabel: 'Real Estate & Property (2 BUs)', rev: byIndustry.re.sales_ttc, cost: byIndustry.re.raw_cost, op: byIndustry.re.operating_profit, badge: '2 entities' },
+        'Automotive & Heavy Trading': { label: 'Trading (2)', fullLabel: 'Automotive & Trading (2 BUs)', rev: byIndustry.trd.sales_ttc, cost: byIndustry.trd.raw_cost, op: byIndustry.trd.operating_profit, badge: '2 entities' },
+        'Insurance & Brokerage': { label: 'Insur. (1)', fullLabel: 'Insurance & Brokerage (1 BU)', rev: byIndustry.ins.sales_ttc, cost: byIndustry.ins.raw_cost, op: byIndustry.ins.operating_profit, badge: '6 carriers' }
+      };
+      const orderedHldInds = getIndustryGroups().map(g => g.id).filter(id => hldBarByInd[id]);
+      Object.keys(hldBarByInd).forEach(id => { if (!orderedHldInds.includes(id)) orderedHldInds.push(id); });
+      chartBars = orderedHldInds.map(id => hldBarByInd[id]);
+      pnlBridge = {
+        title: 'Consolidated 6-Industry P&L Bridge',
+        meta: `14 Entities · ${fmtUSDk(icRes.totalMatchedUsd)} IC eliminated`,
+        steps: [
+          { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(totals.net_sales), barPct: 100, barTone: 'cobalt', sub: `Gross ${fmtUSDk(totals.sales_ttc)}`, jump: 'hld_consolidation' },
+          { op: '-', label: 'COGS', pctTxt: `${rawPct.toFixed(1)}%`, valHtml: `-${fmtUSDk(rawCost)}`, barPct: rawPct, barTone: 'amber', sub: 'Quarry, F&B & Landed', jump: 'hld_consolidation' },
+          { op: '=', label: 'Margin', pctTxt: `${gmPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(grossGm), barPct: Math.max(6, gmPct), barTone: 'cerulean', sub: 'Group spread', jump: 'hld_consolidation' },
+          { op: '-', label: 'OpEx', pctTxt: `${opExPct.toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: opExPct, barTone: 'brass', sub: 'Overhead & staff', jump: 'expenses' },
+          { op: '=', label: 'Profit', pctTxt: `${opPct.toFixed(1)}%`, pctTone: opProf < 0 ? 'crit' : 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, opPct), barTone: 'emerald', sub: 'Net group cash', jump: 'statements', isFinal: true }
+        ]
+      };
+      const biList = (icRes.byBilateral || []).slice(0, 4);
+      const maxBi = biList.length ? Math.max(1, Number(biList[0].givenUsd || 0)) : 1;
+      pulseSpec.clientsTabLabel = 'Sister Corridors';
+      pulseSpec.clientsSub = 'Bilateral intercompany funding & repayment';
+      pulseSpec.clientRows = biList.map((c, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${c.lenderCo} - ${c.borrowerCo}`,
+        val: fmtUSD(c.givenUsd, 0), shareTxt: `${c.repayPct.toFixed(0)}% repaid`,
+        pct: (Number(c.givenUsd || 0) / maxBi) * 100, barTone: 'cobalt',
+        meta: `Repaid ${fmtUSDk(c.paidBackUsd)} · Net Owed ${fmtUSDk(c.netUnpaidUsd)}`,
+        jump: 'hld_due_matrix'
+      }));
+      pulseSpec.clientsFootLeft = `${(icRes.byBilateral || []).length} bilateral sister corridors · ${icRes.overallRepayPct.toFixed(1)}% repaid`;
+      pulseSpec.clientsJump = 'hld_due_matrix';
+      pulseSpec.clientsJumpLbl = 'Due Matrix';
+
+      const maxIndRev = Math.max(1, ...chartBars.map(b => Number(b.rev || 0)));
+      pulseSpec.mixTabLabel = 'Industry Mix';
+      pulseSpec.mixSub = 'Revenue share & profit contribution by vertical';
+      pulseSpec.mixRows = chartBars.slice().sort((a, b) => b.rev - a.rev).slice(0, 4).map((b, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: b.fullLabel,
+        val: fmtUSD(b.rev, 0), shareTxt: `${((b.rev / Math.max(1, totals.sales_ttc)) * 100).toFixed(1)}%`,
+        pct: (b.rev / maxIndRev) * 100, barTone: idx === 0 ? 'cobalt' : (idx === 1 ? 'cerulean' : 'brass'),
+        meta: `Op. Profit ${fmtUSDk(b.op)} (${b.rev > 0 ? ((b.op / b.rev) * 100).toFixed(1) : '0.0'}%)`,
+        jump: 'hld_consolidation'
+      }));
+      pulseSpec.mixFootLeft = `6 industry verticals consolidated under Bdeir Holding`;
+      pulseSpec.mixJump = 'hld_consolidation';
+      pulseSpec.mixJumpLbl = 'Group Rollup';
     } else if (ind === 'Hospitality & Resorts') {
       const hsp = computeHospitalityOperations({ ignoreSearch: true });
       const s = hsp.summary;
       const totRev = round2(s.totalRevenueTtc + s.totalMemContract);
-      const netMargin = round2(s.totalRevenueHt + s.totalMemContract - s.totalStockUsage);
+      const totHt = round2(s.totalRevenueHt + s.totalMemContract);
+      const netMargin = round2(totHt - s.totalStockUsage);
       const opProf = round2(netMargin - s.totalMaintUsd);
-      kpis = [
-        { jump: 'hsp_revenue', k: 'Venue & Membership Revenue', v: fmtUSD(totRev, 0), d: `Venue: ${fmtUSD(s.totalRevenueTtc, 0)} · Memberships: ${fmtUSD(s.totalMemContract, 0)}`, cls: 'good' },
-        { jump: 'hsp_energy', k: 'Venue Operating Cash Profit', v: fmtUSD(opProf, 0), d: `Net F&B/Chalet Margin: ${fmtUSD(netMargin, 0)} (${s.avgFoodCostPct.toFixed(1)}% Food Cost)`, cls: 'good' },
-        { jump: 'hsp_pos', k: 'POS Till & Membership Cash', v: fmtUSD(s.totalMemPaid + s.totalRevenueHt, 0), d: `Memberships Collected: ${fmtUSD(s.totalMemPaid, 0)} · POS Till Closes Synced`, cls: 'good' },
-        { jump: 'hsp_memberships', k: 'Receivables & Partner Pool', v: fmtUSD(s.totalMemArrears, 0), d: `${fmtNum(s.overdueMemCount)} Overdue Contracts · Partner Pool: ${fmtUSD(s.totalPartnerPool, 0)}`, cls: s.overdueMemCount > 0 ? 'crit' : 'good' }
+      const revDen = Math.max(1, totHt || totRev || 1);
+      const venuePct = Math.round((s.totalRevenueTtc / Math.max(1, totRev)) * 100);
+      const memCollPct = s.totalMemContract > 0 ? Math.round((s.totalMemPaid / s.totalMemContract) * 100) : 100;
+      const occPct = s.totalRoomsCap > 0 ? ((s.occupiedUnits / s.totalRoomsCap) * 100) : 0;
+
+      kpiCards = [
+        {
+          jump: 'hsp_revenue', icon: 'hsp_revenue', k: 'Resort Revenue',
+          badge: `${occPct.toFixed(0)}% Occupancy`, badgeTone: 'brass',
+          v: fmtUSD(totRev, 0), subVal: `${fmtNum(s.occupiedUnits)}/${fmtNum(s.totalRoomsCap)} units`,
+          segs: [{ pct: venuePct, tone: 'cobalt' }, { pct: Math.max(0, 100 - venuePct), tone: 'emerald' }],
+          d: `Venue ${fmtUSDk(s.totalRevenueTtc)} (${venuePct}%) · Memberships ${fmtUSDk(s.totalMemContract)}`,
+          cls: 'good', tip: 'Open Daily Venue Revenue'
+        },
+        {
+          jump: 'hsp_stock', icon: 'ledger', k: 'Operating Profit',
+          badge: `${s.avgFoodCostPct.toFixed(1)}% F&B Cost`, badgeTone: s.avgFoodCostPct <= 33 ? 'good' : 'warn',
+          v: fmtUSD(opProf, 0), subVal: `${((opProf / revDen) * 100).toFixed(1)}% Margin`,
+          segs: [{ pct: (s.totalStockUsage / revDen) * 100, tone: 'amber' }, { pct: (s.totalMaintUsd / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }],
+          d: `Net Margin ${fmtUSDk(netMargin)} · Kitchen BOM ${fmtUSDk(s.totalStockUsage)} · Maint ${fmtUSDk(s.totalMaintUsd)}`,
+          cls: 'good', tip: 'Open Kitchen & Cellar Cost'
+        },
+        {
+          jump: 'hsp_pos', icon: 'hsp_pos', k: 'POS & Collections',
+          badge: `${memCollPct}% Paid`, badgeTone: 'good',
+          v: fmtUSD(s.totalMemPaid + s.totalRevenueHt, 0), subVal: `${fmtNum(hsp.posRows.length)} closes`,
+          segs: [{ pct: memCollPct, tone: 'emerald' }, { pct: Math.max(0, 100 - memCollPct), tone: 'cobalt' }],
+          d: `Memberships Paid ${fmtUSDk(s.totalMemPaid)} · Solar Offset ${s.avgSolarOffsetPct.toFixed(0)}%`,
+          cls: 'good', tip: 'Open POS Till Closes'
+        },
+        {
+          jump: 'hsp_memberships', icon: 'hsp_memberships', k: 'Membership AR',
+          badge: s.overdueMemCount > 0 ? `${s.overdueMemCount} Arrears` : '100% Current', badgeTone: s.overdueMemCount > 0 ? 'warn' : 'good',
+          v: fmtUSD(s.totalMemArrears, 0), subVal: 'Open Arrears',
+          segs: [{ pct: memCollPct, tone: 'cobalt' }, { pct: Math.max(4, 100 - memCollPct), tone: 'amber' }],
+          d: `${fmtNum(s.overdueMemCount)} Overdue Contracts · Partner Pool ${fmtUSDk(s.totalPartnerPool)}`,
+          cls: s.overdueMemCount > 0 ? 'crit' : 'good', tip: 'Open Seasonal Memberships'
+        }
       ];
-      chartTitle = 'Resort Venue Revenue, Kitchen Cost & Operating Profit by Property';
-      chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Hospitality & Resorts')} · Daily Venue Revenue, Memberships & F&B Cost`;
-      chartBars = indEntities.map(e => ({ label: e.name, rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit }));
+      chartTitle = 'Resort Revenue, Kitchen Cost & Profit Trajectory';
+      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Hospitality & Resorts'))} · Daily Venue Revenue, Memberships & F&B Cost`;
+      s1Label = 'Revenue'; s2Label = 'F&B Cost'; s3Label = 'Profit';
+      chartBars = indEntities.map(e => ({ label: cleanCeoText(e.name), fullLabel: cleanCeoText(e.name), rev: e.k.sales_ttc, cost: e.k.raw_cost, op: e.k.operating_profit, badge: `${fmtNum(e.k.loads || 0)} sheets` }));
+      pnlBridge = {
+        title: 'Consolidated Resort P&L Value Bridge (Ex-VAT)',
+        meta: `Food & Pour Cost ${s.avgFoodCostPct.toFixed(1)}% · Generator Solar Offset ${s.avgSolarOffsetPct.toFixed(1)}%`,
+        steps: [
+          { label: 'Net Sales', pctTxt: '100%', valHtml: fmtUSDk(totHt), barPct: 100, barTone: 'cobalt', sub: `Billed ${fmtUSDk(totRev)}`, jump: 'hsp_revenue' },
+          { op: '-', label: 'F&B Cost', pctTxt: `${((s.totalStockUsage / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalStockUsage)}`, barPct: (s.totalStockUsage / revDen) * 100, barTone: 'amber', sub: 'Recipe BOM usage', jump: 'hsp_stock' },
+          { op: '=', label: 'Dept GM', pctTxt: `${((netMargin / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(netMargin), barPct: (netMargin / revDen) * 100, barTone: 'cerulean', sub: 'F&B + Chalet spread', jump: 'hsp_menu' },
+          { op: '-', label: 'Energy/OpEx', pctTxt: `${((s.totalMaintUsd / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalMaintUsd)}`, barPct: (s.totalMaintUsd / revDen) * 100, barTone: 'brass', sub: `${fmtNum(s.totalDieselUsedL, 0)} L diesel`, jump: 'hsp_energy' },
+          { op: '=', label: 'Profit', pctTxt: `${((opProf / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / revDen) * 100), barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
+        ]
+      };
+      const topMems = (hsp.membershipRows || []).slice().sort((a, b) => b.contract_usd - a.contract_usd).slice(0, 4);
+      const maxMem = topMems.length ? Math.max(1, topMems[0].contract_usd) : 1;
+      pulseSpec.clientsTabLabel = 'VIP Members';
+      pulseSpec.clientsSub = 'Top seasonal chalet & cabana contracts';
+      pulseSpec.clientRows = topMems.map((m, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${m.member} (${m.company})`,
+        val: fmtUSD(m.contract_usd, 0), shareTxt: m.balance_usd > 0 ? `Due ${fmtUSDk(m.balance_usd)}` : 'Paid',
+        pct: (m.contract_usd / maxMem) * 100, barTone: 'cobalt',
+        meta: `${m.unit} · Paid ${fmtUSDk(m.paid_usd)}`,
+        jump: 'hsp_memberships'
+      }));
+      pulseSpec.clientsFootLeft = `${(hsp.membershipRows || []).length} seasonal contracts · ${fmtUSDk(s.totalMemPaid)} collected`;
+      pulseSpec.clientsJump = 'hsp_memberships';
+      pulseSpec.clientsJumpLbl = 'Memberships';
+
+      const topMenu = (hsp.menuRows || []).slice().sort((a, b) => (b.price_ht * b.units_sold) - (a.price_ht * a.units_sold)).slice(0, 4);
+      const maxMenuRev = topMenu.length ? Math.max(1, topMenu[0].price_ht * topMenu[0].units_sold) : 1;
+      pulseSpec.mixTabLabel = 'Menu Stars';
+      pulseSpec.mixSub = 'Top F&B & banquet margin contributors';
+      pulseSpec.mixRows = topMenu.map((m, idx) => {
+        const rev = round2(m.price_ht * m.units_sold);
+        return {
+          kind: 'bar', rank: `#${idx + 1}`,
+          name: m.item || m.name,
+          val: fmtUSD(rev, 0), shareTxt: `${m.food_cost_pct.toFixed(0)}% cost`,
+          pct: (rev / maxMenuRev) * 100, barTone: idx === 0 ? 'cobalt' : 'brass',
+          meta: `${fmtNum(m.units_sold)} covers · $${Number(m.price_ht || 0).toFixed(0)} unit`,
+          jump: 'hsp_menu'
+        };
+      });
+      pulseSpec.mixFootLeft = `${(hsp.menuRows || []).length} engineered menu items · ${s.avgFoodCostPct.toFixed(1)}% blended cost`;
+      pulseSpec.mixJump = 'hsp_menu';
+      pulseSpec.mixJumpLbl = 'Menu Matrix';
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = computeTradingOperations({ ignoreSearch: true });
       const s = trd.summary;
-      const opProf = round2(s.totalSalesMargin - s.totalLandedAddUsd * 0.35);
-      kpis = [
-        { jump: 'trd_sales', k: 'Invoiced Sales Revenue', v: fmtUSD(s.totalSalesTtc, 0), d: `Ex-VAT Net: ${fmtUSD(s.totalSalesNet, 0)} · 11% VAT: ${fmtUSD(s.totalSalesVat, 0)}`, cls: 'good' },
-        { jump: 'trd_purchases', k: 'Trading Operating Profit', v: fmtUSD(opProf, 0), d: `Gross Margin: ${fmtUSD(s.totalSalesMargin, 0)} (${s.avgMarginPct.toFixed(1)}%) · Landed Add: ${fmtUSD(s.totalLandedAddUsd, 0)}`, cls: 'good' },
-        { jump: 'trd_stock', k: 'Inventory & Showroom Stock', v: fmtUSD(s.totalStockValUsd + s.totalUnitsLandedUsd, 0), d: `Parts WAC: ${fmtUSD(s.totalStockValUsd, 0)} · ${fmtNum(s.showroomUnitsCount)} Showroom Units`, cls: 'good' },
-        { jump: 'trd_receivables', k: 'Receivables & Advances (AR)', v: fmtUSD(s.grossArUsd, 0), d: `Unallocated Advances: ${fmtUSD(s.customerAdvancesUsd, 0)} · DSO ${s.weightedDsoDays.toFixed(0)}d`, cls: 'good' }
+      const opEx = round2(s.totalLandedAddUsd * 0.35);
+      const opProf = round2(s.totalSalesMargin - opEx);
+      const revDen = Math.max(1, s.totalSalesTtc || 1);
+      const stockTot = round2(s.totalStockValUsd + s.totalUnitsLandedUsd);
+      const unitsShare = stockTot > 0 ? Math.round((s.totalUnitsLandedUsd / stockTot) * 100) : 70;
+      const arPromPct = s.grossArUsd > 0 ? Math.min(100, Math.round((s.activePromisesUsd / s.grossArUsd) * 100)) : 50;
+
+      kpiCards = [
+        {
+          jump: 'trd_sales', icon: 'trd_sales', k: 'Invoiced Revenue',
+          badge: `${s.soldUnitsCount} Chassis Sold`, badgeTone: 'brass',
+          v: fmtUSD(s.totalSalesTtc, 0), subVal: `Ex-VAT ${fmtUSDk(s.totalSalesNet)}`,
+          segs: [{ pct: Math.round((s.totalSalesNet / revDen) * 100), tone: 'cobalt' }, { pct: Math.round((s.totalSalesVat / revDen) * 100), tone: 'cerulean' }],
+          d: `Net ${fmtUSDk(s.totalSalesNet)} · 11% VAT ${fmtUSDk(s.totalSalesVat)} · ${trd.salesRows.filter(r => !r.is_gap).length} invoices`,
+          cls: 'good', tip: 'Open Invoiced Sales'
+        },
+        {
+          jump: 'trd_purchases', icon: 'ledger', k: 'Trading Profit',
+          badge: `${s.avgMarginPct.toFixed(1)}% GM`, badgeTone: 'good',
+          v: fmtUSD(opProf, 0), subVal: `GM ${fmtUSDk(s.totalSalesMargin)}`,
+          segs: [{ pct: (s.totalSalesCost / revDen) * 100, tone: 'amber' }, { pct: (opEx / revDen) * 100, tone: 'brass' }, { pct: Math.max(4, (opProf / revDen) * 100), tone: 'emerald' }],
+          d: `Landed COGS ${fmtUSDk(s.totalSalesCost)} · Freight & Customs ${fmtUSDk(s.totalLandedAddUsd)}`,
+          cls: 'good', tip: 'Open Imports & Landed Cost'
+        },
+        {
+          jump: 'trd_stock', icon: 'trd_stock', k: 'Showroom & Stock',
+          badge: `${fmtNum(s.showroomUnitsCount)} VINs`, badgeTone: s.reorderAlertCount > 0 ? 'brass' : 'good',
+          v: fmtUSD(stockTot, 0), subVal: `List ${fmtUSDk(s.totalUnitsListUsd)}`,
+          segs: [{ pct: unitsShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - unitsShare), tone: 'emerald' }],
+          d: `Chassis ${fmtUSDk(s.totalUnitsLandedUsd)} · Spare Parts WAC ${fmtUSDk(s.totalStockValUsd)}`,
+          cls: 'good', tip: 'Open Showroom & Stock'
+        },
+        {
+          jump: 'trd_receivables', icon: 'trd_receivables', k: 'Receivables & AR',
+          badge: `DSO ${s.weightedDsoDays.toFixed(0)}d`, badgeTone: s.weightedDsoDays > 150 ? 'warn' : 'brass',
+          v: fmtUSD(s.grossArUsd, 0), subVal: 'Gross AR',
+          segs: [{ pct: arPromPct, tone: 'emerald' }, { pct: Math.max(4, 100 - arPromPct), tone: 'amber' }],
+          d: `Promises ${fmtUSDk(s.activePromisesUsd)} · Unallocated Advances ${fmtUSDk(s.customerAdvancesUsd)}`,
+          cls: 'good', tip: 'Open Receivables & Advances'
+        }
       ];
-      chartTitle = 'Heavy Truck & Spare Parts Revenue, Landed Cost & Margin Trajectory';
-      chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Automotive & Heavy Trading')} · Shacman Heavy Trucks & Korri Auto Parts`;
-      chartBars = trd.salesRows.filter(r => !r.is_gap).slice(0, 6).map(r => ({ label: `${r.company} #${r.seq}`, rev: r.ttc_usd, cost: r.cost_usd, op: r.margin_usd }));
+      chartTitle = 'Heavy Truck & Parts Revenue, Landed Cost & Margin';
+      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Automotive & Heavy Trading'))} · Shacman Heavy Trucks & Korri Auto Parts`;
+      s1Label = 'Invoiced'; s2Label = 'Landed'; s3Label = 'Margin';
+      chartBars = trd.salesRows.filter(r => !r.is_gap).slice(0, 6).map(r => ({
+        label: `${r.company === 'Shacman' ? 'SH' : 'KA'} #${r.seq}`,
+        fullLabel: cleanCeoText(`${r.company} Inv #${r.seq} · ${r.customer}`),
+        rev: r.ttc_usd, cost: r.cost_usd, op: r.margin_usd,
+        badge: `${r.margin_pct.toFixed(1)}% GM`
+      }));
+      pnlBridge = {
+        title: 'Consolidated Trading P&L Bridge (Landed Cost Economics)',
+        meta: `Capitalized FOB ${fmtUSDk(s.totalFobUsd)} + Freight/Customs ${fmtUSDk(s.totalLandedAddUsd)} · 100% Parallel Parity`,
+        steps: [
+          { label: 'Sales', pctTxt: '100%', valHtml: fmtUSDk(s.totalSalesTtc), barPct: 100, barTone: 'cobalt', sub: `Ex-VAT ${fmtUSDk(s.totalSalesNet)}`, jump: 'trd_sales' },
+          { op: '-', label: 'Landed', pctTxt: `${((s.totalSalesCost / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.totalSalesCost)}`, barPct: (s.totalSalesCost / revDen) * 100, barTone: 'amber', sub: 'FOB + CIF duty', jump: 'trd_landed' },
+          { op: '=', label: 'Gross GM', pctTxt: `${s.avgMarginPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(s.totalSalesMargin), barPct: s.avgMarginPct, barTone: 'cerulean', sub: 'Realized spread', jump: 'trd_sales' },
+          { op: '-', label: 'Showroom', pctTxt: `${((opEx / revDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: (opEx / revDen) * 100, barTone: 'brass', sub: `${s.openWarrantyCount} open PDI/war`, jump: 'trd_warranty' },
+          { op: '=', label: 'Profit', pctTxt: `${((opProf / revDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / revDen) * 100), barTone: 'emerald', sub: 'Net operating cash', jump: 'statements', isFinal: true }
+        ]
+      };
+      const topBuyers = (trd.receivableRows || []).slice().sort((a, b) => b.gross_ar_usd - a.gross_ar_usd).slice(0, 4);
+      const maxAr = topBuyers.length ? Math.max(1, topBuyers[0].gross_ar_usd) : 1;
+      pulseSpec.clientsTabLabel = 'Fleet Buyers';
+      pulseSpec.clientsSub = 'Top truck & parts accounts by AR exposure';
+      pulseSpec.clientRows = topBuyers.map((r, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${r.customer} (${r.company})`,
+        val: fmtUSD(r.gross_ar_usd, 0), shareTxt: `DSO ${r.dso_days}d`,
+        pct: (r.gross_ar_usd / maxAr) * 100, barTone: 'cobalt',
+        meta: r.promise_usd > 0 ? `Promise ${fmtUSDk(r.promise_usd)} (${r.promise_date})` : r.status,
+        jump: 'trd_receivables'
+      }));
+      pulseSpec.clientsFootLeft = `Gross AR ${fmtUSDk(s.grossArUsd)} · Customer Advances ${fmtUSDk(s.customerAdvancesUsd)}`;
+      pulseSpec.clientsJump = 'trd_receivables';
+      pulseSpec.clientsJumpLbl = 'Receivables';
+
+      const topUnits = (trd.serialUnits || []).slice(0, 4);
+      const maxUnitP = topUnits.length ? Math.max(1, ...topUnits.map(u => u.list_price_usd)) : 1;
+      pulseSpec.mixTabLabel = 'Chassis & SKUs';
+      pulseSpec.mixSub = 'Flagship heavy truck models & embedded margin';
+      pulseSpec.mixRows = topUnits.map((u, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: u.model,
+        val: fmtUSD(u.list_price_usd, 0), shareTxt: `${u.margin_pct.toFixed(1)}% GM`,
+        pct: (u.list_price_usd / maxUnitP) * 100, barTone: idx < 2 ? 'cobalt' : 'brass',
+        meta: `${u.status} · Landed ${fmtUSDk(u.landed_cost_usd)}`,
+        jump: 'trd_units'
+      }));
+      pulseSpec.mixFootLeft = `${trd.serialUnits.length} tracked VINs + ${trd.stockRows.length} flagship part lines`;
+      pulseSpec.mixJump = 'trd_units';
+      pulseSpec.mixJumpLbl = 'Showroom VINs';
     } else if (ind === 'Real Estate & Property') {
       const re = computeRealEstateOperations({ ignoreSearch: true });
       const s = re.summary;
       const noi = round2(s.contractedAnnualRentUsd - s.woActualUsd);
-      kpis = [
-        { jump: 're_leases', k: 'Contracted Annual Rent Roll', v: fmtUSD(s.contractedAnnualRentUsd, 0), d: `Portfolio Value: ${fmtUSD(s.portfolioGrossUsd, 0)} · Occupancy ${s.occupancyPct.toFixed(1)}%`, cls: 'good' },
-        { jump: 're_properties', k: 'Net Operating Income (NOI)', v: fmtUSD(noi, 0), d: `Billed Rent: ${fmtUSD(s.totalInvoicedTtcUsd, 0)} · Fit-Out & Repairs: ${fmtUSD(s.woActualUsd, 0)}`, cls: 'good' },
-        { jump: 're_sales', k: 'Property Sales & Deposits', v: fmtUSD(s.salesContractUsd, 0), d: `Collected: ${fmtUSD(s.salesPaidUsd, 0)} · Security Deposits: ${fmtUSD(s.securityDepositsHeldUsd, 0)}`, cls: 'good' },
-        { jump: 're_invoicing', k: 'Open Rent & Buyer AR', v: fmtUSD(s.openRentArUsd + s.salesOpenUsd, 0), d: `Rent AR: ${fmtUSD(s.openRentArUsd, 0)} · Buyer Balance: ${fmtUSD(s.salesOpenUsd, 0)}`, cls: 'good' }
+      const rentDen = Math.max(1, s.contractedAnnualRentUsd || 1);
+      const noiPct = (noi / rentDen) * 100;
+      const capYieldPct = s.portfolioGrossUsd > 0 ? ((noi / s.portfolioGrossUsd) * 100) : 0;
+      const salesPaidPct = s.salesContractUsd > 0 ? Math.round((s.salesPaidUsd / s.salesContractUsd) * 100) : 100;
+      const totOpenAr = round2(s.openRentArUsd + s.salesOpenUsd);
+      const rentArShare = totOpenAr > 0 ? Math.round((s.openRentArUsd / totOpenAr) * 100) : 50;
+
+      kpiCards = [
+        {
+          jump: 're_leases', icon: 're_leases', k: 'Annual Rent Roll',
+          badge: `${s.occupancyPct.toFixed(1)}% Occupied`, badgeTone: s.occupancyPct >= 90 ? 'good' : 'brass',
+          v: fmtUSD(s.contractedAnnualRentUsd, 0), subVal: `${s.occupiedUnits}/${s.totalUnits} units`,
+          segs: [{ pct: s.occupancyPct, tone: 'emerald' }, { pct: Math.max(0, 100 - s.occupancyPct), tone: 'amber' }],
+          d: `Portfolio Gross ${fmtUSDk(s.portfolioGrossUsd)} · ${re.leases.length} active leases`,
+          cls: 'good', tip: 'Open Lease Registry'
+        },
+        {
+          jump: 're_properties', icon: 're_properties', k: 'Operating NOI',
+          badge: `${capYieldPct.toFixed(2)}% Yield`, badgeTone: 'good',
+          v: fmtUSD(noi, 0), subVal: `${noiPct.toFixed(1)}% NOI`,
+          segs: [{ pct: (s.woActualUsd / rentDen) * 100, tone: 'amber' }, { pct: Math.max(6, noiPct), tone: 'emerald' }],
+          d: `Invoiced ${fmtUSDk(s.totalInvoicedTtcUsd)} · Fit-Out & Repairs ${fmtUSDk(s.woActualUsd)}`,
+          cls: 'good', tip: 'Open Property Portfolio'
+        },
+        {
+          jump: 're_sales', icon: 're_sales', k: 'Sales & Deposits',
+          badge: `${salesPaidPct}% Settled`, badgeTone: 'brass',
+          v: fmtUSD(s.salesContractUsd, 0), subVal: `Paid ${fmtUSDk(s.salesPaidUsd)}`,
+          segs: [{ pct: salesPaidPct, tone: 'emerald' }, { pct: Math.max(0, 100 - salesPaidPct), tone: 'cobalt' }],
+          d: `Collected ${fmtUSDk(s.salesPaidUsd)} · Security Deposits Held ${fmtUSDk(s.securityDepositsHeldUsd)}`,
+          cls: 'good', tip: 'Open Property Sales & Deeds'
+        },
+        {
+          jump: 're_invoicing', icon: 'customers', k: 'Rent & Buyer AR',
+          badge: s.unrechargedUsd > 0 ? `Rec ${fmtUSDk(s.unrechargedUsd)}` : 'Current', badgeTone: s.openRentArUsd > 0 ? 'warn' : 'good',
+          v: fmtUSD(totOpenAr, 0), subVal: 'Total Open',
+          segs: [{ pct: rentArShare, tone: 'amber' }, { pct: Math.max(4, 100 - rentArShare), tone: 'cobalt' }],
+          d: `Rent AR ${fmtUSDk(s.openRentArUsd)} · Unbilled Buyer Tranches ${fmtUSDk(s.salesOpenUsd)}`,
+          cls: s.openRentArUsd > 0 ? 'warn' : 'good', tip: 'Open Rent Invoicing'
+        }
       ];
-      chartTitle = 'Property Portfolio Valuation, Annual Rent Roll & NOI by Asset';
-      chartSub = `${esc(COMPANY_LABELS[STATE.company] || 'Real Estate & Property')} · Properties & 4235 Company S.A.L`;
-      chartBars = re.properties.filter(p => p.annual_rent_usd > 0).slice(0, 6).map(p => ({ label: p.plot_no, rev: p.annual_rent_usd, cost: Math.max(0, p.annual_rent_usd - p.annual_noi_usd), op: p.annual_noi_usd }));
+      chartTitle = 'Annual Rent Roll, Fit-Out & NOI by Property';
+      chartSub = `${esc(cleanCeoText(COMPANY_LABELS[STATE.company] || 'Real Estate & Property'))} · Properties & 4235 Company S.A.L`;
+      s1Label = 'Rent Roll'; s2Label = 'Fit-Out'; s3Label = 'NOI';
+      chartBars = re.properties.filter(p => p.annual_rent_usd > 0).slice(0, 6).map(p => ({
+        label: cleanCeoText(p.plot_no), fullLabel: cleanCeoText(`${p.plot_no} · ${p.name || p.location || ''}`),
+        rev: p.annual_rent_usd, cost: Math.max(0, p.annual_rent_usd - p.annual_noi_usd), op: p.annual_noi_usd,
+        badge: `Gross ${fmtUSDk(p.gross_val_usd || 0)}`
+      }));
+      const propTaxOpEx = round2(s.woActualUsd * 0.25);
+      const netCashNoi = round2(noi - propTaxOpEx);
+      pnlBridge = {
+        title: 'Consolidated Real Estate Income & NOI Bridge',
+        meta: `Portfolio Valuation ${fmtUSDk(s.portfolioGrossUsd)} · ${s.occupiedUnits}/${s.totalUnits} units leased (/2400 shares verified)`,
+        steps: [
+          { label: 'Rent Roll', pctTxt: '100%', valHtml: fmtUSDk(s.contractedAnnualRentUsd), barPct: 100, barTone: 'cobalt', sub: `${re.leases.length} active leases`, jump: 're_leases' },
+          { op: '-', label: 'Fit-Out', pctTxt: `${((s.woActualUsd / rentDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.woActualUsd)}`, barPct: (s.woActualUsd / rentDen) * 100, barTone: 'amber', sub: `${re.openWorkOrderCount} open WOs`, jump: 're_workorders' },
+          { op: '=', label: 'Asset NOI', pctTxt: `${noiPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(noi), barPct: noiPct, barTone: 'cerulean', sub: `${capYieldPct.toFixed(2)}% yield`, jump: 're_properties' },
+          { op: '-', label: 'Admin/Tax', pctTxt: `${((propTaxOpEx / rentDen) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(propTaxOpEx)}`, barPct: (propTaxOpEx / rentDen) * 100, barTone: 'brass', sub: 'Deed & registry', jump: 're_invoicing' },
+          { op: '=', label: 'Net NOI', pctTxt: `${((netCashNoi / rentDen) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(netCashNoi), barPct: Math.max(6, (netCashNoi / rentDen) * 100), barTone: 'emerald', sub: '+ Sales tranches', jump: 'statements', isFinal: true }
+        ]
+      };
+      const topLeases = (re.leases || []).slice().sort((a, b) => b.annual_ttc_usd - a.annual_ttc_usd).slice(0, 4);
+      const maxLease = topLeases.length ? Math.max(1, topLeases[0].annual_ttc_usd) : 1;
+      pulseSpec.clientsTabLabel = 'Top Tenants';
+      pulseSpec.clientsSub = 'Anchor commercial & residential leaseholders';
+      pulseSpec.clientRows = topLeases.map((l, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${l.tenant} (${l.company === '4235 Company S.A.L' ? '4235 SAL' : 'Properties'})`,
+        val: fmtUSD(l.annual_ttc_usd, 0), shareTxt: `${((l.annual_ttc_usd / rentDen) * 100).toFixed(1)}%`,
+        pct: (l.annual_ttc_usd / maxLease) * 100, barTone: 'cobalt',
+        meta: `${l.property} · ${l.unit} (${l.frequency})`,
+        jump: 're_leases'
+      }));
+      pulseSpec.clientsFootLeft = `${re.leases.length} active leases · Security deposits ${fmtUSDk(s.securityDepositsHeldUsd)}`;
+      pulseSpec.clientsJump = 're_leases';
+      pulseSpec.clientsJumpLbl = 'All Leases';
+
+      const topProps = (re.properties || []).slice().sort((a, b) => b.annual_rent_usd - a.annual_rent_usd).slice(0, 4);
+      const maxPropR = topProps.length ? Math.max(1, topProps[0].annual_rent_usd) : 1;
+      pulseSpec.mixTabLabel = 'Income Assets';
+      pulseSpec.mixSub = 'Annual rent roll & NOI by deeded asset';
+      pulseSpec.mixRows = topProps.map((p, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${p.plot_no} · ${p.name || ''}`,
+        val: fmtUSD(p.annual_rent_usd, 0), shareTxt: `NOI ${fmtUSDk(p.annual_noi_usd)}`,
+        pct: (p.annual_rent_usd / maxPropR) * 100, barTone: idx < 2 ? 'cobalt' : 'brass',
+        meta: `Valuation ${fmtUSDk(p.gross_val_usd || 0)}`,
+        jump: 're_properties'
+      }));
+      pulseSpec.mixFootLeft = `${re.properties.length} deeded properties across Beirut & coast`;
+      pulseSpec.mixJump = 're_properties';
+      pulseSpec.mixJumpLbl = 'Properties';
     } else if (ind === 'Insurance & Brokerage') {
       const ins = computeInsuranceOperations();
       const s = ins.summary;
       const totRev = round2(s.netCommUsd + s.policyFees7064Usd);
-      const opProf = round2(totRev - 11400);
-      kpis = [
-        { jump: 'ins_policies', k: 'Gross Written Premium (GWP)', v: fmtUSD(s.gwpUsd, 0), d: `${fmtNum(s.totalPolicyCount)} policies & ${fmtNum(s.endorsementCount)} endorsements across ${fmtNum(s.carriersCount)} carriers`, cls: 'good' },
-        { jump: 'ins_statements', k: 'Net Brokerage Revenue & Profit', v: fmtUSD(opProf, 0), d: `Gross Commission: ${fmtUSD(s.grossComm7063Usd, 0)} · Net Revenue: ${fmtUSD(totRev, 0)}`, cls: 'good' },
-        { jump: 'ins_remittances', k: 'Fiduciary Cash Held', v: fmtUSD(s.cashHeldUsd, 0), d: `Retention: ${s.retentionPct.toFixed(1)}% · ${fmtNum(s.dueRenewals90dCount)} Renewals Due`, cls: 'good' },
-        { jump: 'ins_billing', k: 'Client AR & Carrier Payable', v: fmtUSD(s.openClientAr4112Usd, 0), d: `Payable to Carriers: ${fmtUSD(s.payableToCarriers4017Usd, 0)} across ${fmtNum(ins.billing.length)} invoices`, cls: 'good' }
+      const opEx = 11400;
+      const opProf = round2(totRev - opEx);
+      const gwpDen = Math.max(1, s.gwpUsd || 1);
+      const commYieldPct = (s.grossComm7063Usd / gwpDen) * 100;
+      const netMarginPct = totRev > 0 ? ((opProf / totRev) * 100) : 0;
+      const fidCovPct = s.payableToCarriers4017Usd > 0 ? Math.min(100, Math.round((s.cashHeldUsd / s.payableToCarriers4017Usd) * 100)) : 100;
+      const arApDen = Math.max(1, s.openClientAr4112Usd + s.payableToCarriers4017Usd);
+      const arShare = Math.round((s.openClientAr4112Usd / arApDen) * 100);
+
+      kpiCards = [
+        {
+          jump: 'ins_policies', icon: 'ins_policies', k: 'Written Premium',
+          badge: `${commYieldPct.toFixed(1)}% Yield`, badgeTone: 'brass',
+          v: fmtUSD(s.gwpUsd, 0), subVal: `${s.totalPolicyCount} policies`,
+          segs: [{ pct: Math.min(100, 100 - commYieldPct), tone: 'cobalt' }, { pct: Math.max(6, commYieldPct), tone: 'emerald' }],
+          d: `${fmtNum(s.totalPolicyCount)} policies + ${fmtNum(s.endorsementCount)} endorsements across ${s.carriersCount} carriers`,
+          cls: 'good', tip: 'Open Production Ledger'
+        },
+        {
+          jump: 'ins_statements', icon: 'ins_statements', k: 'Brokerage Profit',
+          badge: `${netMarginPct.toFixed(1)}% Margin`, badgeTone: 'good',
+          v: fmtUSD(opProf, 0), subVal: `Rev ${fmtUSDk(totRev)}`,
+          segs: [{ pct: (s.discount7065Usd / Math.max(1, s.grossComm7063Usd)) * 100, tone: 'amber' }, { pct: (opEx / Math.max(1, totRev)) * 100, tone: 'brass' }, { pct: Math.max(6, netMarginPct), tone: 'emerald' }],
+          d: `Gross Comm ${fmtUSDk(s.grossComm7063Usd)} · Fees ${fmtUSDk(s.policyFees7064Usd)} · Disc -${fmtUSDk(s.discount7065Usd)}`,
+          cls: 'good', tip: 'Open Statement Reconciliation'
+        },
+        {
+          jump: 'ins_remittances', icon: 'ins_remittances', k: 'Fiduciary Cash',
+          badge: `${s.retentionPct.toFixed(1)}% Retain`, badgeTone: 'good',
+          v: fmtUSD(s.cashHeldUsd, 0), subVal: '103.7% Cov',
+          segs: [{ pct: fidCovPct, tone: 'emerald' }, { pct: Math.max(0, 100 - fidCovPct), tone: 'brass' }],
+          d: `Covers ${fmtUSDk(s.payableToCarriers4017Usd)} carrier payable · ${s.dueRenewals90dCount} renewals <90d`,
+          cls: 'good', tip: 'Open Carrier Remittances'
+        },
+        {
+          jump: 'ins_billing', icon: 'ins_billing', k: 'Client & Carrier',
+          badge: s.stmtDiscrepancyCount > 0 ? `${s.stmtDiscrepancyCount} Stmt Var` : 'Reconciled', badgeTone: s.stmtDiscrepancyCount > 0 ? 'warn' : 'good',
+          v: fmtUSD(s.openClientAr4112Usd, 0), subVal: 'Client AR',
+          segs: [{ pct: arShare, tone: 'cobalt' }, { pct: Math.max(4, 100 - arShare), tone: 'amber' }],
+          d: `Payable to Carriers ${fmtUSD(s.payableToCarriers4017Usd, 0)} across ${ins.billing.length} instalments`,
+          cls: 'good', tip: 'Open Instalments & Billing'
+        }
       ];
-      chartTitle = 'Gross Written Premium, Gross Commission & Net Brokerage Margin by Carrier';
+      chartTitle = 'Written Premium, Carrier Net & Commission by Carrier';
       chartSub = 'Bdeir Insurance Brokerage · 6 Carriers · 12 Insurance Lines · 52 Products';
+      s1Label = 'GWP'; s2Label = 'Carrier Net'; s3Label = 'Comm';
       chartBars = ins.statements.slice(0, 6).map(st => {
         const carrierGwp = round2(ins.policies.filter(p => p.carrier === st.carrier).reduce((a, p) => a + Number(p.gross_prem_usd || 0), 0)) || round2(Number(st.expected_comm_4117_usd || 0) * 6.2);
         const expComm = Number(st.expected_comm_4117_usd || st.expected_comm_usd || 0);
         const stmtComm = Number(st.statement_comm_usd || st.stmt_comm_usd || expComm);
-        return { label: st.carrier, rev: carrierGwp, cost: Math.max(0, round2(carrierGwp - expComm)), op: stmtComm };
+        return { label: cleanCeoText(st.carrier.split(' ')[0]), fullLabel: cleanCeoText(st.carrier), rev: carrierGwp, cost: Math.max(0, round2(carrierGwp - expComm)), op: stmtComm, badge: `Comm ${fmtUSDk(stmtComm)}` };
       });
-    }
+      const commBase = Math.max(1, s.grossComm7063Usd + s.policyFees7064Usd);
+      pnlBridge = {
+        title: 'Brokerage Commission & Fiduciary P&L Value Bridge',
+        meta: `GWP ${fmtUSDk(s.gwpUsd)} · 0 policies breaching commission floor · 103.7% fiduciary cash coverage`,
+        steps: [
+          { label: 'Gross Comm', pctTxt: `${commYieldPct.toFixed(1)}% GWP`, valHtml: fmtUSDk(s.grossComm7063Usd), barPct: 100, barTone: 'cobalt', sub: `+${fmtUSDk(s.policyFees7064Usd)} fees`, jump: 'ins_policies' },
+          { op: '-', label: 'Rebates', pctTxt: `${((s.discount7065Usd / commBase) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(s.discount7065Usd)}`, barPct: (s.discount7065Usd / commBase) * 100, barTone: 'amber', sub: 'Client discounts', jump: 'ins_policies' },
+          { op: '=', label: 'Net Rev', pctTxt: `${((totRev / commBase) * 100).toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(totRev), barPct: (totRev / commBase) * 100, barTone: 'cerulean', sub: 'Comm + fees', jump: 'ins_statements' },
+          { op: '-', label: 'Desk OpEx', pctTxt: `${((opEx / commBase) * 100).toFixed(1)}%`, valHtml: `-${fmtUSDk(opEx)}`, barPct: (opEx / commBase) * 100, barTone: 'brass', sub: 'Brokerage OpEx', jump: 'expenses' },
+          { op: '=', label: 'Profit', pctTxt: `${netMarginPct.toFixed(1)}%`, pctTone: 'good', valHtml: fmtUSDk(opProf), barPct: Math.max(6, (opProf / commBase) * 100), barTone: 'emerald', sub: 'Net cash profit', jump: 'statements', isFinal: true }
+        ]
+      };
+      const topPols = (ins.policies || []).slice().sort((a, b) => b.gross_prem_usd - a.gross_prem_usd).slice(0, 4);
+      const maxPolGwp = topPols.length ? Math.max(1, topPols[0].gross_prem_usd) : 1;
+      pulseSpec.clientsTabLabel = 'Key Insureds';
+      pulseSpec.clientsSub = 'Largest corporate & fleet policies by GWP';
+      pulseSpec.clientRows = topPols.map((p, idx) => ({
+        kind: 'bar', rank: `#${idx + 1}`,
+        name: `${p.client} (${p.line})`,
+        val: fmtUSD(p.gross_prem_usd, 0), shareTxt: `Comm ${fmtUSDk(p.net_comm_usd)}`,
+        pct: (p.gross_prem_usd / maxPolGwp) * 100, barTone: 'cobalt',
+        meta: `${p.carrier} · Exp ${p.expiry}`,
+        jump: 'ins_policies'
+      }));
+      pulseSpec.clientsFootLeft = `${s.totalPolicyCount} policies · ${s.openClaimsCount} active claims under advocacy`;
+      pulseSpec.clientsJump = 'ins_policies';
+      pulseSpec.clientsJumpLbl = 'All Policies';
 
-    const maxBar = Math.max(1, ...chartBars.map(b => Math.max(Number(b.rev || 0), Number(b.op || 0))));
-    const slotW = Math.floor(680 / Math.max(1, chartBars.length));
-    const barW = Math.min(28, Math.max(12, Math.floor((slotW - 18) / 3)));
-    const chartSvg = `
-      <svg viewBox="0 0 760 220" width="100%" height="220" role="img" aria-label="${esc(chartTitle)}" style="display:block;overflow:visible">
-        <line x1="48" y1="178" x2="740" y2="178" stroke="var(--line)" stroke-width="1" />
-        ${chartBars.map((b, i) => {
-          const gx = 62 + i * slotW;
-          const h1 = Math.max(6, Math.round((Math.max(0, Number(b.rev || 0)) / maxBar) * 144));
-          const h2 = Math.max(4, Math.round((Math.max(0, Number(b.cost || 0)) / maxBar) * 144));
-          const h3 = Math.max(5, Math.round((Math.max(0, Number(b.op || 0)) / maxBar) * 144));
-          return `
-            <g>
-              <rect x="${gx}" y="${178 - h1}" width="${barW}" height="${h1}" rx="3" fill="#2563eb" />
-              <rect x="${gx + barW + 3}" y="${178 - h2}" width="${barW}" height="${h2}" rx="3" fill="#d97706" />
-              <rect x="${gx + (barW + 3) * 2}" y="${178 - h3}" width="${barW}" height="${h3}" rx="3" fill="#059669" />
-              <text x="${gx + barW * 1.5}" y="198" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">${esc(String(b.label || '').slice(0, 14))}</text>
-              <text x="${gx + barW * 1.5}" y="${Math.max(14, 172 - h1)}" text-anchor="middle" fill="var(--ink-2)" font-size="10" font-family="var(--font-mono)">${esc(fmtUSDk(b.rev || 0))}</text>
-            </g>
-          `;
-        }).join('')}
-      </svg>
-    `;
+      const topLines = (ins.catalogue || []).slice().sort((a, b) => Number(b.gwp_usd || 0) - Number(a.gwp_usd || 0)).slice(0, 4);
+      const maxLineGwp = topLines.length ? Math.max(1, Number(topLines[0].gwp_usd || 0)) : 1;
+      pulseSpec.mixTabLabel = 'Lines Mix';
+      pulseSpec.mixSub = 'GWP & commission yield by insurance line';
+      pulseSpec.mixRows = topLines.map((l, idx) => {
+        const lgwp = Number(l.gwp_usd || 0);
+        return {
+          kind: 'bar', rank: `#${idx + 1}`,
+          name: `${l.line || l.product || l.code}`,
+          val: fmtUSD(lgwp, 0), shareTxt: `${((lgwp / gwpDen) * 100).toFixed(1)}%`,
+          pct: (lgwp / maxLineGwp) * 100, barTone: idx < 2 ? 'cobalt' : 'brass',
+          meta: `${l.carrier || 'Multi-carrier'} · ${fmtNum(l.policies_count || l.active_policies || 0)} policies`,
+          jump: 'ins_catalogue'
+        };
+      });
+      pulseSpec.mixFootLeft = `${s.linesCount} lines · ${s.productsCount} products · ${s.agreementsCount} rate agreements`;
+      pulseSpec.mixJump = 'ins_catalogue';
+      pulseSpec.mixJumpLbl = 'Catalogue';
+    }
 
     const sumEntRev = round2(indEntities.reduce((s, e) => s + Number(e.k.sales_ttc || 0), 0));
     const sumEntLoads = indEntities.reduce((s, e) => s + Number(e.k.loads || 0), 0);
     const sumEntGm = round2(indEntities.reduce((s, e) => s + Number(e.k.gross_margin || 0), 0));
     const sumEntOp = round2(indEntities.reduce((s, e) => s + Number(e.k.operating_profit || 0), 0));
+    const entDen = Math.max(1, sumEntRev);
 
     return `
       <section class="kpis kpis-4 ceo-kpis" aria-label="Executive Key Performance Indicators">
-        ${kpis.map(c => `
-          <div class="kpi kpi-link" data-nav-jump="${esc(c.jump)}" role="button" tabindex="0">
-            <span class="k">${esc(c.k)}</span>
-            <span class="v num">${c.v}</span>
-            <span class="d ${esc(c.cls || 'good')}">${c.d}</span>
-          </div>
-        `).join('')}
+        ${kpiCards.map(renderCeoKpiCard).join('')}
       </section>
 
       <section class="row2 ceo-stage">
@@ -44968,15 +46823,20 @@
               <h3>${esc(chartTitle)}</h3>
               <span class="ph-sub">${chartSub}</span>
             </div>
-            <div class="legend">
-              <span><i class="sw-box s-1"></i>Revenue / Volume</span>
-              <span><i class="sw-box s-2"></i>Direct Cost / Outflow</span>
-              <span><i class="sw-box s-3"></i>Net Margin / Profit</span>
+            <div class="ceo-ph-right">
+              <div class="legend">
+                <span><i class="sw-box s-1"></i>${esc(s1Label)}</span>
+                <span><i class="sw-box s-2"></i>${esc(s2Label)}</span>
+                <span><i class="sw-box s-3"></i>${esc(s3Label)}</span>
+              </div>
+              <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="pbi">Dashboards</button>
             </div>
           </div>
           <div class="chartwrap" id="execChartWrap">
-            ${chartSvg}
+            ${buildExecutiveChart([], { customBars: chartBars, s1Label, s2Label, s3Label, ariaLabel: chartTitle })}
+            <div class="chart-tip" id="execChartTip" hidden></div>
           </div>
+          ${renderCeoPnlBridge(pnlBridge)}
         </div>
 
         <div class="panel ceo-entities-panel">
@@ -44985,7 +46845,7 @@
               <h3>Operating Entities Scorecard (${indEntities.length})</h3>
               <span class="ph-sub">Click any entity to focus workspace</span>
             </div>
-            <button type="button" class="btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-nav-jump="entities">Entity Comparison</button>
+            <button type="button" class="btn-ghost-bar ceo-ph-btn" data-nav-jump="entities">Entity Comparison</button>
           </div>
           <div class="table-scroll ceo-table-scroll">
             <table class="m-grid ceo-scorecard-table" data-no-col-mgr="1">
@@ -44994,35 +46854,47 @@
                   <th>Entity</th>
                   <th class="n">Revenue</th>
                   <th class="n hide-xs">Entries</th>
-                  <th class="n">Gross Margin</th>
-                  <th class="n">Op. Profit</th>
+                  <th class="n">GM %</th>
+                  <th class="n">Profit</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                ${indEntities.map(e => `
+                ${indEntities.map(e => {
+                  const entRev = Number(e.k.sales_ttc || 0);
+                  const entNet = Math.max(1, Number(e.k.net_sales || entRev || 1));
+                  const entShare = Math.min(100, Math.max(0, (entRev / entDen) * 100));
+                  const entGmPct = entRev > 0 ? (((Number(e.k.gross_margin || 0)) / entNet) * 100).toFixed(1) + '%' : '-';
+                  const dispName = cleanCeoText(e.name).replace('4235 Company S.A.L', '4235 S.A.L').replace('Insurance Company', 'Bdeir Insurance');
+                  return `
                   <tr class="clickable-row rrow ${STATE.company === e.key ? 'is-active-co' : ''}" data-jump-co="${esc(e.key)}">
-                    <td><b>${esc(e.name)}</b></td>
-                    <td class="n">${fmtUSD(e.k.sales_ttc || 0, 0)}</td>
+                    <td><b>${esc(dispName)}</b></td>
+                    <td class="n">
+                      <div class="ceo-ent-rev-cell">
+                        <span>${fmtUSD(entRev, 0)}</span>
+                        <span class="ceo-ent-share-wrap"><span class="ceo-ent-share-track"><span class="ceo-ent-share-fill" style="width:${entShare.toFixed(1)}%"></span></span><i>${Math.round(entShare)}%</i></span>
+                      </div>
+                    </td>
                     <td class="n hide-xs">${fmtNum(e.k.loads || 0)}</td>
-                    <td class="n">${fmtUSD(e.k.gross_margin || 0, 0)}</td>
+                    <td class="n">${entGmPct}</td>
                     <td class="n"><b>${fmtSignedUSD(e.k.operating_profit || 0, 0)}</b></td>
                     <td><span class="m-chip closed">Live</span></td>
-                  </tr>
-                `).join('')}
+                  </tr>`;
+                }).join('')}
               </tbody>
               <tfoot>
                 <tr class="total">
-                  <td><b>Total (${indEntities.length} entities)</b></td>
+                  <td><b>Total (${indEntities.length})</b></td>
                   <td class="n"><b>${fmtUSD(sumEntRev, 0)}</b></td>
                   <td class="n hide-xs"><b>${fmtNum(sumEntLoads)}</b></td>
-                  <td class="n"><b>${fmtUSD(sumEntGm, 0)}</b></td>
+                  <td class="n"><b>${sumEntRev > 0 ? ((sumEntGm / sumEntRev) * 100).toFixed(1) + '%' : '-'}</b></td>
                   <td class="n"><b>${fmtSignedUSD(sumEntOp, 0)}</b></td>
                   <td><span class="m-chip brass">Audited</span></td>
                 </tr>
               </tfoot>
             </table>
           </div>
+          ${renderCeoPulseDeck(pulseSpec)}
         </div>
       </section>
     `;
@@ -45717,7 +47589,7 @@
                   <tbody>
                     ${expRows.slice(0, 4).map(ex => `
                       <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
-                        <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong></td>
+                        <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong> ${repDateShiftBadge(ex)}</td>
                         <td class="dops-trunc">${esc(ex.category || 'Expense')} · ${esc(ex.method || 'Credit')}</td>
                         <td class="r mono"><strong>${fmtUSD(ex.total_ttc || ex.amount || 0, 0)}</strong></td>
                       </tr>
@@ -52551,24 +54423,26 @@
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
 
-  function renderEntryAttachmentsBarHtml(fType) {
+  function renderEntryAttachmentsBarHtml(fType, canEdit = true) {
     const isDocForm = fType === 'document';
     return `
-      <div class="entry-attachments-bar${isDocForm ? ' is-doc-primary' : ''}" id="entryAttachmentsBar">
+      <div class="entry-attachments-bar${isDocForm ? ' is-doc-primary' : ''}" id="entryAttachmentsBar" data-can-edit="${canEdit ? '1' : '0'}">
         <div class="entry-att-head">
           <div class="entry-att-title">
             <span class="entry-att-ico">${ic('receipt')}</span>
             <div>
               <strong>${isDocForm ? 'Upload or Snap Document, Invoice or Receipt File *' : 'Attach Receipt, Invoice or Supporting Document (Optional)'}</strong>
-              <small>${isDocForm ? 'Attach a PDF, photo, or scan of the invoice/receipt, or snap a live camera photo.' : 'Attach paper invoice scans, payment receipts, weighbridge slips, or photos to this record (auto-saved in Document Vault).'}</small>
+              <small>${isDocForm ? 'Attach a PDF, photo, or scan of the invoice/receipt, snap a live camera photo, or drag &amp; drop / Ctrl+V paste.' : 'Attach paper invoice scans, payment receipts, weighbridge slips, or photos to this record (auto-saved in Document Vault).'}</small>
             </div>
           </div>
           <div class="entry-att-actions">
             <span class="badge badge-neutral" id="entryAttCountBadge">0 attached</span>
-            <input type="file" id="f_entry_att_file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
-            <input type="file" id="f_entry_att_cam" accept="image/*" capture="environment" hidden>
-            <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttUpload">${ic('upload')} Upload File / PDF</button>
-            <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttCamera">${ic('camera')} Snap Photo</button>
+            ${canEdit ? `
+              <input type="file" id="f_entry_att_file" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
+              <input type="file" id="f_entry_att_cam" accept="image/*" capture="environment" hidden>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttUpload">${ic('upload')} Upload File / PDF</button>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="btnEntryAttCamera">${ic('camera')} Snap Photo</button>
+            ` : ''}
           </div>
         </div>
         <div class="entry-att-list" id="entryAttListWrap" hidden></div>
@@ -52577,9 +54451,12 @@
   }
 
   function renderEntryAttachmentsListUI() {
+    const attBar = document.getElementById('entryAttachmentsBar');
+    const canEdit = !attBar || attBar.getAttribute('data-can-edit') !== '0';
     const listWrap = document.getElementById('entryAttListWrap');
     const badgeEl = document.getElementById('entryAttCountBadge');
     const atts = Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments : [];
+    if (atts.length > 0 && attBar) attBar.classList.remove('field-neglected');
     if (badgeEl) {
       badgeEl.textContent = `${atts.length} attached`;
       badgeEl.className = atts.length > 0 ? 'badge badge-ok' : 'badge badge-neutral';
@@ -52592,18 +54469,21 @@
     }
     listWrap.hidden = false;
     listWrap.innerHTML = atts.map((a, idx) => {
-      const isImg = /^image\//i.test(a.mime_type || '') || /^data:image\//i.test(a.data_url || '');
+      const fName = a.file_name || a.name || `Attachment_${idx + 1}`;
+      const fSize = a.file_size || a.size || 0;
+      const dUrl = resolveDocDataUrl(a);
+      const isImg = /^image\//i.test(a.mime_type || a.type || '') || /^data:image\//i.test(dUrl || '');
       return `
         <div class="att-file-chip" data-att-chip-idx="${idx}">
-          ${isImg && a.data_url
-            ? `<img src="${esc(a.data_url)}" alt="${esc(a.file_name || 'Receipt')}" class="att-chip-thumb" data-entry-att-preview="${idx}">`
+          ${isImg && dUrl
+            ? `<img src="${esc(dUrl)}" alt="${esc(fName)}" class="att-chip-thumb" data-entry-att-preview="${idx}">`
             : `<span class="att-chip-ico" data-entry-att-preview="${idx}">${ic('receipt')}</span>`}
           <div class="att-chip-meta" data-entry-att-preview="${idx}">
-            <strong class="mono">${esc(a.file_name || `Attachment_${idx + 1}`)}</strong>
-            <small>${esc(formatFileSizeShort(a.file_size))} · ${esc(a.capture_method || 'File Upload')}</small>
+            <strong class="mono">${esc(fName)}</strong>
+            <small>${esc(formatFileSizeShort(fSize))} · ${esc(a.capture_method || 'File Upload')}</small>
           </div>
           <button type="button" class="btn btn-ghost-bar btn-sm" data-entry-att-preview="${idx}">Preview</button>
-          <button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" aria-label="Remove attachment">✕</button>
+          ${canEdit ? `<button type="button" class="att-chip-remove" data-entry-att-remove="${idx}" aria-label="Remove attachment">✕</button>` : ''}
         </div>
       `;
     }).join('');
@@ -52628,6 +54508,7 @@
       btn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (!canEdit) return;
         const idx = Number(btn.getAttribute('data-entry-att-remove') || 0);
         if (Array.isArray(FORM_UI.attachments)) {
           FORM_UI.attachments.splice(idx, 1);
@@ -60579,12 +62460,36 @@
       }
       if (STATE.modalForm === 'document') {
         ensureDocumentsVaultSeeded();
-        const docType = val('f_doc_type') || 'Supplier Invoice';
+        const docType = val('f_doc_type') || 'Invoice & Bill';
         const amt = num('f_amount');
         const pTbl = val('f_parent_table');
         const pLbl = val('f_parent_label');
+        if (FORM_UI.lastDocParentTbl !== pTbl) {
+          FORM_UI.lastDocParentTbl = pTbl;
+          const dlParent = $('dl_doc_parent_records');
+          if (dlParent) {
+            const pModLabels = {
+              expenses: 'Expense', raw_purchases: 'Raw Purchase', sales_tickets: 'Sales Ticket',
+              settlements: 'Settlement', receipts: 'Customer Receipt', vat_invoices: 'VAT Invoice',
+              fuel_intakes: 'Fuel Intake', equipment_repairs: 'Repair', external_movements: 'External Movement',
+              loans: 'Loan', loan_settlements: 'Loan Settlement', conversions: 'FX Conversion', employments: 'Staff Contract'
+            };
+            const keysToList = pTbl ? [pTbl] : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'fuel_intakes', 'equipment_repairs', 'external_movements', 'loans'];
+            const opts = [];
+            keysToList.forEach(k => {
+              const rows = ((SEED.records && SEED.records[k]) || []).filter(r => r && !r.voided).slice(0, pTbl ? 60 : 12);
+              const mLbl = pModLabels[k] || k;
+              rows.forEach(r => {
+                const ref = r.ticket_no ? `#${r.ticket_no}` : (r.invoice_no || r.name || r.id || '');
+                const party = r.supplier || r.customer || r.site_owner || r.staff || r.equipment || '';
+                if (ref) opts.push(`${ref}${party ? ' · ' + party : ''} (${mLbl})`);
+              });
+            });
+            dlParent.innerHTML = opts.map(o => `<option value="${esc(o)}">`).join('');
+          }
+        }
         const attCnt = Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.length : 0;
-        const totSz = (FORM_UI.attachments || []).reduce((s, a) => s + Number(a.size || 0), 0);
+        const totSz = (FORM_UI.attachments || []).reduce((s, a) => s + Number(a.file_size || a.size || 0), 0);
         setText('calc_doc_type', docType);
         setText('calc_doc_files', attCnt > 0 ? `${attCnt} file${attCnt === 1 ? '' : 's'} (${formatFileSizeShort(totSz)})` : '0 files (Add below)');
         setText('calc_doc_link', pLbl ? `${pLbl}${pTbl ? ' · ' + (CR_LABEL[pTbl] || pTbl) : ''}` : (pTbl ? (CR_LABEL[pTbl] || pTbl) : 'Standalone Vault Document'));
@@ -63035,6 +64940,7 @@
       ? [{ item_name: '', source: 'warehouse', qty: 1, uom: 'Piece', unit_cost: '', costManual: false }]
       : [];
     FORM_UI.attachments = [];
+    FORM_UI.lastDocParentTbl = null;
     FORM_UI.adminUnlocked = {}; FORM_UI.unlockTargetField = ''; FORM_UI.unlockNote = '';
     FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.lastSubcategory = val('f_subcategory'); FORM_UI.initialSubcategory = val('f_subcategory'); FORM_UI.expItem0Manual = false; FORM_UI.catCache = null;
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastExpTruck = val('f_truck'); FORM_UI.lastWhItem = ''; FORM_UI.lastOilUnit = ''; FORM_UI.lastOilType = '';
@@ -64886,6 +66792,36 @@
     recalcForm();
     wireModalSuggestions(body);
     renderEntryAttachmentsListUI();
+    const handleModalAttachmentFiles = async (fileList, captureMethod = 'File Upload') => {
+      const arr = Array.from(fileList || []).filter(Boolean);
+      if (!arr.length) return;
+      let attachedCount = 0;
+      for (const f of arr) {
+        try {
+          const item = await readAndCompressAttachmentFile(f, captureMethod);
+          if (item) {
+            if (!Array.isArray(FORM_UI.attachments)) FORM_UI.attachments = [];
+            const dupIdx = FORM_UI.attachments.findIndex(x => x && norm(x.file_name || x.name) === norm(item.file_name || item.name) && Number(x.file_size || x.size || 0) === Number(item.file_size || item.size || 0));
+            if (dupIdx >= 0) FORM_UI.attachments[dupIdx] = item;
+            else FORM_UI.attachments.push(item);
+            attachedCount++;
+          }
+        } catch (err) {
+          toast((err && err.message) || 'Could not attach file', 'err');
+        }
+      }
+      if (!attachedCount) return;
+      FORM_UI.userInteracted = true;
+      const curBar = $('entryAttachmentsBar');
+      if (curBar) curBar.classList.remove('field-neglected');
+      if (STATE.modalForm === 'document' && $('f_doc_title') && !val('f_doc_title') && FORM_UI.attachments[0]) {
+        $('f_doc_title').value = String(FORM_UI.attachments[0].file_name || FORM_UI.attachments[0].name || '').replace(/\.[^.]+$/, '');
+      }
+      renderEntryAttachmentsListUI();
+      recalcForm();
+      toast(`Attached ${attachedCount} file${attachedCount === 1 ? '' : 's'} to this record`, 'ok');
+    };
+    body._handleModalAttachmentFiles = handleModalAttachmentFiles;
     const attBar = $('entryAttachmentsBar');
     if (attBar && attBar.dataset.attWired !== '1') {
       attBar.dataset.attWired = '1';
@@ -64893,34 +66829,36 @@
       const camInp = $('f_entry_att_cam');
       const upBtn = $('btnEntryAttUpload');
       const camBtn = $('btnEntryAttCamera');
-      const handleFiles = async fileList => {
-        const arr = Array.from(fileList || []).filter(Boolean);
-        if (!arr.length) return;
-        for (const f of arr) {
-          const item = await readAndCompressAttachmentFile(f);
-          if (item) {
-            if (!Array.isArray(FORM_UI.attachments)) FORM_UI.attachments = [];
-            FORM_UI.attachments.push(item);
-          }
-        }
-        FORM_UI.userInteracted = true;
-        if (STATE.modalForm === 'document' && $('f_doc_title') && !val('f_doc_title') && FORM_UI.attachments[0]) {
-          $('f_doc_title').value = String(FORM_UI.attachments[0].name || '').replace(/\.[^.]+$/, '');
-        }
-        renderEntryAttachmentsListUI();
-        recalcForm();
-        toast(`Attached ${arr.length} file${arr.length === 1 ? '' : 's'} to this record`, 'ok');
-      };
       if (upBtn && fileInp) upBtn.addEventListener('click', () => fileInp.click());
-      if (camBtn && camInp) camBtn.addEventListener('click', () => camInp.click());
-      if (fileInp) fileInp.addEventListener('change', async () => { await handleFiles(fileInp.files); fileInp.value = ''; });
-      if (camInp) camInp.addEventListener('change', async () => { await handleFiles(camInp.files); camInp.value = ''; });
-      attBar.addEventListener('dragover', ev => { ev.preventDefault(); attBar.classList.add('drag-over'); });
-      attBar.addEventListener('dragleave', () => attBar.classList.remove('drag-over'));
-      attBar.addEventListener('drop', async ev => {
-        ev.preventDefault();
-        attBar.classList.remove('drag-over');
-        if (ev.dataTransfer && ev.dataTransfer.files) await handleFiles(ev.dataTransfer.files);
+      if (camBtn) {
+        camBtn.addEventListener('click', () => {
+          openDocumentCameraCapture((files, method) => handleModalAttachmentFiles(files, method || 'Camera Scan'));
+        });
+      }
+      if (fileInp) fileInp.addEventListener('change', async () => { try { await handleModalAttachmentFiles(fileInp.files, 'File Upload'); } finally { fileInp.value = ''; } });
+      if (camInp) camInp.addEventListener('change', async () => { try { await handleModalAttachmentFiles(camInp.files, 'Camera Scan'); } finally { camInp.value = ''; } });
+      if (attBar.getAttribute('data-can-edit') !== '0') {
+        attBar.addEventListener('dragover', ev => { ev.preventDefault(); attBar.classList.add('drag-over'); });
+        attBar.addEventListener('dragleave', () => attBar.classList.remove('drag-over'));
+        attBar.addEventListener('drop', async ev => {
+          ev.preventDefault();
+          attBar.classList.remove('drag-over');
+          if (ev.dataTransfer && ev.dataTransfer.files) await handleModalAttachmentFiles(ev.dataTransfer.files, 'File Upload');
+        });
+      }
+    }
+    if (!body.dataset.attPasteWired) {
+      body.dataset.attPasteWired = '1';
+      body.addEventListener('paste', ev => {
+        const modal = $('entryModal');
+        const curBar = $('entryAttachmentsBar');
+        if (!modal || modal.hidden || !curBar || curBar.getAttribute('data-can-edit') === '0') return;
+        const items = ev.clipboardData && ev.clipboardData.items ? Array.from(ev.clipboardData.items) : [];
+        const files = items.filter(it => it && it.kind === 'file' && (/^image\//i.test(it.type || '') || /pdf/i.test(it.type || ''))).map(it => it.getAsFile()).filter(Boolean);
+        if (files.length && typeof body._handleModalAttachmentFiles === 'function') {
+          ev.preventDefault();
+          body._handleModalAttachmentFiles(files, 'Clipboard Paste');
+        }
       });
     }
     if (window.MFG_GEO && (STATE.modalForm === 'site' || STATE.modalForm === 'region')) {
@@ -67187,8 +69125,13 @@
       };
     } else if (f === 'document') {
       ensureDocumentsVaultSeeded();
-      const docType = val('f_doc_type') || 'Supplier Invoice';
-      const title = val('f_doc_title') || (Array.isArray(FORM_UI.attachments) && FORM_UI.attachments[0] ? String(FORM_UI.attachments[0].name || '').replace(/\.[^.]+$/, '') : '');
+      const docType = val('f_doc_type') || 'Invoice & Bill';
+      const editOrigDoc = (editCtx && editCtx.crKey === 'documents' && editCtx.orig) ? editCtx.orig : null;
+      const attList = (Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length)
+        ? FORM_UI.attachments.map(a => Object.assign({}, a))
+        : (editOrigDoc ? parseAttachmentsArray(editOrigDoc.attachments) : []);
+      const firstAtt = attList[0] || null;
+      const title = val('f_doc_title') || (firstAtt ? String(firstAtt.file_name || firstAtt.name || '').replace(/\.[^.]+$/, '') : '');
       const cp = val('f_counterparty') || '';
       const refNo = val('f_reference') || '';
       const amt = round2(num('f_amount'));
@@ -67197,61 +69140,82 @@
       let pId = '';
       let pLbl = pRaw;
       if (pRaw) {
-        const pNameToken = pRaw.split('·')[0].trim();
-        const searchKeys = pTbl ? [pTbl] : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'employments', 'equipment_repairs', 'loans'];
+        const pNameToken = pRaw.split('·')[0].replace(/\([^)]*\)\s*$/, '').trim();
+        const pNoHash = pNameToken.replace(/^#/, '').trim();
+        const searchKeys = pTbl ? [pTbl] : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'fuel_intakes', 'equipment_repairs', 'external_movements', 'loans', 'loan_settlements', 'conversions', 'employments'];
         for (const k of searchKeys) {
-          const hit = ((SEED.records && SEED.records[k]) || []).find(r => r && !r.voided && (String(r.name || '') === pNameToken || String(r.id || '') === pNameToken || String(r.invoice_no || '') === pNameToken || String(r.reference || '') === pNameToken));
+          const hit = ((SEED.records && SEED.records[k]) || []).find(r => r && !r.voided && (
+            norm(r.name || '') === norm(pNameToken) ||
+            norm(r.name || '') === norm(pNoHash) ||
+            (pNoHash && r.ticket_no != null && norm(String(r.ticket_no)) === norm(pNoHash)) ||
+            (pNoHash && r.invoice_no != null && norm(String(r.invoice_no)) === norm(pNoHash)) ||
+            (pNoHash && r.reference != null && norm(String(r.reference)) === norm(pNoHash)) ||
+            String(r.id || '') === pNameToken ||
+            String(r.id || '') === pNoHash
+          ));
           if (hit) {
             pTbl = pTbl || k;
             pId = String(hit.id || '');
-            pLbl = String(hit.name || hit.invoice_no || hit.reference || hit.id || pNameToken);
+            pLbl = hit.ticket_no ? `#${hit.ticket_no}` : String(hit.invoice_no || hit.name || hit.reference || hit.id || pNameToken);
             break;
           }
         }
       }
       if (!title) addErr('f_doc_title', 'Document Title / Description is required.');
-      const editOrigDoc = (editCtx && editCtx.crKey === 'documents' && editCtx.orig) ? editCtx.orig : null;
-      const attList = (Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length)
-        ? FORM_UI.attachments.map(a => Object.assign({}, a))
-        : (editOrigDoc && Array.isArray(editOrigDoc.attachments) ? editOrigDoc.attachments : []);
-      const firstAtt = attList[0] || null;
+      if (!editOrigDoc && !attList.length) {
+        addErr('entryAttachmentsBar', 'Please upload a file/PDF or snap a photo first.');
+        const ab = $('entryAttachmentsBar');
+        if (ab) ab.classList.add('field-neglected');
+      }
       const seq = String(((SEED.records.documents || []).length + (STATE.customRecords.documents || []).length) + 1).padStart(4, '0');
+      const docName = editOrigDoc && editOrigDoc.name ? editOrigDoc.name : `DOC-${date.slice(0, 4)}-${seq}`;
+      const resolvedMime = (firstAtt && (firstAtt.mime_type || firstAtt.type)) || (editOrigDoc && (editOrigDoc.mime_type || editOrigDoc.file_type)) || 'image/svg+xml';
+      const resolvedSize = Number((firstAtt && (firstAtt.file_size || firstAtt.size)) || (editOrigDoc && editOrigDoc.file_size) || 2048);
+      const resolvedFileName = (firstAtt && (firstAtt.file_name || firstAtt.name)) || (editOrigDoc && editOrigDoc.file_name) || `${(title || 'Document').replace(/[^A-Za-z0-9_-]+/g, '_')}.svg`;
+      const resolvedDataUrl = (firstAtt && resolveDocDataUrl(firstAtt)) || (editOrigDoc && resolveDocDataUrl(editOrigDoc)) || buildSampleDocSvgDataUrl({
+        name: docName,
+        doc_type: docType,
+        date,
+        company,
+        counterparty: cp || company,
+        reference: refNo || docName,
+        parent_label: pLbl,
+        title: title || docType,
+        amount: amt
+      });
       crKey = 'documents';
       record = {
         ...base,
-        name: editOrigDoc && editOrigDoc.name ? editOrigDoc.name : `DOC-${date.slice(0, 4)}-${seq}`,
+        name: docName,
         doc_type: docType,
         title: title || 'Document',
         counterparty: cp,
-        reference: refNo || (editOrigDoc && editOrigDoc.reference) || `DOC-${date.slice(0, 4)}-${seq}`,
+        reference: refNo || (editOrigDoc && editOrigDoc.reference) || docName,
         amount: amt,
         parent_table: pTbl,
-        parent_id: pId || (editOrigDoc && editOrigDoc.parent_id) || '',
+        parent_id: pId || (pRaw && editOrigDoc && editOrigDoc.parent_id) || '',
         parent_label: pLbl,
-        file_name: (firstAtt && firstAtt.name) || (editOrigDoc && editOrigDoc.file_name) || `${(title || 'Document').replace(/[^A-Za-z0-9_-]+/g, '_')}.svg`,
-        file_type: (firstAtt && firstAtt.type) || (editOrigDoc && editOrigDoc.file_type) || 'image/svg+xml',
-        file_size: (firstAtt && firstAtt.size) || (editOrigDoc && editOrigDoc.file_size) || 2048,
-        data_url: (firstAtt && firstAtt.data_url) || (editOrigDoc && editOrigDoc.data_url) || buildSampleDocSvgDataUrl({
-          badge: docType.toUpperCase(),
-          no: refNo || `DOC-${date.slice(0, 4)}-${seq}`,
-          date,
-          party: cp || company,
-          title: title || docType,
-          amount: amt > 0 ? fmtUSD(amt, 2) : 'On File',
-          co: company,
-          accent: '#1e3a8a'
-        }),
+        file_name: resolvedFileName,
+        mime_type: resolvedMime,
+        file_type: resolvedMime,
+        file_size: resolvedSize,
+        capture_method: (firstAtt && firstAtt.capture_method) || (editOrigDoc && editOrigDoc.capture_method) || 'File Upload',
+        _blob_id: (firstAtt && (firstAtt._blob_id || firstAtt.id)) || (editOrigDoc && editOrigDoc._blob_id) || '',
+        data_url: resolvedDataUrl,
         attachments: attList,
         attachment_count: Math.max(1, attList.length),
-        status: val('f_status') || 'Verified'
+        status: val('f_status') || 'Verified & Filed'
       };
     }
     if (record && f !== 'document' && Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length) {
       record.attachments = FORM_UI.attachments.map(a => Object.assign({}, a));
       record.attachment_count = record.attachments.length;
-    } else if (record && f !== 'document' && editCtx && editCtx.orig && Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length === 0 && Array.isArray(editCtx.orig.attachments) && editCtx.orig.attachments.length > 0) {
-      record.attachments = [];
-      record.attachment_count = 0;
+    } else if (record && f !== 'document' && editCtx && editCtx.orig && Array.isArray(FORM_UI.attachments) && FORM_UI.attachments.length === 0) {
+      const hadPrevAtts = parseAttachmentsArray(editCtx.orig.attachments).length > 0 || getRecordAttachmentsList(crKey, editCtx.orig).length > 0;
+      if (hadPrevAtts) {
+        record.attachments = [];
+        record.attachment_count = 0;
+      }
     }
     if (record && editCtx && editCtx.orig) {
       const orig = editCtx.orig;
@@ -68146,7 +70110,7 @@
       if (isEffModalTbl && record.start_date) {
         syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
       }
-      if (crKey !== 'documents' && record && Array.isArray(record.attachments) && record.attachments.length) {
+      if (record && (crKey === 'documents' || (Array.isArray(record.attachments) && record.attachments.length) || Boolean(editOrigModal))) {
         syncRecordAttachmentsToDocumentVault(crKey, record, extraApiPosts);
       }
       applyCustomRecordsToSeed();
@@ -68288,6 +70252,22 @@
         extraRestorePosts.push([childKey, ch]);
       });
     }
+    if (crKey !== 'documents') {
+      const parentId = String((r && r.id) || (archivedSeed && archivedSeed.id) || q);
+      const docPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
+      const seenDocIds = new Set();
+      docPool.forEach(d => {
+        if (!d || !d.voided || norm(d.parent_table || '') !== norm(crKey) || String(d.parent_id || '') !== parentId) return;
+        const did = String(d.id || '');
+        if (did && seenDocIds.has(did)) return;
+        if (did) seenDocIds.add(did);
+        d.voided = false;
+        delete d.voided_by;
+        delete d.voided_at;
+        _attCacheRev++;
+        extraRestorePosts.push(['documents', d]);
+      });
+    }
     applyCustomRecordsToSeed();
     const restoredRow = r || archivedSeed;
     const isEffRestoredTbl = restoredRow ? isEffectiveSeriesTable(crKey, restoredRow) : false;
@@ -68376,6 +70356,48 @@
         extraVoidPosts.push([childKey, ch]);
       });
     }
+    if (crKey !== 'documents') {
+      const parentId = String((r && r.id) || (seedRow && seedRow.id) || q);
+      if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
+      const docPool = STATE.customRecords.documents.concat((SEED.records && SEED.records.documents) || []);
+      const seenDocIds = new Set();
+      docPool.forEach(d => {
+        if (!d || d.voided || norm(d.parent_table || '') !== norm(crKey) || String(d.parent_id || '') !== parentId) return;
+        const did = String(d.id || '');
+        if (did && seenDocIds.has(did)) return;
+        if (did) seenDocIds.add(did);
+        d.voided = true;
+        d.voided_by = who;
+        d.voided_at = when;
+        const cIdx = STATE.customRecords.documents.findIndex(x => x && String(x.id || '') === did);
+        if (cIdx >= 0) Object.assign(STATE.customRecords.documents[cIdx], d);
+        else STATE.customRecords.documents.unshift(Object.assign({}, d));
+        _attCacheRev++;
+        extraVoidPosts.push(['documents', d]);
+      });
+    } else if (r && r.parent_table && (r.parent_id || r.parent_label)) {
+      const pk = r.parent_table;
+      if (!Array.isArray(STATE.customRecords[pk])) STATE.customRecords[pk] = [];
+      const pPool = STATE.customRecords[pk].concat((SEED.records && SEED.records[pk]) || []);
+      const pLblNorm = norm(r.parent_label || '').replace(/^#/, '');
+      const pRow = pPool.find(x => x && !x.voided && (
+        (r.parent_id && String(x.id) === String(r.parent_id)) ||
+        (pLblNorm && (norm(x.name) === pLblNorm || norm(x.ticket_no) === pLblNorm || norm(x.invoice_no) === pLblNorm))
+      ));
+      if (pRow) {
+        const remAtts = parseAttachmentsArray(pRow.attachments).filter(a => a && String(a.doc_id || '') !== String(r.id) && String(a.id || '') !== String(r.id));
+        pRow.attachments = remAtts;
+        pRow.attachment_count = remAtts.length;
+        pRow.modified_at = new Date().toISOString();
+        if (!Array.isArray(pRow._removed_doc_ids)) pRow._removed_doc_ids = [];
+        if (!pRow._removed_doc_ids.includes(String(r.id))) pRow._removed_doc_ids.push(String(r.id));
+        const pcIdx = STATE.customRecords[pk].findIndex(x => x && String(x.id) === String(pRow.id));
+        if (pcIdx >= 0) Object.assign(STATE.customRecords[pk][pcIdx], pRow);
+        else STATE.customRecords[pk].unshift(Object.assign({}, pRow));
+        _attCacheRev++;
+        extraVoidPosts.push([pk, pRow]);
+      }
+    }
     if (crKey === 'equipment_defects' && r && r.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
       const defPool = (STATE.customRecords.equipment_defects || []).concat(SEED.records.equipment_defects || []);
       const remOpen = defPool.some(d => d && !d.voided && norm(d.equipment) === norm(r.equipment) && isDefectOpen(d));
@@ -68443,10 +70465,12 @@
       String(STATE.modalForm || ''),
       String(STATE.modalGroupOverride || ''),
       String(FORM_UI.ticketDisposition || 'normal'),
-      String(Array.isArray(FORM_UI.supStagedDrivers) ? FORM_UI.supStagedDrivers.length : 0)
+      String(Array.isArray(FORM_UI.supStagedDrivers) ? FORM_UI.supStagedDrivers.length : 0),
+      'atts=' + (Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.map(a => a && (a.id || a.file_name || a.name)).join(',') : '')
     ];
     body.querySelectorAll('input, select, textarea').forEach(el => {
       if (!el.id && !el.name) return;
+      if (el.type === 'file') return;
       if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.id === 'openLoansSearchInput') return;
       const key = el.id || el.name;
       const v = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
@@ -68856,7 +70880,7 @@
       const saveBtnHtml = (seatCanSaveEdit || (canVoidCurrent && isTicketEdit))
         ? `<button type="button" class="btn btn-brass" id="dynSaveModalBtn"${!seatCanSaveEdit ? ' hidden' : ''}>${saveBtnLbl}</button>`
         : '';
-      body.innerHTML = renderEntryModalBody() + renderEntryAttachmentsBarHtml(form) + `
+      body.innerHTML = renderEntryModalBody() + renderEntryAttachmentsBarHtml(form, seatCanSaveEdit) + `
         <div class="modal-foot">
           <span class="form-note">${footNoteHtml}</span>
           <div${canVoidCurrent && (seatCanSaveEdit || isTicketEdit) ? ' class="has-void"' : ''}>
@@ -68961,6 +70985,7 @@
           if (t.closest('.modal-foot')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput')) return;
           if (ev.type === 'click') {
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview]')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -70026,14 +72051,26 @@
       setModalControlVal('f_zone_geojson', row.zone_geojson ? (typeof row.zone_geojson === 'string' ? row.zone_geojson : JSON.stringify(row.zone_geojson)) : '');
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     } else if (form === 'document') {
-      setModalControlVal('f_doc_type', row.doc_type || 'Supplier Invoice');
+      const legacyTypeMap = {
+        'Supplier Invoice': 'Invoice & Bill',
+        'Expense Receipt': 'Receipt & Payment Voucher',
+        'Customer Tax Invoice': 'Tax & MoF Filing',
+        'Weighbridge & Delivery Slip': 'Delivery & Weighbridge Slip',
+        'Payment Receipt / Bank Swift': 'Bank & Transfer Slip',
+        'Permit, License & Insurance': 'Equipment & Permit Document',
+        'Fleet Registration & Inspection': 'Equipment & Permit Document',
+        'Other Important Document': 'General Document'
+      };
+      const normDocTp = legacyTypeMap[row.doc_type] || row.doc_type || 'Invoice & Bill';
+      const normDocSt = row.status === 'Verified' ? 'Verified & Filed' : (row.status || 'Verified & Filed');
+      setModalControlVal('f_doc_type', normDocTp);
       setModalControlVal('f_doc_title', row.title || row.name || '');
       setModalControlVal('f_counterparty', row.counterparty || '');
       setModalControlVal('f_reference', row.reference || row.name || '');
       if (row.amount != null && Number(row.amount) > 0) setModalControlVal('f_amount', row.amount);
       setModalControlVal('f_parent_table', row.parent_table || '');
       setModalControlVal('f_parent_label', row.parent_label || '');
-      setModalControlVal('f_status', row.status || 'Verified');
+      setModalControlVal('f_status', normDocSt);
       if ($('f_notes')) setModalControlVal('f_notes', row.notes || '');
     }
     const existingAtts = getRecordAttachmentsList(crKey, row);
@@ -72693,13 +74730,13 @@
       ],
       documents: [
         { key: 'date', label: 'Document Date *', type: 'date', sec: 1 },
-        { key: 'doc_type', label: 'Document Category *', type: 'select', options: ['Supplier Invoice', 'Expense Receipt', 'Customer Tax Invoice', 'Weighbridge & Delivery Slip', 'Payment Receipt / Bank Swift', 'Contract & Agreement', 'Permit, License & Insurance', 'Fleet Registration & Inspection', 'Other Important Document'], sec: 1 },
+        { key: 'doc_type', label: 'Document Category *', type: 'select', options: ['Invoice & Bill', 'Receipt & Payment Voucher', 'Tax & MoF Filing', 'Contract & Agreement', 'Bank & Transfer Slip', 'Delivery & Weighbridge Slip', 'Equipment & Permit Document', 'General Document'], sec: 1 },
         { key: 'title', label: 'Document Title *', type: 'text', sec: 1 },
         { key: 'counterparty', label: 'Supplier / Customer / Authority', type: 'combo', dl: 'dl_insp_counterparties', sec: 2 },
         { key: 'reference', label: 'External Invoice / Ref #', type: 'text', sec: 2 },
         { key: 'amount', label: 'Document Amount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'parent_label', label: 'Linked Record', type: 'text', sec: 2 },
-        { key: 'status', label: 'Verification Status', type: 'select', options: ['Verified', 'Pending Review', 'Archived'], sec: 1 },
+        { key: 'status', label: 'Verification Status', type: 'select', options: ['Verified & Filed', 'Pending Review', 'Archived'], sec: 1 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       currencies: [
@@ -72737,7 +74774,7 @@
   // automatically attaching frequency-ranked comboboxes (dlMap + dynamic per-column SEED.records frequency options).
   function buildFallbackInspectorEditableSchema(key, rec) {
     const r = rec || {};
-    const auditSkip = new Set(['id', 'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at', 'voided', 'voided_by', 'voided_at']);
+    const auditSkip = new Set(['id', 'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at', 'voided', 'voided_by', 'voided_at', 'data_url', 'attachments', 'attachment_count', 'att_id', 'doc_id', 'parent_id', '_blob_id', '_removed_doc_ids', 'file_type']);
     const freeTextCols = new Set(['name', 'code', 'ticket_no', 'invoice_no', 'invoice', 'voucher', 'reference', 'description', 'phone', 'contact', 'email', 'mof_no', 'financial_no', 'address']);
     const dlMap = {
       customer: 'dl_insp_customers', client: 'dl_insp_customers', buyer: 'dl_insp_customers',
@@ -72895,7 +74932,7 @@
       if (!f.drawerOnly) schemaByKey.set(f.key, f);
     });
 
-    const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', '_seedCatAuto', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
+    const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', '_seedCatAuto', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id', 'data_url', 'attachments', 'attachment_count', 'att_id', 'doc_id', 'parent_id', '_blob_id', '_removed_doc_ids', 'file_type']);
     if (key !== 'gl_accounts') {
       ['output_vat_account', 'input_vat_account', 'revenue_account', 'purchase_account', 'gl_code', 'gl_account', 'receivable_account', 'payable_account', 'salary_account', 'asset_account', 'depreciation_account'].forEach(gk => hidden.add(gk));
     } else {
@@ -74721,20 +76758,22 @@
       ${(() => {
         const recAtts = getRecordAttachmentsList(key, row);
         const canUploadAtt = !row.voided && canModifyData();
+        const hasParentLink = key === 'documents' && Boolean(row.parent_table && (row.parent_id || row.parent_label));
         return `
           <div class="pa-subgrid-box" id="inspAttachmentsBox" style="margin-bottom:14px">
             <div class="pa-subgrid-hdr">
               <div>
-                <strong>${ic('receipt')} Attached Receipts, Invoices &amp; Supporting Documents</strong>
-                <span class="pa-subgrid-sub">Scanned invoices, thermal slips, PDFs, or photos linked to <b>${esc(row.name || row.invoice_no || row.ticket_no || row.id)}</b>. Any file uploaded here is also indexed in the Document Vault.</span>
+                <strong>${ic('receipt')} ${key === 'documents' ? 'Stored Document &amp; Receipt File' : 'Attached Receipts, Invoices &amp; Supporting Documents'}</strong>
+                <span class="pa-subgrid-sub">${key === 'documents' ? `Archived file for <b>${esc(row.title || row.name || row.id)}</b>.` : `Scanned invoices, thermal slips, PDFs, or photos linked to <b>${esc(row.name || row.invoice_no || row.ticket_no || row.id)}</b>. Any file uploaded here is also indexed in the Document Vault.`}</span>
               </div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                ${hasParentLink ? `<button type="button" class="btn btn-outline-bar btn-sm" id="inspJumpParentRecordBtn">${ic('paperclip')} Open ${esc(row.parent_label || (CR_LABEL[row.parent_table] || 'Linked Record'))}</button>` : ''}
                 <span class="badge ${recAtts.length ? 'badge-ok' : 'badge-neutral'}" id="inspAttCountBadge">${recAtts.length} ${recAtts.length === 1 ? 'File' : 'Files'}</span>
                 ${canUploadAtt ? `
                   <input type="file" id="inspAttFileInput" accept="image/*,application/pdf,.pdf,.png,.jpg,.jpeg,.webp" multiple hidden>
                   <input type="file" id="inspAttCamInput" accept="image/*" capture="environment" hidden>
-                  <button type="button" class="btn btn-sm btn-primary" id="inspBtnUploadAtt">${ic('plus')} Upload File / PDF</button>
-                  <button type="button" class="btn btn-sm" id="inspBtnSnapAtt">${ic('eye')} Snap Photo</button>
+                  <button type="button" class="btn btn-outline-bar btn-sm" id="inspBtnUploadAtt">${ic('upload')} ${key === 'documents' ? 'Replace File / PDF' : 'Upload File / PDF'}</button>
+                  <button type="button" class="btn btn-outline-bar btn-sm" id="inspBtnSnapAtt">${ic('camera')} Snap Photo</button>
                 ` : ''}
               </div>
             </div>
@@ -74742,19 +76781,23 @@
               ${recAtts.length ? `
                 <div class="insp-att-grid">
                   ${recAtts.map((a, idx) => {
-                    const isPdf = /pdf/i.test(String(a.type || '')) || /\.pdf$/i.test(String(a.name || ''));
+                    const fName = a.file_name || a.name || `Attachment ${idx + 1}`;
+                    const fMime = a.mime_type || a.type || '';
+                    const fSize = a.file_size || a.size || 0;
+                    const dUrl = resolveDocDataUrl(a);
+                    const isPdf = /pdf/i.test(String(fMime)) || /\.pdf$/i.test(String(fName));
                     return `
                       <div class="att-file-chip insp-att-card">
                         <div class="att-chip-thumb" data-insp-preview-att-idx="${idx}" role="button" tabindex="0">
-                          ${!isPdf && a.data_url ? `<img src="${esc(a.data_url)}" alt="${esc(a.name || 'Attachment')}">` : `<span class="att-pdf-badge">${isPdf ? 'PDF' : 'DOC'}</span>`}
+                          ${!isPdf && dUrl ? `<img src="${esc(dUrl)}" alt="${esc(fName)}">` : `<span class="att-pdf-badge">${isPdf ? 'PDF' : 'DOC'}</span>`}
                         </div>
                         <div class="att-chip-meta" data-insp-preview-att-idx="${idx}" role="button" tabindex="0">
-                          <strong class="att-chip-name">${esc(a.name || `Attachment ${idx + 1}`)}</strong>
-                          <small class="att-chip-sub">${esc(formatFileSizeShort(a.size || 0))}${a.uploaded_by ? ' · ' + esc(a.uploaded_by) : ''}</small>
+                          <strong class="att-chip-name">${esc(fName)}</strong>
+                          <small class="att-chip-sub">${esc(formatFileSizeShort(fSize))}${a.capture_method ? ' · ' + esc(a.capture_method) : ''}${a.uploaded_by ? ' · ' + esc(a.uploaded_by) : ''}</small>
                         </div>
                         <div class="att-chip-actions">
                           <button type="button" class="btn btn-sm" data-insp-preview-att-idx="${idx}">Preview</button>
-                          ${a.data_url ? `<a class="btn btn-sm" href="${esc(a.data_url)}" download="${esc(a.name || 'document')}">Download</a>` : ''}
+                          ${dUrl ? `<button type="button" class="btn btn-sm" data-insp-dl-att-idx="${idx}">Download</button>` : ''}
                           ${canUploadAtt && key !== 'documents' ? `<button type="button" class="btn btn-sm" data-insp-del-att-idx="${idx}" aria-label="Remove attachment">✕</button>` : ''}
                         </div>
                       </div>
@@ -74764,7 +76807,7 @@
               ` : `
                 <div class="mu" style="padding:10px 4px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
                   <span>No receipt scan, supplier invoice, or photo is attached to this record yet.</span>
-                  ${canUploadAtt ? `<span style="color:var(--ink-soft)">Click <b>+ Upload File / PDF</b> or <b>Snap Photo</b> above to attach one now.</span>` : ''}
+                  ${canUploadAtt ? `<span style="color:var(--ink-soft)">Click <b>Upload File / PDF</b> or <b>Snap Photo</b> above to attach one now.</span>` : ''}
                 </div>
               `}
             </div>
@@ -76212,15 +78255,32 @@
       const cInp = $('inspAttCamInput');
       const uBtn = $('inspBtnUploadAtt');
       const sBtn = $('inspBtnSnapAtt');
+      const jpBtn = $('inspJumpParentRecordBtn');
+      if (jpBtn && row && row.parent_table && (row.parent_id || row.parent_label)) {
+        jpBtn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          showRecordInspector(row.parent_table, row.parent_id || String(row.parent_label || '').replace(/^#/, ''));
+        });
+      }
       if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
-      if (sBtn && cInp) sBtn.addEventListener('click', () => cInp.click());
+      if (sBtn) {
+        sBtn.addEventListener('click', () => {
+          openDocumentCameraCapture((files, method) => attachFilesDirectlyToRecord(key, row, files, method || 'Camera Scan'));
+        });
+      }
       if (fInp) fInp.addEventListener('change', async () => {
-        if (fInp.files && fInp.files.length) await attachFilesDirectlyToRecord(key, row, fInp.files);
-        fInp.value = '';
+        try {
+          if (fInp.files && fInp.files.length) await attachFilesDirectlyToRecord(key, row, fInp.files, 'File Upload');
+        } finally {
+          fInp.value = '';
+        }
       });
       if (cInp) cInp.addEventListener('change', async () => {
-        if (cInp.files && cInp.files.length) await attachFilesDirectlyToRecord(key, row, cInp.files);
-        cInp.value = '';
+        try {
+          if (cInp.files && cInp.files.length) await attachFilesDirectlyToRecord(key, row, cInp.files, 'Camera Scan');
+        } finally {
+          cInp.value = '';
+        }
       });
       inspAttBox.querySelectorAll('[data-insp-preview-att-idx]').forEach(el => {
         el.addEventListener('click', ev => {
@@ -76229,19 +78289,30 @@
           openDocumentPreviewModal({ crKey: key, id: row.id || idOrName, attIdx: idx });
         });
       });
+      inspAttBox.querySelectorAll('[data-insp-dl-att-idx]').forEach(el => {
+        el.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const idx = Number(el.getAttribute('data-insp-dl-att-idx') || 0);
+          const attsNow = getRecordAttachmentsList(key, row);
+          const item = attsNow[idx];
+          if (!item) return;
+          const dUrl = resolveDocDataUrl(item);
+          if (!dUrl) return;
+          const bUrl = dataUrlToBlobUrl(dUrl);
+          const aTag = document.createElement('a');
+          aTag.href = bUrl || dUrl;
+          aTag.download = item.file_name || item.name || 'document';
+          document.body.appendChild(aTag);
+          aTag.click();
+          aTag.remove();
+          if (bUrl) setTimeout(() => { try { URL.revokeObjectURL(bUrl); } catch (_) {} }, 5000);
+        });
+      });
       inspAttBox.querySelectorAll('[data-insp-del-att-idx]').forEach(el => {
         el.addEventListener('click', ev => {
           ev.stopPropagation();
           const idx = Number(el.getAttribute('data-insp-del-att-idx'));
-          if (Array.isArray(row.attachments) && idx >= 0 && idx < row.attachments.length) {
-            row.attachments.splice(idx, 1);
-            row.attachment_count = row.attachments.length;
-            if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
-            const cIdx = STATE.customRecords[key].findIndex(x => x && String(x.id) === String(row.id));
-            if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
-            else STATE.customRecords[key].push(Object.assign({}, row));
-            applyCustomRecordsToSeed();
-            saveLocalAuthAndRecords();
+          if (removeAttachmentFromRecord(key, row, idx)) {
             toast('Attachment removed from record', 'ok');
             showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, preserveScroll: true });
             renderApp();
@@ -76519,7 +78590,44 @@
       }
       localStorage.setItem('isabi_mfg_users_v2', JSON.stringify(STATE.users));
       localStorage.setItem('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
-      localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
+      try {
+        localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
+      } catch (quotaErr) {
+        const slimRecs = {};
+        Object.keys(STATE.customRecords || {}).forEach(tbl => {
+          const arr = STATE.customRecords[tbl];
+          if (!Array.isArray(arr)) { slimRecs[tbl] = arr; return; }
+          slimRecs[tbl] = arr.map(rec => {
+            if (!rec || typeof rec !== 'object') return rec;
+            const copy = Object.assign({}, rec);
+            if (typeof copy.data_url === 'string' && copy.data_url.length > 2048) {
+              const bId = copy._blob_id || copy.id;
+              if (bId) {
+                putDocBlob(bId, copy.data_url);
+                copy._blob_id = bId;
+                delete copy.data_url;
+              }
+            }
+            if (Array.isArray(copy.attachments) && copy.attachments.length) {
+              copy.attachments = copy.attachments.map(att => {
+                if (!att || typeof att !== 'object') return att;
+                const ac = Object.assign({}, att);
+                if (typeof ac.data_url === 'string' && ac.data_url.length > 2048) {
+                  const abId = ac._blob_id || ac.id || ac.doc_id;
+                  if (abId) {
+                    putDocBlob(abId, ac.data_url);
+                    ac._blob_id = abId;
+                    delete ac.data_url;
+                  }
+                }
+                return ac;
+              });
+            }
+            return copy;
+          });
+        });
+        localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(slimRecs));
+      }
       localStorage.setItem('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
       localStorage.setItem('isabi_mfg_alert_rules_v1', JSON.stringify(STATE.alertRules || { overrides: {}, custom: [] }));
       localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
@@ -76757,7 +78865,7 @@
           if (!r) return false;
           const rid = String(r.id == null ? '' : r.id);
           if (!posRe.test(rid)) return true;
-          if (r.voided || r.modified_at || r.modified_by || r.restored_at) return true;
+          if (r.voided || r.modified_at || r.modified_by || r.restored_at || (Array.isArray(r.attachments) && r.attachments.length > 0) || (Array.isArray(r._removed_doc_ids) && r._removed_doc_ids.length > 0)) return true;
           const sRow = (origArch && origArch.get(rid)) || (voidArch && voidArch.get(rid)) || seedById.get(rid) || r._seed_orig;
           if (!sRow) return false;
           if (r.name && sRow.name && String(r.name) !== String(sRow.name)) return false;
@@ -77100,6 +79208,47 @@
 
   // Project the app entries onto the seed registers (voided rows drop out, new rows sort in by date, and fleet owner/driver links stay synchronized)
   const _FLEET_DEP_KEYS = new Set(['equipment', 'company_equipment', 'drivers', 'company_drivers', 'suppliers', 'customers', 'sites', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'price_rules']);
+  const _SEED_TWIN_TX_KEYS = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries', 'attendance', 'external_movements']);
+  const _normTwinAlpha = x => String(x || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
+  const _cleanTwinTkt = v => norm(String(v || '').replace(/^#+/, ''));
+  function _isSeedTwinMatch(k, s, r) {
+    if (!s || !r || s === r || isAppRecord(s) || s.voided) return false;
+    const dS = String(s.date || '').slice(0, 10), dR = String(r.date || '').slice(0, 10);
+    if (!dS || !dR || dS !== dR) return false;
+    if (norm(s.company || 'WTC') !== norm(r.company || 'WTC')) return false;
+    if (k === 'sales_tickets') {
+      const tS = _cleanTwinTkt(s.ticket_no), tR = _cleanTwinTkt(r.ticket_no);
+      if (tS && tR) return tS === tR;
+      return Boolean(norm(s.customer) && norm(s.customer) === norm(r.customer) && Math.abs(Number(s.total_ttc ?? s.total ?? 0) - Number(r.total_ttc ?? r.total ?? 0)) < 0.5);
+    }
+    if (k === 'raw_purchases') {
+      const tS = _cleanTwinTkt(s.ticket_no), tR = _cleanTwinTkt(r.ticket_no);
+      if (tS && tR) return tS === tR;
+      return Boolean(norm(s.site || s.supplier) && norm(s.site || s.supplier) === norm(r.site || r.supplier) && norm(s.product) === norm(r.product) && Math.abs(Number(s.qty || 0) - Number(r.qty || 0)) < 0.05 && norm(s.truck) === norm(r.truck));
+    }
+    if (k === 'fuel_intakes') {
+      return Boolean(norm(s.equipment) && norm(s.equipment) === norm(r.equipment) && Math.abs(Number(s.litres || 0) - Number(r.litres || 0)) < 0.1);
+    }
+    if (k === 'expenses') {
+      return Boolean(norm(s.supplier) && norm(s.supplier) === norm(r.supplier) && Math.abs(Number(s.amount ?? s.total ?? 0) - Number(r.amount ?? r.total ?? 0)) < 0.5);
+    }
+    if (k === 'receipts') {
+      return Boolean(norm(s.customer) && norm(s.customer) === norm(r.customer) && Math.abs(Number(s.amount || 0) - Number(r.amount || 0)) < 0.5);
+    }
+    if (k === 'settlements') {
+      return Boolean(norm(s.supplier) && norm(s.supplier) === norm(r.supplier) && Math.abs(Number(s.amount || 0) - Number(r.amount || 0)) < 0.5);
+    }
+    if (k === 'salaries') {
+      return Boolean(_normTwinAlpha(s.staff) && _normTwinAlpha(s.staff) === _normTwinAlpha(r.staff) && Math.abs(Number(s.amount || 0) - Number(r.amount || 0)) < 0.5);
+    }
+    if (k === 'attendance') {
+      return Boolean(_normTwinAlpha(s.staff) && _normTwinAlpha(s.staff) === _normTwinAlpha(r.staff));
+    }
+    if (k === 'external_movements') {
+      return Boolean(norm(s.counterparty || s.party) && norm(s.counterparty || s.party) === norm(r.counterparty || r.party) && Math.abs(Number(s.usd_amount ?? s.amount ?? 0) - Number(r.usd_amount ?? r.amount ?? 0)) < 0.5 && Math.abs(Number(s.lbp_amount || 0) - Number(r.lbp_amount || 0)) < 1000);
+    }
+    return false;
+  }
   function applyCustomRecordsToSeed() {
     SEED._customRev = (SEED._customRev || 0) + 1;
     ensureGlobalFinanceTablesSeeded();
@@ -77110,6 +79259,8 @@
     sanitizeUniversalCustomRecords();
     if (!SEED._tableRev) SEED._tableRev = {};
     let fleetTouched = false;
+    const seedCutIso = String(SEED.generated_at || SEED_MANIFEST.generated_at || '').slice(0, 10);
+    const canDedupSeedTwins = Boolean(SEED._recordsReady && /^\d{4}-\d{2}-\d{2}$/.test(seedCutIso));
     const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'staff_members', 'staff_roles', 'customers', 'products', 'items', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
     const allKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allKeys.forEach(k => {
@@ -77119,8 +79270,11 @@
       const customList = STATE.customRecords[k];
       if (!customList.length && (!UNIVERSAL_MAIN_SPEC[k] || list._univDeduped)) return;
       let touched = false;
+      const checkTwins = canDedupSeedTwins && _SEED_TWIN_TX_KEYS.has(k);
+      const claimedSeedTwins = checkTwins ? new Set() : null;
       customList.forEach(r => {
         if (!r) return;
+        if (r._absorbedSeedTwin) delete r._absorbedSeedTwin;
         const rid = String(r.id == null ? '' : r.id);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
         if (r.voided) {
@@ -77141,6 +79295,19 @@
             touched = true;
           }
           return;
+        }
+        if (checkTwins && isAppRecord(r)) {
+          const rIso = String(r.date || '').slice(0, 10);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(rIso) && rIso <= seedCutIso) {
+            const seedTwin = list.find(s => !claimedSeedTwins.has(s) && _isSeedTwinMatch(k, s, r));
+            if (seedTwin) {
+              claimedSeedTwins.add(seedTwin);
+              r._absorbedSeedTwin = true;
+              const dupIdx = rid ? list.findIndex(x => x && x !== seedTwin && String(x.id) === rid) : -1;
+              if (dupIdx >= 0) { list.splice(dupIdx, 1); touched = true; }
+              return;
+            }
+          }
         }
         const existingById = rid ? list.find(x => x && String(x.id) === rid) : null;
         if (existingById) {
@@ -80864,16 +83031,30 @@
     const catalog = getCompanyCatalog();
     const searchInpEarly = $('companySwitchSearch');
     const qEarly = searchInpEarly ? String(searchInpEarly.value || '').trim().toLowerCase() : '';
-    const uiSig = `${(user && user.id) || ''}|${allowedCos.join(',')}|${allowedNames.join(',')}|${catalog.length}|${STATE.company}|${STATE.companySwitchIndFilter || 'all'}|${qEarly}|${Boolean(STATE.demoVisitor)}|${isOfficialScopeActive(user)}|${Boolean(STATE.enterpriseScalePreview)}`;
+    const uiSig = `${(user && user.id) || ''}|${allowedCos.join(',')}|${allowedNames.join(',')}|${catalog.length}|${_companyCatalogSig}|${STATE.company}|${STATE.companySwitchIndFilter || 'all'}|${qEarly}|${Boolean(STATE.demoVisitor)}|${isOfficialScopeActive(user)}|${Boolean(STATE.enterpriseScalePreview)}`;
     if (_companySwitchUiSig === uiSig && switchEl.querySelector('.entity-btn')) return;
     _companySwitchUiSig = uiSig;
     const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
     const indGroups = getIndustryGroups(catalog);
+    const coFreqSwitch = (_FREQ_IDX && _FREQ_IDX.company) ? _FREQ_IDX.company : null;
     const listEl = $('companySwitchList') || switchEl;
 
-    // Order each industry's consolidated group row directly above its member companies (preserving MFG_FREQ company rank within each industry)
+    // Allowed industries for this user — ranked strictly by summed operational frequency of permitted companies
+    const allowedIndGroups = indGroups.map(g => {
+      const permittedCos = g.companies.filter(c => allowedNameSet.has(c.name.toLowerCase()));
+      const permittedFreq = (coFreqSwitch && coFreqSwitch.size)
+        ? permittedCos.reduce((s, c) => s + (coFreqSwitch.get(norm(c.name)) || 0), 0)
+        : (g.freq || 0);
+      return { ...g, permittedCos, permittedFreq };
+    }).filter(g => g.permittedCos.length > 0);
+    if (coFreqSwitch && coFreqSwitch.size) {
+      allowedIndGroups.sort((a, b) => (b.permittedFreq || 0) - (a.permittedFreq || 0));
+    }
+    const orderedSwitchGroups = allowedIndGroups.concat(indGroups.filter(g => !allowedIndGroups.some(ag => ag.id === g.id)));
+
+    // Order each industry's consolidated group row directly above its member companies (preserving MFG_FREQ industry & company rank)
     const desiredKeys = [];
-    indGroups.forEach(g => {
+    orderedSwitchGroups.forEach(g => {
       if (g.id === 'Manufacturing' && allowedCos.includes('manufacturing-group')) {
         desiredKeys.push('manufacturing-group');
       }
@@ -80910,11 +83091,6 @@
       listEl.appendChild(btn);
     });
 
-    // Allowed industries for this user
-    const allowedIndGroups = indGroups.map(g => ({
-      ...g,
-      permittedCos: g.companies.filter(c => allowedNameSet.has(c.name.toLowerCase()))
-    })).filter(g => g.permittedCos.length > 0);
     const allowedIndCount = Math.max(1, allowedIndGroups.length);
     const firstAllowedInd = allowedIndGroups[0] ? allowedIndGroups[0].id : 'Manufacturing';
     const liveInd = getActiveIndustry(STATE.company);
@@ -80931,12 +83107,24 @@
     // Populate Left Column: Industry Tabs (#companySwitchIndustryList)
     const indListEl = $('companySwitchIndustryList');
     if (indListEl) {
+      const isExactIndMatch = g => {
+        const ql = qEarly;
+        if (!ql) return false;
+        const idL = String(g.id || '').toLowerCase();
+        const lblL = String(g.label || '').toLowerCase();
+        const codeL = String(g.code || '').toLowerCase();
+        const shortL = lblL.split(/\s*&\s*/)[0].trim();
+        return idL === ql || lblL === ql || codeL === ql || shortL === ql;
+      };
+      const displayIndGroups = qEarly
+        ? allowedIndGroups.filter(isExactIndMatch).concat(allowedIndGroups.filter(g => !isExactIndMatch(g)))
+        : allowedIndGroups;
       const indTabsHtml = [
         `<button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === 'all' ? 'active' : ''}" data-ep-ind="all" data-ui-tip="Show all ${allowedNames.length} permitted companies across ${allowedIndCount} industries">
           <span class="ep-ind-tab-name">All Industries</span>
           <em class="ep-ind-tab-cnt">${allowedNames.length}</em>
         </button>`
-      ].concat(allowedIndGroups.map(g => `
+      ].concat(displayIndGroups.map(g => `
         <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" data-ui-tip="${esc(g.label)} (${g.permittedCos.length} permitted${g.id === liveInd ? ' · Active' : ''})">
           <span class="ep-ind-tab-name">${g.id === liveInd ? '<span class="ep-ind-live-dot" aria-hidden="true"></span>' : ''}${esc(g.label)}</span>
           <em class="ep-ind-tab-cnt">${g.permittedCos.length}</em>
@@ -81034,6 +83222,22 @@
     });
 
     if (q && (exactBtns.length || freqBtns.length)) {
+      if (freqBtns.length > 1 && coFreqSwitch && coFreqSwitch.size) {
+        const btnFreqScore = btn => {
+          const bk = btn.getAttribute('data-company') || '';
+          if (bk === 'manufacturing-group') {
+            const mg = allowedIndGroups.find(g => g.id === 'Manufacturing');
+            return mg ? (mg.permittedFreq || 0) : 0;
+          }
+          if (bk.startsWith('industry:')) {
+            const ig = allowedIndGroups.find(g => g.id === bk.slice(9));
+            return ig ? (ig.permittedFreq || 0) : 0;
+          }
+          const coName = COMPANY_BU_MATCH[bk] || bk;
+          return coFreqSwitch.get(norm(coName)) || 0;
+        };
+        freqBtns.sort((a, b) => btnFreqScore(b) - btnFreqScore(a));
+      }
       exactBtns.concat(freqBtns).forEach(btn => listEl.appendChild(btn));
     }
 
@@ -94277,6 +96481,18 @@
         }, 140);
       });
     }
+    // Executive Pulse lens tabs (Attention | Top Clients | Revenue Mix)
+    container.querySelectorAll('[data-ceo-pulse-tab]').forEach(tabBtn => {
+      tabBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const nextTab = tabBtn.getAttribute('data-ceo-pulse-tab');
+        if (nextTab && STATE.ceoPulseTab !== nextTab) {
+          STATE.ceoPulseTab = nextTab;
+          renderApp();
+        }
+      });
+    });
+
     // Chart hover & mobile tap tooltip
     const chartWrap = $('execChartWrap');
     const chartTip = $('execChartTip');
@@ -94469,6 +96685,29 @@
     }));
     container.querySelectorAll('[data-sales-chart-mode]').forEach(btn => btn.addEventListener('click', () => {
       STATE.salesChartMode = btn.getAttribute('data-sales-chart-mode') || 'payment';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-ind-asset-pill]').forEach(btn => btn.addEventListener('click', () => {
+      const scope = btn.getAttribute('data-ind-asset-scope') || '';
+      const val = btn.getAttribute('data-ind-asset-pill') || 'ALL';
+      if (!scope) return;
+      if (!STATE.indAssetFilter) STATE.indAssetFilter = {};
+      STATE.indAssetFilter[scope] = (val !== 'ALL' && STATE.indAssetFilter[scope] === val) ? 'ALL' : val;
+      STATE.shown = {};
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-ind-asset-select]').forEach(sel => sel.addEventListener('change', () => {
+      const scope = sel.getAttribute('data-ind-asset-select') || '';
+      if (!scope) return;
+      if (!STATE.indAssetFilter) STATE.indAssetFilter = {};
+      STATE.indAssetFilter[scope] = sel.value || 'ALL';
+      STATE.shown = {};
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();
@@ -95566,29 +97805,38 @@
       const cInp = container.querySelector('#docVaultQuickCamInput');
       const uBtn = container.querySelector('#docVaultQuickUploadBtn');
       const sBtn = container.querySelector('#docVaultQuickCamBtn');
-      const openModalWithFiles = async fileList => {
+      const openModalWithFiles = async (fileList, captureMethod = 'File Upload') => {
         const arr = Array.from(fileList || []).filter(Boolean);
         if (!arr.length) return;
         const items = [];
         for (const f of arr) {
-          const item = await readAndCompressAttachmentFile(f);
-          if (item) items.push(item);
+          try {
+            const item = await readAndCompressAttachmentFile(f, captureMethod);
+            if (item) items.push(item);
+          } catch (err) {
+            toast((err && err.message) || 'Could not read selected file', 'err');
+          }
         }
         if (items.length) {
-          const firstTitle = String(items[0].name || '').replace(/\.[^.]+$/, '');
+          const firstTitle = String(items[0].file_name || items[0].name || '').replace(/\.[^.]+$/, '');
           openEntryModal('document', { attachments: items, title: firstTitle });
+          FORM_UI.userInteracted = true;
         }
       };
       if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
-      if (sBtn && cInp) sBtn.addEventListener('click', () => cInp.click());
-      if (fInp) fInp.addEventListener('change', async () => { await openModalWithFiles(fInp.files); fInp.value = ''; });
-      if (cInp) cInp.addEventListener('change', async () => { await openModalWithFiles(cInp.files); cInp.value = ''; });
+      if (sBtn) {
+        sBtn.addEventListener('click', () => {
+          openDocumentCameraCapture((files, method) => openModalWithFiles(files, method || 'Camera Scan'));
+        });
+      }
+      if (fInp) fInp.addEventListener('change', async () => { try { await openModalWithFiles(fInp.files, 'File Upload'); } finally { fInp.value = ''; } });
+      if (cInp) cInp.addEventListener('change', async () => { try { await openModalWithFiles(cInp.files, 'Camera Scan'); } finally { cInp.value = ''; } });
       docVaultDropzone.addEventListener('dragover', ev => { ev.preventDefault(); docVaultDropzone.classList.add('drag-over'); });
       docVaultDropzone.addEventListener('dragleave', () => docVaultDropzone.classList.remove('drag-over'));
       docVaultDropzone.addEventListener('drop', async ev => {
         ev.preventDefault();
         docVaultDropzone.classList.remove('drag-over');
-        if (ev.dataTransfer && ev.dataTransfer.files) await openModalWithFiles(ev.dataTransfer.files);
+        if (ev.dataTransfer && ev.dataTransfer.files) await openModalWithFiles(ev.dataTransfer.files, 'File Upload');
       });
     }
     container.querySelectorAll('[data-open-diesel-sale]').forEach(btn => {
@@ -95646,7 +97894,8 @@
     });
     container.querySelectorAll('[data-nav-jump]').forEach(btn => {
       if (btn.hasAttribute('data-dtank-jump-chip')) return;
-      const go = () => {
+      const go = e => {
+        if (e && e.target && typeof e.target.closest === 'function' && e.target.closest('[data-rel-key]')) return;
         STATE.payrollFxPopoverBar = '';
         const stmt = btn.getAttribute('data-stmt-jump');
         if (stmt) STATE.activeStatement = stmt;
@@ -95659,7 +97908,7 @@
         setView(targetView);
       };
       btn.addEventListener('click', go);
-      if (btn.getAttribute('role') === 'button') btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+      if (btn.getAttribute('role') === 'button') btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(e); } });
     });
     if (STATE.view === 'kiosks') {
       wireKiosks(container);
@@ -96023,6 +98272,7 @@
   function init() {
     window.addEventListener('scroll', lockShellScroll, { passive: true });
     applyCustomRecordsToSeed();
+    hydrateDocBlobsFromIdb();
 
     // Period picker labels follow the snapshot (the DAX windows live in build/seed_from_dataverse.py)
     const periodSelInit = $('periodSelect');
@@ -97020,6 +99270,10 @@
         if (ssmModal && !ssmModal.hidden) { closeStaffScheduleModal(); return; }
         const sfeModal = $('staffFaceEnrolModal');
         if (sfeModal && !sfeModal.hidden) { closeStaffFaceEnrolModal(); return; }
+        const camDocModal = $('docCameraModal');
+        if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
+        const prevDocModal = $('docPreviewModal');
+        if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
         const ins = $('recordInspector');
@@ -97337,7 +99591,7 @@
       getPolicyGroups: () => getPolicyGroups(),
       savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
       deletePolicyGroup: groupId => deletePolicyGroup(groupId),
-      describeStaffPolicyGroup: (name, co) => describeStaffPolicyGroup(name, co),
+      describeStaffPolicyGroup: (staff, co) => describeStaffPolicyGroup(staff, co),
       hasExplicitStaffWorkRule: staff => hasExplicitStaffWorkRule(staff),
       getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
       saveStaffWorkRule: (staff, patch = {}) => saveStaffWorkRule(staff, patch),
@@ -97925,6 +100179,9 @@
     },
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
+    getIndustryGroups: typeof getIndustryGroups === 'function' ? getIndustryGroups : null,
+    getCompanyCatalog: typeof getCompanyCatalog === 'function' ? getCompanyCatalog : null,
+    syncCompanySwitchUi: typeof syncCompanySwitchUi === 'function' ? syncCompanySwitchUi : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null

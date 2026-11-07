@@ -2779,16 +2779,16 @@
       const marginPct = k.sales_ttc > 0 ? ((k.gross_margin / k.sales_ttc) * 100).toFixed(1) : '0.0';
       const opPct = k.sales_ttc > 0 ? ((k.operating_profit / k.sales_ttc) * 100).toFixed(1) : '0.0';
 
-      bullets.push(`<b>Row 1 · 4 Headline Executive KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> split into Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) and Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>); <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> alongside Realized Gross Margin (<b>${fmtMoney(k.gross_margin, 0)} · ${marginPct}%</b>); <b>Cash Position & Net Flow (${fmtMoney(tillVal, 2)})</b>, which turns negative whenever physical cash outflows (<b>${fmtMoney(cashOut, 0)}</b>) exceed direct cash-in-hand inflows (<b>${fmtMoney(cashIn, 0)}</b>); and <b>Receivables & Payables (${fmtMoney(k.ar_balance, 0)} Open AR vs. ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
-      bullets.push(`<b>Row 2 Left · Monthly Revenue, Raw Cost & Cash Profit Trajectory</b>: Plots monthly <b>Total Sales</b> (blue), <b>Raw Material Cost</b> (slate), and <b>Operating Profit</b> (gold) so leadership can track seasonal volume and cash margin trends at a glance.`);
-      bullets.push(`<b>Row 2 Right · Operating Entities Scorecard</b>: Summarizes entity-by-entity <b>Revenue</b>, <b>Loads / Entries</b>, <b>Gross Margin</b>, <b>Operating Profit</b>, and <b>Ledger Status</b> across permitted companies with 1-click workspace filtering.`);
+      bullets.push(`<b>Row 1 · 4 Executive Telemetry KPIs</b>: Displays <b>Consolidated Revenue (${fmtMoney(k.sales_ttc, 0)})</b> with monthly run-rate and Cash (<b>${fmtMoney(k.cash_sales, 0)}</b>) vs Credit (<b>${fmtMoney(k.credit_sales, 0)}</b>) composition bar; <b>Operating Cash Profit (${fmtMoney(k.operating_profit, 0)} · ${opPct}%)</b> with Raw Material, OpEx, and Profit share; <b>Cash Position & Velocity (${fmtMoney(tillVal, 2)})</b> with AR collection rate and Cash In (<b>${fmtMoney(cashIn, 0)}</b>) vs Out (<b>${fmtMoney(cashOut, 0)}</b>); and <b>Working Capital (${fmtMoney(k.ar_balance, 0)} Open AR vs ${fmtMoney(k.ap_balance, 0)} Open AP)</b>.`);
+      bullets.push(`<b>Row 2 Left · Performance Trajectory & 5-Step P&L Value Bridge</b>: Plots monthly <b>Sales</b>, <b>Direct Cost</b>, and <b>Operating Profit</b> with peak-month callout and dashed run-rate line, anchored below by a clickable 5-step P&L waterfall (<b>Net Revenue - Direct Cost = Gross Margin - OpEx & Payroll = Cash Profit</b>) and unit economics spread.`);
+      bullets.push(`<b>Row 2 Right · Operating Entities Scorecard & 3-Lens Executive Pulse</b>: Pairs entity-by-entity revenue share, margin, and ledger tie-out above an interactive <b>Executive Pulse</b> deck switching instantly between <b>Attention</b> (overdue AR, open sentinels, pending rate sign-offs, $0.00 book parity), <b>Top Clients</b> (concentration & 360° Inspector), and <b>Revenue Mix</b> (top grades & unit pricing).`);
 
       rows = [
         ['1. Consolidated Revenue', fmtMoney(k.sales_ttc, 0), `Cash ${fmtMoney(k.cash_sales, 0)} + Credit ${fmtMoney(k.credit_sales, 0)}`],
         ['2. Operating Cash Profit', `${fmtMoney(k.operating_profit, 0)} (${opPct}%)`, `Gross Margin ${fmtMoney(k.gross_margin, 0)} (${marginPct}%) minus OpEx & Payroll (${fmtMoney(expTotal, 0)})`],
-        ['3. Cash Position & Net Flow', fmtMoney(tillVal, 2), `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
-        ['4. Receivables & Payables', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
-        ['5. Operating Entities Scorecard', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Click any entity row to focus the workspace on that company']
+        ['3. Cash Position & Velocity', fmtMoney(tillVal, 2), `Cash In (${fmtMoney(cashIn, 0)}) minus Cash Out (${fmtMoney(cashOut, 0)})`],
+        ['4. Working Capital (AR / AP)', `${fmtMoney(k.ar_balance, 0)} AR`, `Overdue >30d: ${fmtMoney(k.ar_overdue, 0)} · Open AP: ${fmtMoney(k.ap_balance, 0)}`],
+        ['5. Scorecard & Executive Pulse', `${fmtInt(salesLoads)} loads (${fmtInt(salesTons, 0)} t)`, 'Switch between Attention, Top Clients, and Revenue Mix or click any entity row']
       ];
     } else if (/^reg_/.test(viewId) || (useSnap && useSnap.hubCards && useSnap.hubCards.length > 0)) {
       const regTableMap = {

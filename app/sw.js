@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.173';
+const SHELL_CACHE = 'isabi-mfg-v19.6.174';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,35 +6,35 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.173',
-  './css/geo_dispatch.css?v=19.6.173',
-  './css/daily_ops.css?v=19.6.173',
-  './css/ask_isabi.css?v=19.6.173',
-  './css/fleet_pnl.css?v=19.6.173',
-  './js/face.js?v=19.6.173',
-  './js/endpoints.js?v=19.6.173',
-  './js/seed_manifest.js?v=19.6.173',
-  './js/icons.js?v=19.6.173',
-  './js/geo_dispatch.js?v=19.6.173',
-  './js/forms_engine.js?v=19.6.173',
-  './js/pbi_pages.js?v=19.6.173',
-  './js/rdl_reports.js?v=19.6.173',
-  './js/kiosk_print.js?v=19.6.173',
-  './js/table_columns.js?v=19.6.173',
-  './js/daily_ops.js?v=19.6.173',
-  './js/i18n.js?v=19.6.173',
-  './js/ask_isabi.js?v=19.6.173',
-  './js/fleet_pnl.js?v=19.6.173',
-  './js/app.js?v=19.6.173',
-  './manifest.json?v=19.6.173',
-  './favicon.ico?v=19.6.173',
-  './favicon-dark.ico?v=19.6.173',
-  './icon.svg?v=19.6.173',
-  './icon-dark.svg?v=19.6.173',
-  './icon-180.png?v=19.6.173',
-  './icon-192.png?v=19.6.173',
-  './icon-512.png?v=19.6.173',
-  './icon-512-maskable.png?v=19.6.173'
+  './css/app.css?v=19.6.174',
+  './css/geo_dispatch.css?v=19.6.174',
+  './css/daily_ops.css?v=19.6.174',
+  './css/ask_isabi.css?v=19.6.174',
+  './css/fleet_pnl.css?v=19.6.174',
+  './js/face.js?v=19.6.174',
+  './js/endpoints.js?v=19.6.174',
+  './js/seed_manifest.js?v=19.6.174',
+  './js/icons.js?v=19.6.174',
+  './js/geo_dispatch.js?v=19.6.174',
+  './js/forms_engine.js?v=19.6.174',
+  './js/pbi_pages.js?v=19.6.174',
+  './js/rdl_reports.js?v=19.6.174',
+  './js/kiosk_print.js?v=19.6.174',
+  './js/table_columns.js?v=19.6.174',
+  './js/daily_ops.js?v=19.6.174',
+  './js/i18n.js?v=19.6.174',
+  './js/ask_isabi.js?v=19.6.174',
+  './js/fleet_pnl.js?v=19.6.174',
+  './js/app.js?v=19.6.174',
+  './manifest.json?v=19.6.174',
+  './favicon.ico?v=19.6.174',
+  './favicon-dark.ico?v=19.6.174',
+  './icon.svg?v=19.6.174',
+  './icon-dark.svg?v=19.6.174',
+  './icon-180.png?v=19.6.174',
+  './icon-192.png?v=19.6.174',
+  './icon-512.png?v=19.6.174',
+  './icon-512-maskable.png?v=19.6.174'
 ];
 
 const VENDOR_ASSETS = [
@@ -119,7 +119,7 @@ self.addEventListener('activate', event => {
 });
 
 function isPersistentDataUrl(url) {
-  return url.pathname.includes('/vendor/') || /\/seed_(core|records)\.json$/.test(url.pathname);
+  return url.pathname.includes('/vendor/') || /\/seed_(core|records|industries)\.json$/.test(url.pathname);
 }
 
 self.addEventListener('fetch', event => {
@@ -232,15 +232,19 @@ self.addEventListener('message', event => {
         VENDOR_ASSETS.forEach(u => targets.push(u));
         if (manifest.core) targets.push(manifest.core);
         if (manifest.records) targets.push(manifest.records);
+        if (manifest.industries) targets.push(manifest.industries);
 
         // Prune superseded seed_*.json?d=<old> entries so DATA_CACHE stays lean across future snapshots
         const existingKeys = await cache.keys();
         const activeCoreHref = manifest.core ? new URL(manifest.core, self.location.href).href : '';
         const activeRecHref = manifest.records ? new URL(manifest.records, self.location.href).href : '';
+        const activeIndHref = manifest.industries ? new URL(manifest.industries, self.location.href).href : '';
         for (const req of existingKeys) {
           if (/\/seed_core\.json\b/.test(req.url) && activeCoreHref && req.url !== activeCoreHref) {
             await cache.delete(req);
           } else if (/\/seed_records\.json\b/.test(req.url) && activeRecHref && req.url !== activeRecHref) {
+            await cache.delete(req);
+          } else if (/\/seed_industries\.json\b/.test(req.url) && activeIndHref && req.url !== activeIndHref) {
             await cache.delete(req);
           }
         }

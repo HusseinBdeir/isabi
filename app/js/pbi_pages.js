@@ -7419,7 +7419,7 @@
         </div>
 
         ${(window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.renderCockpitHtml === 'function')
-          ? window.MFG_FLEET_PNL.renderCockpitHtml({ containerId: 'pbiFleetRevCostCockpit' })
+          ? window.MFG_FLEET_PNL.renderCockpitHtml({ containerId: 'pbiFleetRevCostCockpit', slicerEquipment: sl.equipment || '' })
           : ''}
       `;
     }

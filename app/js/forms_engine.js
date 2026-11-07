@@ -2598,12 +2598,22 @@
 
     if (fType === 'document') {
       const docPartyNames = uniqSorted(supNames.concat(custNames), fIdx && fIdx.supplier);
+      const fmtParentRef = (r, tblLbl) => {
+        if (!r || r.voided) return '';
+        const token = r.ticket_no ? `#${r.ticket_no}` : (r.invoice_no || r.name || '');
+        if (!token) return '';
+        const who = r.supplier || r.customer || r.site_owner || r.truck_owner || r.equipment || '';
+        return who ? `${token} · ${who} (${tblLbl})` : `${token} · ${tblLbl}`;
+      };
       const docRecordRefs = uniqSorted(
-        ((rec.expenses || []).slice(0, 60).map(r => r && r.name))
-          .concat((rec.raw_purchases || []).slice(0, 60).map(r => r && (r.ticket_no || r.name)))
-          .concat((rec.sales_tickets || []).slice(0, 60).map(r => r && (r.ticket_no || r.name)))
-          .concat((rec.settlements || []).slice(0, 40).map(r => r && r.name))
-          .concat((rec.receipts || []).slice(0, 40).map(r => r && r.name))
+        ((rec.expenses || []).filter(r => r && !r.voided).slice(-80).reverse().map(r => fmtParentRef(r, 'Expense')))
+          .concat((rec.raw_purchases || []).filter(r => r && !r.voided).slice(-60).reverse().map(r => fmtParentRef(r, 'Raw Ticket')))
+          .concat((rec.sales_tickets || []).filter(r => r && !r.voided).slice(-60).reverse().map(r => fmtParentRef(r, 'Sales Ticket')))
+          .concat((rec.settlements || []).filter(r => r && !r.voided).slice(-50).reverse().map(r => fmtParentRef(r, 'Settlement')))
+          .concat((rec.receipts || []).filter(r => r && !r.voided).slice(-50).reverse().map(r => fmtParentRef(r, 'Receipt')))
+          .concat((rec.vat_invoices || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'VAT Invoice')))
+          .concat((rec.fuel_intakes || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'Fuel Intake')))
+          .concat((rec.equipment_repairs || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'Repair')))
           .filter(Boolean)
       );
       return `
@@ -2630,16 +2640,21 @@
           ${secHdr('2. Linked Record & Filing Status (Optional)', 'Link this document to an Expense, Raw Ticket, Sales Ticket, Settlement, or keep it as a standalone vault file')}
           ${fld('Linked Record Module', sel('f_parent_table', [
             ['', 'Standalone Document (No Linked Transaction)'],
-            ['expenses', 'Operating Expense (bhf_expense)'],
-            ['raw_purchases', 'Raw Material Ticket (bhf_rawpurchase)'],
-            ['sales_tickets', 'Sales Ticket (bhf_salesticket)'],
-            ['settlements', 'Supplier Settlement (bhf_supplierpayment)'],
-            ['receipts', 'Customer Receipt (bhf_customerreceipt)'],
-            ['vat_invoices', 'Statutory VAT Invoice (bhf_vatinvoice)'],
-            ['fuel_intakes', 'Fuel & Lubricant Intake (bhf_fuelintake)'],
-            ['equipment_repairs', 'Equipment Repair (bhf_equipmentrepair)']
+            ['expenses', 'Operating Expense'],
+            ['raw_purchases', 'Raw Material Ticket'],
+            ['sales_tickets', 'Sales Ticket'],
+            ['settlements', 'Supplier Settlement'],
+            ['receipts', 'Customer Receipt'],
+            ['vat_invoices', 'Statutory VAT Invoice'],
+            ['fuel_intakes', 'Fuel & Lubricant Intake'],
+            ['equipment_repairs', 'Equipment Repair'],
+            ['external_movements', 'External Cash / Bank Movement'],
+            ['loans', 'Partner / Shareholder Loan'],
+            ['loan_settlements', 'Loan Repayment / Settlement'],
+            ['conversions', 'FX Currency Conversion'],
+            ['employments', 'Staff Employment / Contract']
           ], ''), { id: 'wrap_f_parent_table' })}
-          ${fld('Linked Ticket / Voucher #', inp('f_parent_label', 'text', '', 'list="dl_doc_parent_records" placeholder="Optional ticket or voucher # (e.g. EXP-2026-0001)..."') + dl('dl_doc_parent_records', docRecordRefs), { id: 'wrap_f_parent_label' })}
+          ${fld('Linked Ticket / Voucher #', inp('f_parent_label', 'text', '', 'list="dl_doc_parent_records" placeholder="Optional ticket or voucher # (e.g. EXP-2026-0001 or #44210)..."') + dl('dl_doc_parent_records', docRecordRefs), { id: 'wrap_f_parent_label' })}
           ${fld('Filing Status *', sel('f_status', [
             ['Verified & Filed', 'Verified & Filed'],
             ['Pending Review', 'Pending Review'],
