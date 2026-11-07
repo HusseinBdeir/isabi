@@ -8468,7 +8468,7 @@
                     ${hasFullFinRows ? chipBtn('cf_loan', `Borrowing (${fmtNum(streamCounts.loan)})`) : ''}
                     ${hasFullFinRows ? chipBtn('cf_sal', `Salary (${fmtNum(streamCounts.sal)})`) : ''}
                     ${hasFullFinRows ? chipBtn('cf_ext', `External (${fmtNum(streamCounts.ext)})`) : ''}
-                    ${hasFullFinRows ? chipBtn('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
+                    ${hasFullFinRows && streamCounts.extd > 0 ? chipBtn('cf_extd', `Extended (${fmtNum(streamCounts.extd)})`) : ''}
                     ${chipBtn('cf_fx', `FX Conversions (${fmtNum(streamCounts.fx)})`)}
                     ${chipBtn('cf_lbp', 'LBP (LL)')}
                   ` : `
@@ -9426,8 +9426,8 @@
       ]
     },
     external: {
-      title: 'External & Extended Stakeholder Treasury Analytics',
-      subtitle: 'Partner Injections, Withdrawals, Inter-Account Transfers & Extended Stakeholder Movements',
+      title: 'External Stakeholder Treasury Analytics',
+      subtitle: 'Partner Injections, Withdrawals & Inter-Account Treasury Transfers',
       defaultSec: 'treasury',
       sections: [
         { id: 'treasury', label: 'External Treasury, Partner Loans & USD ↔ LBP FX', pageId: 'p15_treasury', badge: 'Analytics' }
@@ -9887,7 +9887,10 @@
       ignoreRls: isUniv,
       ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
     });
-    const rawViews = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
+    const isHoldingTbl = ctx.activeIndustry === 'Holding & Treasury';
+    const rawViews = (meta.key === 'external_movements' && !isHoldingTbl)
+      ? [{ id: 'all', label: 'All External Movements' }]
+      : (meta.views || [{ id: 'all', label: 'All ' + meta.label }]);
     const views = (meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
       ? rawViews.filter(v => v.id !== 'iva')
       : rawViews;
@@ -9898,7 +9901,7 @@
       ? (isRawPrMode ? views.filter(v => /^raw_/i.test(v.id)) : views.filter(v => !/^raw_/i.test(v.id)))
       : views;
     const effGroup = isRawPrMode ? '2 · Purchases, Expenses & Payables' : meta.group;
-    const effLabel = isRawPrMode ? 'Raw & Haulage Agreements' : meta.label;
+    const effLabel = isRawPrMode ? 'Raw & Haulage Agreements' : ((meta.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : meta.label);
     const domainScopedRaw = meta.key === 'price_rules'
       ? (isRawPrMode
           ? rlsScopedRaw.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
@@ -9908,7 +9911,9 @@
     const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeView.id === 'iva');
     const activeCols = (meta.key === 'sales_tickets' && !taxColsVisibleOnHub)
       ? rawActiveCols.filter(c => c !== 'vat')
-      : rawActiveCols;
+      : ((meta.key === 'external_movements' && !isHoldingTbl)
+          ? rawActiveCols.filter(c => c !== 'kind')
+          : rawActiveCols);
     const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
@@ -9978,7 +9983,8 @@
                 const cnt = chipCounts.byKey[t.key] != null ? chipCounts.byKey[t.key] : 0;
                 const isChipAct = t.key === meta.key && !(t.key === 'price_rules' && /^raw_/i.test(activeView.id));
                 const showUnivTag = tUniv && !/Universal/i.test(t.group || '');
-                const mainChip = `<button type="button" class="filter-chip ${isChipAct ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(t.label)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${showUnivTag ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
+                const tChipLbl = (t.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : t.label;
+                const mainChip = `<button type="button" class="filter-chip ${isChipAct ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(tChipLbl)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${showUnivTag ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
                 if (t.key === 'settlements' && (!ctx.canAccessTable || ctx.canAccessTable('price_rules'))) {
                   const rawPrCnt = chipCounts.rawPrCnt;
                   const isRawPrAct = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
@@ -10010,7 +10016,7 @@
                   const rCnt = isRawPr
                     ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
                     : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
-                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : rt.label;
+                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : ((rt.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : rt.label);
                   const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
                   return `<button type="button" class="filter-chip conn-table-chip" data-conn-table-key="${esc(rt.key)}" data-ui-tip="Switch to related table ${esc(rtLbl)}">
                     <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
@@ -10982,7 +10988,7 @@
                   const rCnt = isRawPr
                     ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
                     : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
-                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : rt.label;
+                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : ((rt.key === 'external_movements' && ctx.activeIndustry !== 'Holding & Treasury') ? 'External Movements' : rt.label);
                   const isConnOpen = activeConnKey === rt.key;
                   const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
                   return `<button type="button" class="filter-chip conn-table-chip ${isConnOpen ? 'active' : ''}" data-conn-table-key="${esc(rt.key)}" data-ui-tip="${isConnOpen ? 'Click to close inline preview' : 'Click to preview ' + fmtNum(rCnt) + ' linked ' + esc(rtLbl) + ' records inline'}">

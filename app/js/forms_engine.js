@@ -2342,7 +2342,7 @@
           ${fld('Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid)']], 'Inflow'), { id: 'wrap_tr_dir' })}
-          ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Reserve / Special)']], 'External'), { id: 'wrap_ext_kind' })}
+          ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Stakeholder Ledger)']], 'External'), { id: 'wrap_ext_kind', hidden: !/^bdeir\s*holding$/i.test(String(company || '').trim()) })}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
