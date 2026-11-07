@@ -33982,4 +33982,52 @@ video::-webkit-media-controls-start-playback-button {
   white-space: nowrap !important;
 }
 
+/* Phase 13: Light-Mode-safe inline 1-click operational queue workflow actions & Daily Ops search */
+.btn-ind-wf {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 5px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  border-radius: 999px;
+  background: rgba(200, 157, 84, 0.14);
+  color: var(--ink, #0F172A);
+  border: 1px solid rgba(200, 157, 84, 0.48);
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-ind-wf:hover {
+  background: rgba(200, 157, 84, 0.26);
+  border-color: rgba(200, 157, 84, 0.72);
+  color: var(--ink, #0F172A);
+}
+[data-theme="dark"] .btn-ind-wf {
+  background: rgba(212, 175, 106, 0.18);
+  color: #F8FAFC;
+  border-color: rgba(212, 175, 106, 0.52);
+}
+.dops-search-inp {
+  min-width: 170px;
+  max-width: 240px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--card, #FFFFFF);
+  color: var(--ink, #0F172A);
+  border: 1px solid var(--line, #CBD5E1);
+}
+@media (max-width: 640px) {
+  .dops-search-inp {
+    min-width: 120px;
+    max-width: 100%;
+    flex: 1 1 140px;
+  }
+}
+
+
 

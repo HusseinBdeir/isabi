@@ -320,20 +320,20 @@
     if (s === 'wtc') return 'WTC';
     if (s === 'bbconstruction' || s === 'bbc') return 'BBConstruction';
     if (s === 'lionstransport' || s === 'lions transport' || s === 'lt') return 'Lions Transport';
-    if (s === 'bdeirholding' || s === 'bdeir holding' || s === 'industry:holding & treasury') return 'Bdeir Holding';
+    if (s === 'bdeirholding' || s === 'bdeir holding' || s === 'industry:holding & treasury' || s === 'industry:holding') return 'Bdeir Holding';
     if (s === 'blanca') return 'Blanca';
     if (s === 'launa' || s === 'la una') return 'La Una';
     if (s === 'palms') return 'Palms';
     if (s === 'voile') return 'Voile';
     if (s === 'platinum') return 'Platinum';
-    if (s === 'industry:hospitality & resorts') return 'Hospitality Group';
+    if (s === 'industry:hospitality & resorts' || s === 'industry:hospitality') return 'Hospitality Group';
     if (s === 'korriauto' || s === 'korri auto') return 'Korri Auto';
     if (s === 'shacman') return 'Shacman';
-    if (s === 'industry:automotive & heavy trading') return 'Trading Group';
+    if (s === 'industry:automotive & heavy trading' || s === 'industry:trading') return 'Trading Group';
     if (s === 'properties') return 'Properties';
     if (s === '4235company' || s === '4235 company s.a.l') return '4235 Company S.A.L';
-    if (s === 'industry:real estate & property') return 'Real Estate Group';
-    if (s === 'insurance' || s === 'insurance company' || s === 'industry:insurance & brokerage') return 'Insurance Company';
+    if (s === 'industry:real estate & property' || s === 'industry:realestate') return 'Real Estate Group';
+    if (s === 'insurance' || s === 'insurance company' || s === 'industry:insurance & brokerage' || s === 'industry:insurance') return 'Insurance Company';
     return 'ALL';
   }
 
@@ -463,6 +463,557 @@
     { code: '706', name: 'Pump, Transport & Hauling Revenue / إيرادات الضخ والنقل', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
   ];
 
+  function getRdlIndustryForCo(normCo) {
+    const c = String(normCo || 'ALL');
+    if (c === 'Bdeir Holding') return 'Holding & Treasury';
+    if (c === 'Blanca' || c === 'La Una' || c === 'Palms' || c === 'Voile' || c === 'Platinum' || c === 'Hospitality Group') return 'Hospitality & Resorts';
+    if (c === 'Korri Auto' || c === 'Shacman' || c === 'Trading Group') return 'Automotive & Heavy Trading';
+    if (c === 'Properties' || c === '4235 Company S.A.L' || c === 'Real Estate Group') return 'Real Estate & Property';
+    if (c === 'Insurance Company') return 'Insurance & Brokerage';
+    return 'Manufacturing';
+  }
+
+  const DOMAIN_RDL_TERMS = {
+    'Manufacturing': {
+      qtyUnit: 'm³', qtyDp: 1, qtyCol: 'Qty (m³)', volKpi: 'Concrete Volume', txSingular: 'load', txPlural: 'loads', txCol: 'Loads',
+      avgUnitLbl: 'Avg $/m³', rateCol: 'Unit Rate ($/m³)', sec1Title: '1. Production & Revenue by Concrete Grade / Product',
+      sec1ProdCol: 'Product / Grade', sec1TotalLbl: 'Total Production Mix',
+      sec2Title: '2. Daily Plant Dispatch, Collections & Outflows (Most Recent Operating Days)',
+      sec2VolCol: 'Dispatched (m³)', sec2RmCol: 'RM Purchases ($)', sec2FuelCol: 'Diesel (L)',
+      cfCustIn: 'Customer Receipts & Concrete Collections (تحصيلات الزبائن)',
+      cfRmOut: 'Raw Material & Cement Payments (مدفوعات المواد الأولية)',
+      cfFuelOut: 'Diesel & Fleet Fuel Payments (مدفوعات المحروقات)',
+      cfExpOut: 'Plant Maintenance & General OPEX Paid (مدفوعات المصاريف والصيانة)',
+      plSales: 'Concrete & Product Sales (Excl. VAT)',
+      plRm: 'Raw Materials Intake (Cement, Sand, Aggregate)',
+      plFuel: 'Fleet & Plant Diesel Consumption',
+      plExp: 'Plant Maintenance & General Operating Expenses',
+      custSubTitle: 'Account 411 · Ready-Mix Concrete Customer',
+      custDefault: 'Sabeh Beton S.R.L', siteDefault: 'Baabda', supDefault: 'Holcim Liban S.A.L',
+      supSubtitle: 'Raw Materials, Parts & Plant Supplies',
+      doc21Label: 'Delivery Ticket', doc21NoLbl: 'Delivery Ticket No', doc21DateLbl: 'Dispatch Date',
+      doc21Ref1Lbl: 'Mixer / Truck', doc21Ref1Def: 'Plant Mixer', doc21Ref2Lbl: 'Driver', doc21Ref2Def: 'Assigned Driver',
+      doc21SitePfx: 'Project Site', doc21ProdCol: 'Concrete Grade / Product', doc21SiteCol: 'Pouring Site',
+      doc21TotalLbl: 'Total Certified Concrete Delivery', doc21SigLeft: 'Batching Plant Dispatcher / مسؤول المجبل', doc21SigRight: 'Site Engineer / المستلم في الورشة',
+      rcptDescDef: 'Concrete Supply'
+    },
+    'Holding & Treasury': {
+      qtyUnit: 'tx', qtyDp: 0, qtyCol: 'Transfers', volKpi: 'Treasury Transfers', txSingular: 'transfer', txPlural: 'transfers', txCol: 'Legs',
+      avgUnitLbl: 'Avg / Leg', rateCol: 'Transfer Amount ($)', sec1Title: '1. Intercompany Funding & Advisory by Corridor / Stream',
+      sec1ProdCol: 'Corridor / Stream', sec1TotalLbl: 'Total Treasury & Advisory Mix',
+      sec2Title: '2. Daily Treasury Clearing, Sister Settlements & Overhead Outflows',
+      sec2VolCol: 'Transfers', sec2RmCol: 'Facility Outflows ($)', sec2FuelCol: 'Utility (L)',
+      cfCustIn: 'Sister Entity Repayments & Advisory Receipts (تحصيلات الشركات الشقيقة)',
+      cfRmOut: 'Intercompany Advances & Facility Funding (تمويل الشركات الشقيقة)',
+      cfFuelOut: 'HQ Generator & Fleet Fuel Payments (مدفوعات محروقات المركز)',
+      cfExpOut: 'Holding Shared Services & General OPEX Paid (مدفوعات المصاريف الإدارية)',
+      plSales: 'Intercompany Treasury & Advisory Income (Excl. VAT)',
+      plRm: 'Central Facility & Sister Funding Cost',
+      plFuel: 'HQ Fleet & Utility Fuel Consumption',
+      plExp: 'Shared Corporate Services & General Overhead',
+      custSubTitle: 'Account 451 / 411 · Sister Entity & Counterparty Account',
+      custDefault: 'WTC', siteDefault: 'Group Treasury', supDefault: 'Corporate Advisory Services',
+      supSubtitle: 'Legal, Audit & Shared Corporate Vendors',
+      doc21Label: 'Transfer Advice', doc21NoLbl: 'Transfer Advice No', doc21DateLbl: 'Value Date',
+      doc21Ref1Lbl: 'Channel', doc21Ref1Def: 'Bank Wire', doc21Ref2Lbl: 'Authorized By', doc21Ref2Def: 'Group Treasury',
+      doc21SitePfx: 'Corridor', doc21ProdCol: 'Treasury Corridor / Purpose', doc21SiteCol: 'Sister Scope',
+      doc21TotalLbl: 'Total Certified Treasury Transfer', doc21SigLeft: 'Group Treasury Desk / مكتب الخزينة', doc21SigRight: 'Counterparty Confirmation / توقيع المستلم',
+      rcptDescDef: 'Intercompany Settlement'
+    },
+    'Hospitality & Resorts': {
+      qtyUnit: 'covers', qtyDp: 0, qtyCol: 'Covers / Units', volKpi: 'Covers & Chalets', txSingular: 'close', txPlural: 'closes', txCol: 'Sheets',
+      avgUnitLbl: 'Avg Check', rateCol: 'Avg Rate ($)', sec1Title: '1. Venue, Chalet & Membership Revenue by Category',
+      sec1ProdCol: 'Outlet / Revenue Category', sec1TotalLbl: 'Total Resort Revenue Mix',
+      sec2Title: '2. Daily Venue Closes, POS Collections, Commissary & Energy Outflows',
+      sec2VolCol: 'Covers', sec2RmCol: 'Kitchen & Cellar ($)', sec2FuelCol: 'Gen. Diesel (L)',
+      cfCustIn: 'POS Till Closes, Chalet & Membership Collections (تحصيلات الصناديق والاشتراكات)',
+      cfRmOut: 'Commissary, F&B & Cellar Supplier Payments (مدفوعات المطبخ والمستودع)',
+      cfFuelOut: 'Resort Generator Diesel & Energy Payments (مدفوعات المازوت والطاقة)',
+      cfExpOut: 'Resort Housekeeping, Maintenance & OPEX Paid (مدفوعات الصيانة والتشغيل)',
+      plSales: 'Venue POS, Chalet & Seasonal Membership Revenue (Excl. VAT)',
+      plRm: 'Kitchen, Bar & Cellar Commissary Consumption',
+      plFuel: 'Resort Prime Generator Diesel Consumption',
+      plExp: 'Resort Maintenance, Housekeeping & Operating Expenses',
+      custSubTitle: 'Account 411 · Resort Member & Hospitality Client',
+      custDefault: 'Blanca Main Venue', siteDefault: 'South Coast Resort', supDefault: 'Main Commissary Suppliers',
+      supSubtitle: 'F&B Commissary, Beverage Cellar & Resort Contractors',
+      doc21Label: 'Venue Close Slip', doc21NoLbl: 'Venue Close Ref', doc21DateLbl: 'Operating Date',
+      doc21Ref1Lbl: 'Outlet / Terminal', doc21Ref1Def: 'Main POS', doc21Ref2Lbl: 'Duty Manager', doc21Ref2Def: 'Resort Manager',
+      doc21SitePfx: 'Resort Outlet', doc21ProdCol: 'Revenue Stream / Membership', doc21SiteCol: 'Venue / Cabana',
+      doc21TotalLbl: 'Total Certified Venue Voucher', doc21SigLeft: 'Resort Cashier / أمين الصندوق', doc21SigRight: 'Duty Manager / مدير الصالة',
+      rcptDescDef: 'Resort & Membership Settlement'
+    },
+    'Automotive & Heavy Trading': {
+      qtyUnit: 'units', qtyDp: 0, qtyCol: 'Qty (Units)', volKpi: 'Units Invoiced', txSingular: 'invoice', txPlural: 'invoices', txCol: 'Invoices',
+      avgUnitLbl: 'Avg / Unit', rateCol: 'Unit Price ($)', sec1Title: '1. Commercial Vehicle & OEM Spare Parts Revenue by Line',
+      sec1ProdCol: 'Vehicle Model / Part Line', sec1TotalLbl: 'Total Trading Sales Mix',
+      sec2Title: '2. Daily Showroom & Counter Invoicing, Collections & Import Outflows',
+      sec2VolCol: 'Units', sec2RmCol: 'Imports & Landed ($)', sec2FuelCol: 'Workshop Lube (L)',
+      cfCustIn: 'Showroom, Fleet & Spare Parts Customer Collections (تحصيلات مبيعات الآليات وقطع الغيار)',
+      cfRmOut: 'OEM Import Letters, Customs & Freight Payments (مدفوعات الاستيراد والجمارك)',
+      cfFuelOut: 'PDI & Workshop Lubricants / Fuel Payments (مدفوعات الورشة والزيوت)',
+      cfExpOut: 'Showroom, Warehouse & Warranty OPEX Paid (مدفوعات المعارض والمستودعات)',
+      plSales: 'Heavy Trucks & OEM Spare Parts Sales (Excl. VAT)',
+      plRm: 'Landed Cost of Imported Vehicles & Spare Parts (FOB + CIF)',
+      plFuel: 'Workshop PDI & Service Bay Consumables',
+      plExp: '5-Warehouse, Showroom & Commercial Operating Expenses',
+      custSubTitle: 'Account 411 · Commercial Fleet & Parts Customer',
+      custDefault: 'Commercial Fleet Buyer', siteDefault: 'Main Showroom', supDefault: 'Shaanxi Heavy Duty Automobile Import & Export',
+      supSubtitle: 'Overseas OEM Exporters, Customs Clearing & Freight Forwarders',
+      doc21Label: 'Release & PDI Note', doc21NoLbl: 'Delivery / Release No', doc21DateLbl: 'Release Date',
+      doc21Ref1Lbl: 'Chassis / VIN', doc21Ref1Def: 'Warehouse SKU', doc21Ref2Lbl: 'Warehouse / Book', doc21Ref2Def: 'Main Showroom',
+      doc21SitePfx: 'Dispatch Location', doc21ProdCol: 'Vehicle Model / OEM Part Description', doc21SiteCol: 'Warehouse / Category',
+      doc21TotalLbl: 'Total Certified Goods Release', doc21SigLeft: 'Showroom / Storekeeper / أمين المستودع', doc21SigRight: 'Buyer / Authorized Receiver / توقيع المستلم',
+      rcptDescDef: 'Vehicle & Parts Invoice'
+    },
+    'Real Estate & Property': {
+      qtyUnit: 'units', qtyDp: 0, qtyCol: 'Units / Periods', volKpi: 'Billed Tranches', txSingular: 'bill', txPlural: 'bills', txCol: 'Bills',
+      avgUnitLbl: 'Avg / Tranche', rateCol: 'Period Rate ($)', sec1Title: '1. Commercial Lease Rent & Property Deed Sales by Asset',
+      sec1ProdCol: 'Lease / Deed Stream', sec1TotalLbl: 'Total Portfolio Billing Mix',
+      sec2Title: '2. Daily Rent Invoicing, Tenant Receipts & Fit-Out Contractor Outflows',
+      sec2VolCol: 'Tranches', sec2RmCol: 'Fit-Out & WOs ($)', sec2FuelCol: 'Bldg Gen (L)',
+      cfCustIn: 'Tenant Rent Receipts, Escrow & Buyer Instalments (تحصيلات الإيجارات والمبيعات العقارية)',
+      cfRmOut: 'MEP Fit-Out, Contractor & CAPEX Work Order Payments (مدفوعات المقاولين والتجهيز)',
+      cfFuelOut: 'Building Generator & Common-Area Utility Payments (مدفوعات المولدات والخدمات المشتركة)',
+      cfExpOut: 'Municipal Taxes, Cadastral & Property OPEX Paid (مدفوعات الرسوم البلدية والعقارية)',
+      plSales: 'Commercial & Residential Lease Rent & Deed Revenue (Excl. VAT)',
+      plRm: 'Building Fit-Out, MEP Work Orders & Recoverable Charges',
+      plFuel: 'Common-Area Generator & HVAC Energy Cost',
+      plExp: 'Property Management, Municipal & Cadastral Expenses',
+      custSubTitle: 'Account 411 · Commercial Tenant / Property Buyer',
+      custDefault: 'Commercial Leaseholder', siteDefault: 'Beirut Portfolio', supDefault: 'MEP Fit-Out Contractor',
+      supSubtitle: 'MEP Contractors, Facility Maintenance & Municipal Authorities',
+      doc21Label: 'Lease / Handover Note', doc21NoLbl: 'Schedule / Handover No', doc21DateLbl: 'Billing Date',
+      doc21Ref1Lbl: 'Building Unit', doc21Ref1Def: 'Leased Unit', doc21Ref2Lbl: 'Entity', doc21Ref2Def: 'Portfolio Management',
+      doc21SitePfx: 'Property Asset', doc21ProdCol: 'Lease Period / Property Unit', doc21SiteCol: 'Property / Plot',
+      doc21TotalLbl: 'Total Certified Property Schedule', doc21SigLeft: 'Property Management / إدارة العقارات', doc21SigRight: 'Tenant / Buyer Signature / توقيع المستأجر',
+      rcptDescDef: 'Rent & Property Tranche'
+    },
+    'Insurance & Brokerage': {
+      qtyUnit: 'pol', qtyDp: 0, qtyCol: 'Policies', volKpi: 'Policies Bound', txSingular: 'policy', txPlural: 'policies', txCol: 'Policies',
+      avgUnitLbl: 'Avg GWP', rateCol: 'Premium ($)', sec1Title: '1. Bound Policies, Endorsements & Brokerage Production by Line',
+      sec1ProdCol: 'Insurance Line & Product', sec1TotalLbl: 'Total Bound Portfolio',
+      sec2Title: '2. Daily Policy Binding, Client Premium Collections & Carrier Bordereaux',
+      sec2VolCol: 'Policies', sec2RmCol: 'Carrier Bordereaux ($)', sec2FuelCol: 'Survey Fleet (L)',
+      cfCustIn: 'Policyholder Premium & Instalment Collections (تحصيلات أقساط التأمين من المضمونين)',
+      cfRmOut: 'Carrier Bordereau Net Premium Remittances (تسديدات صافي الأقساط لشركات التأمين)',
+      cfFuelOut: 'Survey & Advocacy Fleet Mobility Payments (مدفوعات التنقل والمعاينة)',
+      cfExpOut: 'Brokerage Desk, Licensing & General OPEX Paid (مدفوعات مصاريف مكتب الوساطة)',
+      plSales: 'Written Premiums, Brokerage Commissions & Policy Fees',
+      plRm: 'Net Carrier Bordereau Payables & Reinsurance Share',
+      plFuel: 'Claims Survey & Field Inspection Mobility',
+      plExp: 'Brokerage Desk Administration & Operating Expenses',
+      custSubTitle: 'Account 4112 · Policyholder Premium Receivable',
+      custDefault: 'Corporate Policyholder', siteDefault: 'Underwriting Carrier', supDefault: 'MedGulf',
+      supSubtitle: 'Underwriting Insurance Carriers & Bordereau Accounts (Account 4017)',
+      doc21Label: 'Policy Borderaux Slip', doc21NoLbl: 'Cover / Policy No', doc21DateLbl: 'Effective Date',
+      doc21Ref1Lbl: 'Underwriting Carrier', doc21Ref1Def: 'Carrier', doc21Ref2Lbl: 'Producer', doc21Ref2Def: 'Brokerage Desk',
+      doc21SitePfx: 'Carrier', doc21ProdCol: 'Insurance Line & Coverage', doc21SiteCol: 'Underwriting Carrier',
+      doc21TotalLbl: 'Total Certified Policy Cover Schedule', doc21SigLeft: 'Brokerage Underwriting / قسم الإصدار', doc21SigRight: 'Policyholder / المضمون',
+      rcptDescDef: 'Policy Premium Instalment'
+    }
+  };
+
+  function getDomainRdlTerms(ind) {
+    return DOMAIN_RDL_TERMS[ind] || DOMAIN_RDL_TERMS['Manufacturing'];
+  }
+
+  function getCoaAccountsForInd(ind) {
+    if (!ind || ind === 'Manufacturing') return COA_ACCOUNTS;
+    const rev701Map = {
+      'Holding & Treasury': 'Intercompany Treasury & Shared Advisory Income / إيرادات الخزينة والخدمات المشتركة',
+      'Hospitality & Resorts': 'Venue POS, Chalet & Seasonal Membership Revenue / إيرادات المنتجعات والاشتراكات',
+      'Automotive & Heavy Trading': 'Commercial Vehicles & OEM Spare Parts Sales / مبيعات الشاحنات وقطع الغيار',
+      'Real Estate & Property': 'Commercial & Residential Lease Rent & Deed Sales / إيرادات عقود الإيجار والعقارات',
+      'Insurance & Brokerage': 'Policy Production, Brokerage Commissions & Fees / إيرادات البوالص وعمولات الوساطة'
+    };
+    const cogs601Map = {
+      'Holding & Treasury': 'Sister Facility Funding & Treasury Direct Cost / أعباء التمويل والتسهيلات المركزية',
+      'Hospitality & Resorts': 'Commissary F&B, Beverage Cellar & Generator Cost / كلفة المطبخ والمستودع والطاقة',
+      'Automotive & Heavy Trading': 'Landed Cost of Imported Vehicles & Parts (FOB + CIF) / كلفة البضاعة المستوردة',
+      'Real Estate & Property': 'Building Fit-Out, MEP Work Orders & Common Utilities / كلفة التجهيز والصيانة العقارية',
+      'Insurance & Brokerage': 'Carrier Net Premium Remittances & Bordereaux / صافي الأقساط المستحقة لشركات التأمين'
+    };
+    const inv311Map = {
+      'Holding & Treasury': 'Short-Term Treasury Placements & Clearing / توظيفات وحسابات مقاصة قصيرة الأجل',
+      'Hospitality & Resorts': 'Kitchen Commissary, Cellar & Resort Supplies Stock / مخزون المطبخ والمشروبات والمنتجع',
+      'Automotive & Heavy Trading': 'Showroom VIN Fleet & 5-Warehouse Spare Parts Stock / مخزون الشاحنات وقطع الغيار',
+      'Real Estate & Property': 'Property Units Held for Sale & Fit-Out Materials / وحدات عقارية ومواد تجهيز',
+      'Insurance & Brokerage': 'Unbilled Renewal Pipeline & Stamps Stock / طوابع وعقود قيد الإصدار'
+    };
+    return [
+      { code: '101', name: 'Subscribed Capital & Partner Equity / رأس المال المكتتب', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
+      { code: '165', name: 'Shareholder & Partner Current Accounts / جاري الشركاء والمساهمين', cls: '1 - Capital & Long-Term Liabilities', section: 'Equity & Long-Term Liabilities', normal: 'C' },
+      { code: '215', name: 'Properties, Buildings, Fit-Out & Equipment / العقارات والأبنية والتجهيزات', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'D' },
+      { code: '218', name: 'Operational Vehicles & Service Fleet / الآليات وأسطول الخدمة', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'D' },
+      { code: '281', name: 'Accumulated Depreciation / الاستهلاكات المتراكمة', cls: '2 - Fixed Assets', section: 'Fixed & Non-Current Assets', normal: 'C' },
+      { code: '311', name: inv311Map[ind] || 'Operating Merchandise & Supplies Stock / مخزون البضائع', cls: '3 - Inventory', section: 'Current Assets', normal: 'D' },
+      { code: '401', name: 'Suppliers, Contractors & Carriers Payable / ذمم الموردين وشركات التأمين', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+      { code: '411', name: 'Customers, Tenants & Policyholders Receivable / ذمم الزبائن والمستأجرين', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
+      { code: '421', name: 'Personnel · Salaries & Advances / ذمم الموظفين والسلف', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+      { code: '442', name: 'State · VAT Collectible & Deductible / الضريبة على القيمة المضافة', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+      { code: '467', name: 'Sister Entities, Escrow & Clearing Accounts / ذمم الشركات الشقيقة وحسابات التسوية', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
+      { code: '512', name: 'Banks & Financial Institutions (Fresh USD) / البنوك والمؤسسات المالية', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
+      { code: '531', name: 'Cash on Hand & Safe / الصندوق النقدي', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
+      { code: '601', name: cogs601Map[ind] || 'Direct Operating Cost of Sales / كلفة المبيعات المباشرة', cls: '6 - Expenses', section: 'Cost of Goods Sold', normal: 'D' },
+      { code: '615', name: 'Facility, Asset & Equipment Maintenance / الصيانة والإصلاحات', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
+      { code: '622', name: 'Contracted Services & General Operations / الخدمات الخارجية والمصاريف العامة', cls: '6 - Expenses', section: 'Operating Expenses', normal: 'D' },
+      { code: '641', name: 'Staff Salaries, Wages & Benefits / الرواتب والأجور', cls: '6 - Expenses', section: 'Payroll & Personnel', normal: 'D' },
+      { code: '701', name: rev701Map[ind] || 'Primary Operating Revenue / الإيرادات التشغيلية', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' },
+      { code: '706', name: 'Ancillary Services, Fees & Recoveries / إيرادات الخدمات والرسوم المساندة', cls: '7 - Revenue', section: 'Operating Revenue', normal: 'C' }
+    ];
+  }
+
+  function hydrateNonMfgRdlStreams(ind, co, allowedCos, STATE, rawReceipts, rawSettlements) {
+    const E = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) || {};
+    const salesAll = [];
+    const receiptLedgerAll = [];
+    const rmAll = [];
+    const apRmLegsAll = [];
+    const settlementLedgerAll = [];
+    const fuelAll = [];
+    const extraReceipts = [];
+    const r2 = v => Math.round((Number(v || 0) + Number.EPSILON) * 100) / 100;
+
+    const pushSale = s => {
+      const tot = r2(s.total_usd);
+      const vat = r2(s.vat_usd || 0);
+      const qty = Number(s.qty || 1) || 1;
+      const isCredit = s.is_credit !== undefined ? Boolean(s.is_credit) : true;
+      const paid = s.paid_usd !== undefined ? r2(s.paid_usd) : (isCredit ? 0 : tot);
+      salesAll.push({
+        id: String(s.id || s.ticket_no || ('DOM-' + (salesAll.length + 1))),
+        date: String(s.date || '2026-09-30').slice(0, 10),
+        rep_date: String(s.rep_date || s.date || '2026-09-30').slice(0, 10),
+        co: s.co || co,
+        ticket_no: String(s.ticket_no || s.id || ''),
+        invoice_no: String(s.invoice_no || s.vat_inv || s.ticket_no || s.id || ''),
+        vat_inv: String(s.vat_inv || ''),
+        customer: s.customer || 'Client Account',
+        site: s.site || s.co || co,
+        product: s.product || 'Operating Service',
+        truck: s.truck || '',
+        driver: s.driver || '',
+        qty,
+        unit_price: s.unit_price !== undefined ? r2(s.unit_price) : r2(tot / Math.max(1, qty)),
+        vat_usd: vat,
+        total_usd: tot,
+        paid_usd: paid,
+        balance_usd: isCredit ? r2(tot - paid) : 0,
+        pay_method: s.pay_method || (isCredit ? 'Credit' : 'Cash'),
+        is_cash: !isCredit,
+        is_credit: isCredit,
+        is_barter: false,
+        is_return: tot < 0
+      });
+    };
+
+    const pushRcpt = rc => {
+      const amt = r2(rc.paid_usd || rc.amount || 0);
+      if (Math.abs(amt) < 0.005) return;
+      const id = String(rc.id || ('RCPT-' + (receiptLedgerAll.length + 1)));
+      const d = String(rc.date || '2026-09-30').slice(0, 10);
+      receiptLedgerAll.push({
+        id,
+        date: d,
+        rep_date: d,
+        co: rc.co || co,
+        ticket_no: rc.ref || id,
+        invoice_no: rc.ref || id,
+        vat_inv: '',
+        customer: rc.customer || 'Client Account',
+        site: rc.site || 'Account Settlement',
+        product: rc.product || 'Official Receipt',
+        truck: '',
+        driver: '',
+        qty: 0,
+        unit_price: 0,
+        vat_usd: 0,
+        total_usd: 0,
+        paid_usd: amt,
+        balance_usd: -amt,
+        pay_method: rc.pay_method || 'Bank / Fresh USD',
+        is_cash: false,
+        is_credit: false,
+        is_barter: false,
+        is_return: false,
+        is_receipt_row: true
+      });
+      extraReceipts.push({
+        id,
+        date: d,
+        rep_date: d,
+        company: rc.co || co,
+        name: rc.ref || id,
+        customer: rc.customer || 'Client Account',
+        notes: rc.site || 'Account Settlement',
+        method: rc.pay_method || 'Bank / Fresh USD',
+        usd_amount: amt,
+        amount: amt
+      });
+    };
+
+    const pushRm = rm => {
+      const tot = r2(rm.total_usd || 0);
+      const paid = r2(rm.paid_usd !== undefined ? rm.paid_usd : 0);
+      if (Math.abs(tot) < 0.005 && Math.abs(paid) < 0.005) return;
+      const row = {
+        id: String(rm.id || ('PUR-' + (rmAll.length + 1))),
+        date: String(rm.date || '2026-09-30').slice(0, 10),
+        rep_date: String(rm.date || '2026-09-30').slice(0, 10),
+        co: rm.co || co,
+        voucher: String(rm.voucher || rm.id || ''),
+        name: String(rm.voucher || rm.id || ''),
+        leg: 'material',
+        material: rm.material || 'Direct Supply',
+        supplier: rm.supplier || 'Vendor',
+        driver: rm.driver || '',
+        plate: rm.plate || '',
+        qty: Number(rm.qty || 1),
+        unit: rm.unit || 'lot',
+        unit_price: r2(tot / Math.max(1, Number(rm.qty || 1))),
+        total_usd: tot,
+        paid_usd: paid
+      };
+      rmAll.push(row);
+      apRmLegsAll.push(row);
+    };
+
+    if (ind === 'Hospitality & Resorts' && typeof E.computeHospitalityOperations === 'function') {
+      const hsp = E.computeHospitalityOperations({ ignoreSearch: true, company: STATE.company });
+      (hsp.venueRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        const isCr = /credit|account|receivable/i.test(String(r.method || ''));
+        pushSale({
+          id: r.id, date: r.date, co: r.company, ticket_no: r.id,
+          vat_inv: Number(r.vat_usd || 0) > 0 ? String(r.id) : '',
+          customer: `${r.company} · ${r.outlet || 'Main Venue'}`,
+          site: r.outlet || r.company,
+          product: r.category || 'Venue Close',
+          driver: r.method || 'POS Close',
+          qty: Math.max(1, Number(r.covers || r.rooms || 1)),
+          vat_usd: r.vat_usd, total_usd: r.ttc_usd,
+          is_credit: isCr, paid_usd: isCr ? 0 : r.ttc_usd,
+          pay_method: r.method || 'Cash & Card'
+        });
+      });
+      (hsp.membershipRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        const cont = Number(r.contract_usd || 0);
+        const vat = r2(cont - cont / 1.11);
+        pushSale({
+          id: r.id, date: r.start_date || '2026-06-01', co: r.company, ticket_no: r.id,
+          vat_inv: String(r.id),
+          customer: r.member || 'Seasonal Member',
+          site: `${r.company} · ${r.unit || 'Cabana'}`,
+          product: `Seasonal Membership (${r.season || '2026'})`,
+          truck: r.unit || 'Cabana', driver: r.season || '2026',
+          qty: 1, vat_usd: vat, total_usd: cont, is_credit: true, paid_usd: 0, pay_method: 'Membership Contract'
+        });
+        if (Number(r.paid_usd || 0) > 0) {
+          pushRcpt({
+            id: `RC-${r.id}`, ref: `RC-${r.id}`, date: r.due_date || r.start_date || '2026-07-15',
+            co: r.company, customer: r.member || 'Seasonal Member',
+            site: `${r.unit || 'Cabana'} (${r.season || '2026'})`,
+            pay_method: 'Fresh USD / Card', paid_usd: r.paid_usd
+          });
+        }
+      });
+      (hsp.stockRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        pushRm({
+          id: r.id, voucher: r.id, date: r.date, co: r.company,
+          supplier: `${r.store || 'Commissary'} Suppliers (${r.company})`,
+          material: r.item_group || 'F&B Stock', qty: 1, unit: 'lot',
+          total_usd: r.purchases_in_usd, paid_usd: r2(Number(r.purchases_in_usd || 0) * 0.82)
+        });
+      });
+      (hsp.energyRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        const lit = Number(r.diesel_used_l || 0);
+        if (lit > 0) {
+          fuelAll.push({
+            id: r.id, date: r.date, rep_date: r.date, co: r.company, voucher: r.id, name: r.id,
+            equip: r.asset || 'Prime Generator', equip_type: 'Generator', driver: r.company,
+            station: `${r.company} Generator Tank`, supplier: 'Generator Diesel Supply',
+            odometer: Number(r.run_hours || 0), meter_unit: 'h', liters: lit, price_per_l: 0.92,
+            total_usd: r2(lit * 0.92), paid_usd: r2(lit * 0.92)
+          });
+        }
+      });
+    } else if (ind === 'Automotive & Heavy Trading' && typeof E.computeTradingOperations === 'function') {
+      const trd = E.computeTradingOperations();
+      (trd.salesRows || []).filter(r => !r.is_gap && coMatch(r.company, co, allowedCos)).forEach(r => {
+        const vInv = `${r.book || 'INV'}-${r.seq || r.id}`;
+        pushSale({
+          id: r.id, date: r.date, co: r.company, ticket_no: r.id, invoice_no: vInv,
+          vat_inv: Number(r.vat_usd || 0) > 0 ? vInv : '',
+          customer: r.customer, site: r.category || 'Showroom', product: r.item,
+          truck: r.chassis || r.book || '', driver: r.company,
+          qty: Math.max(1, Number(r.qty || 1)), vat_usd: r.vat_usd, total_usd: r.ttc_usd,
+          is_credit: true, paid_usd: 0, pay_method: 'Commercial Invoice'
+        });
+      });
+      (trd.receivableRows || []).filter(r => coMatch(r.company, co, allowedCos) && Number(r.settled_usd || 0) > 0).forEach(r => {
+        pushRcpt({
+          id: `RC-${r.id}`, ref: `RC-${r.id}`, date: (r.promise_date && r.promise_date <= '2026-11-06') ? r.promise_date : '2026-08-25',
+          co: r.company, customer: r.customer, site: `${r.company} Commercial AR`,
+          pay_method: 'Bank Transfer / Fresh USD', paid_usd: r.settled_usd
+        });
+      });
+      (trd.importRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        pushRm({
+          id: r.id, voucher: r.id, date: r.date, co: r.company,
+          supplier: r.supplier, material: `${r.origin || 'Import'} · ${r.container_bl || r.id}`,
+          qty: Math.max(1, Number(r.ordered_qty || 1)), unit: 'units',
+          total_usd: r.total_landed_usd, paid_usd: r.fob_usd
+        });
+      });
+    } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
+      const re = E.computeRealEstateOperations({ ignoreSearch: true, company: STATE.company });
+      (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        const hasVat = Number(r.vat_usd || 0) > 0;
+        const taxSeq = (r.tax_seq && !/N\/A/i.test(r.tax_seq)) ? String(r.tax_seq) : String(r.id);
+        pushSale({
+          id: r.id, date: r.date, co: r.company, ticket_no: r.id, invoice_no: taxSeq,
+          vat_inv: hasVat ? taxSeq : '',
+          customer: r.tenant, site: r.property || r.company,
+          product: `Lease Rent · ${r.period || 'Period'}`,
+          truck: r.tax_seq || '', driver: r.company,
+          qty: 1, vat_usd: r.vat_usd, total_usd: r.amount_ttc_usd,
+          is_credit: true, paid_usd: 0, pay_method: 'Lease Invoice'
+        });
+      });
+      (re.sales || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        pushSale({
+          id: r.id, date: r.date, co: r.company, ticket_no: r.id, invoice_no: r.id,
+          vat_inv: '', customer: r.buyer, site: `${r.property} · ${r.unit || ''}`,
+          product: `Property Sale Contract · ${r.unit || r.property}`,
+          truck: r.unit || '', driver: r.deed_status || 'Notary',
+          qty: 1, vat_usd: 0, total_usd: r.contract_usd,
+          is_credit: true, paid_usd: 0, pay_method: 'Buyer Instalments'
+        });
+        if (Number(r.paid_usd || 0) > 0) {
+          pushRcpt({
+            id: `RC-${r.id}`, ref: `RC-${r.id}`, date: r.date, co: r.company,
+            customer: r.buyer, site: `${r.property} (${r.unit || 'Deed'})`,
+            pay_method: 'Escrow / Banker Cheque', paid_usd: r.paid_usd
+          });
+        }
+      });
+      (re.receipts || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        pushRcpt({
+          id: r.id, ref: r.id, date: r.date, co: r.company,
+          customer: r.tenant, site: r.property, pay_method: r.method || 'Bank Transfer',
+          paid_usd: r.allocated_inv_usd || r.gross_usd
+        });
+      });
+      (re.workorders || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
+        pushRm({
+          id: r.id, voucher: r.id, date: r.date, co: r.company,
+          supplier: r.contractor, material: `${r.property} · ${r.unit} (${r.category})`,
+          qty: 1, unit: 'job', total_usd: r.actual_usd,
+          paid_usd: r.status === 'Completed' ? r.actual_usd : r2(Number(r.actual_usd || 0) * 0.5)
+        });
+      });
+    } else if (ind === 'Insurance & Brokerage' && typeof E.computeInsuranceOperations === 'function') {
+      const ins = E.computeInsuranceOperations();
+      (ins.policies || []).forEach(r => {
+        const billTot = r2(Number(r.gross_prem_usd || 0) + Number(r.policy_fee_usd || 0) - Number(r.discount_usd || 0));
+        pushSale({
+          id: r.id, date: r.date, co: r.company || 'Insurance Company', ticket_no: r.id, invoice_no: r.id,
+          vat_inv: '', customer: r.client, site: r.carrier,
+          product: `${r.line} · ${r.product || r.type || 'Policy'}`,
+          truck: r.carrier, driver: r.producer || 'Brokerage Desk',
+          qty: 1, vat_usd: 0, total_usd: billTot,
+          is_credit: true, paid_usd: 0, pay_method: 'Policy Billing'
+        });
+      });
+      (ins.billing || []).forEach(r => {
+        const col = Number(r.collected_usd != null ? r.collected_usd : (r.paid_usd != null ? r.paid_usd : (r.status === 'Paid' ? r.amount_usd : 0)));
+        if (col > 0) {
+          pushRcpt({
+            id: r.id, ref: r.id, date: r.due_date || r.date || '2026-09-20',
+            co: r.company || 'Insurance Company', customer: r.client,
+            site: `${r.policy_no || ''} · ${r.carrier || 'Carrier'}`,
+            pay_method: r.method || 'Fresh USD / Cheque', paid_usd: col
+          });
+        }
+      });
+      (ins.remittances || []).forEach(r => {
+        pushRm({
+          id: r.id, voucher: r.id, date: r.date || '2026-09-28',
+          co: r.company || 'Insurance Company', supplier: r.carrier,
+          material: `Carrier Bordereau (${r.period || r.id})`,
+          qty: Math.max(1, Number(r.policies_count || r.policies_settled || 1)), unit: 'pol',
+          total_usd: r.net_payable_4017_usd || r.payable_usd || 0,
+          paid_usd: r.remitted_usd || r.paid_usd || 0
+        });
+      });
+    } else if (ind === 'Holding & Treasury' && typeof E.computeIntercompanyInteractions === 'function') {
+      const icRes = E.computeIntercompanyInteractions({ ignoreSearch: true });
+      (icRes.rows || []).forEach((r, idx) => {
+        const amt = Number(r.usd || r.amount_usd || 0);
+        if (amt <= 0) return;
+        const fCo = r.fromCo || r.initiatorCo || 'Bdeir Holding';
+        const tCo = r.toCo || r.mirrorCo || 'Sister Entity';
+        if (fCo === 'Bdeir Holding' || idx < 45) {
+          pushSale({
+            id: r.id || `IC-${idx + 1}`, date: r.date || '2026-09-15', co: 'Bdeir Holding',
+            ticket_no: r.id || `IC-${idx + 1}`, invoice_no: r.id || `IC-${idx + 1}`, vat_inv: '',
+            customer: tCo === 'Bdeir Holding' ? fCo : tCo,
+            site: `${fCo} to ${tCo}`,
+            product: r.notes || 'Intercompany Treasury Transfer',
+            truck: r.method || 'Bank Wire', driver: fCo,
+            qty: 1, vat_usd: 0, total_usd: amt,
+            is_credit: true, paid_usd: 0, pay_method: r.method || 'Bank Transfer'
+          });
+          if (r.matched || r.reconciled) {
+            pushRcpt({
+              id: `RC-${r.id || idx}`, ref: `RC-${r.id || idx}`, date: r.date || '2026-09-15',
+              co: 'Bdeir Holding', customer: tCo === 'Bdeir Holding' ? fCo : tCo,
+              site: 'Mirrored Sister Clearing', pay_method: r.method || 'Sister Mirror', paid_usd: amt
+            });
+          }
+        } else if (tCo === 'Bdeir Holding') {
+          pushRcpt({
+            id: `RC-${r.id || idx}`, ref: `RC-${r.id || idx}`, date: r.date || '2026-09-15',
+            co: 'Bdeir Holding', customer: fCo, site: 'Inbound Sister Transfer',
+            pay_method: r.method || 'Bank Transfer', paid_usd: amt
+          });
+        }
+      });
+    }
+
+    (rawReceipts || []).forEach(rc => {
+      pushRcpt({
+        id: rc.id, ref: rc.name || rc.id, date: rc.date, co: rc.company || co,
+        customer: rc.customer || 'Client Account', site: rc.notes || 'Receipt',
+        pay_method: rc.method || 'Cash USD', paid_usd: Number(rc.usd_amount || rc.amount || 0)
+      });
+    });
+    (rawSettlements || []).forEach(s => {
+      const amt = r2(s.usd_amount || s.amount || 0);
+      if (Math.abs(amt) > 0.005) {
+        settlementLedgerAll.push({
+          id: s.id, date: s.date, rep_date: s.rep_date || s.date, co: s.company || co,
+          voucher: s.name || s.id, name: s.name || '', leg: 'settlement',
+          pay_method: s.method || 'Bank', material: s.notes || 'Supplier Settlement',
+          supplier: s.supplier || 'Vendor', driver: '', plate: '', qty: 0, unit: 'USD',
+          unit_price: 0, total_usd: 0, paid_usd: amt, is_settlement_row: true
+        });
+      }
+    });
+
+    return {
+      salesAll,
+      receiptLedgerAll,
+      arLedgerAll: [...salesAll, ...receiptLedgerAll],
+      rmAll,
+      apRmLegsAll,
+      settlementLedgerAll,
+      apRmLedgerAll: [...apRmLegsAll, ...settlementLedgerAll],
+      fuelAll,
+      extraReceipts
+    };
+  }
+
   function periodBucket(dateStr, periodMode) {
     const s = String(dateStr || '').slice(0, 10);
     if (!s || s.length < 7) return 'Unknown';
@@ -482,12 +1033,15 @@
     }
     const rdl = ensureRdlState(STATE, SEED);
     const co = normalizeStateCo(STATE.company);
+    const ind = getRdlIndustryForCo(co);
     const basis = STATE.basis || STATE.dateBasis || 'tx';
     const recs = (SEED && SEED.records) || {};
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
     const allowedSig = allowedCos ? allowedCos.join(',') : 'ALL';
     const offScope = Boolean(STATE._officialScopeActive);
-    const sig = `${co}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
+    const indRev = (SEED && (SEED._indCustomRev || SEED._industryRev)) || 0;
+    const editRev = STATE && STATE.industryRowEdits ? Object.keys(STATE.industryRowEdits).length : 0;
+    const sig = `${co}|${ind}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -511,7 +1065,7 @@
         vatInvByCust.set(vi.customer, arr);
       });
 
-      const salesAll = rawSales.map(r => {
+      let salesAll = rawSales.map(r => {
         const m = String(r.method || '').trim();
         const pNorm = String(r.product || '').trim().toLowerCase();
         const sign = (pNorm === 'remove' || m === 'Free' || m === 'Remove' || m === 'Config' || m === 'VATConfig') ? 0 : ((m === 'C Return' || m === 'CR Return' || m === 'Cash Return' || m === 'Credit Return' || r.return) ? -1 : 1);
@@ -555,7 +1109,7 @@
       });
 
       // Separate customer receipt ledger entries for SOA, Aging, Cash Flow & Journal (never mixed into salesAll ticket register)
-      const receiptLedgerAll = [];
+      let receiptLedgerAll = [];
       rawReceipts.forEach(rc => {
         const m = String(rc.method || '').trim();
         if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
@@ -584,7 +1138,7 @@
           is_receipt_row: true
         });
       });
-      const arLedgerAll = [...salesAll, ...receiptLedgerAll];
+      let arLedgerAll = [...salesAll, ...receiptLedgerAll];
 
       const expAll = rawExp.map(r => {
         const m = String(r.method || 'Cash').trim();
@@ -641,7 +1195,7 @@
         };
       });
 
-      const rmAll = rawRm.map(r => {
+      let rmAll = rawRm.map(r => {
         const tot = Number(r.total !== undefined ? r.total : (r.total_usd || 0));
         const isCash = String(r.method || '').toLowerCase() === 'cash';
         const paid = isCash ? tot : 0;
@@ -665,7 +1219,7 @@
       });
 
       // Split raw_purchases into explicit Leg 1 (Material -> site_owner || truck_owner) & Leg 2 (Haulage -> truck_owner) for Account 401 AP
-      const apRmLegsAll = [];
+      let apRmLegsAll = [];
       rawRm.forEach(r => {
         const isCash = String(r.method || '').toLowerCase() === 'cash';
         const matCost = Number(r.cost !== undefined ? r.cost : (Number(r.total || r.total_usd || 0) - Number(r.trans_cost || 0)));
@@ -715,7 +1269,7 @@
       });
 
       // Separate supplier settlements for Supplier Balances, SOA, Cash Flow & VAT (never mixed into rmAll intake register)
-      const settlementLedgerAll = [];
+      let settlementLedgerAll = [];
       const vatPaidAll = [];
       expAll.forEach(ex => {
         if (ex.is_vat_only && Math.abs(ex.vat_usd) >= 0.005) {
@@ -774,12 +1328,12 @@
           is_settlement_row: true
         });
       });
-      const apRmLedgerAll = [...apRmLegsAll, ...settlementLedgerAll];
+      let apRmLedgerAll = [...apRmLegsAll, ...settlementLedgerAll];
 
       const eqMap = new Map();
       ((recs.equipment || [])).forEach(e => { if (e && e.name) eqMap.set(e.name, e.type || 'Heavy Equipment'); });
 
-      const fuelAll = rawFuel.map(r => {
+      let fuelAll = rawFuel.map(r => {
         const liters = Number(r.litres !== undefined ? r.litres : (r.liters || 0));
         const rate = Number(r.price_per_l || 0.95);
         const tot = Number(r.total_usd || (liters * rate));
@@ -811,6 +1365,20 @@
           paid_usd: tot
         };
       });
+
+      let rawReceiptsForDocs = rawReceipts;
+      if (ind !== 'Manufacturing') {
+        const hyd = hydrateNonMfgRdlStreams(ind, co, allowedCos, STATE, rawReceipts, rawSettlements);
+        salesAll = hyd.salesAll;
+        receiptLedgerAll = hyd.receiptLedgerAll;
+        arLedgerAll = hyd.arLedgerAll;
+        rmAll = hyd.rmAll;
+        apRmLegsAll = hyd.apRmLegsAll;
+        settlementLedgerAll = hyd.settlementLedgerAll;
+        apRmLedgerAll = hyd.apRmLedgerAll;
+        fuelAll = hyd.fuelAll;
+        rawReceiptsForDocs = [...rawReceipts, ...(hyd.extraReceipts || [])];
+      }
 
       const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
       const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
@@ -948,7 +1516,7 @@
         ticketById.set(String(t.id || t.ticket_no), t);
       });
 
-      const receiptCandidates = rawReceipts
+      const receiptCandidates = rawReceiptsForDocs
         .slice()
         .sort((a, b) => {
           const db = rowDate(b, basis), da = rowDate(a, basis);
@@ -962,9 +1530,9 @@
           invoice_no: rc.name || String(rc.id),
           ticket_no: rc.name || String(rc.id),
           vat_inv: rc.name || String(rc.id),
-          customer: rc.customer || '—',
+          customer: rc.customer || '-',
           site: rc.notes || 'Account Settlement',
-          product: 'Customer Receipt',
+          product: ind === 'Manufacturing' ? 'Customer Receipt' : (getDomainRdlTerms(ind).rcptDescDef || 'Account Receipt'),
           qty: 0,
           pay_method: rc.method || 'Cash USD',
           total_usd: Number(rc.usd_amount || rc.amount || 0),
@@ -978,6 +1546,9 @@
 
       _cachedCoKey = sig;
       _cachedCtxData = {
+        ind,
+        coaAccounts: getCoaAccountsForInd(ind),
+        domainTerms: getDomainRdlTerms(ind),
         salesAll, expAll, payAll, rmAll, apRmLegsAll, fuelAll, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
@@ -1012,15 +1583,20 @@
       return _cachedCtxData._allJes.filter(j => j.date <= capDate);
     }
     const basis = ctx.basis;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const entries = [];
     let jSeq = 1000;
 
-    // Opening balances (Capital, Batching Plant, Fleet, Accumulated Depreciation, Opening Cash & Inventory)
-    const coScale = ctx.co === 'ALL' ? 1.85 : (ctx.co === 'WTC' ? 1.0 : (ctx.co === 'BBConstruction' ? 0.55 : 0.30));
+    // Opening balances (Lebanese CoA Classes 1-5, balanced Dr === Cr)
+    const coScale = isMfg
+      ? (ctx.co === 'ALL' ? 1.85 : (ctx.co === 'WTC' ? 1.0 : (ctx.co === 'BBConstruction' ? 0.55 : 0.30)))
+      : (RDL_GROUP_COMPANIES[ctx.co] ? 1.40 : 0.75);
     const openDate = '2020-01-01';
-    const acctLookup = new Map(COA_ACCOUNTS.map(a => [a.code, a]));
+    const acctLookup = new Map(coaList.map(a => [a.code, a]));
     const pushJe = (date, ref, source, acctCode, subName, desc, dr, cr) => {
-      const a = acctLookup.get(acctCode) || COA_ACCOUNTS[0];
+      const a = acctLookup.get(acctCode) || coaList[0];
       entries.push({
         je_no: `JE-${++jSeq}`,
         date,
@@ -1038,25 +1614,39 @@
       });
     };
 
-    pushJe(openDate, 'OB-001', 'Opening', '215', 'Plant & Mixers', 'Opening Batching Plant & Concrete Pumps', 680000 * coScale, 0);
-    pushJe(openDate, 'OB-001', 'Opening', '218', 'Heavy Fleet', 'Opening Transit Mixers & Silo Trucks', 420000 * coScale, 0);
-    pushJe(openDate, 'OB-001', 'Opening', '281', 'Accum. Depr.', 'Opening Accumulated Depreciation', 0, 310000 * coScale);
-    pushJe(openDate, 'OB-001', 'Opening', '311', 'Plant Silos', 'Opening Cement & Aggregate Stock', 95000 * coScale, 0);
-    pushJe(openDate, 'OB-001', 'Opening', '512', 'Fresh USD Bank', 'Opening Bank Working Capital', 145000 * coScale, 0);
-    pushJe(openDate, 'OB-001', 'Opening', '531', 'Plant Safe', 'Opening Cash on Hand', 35000 * coScale, 0);
-    pushJe(openDate, 'OB-001', 'Opening', '101', 'Bdeir Holding / Partners', 'Subscribed Capital & Paid-in Equity', 0, 850000 * coScale);
-    pushJe(openDate, 'OB-001', 'Opening', '165', 'Shareholder Current Account', 'Partner Financing Current Account', 0, 215000 * coScale);
+    if (isMfg) {
+      pushJe(openDate, 'OB-001', 'Opening', '215', 'Plant & Mixers', 'Opening Batching Plant & Concrete Pumps', 680000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '218', 'Heavy Fleet', 'Opening Transit Mixers & Silo Trucks', 420000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '281', 'Accum. Depr.', 'Opening Accumulated Depreciation', 0, 310000 * coScale);
+      pushJe(openDate, 'OB-001', 'Opening', '311', 'Plant Silos', 'Opening Cement & Aggregate Stock', 95000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '512', 'Fresh USD Bank', 'Opening Bank Working Capital', 145000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '531', 'Plant Safe', 'Opening Cash on Hand', 35000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '101', 'Bdeir Holding / Partners', 'Subscribed Capital & Paid-in Equity', 0, 850000 * coScale);
+      pushJe(openDate, 'OB-001', 'Opening', '165', 'Shareholder Current Account', 'Partner Financing Current Account', 0, 215000 * coScale);
+    } else {
+      const entSub = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Operating Portfolio';
+      pushJe(openDate, 'OB-001', 'Opening', '215', entSub, 'Opening Fixed Assets & Operating Infrastructure', 680000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '218', entSub, 'Opening Vehicles, Equipment & Fit-Out', 420000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '281', 'Accum. Depr.', 'Opening Accumulated Depreciation', 0, 310000 * coScale);
+      pushJe(openDate, 'OB-001', 'Opening', '311', entSub, 'Opening Operating Stock & Supplies', 95000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '512', 'Fresh USD Bank', 'Opening Bank Working Capital', 145000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '531', 'Main Safe', 'Opening Cash & Treasury Safe', 35000 * coScale, 0);
+      pushJe(openDate, 'OB-001', 'Opening', '101', 'Bdeir Holding / Partners', 'Subscribed Capital & Paid-in Equity', 0, 850000 * coScale);
+      pushJe(openDate, 'OB-001', 'Opening', '165', 'Shareholder Current Account', 'Partner Financing Current Account', 0, 215000 * coScale);
+    }
 
     ctx.salesAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
-      const tot = Number(r.total_usd || 0);
-      const vat = Number(r.vat_usd || 0);
-      const net = tot - vat;
-      const paid = Number(r.paid_usd || 0);
+      const tot = isMfg ? Number(r.total_usd || 0) : Math.round(Number(r.total_usd || 0) * 100) / 100;
+      const vat = isMfg ? Number(r.vat_usd || 0) : Math.round(Number(r.vat_usd || 0) * 100) / 100;
+      const net = isMfg ? (tot - vat) : Math.round((tot - vat) * 100) / 100;
+      const paid = isMfg ? Number(r.paid_usd || 0) : Math.round(Number(r.paid_usd || 0) * 100) / 100;
       const ref = r.vat_inv ? `VAT-${r.vat_inv}` : String(r.invoice_no || r.ticket_no || 'SL');
       const cust = r.customer || 'Walk-in Customer';
-      const desc = `${r.product || 'Concrete'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim();
+      const desc = isMfg
+        ? `${r.product || 'Concrete'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim()
+        : `${r.product || dt.rcptDescDef} · ${fmtNum(r.qty, dt.qtyDp)} ${dt.qtyUnit}${r.site ? ' · ' + r.site : ''}`.trim();
       const revAcct = /pump|haul|trans/i.test(String(r.product || '')) ? '706' : '701';
       const recAcct = r.is_barter ? '467' : '411';
       if (tot > 0) {
@@ -1101,10 +1691,10 @@
       const tot = Number(r.total_usd || 0);
       const paid = Number(r.paid_usd || 0);
       if (Math.abs(tot) < 0.005 && Math.abs(paid) < 0.005) return;
-      const sup = r.supplier || 'Raw Material Supplier';
+      const sup = r.supplier || (isMfg ? 'Raw Material Supplier' : 'Direct Vendor');
       const ref = String(r.voucher || r.name || 'RM');
-      const src = r.leg === 'haulage' ? 'Raw Haulage' : 'Raw Material';
-      const desc = `${r.material || 'Raw Material'} · ${fmtNum(r.qty, 2)} ${r.unit || 't'}`;
+      const src = r.leg === 'haulage' ? (isMfg ? 'Raw Haulage' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply');
+      const desc = `${r.material || (isMfg ? 'Raw Material' : 'Supply')} · ${fmtNum(r.qty, 2)} ${r.unit || 't'}`;
       if (tot > 0) {
         pushJe(d, ref, src, '601', sup, desc, tot, 0);
         pushJe(d, ref, src, '401', sup, desc, 0, tot);
@@ -1142,7 +1732,7 @@
       if (!d) return;
       const tot = Number(r.total_usd || 0);
       if (tot <= 0) return;
-      const tank = r.station || 'Plant Diesel Tank';
+      const tank = r.station || (isMfg ? 'Plant Diesel Tank' : 'Utility & Fleet Tank');
       const ref = String(r.voucher || r.name || 'FUEL');
       const desc = `Diesel ${fmtNum(r.liters, 0)} L · ${r.equip || r.driver || 'Fleet'}`;
       pushJe(d, ref, 'Fuel Log', '601', tank, desc, tot, 0);
@@ -1152,17 +1742,17 @@
     ctx.expAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
-      const tot = Number(r.total_usd || 0);
-      const vat = Number(r.vat_usd || 0);
-      const net = tot - vat;
-      const paid = Number(r.paid_usd || 0);
+      const tot = isMfg ? Number(r.total_usd || 0) : Math.round(Number(r.total_usd || 0) * 100) / 100;
+      const vat = isMfg ? Number(r.vat_usd || 0) : Math.round(Number(r.vat_usd || 0) * 100) / 100;
+      const net = isMfg ? (tot - vat) : Math.round((tot - vat) * 100) / 100;
+      const paid = isMfg ? Number(r.paid_usd || 0) : Math.round(Number(r.paid_usd || 0) * 100) / 100;
       if (Math.abs(tot) < 0.005) return;
       const sup = r.supplier || r.category || 'General Vendor';
       const ref = String(r.voucher_no || r.invoice_no || r.name || 'EXP');
       const cat = String(r.category || '');
       const expAcct = /maint|spare|repair|tire|oil/i.test(cat) ? '615' : (/raw|cement|sand|agg|fuel|diesel/i.test(cat) ? '601' : '622');
       const liabAcct = r.is_barter ? '467' : '401';
-      const desc = `${cat} — ${r.description || sup}`;
+      const desc = isMfg ? `${cat} — ${r.description || sup}` : `${cat} · ${r.description || sup}`;
       if (tot > 0) {
         if (net > 0.0001) pushJe(d, ref, 'Expense', expAcct, sup, desc, net, 0);
         if (vat > 0.0001) pushJe(d, ref, 'Input VAT', '442', 'VAT Deductible (11%)', `Input VAT on ${ref}`, vat, 0);
@@ -1234,19 +1824,20 @@
     };
 
     if (k === 'account') {
+      const coaList = ctx.coaAccounts || COA_ACCOUNTS;
       const jes = ctx._allJes || buildJournalEntries(ctx, '9999-12-31');
       const acctFreq = new Map();
       jes.forEach(j => {
         const ac = j && (j.acct_code || j.acct);
         if (ac) acctFreq.set(String(ac), (acctFreq.get(String(ac)) || 0) + 1);
       });
-      const rankedCoa = COA_ACCOUNTS.slice().sort((a, b) => (acctFreq.get(String(b.code)) || 0) - (acctFreq.get(String(a.code)) || 0));
+      const rankedCoa = coaList.slice().sort((a, b) => (acctFreq.get(String(b.code)) || 0) - (acctFreq.get(String(a.code)) || 0));
       const opts = [{
         value: 'ALL',
         code: 'ALL',
-        main: `All Accounts (${COA_ACCOUNTS.length})`,
-        meta: 'Classes 1–7',
-        label: `All Accounts (${COA_ACCOUNTS.length})`,
+        main: `All Accounts (${coaList.length})`,
+        meta: 'Classes 1-7',
+        label: `All Accounts (${coaList.length})`,
         q: 'all accounts coa'
       }];
       rankedCoa.forEach(a => {
@@ -1259,7 +1850,7 @@
           q: `${a.code} ${a.name} ${a.cls} ${a.section}`.toLowerCase()
         });
       });
-      return { label: 'Account', wide: true, placeholder: 'Search account code or name…', badge: `${COA_ACCOUNTS.length} accounts`, options: opts };
+      return { label: 'Account', wide: true, placeholder: 'Search account code or name…', badge: `${coaList.length} accounts`, options: opts };
     }
     if (k === 'subAccount') {
       const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -1328,10 +1919,11 @@
       return { label: 'Month', wide: false, placeholder: 'Select month…', badge: '', options: opts };
     }
     if (k === 'invoiceNo') {
+      const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
       const opts = ctx.invoiceList.map(g => {
         const invNo = String(g.vat_inv || g.invoice_no);
-        const cust = g.customer || '—';
-        const lds = `${g.loads} load${g.loads === 1 ? '' : 's'}`;
+        const cust = g.customer || '-';
+        const lds = `${g.loads} ${g.loads === 1 ? dt.txSingular : dt.txPlural}`;
         return {
           value: String(g.key),
           code: `#${invNo}`,
@@ -1344,13 +1936,14 @@
       return { label: 'VAT Invoice No', wide: true, steppable: true, placeholder: 'Search customer name, invoice # or date…', badge: `${fmtNum(opts.length)} invoices`, options: opts };
     }
     if (k === 'ticketId') {
+      const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
       if (!ctx._ticketComboOpts) {
         ctx._ticketComboOpts = ctx.ticketCandidates.map(t => {
           const tid = String(t.id || t.ticket_no);
           const tno = String(t.ticket_no || t.invoice_no || tid);
           const d = rowDate(t, ctx.basis);
-          const cust = t.customer || '—';
-          const vol = `${fmtNum(t.qty, 1)} m³`;
+          const cust = t.customer || '-';
+          const vol = `${fmtNum(t.qty, dt.qtyDp)} ${dt.qtyUnit}`;
           return {
             value: tid,
             code: `#${tno}`,
@@ -1361,7 +1954,7 @@
           };
         });
       }
-      return { label: 'Delivery Ticket', wide: true, steppable: true, placeholder: 'Search customer name, ticket #, site or date…', badge: `${fmtNum(ctx._ticketComboOpts.length)} tickets`, options: ctx._ticketComboOpts };
+      return { label: dt.doc21Label, wide: true, steppable: true, placeholder: 'Search customer name, ref #, location or date…', badge: `${fmtNum(ctx._ticketComboOpts.length)} records`, options: ctx._ticketComboOpts };
     }
     if (k === 'receiptId') {
       if (!ctx._receiptComboOpts) {
@@ -1483,6 +2076,8 @@
 
   function render01DailyOps(meta, ctx) {
     const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
     const rcpts = (ctx.receiptLedgerAll || []).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
     const exps = ctx.expAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
@@ -1498,7 +2093,7 @@
     // Group by Product
     const byProd = new Map();
     sales.forEach(r => {
-      const k = r.product || 'Ready-Mix Concrete';
+      const k = r.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef);
       const g = byProd.get(k) || { product: k, loads: 0, m3: 0, rev: 0, paid: 0, bal: 0 };
       if (!r.is_return) g.loads += 1;
       g.m3 += Number(r.qty || 0);
@@ -1545,24 +2140,27 @@
       byDay.set(d, g);
     });
     const dayRows = [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 35);
+    const subHdr = isMfg
+      ? `Period ${p.from} to ${p.to} · ${sales.length} deliveries · ${fmtNum(totM3, 1)} m³ dispatched`
+      : `Period ${p.from} to ${p.to} · ${sales.length} ${dt.txPlural} · ${fmtNum(totM3, dt.qtyDp)} ${dt.qtyUnit} recorded`;
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · ${sales.length} deliveries · ${fmtNum(totM3, 1)} m³ dispatched`)}
+      ${sheetHeaderHtml(meta, ctx.co, subHdr)}
       <div class="rdl-kpi-strip">
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Concrete Volume</div><div class="rdl-kpi-val">${fmtNum(totM3, 1)} m³</div><div class="rdl-kpi-sub">${sales.length} batching loads</div></div>
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Gross Billing</div><div class="rdl-kpi-val">${fmtUsd(totRev)}</div><div class="rdl-kpi-sub">Avg ${fmtUsd(totM3 > 0 ? totRev / totM3 : 0)} / m³</div></div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${esc(dt.volKpi)}</div><div class="rdl-kpi-val">${fmtNum(totM3, dt.qtyDp)} ${esc(dt.qtyUnit)}</div><div class="rdl-kpi-sub">${sales.length} ${esc(isMfg ? 'batching loads' : dt.txPlural)}</div></div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Gross Billing</div><div class="rdl-kpi-val">${fmtUsd(totRev)}</div><div class="rdl-kpi-sub">Avg ${fmtUsd(totM3 > 0 ? totRev / totM3 : 0)} / ${esc(dt.qtyUnit)}</div></div>
         <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">Cash Collected</div><div class="rdl-kpi-val">${fmtUsd(totPaid)}</div><div class="rdl-kpi-sub">${totRev > 0 ? ((totPaid / totRev) * 100).toFixed(1) : '0.0'}% realization</div></div>
-        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">OPEX + RM Intake</div><div class="rdl-kpi-val">${fmtUsd(totExp)}</div><div class="rdl-kpi-sub">Diesel ${fmtNum(totLiters, 0)} L</div></div>
+        <div class="rdl-kpi-box"><div class="rdl-kpi-lbl">${isMfg ? 'OPEX + RM Intake' : 'OPEX & Direct Costs'}</div><div class="rdl-kpi-val">${fmtUsd(totExp)}</div><div class="rdl-kpi-sub">${isMfg ? 'Diesel' : 'Utility / Fuel'} ${fmtNum(totLiters, 0)} L</div></div>
       </div>
 
-      <div class="rdl-sec-title">1. Production & Revenue by Concrete Grade / Product</div>
+      <div class="rdl-sec-title">${esc(dt.sec1Title)}</div>
       <table class="rdl-table">
         <thead>
           <tr>
-            <th>Product / Grade</th>
-            <th class="num">Loads</th>
-            <th class="num">Volume (m³)</th>
-            <th class="num">Avg $/m³</th>
+            <th>${esc(dt.sec1ProdCol)}</th>
+            <th class="num">${esc(dt.txCol)}</th>
+            <th class="num">${esc(isMfg ? 'Volume (m³)' : dt.qtyCol)}</th>
+            <th class="num">${esc(dt.avgUnitLbl)}</th>
             <th class="num">Total Billed ($)</th>
             <th class="num">Collected ($)</th>
             <th class="num">Balance ($)</th>
@@ -1573,7 +2171,7 @@
             <tr>
               <td class="bold">${esc(r.product)}</td>
               <td class="num">${fmtNum(r.loads, 0)}</td>
-              <td class="num">${fmtNum(r.m3, 1)}</td>
+              <td class="num">${fmtNum(r.m3, dt.qtyDp)}</td>
               <td class="num">${fmtUsd(r.m3 > 0 ? r.rev / r.m3 : 0, 2)}</td>
               <td class="num bold">${fmtUsd(r.rev)}</td>
               <td class="num">${fmtUsd(r.paid)}</td>
@@ -1583,9 +2181,9 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td>Total Production Mix</td>
+            <td>${esc(dt.sec1TotalLbl)}</td>
             <td class="num">${fmtNum(sales.length, 0)}</td>
-            <td class="num">${fmtNum(totM3, 1)}</td>
+            <td class="num">${fmtNum(totM3, dt.qtyDp)}</td>
             <td class="num">${fmtUsd(totM3 > 0 ? totRev / totM3 : 0, 2)}</td>
             <td class="num">${fmtUsd(totRev)}</td>
             <td class="num">${fmtUsd(totPaid)}</td>
@@ -1594,18 +2192,18 @@
         </tfoot>
       </table>
 
-      <div class="rdl-sec-title">2. Daily Plant Dispatch, Collections & Outflows (Most Recent Operating Days)</div>
+      <div class="rdl-sec-title">${esc(dt.sec2Title)}</div>
       <table class="rdl-table">
         <thead>
           <tr>
             <th>Operating Date</th>
-            <th class="num">Loads</th>
-            <th class="num">Dispatched (m³)</th>
+            <th class="num">${esc(dt.txCol)}</th>
+            <th class="num">${esc(dt.sec2VolCol)}</th>
             <th class="num">Sales Billed ($)</th>
             <th class="num">Cash Collected ($)</th>
-            <th class="num">RM Purchases ($)</th>
-            <th class="num">Site Expenses ($)</th>
-            <th class="num">Diesel (L)</th>
+            <th class="num">${esc(dt.sec2RmCol)}</th>
+            <th class="num">${isMfg ? 'Site Expenses ($)' : 'Operating OPEX ($)'}</th>
+            <th class="num">${esc(dt.sec2FuelCol)}</th>
           </tr>
         </thead>
         <tbody>
@@ -1613,7 +2211,7 @@
             <tr>
               <td class="mono">${esc(d.date)}</td>
               <td class="num">${fmtNum(d.loads, 0)}</td>
-              <td class="num">${fmtNum(d.m3, 1)}</td>
+              <td class="num">${fmtNum(d.m3, dt.qtyDp)}</td>
               <td class="num bold">${fmtUsd(d.sales)}</td>
               <td class="num">${fmtUsd(d.collected)}</td>
               <td class="num">${fmtUsd(d.rm)}</td>
@@ -1629,9 +2227,11 @@
 
   function render02BalanceSheet(meta, ctx) {
     const asof = ctx.rdl.params.asof || ctx.rdl.params.to;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
     const jes = buildJournalEntries(ctx, asof);
     const balMap = new Map();
-    COA_ACCOUNTS.forEach(a => balMap.set(a.code, { ...a, dr: 0, cr: 0 }));
+    coaList.forEach(a => balMap.set(a.code, { ...a, dr: 0, cr: 0 }));
     jes.forEach(j => {
       const b = balMap.get(j.acct_code);
       if (b) { b.dr += j.debit; b.cr += j.credit; }
@@ -1644,13 +2244,14 @@
       if (b.code.startsWith('6')) expNet += (b.dr - b.cr);
     });
     const retainedEarnings = revNet - expNet;
+    const sep = isMfg ? '—' : '·';
 
     const bsSections = [
-      { title: 'ASSETS — NON-CURRENT & FIXED ASSETS (Class 2)', codes: ['215', '218', '281'], sign: 'D' },
-      { title: 'ASSETS — INVENTORIES & RECEIVABLES (Classes 3 & 4)', codes: ['311', '411', '467'], sign: 'D' },
-      { title: 'ASSETS — CASH, BANK & TREASURY (Class 5)', codes: ['512', '531'], sign: 'D' },
-      { title: 'LIABILITIES — PAYABLES & TAX OBLIGATIONS (Class 4)', codes: ['401', '421', '442'], sign: 'C' },
-      { title: 'EQUITY & PARTNER ACCOUNTS (Class 1 + Period Result)', codes: ['101', '165'], sign: 'C', includeRetained: true }
+      { title: `ASSETS ${sep} NON-CURRENT & FIXED ASSETS (Class 2)`, codes: ['215', '218', '281'], sign: 'D' },
+      { title: `ASSETS ${sep} INVENTORIES & RECEIVABLES (Classes 3 & 4)`, codes: ['311', '411', '467'], sign: 'D' },
+      { title: `ASSETS ${sep} CASH, BANK & TREASURY (Class 5)`, codes: ['512', '531'], sign: 'D' },
+      { title: `LIABILITIES ${sep} PAYABLES & TAX OBLIGATIONS (Class 4)`, codes: ['401', '421', '442'], sign: 'C' },
+      { title: `EQUITY & PARTNER ACCOUNTS (Class 1 + Period Result)`, codes: ['101', '165'], sign: 'C', includeRetained: true }
     ];
 
     let totalAssets = 0;
@@ -1691,14 +2292,14 @@
         <tr class="rdl-group-row"><td colspan="5">${esc(sec.title)}</td></tr>
         ${rows.join('')}
         <tr class="rdl-subtotal-row">
-          <td colspan="4">Subtotal — ${esc(sec.title)}</td>
+          <td colspan="4">Subtotal ${sep} ${esc(sec.title)}</td>
           <td class="num">${fmtUsdSigned(secTot)}</td>
         </tr>
       `;
     }).join('');
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1–5) · Functional Currency USD`)}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Lebanese General Chart of Accounts (Classes 1${isMfg ? '–' : '-'}5) · Functional Currency USD${!isMfg && Math.abs(totalAssets - totalLiabEq) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -1730,6 +2331,8 @@
 
   function render03IncomeStatement(meta, ctx) {
     const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
     const jes = buildJournalEntries(ctx, p.to).filter(j => j.date !== '2020-01-01' && inWindow(j.date, p.from, p.to));
     const pMode = p.period || 'Month';
     const bucketsSet = new Set();
@@ -1738,7 +2341,7 @@
     // Show up to 8 most recent period columns so table fits cleanly on page
     const cols = allBuckets.length > 8 ? allBuckets.slice(-8) : (allBuckets.length ? allBuckets : [periodBucket(p.to, pMode)]);
 
-    const plAccounts = COA_ACCOUNTS.filter(a => a.code.startsWith('7') || a.code.startsWith('6'));
+    const plAccounts = coaList.filter(a => a.code.startsWith('7') || a.code.startsWith('6'));
     const byAcctBucket = new Map();
     plAccounts.forEach(a => byAcctBucket.set(a.code, { acct: a, colVals: {}, total: 0 }));
 
@@ -1803,8 +2406,8 @@
           </tr>
         </thead>
         <tbody>
-          ${renderGroup('OPERATING REVENUE (Class 7 — الإيرادات التشغيلية)', revCodes)}
-          ${renderGroup('OPERATING COSTS & EXPENSES (Class 6 — الأعباء والمصاريف)', expCodes)}
+          ${renderGroup(`OPERATING REVENUE (Class 7 ${isMfg ? '—' : '·'} الإيرادات التشغيلية)`, revCodes)}
+          ${renderGroup(`OPERATING COSTS & EXPENSES (Class 6 ${isMfg ? '—' : '·'} الأعباء والمصاريف)`, expCodes)}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
@@ -1833,11 +2436,12 @@
     const allB = [...bucketsSet].sort();
     const cols = allB.length > 8 ? allB.slice(-8) : (allB.length ? allB : [periodBucket(p.to, pMode)]);
 
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const lines = {
-      custIn: { label: 'Customer Receipts & Concrete Collections (تحصيلات الزبائن)', cols: {}, total: 0 },
-      rmOut: { label: 'Raw Material & Cement Payments (مدفوعات المواد الأولية)', cols: {}, total: 0 },
-      fuelOut: { label: 'Diesel & Fleet Fuel Payments (مدفوعات المحروقات)', cols: {}, total: 0 },
-      expOut: { label: 'Plant Maintenance & General OPEX Paid (مدفوعات المصاريف والصيانة)', cols: {}, total: 0 },
+      custIn: { label: dt.cfCustIn, cols: {}, total: 0 },
+      rmOut: { label: dt.cfRmOut, cols: {}, total: 0 },
+      fuelOut: { label: dt.cfFuelOut, cols: {}, total: 0 },
+      expOut: { label: dt.cfExpOut, cols: {}, total: 0 },
       payOut: { label: 'Staff Salaries & Daily Labor Disbursed (مدفوعات الرواتب والأجور)', cols: {}, total: 0 }
     };
 
@@ -1894,9 +2498,10 @@
 
   function render05TrialBalance(meta, ctx) {
     const p = ctx.rdl.params;
+    const coaList = ctx.coaAccounts || COA_ACCOUNTS;
     const jes = buildJournalEntries(ctx, p.to);
     const map = new Map();
-    COA_ACCOUNTS.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0 }));
+    coaList.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0 }));
 
     jes.forEach(j => {
       const m = map.get(j.acct_code);
@@ -1911,7 +2516,7 @@
     });
 
     let tOpenDr = 0, tOpenCr = 0, tPerDr = 0, tPerCr = 0, tCloseDr = 0, tCloseCr = 0;
-    const rowsHtml = COA_ACCOUNTS.map(a => {
+    const rowsHtml = coaList.map(a => {
       const m = map.get(a.code);
       const netOpen = m.openDr - m.openCr;
       const oDr = netOpen > 0 ? netOpen : 0;
@@ -1938,8 +2543,9 @@
       `;
     }).join('');
 
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Six-Column Trial Balance · Period ${p.from} to ${p.to} · Functional Currency USD${!isMfg && Math.abs(tCloseDr - tCloseCr) < 0.02 ? ' · Balanced ($0.00 Variance)' : ''}`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2121,8 +2727,11 @@
     const viewRows = rows.slice(0, 160);
 
     const showTaxCols = Boolean(ctx.showTaxBreakdown || ctx.officialScope);
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+    const recWord = isMfg ? 'tickets' : dt.txPlural;
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Customer: ${p.customer} · Product: ${p.product} · Site: ${p.site} · ${rows.length} tickets (showing ${viewRows.length})`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Customer: ${p.customer} · Product: ${p.product} · Site: ${p.site} · ${rows.length} ${recWord} (showing ${viewRows.length})`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2130,9 +2739,9 @@
             <th>Ticket / Inv</th>
             ${showTaxCols ? '<th>VAT Inv</th>' : ''}
             <th>Customer</th>
-            <th>Site</th>
+            <th>${isMfg ? 'Site' : 'Location'}</th>
             <th>Product</th>
-            <th class="num">Qty (m³)</th>
+            <th class="num">${esc(dt.qtyCol)}</th>
             <th class="num">Price ($)</th>
             ${showTaxCols ? '<th class="num">Net ($)</th><th class="num">VAT ($)</th>' : ''}
             <th class="num">Total ($)</th>
@@ -2153,7 +2762,7 @@
                 <td class="bold">${esc(r.customer || '-')}</td>
                 <td>${esc(r.site || '-')}</td>
                 <td>${esc(r.product || '-')}</td>
-                <td class="num">${fmtNum(r.qty, 1)}</td>
+                <td class="num">${fmtNum(r.qty, dt.qtyDp)}</td>
                 <td class="num">${fmtUsd(unitRate, 2)}</td>
                 ${showTaxCols ? `<td class="num">${fmtUsdSigned(net, 2)}</td><td class="num">${fmtUsdSigned(r.vat_usd, 2)}</td>` : ''}
                 <td class="num bold">${fmtUsdSigned(r.total_usd, 2)}</td>
@@ -2164,8 +2773,8 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="${showTaxCols ? 6 : 5}">TOTAL SALES REGISTER (${fmtNum(rows.length, 0)} tickets)</td>
-            <td class="num">${fmtNum(totQty, 1)}</td>
+            <td colspan="${showTaxCols ? 6 : 5}">TOTAL SALES REGISTER (${fmtNum(rows.length, 0)} ${esc(recWord)})</td>
+            <td class="num">${fmtNum(totQty, dt.qtyDp)}</td>
             <td class="num">${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}</td>
             ${showTaxCols ? `<td class="num">${fmtUsd(totSub, 2)}</td><td class="num">${fmtUsd(totVat, 2)}</td>` : ''}
             <td class="num">${fmtUsd(totGross, 2)}</td>
@@ -2255,12 +2864,9 @@
     const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
       ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to } })
       : null;
-    const coLabelNorm = (ctx.co && ctx.co.key && ctx.co.key !== 'manufacturing-group' && !String(ctx.co.key).startsWith('industry:'))
-      ? String(ctx.co.short || ctx.co.name || '').trim().toLowerCase()
-      : '';
     const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
       if (!sr) return false;
-      if (coLabelNorm && String(sr.company || '').trim().toLowerCase() !== coLabelNorm) return false;
+      if (!coMatch(sr.company || 'WTC', ctx.co, null)) return false;
       if (p.staff && p.staff !== 'ALL' && sr.staff !== p.staff) return false;
       return Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005;
     });
@@ -2547,7 +3153,7 @@
         <thead>
           <tr>
             <th>Customer (Account 411)</th>
-            <th class="num">Credit Sales TTC ($)</th>
+            <th class="num">${(!ctx.ind || ctx.ind === 'Manufacturing') ? 'Credit Sales TTC ($)' : 'Credit Billed ($)'}</th>
             <th class="num">Settled ($)</th>
             <th class="num">0–30 Days ($)</th>
             <th class="num">31–60 Days ($)</th>
@@ -2593,7 +3199,9 @@
 
   function render14CustomerStatement(meta, ctx) {
     const p = ctx.rdl.params;
-    const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || 'Sabeh Beton S.R.L');
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+    const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
     const allCustRows = (ctx.arLedgerAll || ctx.salesAll)
       .filter(r => r.customer === custName && (r.is_receipt_row || r.is_credit))
       .sort((a, b) => rowDate(a, ctx.basis).localeCompare(rowDate(b, ctx.basis)));
@@ -2616,6 +3224,7 @@
     const totM3 = periodRows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const closingBal = runBal + totDr - totCr;
     const siteList = [...new Set(allCustRows.filter(r => !r.is_receipt_row).map(r => r.site).filter(Boolean))].slice(0, 3).join(' · ');
+    const dash = isMfg ? '—' : '-';
 
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Customer Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
@@ -2623,12 +3232,12 @@
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
           ['Statement Period', `${p.from} .. ${p.to}`],
-          ['Account Code', '411 — Customers AR'],
-          ['Dispatched Volume', `${fmtNum(totM3, 1)} m³ (${periodRows.filter(r => !r.is_receipt_row && !r.is_return).length} loads)`],
+          ['Account Code', isMfg ? '411 — Customers AR' : '411 · Customers AR'],
+          [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totM3, dt.qtyDp)} ${dt.qtyUnit} (${periodRows.filter(r => !r.is_receipt_row && !r.is_return).length} ${dt.txPlural})`],
           ['Closing Balance', fmtUsdSigned(closingBal, 2)]
         ])}
       </div>
-      ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? `Active Sites: ${siteList}` : 'Ready-Mix Concrete Account', 'Account Currency: Fresh USD', '')}
+      ${partyBlockHtml('Statement of Account For / كشف حساب الزبون', custName, siteList ? (isMfg ? `Active Sites: ${siteList}` : `Active Locations: ${siteList}`) : (isMfg ? 'Ready-Mix Concrete Account' : dt.custSubTitle), 'Account Currency: Fresh USD', '')}
 
       <table class="rdl-table">
         <thead>
@@ -2636,9 +3245,9 @@
             <th>Date</th>
             <th>Ticket / Inv</th>
             <th>VAT Inv</th>
-            <th>Site</th>
+            <th>${isMfg ? 'Site' : 'Location'}</th>
             <th>Product</th>
-            <th class="num">Qty (m³)</th>
+            <th class="num">${esc(dt.qtyCol)}</th>
             <th class="num">Price ($)</th>
             <th class="num">Debit / Billed ($)</th>
             <th class="num">Credit / Paid ($)</th>
@@ -2660,14 +3269,14 @@
             return `
               <tr>
                 <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-                <td class="mono">${esc(r.ticket_no || r.invoice_no || '—')}</td>
-                <td class="mono bold">${esc(r.vat_inv || '—')}</td>
-                <td>${esc(r.site || '—')}</td>
-                <td>${esc(r.product || '—')}</td>
-                <td class="num">${fmtNum(r.qty, 1)}</td>
+                <td class="mono">${esc(r.ticket_no || r.invoice_no || dash)}</td>
+                <td class="mono bold">${esc(r.vat_inv || dash)}</td>
+                <td>${esc(r.site || dash)}</td>
+                <td>${esc(r.product || dash)}</td>
+                <td class="num">${fmtNum(r.qty, dt.qtyDp)}</td>
                 <td class="num">${fmtUsd(r.unit_price, 2)}</td>
                 <td class="num">${fmtUsdSigned(dr, 2)}</td>
-                <td class="num">${cr !== 0 ? fmtUsdSigned(cr, 2) : '—'}</td>
+                <td class="num">${cr !== 0 ? fmtUsdSigned(cr, 2) : dash}</td>
                 <td class="num bold">${fmtUsdSigned(runBal, 2)}</td>
               </tr>
             `;
@@ -2675,9 +3284,9 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="5">CLOSING STATEMENT BALANCE — ${esc(custName)}</td>
-            <td class="num">${fmtNum(totM3, 1)}</td>
-            <td>—</td>
+            <td colspan="5">CLOSING STATEMENT BALANCE ${isMfg ? '—' : '·'} ${esc(custName)}</td>
+            <td class="num">${fmtNum(totM3, dt.qtyDp)}</td>
+            <td>${dash}</td>
             <td class="num">${fmtUsd(openDr + totDr, 2)}</td>
             <td class="num">${fmtUsd(openCr + totCr, 2)}</td>
             <td class="num">${fmtUsdSigned(closingBal, 2)}</td>
@@ -2717,8 +3326,9 @@
       addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.ap_credit_usd || 0), 0);
     });
 
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
     const seedCutRdl = (typeof SEED !== 'undefined' && SEED && SEED.generated_at) ? String(SEED.generated_at).slice(0, 10) : '2026-11-04';
-    if ((!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
+    if (isMfg && (!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
       const coKey = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
       const legRes = window.__mfgComputeThreeLegPayables({ company: coKey, ignorePeriod: true });
       if (legRes && legRes.byNorm) {
@@ -2759,13 +3369,13 @@
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Supplier: ${supFilter === 'ALL' ? 'All Suppliers' : supFilter} · 3-Leg Accounts Payable (Account 401)`)}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Supplier: ${supFilter === 'ALL' ? 'All Suppliers' : supFilter} · ${isMfg ? '3-Leg Accounts Payable (Account 401)' : 'Vendor & Carrier Accounts Payable (Account 401)'}`)}
       <table class="rdl-table">
         <thead>
           <tr>
-            <th>Supplier / Hauler (Account 401)</th>
-            <th class="num">Raw Materials ($)</th>
-            <th class="num">Haulage ($)</th>
+            <th>${isMfg ? 'Supplier / Hauler (Account 401)' : 'Supplier / Carrier (Account 401)'}</th>
+            <th class="num">${isMfg ? 'Raw Materials ($)' : 'Direct Supply ($)'}</th>
+            <th class="num">${isMfg ? 'Haulage ($)' : 'Freight / Delivery ($)'}</th>
             <th class="num">Credit Expenses ($)</th>
             <th class="num">Total Credit ($)</th>
             <th class="num">Settled ($)</th>
@@ -2809,11 +3419,13 @@
 
   function render16SupplierStatement(meta, ctx) {
     const p = ctx.rdl.params;
-    const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || 'Holcim Liban S.A.L');
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+    const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
     const tx = [];
     (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
-      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? 'Raw Haulage' : 'Raw Material');
-      const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Haulage') : `${r.material || 'Material'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
+      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? (isMfg ? 'Raw Haulage' : 'Freight / Delivery') : (isMfg ? 'Raw Material' : 'Direct Supply'));
+      const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Delivery') : `${r.material || 'Supply'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
       tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: srcLbl, desc: descLbl, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
     });
     ctx.expAll.filter(r => r.supplier === supName && r.is_ap_credit).forEach(r => {
@@ -2832,6 +3444,7 @@
     const totCr = periodRows.reduce((s, t) => s + t.cr, 0);
     const totDr = periodRows.reduce((s, t) => s + t.dr, 0);
     const closingBal = runBal + totCr - totDr;
+    const dash = isMfg ? '—' : '-';
 
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Supplier Statement of Account (SOA) · Period ${p.from} to ${p.to}`)}
@@ -2839,12 +3452,12 @@
         ${companyBlockHtml(ctx.co)}
         ${metaRowsHtml([
           ['Statement Period', `${p.from} .. ${p.to}`],
-          ['Account Code', '401 — Suppliers AP'],
+          ['Account Code', isMfg ? '401 — Suppliers AP' : '401 · Suppliers AP'],
           ['Transactions', `${periodRows.length} vouchers in period`],
           ['Net Payable Balance', fmtUsdSigned(closingBal, 2)]
         ])}
       </div>
-      ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, 'Raw Materials, Parts & Plant Supplies', 'Account Currency: Fresh USD', '')}
+      ${partyBlockHtml('Supplier Account / كشف حساب المورد', supName, dt.supSubtitle, 'Account Currency: Fresh USD', '')}
 
       <table class="rdl-table">
         <thead>
@@ -3116,11 +3729,12 @@
     const subExp = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
     const subPay = pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
 
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const reconRows = [
-      { stream: 'Concrete & Product Sales (Excl. VAT)', acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: subSales, sign: 1 },
-      { stream: 'Raw Materials Intake (Cement, Sand, Aggregate)', acct: '601-RM', count: rms.length, subTotal: subRm, glTotal: subRm, sign: -1 },
-      { stream: 'Fleet & Plant Diesel Consumption', acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: subFuel, sign: -1 },
-      { stream: 'Plant Maintenance & General Operating Expenses', acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: subExp, sign: -1 },
+      { stream: dt.plSales, acct: '701 / 706', count: sales.length, subTotal: subSales, glTotal: subSales, sign: 1 },
+      { stream: dt.plRm, acct: '601-DIR', count: rms.length, subTotal: subRm, glTotal: subRm, sign: -1 },
+      { stream: dt.plFuel, acct: '601-FUEL', count: fuels.length, subTotal: subFuel, glTotal: subFuel, sign: -1 },
+      { stream: dt.plExp, acct: '615 / 622', count: exps.length, subTotal: subExp, glTotal: subExp, sign: -1 },
       { stream: 'Staff Salaries, Wages & Labor Disbursements', acct: '641', count: pays.length, subTotal: subPay, glTotal: subPay, sign: -1 }
     ];
 
@@ -3169,15 +3783,19 @@
 
   function render20SalesInvoice(meta, ctx) {
     const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || {
-      key: '2738', vat_inv: '2738', invoice_no: '2738', customer: 'Sabeh Beton S.R.L',
-      site: 'Baabda', date: '2026-09-25', co: ctx.co, loads: 0, qty: 0, total: 0, vat: 0, rows: []
+      key: isMfg ? '2738' : 'INV-001', vat_inv: isMfg ? '2738' : 'INV-001', invoice_no: isMfg ? '2738' : 'INV-001',
+      customer: ctx.customers[0] || dt.custDefault,
+      site: dt.siteDefault, date: p.to || '2026-10-21', co: ctx.co, loads: 0, qty: 0, total: 0, vat: 0, rows: []
     };
     const rows = grp.rows.slice().sort((a, b) => String(a.ticket_no || '').localeCompare(String(b.ticket_no || '')));
     const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
     const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
     const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
     const totSub = Math.max(0, totGross - totVat);
+    const dash = isMfg ? '—' : '-';
 
     return `
       ${sheetHeaderHtml(meta, grp.co || ctx.co, `Invoice ${grp.vat_inv || grp.invoice_no} · Customer ${grp.customer} · Date ${grp.date}`)}
@@ -3186,22 +3804,22 @@
         ${metaRowsHtml([
           ['VAT Invoice No', grp.vat_inv || grp.invoice_no],
           ['Invoice Date', grp.date],
-          ['Loads', `${rows.length} load${rows.length === 1 ? '' : 's'}`],
-          ['Dispatched Volume', `${fmtNum(totQty, 1)} m³`]
+          [isMfg ? 'Loads' : dt.txCol, `${rows.length} ${rows.length === 1 ? dt.txSingular : dt.txPlural}`],
+          [isMfg ? 'Dispatched Volume' : dt.volKpi, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`]
         ])}
       </div>
-      ${partyBlockHtml('Bill To / الفاتورة إلى', grp.customer, grp.site ? `Site: ${grp.site}` : '', 'Account 411 — Ready-Mix Concrete Customer', '')}
+      ${partyBlockHtml('Bill To / الفاتورة إلى', grp.customer, grp.site ? `${isMfg ? 'Site' : 'Location'}: ${grp.site}` : '', isMfg ? 'Account 411 — Ready-Mix Concrete Customer' : dt.custSubTitle, '')}
 
       <table class="rdl-table">
         <thead>
           <tr>
-            <th>Ticket #</th>
+            <th>${isMfg ? 'Ticket #' : 'Ref #'}</th>
             <th>Date</th>
             <th>Product</th>
-            <th>Site</th>
-            <th>Truck</th>
-            <th>Driver</th>
-            <th class="num">Qty (m³)</th>
+            <th>${isMfg ? 'Site' : 'Location'}</th>
+            <th>${isMfg ? 'Truck' : 'Ref / Unit'}</th>
+            <th>${isMfg ? 'Driver' : 'Channel'}</th>
+            <th class="num">${esc(dt.qtyCol)}</th>
             <th class="num">Unit Price</th>
             <th class="num">Subtotal</th>
             <th class="num">VAT 11%</th>
@@ -3215,13 +3833,13 @@
             const sub = Math.max(0, tot - vat);
             return `
               <tr>
-                <td class="mono">${esc(r.ticket_no || r.invoice_no || '—')}</td>
+                <td class="mono">${esc(r.ticket_no || r.invoice_no || dash)}</td>
                 <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-                <td>${esc(r.product || '—')}</td>
-                <td>${esc(r.site || '—')}</td>
-                <td class="mono">${esc(r.truck || '—')}</td>
-                <td>${esc(r.driver || '—')}</td>
-                <td class="num">${fmtNum(r.qty, 1)}</td>
+                <td>${esc(r.product || dash)}</td>
+                <td>${esc(r.site || dash)}</td>
+                <td class="mono">${esc(r.truck || dash)}</td>
+                <td>${esc(r.driver || dash)}</td>
+                <td class="num">${fmtNum(r.qty, dt.qtyDp)}</td>
                 <td class="num">${fmtUsd(r.unit_price, 2)}</td>
                 <td class="num">${fmtUsd(sub, 2)}</td>
                 <td class="num">${fmtUsd(vat, 2)}</td>
@@ -3233,7 +3851,7 @@
         <tfoot>
           <tr class="rdl-total-row">
             <td colspan="6">Grand Total</td>
-            <td class="num">${fmtNum(totQty, 1)}</td>
+            <td class="num">${fmtNum(totQty, dt.qtyDp)}</td>
             <td></td>
             <td class="num">${fmtUsd(totSub, 2)}</td>
             <td class="num">${fmtUsd(totVat, 2)}</td>
@@ -3248,34 +3866,37 @@
 
   function render21DeliveryTicket(meta, ctx) {
     const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const tk = (ctx.ticketById && ctx.ticketById.get(String(p.ticketId))) || ctx.ticketCandidates.find(r => String(r.id || r.ticket_no) === String(p.ticketId)) || ctx.ticketCandidates[0] || ctx.salesAll[0] || {};
     const d = rowDate(tk, ctx.basis);
     const tNo = tk.ticket_no || tk.invoice_no || 'TK-001';
+    const dash = isMfg ? '—' : '-';
 
     return `
-      ${sheetHeaderHtml(meta, tk.co || ctx.co, `Delivery Ticket ${tNo} · Dispatched ${d} · Customer ${tk.customer || '—'}`)}
+      ${sheetHeaderHtml(meta, tk.co || ctx.co, `${dt.doc21Label} ${tNo} · ${isMfg ? 'Dispatched' : 'Date'} ${d} · Customer ${tk.customer || dash}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(tk.co || ctx.co)}
         ${metaRowsHtml([
-          ['Delivery Ticket No', tNo],
-          ['Dispatch Date', d],
-          ['Mixer / Truck', tk.truck || 'Plant Mixer'],
-          ['Driver', tk.driver || 'Assigned Driver']
+          [dt.doc21NoLbl, tNo],
+          [dt.doc21DateLbl, d],
+          [dt.doc21Ref1Lbl, tk.truck || dt.doc21Ref1Def],
+          [dt.doc21Ref2Lbl, tk.driver || dt.doc21Ref2Def]
         ])}
       </div>
-      ${partyBlockHtml('Deliver To / التسليم إلى', tk.customer || '—', `Project Site: ${tk.site || 'Main Pouring Site'}`, `VAT Inv Ref: ${tk.vat_inv || 'N/A'}`, '')}
+      ${partyBlockHtml('Deliver To / التسليم إلى', tk.customer || dash, `${dt.doc21SitePfx}: ${tk.site || dt.siteDefault}`, `VAT Inv Ref: ${tk.vat_inv || 'N/A'}`, '')}
 
       <table class="rdl-table">
         <thead>
           <tr>
-            <th>Ticket #</th>
+            <th>${isMfg ? 'Ticket #' : 'Ref #'}</th>
             <th>Date</th>
-            <th>Concrete Grade / Product</th>
-            <th>Pouring Site</th>
-            <th>Mixer Truck</th>
-            <th>Driver</th>
-            <th class="num">Dispatched Volume (m³)</th>
-            <th class="num">Unit Rate ($/m³)</th>
+            <th>${esc(dt.doc21ProdCol)}</th>
+            <th>${esc(dt.doc21SiteCol)}</th>
+            <th>${esc(isMfg ? 'Mixer Truck' : dt.doc21Ref1Lbl)}</th>
+            <th>${esc(dt.doc21Ref2Lbl)}</th>
+            <th class="num">${esc(isMfg ? 'Dispatched Volume (m³)' : dt.qtyCol)}</th>
+            <th class="num">${esc(dt.rateCol)}</th>
             <th class="num">Total Value ($)</th>
           </tr>
         </thead>
@@ -3283,38 +3904,44 @@
           <tr>
             <td class="mono bold">${esc(tNo)}</td>
             <td class="mono">${esc(d)}</td>
-            <td class="bold">${esc(tk.product || 'Ready-Mix Concrete')}</td>
-            <td>${esc(tk.site || '—')}</td>
-            <td class="mono">${esc(tk.truck || '—')}</td>
-            <td>${esc(tk.driver || '—')}</td>
-            <td class="num bold">${fmtNum(tk.qty || 0, 1)}</td>
+            <td class="bold">${esc(tk.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef))}</td>
+            <td>${esc(tk.site || dash)}</td>
+            <td class="mono">${esc(tk.truck || dash)}</td>
+            <td>${esc(tk.driver || dash)}</td>
+            <td class="num bold">${fmtNum(tk.qty || 0, dt.qtyDp)}</td>
             <td class="num">${fmtUsd(tk.unit_price || 0, 2)}</td>
             <td class="num bold">${fmtUsd(tk.total_usd || 0, 2)}</td>
           </tr>
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="6">Total Certified Concrete Delivery</td>
-            <td class="num">${fmtNum(tk.qty || 0, 1)} m³</td>
+            <td colspan="6">${esc(dt.doc21TotalLbl)}</td>
+            <td class="num">${fmtNum(tk.qty || 0, dt.qtyDp)} ${esc(dt.qtyUnit)}</td>
             <td></td>
             <td class="num">${fmtUsd(tk.total_usd || 0, 2)}</td>
           </tr>
         </tfoot>
       </table>
-      ${signatureRowHtml('Batching Plant Dispatcher / مسؤول المجبل', 'Site Engineer / المستلم في الورشة')}
+      ${signatureRowHtml(dt.doc21SigLeft, dt.doc21SigRight)}
       ${sheetFooterHtml(tk.co || ctx.co, 1, 1)}
     `;
   }
 
   function render22ReceiptVoucher(meta, ctx) {
     const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const rc = (ctx.receiptById && ctx.receiptById.get(String(p.receiptId))) || ctx.receiptCandidates.find(r => String(r.id) === String(p.receiptId)) || ctx.receiptCandidates[0] || ctx.salesAll[0] || {};
     const d = rowDate(rc, ctx.basis);
     const vNo = `RC-${rc.invoice_no || rc.ticket_no || String(rc.id || '1001').slice(-4)}`;
     const paid = Number(rc.paid_usd || rc.total_usd || 0);
+    const dash = isMfg ? '—' : '-';
+    const descLine = isMfg
+      ? `Settlement against ${esc(rc.product || 'Concrete Supply')} (${fmtNum(rc.qty || 0, 1)} m³)`
+      : `Settlement against ${esc(rc.product || dt.rcptDescDef)}${Number(rc.qty || 0) > 0 ? ` (${fmtNum(rc.qty || 0, dt.qtyDp)} ${esc(dt.qtyUnit)})` : ''}`;
 
     return `
-      ${sheetHeaderHtml(meta, rc.co || ctx.co, `Receipt Voucher ${vNo} · Date ${d} · Received from ${rc.customer || '—'}`)}
+      ${sheetHeaderHtml(meta, rc.co || ctx.co, `Receipt Voucher ${vNo} · Date ${d} · Received from ${rc.customer || dash}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(rc.co || ctx.co)}
         ${metaRowsHtml([
@@ -3324,7 +3951,7 @@
           ['Amount Received', fmtUsd(paid, 2)]
         ])}
       </div>
-      ${partyBlockHtml('Received From / وصلنا من السادة', rc.customer || '—', `Project Site: ${rc.site || 'General Account'}`, 'Credited to Account 411 — Customers AR', '')}
+      ${partyBlockHtml('Received From / وصلنا من السادة', rc.customer || dash, `${isMfg ? 'Project Site' : 'Reference'}: ${rc.site || 'General Account'}`, isMfg ? 'Credited to Account 411 — Customers AR' : 'Credited to Account 411 · Customers AR', '')}
 
       <table class="rdl-table">
         <thead>
@@ -3344,7 +3971,7 @@
             <td class="mono bold">${esc(vNo)}</td>
             <td class="mono">${esc(d)}</td>
             <td class="mono">${esc(rc.vat_inv || rc.invoice_no || rc.ticket_no || 'Account')}</td>
-            <td>Settlement against ${esc(rc.product || 'Concrete Supply')} (${fmtNum(rc.qty || 0, 1)} m³)</td>
+            <td>${descLine}</td>
             <td>${esc(rc.pay_method || 'Cash USD')}</td>
             <td class="num">${fmtUsd(rc.total_usd || paid, 2)}</td>
             <td class="num bold">${fmtUsd(paid, 2)}</td>
@@ -3849,9 +4476,55 @@
   };
 
   function renderRdlSheet(id, ctx) {
-    const meta = RDL_CATALOG.find(x => x.id === id) || RDL_CATALOG[0];
+    const padId = String(id || '01').padStart(2, '0');
+    const meta = RDL_CATALOG.find(x => x.id === padId) || RDL_CATALOG[0];
+    let effCtx = ctx;
+    if (!effCtx || !Array.isArray(effCtx.salesAll)) {
+      const opts = effCtx && typeof effCtx === 'object' ? effCtx : {};
+      const seedObj = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : {};
+      const coRaw = opts.company !== undefined ? opts.company : (opts.co !== undefined ? opts.co : 'ALL');
+      const maxD = String((seedObj && seedObj.generated_at) || '2026-12-31').slice(0, 10);
+      const mockState = {
+        company: coRaw,
+        dateFilter: opts.dateFilter || 'all',
+        dateFrom: opts.from || '2024-01-01',
+        dateTo: opts.to || maxD,
+        rdl: {
+          _dateTouched: Boolean(opts.from || opts.to || opts.asof),
+          params: {
+            from: opts.from || '2024-01-01',
+            to: opts.to || maxD,
+            asof: opts.asof || opts.to || maxD,
+            period: opts.period || 'Month',
+            account: opts.account || 'ALL',
+            subAccount: opts.subAccount || 'ALL',
+            customer: opts.customer || 'ALL',
+            product: opts.product || 'ALL',
+            supplier: opts.supplier || 'ALL',
+            material: opts.material || 'ALL',
+            employee: opts.employee || 'ALL',
+            equipType: opts.equipType || 'ALL',
+            equipment: opts.equipment || 'ALL',
+            driver: opts.driver || 'ALL',
+            year: opts.year || 'ALL',
+            month: opts.month || 'ALL',
+            invoiceNo: opts.invoiceNo || '2738',
+            ticketId: opts.ticketId || '',
+            receiptId: opts.receiptId || ''
+          }
+        }
+      };
+      effCtx = buildRdlContext(seedObj, mockState);
+      if (opts.co !== undefined && Number(padId) >= 23) {
+        effCtx.co = opts.co;
+      }
+    }
     const fn = SHEET_RENDERERS[meta.id] || render01DailyOps;
-    return fn(meta, ctx);
+    let html = fn(meta, effCtx);
+    if (effCtx && ((effCtx.ind && effCtx.ind !== 'Manufacturing') || Number(meta.id) >= 23)) {
+      html = String(html || '').replace(/\u2014/g, '-').replace(/\u2192/g, ' - ');
+    }
+    return html;
   }
 
   function exportPrintableSheetCsv(meta, coKey) {
@@ -4947,6 +5620,10 @@
     renderStatementsView,
     wireStatementsEvents,
     renderRdlSheet,
-    renderSheet: renderRdlSheet
+    renderSheet: renderRdlSheet,
+    buildRdlContext,
+    buildJournalEntries,
+    getCoaAccountsForInd,
+    getDomainRdlTerms
   };
 })();

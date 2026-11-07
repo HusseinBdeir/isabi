@@ -14067,7 +14067,20 @@
     'Kiosk 3 · FNOL Claim & Survey Desk': 'كشك 3 · مكتب المطالبات والمعاينة',
     'Kiosk 1 · Intercompany Transfer Desk': 'كشك 1 · مكتب التحويلات بين الشركات',
     'Kiosk 2 · Corporate Voucher Intake': 'كشك 2 · إدخال قسائم الشركات',
-    'Kiosk 3 · Treasury FX & Liquidity Log': 'كشك 3 · سجل السيولة والقطع'
+    'Kiosk 3 · Treasury FX & Liquidity Log': 'كشك 3 · سجل السيولة والقطع',
+    '+ Split': '+ توزيع',
+    '+ Repay': '+ سداد',
+    'Repayment Logged': 'تم تسجيل السداد',
+    'Log Close': 'إقفال الوردية',
+    'Collect': 'تحصيل',
+    '+ Landed': '+ تكلفة واصلة',
+    'Invoice VIN': 'فوترة الشاسيه',
+    '+ Rent Inv': '+ فاتورة إيجار',
+    'Bill Tenant': 'فوترة المستأجر',
+    'Renew': 'تجديد',
+    'Settle': 'تسوية',
+    'Latest Op Day': 'آخر يوم تشغيلي',
+    'CUSTOM WATCHDOG': 'مراقب مخصص'
   });
   registerLocale('fr', LOCALES.fr, {
     'Thermal Voucher': 'Bon thermique',
@@ -14098,7 +14111,20 @@
     'Kiosk 3 · FNOL Claim & Survey Desk': 'Kiosque 3 · Déclaration sinistre et expertise',
     'Kiosk 1 · Intercompany Transfer Desk': 'Kiosque 1 · Transferts intragroupe',
     'Kiosk 2 · Corporate Voucher Intake': 'Kiosque 2 · Saisie pièces holding',
-    'Kiosk 3 · Treasury FX & Liquidity Log': 'Kiosque 3 · Trésorerie FX et liquidité'
+    'Kiosk 3 · Treasury FX & Liquidity Log': 'Kiosque 3 · Trésorerie FX et liquidité',
+    '+ Split': '+ Répartir',
+    '+ Repay': '+ Rembourser',
+    'Repayment Logged': 'Remboursement enregistré',
+    'Log Close': 'Clôturer caisse',
+    'Collect': 'Encaisser',
+    '+ Landed': '+ Coût rendu',
+    'Invoice VIN': 'Facturer VIN',
+    '+ Rent Inv': '+ Facture loyer',
+    'Bill Tenant': 'Refacturer locataire',
+    'Renew': 'Renouveler',
+    'Settle': 'Régler',
+    'Latest Op Day': 'Dernier jour op.',
+    'CUSTOM WATCHDOG': 'Sentinelle personnalisée'
   });
 
   function bootI18n() {

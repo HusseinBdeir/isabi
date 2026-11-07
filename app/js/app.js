@@ -14860,12 +14860,12 @@
       }
 
       const bars = [
-        { v: sK, cls: 's-1', x: x0, idx: 0 },
-        { v: rK, cls: 's-2', x: x0 + subW + 1.5, idx: 1 },
-        { v: pK, cls: 's-3', x: x0 + (subW + 1.5) * 2, idx: 2 }
+        { v: Number.isFinite(sK) ? sK : 0, cls: 's-1', x: x0, idx: 0 },
+        { v: Number.isFinite(rK) ? rK : 0, cls: 's-2', x: x0 + subW + 1.5, idx: 1 },
+        { v: Number.isFinite(pK) ? pK : 0, cls: 's-3', x: x0 + (subW + 1.5) * 2, idx: 2 }
       ].map(b => {
-        const top = y(b.v);
-        const bottom = y(0);
+        const top = Number(y(b.v) || 0);
+        const bottom = Number(y(0) || 0);
         const h = Math.max(2, bottom - top);
         return `<rect class="${b.cls}" data-series-idx="${b.idx}" x="${b.x.toFixed(1)}" y="${top.toFixed(1)}" width="${subW.toFixed(1)}" height="${h.toFixed(1)}" rx="2"/>`;
       }).join('');
@@ -16909,8 +16909,252 @@
         const co = STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC');
         return [{ id: 'cash_till_' + co, rid: 'cash_till', rkey: 'expenses', date: SEED_DATE || '', company: co, target: '', party: `${co} USD Cash Till`, detail: 'Live net cash balance', value: round2(bal) }];
       }
+    },
+    hld_unmatched_ic_usd: {
+      verticalInd: 'Holding & Treasury',
+      label: 'Unmatched One-Sided Sister Leg ($)',
+      unit: '$', domainKey: 'holding', domain: 'Intercompany & Facilities', targetKind: 'sister_entity',
+      explain: 'USD value of any open single-sided intercompany transfer awaiting mirror booking in the receiving sister entity.',
+      formTypes: [], whereLabel: 'Sister Clearing & AI Sentinels', jumpView: 'hld_open_recon',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => {
+        const ic = computeIntercompanyInteractions({ ignoreSearch: true });
+        return (ic.openRows || []).map(r => ({
+          id: r.id || `${r.fromCo}_${r.toCo}_${r.date}`, rid: r.id || r.fromCo, rkey: 'external_movements',
+          date: String(r.date || '').slice(0, 10), company: r.fromCo || 'Bdeir Holding',
+          target: r.toCo || '', party: `${r.fromCo || 'Holding'} to ${r.toCo || 'Sister'}`,
+          detail: [r.method, r.notes].filter(Boolean).join(' · ') || 'Open Sister Transfer',
+          value: Math.abs(Number(r.usd || 0))
+        }));
+      }
+    },
+    hld_loan_open_usd: {
+      verticalInd: 'Holding & Treasury',
+      label: 'Central Facility Principal Exposure ($)',
+      unit: '$', domainKey: 'holding', domain: 'Intercompany & Facilities', targetKind: 'sister_entity',
+      explain: 'Principal exposure in USD across central Holding loan facilities and subsidiary credit lines.',
+      formTypes: [], whereLabel: 'Holding Loans & Treasury Audit', jumpView: 'hld_loans',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true }).map(l => ({
+        id: l.id, rid: l.id, rkey: 'loans', date: String(l.date || l.start_date || '').slice(0, 10),
+        company: l.company || 'Bdeir Holding', target: l.counterparty || l.borrower || l.party || '',
+        party: l.counterparty || l.party || l.name || 'Facility',
+        detail: l.direction || l.type || 'Loan Facility',
+        value: Math.abs(Number(l.principal_usd || l.amount_usd || l.amount || l.principal || 0))
+      }))
+    },
+    hsp_pos_variance_usd: {
+      verticalInd: 'Hospitality & Resorts',
+      label: 'POS Shift Drawer Variance ($)',
+      unit: '$', domainKey: 'hospitality', domain: 'Resorts, POS & Energy', targetKind: 'resort_outlet',
+      explain: 'Absolute drawer discrepancy in USD between POS billed close and counted cash, card, Whish, and approved comps.',
+      formTypes: [], whereLabel: 'POS Shift Close & AI Sentinels', jumpView: 'hsp_pos',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeHospitalityOperations({ ignoreSearch: true }).posRows || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 'hsp_pos', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'Blanca', target: r.terminal || '',
+        party: `${r.company || 'Resort'} · ${r.terminal || 'POS'}`,
+        detail: `${r.cashier || 'Cashier'} · ${r.shift || 'Shift'}`,
+        value: Math.abs(Number(r.variance_usd || 0))
+      }))
+    },
+    hsp_mem_arrears_usd: {
+      verticalInd: 'Hospitality & Resorts',
+      label: 'Seasonal Membership Open Arrears ($)',
+      unit: '$', domainKey: 'hospitality', domain: 'Resorts, POS & Energy', targetKind: 'none',
+      explain: 'Unpaid contract balance in USD on seasonal chalet, beach cabana, and VIP resort memberships.',
+      formTypes: [], whereLabel: 'Seasonal Memberships & Arrears Audit', jumpView: 'hsp_memberships',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeHospitalityOperations({ ignoreSearch: true }).membershipRows || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 'hsp_memberships', date: String(r.due_date || r.start_date || '').slice(0, 10),
+        company: r.company || 'Blanca', target: '', party: r.member || 'Seasonal Member',
+        detail: `${r.unit || 'Cabana'} · ${r.season || 'Season'}`,
+        value: Number(r.balance_usd || 0)
+      }))
+    },
+    hsp_gen_burn_lph: {
+      verticalInd: 'Hospitality & Resorts',
+      label: 'Resort Generator Diesel Burn (L/hr)',
+      unit: 'L/hr', domainKey: 'hospitality', domain: 'Resorts, POS & Energy', targetKind: 'resort_outlet',
+      explain: 'Measured diesel consumption rate in litres per run-hour across resort power plants and hybrid generators.',
+      formTypes: [], whereLabel: 'Generators & Solar Audit', jumpView: 'hsp_energy',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeHospitalityOperations({ ignoreSearch: true }).energyRows || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 'hsp_energy', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'Blanca', target: r.asset || '',
+        party: `${r.company || 'Resort'} · ${r.asset || 'Generator'}`,
+        detail: `Rated ${fmtNum(r.rated_l_hr || 0, 1)} L/hr · ${fmtNum(r.run_hours || 0, 1)} hrs`,
+        value: Number(r.l_per_hr || 0)
+      }))
+    },
+    trd_invoice_margin_pct: {
+      verticalInd: 'Automotive & Heavy Trading',
+      label: 'Commercial Invoice Gross Margin (%)',
+      unit: '%', domainKey: 'trading', domain: 'Showroom, Imports & Stock', targetKind: 'none', allowZeroOrNeg: true,
+      explain: 'Realized gross margin percentage on heavy truck and spare parts invoices against capitalized landed cost.',
+      formTypes: [], whereLabel: 'Showroom Invoicing & Margin Audit', jumpView: 'trd_sales',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeTradingOperations({ ignoreSearch: true }).salesRows || []).filter(r => !r.is_gap && Number(r.ttc_usd || 0) > 0).map(r => ({
+        id: r.id, rid: r.id, rkey: 'trd_sales', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'Shacman', target: '', party: r.customer || 'Commercial Buyer',
+        detail: `${r.id} · ${r.item || ''}`, value: Number(r.margin_pct || 0)
+      }))
+    },
+    trd_unalloc_landed_usd: {
+      verticalInd: 'Automotive & Heavy Trading',
+      label: 'Unallocated Container Landed Cost ($)',
+      unit: '$', domainKey: 'trading', domain: 'Showroom, Imports & Stock', targetKind: 'none',
+      explain: 'Sea freight, customs duty, and port clearance charges not yet capitalized onto received chassis or warehouse parts.',
+      formTypes: [], whereLabel: 'Import Files & Landed Cost Audit', jumpView: 'trd_landed',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeTradingOperations({ ignoreSearch: true }).landedRows || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 'trd_landed', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'Shacman', target: '', party: r.import_file || r.id,
+        detail: r.basis || 'Landed Cost Allocation', value: Number(r.unallocated_usd || 0)
+      }))
+    },
+    trd_stock_qty: {
+      verticalInd: 'Automotive & Heavy Trading',
+      label: 'Warehouse Spare Part Qty On Hand (pcs)',
+      unit: 'pcs', domainKey: 'trading', domain: 'Showroom, Imports & Stock', targetKind: 'trd_warehouse', allowZeroOrNeg: true,
+      explain: 'On-hand spare parts stock count per SKU across the 5 trading warehouses. Pair with Drops Below (<) for reorder watch.',
+      formTypes: [], whereLabel: '5-Warehouse Stock & Reorder Watch', jumpView: 'trd_stock',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeTradingOperations({ ignoreSearch: true }).stockRows || []).map(r => ({
+        id: r.id || r.code, rid: r.id || r.code, rkey: 'trd_stock', date: SEED_DATE || '2026-11-06',
+        company: r.company || 'Korri Auto', target: r.warehouse || '',
+        party: `${r.code || ''} · ${r.name || 'Part'}`,
+        detail: `${r.warehouse || 'Warehouse'} (Min ${fmtNum(r.reorder_min || 0)})`,
+        value: Number(r.on_hand || 0)
+      }))
+    },
+    re_lease_expiry_days: {
+      verticalInd: 'Real Estate & Property',
+      label: 'Commercial Lease Days to Expiry (days)',
+      unit: 'days', domainKey: 'realestate', domain: 'Leases, Rent & Fit-Out', targetKind: 're_property', allowZeroOrNeg: true,
+      explain: 'Remaining calendar days until lease contract expiration. Pair with Drops Below (<) to flag upcoming renewals.',
+      formTypes: [], whereLabel: 'Lease Registry & Renewal Countdown', jumpView: 're_leases',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeRealEstateOperations({ ignoreSearch: true }).leases || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 're_leases', date: String(r.end_date || '').slice(0, 10),
+        company: r.company || 'Properties', target: r.property || '',
+        party: `${r.tenant || 'Tenant'} (${r.id})`,
+        detail: `${r.property || ''} · ${r.unit || ''}`, value: Number(r.days_to_expiry || 0)
+      }))
+    },
+    re_open_rent_ar_usd: {
+      verticalInd: 'Real Estate & Property',
+      label: 'Unpaid Period Rent Invoice AR ($)',
+      unit: '$', domainKey: 'realestate', domain: 'Leases, Rent & Fit-Out', targetKind: 're_property',
+      explain: 'Open unpaid balance in USD on billed commercial and residential period rent invoices.',
+      formTypes: [], whereLabel: 'Period Rent Invoicing & AR Audit', jumpView: 're_invoicing',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeRealEstateOperations({ ignoreSearch: true }).invoices || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 're_invoicing', date: String(r.date || '').slice(0, 10),
+        company: r.company || '4235 Company S.A.L', target: r.property || '',
+        party: r.tenant || 'Tenant', detail: `${r.id} · ${r.period || ''}`, value: Number(r.open_ar_usd || 0)
+      }))
+    },
+    re_wo_overrun_usd: {
+      verticalInd: 'Real Estate & Property',
+      label: 'Fit-Out & Maintenance Work Order Spend ($)',
+      unit: '$', domainKey: 'realestate', domain: 'Leases, Rent & Fit-Out', targetKind: 're_property',
+      explain: 'Actual USD contractor spend on building CAPEX fit-outs, MEP work orders, and tenant-fault repairs.',
+      formTypes: [], whereLabel: 'Fit-Out & Tenant Recharge Audit', jumpView: 're_workorders',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeRealEstateOperations({ ignoreSearch: true }).workorders || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 're_workorders', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'Properties', target: r.property || '',
+        party: `${r.id} · ${r.contractor || 'Contractor'}`,
+        detail: `${r.unit || ''} (Budget ${fmtUSD(r.budget_usd || 0, 0)})`, value: Number(r.actual_usd || 0)
+      }))
+    },
+    ins_renewal_days_left: {
+      verticalInd: 'Insurance & Brokerage',
+      label: 'Policy Days Until Renewal Expiry (days)',
+      unit: 'days', domainKey: 'insurance', domain: 'Policies, Renewals & Carriers', targetKind: 'ins_carrier', allowZeroOrNeg: true,
+      explain: 'Remaining days until policy expiration in the 30/60/90-day renewal pipeline. Pair with Drops Below (<) to flag urgent renewals.',
+      formTypes: [], whereLabel: '30/60/90-Day Renewal Queue', jumpView: 'ins_renewals',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeInsuranceOperations().renewals || []).map(r => ({
+        id: r.id || r.policy_no, rid: r.id || r.policy_no, rkey: 'ins_renewals',
+        date: String(r.expiry_date || '').slice(0, 10), company: 'Insurance Company',
+        target: r.carrier || '', party: `${r.client || 'Policyholder'} (${r.policy_no || r.id})`,
+        detail: `${r.carrier || ''} · ${r.line || ''}`, value: Number(r.days_left || 0)
+      }))
+    },
+    ins_discount_pct_comm: {
+      verticalInd: 'Insurance & Brokerage',
+      label: 'Client Discount Share of Gross Comm (%)',
+      unit: '%', domainKey: 'insurance', domain: 'Policies, Renewals & Carriers', targetKind: 'ins_carrier',
+      explain: 'Client premium rebate expressed as a percentage of gross brokerage commission on a policy.',
+      formTypes: [], whereLabel: 'Policy Register & Rebate Margin Guard', jumpView: 'ins_policies',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeInsuranceOperations().policies || []).filter(p => Number(p.gross_comm_usd || 0) > 0 && Number(p.discount_usd || 0) > 0).map(p => ({
+        id: p.id, rid: p.id, rkey: 'ins_policies', date: String(p.date || '').slice(0, 10),
+        company: 'Insurance Company', target: p.carrier || '',
+        party: `${p.client || 'Policyholder'} (${p.id})`,
+        detail: `Disc ${fmtUSD(p.discount_usd || 0, 0)} / Comm ${fmtUSD(p.gross_comm_usd || 0, 0)}`,
+        value: round2((Number(p.discount_usd || 0) / Number(p.gross_comm_usd || 1)) * 100)
+      }))
+    },
+    ins_carrier_payable_usd: {
+      verticalInd: 'Insurance & Brokerage',
+      label: 'Net Carrier Bordereau Payable ($)',
+      unit: '$', domainKey: 'insurance', domain: 'Policies, Renewals & Carriers', targetKind: 'ins_carrier',
+      explain: 'Net unpaid insurer balance (Gross Written Premium minus retained brokerage commission and settled wires).',
+      formTypes: [], whereLabel: 'Carrier Remittances & Fiduciary Cash', jumpView: 'ins_remittances',
+      formTargetFn: () => '', formValFn: () => 0,
+      recordsFn: () => (computeInsuranceOperations().remittances || []).map(r => ({
+        id: r.id, rid: r.id, rkey: 'ins_remittances', date: String(r.next_due || '').slice(0, 10),
+        company: 'Insurance Company', target: r.carrier || '', party: r.carrier || 'Carrier',
+        detail: `${r.id} · ${r.settlement_mode || 'Bordereau'}`, value: Number(r.net_payable_4017_usd || 0)
+      }))
     }
   };
+
+  const SHARED_SPINE_ALERT_METRIC_KEYS = [
+    'expense_usd', 'expense_cat_month_usd', 'expense_cat_30d_usd', 'daily_cash_expense_usd',
+    'settlement_usd', 'salary_voucher_usd', 'staff_rem_due_usd', 'staff_month_ot_usd',
+    'staff_month_absent_d', 'external_out_usd', 'cash_till_usd'
+  ];
+
+  const VERTICAL_CA_DOMAIN_PILL = {
+    'Holding & Treasury': { key: 'holding', label: 'Intercompany & Facilities' },
+    'Hospitality & Resorts': { key: 'hospitality', label: 'Resorts, POS & Energy' },
+    'Automotive & Heavy Trading': { key: 'trading', label: 'Showroom, Imports & Stock' },
+    'Real Estate & Property': { key: 'realestate', label: 'Leases, Rent & Fit-Out' },
+    'Insurance & Brokerage': { key: 'insurance', label: 'Policies, Renewals & Carriers' }
+  };
+
+  function getCustomAlertDomainsForIndustry(ind) {
+    if (!ind || ind === 'Manufacturing') return CUSTOM_ALERT_DOMAINS;
+    const domPill = VERTICAL_CA_DOMAIN_PILL[ind] || VERTICAL_CA_DOMAIN_PILL['Holding & Treasury'];
+    return [
+      { key: 'all', label: 'All Areas' },
+      domPill,
+      { key: 'expenses', label: 'Expenses & Payables' },
+      { key: 'payroll', label: 'Payroll & Workforce' },
+      { key: 'treasury', label: 'Cash Till & Loans' }
+    ];
+  }
+
+  function getCustomAlertMetricsForIndustry(ind) {
+    const out = {};
+    if (!ind || ind === 'Manufacturing') {
+      Object.entries(CUSTOM_ALERT_METRICS).forEach(([k, v]) => {
+        if (!v.verticalInd) out[k] = v;
+      });
+      return out;
+    }
+    Object.entries(CUSTOM_ALERT_METRICS).forEach(([k, v]) => {
+      if (v.verticalInd === ind) out[k] = v;
+    });
+    SHARED_SPINE_ALERT_METRIC_KEYS.forEach(k => {
+      if (CUSTOM_ALERT_METRICS[k]) out[k] = CUSTOM_ALERT_METRICS[k];
+    });
+    return out;
+  }
 
   function formatCustomAlertMetricVal(spec, v, decOverride) {
     const n = Number(v || 0);
@@ -16937,7 +17181,8 @@
     if (targetKind === 'supplier') {
       const arr = [];
       (SEED.records.suppliers || []).forEach(s => { if (s && s.name) arr.push(s.name); });
-      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: cleanFreqSort(arr, fIdx.supplier) };
+      const nonMfg = getActiveIndustry(STATE.company) !== 'Manufacturing';
+      return { label: nonMfg ? 'Specific Supplier / Vendor (Optional)' : 'Specific Supplier / Haulier (Optional)', placeholder: nonMfg ? 'All Suppliers & Vendors' : 'All Suppliers & Hauliers', options: cleanFreqSort(arr, fIdx.supplier) };
     }
     if (targetKind === 'product') {
       const arr = [];
@@ -16959,6 +17204,30 @@
       (SEED.records.employments || []).forEach(e => { if (e && e.staff) arr.push(e.staff); });
       (SEED.records.salaries || []).forEach(s => { if (s && s.staff) arr.push(s.staff); });
       return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: cleanFreqSort(arr, fIdx.staff) };
+    }
+    if (targetKind === 'sister_entity') {
+      const arr = getCompanyCatalog().map(c => c.name);
+      return { label: 'Sister Entity / Counterparty (Optional)', placeholder: 'All Group Entities', options: cleanFreqSort(arr, fIdx.company) };
+    }
+    if (targetKind === 'resort_outlet') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+      const arr = [].concat((hsp.posRows || []).map(r => r.terminal), (hsp.energyRows || []).map(r => r.asset));
+      return { label: 'Resort Terminal / Asset (Optional)', placeholder: 'All Resort Terminals & Generators', options: cleanFreqSort(arr, fIdx.site) };
+    }
+    if (targetKind === 'trd_warehouse') {
+      const trd = computeTradingOperations({ ignoreSearch: true });
+      const arr = (trd.stockRows || []).map(r => r.warehouse);
+      return { label: 'Specific Warehouse (Optional)', placeholder: 'All 5 Trading Warehouses', options: cleanFreqSort(arr, fIdx.site) };
+    }
+    if (targetKind === 're_property') {
+      const re = computeRealEstateOperations({ ignoreSearch: true });
+      const arr = (re.properties || []).map(p => p.name || p.property);
+      return { label: 'Specific Property (Optional)', placeholder: 'All Portfolio Properties', options: cleanFreqSort(arr, fIdx.site) };
+    }
+    if (targetKind === 'ins_carrier') {
+      const ins = computeInsuranceOperations();
+      const arr = (ins.remittances || []).map(r => r.carrier);
+      return { label: 'Insurance Carrier (Optional)', placeholder: 'All 6 Insurance Carriers', options: cleanFreqSort(arr, fIdx.supplier) };
     }
     return { label: 'Specific Scope', placeholder: 'Entire Selected Entity', options: [] };
   }
@@ -17166,7 +17435,7 @@
     const coScope = String(cr.company || 'all');
     const targetScope = String(cr.target || '').trim();
     const salesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const evalKey = `${cr.id || ''}|${cr.updated_at || ''}|${cr.metric}|${op}|${thresh}|${coScope}|${targetScope}|${cr.code || ''}|${cr.name || ''}|${SEED._customRev || 0}|${STATE._customRev || 0}|${_ALERT_RULES_REV || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${allowedCompanyNames().join(',')}|${getLbpFxRate()}|${salesLen}`;
+    const evalKey = `${cr.id || ''}|${cr.updated_at || ''}|${cr.metric}|${op}|${thresh}|${coScope}|${targetScope}|${cr.code || ''}|${cr.name || ''}|${SEED._customRev || 0}|${STATE._customRev || 0}|${STATE._indCustomRev || 0}|${_ALERT_RULES_REV || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${allowedCompanyNames().join(',')}|${getLbpFxRate()}|${salesLen}`;
     if (_customAlertEvalCache.has(evalKey)) return _customAlertEvalCache.get(evalKey);
     const rows = spec.recordsFn(targetScope) || [];
     const hits = [];
@@ -17277,7 +17546,13 @@
     const isMfgScope = !activeInd || activeInd === 'Manufacturing';
     const sentItems = buildSentinelItems();
     const sentById = new Map(sentItems.map(s => [s.id, s]));
-    const customList = getActiveCustomAlertRules();
+    const scopedCaDomains = getCustomAlertDomainsForIndustry(activeInd);
+    const scopedCaMetrics = getCustomAlertMetricsForIndustry(activeInd);
+    const allCustomRules = getActiveCustomAlertRules();
+    const customList = isMfgScope
+      ? allCustomRules.filter(cr => !CUSTOM_ALERT_METRICS[cr.metric] || !CUSTOM_ALERT_METRICS[cr.metric].verticalInd)
+      : allCustomRules.filter(cr => Boolean(scopedCaMetrics[cr.metric]));
+    let indSentByRule = null;
 
     const universalRuleIds = new Set(['G_BACKDATE_NOTE', 'G_REPDATE_GAP', 'S8', 'S4', 'S1', 'S7', 'G_KIOSK_PUNCH']);
     const scopedBuiltInCatalog = isMfgScope
@@ -17323,7 +17598,7 @@
 
     if (!isMfgScope && typeof buildIndustrySentinelItems === 'function') {
       const indSentinels = buildIndustrySentinelItems(activeInd) || [];
-      const indSentByRule = new Map(indSentinels.map(s => [s.ruleId || s.id, s]));
+      indSentByRule = new Map(indSentinels.map(s => [s.ruleId || s.id, s]));
       const domainCatalog = IND_ALERT_RULE_CATALOG.filter(r => r.industry === activeInd);
       const domainRows = domainCatalog.map(r => {
         const p = getAlertRuleParamsObj(r.id);
@@ -17367,7 +17642,7 @@
       const enabled = cr.enabled !== false;
       const behavior = cr.mode === 'block_and_audit' ? 'block' : (cr.mode === 'audit_only' ? 'audit' : 'warn');
       const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
-      const snItem = sentById.get(cr.id);
+      const snItem = (!isMfgScope && indSentByRule ? indSentByRule.get(cr.id) : null) || sentById.get(cr.id);
       const isFlagged = Boolean(enabled && snItem && snItem.severity !== 'ok');
       const scopeLbl = (!cr.company || cr.company === 'all') ? 'All Entities' : cr.company;
       const targetStr = String(cr.target || '').trim();
@@ -17440,7 +17715,9 @@
       ? Array.from(new Set(['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll'].concat(unifiedRows.map(r => r.domain))))
       : Array.from(new Set(unifiedRows.map(r => r.domain)));
     const compOpts = ['all'].concat(allowedCompanyNames());
-    const initTargetMeta = getCustomAlertTargetOptions('expense_cat');
+    const initCaMetricKey = Object.keys(scopedCaMetrics)[0] || 'expense_usd';
+    const initCaSpec = scopedCaMetrics[initCaMetricKey] || CUSTOM_ALERT_METRICS.expense_usd;
+    const initTargetMeta = getCustomAlertTargetOptions(initCaSpec.targetKind);
 
     const behaviorBadgeHtml = b => {
       if (b === 'block') return `<span class="badge badge-crit">Blocks Save</span>`;
@@ -17516,28 +17793,28 @@
           <div class="alert-custom-creator" id="customAlertCreatorCard">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <strong style="font-size:13.5px;color:var(--ink)">${ic('sliders')} Add a New Custom Alert &amp; Business Reason</strong>
-              <span style="font-size:11.5px;color:var(--muted)">Runs live on Entry Forms and AI Sentinels &amp; Audit · ${Object.keys(CUSTOM_ALERT_METRICS).length} business metrics</span>
+              <span style="font-size:11.5px;color:var(--muted)">Runs live on Entry Forms and AI Sentinels &amp; Audit · ${Object.keys(scopedCaMetrics).length} business metrics</span>
             </div>
             <div class="ca-domain-pills" role="tablist" aria-label="Filter metrics by operational area">
-              ${CUSTOM_ALERT_DOMAINS.map((d, di) => {
-                const cnt = d.key === 'all' ? Object.keys(CUSTOM_ALERT_METRICS).length : Object.values(CUSTOM_ALERT_METRICS).filter(m => m.domainKey === d.key).length;
+              ${scopedCaDomains.map((d, di) => {
+                const cnt = d.key === 'all' ? Object.keys(scopedCaMetrics).length : Object.values(scopedCaMetrics).filter(m => m.domainKey === d.key).length;
                 return `<button type="button" class="ca-domain-pill${di === 0 ? ' active' : ''}" data-ca-domain="${esc(d.key)}">${esc(d.label)} <span class="ca-pill-cnt">${cnt}</span></button>`;
               }).join('')}
             </div>
             <div class="alert-custom-grid">
               <div class="fld-mini">
                 <label for="caName">Alert Name *</label>
-                <input type="text" id="caName" placeholder="e.g. High Workshop Repair Invoice">
+                <input type="text" id="caName" placeholder="${isMfgScope ? 'e.g. High Workshop Repair Invoice' : 'e.g. Custom Operational Threshold Watch'}">
               </div>
               <div class="fld-mini">
                 <label for="caMetric">What to Measure *</label>
                 <select id="caMetric" data-plain-options="1">
-                  ${Object.entries(CUSTOM_ALERT_METRICS).map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('')}
+                  ${Object.entries(scopedCaMetrics).map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('')}
                 </select>
               </div>
               <div class="fld-mini">
                 <label for="caTarget" id="caTargetLabel">${esc(initTargetMeta.label)}</label>
-                <select id="caTarget" data-plain-options="1">
+                <select id="caTarget" data-plain-options="1" ${initCaSpec.targetKind === 'none' ? 'disabled' : ''}>
                   <option value="">${esc(initTargetMeta.placeholder)}</option>
                   ${initTargetMeta.options.map(opt => `<option value="${esc(opt)}">${esc(opt)}</option>`).join('')}
                 </select>
@@ -17550,7 +17827,7 @@
                 </select>
               </div>
               <div class="fld-mini">
-                <label for="caThreshold" id="caThresholdLabel">Threshold Value ($) *</label>
+                <label for="caThreshold" id="caThresholdLabel">Threshold Value (${esc(initCaSpec.unit || '$')}) *</label>
                 <input type="number" id="caThreshold" step="any" placeholder="e.g. 1500">
               </div>
               <div class="fld-mini">
@@ -17569,7 +17846,7 @@
               </div>
             </div>
             <div class="ca-explain-box" id="caMetricExplainBox">
-              ${buildCustomAlertExplainHtml('expense_usd', '', '>', '', 'all')}
+              ${buildCustomAlertExplainHtml(initCaMetricKey, '', '>', '', 'all')}
             </div>
             <div class="fld-mini" style="margin-top:10px">
               <label for="caWhy" style="display:block;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:4px">Why Am I Adding This Alert? * (Plain-English reminder so your team always knows its purpose)</label>
@@ -41608,7 +41885,7 @@
                   <td class="r mono good">${fmtUSD(p.inUsd, 2)}</td>
                   <td class="r mono crit">${fmtUSD(p.outUsd, 2)}</td>
                   <td class="r mono ${p.netUsd >= 0 ? 'good' : 'crit'}"><strong>${fmtSignedUSD(p.netUsd, 2)}</strong></td>
-                  <td class="mono">${esc(fmtDateDMY(p.lastDate))}</td>
+                  <td class="mono">${esc(fmtDateDMY(p.lastDate))} <button type="button" class="btn-ind-wf" data-ind-workflow="hld_partner_split" data-wf-partner="${esc(p.partner)}" data-wf-pool="${Math.max(1000, Math.round(Math.abs(p.inUsd - p.outUsd) || 50000))}">+ Split</button></td>
                 </tr>
               `).join('') : emptyRow(7, 'No partner entries match the current filter')}
               ${showMoreRow('hld_partners', partners.length, 7)}
@@ -41849,13 +42126,15 @@
               ${shownLoans.length ? shownLoans.map(l => {
                 const amt = Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0);
                 const dir = String(l.side || l.type || l.direction || 'Loan Given');
+                const wfLoan = getIndustryWorkflowPatch('hld_loans', l.id);
+                const loanDone = Boolean(wfLoan && wfLoan.status === 'Repayment Logged');
                 return `
                   <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
                     <td class="mono">${esc(fmtDateDMY(l.date || l.start_date))}</td>
                     <td class="mono"><strong>${esc(l.name || l.id)}</strong>${renderSpineInlineAttBadgeHtml('loans', l)}</td>
                     <td>${coBadge(l.company)}</td>
                     <td><strong>${esc(l.counterparty || l.party || l.borrower || '—')}</strong></td>
-                    <td><span class="badge badge-info">${esc(dir)}</span></td>
+                    <td><span class="badge badge-info">${esc(dir)}</span>${!loanDone ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="hld_loan_repay" data-wf-id="${esc(l.id)}" data-wf-co="${esc(l.company || 'Bdeir Holding')}" data-wf-party="${esc(l.counterparty || l.party || l.borrower || 'Central Facility')}" data-wf-amt="${amt}">+ Repay</button>` : ` <span class="badge badge-good">Repayment Logged</span>`}</td>
                     <td class="r mono"><strong>${fmtUSD(amt, 2)}</strong></td>
                     <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(cleanNotesText(l.notes) || '—')}</td>
                   </tr>
@@ -41969,6 +42248,7 @@
     getIndustryCustomRows('hsp_pos').forEach(cr => posRows.unshift(cr));
     const scopedPosRows = posRows.filter(r => activeNames.has(r.company));
     posRows.length = 0; posRows.push(...scopedPosRows);
+    posRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_pos', r.id); if (p) posRows[i] = Object.assign({}, r, p); });
 
     const vatRows = pickHsp('vatRows', [
       { id: 'HSP-VAT-101', date: '2026-09-28', company: 'Blanca', doc_ref: 'VAT-BL-2026-091', category: 'Chalet & F&B Sales', tax_rule: '11% Standard VAT', ht_usd: 29450, vat_usd: 3239.5, ttc_usd: 32689.5, direction: 'Output VAT', notes: 'Official 11% fiscal declaration on resort rooms & dining' },
@@ -41992,6 +42272,7 @@
     getIndustryCustomRows('hsp_memberships').forEach(cr => membershipRows.unshift(cr));
     const scopedMemRows = membershipRows.filter(r => activeNames.has(r.company));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
+    membershipRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_memberships', r.id); if (p) membershipRows[i] = Object.assign({}, r, p); });
 
     const partnerSplitRows = pickHsp('partnerSplitRows', [
       { id: 'HSP-JV-01', company: 'Blanca', category: 'Restaurant & Terrace F&B', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Chef Operator (30%) · Co-Investor (20%)', gross_pool_usd: 148500, operator_share_usd: 44550, holding_share_usd: 74250, coinvest_share_usd: 29700, paid_drawings_usd: 125000, open_payable_usd: 23500, status: 'Active Split' },
@@ -42281,7 +42562,7 @@
                     <td class="r mono">${fmtUSD(r.card_whish_usd, 2)}</td>
                     <td class="r mono">${fmtUSD(r.comp_usd, 2)}</td>
                     <td class="r mono ${Math.abs(r.variance_usd) > 0.5 ? 'warn' : 'good'}"><strong>${fmtSignedUSD(r.variance_usd, 2)}</strong></td>
-                    <td><span class="badge ${Math.abs(r.variance_usd) > 0.5 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                    <td><span class="badge ${Math.abs(r.variance_usd) > 0.5 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span>${Math.abs(r.variance_usd) > 0.5 ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${round2(r.cash_usd - r.variance_usd)}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_usd}">Log Close</button>` : ''}</td>
                   </tr>
                 `).join('') : emptyRow(12, 'No POS shift records match current filter')}
                 ${showMoreRow('hsp_pos', filteredPos.length, 12)}
@@ -42733,7 +43014,7 @@
                   <td class="r mono good">${fmtUSD(r.paid_usd, 2)}</td>
                   <td class="r mono ${r.balance_usd > 0 ? 'warn' : 'good'}"><strong>${fmtUSD(r.balance_usd, 2)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(r.due_date))}</td>
-                  <td><span class="badge ${r.status === 'Overdue Arrears' ? 'badge-crit' : (r.balance_usd > 0 ? 'badge-warn' : 'badge-good')}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.status === 'Overdue Arrears' ? 'badge-crit' : (r.balance_usd > 0 ? 'badge-warn' : 'badge-good')}">${esc(r.status)}</span>${r.balance_usd > 0 ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="hsp_mem_collect" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-member="${esc(r.member)}" data-wf-unit="${esc(r.unit)}" data-wf-season="${esc(r.season)}" data-wf-contract="${r.contract_usd}">Collect</button>` : ''}</td>
                   <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(r.notes)}</td>
                 </tr>
               `).join('') : emptyRow(11, 'No seasonal memberships match current filter')}
@@ -43380,7 +43661,27 @@
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
       { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
-    ]));
+    ])).map(rawR => {
+      const wp = getIndustryWorkflowPatch('trd_purchases', rawR.id);
+      const r = wp ? Object.assign({}, rawR, wp) : rawR;
+      const fob_usd = Number(r.fob_usd || 0);
+      const landed_add_usd = Number(r.landed_add_usd != null ? r.landed_add_usd : (r.duty_freight_usd || 0));
+      const total_landed_usd = Number(r.total_landed_usd != null ? r.total_landed_usd : (r.cif_usd != null ? r.cif_usd : round2(fob_usd + landed_add_usd)));
+      const ordered_qty = Number(r.ordered_qty != null ? r.ordered_qty : (r.qty || 1));
+      const received_qty = Number(r.received_qty != null ? r.received_qty : ordered_qty);
+      const backorder_qty = Number(r.backorder_qty != null ? r.backorder_qty : Math.max(0, ordered_qty - received_qty));
+      return {
+        ...r,
+        container_bl: r.container_bl || r.bl_no || '-',
+        ordered_qty,
+        received_qty,
+        backorder_qty,
+        fob_usd,
+        landed_add_usd,
+        total_landed_usd,
+        status: String(r.status || 'Cleared & Costed')
+      };
+    });
 
     // 5. Landed Cost Allocations
     const rawLandedRows = pickTrd('landedRows', [
@@ -43411,10 +43712,19 @@
       { id: 'SU-SH-007', company: 'Shacman', model: 'Shacman L3000 4x2 Municipal Water Tanker', family: 'L3000 Series', chassis_vin: 'LZGJLDR44PX019312', engine_no: 'ISD245-50-440198', year: 2026, warehouse: 'Workshop', fob_usd: 46800, landed_add_usd: 4200, landed_cost_usd: 51000, list_price_usd: 69500, status: 'In PDI', buyer: 'Pre-Delivery Inspection Bay 2' },
       { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2025, warehouse: 'Al Ghazieh', fob_usd: 29500, landed_add_usd: 3100, landed_cost_usd: 32600, list_price_usd: 42900, status: 'In Showroom', buyer: 'Available (Al-Ghazieh Branch)' },
       { id: 'SU-KA-002', company: 'Korri Auto', model: 'Hydraulic Lowbed Recovery Trailer 60T', family: 'Heavy Trailers', chassis_vin: 'TRL60TLB2026KA009', engine_no: 'HYD-AXLE-BPW-3AX', year: 2026, warehouse: 'Al Ghazieh', fob_usd: 34200, landed_add_usd: 3600, landed_cost_usd: 37800, list_price_usd: 49500, status: 'Reserved', buyer: 'South Coast Auto Fleet' }
-    ])).map(r => {
-      const margin_usd = round2(r.list_price_usd - r.landed_cost_usd);
-      const margin_pct = r.list_price_usd > 0 ? round2((margin_usd / r.list_price_usd) * 100) : 0;
-      return { ...r, margin_usd, margin_pct };
+    ])).map(rawR => {
+      const wp = getIndustryWorkflowPatch('trd_trucks', rawR.id);
+      const r = wp ? Object.assign({}, rawR, wp) : rawR;
+      const landed_cost_usd = round2(Number(r.landed_cost_usd ?? r.landed_usd ?? 0));
+      const fob_usd = round2(Number(r.fob_usd ?? Math.max(0, landed_cost_usd - Number(r.landed_add_usd || 0)) ?? 0));
+      const landed_add_usd = round2(Number(r.landed_add_usd ?? Math.max(0, landed_cost_usd - fob_usd) ?? 0));
+      const list_price_usd = round2(Number(r.list_price_usd ?? r.ask_price_usd ?? r.price_usd ?? landed_cost_usd));
+      const warehouse = r.warehouse || r.location || 'Main Showroom';
+      const family = r.family || r.model || 'Heavy Commercial';
+      const engine_no = r.engine_no || 'OEM-SPEC';
+      const margin_usd = round2(list_price_usd - landed_cost_usd);
+      const margin_pct = list_price_usd > 0 ? round2((margin_usd / list_price_usd) * 100) : 0;
+      return { ...r, fob_usd, landed_add_usd, landed_cost_usd, list_price_usd, warehouse, family, engine_no, margin_usd, margin_pct };
     });
 
     // 8. Workshop, PDI & Warranty Claims
@@ -43437,9 +43747,13 @@
       { id: 'PRT-KA-FLT-LF9009', code: 'FLT-LF9009', name: 'Fleetguard LF9009 / FS19732 Heavy Filter Service Pack', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Filters & Consumables', on_hand: 210, reorder_min: 80, wac_usd: 48, retail_usd: 68 },
       { id: 'PRT-KA-LUB-15W40-208L', code: 'LUB-15W40-208L', name: 'CI-4 15W-40 Heavy Diesel Engine Oil Drum (208L)', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Lubricants & Fluids', on_hand: 32, reorder_min: 12, wac_usd: 440, retail_usd: 620 }
     ])).map(r => {
-      const stock_val_usd = round2(r.on_hand * r.wac_usd);
-      const is_low = r.on_hand <= r.reorder_min;
-      return { ...r, stock_val_usd, is_low, status: is_low ? 'Reorder Alert' : 'Optimal Stock' };
+      const on_hand = Number(r.on_hand ?? r.qty_on_hand ?? 0);
+      const reorder_min = Number(r.reorder_min ?? r.min_qty ?? 0);
+      const wac_usd = Number(r.wac_usd ?? r.unit_cost_usd ?? 0);
+      const retail_usd = Number(r.retail_usd ?? r.list_price_usd ?? wac_usd);
+      const stock_val_usd = round2(on_hand * wac_usd);
+      const is_low = on_hand <= reorder_min;
+      return { ...r, on_hand, reorder_min, wac_usd, retail_usd, stock_val_usd, is_low, status: is_low ? 'Reorder Alert' : 'Optimal Stock' };
     });
 
     // 10. Stock Movements & Inter-Company Transfers
@@ -43932,13 +44246,13 @@
 
     const chartW = 780, chartH = 195;
     const chartImpRows = trd.importRows.slice(0, 12);
-    const maxImp = Math.max(1, ...chartImpRows.map(r => r.total_landed_usd));
+    const maxImp = Math.max(1, ...chartImpRows.map(r => Number(r.total_landed_usd) || 0));
     const slotW = Math.floor((chartW - 70) / Math.max(1, chartImpRows.length));
     const barW = Math.min(36, Math.max(16, Math.floor((slotW - 18) / 2)));
     const impSvgBars = chartImpRows.map((r, i) => {
       const gx = 55 + i * slotW;
-      const hFob = Math.max(6, Math.round((r.fob_usd / maxImp) * 120));
-      const hTot = Math.max(6, Math.round((r.total_landed_usd / maxImp) * 120));
+      const hFob = Math.max(6, Math.round(((Number(r.fob_usd) || 0) / maxImp) * 120));
+      const hTot = Math.max(6, Math.round(((Number(r.total_landed_usd) || 0) / maxImp) * 120));
       const baseY = 150;
       const hasUnalloc = r.status.includes('Pending');
       return `
@@ -44259,7 +44573,7 @@
                   <td class="r mono">${fmtUSD(r.fob_usd, 2)}</td>
                   <td class="r mono">${fmtUSD(r.landed_add_usd, 2)}</td>
                   <td class="r mono"><strong>${fmtUSD(r.total_landed_usd, 2)}</strong></td>
-                  <td><span class="badge ${r.status.includes('Pending') || r.backorder_qty > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.status.includes('Pending') || r.backorder_qty > 0 ? 'badge-warn' : 'badge-good'}">${esc(r.status)}</span>${(r.status.includes('Pending') || r.backorder_qty > 0) ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="trd_imp_landed" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-supplier="${esc(r.supplier)}" data-wf-origin="${esc(r.origin)}" data-wf-bl="${esc(r.container_bl)}" data-wf-ord="${r.ordered_qty}" data-wf-fob="${r.fob_usd}" data-wf-add="${r.landed_add_usd}">+ Landed</button>` : ''}</td>
                 </tr>
               `).join('') : emptyRow(hideCo ? 11 : 12, 'No import files or purchase orders match current filter')}
               ${showMoreRow('trd_purchases', filteredImp.length, hideCo ? 11 : 12)}
@@ -44542,7 +44856,7 @@
                   <td class="r mono"><strong>${fmtUSD(r.landed_cost_usd, 0)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(r.list_price_usd, 0)}</strong></td>
                   <td class="r mono good"><strong>${fmtUSD(r.margin_usd, 0)} (${r.margin_pct.toFixed(1)}%)</strong></td>
-                  <td><span class="badge ${r.status === 'Sold & Delivered' ? 'badge-good' : (r.status === 'Reserved' ? 'badge-warn' : 'badge-info')}">${esc(r.status)}</span> <span style="font-size:11px;color:var(--mu)">${esc(r.buyer)}</span></td>
+                  <td><span class="badge ${r.status === 'Sold & Delivered' ? 'badge-good' : (r.status === 'Reserved' ? 'badge-warn' : 'badge-info')}">${esc(r.status)}</span> <span style="font-size:11px;color:var(--mu)">${esc(r.buyer)}</span>${r.status !== 'Sold & Delivered' ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="trd_vin_invoice" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-model="${esc(r.model)}" data-wf-vin="${esc(r.chassis_vin)}" data-wf-list="${r.list_price_usd}" data-wf-cost="${r.landed_cost_usd}" data-wf-buyer="${esc(r.buyer && !/Available|Bay/i.test(r.buyer) ? r.buyer : '')}">Invoice VIN</button>` : ''}</td>
                 </tr>
               `).join('') : emptyRow(hideCo ? 11 : 12, 'No serial units or chassis match current filter')}
               ${showMoreRow('trd_trucks', filteredUnits.length, hideCo ? 11 : 12)}
@@ -44914,7 +45228,7 @@
     const ignoreSearch = Boolean(opts.ignoreSearch);
     const activeCo = opts.company || STATE.company || 'manufacturing-group';
     const selectedEntityName = RE_ENTITY_KEYS.includes(activeCo) ? COMPANY_BU_MATCH[activeCo] : null;
-    const sig = `${activeCo}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const sig = `${activeCo}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${JSON.stringify(STATE.industryRowEdits || {})}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
     const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
     const pickRe = (key, fallback) => {
@@ -45052,6 +45366,8 @@
     getIndustryCustomRows('re_invoicing').forEach(cr => invoices.unshift(cr));
     getIndustryCustomRows('re_sales').forEach(cr => sales.unshift(cr));
     getIndustryCustomRows('re_workorders').forEach(cr => workorders.unshift(cr));
+    leases.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_leases', r.id); if (p) leases[i] = Object.assign({}, r, p); });
+    workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
 
     const reUser = activeUser();
     const rlsReSet = (!isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
@@ -45434,7 +45750,7 @@
                   <td class="r mono"><strong>${fmtUSD(r.ttc_period_usd, 2)}</strong></td>
                   <td class="r mono"><strong>${fmtUSD(r.annual_ttc_usd, 2)}</strong></td>
                   <td class="r mono">${fmtUSD(r.deposit_usd, 2)}</td>
-                  <td><span class="badge ${r.status === 'Active' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.status === 'Active' || r.status === 'Billed Current' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span>${r.status !== 'Billed Current' ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="re_lease_bill" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-prop="${esc(r.property)}" data-wf-tenant="${esc(r.tenant)}" data-wf-net="${r.net_period_usd}">+ Rent Inv</button>` : ''}</td>
                 </tr>
               `).join('') : emptyRow(hideCo ? 10 : 11, 'No lease contracts match current filter')}
               ${showMoreRow('re_leases', filteredLeases.length, hideCo ? 10 : 11)}
@@ -46197,7 +46513,7 @@
                   <td class="r mono">${fmtUSD(r.budget_usd, 2)}</td>
                   <td class="r mono ${r.actual_usd > r.budget_usd ? 'crit' : ''}"><strong>${fmtUSD(r.actual_usd, 2)}</strong></td>
                   <td><span class="badge ${r.rechargeable ? 'badge-warn' : 'badge-good'}">${r.rechargeable ? 'Yes (Tenant Recharge)' : 'Landlord'}</span></td>
-                  <td><span class="badge ${r.status === 'Completed' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.status === 'Completed' || r.status === 'Recharged' ? 'badge-good' : 'badge-warn'}">${esc(r.status)}</span>${(r.rechargeable && r.status !== 'Recharged') ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="re_wo_recharge" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-prop="${esc(r.property)}" data-wf-unit="${esc(r.unit)}" data-wf-amt="${r.actual_usd || r.budget_usd}">Bill Tenant</button>` : ''}</td>
                 </tr>
               `).join('') : emptyRow(hideCo ? 10 : 11, 'No work orders match current filter')}
               ${showMoreRow('re_workorders', filteredWo.length, hideCo ? 10 : 11)}
@@ -46429,6 +46745,8 @@
       }
       agreements.unshift(ca);
     });
+    renewals.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_renewals', r.id || r.policy_no); if (p) renewals[i] = Object.assign({}, r, p); });
+    statements.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_statements', r.id); if (p) statements[i] = Object.assign({}, r, p); });
 
     const gwpUsd = policies.reduce((a, r) => a + r.gross_prem_usd, 0);
     const grossComm7063Usd = policies.reduce((a, r) => a + r.gross_comm_usd, 0);
@@ -46570,7 +46888,7 @@
                     <td class="r mono">${fmtUSD(r.expiring_prem_usd, 0)}</td>
                     <td class="r mono"><strong>${fmtUSD(r.quoted_renewal_usd, 0)}</strong></td>
                     <td>${esc(r.stage)}</td>
-                    <td><span class="badge ${r.status.includes('Expired') ? 'badge-crit' : 'badge-warn'}">${esc(r.status)}</span></td>
+                    <td><span class="badge ${r.status.includes('Expired') ? 'badge-crit' : (r.status.includes('Renewed') ? 'badge-good' : 'badge-warn')}">${esc(r.status)}</span>${!r.status.includes('Renewed') ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="ins_renew_pol" data-wf-id="${esc(r.id || r.policy_no)}" data-wf-pol="${esc(r.policy_no)}" data-wf-client="${esc(r.client)}" data-wf-carrier="${esc(r.carrier)}" data-wf-line="${esc(r.line)}" data-wf-prem="${r.quoted_renewal_usd || r.expiring_prem_usd}" data-wf-prod="${esc(r.producer)}">Renew</button>` : ''}</td>
                   </tr>
                 `).join('') : emptyRow(11, 'No renewal records match current filter')}
                 ${showMoreRow('ins_renewals', filteredRen.length, 11)}
@@ -46904,7 +47222,7 @@
                     <td class="r mono">${fmtUSD(r.statement_comm_usd, 2)}</td>
                     <td class="r mono ${r.variance_usd !== 0 ? 'crit' : ''}"><strong>${fmtUSD(r.variance_usd, 2)}</strong></td>
                     <td>${esc(r.note)}</td>
-                    <td><span class="badge ${r.status === 'Discrepancy' ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span></td>
+                    <td><span class="badge ${r.status === 'Discrepancy' ? 'badge-crit' : 'badge-good'}">${esc(r.status)}</span>${r.status !== 'Settled' ? ` <button type="button" class="btn-ind-wf" data-ind-workflow="ins_stmt_settle" data-wf-id="${esc(r.id)}" data-wf-carrier="${esc(r.carrier)}" data-wf-comm="${r.expected_comm_4117_usd}">Settle</button>` : ''}</td>
                   </tr>
                 `).join('') : emptyRow(9, 'No commission statements match current filter')}
                 ${showMoreRow('ins_statements', filteredStm.length, 9)}
@@ -47312,7 +47630,36 @@
     const ind = indOverride || getActiveIndustry(STATE.company);
     if (!ind || ind === 'Manufacturing') return [];
     const scopeLabel = COMPANY_LABELS[STATE.company] || ind;
-    const onlyEnabled = list => list.filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId));
+    const onlyEnabled = list => {
+      const base = list.filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId));
+      const scopedMetrics = getCustomAlertMetricsForIndustry(ind);
+      const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric]);
+      if (!customRules.length) return base;
+      const customItems = customRules.map(cr => {
+        const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+        const hits = evaluateSingleCustomAlert(cr);
+        const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
+        const top = hits[0];
+        const topSummary = top ? ` · Top: ${top.party} (${formatCustomAlertMetricVal(spec, top.value)})` : '';
+        return {
+          id: cr.id,
+          ruleId: cr.id,
+          isCustom: true,
+          code: cr.code || 'CUSTOM',
+          title: cr.name || 'Custom Alert',
+          detail: `${fmtNum(hits.length)} record${hits.length === 1 ? '' : 's'} ${cr.op === '<' ? 'below' : 'above'} ${fmtT}${topSummary}. Reason: ${cr.why || 'Custom threshold watch'}.`,
+          severity: hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok',
+          badge: hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : '0 CLEAR',
+          company: (!cr.company || cr.company === 'all') ? scopeLabel : cr.company,
+          rawMetric: hits.length,
+          rawSecondary: top ? Math.round(Math.abs(Number(top.value || 0))) : 0,
+          scrollPanel: 'industrySentinelsDetailPanel',
+          navView: spec.jumpView || 'alert_rules',
+          navLabel: 'Open Register'
+        };
+      });
+      return base.concat(customItems);
+    };
 
     if (ind === 'Holding & Treasury') {
       const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
@@ -49410,6 +49757,12 @@
     ensureMultiIndustrySpineSeeded();
     ensureDocumentsVaultSeeded();
     const ind = indOverride || getActiveIndustry(STATE.company);
+    const scopeSig = `${ind}|${STATE.company}`;
+    if (STATE._lastIndDopsScope && STATE._lastIndDopsScope !== scopeSig) {
+      STATE.dailyOpsDate = '';
+    }
+    STATE._lastIndDopsScope = scopeSig;
+
     const ds0 = buildIndustryDomainDataset(ind, 0);
     const ds1 = buildIndustryDomainDataset(ind, 1);
     const ds2 = buildIndustryDomainDataset(ind, 2);
@@ -49419,16 +49772,88 @@
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
     const today = typeof todayISO === 'function' ? todayISO() : '2026-11-06';
     const yestWall = typeof yesterdayISO === 'function' ? yesterdayISO() : '2026-11-05';
-    const latestOpDate = ind === 'Automotive & Heavy Trading' ? '2026-08-31' : '2026-11-06';
-    const targetDate = (STATE.dailyOpsDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.dailyOpsDate)) ? STATE.dailyOpsDate : latestOpDate;
     const stepDay = (iso, delta) => {
       const dt = new Date(`${iso}T12:00:00Z`);
       if (Number.isNaN(dt.getTime())) return iso;
       dt.setUTCDate(dt.getUTCDate() + delta);
       return dt.toISOString().slice(0, 10);
     };
-    const prevDate = targetDate > MIN_DATE ? stepDay(targetDate, -1) : '';
-    const nextDate = targetDate < MAX_DATE ? stepDay(targetDate, 1) : '';
+
+    const kSnap = getIndustryKpiSnapshot(ind, STATE.company, {});
+    const expRows = filterRecords(SEED.records.expenses || [], { ignorePeriod: true, tableKey: 'expenses' });
+    const docRows = filterRecords(SEED.records.documents || [], { ignorePeriod: true, tableKey: 'documents' });
+    const extRows = filterRecords(SEED.records.external_movements || [], { ignorePeriod: true, tableKey: 'external_movements' });
+    const loanRows = filterRecords(SEED.records.loans || [], { ignorePeriod: true, tableKey: 'loans' });
+    const empRows = filterRecords(SEED.records.employments || [], { ignorePeriod: true, tableKey: 'employments' });
+    const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
+    const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
+    const cashMoves = buildIndustryCashMoves(ind);
+
+    const revEvents = [];
+    const directEvents = [];
+    const extraDates = [];
+    if (ind === 'Holding & Treasury') {
+      const ic = computeIntercompanyInteractions({ ignoreSearch: true });
+      (ic.events || []).forEach(ev => {
+        if (!ev || !ev.date) return;
+        const d = String(ev.date).slice(0, 10);
+        if (ev.side === 'In') revEvents.push({ date: d, usd: Number(ev.usd || 0) });
+        else directEvents.push({ date: d, usd: Number(ev.usd || 0) });
+      });
+    } else if (ind === 'Hospitality & Resorts') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+      (hsp.venueRows || []).forEach(r => revEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.ttc_usd || 0) }));
+      (hsp.stockRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.recipe_usage_usd || 0) }));
+      (hsp.maintRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.cost_usd || 0) }));
+      (hsp.posRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+      (hsp.energyRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+    } else if (ind === 'Automotive & Heavy Trading') {
+      const trd = computeTradingOperations({ ignoreSearch: true });
+      (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => {
+        const d = String(r.date || '').slice(0, 10);
+        revEvents.push({ date: d, usd: Number(r.ttc_usd || 0) });
+        directEvents.push({ date: d, usd: Number(r.cost_usd || 0) });
+      });
+      (trd.importRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.landed_add_usd || 0) }));
+      (trd.grnRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+      (trd.warrantyRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+    } else if (ind === 'Real Estate & Property') {
+      const re = computeRealEstateOperations({ ignoreSearch: true });
+      (re.invoices || []).forEach(r => revEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.amount_ttc_usd || 0) }));
+      (re.sales || []).forEach(r => revEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.paid_usd || r.contract_usd || 0) }));
+      (re.workorders || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: Number(r.actual_usd || 0) }));
+      (re.receipts || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+      (re.recharges || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+    } else if (ind === 'Insurance & Brokerage') {
+      const ins = computeInsuranceOperations();
+      (ins.policies || []).forEach(r => {
+        const d = String(r.date || '').slice(0, 10);
+        revEvents.push({ date: d, usd: Number(r.gross_prem_usd || 0) });
+        directEvents.push({ date: d, usd: Math.max(0, Number(r.net_payable_4017_usd || 0)) });
+      });
+      (ins.billing || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+      (ins.claims || []).forEach(r => directEvents.push({ date: String(r.loss_date || '').slice(0, 10), usd: Number(r.paid_by_insurer_usd || r.approved_usd || 0) }));
+    }
+
+    const isValidOpIso = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= MIN_DATE && d <= MAX_DATE;
+    const revOpDates = Array.from(new Set(revEvents.filter(e => Number(e.usd || 0) > 0 && isValidOpIso(e.date)).map(e => e.date))).sort();
+    const allOpDates = Array.from(new Set([
+      ...revEvents.map(e => e.date),
+      ...directEvents.map(e => e.date),
+      ...extraDates,
+      ...expRows.map(r => String(r.date || r.rep_date || '').slice(0, 10)),
+      ...docRows.map(r => String(r.date || '').slice(0, 10)),
+      ...extRows.map(r => String(r.date || '').slice(0, 10)),
+      ...attRows.map(r => String(r.date || '').slice(0, 10)),
+      ...cashMoves.map(m => String(m.date || '').slice(0, 10))
+    ].filter(isValidOpIso))).sort();
+
+    const latestOpDate = revOpDates[revOpDates.length - 1]
+      || allOpDates[allOpDates.length - 1]
+      || (ind === 'Automotive & Heavy Trading' ? '2026-08-31' : '2026-11-06');
+    const targetDate = (STATE.dailyOpsDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.dailyOpsDate)) ? STATE.dailyOpsDate : latestOpDate;
+    const prevDate = allOpDates.filter(d => d < targetDate).pop() || (targetDate > MIN_DATE ? stepDay(targetDate, -1) : '');
+    const nextDate = allOpDates.find(d => d > targetDate) || (targetDate < MAX_DATE ? stepDay(targetDate, 1) : '');
 
     const indCos = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === ind);
     const rollupKey = indCos.length > 1 ? `industry:${ind}` : (indCos[0] ? indCos[0].key : STATE.company);
@@ -49452,16 +49877,6 @@
       </div>
     `;
 
-    const kSnap = getIndustryKpiSnapshot(ind, STATE.company, {});
-    const expRows = filterRecords(SEED.records.expenses || [], { ignorePeriod: true, tableKey: 'expenses' });
-    const docRows = filterRecords(SEED.records.documents || [], { ignorePeriod: true, tableKey: 'documents' });
-    const extRows = filterRecords(SEED.records.external_movements || [], { ignorePeriod: true, tableKey: 'external_movements' });
-    const loanRows = filterRecords(SEED.records.loans || [], { ignorePeriod: true, tableKey: 'loans' });
-    const empRows = filterRecords(SEED.records.employments || [], { ignorePeriod: true, tableKey: 'employments' });
-    const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
-    const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
-    const cashMoves = buildIndustryCashMoves(ind);
-
     const revUsd = round2(Number(kSnap.salesTotal || 0));
     const directUsd = round2(Number(kSnap.directCost || 0));
     const expTotal = round2(expRows.reduce((s, r) => s + Number(r.total_ttc || r.amount || 0), 0) || Number(kSnap.opEx || 0));
@@ -49469,8 +49884,47 @@
     const marginPct = revUsd > 0 ? Math.round((opProfit / revUsd) * 100) : 0;
     const cashIn = round2(cashMoves.reduce((s, m) => s + Number(m.in_usd || 0), 0));
     const cashOut = round2(cashMoves.reduce((s, m) => s + Number(m.out_usd || 0), 0));
-    const netCash = round2(cashIn - cashOut);
     const otHours = round2(attRows.reduce((s, a) => s + Number(a.overtime_hours || 0), 0));
+
+    const dayRevRows = revEvents.filter(e => e.date === targetDate);
+    const dayDirectRows = directEvents.filter(e => e.date === targetDate);
+    const dayExpList = expRows.filter(r => String(r.date || r.rep_date || '').slice(0, 10) === targetDate);
+    const dayDocList = docRows.filter(r => String(r.date || '').slice(0, 10) === targetDate);
+    const dayCashList = cashMoves.filter(m => String(m.date || '').slice(0, 10) === targetDate);
+    const dayAttList = attRows.filter(a => String(a.date || '').slice(0, 10) === targetDate);
+
+    const dayRevUsd = round2(dayRevRows.reduce((s, e) => s + Number(e.usd || 0), 0));
+    const dayDirectUsd = round2(dayDirectRows.reduce((s, e) => s + Number(e.usd || 0), 0));
+    const dayExpUsd = round2(dayExpList.reduce((s, r) => s + Number(r.total_ttc || r.amount || 0), 0));
+    const dayOpProfit = round2(dayRevUsd - dayDirectUsd - dayExpUsd);
+    const dayMarginPct = dayRevUsd > 0 ? Math.round((dayOpProfit / dayRevUsd) * 100) : marginPct;
+    const dayCashIn = round2(dayCashList.reduce((s, m) => s + Number(m.in_usd || 0), 0));
+    const dayCashOut = round2(dayCashList.reduce((s, m) => s + Number(m.out_usd || 0), 0));
+    const dayNetCash = round2(dayCashIn - dayCashOut);
+
+    const dopsQ = norm(STATE.dopsSearch || '');
+    const targetDmy = fmtDateDMY(targetDate);
+    const rowMatchesDayText = txt => {
+      const s = String(txt || '');
+      return s.includes(targetDate) || (targetDmy && s.includes(targetDmy));
+    };
+    const scopeBentoRows = (rows, textFn, isDated = false) => {
+      const qFiltered = dopsQ ? rows.filter(r => norm(textFn(r)).includes(dopsQ)) : rows.slice();
+      if (!isDated || dopsQ) return qFiltered;
+      const dayHits = qFiltered.filter(r => rowMatchesDayText(textFn(r)));
+      return dayHits.length ? dayHits.concat(qFiltered.filter(r => !rowMatchesDayText(textFn(r)))) : qFiltered;
+    };
+
+    const p1Rows = scopeBentoRows(ds0.rows, r => r.join(' '), true);
+    const p2Rows = scopeBentoRows(ds1.rows, r => r.join(' '), true);
+    const p3ExpRows = scopeBentoRows(expRows, r => `${r.date || ''} ${r.rep_date || ''} ${r.supplier || ''} ${r.name || ''} ${r.category || ''} ${r.method || ''} ${r.notes || ''}`, true);
+    const p3DocRows = scopeBentoRows(docRows, r => `${r.date || ''} ${r.name || ''} ${r.title || ''} ${r.doc_type || ''} ${r.counterparty || ''} ${r.company || ''}`, true);
+    const p4ExtRows = scopeBentoRows(extRows, r => `${r.date || ''} ${r.party || ''} ${r.counterparty || ''} ${r.company || ''} ${r.direction || ''} ${r.kind || ''}`, true);
+    const p4LoanRows = scopeBentoRows(loanRows, r => `${r.date || ''} ${r.name || ''} ${r.counterparty || ''} ${r.direction || ''}`, true);
+    const p5EqRows = scopeBentoRows(eqRows, r => `${r.equipment || ''} ${r.name || ''} ${r.site || ''} ${r.company || ''} ${r.default_driver || ''} ${r.status || ''}`, false);
+    const p5DomRows = scopeBentoRows(ds2.rows, r => r.join(' '), true);
+    const p6EmpRows = scopeBentoRows(empRows, r => `${r.staff || ''} ${r.name || ''} ${r.role || ''} ${r.company || ''}`, false);
+    const p6SenRows = scopeBentoRows(sentinels, s => `${s.title || ''} ${s.company || ''} ${s.category || ''} ${s.badge || ''} ${s.metric || ''}`, false);
 
     const domainLabels = {
       'Holding & Treasury': { rev: 'Intercompany & Advisory', direct: 'Facility & Funding Cost', p1: '1 · Sister Clearing & Flows', p2: '2 · Partner Split & Facilities', p5: '5 · HQ Assets & Treasury Desk' },
@@ -49489,11 +49943,12 @@
             <div class="dops-title-group">
               <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
               <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(targetDate)} · ${esc(coLbl)}</span>
-              <span class="dops-basis-tag" id="dopsTxBasisBadge">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis</span></span></span>
+              <span class="dops-basis-tag" id="dopsTxBasisBadge">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis (${fmtNum(allOpDates.length)}d)</span></span></span>
               ${buStripHtml}
             </div>
           </div>
           <div class="dops-bar-controls">
+            <input type="search" id="dopsQuickSearchInput" class="dops-search-inp" value="${esc(STATE.dopsSearch || '')}" placeholder="Filter day streams..." aria-label="Filter Daily Operations">
             <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
               <button type="button" class="dops-qpill${targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
               <button type="button" class="dops-qpill${targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
@@ -49516,61 +49971,61 @@
           <div class="dops-kpi accent-sales" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">${esc(domainLabels.rev)}</span>
-              <span class="dops-kpi-delta good">${fmtNum(ds0.rows.length)} entries</span>
+              <span class="dops-kpi-delta good">${fmtNum(dayRevRows.length)} day · ${fmtNum(ds0.rows.length)} total</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiSalesVal">${fmtUSD(revUsd, 0)}</span>
-              <span class="dops-kpi-unit">${esc(coLbl)}</span>
+              <span class="dops-kpi-val" id="dopsKpiSalesVal">${fmtUSD(dayRevUsd, 0)}</span>
+              <span class="dops-kpi-unit">${esc(targetDate.slice(5))}</span>
             </div>
-            <div class="dops-kpi-sub">AR Open <b>${fmtUSDk(kSnap.arOpen || 0)}</b> · Verified ledger tie-out</div>
+            <div class="dops-kpi-sub">Period <b>${fmtUSDk(revUsd)}</b> · AR Open <b>${fmtUSDk(kSnap.arOpen || 0)}</b></div>
           </div>
 
           <div class="dops-kpi accent-raw" data-nav-jump="${esc((spec.slots && spec.slots[1] && spec.slots[1].view) || 'expenses')}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">${esc(domainLabels.direct)}</span>
-              <span class="dops-kpi-delta neutral">${fmtNum(ds1.rows.length)} schedules</span>
+              <span class="dops-kpi-delta neutral">${fmtNum(dayDirectRows.length)} day · ${fmtNum(ds1.rows.length)} schedules</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiRawVal">${fmtUSD(directUsd, 0)}</span>
+              <span class="dops-kpi-val" id="dopsKpiRawVal">${fmtUSD(dayDirectUsd, 0)}</span>
               <span class="dops-kpi-unit">AP Open ${fmtUSDk(kSnap.apOpen || 0)}</span>
             </div>
-            <div class="dops-kpi-sub">Active contracts &amp; direct operational cost</div>
+            <div class="dops-kpi-sub">Period Direct <b>${fmtUSDk(directUsd)}</b> · Active contracts</div>
           </div>
 
           <div class="dops-kpi accent-exp" data-nav-jump="expenses" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Expenses &amp; Vault</span>
-              <span class="dops-kpi-delta neutral">${fmtNum(docRows.length)} scans</span>
+              <span class="dops-kpi-delta neutral">${fmtNum(dayExpList.length)} day · ${fmtNum(docRows.length)} scans</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(expTotal, 0)}</span>
-              <span class="dops-kpi-unit">${fmtNum(expRows.length)} bills · ${fmtNum(docRows.length)} docs</span>
+              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(dayExpUsd, 0)}</span>
+              <span class="dops-kpi-unit">${fmtNum(dayDocList.length)} day docs</span>
             </div>
-            <div class="dops-kpi-sub">Document Vault <b>${fmtNum(docRows.length)} filed</b> · 11% VAT tracked</div>
+            <div class="dops-kpi-sub">Period Bills <b>${fmtUSDk(expTotal)}</b> · Vault <b>${fmtNum(docRows.length)} filed</b></div>
           </div>
 
-          <div class="dops-kpi accent-profit${opProfit < 0 ? ' is-neg' : ''}" data-nav-jump="ledger" role="button" tabindex="0">
+          <div class="dops-kpi accent-profit${dayOpProfit < 0 ? ' is-neg' : ''}" data-nav-jump="ledger" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
-              <span class="dops-kpi-delta ${opProfit >= 0 ? 'good' : 'crit'}">${marginPct}% Margin</span>
+              <span class="dops-kpi-delta ${dayOpProfit >= 0 ? 'good' : 'crit'}">${dayMarginPct}% Margin</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val ${opProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${fmtUSD(opProfit, 0)}</span>
-              <span class="dops-kpi-unit">Net Contribution</span>
+              <span class="dops-kpi-val ${dayOpProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${fmtUSD(dayOpProfit, 0)}</span>
+              <span class="dops-kpi-unit">Day Contribution</span>
             </div>
-            <div class="dops-kpi-sub">Double-entry Lebanese PCG tied ($0 variance)</div>
+            <div class="dops-kpi-sub">Period Profit <b>${fmtUSDk(opProfit)}</b> · Lebanese CoA tied</div>
           </div>
 
           <div class="dops-kpi accent-cash" data-nav-jump="cashflow" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Treasury &amp; Cash</span>
-              <span class="dops-kpi-delta ${netCash >= 0 ? 'good' : 'warn'}">${netCash >= 0 ? 'Net In' : 'Net Out'}</span>
+              <span class="dops-kpi-delta ${dayNetCash >= 0 ? 'good' : 'warn'}">${dayNetCash >= 0 ? 'Net In' : 'Net Out'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiCashVal">${netCash > 0 ? '+' : ''}${fmtUSD(netCash, 0)}</span>
-              <span class="dops-kpi-unit">In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}</span>
+              <span class="dops-kpi-val" id="dopsKpiCashVal">${dayNetCash > 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}</span>
+              <span class="dops-kpi-unit">Period In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}</span>
             </div>
-            <div class="dops-kpi-sub">Ext <b>${fmtNum(extRows.length)}</b> · Facilities <b>${fmtNum(loanRows.length)}</b></div>
+            <div class="dops-kpi-sub">Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Facilities <b>${fmtNum(loanRows.length)}</b></div>
           </div>
 
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" role="button" tabindex="0">
@@ -49582,7 +50037,7 @@
               <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(empRows.length)} Staff</span>
               <span class="dops-kpi-unit">${fmtNum(eqRows.length)} Units · +${fmtNum(otHours, 0)}h OT</span>
             </div>
-            <div class="dops-kpi-sub">Biometric logs <b>${fmtNum(attRows.length)}</b> · Active contracts <b>${fmtNum(empRows.length)}</b></div>
+            <div class="dops-kpi-sub">Day logs <b>${fmtNum(dayAttList.length)}</b> · Total logs <b>${fmtNum(attRows.length)}</b></div>
           </div>
         </section>
 
@@ -49594,7 +50049,7 @@
                 <h2 class="dops-card-title">${esc(domainLabels.p1)}</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'pbi')}">${fmtNum(ds0.rows.length)}</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'pbi')}">${fmtNum(p1Rows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49603,13 +50058,13 @@
                   <colgroup><col style="width:38%"><col style="width:38%"><col style="width:24%"></colgroup>
                   <thead><tr><th>${esc(ds0.headers[0] || 'Reference')}</th><th>${esc(ds0.headers[1] || 'Counterparty')}</th><th class="r">${esc(ds0.headers[ds0.headers.length - 1] || 'Amount')}</th></tr></thead>
                   <tbody>
-                    ${ds0.rows.slice(0, 6).map((r, rIdx) => `
+                    ${p1Rows.length ? p1Rows.slice(0, 6).map((r, rIdx) => `
                       <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops">
                         <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
                         <td class="dops-trunc">${esc(r[1] || r[2] || '-')}</td>
                         <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
                       </tr>
-                    `).join('')}
+                    `).join('') : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching stream entries</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -49623,7 +50078,7 @@
                 <h2 class="dops-card-title">${esc(domainLabels.p2)}</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[1] && spec.slots[1].view) || 'pbi')}">${fmtNum(ds1.rows.length)}</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[1] && spec.slots[1].view) || 'pbi')}">${fmtNum(p2Rows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49632,13 +50087,13 @@
                   <colgroup><col style="width:38%"><col style="width:38%"><col style="width:24%"></colgroup>
                   <thead><tr><th>${esc(ds1.headers[0] || 'Schedule')}</th><th>${esc(ds1.headers[1] || 'Party / Scope')}</th><th class="r">${esc(ds1.headers[ds1.headers.length - 1] || 'Value')}</th></tr></thead>
                   <tbody>
-                    ${ds1.rows.slice(0, 6).map((r, rIdx) => `
+                    ${p2Rows.length ? p2Rows.slice(0, 6).map((r, rIdx) => `
                       <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops_2">
                         <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
                         <td class="dops-trunc">${esc(r[1] || r[2] || '-')}</td>
                         <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
                       </tr>
-                    `).join('')}
+                    `).join('') : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching schedule entries</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -49652,8 +50107,8 @@
                 <h2 class="dops-card-title">3 · P&amp;L, Bills &amp; Document Vault</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(docRows.length)})</button>
-                <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(expRows.length)}</button>
+                <button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(p3ExpRows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49662,20 +50117,22 @@
                   <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
                   <thead><tr><th>Supplier / Vault Scan</th><th>Category &amp; Method</th><th class="r">Amount</th></tr></thead>
                   <tbody>
-                    ${expRows.slice(0, 4).map(ex => `
-                      <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
-                        <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong> ${repDateShiftBadge(ex)}</td>
-                        <td class="dops-trunc">${esc(ex.category || 'Expense')} · ${esc(ex.method || 'Credit')}</td>
-                        <td class="r mono"><strong>${fmtUSD(ex.total_ttc || ex.amount || 0, 0)}</strong></td>
-                      </tr>
-                    `).join('')}
-                    ${docRows.slice(0, 2).map(dc => `
-                      <tr class="rrow" data-rkey="documents" data-rid="${esc(dc.id)}">
-                        <td class="dops-trunc"><span class="badge badge-brass">Doc</span> <strong>${esc(dc.name || dc.title)}</strong></td>
-                        <td class="dops-trunc">${esc(dc.doc_type || 'Filed Scan')} · ${esc(dc.counterparty || dc.company)}</td>
-                        <td class="r mono"><strong>${fmtUSD(dc.amount || 0, 0)}</strong></td>
-                      </tr>
-                    `).join('')}
+                    ${(p3ExpRows.length || p3DocRows.length) ? `
+                      ${p3ExpRows.slice(0, 4).map(ex => `
+                        <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
+                          <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong> ${repDateShiftBadge(ex)}</td>
+                          <td class="dops-trunc">${esc(ex.category || 'Expense')} · ${esc(ex.method || 'Credit')}</td>
+                          <td class="r mono"><strong>${fmtUSD(ex.total_ttc || ex.amount || 0, 0)}</strong></td>
+                        </tr>
+                      `).join('')}
+                      ${p3DocRows.slice(0, 2).map(dc => `
+                        <tr class="rrow" data-rkey="documents" data-rid="${esc(dc.id)}">
+                          <td class="dops-trunc"><span class="badge badge-brass">Doc</span> <strong>${esc(dc.name || dc.title)}</strong></td>
+                          <td class="dops-trunc">${esc(dc.doc_type || 'Filed Scan')} · ${esc(dc.counterparty || dc.company)}</td>
+                          <td class="r mono"><strong>${fmtUSD(dc.amount || 0, 0)}</strong></td>
+                        </tr>
+                      `).join('')}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching bills or documents</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -49689,8 +50146,8 @@
                 <h2 class="dops-card-title">4 · Treasury, External &amp; Loans</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(extRows.length)})</button>
-                <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(loanRows.length)}</button>
+                <button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(p4ExtRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(p4LoanRows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49699,24 +50156,26 @@
                   <colgroup><col style="width:40%"><col style="width:36%"><col style="width:24%"></colgroup>
                   <thead><tr><th>Counterparty / Facility</th><th>Movement Type</th><th class="r">USD Flow</th></tr></thead>
                   <tbody>
-                    ${extRows.slice(0, 4).map(ex => {
-                      const isOut = /out/i.test(String(ex.direction || ex.type || ''));
-                      const amt = Number(ex.usd_amount || ex.amount || 0);
-                      return `
-                        <tr class="rrow" data-rkey="external_movements" data-rid="${esc(ex.id)}">
-                          <td class="dops-trunc"><strong>${esc(ex.party || ex.counterparty || ex.company)}</strong></td>
-                          <td class="dops-trunc">${esc(ex.direction || ex.kind || 'Treasury')}</td>
-                          <td class="r mono"><strong class="${isOut ? 'warn' : 'good'}">${isOut ? '-' : '+'}${fmtUSD(amt, 0)}</strong></td>
+                    ${(p4ExtRows.length || p4LoanRows.length) ? `
+                      ${p4ExtRows.slice(0, 4).map(ex => {
+                        const isOut = /out/i.test(String(ex.direction || ex.type || ''));
+                        const amt = Number(ex.usd_amount || ex.amount || 0);
+                        return `
+                          <tr class="rrow" data-rkey="external_movements" data-rid="${esc(ex.id)}">
+                            <td class="dops-trunc"><strong>${esc(ex.party || ex.counterparty || ex.company)}</strong></td>
+                            <td class="dops-trunc">${esc(ex.direction || ex.kind || 'Treasury')}</td>
+                            <td class="r mono"><strong class="${isOut ? 'warn' : 'good'}">${isOut ? '-' : '+'}${fmtUSD(amt, 0)}</strong></td>
+                          </tr>
+                        `;
+                      }).join('')}
+                      ${p4LoanRows.slice(0, 2).map(ln => `
+                        <tr class="rrow" data-rkey="loans" data-rid="${esc(ln.id)}">
+                          <td class="dops-trunc"><strong>${esc(ln.name)}</strong> · ${esc(ln.counterparty || '')}</td>
+                          <td class="dops-trunc">${esc(ln.direction || 'Facility')}</td>
+                          <td class="r mono"><strong>${fmtUSD(ln.principal || ln.amount || 0, 0)}</strong></td>
                         </tr>
-                      `;
-                    }).join('')}
-                    ${loanRows.slice(0, 2).map(ln => `
-                      <tr class="rrow" data-rkey="loans" data-rid="${esc(ln.id)}">
-                        <td class="dops-trunc"><strong>${esc(ln.name)}</strong> · ${esc(ln.counterparty || '')}</td>
-                        <td class="dops-trunc">${esc(ln.direction || 'Facility')}</td>
-                        <td class="r mono"><strong>${fmtUSD(ln.principal || ln.amount || 0, 0)}</strong></td>
-                      </tr>
-                    `).join('')}
+                      `).join('')}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching treasury entries</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -49730,7 +50189,7 @@
                 <h2 class="dops-card-title">${esc(domainLabels.p5)}</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-disc-link" data-nav-jump="reg_equipment">${fmtNum(eqRows.length)}</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="reg_equipment">${fmtNum(p5EqRows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49739,20 +50198,22 @@
                   <colgroup><col style="width:42%"><col style="width:36%"><col style="width:22%"></colgroup>
                   <thead><tr><th>Unit / Operational Asset</th><th>Assigned Site &amp; Lead</th><th class="r">Status</th></tr></thead>
                   <tbody>
-                    ${eqRows.slice(0, 4).map(eq => `
-                      <tr class="rrow" data-rkey="company_equipment" data-rid="${esc(eq.id)}">
-                        <td class="dops-trunc"><strong>${esc(eq.equipment || eq.name)}</strong></td>
-                        <td class="dops-trunc">${esc(eq.site || eq.company)} · ${esc(eq.default_driver || '-')}</td>
-                        <td class="r"><span class="badge badge-good">${esc(eq.status || 'Active')}</span></td>
-                      </tr>
-                    `).join('')}
-                    ${ds2.rows.slice(0, 2).map((r, rIdx) => `
-                      <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops_5">
-                        <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
-                        <td class="dops-trunc">${esc(r[1] || '-')}</td>
-                        <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
-                      </tr>
-                    `).join('')}
+                    ${(p5EqRows.length || p5DomRows.length) ? `
+                      ${p5EqRows.slice(0, 4).map(eq => `
+                        <tr class="rrow" data-rkey="company_equipment" data-rid="${esc(eq.id)}">
+                          <td class="dops-trunc"><strong>${esc(eq.equipment || eq.name)}</strong></td>
+                          <td class="dops-trunc">${esc(eq.site || eq.company)} · ${esc(eq.default_driver || '-')}</td>
+                          <td class="r"><span class="badge badge-good">${esc(eq.status || 'Active')}</span></td>
+                        </tr>
+                      `).join('')}
+                      ${p5DomRows.slice(0, 2).map((r, rIdx) => `
+                        <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops_5">
+                          <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
+                          <td class="dops-trunc">${esc(r[1] || '-')}</td>
+                          <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                        </tr>
+                      `).join('')}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching operational assets</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -49767,7 +50228,7 @@
               </div>
               <div class="dops-card-actions">
                 <button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>
-                <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(empRows.length)}</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(p6EmpRows.length)}</button>
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -49776,20 +50237,22 @@
                   <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
                   <thead><tr><th>Staff / Control Watchdog</th><th>Role or Rule Scope</th><th class="r">Metric</th></tr></thead>
                   <tbody>
-                    ${empRows.slice(0, 3).map(em => `
-                      <tr class="rrow" data-rkey="employments" data-rid="${esc(em.id)}">
-                        <td class="dops-trunc"><strong>${esc(em.staff || em.name)}</strong></td>
-                        <td class="dops-trunc">${esc(em.role || 'Staff')} · ${esc(em.company)}</td>
-                        <td class="r mono"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
-                      </tr>
-                    `).join('')}
-                    ${sentinels.slice(0, 3).map(s => `
-                      <tr class="rrow" data-nav-jump="${esc(s.navView || s.targetView || 'sentinels')}">
-                        <td class="dops-trunc"><strong>${esc(s.title)}</strong></td>
-                        <td class="dops-trunc">${esc(s.company || s.category || ind)}</td>
-                        <td class="r"><span class="badge ${s.severity === 'ok' ? 'badge-good' : (s.severity === 'crit' ? 'badge-crit' : 'badge-warn')}">${esc(s.badge || s.metric || 'Active')}</span></td>
-                      </tr>
-                    `).join('')}
+                    ${(p6EmpRows.length || p6SenRows.length) ? `
+                      ${p6EmpRows.slice(0, 3).map(em => `
+                        <tr class="rrow" data-rkey="employments" data-rid="${esc(em.id)}">
+                          <td class="dops-trunc"><strong>${esc(em.staff || em.name)}</strong></td>
+                          <td class="dops-trunc">${esc(em.role || 'Staff')} · ${esc(em.company)}</td>
+                          <td class="r mono"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
+                        </tr>
+                      `).join('')}
+                      ${p6SenRows.slice(0, 3).map(s => `
+                        <tr class="rrow" data-nav-jump="${esc(s.navView || s.targetView || 'sentinels')}">
+                          <td class="dops-trunc"><strong>${esc(s.title)}</strong></td>
+                          <td class="dops-trunc">${esc(s.company || s.category || ind)}</td>
+                          <td class="r"><span class="badge ${s.severity === 'ok' ? 'badge-good' : (s.severity === 'crit' ? 'badge-crit' : 'badge-warn')}">${esc(s.badge || s.metric || 'Active')}</span></td>
+                        </tr>
+                      `).join('')}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching staff or control rules</td></tr>`}
                   </tbody>
                 </table>
               </div>
@@ -51891,9 +52354,33 @@
     _icInteractionsSig = '';
     _reOpsCache = null;
     _reOpsSig = '';
+    if (typeof _hspOpsCache !== 'undefined' && _hspOpsCache) _hspOpsCache.clear();
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
+    if (typeof _customAlertEvalCache !== 'undefined' && _customAlertEvalCache instanceof Map) _customAlertEvalCache.clear();
     _liveSentinelCache = null;
     _FREQ_IDX = null;
+  }
+
+  function getIndustryWorkflowPatch(bucket, rowId) {
+    if (!bucket || !rowId) return null;
+    const store = getIndustryRowEditStore();
+    const hit = store[`WF::${bucket}::${String(rowId).trim()}`];
+    return (hit && typeof hit === 'object' && !hit.voided) ? hit : null;
+  }
+
+  function saveIndustryWorkflowPatch(bucket, rowId, patch) {
+    if (!bucket || !rowId || !patch || typeof patch !== 'object') return null;
+    const store = getIndustryRowEditStore();
+    const key = `WF::${bucket}::${String(rowId).trim()}`;
+    const prev = (store[key] && typeof store[key] === 'object') ? store[key] : {};
+    const next = Object.assign({}, prev, patch, {
+      _revBumped: false,
+      updated_at: new Date().toISOString()
+    });
+    store[key] = next;
+    saveIndustryRowEditStore(store);
+    invalidateIndustryDomainCaches();
+    return next;
   }
 
   function addIndustryCustomRow(bucket, rowObj, opts = {}) {
@@ -52211,12 +52698,12 @@
       fieldsHtml = `
         ${fldWrap('Brokerage Entity', coSelectHtml)}
         ${fldWrap('Policy / Endorsement # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'POL-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Record Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Policy (New)">Policy (New)</option><option value="Policy (Renewal)">Policy (Renewal)</option><option value="Endorsement (+)">Endorsement (+)</option></select>`)}
+        ${fldWrap('Record Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Policy (New)" ${prefill.type === 'Policy (New)' ? 'selected' : ''}>Policy (New)</option><option value="Policy (Renewal)" ${prefill.type === 'Policy (Renewal)' ? 'selected' : ''}>Policy (Renewal)</option><option value="Endorsement (+)" ${prefill.type === 'Endorsement (+)' ? 'selected' : ''}>Endorsement (+)</option></select>`)}
         ${fldWrap('Effective Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Expiry Date *', `<input type="date" id="ide_expiry" style="${inpStyle}" value="${esc(prefill.expiry || '2027-10-29')}">`)}
         ${fldWrap('Policyholder / Client *', `<input type="text" id="ide_client" list="dl_ide_ins_clients" style="${inpStyle}" value="${esc(prefill.client || '')}" placeholder="Select or type client...">`)}
         ${fldWrap('Insurance Carrier *', `<input type="text" id="ide_carrier" list="dl_ide_ins_carriers" style="${inpStyle}" value="${esc(prefill.carrier || carriers[0] || 'MedGulf')}">`)}
-        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}">${lines.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('')}</select>`)}
+        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}">${lines.map(l => `<option value="${esc(l)}" ${prefill.line === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`)}
         ${fldWrap('Product / Cover Plan', `<input type="text" id="ide_product" style="${inpStyle}" value="${esc(prefill.product || 'Commercial All-Risk Cover')}">`)}
         ${fldWrap('Sum Insured ($)', `<input type="number" id="ide_sum_insured" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.sum_insured_usd || '500000')}">`)}
         ${fldWrap('Gross Written Premium ($ GWP) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="1" style="${inpStyle}" value="${esc(prefill.gross_prem_usd || '10000')}">`)}
@@ -52255,12 +52742,13 @@
         ${fldWrap('Override Bonus (%)', `<input type="number" id="ide_bonus_pct" class="mono" step="0.1" min="0" max="25" style="${inpStyle}" value="2.0">`)}
       `;
     } else if (spec.key === 'ins_remittances') {
+      const remCarriers = ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance'];
       fieldsHtml = `
-        ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="REM-2026-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}"><option value="MedGulf">MedGulf</option><option value="Bankers Assurance">Bankers Assurance</option><option value="Allianz SNA">Allianz SNA</option><option value="AXA Middle East">AXA Middle East</option><option value="Libano-Suisse">Libano-Suisse</option><option value="Arope Insurance">Arope Insurance</option></select>`)}
-        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="10" min="1" style="${inpStyle}" value="15000">`)}
-        ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="10" min="0" style="${inpStyle}" value="2250">`)}
-        ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="10" min="0" style="${inpStyle}" value="10000">`)}
+        ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
+        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : '15000')}">`)}
+        ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : '2250')}">`)}
+        ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.settled != null ? prefill.settled : '10000')}">`)}
         ${fldWrap('Remaining Carrier Payable ($)', `<input type="text" id="ide_payable" class="mono" readonly style="${roStyle}" value="$2,750.00">`)}
         ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="2026-11-30">`)}
       `;
@@ -52286,16 +52774,16 @@
     } else if (spec.key === 're_invoicing') {
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
-        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="INV-RE-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Official Tax Sequence', `<input type="text" id="ide_tax_seq" class="mono" style="${inpStyle}" value="VAT-4235-#016">`)}
-        ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'}">`)}
-        ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" style="${inpStyle}" value="Mazen (Unesco Pharmacy)">`)}
-        ${fldWrap('Billing Period', `<input type="text" id="ide_period" style="${inpStyle}" value="2026-Q4 (Nov-Jan)">`)}
-        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="12500">`)}
+        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'INV-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Official Tax Sequence', `<input type="text" id="ide_tax_seq" class="mono" style="${inpStyle}" value="${esc(prefill.tax_seq || 'VAT-4235-#016')}">`)}
+        ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
+        ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" style="${inpStyle}" value="${esc(prefill.tenant || 'Mazen (Unesco Pharmacy)')}">`)}
+        ${fldWrap('Billing Period', `<input type="text" id="ide_period" style="${inpStyle}" value="${esc(prefill.period || '2026-Q4 (Nov-Jan)')}">`)}
+        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '12500')}">`)}
         ${fldWrap('VAT Amount ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
         ${fldWrap('Total Billed Rent ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
-        ${fldWrap('Collected Now ($)', `<input type="number" id="ide_collected" class="mono" step="50" min="0" style="${inpStyle}" value="0">`)}
+        ${fldWrap('Collected Now ($)', `<input type="number" id="ide_collected" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.collected_usd != null ? prefill.collected_usd : '0')}">`)}
       `;
     } else if (spec.key === 're_sales') {
       fieldsHtml = `
@@ -52332,27 +52820,27 @@
         ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
         ${fldWrap('Customer *', `<input type="text" id="ide_customer" list="dl_ide_trd_custs" style="${inpStyle}" value="${esc(prefill.customer || custs[0] || '')}">`)}
         ${fldWrap('Sale Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale">Heavy Truck Sale</option><option value="Spare Parts & Tyres">Spare Parts & Tyres</option><option value="Lubricants & Hydraulics">Lubricants & Hydraulics</option></select>`)}
-        ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="Shacman F3000 6x4 Dump Truck 340HP">`)}
-        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="LZGJLDR44PX019301">`, 'Serial VIN (>=6 chars) locks Qty = 1')}
+        ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || 'Shacman F3000 6x4 Dump Truck 340HP')}">`)}
+        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || 'LZGJLDR44PX019301')}">`, 'Serial VIN (>=6 chars) locks Qty = 1')}
         ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="1">`)}
-        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="100" min="1" style="${inpStyle}" value="84500">`)}
+        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '84500')}">`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
-        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="100" min="0" style="${inpStyle}" value="69200">`)}
+        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.cost_usd != null ? prefill.cost_usd : '69200')}">`)}
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
       `;
     } else if (spec.key === 'trd_purchases') {
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
-        ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="IMP-TRD-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" style="${inpStyle}" value="Shaanxi Heavy Duty Automobile Imp & Exp Co.">`)}
-        ${fldWrap('Port of Origin', `<input type="text" id="ide_origin" style="${inpStyle}" value="Qingdao Port">`)}
-        ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="COSU6891992014 · 2x40HC">`)}
-        ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="50">`)}
-        ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="50">`)}
-        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="48000">`)}
-        ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="50" min="0" style="${inpStyle}" value="5400">`)}
+        ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'IMP-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" style="${inpStyle}" value="${esc(prefill.supplier || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
+        ${fldWrap('Port of Origin', `<input type="text" id="ide_origin" style="${inpStyle}" value="${esc(prefill.origin || 'Qingdao Port')}">`)}
+        ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || 'COSU6891992014 · 2x40HC')}">`)}
+        ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.ordered_qty != null ? prefill.ordered_qty : '50')}">`)}
+        ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : '50')}">`)}
+        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '48000')}">`)}
+        ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.landed_add_usd != null ? prefill.landed_add_usd : '5400')}">`)}
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
     } else if (spec.key === 'trd_trucks') {
@@ -52399,29 +52887,29 @@
     } else if (spec.key === 'hsp_pos') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('POS Shift Close # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="POS-CL-${String(Math.floor(910 + Math.random() * 89))}">`)}
-        ${fldWrap('Close Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="2026-09-29">`)}
-        ${fldWrap('POS Terminal *', `<input type="text" id="ide_terminal" style="${inpStyle}" value="Main Terrace POS #1">`)}
-        ${fldWrap('Shift Window', `<input type="text" id="ide_shift" style="${inpStyle}" value="Full Day">`)}
-        ${fldWrap('Cashier Name *', `<input type="text" id="ide_cashier" style="${inpStyle}" value="Maya S.">`)}
+        ${fldWrap('POS Shift Close # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'POS-CL-' + String(Math.floor(910 + Math.random() * 89)))}">`)}
+        ${fldWrap('Close Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || '2026-09-29')}">`)}
+        ${fldWrap('POS Terminal *', `<input type="text" id="ide_terminal" style="${inpStyle}" value="${esc(prefill.terminal || 'Main Terrace POS #1')}">`)}
+        ${fldWrap('Shift Window', `<input type="text" id="ide_shift" style="${inpStyle}" value="${esc(prefill.shift || 'Full Day')}">`)}
+        ${fldWrap('Cashier Name *', `<input type="text" id="ide_cashier" style="${inpStyle}" value="${esc(prefill.cashier || 'Maya S.')}">`)}
         ${fldWrap('Closed Bills Count', `<input type="number" id="ide_bills" class="mono" step="1" min="1" style="${inpStyle}" value="120">`)}
-        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="10" min="1" style="${inpStyle}" value="9500">`)}
-        ${fldWrap('Physical Cash Counted ($)', `<input type="number" id="ide_cash" class="mono" step="10" min="0" style="${inpStyle}" value="5200">`)}
-        ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="10" min="0" style="${inpStyle}" value="4300">`)}
-        ${fldWrap('Approved Comp / Promo ($)', `<input type="number" id="ide_comp" class="mono" step="10" min="0" style="${inpStyle}" value="0">`)}
+        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : '9500')}">`)}
+        ${fldWrap('Physical Cash Counted ($)', `<input type="number" id="ide_cash" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.cash_usd != null ? prefill.cash_usd : '5200')}">`)}
+        ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.card_usd != null ? prefill.card_usd : '4300')}">`)}
+        ${fldWrap('Approved Comp / Promo ($)', `<input type="number" id="ide_comp" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comp_usd != null ? prefill.comp_usd : '0')}">`)}
         ${fldWrap('Drawer Variance ($)', `<input type="text" id="ide_var" class="mono" readonly style="${roStyle}" value="$0.00 (Balanced)">`)}
       `;
     } else if (spec.key === 'hsp_memberships') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('Membership Contract # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="MEM-2026-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Member / Family Name *', `<input type="text" id="ide_member" style="${inpStyle}" value="Frem Family Beach Trust">`)}
-        ${fldWrap('Assigned Chalet / Cabana *', `<input type="text" id="ide_unit" style="${inpStyle}" value="VIP Cabana #A-09">`)}
-        ${fldWrap('Season Package', `<input type="text" id="ide_season" style="${inpStyle}" value="Summer 2026">`)}
+        ${fldWrap('Membership Contract # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'MEM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Member / Family Name *', `<input type="text" id="ide_member" style="${inpStyle}" value="${esc(prefill.member || 'Frem Family Beach Trust')}">`)}
+        ${fldWrap('Assigned Chalet / Cabana *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'VIP Cabana #A-09')}">`)}
+        ${fldWrap('Season Package', `<input type="text" id="ide_season" style="${inpStyle}" value="${esc(prefill.season || 'Summer 2026')}">`)}
         ${fldWrap('Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="2026-05-01">`)}
         ${fldWrap('End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="2026-10-31">`)}
-        ${fldWrap('Seasonal Contract Value ($) *', `<input type="number" id="ide_contract" class="mono" step="100" min="100" style="${inpStyle}" value="22000">`)}
-        ${fldWrap('Amount Collected ($)', `<input type="number" id="ide_paid" class="mono" step="100" min="0" style="${inpStyle}" value="22000">`)}
+        ${fldWrap('Seasonal Contract Value ($) *', `<input type="number" id="ide_contract" class="mono" step="100" min="100" style="${inpStyle}" value="${esc(prefill.contract_usd != null ? prefill.contract_usd : '22000')}">`)}
+        ${fldWrap('Amount Collected ($)', `<input type="number" id="ide_paid" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.paid_usd != null ? prefill.paid_usd : '22000')}">`)}
         ${fldWrap('Remaining Balance ($)', `<input type="text" id="ide_balance" class="mono" readonly style="${roStyle}" value="$0.00">`)}
       `;
     } else if (spec.key === 'hsp_stock') {
@@ -52451,24 +52939,24 @@
       `;
     } else if (spec.key === 'hld_partners') {
       fieldsHtml = `
-        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="HLD-PRT-${String(Math.floor(10 + Math.random() * 89))}">`)}
-        ${fldWrap('Operating Subsidiary Pool *', `<input type="text" id="ide_entity" style="${inpStyle}" value="Bdeir Holding · Consolidated JV">`)}
-        ${fldWrap('Partner / Shareholder Slot *', `<input type="text" id="ide_partner" style="${inpStyle}" value="Strategic Co-Investor (Slot 6)">`)}
+        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'HLD-PRT-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Operating Subsidiary Pool *', `<input type="text" id="ide_entity" style="${inpStyle}" value="${esc(prefill.entity || 'Bdeir Holding · Consolidated JV')}">`)}
+        ${fldWrap('Partner / Shareholder Slot *', `<input type="text" id="ide_partner" style="${inpStyle}" value="${esc(prefill.partner || 'Strategic Co-Investor (Slot 6)')}">`)}
         ${fldWrap('Effective From Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="2026-07-01">`)}
         ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="20">`)}
-        ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="1000" min="100" style="${inpStyle}" value="150000">`)}
+        ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="1000" min="100" style="${inpStyle}" value="${esc(prefill.pool_usd != null ? prefill.pool_usd : '150000')}">`)}
         ${fldWrap('Drawings Paid ($)', `<input type="number" id="ide_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="20000">`)}
         ${fldWrap('Entitled & Open Balance', `<input type="text" id="ide_entitled" class="mono" readonly style="${roStyle}" value="$30,000 Entitled · $10,000 Open">`)}
       `;
     } else if (spec.key === 'hld_loans') {
       fieldsHtml = `
         ${fldWrap('Holding / Subsidiary Entity *', coSelectHtml)}
-        ${fldWrap('Facility ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="LN-HLD-${String(Math.floor(10 + Math.random() * 89))}">`)}
-        ${fldWrap('Agreement Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="Central Shareholder Treasury Line">`)}
+        ${fldWrap('Facility ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'LN-HLD-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Agreement Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="${esc(prefill.lender || 'Central Shareholder Treasury Line')}">`)}
         ${fldWrap('Facility Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Term Facility">Term Facility</option><option value="Revolving Sister Line">Revolving Sister Line</option><option value="Equipment Finance">Equipment Finance</option></select>`)}
-        ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="1000" min="500" style="${inpStyle}" value="120000">`)}
-        ${fldWrap('Principal Repaid ($)', `<input type="number" id="ide_rep" class="mono" step="500" min="0" style="${inpStyle}" value="30000">`)}
+        ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="1000" min="500" style="${inpStyle}" value="${esc(prefill.principal_usd != null ? prefill.principal_usd : '120000')}">`)}
+        ${fldWrap('Principal Repaid ($)', `<input type="number" id="ide_rep" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.repaid_usd != null ? prefill.repaid_usd : '30000')}">`)}
         ${fldWrap('Outstanding Balance ($)', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
     } else {
@@ -53177,6 +53665,10 @@
       const amtGuess = numVal('ide_gwp') || numVal('ide_net') || numVal('ide_paid') || numVal('ide_price') || numVal('ide_tot') || numVal('ide_billed') || numVal('ide_contract') || numVal('ide_usd') || numVal('ide_claimed') || numVal('ide_actual') || 0;
       const dtGuess = strVal('ide_date') || strVal('ide_start_date') || today;
       const filesToAttach = pendingDomainFiles.slice();
+
+      if (prefill && typeof prefill._onPosted === 'function') {
+        try { prefill._onPosted(recId); } catch (_) {}
+      }
 
       closeIndustryDomainEntryModal();
       renderApp();
@@ -75029,6 +75521,8 @@
     }
   }
 
+  const MFG_ONLY_MODAL_FORMS = new Set(['sales', 'raw', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'fuel', 'malfunction', 'triprate']);
+
   function openEntryModal(formType, prefill = null, opts = null) {
     wireEntryUnsavedPromptDom();
     if (!(opts && opts.forceSwitch)) {
@@ -75086,6 +75580,13 @@
     const pendingRawRow = (form === 'raw' && pendingRawTargetId) ? findRawPurchaseRecordById(pendingRawTargetId) : null;
     const pendingSalRow = ((form === 'employment' || form === 'freelance') && pendingSalTargetId) ? findEmploymentRecordById(pendingSalTargetId) : null;
     const pendingTargetRow = pendingExpRow || pendingRawRow || pendingSalRow;
+    const curIndForModalScope = getActiveIndustry(STATE.company);
+    const isNonMfgModalScope = Boolean(curIndForModalScope && curIndForModalScope !== 'Manufacturing');
+    if (isNonMfgModalScope && !editTargetRow && !pendingTargetRow && !(opts && opts.indQuickTpl) && (MFG_ONLY_MODAL_FORMS.has(formType) || MFG_ONLY_MODAL_FORMS.has(form))) {
+      closeEntryModal(true);
+      openIndustryDomainEntryModal(STATE.view, prefill && typeof prefill === 'object' ? prefill : {});
+      return;
+    }
     if (!editTargetRow && !(pendingTargetRow ? (canModifyData() || canEnterForm(form)) : canEnterForm(form))) {
       toast('Your seat has no entry rights for this form', 'err');
       return;
@@ -75197,7 +75698,9 @@
       }
     }
     if (tabsWrap) tabsWrap.hidden = Boolean(pendingTargetRow || (editTargetRow && (form === 'site' || form === 'region')));
-    const tabPermCheck = fId => (editTargetRow && fId === form) ? true : canEnterForm(fId);
+    const tabPermCheck = fId => ((editTargetRow && fId === form) || (opts && opts.indQuickTpl && fId === form))
+      ? true
+      : ((!isNonMfgModalScope || !MFG_ONLY_MODAL_FORMS.has(fId)) && canEnterForm(fId));
     if (tabsWrap && window.MFG_FORMS) {
       const prevGroupsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-groups') : null;
       const prevSubtabsEl = !wasClosed ? tabsWrap.querySelector('.pa-modal-subtabs') : null;
@@ -75238,7 +75741,7 @@
             return;
           }
           const grp = (window.MFG_FORMS.FORM_GROUPS || []).find(g => g.id === gid);
-          const firstForm = grp && grp.forms.find(f => canEnterForm(f.id));
+          const firstForm = grp && grp.forms.find(f => tabPermCheck(f.id));
           if (firstForm) openEntryModal(firstForm.id, null, { groupId: gid, label: firstForm.label || FORM_TITLES[firstForm.id] || firstForm.id });
         });
       });
@@ -87689,9 +88192,19 @@
 
   function getActiveIndustry(coKey) {
     const k = String(coKey || STATE.company || 'manufacturing-group');
-    if (k === 'manufacturing-group') return 'Manufacturing';
+    if (k === 'manufacturing-group' || k === 'ALL') return 'Manufacturing';
     if (k === 'bdeirholding') return 'Holding & Treasury';
-    if (k.startsWith('industry:')) return k.slice(9) || 'Manufacturing';
+    if (k.startsWith('industry:')) {
+      const slug = k.slice(9).trim();
+      const sl = slug.toLowerCase();
+      if (sl === 'holding' || sl === 'holding & treasury') return 'Holding & Treasury';
+      if (sl === 'hospitality' || sl === 'hospitality & resorts') return 'Hospitality & Resorts';
+      if (sl === 'trading' || sl === 'automotive & heavy trading') return 'Automotive & Heavy Trading';
+      if (sl === 'realestate' || sl === 'real estate' || sl === 'real estate & property') return 'Real Estate & Property';
+      if (sl === 'insurance' || sl === 'insurance & brokerage') return 'Insurance & Brokerage';
+      if (sl === 'manufacturing') return 'Manufacturing';
+      return slug || 'Manufacturing';
+    }
     if (COMPANY_INDUSTRY_BY_KEY[k]) return COMPANY_INDUSTRY_BY_KEY[k];
     const cat = getCompanyCatalog();
     const hit = cat.find(c => c.key === k || c.name.toLowerCase() === k.toLowerCase());
@@ -103566,6 +104079,120 @@
         return;
       }
 
+      const wfBtn = t.closest('[data-ind-workflow]');
+      if (wfBtn && container.contains(wfBtn)) {
+        e.stopPropagation();
+        const wfAction = wfBtn.getAttribute('data-ind-workflow') || '';
+        const wfId = wfBtn.getAttribute('data-wf-id') || '';
+        const wfCo = wfBtn.getAttribute('data-wf-co') || '';
+        if (wfAction === 'hld_partner_split') {
+          openIndustryDomainEntryModal('hld_partners', {
+            partner: wfBtn.getAttribute('data-wf-partner') || '',
+            pool_usd: Number(wfBtn.getAttribute('data-wf-pool') || 50000)
+          });
+        } else if (wfAction === 'hld_loan_repay') {
+          const amt = Number(wfBtn.getAttribute('data-wf-amt') || 50000);
+          openIndustryDomainEntryModal('hld_loans', {
+            company: wfCo || 'Bdeir Holding',
+            lender: wfBtn.getAttribute('data-wf-party') || 'Central Facility',
+            principal_usd: Math.max(500, amt),
+            repaid_usd: Math.max(0, round2(amt * 0.25)),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('hld_loans', wfId, { status: 'Repayment Logged' }); }
+          });
+        } else if (wfAction === 'hsp_pos_resolve') {
+          openIndustryDomainEntryModal('hsp_pos', {
+            company: wfCo || 'Blanca',
+            terminal: wfBtn.getAttribute('data-wf-terminal') || 'Main POS',
+            cashier: wfBtn.getAttribute('data-wf-cashier') || 'Shift Cashier',
+            billed_usd: Number(wfBtn.getAttribute('data-wf-billed') || 0),
+            cash_usd: Number(wfBtn.getAttribute('data-wf-cash') || 0),
+            card_usd: Number(wfBtn.getAttribute('data-wf-card') || 0),
+            comp_usd: Number(wfBtn.getAttribute('data-wf-comp') || 0),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('hsp_pos', wfId, { variance_usd: 0, status: 'Balanced' }); }
+          });
+        } else if (wfAction === 'hsp_mem_collect') {
+          const cont = Number(wfBtn.getAttribute('data-wf-contract') || 20000);
+          openIndustryDomainEntryModal('hsp_memberships', {
+            company: wfCo || 'Blanca',
+            member: wfBtn.getAttribute('data-wf-member') || '',
+            unit: wfBtn.getAttribute('data-wf-unit') || '',
+            season: wfBtn.getAttribute('data-wf-season') || 'Summer 2026',
+            contract_usd: cont,
+            paid_usd: cont,
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('hsp_memberships', wfId, { paid_usd: cont, balance_usd: 0, status: 'Paid in Full' }); }
+          });
+        } else if (wfAction === 'trd_imp_landed') {
+          const fob = Number(wfBtn.getAttribute('data-wf-fob') || 40000);
+          const add = Number(wfBtn.getAttribute('data-wf-add') || 4500);
+          const ord = Number(wfBtn.getAttribute('data-wf-ord') || 50);
+          openIndustryDomainEntryModal('trd_purchases', {
+            company: wfCo || 'Shacman',
+            supplier: wfBtn.getAttribute('data-wf-supplier') || '',
+            origin: wfBtn.getAttribute('data-wf-origin') || '',
+            bl: wfBtn.getAttribute('data-wf-bl') || '',
+            ordered_qty: ord,
+            received_qty: ord,
+            fob_usd: fob,
+            landed_add_usd: add,
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('trd_purchases', wfId, { received_qty: ord, backorder_qty: 0, total_landed_usd: round2(fob + add), status: 'Cleared & Costed' }); }
+          });
+        } else if (wfAction === 'trd_vin_invoice') {
+          const listUsd = Number(wfBtn.getAttribute('data-wf-list') || 88000);
+          const netUsd = round2(listUsd / 1.11);
+          const buyer = wfBtn.getAttribute('data-wf-buyer') || 'Bdeir Contracting & Earthworks';
+          openIndustryDomainEntryModal('trd_sales', {
+            company: wfCo || 'Shacman',
+            customer: buyer,
+            item: wfBtn.getAttribute('data-wf-model') || '',
+            chassis: wfBtn.getAttribute('data-wf-vin') || '',
+            net_usd: netUsd,
+            cost_usd: Number(wfBtn.getAttribute('data-wf-cost') || 68000),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('trd_trucks', wfId, { status: 'Sold & Delivered', buyer }); }
+          });
+        } else if (wfAction === 're_lease_bill') {
+          openIndustryDomainEntryModal('re_invoicing', {
+            company: wfCo || '4235 Company S.A.L',
+            property: wfBtn.getAttribute('data-wf-prop') || '',
+            tenant: wfBtn.getAttribute('data-wf-tenant') || '',
+            period: '2026-Q4 (Nov-Jan)',
+            net_usd: Number(wfBtn.getAttribute('data-wf-net') || 12500),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('re_leases', wfId, { unbilled_periods: 0, status: 'Billed Current' }); }
+          });
+        } else if (wfAction === 're_wo_recharge') {
+          openIndustryDomainEntryModal('re_invoicing', {
+            company: wfCo || '4235 Company S.A.L',
+            property: wfBtn.getAttribute('data-wf-prop') || '',
+            tenant: wfBtn.getAttribute('data-wf-unit') || 'Tenant Recharge',
+            period: `WO Recharge (${wfId || 'Facility'})`,
+            net_usd: Number(wfBtn.getAttribute('data-wf-amt') || 6400),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('re_workorders', wfId, { status: 'Recharged' }); }
+          });
+        } else if (wfAction === 'ins_renew_pol') {
+          openIndustryDomainEntryModal('ins_policies', {
+            type: 'Policy (Renewal)',
+            client: wfBtn.getAttribute('data-wf-client') || '',
+            carrier: wfBtn.getAttribute('data-wf-carrier') || 'MedGulf',
+            line: wfBtn.getAttribute('data-wf-line') || 'MOT · Motor',
+            gross_prem_usd: Number(wfBtn.getAttribute('data-wf-prem') || 3150),
+            producer: wfBtn.getAttribute('data-wf-prod') || 'Joseph Khalil',
+            date: '2026-11-06',
+            expiry: '2027-11-05',
+            _onPosted: newPolId => { if (wfId) saveIndustryWorkflowPatch('ins_renewals', wfId, { status: 'Renewed', stage: `Converted (${newPolId})`, days_left: 365, bucket: 'Active Term' }); }
+          });
+        } else if (wfAction === 'ins_stmt_settle') {
+          const comm = Number(wfBtn.getAttribute('data-wf-comm') || 2000);
+          const gwpEst = Math.max(comm + 1000, round2(comm / 0.15));
+          openIndustryDomainEntryModal('ins_remittances', {
+            carrier: wfBtn.getAttribute('data-wf-carrier') || 'Allianz SNA',
+            gwp: gwpEst,
+            comm,
+            settled: round2(gwpEst - comm),
+            _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('ins_statements', wfId, { variance_usd: 0, statement_comm_usd: comm, status: 'Settled', note: 'Reconciled & settled via carrier bordereau' }); }
+          });
+        }
+        return;
+      }
+
       const rrow = t.closest('tr.rrow[data-rid]');
       if (rrow && container.contains(rrow)) {
         const selDot = t.closest('[data-row-sel]');
@@ -103778,6 +104405,40 @@
           try { nextInp.setSelectionRange(pos, pos); } catch (_) {}
         }
       });
+    }
+    if (STATE.view === 'daily_ops' && getActiveIndustry(STATE.company) !== 'Manufacturing') {
+      container.querySelectorAll('[data-dops-pick-date]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dt = btn.getAttribute('data-dops-pick-date') || '';
+          if (dt) {
+            STATE.dailyOpsDate = dt;
+            renderApp();
+          }
+        });
+      });
+      const dopsDateInp = $('dopsDateInput');
+      if (dopsDateInp) {
+        dopsDateInp.addEventListener('change', e => {
+          const dt = String(e.target.value || '').trim();
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+            STATE.dailyOpsDate = dt;
+            renderApp();
+          }
+        });
+      }
+      const dopsSearchInp = $('dopsQuickSearchInput');
+      if (dopsSearchInp) {
+        dopsSearchInp.addEventListener('input', e => {
+          STATE.dailyOpsSearch = e.target.value;
+          const pos = e.target.selectionStart || String(e.target.value || '').length;
+          renderApp();
+          const nextInp = $('dopsQuickSearchInput');
+          if (nextInp) {
+            nextInp.focus();
+            try { nextInp.setSelectionRange(pos, pos); } catch (_) {}
+          }
+        });
+      }
     }
     container.querySelectorAll('[data-rdl-jump]').forEach(btn => btn.addEventListener('click', () => {
       const targetRdl = btn.getAttribute('data-rdl-jump');
@@ -104697,10 +105358,12 @@
             const mSel = $('caMetric');
             if (!mSel) return;
             const prevVal = mSel.value;
-            const entries = Object.entries(CUSTOM_ALERT_METRICS).filter(([, mv]) => domKey === 'all' || mv.domainKey === domKey);
+            const activeCaMetrics = getCustomAlertMetricsForIndustry(getActiveIndustry(STATE.company));
+            const entries = Object.entries(activeCaMetrics).filter(([, mv]) => domKey === 'all' || mv.domainKey === domKey);
+            const fallbackMetric = Object.keys(activeCaMetrics)[0] || 'expense_usd';
             mSel.innerHTML = entries.map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('');
             const keepPrev = entries.some(([mk]) => mk === prevVal);
-            mSel.value = keepPrev ? prevVal : (entries[0] ? entries[0][0] : 'expense_usd');
+            mSel.value = keepPrev ? prevVal : (entries[0] ? entries[0][0] : fallbackMetric);
             syncCaMetricDependents(!keepPrev);
           });
         });
@@ -107673,7 +108336,7 @@
       setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
       setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
       if (Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
-        live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', year: 2026, location: 'Al-Ghazieh Service Bay', landed_cost_usd: 34200, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
+        live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2026, warehouse: 'Al Ghazieh', location: 'Al-Ghazieh Service Bay', fob_usd: 29500, landed_add_usd: 4700, landed_cost_usd: 34200, list_price_usd: 42900, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
       }
     }
     if (live.realestate) {
@@ -108333,7 +108996,12 @@
     getSeatPrimaryIndustry: typeof getSeatPrimaryIndustry === 'function' ? getSeatPrimaryIndustry : null,
     buildIndustryDomainDataset: typeof buildIndustryDomainDataset === 'function' ? buildIndustryDomainDataset : null,
     buildIndustryDomainTableRegister: typeof buildIndustryDomainTableRegister === 'function' ? buildIndustryDomainTableRegister : null,
-    IND_ALERT_RULE_CATALOG: typeof IND_ALERT_RULE_CATALOG !== 'undefined' ? IND_ALERT_RULE_CATALOG : null
+    IND_ALERT_RULE_CATALOG: typeof IND_ALERT_RULE_CATALOG !== 'undefined' ? IND_ALERT_RULE_CATALOG : null,
+    getIndustryGlModel: typeof getIndustryGlModel === 'function' ? getIndustryGlModel : null,
+    getCustomAlertDomainsForIndustry: typeof getCustomAlertDomainsForIndustry === 'function' ? getCustomAlertDomainsForIndustry : null,
+    getCustomAlertMetricsForIndustry: typeof getCustomAlertMetricsForIndustry === 'function' ? getCustomAlertMetricsForIndustry : null,
+    getIndustryWorkflowPatch: typeof getIndustryWorkflowPatch === 'function' ? getIndustryWorkflowPatch : null,
+    saveIndustryWorkflowPatch: typeof saveIndustryWorkflowPatch === 'function' ? saveIndustryWorkflowPatch : null
   };
 
   let _seedHydrationPromise = null;
