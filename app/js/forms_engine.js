@@ -1990,17 +1990,23 @@
         <div class="form-grid-3">
           ${secHdr('1. Regular Shift, BU Default & Effective Window', 'Configure regular clock timings, set the default shift for the selected BU, or log a new effective-dated shift timing change')}
           ${companyField}
-          ${fld('Shift Name *', inp('f_shift_name', 'text', '', 'list="dl_work_shifts" placeholder="e.g. Day Shift, Extended Day, Night Shift..."') + dl('dl_work_shifts', ['Day Shift', 'Extended Day', 'Night Shift', 'Morning Shift', 'Afternoon Shift', 'Site Crew Shift']), { id: 'wrap_ws_name', hintId: 'hint_ws_name', hint: '' })}
-          ${fld('Short Tag', inp('f_shift_short', 'text', '', 'placeholder="e.g. Day, Ext Day, Night"'), { id: 'wrap_ws_short' })}
-          ${fld('BU Default Shift *', sel('f_is_bu_default', [
-            ['No', 'No (Additional / Optional Shift)'],
-            ['Yes', 'Yes (Default Shift for Selected BU)']
-          ], 'No'), { id: 'wrap_ws_budef', hintId: 'hint_ws_budef', hint: 'Default shift automatically applies to all staff in this BU unless overridden' })}
+          ${fld('Shift Name *', inp('f_shift_name', 'text', '', 'list="dl_work_shifts" placeholder="e.g. Day Shift, Office Mon-Fri, Split Shift, Night Shift..."') + dl('dl_work_shifts', ['Day Shift', 'Office Mon-Fri', 'Extended Day', 'Split Shift', 'Night Shift', 'Morning Shift', 'Afternoon Shift']), { id: 'wrap_ws_name', hintId: 'hint_ws_name', hint: '' })}
+          ${fld('Short Tag', inp('f_shift_short', 'text', '', 'placeholder="e.g. Day, Mon-Fri, Split, Night"'), { id: 'wrap_ws_short' })}
+          ${fld('Company Default Shift *', sel('f_is_bu_default', [
+            ['No', 'No (Additional / Optional Company Shift)'],
+            ['Yes', 'Yes (Default Shift for Selected Company)']
+          ], 'No'), { id: 'wrap_ws_budef', hintId: 'hint_ws_budef', hint: 'Default shift automatically applies to all staff in this company unless overridden' })}
           ${fld('Effective Start Date *', inp('f_date', 'date', today), { id: 'wrap_ws_startdate', hintId: 'hint_ws_dates', hint: '' })}
           ${fld('Effective End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_ws_enddate' })}
           <div id="workShiftContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Shift Structure', sel('f_split_shift', [
+            ['No', 'Single Continuous Window (Regular / Overnight)'],
+            ['Yes', 'Split Shift (Two Daily Windows, e.g. Morning + Evening)']
+          ], 'No'), { id: 'wrap_ws_split_mode' })}
           ${fld('Regular Start Time (IN) *', inp('f_in_time', 'time', '08:00'), { id: 'wrap_ws_in' })}
           ${fld('Regular End Time (OUT) *', inp('f_out_time', 'time', '16:00'), { id: 'wrap_ws_out' })}
+          ${fld('Window 2 Start (Split IN)', inp('f_split_s2', 'time', '19:00'), { id: 'wrap_ws_split_s2' })}
+          ${fld('Window 2 End (Split OUT)', inp('f_split_e2', 'time', '23:00'), { id: 'wrap_ws_split_e2' })}
           ${fld('Scheduled Workdays', sel('f_working_days', [
             ['Mon,Tue,Wed,Thu,Fri,Sat', 'Mon to Sat (6 Days)'],
             ['Mon,Tue,Wed,Thu,Fri', 'Mon to Fri (5 Days)'],
