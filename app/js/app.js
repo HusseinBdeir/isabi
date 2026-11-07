@@ -11505,11 +11505,16 @@
     const custN = norm(opts.customer);
     const siteN = norm(opts.site);
     let best = null, bestSpec = -1, bestStart = '', bestTie = -1;
+    let maxClosedGenEndOnSide = '';
     for (let i = 0; i < eq.adj_windows.length; i++) {
       const w = eq.adj_windows[i];
       if (!w) continue;
       const wSide = w.side || 'both';
-      if (side && wSide !== 'both' && wSide !== 'all' && wSide !== side) continue;
+      const matchesSide = !side || wSide === 'both' || wSide === 'all' || wSide === side;
+      if (matchesSide && !w.cust && !w.site && w.e && String(w.e) > maxClosedGenEndOnSide) {
+        maxClosedGenEndOnSide = String(w.e);
+      }
+      if (!matchesSide) continue;
       if (w.cust && (!custN || norm(w.cust) !== custN)) continue;
       if (w.site && (!siteN || norm(w.site) !== siteN)) continue;
       if (w.s && String(w.s) > refDate) continue;
@@ -11526,6 +11531,21 @@
         bestSpec = spec;
         bestStart = sVal;
         bestTie = tie;
+      }
+    }
+    if (!best && (side === 'sales' || side === 'raw')) {
+      for (let i = 0; i < eq.adj_windows.length; i++) {
+        const w = eq.adj_windows[i];
+        if (!w || w.e || w.cust || w.site) continue;
+        const sVal = String(w.s || '');
+        if (sVal && sVal > refDate) continue;
+        if (maxClosedGenEndOnSide && sVal <= maxClosedGenEndOnSide) continue;
+        const tie = coN && w.co && norm(w.co) === coN ? 2 : 0;
+        if (!best || sVal > bestStart || (sVal === bestStart && tie >= bestTie)) {
+          best = w;
+          bestStart = sVal;
+          bestTie = tie;
+        }
       }
     }
     return best;
@@ -93860,12 +93880,12 @@
         <div class="kwh-brand">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge brand-badge-sm" role="img" aria-label="ISABI Systems">
             <g class="badge-ii" fill="#281D15">
-              <rect x="33" y="16" width="20" height="67"/>
-              <rect x="67" y="16" width="20" height="67"/>
+              <rect x="32" y="18" width="20" height="60"/>
+              <rect x="68" y="18" width="20" height="60"/>
             </g>
             <g class="badge-rule" fill="#B88228">
-              <rect x="33" y="92" width="54" height="3.6" rx="0.5"/>
-              <rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/>
+              <rect x="28" y="84" width="64" height="6" rx="1"/>
+              <rect x="28" y="96" width="64" height="6" rx="1"/>
             </g>
           </svg>
           <div class="kwh-station-meta">
