@@ -2171,6 +2171,13 @@
     const m = String((s && s.method) || '').trim();
     return m === 'Cash' || m === 'C Return' || m === 'Cash Return';
   }
+  function salesCashMoveAmount(s) {
+    if (!s || isRemovedTicket(s) || !isCashSaleTicket(s)) return 0;
+    const sgn = ticketSign(s);
+    if (!sgn) return 0;
+    const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+    return round2(net * sgn);
+  }
   function isCreditSaleTicket(s) {
     const m = String((s && s.method) || '').trim();
     return m === 'Credit' || m === 'CR Return' || m === 'Credit Return';
@@ -2867,18 +2874,29 @@
     }
   }
 
+  function matchesCashScopeCompany(r, coKey, allowed, opts = {}) {
+    if (!r) return false;
+    const c = String(r.company || 'WTC').trim() || 'WTC';
+    if (Array.isArray(allowed) && allowed.length && !allowed.includes(c)) return false;
+    if (opts.excludeLions && /^lions\s*transport$/i.test(c)) return false;
+    const sk = String(coKey || 'manufacturing-group');
+    if (sk === 'manufacturing-group') {
+      return /^(wtc|bbconstruction|lions\s*transport)$/i.test(c);
+    }
+    if (sk.startsWith('industry:')) {
+      const targetInd = sk.slice(9).trim();
+      const rowKey = COMPANY_KEY_BY_NAME[c] || slugCompanyKey(c);
+      const rowInd = r._industry || COMPANY_INDUSTRY_BY_KEY[rowKey] || inferIndustryForCompany(c);
+      return rowInd === targetInd;
+    }
+    const targetBu = COMPANY_BU_MATCH[sk] || null;
+    return Boolean(targetBu && c === targetBu);
+  }
+
   function applyCustomKpiDeltas(k, coKey, range, opts = {}) {
     if (!k) return k;
     const allowed = allowedCompanyNames();
-    const matchCo = r => {
-      if (!r) return false;
-      const c = String(r.company || 'WTC');
-      if (allowed.length && !allowed.includes(c)) return false;
-      if (coKey === 'wtc') return c === 'WTC';
-      if (coKey === 'bbconstruction') return c === 'BBConstruction';
-      if (coKey === 'lionstransport') return c === 'Lions Transport';
-      return true;
-    };
+    const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
     const inWin = d => {
       if (!range) return true;
       const iso = String(d || '').slice(0, 10);
@@ -3066,15 +3084,7 @@
 
   function computeCustomCashDeltas(coKey, range) {
     const allowed = allowedCompanyNames();
-    const matchCo = r => {
-      if (!r) return false;
-      const c = String(r.company || 'WTC');
-      if (allowed.length && !allowed.includes(c)) return false;
-      if (coKey === 'wtc') return c === 'WTC';
-      if (coKey === 'bbconstruction') return c === 'BBConstruction';
-      if (coKey === 'lionstransport') return c === 'Lions Transport';
-      return true;
-    };
+    const matchCo = r => matchesCashScopeCompany(r, coKey, allowed);
     const inWin = d => {
       if (!range) return true;
       const iso = String(d || '').slice(0, 10);
@@ -7485,7 +7495,9 @@
     const hubCount = (scopedHubs.length && u)
       ? scopedHubs.filter(h => canViewHub(h.id, u)).length
       : (perms.rights.read_fin ? hubTotal : 9);
-    const allTblKeys = typeof TABLE_CATALOG !== 'undefined' ? Object.keys(TABLE_CATALOG) : [];
+    const allTblKeys = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG))
+      ? window.MFG_PBI.TABLE_CATALOG.map(t => t.key)
+      : (typeof TABLE_CATALOG !== 'undefined' ? Object.keys(TABLE_CATALOG) : []);
     const tableTotal = allTblKeys.length || 36;
     const tableCount = (allTblKeys.length && u)
       ? allTblKeys.filter(tk => canAccessTable(tk, u)).length
@@ -37240,10 +37252,10 @@
       conversion: cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 })
     };
     if (!STATE.customRecords || coKey === 'lionstransport') return out;
-    const targetBu = COMPANY_BU_MATCH[coKey] || null;
-    const matchCo = r => r && (!targetBu || (r.company || 'WTC') === targetBu);
+    const allowed = allowedCompanyNames();
+    const matchCo = r => matchesCashScopeCompany(r, coKey, allowed, { excludeLions: true });
     const upsertNamed = (tbl, rawName, applyFn) => {
-      const nm = String(rawName || '—').trim() || '—';
+      const nm = String(rawName || 'Unspecified').trim() || 'Unspecified';
       const nk = norm(nm);
       let row = tbl.rows.find(x => x && norm(x.name) === nk);
       if (!row) {
@@ -37253,18 +37265,42 @@
       applyFn(row);
     };
     forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
-      if (t.removed_slip || !isCashSaleTicket(t)) return;
+      if (isRemovedTicket(t) || !isCashSaleTicket(t)) return;
+      const sgn = ticketSign(t);
+      if (!sgn) return;
       const amt = round2(mult * salesCashMoveAmount(t));
-      if (!amt) return;
-      upsertNamed(out.sales, t.customer || 'Cash Customer', row => { row.usd = round2(Number(row.usd || 0) + amt); });
+      const vatLbp = Math.round(mult * sgn * Number(t.vat || 0) * (rate || 89500));
+      if (!amt && !vatLbp) return;
+      upsertNamed(out.sales, t.customer || 'Cash Customer', row => {
+        row.usd = round2(Number(row.usd || 0) + amt);
+        row.lbp = Math.round(Number(row.lbp || 0) + vatLbp);
+      });
       out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + amt);
+      out.sales.totals.lbp = Math.round(Number(out.sales.totals.lbp || 0) + vatLbp);
     });
     forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
-      if (/^credit/i.test(String(rc.method || 'Payment'))) return;
-      const amt = round2(mult * Number(rc.amount || 0));
-      if (!amt) return;
-      upsertNamed(out.sales, rc.customer || 'Customer', row => { row.usd = round2(Number(row.usd || 0) + amt); });
-      out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + amt);
+      const mth = String(rc.method || '').trim();
+      const knd = receiptKind(rc);
+      const isRentComm = mth === 'Rent' || mth === 'VATRent';
+      if (knd !== 'Settlement' && knd !== 'VAT received' && !isRentComm) return;
+      let u = 0, l = 0;
+      if (mth === 'VATRent') {
+        l = -Math.round(mult * Number(rc.lbp_amount || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * (rate || 89500))));
+      } else if (mth === 'Rent') {
+        u = -round2(mult * Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0));
+      } else if (knd === 'VAT received') {
+        l = Math.round(mult * Number(rc.lbp_amount || (Number(rc.amount || 0) * (rate || 89500))));
+      } else {
+        l = Math.round(mult * Number(rc.lbp_amount || 0));
+        u = round2(mult * (rc.lbp_amount ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0)));
+      }
+      if (!u && !l) return;
+      upsertNamed(out.sales, rc.customer || 'Customer', row => {
+        row.usd = round2(Number(row.usd || 0) + u);
+        row.lbp = Math.round(Number(row.lbp || 0) + l);
+      });
+      out.sales.totals.usd = round2(Number(out.sales.totals.usd || 0) + u);
+      out.sales.totals.lbp = Math.round(Number(out.sales.totals.lbp || 0) + l);
     });
     forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
       if (e.price_pending || isCreditExpense(e)) return;
@@ -37281,11 +37317,18 @@
       out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
     });
     forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
-      if (/^credit/i.test(String(sp.method || 'Payment'))) return;
-      const amt = round2(mult * Number(sp.amount || 0));
-      if (!amt) return;
-      upsertNamed(out.expenses, sp.supplier || 'Supplier', row => { row.usd = round2(Number(row.usd || 0) + amt); });
-      out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + amt);
+      const knd = settlementKind(sp);
+      if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      const lRaw = Number(sp.lbp_amount || 0);
+      const u = knd === 'Payment' ? round2(mult * (lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0))) : 0;
+      const l = knd === 'Payment' ? Math.round(mult * lRaw) : Math.round(mult * (lRaw || Math.round(Number(sp.amount || 0) * (rate || 89500))));
+      if (!u && !l) return;
+      upsertNamed(out.expenses, sp.supplier || 'Supplier', row => {
+        row.usd = round2(Number(row.usd || 0) + u);
+        row.lbp = Math.round(Number(row.lbp || 0) + l);
+      });
+      out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + u);
+      out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
     });
     forEachCashCustomDelta('salaries', matchCo, (sa, mult) => {
       const u = round2(mult * Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0)));
@@ -37344,7 +37387,7 @@
     });
     forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
       const flowStr = String(ex.flow || ex.type || '');
-      const isExtd = /extended/i.test(flowStr) || /^Extended\./i.test(String(ex.notes || ''));
+      const isExtd = /extended/i.test(String(ex.kind || flowStr)) || /^Extended\./i.test(String(ex.notes || ''));
       const isCfg = /^config$/i.test(flowStr);
       const isOut = /out|expense/i.test(String(ex.direction || flowStr));
       const lbpRaw = Number(ex.lbp_amount || 0);
@@ -37414,7 +37457,11 @@
     const fullFin = isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
     const allowedNames = allowedCompanyNames(u);
+    const activeIndCf = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    const isIndRollupCf = String(STATE.company || '').startsWith('industry:') || STATE.company === 'manufacturing-group';
+    const indCosCf = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeIndCf && (!allowedNames.length || allowedNames.includes(c.name)));
     const showGroupSplit = STATE.company === 'manufacturing-group' && allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
+    const showSingleEntityBanner = !showGroupSplit && !isIndRollupCf && indCosCf.length > 1;
     const wtcK = showGroupSplit ? getKPI('wtc') : null;
     const bbcK = showGroupSplit ? getKPI('bbconstruction') : null;
 
@@ -37691,9 +37738,9 @@
             ${canEnterForm('expense', u) ? '<button type="button" class="btn" data-open-modal="expense">+ Cash Expense</button>' : ''}
             ${canEnterForm('settlement', u) ? '<button type="button" class="btn" data-open-modal="settlement">+ AP Payment</button>' : ''}
             ${canEnterForm('salary', u) ? '<button type="button" class="btn" data-open-modal="salary">+ Salary</button>' : ''}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn" data-open-modal="external">+ External</button>' : ''}
+            ${canEnterForm('external', u) ? '<button type="button" class="btn" data-open-modal="external">+ External</button>' : ''}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn" data-open-modal="treasury">+ Loan</button>' : ''}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
+            ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
             ${exportBtn('tillRecentPanel', isDailyMode ? 'Daily_Till_Sheet' : 'Cash_Till_Entries')}
           </div>
         </div>
@@ -37754,13 +37801,13 @@
               <span><small>Combined Till</small><b class="brass">${fmtUSD(bbcK.cash_till, 2)}</b></span>
             </div>
           </div>
-        </div>` : (allowedNames.length > 1 ? `
+        </div>` : (showSingleEntityBanner ? `
         <div class="sales-entity-recon single">
           <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
             <div class="sales-recon-head">
-              <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || STATE.company)}</span>
-              <b>Active Plant Cash Flow &amp; Till (${fmtNum(isDailyMode ? sortedDaily.length : sortedMoves.length)} ${isDailyMode ? 'Days' : 'Entries'})</b>
-              <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
+              <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || STATE.company)}</span>
+              <b>Active ${activeIndCf === 'Manufacturing' ? 'Plant' : 'Entity'} Cash Flow &amp; Till (${fmtNum(isDailyMode ? sortedDaily.length : sortedMoves.length)} ${isDailyMode ? 'Days' : 'Entries'})</b>
+              <button type="button" class="btn sales-recon-reset" data-jump-co="${esc(activeIndCf === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeIndCf))}">Show All ${esc(activeIndCf === 'Manufacturing' ? 'Group' : activeIndCf)} (${indCosCf.length})</button>
             </div>
             <div class="sales-recon-metrics">
               <span><small>Cash In ($)</small><b class="good">+${fmtUSD(isDailyMode ? dyInUsd : mvInUsd, 2)}</b></span>
@@ -47873,21 +47920,23 @@
     });
   }
 
-  function buildIndustryCashMoves(ind, rawKey) {
+  function buildIndustryCashMoves(ind, rawKey, opts = {}) {
     const kSnap = getIndustryKpiSnapshot(ind, rawKey, {});
     const coLbl = COMPANY_LABELS[rawKey] || (ind === 'Holding & Treasury' ? 'Bdeir Holding' : ind);
     const rows = [];
-    const addMv = (id, date, company, stream, cat, party, detail, ref, method, usdVal) => {
+    const addMv = (id, date, company, stream, cat, party, detail, ref, method, usdVal, lbpVal = 0, rkeyOverride = '', rawObj = null) => {
       const uVal = round2(Number(usdVal || 0));
-      if (Math.abs(uVal) < 0.01) return;
+      const lVal = Math.round(Number(lbpVal || 0));
+      if (Math.abs(uVal) < 0.01 && Math.abs(lVal) <= 1) return;
+      const dt = String(date || '2026-10-28').slice(0, 10);
       rows.push({
         id,
-        rkey: stream === 'sales' ? 'sales_tickets' : (stream === 'exp' ? 'expenses' : 'external_movements'),
-        date,
-        ym: date.slice(0, 7),
+        rkey: rkeyOverride || (stream === 'sales' ? 'sales_tickets' : (stream === 'exp' ? 'expenses' : 'external_movements')),
+        date: dt,
+        ym: dt.slice(0, 7),
         company,
         stream,
-        dir: uVal >= 0 ? 'IN' : 'OUT',
+        dir: (uVal > 0.005 || (Math.abs(uVal) <= 0.005 && lVal > 1)) ? 'IN' : 'OUT',
         cat,
         party,
         partyRel: '',
@@ -47898,9 +47947,9 @@
         usd: uVal,
         in_usd: uVal > 0 ? uVal : 0,
         out_usd: uVal < 0 ? round2(-uVal) : 0,
-        lbp: 0,
+        lbp: lVal,
         ticketId: '',
-        raw: { id, date, company, party, notes: detail, total: Math.abs(uVal) }
+        raw: rawObj || { id, date: dt, company, party, notes: detail, total: Math.abs(uVal) }
       });
     };
 
@@ -47951,6 +48000,66 @@
     if (!rows.length) {
       addMv('ind-mv-1', '2026-10-28', coLbl, 'sales', 'Operating Cash Inflow', coLbl, 'Verified domain treasury receipt', 'DOC-001', 'Cash', kSnap.cash_in_usd || 75000);
       addMv('ind-mv-2', '2026-10-27', coLbl, 'exp', 'Operating Cash Outflow', coLbl, 'Verified domain supplier settlement', 'DOC-002', 'Cash', -(kSnap.cash_out_usd || 26500));
+    }
+
+    if (!opts.baselineOnly && STATE.customRecords) {
+      const effScopeKey = rawKey || ('industry:' + ind);
+      const allowed = allowedCompanyNames();
+      const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
+      forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
+        if (isRemovedTicket(t) || !isCashSaleTicket(t)) return;
+        const sgn = ticketSign(t);
+        if (!sgn) return;
+        const u = round2(mult * salesCashMoveAmount(t));
+        const l = Math.round(mult * sgn * Number(t.vat || 0) * 89500);
+        addMv(t.id, t.date, t.company, 'sales', 'Cash Sale', t.customer || 'Cash Customer', t.product || t.notes || 'Cash sale', String(t.ticket_no || t.id || ''), t.method || 'Cash', u, l, 'sales_tickets', t);
+      });
+      forEachCashCustomDelta('receipts', matchCo, (rc, mult) => {
+        const mth = String(rc.method || '').trim();
+        const knd = receiptKind(rc);
+        if (knd !== 'Settlement' && knd !== 'VAT received' && mth !== 'Rent' && mth !== 'VATRent') return;
+        const lRaw = Number(rc.lbp_amount || 0);
+        const u = mth === 'Rent' ? -round2(mult * Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))
+          : (knd === 'Settlement' ? round2(mult * (lRaw ? Number(rc.usd_amount || 0) : Number(rc.usd_amount != null ? rc.usd_amount : rc.amount || 0))) : 0);
+        const l = mth === 'VATRent' ? -Math.round(mult * (lRaw || ((Number(rc.amount || 0) + Number(rc.discount || 0)) * 89500)))
+          : (knd === 'VAT received' ? Math.round(mult * (lRaw || (Number(rc.amount || 0) * 89500))) : Math.round(mult * lRaw));
+        addMv(rc.id, rc.date, rc.company, 'sales', 'Customer Receipt', rc.customer || 'Customer', rc.notes || 'Customer settlement', String(rc.reference || rc.id || ''), mth || 'Cash', u, l, 'receipts', rc);
+      });
+      forEachCashCustomDelta('expenses', matchCo, (e, mult) => {
+        if (e.price_pending || isCreditExpense(e)) return;
+        const sgn = expenseSign(e);
+        if (!sgn) return;
+        const lRaw = Number(e.lbp_amount || 0);
+        const u = -round2(mult * sgn * (lRaw ? Number(e.usd_amount || 0) : Number(e.usd_amount != null ? e.usd_amount : e.amount || 0)));
+        const l = -Math.round(mult * sgn * lRaw);
+        addMv(e.id, e.date, e.company, 'exp', e.category || 'Cash Expense', e.supplier || e.subcategory || 'Expense', e.notes || e.item_summary || 'Operating expense', String(e.reference || e.id || ''), e.method || 'Cash', u, l, 'expenses', e);
+      });
+      forEachCashCustomDelta('settlements', matchCo, (sp, mult) => {
+        const knd = settlementKind(sp);
+        if (knd !== 'Payment' && knd !== 'VAT paid') return;
+        const lRaw = Number(sp.lbp_amount || 0);
+        const u = knd === 'Payment' ? -round2(mult * (lRaw ? Number(sp.usd_amount || 0) : Number(sp.usd_amount != null ? sp.usd_amount : sp.amount || 0))) : 0;
+        const l = knd === 'Payment' ? -Math.round(mult * lRaw) : -Math.round(mult * (lRaw || Math.round(Number(sp.amount || 0) * 89500)));
+        addMv(sp.id, sp.date, sp.company, 'exp', 'Supplier Settlement', sp.supplier || 'Supplier', sp.notes || 'Supplier payment', String(sp.reference || sp.id || ''), sp.method || 'Payment', u, l, 'settlements', sp);
+      });
+      forEachCashCustomDelta('external_movements', matchCo, (ex, mult) => {
+        const flowStr = String(ex.flow || ex.type || '');
+        const isExtd = /extended/i.test(String(ex.kind || flowStr)) || /^Extended\./i.test(String(ex.notes || ''));
+        const isOut = /out|expense/i.test(String(ex.direction || flowStr));
+        const lRaw = Math.abs(Number(ex.lbp_amount || 0));
+        const uRaw = Math.abs(lRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0));
+        const sgn = isOut ? -1 : 1;
+        addMv(ex.id, ex.date, ex.company, isExtd ? 'extd' : 'ext', isExtd ? (isOut ? 'Extended Out' : 'Extended In') : (isOut ? 'External Out' : 'External In'), ex.counterparty || 'External Treasury', ex.notes || 'External movement', String(ex.reference || ex.id || ''), ex.direction || (isOut ? 'External Out' : 'External In'), mult * sgn * uRaw, mult * sgn * lRaw, 'external_movements', ex);
+      });
+      forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
+        const d = convSignedDeltas(cv, 89500);
+        addMv(cv.id, cv.date, cv.company, 'fx', d.dirLabel || 'FX Conversion', 'FX Desk', cv.notes || d.dirLabel || 'Currency exchange', String(cv.reference || cv.id || ''), d.dirLabel || 'FX', mult * d.usd, mult * d.lbp, 'conversions', cv);
+      });
+    }
+
+    const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
+    if (range) {
+      return rows.filter(mv => !mv.date || ((!range.from || mv.date >= range.from) && (!range.to || mv.date <= range.to)));
     }
     return rows;
   }
@@ -49190,13 +49299,69 @@
     }
 
     const glTb = makeBalancedTb(rawTb);
-    const cashMoves = buildIndustryCashMoves(ind, rawKey);
+    const baseMoves = buildIndustryCashMoves(ind, rawKey, { baselineOnly: true, ignorePeriod: true });
+    const cashMoves = buildIndustryCashMoves(ind, rawKey, { ignorePeriod: true });
     const dailyByDate = new Map();
     cashMoves.forEach(mv => {
       const cur = dailyByDate.get(mv.date) || [mv.date, 0, 0, 0, 0];
       cur[1] = round2(cur[1] + mv.in_usd);
       cur[2] = round2(cur[2] + mv.out_usd);
+      cur[3] = Math.round(cur[3] + (mv.lbp > 0 ? mv.lbp : 0));
+      cur[4] = Math.round(cur[4] + (mv.lbp < 0 ? -mv.lbp : 0));
       dailyByDate.set(mv.date, cur);
+    });
+    const indCfTables = {
+      sales: { rows: [], totals: { usd: 0, lbp: 0 } },
+      expenses: { rows: [], totals: { usd: 0, lbp: 0 } },
+      borrowing: { rows: [], totals: { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 } },
+      salary: { rows: [], totals: { usd: 0, lbp: 0 } },
+      external: { rows: [], totals: { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 } },
+      extended: { rows: [], totals: { usd: 0, lbp: 0 } },
+      conversion: { rows: [], totals: { from_amt: 0, to_amt: 0 } }
+    };
+    const upsertIndCfRow = (tbl, rawName) => {
+      const nm = String(rawName || 'Counterparty').trim() || 'Counterparty';
+      const nk = norm(nm);
+      let row = tbl.rows.find(x => x && norm(x.name) === nk);
+      if (!row) {
+        row = { name: nm, usd: 0, lbp: 0, rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0, exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 };
+        tbl.rows.push(row);
+      }
+      return row;
+    };
+    baseMoves.forEach(mv => {
+      const uAbs = Math.abs(Number(mv.usd || 0));
+      if (mv.stream === 'sales') {
+        const r = upsertIndCfRow(indCfTables.sales, mv.party);
+        r.usd = round2(r.usd + mv.usd);
+        indCfTables.sales.totals.usd = round2(indCfTables.sales.totals.usd + mv.usd);
+      } else if (mv.stream === 'exp') {
+        const r = upsertIndCfRow(indCfTables.expenses, mv.party);
+        r.usd = round2(r.usd + uAbs);
+        indCfTables.expenses.totals.usd = round2(indCfTables.expenses.totals.usd + uAbs);
+      } else if (mv.stream === 'loan') {
+        const r = upsertIndCfRow(indCfTables.borrowing, mv.party);
+        if (mv.usd >= 0) {
+          r.paid_usd = round2(r.paid_usd + uAbs);
+          indCfTables.borrowing.totals.paid_usd = round2(indCfTables.borrowing.totals.paid_usd + uAbs);
+        } else {
+          r.rec_usd = round2(r.rec_usd + uAbs);
+          indCfTables.borrowing.totals.rec_usd = round2(indCfTables.borrowing.totals.rec_usd + uAbs);
+        }
+      } else if (mv.stream === 'sal') {
+        const r = upsertIndCfRow(indCfTables.salary, mv.party);
+        r.usd = round2(r.usd + uAbs);
+        indCfTables.salary.totals.usd = round2(indCfTables.salary.totals.usd + uAbs);
+      } else if (mv.stream === 'ext') {
+        const r = upsertIndCfRow(indCfTables.external, mv.party);
+        if (mv.usd >= 0) {
+          r.rev_usd = round2(r.rev_usd + uAbs);
+          indCfTables.external.totals.rev_usd = round2(indCfTables.external.totals.rev_usd + uAbs);
+        } else {
+          r.exp_usd = round2(r.exp_usd + uAbs);
+          indCfTables.external.totals.exp_usd = round2(indCfTables.external.totals.exp_usd + uAbs);
+        }
+      }
     });
 
     const buFilter = (!String(rawKey || '').startsWith('industry:') && COMPANY_BU_MATCH[rawKey]) || null;
@@ -49321,7 +49486,7 @@
           out_lbp: 0
         },
         daily: Array.from(dailyByDate.values()),
-        tables: {}
+        tables: indCfTables
       }
     });
     if (_indGlModelCache.size > 32) _indGlModelCache.clear();
@@ -50062,7 +50227,7 @@
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('extEntriesPanel', 'External_Entries')}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
+            ${canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
         </div>
 
@@ -50298,7 +50463,7 @@
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('fxConversionsPanel', 'FX_Conversions')}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
+            ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
           </div>
         </div>
         ${renderColFilterBar('fx_conv')}
@@ -71883,9 +72048,11 @@
         const isBorrowRow = /^company\s+borrows$/i.test(String(row.direction || '')) ||
           (trt === 'loan_settlement' && /out/i.test(String(row.direction || row.method || ''))) ||
           (row.borrower && norm(row.borrower) === norm(row.company) && norm(row.lender || row.counterparty || '') !== norm(row.company));
-        const cpVal = isBorrowRow
-          ? (row.lender || row.counterparty || row.loan || '')
-          : (row.borrower || row.counterparty || row.lender || row.loan || '');
+        const cpVal = trt === 'external'
+          ? (row.counterparty || '')
+          : (isBorrowRow
+            ? (row.lender || row.counterparty || row.loan || '')
+            : (row.borrower || row.counterparty || row.lender || row.loan || ''));
         setModalControlVal('f_counterparty', cpVal);
         FORM_UI.lastLoanCp = cpVal;
         if ($('f_loan_side')) setModalControlVal('f_loan_side', isBorrowRow ? 'Company borrows' : 'Company lends');
@@ -100867,6 +101034,8 @@
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
+    customRecords: () => STATE.customRecords,
+    refreshCustomRecords: () => { invalidateAllSeedCaches(); applyCustomRecordsToSeed(); },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
 
