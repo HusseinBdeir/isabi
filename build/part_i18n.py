@@ -5808,6 +5808,22 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       "Day-in-the-Life": {
             "ar": "يوم عمل متكامل",
             "fr": "Journée Type"
+      },
+      "Debit": {
+            "ar": "مدين",
+            "fr": "Débit"
+      },
+      "Credit": {
+            "ar": "دائن",
+            "fr": "Crédit"
+      },
+      ", the assistant built into ISABI Systems. I can walk you through our 8 live industry systems, run numbers in the": {
+            "ar": "، المساعد الذكي المدمج في ISABI Systems. يمكنني استعراض أنظمتنا القطاعية الثمانية الحية، أو تشغيل الأرقام في بيئة",
+            "fr": ", l'assistant intégré à ISABI Systems. Je peux vous présenter nos 8 systèmes sectoriels, simuler vos chiffres dans le bac à sable"
+      },
+      "sandbox, or answer questions about how we build around your accounting.": {
+            "ar": "التجربة التفاعلية، أو الإجابة عن كيفية بناء النظام حول محاسبتكم.",
+            "fr": "interactif, ou répondre à vos questions sur notre intégration comptable."
       }
 };
 
@@ -5840,25 +5856,60 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
     } catch (_) {}
     let _everTranslatedShowcase = (activeShowcaseLang !== 'en');
     let _isApplyingShowcase = false;
+    let _showcaseAuditMode = false;
+    try {
+      _showcaseAuditMode = new URLSearchParams(location.search).get('i18n_audit') === '1';
+      if (_showcaseAuditMode && typeof document !== 'undefined' && document.head && !document.getElementById('isabi-i18n-audit-css')) {
+        const st = document.createElement('style');
+        st.id = 'isabi-i18n-audit-css';
+        st.textContent = '[data-i18n-missing="1"] { outline: 2px dashed #E11D48 !important; outline-offset: 2px !important; }';
+        document.head.appendChild(st);
+      }
+    } catch (_) {}
+    const _showcaseMissing = { ar: new Map(), fr: new Map() };
 
-    function translateShowcaseCore(trimmed, lang, depth) {
-      if (!trimmed || depth > 4) return trimmed;
-      if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(k|M|B|s|ms|d|pt|m³|MT|USD|EUR|AED|LBP))?$/i.test(trimmed)) return trimmed;
-      if (/^(USD|EUR|AED|LBP|EN|FR|ES|AR)$/i.test(trimmed)) return trimmed;
+    const SHOWCASE_PROPER_OR_INVARIANT = new Set([
+      'isabi', 'isabi systems', 'isabi erp', 'isabisystems.com', 'hussein bdeir', 'karim mansour',
+      'wtc', 'bbconstruction', 'bbc', 'lions transport', 'bdeir holding', 'blanca', 'la una', 'palms',
+      'voile', 'platinum', 'korri auto', 'shacman', 'properties', '4235', '4235 s.a.l', 'whatsapp', 'hb', 'k',
+      'sql', 'pwa', 'csv', 'pdf', 'rawbt', 'json', 'https', 'tls',
+      'rest', 'api', 'sse', 'pwa', 'ios', 'android', 'windows', 'macos', 'chrome', 'edge', 'safari',
+      'usd', 'lbp', 'll', 'eur', 'aed', 'gbp', 'sar', 'iqd', 'en', 'fr', 'ar', 'es',
+      'rls', '2fa', 'pin', 'pos', 'vin', 'pdi', 'gwp', 'noi', 'dso', 'fifo', 'cump', 'wac',
+      'ttc', 'ht', 'tva', 'vat', 'iva', 'coa', 'pcg', 'soa', 'gl', 'ar', 'ap', 'ic', 'jv', 'bu',
+      'mtd', 'qtd', 'ytd', 'f&b', 'hvac', 'fnol', 'fob', 'cif', 'sku', 'skus', 'kpi', 'kpis', 'erp', 'ai'
+    ]);
+
+    function isShowcaseInvariant(s) {
+      if (!s || typeof s !== 'string') return true;
+      const t = s.trim();
+      if (!t || !/[A-Za-z]/.test(t)) return true;
+      if (SHOWCASE_PROPER_OR_INVARIANT.has(t.toLowerCase())) return true;
+      if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(k|M|B|s|ms|d|h|yr|mo|pt|px|m³|MT|L|km|kg|USD|EUR|AED|LBP|LL))?$/i.test(t)) return true;
+      if (/^(?:https?:\/\/\S+|\S+@\S+\.\S+|\+\d[\d\s-]{6,}|[a-z0-9.-]+\.(com|org|net|io|gov\.lb)(\/\S*)?)$/i.test(t)) return true;
+      if (/^[A-Z]{2,5}[-#][A-Z0-9.,/#-]*\d[A-Z0-9.,/#-]*$/i.test(t)) return true;
+      return false;
+    }
+
+    function evalShowcaseCore(trimmed, lang, depth) {
+      if (!trimmed || lang === 'en') return { out: trimmed, ok: true };
+      if (depth > 4) return { out: trimmed, ok: isShowcaseInvariant(trimmed) };
+      if (/^[+-]?[$€£]?\s*[\d,.:/%×+-]+(\s*(k|M|B|s|ms|d|h|pt|m³|MT|L|km|kg|USD|EUR|AED|LBP))?$/i.test(trimmed)) return { out: trimmed, ok: true };
+      if (/^(USD|EUR|AED|LBP|EN|FR|ES|AR)$/i.test(trimmed)) return { out: trimmed, ok: true };
       const exact = SHOWCASE_DICT[trimmed];
-      if (exact && exact[lang] !== undefined) return exact[lang];
+      if (exact && exact[lang] !== undefined) return { out: exact[lang], ok: true };
 
       const lowMap = SHOWCASE_LOWER[lang];
       const lk = trimmed.toLowerCase();
       if (lowMap && lowMap[lk] !== undefined) {
         const val = lowMap[lk];
         if (lang !== 'ar' && trimmed.length > 3 && trimmed === trimmed.toUpperCase() && /[A-Z]{3}/.test(trimmed)) {
-          return val.toUpperCase();
+          return { out: val.toUpperCase(), ok: true };
         }
-        return val;
+        return { out: val, ok: true };
       }
 
-      if (/^(?:https?:\/\/|\S+@\S+\.\S+)/i.test(trimmed) || /^[A-Z]{2,4}-[A-Z0-9-]+$/.test(trimmed)) return trimmed;
+      if (/^(?:https?:\/\/\S+|\S+@\S+\.\S+)/i.test(trimmed) || /^[A-Z]{2,4}-[A-Z0-9-]+$/.test(trimmed)) return { out: trimmed, ok: true };
 
       // Parametric Showcase UI Patterns
       const MONTHS_AR = { jan:'كانون الثاني', feb:'شباط', mar:'آذار', apr:'نيسان', may:'أيار', jun:'حزيران', jul:'تموز', aug:'آب', sep:'أيلول', oct:'تشرين الأول', nov:'تشرين الثاني', dec:'كانون الأول', january:'كانون الثاني', february:'شباط', march:'آذار', april:'نيسان', june:'حزيران', july:'تموز', august:'آب', september:'أيلول', october:'تشرين الأول', november:'تشرين الثاني', december:'كانون الأول' };
@@ -5867,119 +5918,142 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       let m = trimmed.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/i);
       if (m) {
         const mk = m[2].toLowerCase();
-        return `${m[1]} ${lang === 'ar' ? MONTHS_AR[mk] : MONTHS_FR[mk]}`;
+        return { out: `${m[1]} ${lang === 'ar' ? MONTHS_AR[mk] : MONTHS_FR[mk]}`, ok: true };
       }
       m = trimmed.match(/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})(?:\s*\((MTD|QTD|YTD)\))?$/i);
       if (m) {
         const mk = m[1].toLowerCase();
         const mName = lang === 'ar' ? MONTHS_AR[mk] : MONTHS_FR[mk];
         const tag = m[3] ? (lang === 'ar' ? (m[3].toUpperCase() === 'MTD' ? ' (الشهر الحالي)' : m[3].toUpperCase() === 'QTD' ? ' (الربع الحالي)' : ' (منذ بداية السنة)') : ` (${m[3].toUpperCase()})`) : '';
-        return `${mName} ${m[2]}${tag}`;
+        return { out: `${mName} ${m[2]}${tag}`, ok: true };
       }
       m = trimmed.match(/^Q([1-4])\s+(\d{4})(?:\s*\(QTD\))?$/i);
-      if (m) return lang === 'ar' ? `الربع ${m[1]} ${m[2]} (الربع الحالي)` : `T${m[1]} ${m[2]} (QTD)`;
+      if (m) return { out: lang === 'ar' ? `الربع ${m[1]} ${m[2]} (الربع الحالي)` : `T${m[1]} ${m[2]} (QTD)`, ok: true };
 
       m = trimmed.match(/^FY\s+(\d{4})(?:\s*\(YTD\))?$/i);
-      if (m) return lang === 'ar' ? `السنة المالية ${m[1]} (منذ بداية السنة)` : `Exercice ${m[1]} (YTD)`;
+      if (m) return { out: lang === 'ar' ? `السنة المالية ${m[1]} (منذ بداية السنة)` : `Exercice ${m[1]} (YTD)`, ok: true };
 
       m = trimmed.match(/^Period:\s*(.+?)\s*·\s*Lebanese \/ Regional Class 1 to 7 COA\s*·\s*Reconciled to \$0\.00 Variance$/i);
       if (m) {
-        const pTr = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar'
-          ? `الفترة: ${pTr} · شجرة الحسابات اللبنانية والإقليمية (الأصناف 1 إلى 7) · مطابقة بفارق $0.00`
-          : `Période : ${pTr} · Plan Comptable Classes 1 à 7 · Rapproché à 0,00 $ d'écart`;
+        const pTr = evalShowcaseCore(m[1].trim(), lang, depth + 1).out;
+        return {
+          out: lang === 'ar'
+            ? `الفترة: ${pTr} · شجرة الحسابات اللبنانية والإقليمية (الأصناف 1 إلى 7) · مطابقة بفارق $0.00`
+            : `Période : ${pTr} · Plan Comptable Classes 1 à 7 · Rapproché à 0,00 $ d'écart`,
+          ok: true
+        };
       }
       m = trimmed.match(/^Organizational Scale\s*\((.+)\)$/i);
       if (m) {
-        const inner = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `حجم المؤسسة (${inner})` : `Échelle de l'Organisation (${inner})`;
+        const inner = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `حجم المؤسسة (${inner.out})` : `Échelle de l'Organisation (${inner.out})`, ok: inner.ok };
       }
       m = trimmed.match(/^Multi-Branch\s*\((\d+)\s+to\s+(\d+)\s+Entities\)$/i);
-      if (m) return lang === 'ar' ? `متعدد الفروع (${m[1]} إلى ${m[2]} شركات)` : `Multi-Sociétés (${m[1]} à ${m[2]} Entités)`;
+      if (m) return { out: lang === 'ar' ? `متعدد الفروع (${m[1]} إلى ${m[2]} شركات)` : `Multi-Sociétés (${m[1]} à ${m[2]} Entités)`, ok: true };
 
       m = trimmed.match(/^Receipts Synced:\s*(\d+)$/i);
-      if (m) return lang === 'ar' ? `الإيصالات المزامنة: ${m[1]}` : `Reçus synchronisés : ${m[1]}`;
+      if (m) return { out: lang === 'ar' ? `الإيصالات المزامنة: ${m[1]}` : `Reçus synchronisés : ${m[1]}`, ok: true };
 
       m = trimmed.match(/^(\d{2}:\d{2}:\d{2})\s*(AM|PM)$/i);
-      if (m) return lang === 'ar' ? `${m[1]} ${m[2].toUpperCase() === 'AM' ? 'ص' : 'م'}` : m[1];
+      if (m) return { out: lang === 'ar' ? `${m[1]} ${m[2].toUpperCase() === 'AM' ? 'ص' : 'م'}` : m[1], ok: true };
 
       m = trimmed.match(/^(\d+)x\s+(.+)$/i);
       if (m) {
-        const itm = translateShowcaseCore(m[2].trim(), lang, depth + 1);
-        return `${m[1]}× ${itm}`;
+        const itm = evalShowcaseCore(m[2].trim(), lang, depth + 1);
+        return { out: `${m[1]}× ${itm.out}`, ok: itm.ok || isShowcaseInvariant(m[2].trim()) };
       }
       m = trimmed.match(/^Analyze the\s+(.+?)\s+dashboard numbers$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `حلل أرقام لوحة ${x}` : `Analyser les chiffres du tableau ${x}`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `حلل أرقام لوحة ${x.out}` : `Analyser les chiffres du tableau ${x.out}`, ok: true };
       }
 
       m = trimmed.match(/^(\d{2}:\d{2}\s*(?:AM|PM))\s*·\s*(.+)$/i);
       if (m) {
-        const rhs = translateShowcaseCore(m[2].trim(), lang, depth + 1);
-        return `${m[1]} · ${rhs}`;
+        const rhs = evalShowcaseCore(m[2].trim(), lang, depth + 1);
+        return { out: `${m[1]} · ${rhs.out}`, ok: rhs.ok || isShowcaseInvariant(m[2].trim()) };
       }
       m = trimmed.match(/^Today\s+(\d{2}:\d{2}(?::\d{2})?)$/i);
-      if (m) return lang === 'ar' ? `اليوم ${m[1]}` : `Aujourd'hui ${m[1]}`;
+      if (m) return { out: lang === 'ar' ? `اليوم ${m[1]}` : `Aujourd'hui ${m[1]}`, ok: true };
 
       m = trimmed.match(/^([\d.]+%)\s+Face\s*\+\s*PIN(?:\s+Match)?$/i);
-      if (m) return lang === 'ar' ? `${m[1]} الوجه + PIN` : `${m[1]} Visage + PIN`;
+      if (m) return { out: lang === 'ar' ? `${m[1]} الوجه + PIN` : `${m[1]} Visage + PIN`, ok: true };
 
       m = trimmed.match(/^Launch Full Interactive Command Center for\s+(.+)$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `تشغيل مركز القيادة التفاعلي الكامل لـ ${x}` : `Lancer le Centre de Commande Interactif pour ${x}`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `تشغيل مركز القيادة التفاعلي الكامل لـ ${x.out}` : `Lancer le Centre de Commande Interactif pour ${x.out}`, ok: true };
       }
       m = trimmed.match(/^Open the full interactive Command Center for\s+(.+)$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `افتح مركز القيادة التفاعلي الكامل لـ ${x}` : `Ouvrir le Centre de Commande Interactif pour ${x}`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `افتح مركز القيادة التفاعلي الكامل لـ ${x.out}` : `Ouvrir le Centre de Commande Interactif pour ${x.out}`, ok: true };
       }
       m = trimmed.match(/^Discuss\s+(.+?)\s+on WhatsApp$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `ناقش ${x} عبر واتساب` : `Discuter de ${x} sur WhatsApp`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `ناقش ${x.out} عبر واتساب` : `Discuter de ${x.out} sur WhatsApp`, ok: true };
       }
       m = trimmed.match(/^Analyze the\s+(.+?)\s+dashboard numbers and highlight key action items$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `حلل أرقام لوحة ${x} وأبرز أهم الإجراءات المطلوبة` : `Analyser les chiffres du tableau ${x} et dégager les actions clés`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `حلل أرقام لوحة ${x.out} وأبرز أهم الإجراءات المطلوبة` : `Analyser les chiffres du tableau ${x.out} et dégager les actions clés`, ok: true };
       }
       m = trimmed.match(/^Provide an executive action plan for:\s*(.+)$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `قدّم خطة عمل تنفيذية لـ: ${x}` : `Proposer un plan d'action exécutif pour : ${x}`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `قدّم خطة عمل تنفيذية لـ: ${x.out}` : `Proposer un plan d'action exécutif pour : ${x.out}`, ok: true };
       }
       m = trimmed.match(/^Viewing ERP module:\s*(.+)$/i);
       if (m) {
-        const x = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        return lang === 'ar' ? `عرض وحدة النظام: ${x}` : `Module affiché : ${x}`;
+        const x = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `عرض وحدة النظام: ${x.out}` : `Module affiché : ${x.out}`, ok: true };
       }
       m = trimmed.match(/^(\d+(?:-\d+)?)\s+(Days|Units|Entities|Venues|Policies|Tickets)$/i);
       if (m) {
         const w = m[2].toLowerCase();
         const arW = w === 'days' ? 'يوماً' : w === 'units' ? 'وحدة' : w === 'entities' ? 'شركات' : w === 'venues' ? 'فروع' : w === 'policies' ? 'بوليصة' : 'إيصال';
         const frW = w === 'days' ? 'Jours' : w === 'units' ? 'Unités' : w === 'entities' ? 'Entités' : w === 'venues' ? 'Sites' : w === 'policies' ? 'Polices' : 'Bons';
-        return `${m[1]} ${lang === 'ar' ? arW : frW}`;
+        return { out: `${m[1]} ${lang === 'ar' ? arW : frW}`, ok: true };
       }
       m = trimmed.match(/^of\s+(\d+)$/i);
-      if (m) return lang === 'ar' ? `من ${m[1]}` : `sur ${m[1]}`;
+      if (m) return { out: lang === 'ar' ? `من ${m[1]}` : `sur ${m[1]}`, ok: true };
+
+      m = trimmed.match(/^\$([\d,]+\+?)\s+Setup\s*\+\s*\$([\d,]+)\/seat\/mo$/i);
+      if (m) return { out: lang === 'ar' ? `$${m[1]} تأسيس + $${m[2]}/مستخدم/شهر` : `$${m[1]} mise en place + $${m[2]}/poste/mois`, ok: true };
+
+      m = trimmed.match(/^Selected:\s*(.+)$/i);
+      if (m) {
+        const inner = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return { out: lang === 'ar' ? `الباقة المحددة: ${inner.out}` : `Sélectionné : ${inner.out}`, ok: inner.ok };
+      }
+
+      m = trimmed.match(/^Selected\s+(.+?)\.\s*Add your details below and send the brief to Hussein\.$/i);
+      if (m) {
+        const inner = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        return {
+          out: lang === 'ar'
+            ? `تم اختيار ${inner.out}. أضف بياناتك أدناه وأرسل الملخص إلى حسين.`
+            : `${inner.out} sélectionné. Ajoutez vos coordonnées ci-dessous et envoyez le brief à Hussein.`,
+          ok: inner.ok
+        };
+      }
 
       // Affix peelers
-      m = trimmed.match(/^((?:[✓▲★●·]\s*)+)(.+)$/);
+      m = trimmed.match(/^((?:[✓▲★●·+]\s*)+)(.+)$/);
       if (m) {
-        const inner = translateShowcaseCore(m[2].trim(), lang, depth + 1);
-        if (inner !== m[2].trim()) return m[1] + inner;
+        const inner = evalShowcaseCore(m[2].trim(), lang, depth + 1);
+        if (inner.ok) return { out: m[1] + inner.out, ok: true };
       }
       m = trimmed.match(/^(.+?)(\s*▸|\s*\*|:)$/);
       if (m) {
-        const inner = translateShowcaseCore(m[1].trim(), lang, depth + 1);
-        if (inner !== m[1].trim()) return inner + m[2];
+        const inner = evalShowcaseCore(m[1].trim(), lang, depth + 1);
+        if (inner.ok) return { out: inner.out + m[2], ok: true };
       }
       m = trimmed.match(/^(\d{1,2}\.)\s+(.+)$/);
       if (m) {
-        const inner = translateShowcaseCore(m[2].trim(), lang, depth + 1);
-        if (inner !== m[2].trim()) return `${m[1]} ${inner}`;
+        const inner = evalShowcaseCore(m[2].trim(), lang, depth + 1);
+        if (inner.ok) return { out: `${m[1]} ${inner.out}`, ok: true };
       }
 
       // Parenthetical splitter
@@ -5987,26 +6061,89 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       if (m) {
         const bRaw = m[1].trim();
         const iRaw = m[2].trim();
-        const bTr = translateShowcaseCore(bRaw, lang, depth + 1);
-        const iTr = translateShowcaseCore(iRaw, lang, depth + 1);
-        if (bTr !== bRaw || iTr !== iRaw) return `${bTr} (${iTr})`;
-      }
-
-      // Multi-part separator splitter
-      for (const sep of [' · ', ' / ']) {
-        if (trimmed.includes(sep)) {
-          const parts = trimmed.split(sep);
-          let changed = false;
-          const out = parts.map(p => {
-            const tp = translateShowcaseCore(p.trim(), lang, depth + 1);
-            if (tp !== p.trim()) changed = true;
-            return tp;
-          });
-          if (changed) return out.join(sep);
+        const bRes = evalShowcaseCore(bRaw, lang, depth + 1);
+        const iRes = isShowcaseInvariant(iRaw) ? { out: iRaw, ok: true } : evalShowcaseCore(iRaw, lang, depth + 1);
+        const bOk = bRes.ok || isShowcaseInvariant(bRaw);
+        if (bRes.ok || iRes.out !== iRaw || (bOk && iRes.ok)) {
+          return { out: `${bRes.out} (${iRes.out})`, ok: bOk && iRes.ok };
         }
       }
 
-      return trimmed;
+      // Multi-part separator splitter
+      for (const sep of [' · ', ' | ', ' / ']) {
+        if (trimmed.includes(sep)) {
+          const parts = trimmed.split(sep);
+          let changed = false;
+          let allOk = true;
+          const out = parts.map(p => {
+            const clean = p.trim();
+            if (!clean || isShowcaseInvariant(clean)) return clean;
+            const r = evalShowcaseCore(clean, lang, depth + 1);
+            if (r.out !== clean) changed = true;
+            if (!r.ok) allOk = false;
+            return r.out;
+          });
+          if (changed || allOk) return { out: out.join(sep), ok: allOk };
+        }
+      }
+
+      return { out: trimmed, ok: isShowcaseInvariant(trimmed) };
+    }
+
+    function translateShowcaseCore(trimmed, lang, depth) {
+      return evalShowcaseCore(trimmed, lang, depth).out;
+    }
+
+    function evalShowcaseCached(trimmed, lang) {
+      if (!trimmed || lang === 'en') return { out: trimmed, ok: true };
+      let cache = SHOWCASE_CACHE[lang];
+      if (!cache) {
+        cache = new Map();
+        SHOWCASE_CACHE[lang] = cache;
+      }
+      let entry = cache.get(trimmed);
+      if (entry === undefined) {
+        entry = evalShowcaseCore(trimmed, lang, 0);
+        if (cache.size > 6000) cache.clear();
+        cache.set(trimmed, entry);
+      }
+      return entry;
+    }
+
+    function recordShowcaseMissing(lang, text, context) {
+      if (!lang || lang === 'en' || !text) return;
+      let bucket = _showcaseMissing[lang];
+      if (!bucket) {
+        bucket = new Map();
+        _showcaseMissing[lang] = bucket;
+      }
+      if (bucket.has(text)) bucket.get(text).count++;
+      else if (bucket.size < 2000) bucket.set(text, { text, count: 1, context: context || '' });
+    }
+
+    function getShowcaseMissing(lang) {
+      if (lang && _showcaseMissing[lang]) return Array.from(_showcaseMissing[lang].values());
+      const out = {};
+      Object.keys(_showcaseMissing).forEach(k => {
+        out[k] = Array.from(_showcaseMissing[k].values());
+      });
+      return out;
+    }
+
+    function clearShowcaseMissing(lang) {
+      if (lang && _showcaseMissing[lang]) {
+        _showcaseMissing[lang].clear();
+        return;
+      }
+      Object.keys(_showcaseMissing).forEach(k => _showcaseMissing[k].clear());
+    }
+
+    function isShowcaseTranslated(str, lang) {
+      const target = lang || (activeShowcaseLang === 'en' ? 'ar' : activeShowcaseLang);
+      if (!str || typeof str !== 'string' || target === 'en') return true;
+      const trimmed = str.trim();
+      if (!trimmed) return true;
+      return evalShowcaseCached(trimmed, target).ok;
     }
 
     function translateShowcaseStr(str, lang) {
@@ -6015,21 +6152,52 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       const s = String(str);
       const trimmed = s.trim();
       if (!trimmed) return s;
-      let cache = SHOWCASE_CACHE[target];
-      if (!cache) {
-        cache = new Map();
-        SHOWCASE_CACHE[target] = cache;
-      }
-      let out = cache.get(trimmed);
-      if (out === undefined) {
-        out = translateShowcaseCore(trimmed, target, 0);
-        if (cache.size > 4000) cache.clear();
-        cache.set(trimmed, out);
-      }
-      if (out === trimmed) return s;
+      const res = evalShowcaseCached(trimmed, target);
+      if (res.out === trimmed) return s;
       const l = (s.match(/^\s*/) || [''])[0];
       const r = (s.match(/\s*$/) || [''])[0];
-      return l + out + r;
+      return l + res.out + r;
+    }
+
+    const SHOWCASE_SKIP_TAGS = new Set([
+      'SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE',
+      'PATH', 'RECT', 'CIRCLE', 'LINE', 'POLYLINE', 'POLYGON', 'DEFS', 'CLIPPATH', 'LINEARGRADIENT'
+    ]);
+
+    function isShowcaseAuditExcluded(el) {
+      if (!el || el.nodeType !== 1) return true;
+      if (SHOWCASE_SKIP_TAGS.has(el.tagName) || el.tagName === 'SVG') return true;
+      if (el.closest && el.closest('#hdr-lang-switch, [data-no-i18n], .brand-badge svg, .hlc-brand svg, svg.ic-isabi, svg, code, pre, script, style, .mono, .sim-ticket-num, .soa-doc-ref')) {
+        return true;
+      }
+      if (el.tagName === 'TD' || (el.closest && el.closest('tbody td'))) {
+        const uiInner = el.closest && el.closest('button, .btn, .badge, .pill, .status-pill');
+        const td = el.closest && el.closest('tbody td');
+        if (td) {
+          const tr = td.parentElement;
+          const trCls = (tr && typeof tr.className === 'string') ? tr.className : '';
+          if (!/\b(total|subtotal|summary|footer)\b/i.test(trCls) && (!uiInner || !td.contains(uiInner))) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function isShowcaseElVisible(el) {
+      let cur = el;
+      while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+        if (cur.hasAttribute('hidden')) return false;
+        const st = cur.getAttribute('style') || '';
+        if (/display\s*:\s*none/i.test(st)) return false;
+        if (cur.classList && (cur.classList.contains('hidden') || cur.classList.contains('is-hidden'))) return false;
+        if (typeof window !== 'undefined' && window.getComputedStyle) {
+          const cs = window.getComputedStyle(cur);
+          if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+        }
+        cur = cur.parentElement;
+      }
+      return true;
     }
 
     function translateShowcaseAttr(el, attrName, lang) {
@@ -6045,17 +6213,21 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       if (lang === 'en') {
         if (cur !== el[origProp]) el.setAttribute(attrName, el[origProp]);
         el[appProp] = el[origProp];
+        if (_showcaseAuditMode) el.removeAttribute('data-i18n-missing');
       } else {
-        const next = translateShowcaseStr(el[origProp], lang);
+        const origTrim = el[origProp].trim();
+        const res = evalShowcaseCached(origTrim, lang);
+        const next = res.out === origTrim ? el[origProp] : translateShowcaseStr(el[origProp], lang);
         if (cur !== next) el.setAttribute(attrName, next);
         el[appProp] = next;
+        if (!res.ok && !isShowcaseAuditExcluded(el)) {
+          recordShowcaseMissing(lang, origTrim, '@' + attrName);
+          if (_showcaseAuditMode) el.setAttribute('data-i18n-missing', '1');
+        } else if (_showcaseAuditMode) {
+          el.removeAttribute('data-i18n-missing');
+        }
       }
     }
-
-    const SHOWCASE_SKIP_TAGS = new Set([
-      'SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE',
-      'PATH', 'RECT', 'CIRCLE', 'LINE', 'POLYLINE', 'POLYGON', 'DEFS', 'CLIPPATH', 'LINEARGRADIENT'
-    ]);
 
     function translateShowcaseTitle(lang) {
       if (typeof document === 'undefined' || typeof document.title !== 'string') return;
@@ -6109,10 +6281,19 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
           if (lang === 'en') {
             if (node.nodeValue !== node.__enText) node.nodeValue = node.__enText;
             node.__enApplied = node.__enText;
+            if (_showcaseAuditMode) p.removeAttribute('data-i18n-missing');
           } else {
-            const next = translateShowcaseStr(node.__enText, lang);
+            const origTrim = node.__enText.trim();
+            const res = evalShowcaseCached(origTrim, lang);
+            const next = res.out === origTrim ? node.__enText : translateShowcaseStr(node.__enText, lang);
             if (next && node.nodeValue !== next) node.nodeValue = next;
             node.__enApplied = next;
+            if (!res.ok && !isShowcaseAuditExcluded(p)) {
+              recordShowcaseMissing(lang, origTrim, tag.toLowerCase() + (p.id ? '#' + p.id : ''));
+              if (_showcaseAuditMode) p.setAttribute('data-i18n-missing', '1');
+            } else if (_showcaseAuditMode) {
+              p.removeAttribute('data-i18n-missing');
+            }
           }
         }
         if (targetRoot.querySelectorAll) {
@@ -6129,6 +6310,64 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       } finally {
         _isApplyingShowcase = false;
       }
+    }
+
+    function auditShowcaseDom(rootEl, lang) {
+      const targetLang = lang || (activeShowcaseLang === 'en' ? 'ar' : activeShowcaseLang);
+      const root = rootEl || document.body;
+      if (!root || targetLang === 'en') return { lang: targetLang, count: 0, items: [] };
+      const found = new Map();
+      const addMiss = (text, ctx) => {
+        if (!found.has(text)) found.set(text, { text, count: 1, context: ctx });
+        else found.get(text).count++;
+      };
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while ((n = walker.nextNode())) {
+        const p = n.parentElement;
+        if (!p || isShowcaseAuditExcluded(p)) continue;
+        const checkEl = p.tagName === 'OPTION' ? (p.parentElement || p) : p;
+        if (!isShowcaseElVisible(checkEl)) continue;
+        const src = (n.__enText !== undefined ? n.__enText : (n.nodeValue || '')).trim();
+        if (!src || !/[A-Za-z]/.test(src)) continue;
+        const res = evalShowcaseCached(src, targetLang);
+        if (!res.ok) {
+          addMiss(src, p.tagName.toLowerCase() + (p.id ? '#' + p.id : ''));
+          if (_showcaseAuditMode) p.setAttribute('data-i18n-missing', '1');
+        }
+      }
+      if (root.querySelectorAll) {
+        ['placeholder', 'aria-label', 'title'].forEach(attr => {
+          root.querySelectorAll('[' + attr + ']').forEach(el => {
+            if (isShowcaseAuditExcluded(el) || !isShowcaseElVisible(el)) return;
+            const raw = (el['__enAttr_' + attr] !== undefined ? el['__enAttr_' + attr] : (el.getAttribute(attr) || '')).trim();
+            if (!raw || !/[A-Za-z]/.test(raw)) return;
+            const res = evalShowcaseCached(raw, targetLang);
+            if (!res.ok) {
+              addMiss(raw, el.tagName.toLowerCase() + '@' + attr);
+              if (_showcaseAuditMode) el.setAttribute('data-i18n-missing', '1');
+            }
+          });
+        });
+      }
+      const items = Array.from(found.values());
+      return { lang: targetLang, count: items.length, items };
+    }
+
+    function setShowcaseAuditMode(enabled) {
+      _showcaseAuditMode = !!enabled;
+      if (_showcaseAuditMode && typeof document !== 'undefined' && document.head && !document.getElementById('isabi-i18n-audit-css')) {
+        const st = document.createElement('style');
+        st.id = 'isabi-i18n-audit-css';
+        st.textContent = '[data-i18n-missing="1"] { outline: 2px dashed #E11D48 !important; outline-offset: 2px !important; }';
+        document.head.appendChild(st);
+      }
+      if (!_showcaseAuditMode && typeof document !== 'undefined') {
+        document.querySelectorAll('[data-i18n-missing]').forEach(el => el.removeAttribute('data-i18n-missing'));
+      } else if (activeShowcaseLang !== 'en' && typeof document !== 'undefined') {
+        auditShowcaseDom(document.body, activeShowcaseLang);
+      }
+      return _showcaseAuditMode;
     }
 
     let _showcaseObs = null;
@@ -6213,6 +6452,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
         });
       }
       rebuildShowcaseIndex(clean);
+      _showcaseMissing[clean] = new Map();
       return true;
     }
 
@@ -6234,6 +6474,11 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       getLang: () => activeShowcaseLang,
       setLang: setShowcaseLang,
       t: translateShowcaseStr,
+      isTranslated: isShowcaseTranslated,
+      auditDom: auditShowcaseDom,
+      getMissing: getShowcaseMissing,
+      clearMissing: clearShowcaseMissing,
+      setAuditVisualMode: setShowcaseAuditMode,
       translateDom: translateShowcaseDom,
       registerLocale: registerShowcaseLocale,
       getLocales: () => Object.assign({}, SHOWCASE_LOCALES),

@@ -3,6 +3,8 @@ Ensures https://isabisystems.com/app/ serves the exact verified Command Center a
 """
 import os
 import shutil
+import subprocess
+import sys
 
 ISABI_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PARENT_DIR = os.path.dirname(ISABI_ROOT)
@@ -39,6 +41,19 @@ def sync_command_app() -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
         return 0
+
+    audit_script = os.path.join(APP_SRC_ROOT, "build", "audit_i18n.py")
+    if os.path.isfile(audit_script) and os.environ.get("ISABI_SKIP_I18N_AUDIT") != "1" and "--skip-i18n-audit" not in sys.argv:
+        chk = subprocess.run([sys.executable, audit_script], capture_output=True, text=True, encoding="utf-8")
+        if chk.returncode != 0:
+            print("ERROR: Command Center i18n gate failed in sync_app.py!", file=sys.stderr)
+            if chk.stdout:
+                print(chk.stdout, file=sys.stderr)
+            if chk.stderr:
+                print(chk.stderr, file=sys.stderr)
+            raise SystemExit(chk.returncode)
+        if chk.stdout.strip():
+            print(chk.stdout.strip())
 
     os.makedirs(APP_OUT, exist_ok=True)
     copied = 0

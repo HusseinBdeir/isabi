@@ -468,6 +468,14 @@ document.addEventListener('DOMContentLoaded', function() {
       var arModBtn = document.querySelector('[data-ind-subtab="modules"]');
       if (arModBtn) arModBtn.click();
       window.ISABI_I18N.translateDom(document.getElementById('industries'));
+      // Layer 3 Showcase Runtime Crawl Gate: audit visible DOM across blueprints, subtabs & sandbox modes
+      document.querySelectorAll('[data-ind-tab]').forEach(function(b) { b.click(); });
+      document.querySelectorAll('[data-ind-subtab]').forEach(function(b) { b.click(); });
+      document.querySelectorAll('[data-demo-tab]').forEach(function(b) { b.click(); });
+      window.ISABI_I18N.translateDom(document.body);
+      var arDomAudit = window.ISABI_I18N.auditDom(document.body, 'ar');
+      window.ISABI_I18N.setLang('fr', false);
+      var frDomAudit = window.ISABI_I18N.auditDom(document.body, 'fr');
       window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Features': 'Funciones' });
       window.ISABI_I18N.setLang('es', false);
       var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
@@ -487,6 +495,10 @@ document.addEventListener('DOMContentLoaded', function() {
         arPricingOk: /[\\u0600-\\u06FF]/.test(arPricingTxt) && arPricingTxt.indexOf('الأساس التشغيلي') !== -1,
         arPhOk: /[\\u0600-\\u06FF]/.test(arLeadPh),
         arFlowOk: /[\\u0600-\\u06FF]/.test(arFlowTxt),
+        arAuditMissing: arDomAudit.count,
+        arAuditSample: arDomAudit.items.slice(0, 8),
+        frAuditMissing: frDomAudit.count,
+        frAuditSample: frDomAudit.items.slice(0, 8),
         esNav: esNav,
         enNav: enNav,
         enDir: enDir,
@@ -497,6 +509,7 @@ document.addEventListener('DOMContentLoaded', function() {
         arDir === 'rtl' && arNav === 'المميزات' && i18nDiag.arHeroOk &&
         i18nDiag.arScrollOk && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
         i18nDiag.arPhOk && i18nDiag.arFlowOk &&
+        arDomAudit.count === 0 && frDomAudit.count === 0 &&
         esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' && i18nDiag.enRestoreOk
       );
     }

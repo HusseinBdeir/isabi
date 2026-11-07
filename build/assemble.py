@@ -11,6 +11,7 @@ from part_body import BODY
 from part_script import JS
 from part_faq import FAQ_JSONLD
 from sync_app import sync_command_app
+from audit_showcase_i18n import find_node_runtime, run_showcase_i18n_audit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_HTML = os.path.join(ROOT, 'index.html')
@@ -45,14 +46,14 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.24">
-  <link rel="icon" href="icon.svg?v=6.24" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.24" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.24" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.24">
-  <link rel="icon" href="favicon-dark.ico?v=6.24" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.24" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.24">
+  <link rel="manifest" href="manifest.json?v=6.25">
+  <link rel="icon" href="icon.svg?v=6.25" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.25" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.25" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.25">
+  <link rel="icon" href="favicon-dark.ico?v=6.25" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.25" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.25">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -92,7 +93,7 @@ ORG_JSONLD = _json.dumps({
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.24",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.25",
     "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with tailored setup and simple per-seat pricing.",
@@ -151,15 +152,20 @@ def main():
     with open(os.path.join(ROOT, 'sitemap.xml'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(build_sitemap_xml(today_iso))
 
-    # Check JS syntax with node --check
+    # Check JS syntax with node --check (falls back to VS Code Electron-as-Node if node is not on PATH)
     tmp_js = os.path.join(ROOT, 'build', '_check_syntax.js')
     with open(tmp_js, 'w', encoding='utf-8') as f:
         f.write(JS)
-    res = subprocess.run(['node', '--check', tmp_js], capture_output=True, text=True, shell=(os.name == 'nt'))
+    node_bin, node_env = find_node_runtime()
+    res = subprocess.run([node_bin, '--check', tmp_js], capture_output=True, text=True, env=node_env)
     if os.path.exists(tmp_js):
         os.remove(tmp_js)
     if res.returncode != 0:
         print("JS SYNTAX ERROR:", res.stderr, file=sys.stderr)
+        sys.exit(1)
+
+    # Static pre-deploy Showcase trilingual (EN | AR | FR) audit gate
+    if run_showcase_i18n_audit() != 0:
         sys.exit(1)
 
     # Sync Command Center bundle into /isabi/app/ unless skipped or isabi-app has uncommitted WIP
