@@ -390,6 +390,57 @@
     const tons = uom === 'Ton' ? qty : (tonFactor && tonFactor !== 1 ? qty * tonFactor : qty);
     const barcodeDigits = makeNumericBarcodeDigits(docType, record);
 
+    if (record && record._domainSlip) {
+      const ds = record._domainSlip;
+      const unitPrice = Number(record.unit_price != null ? record.unit_price : (record.price || record.total || 0));
+      const disc = Number(record.discount || 0);
+      const netUsd = Number(record.total != null ? record.total : Math.max(0, qty * unitPrice - disc));
+      const vatUsd = Number(record.vat || 0);
+      const ttcUsd = Number(record.total_ttc != null ? record.total_ttc : (netUsd + vatUsd));
+      return {
+        docType: 'domain',
+        paperWidth,
+        priceMode,
+        company,
+        coFull,
+        title: priceMode === 'priced'
+          ? (ds.title || 'OFFICIAL OPERATIONAL VOUCHER')
+          : (ds.unpricedTitle || 'OFFICIAL HANDOVER & GATE PASS'),
+        badge: priceMode === 'priced'
+          ? (ds.badge || 'PRICED OFFICIAL VOUCHER')
+          : (ds.unpricedBadge || 'UNPRICED HANDOVER PASS'),
+        refLabel: ds.refLabel || 'VOUCHER #',
+        ticketNo,
+        dateStr,
+        repDateStr,
+        timeStr,
+        overtime: !!record.overtime,
+        counterpartyLbl: ds.counterpartyLbl || 'Counterparty',
+        counterparty: ds.counterparty || record.customer || company,
+        scopeLbl: ds.scopeLbl || 'Operating Scope',
+        scopeVal: ds.scopeVal || record.site || company,
+        itemLbl: ds.itemLbl || 'Transaction Summary',
+        product: ds.itemVal || record.product || 'Domain Voucher',
+        qty: qty > 0 ? qty : 1,
+        uom: record.uom || 'Unit',
+        unitPrice,
+        disc,
+        netUsd,
+        vatUsd,
+        ttcUsd,
+        method: record.method || 'Account',
+        extraPairs: Array.isArray(ds.extraPairs) ? ds.extraPairs : [],
+        sigLeft: ds.sigLeft || 'Counterparty Sign',
+        sigRight: ds.sigRight || 'Authorized Officer',
+        footerCaption: ds.footerCaption || `ISABI COMMAND SUITE · ${paperWidth.toUpperCase()} ESC/POS`,
+        reference: record.reference || '',
+        extInvoice: record.external_invoice || '',
+        notes: record.notes || '',
+        enteredBy: record.entered_by || 'Desk Officer',
+        barcodeDigits
+      };
+    }
+
     if (docType === 'raw') {
       const unitCost = Number(record.unit_cost != null ? record.unit_cost : (record.unit_price || 0));
       const matCost = Number(record.cost != null ? record.cost : (qty * unitCost));
@@ -597,7 +648,45 @@
     line(SEP);
 
     // 4. Body by Document Type
-    if (d.docType === 'sales') {
+    if (d.docType === 'domain') {
+      lr(d.counterpartyLbl + ':', d.counterparty);
+      if (d.scopeVal) lr(d.scopeLbl + ':', d.scopeVal);
+      (d.extraPairs || []).forEach(p => {
+        if (p && p.k && p.v != null && String(p.v).trim() !== '') {
+          lr(String(p.k) + ':', String(p.v));
+        }
+      });
+      line(SEP);
+      emit(P.BOLD_ON);
+      line(String(d.itemLbl || 'VOUCHER DETAILS').toUpperCase());
+      emit(P.BOLD_OFF);
+      emit(P.BOLD_ON, P.TALL_ON);
+      line(d.product);
+      emit(P.NORMAL, P.BOLD_OFF);
+      lr('Quantity / Units:', `${fmtQty(d.qty, d.qty % 1 === 0 ? 0 : 2)} ${d.uom}`);
+      if (d.priceMode === 'priced') {
+        line(SEP);
+        lr('Subtotal Ex-VAT (USD):', fmtMoney(d.netUsd));
+        if (d.vatUsd > 0) {
+          lr('Statutory VAT 11%:', fmtMoney(d.vatUsd));
+        }
+        if (d.disc > 0) {
+          lr('Discount / Deduction:', '-' + fmtMoney(d.disc));
+        }
+        line(DSEP);
+        emit(P.BOLD_ON, P.TALL_ON);
+        lr('TOTAL USD:', fmtMoney(d.ttcUsd));
+        emit(P.NORMAL, P.BOLD_OFF);
+        lr('Settlement Mode:', String(d.method || 'Account').toUpperCase());
+      } else {
+        line(DSEP);
+        emit(P.ALIGN_C, P.BOLD_ON, P.TALL_ON);
+        line(`PASS QTY: ${fmtQty(d.qty, d.qty % 1 === 0 ? 0 : 2)} ${d.uom}`);
+        emit(P.NORMAL, P.BOLD_OFF);
+        line('UNPRICED HANDOVER / CLEARANCE PASS');
+        emit(P.ALIGN_L);
+      }
+    } else if (d.docType === 'sales') {
       lr('Sale Type:', d.saleType);
       lr('Customer:', d.customer);
       if (d.site) lr('Dest. Site:', d.site);
@@ -861,7 +950,32 @@
     const is58 = d.paperWidth === '58mm';
 
     let bodyRowsHtml = '';
-    if (d.docType === 'sales') {
+    if (d.docType === 'domain') {
+      bodyRowsHtml = `
+        <div class="th-kv"><span>${escHtml(d.counterpartyLbl)}</span><b>${escHtml(d.counterparty)}</b></div>
+        ${d.scopeVal ? `<div class="th-kv"><span>${escHtml(d.scopeLbl)}</span><b>${escHtml(d.scopeVal)}</b></div>` : ''}
+        ${(d.extraPairs || []).map(p => (p && p.k && p.v != null && String(p.v).trim() !== '') ? `<div class="th-kv"><span>${escHtml(p.k)}</span><b>${escHtml(p.v)}</b></div>` : '').join('')}
+        <div class="th-sep"></div>
+        <div class="th-sec-lbl">${escHtml(String(d.itemLbl || 'VOUCHER DETAILS').toUpperCase())}</div>
+        <div class="th-item-title">${escHtml(d.product)}</div>
+        <div class="th-kv th-kv-lg"><span>Quantity / Units</span><b>${fmtQty(d.qty, d.qty % 1 === 0 ? 0 : 2)} ${escHtml(d.uom)}</b></div>
+        ${d.priceMode === 'priced' ? `
+          <div class="th-sep"></div>
+          <div class="th-kv"><span>Subtotal Ex-VAT (USD)</span><b>${fmtMoney(d.netUsd)}</b></div>
+          ${d.vatUsd > 0 ? `<div class="th-kv"><span>Statutory VAT (11%)</span><b>${fmtMoney(d.vatUsd)}</b></div>` : ''}
+          ${d.disc > 0 ? `<div class="th-kv"><span>Discount / Deduction</span><b>-${fmtMoney(d.disc)}</b></div>` : ''}
+          <div class="th-dsep"></div>
+          <div class="th-total-row"><span>TOTAL USD</span><b>${fmtMoney(d.ttcUsd)}</b></div>
+          <div class="th-kv"><span>Settlement Mode</span><b>${escHtml(String(d.method || 'Account').toUpperCase())}</b></div>
+        ` : `
+          <div class="th-dsep"></div>
+          <div class="th-gatepass-box">
+            <div class="th-gatepass-qty">PASS: ${fmtQty(d.qty, d.qty % 1 === 0 ? 0 : 2)} ${escHtml(d.uom)}</div>
+            <div class="th-gatepass-sub">UNPRICED HANDOVER &amp; CLEARANCE PASS</div>
+          </div>
+        `}
+      `;
+    } else if (d.docType === 'sales') {
       bodyRowsHtml = `
         <div class="th-kv"><span>Sale Type</span><b>${escHtml(d.saleType)}</b></div>
         <div class="th-kv"><span>Customer</span><b>${escHtml(d.customer)}</b></div>
@@ -967,7 +1081,7 @@
         </div>
         <div class="th-dsep"></div>
         <div class="th-ticket-head">
-          <span class="th-tkt-num">TICKET #${escHtml(d.ticketNo)}</span>
+          <span class="th-tkt-num">${escHtml(d.docType === 'domain' ? (d.refLabel || 'VOUCHER #') : 'TICKET #')} ${escHtml(d.ticketNo)}</span>
           ${d.overtime ? '<span class="th-ot-tag">OVERTIME</span>' : `<span class="th-tkt-date">${escHtml(d.dateStr)} ${escHtml(d.timeStr)}</span>`}
         </div>
         <div class="th-kv"><span>Date / Time</span><b class="mono">${escHtml(d.dateStr)} ${escHtml(d.timeStr)}</b></div>
@@ -981,14 +1095,14 @@
         <div class="th-sep"></div>
         <div class="th-kv"><span>Operator</span><b>${escHtml(d.enteredBy)}</b></div>
         <div class="th-sig-grid">
-          <div class="th-sig-box"><span>Driver Signature</span></div>
-          <div class="th-sig-box"><span>Scale / Gate Stamp</span></div>
+          <div class="th-sig-box"><span>${escHtml(d.docType === 'domain' ? (d.sigLeft || 'Counterparty Signature') : 'Driver Signature')}</span></div>
+          <div class="th-sig-box"><span>${escHtml(d.docType === 'domain' ? (d.sigRight || 'Authorized Stamp') : 'Scale / Gate Stamp')}</span></div>
         </div>
         <div class="th-barcode-wrap">
           ${renderBarcodeSvg(d.barcodeDigits, 38)}
           <div class="th-barcode-num">${escHtml(d.barcodeDigits)}</div>
         </div>
-        <div class="th-foot-caption">ISABI WEIGHBRIDGE &amp; KIOSK SUITE · ${escHtml(d.paperWidth.toUpperCase())} ESC/POS</div>
+        <div class="th-foot-caption">${escHtml(d.docType === 'domain' ? (d.footerCaption || ('ISABI COMMAND SUITE · ' + d.paperWidth.toUpperCase() + ' ESC/POS')) : ('ISABI WEIGHBRIDGE & KIOSK SUITE · ' + d.paperWidth.toUpperCase() + ' ESC/POS'))}</div>
       </div>
     `;
   }
@@ -1254,6 +1368,7 @@
     renderThermalTicketHtml,
     openThermalPreviewModal,
     closeThermalModal,
+    closeThermalPreviewModal: closeThermalModal,
     printThermalTicket,
     pairWebBluetoothPrinter,
     getLastJob: () => _lastJob

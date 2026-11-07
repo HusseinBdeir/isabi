@@ -3373,11 +3373,11 @@
     const pRows = h.partners || [];
     const coKey = ctx.co && ctx.co !== 'ALL' ? ctx.co : 'Bdeir Holding';
     return `
-      ${sheetHeaderHtml(meta, coKey, `ROOT-BU Treasury & Intercompany Consolidation · Window ${ctx.from} to ${ctx.to}`)}
+      ${sheetHeaderHtml(meta, coKey, `Corporate Treasury & Intercompany Consolidation · Window ${ctx.from} to ${ctx.to}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
-          ['Statement Code', 'RDL-23 · Holding & Treasury'],
+          ['Statement Code', 'Statement 23 · Holding & Treasury'],
           ['Reporting Window', `${ctx.from} to ${ctx.to}`],
           ['Shared Holding Overhead', fmtUsd(k.totalExpenses || 0, 2)],
           ['Net Intercompany Clearing', fmtUsd(k.netIntercompany || 0, 2)]
@@ -3421,7 +3421,7 @@
           </tr>
         </tfoot>
       </table>
-      <div class="rdl-section-hdr" style="margin-top:14px;">2. Shareholder & Partner Split Ledger · Account 165 (توزيع حصص الشركاء - حساب 165)</div>
+      <div class="rdl-section-hdr" style="margin-top:14px;">2. Shareholder & Partner Equity Current Accounts (توزيع حصص الشركاء والحسابات الجارية)</div>
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3455,24 +3455,27 @@
 
   function render24HospitalityRegister(meta, ctx) {
     const d = (window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
-      ? window.MFG_HOSPITALITY.compute()
+      ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts' })
       : { kpis: {}, salesRows: [], memberRows: [] };
     const k = d.kpis || {};
-    const sRows = (d.salesRows || []).slice(0, 18);
-    const mRows = (d.memberRows || []).slice(0, 10);
     const coKey = (ctx.co && ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Hospitality Group'].includes(ctx.co)) ? ctx.co : 'Hospitality Group';
+    const allSales = (d.salesRows || []).filter(r => coKey === 'Hospitality Group' || r.company === coKey);
+    const allMembers = (d.memberRows || []).filter(m => coKey === 'Hospitality Group' || m.company === coKey);
+    const sRows = allSales.slice(0, 18);
+    const mRows = allMembers.slice(0, 10);
+    const revTotal = coKey === 'Hospitality Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
     return `
       ${sheetHeaderHtml(meta, coKey, `Resort F&B, Cabanas, POS Till & Membership Audit · Window ${ctx.from} to ${ctx.to}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
-          ['Statement Code', 'RDL-24 · Hospitality & Resorts'],
-          ['Venue Revenue (TTC)', fmtUsd(k.salesTotal || 0, 2)],
+          ['Statement Code', 'Statement 24 · Hospitality & Resorts'],
+          ['Venue Revenue', fmtUsd(revTotal, 2)],
           ['Cash Collected vs Card', `${fmtUsd(k.cashCollected || 0, 0)} / ${fmtUsd(k.cardCollected || 0, 0)}`],
-          ['Active Memberships', `${fmtNum(k.activeMembers || 0, 0)} (${fmtUsd(k.membershipPkgValue || 0, 0)})`]
+          ['Active Memberships', `${fmtNum(allMembers.length, 0)} (${fmtUsd(allMembers.reduce((s, m) => s + Number(m.packageUsd || 0), 0), 0)})`]
         ])}
       </div>
-      <div class="rdl-section-hdr">1. Venue Revenue & RawBT POS Till Register (سجل إيرادات الصالات وصندوق الكاشير)</div>
+      <div class="rdl-section-hdr">1. Venue Revenue & POS Till Register (سجل إيرادات الصالات وصندوق الكاشير)</div>
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3483,7 +3486,7 @@
             <th>Guest / Walk-in</th>
             <th class="num">Covers</th>
             <th>Channel</th>
-            <th class="num">Total TTC ($)</th>
+            <th class="num">Total ($)</th>
           </tr>
         </thead>
         <tbody>
@@ -3545,19 +3548,22 @@
 
   function render25TradingRegister(meta, ctx) {
     const d = (window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
-      ? window.MFG_TRADING.compute()
+      ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading' })
       : { kpis: {}, salesRows: [], vehicleRows: [], stockRows: [] };
     const k = d.kpis || {};
-    const sRows = (d.salesRows || []).slice(0, 14);
-    const vRows = (d.vehicleRows || []).slice(0, 10);
     const coKey = (ctx.co && ['Korri Auto', 'Shacman', 'Trading Group'].includes(ctx.co)) ? ctx.co : 'Trading Group';
+    const allSales = (d.salesRows || []).filter(r => coKey === 'Trading Group' || r.company === coKey);
+    const allVehicles = (d.vehicleRows || []).filter(v => coKey === 'Trading Group' || !v.company || v.company === coKey);
+    const sRows = allSales.slice(0, 14);
+    const vRows = allVehicles.slice(0, 10);
+    const revTotal = coKey === 'Trading Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
     return `
       ${sheetHeaderHtml(meta, coKey, `Multi-Book Commercial Sales (N/S/IS/IN), Shacman VIN Fleet & FIFO Stock · Window ${ctx.from} to ${ctx.to}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
-          ['Statement Code', 'RDL-25 · Automotive & Heavy Trading'],
-          ['Commercial Revenue (TTC)', fmtUsd(k.salesTotal || 0, 2)],
+          ['Statement Code', 'Statement 25 · Automotive & Heavy Trading'],
+          ['Commercial Revenue', fmtUsd(revTotal, 2)],
           ['Heavy Trucks Delivered', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} VINs`],
           ['FIFO Stock Valuation', fmtUsd(k.stockValuation || 0, 2)]
         ])}
@@ -3572,7 +3578,7 @@
             <th>Entity</th>
             <th>Customer / Dealer</th>
             <th>Description</th>
-            <th class="num">Total TTC ($)</th>
+            <th class="num">Total ($)</th>
             <th class="num">AR Balance ($)</th>
           </tr>
         </thead>
@@ -3634,19 +3640,20 @@
 
   function render26RealEstateRegister(meta, ctx) {
     const d = (window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
-      ? window.MFG_REALESTATE.compute()
+      ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property' })
       : { kpis: {}, leases: [], rentInvoices: [] };
     const k = d.kpis || {};
-    const lRows = d.leases || [];
-    const rRows = d.rentInvoices || [];
     const coKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
+    const lRows = (d.leases || []).filter(l => coKey === 'Real Estate Group' || l.company === coKey);
+    const rRows = (d.rentInvoices || []).filter(r => coKey === 'Real Estate Group' || !r.company || r.company === coKey);
+    const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0);
     return `
       ${sheetHeaderHtml(meta, coKey, `Official 4235 Company S.A.L 11% VAT Rent Roll & Lease Schedule · Window ${ctx.from} to ${ctx.to}`)}
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
-          ['Statement Code', 'RDL-26 · Real Estate & Property'],
-          ['Contracted Annual Rent (TTC)', fmtUsd(k.annualRentTtc || 0, 2)],
+          ['Statement Code', 'Statement 26 · Real Estate & Property'],
+          ['Contracted Annual Rent', fmtUsd(rentTotal || k.annualRentTtc || 0, 2)],
           ['Portfolio Occupancy', `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} (${fmtNum(k.occupancyPct || 0, 1)}%)`],
           ['Rent Collected vs Open AR', `${fmtUsd(k.collectedUsd || 0, 0)} / ${fmtUsd(k.openArUsd || 0, 0)}`]
         ])}
@@ -3662,7 +3669,7 @@
             <th>Term Window</th>
             <th class="num">Annual Base ($)</th>
             <th class="num">11% VAT ($)</th>
-            <th class="num">Annual TTC ($)</th>
+            <th class="num">Annual Total ($)</th>
           </tr>
         </thead>
         <tbody>
@@ -3698,7 +3705,7 @@
             <th>Unit</th>
             <th class="num">Base Rent ($)</th>
             <th class="num">VAT 11% ($)</th>
-            <th class="num">Total TTC ($)</th>
+            <th class="num">Total ($)</th>
             <th class="num">Balance ($)</th>
           </tr>
         </thead>
@@ -3735,10 +3742,10 @@
       <div class="rdl-doc-top">
         ${companyBlockHtml(coKey)}
         ${metaRowsHtml([
-          ['Statement Code', 'RDL-27 · Insurance & Brokerage'],
+          ['Statement Code', 'Statement 27 · Insurance & Brokerage'],
           ['Gross Written Premium (GWP)', fmtUsd(k.gwpTotal || 0, 2)],
           ['Brokerage Commission Earned', `${fmtUsd(k.commTotal || 0, 2)} (${fmtNum(k.avgCommYield || 0, 1)}%)`],
-          ['Net Carrier Payable (401)', fmtUsd(k.carrierPayableUsd || 0, 2)]
+          ['Net Carrier Payable', fmtUsd(k.carrierPayableUsd || 0, 2)]
         ])}
       </div>
       <div class="rdl-section-hdr">1. Active Policy Schedule & 30/60/90-Day Renewal Pipeline (جدول البوالص والتجديدات)</div>
@@ -4939,6 +4946,7 @@
     RDL_CATALOG,
     renderStatementsView,
     wireStatementsEvents,
-    renderRdlSheet
+    renderRdlSheet,
+    renderSheet: renderRdlSheet
   };
 })();
