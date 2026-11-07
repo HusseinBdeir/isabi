@@ -4517,7 +4517,191 @@ JS = r"""
       triggerInstall();
     });
 
-__SHOWCASE_I18N_JS__
+    // =========================================================================
+    // CURATED TRILINGUAL SUITE (EN | AR | FR) + MODULAR LOCALE REGISTRY
+    // =========================================================================
+    const SHOWCASE_LOCALES = {
+      en: { code: 'en', label: 'EN', nativeName: 'English', dir: 'ltr' },
+      ar: { code: 'ar', label: 'عربي', nativeName: 'العربية', dir: 'rtl' },
+      fr: { code: 'fr', label: 'FR', nativeName: 'Français', dir: 'ltr' }
+    };
+    const SHOWCASE_DICT = {
+      'Features': { ar: 'المميزات', fr: 'Fonctionnalités' },
+      'Industries': { ar: 'القطاعات', fr: 'Secteurs' },
+      'Live Demo': { ar: 'العرض التفاعلي', fr: 'Démo Live' },
+      'Why ISABI': { ar: 'لماذا ISABI', fr: 'Pourquoi ISABI' },
+      'Pricing': { ar: 'الأسعار', fr: 'Tarifs' },
+      'Ask ISABI': { ar: 'اسأل ISABI', fr: 'Ask ISABI' },
+      'Dark': { ar: 'داكن', fr: 'Sombre' },
+      'Light': { ar: 'فاتح', fr: 'Clair' },
+      'Sign In': { ar: 'تسجيل الدخول', fr: 'Connexion' },
+      'Book Consultation': { ar: 'احجز استشارة', fr: 'Réserver un appel' },
+      '01 Features': { ar: '01 المميزات', fr: '01 Fonctionnalités' },
+      '02 Industries': { ar: '02 القطاعات', fr: '02 Secteurs' },
+      '03 Live Demo': { ar: '03 العرض التفاعلي', fr: '03 Démo Live' },
+      '04 Why ISABI': { ar: '04 لماذا ISABI', fr: '04 Pourquoi ISABI' },
+      '05 Pricing': { ar: '05 الأسعار', fr: '05 Tarifs' },
+      '06 Contact': { ar: '06 تواصل معنا', fr: '06 Contact' },
+      'Tailored Enterprise ERP · Live in 1 to 2 Weeks': { ar: 'نظام ERP مؤسسي مخصص · جاهز خلال أسبوع إلى أسبوعين', fr: 'ERP d\'Entreprise sur Mesure · Opérationnel en 1 à 2 Semaines' },
+      'The ERP Your Group': { ar: 'نظام ERP الذي تعتمد عليه', fr: 'L\'ERP sur lequel votre Groupe' },
+      'Actually Runs On': { ar: 'مجموعتك فعلياً', fr: 'Opère Réellement' },
+      'Explore Live Demo': { ar: 'استكشف العرض التفاعلي', fr: 'Explorer la Démo Live' },
+      'WhatsApp Direct': { ar: 'تواصل عبر واتساب', fr: 'WhatsApp Direct' },
+      'Tailored Setup + Simple Per-Seat Plans': { ar: 'تأسيس مخصص + باقات شهرية واضحة لكل مستخدم', fr: 'Déploiement sur Mesure + Forfaits Simples par Utilisateur' },
+      'Custom-Built for Your Business in 1 to 2 Weeks': { ar: 'مصمم خصيصاً لأعمالك خلال أسبوع إلى أسبوعين', fr: 'Conçu sur Mesure pour Votre Entreprise en 1 à 2 Semaines' },
+      'Smooth Migration & Full Data Ownership': { ar: 'نقل سلس للبيانات وملكية كاملة لسجلاتك', fr: 'Migration Fluide & Propriété Totale des Données' },
+      'Open Full Portal': { ar: 'افتح البوابة الكاملة', fr: 'Ouvrir le Portail Complet' },
+      'Launch Live Command Center': { ar: 'تشغيل مركز القيادة الحي', fr: 'Lancer le Centre de Commande' },
+      '01 / SYSTEM CAPABILITIES': { ar: '01 / قدرات النظام', fr: '01 / CAPACITÉS DU SYSTÈME' },
+      '02 / INDUSTRY BLUEPRINTS': { ar: '02 / مخططات القطاعات', fr: '02 / MODÈLES SECTORIELS' },
+      '03 / INTERACTIVE SANDBOX': { ar: '03 / المحاكي التفاعلي', fr: '03 / SIMULATEUR INTERACTIF' },
+      '04 / WHY ISABI SYSTEMS': { ar: '04 / لماذا ISABI SYSTEMS', fr: '04 / POURQUOI ISABI SYSTEMS' },
+      '05 / TRANSPARENT PRICING': { ar: '05 / أسعار واضحة وشفافة', fr: '05 / TARIFICATION TRANSPARENTE' },
+      '06 / PROJECT INQUIRY PORTAL': { ar: '06 / بوابة طلب المشروع', fr: '06 / PORTAIL DE CONSULTATION' },
+      'Core Capabilities': { ar: 'القدرات الأساسية', fr: 'Capacités Clés' },
+      '18 Operational Modules': { ar: '18 وحدة تشغيلية', fr: '18 Modules Opérationnels' },
+      'Modules & Safeguards': { ar: 'الوحدات والضوابط', fr: 'Modules & Contrôles' },
+      'Day-in-the-Life Flow': { ar: 'مسار العمل اليومي', fr: 'Flux Opérationnel Quotidien' },
+      'Before vs. After ISABI': { ar: 'قبل وبعد ISABI', fr: 'Avant vs Après ISABI' },
+      'Command Center & Dashboards': { ar: 'مركز القيادة ولوحات المعلومات', fr: 'Centre de Commande & Tableaux' },
+      'Printable Statements (SOA)': { ar: 'كشوفات الحساب المطبوعة (SOA)', fr: 'Relevés de Compte (SOA)' },
+      'Touch POS & Gate Kiosks': { ar: 'نقاط البيع وأكشاك البوابات', fr: 'Caisses Tactiles & Bornes' },
+      'Comparison Matrix': { ar: 'مصفوفة المقارنة', fr: 'Matrice Comparative' },
+      '14-Day Go-Live Sprint': { ar: 'خطة الإطلاق خلال 14 يوماً', fr: 'Déploiement en 14 Jours' },
+      'Executive FAQ (6)': { ar: 'الأسئلة الشائعة (6)', fr: 'FAQ Exécutive (6)' },
+      'Plans & Seat Tiers': { ar: 'الباقات وفئات المستخدمين', fr: 'Forfaits & Utilisateurs' },
+      'Custom Scope Estimator': { ar: 'حاسبة نطاق المشروع', fr: 'Estimateur sur Mesure' },
+      'Operational Foundation': { ar: 'الأساس التشغيلي', fr: 'Socle Opérationnel' },
+      'Multi-Entity Suite': { ar: 'الباقة متعددة الشركات', fr: 'Suite Multi-Sociétés' },
+      'Enterprise Group & Holding': { ar: 'المجموعات والشركات القابضة', fr: 'Groupe & Holding' },
+      'Send via WhatsApp': { ar: 'إرسال عبر واتساب', fr: 'Envoyer via WhatsApp' },
+      'Send via Email': { ar: 'إرسال عبر البريد', fr: 'Envoyer par E-mail' },
+      'Copy Brief': { ar: 'نسخ الملخص', fr: 'Copier le Brief' },
+      'Print Brief': { ar: 'طباعة الملخص', fr: 'Imprimer le Brief' },
+      'Reset': { ar: 'إعادة ضبط', fr: 'Réinitialiser' },
+      'Ask': { ar: 'اسأل', fr: 'Demander' },
+      'Contact': { ar: 'تواصل', fr: 'Contact' }
+    };
+
+    const IS_AUTO_TEST = Boolean(navigator.webdriver || window.__ISABI_SYNC_TEST || location.protocol === 'file:');
+    let activeShowcaseLang = 'en';
+    try {
+      if (!IS_AUTO_TEST) {
+        const saved = localStorage.getItem('isabi.lang.v1') || localStorage.getItem('isabi_mfg_lang') || '';
+        if (saved && SHOWCASE_LOCALES[saved]) activeShowcaseLang = saved;
+      }
+    } catch (_) {}
+
+    function translateShowcaseStr(str, lang) {
+      const target = lang || activeShowcaseLang;
+      if (!str || target === 'en') return str;
+      const s = String(str);
+      const trimmed = s.trim();
+      if (!trimmed) return s;
+      const hit = SHOWCASE_DICT[trimmed];
+      if (hit && hit[target]) {
+        const l = s.match(/^\s*/)[0];
+        const r = s.match(/\s*$/)[0];
+        return l + hit[target] + r;
+      }
+      return s;
+    }
+
+    function translateShowcaseDom(root) {
+      const targetRoot = root || document.body;
+      if (!targetRoot) return;
+      const lang = activeShowcaseLang;
+      const walker = document.createTreeWalker(targetRoot, NodeFilter.SHOW_TEXT, null);
+      const nodes = [];
+      let n;
+      while ((n = walker.nextNode())) nodes.push(n);
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const p = node.parentElement;
+        if (!p) continue;
+        const tag = p.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'SVG' || tag === 'PATH' || tag === 'OPTION') continue;
+        if (p.closest && p.closest('#hdr-lang-switch, .num, .kpi-val, .price-val, .calc-num, svg')) continue;
+        const cur = node.nodeValue || '';
+        if (!cur.trim()) continue;
+        if (node.__enText === undefined) node.__enText = cur;
+        if (lang === 'en') {
+          if (node.nodeValue !== node.__enText) node.nodeValue = node.__enText;
+        } else {
+          const next = translateShowcaseStr(node.__enText, lang);
+          if (next && node.nodeValue !== next) node.nodeValue = next;
+        }
+      }
+      document.querySelectorAll('#hdr-lang-switch [data-lang-switch]').forEach(el => {
+        const c = el.getAttribute('data-lang-switch');
+        const on = c === lang;
+        el.classList.toggle('active', on);
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+
+    function setShowcaseLang(code, persist = true) {
+      const clean = String(code || 'en').trim().toLowerCase();
+      if (!SHOWCASE_LOCALES[clean]) return false;
+      activeShowcaseLang = clean;
+      const meta = SHOWCASE_LOCALES[clean];
+      document.documentElement.setAttribute('lang', meta.code);
+      document.documentElement.setAttribute('dir', meta.dir || 'ltr');
+      document.documentElement.setAttribute('data-lang', meta.code);
+      if (persist) {
+        try {
+          localStorage.setItem('isabi.lang.v1', meta.code);
+          localStorage.setItem('isabi_mfg_lang', meta.code);
+        } catch (_) {}
+      }
+      translateShowcaseDom(document.body);
+      return true;
+    }
+
+    function registerShowcaseLocale(code, meta, entries) {
+      const clean = String(code || '').trim().toLowerCase();
+      if (!clean) return false;
+      SHOWCASE_LOCALES[clean] = {
+        code: clean,
+        label: (meta && meta.label) || clean.toUpperCase(),
+        nativeName: (meta && meta.nativeName) || clean.toUpperCase(),
+        dir: (meta && meta.dir === 'rtl') ? 'rtl' : 'ltr'
+      };
+      if (entries && typeof entries === 'object') {
+        Object.keys(entries).forEach(enKey => {
+          if (!SHOWCASE_DICT[enKey]) SHOWCASE_DICT[enKey] = {};
+          SHOWCASE_DICT[enKey][clean] = String(entries[enKey]);
+        });
+      }
+      return true;
+    }
+
+    document.getElementById('hdr-lang-switch')?.addEventListener('click', e => {
+      const pill = e.target.closest('[data-lang-switch]');
+      if (pill) setShowcaseLang(pill.getAttribute('data-lang-switch'), true);
+    });
+    document.getElementById('hdr-lang-switch')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const pill = e.target.closest('[data-lang-switch]');
+        if (pill) {
+          e.preventDefault();
+          setShowcaseLang(pill.getAttribute('data-lang-switch'), true);
+        }
+      }
+    });
+
+    window.ISABI_I18N = {
+      getLang: () => activeShowcaseLang,
+      setLang: setShowcaseLang,
+      t: translateShowcaseStr,
+      translateDom: translateShowcaseDom,
+      registerLocale: registerShowcaseLocale,
+      getLocales: () => Object.assign({}, SHOWCASE_LOCALES)
+    };
+
+    if (activeShowcaseLang !== 'en') {
+      setShowcaseLang(activeShowcaseLang, false);
+    }
 
     // Register Service Worker with immediate update check & single-reload controllerchange (only when upgrading an existing controller)
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -4546,10 +4730,8 @@ __SHOWCASE_I18N_JS__
 import json  # noqa: E402
 from part_endpoints import ASK_FLOW_U_B64, ASK_FLOW_K_B64  # noqa: E402
 from part_icons import ICONS  # noqa: E402
-from part_i18n import SHOWCASE_I18N_JS  # noqa: E402
 JS = (
     JS.replace('__ASK_FLOW_U_B64__', ASK_FLOW_U_B64)
     .replace('__ASK_FLOW_K_B64__', ASK_FLOW_K_B64)
     .replace('__ICONS_JSON__', json.dumps(ICONS))
-    .replace('__SHOWCASE_I18N_JS__', SHOWCASE_I18N_JS)
 )

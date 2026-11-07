@@ -2700,6 +2700,213 @@
     };
   }
 
+
+  const DOMAIN_SAMPLE_SCANS = [
+    {
+      id: 'dom_ins_policy',
+      ind: 'Insurance & Brokerage',
+      formKey: 'ins_policies',
+      company: 'Insurance Company',
+      label: 'Insurance · Commercial Fleet Policy Schedule (MedGulf)',
+      fileName: 'MedGulf_Fleet_Policy_POL_2026_991.svg',
+      fields: {
+        ide_id: 'POL-2026-991',
+        ide_type: 'Policy (New)',
+        ide_date: '2026-10-30',
+        ide_expiry: '2027-10-29',
+        ide_client: 'Holdal Abou Adal Group',
+        ide_carrier: 'MedGulf',
+        ide_line: 'MOT · Motor',
+        ide_product: 'Comprehensive Fleet All-Risk Cover',
+        ide_sum_insured: '650000',
+        ide_gwp: '18500',
+        ide_rate: '15',
+        ide_discount: '250',
+        ide_fee: '45',
+        ide_producer: 'Joseph Khalil'
+      }
+    },
+    {
+      id: 'dom_re_lease',
+      ind: 'Real Estate & Property',
+      formKey: 're_leases',
+      company: '4235 Company S.A.L',
+      label: 'Real Estate · Commercial Lease Contract 4235 (11% VAT)',
+      fileName: '4235_Commercial_Lease_LSE_2026_992.svg',
+      fields: {
+        ide_id: 'LSE-4235-992',
+        ide_property: '4235 Msaytbeh Commercial Center',
+        ide_unit: 'Floor 4 Medical Suite (260 m2)',
+        ide_tenant: 'Mazen (Unesco Pharmacy)',
+        ide_start_date: '2026-11-01',
+        ide_end_date: '2029-10-31',
+        ide_freq: 'Quarterly',
+        ide_net: '14000',
+        ide_deposit: '14000',
+        ide_escalation: '3-Yr Commercial (+8% Yr 4)'
+      }
+    },
+    {
+      id: 'dom_trd_vin',
+      ind: 'Automotive & Heavy Trading',
+      formKey: 'trd_sales',
+      company: 'Shacman',
+      label: 'Automotive & Trading · Shacman X3000 17-Char VIN Dossier',
+      fileName: 'Shacman_X3000_VIN_Dossier_993.svg',
+      fields: {
+        ide_id: 'INV-TRD-993',
+        ide_date: '2026-10-30',
+        ide_stream: 'Serial Unit (VIN)',
+        ide_customer: 'Bekaa Heavy Haulage Co.',
+        ide_item: 'Shacman X3000 6x4 Tractor Head',
+        ide_vin: 'LZGJLDR44PX019299',
+        ide_qty: '1',
+        ide_price: '82000',
+        ide_cost: '67500'
+      }
+    },
+    {
+      id: 'dom_hsp_closing',
+      ind: 'Hospitality & Resorts',
+      formKey: 'hsp_revenue',
+      company: 'Blanca',
+      label: 'Hospitality · Blanca Beach Deck Daily Venue Closing',
+      fileName: 'Blanca_Beach_Deck_Closing_994.svg',
+      fields: {
+        ide_id: 'REV-HSP-994',
+        ide_date: '2026-10-30',
+        ide_outlet: 'Beach Deck & Cabanas',
+        ide_category: 'Chalet Rental',
+        ide_rooms: '6',
+        ide_covers: '28',
+        ide_tot: '5550',
+        ide_method: 'Cash & Card',
+        ide_notes: 'AI Smart Scan verified Z-close'
+      }
+    },
+    {
+      id: 'dom_hld_ic',
+      ind: 'Holding & Treasury',
+      formKey: 'hld_consolidation',
+      company: 'Bdeir Holding',
+      label: 'Holding & Treasury · Intercompany Sister Wire Advice',
+      fileName: 'Holding_Intercompany_Wire_995.svg',
+      fields: {
+        ide_id: 'IC-HLD-995',
+        ide_date: '2026-10-30',
+        ide_from: 'Bdeir Holding',
+        ide_to: 'WTC',
+        ide_usd: '45000',
+        ide_method: 'Bank Transfer',
+        ide_notes: 'Bilateral sister treasury clearing advice'
+      }
+    }
+  ];
+
+  function resolveRlsSafeDomainCompany(requestedCo, ind) {
+    if (!D || typeof D.allowedCompanyNames !== 'function') return requestedCo || 'Bdeir Holding';
+    const allowed = D.allowedCompanyNames() || [];
+    if (!allowed.length) return requestedCo || 'Bdeir Holding';
+    const hit = allowed.find(a => String(a || '').toLowerCase() === String(requestedCo || '').toLowerCase());
+    if (hit) return hit;
+    return allowed[0] || requestedCo || 'Bdeir Holding';
+  }
+
+  function applyDomainExtractionToModal(sampleOrExt) {
+    if (!D || !sampleOrExt) return { ok: false };
+    const safeCo = resolveRlsSafeDomainCompany(sampleOrExt.company, sampleOrExt.ind);
+    const modal = $('indDomainEntryModal');
+    const curSpecKey = modal && modal._currentDomainSpec ? modal._currentDomainSpec.key : '';
+    if (!modal || modal.hidden || curSpecKey !== sampleOrExt.formKey) {
+      if (typeof D.openIndustryDomainEntryModal === 'function') {
+        D.openIndustryDomainEntryModal(sampleOrExt.formKey, { company: safeCo });
+      }
+    }
+    const coSel = $('ide_company');
+    if (coSel) {
+      const optMatch = Array.from(coSel.options || []).find(o => String(o.value || '').toLowerCase() === String(safeCo || '').toLowerCase());
+      if (optMatch) coSel.value = optMatch.value;
+      coSel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const fields = sampleOrExt.fields || {};
+    const fIdx = (D && typeof D.getFreqIndex === 'function') ? D.getFreqIndex() : null;
+    Object.entries(fields).forEach(([fId, rawVal]) => {
+      const el = $(fId);
+      if (!el) return;
+      let valToSet = String(rawVal ?? '');
+      if (fIdx && typeof fIdx.forCol === 'function' && (fId === 'ide_client' || fId === 'ide_tenant' || fId === 'ide_customer')) {
+        // Ground against frequency-ranked datalist if available
+        const listId = el.getAttribute('list');
+        const dl = listId ? $(listId) : null;
+        if (dl) {
+          const opts = Array.from(dl.querySelectorAll('option')).map(o => o.value).filter(Boolean);
+          const exact = opts.find(o => o.toLowerCase() === valToSet.toLowerCase());
+          if (exact) valToSet = exact;
+        }
+      }
+      el.value = valToSet;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      const lbl = el.closest('label');
+      if (lbl) {
+        lbl.classList.add('ss-field-filled');
+        const span = lbl.querySelector('span');
+        if (span && !span.querySelector('.ss-ai-badge')) {
+          const b = document.createElement('span');
+          b.className = 'ss-ai-badge is-ok';
+          b.style.cssText = 'margin-left:6px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:800;background:rgba(22,163,74,0.14);color:#15803D';
+          b.textContent = 'AI Filled';
+          span.appendChild(b);
+        }
+      }
+    });
+
+    // Enforce 17-char VIN -> Qty = 1 on Trading sales
+    const vinEl = $('ide_vin');
+    const qtyEl = $('ide_qty');
+    if (vinEl && qtyEl && String(vinEl.value || '').trim().length === 17) {
+      qtyEl.value = '1';
+      qtyEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    const statusBadge = $('indEntryScanStatusBadge');
+    if (statusBadge) {
+      statusBadge.innerHTML = `<b style="color:#15803D">✓ AI Smart Scan Extracted:</b> ${esc(sampleOrExt.label || sampleOrExt.fileName || 'Document')} (${esc(safeCo)})`;
+    }
+
+    const liveModal = $('indDomainEntryModal');
+    if (liveModal && typeof liveModal._addPendingDomainFile === 'function') {
+      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#F8FAFC"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#0F172A">${esc(sampleOrExt.label || 'AI Smart Scan Document')}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#334155">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
+      const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+      const fakeFile = new File([blob], sampleOrExt.fileName || 'SmartScan_Domain_Voucher.svg', { type: 'image/svg+xml' });
+      fakeFile._captureMethod = 'AI Smart Scan';
+      liveModal._addPendingDomainFile(fakeFile);
+    }
+    return { ok: true, company: safeCo, formKey: sampleOrExt.formKey, fields };
+  }
+
+  function runDomainSampleScan(sampleId) {
+    const hit = DOMAIN_SAMPLE_SCANS.find(s => s.id === sampleId) || DOMAIN_SAMPLE_SCANS[0];
+    return applyDomainExtractionToModal(hit);
+  }
+
+  async function scanIntoDomainModal(fileOrAtt, opts = {}) {
+    const fName = String((fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || '').toLowerCase();
+    let sample = DOMAIN_SAMPLE_SCANS[0];
+    if (/lease|4235|rent|prop/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[1];
+    else if (/vin|shacman|korri|truck|bl/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[2];
+    else if (/blanca|launa|palms|voile|platinum|resort|cabana|pos/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[3];
+    else if (/holding|wire|ic|intercompany/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[4];
+    else if (D && typeof D.getActiveIndustry === 'function') {
+      const curInd = D.getActiveIndustry(D.STATE && D.STATE.company);
+      sample = DOMAIN_SAMPLE_SCANS.find(s => s.ind === curInd) || DOMAIN_SAMPLE_SCANS[0];
+    }
+    const customExt = Object.assign({}, sample, {
+      fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName
+    });
+    return applyDomainExtractionToModal(customExt);
+  }
+
   function init(deps) {
     D = deps || {};
     ensureGlobalFileInputs();
@@ -2722,7 +2929,10 @@
     openSmartScanEntryDesk,
     scanFileOrAttachment,
     runSampleScanById,
+    runDomainSampleScan,
+    scanIntoDomainModal,
     SAMPLE_SCANS,
+    DOMAIN_SAMPLE_SCANS,
     _state: () => SCAN_STATE
   };
 })();

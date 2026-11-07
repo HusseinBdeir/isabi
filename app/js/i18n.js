@@ -14037,6 +14037,70 @@
     });
   }
 
+  // Phase 12 Multi-Industry Kiosk, Smart Scan, Thermal Voucher & Copilot keys
+  registerLocale('ar', LOCALES.ar, {
+    'Thermal Voucher': 'قسيمة حرارية',
+    'Print 80mm / 58mm thermal slip or voucher': 'طباعة إيصال أو قسيمة حرارية 80mm / 58mm',
+    'Supporting Documents & Scans': 'المستندات المرفقة والمسح الضوئي',
+    'Upload File': 'رفع ملف',
+    'Camera': 'الكاميرا',
+    'No documents attached yet. Uploaded files sync automatically to the Document Vault upon posting.': 'لا توجد مستندات مرفقة بعد. تتم مزامنة الملفات المرفوعة تلقائياً مع خزنة المستندات عند الترحيل.',
+    'Smart Scan & Auto-Fill Domain Entry': 'المسح الذكي والتعبئة التلقائية لسجل القطاع',
+    'Upload or snap any policy schedule, lease contract, customs VIN declaration, resort z-report, or wire advice to auto-select the right domain tab and fill fields.': 'ارفع أو صوّر أي جدول بوليصة أو عقد إيجار أو بيان جمركي أو إغلاق يومي لاختيار التبويب المناسب وتعبئة الحقول تلقائياً.',
+    'Partner Equity Splits': 'توزيع حصص الشركاء',
+    'Statement 23': 'كشف 23',
+    'Statement 24': 'كشف 24',
+    'Statement 25': 'كشف 25',
+    'Statement 26 Rent Roll': 'كشف عقود الإيجار 26',
+    'Statement 27': 'كشف 27',
+    'Kiosk 1 · POS & Venue Closing': 'كشك 1 · نقطة البيع وإغلاق الصالة',
+    'Kiosk 2 · Commissary & Cellar Intake': 'كشك 2 · استلام المطبخ والقبو',
+    'Kiosk 3 · Generator & Utility Meter': 'كشك 3 · عدادات المولدات والطاقة',
+    'Kiosk 1 · Commercial Counter Invoice': 'كشك 1 · فاتورة مبيعات تجارية',
+    'Kiosk 2 · VIN & Parts Receiving': 'كشك 2 · استلام الشاحنات وقطع الغيار',
+    'Kiosk 3 · PDI Yard & Fuel Log': 'كشك 3 · سجل فحص الساحة والوقود',
+    'Kiosk 1 · Tenant Rent Receipt': 'كشك 1 · إيصال قبض إيجار المستأجر',
+    'Kiosk 2 · Work Order & Contractor': 'كشك 2 · أمر صيانة ومقاول',
+    'Kiosk 3 · Building Utility & Generator': 'كشك 3 · مرافق المبنى والمولد',
+    'Kiosk 1 · Policy & Endorsement Desk': 'كشك 1 · مكتب البوالص والملاحق',
+    'Kiosk 2 · Premium Collection Receipt': 'كشك 2 · إيصال تحصيل الأقساط',
+    'Kiosk 3 · FNOL Claim & Survey Desk': 'كشك 3 · مكتب المطالبات والمعاينة',
+    'Kiosk 1 · Intercompany Transfer Desk': 'كشك 1 · مكتب التحويلات بين الشركات',
+    'Kiosk 2 · Corporate Voucher Intake': 'كشك 2 · إدخال قسائم الشركات',
+    'Kiosk 3 · Treasury FX & Liquidity Log': 'كشك 3 · سجل السيولة والقطع'
+  });
+  registerLocale('fr', LOCALES.fr, {
+    'Thermal Voucher': 'Bon thermique',
+    'Print 80mm / 58mm thermal slip or voucher': 'Imprimer un reçu ou bon thermique 80mm / 58mm',
+    'Supporting Documents & Scans': 'Pièces justificatives et numérisations',
+    'Upload File': 'Téléverser',
+    'Camera': 'Caméra',
+    'No documents attached yet. Uploaded files sync automatically to the Document Vault upon posting.': 'Aucun document joint. Les fichiers téléversés sont synchronisés automatiquement avec le coffre-fort documentaire.',
+    'Smart Scan & Auto-Fill Domain Entry': 'Numérisation IA et remplissage automatique métier',
+    'Upload or snap any policy schedule, lease contract, customs VIN declaration, resort z-report, or wire advice to auto-select the right domain tab and fill fields.': 'Importez ou photographiez une police, un bail, une déclaration douanière VIN, une clôture POS ou un avis de virement pour remplir automatiquement le formulaire.',
+    'Partner Equity Splits': 'Répartition des associés',
+    'Statement 23': 'État 23',
+    'Statement 24': 'État 24',
+    'Statement 25': 'État 25',
+    'Statement 26 Rent Roll': 'État locatif 26',
+    'Statement 27': 'État 27',
+    'Kiosk 1 · POS & Venue Closing': 'Kiosque 1 · Caisse POS et clôture',
+    'Kiosk 2 · Commissary & Cellar Intake': 'Kiosque 2 · Réception économat et cave',
+    'Kiosk 3 · Generator & Utility Meter': 'Kiosque 3 · Compteurs groupe et énergie',
+    'Kiosk 1 · Commercial Counter Invoice': 'Kiosque 1 · Facturation comptoir commercial',
+    'Kiosk 2 · VIN & Parts Receiving': 'Kiosque 2 · Réception VIN et pièces',
+    'Kiosk 3 · PDI Yard & Fuel Log': 'Kiosque 3 · Parc PDI et carburant',
+    'Kiosk 1 · Tenant Rent Receipt': 'Kiosque 1 · Quittance de loyer locataire',
+    'Kiosk 2 · Work Order & Contractor': 'Kiosque 2 · Bon de travaux et prestataire',
+    'Kiosk 3 · Building Utility & Generator': 'Kiosque 3 · Utilités immeuble et groupe',
+    'Kiosk 1 · Policy & Endorsement Desk': 'Kiosque 1 · Guichet polices et avenants',
+    'Kiosk 2 · Premium Collection Receipt': 'Kiosque 2 · Encaissement de prime',
+    'Kiosk 3 · FNOL Claim & Survey Desk': 'Kiosque 3 · Déclaration sinistre et expertise',
+    'Kiosk 1 · Intercompany Transfer Desk': 'Kiosque 1 · Transferts intragroupe',
+    'Kiosk 2 · Corporate Voucher Intake': 'Kiosque 2 · Saisie pièces holding',
+    'Kiosk 3 · Treasury FX & Liquidity Log': 'Kiosque 3 · Trésorerie FX et liquidité'
+  });
+
   function bootI18n() {
     wireGlobalLangDelegation();
     ensureDomObserver();

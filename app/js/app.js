@@ -498,6 +498,11 @@
     trd_trucks: 'serial chassis unit', trd_warranty: 'PDI & warranty job',
     re_leases: 'lease contract', re_invoicing: 'rent invoice', re_receipts: 'tenant receipt',
     ins_remittances: 'carrier bordereau', ins_statements: 'commission statement', ins_claims: 'insurance claim',
+    ins_policies: 'insurance policy', ins_agreements: 'commission agreement',
+    re_units: 'property unit', re_maintenance: 'property work order',
+    trd_sales: 'commercial vehicle & parts invoice', trd_parts: 'spare parts SKU',
+    hsp_revenue: 'venue daily closing', hsp_pos: 'POS terminal Z-read', hsp_energy: 'generator & utility log',
+    hld_interactions: 'intercompany treasury voucher', hld_partners: 'partner distribution', hld_loans: 'facility schedule',
     ind_domain: 'domain record'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
@@ -30616,16 +30621,28 @@
   }
 
   const DOMAIN_PARENT_VIEW_MAP = {
+    hld_interactions: { view: 'hld_consolidation', ind: 'Holding & Treasury', label: 'Intercompany Treasury Voucher' },
+    hld_partners: { view: 'hld_partners', ind: 'Holding & Treasury', label: 'Partner Equity & Distribution' },
+    hld_loans: { view: 'hld_loans', ind: 'Holding & Treasury', label: 'Group Credit Facility' },
+    hsp_revenue: { view: 'hsp_revenue', ind: 'Hospitality & Resorts', label: 'Venue Revenue Closing' },
+    hsp_pos: { view: 'hsp_pos', ind: 'Hospitality & Resorts', label: 'POS Terminal Z-Read' },
     hsp_memberships: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Membership Contract' },
     hsp_stock: { view: 'hsp_stock', ind: 'Hospitality & Resorts', label: 'Commissary & Cellar Stock' },
+    hsp_energy: { view: 'hsp_energy', ind: 'Hospitality & Resorts', label: 'Generator & Utility Log' },
+    trd_sales: { view: 'trd_sales', ind: 'Automotive & Heavy Trading', label: 'Commercial Sales Invoice' },
+    trd_parts: { view: 'trd_parts', ind: 'Automotive & Heavy Trading', label: 'Spare Parts Catalog SKU' },
     trd_imports: { view: 'trd_purchases', ind: 'Automotive & Heavy Trading', label: 'Import File & Ocean B/L' },
     trd_landed: { view: 'trd_landed', ind: 'Automotive & Heavy Trading', label: 'Landed Cost Voucher' },
     trd_grn: { view: 'trd_grn', ind: 'Automotive & Heavy Trading', label: 'Goods Receipt Note' },
     trd_trucks: { view: 'trd_trucks', ind: 'Automotive & Heavy Trading', label: 'Serial Chassis Unit' },
     trd_warranty: { view: 'trd_warranty', ind: 'Automotive & Heavy Trading', label: 'PDI & Warranty Job' },
     re_leases: { view: 're_leases', ind: 'Real Estate & Property', label: 'Registered Lease Contract' },
+    re_units: { view: 're_leases', ind: 'Real Estate & Property', label: 'Property Unit Register' },
     re_invoicing: { view: 're_invoicing', ind: 'Real Estate & Property', label: 'Official Rent Invoice' },
     re_receipts: { view: 're_receipts', ind: 'Real Estate & Property', label: 'Tenant Settlement Receipt' },
+    re_maintenance: { view: 're_maintenance', ind: 'Real Estate & Property', label: 'Property CAPEX & Work Order' },
+    ins_policies: { view: 'ins_policies', ind: 'Insurance & Brokerage', label: 'Insurance Policy & Endorsement' },
+    ins_agreements: { view: 'ins_agreements', ind: 'Insurance & Brokerage', label: 'Carrier Commission Agreement' },
     ins_remittances: { view: 'ins_remittances', ind: 'Insurance & Brokerage', label: 'Carrier Bordereau' },
     ins_statements: { view: 'ins_statements', ind: 'Insurance & Brokerage', label: 'Commission Statement' },
     ins_claims: { view: 'ins_claims', ind: 'Insurance & Brokerage', label: 'FNOL Insurance Claim' }
@@ -30633,20 +30650,33 @@
 
   function inferDomainTblKey(ind, viewKey, primaryId) {
     const pid = String(primaryId || '').trim();
+    if (/^(POL|END|ALZ|MGF|BNK|AXA|LBS|ARP)-/i.test(pid)) return 'ins_policies';
+    if (/^AGR-/i.test(pid)) return 'ins_agreements';
     if (/^MEM-/i.test(pid)) return 'hsp_memberships';
     if (/^STK-/i.test(pid)) return 'hsp_stock';
+    if (/^(POS|Z)-/i.test(pid)) return 'hsp_pos';
+    if (/^(REV|HSP-REV)-/i.test(pid)) return 'hsp_revenue';
+    if (/^(ENG|GEN)-/i.test(pid)) return 'hsp_energy';
     if (/^IMP-/i.test(pid)) return 'trd_imports';
     if (/^LC-/i.test(pid)) return 'trd_landed';
     if (/^GRN-/i.test(pid)) return 'trd_grn';
     if (/^SU-/i.test(pid)) return 'trd_trucks';
     if (/^(PDI|SVC|WAR)-/i.test(pid)) return 'trd_warranty';
+    if (/^(INV-TRD|TRD-INV|SH-INV|KA-INV)-/i.test(pid)) return 'trd_sales';
+    if (/^(PRT|SKU)-/i.test(pid)) return 'trd_parts';
     if (/^LSE-/i.test(pid)) return 're_leases';
-    if (/^INV-(4235|PROP)-/i.test(pid)) return 're_invoicing';
-    if (/^RCT-(4235|PROP)-/i.test(pid)) return 're_receipts';
+    if (/^UNT-/i.test(pid)) return 're_units';
+    if (/^INV-(4235|PROP|RE)-/i.test(pid)) return 're_invoicing';
+    if (/^RCT-(4235|PROP|RE)-/i.test(pid)) return 're_receipts';
+    if (/^WO-/i.test(pid)) return 're_maintenance';
     if (/^REM-/i.test(pid)) return 'ins_remittances';
     if (/^STM-/i.test(pid)) return 'ins_statements';
     if (/^CLM-/i.test(pid)) return 'ins_claims';
+    if (/^(IC|HLD-IC)-/i.test(pid)) return 'hld_interactions';
+    if (/^(JV|DIV)-/i.test(pid)) return 'hld_partners';
+    if (/^(LN|FAC)-/i.test(pid)) return 'hld_loans';
     if (viewKey === 'trd_purchases') return 'trd_imports';
+    if (viewKey === 'hld_consolidation') return 'hld_interactions';
     if (viewKey && DOMAIN_PARENT_VIEW_MAP[viewKey]) return viewKey;
     return 'ind_domain';
   }
@@ -30705,9 +30735,12 @@
   }
 
   function navigateToRecordOrDomainRow(parentTbl, parentId, parentLbl, docCo) {
+    const rawTbl = String(parentTbl || '').trim();
+    const cleanTbl = rawTbl.startsWith('ind_domain:') ? rawTbl.slice(11) : rawTbl;
     const targetId = String(parentId || parentLbl || '').replace(/^#/, '').trim();
-    const domHit = DOMAIN_PARENT_VIEW_MAP[parentTbl];
-    if (domHit || parentTbl === 'ind_domain') {
+    const domHit = DOMAIN_PARENT_VIEW_MAP[cleanTbl] || (cleanTbl ? DOMAIN_PARENT_VIEW_MAP[inferDomainTblKey('', '', targetId)] : null);
+    if (domHit || cleanTbl === 'ind_domain' || rawTbl.startsWith('ind_domain:')) {
+      parentTbl = cleanTbl;
       closeRecordInspector();
       if (domHit) {
         const curInd = getActiveIndustry(STATE.company);
@@ -30744,6 +30777,11 @@
             trEl: hitTr,
             domainTblKey: hitTr.getAttribute('data-ind-row-tbl') || parentTbl,
             rowCompany: hitTr.getAttribute('data-ind-row-co') || docCo || ''
+          });
+        } else if (typeof openIndustryDomainInspectorById === 'function') {
+          openIndustryDomainInspectorById(parentTbl, targetId, {
+            ind: (domHit && domHit.ind) || getActiveIndustry(STATE.company),
+            rowCompany: docCo || ''
           });
         }
       }
@@ -46059,7 +46097,35 @@
     const customInsPols = getIndustryCustomRows('ins_policies');
     let customPolOnlyCount = 0;
     let customEndOnlyCount = 0;
-    customInsPols.forEach(cp => {
+    customInsPols.forEach(rawCp => {
+      const gwpN = Number(rawCp.gross_prem_usd != null ? rawCp.gross_prem_usd : (rawCp.gwp_usd || 0));
+      const commN = Number(rawCp.gross_comm_usd != null ? rawCp.gross_comm_usd : (rawCp.comm_usd != null ? rawCp.comm_usd : (rawCp.net_comm_usd || round2(gwpN * 0.15))));
+      const discN = Number(rawCp.discount_usd || 0);
+      const netCommN = Number(rawCp.net_comm_usd != null ? rawCp.net_comm_usd : Math.max(0, commN - discN));
+      const pay4017N = Number(rawCp.net_payable_4017_usd != null ? rawCp.net_payable_4017_usd : (rawCp.carrier_payable_usd != null ? rawCp.carrier_payable_usd : Math.max(0, gwpN - commN)));
+      const cp = Object.assign({
+        client: rawCp.client || rawCp.insured || 'Policyholder',
+        insured: rawCp.insured || rawCp.client || 'Policyholder',
+        carrier: rawCp.carrier || 'MedGulf',
+        line: rawCp.line || 'MOT · Motor',
+        gross_prem_usd: gwpN,
+        gwp_usd: gwpN,
+        comm_rate_pct: Number(rawCp.comm_rate_pct || 15),
+        gross_comm_usd: commN,
+        discount_usd: discN,
+        net_comm_usd: netCommN,
+        policy_fee_usd: Number(rawCp.policy_fee_usd || 0),
+        net_payable_4017_usd: pay4017N
+      }, rawCp, {
+        client: rawCp.client || rawCp.insured || 'Policyholder',
+        insured: rawCp.insured || rawCp.client || 'Policyholder',
+        gross_prem_usd: gwpN,
+        gwp_usd: gwpN,
+        gross_comm_usd: commN,
+        discount_usd: discN,
+        net_comm_usd: netCommN,
+        net_payable_4017_usd: pay4017N
+      });
       policies.unshift(cp);
       if (/endorsement/i.test(String(cp.type || ''))) customEndOnlyCount += 1;
       else customPolOnlyCount += 1;
@@ -51405,9 +51471,9 @@
   }
 
   function getIndustryRowEditStore() {
-    if (!STATE.industryRowEdits) {
+    if (!STATE.industryRowEdits || typeof STATE.industryRowEdits !== 'object') {
       try {
-        const raw = localStorage.getItem('isabi_mfg_ind_row_edits_v1');
+        const raw = !IS_AUTOMATED_TEST ? localStorage.getItem('isabi_mfg_ind_row_edits_v1') : null;
         STATE.industryRowEdits = raw ? JSON.parse(raw) : {};
       } catch (_) {
         STATE.industryRowEdits = {};
@@ -51416,11 +51482,39 @@
     return STATE.industryRowEdits;
   }
 
-  function saveIndustryRowEditStore(store) {
-    STATE.industryRowEdits = store || {};
+  function postIndustryDomainStoreToLocalApi() {
+    if (!HAS_LOCAL_API) return;
     try {
-      localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
+      fetch('./api/industry_domain_store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          industryCustomRows: getIndustryCustomRowsStore(),
+          industryRowEdits: getIndustryRowEditStore()
+        })
+      }).catch(() => {});
     } catch (_) {}
+  }
+
+  function saveIndustryRowEditStore(store) {
+    const nextStore = store || {};
+    const nowIso = new Date().toISOString();
+    Object.keys(nextStore).forEach(k => {
+      const item = nextStore[k];
+      if (item && typeof item === 'object') {
+        item.rev = Math.max(1, Number(item.rev || 0) + (item._revBumped ? 0 : 1));
+        item._revBumped = true;
+        item.updated_at = item.updated_at || item.updatedAt || nowIso;
+        item.updatedAt = item.updated_at;
+      }
+    });
+    STATE.industryRowEdits = nextStore;
+    if (!IS_AUTOMATED_TEST) {
+      try {
+        localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
+      } catch (_) {}
+    }
+    postIndustryDomainStoreToLocalApi();
   }
 
   function makeIndustryRowEditKey(ind, tableTitle, primaryId) {
@@ -51485,12 +51579,52 @@
     return STATE.industryCustomRows;
   }
 
+  function offloadIndustryCustomRowBlobs(storeObj) {
+    const slim = {};
+    Object.keys(storeObj || {}).forEach(bucket => {
+      const arr = storeObj[bucket];
+      if (!Array.isArray(arr)) { slim[bucket] = arr; return; }
+      slim[bucket] = arr.map(rec => {
+        if (!rec || typeof rec !== 'object') return rec;
+        const copy = Object.assign({}, rec);
+        if (typeof copy.data_url === 'string' && copy.data_url.length > 2048) {
+          const bId = copy._blob_id || copy.id || copy.code;
+          if (bId && typeof putDocBlob === 'function') {
+            putDocBlob(bId, copy.data_url);
+            copy._blob_id = bId;
+            delete copy.data_url;
+          }
+        }
+        if (Array.isArray(copy.attachments) && copy.attachments.length) {
+          copy.attachments = copy.attachments.map(att => {
+            if (!att || typeof att !== 'object') return att;
+            const ac = Object.assign({}, att);
+            if (typeof ac.data_url === 'string' && ac.data_url.length > 2048) {
+              const abId = ac._blob_id || ac.id || ac.doc_id;
+              if (abId && typeof putDocBlob === 'function') {
+                putDocBlob(abId, ac.data_url);
+                ac._blob_id = abId;
+                delete ac.data_url;
+              }
+            }
+            return ac;
+          });
+        }
+        return copy;
+      });
+    });
+    return slim;
+  }
+
   function saveIndustryCustomRowsStore() {
+    const store = getIndustryCustomRowsStore();
+    const slim = offloadIndustryCustomRowBlobs(store);
     if (!IS_AUTOMATED_TEST) {
       try {
-        localStorage.setItem('isabi_mfg_ind_custom_rows_v1', JSON.stringify(getIndustryCustomRowsStore()));
+        localStorage.setItem('isabi_mfg_ind_custom_rows_v1', JSON.stringify(slim));
       } catch (_) {}
     }
+    postIndustryDomainStoreToLocalApi();
   }
 
   function getIndustryCustomRows(bucket) {
@@ -51517,10 +51651,22 @@
     if (!bucket || !rowObj) return null;
     const store = getIndustryCustomRowsStore();
     if (!Array.isArray(store[bucket])) store[bucket] = [];
-    const rec = Object.assign({ _customBucket: bucket, _createdAt: new Date().toISOString() }, rowObj);
-    store[bucket].unshift(rec);
+    const nowIso = new Date().toISOString();
+    const pid = String(rowObj.id || rowObj.code || '').trim();
+    const existingIdx = pid ? store[bucket].findIndex(r => r && String(r.id || r.code || '').trim() === pid) : -1;
+    const prevRev = existingIdx >= 0 ? Number(store[bucket][existingIdx].rev || 1) : 0;
+    const nextRev = Math.max(prevRev + 1, Number(rowObj.rev || 1));
+    const rec = Object.assign(
+      { _customBucket: bucket, _createdAt: nowIso, voided: false },
+      existingIdx >= 0 ? store[bucket][existingIdx] : {},
+      rowObj,
+      { _customBucket: bucket, rev: nextRev, updated_at: rowObj.updated_at || nowIso }
+    );
+    if (existingIdx >= 0) store[bucket][existingIdx] = rec;
+    else store[bucket].unshift(rec);
     saveIndustryCustomRowsStore();
     invalidateIndustryDomainCaches();
+    if (typeof syncWithCloud === 'function') syncWithCloud(true);
     return rec;
   }
 
@@ -51528,12 +51674,15 @@
     const pid = String(primaryId || '').trim();
     if (!pid) return false;
     const store = getIndustryCustomRowsStore();
+    const nowIso = new Date().toISOString();
     let hit = false;
     Object.keys(store).forEach(bucket => {
       if (!Array.isArray(store[bucket])) return;
       store[bucket].forEach(r => {
         if (r && String(r.id || r.code || '').trim() === pid) {
           r.voided = true;
+          r.rev = Number(r.rev || 1) + 1;
+          r.updated_at = nowIso;
           hit = true;
         }
       });
@@ -51541,8 +51690,123 @@
     if (hit) {
       saveIndustryCustomRowsStore();
       invalidateIndustryDomainCaches();
+      if (typeof syncWithCloud === 'function') syncWithCloud(true);
     }
     return hit;
+  }
+
+  function mergeIndustryCustomRows(remoteMap) {
+    if (!remoteMap || typeof remoteMap !== 'object') return false;
+    const store = getIndustryCustomRowsStore();
+    let changed = false;
+    Object.keys(remoteMap).forEach(bucket => {
+      const remArr = remoteMap[bucket];
+      if (!Array.isArray(remArr)) return;
+      if (!Array.isArray(store[bucket])) store[bucket] = [];
+      const locArr = store[bucket];
+      const byId = new Map();
+      locArr.forEach(r => {
+        if (!r || typeof r !== 'object') return;
+        const id = String(r.id || r.code || '').trim();
+        if (id) byId.set(id, r);
+      });
+      remArr.forEach(rem => {
+        if (!rem || typeof rem !== 'object') return;
+        const id = String(rem.id || rem.code || '').trim();
+        if (!id) return;
+        const loc = byId.get(id);
+        if (!loc) {
+          const clone = Object.assign({ _customBucket: bucket, rev: Number(rem.rev || 1), updated_at: rem.updated_at || rem._createdAt || new Date().toISOString() }, rem);
+          locArr.push(clone);
+          byId.set(id, clone);
+          changed = true;
+          return;
+        }
+        const lRev = Number(loc.rev || 1);
+        const rRev = Number(rem.rev || 1);
+        const lVoid = Boolean(loc.voided);
+        const rVoid = Boolean(rem.voided);
+        const lTs = String(loc.updated_at || loc._createdAt || '');
+        const rTs = String(rem.updated_at || rem._createdAt || '');
+        if (rVoid && !lVoid && rRev >= lRev) {
+          loc.voided = true;
+          loc.rev = Math.max(lRev, rRev);
+          loc.updated_at = rTs || lTs || new Date().toISOString();
+          changed = true;
+        } else if (lVoid && !rVoid && lRev >= rRev) {
+          // keep local void tombstone
+        } else if (rRev > lRev || (rRev === lRev && rTs > lTs)) {
+          const merged = Object.assign({}, loc, rem, {
+            _customBucket: bucket,
+            voided: rVoid || (lVoid && lRev >= rRev),
+            rev: Math.max(lRev, rRev),
+            updated_at: rTs || lTs
+          });
+          const idx = locArr.indexOf(loc);
+          if (idx >= 0) locArr[idx] = merged;
+          byId.set(id, merged);
+          changed = true;
+        }
+      });
+    });
+    if (changed) {
+      saveIndustryCustomRowsStore();
+      invalidateIndustryDomainCaches();
+    }
+    return changed;
+  }
+
+  function mergeIndustryRowEdits(remoteMap) {
+    if (!remoteMap || typeof remoteMap !== 'object') return false;
+    const store = getIndustryRowEditStore();
+    let changed = false;
+    Object.keys(remoteMap).forEach(editKey => {
+      const rem = remoteMap[editKey];
+      if (!rem || typeof rem !== 'object') return;
+      const loc = store[editKey];
+      if (!loc || typeof loc !== 'object') {
+        store[editKey] = Object.assign({ rev: Number(rem.rev || 1), _revBumped: true }, rem);
+        changed = true;
+        return;
+      }
+      const lRev = Number(loc.rev || 1);
+      const rRev = Number(rem.rev || 1);
+      const lVoid = Boolean(loc.voided);
+      const rVoid = Boolean(rem.voided);
+      const lTs = String(loc.updated_at || loc.updatedAt || '');
+      const rTs = String(rem.updated_at || rem.updatedAt || '');
+      const mergedRemovedDocs = Array.from(new Set([].concat(loc.removedDocIds || [], rem.removedDocIds || []).map(String).filter(Boolean)));
+      if (rVoid && !lVoid && rRev >= lRev) {
+        store[editKey] = Object.assign({}, loc, rem, {
+          voided: true,
+          rev: Math.max(lRev, rRev),
+          removedDocIds: mergedRemovedDocs.length ? mergedRemovedDocs : undefined,
+          updated_at: rTs || lTs,
+          updatedAt: rTs || lTs,
+          _revBumped: true
+        });
+        changed = true;
+      } else if (rRev > lRev || (rRev === lRev && rTs > lTs)) {
+        store[editKey] = Object.assign({}, loc, rem, {
+          voided: rVoid || (lVoid && lRev >= rRev),
+          rev: Math.max(lRev, rRev),
+          removedDocIds: mergedRemovedDocs.length ? mergedRemovedDocs : undefined,
+          updated_at: rTs || lTs,
+          updatedAt: rTs || lTs,
+          _revBumped: true
+        });
+        changed = true;
+      } else if (mergedRemovedDocs.length > (Array.isArray(loc.removedDocIds) ? loc.removedDocIds.length : 0)) {
+        loc.removedDocIds = mergedRemovedDocs;
+        loc._revBumped = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveIndustryRowEditStore(store);
+      invalidateIndustryDomainCaches();
+    }
+    return changed;
   }
 
   function clearIndustryCustomRows(bucket) {
@@ -51971,22 +52235,76 @@
       `;
     }
 
+    let pendingDomainFiles = Array.isArray(prefill._pendingFiles) ? prefill._pendingFiles.slice() : [];
+    modal._currentDomainSpec = spec;
+    modal._currentDomainInd = ind;
+    modal._getPendingDomainFiles = () => pendingDomainFiles;
+    modal._addPendingDomainFile = (fileObj) => {
+      if (fileObj) {
+        pendingDomainFiles.push(fileObj);
+        if (typeof modal._renderPendingDomainAtts === 'function') modal._renderPendingDomainAtts();
+      }
+    };
+
+    const defaultSampleByInd = {
+      'Insurance & Brokerage': 'dom_ins_policy',
+      'Real Estate & Property': 'dom_re_lease',
+      'Automotive & Heavy Trading': 'dom_trd_vin',
+      'Hospitality & Resorts': 'dom_hsp_closing',
+      'Holding & Treasury': 'dom_hld_ic'
+    };
+    const defSampleId = defaultSampleByInd[ind] || 'dom_ins_policy';
+
     const bodyEl = $('indEntryModalBody');
     bodyEl.innerHTML = `
       ${datalistsHtml}
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:12px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
         <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
           ${list.map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
         </div>
         <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
       </div>
+      <div id="indEntrySmartScanBar" class="ss-bar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;border-radius:8px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#CBD5E1)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="badge badge-info" style="font-weight:800">${ic('sparkles')} AI Smart Scan</span>
+          <span id="indEntryScanStatusBadge" style="font-size:11.5px;color:var(--ink,#0F172A);font-weight:600">Drop a policy schedule, lease contract, customs B/L, POS slip, or treasury advice to auto-fill</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <input type="file" id="indEntryScanFileInput" accept="image/*,application/pdf,.pdf,.png,.jpg,.jpeg,.webp" hidden>
+          <button type="button" class="btn btn-outline-bar btn-sm" id="indEntryScanUploadBtn">${ic('upload')} Scan Document</button>
+          <button type="button" class="btn btn-outline-bar btn-sm" id="indEntryScanCameraBtn">${ic('camera')} Snap &amp; Extract</button>
+          <select id="indEntryScanSampleSelect" data-plain-options="1" aria-label="Try Sample Domain Scan" style="padding:4px 8px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:11.5px;font-weight:700">
+            <option value="">Try Sample Scan...</option>
+            <option value="dom_ins_policy" ${defSampleId === 'dom_ins_policy' ? 'selected' : ''}>Sample: Insurance Policy Schedule (MedGulf)</option>
+            <option value="dom_re_lease" ${defSampleId === 'dom_re_lease' ? 'selected' : ''}>Sample: Commercial Lease 4235 (11% VAT)</option>
+            <option value="dom_trd_vin" ${defSampleId === 'dom_trd_vin' ? 'selected' : ''}>Sample: Shacman X3000 Chassis VIN Dossier</option>
+            <option value="dom_hsp_closing" ${defSampleId === 'dom_hsp_closing' ? 'selected' : ''}>Sample: Resort Daily Venue Closing</option>
+            <option value="dom_hld_ic" ${defSampleId === 'dom_hld_ic' ? 'selected' : ''}>Sample: Holding Intercompany Wire Advice</option>
+          </select>
+          <button type="button" class="btn btn-primary btn-sm" id="indEntryRunSampleScanBtn">Auto-Fill Sample</button>
+        </div>
+      </div>
       <form id="indDomainEntryForm" autocomplete="off">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px" id="indEntryFieldsGrid">
           ${fieldsHtml}
+        </div>
+        <div id="indEntryAttachmentsBar" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px">
+              <strong style="font-size:12px;color:var(--ink,#0F172A)">${ic('receipt')} Supporting Contracts, Scans &amp; Receipts</strong>
+              <span class="badge badge-neutral" id="indEntryAttCountBadge">0 Files</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <input type="file" id="indEntryAttFileInput" accept="image/*,application/pdf,.pdf,.png,.jpg,.jpeg,.webp" multiple hidden>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="indEntryBtnUploadAtt">${ic('upload')} Attach File / PDF</button>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="indEntryBtnSnapAtt">${ic('camera')} Snap Photo</button>
+            </div>
+          </div>
+          <div id="indEntryAttList" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
         </div>
         <div id="indEntryValidationMsg" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:10px;border-top:1px solid var(--line,#E2E8F0)">
-          <span style="font-size:11.5px;color:var(--muted,#64748B)">Posts live to Domain Hub, Executive Rollup, Native Dashboards &amp; Balanced Lebanese PCG GL</span>
+          <span style="font-size:11.5px;color:var(--muted,#64748B)">Posts live to Domain Hub, Executive Rollup, Document Vault, Native Dashboards &amp; Balanced Lebanese PCG GL</span>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn btn-ghost-bar" id="ideCancelBtn">Cancel</button>
             <button type="submit" class="btn btn-primary" id="ideSaveBtn">Post Domain Record</button>
@@ -52150,7 +52468,7 @@
     });
     recalcLive();
 
-    formEl.onsubmit = ev => {
+    formEl.onsubmit = async ev => {
       ev.preventDefault();
       if (!recalcLive()) {
         toast('Please resolve the domain guardrail error before posting', 'err');
@@ -52604,12 +52922,286 @@
         });
       }
 
+      const partyGuess = strVal('ide_client') || strVal('ide_tenant') || strVal('ide_customer') || strVal('ide_supplier') || strVal('ide_member') || strVal('ide_partner') || strVal('ide_carrier') || strVal('ide_to') || co;
+      const amtGuess = numVal('ide_gwp') || numVal('ide_net') || numVal('ide_paid') || numVal('ide_price') || numVal('ide_tot') || numVal('ide_billed') || numVal('ide_contract') || numVal('ide_usd') || numVal('ide_claimed') || numVal('ide_actual') || 0;
+      const dtGuess = strVal('ide_date') || strVal('ide_start_date') || today;
+      const filesToAttach = pendingDomainFiles.slice();
+
       closeIndustryDomainEntryModal();
       renderApp();
       toast(`Posted ${recId} to ${ind}`);
+
+      if (filesToAttach.length > 0) {
+        const domCrKey = inferDomainTblKey(ind, spec.key, recId);
+        await attachFilesToDomainRecord({
+          crKey: domCrKey,
+          primaryId: recId,
+          company: co,
+          ind,
+          date: dtGuess,
+          counterparty: partyGuess,
+          amount: amtGuess
+        }, filesToAttach, filesToAttach[0]._captureMethod || 'File Upload');
+      }
     };
 
+    const renderPendingDomainAtts = () => {
+      const badge = $('indEntryAttCountBadge');
+      const listEl = $('indEntryAttList');
+      if (badge) {
+        badge.textContent = `${pendingDomainFiles.length} ${pendingDomainFiles.length === 1 ? 'File' : 'Files'}`;
+        badge.className = `badge ${pendingDomainFiles.length ? 'badge-ok' : 'badge-neutral'}`;
+      }
+      if (listEl) {
+        listEl.innerHTML = pendingDomainFiles.map((f, i) => `
+          <span class="chip" style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px">
+            ${ic('receipt')} <b>${esc(f.name || f.file_name || ('Attachment ' + (i + 1)))}</b>
+            <button type="button" data-ind-entry-rm-att="${i}" style="border:none;background:transparent;cursor:pointer;color:var(--crit,#DC2626);font-weight:800;padding:0 2px" aria-label="Remove">✕</button>
+          </span>
+        `).join('');
+        listEl.querySelectorAll('[data-ind-entry-rm-att]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.getAttribute('data-ind-entry-rm-att'));
+            if (idx >= 0 && idx < pendingDomainFiles.length) {
+              pendingDomainFiles.splice(idx, 1);
+              renderPendingDomainAtts();
+            }
+          });
+        });
+      }
+    };
+    modal._renderPendingDomainAtts = renderPendingDomainAtts;
+    renderPendingDomainAtts();
+
+    const attInput = $('indEntryAttFileInput');
+    const attUpBtn = $('indEntryBtnUploadAtt');
+    const attSnapBtn = $('indEntryBtnSnapAtt');
+    if (attUpBtn && attInput) attUpBtn.addEventListener('click', () => attInput.click());
+    if (attInput) {
+      attInput.addEventListener('change', () => {
+        if (attInput.files && attInput.files.length) {
+          Array.from(attInput.files).forEach(f => { f._captureMethod = 'File Upload'; pendingDomainFiles.push(f); });
+          renderPendingDomainAtts();
+        }
+        attInput.value = '';
+      });
+    }
+    if (attSnapBtn) {
+      attSnapBtn.addEventListener('click', () => {
+        openDocumentCameraCapture((files, method) => {
+          Array.from(files || []).forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
+          renderPendingDomainAtts();
+        });
+      });
+    }
+
+    const scanUpBtn = $('indEntryScanUploadBtn');
+    const scanFileInp = $('indEntryScanFileInput');
+    const scanCamBtn = $('indEntryScanCameraBtn');
+    const scanRunSampleBtn = $('indEntryRunSampleScanBtn');
+    const scanSampleSel = $('indEntryScanSampleSelect');
+    if (scanUpBtn && scanFileInp) scanUpBtn.addEventListener('click', () => scanFileInp.click());
+    if (scanFileInp) {
+      scanFileInp.addEventListener('change', () => {
+        if (scanFileInp.files && scanFileInp.files[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+          window.MFG_SMART_SCAN.scanIntoDomainModal(scanFileInp.files[0], { captureMethod: 'File Upload' });
+        }
+        scanFileInp.value = '';
+      });
+    }
+    if (scanCamBtn) {
+      scanCamBtn.addEventListener('click', () => {
+        openDocumentCameraCapture((files, method) => {
+          if (files && files[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+            window.MFG_SMART_SCAN.scanIntoDomainModal(files[0], { captureMethod: method || 'Camera Scan' });
+          }
+        });
+      });
+    }
+    if (scanRunSampleBtn) {
+      scanRunSampleBtn.addEventListener('click', () => {
+        const sid = (scanSampleSel && scanSampleSel.value) || defSampleId;
+        if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.runDomainSampleScan === 'function') {
+          window.MFG_SMART_SCAN.runDomainSampleScan(sid);
+        }
+      });
+    }
+
     modal.hidden = false;
+  }
+
+  function lookupIndustryDomainRecord(queryStr) {
+    const q = String(queryStr || '').trim();
+    if (!q) return null;
+    const qUpper = q.toUpperCase();
+    const tokenMatch = qUpper.match(/\b((?:POL|END|ALZ|MGF|BNK|AXA|LBS|ARP|CLM|REM|STM|AGR|LSE|UNT|INV-4235|INV-PROP|INV-RE|RCT-4235|RCT-PROP|RCT-RE|WO|IMP|LC|GRN|SU|PDI|WAR|SVC|MEM|STK|POS|REV|ENG|IC|JV|LN)-[A-Z0-9-]+|LZG[A-Z0-9]{8,17}|WDB[A-Z0-9]{8,17})\b/);
+    const needle = tokenMatch ? tokenMatch[1] : qUpper;
+    if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
+
+    // 1. Check custom domain rows first
+    const customStore = getIndustryCustomRowsStore();
+    for (const [bucket, arr] of Object.entries(customStore || {})) {
+      if (!Array.isArray(arr)) continue;
+      const hit = arr.find(r => r && !r.voided && (
+        String(r.id || r.code || '').toUpperCase() === needle ||
+        String(r.vin || r.chassis_vin || '').toUpperCase() === needle ||
+        (needle.length >= 5 && String(r.id || r.code || '').toUpperCase().includes(needle))
+      ));
+      if (hit) {
+        const pid = String(hit.id || hit.code || needle);
+        const domKey = inferDomainTblKey('', bucket, pid);
+        const mapEntry = DOMAIN_PARENT_VIEW_MAP[domKey] || DOMAIN_PARENT_VIEW_MAP[bucket] || { view: bucket, ind: getActiveIndustry(STATE.company), label: 'Domain Record' };
+        const co = hit.company || hit.entity || hit.fromCo || 'Bdeir Holding';
+        const party = hit.insured || hit.client || hit.tenant || hit.customer || hit.supplier || hit.member || hit.partner || hit.carrier || hit.toCo || co;
+        const amt = Number(hit.gwp_usd || hit.annual_ttc_usd || hit.ttc_usd || hit.pos_billed_ttc || hit.contract_usd || hit.fob_usd || hit.price_usd || hit.claimed_usd || hit.usd || hit.principal_usd || 0);
+        const headers = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 8).map(k => k.replace(/_/g, ' ').toUpperCase());
+        const cells = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 8).map(k => String(hit[k] ?? ''));
+        return {
+          id: pid,
+          bucket: domKey !== 'ind_domain' ? domKey : bucket,
+          view: mapEntry.view,
+          parentView: mapEntry.view,
+          ind: mapEntry.ind,
+          industry: mapEntry.ind,
+          label: mapEntry.label,
+          title: mapEntry.label,
+          company: co,
+          counterparty: party,
+          party,
+          summary: hit.line || hit.product || hit.property || hit.model || hit.item || hit.outlet || hit.unit || mapEntry.label,
+          amount: amt,
+          status: hit.status || 'Active',
+          date: hit.date || hit.start_date || hit.loss_date || todayISO(),
+          headers: headers.length >= 2 ? headers : ['ID', 'Company', 'Counterparty', 'Amount', 'Status'],
+          cells: cells.length >= 2 ? cells : [pid, co, party, fmtUSD(amt, 2), hit.status || 'Active'],
+          raw: hit
+        };
+      }
+    }
+
+    // 2. Check computed domain datasets across the 5 verticals
+    const ins = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : null;
+    if (ins) {
+      const pol = (ins.policies || []).find(p => String(p.id || '').toUpperCase() === needle || String(p.id || '').toUpperCase().includes(needle));
+      if (pol) {
+        return {
+          id: pol.id, bucket: 'ins_policies', view: 'ins_policies', parentView: 'ins_policies', ind: 'Insurance & Brokerage', industry: 'Insurance & Brokerage', label: 'Insurance Policy', title: 'Insurance Policy',
+          company: pol.company || 'Insurance Company', counterparty: pol.insured, party: pol.insured, summary: `${pol.carrier} · ${pol.line}`, amount: pol.gwp_usd, status: pol.status, date: pol.start_date,
+          headers: ['Policy #', 'Insured Client', 'Carrier', 'Line', 'Expiry Date', 'GWP ($)', 'Net Comm ($)', 'Status'],
+          cells: [pol.id, pol.insured, pol.carrier, pol.line, pol.end_date, fmtUSD(pol.gwp_usd, 2), fmtUSD(pol.net_comm_usd, 2), pol.status],
+          raw: pol
+        };
+      }
+      const clm = (ins.claims || []).find(c => String(c.id || '').toUpperCase() === needle || String(c.policy_no || '').toUpperCase() === needle);
+      if (clm) {
+        return {
+          id: clm.id, bucket: 'ins_claims', view: 'ins_claims', parentView: 'ins_claims', ind: 'Insurance & Brokerage', industry: 'Insurance & Brokerage', label: 'FNOL Insurance Claim', title: 'FNOL Insurance Claim',
+          company: clm.company || 'Insurance Company', counterparty: clm.insured, party: clm.insured, summary: `${clm.carrier} · Policy ${clm.policy_no}`, amount: clm.claimed_usd, status: clm.status, date: clm.loss_date,
+          headers: ['Claim #', 'Loss Date', 'Policy #', 'Insured', 'Carrier', 'Claimed ($)', 'Approved ($)', 'Status'],
+          cells: [clm.id, clm.loss_date, clm.policy_no, clm.insured, clm.carrier, fmtUSD(clm.claimed_usd, 2), fmtUSD(clm.approved_usd, 2), clm.status],
+          raw: clm
+        };
+      }
+      const rem = (ins.remittances || []).find(r => String(r.id || '').toUpperCase() === needle);
+      if (rem) {
+        return {
+          id: rem.id, bucket: 'ins_remittances', view: 'ins_remittances', parentView: 'ins_remittances', ind: 'Insurance & Brokerage', industry: 'Insurance & Brokerage', label: 'Carrier Bordereau', title: 'Carrier Bordereau',
+          company: rem.company || 'Insurance Company', counterparty: rem.carrier, party: rem.carrier, summary: `GWP ${fmtUSD(rem.gwp_usd, 0)}`, amount: rem.net_payable_usd, status: rem.status, date: rem.due_date,
+          headers: ['Bordereau #', 'Carrier', 'Gross GWP ($)', 'Retained Comm ($)', 'Net Payable ($)', 'Settled ($)', 'Balance ($)', 'Status'],
+          cells: [rem.id, rem.carrier, fmtUSD(rem.gwp_usd, 2), fmtUSD(rem.comm_usd, 2), fmtUSD(rem.net_payable_usd, 2), fmtUSD(rem.settled_usd, 2), fmtUSD(rem.balance_usd, 2), rem.status],
+          raw: rem
+        };
+      }
+    }
+
+    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : null;
+    if (re) {
+      const lse = (re.leases || []).find(l => String(l.id || '').toUpperCase() === needle || String(l.id || '').toUpperCase().includes(needle));
+      if (lse) {
+        return {
+          id: lse.id, bucket: 're_leases', view: 're_leases', parentView: 're_leases', ind: 'Real Estate & Property', industry: 'Real Estate & Property', label: 'Registered Lease Contract', title: 'Registered Lease Contract',
+          company: lse.company, counterparty: lse.tenant, party: lse.tenant, summary: `${lse.property} · ${lse.unit}`, amount: lse.annual_ttc_usd, status: lse.status, date: lse.start_date,
+          headers: ['Lease ID', 'Entity', 'Property', 'Unit', 'Tenant', 'Start Date', 'End Date', 'Annual Rent ($)'],
+          cells: [lse.id, lse.company, lse.property, lse.unit, lse.tenant, lse.start_date, lse.end_date, fmtUSD(lse.annual_ttc_usd, 2)],
+          raw: lse
+        };
+      }
+      const rinv = (re.invoices || []).find(iv => String(iv.id || '').toUpperCase() === needle || String(iv.tax_seq || '').toUpperCase() === needle);
+      if (rinv) {
+        return {
+          id: rinv.id, bucket: 're_invoicing', view: 're_invoicing', parentView: 're_invoicing', ind: 'Real Estate & Property', industry: 'Real Estate & Property', label: 'Official Rent Invoice', title: 'Official Rent Invoice',
+          company: rinv.company, counterparty: rinv.tenant, party: rinv.tenant, summary: rinv.tax_seq || rinv.property || 'Rent Invoice', amount: rinv.ttc_usd, status: rinv.status, date: rinv.date,
+          headers: ['Invoice #', 'Date', 'Entity', 'Tax Seq', 'Tenant', 'Base Rent ($)', 'VAT ($)', 'Total Billed ($)'],
+          cells: [rinv.id, rinv.date, rinv.company, rinv.tax_seq, rinv.tenant, fmtUSD(rinv.base_usd, 2), fmtUSD(rinv.vat_usd, 2), fmtUSD(rinv.ttc_usd, 2)],
+          raw: rinv
+        };
+      }
+    }
+
+    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
+    if (trd) {
+      const unit = (trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === needle || String(u.chassis_vin || u.vin || '').toUpperCase() === needle);
+      if (unit) {
+        return {
+          id: unit.id, bucket: 'trd_trucks', view: 'trd_trucks', parentView: 'trd_trucks', ind: 'Automotive & Heavy Trading', industry: 'Automotive & Heavy Trading', label: 'Serial Chassis Unit', title: 'Serial Chassis Unit',
+          company: unit.company, counterparty: unit.buyer || 'Showroom Stock', party: unit.buyer || 'Showroom Stock', summary: `${unit.model} · ${unit.chassis_vin || unit.vin}`, amount: unit.price_usd || unit.landed_usd, status: unit.status, date: '2026-09-16',
+          headers: ['Unit ID', 'Entity', 'Model', 'Chassis / VIN', 'Customs Bayane', 'Landed Cost ($)', 'Selling Price ($)', 'Status'],
+          cells: [unit.id, unit.company, unit.model, unit.chassis_vin || unit.vin, unit.customs_no, fmtUSD(unit.landed_usd, 2), fmtUSD(unit.price_usd, 2), unit.status],
+          raw: unit
+        };
+      }
+      const imp = (trd.importRows || []).find(im => String(im.id || '').toUpperCase() === needle || String(im.bl_no || '').toUpperCase() === needle);
+      if (imp) {
+        return {
+          id: imp.id, bucket: 'trd_imports', view: 'trd_purchases', parentView: 'trd_purchases', ind: 'Automotive & Heavy Trading', industry: 'Automotive & Heavy Trading', label: 'Import File & Ocean B/L', title: 'Import File & Ocean B/L',
+          company: imp.company, counterparty: imp.supplier, party: imp.supplier, summary: `B/L ${imp.bl_no}`, amount: imp.cif_usd || imp.fob_usd, status: imp.status, date: imp.date,
+          headers: ['Import File', 'Date', 'Entity', 'Supplier', 'Ocean B/L', 'FOB ($)', 'Landed Add-On ($)', 'Status'],
+          cells: [imp.id, imp.date, imp.company, imp.supplier, imp.bl_no, fmtUSD(imp.fob_usd, 2), fmtUSD(imp.duty_freight_usd, 2), imp.status],
+          raw: imp
+        };
+      }
+    }
+
+    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : null;
+    if (hsp) {
+      const mem = (hsp.membershipRows || []).find(m => String(m.id || '').toUpperCase() === needle);
+      if (mem) {
+        return {
+          id: mem.id, bucket: 'hsp_memberships', view: 'hsp_memberships', parentView: 'hsp_memberships', ind: 'Hospitality & Resorts', industry: 'Hospitality & Resorts', label: 'Seasonal Membership Contract', title: 'Seasonal Membership Contract',
+          company: mem.company, counterparty: mem.member, party: mem.member, summary: `${mem.unit} · ${mem.season}`, amount: mem.contract_usd, status: mem.status, date: mem.start_date,
+          headers: ['Contract #', 'Resort', 'Member', 'Cabana / Unit', 'Season', 'Contract ($)', 'Paid ($)', 'Balance ($)'],
+          cells: [mem.id, mem.company, mem.member, mem.unit, mem.season, fmtUSD(mem.contract_usd, 2), fmtUSD(mem.paid_usd, 2), fmtUSD(mem.balance_usd, 2)],
+          raw: mem
+        };
+      }
+    }
+    return null;
+  }
+
+  function openIndustryDomainInspectorById(bucketOrKey, primaryId, extraOpts = {}) {
+    const cleanKey = String(bucketOrKey || '').replace(/^ind_domain:/, '').trim();
+    const hit = lookupIndustryDomainRecord(primaryId);
+    if (hit) {
+      openIndustryDomainInspector({
+        ind: extraOpts.ind || hit.ind || getActiveIndustry(STATE.company),
+        headers: hit.headers,
+        cells: hit.cells,
+        tableTitle: hit.label || VIEW_TITLES[hit.view] || 'Domain Register',
+        domainTblKey: hit.bucket || cleanKey || 'ind_domain',
+        rowCompany: extraOpts.rowCompany || hit.company || ''
+      });
+      return true;
+    }
+    const domHit = DOMAIN_PARENT_VIEW_MAP[cleanKey];
+    openIndustryDomainInspector({
+      ind: extraOpts.ind || (domHit && domHit.ind) || getActiveIndustry(STATE.company),
+      headers: ['Record ID', 'Counterparty / Scope', 'Status'],
+      cells: [String(primaryId || '').trim(), extraOpts.rowCompany || (domHit && domHit.label) || cleanKey, 'Verified'],
+      tableTitle: (domHit && domHit.label) || 'Domain Register',
+      domainTblKey: cleanKey || 'ind_domain',
+      rowCompany: extraOpts.rowCompany || ''
+    });
+    return true;
   }
 
   function openIndustryDomainInspector(opts = {}) {
@@ -52839,6 +53431,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${canEditAny ? '<button type="button" class="btn btn-primary" id="indInspSaveChangesBtn">Save Changes</button>' : ''}
               <button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn">+ New Domain Record</button>
+              <button type="button" class="btn btn-outline-bar" id="indInspThermalSlipBtn">${ic('printer')} Thermal Voucher</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspOpenLedgerBtn" data-nav-jump="ledger">Open General Ledger &amp; SOA</button>
               ${allowVoid ? '<button type="button" class="btn btn-ghost-bar" id="indInspVoidRowBtn" style="color:var(--crit,#DC2626)">Void / Delete Row</button>' : ''}
@@ -53129,6 +53722,46 @@
         closeRecordInspector();
         openIndustryDomainEntryModal(STATE.view);
       };
+      const thermalBtn = $('indInspThermalSlipBtn');
+      if (thermalBtn && window.MFG_PRINT) {
+        thermalBtn.onclick = () => {
+          const curVals = inputs.map(el => el.value.trim());
+          const slipRec = {
+            id: primaryId,
+            ticket_no: primaryId,
+            company: rowCompany || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || ind,
+            date: dateCell,
+            customer: secondaryLbl || ind,
+            product: `${tableTitle} · ${primaryId}`,
+            site: curVals[2] || ind,
+            qty: 1,
+            uom: 'Voucher',
+            unit_price: numericAmt,
+            price: numericAmt,
+            total: numericAmt,
+            total_ttc: numericAmt,
+            method: 'Official Register',
+            entered_by: activeUser().full_name || 'Officer',
+            notes: `${ind} · ${tableTitle}`,
+            _domainSlip: {
+              ind,
+              title: `${tableTitle.toUpperCase()} VOUCHER`,
+              unpricedTitle: `${tableTitle.toUpperCase()} PASS`,
+              badge: `${ind.toUpperCase()} REGISTER`,
+              refLabel: 'REFERENCE #',
+              counterpartyLbl: headers[1] || 'Counterparty',
+              counterparty: secondaryLbl || ind,
+              itemLbl: headers[2] || 'Register Scope',
+              itemVal: curVals[2] || tableTitle,
+              extraPairs: headers.slice(1, 6).map((h, idx) => ({ k: h, v: curVals[idx + 1] || '-' }))
+            }
+          };
+          window.MFG_PRINT.openThermalPreviewModal('sales', slipRec, {
+            paperWidth: window.MFG_PRINT.SETTINGS.paperWidth || 80,
+            priceMode: window.MFG_PRINT.SETTINGS.priceMode || 'priced'
+          });
+        };
+      }
       const cBtn = $('indInspCloseFooterBtn');
       if (cBtn) cBtn.onclick = () => closeRecordInspector();
     }
@@ -79704,6 +80337,10 @@
   }
 
   function showRecordInspector(key, idOrName, opts = {}) {
+    if (typeof key === 'string' && (key.startsWith('ind_domain:') || DOMAIN_PARENT_VIEW_MAP[key] || key === 'ind_domain')) {
+      navigateToRecordOrDomainRow(key, idOrName, idOrName, opts && opts.company);
+      return;
+    }
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
     if (!STATE.inspectorHistory) STATE.inspectorHistory = [];
@@ -82127,6 +82764,10 @@
       localStorage.setItem('isabi_mfg_work_sched_v1', JSON.stringify(STATE.workSchedules || { shiftTypes: [], staffRules: {} }));
       localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
       if (STATE.lbpFxUpdatedAt) localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
+      if (!IS_AUTOMATED_TEST) {
+        localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(getIndustryRowEditStore()));
+        localStorage.setItem('isabi_mfg_ind_custom_rows_v1', JSON.stringify(offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore())));
+      }
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
   }
 
@@ -83218,6 +83859,8 @@
       workSchedules: STATE.workSchedules || { shiftTypes: [], staffRules: {} },
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
+      industryCustomRows: offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore()),
+      industryRowEdits: getIndustryRowEditStore(),
       faceSettings: STATE.faceSettings,
       lbpFxRate: getLbpFxRate(),
       lbpFxUpdatedAt: STATE.lbpFxUpdatedAt || '',
@@ -83489,6 +84132,17 @@
             saveLocalAuthAndRecords();
           }
         }
+        const ctrlId = new AbortController();
+        const tId = setTimeout(() => ctrlId.abort(), 5000);
+        const rId = await fetch('./api/industry_domain_store', { signal: ctrlId.signal });
+        clearTimeout(tId);
+        if (rId.ok) {
+          const dId = await rId.json();
+          let idChanged = false;
+          if (dId && dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) idChanged = true;
+          if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
+          if (idChanged) saveLocalAuthAndRecords();
+        }
       } catch (_) { /* server.py not running */ }
     }
 
@@ -83562,6 +84216,8 @@
       if (remote.workSchedules && mergeWorkSchedules(remote.workSchedules)) { changed = true; }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
       if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
+      if (remote.industryCustomRows && mergeIndustryCustomRows(remote.industryCustomRows)) { changed = true; }
+      if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
       if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
         if (setLbpFxRate(remote.lbpFxRate, { updatedAt: remote.lbpFxUpdatedAt, sync: false, render: false })) changed = true;
       } else if (!pushChanges && STATE.lbpFxUpdatedAt && String(STATE.lbpFxUpdatedAt) > String(remote.lbpFxUpdatedAt || '')) {
@@ -83600,6 +84256,26 @@
         const remoteIds = new Set();
         CR_KEYS.forEach(k => (remote.customRecords[k] || []).forEach(r => r && remoteIds.add(r.id + (r.voided ? '|v' : ''))));
         CR_KEYS.forEach(k => STATE.customRecords[k].forEach(r => { if (!remoteIds.has(r.id + (r.voided ? '|v' : ''))) pushChanges = true; }));
+      }
+      if (!pushChanges && STATE.industryCustomRows && Object.keys(STATE.industryCustomRows).length) {
+        const remCr = remote.industryCustomRows || {};
+        Object.entries(STATE.industryCustomRows).forEach(([bk, arr]) => {
+          if (!Array.isArray(arr)) return;
+          const remMap = new Map((Array.isArray(remCr[bk]) ? remCr[bk] : []).filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code), x]));
+          arr.forEach(r => {
+            if (!r || !(r.id || r.code)) return;
+            const rr = remMap.get(String(r.id || r.code));
+            if (!rr || Number(r.rev || 1) > Number(rr.rev || 1) || Boolean(r.voided) !== Boolean(rr.voided)) pushChanges = true;
+          });
+        });
+      }
+      if (!pushChanges && STATE.industryRowEdits && Object.keys(STATE.industryRowEdits).length) {
+        const remEd = remote.industryRowEdits || {};
+        Object.entries(STATE.industryRowEdits).forEach(([ek, ev]) => {
+          if (!ev) return;
+          const re = remEd[ek];
+          if (!re || Number(ev.rev || 1) > Number(re.rev || 1) || Boolean(ev.voided) !== Boolean(re.voided)) pushChanges = true;
+        });
       }
       if (!pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
         const remSr = remote.sentinelReviews || {};
@@ -89615,8 +90291,1094 @@
     return modal;
   }
 
+  const INDUSTRY_KIOSK_PRESETS = {
+    'Insurance & Brokerage': {
+      sales: [
+        { lbl: 'Top Carriers', field: 'ik_carrier', vals: ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East'] },
+        { lbl: 'Cover Lines', field: 'ik_line', vals: ['MOT · Motor', 'MED · Medical', 'PROP · Property', 'MAR · Marine'] }
+      ],
+      raw: [
+        { lbl: 'Carrier Bordereau', field: 'ik_carrier', vals: ['MedGulf', 'Allianz SNA', 'Bankers Assurance', 'AXA Middle East'] },
+        { lbl: 'Quick Settlement ($)', field: 'ik_settled', vals: ['5000', '10000', '25000', '50000'] }
+      ],
+      fuel: [
+        { lbl: 'Active Perils', field: 'ik_peril', vals: ['Motor Fleet Collision Survey', 'Medical In-Patient Pre-Auth', 'Commercial Property Water Damage', 'Marine Cargo Transit Survey'] },
+        { lbl: 'Carriers', field: 'ik_carrier', vals: ['Allianz SNA', 'MedGulf', 'Bankers Assurance', 'AXA Middle East'] }
+      ]
+    },
+    'Real Estate & Property': {
+      sales: [
+        { lbl: 'Active Tenants', field: 'ik_tenant', vals: ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics'] },
+        { lbl: 'Entities', field: 'ik_company', vals: ['4235 Company S.A.L', 'Properties'] }
+      ],
+      raw: [
+        { lbl: 'Portfolio Buildings', field: 'ik_property', vals: ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '1092/29 Ras Beirut (Hamra Pavillon)', 'Mazraa Logistics Plaza'] },
+        { lbl: 'Billing Cycle', field: 'ik_freq', vals: ['Quarterly', 'Monthly', 'Annual'] }
+      ],
+      fuel: [
+        { lbl: 'Facility Systems', field: 'ik_category', vals: ['Generator & Solar Plant', 'Elevator & HVAC Overhaul', 'Facade & Waterproofing', 'Common Area Electrical'] },
+        { lbl: 'Buildings', field: 'ik_property', vals: ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)'] }
+      ]
+    },
+    'Automotive & Heavy Trading': {
+      sales: [
+        { lbl: 'Showroom Catalog', field: 'ik_item', vals: ['Shacman X3000 6x4 Tractor Head', 'Shacman F3000 8x4 Tipper', 'Weichai WP12 Overhaul Kit', 'Radial Heavy Truck Tyre 315/80R22.5'] },
+        { lbl: 'Fleet Buyers', field: 'ik_customer', vals: ['Bekaa Heavy Haulage Co.', 'South Coast Contracting SAL', 'Mount Lebanon Earthworks', 'Tripoli Port Logistics'] }
+      ],
+      raw: [
+        { lbl: 'Receiving Yards', field: 'ik_wh', vals: ['Shacman Bonded Yard', 'Al-Ghazieh Main Hub', 'Beirut Free Zone Depot'] },
+        { lbl: 'OEM Suppliers', field: 'ik_supplier', vals: ['Shaanxi Heavy Duty Automobile Export', 'Weichai Power & Fast Gear OEM Export', 'Bosch & ZF European Auto Parts GmbH'] }
+      ],
+      fuel: [
+        { lbl: 'Workshop Bay Jobs', field: 'ik_job_type', vals: ['52-Point Pre-Delivery Inspection (PDI)', 'Warranty Hydraulic & Gearbox Claim', '10,000 km Heavy Fleet Service'] },
+        { lbl: 'Models', field: 'ik_model', vals: ['Shacman X3000 6x4 Tractor', 'Shacman F3000 8x4 Mixer', 'Commercial Van 316 CDI'] }
+      ]
+    },
+    'Hospitality & Resorts': {
+      sales: [
+        { lbl: 'Resort Venues', field: 'ik_outlet', vals: ['Beach Deck & Cabanas', 'Pool Bar & Sunset Lounge', 'Main Seafood Restaurant', 'VIP Horizon Chalets'] },
+        { lbl: 'Revenue Stream', field: 'ik_category', vals: ['Chalet & Cabana Rental', 'F&B Restaurant & Bar', 'VIP Event & Banquet', 'Tips & Gratuities'] }
+      ],
+      raw: [
+        { lbl: 'Commissary Stores', field: 'ik_store', vals: ['Main Cold-Chain Commissary', 'Bonded Beverage Cellar', 'Executive Lounge Pantry'] },
+        { lbl: 'Stock Groups', field: 'ik_group', vals: ['Seafood & Prime Cuts', 'Champagne & Premium Spirits', 'Artisan Produce & Dry Goods'] }
+      ],
+      fuel: [
+        { lbl: 'Resort Power Assets', field: 'ik_asset', vals: ['Prime Resort Generator #1 (800 kVA)', 'Backup Marina Generator #2 (500 kVA)', 'Roof Solar Hybrid Array'] },
+        { lbl: 'Quick Diesel (L)', field: 'ik_diesel', vals: ['120', '240', '360', '500'] }
+      ]
+    },
+    'Holding & Treasury': {
+      sales: [
+        { lbl: 'Receiver Sister Entities', field: 'ik_to', vals: ['WTC', 'Blanca', 'Korri Auto', '4235 Company S.A.L', 'Insurance Company'] },
+        { lbl: 'Quick Transfer ($)', field: 'ik_usd', vals: ['15000', '25000', '50000', '100000'] }
+      ],
+      raw: [
+        { lbl: 'Facility Counterparties', field: 'ik_lender', vals: ['Bdeir Family Holding Trust', 'Central Group Treasury Pool', 'Corporate Legal & Cadastral Advisory'] },
+        { lbl: 'Facility Types', field: 'ik_type', vals: ['Term Credit Facility', 'Board Capital Resolution', 'Sister Working Capital Line'] }
+      ],
+      fuel: [
+        { lbl: 'Managing Partners', field: 'ik_partner', vals: ['Hussein Bdeir', 'Bdeir Family Holding Trust'] },
+        { lbl: 'Quick Draw ($)', field: 'ik_drawn', vals: ['10000', '25000', '50000'] }
+      ]
+    }
+  };
+
+  function renderIndustryKioskQuickStripHtml(activeInd, kMode) {
+    const indMap = INDUSTRY_KIOSK_PRESETS[activeInd] || INDUSTRY_KIOSK_PRESETS['Holding & Treasury'];
+    const groups = (indMap && indMap[kMode]) || indMap.sales || [];
+    if (!groups.length) return '';
+    return `
+      <div class="kiosk-quick-strip" id="kioskQuickStrip">
+        ${groups.map(g => `
+          <div class="kiosk-quick-group">
+            <span class="kiosk-quick-lbl">${esc(g.lbl)}:</span>
+            ${(g.vals || []).map(v => `<button type="button" class="kiosk-qchip" data-kiosk-ind-preset-field="${esc(g.field)}" data-kiosk-ind-preset-val="${esc(v)}">${esc(v)}</button>`).join('')}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderIndustryKioskFormHtml(activeInd, kMode, defCo) {
+    const today = todayISO();
+    const allowedCos = allowedCompanyNames();
+    const cat = getCompanyCatalog();
+    const indCos = cat.filter(c => c.industry === activeInd && (isOwner(activeUser()) || allowedCos.some(a => a.toLowerCase() === c.name.toLowerCase()))).map(c => c.name);
+    const entityOptions = indCos.length ? indCos : [defCo || 'Bdeir Holding'];
+    const curCo = entityOptions.includes(defCo) ? defCo : entityOptions[0];
+    const inpStyle = 'padding:8px 10px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:13px;font-weight:600;width:100%';
+    const roStyle = 'padding:8px 10px;border:1px solid var(--line,#E2E8F0);border-radius:6px;background:var(--bg,#F1F5F9);color:var(--ink,#0F172A);font-size:13px;font-weight:700;width:100%';
+    const fld = (lbl, html, hint = '') => `
+      <label class="kiosk-ind-field" style="display:flex;flex-direction:column;gap:4px;padding:9px 11px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
+        <span style="font-size:11px;font-weight:700;color:var(--ink,#0F172A)">${lbl}</span>
+        ${html}
+        ${hint ? `<span style="font-size:10.5px;color:var(--muted,#64748B)">${hint}</span>` : ''}
+      </label>
+    `;
+    const coSel = `<select id="ik_company" data-plain-options="1" style="${inpStyle}">${entityOptions.map(c => `<option value="${esc(c)}" ${c === curCo ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
+    let gridHtml = '';
+    let dlHtml = '';
+
+    if (activeInd === 'Insurance & Brokerage') {
+      const carriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
+      const clients = freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'MAN Enterprise Contracting S.A.L.', 'Khalil Fattal & Fils']);
+      dlHtml = `
+        <datalist id="dl_ik_carriers">${carriers.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="dl_ik_clients">${clients.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      `;
+      if (kMode === 'sales') {
+        gridHtml = `
+          ${fld('Brokerage Entity', coSel)}
+          ${fld('Policy / Endorsement # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="POL-2026-841">`)}
+          ${fld('Effective Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Policyholder / Client *', `<input type="text" id="ik_client" list="dl_ik_clients" style="${inpStyle}" value="${esc(clients[0] || 'Holdal Abou Adal Group')}">`)}
+          ${fld('Insurance Carrier *', `<input type="text" id="ik_carrier" list="dl_ik_carriers" style="${inpStyle}" value="${esc(carriers[0] || 'MedGulf')}">`)}
+          ${fld('Line of Business *', `<input type="text" id="ik_line" style="${inpStyle}" value="MOT · Motor">`)}
+          ${fld('Gross Written Premium ($ GWP) *', `<input type="number" id="ik_gwp" class="mono" step="50" min="1" style="${inpStyle}" value="12000">`)}
+          ${fld('Brokerage Comm Rate (%) *', `<input type="number" id="ik_rate" class="mono" step="0.5" min="0" max="60" style="${inpStyle}" value="15">`)}
+          ${fld('Client Discount ($)', `<input type="number" id="ik_discount" class="mono" step="10" min="0" style="${inpStyle}" value="0">`, 'Capped at Gross Commission')}
+          ${fld('Policy Admin Fee ($)', `<input type="number" id="ik_fee" class="mono" step="5" min="0" style="${inpStyle}" value="35">`)}
+          ${fld('Net Earned Commission ($)', `<input type="text" id="ik_net_comm" class="mono" readonly style="${roStyle}" value="$1,800.00">`)}
+          ${fld('Net Carrier Payable ($)', `<input type="text" id="ik_payable" class="mono" readonly style="${roStyle}" value="$10,200.00">`)}
+        `;
+      } else if (kMode === 'raw') {
+        gridHtml = `
+          ${fld('Brokerage Entity', coSel)}
+          ${fld('Bordereau # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="REM-2026-842">`)}
+          ${fld('Settlement Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Insurance Carrier *', `<input type="text" id="ik_carrier" list="dl_ik_carriers" style="${inpStyle}" value="${esc(carriers[0] || 'MedGulf')}">`)}
+          ${fld('Gross Bordereau Premium ($) *', `<input type="number" id="ik_gwp" class="mono" step="100" min="1" style="${inpStyle}" value="24000">`)}
+          ${fld('Retained Broker Commission ($)', `<input type="number" id="ik_comm" class="mono" step="50" min="0" style="${inpStyle}" value="3600">`)}
+          ${fld('Settled Wire to Carrier ($) *', `<input type="number" id="ik_settled" class="mono" step="100" min="0" style="${inpStyle}" value="16000">`)}
+          ${fld('Remaining Carrier Balance ($)', `<input type="text" id="ik_payable" class="mono" readonly style="${roStyle}" value="$4,400.00">`)}
+        `;
+      } else {
+        gridHtml = `
+          ${fld('Brokerage Entity', coSel)}
+          ${fld('FNOL Claim # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="CLM-2026-843">`)}
+          ${fld('Loss Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Policy # *', `<input type="text" id="ik_policy_no" class="mono" style="${inpStyle}" value="ALZ-MOT-2026-12801">`)}
+          ${fld('Policyholder / Client *', `<input type="text" id="ik_client" list="dl_ik_clients" style="${inpStyle}" value="Transmed Distribution Fleet">`)}
+          ${fld('Insurance Carrier *', `<input type="text" id="ik_carrier" list="dl_ik_carriers" style="${inpStyle}" value="Allianz SNA">`)}
+          ${fld('Peril / Incident Description *', `<input type="text" id="ik_peril" style="${inpStyle}" value="Motor Fleet Collision Survey">`)}
+          ${fld('Claimed Reserve ($) *', `<input type="number" id="ik_claimed" class="mono" step="50" min="1" style="${inpStyle}" value="4800">`)}
+          ${fld('Policy Deductible ($)', `<input type="number" id="ik_deductible" class="mono" step="25" min="0" style="${inpStyle}" value="250">`)}
+          ${fld('Net Claim Exposure ($)', `<input type="text" id="ik_net_claim" class="mono" readonly style="${roStyle}" value="$4,550.00">`)}
+        `;
+      }
+    } else if (activeInd === 'Real Estate & Property') {
+      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mohamad Ali Fawz']);
+      dlHtml = `<datalist id="dl_ik_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
+      if (kMode === 'sales') {
+        gridHtml = `
+          ${fld('Legal Entity *', coSel, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
+          ${fld('Rent Receipt # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="RCT-4235-841">`)}
+          ${fld('Receipt Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="${/4235/.test(curCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'}">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[0] || 'Mazen (Unesco Pharmacy)')}">`)}
+          ${fld('Linked Rent Invoice #', `<input type="text" id="ik_inv_ref" class="mono" style="${inpStyle}" value="INV-4235-010">`)}
+          ${fld('Base Rent Amount ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="12500">`)}
+          ${fld('Statutory VAT ($)', `<input type="text" id="ik_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
+          ${fld('Total Collected ($) *', `<input type="text" id="ik_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
+          ${fld('Settlement Method', `<select id="ik_method" data-plain-options="1" style="${inpStyle}"><option value="Bank Wire (Fresh USD)">Bank Wire (Fresh USD)</option><option value="Cash USD">Cash USD</option><option value="Certified Check">Certified Check</option></select>`)}
+        `;
+      } else if (kMode === 'raw') {
+        gridHtml = `
+          ${fld('Legal Entity *', coSel)}
+          ${fld('Lease Contract # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="LSE-4235-842">`)}
+          ${fld('Start Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="4235 Msaytbeh Commercial Center">`)}
+          ${fld('Leased Unit / Floor *', `<input type="text" id="ik_unit" style="${inpStyle}" value="Floor 3 Commercial Suite">`)}
+          ${fld('Tenant Name *', `<input type="text" id="ik_tenant" list="dl_ik_tenants" style="${inpStyle}" value="${esc(tenants[1] || 'Infinitas S.A.L')}">`)}
+          ${fld('Billing Frequency', `<input type="text" id="ik_freq" style="${inpStyle}" value="Quarterly">`)}
+          ${fld('Net Period Rent ($) *', `<input type="number" id="ik_net" class="mono" step="100" min="1" style="${inpStyle}" value="15000">`)}
+          ${fld('Security Deposit ($)', `<input type="number" id="ik_deposit" class="mono" step="100" min="0" style="${inpStyle}" value="15000">`)}
+          ${fld('Period Billed Rent ($)', `<input type="text" id="ik_tot" class="mono" readonly style="${roStyle}" value="$16,650.00">`)}
+        `;
+      } else {
+        gridHtml = `
+          ${fld('Legal Entity *', coSel)}
+          ${fld('Work Order # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="WO-RE-843">`)}
+          ${fld('Execution Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Property / Building *', `<input type="text" id="ik_property" style="${inpStyle}" value="4235 Msaytbeh Commercial Center">`)}
+          ${fld('Unit / Common Area *', `<input type="text" id="ik_unit" style="${inpStyle}" value="Main Generator & Roof Solar">`)}
+          ${fld('Maintenance Category *', `<input type="text" id="ik_category" style="${inpStyle}" value="Generator & Solar Plant">`)}
+          ${fld('Contractor / Vendor *', `<input type="text" id="ik_vendor" style="${inpStyle}" value="MEP Facility Services SAL">`)}
+          ${fld('Approved Budget ($)', `<input type="number" id="ik_budget" class="mono" step="50" min="0" style="${inpStyle}" value="2800">`)}
+          ${fld('Actual Outlay ($) *', `<input type="number" id="ik_actual" class="mono" step="50" min="1" style="${inpStyle}" value="2650">`)}
+        `;
+      }
+    } else if (activeInd === 'Automotive & Heavy Trading') {
+      const buyers = freqRankCandidates('customer', ['Bekaa Heavy Haulage Co.', 'South Coast Contracting SAL', 'Mount Lebanon Earthworks', 'Tripoli Port Logistics']);
+      dlHtml = `<datalist id="dl_ik_buyers">${buyers.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
+      if (kMode === 'sales') {
+        gridHtml = `
+          ${fld('Trading Entity *', coSel)}
+          ${fld('Commercial Invoice # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="INV-TRD-841">`)}
+          ${fld('Invoice Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Customer / Buyer *', `<input type="text" id="ik_customer" list="dl_ik_buyers" style="${inpStyle}" value="${esc(buyers[0] || 'Bekaa Heavy Haulage Co.')}">`)}
+          ${fld('Vehicle Model / Part SKU *', `<input type="text" id="ik_item" style="${inpStyle}" value="Shacman X3000 6x4 Tractor Head">`)}
+          ${fld('17-Char Chassis VIN (Optional)', `<input type="text" id="ik_vin" class="mono" maxlength="17" style="${inpStyle}" value="LZGJLDR44PX019288">`, '17-char VIN locks Qty = 1')}
+          ${fld('Quantity *', `<input type="number" id="ik_qty" class="mono" step="1" min="1" style="${inpStyle}" value="1">`)}
+          ${fld('Unit Selling Price Ex-VAT ($) *', `<input type="number" id="ik_price" class="mono" step="100" min="1" style="${inpStyle}" value="79000">`)}
+          ${fld('Unit Landed Cost ($) *', `<input type="number" id="ik_cost" class="mono" step="100" min="0" style="${inpStyle}" value="66400">`)}
+          ${fld('Statutory VAT (11%) ($)', `<input type="text" id="ik_vat" class="mono" readonly style="${roStyle}" value="$8,690.00">`)}
+          ${fld('Total Invoice Amount ($)', `<input type="text" id="ik_tot" class="mono" readonly style="${roStyle}" value="$87,690.00">`)}
+          ${fld('Gross Margin ($)', `<input type="text" id="ik_margin" class="mono" readonly style="${roStyle}" value="$12,600.00">`)}
+        `;
+      } else if (kMode === 'raw') {
+        gridHtml = `
+          ${fld('Trading Entity *', coSel)}
+          ${fld('Bonded GRN # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="GRN-SH-842">`)}
+          ${fld('Arrival Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Import File # *', `<input type="text" id="ik_import" class="mono" style="${inpStyle}" value="IMP-SH-2026-015">`)}
+          ${fld('Ocean Bill of Lading #', `<input type="text" id="ik_bl" class="mono" style="${inpStyle}" value="COSU6891204991">`)}
+          ${fld('OEM Supplier *', `<input type="text" id="ik_supplier" style="${inpStyle}" value="Shaanxi Heavy Duty Automobile Export">`)}
+          ${fld('Receiving Warehouse / Yard *', `<input type="text" id="ik_wh" style="${inpStyle}" value="Shacman Bonded Yard">`)}
+          ${fld('Units / Packages Received *', `<input type="number" id="ik_qty" class="mono" step="1" min="1" style="${inpStyle}" value="4">`)}
+          ${fld('Declared Landed Value ($) *', `<input type="number" id="ik_val" class="mono" step="500" min="1" style="${inpStyle}" value="265600">`)}
+        `;
+      } else {
+        gridHtml = `
+          ${fld('Trading Entity *', coSel)}
+          ${fld('Workshop Job Card # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="PDI-SH-843">`)}
+          ${fld('Service Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Job Type *', `<input type="text" id="ik_job_type" style="${inpStyle}" value="52-Point Pre-Delivery Inspection (PDI)">`)}
+          ${fld('17-Char Chassis VIN *', `<input type="text" id="ik_vin" class="mono" maxlength="17" style="${inpStyle}" value="LZGJLDR44PX019288">`)}
+          ${fld('Vehicle Model *', `<input type="text" id="ik_model" style="${inpStyle}" value="Shacman X3000 6x4 Tractor">`)}
+          ${fld('Parts & Labor Cost ($) *', `<input type="number" id="ik_cost" class="mono" step="25" min="1" style="${inpStyle}" value="650">`)}
+          ${fld('Bay Status', `<select id="ik_status" data-plain-options="1" style="${inpStyle}"><option value="Cleared & Signed Off">Cleared &amp; Signed Off</option><option value="In Workshop Bay">In Workshop Bay</option></select>`)}
+        `;
+      }
+    } else if (activeInd === 'Hospitality & Resorts') {
+      if (kMode === 'sales') {
+        gridHtml = `
+          ${fld('Resort Entity *', coSel)}
+          ${fld('Venue Closing Slip # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="REV-HSP-841">`)}
+          ${fld('Operating Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Venue / Outlet *', `<input type="text" id="ik_outlet" style="${inpStyle}" value="Beach Deck & Cabanas">`)}
+          ${fld('Revenue Stream *', `<input type="text" id="ik_category" style="${inpStyle}" value="Chalet & Cabana Rental">`)}
+          ${fld('Guest / Group Reference', `<input type="text" id="ik_guest" style="${inpStyle}" value="VIP Cabana #B-04 Guest">`)}
+          ${fld('Guest Covers *', `<input type="number" id="ik_covers" class="mono" step="1" min="1" style="${inpStyle}" value="18">`)}
+          ${fld('Total Billed Revenue ($) *', `<input type="number" id="ik_tot" class="mono" step="50" min="1" style="${inpStyle}" value="4440">`)}
+          ${fld('Net Ex-VAT ($)', `<input type="text" id="ik_ht" class="mono" readonly style="${roStyle}" value="$4,000.00">`)}
+          ${fld('Statutory VAT 11% ($)', `<input type="text" id="ik_vat" class="mono" readonly style="${roStyle}" value="$440.00">`)}
+          ${fld('Settlement Mix', `<select id="ik_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card">Cash &amp; Card</option><option value="Cash USD">Cash USD</option><option value="POS Card / Whish">POS Card / Whish</option></select>`)}
+        `;
+      } else if (kMode === 'raw') {
+        gridHtml = `
+          ${fld('Resort Entity *', coSel)}
+          ${fld('Stock Intake Slip # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="STK-HSP-842">`)}
+          ${fld('Delivery Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Commissary / Cold Room *', `<input type="text" id="ik_store" style="${inpStyle}" value="Main Cold-Chain Commissary">`)}
+          ${fld('Item Group *', `<input type="text" id="ik_group" style="${inpStyle}" value="Seafood & Prime Cuts">`)}
+          ${fld('Supplier / Purveyor *', `<input type="text" id="ik_supplier" style="${inpStyle}" value="Boecker & Fresh Cold-Chain Supply">`)}
+          ${fld('Opening Stock ($)', `<input type="number" id="ik_open" class="mono" step="100" min="0" style="${inpStyle}" value="8200">`)}
+          ${fld('Purchases Received ($) *', `<input type="number" id="ik_purch" class="mono" step="100" min="1" style="${inpStyle}" value="6400">`)}
+          ${fld('Recipe Depletion ($) *', `<input type="number" id="ik_usage" class="mono" step="100" min="1" style="${inpStyle}" value="5800">`)}
+          ${fld('Closing Stock ($)', `<input type="text" id="ik_close" class="mono" readonly style="${roStyle}" value="$8,800.00">`)}
+        `;
+      } else {
+        gridHtml = `
+          ${fld('Resort Entity *', coSel)}
+          ${fld('Utility Log # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="ENG-HSP-843">`)}
+          ${fld('Log Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Power / Utility Asset *', `<input type="text" id="ik_asset" style="${inpStyle}" value="Prime Resort Generator #1 (800 kVA)">`)}
+          ${fld('Tank Level (L) *', `<input type="number" id="ik_tank" class="mono" step="50" min="0" style="${inpStyle}" value="4200">`)}
+          ${fld('Generator Run Hours (hrs) *', `<input type="number" id="ik_hours" class="mono" step="0.5" min="0.5" style="${inpStyle}" value="10">`)}
+          ${fld('Diesel Consumed (L) *', `<input type="number" id="ik_diesel" class="mono" step="10" min="1" style="${inpStyle}" value="220">`)}
+          ${fld('Rated Burn Curve (L/hr)', `<input type="number" id="ik_rated" class="mono" step="1" min="1" style="${inpStyle}" value="22">`)}
+          ${fld('Solar Offset (%)', `<input type="number" id="ik_solar" class="mono" step="1" min="0" max="100" style="${inpStyle}" value="28">`)}
+          ${fld('Computed Burn Rate (L/hr)', `<input type="text" id="ik_lph" class="mono" readonly style="${roStyle}" value="22.0 L/hr">`)}
+        `;
+      }
+    } else {
+      // Holding & Treasury
+      if (kMode === 'sales') {
+        gridHtml = `
+          ${fld('Sender Sister Entity *', coSel)}
+          ${fld('Treasury Voucher # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="IC-HLD-841">`)}
+          ${fld('Transfer Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Receiver Sister Entity *', `<input type="text" id="ik_to" style="${inpStyle}" value="WTC">`)}
+          ${fld('Transfer Amount ($) *', `<input type="number" id="ik_usd" class="mono" step="500" min="1" style="${inpStyle}" value="25000">`)}
+          ${fld('Settlement Channel', `<select id="ik_method" data-plain-options="1" style="${inpStyle}"><option value="Bank Transfer">Bank Transfer</option><option value="Central Treasury Clearing">Central Treasury Clearing</option><option value="Cash Vault">Cash Vault</option></select>`)}
+          ${fld('Treasury Narrative', `<input type="text" id="ik_notes" style="${inpStyle}" value="Bilateral sister treasury clearing">`)}
+          ${fld('Mirror Booking', `<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding-top:4px"><input type="checkbox" id="ik_mirror" checked> Auto-Book Mirror Voucher in Receiver Sister Entity</label>`)}
+        `;
+      } else if (kMode === 'raw') {
+        gridHtml = `
+          ${fld('Holding Entity *', coSel)}
+          ${fld('Facility / Resolution # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="LN-HLD-842">`)}
+          ${fld('Execution Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Facility Provider / Counterparty *', `<input type="text" id="ik_lender" style="${inpStyle}" value="Bdeir Family Holding Trust">`)}
+          ${fld('Facility Type *', `<input type="text" id="ik_type" style="${inpStyle}" value="Term Credit Facility">`)}
+          ${fld('Approved Principal ($) *', `<input type="number" id="ik_prin" class="mono" step="1000" min="1" style="${inpStyle}" value="100000">`)}
+          ${fld('Repaid / Settled ($) *', `<input type="number" id="ik_rep" class="mono" step="500" min="0" style="${inpStyle}" value="20000">`)}
+          ${fld('Open Facility Balance ($)', `<input type="text" id="ik_bal" class="mono" readonly style="${roStyle}" value="$80,000.00">`)}
+        `;
+      } else {
+        gridHtml = `
+          ${fld('Holding Entity *', coSel)}
+          ${fld('Distribution Voucher # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="JV-HLD-843">`)}
+          ${fld('Effective Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
+          ${fld('Managing Partner *', `<input type="text" id="ik_partner" style="${inpStyle}" value="Hussein Bdeir">`)}
+          ${fld('Equity Share (%) *', `<input type="number" id="ik_pct" class="mono" step="1" min="1" max="100" style="${inpStyle}" value="50">`)}
+          ${fld('Distributable Pool ($) *', `<input type="number" id="ik_pool" class="mono" step="1000" min="1" style="${inpStyle}" value="200000">`)}
+          ${fld('Partner Draw Amount ($) *', `<input type="number" id="ik_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="40000">`)}
+          ${fld('Remaining Partner Entitlement ($)', `<input type="text" id="ik_open_ent" class="mono" readonly style="${roStyle}" value="$60,000.00">`)}
+        `;
+      }
+    }
+
+    return `
+      ${dlHtml}
+      <div id="kioskIndForm" data-kiosk-ind="${esc(activeInd)}" data-kiosk-mode="${esc(kMode)}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;padding:4px 0">
+        ${gridHtml}
+      </div>
+      <div id="kioskIndErrorBanner" style="display:none;margin-top:8px;padding:8px 11px;border-radius:6px;background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.35);color:#B91C1C;font-size:12px;font-weight:700"></div>
+    `;
+  }
+
+  function recalcIndustryKioskLive(activeInd, kMode) {
+    const numV = id => { const el = $(id); const v = el ? parseFloat(el.value) : 0; return Number.isFinite(v) ? v : 0; };
+    const strV = id => { const el = $(id); return el ? String(el.value || '').trim() : ''; };
+    if (activeInd === 'Insurance & Brokerage') {
+      if (kMode === 'sales') {
+        const gwp = Math.max(0, numV('ik_gwp'));
+        const rate = Math.max(0, Math.min(60, numV('ik_rate')));
+        const grossComm = round2(gwp * (rate / 100));
+        const disc = Math.max(0, Math.min(grossComm, numV('ik_discount')));
+        const netComm = round2(grossComm - disc);
+        const payable = round2(gwp - grossComm);
+        if ($('ik_net_comm')) $('ik_net_comm').value = fmtUSD(netComm, 2);
+        if ($('ik_payable')) $('ik_payable').value = fmtUSD(payable, 2);
+      } else if (kMode === 'raw') {
+        const gwp = Math.max(0, numV('ik_gwp'));
+        const comm = Math.max(0, numV('ik_comm'));
+        const set = Math.max(0, numV('ik_settled'));
+        const pay = round2(Math.max(0, gwp - comm - set));
+        if ($('ik_payable')) $('ik_payable').value = fmtUSD(pay, 2);
+      } else {
+        const clm = Math.max(0, numV('ik_claimed'));
+        const ded = Math.max(0, numV('ik_deductible'));
+        if ($('ik_net_claim')) $('ik_net_claim').value = fmtUSD(Math.max(0, clm - ded), 2);
+      }
+    } else if (activeInd === 'Real Estate & Property') {
+      const co = strV('ik_company');
+      const is4235 = /4235/.test(co);
+      if (kMode === 'sales' || kMode === 'raw') {
+        const net = Math.max(0, numV('ik_net'));
+        const vat = is4235 ? round2(net * 0.11) : 0;
+        const tot = round2(net + vat);
+        if ($('ik_vat')) $('ik_vat').value = fmtUSD(vat, 2);
+        if ($('ik_tot')) $('ik_tot').value = fmtUSD(tot, 2);
+      }
+    } else if (activeInd === 'Automotive & Heavy Trading') {
+      if (kMode === 'sales') {
+        const vin = strV('ik_vin');
+        if (vin.length === 17 && $('ik_qty')) $('ik_qty').value = '1';
+        const qty = Math.max(1, numV('ik_qty'));
+        const up = Math.max(0, numV('ik_price'));
+        const uc = Math.max(0, numV('ik_cost'));
+        const ht = round2(qty * up);
+        const vat = round2(ht * 0.11);
+        const tot = round2(ht + vat);
+        const margin = round2(ht - qty * uc);
+        if ($('ik_vat')) $('ik_vat').value = fmtUSD(vat, 2);
+        if ($('ik_tot')) $('ik_tot').value = fmtUSD(tot, 2);
+        if ($('ik_margin')) $('ik_margin').value = fmtUSD(margin, 2);
+      }
+    } else if (activeInd === 'Hospitality & Resorts') {
+      if (kMode === 'sales') {
+        const cat = strV('ik_category');
+        const tot = Math.max(0, numV('ik_tot'));
+        const isZeroVat = /tip|gratuities|diesel/i.test(cat);
+        const ht = isZeroVat ? tot : round2(tot / 1.11);
+        const vat = isZeroVat ? 0 : round2(tot - ht);
+        if ($('ik_ht')) $('ik_ht').value = fmtUSD(ht, 2);
+        if ($('ik_vat')) $('ik_vat').value = fmtUSD(vat, 2);
+      } else if (kMode === 'raw') {
+        const cls = round2(numV('ik_open') + numV('ik_purch') - numV('ik_usage'));
+        if ($('ik_close')) $('ik_close').value = fmtUSD(cls, 2);
+      } else {
+        const hrs = Math.max(0.5, numV('ik_hours'));
+        const dsl = Math.max(0, numV('ik_diesel'));
+        if ($('ik_lph')) $('ik_lph').value = `${(dsl / hrs).toFixed(1)} L/hr`;
+      }
+    } else if (activeInd === 'Holding & Treasury') {
+      if (kMode === 'raw') {
+        const bal = round2(Math.max(0, numV('ik_prin') - numV('ik_rep')));
+        if ($('ik_bal')) $('ik_bal').value = fmtUSD(bal, 2);
+      } else if (kMode === 'fuel') {
+        const ent = round2(numV('ik_pool') * (numV('ik_pct') / 100));
+        const opn = round2(Math.max(0, ent - numV('ik_drawn')));
+        if ($('ik_open_ent')) $('ik_open_ent').value = fmtUSD(opn, 2);
+      }
+    }
+  }
+
+  function buildIndustryKioskThermalDraft(activeInd, kMode) {
+    recalcIndustryKioskLive(activeInd, kMode);
+    const numV = id => { const el = $(id); const v = el ? parseFloat(el.value) : 0; return Number.isFinite(v) ? v : 0; };
+    const strV = id => { const el = $(id); return el ? String(el.value || '').trim() : ''; };
+    const co = strV('ik_company') || defaultEntryCompany() || 'Bdeir Holding';
+    const dt = strV('ik_date') || todayISO();
+    const recId = strV('ik_id') || 'DOM-841';
+    const who = activeUser().full_name || 'Desk Officer';
+
+    if (activeInd === 'Insurance & Brokerage') {
+      if (kMode === 'sales') {
+        const gwp = numV('ik_gwp') || 12000;
+        const rate = numV('ik_rate') || 15;
+        const grossComm = round2(gwp * (rate / 100));
+        const disc = Math.min(grossComm, numV('ik_discount'));
+        const fee = numV('ik_fee');
+        const netComm = round2(grossComm - disc);
+        const payable = round2(gwp - grossComm);
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_client') || 'Policyholder',
+          product: `${strV('ik_line') || 'MOT · Motor'} · ${strV('ik_carrier') || 'MedGulf'}`,
+          site: strV('ik_carrier') || 'MedGulf',
+          qty: 1, uom: 'Policy', unit_price: gwp, discount: disc,
+          total: gwp + fee, vat: 0, total_ttc: gwp + fee - disc,
+          method: 'Brokerage Account', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'INSURANCE POLICY & PREMIUM VOUCHER',
+            unpricedTitle: 'INSURANCE COVER CERTIFICATE PASS',
+            badge: 'PRICED POLICY SCHEDULE',
+            refLabel: 'POLICY #',
+            counterpartyLbl: 'Policyholder',
+            counterparty: strV('ik_client') || 'Policyholder',
+            scopeLbl: 'Insurance Carrier',
+            scopeVal: strV('ik_carrier') || 'MedGulf',
+            itemLbl: 'Coverage & Commission Breakdown',
+            itemVal: `${strV('ik_line') || 'MOT · Motor'} (GWP ${fmtUSD(gwp, 2)})`,
+            extraPairs: [
+              { k: 'Broker Comm (' + rate + '%)', v: fmtUSD(netComm, 2) },
+              { k: 'Carrier Net Payable', v: fmtUSD(payable, 2) },
+              { k: 'Admin Policy Fee', v: fmtUSD(fee, 2) }
+            ]
+          }
+        };
+      }
+      if (kMode === 'raw') {
+        const gwp = numV('ik_gwp') || 24000;
+        const comm = numV('ik_comm') || 3600;
+        const settled = numV('ik_settled') || 16000;
+        const rem = round2(Math.max(0, gwp - comm - settled));
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_carrier') || 'MedGulf',
+          product: `Carrier Bordereau Settlement · ${recId}`,
+          site: co, qty: 1, uom: 'Bordereau', unit_price: settled,
+          total: settled, vat: 0, total_ttc: settled,
+          method: 'Bank Wire', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'CARRIER BORDEREAU REMITTANCE VOUCHER',
+            unpricedTitle: 'CARRIER BORDEREAU TRANSMITTAL SLIP',
+            badge: 'NET-OF-COMMISSION BORDEREAU',
+            refLabel: 'BORDEREAU #',
+            counterpartyLbl: 'Insurance Carrier',
+            counterparty: strV('ik_carrier') || 'MedGulf',
+            scopeLbl: 'Gross Bordereau GWP',
+            scopeVal: fmtUSD(gwp, 2),
+            itemLbl: 'Remittance Settlement',
+            itemVal: `Settled Wire ${fmtUSD(settled, 2)} (Retained Comm ${fmtUSD(comm, 2)})`,
+            extraPairs: [
+              { k: 'Retained Commission', v: fmtUSD(comm, 2) },
+              { k: 'Remaining Balance', v: fmtUSD(rem, 2) }
+            ]
+          }
+        };
+      }
+      const clm = numV('ik_claimed') || 4800;
+      const ded = numV('ik_deductible') || 250;
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: strV('ik_client') || 'Insured Client',
+        product: strV('ik_peril') || 'FNOL Survey',
+        site: strV('ik_policy_no') || 'POL-2026',
+        qty: 1, uom: 'Claim File', unit_price: clm, discount: ded,
+        total: Math.max(0, clm - ded), vat: 0, total_ttc: Math.max(0, clm - ded),
+        method: 'Claim Reserve', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'FNOL RAPID CLAIM REGISTRATION VOUCHER',
+          unpricedTitle: 'FNOL ROADSIDE SURVEY PASS',
+          badge: 'FNOL CLAIM DOSSIER',
+          refLabel: 'CLAIM #',
+          counterpartyLbl: 'Insured Client',
+          counterparty: strV('ik_client') || 'Insured Client',
+          scopeLbl: 'Policy & Carrier',
+          scopeVal: `${strV('ik_policy_no') || 'POL'} · ${strV('ik_carrier') || 'Allianz SNA'}`,
+          itemLbl: 'Reported Peril & Deductible',
+          itemVal: strV('ik_peril') || 'Motor Fleet Collision Survey',
+          extraPairs: [
+            { k: 'Gross Claimed', v: fmtUSD(clm, 2) },
+            { k: 'Policy Deductible', v: fmtUSD(ded, 2) }
+          ]
+        }
+      };
+    }
+
+    if (activeInd === 'Real Estate & Property') {
+      const is4235 = /4235/.test(co);
+      if (kMode === 'sales') {
+        const net = numV('ik_net') || 12500;
+        const vat = is4235 ? round2(net * 0.11) : 0;
+        const tot = round2(net + vat);
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_tenant') || 'Tenant',
+          product: `Rent Collection · ${strV('ik_property') || co}`,
+          site: strV('ik_property') || co,
+          qty: 1, uom: 'Receipt', unit_price: net,
+          total: net, vat, total_ttc: tot,
+          method: strV('ik_method') || 'Bank Wire (Fresh USD)', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: is4235 ? 'OFFICIAL 11% VAT RENT RECEIPT' : 'OFFICIAL PROPERTY RENT RECEIPT',
+            unpricedTitle: 'TENANT CLEARANCE & ACCESS PASS',
+            badge: is4235 ? '4235 S.A.L · 11% VAT' : 'PROPERTIES · 0% VAT',
+            refLabel: 'RECEIPT #',
+            counterpartyLbl: 'Tenant Name',
+            counterparty: strV('ik_tenant') || 'Tenant',
+            scopeLbl: 'Property / Building',
+            scopeVal: strV('ik_property') || co,
+            itemLbl: 'Rent Settlement Details',
+            itemVal: `Linked Invoice ${strV('ik_inv_ref') || 'INV-4235-010'}`,
+            extraPairs: [
+              { k: 'Tax Regime', v: is4235 ? '11% Statutory VAT' : '0% Non-Corporate' }
+            ]
+          }
+        };
+      }
+      if (kMode === 'raw') {
+        const net = numV('ik_net') || 15000;
+        const vat = is4235 ? round2(net * 0.11) : 0;
+        const tot = round2(net + vat);
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_tenant') || 'Tenant',
+          product: `${strV('ik_unit') || 'Commercial Unit'} (${strV('ik_freq') || 'Quarterly'})`,
+          site: strV('ik_property') || co,
+          qty: 1, uom: 'Lease', unit_price: net,
+          total: net, vat, total_ttc: tot,
+          method: 'Registered Contract', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'COMMERCIAL LEASE & HANDOVER VOUCHER',
+            unpricedTitle: 'UNIT KEYS & HANDOVER PASS',
+            badge: 'LEASE REGISTRATION',
+            refLabel: 'LEASE #',
+            counterpartyLbl: 'Tenant Name',
+            counterparty: strV('ik_tenant') || 'Tenant',
+            scopeLbl: 'Property & Unit',
+            scopeVal: `${strV('ik_property') || co} · ${strV('ik_unit') || 'Suite'}`,
+            itemLbl: 'Contracted Schedule',
+            itemVal: `${strV('ik_freq') || 'Quarterly'} Rent (Deposit ${fmtUSD(numV('ik_deposit'), 2)})`,
+            extraPairs: [
+              { k: 'Security Deposit', v: fmtUSD(numV('ik_deposit'), 2) }
+            ]
+          }
+        };
+      }
+      const act = numV('ik_actual') || 2650;
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: strV('ik_vendor') || 'Contractor',
+        product: `${strV('ik_category') || 'Facility Works'} · ${strV('ik_unit') || 'Building'}`,
+        site: strV('ik_property') || co,
+        qty: 1, uom: 'Work Order', unit_price: act,
+        total: act, vat: 0, total_ttc: act,
+        method: 'Vendor Account', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'PROPERTY WORK ORDER & CAPEX VOUCHER',
+          unpricedTitle: 'CONTRACTOR SITE ACCESS PASS',
+          badge: 'FACILITY MAINTENANCE',
+          refLabel: 'WORK ORDER #',
+          counterpartyLbl: 'Contractor / Vendor',
+          counterparty: strV('ik_vendor') || 'Contractor',
+          scopeLbl: 'Property & Area',
+          scopeVal: `${strV('ik_property') || co} · ${strV('ik_unit') || 'Plant'}`,
+          itemLbl: 'Scope of Works',
+          itemVal: strV('ik_category') || 'Generator & Solar Plant',
+          extraPairs: [
+            { k: 'Approved Budget', v: fmtUSD(numV('ik_budget'), 2) }
+          ]
+        }
+      };
+    }
+
+    if (activeInd === 'Automotive & Heavy Trading') {
+      if (kMode === 'sales') {
+        const qty = Math.max(1, numV('ik_qty') || 1);
+        const up = numV('ik_price') || 79000;
+        const ht = round2(qty * up);
+        const vat = round2(ht * 0.11);
+        const tot = round2(ht + vat);
+        const vin = strV('ik_vin');
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_customer') || 'Fleet Buyer',
+          product: strV('ik_item') || 'Shacman X3000 6x4 Tractor Head',
+          site: vin || 'Showroom Delivery',
+          qty, uom: vin.length === 17 ? 'Chassis Unit' : 'Unit',
+          unit_price: up, total: ht, vat, total_ttc: tot,
+          method: 'Commercial Invoice', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'SHOWROOM VEHICLE & PARTS TAX INVOICE',
+            unpricedTitle: 'YARD EXIT & CHASSIS RELEASE PASS',
+            badge: '11% VAT COMMERCIAL INVOICE',
+            refLabel: 'INVOICE #',
+            counterpartyLbl: 'Buyer / Customer',
+            counterparty: strV('ik_customer') || 'Fleet Buyer',
+            scopeLbl: 'Chassis VIN / Ref',
+            scopeVal: vin || 'Parts Counter',
+            itemLbl: 'Commercial Vehicle / Part',
+            itemVal: strV('ik_item') || 'Shacman X3000 6x4 Tractor Head',
+            extraPairs: [
+              { k: 'Unit Price Ex-VAT', v: fmtUSD(up, 2) }
+            ]
+          }
+        };
+      }
+      if (kMode === 'raw') {
+        const qty = Math.max(1, numV('ik_qty') || 4);
+        const val = numV('ik_val') || 265600;
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_supplier') || 'OEM Supplier',
+          product: `Import File ${strV('ik_import') || 'IMP-SH'} · B/L ${strV('ik_bl') || 'COSU'}`,
+          site: strV('ik_wh') || 'Bonded Yard',
+          qty, uom: 'Units', unit_price: round2(val / qty),
+          total: val, vat: 0, total_ttc: val,
+          method: 'Import Letter of Credit', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'BONDED YARD GOODS RECEIPT NOTE (GRN)',
+            unpricedTitle: 'BONDED GATE-IN TALLY PASS',
+            badge: 'IMPORT & LANDED COST GRN',
+            refLabel: 'GRN #',
+            counterpartyLbl: 'OEM Supplier',
+            counterparty: strV('ik_supplier') || 'OEM Supplier',
+            scopeLbl: 'Receiving Yard',
+            scopeVal: strV('ik_wh') || 'Shacman Bonded Yard',
+            itemLbl: 'Import Dossier & Ocean B/L',
+            itemVal: `${strV('ik_import') || 'IMP-SH-2026'} · B/L ${strV('ik_bl') || 'COSU'}`
+          }
+        };
+      }
+      const cost = numV('ik_cost') || 650;
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: strV('ik_vin') || 'Chassis VIN',
+        product: `${strV('ik_job_type') || '52-Point PDI'} · ${strV('ik_model') || 'Shacman X3000'}`,
+        site: strV('ik_status') || 'Cleared & Signed Off',
+        qty: 1, uom: 'Job Card', unit_price: cost,
+        total: cost, vat: 0, total_ttc: cost,
+        method: 'Internal Service / Warranty', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'WORKSHOP PDI & SERVICE JOB VOUCHER',
+          unpricedTitle: 'WORKSHOP BAY CLEARANCE PASS',
+          badge: '52-POINT PDI & WARRANTY',
+          refLabel: 'JOB CARD #',
+          counterpartyLbl: 'Chassis VIN',
+          counterparty: strV('ik_vin') || 'LZGJLDR44PX019288',
+          scopeLbl: 'Vehicle Model',
+          scopeVal: strV('ik_model') || 'Shacman X3000 6x4 Tractor',
+          itemLbl: 'Inspection / Service Scope',
+          itemVal: strV('ik_job_type') || '52-Point Pre-Delivery Inspection (PDI)'
+        }
+      };
+    }
+
+    if (activeInd === 'Hospitality & Resorts') {
+      if (kMode === 'sales') {
+        const cat = strV('ik_category') || 'Chalet & Cabana Rental';
+        const tot = numV('ik_tot') || 4440;
+        const isZeroVat = /tip|gratuities|diesel/i.test(cat);
+        const ht = isZeroVat ? tot : round2(tot / 1.11);
+        const vat = isZeroVat ? 0 : round2(tot - ht);
+        const covers = Math.max(1, numV('ik_covers') || 18);
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_guest') || 'Resort Guest',
+          product: `${strV('ik_outlet') || 'Beach Deck'} · ${cat}`,
+          site: strV('ik_outlet') || 'Beach Deck',
+          qty: covers, uom: 'Covers', unit_price: round2(ht / covers),
+          total: ht, vat, total_ttc: tot,
+          method: strV('ik_method') || 'Cash & Card', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'RESORT VENUE & CABANA CLOSING VOUCHER',
+            unpricedTitle: 'GUEST CABANA & BEACH ACCESS PASS',
+            badge: `${co.toUpperCase()} · VENUE DESK`,
+            refLabel: 'SLIP #',
+            counterpartyLbl: 'Guest / Reference',
+            counterparty: strV('ik_guest') || 'Resort Guest',
+            scopeLbl: 'Venue / Outlet',
+            scopeVal: strV('ik_outlet') || 'Beach Deck & Cabanas',
+            itemLbl: 'Hospitality Revenue Category',
+            itemVal: cat
+          }
+        };
+      }
+      if (kMode === 'raw') {
+        const pur = numV('ik_purch') || 6400;
+        const use = numV('ik_usage') || 5800;
+        const cls = round2(numV('ik_open') + pur - use);
+        return {
+          id: recId, ticket_no: recId, company: co, date: dt,
+          customer: strV('ik_supplier') || 'Cold-Chain Purveyor',
+          product: `${strV('ik_group') || 'Seafood & Prime Cuts'} (${strV('ik_store') || 'Commissary'})`,
+          site: strV('ik_store') || 'Main Commissary',
+          qty: 1, uom: 'Intake Lot', unit_price: pur,
+          total: pur, vat: 0, total_ttc: pur,
+          method: 'Supplier Delivery Note', entered_by: who,
+          _domainSlip: {
+            ind: activeInd,
+            title: 'COMMISSARY & CELLAR RECEIVING VOUCHER',
+            unpricedTitle: 'KITCHEN COLD-ROOM RECEIVING SLIP',
+            badge: 'HACCP STOCK INTAKE',
+            refLabel: 'INTAKE #',
+            counterpartyLbl: 'Purveyor / Supplier',
+            counterparty: strV('ik_supplier') || 'Cold-Chain Purveyor',
+            scopeLbl: 'Store / Cold Room',
+            scopeVal: strV('ik_store') || 'Main Cold-Chain Commissary',
+            itemLbl: 'Item Group & Closing Stock',
+            itemVal: `${strV('ik_group') || 'Seafood'} (Closing ${fmtUSD(cls, 2)})`
+          }
+        };
+      }
+      const dsl = numV('ik_diesel') || 220;
+      const hrs = Math.max(0.5, numV('ik_hours') || 10);
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: strV('ik_asset') || 'Prime Generator #1',
+        product: `Generator Run ${hrs} hrs · ${dsl} L Diesel (${(dsl / hrs).toFixed(1)} L/hr)`,
+        site: `${co} Power Plant`,
+        qty: dsl, uom: 'L', unit_price: 0.95,
+        total: round2(dsl * 0.95), vat: 0, total_ttc: round2(dsl * 0.95),
+        method: 'Utility Log', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'RESORT GENERATOR & SOLAR UTILITY VOUCHER',
+          unpricedTitle: 'POWER PLANT SHIFT LOG SLIP',
+          badge: 'ENERGY & BURN TELEMETRY',
+          refLabel: 'LOG #',
+          counterpartyLbl: 'Power Asset',
+          counterparty: strV('ik_asset') || 'Prime Resort Generator #1',
+          scopeLbl: 'Tank Level & Solar',
+          scopeVal: `${numV('ik_tank')} L Tank · ${numV('ik_solar')}% Solar`,
+          itemLbl: 'Run Hours & Burn Rate',
+          itemVal: `${hrs} hrs · ${(dsl / hrs).toFixed(1)} L/hr (Rated ${numV('ik_rated')} L/hr)`
+        }
+      };
+    }
+
+    // Holding & Treasury
+    if (kMode === 'sales') {
+      const usd = numV('ik_usd') || 25000;
+      const toCo = strV('ik_to') || 'WTC';
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: toCo,
+        product: `Intercompany Transfer: ${co} to ${toCo}`,
+        site: strV('ik_notes') || 'Sister Treasury Clearing',
+        qty: 1, uom: 'Wire', unit_price: usd,
+        total: usd, vat: 0, total_ttc: usd,
+        method: strV('ik_method') || 'Bank Transfer', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'INTERCOMPANY TREASURY CLEARING VOUCHER',
+          unpricedTitle: 'TREASURY MIRROR ADVICE SLIP',
+          badge: 'BILATERAL SISTER VOUCHER',
+          refLabel: 'VOUCHER #',
+          counterpartyLbl: 'Receiver Sister Entity',
+          counterparty: toCo,
+          scopeLbl: 'Sender Entity',
+          scopeVal: co,
+          itemLbl: 'Treasury Instruction',
+          itemVal: strV('ik_notes') || 'Bilateral sister treasury clearing'
+        }
+      };
+    }
+    if (kMode === 'raw') {
+      const prin = numV('ik_prin') || 100000;
+      const rep = numV('ik_rep') || 20000;
+      return {
+        id: recId, ticket_no: recId, company: co, date: dt,
+        customer: strV('ik_lender') || 'Holding Facility',
+        product: `${strV('ik_type') || 'Term Facility'} (Open ${fmtUSD(Math.max(0, prin - rep), 2)})`,
+        site: co, qty: 1, uom: 'Facility', unit_price: prin,
+        total: prin, vat: 0, total_ttc: prin,
+        method: 'Treasury Facility', entered_by: who,
+        _domainSlip: {
+          ind: activeInd,
+          title: 'GROUP CREDIT FACILITY & CAPITAL VOUCHER',
+          unpricedTitle: 'BOARD RESOLUTION CLEARANCE SLIP',
+          badge: 'HOLDING FACILITY SCHEDULE',
+          refLabel: 'FACILITY #',
+          counterpartyLbl: 'Facility Provider',
+          counterparty: strV('ik_lender') || 'Bdeir Family Holding Trust',
+          scopeLbl: 'Facility Type',
+          scopeVal: strV('ik_type') || 'Term Credit Facility',
+          itemLbl: 'Principal & Repaid Status',
+          itemVal: `Principal ${fmtUSD(prin, 2)} · Repaid ${fmtUSD(rep, 2)}`
+        }
+      };
+    }
+    const drw = numV('ik_drawn') || 40000;
+    return {
+      id: recId, ticket_no: recId, company: co, date: dt,
+      customer: strV('ik_partner') || 'Managing Partner',
+      product: `Partner Distribution (${numV('ik_pct') || 50}% Share)`,
+      site: co, qty: 1, uom: 'Distribution', unit_price: drw,
+      total: drw, vat: 0, total_ttc: drw,
+      method: 'Partner Current Account', entered_by: who,
+      _domainSlip: {
+        ind: activeInd,
+        title: 'MANAGING PARTNER DISTRIBUTION VOUCHER',
+        unpricedTitle: 'PARTNER ENTITLEMENT ADVICE',
+        badge: 'EQUITY & DIVIDEND DESK',
+        refLabel: 'VOUCHER #',
+        counterpartyLbl: 'Managing Partner',
+        counterparty: strV('ik_partner') || 'Hussein Bdeir',
+        scopeLbl: 'Equity Share & Pool',
+        scopeVal: `${numV('ik_pct') || 50}% of ${fmtUSD(numV('ik_pool') || 200000, 2)}`,
+        itemLbl: 'Partner Draw Instruction',
+        itemVal: `Draw ${fmtUSD(drw, 2)}`
+      }
+    };
+  }
+
+  async function saveIndustryKioskEntry(opts = {}) {
+    if (STATE.saving) return { ok: false, reason: 'saving' };
+    const activeInd = getActiveIndustry(STATE.company);
+    const kMode = STATE.activeKiosk || 'sales';
+    const numV = id => { const el = $(id); const v = el ? parseFloat(el.value) : 0; return Number.isFinite(v) ? v : 0; };
+    const strV = id => { const el = $(id); return el ? String(el.value || '').trim() : ''; };
+    const errEl = $('kioskIndErrorBanner');
+    const showErr = msg => {
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = msg; }
+      toast(msg, 'err');
+    };
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+    const co = strV('ik_company') || defaultEntryCompany() || 'Bdeir Holding';
+    const dt = strV('ik_date') || todayISO();
+    const recId = strV('ik_id');
+    if (!recId) {
+      showErr('Reference / Voucher ID is required.');
+      return { ok: false, errors: ['Reference / Voucher ID is required.'] };
+    }
+
+    let postedBucket = '';
+    let postedRow = null;
+
+    if (activeInd === 'Insurance & Brokerage') {
+      if (kMode === 'sales') {
+        const gwp = numV('ik_gwp');
+        const rate = numV('ik_rate');
+        const grossComm = round2(gwp * (rate / 100));
+        const disc = numV('ik_discount');
+        if (gwp <= 0) { showErr('Gross Written Premium ($ GWP) must be greater than 0.'); return { ok: false }; }
+        if (disc > grossComm + 0.01) { showErr(`Client Discount ($${disc.toFixed(2)}) cannot exceed Gross Commission ($${grossComm.toFixed(2)}).`); return { ok: false }; }
+        postedBucket = 'ins_policies';
+        postedRow = addIndustryCustomRow('ins_policies', {
+          id: recId, company: co, type: 'Policy (New)', start_date: dt, end_date: '2027-10-29', days_to_expiry: 364,
+          insured: strV('ik_client') || 'Policyholder', carrier: strV('ik_carrier') || 'MedGulf',
+          line: strV('ik_line') || 'MOT · Motor', product: 'Commercial Cover', sum_insured_usd: gwp * 25,
+          gwp_usd: gwp, comm_rate_pct: rate, gross_comm_usd: grossComm, discount_usd: disc,
+          policy_fee_usd: numV('ik_fee'), net_comm_usd: round2(grossComm - disc),
+          carrier_payable_usd: round2(gwp - grossComm), collected_usd: gwp, open_ar_usd: 0,
+          producer: activeUser().full_name || 'Desk Officer', status: 'Active'
+        });
+      } else if (kMode === 'raw') {
+        const gwp = numV('ik_gwp');
+        const comm = numV('ik_comm');
+        const settled = numV('ik_settled');
+        const netPay = round2(Math.max(0, gwp - comm));
+        postedBucket = 'ins_remittances';
+        postedRow = addIndustryCustomRow('ins_remittances', {
+          id: recId, company: co, carrier: strV('ik_carrier') || 'MedGulf',
+          settlement_mode: 'Net-of-Commission Bordereau', gl_payable: 'Carrier Payables',
+          gwp_usd: gwp, comm_usd: comm, net_payable_usd: netPay, settled_usd: settled,
+          balance_usd: round2(Math.max(0, netPay - settled)), due_date: dt,
+          status: netPay - settled <= 0 ? 'Settled' : 'Part-Settled'
+        });
+      } else {
+        const clm = numV('ik_claimed');
+        const ded = numV('ik_deductible');
+        postedBucket = 'ins_claims';
+        postedRow = addIndustryCustomRow('ins_claims', {
+          id: recId, company: co, loss_date: dt, policy_no: strV('ik_policy_no') || 'POL-2026',
+          insured: strV('ik_client') || 'Insured Client', carrier: strV('ik_carrier') || 'Allianz SNA',
+          line: 'MOT · Motor', peril: strV('ik_peril') || 'Motor Collision Survey',
+          adjuster: 'Rapid Response Desk', claimed_usd: clm, deductible_usd: ded,
+          approved_usd: Math.max(0, clm - ded), paid_usd: 0, status: 'Under Survey'
+        });
+      }
+    } else if (activeInd === 'Real Estate & Property') {
+      const is4235 = /4235/.test(co);
+      if (kMode === 'sales') {
+        const net = numV('ik_net');
+        const vat = is4235 ? round2(net * 0.11) : 0;
+        const tot = round2(net + vat);
+        postedBucket = 're_receipts';
+        postedRow = addIndustryCustomRow('re_receipts', {
+          id: recId, date: dt, company: co, property: strV('ik_property') || co,
+          tenant: strV('ik_tenant') || 'Tenant', invoice_id: strV('ik_inv_ref') || 'INV-4235-010',
+          amount_usd: tot, method: strV('ik_method') || 'Bank Wire (Fresh USD)',
+          reference: recId, status: 'Cleared & Reconciled', audit_flag: 'Verified Kiosk Receipt'
+        });
+      } else if (kMode === 'raw') {
+        const net = numV('ik_net');
+        const vat = is4235 ? round2(net * 0.11) : 0;
+        const tot = round2(net + vat);
+        postedBucket = 're_leases';
+        postedRow = addIndustryCustomRow('re_leases', {
+          id: recId, company: co, property: strV('ik_property') || co,
+          unit: strV('ik_unit') || 'Commercial Suite', tenant: strV('ik_tenant') || 'Tenant',
+          start_date: dt, end_date: '2029-10-31', days_to_expiry: 1095,
+          freq: strV('ik_freq') || 'Quarterly', vat_rate_pct: is4235 ? 11 : 0,
+          net_period_usd: net, vat_period_usd: vat, period_ttc_usd: tot,
+          annual_base_usd: net * 4, annual_vat_usd: vat * 4, annual_ttc_usd: tot * 4,
+          deposit_usd: numV('ik_deposit'), escalation: '3-Yr Commercial', status: 'Active'
+        });
+      } else {
+        postedBucket = 're_maintenance';
+        postedRow = addIndustryCustomRow('re_maintenance', {
+          id: recId, date: dt, company: co, property: strV('ik_property') || co,
+          unit: strV('ik_unit') || 'Common Area', category: strV('ik_category') || 'Generator & Solar Plant',
+          vendor: strV('ik_vendor') || 'MEP Contractor', budget_usd: numV('ik_budget'),
+          actual_usd: numV('ik_actual'), recoverable: 'Landlord CAPEX', status: 'Completed'
+        });
+      }
+    } else if (activeInd === 'Automotive & Heavy Trading') {
+      if (kMode === 'sales') {
+        const vin = strV('ik_vin');
+        const qty = vin.length === 17 ? 1 : Math.max(1, Math.round(numV('ik_qty')));
+        const up = numV('ik_price');
+        const uc = numV('ik_cost');
+        const ht = round2(qty * up);
+        const vat = round2(ht * 0.11);
+        const tot = round2(ht + vat);
+        postedBucket = 'trd_sales';
+        postedRow = addIndustryCustomRow('trd_sales', {
+          id: recId, seqNo: 900, book: 'SHOWROOM', date: dt, company: co,
+          stream: vin.length === 17 ? 'Serial Unit (VIN)' : 'Spare Parts',
+          customer: strV('ik_customer') || 'Fleet Buyer', item: strV('ik_item') || 'Shacman X3000',
+          vin: vin || '—', qty, ht_usd: ht, vat_usd: vat, ttc_usd: tot,
+          cogs_usd: round2(qty * uc), margin_usd: round2(ht - qty * uc),
+          paid_usd: tot, status: 'Delivered & Settled', is_gap: false
+        });
+      } else if (kMode === 'raw') {
+        postedBucket = 'trd_grn';
+        postedRow = addIndustryCustomRow('trd_grn', {
+          id: recId, import_file: strV('ik_import') || 'IMP-SH-2026-015', date: dt, company: co,
+          warehouse: strV('ik_wh') || 'Shacman Bonded Yard', supplier: strV('ik_supplier') || 'OEM Supplier',
+          items_summary: `${Math.max(1, Math.round(numV('ik_qty')))} Units · B/L ${strV('ik_bl') || 'COSU'}`,
+          landed_val_usd: numV('ik_val'), qc_status: 'Verified & Tally Signed'
+        });
+      } else {
+        postedBucket = 'trd_warranty';
+        postedRow = addIndustryCustomRow('trd_warranty', {
+          id: recId, date: dt, company: co, chassis_vin: strV('ik_vin') || 'LZGJLDR44PX019288',
+          model: strV('ik_model') || 'Shacman X3000', job_type: strV('ik_job_type') || '52-Point PDI',
+          claim_status: strV('ik_status') || 'Cleared & Signed Off', cost_usd: numV('ik_cost'),
+          technician: activeUser().full_name || 'Lead Tech'
+        });
+      }
+    } else if (activeInd === 'Hospitality & Resorts') {
+      if (kMode === 'sales') {
+        const cat = strV('ik_category') || 'Chalet & Cabana Rental';
+        const tot = numV('ik_tot');
+        const isZeroVat = /tip|gratuities|diesel/i.test(cat);
+        const ht = isZeroVat ? tot : round2(tot / 1.11);
+        const vat = isZeroVat ? 0 : round2(tot - ht);
+        postedBucket = 'hsp_revenue';
+        postedRow = addIndustryCustomRow('hsp_revenue', {
+          id: recId, date: dt, company: co, outlet: strV('ik_outlet') || 'Beach Deck & Cabanas',
+          category: cat, rooms: 1, capacity: 4, covers: Math.max(1, Math.round(numV('ik_covers'))),
+          ht_usd: ht, vat_usd: vat, ttc_usd: tot, method: strV('ik_method') || 'Cash & Card',
+          notes: strV('ik_guest') || 'Venue desk closing'
+        });
+      } else if (kMode === 'raw') {
+        const opn = numV('ik_open');
+        const pur = numV('ik_purch');
+        const use = Math.max(1, numV('ik_usage'));
+        postedBucket = 'hsp_stock';
+        postedRow = addIndustryCustomRow('hsp_stock', {
+          id: recId, date: dt, company: co, store: strV('ik_store') || 'Main Commissary',
+          item_group: strV('ik_group') || 'Seafood & Prime Cuts', opening_usd: opn,
+          purchases_in_usd: pur, transfers_net_usd: 0, recipe_usage_usd: use,
+          closing_usd: round2(opn + pur - use), r3_ratio: round2(pur / use),
+          status: 'Optimal', notes: strV('ik_supplier') || 'Commissary intake'
+        });
+      } else {
+        const hrs = Math.max(0.5, numV('ik_hours'));
+        const dsl = numV('ik_diesel');
+        const lph = round2(dsl / hrs);
+        const rated = Math.max(1, numV('ik_rated'));
+        postedBucket = 'hsp_energy';
+        postedRow = addIndustryCustomRow('hsp_energy', {
+          id: recId, date: dt, company: co, asset: strV('ik_asset') || 'Prime Generator #1',
+          tank_level_l: numV('ik_tank'), refill_l: 0, run_hours: hrs, diesel_used_l: dsl,
+          l_per_hr: lph, rated_l_hr: rated, kwh_gen: Math.round(dsl * 3.8),
+          solar_offset_pct: numV('ik_solar'), status: lph > rated * 1.15 ? 'Burn Spike' : 'Normal Burn',
+          notes: 'Kiosk utility telemetry'
+        });
+      }
+    } else {
+      // Holding & Treasury
+      if (kMode === 'sales') {
+        const toCo = strV('ik_to') || 'WTC';
+        if (co === toCo) { showErr('Sender and Receiver sister entities must differ.'); return { ok: false }; }
+        postedBucket = 'hld_interactions';
+        postedRow = addIndustryCustomRow('hld_interactions', {
+          id: recId, date: dt, fromCo: co, toCo, initiatorCo: co, mirrorCo: toCo,
+          side: 'Out', usd: numV('ik_usd'), cur: 'USD',
+          method: strV('ik_method') || 'Bank Transfer',
+          notes: strV('ik_notes') || 'Bilateral sister treasury clearing',
+          bookMirror: Boolean($('ik_mirror') && $('ik_mirror').checked)
+        });
+      } else if (kMode === 'raw') {
+        const prin = numV('ik_prin');
+        const rep = Math.min(prin, numV('ik_rep'));
+        postedBucket = 'hld_loans';
+        postedRow = addIndustryCustomRow('hld_loans', {
+          id: recId, date: dt, company: co, lender: strV('ik_lender') || 'Bdeir Family Holding Trust',
+          type: strV('ik_type') || 'Term Credit Facility', principal_usd: prin,
+          repaid_usd: rep, balance_usd: round2(prin - rep),
+          status: prin - rep <= 0 ? 'Settled' : 'Active Facility'
+        });
+      } else {
+        const pool = numV('ik_pool');
+        const pct = numV('ik_pct');
+        const ent = round2(pool * (pct / 100));
+        const drw = Math.min(ent, numV('ik_drawn'));
+        postedBucket = 'hld_partners';
+        postedRow = addIndustryCustomRow('hld_partners', {
+          id: recId, entity: co, partner: strV('ik_partner') || 'Hussein Bdeir',
+          pct, pool_usd: pool, entitled_usd: ent, drawn_usd: drw,
+          open_usd: round2(ent - drw), start_date: dt,
+          status: ent - drw <= 0 ? 'Settled' : 'Active Agreement'
+        });
+      }
+    }
+
+    const draftSlip = buildIndustryKioskThermalDraft(activeInd, kMode);
+    let printResult = null;
+    if (opts.print !== false && window.MFG_PRINT) {
+      const priceMode = opts.priceMode || window.MFG_PRINT.SETTINGS.priceMode || 'priced';
+      const paperWidth = opts.paperWidth || window.MFG_PRINT.SETTINGS.paperWidth || 80;
+      printResult = await window.MFG_PRINT.printThermalTicket('sales', draftSlip, {
+        priceMode,
+        paperWidth,
+        channel: opts.channel || window.MFG_PRINT.SETTINGS.channel,
+        openModal: opts.openModal !== false
+      });
+    }
+    toast(`Posted ${recId} to ${activeInd}`, 'ok');
+    renderApp();
+    return { ok: true, bucket: postedBucket, record: postedRow, printResult };
+  }
+
   function buildDraftThermalRecordFromForm(calcRes) {
     const kMode = STATE.activeKiosk || 'sales';
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    if (activeInd !== 'Manufacturing' && kMode !== 'attendance') {
+      return buildIndustryKioskThermalDraft(activeInd, kMode);
+    }
     const company = val('f_company') || defaultEntryCompany();
     const date = val('f_date') || todayISO();
     const repDate = val('f_repdate') || date;
@@ -89815,6 +91577,10 @@
 
   async function saveKioskEntry(opts = {}) {
     if (STATE.saving) return { ok: false, reason: 'saving' };
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    if (activeInd !== 'Manufacturing' && STATE.activeKiosk !== 'attendance') {
+      return saveIndustryKioskEntry(opts);
+    }
     const formType = resolveKioskFormType();
     STATE.modalForm = formType;
     if (!canEnterForm(formType)) {
@@ -98371,50 +100137,7 @@
     let quickStripHtml = '';
     if (activeInd !== 'Manufacturing') {
       ensureMultiIndustrySpineSeeded();
-      const indProds = filterRecords(SEED.records.products || [], { ignorePeriod: true, ignoreCompany: true }).slice(0, 4);
-      const indCusts = filterRecords(SEED.records.customers || [], { ignorePeriod: true }).slice(0, 4);
-      const indSites = filterRecords(SEED.records.sites || [], { ignorePeriod: true }).slice(0, 4);
-      const indUnits = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true }).slice(0, 4);
-      if (kMode === 'sales') {
-        quickStripHtml = `
-          <div class="kiosk-quick-strip" id="kioskQuickStrip">
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">1-Tap Catalog:</span>
-              ${indProds.map(p => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_product" data-kiosk-preset-val="${esc(p.name)}">${esc(p.name)}</button>`).join('')}
-            </div>
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">Top Counterparties:</span>
-              ${indCusts.map(c => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_customer" data-kiosk-preset-val="${esc(c.name)}">${esc(c.name)}</button>`).join('')}
-            </div>
-          </div>
-        `;
-      } else if (kMode === 'raw') {
-        quickStripHtml = `
-          <div class="kiosk-quick-strip" id="kioskQuickStrip">
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">Receiving Site:</span>
-              ${indSites.map(s => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_site" data-kiosk-preset-val="${esc(s.name)}">${esc(s.name)}</button>`).join('')}
-            </div>
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">1-Tap Item:</span>
-              ${indProds.map(p => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_product" data-kiosk-preset-val="${esc(p.name)}">${esc(p.name)}</button>`).join('')}
-            </div>
-          </div>
-        `;
-      } else if (kMode === 'fuel') {
-        quickStripHtml = `
-          <div class="kiosk-quick-strip" id="kioskQuickStrip">
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">Assigned Asset / Generator:</span>
-              ${indUnits.map(u => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_equipment" data-kiosk-preset-val="${esc(u.equipment || u.name)}">${esc(u.equipment || u.name)}</button>`).join('')}
-            </div>
-            <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">Quick Litres:</span>
-              ${[25, 50, 100, 200].map(l => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_qty" data-kiosk-preset-val="${l}">${l} L</button>`).join('')}
-            </div>
-          </div>
-        `;
-      }
+      quickStripHtml = renderIndustryKioskQuickStripHtml(activeInd, kMode);
     } else if (kMode === 'sales') {
       const topProds = productList(true, 'sales', defCo).slice(0, 6);
       const topCusts = customerNames().slice(0, 5);
@@ -98708,13 +100431,13 @@
               ? 'Malfunction, Leakage & Stock Variance'
               : 'Fuel, Diesel & Lubricant Dispense')
         };
-      const indRecentDs = (activeInd !== 'Manufacturing' && activeRecentRows.length === 0)
+      const indRecentDs = activeInd !== 'Manufacturing'
         ? buildIndustryDomainDataset(activeInd, kMode === 'raw' ? 1 : (kMode === 'fuel' ? 2 : 0))
         : null;
       const recentCountVal = indRecentDs ? Math.min(8, indRecentDs.rows.length) : activeRecentRows.length;
-      const showThermalPane = !(kMode === 'fuel' && fSub === 'malfunction');
+      const showThermalPane = activeInd !== 'Manufacturing' ? true : !(kMode === 'fuel' && fSub === 'malfunction');
       const footerThermalNote = showThermalPane
-        ? ` · Print: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm${(kMode === 'sales' || kMode === 'raw') ? ` · ${pCfg.priceMode === 'unpriced' ? (kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass') : (kMode === 'raw' ? 'Priced 2-Leg Voucher' : 'Priced Invoice')}` : ' Pump Slip'}</b>`
+        ? ` · Print: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm · ${pCfg.priceMode === 'unpriced' ? (activeInd !== 'Manufacturing' ? 'Unpriced Handover Pass' : (kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass')) : (activeInd !== 'Manufacturing' ? 'Priced Official Voucher' : (kMode === 'raw' ? 'Priced 2-Leg Voucher' : (kMode === 'fuel' ? 'Pump Slip' : 'Priced Invoice')))}</b>`
         : '';
 
       workspaceBodyHtml = `
@@ -98726,7 +100449,7 @@
               <span class="badge">Posting to ${esc(defCo)}</span>
             </div>
             <div class="kiosk-form-body" id="kioskFormBody">
-              ${renderEntryModalBody()}
+              ${activeInd !== 'Manufacturing' ? renderIndustryKioskFormHtml(activeInd, kMode, defCo) : renderEntryModalBody()}
             </div>
             <div class="kiosk-action-bar">
               <div class="kiosk-action-note">
@@ -98778,17 +100501,22 @@
                           <th>${esc(indRecentDs.headers[1] || 'Counterparty')}</th>
                           <th>${esc(indRecentDs.headers[2] || 'Scope')}</th>
                           <th class="r">${esc(indRecentDs.headers[indRecentDs.headers.length - 1] || 'Amount')}</th>
+                          <th>Reprint</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${indRecentDs.rows.slice(0, 8).map((r, rIdx) => `
-                          <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="kiosk_recent">
+                          <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="kiosk_recent" data-ind-row-id="${esc(r[0] || '')}">
                             <td class="mono"><strong>${esc(r[0] || '-')}</strong></td>
                             <td class="kiosk-rec-name-cell"><strong>${esc(r[1] || '-')}</strong></td>
                             <td>${esc(r[2] || '-')}</td>
                             <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                            <td class="kiosk-rec-print-cell">
+                              <button type="button" class="tkt-print-mini" data-print-ind-row="${rIdx}" data-print-mode="priced" aria-label="Print Priced Voucher">${ic('dollar')}</button>
+                              <button type="button" class="tkt-print-mini" data-print-ind-row="${rIdx}" data-print-mode="unpriced" aria-label="Print Unpriced Handover Pass">${ic('printer')}</button>
+                            </td>
                           </tr>
-                        `).join('') || emptyRow(4, 'No recent terminal entries')}
+                        `).join('') || emptyRow(5, 'No recent terminal entries')}
                       </tbody>
                     </table>
                   ` : `
@@ -99755,7 +101483,66 @@
         if ($('f_category') && !val('f_category')) $('f_category').value = 'Fuel';
         if ($('f_method') && !val('f_method')) $('f_method').value = 'Credit';
       }
-      wireModalLiveCalc(false);
+      if ( getActiveIndustry(STATE.company) !== 'Manufacturing' ) {
+        const indFormEl = $('kioskIndForm');
+        if (indFormEl) {
+          indFormEl.querySelectorAll('input, select').forEach(el => {
+            el.addEventListener('input', () => updateKioskLiveThermalPreview());
+            el.addEventListener('change', () => updateKioskLiveThermalPreview());
+          });
+        }
+        container.querySelectorAll('[data-kiosk-ind-preset-field]').forEach(chip => {
+          chip.addEventListener('click', () => {
+            const fId = chip.getAttribute('data-kiosk-ind-preset-field');
+            const fVal = chip.getAttribute('data-kiosk-ind-preset-val') || '';
+            const target = fId ? $(fId) : null;
+            if (target) {
+              target.value = fVal;
+              updateKioskLiveThermalPreview();
+            }
+          });
+        });
+        container.querySelectorAll('[data-print-ind-row]').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const rIdx = Number(btn.getAttribute('data-print-ind-row') || 0);
+            const pMode = btn.getAttribute('data-print-mode') || 'priced';
+            const curInd = getActiveIndustry(STATE.company);
+            const ds = buildIndustryDomainDataset(curInd, STATE.activeKiosk === 'raw' ? 1 : (STATE.activeKiosk === 'fuel' ? 2 : 0));
+            const rowCells = (ds && ds.rows && ds.rows[rIdx]) || [];
+            if (rowCells.length && window.MFG_PRINT) {
+              const rawAmt = parseFloat(String(rowCells[rowCells.length - 1] || '0').replace(/[^0-9.-]/g, '')) || 0;
+              const slip = {
+                id: rowCells[0] || 'VOUCHER',
+                ticket_no: rowCells[0] || 'VOUCHER',
+                company: defaultEntryCompany() || curInd,
+                date: todayISO(),
+                customer: rowCells[1] || curInd,
+                product: `${ds.title || curInd} · ${rowCells[0]}`,
+                site: rowCells[2] || curInd,
+                qty: 1, uom: 'Voucher', unit_price: rawAmt, total: rawAmt, total_ttc: rawAmt,
+                method: 'Official Register', entered_by: activeUser().full_name || 'Officer',
+                _domainSlip: {
+                  ind: curInd,
+                  title: `${(ds.title || curInd).toUpperCase()} VOUCHER`,
+                  unpricedTitle: `${(ds.title || curInd).toUpperCase()} PASS`,
+                  badge: `${curInd.toUpperCase()} KIOSK`,
+                  refLabel: 'VOUCHER #',
+                  counterpartyLbl: ds.headers[1] || 'Counterparty',
+                  counterparty: rowCells[1] || curInd,
+                  scopeLbl: ds.headers[2] || 'Scope',
+                  scopeVal: rowCells[2] || curInd,
+                  itemLbl: 'Transaction Reference',
+                  itemVal: `${rowCells[0]} · ${rowCells[2] || ''}`
+                }
+              };
+              window.MFG_PRINT.printThermalTicket('sales', slip, { priceMode: pMode });
+            }
+          });
+        });
+      } else {
+        wireModalLiveCalc(false);
+      }
       updateKioskLiveThermalPreview();
 
       const resetBtn = $('kioskResetFormBtn');
@@ -104089,6 +105876,8 @@
         contextFormForView,
         canEnterForm,
         openEntryModal,
+        openIndustryDomainEntryModal,
+        resolveDomainFormSpec,
         recalcForm,
         readAndCompressAttachmentFile,
         openDocumentCameraCapture,
@@ -105071,8 +106860,9 @@
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
   window.MFG_HOSPITALITY = {
-    compute: () => {
-      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+    compute: (opts = {}) => {
+      const hspCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Hospitality & Resorts' ? STATE.company : 'industry:Hospitality & Resorts');
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, company: hspCo });
       const s = hsp.summary;
       const totRev = round2(s.totalRevenueTtc + s.totalMemContract);
       const opProf = round2(s.totalRevenueHt + s.totalMemContract - s.totalStockUsage - s.totalMaintUsd);
@@ -105097,7 +106887,7 @@
           company: r.company,
           outlet: r.outlet,
           category: r.category,
-          guest: r.notes || 'Resort Guest',
+          guest: String(r.notes || 'Resort Guest').replace(/\s*\(RawBT synced\)/ig, ''),
           covers: r.covers,
           payMethod: r.method,
           totalTtc: r.ttc_usd
@@ -105122,8 +106912,9 @@
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
   window.MFG_TRADING = {
-    compute: () => {
-      const trd = computeTradingOperations({ ignoreSearch: true });
+    compute: (opts = {}) => {
+      const trdCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Automotive & Heavy Trading' ? STATE.company : 'industry:Automotive & Heavy Trading');
+      const trd = computeTradingOperations({ ignoreSearch: true, company: trdCo });
       const s = trd.summary;
       const validSales = (trd.salesRows || []).filter(r => !r.is_gap);
       return {
@@ -105151,6 +106942,7 @@
         })),
         vehicleRows: (trd.truckRows || trd.unitRows || validSales.slice(0, 8)).map((v, idx) => ({
           vin: v.vin || v.chassis || (`LZGJL484${idx + 10}X00${idx + 1}`),
+          company: v.company || 'Shacman',
           model: v.model || v.item || 'Shacman X3000 6x4 Tractor',
           customsNo: v.customs_no || (`BEY-2026-IM-${410 + idx}`),
           buyer: v.buyer || v.customer || 'Showroom Yard',
@@ -105169,8 +106961,9 @@
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null
   };
   window.MFG_REALESTATE = {
-    compute: () => {
-      const re = computeRealEstateOperations({ ignoreSearch: true });
+    compute: (opts = {}) => {
+      const reCo = (opts && opts.company) || (getActiveIndustry(STATE.company) === 'Real Estate & Property' ? STATE.company : 'industry:Real Estate & Property');
+      const re = computeRealEstateOperations({ ignoreSearch: true, company: reCo });
       const s = re.summary;
       return {
         kpis: {
@@ -105201,6 +106994,7 @@
         })),
         rentInvoices: (re.invoices || []).map(r => ({
           invNo: r.id,
+          company: r.company,
           date: r.period_start,
           tenant: r.tenant,
           unitCode: r.unit,
@@ -105296,6 +107090,17 @@
     invalidateAllSeedCaches: typeof invalidateAllSeedCaches === 'function' ? invalidateAllSeedCaches : null,
     openIndustryDomainEntryModal: typeof openIndustryDomainEntryModal === 'function' ? openIndustryDomainEntryModal : null,
     closeIndustryDomainEntryModal: typeof closeIndustryDomainEntryModal === 'function' ? closeIndustryDomainEntryModal : null,
+    openIndustryDomainInspector: typeof openIndustryDomainInspector === 'function' ? openIndustryDomainInspector : null,
+    openIndustryDomainInspectorById: typeof openIndustryDomainInspectorById === 'function' ? openIndustryDomainInspectorById : null,
+    showRecordInspector: typeof showRecordInspector === 'function' ? showRecordInspector : null,
+    lookupIndustryDomainRecord: typeof lookupIndustryDomainRecord === 'function' ? lookupIndustryDomainRecord : null,
+    addIndustryCustomRow: typeof addIndustryCustomRow === 'function' ? addIndustryCustomRow : null,
+    voidIndustryCustomRowById: typeof voidIndustryCustomRowById === 'function' ? voidIndustryCustomRowById : null,
+    getIndustryCustomRowsStore: typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore : null,
+    getIndustryRowEditStore: typeof getIndustryRowEditStore === 'function' ? getIndustryRowEditStore : null,
+    saveIndustryRowEditStore: typeof saveIndustryRowEditStore === 'function' ? saveIndustryRowEditStore : null,
+    mergeIndustryCustomRows: typeof mergeIndustryCustomRows === 'function' ? mergeIndustryCustomRows : null,
+    mergeIndustryRowEdits: typeof mergeIndustryRowEdits === 'function' ? mergeIndustryRowEdits : null,
     getIndustryCustomRows: typeof getIndustryCustomRows === 'function' ? getIndustryCustomRows : null,
     addIndustryCustomRow: typeof addIndustryCustomRow === 'function' ? addIndustryCustomRow : null,
     clearIndustryCustomRows: typeof clearIndustryCustomRows === 'function' ? clearIndustryCustomRows : null,

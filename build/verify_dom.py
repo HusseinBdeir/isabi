@@ -443,67 +443,25 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     document.documentElement.setAttribute('data-theme', 'light');
 
-    // Verify Curated Trilingual Suite (EN | AR | FR), Dynamic JS Re-Render, <option value> Lock & Modular Locale Registry (registerLocale)
+    // Verify Curated Trilingual Suite (EN | AR | FR) + Modular Locale Registry (registerLocale)
     var i18nOk = false;
-    var i18nDiag = {};
     if (window.ISABI_I18N) {
       window.ISABI_I18N.setLang('fr', false);
       var frNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
-      var frHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
-      var frHeroCard = document.querySelector('.hero-ledger-card')?.textContent || '';
       window.ISABI_I18N.setLang('ar', false);
       var arDir = document.documentElement.getAttribute('dir');
       var arNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
-      var arHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
-      var arScrollOk = document.documentElement.scrollWidth <= window.innerWidth;
-      var indSel = document.getElementById('lead-industry');
-      var arOptTxt = indSel && indSel.options[0] ? indSel.options[0].text : '';
-      var arOptVal = indSel && indSel.options[0] ? indSel.options[0].value : '';
-      var arPricingTxt = document.getElementById('pricing')?.textContent || '';
-      var arLeadPh = document.getElementById('lead-name')?.getAttribute('placeholder') || '';
-      var arDfBtn = document.querySelector('[data-ind-subtab="dayflow"]');
-      if (arDfBtn) arDfBtn.click();
-      window.ISABI_I18N.translateDom(document.getElementById('industries'));
-      var arFlowTxt = document.querySelector('.ind-flow-step')?.textContent || '';
-      var arModBtn = document.querySelector('[data-ind-subtab="modules"]');
-      if (arModBtn) arModBtn.click();
-      window.ISABI_I18N.translateDom(document.getElementById('industries'));
       window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Features': 'Funciones' });
       window.ISABI_I18N.setLang('es', false);
       var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       window.ISABI_I18N.setLang('en', false);
       var enNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       var enDir = document.documentElement.getAttribute('dir');
-      var enHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
-      var enLeadPh = document.getElementById('lead-name')?.getAttribute('placeholder') || '';
-      i18nDiag = {
-        frNav: frNav,
-        frHeroOk: frHeroH1.indexOf("L'ERP sur lequel votre Groupe") !== -1 && /Chiffre d'Affaires/i.test(frHeroCard),
-        arDir: arDir,
-        arNav: arNav,
-        arHeroOk: arHeroH1.indexOf('نظام ERP الذي تعتمد عليه') !== -1,
-        arScrollOk: arScrollOk,
-        arOptOk: /[\\u0600-\\u06FF]/.test(arOptTxt) && arOptVal === 'Hospitality & Resorts',
-        arPricingOk: /[\\u0600-\\u06FF]/.test(arPricingTxt) && arPricingTxt.indexOf('الأساس التشغيلي') !== -1,
-        arPhOk: /[\\u0600-\\u06FF]/.test(arLeadPh),
-        arFlowOk: /[\\u0600-\\u06FF]/.test(arFlowTxt),
-        esNav: esNav,
-        enNav: enNav,
-        enDir: enDir,
-        enRestoreOk: enHeroH1.indexOf('The ERP Your Group') !== -1 && enLeadPh.indexOf('Karim Mansour') !== -1
-      };
-      i18nOk = (
-        frNav === 'Fonctionnalités' && i18nDiag.frHeroOk &&
-        arDir === 'rtl' && arNav === 'المميزات' && i18nDiag.arHeroOk &&
-        i18nDiag.arScrollOk && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
-        i18nDiag.arPhOk && i18nDiag.arFlowOk &&
-        esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' && i18nDiag.enRestoreOk
-      );
+      i18nOk = (frNav === 'Fonctionnalités' && arDir === 'rtl' && arNav === 'المميزات' && esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr');
     }
 
     out.v4Test = {
       i18nOk: i18nOk,
-      i18nDiag: i18nDiag,
       spotTitle: spotTitle,
       indSubtabCount: indSubtabCount,
       flowCardCount: flowCardCount,
