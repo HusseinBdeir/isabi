@@ -39,6 +39,36 @@
   color: var(--ink);
 }
 
+#aiDrawer .ai-voice-toggle-btn {
+  gap: 5px;
+  padding: 0 9px;
+}
+
+#aiDrawer .ai-voice-toggle-btn .ai-hdr-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+#aiDrawer .ai-voice-toggle-btn .ai-hdr-ico svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#aiDrawer .ai-voice-toggle-btn.is-active {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #0B1730;
+  font-weight: 700;
+}
+
 #aiDrawer .ai-msg-user {
   align-self: flex-end;
   background: var(--brass-tint);
@@ -210,6 +240,38 @@
 
 .ai-act-btn.is-primary:hover {
   filter: brightness(1.04);
+}
+
+.ai-act-btn .ai-act-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.ai-act-btn .ai-act-ico svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ai-act-btn.ai-speak-btn.is-loading {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  opacity: 0.88;
+}
+
+.ai-act-btn.ai-speak-btn.is-speaking {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #0B1730;
+  font-weight: 700;
 }
 
 .ai-msg-followup {

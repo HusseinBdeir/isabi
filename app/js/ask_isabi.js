@@ -49,7 +49,14 @@
     voiceBaseText: '',
     voiceInterimText: '',
     voiceStatusOverride: '',
-    activeAudioEl: null
+    activeAudioEl: null,
+    activeSpeakBtn: null,
+    activeSpeakCtrl: null,
+    lastSpokenText: '',
+    autoVoiceReadback: (function () {
+      try { return localStorage.getItem('isabi_ask_auto_voice') === '1'; } catch (_) { return false; }
+    })(),
+    ttsAudioCache: new Map()
   };
 
   function cleanOut(s) {
@@ -2303,6 +2310,8 @@
     doc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8Z"/><polyline points="14 2.5 14 8 19.5 8"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="17" x2="13.5" y2="17"/></svg>',
     image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="8.8" cy="8.8" r="1.6"/><path d="m20.5 15.5-4.6-4.6L6.5 20.5"/></svg>',
     audio: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 5.8a9 9 0 0 1 0 12.4"/></svg>',
+    audioOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>',
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 5 19 12 7 19 7 5"/></svg>'
   };
 
@@ -3713,9 +3722,39 @@
     });
   }
 
+  function speakIdleLabel(lang) {
+    if (lang === 'ar') return 'استماع';
+    if (lang === 'fr') return 'Écouter';
+    return 'Read Aloud';
+  }
+
+  function speakStopLabel(lang) {
+    if (lang === 'ar') return 'إيقاف';
+    if (lang === 'fr') return 'Arrêter';
+    return 'Stop';
+  }
+
+  function resetSpeakButtonUi(btn) {
+    if (!btn) return;
+    const lang = btn.getAttribute('data-ai-speak') || 'en';
+    btn.classList.remove('is-speaking', 'is-loading');
+    btn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(speakIdleLabel(lang))}</span>`;
+  }
+
   function stopActivePlayback() {
+    if (_chatState.activeSpeakCtrl) {
+      try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
+      _chatState.activeSpeakCtrl = null;
+    }
+    if (_chatState.activeSpeakBtn) {
+      resetSpeakButtonUi(_chatState.activeSpeakBtn);
+      _chatState.activeSpeakBtn = null;
+    }
+    _chatState.lastSpokenText = '';
     if (_chatState.activeAudioEl) {
       try {
+        _chatState.activeAudioEl.onended = null;
+        _chatState.activeAudioEl.onerror = null;
         _chatState.activeAudioEl.pause();
         _chatState.activeAudioEl.currentTime = 0;
       } catch (_) {}
@@ -3982,32 +4021,212 @@
     syncVoiceBarUi();
   }
 
-  function speakBotReply(rawHtml, lang) {
-    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
-    if (!plain) return false;
-    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
-    if (isAutoTest || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
-      return true;
+  function base64ToBlobUrl(b64, mimeType) {
+    const bin = atob(String(b64 || '').trim());
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mimeType || 'audio/wav' });
+    return URL.createObjectURL(blob);
+  }
+
+  function fallbackBrowserSpeech(plain, lang, btnEl) {
+    if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      if (btnEl) resetSpeakButtonUi(btnEl);
+      return false;
     }
     try {
-      if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        if (_chatState.lastSpokenText === plain) {
-          _chatState.lastSpokenText = '';
-          return true;
-        }
-      }
-      _chatState.lastSpokenText = plain;
       const utt = new window.SpeechSynthesisUtterance(plain);
       utt.lang = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
       utt.rate = 1.02;
-      utt.onend = () => { _chatState.lastSpokenText = ''; };
-      utt.onerror = () => { _chatState.lastSpokenText = ''; };
+      _chatState.lastSpokenText = plain;
+      if (btnEl) {
+        _chatState.activeSpeakBtn = btnEl;
+        btnEl.classList.remove('is-loading');
+        btnEl.classList.add('is-speaking');
+        btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(lang))}</span>`;
+      }
+      utt.onend = () => {
+        if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
+        _chatState.lastSpokenText = '';
+        if (btnEl) resetSpeakButtonUi(btnEl);
+      };
+      utt.onerror = () => {
+        if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
+        _chatState.lastSpokenText = '';
+        if (btnEl) resetSpeakButtonUi(btnEl);
+      };
       window.speechSynthesis.speak(utt);
       return true;
     } catch (_) {
+      if (btnEl) resetSpeakButtonUi(btnEl);
       return false;
     }
+  }
+
+  async function requestCloudOrLocalTtsUrl(plain, lang, signal) {
+    const cacheKey = `${lang}|${plain}`;
+    if (_chatState.ttsAudioCache.has(cacheKey)) {
+      return _chatState.ttsAudioCache.get(cacheKey);
+    }
+    const voiceName = lang === 'ar' ? 'Charon' : (lang === 'fr' ? 'Aoede' : 'Kore');
+    const dirPrefix = lang === 'ar'
+      ? 'تحدث بنبرة تنفيذية هادئة وواضحة وطبيعية: '
+      : (lang === 'fr'
+        ? 'Parlez sur un ton exécutif calme, clair et naturel : '
+        : 'Speak in a calm, crisp, natural executive tone: ');
+    const promptText = dirPrefix + plain.slice(0, 1900);
+
+    // 1. Local SQLite API Server (/api/tts) when hosted locally
+    const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+    if (isLocalHost || window.ISABI_LOCAL_API) {
+      try {
+        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+        const rLocal = await fetch(`${base}/api/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: promptText, lang, voiceName, model: 'gemini-3.8-flash-lite-tts' }),
+          signal
+        });
+        if (rLocal.ok) {
+          const jL = await rLocal.json();
+          if (jL && jL.ok && jL.audioBase64) {
+            const url = base64ToBlobUrl(jL.audioBase64, jL.mimeType || 'audio/wav');
+            if (_chatState.ttsAudioCache.size >= 24) {
+              const oldest = _chatState.ttsAudioCache.keys().next().value;
+              _chatState.ttsAudioCache.delete(oldest);
+            }
+            _chatState.ttsAudioCache.set(cacheKey, url);
+            return url;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Cloud AI Relay (op: 'tts' -> gemini-3.8-flash-lite-tts)
+    const askCfg = window.MFG_ASK_CFG || {};
+    let flowUrl = '';
+    let flowKey = '';
+    try {
+      if (askCfg.u && askCfg.k) {
+        flowUrl = atob(askCfg.u);
+        flowKey = atob(askCfg.k);
+      }
+    } catch (_) {}
+    if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+      const rCloud = await fetch(flowUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({
+          key: flowKey,
+          op: 'tts',
+          model: 'gemini-3.8-flash-lite-tts',
+          voiceName,
+          lang,
+          text: promptText
+        }),
+        signal
+      });
+      if (rCloud.ok) {
+        const jC = await rCloud.json();
+        if (jC && jC.ok && jC.mode === 'gemini_tts' && jC.audioBase64) {
+          const url = base64ToBlobUrl(jC.audioBase64, jC.mimeType || 'audio/wav');
+          if (_chatState.ttsAudioCache.size >= 24) {
+            const oldest = _chatState.ttsAudioCache.keys().next().value;
+            _chatState.ttsAudioCache.delete(oldest);
+          }
+          _chatState.ttsAudioCache.set(cacheKey, url);
+          return url;
+        }
+      }
+    }
+    return '';
+  }
+
+  function speakBotReply(rawHtml, lang, btnEl) {
+    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+    if (!plain) return false;
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (isAutoTest) return true;
+
+    const safeLang = lang || detectLang(plain) || 'en';
+    const isSameActive = Boolean(
+      (btnEl && _chatState.activeSpeakBtn === btnEl) ||
+      (!btnEl && _chatState.lastSpokenText === plain && (_chatState.activeAudioEl || (window.speechSynthesis && window.speechSynthesis.speaking)))
+    );
+    if (isSameActive) {
+      stopActivePlayback();
+      return true;
+    }
+
+    stopActivePlayback();
+    _chatState.lastSpokenText = plain;
+
+    // Create Audio element synchronously inside gesture handler for iOS Safari unlock
+    const audioEl = (typeof Audio !== 'undefined') ? new Audio() : null;
+    if (!audioEl) {
+      return fallbackBrowserSpeech(plain, safeLang, btnEl);
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 11500);
+    _chatState.activeSpeakCtrl = ctrl;
+    if (btnEl) {
+      _chatState.activeSpeakBtn = btnEl;
+      btnEl.classList.add('is-loading');
+      btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...'))}</span>`;
+    }
+
+    requestCloudOrLocalTtsUrl(plain, safeLang, ctrl.signal).then(blobUrl => {
+      clearTimeout(timer);
+      if (ctrl.signal.aborted) return;
+      _chatState.activeSpeakCtrl = null;
+      if (blobUrl) {
+        audioEl.src = blobUrl;
+        _chatState.activeAudioEl = audioEl;
+        if (btnEl) {
+          btnEl.classList.remove('is-loading');
+          btnEl.classList.add('is-speaking');
+          btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(safeLang))}</span>`;
+        }
+        audioEl.onended = () => {
+          if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
+          if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
+          _chatState.lastSpokenText = '';
+          if (btnEl) resetSpeakButtonUi(btnEl);
+        };
+        audioEl.onerror = () => {
+          if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
+          fallbackBrowserSpeech(plain, safeLang, btnEl);
+        };
+        audioEl.play().catch(() => {
+          if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
+          fallbackBrowserSpeech(plain, safeLang, btnEl);
+        });
+      } else {
+        fallbackBrowserSpeech(plain, safeLang, btnEl);
+      }
+    }).catch(() => {
+      clearTimeout(timer);
+      if (ctrl.signal.aborted) return;
+      _chatState.activeSpeakCtrl = null;
+      fallbackBrowserSpeech(plain, safeLang, btnEl);
+    });
+    return true;
+  }
+
+  function maybeAutoSpeakTurn(turnObj) {
+    if (!turnObj || !_chatState.autoVoiceReadback) return;
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
+    setTimeout(() => {
+      const askDrawer = document.getElementById('aiDrawer');
+      if (!askDrawer || !askDrawer.classList.contains('open')) return;
+      const bots = askDrawer.querySelectorAll('.ai-msg-bot:not(.ai-welcome-card)');
+      const lastBot = bots.length ? bots[bots.length - 1] : null;
+      const btn = lastBot ? lastBot.querySelector('[data-ai-speak]') : null;
+      const bulletTxt = Array.isArray(turnObj.bullets) ? turnObj.bullets.join('. ') : '';
+      const combined = [turnObj.answer || '', bulletTxt].filter(Boolean).join('. ');
+      speakBotReply(combined, turnObj.lang || 'en', btn || null);
+    }, 120);
   }
 
   // ============================================================================
@@ -4136,29 +4355,67 @@
       }
     } catch (_) {}
 
-    // Lane 1: Cloud AI Relay (skip logging in public demo sandbox to keep visitor logs clean)
+    // Lane 1: Cloud AI Relay (tiered: gemini-3.8-flash for multimodal/deep reasoning, gemini-3.5-flash-lite for fast chat)
     const isDemo = Boolean(_ctx && _ctx.STATE && (_ctx.STATE.demoVisitor || _ctx.STATE.isPublicDemoSandbox));
     if (flowUrl && flowUrl.startsWith('http') && !isDemo) {
+      const visionAtts = (Array.isArray(turnAtts) ? turnAtts : []).filter(a => {
+        if (!a || !a.dataUrl || !String(a.dataUrl).includes(';base64,')) return false;
+        return /^data:(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf);base64,/i.test(String(a.dataUrl));
+      });
+      const hasVisionAtt = visionAtts.length > 0;
+      const deepReason = isReasoningQuery(cleanQ) || cleanQ.length > 180;
+      const useProFlash = Boolean(hasVisionAtt || deepReason);
+      const targetModel = useProFlash ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+
+      // Build multi-turn Gemini contents (with inlineData for any attached image/PDF on the final user turn)
+      const geminiContents = [];
+      const nonSysMsgs = messages.slice(1);
+      for (let i = 0; i < nonSysMsgs.length; i++) {
+        const m = nonSysMsgs[i];
+        const isLastUser = (i === nonSysMsgs.length - 1 && m.role === 'user');
+        const parts = [{ text: String(m.content || '') }];
+        if (isLastUser && hasVisionAtt) {
+          visionAtts.slice(0, 2).forEach(va => {
+            const mMatch = String(va.dataUrl).match(/^data:([^;]+);base64,(.+)$/i);
+            if (mMatch && mMatch[2] && mMatch[2].length < 4000000) {
+              const normMime = mMatch[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : mMatch[1].toLowerCase();
+              parts.push({ inlineData: { mimeType: normMime, data: mMatch[2] } });
+            }
+          });
+        }
+        geminiContents.push({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts
+        });
+      }
+
+      const reqPayload = {
+        key: flowKey,
+        op: 'ask',
+        surface: 'command_center',
+        q: cleanQ,
+        lang,
+        industry: scope.scopeCoLabel,
+        currency: 'USD',
+        period: scope.periodLabel,
+        replyTitle: fallback.title || '',
+        model: targetModel,
+        systemPrompt: messages[0].content,
+        userPrompt: cleanQ,
+        geminiContents,
+        messages
+      };
+      if (useProFlash) {
+        reqPayload.thinkingBudget = hasVisionAtt ? 0 : 1024;
+      }
+
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 9500);
+      const timer = setTimeout(() => ctrl.abort(), useProFlash ? 13500 : 9500);
       try {
         const res = await fetch(flowUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({
-            key: flowKey,
-            op: 'ask',
-            surface: 'command_center',
-            q: cleanQ,
-            lang,
-            industry: scope.scopeCoLabel,
-            currency: 'USD',
-            period: scope.periodLabel,
-            replyTitle: fallback.title || '',
-            systemPrompt: messages[0].content,
-            userPrompt: cleanQ,
-            messages
-          }),
+          body: JSON.stringify(reqPayload),
           signal: ctrl.signal
         });
         clearTimeout(timer);
@@ -4264,8 +4521,8 @@
       : '';
 
     const baseActions = Array.isArray(item.actions) ? item.actions.slice() : [];
-    if (item.fromVoice && !baseActions.some(a => a.type === 'speak')) {
-      baseActions.push({ type: 'speak', lang: item.lang || 'en', label: 'Read Aloud' });
+    if (!baseActions.some(a => a.type === 'speak')) {
+      baseActions.push({ type: 'speak', lang: item.lang || 'en', label: speakIdleLabel(item.lang || 'en') });
     }
 
     const actionsHtml = baseActions.length
@@ -4277,7 +4534,7 @@
             return `<button type="button" class="ai-act-btn" data-ai-open-form="${esc(a.form)}">${esc(a.label)}</button>`;
           }
           if (a.type === 'speak') {
-            return `<button type="button" class="ai-act-btn" data-ai-speak="${esc(a.lang || 'en')}">${esc(a.label)}</button>`;
+            return `<button type="button" class="ai-act-btn ai-speak-btn" data-ai-speak="${esc(a.lang || 'en')}"><span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(a.label || speakIdleLabel(a.lang || 'en'))}</span></button>`;
           }
           return `<button type="button" class="ai-act-btn${idx === 0 ? ' is-primary' : ''}" data-ai-goto-view="${esc(a.view)}">${esc(a.label)}</button>`;
         }).join('')}</div>`
@@ -4558,6 +4815,7 @@
           _chatState.history.push(decoratedFast);
           if (_chatState.history.length > 12) _chatState.history.shift();
           renderThread(true);
+          maybeAutoSpeakTurn(decoratedFast);
           setTimeout(() => {
             _chatState.typingFollowup = false;
             renderThread(true);
@@ -4578,6 +4836,7 @@
         _chatState.history.push(finalAns);
         if (_chatState.history.length > 12) _chatState.history.shift();
         renderThread(true);
+        maybeAutoSpeakTurn(finalAns);
         setTimeout(() => {
           _chatState.typingFollowup = false;
           renderThread(true);
@@ -4748,6 +5007,31 @@
       if (_chatState.voiceActive) stopVoiceRecording({ attachVoiceNote: true });
       else startVoiceRecording();
     });
+
+    // Mount Auto-Voice Readback toggle in #aiDrawer header actions
+    const hdrActions = document.querySelector('#aiDrawer .ai-hdr-actions');
+    if (hdrActions && !document.getElementById('aiAutoVoiceBtn')) {
+      const autoVoiceBtn = document.createElement('button');
+      autoVoiceBtn.type = 'button';
+      autoVoiceBtn.className = 'ai-reset-btn ai-voice-toggle-btn' + (_chatState.autoVoiceReadback ? ' is-active' : '');
+      autoVoiceBtn.id = 'aiAutoVoiceBtn';
+      autoVoiceBtn.setAttribute('aria-pressed', _chatState.autoVoiceReadback ? 'true' : 'false');
+      autoVoiceBtn.setAttribute('data-ui-tip', 'Read Aloud');
+      const syncAutoVoiceBtnUi = () => {
+        const on = Boolean(_chatState.autoVoiceReadback);
+        autoVoiceBtn.classList.toggle('is-active', on);
+        autoVoiceBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        autoVoiceBtn.innerHTML = `<span class="ai-hdr-ico">${on ? AI_SVGS.audio : AI_SVGS.audioOff}</span><span>Read Aloud</span>`;
+      };
+      syncAutoVoiceBtnUi();
+      autoVoiceBtn.addEventListener('click', () => {
+        _chatState.autoVoiceReadback = !_chatState.autoVoiceReadback;
+        try { localStorage.setItem('isabi_ask_auto_voice', _chatState.autoVoiceReadback ? '1' : '0'); } catch (_) {}
+        if (!_chatState.autoVoiceReadback) stopActivePlayback();
+        syncAutoVoiceBtnUi();
+      });
+      hdrActions.insertBefore(autoVoiceBtn, hdrActions.firstChild);
+    }
   }
 
   function init(ctx) {
@@ -4867,7 +5151,7 @@
           const listEl = botBubble ? botBubble.querySelector('.ai-bot-list') : null;
           const bulletTexts = listEl ? Array.from(listEl.querySelectorAll('li')).map(li => li.textContent.trim()).filter(Boolean) : [];
           const combinedHtml = [pEl ? pEl.textContent.trim() : '', ...bulletTexts].filter(Boolean).join('. ');
-          speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en');
+          speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en', speakBtn);
           return;
         }
         const chip = e.target.closest('#aiChips .ai-pill-btn');

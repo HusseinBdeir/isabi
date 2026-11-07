@@ -1268,18 +1268,48 @@
     return null;
   }
 
+  function resolveAskRelayEndpoint() {
+    const askCfg = window.MFG_ASK_CFG || {};
+    if (askCfg.endpointUrl && askCfg.enabled) {
+      return { url: String(askCfg.endpointUrl), key: String(askCfg.key || '') };
+    }
+    try {
+      if (askCfg.u && askCfg.k) {
+        return { url: atob(askCfg.u), key: atob(askCfg.k) };
+      }
+    } catch (_) {}
+    return { url: '', key: '' };
+  }
+
+  function extractVisionInlinePart(attObj) {
+    if (!attObj || !attObj.data_url) return null;
+    const dataUrl = String(attObj.data_url || '');
+    const mimeRaw = String(attObj.mime_type || '').toLowerCase().trim();
+    if (!dataUrl.includes(';base64,')) return null;
+    if (!/^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(mimeRaw)) return null;
+    const b64Part = dataUrl.split(';base64,')[1] || '';
+    if (!b64Part || b64Part.length > 4200000) return null;
+    const normMime = mimeRaw === 'image/jpg' ? 'image/jpeg' : mimeRaw;
+    return { mimeType: normMime, data: b64Part };
+  }
+
   async function tryLocalServerVisionScan(payload) {
+    if (isHeadlessEnv() && !window.__MFG_TEST_LIVE_AI) return null;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
     const isLocalHost = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
     if (!isLocalHost && !window.ISABI_LOCAL_API) return null;
+    const hasBin = payload && payload.dataUrl && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(String(payload.mimeType || ''));
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3600);
+    const timer = setTimeout(() => ctrl.abort(), hasBin ? 12000 : 4800);
     try {
       const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
       const res = await fetch(`${base}/api/smart-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(Object.assign({
+          model: hasBin ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
+          thinkingBudget: 0
+        }, payload)),
         signal: ctrl.signal
       });
       if (!res.ok) return null;
@@ -1294,8 +1324,10 @@
     return null;
   }
 
-  async function tryCloudAiStructuredParse(extractedText, regScope) {
-    if (!extractedText || extractedText.trim().length < 18) return null;
+  async function tryCloudAiStructuredParse(extractedText, regScope, attObj) {
+    const inlinePart = extractVisionInlinePart(attObj);
+    const cleanTxt = String(extractedText || '').trim();
+    if (cleanTxt.length < 18 && !inlinePart) return null;
     if (isHeadlessEnv() && !window.__MFG_TEST_LIVE_AI) return null;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
@@ -1316,32 +1348,44 @@
       'Expense Categories: ' + (regScope.expCats || []).slice(0, 18).join(', ')
     ].join('\n');
 
-    const userMsg = 'DOCUMENT TEXT:\n' + String(extractedText).slice(0, 5500);
+    const userMsg = cleanTxt
+      ? ('DOCUMENT TEXT:\n' + cleanTxt.slice(0, 5500))
+      : 'Extract all accounting fields, counterparty, date, currency/VAT, and line items directly from this document image.';
 
-    // 1. Primary Cloud AI Relay (window.MFG_ASK_CFG)
-    const askCfg = window.MFG_ASK_CFG;
-    if (askCfg && askCfg.enabled && askCfg.endpointUrl) {
+    // 1. Primary Cloud AI Relay (tiered: gemini-3.8-flash w/ thinkingBudget=0 for vision, gemini-3.5-flash-lite for clean text)
+    const relay = resolveAskRelayEndpoint();
+    if (relay.url && relay.url.startsWith('http')) {
+      const useVisionPro = Boolean(inlinePart || cleanTxt.length < 160);
+      const targetModel = useVisionPro ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+      const parts = [{ text: userMsg }];
+      if (inlinePart) parts.push({ inlineData: inlinePart });
+      const reqBody = {
+        key: relay.key,
+        op: 'ask',
+        surface: 'smart_scan',
+        q: 'Smart Scan Document Parse',
+        companyScope: 'Smart Scan',
+        model: targetModel,
+        systemPrompt: sysPrompt,
+        userPrompt: userMsg,
+        geminiContents: [{ role: 'user', parts }]
+      };
+      if (useVisionPro) reqBody.thinkingBudget = 0;
+
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 4500);
+      const timer = setTimeout(() => ctrl.abort(), inlinePart ? 13000 : 8500);
       try {
-        const res = await fetch(askCfg.endpointUrl, {
+        const res = await fetch(relay.url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            op: 'ask',
-            question: sysPrompt + '\n\n' + userMsg,
-            contextJson: '{}',
-            historyJson: '[]',
-            userEmail: 'smart-scan@isabisystems.com',
-            companyScope: 'Smart Scan'
-          }),
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify(reqBody),
           signal: ctrl.signal
         });
         if (res.ok) {
           const j = await res.json();
           const parsed = extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
           if (parsed && typeof parsed === 'object') {
-            return { parsed, engine: 'ISABI Cloud AI + Ledger Grounding' };
+            return { parsed, engine: inlinePart ? 'ISABI Vision Engine + Ledger Grounding' : 'ISABI Cloud AI + Ledger Grounding' };
           }
         }
       } catch (_) {
@@ -2106,7 +2150,7 @@
         companies: prelimScope.companies.slice(0, 16)
       });
       if (!aiResult && !isBuiltInSample) {
-        aiResult = await tryCloudAiStructuredParse(extractedText, prelimScope);
+        aiResult = await tryCloudAiStructuredParse(extractedText, prelimScope, attObj);
       }
 
       const mergedParsed = mergeParsedResults(detParsed, aiResult && aiResult.parsed);
@@ -2899,11 +2943,16 @@
 
     const liveModal = $('indDomainEntryModal');
     if (liveModal && typeof liveModal._addPendingDomainFile === 'function') {
-      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#F8FAFC"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#0F172A">${esc(sampleOrExt.label || 'AI Smart Scan Document')}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#334155">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
-      const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-      const fakeFile = new File([blob], sampleOrExt.fileName || 'SmartScan_Domain_Voucher.svg', { type: 'image/svg+xml' });
-      fakeFile._captureMethod = 'AI Smart Scan';
-      liveModal._addPendingDomainFile(fakeFile);
+      if (sampleOrExt.rawFile && typeof Blob !== 'undefined' && sampleOrExt.rawFile instanceof Blob) {
+        sampleOrExt.rawFile._captureMethod = sampleOrExt.captureMethod || 'AI Smart Scan';
+        liveModal._addPendingDomainFile(sampleOrExt.rawFile);
+      } else {
+        const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#F8FAFC"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#0F172A">${esc(sampleOrExt.label || 'AI Smart Scan Document')}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#334155">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
+        const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+        const fakeFile = new File([blob], sampleOrExt.fileName || 'SmartScan_Domain_Voucher.svg', { type: 'image/svg+xml' });
+        fakeFile._captureMethod = 'AI Smart Scan';
+        liveModal._addPendingDomainFile(fakeFile);
+      }
     }
     return { ok: true, company: safeCo, formKey: sampleOrExt.formKey, fields };
   }
@@ -2924,8 +2973,123 @@
       const curInd = D.getActiveIndustry(D.STATE && D.STATE.company);
       sample = DOMAIN_SAMPLE_SCANS.find(s => s.ind === curInd) || DOMAIN_SAMPLE_SCANS[0];
     }
+
+    const liveModal = $('indDomainEntryModal');
+    const curSpec = liveModal && !liveModal.hidden && liveModal._currentDomainSpec ? liveModal._currentDomainSpec : null;
+    const isRealUpload = typeof Blob !== 'undefined' && fileOrAtt instanceof Blob;
+    const canRunLiveVision = (!isHeadlessEnv() || window.__MFG_TEST_LIVE_AI) &&
+      (typeof navigator === 'undefined' || navigator.onLine !== false) &&
+      (isRealUpload || (fileOrAtt && fileOrAtt.data_url));
+
+    if (canRunLiveVision) {
+      const statusBadge = $('indEntryScanStatusBadge');
+      if (statusBadge) statusBadge.textContent = 'Scanning document with ISABI Vision...';
+      try {
+        let attObj = null;
+        if (isRealUpload) {
+          if (D && D.readAndCompressAttachmentFile) {
+            attObj = await D.readAndCompressAttachmentFile(fileOrAtt, opts.captureMethod || 'AI Smart Scan');
+          }
+          if (!attObj) {
+            const dataUrl = await new Promise(res => {
+              const r = new FileReader();
+              r.onload = () => res(String(r.result || ''));
+              r.onerror = () => res('');
+              r.readAsDataURL(fileOrAtt);
+            });
+            attObj = {
+              file_name: fileOrAtt.name || 'Document',
+              mime_type: fileOrAtt.type || 'application/octet-stream',
+              data_url: dataUrl
+            };
+          }
+        } else {
+          attObj = fileOrAtt;
+        }
+        const extractedText = await extractAnyDocumentText(isRealUpload ? fileOrAtt : null, attObj, () => {});
+        const inlinePart = extractVisionInlinePart(attObj);
+        const relay = resolveAskRelayEndpoint();
+
+        // Collect live ide_* field IDs and labels from the open domain modal so all 20 forms across 5 industries work
+        const fieldSchema = [];
+        if (liveModal && !liveModal.hidden) {
+          liveModal.querySelectorAll('input[id^="ide_"], select[id^="ide_"], textarea[id^="ide_"]').forEach(el => {
+            if (el.id === 'ide_company') return;
+            const lbl = el.closest('label');
+            const span = lbl ? lbl.querySelector('span') : null;
+            const lblTxt = span ? span.textContent.replace(/AI Filled/g, '').trim() : el.id;
+            fieldSchema.push(`${el.id} (${lblTxt})`);
+          });
+        }
+        if (!fieldSchema.length) {
+          Object.keys(sample.fields || {}).forEach(k => fieldSchema.push(k));
+        }
+        const allowedCos = (D && typeof D.allowedCompanyNames === 'function') ? D.allowedCompanyNames() : [sample.company];
+        const domPrompt = [
+          'You are ISABI Smart Scan extracting structured domain fields for an enterprise voucher.',
+          'Return ONLY valid JSON: {"company":"","label":"Short document title","fields":{...}}',
+          'Allowed companies: ' + allowedCos.slice(0, 16).join(', '),
+          'Target field keys inside "fields": ' + fieldSchema.join(', '),
+          'Format dates as YYYY-MM-DD and numeric amounts without currency symbols or commas.'
+        ].join('\n');
+        const userText = extractedText
+          ? ('DOCUMENT TEXT:\n' + String(extractedText).slice(0, 5000))
+          : 'Extract all matching fields directly from this document image.';
+
+        let aiDom = null;
+        if (relay.url && relay.url.startsWith('http') && (inlinePart || String(extractedText || '').trim().length >= 12)) {
+          const usePro = Boolean(inlinePart || String(extractedText || '').trim().length < 160);
+          const parts = [{ text: userText }];
+          if (inlinePart) parts.push({ inlineData: inlinePart });
+          const reqBody = {
+            key: relay.key,
+            op: 'ask',
+            surface: 'domain_smart_scan',
+            q: 'Domain Smart Scan Parse',
+            model: usePro ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
+            systemPrompt: domPrompt,
+            userPrompt: userText,
+            geminiContents: [{ role: 'user', parts }]
+          };
+          if (usePro) reqBody.thinkingBudget = 0;
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), inlinePart ? 13000 : 8500);
+          try {
+            const res = await fetch(relay.url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+              body: JSON.stringify(reqBody),
+              signal: ctrl.signal
+            });
+            if (res.ok) {
+              const j = await res.json();
+              aiDom = extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
+            }
+          } catch (_) {
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        if (aiDom && aiDom.fields && typeof aiDom.fields === 'object' && Object.keys(aiDom.fields).length > 0) {
+          return applyDomainExtractionToModal({
+            ind: (curSpec && curSpec.ind) || sample.ind,
+            formKey: (curSpec && curSpec.key) || sample.formKey,
+            company: aiDom.company || (($('ide_company') && $('ide_company').value) || sample.company),
+            label: aiDom.label || (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.label,
+            fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName,
+            rawFile: isRealUpload ? fileOrAtt : null,
+            captureMethod: opts.captureMethod || 'AI Smart Scan',
+            fields: aiDom.fields
+          });
+        }
+      } catch (_) {}
+    }
+
     const customExt = Object.assign({}, sample, {
-      fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName
+      formKey: (curSpec && curSpec.key) || sample.formKey,
+      fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName,
+      rawFile: isRealUpload ? fileOrAtt : null,
+      captureMethod: opts.captureMethod || 'AI Smart Scan'
     });
     return applyDomainExtractionToModal(customExt);
   }

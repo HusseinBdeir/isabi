@@ -3058,7 +3058,8 @@ table.m-grid tr.total td {
   cursor: pointer;
 }
 
-.ai-act-link:hover {
+.ai-act-link:hover,
+.ai-act-link.is-speaking {
   color: var(--ai-accent);
 }
 

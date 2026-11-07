@@ -1,24 +1,23 @@
-"""isabi_ask_flow.py — Power Automate HTTP Cloud API & Dataverse Question Logger for Ask ISABI.
+"""isabi_ask_flow.py — Cloud Relay API & Question Logger for Ask ISABI & Smart Scan.
 
 Provisions:
-1. Dataverse `annotations` store (`subject = 'bhf_isabi_ask_store'`, `filename = 'bhf_isabi_ask_store.json'`)
+1. Backing JSON store (`annotations`, `subject = 'bhf_isabi_ask_store'`, `filename = 'bhf_isabi_ask_store.json'`)
    holding:
-   - `config`: `{ "geminiKey": "", "model": "gemini-2.5-flash" }`
-   - `logs`: newest 200 visitor questions asked on https://husseinbdeir.github.io/isabi/
-2. Power Automate HTTP Flow `ISABI - Ask ISABI Public API`:
+   - `config`: `{ "geminiKey": "", "model": "gemini-3.5-flash-lite", "visionModel": "gemini-3.8-flash", "ttsModel": "gemini-3.8-flash-lite-tts" }`
+   - `logs`: newest 200 visitor questions asked on https://isabisystems.com/
+2. Cloud HTTP Flow `ISABI - Ask ISABI Public API`:
    - Validates shared client token `key`
-   - Reads `bhf_isabi_ask_store` from `annotations`
-   - Logs every visitor question (`q`, `lang`, `industry`, `currency`, `period`, `scale`, `range`, `ts`)
-   - When `config.geminiKey` is populated, calls Google Gemini Flash (`generateContent` with
-     `responseMimeType: "application/json"`) directly in the cloud (24/7) and returns the structured
-     ISABI response with `Access-Control-Allow-Origin: *`.
-   - When `config.geminiKey` is empty, logs the visitor question and returns `mode: "logged_only"`
-     so the client engine answers seamlessly while still recording lead intelligence in Dataverse.
+   - Reads `bhf_isabi_ask_store`
+   - Supports `op: "tts"` (`gemini-3.8-flash-lite-tts` / `gemini-3.8-flash-tts` returning `audio/wav` base64)
+   - Supports `op: "ask"` with per-request `model` override (`gemini-3.5-flash-lite` fast chat,
+     `gemini-3.8-flash` multimodal vision + controlled `thinkingBudget`), `geminiContents` (`inlineData`
+     images/PDFs & multi-turn messages), and `Access-Control-Allow-Origin: *`.
+   - Falls back cleanly to secondary cloud LLM or `logged_only` if `geminiKey` is absent.
 
 Usage:
-  C:\\Python314\\python.exe build/isabi_ask_flow.py --phases wfet
-  C:\\Python314\\python.exe build/isabi_ask_flow.py --set-gemini-key AIzaSy...
-  C:\\Python314\\python.exe build/isabi_ask_flow.py --logs
+  python build/isabi_ask_flow.py --sync-env-key
+  python build/isabi_ask_flow.py --phases ft
+  python build/isabi_ask_flow.py --logs
 """
 import argparse
 import base64
@@ -29,47 +28,103 @@ import sys
 import time
 import requests
 
-RESORT_SCRIPTS = os.path.join(os.path.expanduser("~"), "bhfirms", "resort-operations", "scripts")
-ATT_SCRIPTS = os.path.join(os.path.expanduser("~"), "bhfirms", "attendance", "scripts")
-sys.path.insert(0, ATT_SCRIPTS)
-sys.path.insert(0, RESORT_SCRIPTS)
-
-from attlib import API, CR_DV, ENV_ID, _token, do, get  # noqa: E402
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-EXPORTS_DIR = os.path.join(ROOT, "exports")
-os.makedirs(EXPORTS_DIR, exist_ok=True)
+RESORT_SCRIPTS = os.path.join(os.path.expanduser("~"), "bhfirms", "resort-operations", "scripts")
+MFG_SCRIPTS = os.path.join(os.path.expanduser("~"), "bhfirms", "manufacturing-operations", "scripts")
+ATT_SCRIPTS = os.path.join(os.path.expanduser("~"), "bhfirms", "attendance", "scripts")
+for _p in (HERE, ATT_SCRIPTS, MFG_SCRIPTS, RESORT_SCRIPTS):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
+try:
+    from attlib import API, CR_DV, ENV_ID, _token, do, get  # type: ignore
+except ImportError:
+    from step3_lib import ENV_ID, _token  # noqa: E402
+    import mlib as _mlib  # noqa: E402
+
+    API = _mlib.API
+    CR_DV = "bhf_sharedcommondataserviceforapps_ops"
+    do = _mlib.do
+
+    def get(path):
+        return _mlib.get(path).json()
+
+EXPORTS_DIR = os.path.join(ROOT, "exports")
+PART_ENDPOINTS = os.path.join(HERE, "part_endpoints.py")
 KEY_FILE = os.path.join(EXPORTS_DIR, "ask_flow_key.txt")
 URL_FILE = os.path.join(EXPORTS_DIR, "ask_flow_url.txt")
 STORE_ID_FILE = os.path.join(EXPORTS_DIR, "ask_store_id.txt")
 FLOW_ID_FILE = os.path.join(EXPORTS_DIR, "ask_flow_id.txt")
-PART_ENDPOINTS = os.path.join(HERE, "part_endpoints.py")
 
 NOTE_SUBJECT = "bhf_isabi_ask_store"
 WR_NAME = "bhf_isabi_ask_store.json"
 FLOW_NAME = "ISABI - Ask ISABI Public API"
+DEFAULT_FAST_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_VISION_MODEL = "gemini-3.8-flash"
+DEFAULT_TTS_MODEL = "gemini-3.8-flash-lite-tts"
+
 DV = {
     "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps",
     "connectionName": "shared_commondataserviceforapps",
 }
 
 
+def _read_part_endpoints():
+    if os.path.exists(PART_ENDPOINTS):
+        try:
+            import part_endpoints as _pe  # noqa: E402
+            u = base64.b64decode(_pe.ASK_FLOW_U_B64).decode("utf-8").strip()
+            k = base64.b64decode(_pe.ASK_FLOW_K_B64).decode("utf-8").strip()
+            return u, k
+        except Exception:
+            pass
+    return "", ""
+
+
 def api_key():
     if os.path.exists(KEY_FILE):
         return open(KEY_FILE, encoding="utf-8").read().strip()
+    _, k = _read_part_endpoints()
+    if k:
+        return k
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
     k = secrets.token_hex(24)
     with open(KEY_FILE, "w", encoding="utf-8") as f:
         f.write(k)
     return k
 
 
+def callback_url():
+    if os.path.exists(URL_FILE):
+        return open(URL_FILE, encoding="utf-8").read().strip()
+    u, _ = _read_part_endpoints()
+    return u
+
+
+def _env_gemini_key():
+    k = os.environ.get("GEMINI_API_KEY") or os.environ.get("ISABI_GEMINI_KEY") or ""
+    if k:
+        return k.strip()
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment") as rk:
+                val, _ = winreg.QueryValueEx(rk, "GEMINI_API_KEY")
+                if val:
+                    return str(val).strip()
+        except Exception:
+            pass
+    return ""
+
+
 def default_seed():
     return {
         "config": {
             "geminiKey": "",
-            "model": "gemini-2.5-flash",
+            "model": DEFAULT_FAST_MODEL,
+            "visionModel": DEFAULT_VISION_MODEL,
+            "ttsModel": DEFAULT_TTS_MODEL,
             "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
         "logs": [],
@@ -135,8 +190,6 @@ def ensure_store():
         )
         assert r is not None, "Failed to create store annotation"
         aid, _ = read_store_annotation()
-    with open(STORE_ID_FILE, "w", encoding="utf-8") as f:
-        f.write(aid)
     print("Store annotationid:", aid)
     return aid
 
@@ -230,7 +283,7 @@ def clientdata(key, store_id):
                 "runAfter": {"Store_Obj": ["Succeeded"]},
                 "inputs": "@coalesce(outputs('Store_Obj')?['logs'], json('[]'))",
             },
-            "Has_Gemini_Key": {
+            "If_Tts_Op": {
                 "type": "If",
                 "runAfter": {"Config": ["Succeeded"], "Cur_Logs": ["Succeeded"]},
                 "expression": {
@@ -246,305 +299,269 @@ def clientdata(key, store_id):
                         {
                             "equals": [
                                 "@coalesce(outputs('Parse_Body')?['op'], 'ask')",
-                                "ask",
+                                "tts",
                             ]
                         },
                     ]
                 },
                 "actions": {
-                    "Call_Gemini": {
-                        "type": "Http",
+                    "Tts_Model": {
+                        "type": "Compose",
                         "runAfter": {},
+                        "inputs": f"@coalesce(outputs('Parse_Body')?['model'], outputs('Config')?['ttsModel'], '{DEFAULT_TTS_MODEL}')",
+                    },
+                    "Call_Gemini_TTS": {
+                        "type": "Http",
+                        "runAfter": {"Tts_Model": ["Succeeded"]},
                         "inputs": {
                             "method": "POST",
-                            "uri": "@concat('https://generativelanguage.googleapis.com/v1beta/models/', coalesce(outputs('Config')?['model'], 'gemini-2.5-flash'), ':generateContent?key=', outputs('Config')?['geminiKey'])",
-                            "headers": {
-                                "Content-Type": "application/json",
-                            },
+                            "uri": "@concat('https://generativelanguage.googleapis.com/v1beta/models/', outputs('Tts_Model'), ':generateContent?key=', outputs('Config')?['geminiKey'])",
+                            "headers": {"Content-Type": "application/json"},
                             "body": {
-                                "systemInstruction": {
-                                    "parts": [
-                                        {
-                                            "text": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the native system intelligence assistant for ISABI Systems.')"
-                                        }
-                                    ]
-                                },
                                 "contents": [
                                     {
-                                        "role": "user",
                                         "parts": [
                                             {
-                                                "text": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))"
+                                                "text": "@coalesce(outputs('Parse_Body')?['text'], string(outputs('Parse_Body')?['q']))"
                                             }
-                                        ],
+                                        ]
                                     }
                                 ],
                                 "generationConfig": {
-                                    "temperature": 0.25,
-                                    "maxOutputTokens": 900,
-                                    "responseMimeType": "application/json",
+                                    "responseModalities": ["AUDIO"],
+                                    "speechConfig": {
+                                        "voiceConfig": {
+                                            "prebuiltVoiceConfig": {
+                                                "voiceName": "@coalesce(outputs('Parse_Body')?['voiceName'], 'Kore')"
+                                            }
+                                        }
+                                    },
                                 },
                             },
                             "retryPolicy": {"type": "none"},
                         },
                     },
-                    "If_Gemini_Ok": {
+                    "If_Tts_Ok": {
                         "type": "If",
-                        "runAfter": {
-                            "Call_Gemini": ["Succeeded", "Failed", "TimedOut"]
-                        },
+                        "runAfter": {"Call_Gemini_TTS": ["Succeeded", "Failed", "TimedOut"]},
                         "expression": {
-                            "equals": [
-                                "@outputs('Call_Gemini')?['statusCode']",
-                                200,
-                            ]
+                            "equals": ["@outputs('Call_Gemini_TTS')?['statusCode']", 200]
                         },
                         "actions": {
-                            "Gemini_Raw_Text": {
-                                "type": "Compose",
-                                "runAfter": {},
-                                "inputs": "@coalesce(body('Call_Gemini')?['candidates']?[0]?['content']?['parts']?[0]?['text'], '{}')",
-                            },
-                            "Log_Entry_Gem": {
-                                "type": "Compose",
-                                "runAfter": {"Gemini_Raw_Text": ["Succeeded"]},
-                                "inputs": {
-                                    "ts": "@utcNow()",
-                                    "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
-                                    "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
-                                    "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
-                                    "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
-                                    "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
-                                    "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
-                                    "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
-                                    "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
-                                    "mode": "gemini_cloud",
-                                },
-                            },
-                            "New_Logs_Gem": {
-                                "type": "Compose",
-                                "runAfter": {"Log_Entry_Gem": ["Succeeded"]},
-                                "inputs": "@take(union(createArray(outputs('Log_Entry_Gem')), outputs('Cur_Logs')), 200)",
-                            },
-                            "Save_Store_Gem": act(
-                                "UpdateRecord",
-                                {
-                                    "entityName": "annotations",
-                                    "recordId": store_id,
-                                    "item/filename": WR_NAME,
-                                    "item/mimetype": "application/json",
-                                    "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Gem')), 'updatedAt', utcNow())))",
-                                },
-                                {"New_Logs_Gem": ["Succeeded"]},
-                            ),
-                            "Response_Gemini": response(
+                            "Response_Tts_Ok": response(
                                 200,
                                 {
                                     "ok": True,
-                                    "mode": "gemini_cloud",
-                                    "rawReply": "@outputs('Gemini_Raw_Text')",
+                                    "mode": "gemini_tts",
+                                    "model": "@outputs('Tts_Model')",
+                                    "mimeType": "@coalesce(body('Call_Gemini_TTS')?['candidates']?[0]?['content']?['parts']?[0]?['inlineData']?['mimeType'], 'audio/wav')",
+                                    "audioBase64": "@coalesce(body('Call_Gemini_TTS')?['candidates']?[0]?['content']?['parts']?[0]?['inlineData']?['data'], '')",
                                     "serverTime": "@utcNow()",
                                 },
-                                {"Save_Store_Gem": ["Succeeded", "Failed"]},
-                            ),
+                            )
                         },
                         "else": {
                             "actions": {
-                                "Log_Entry_Err": {
-                                    "type": "Compose",
-                                    "runAfter": {},
-                                    "inputs": {
-                                        "ts": "@utcNow()",
-                                        "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
-                                        "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
-                                        "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
-                                        "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
-                                        "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
-                                        "mode": "gemini_error",
-                                        "statusCode": "@outputs('Call_Gemini')?['statusCode']",
-                                    },
-                                },
-                                "New_Logs_Err": {
-                                    "type": "Compose",
-                                    "runAfter": {"Log_Entry_Err": ["Succeeded"]},
-                                    "inputs": "@take(union(createArray(outputs('Log_Entry_Err')), outputs('Cur_Logs')), 200)",
-                                },
-                                "Save_Store_Err": act(
-                                    "UpdateRecord",
-                                    {
-                                        "entityName": "annotations",
-                                        "recordId": store_id,
-                                        "item/filename": WR_NAME,
-                                        "item/mimetype": "application/json",
-                                        "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Err')), 'updatedAt', utcNow())))",
-                                    },
-                                    {"New_Logs_Err": ["Succeeded"]},
-                                ),
-                                "Response_Err_Fallback": response(
+                                "Response_Tts_Fallback": response(
                                     200,
                                     {
-                                        "ok": True,
-                                        "mode": "fallback",
-                                        "geminiStatus": "@outputs('Call_Gemini')?['statusCode']",
+                                        "ok": False,
+                                        "mode": "tts_fallback",
+                                        "geminiStatus": "@outputs('Call_Gemini_TTS')?['statusCode']",
                                         "serverTime": "@utcNow()",
                                     },
-                                    {"Save_Store_Err": ["Succeeded", "Failed"]},
-                                ),
+                                )
                             }
                         },
                     },
                 },
                 "else": {
                     "actions": {
-                        "If_Ask_Op": {
+                        "Has_Gemini_Key": {
                             "type": "If",
                             "runAfter": {},
                             "expression": {
-                                "equals": [
-                                    "@coalesce(outputs('Parse_Body')?['op'], 'ask')",
-                                    "ask",
+                                "and": [
+                                    {
+                                        "not": {
+                                            "equals": [
+                                                "@coalesce(outputs('Config')?['geminiKey'], '')",
+                                                "",
+                                            ]
+                                        }
+                                    },
+                                    {
+                                        "equals": [
+                                            "@coalesce(outputs('Parse_Body')?['op'], 'ask')",
+                                            "ask",
+                                        ]
+                                    },
                                 ]
                             },
                             "actions": {
-                                "Default_Messages": {
+                                "Ask_Model": {
+                                    "type": "Compose",
+                                    "runAfter": {},
+                                    "inputs": f"@coalesce(outputs('Parse_Body')?['model'], outputs('Config')?['model'], '{DEFAULT_FAST_MODEL}')",
+                                },
+                                "Default_Gemini_Contents": {
                                     "type": "Compose",
                                     "runAfter": {},
                                     "inputs": [
                                         {
-                                            "role": "system",
-                                            "content": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the warm, human conversational assistant for ISABI Systems.')",
-                                        },
-                                        {
                                             "role": "user",
-                                            "content": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))",
-                                        },
+                                            "parts": [
+                                                {
+                                                    "text": "@coalesce(outputs('Parse_Body')?['userPrompt'], coalesce(outputs('Parse_Body')?['question'], string(outputs('Parse_Body')?['q'])))"
+                                                }
+                                            ],
+                                        }
                                     ],
                                 },
-                                "Call_Cloud_LLM": {
+                                "Base_Gen_Config": {
+                                    "type": "Compose",
+                                    "runAfter": {"Ask_Model": ["Succeeded"]},
+                                    "inputs": {
+                                        "temperature": 0.2,
+                                        "maxOutputTokens": 2048,
+                                        "responseMimeType": "application/json",
+                                    },
+                                },
+                                "Final_Gen_Config": {
+                                    "type": "Compose",
+                                    "runAfter": {"Base_Gen_Config": ["Succeeded"]},
+                                    "inputs": "@if(and(not(equals(outputs('Parse_Body')?['thinkingBudget'], null)), or(contains(outputs('Ask_Model'), '3.8-flash'), contains(outputs('Ask_Model'), '3.6-flash'))), setProperty(outputs('Base_Gen_Config'), 'thinkingConfig', json(concat('{\"thinkingBudget\":', string(outputs('Parse_Body')?['thinkingBudget']), '}'))), outputs('Base_Gen_Config'))",
+                                },
+                                "Call_Gemini": {
                                     "type": "Http",
-                                    "runAfter": {"Default_Messages": ["Succeeded"]},
+                                    "runAfter": {
+                                        "Default_Gemini_Contents": ["Succeeded"],
+                                        "Final_Gen_Config": ["Succeeded"],
+                                    },
                                     "inputs": {
                                         "method": "POST",
-                                        "uri": "https://text.pollinations.ai/openai",
+                                        "uri": "@concat('https://generativelanguage.googleapis.com/v1beta/models/', outputs('Ask_Model'), ':generateContent?key=', outputs('Config')?['geminiKey'])",
                                         "headers": {
                                             "Content-Type": "application/json",
                                         },
                                         "body": {
-                                            "model": "openai-fast",
-                                            "reasoning_effort": "low",
-                                            "response_format": {"type": "json_object"},
-                                            "messages": "@coalesce(outputs('Parse_Body')?['messages'], outputs('Default_Messages'))",
+                                            "systemInstruction": {
+                                                "parts": [
+                                                    {
+                                                        "text": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the native system intelligence assistant for ISABI Systems.')"
+                                                    }
+                                                ]
+                                            },
+                                            "contents": "@coalesce(outputs('Parse_Body')?['geminiContents'], outputs('Default_Gemini_Contents'))",
+                                            "generationConfig": "@outputs('Final_Gen_Config')",
                                         },
                                         "retryPolicy": {"type": "none"},
                                     },
                                 },
-                                "If_Cloud_LLM_Ok": {
+                                "If_Gemini_Ok": {
                                     "type": "If",
                                     "runAfter": {
-                                        "Call_Cloud_LLM": ["Succeeded", "Failed", "TimedOut"]
+                                        "Call_Gemini": ["Succeeded", "Failed", "TimedOut"]
                                     },
                                     "expression": {
                                         "equals": [
-                                            "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                            "@outputs('Call_Gemini')?['statusCode']",
                                             200,
                                         ]
                                     },
                                     "actions": {
-                                        "Cloud_LLM_Text": {
+                                        "Gemini_Raw_Text": {
                                             "type": "Compose",
                                             "runAfter": {},
-                                            "inputs": "@coalesce(body('Call_Cloud_LLM')?['choices']?[0]?['message']?['content'], '{}')",
+                                            "inputs": "@coalesce(body('Call_Gemini')?['candidates']?[0]?['content']?['parts']?[0]?['text'], '{}')",
                                         },
-                                        "Log_Entry_Cloud": {
+                                        "Log_Entry_Gem": {
                                             "type": "Compose",
-                                            "runAfter": {"Cloud_LLM_Text": ["Succeeded"]},
+                                            "runAfter": {"Gemini_Raw_Text": ["Succeeded"]},
                                             "inputs": {
                                                 "ts": "@utcNow()",
                                                 "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
-                                                "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                "q": "@coalesce(outputs('Parse_Body')?['q'], coalesce(outputs('Parse_Body')?['question'], ''))",
                                                 "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
-                                                "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                "industry": "@coalesce(outputs('Parse_Body')?['industry'], coalesce(outputs('Parse_Body')?['companyScope'], ''))",
                                                 "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
                                                 "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
                                                 "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
                                                 "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
-                                                "replyTitle": "Cloud AI Reply",
-                                                "mode": "cloud_llm",
+                                                "model": "@outputs('Ask_Model')",
+                                                "mode": "gemini_cloud",
                                             },
                                         },
-                                        "New_Logs_Cloud": {
+                                        "New_Logs_Gem": {
                                             "type": "Compose",
-                                            "runAfter": {"Log_Entry_Cloud": ["Succeeded"]},
-                                            "inputs": "@take(union(createArray(outputs('Log_Entry_Cloud')), outputs('Cur_Logs')), 200)",
+                                            "runAfter": {"Log_Entry_Gem": ["Succeeded"]},
+                                            "inputs": "@take(union(createArray(outputs('Log_Entry_Gem')), outputs('Cur_Logs')), 200)",
                                         },
-                                        "Save_Store_Cloud": act(
+                                        "Save_Store_Gem": act(
                                             "UpdateRecord",
                                             {
                                                 "entityName": "annotations",
                                                 "recordId": store_id,
                                                 "item/filename": WR_NAME,
                                                 "item/mimetype": "application/json",
-                                                "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Cloud')), 'updatedAt', utcNow())))",
+                                                "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Gem')), 'updatedAt', utcNow())))",
                                             },
-                                            {"New_Logs_Cloud": ["Succeeded"]},
+                                            {"New_Logs_Gem": ["Succeeded"]},
                                         ),
-                                        "Response_Cloud_LLM": response(
+                                        "Response_Gemini": response(
                                             200,
                                             {
                                                 "ok": True,
                                                 "mode": "gemini_cloud",
-                                                "provider": "cloud_llm",
-                                                "rawReply": "@outputs('Cloud_LLM_Text')",
+                                                "model": "@outputs('Ask_Model')",
+                                                "rawReply": "@outputs('Gemini_Raw_Text')",
                                                 "serverTime": "@utcNow()",
                                             },
-                                            {"Save_Store_Cloud": ["Succeeded", "Failed"]},
+                                            {"Save_Store_Gem": ["Succeeded", "Failed"]},
                                         ),
                                     },
                                     "else": {
                                         "actions": {
-                                            "Log_Entry_Fallback": {
+                                            "Log_Entry_Err": {
                                                 "type": "Compose",
                                                 "runAfter": {},
                                                 "inputs": {
                                                     "ts": "@utcNow()",
-                                                    "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
-                                                    "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                    "q": "@coalesce(outputs('Parse_Body')?['q'], coalesce(outputs('Parse_Body')?['question'], ''))",
                                                     "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
                                                     "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
                                                     "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
                                                     "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
-                                                    "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
-                                                    "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
-                                                    "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
-                                                    "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
-                                                    "mode": "rate_limited",
+                                                    "model": "@outputs('Ask_Model')",
+                                                    "mode": "gemini_error",
+                                                    "statusCode": "@outputs('Call_Gemini')?['statusCode']",
                                                 },
                                             },
-                                            "New_Logs_Fallback": {
+                                            "New_Logs_Err": {
                                                 "type": "Compose",
-                                                "runAfter": {"Log_Entry_Fallback": ["Succeeded"]},
-                                                "inputs": "@take(union(createArray(outputs('Log_Entry_Fallback')), outputs('Cur_Logs')), 200)",
+                                                "runAfter": {"Log_Entry_Err": ["Succeeded"]},
+                                                "inputs": "@take(union(createArray(outputs('Log_Entry_Err')), outputs('Cur_Logs')), 200)",
                                             },
-                                            "Save_Store_Fallback": act(
+                                            "Save_Store_Err": act(
                                                 "UpdateRecord",
                                                 {
                                                     "entityName": "annotations",
                                                     "recordId": store_id,
                                                     "item/filename": WR_NAME,
                                                     "item/mimetype": "application/json",
-                                                    "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Fallback')), 'updatedAt', utcNow())))",
+                                                    "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Err')), 'updatedAt', utcNow())))",
                                                 },
-                                                {"New_Logs_Fallback": ["Succeeded"]},
+                                                {"New_Logs_Err": ["Succeeded"]},
                                             ),
-                                            "Response_Fallback": response(
+                                            "Response_Err_Fallback": response(
                                                 200,
                                                 {
                                                     "ok": True,
-                                                    "mode": "rate_limited",
-                                                    "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                                    "mode": "fallback",
+                                                    "geminiStatus": "@outputs('Call_Gemini')?['statusCode']",
                                                     "serverTime": "@utcNow()",
                                                 },
-                                                {"Save_Store_Fallback": ["Succeeded", "Failed"]},
+                                                {"Save_Store_Err": ["Succeeded", "Failed"]},
                                             ),
                                         }
                                     },
@@ -552,49 +569,208 @@ def clientdata(key, store_id):
                             },
                             "else": {
                                 "actions": {
-                                    "Log_Entry_Local": {
-                                        "type": "Compose",
+                                    "If_Ask_Op": {
+                                        "type": "If",
                                         "runAfter": {},
-                                        "inputs": {
-                                            "ts": "@utcNow()",
-                                            "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
-                                            "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
-                                            "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
-                                            "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
-                                            "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
-                                            "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
-                                            "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
-                                            "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
-                                            "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
-                                            "mode": "@coalesce(outputs('Parse_Body')?['mode'], 'logged_only')",
+                                        "expression": {
+                                            "equals": [
+                                                "@coalesce(outputs('Parse_Body')?['op'], 'ask')",
+                                                "ask",
+                                            ]
+                                        },
+                                        "actions": {
+                                            "Default_Messages": {
+                                                "type": "Compose",
+                                                "runAfter": {},
+                                                "inputs": [
+                                                    {
+                                                        "role": "system",
+                                                        "content": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the warm, human conversational assistant for ISABI Systems.')",
+                                                    },
+                                                    {
+                                                        "role": "user",
+                                                        "content": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))",
+                                                    },
+                                                ],
+                                            },
+                                            "Call_Cloud_LLM": {
+                                                "type": "Http",
+                                                "runAfter": {"Default_Messages": ["Succeeded"]},
+                                                "inputs": {
+                                                    "method": "POST",
+                                                    "uri": "https://text.pollinations.ai/openai",
+                                                    "headers": {
+                                                        "Content-Type": "application/json",
+                                                    },
+                                                    "body": {
+                                                        "model": "openai-fast",
+                                                        "reasoning_effort": "low",
+                                                        "response_format": {"type": "json_object"},
+                                                        "messages": "@coalesce(outputs('Parse_Body')?['messages'], outputs('Default_Messages'))",
+                                                    },
+                                                    "retryPolicy": {"type": "none"},
+                                                },
+                                            },
+                                            "If_Cloud_LLM_Ok": {
+                                                "type": "If",
+                                                "runAfter": {
+                                                    "Call_Cloud_LLM": ["Succeeded", "Failed", "TimedOut"]
+                                                },
+                                                "expression": {
+                                                    "equals": [
+                                                        "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                                        200,
+                                                    ]
+                                                },
+                                                "actions": {
+                                                    "Cloud_LLM_Text": {
+                                                        "type": "Compose",
+                                                        "runAfter": {},
+                                                        "inputs": "@coalesce(body('Call_Cloud_LLM')?['choices']?[0]?['message']?['content'], '{}')",
+                                                    },
+                                                    "Log_Entry_Cloud": {
+                                                        "type": "Compose",
+                                                        "runAfter": {"Cloud_LLM_Text": ["Succeeded"]},
+                                                        "inputs": {
+                                                            "ts": "@utcNow()",
+                                                            "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
+                                                            "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                            "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                                            "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                            "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                                            "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                                            "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                                            "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                                            "replyTitle": "Cloud AI Reply",
+                                                            "mode": "cloud_llm",
+                                                        },
+                                                    },
+                                                    "New_Logs_Cloud": {
+                                                        "type": "Compose",
+                                                        "runAfter": {"Log_Entry_Cloud": ["Succeeded"]},
+                                                        "inputs": "@take(union(createArray(outputs('Log_Entry_Cloud')), outputs('Cur_Logs')), 200)",
+                                                    },
+                                                    "Save_Store_Cloud": act(
+                                                        "UpdateRecord",
+                                                        {
+                                                            "entityName": "annotations",
+                                                            "recordId": store_id,
+                                                            "item/filename": WR_NAME,
+                                                            "item/mimetype": "application/json",
+                                                            "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Cloud')), 'updatedAt', utcNow())))",
+                                                        },
+                                                        {"New_Logs_Cloud": ["Succeeded"]},
+                                                    ),
+                                                    "Response_Cloud_LLM": response(
+                                                        200,
+                                                        {
+                                                            "ok": True,
+                                                            "mode": "gemini_cloud",
+                                                            "provider": "cloud_llm",
+                                                            "rawReply": "@outputs('Cloud_LLM_Text')",
+                                                            "serverTime": "@utcNow()",
+                                                        },
+                                                        {"Save_Store_Cloud": ["Succeeded", "Failed"]},
+                                                    ),
+                                                },
+                                                "else": {
+                                                    "actions": {
+                                                        "Log_Entry_Fallback": {
+                                                            "type": "Compose",
+                                                            "runAfter": {},
+                                                            "inputs": {
+                                                                "ts": "@utcNow()",
+                                                                "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
+                                                                "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                                "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                                                "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                                "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                                                "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                                                "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                                                "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                                                "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
+                                                                "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                                                "mode": "rate_limited",
+                                                            },
+                                                        },
+                                                        "New_Logs_Fallback": {
+                                                            "type": "Compose",
+                                                            "runAfter": {"Log_Entry_Fallback": ["Succeeded"]},
+                                                            "inputs": "@take(union(createArray(outputs('Log_Entry_Fallback')), outputs('Cur_Logs')), 200)",
+                                                        },
+                                                        "Save_Store_Fallback": act(
+                                                            "UpdateRecord",
+                                                            {
+                                                                "entityName": "annotations",
+                                                                "recordId": store_id,
+                                                                "item/filename": WR_NAME,
+                                                                "item/mimetype": "application/json",
+                                                                "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Fallback')), 'updatedAt', utcNow())))",
+                                                            },
+                                                            {"New_Logs_Fallback": ["Succeeded"]},
+                                                        ),
+                                                        "Response_Fallback": response(
+                                                            200,
+                                                            {
+                                                                "ok": True,
+                                                                "mode": "rate_limited",
+                                                                "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                                                "serverTime": "@utcNow()",
+                                                            },
+                                                            {"Save_Store_Fallback": ["Succeeded", "Failed"]},
+                                                        ),
+                                                    }
+                                                },
+                                            },
+                                        },
+                                        "else": {
+                                            "actions": {
+                                                "Log_Entry_Local": {
+                                                    "type": "Compose",
+                                                    "runAfter": {},
+                                                    "inputs": {
+                                                        "ts": "@utcNow()",
+                                                        "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
+                                                        "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                        "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                                        "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                        "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                                        "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                                        "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                                        "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                                        "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
+                                                        "mode": "@coalesce(outputs('Parse_Body')?['mode'], 'logged_only')",
+                                                    },
+                                                },
+                                                "New_Logs_Local": {
+                                                    "type": "Compose",
+                                                    "runAfter": {"Log_Entry_Local": ["Succeeded"]},
+                                                    "inputs": "@take(union(createArray(outputs('Log_Entry_Local')), outputs('Cur_Logs')), 200)",
+                                                },
+                                                "Save_Store_Local": act(
+                                                    "UpdateRecord",
+                                                    {
+                                                        "entityName": "annotations",
+                                                        "recordId": store_id,
+                                                        "item/filename": WR_NAME,
+                                                        "item/mimetype": "application/json",
+                                                        "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Local')), 'updatedAt', utcNow())))",
+                                                    },
+                                                    {"New_Logs_Local": ["Succeeded"]},
+                                                ),
+                                                "Response_Logged": response(
+                                                    200,
+                                                    {
+                                                        "ok": True,
+                                                        "mode": "logged_only",
+                                                        "loggedCount": "@length(outputs('New_Logs_Local'))",
+                                                        "serverTime": "@utcNow()",
+                                                    },
+                                                    {"Save_Store_Local": ["Succeeded", "Failed"]},
+                                                ),
+                                            }
                                         },
                                     },
-                                    "New_Logs_Local": {
-                                        "type": "Compose",
-                                        "runAfter": {"Log_Entry_Local": ["Succeeded"]},
-                                        "inputs": "@take(union(createArray(outputs('Log_Entry_Local')), outputs('Cur_Logs')), 200)",
-                                    },
-                                    "Save_Store_Local": act(
-                                        "UpdateRecord",
-                                        {
-                                            "entityName": "annotations",
-                                            "recordId": store_id,
-                                            "item/filename": WR_NAME,
-                                            "item/mimetype": "application/json",
-                                            "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Local')), 'updatedAt', utcNow())))",
-                                        },
-                                        {"New_Logs_Local": ["Succeeded"]},
-                                    ),
-                                    "Response_Logged": response(
-                                        200,
-                                        {
-                                            "ok": True,
-                                            "mode": "logged_only",
-                                            "loggedCount": "@length(outputs('New_Logs_Local'))",
-                                            "serverTime": "@utcNow()",
-                                        },
-                                        {"Save_Store_Local": ["Succeeded", "Failed"]},
-                                    ),
                                 }
                             },
                         },
@@ -627,11 +803,8 @@ def find_flow(name=FLOW_NAME):
 
 def deploy_flow():
     key = api_key()
-    store_id = (
-        open(STORE_ID_FILE, encoding="utf-8").read().strip()
-        if os.path.exists(STORE_ID_FILE)
-        else ensure_store()
-    )
+    aid, _ = read_store_annotation()
+    store_id = aid or ensure_store()
     cd = clientdata(key, store_id)
     ex = find_flow()
     if not ex:
@@ -640,15 +813,13 @@ def deploy_flow():
             "category": 5,
             "type": 1,
             "primaryentity": "none",
-            "description": "Public HTTP API & Dataverse question logger for Ask ISABI on https://husseinbdeir.github.io/isabi/ (backs onto annotations bhf_isabi_ask_store).",
+            "description": "Public HTTP API & question logger for Ask ISABI & Smart Scan on https://isabisystems.com/ (backs onto annotations bhf_isabi_ask_store).",
             "clientdata": json.dumps(cd),
         }
         r = do("create Ask ISABI flow", "POST", "workflows", payload)
         assert r is not None, "Failed to create Ask ISABI flow"
         ex = find_flow()
     w = ex[0]
-    with open(FLOW_ID_FILE, "w", encoding="utf-8") as f:
-        f.write(w["workflowid"])
     if w["statecode"] == 1:
         do("deactivate flow", "PATCH", f"workflows({w['workflowid']})", {"statecode": 0, "statuscode": 1})
     do("update flow clientdata", "PATCH", f"workflows({w['workflowid']})", {"clientdata": json.dumps(cd)})
@@ -668,22 +839,19 @@ def deploy_flow():
         r = requests.post(url, headers=H, timeout=60)
         print(f"listCallbackUrl via {fid}: {r.status_code}")
         if r.ok:
-            cb = r.json()["response"]["value"]
-            with open(URL_FILE, "w", encoding="utf-8") as f:
-                f.write(cb)
-            print("Saved callback URL ->", URL_FILE)
-            return cb
+            return r.json()["response"]["value"]
     raise RuntimeError("Could not fetch callback URL")
 
 
-def write_endpoints_part():
+def write_endpoints_part(cb_url=None):
     key = api_key()
-    url = open(URL_FILE, encoding="utf-8").read().strip()
+    url = cb_url or callback_url()
+    assert url, "Missing callback URL"
     u_b64 = base64.b64encode(url.encode("utf-8")).decode("ascii")
     k_b64 = base64.b64encode(key.encode("utf-8")).decode("ascii")
     with open(PART_ENDPOINTS, "w", encoding="utf-8") as f:
         f.write(
-            '# Generated by build/isabi_ask_flow.py - do not edit by hand\n'
+            "# Generated by build/isabi_ask_flow.py - do not edit by hand\n"
             f'ASK_FLOW_U_B64 = "{u_b64}"\n'
             f'ASK_FLOW_K_B64 = "{k_b64}"\n'
         )
@@ -692,40 +860,99 @@ def write_endpoints_part():
 
 def test_flow():
     key = api_key()
-    url = open(URL_FILE, encoding="utf-8").read().strip()
+    url = callback_url()
+    assert url, "Missing callback URL"
+
+    # 1. Fast chat test (gemini-3.5-flash-lite)
     sys_prompt = (
-        "You are ISABI, the warm, human conversational assistant for ISABI Systems "
-        "(founded by Hussein Bdeir in Lebanon, serving clients across the Middle East and worldwide; "
-        "WhatsApp +961 70 444 955, email hbdeir16@gmail.com). Return ONLY valid JSON: "
-        '{"conversational": true, "title": "Short heading", "answer": "1-2 warm natural sentences", '
-        '"promptText": "1 short natural follow-up question", "followUps": ["Q1", "Q2", "Q3"]}'
+        "You are ISABI, the warm, human conversational assistant for ISABI Systems. "
+        'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 warm natural sentences"}'
     )
-    r = requests.post(
+    t0 = time.time()
+    r1 = requests.post(
         url,
         data=json.dumps({
             "key": key,
             "op": "ask",
-            "q": "were are you located",
+            "surface": "smoke_test",
+            "q": "where are you located",
             "lang": "en",
             "industry": "holding",
-            "currency": "USD",
-            "period": "mtd",
-            "scale": "Multi-Branch (2 to 4 Entities)",
-            "range": "$12,300 to $15,000",
-            "replyTitle": "System Smoke Test",
+            "model": DEFAULT_FAST_MODEL,
             "systemPrompt": sys_prompt,
-            "userPrompt": "Visitor Question: were are you located",
+            "userPrompt": "Visitor Question: where are you located",
         }),
         headers={"Content-Type": "text/plain;charset=UTF-8"},
-        timeout=60,
+        timeout=45,
     )
-    safe_txt = r.text[:400].encode("ascii", "replace").decode("ascii")
-    print("POST status:", r.status_code, "CORS:", r.headers.get("Access-Control-Allow-Origin"), safe_txt)
-    assert r.ok and r.json().get("ok"), "Flow POST failed"
-    print("E2E Ask ISABI Cloud Flow verified 100%!")
+    dt1 = int((time.time() - t0) * 1000)
+    j1 = r1.json()
+    print(f"[1/3] Fast Ask ({DEFAULT_FAST_MODEL}): status={r1.status_code} ({dt1}ms) mode={j1.get('mode')} model={j1.get('model')}")
+    assert r1.ok and j1.get("ok") and j1.get("mode") == "gemini_cloud", f"Fast Ask failed: {r1.text[:300]}"
+
+    # 2. Pro-grade Vision JSON test (gemini-3.8-flash with thinkingBudget=0)
+    # 1x1 white PNG base64
+    tiny_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"
+    t1 = time.time()
+    r2 = requests.post(
+        url,
+        data=json.dumps({
+            "key": key,
+            "op": "ask",
+            "surface": "smart_scan",
+            "q": "Smart Scan Vision Test",
+            "model": DEFAULT_VISION_MODEL,
+            "thinkingBudget": 0,
+            "systemPrompt": 'Return ONLY valid JSON: {"formType":"expense","supplier":"","totalAmount":0,"vatAmount":0}',
+            "geminiContents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": "Invoice: Ste Libanaise, Subtotal $1,000, VAT 11% $110, Total $1,110"},
+                        {"inlineData": {"mimeType": "image/png", "data": tiny_png}},
+                    ],
+                }
+            ],
+        }),
+        headers={"Content-Type": "text/plain;charset=UTF-8"},
+        timeout=45,
+    )
+    dt2 = int((time.time() - t1) * 1000)
+    j2 = r2.json()
+    parsed2 = json.loads(j2.get("rawReply") or "{}")
+    print(f"[2/3] Vision Scan ({DEFAULT_VISION_MODEL}, budget=0): status={r2.status_code} ({dt2}ms) mode={j2.get('mode')} parsed={parsed2}")
+    assert r2.ok and j2.get("mode") == "gemini_cloud" and Number_ok(parsed2.get("totalAmount"), 1110), f"Vision Scan failed: {r2.text[:300]}"
+
+    # 3. Natural Voice Readback TTS test (gemini-3.8-flash-lite-tts)
+    t2 = time.time()
+    r3 = requests.post(
+        url,
+        data=json.dumps({
+            "key": key,
+            "op": "tts",
+            "model": DEFAULT_TTS_MODEL,
+            "voiceName": "Kore",
+            "text": "Books are tied at zero dollars across all fourteen entities.",
+        }),
+        headers={"Content-Type": "text/plain;charset=UTF-8"},
+        timeout=45,
+    )
+    dt3 = int((time.time() - t2) * 1000)
+    j3 = r3.json()
+    wav_bytes = base64.b64decode(j3.get("audioBase64") or "")
+    print(f"[3/3] Voice TTS ({DEFAULT_TTS_MODEL}): status={r3.status_code} ({dt3}ms) mode={j3.get('mode')} mime={j3.get('mimeType')} bytes={len(wav_bytes)} header={wav_bytes[:4]!r}")
+    assert r3.ok and j3.get("ok") and j3.get("mode") == "gemini_tts" and len(wav_bytes) > 4000, f"TTS failed: {r3.text[:300]}"
+    print("E2E Ask ISABI + Vision Smart Scan + TTS Cloud Relay verified 100%!")
 
 
-def set_gemini_key(gkey, model="gemini-2.5-flash"):
+def Number_ok(val, expected):
+    try:
+        return abs(float(val) - float(expected)) < 0.01
+    except Exception:
+        return False
+
+
+def set_gemini_key(gkey, model=DEFAULT_FAST_MODEL, vision_model=DEFAULT_VISION_MODEL, tts_model=DEFAULT_TTS_MODEL):
     aid, obj = read_store_annotation()
     if not aid:
         aid = ensure_store()
@@ -733,8 +960,12 @@ def set_gemini_key(gkey, model="gemini-2.5-flash"):
     obj.setdefault("config", {})
     obj["config"]["geminiKey"] = gkey.strip()
     obj["config"]["model"] = model
+    obj["config"]["visionModel"] = vision_model
+    obj["config"]["ttsModel"] = tts_model
     write_store_annotation(aid, obj)
-    print(f"Saved Gemini API key (length={len(gkey.strip())}, model={model}) in Dataverse annotation {aid}.")
+    print(
+        f"Saved Gemini config (key_len={len(gkey.strip())}, fast={model}, vision={vision_model}, tts={tts_model}) in annotation {aid}."
+    )
 
 
 def show_logs(limit=25):
@@ -745,31 +976,43 @@ def show_logs(limit=25):
     cfg = obj.get("config") or {}
     has_key = bool(cfg.get("geminiKey"))
     logs = obj.get("logs") or []
-    print(f"Store {aid} | Gemini Key Configured: {has_key} (model: {cfg.get('model')}) | Total Logged Questions: {len(logs)}")
+    print(
+        f"Store {aid} | Key: {has_key} (fast={cfg.get('model')}, vision={cfg.get('visionModel')}, tts={cfg.get('ttsModel')}) | Logs: {len(logs)}"
+    )
     for idx, item in enumerate(logs[:limit], 1):
-        print(f"  {idx:02d}. [{item.get('ts')}] ({item.get('lang', 'en')} | {item.get('industry')} | {item.get('mode')}) Q: {item.get('q')} -> {item.get('replyTitle', '')}")
+        print(
+            f"  {idx:02d}. [{item.get('ts')}] ({item.get('lang', 'en')} | {item.get('industry')} | {item.get('mode')} | {item.get('model', '')}) Q: {item.get('q')}"
+        )
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--phases", default="")
     ap.add_argument("--set-gemini-key", default="")
-    ap.add_argument("--model", default="gemini-2.5-flash")
+    ap.add_argument("--sync-env-key", action="store_true")
+    ap.add_argument("--model", default=DEFAULT_FAST_MODEL)
+    ap.add_argument("--vision-model", default=DEFAULT_VISION_MODEL)
+    ap.add_argument("--tts-model", default=DEFAULT_TTS_MODEL)
     ap.add_argument("--logs", action="store_true")
     args = ap.parse_args()
 
-    if args.set_gemini_key:
-        set_gemini_key(args.set_gemini_key, args.model)
+    if args.sync_env_key:
+        ek = _env_gemini_key()
+        assert ek, "No GEMINI_API_KEY found in environment or HKCU\\Environment"
+        set_gemini_key(ek, args.model, args.vision_model, args.tts_model)
+    elif args.set_gemini_key:
+        set_gemini_key(args.set_gemini_key, args.model, args.vision_model, args.tts_model)
     elif args.logs:
         show_logs()
     else:
         phases = args.phases or "wfet"
+        cb = None
         for p in phases:
             if p == "w":
                 ensure_store()
             elif p == "f":
-                deploy_flow()
+                cb = deploy_flow()
             elif p == "e":
-                write_endpoints_part()
+                write_endpoints_part(cb)
             elif p == "t":
                 test_flow()

@@ -33,6 +33,14 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
             "ar": "اسأل ISABI",
             "fr": "Ask ISABI"
       },
+      "Read Aloud": {
+            "ar": "استماع",
+            "fr": "Écouter"
+      },
+      "Stop": {
+            "ar": "إيقاف",
+            "fr": "Arrêter"
+      },
       "Dark": {
             "ar": "داكن",
             "fr": "Sombre"

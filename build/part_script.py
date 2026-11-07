@@ -3187,6 +3187,8 @@ JS = r"""
     if (item.actionCfg) {
       extraActions += `<button type="button" class="ai-act-link" data-configure-ind="${escapeHtml(item.actionCfg)}">Configure Scope</button>`;
     }
+    const speakLbl = item.lang === 'ar' ? 'استماع' : (item.lang === 'fr' ? 'Écouter' : 'Read Aloud');
+    extraActions += `<button type="button" class="ai-act-link ai-showcase-speak-btn" data-ai-speak-reply="${escapeHtml(item.lang || 'en')}">${escapeHtml(speakLbl)}</button>`;
 
     const isRtl = /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
@@ -3468,6 +3470,152 @@ JS = r"""
     }
   }
 
+  const _showcaseTts = {
+    cache: new Map(),
+    audioEl: null,
+    btnEl: null,
+    ctrl: null
+  };
+
+  function showcaseSpeakIdleLabel(lang) {
+    return lang === 'ar' ? 'استماع' : (lang === 'fr' ? 'Écouter' : 'Read Aloud');
+  }
+
+  function stopShowcaseSpeech() {
+    if (_showcaseTts.ctrl) {
+      try { _showcaseTts.ctrl.abort(); } catch (_) {}
+      _showcaseTts.ctrl = null;
+    }
+    if (_showcaseTts.btnEl) {
+      const l = _showcaseTts.btnEl.getAttribute('data-ai-speak-reply') || 'en';
+      _showcaseTts.btnEl.textContent = showcaseSpeakIdleLabel(l);
+      _showcaseTts.btnEl.classList.remove('is-speaking');
+      _showcaseTts.btnEl = null;
+    }
+    if (_showcaseTts.audioEl) {
+      try {
+        _showcaseTts.audioEl.onended = null;
+        _showcaseTts.audioEl.onerror = null;
+        _showcaseTts.audioEl.pause();
+        _showcaseTts.audioEl.currentTime = 0;
+      } catch (_) {}
+      _showcaseTts.audioEl = null;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
+  }
+
+  function speakShowcaseReply(rawText, lang, btnEl) {
+    const plain = sanitizeCleanText(String(rawText || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+    if (!plain) return;
+    if (navigator.webdriver || window.__ISABI_SYNC_TEST) return;
+    if (btnEl && _showcaseTts.btnEl === btnEl) {
+      stopShowcaseSpeech();
+      return;
+    }
+    stopShowcaseSpeech();
+    const safeLang = lang || 'en';
+    const stopLbl = safeLang === 'ar' ? 'إيقاف' : (safeLang === 'fr' ? 'Arrêter' : 'Stop');
+
+    const runFallback = () => {
+      if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+      try {
+        const utt = new window.SpeechSynthesisUtterance(plain);
+        utt.lang = safeLang === 'ar' ? 'ar-LB' : (safeLang === 'fr' ? 'fr-FR' : 'en-US');
+        utt.rate = 1.02;
+        if (btnEl) {
+          _showcaseTts.btnEl = btnEl;
+          btnEl.textContent = stopLbl;
+          btnEl.classList.add('is-speaking');
+        }
+        utt.onend = () => stopShowcaseSpeech();
+        utt.onerror = () => stopShowcaseSpeech();
+        window.speechSynthesis.speak(utt);
+      } catch (_) {}
+    };
+
+    const audioEl = typeof Audio !== 'undefined' ? new Audio() : null;
+    let flowUrl = '';
+    let flowKey = '';
+    try {
+      flowUrl = atob(ASK_FLOW_U_B64);
+      flowKey = atob(ASK_FLOW_K_B64);
+    } catch (_) {}
+    if (!audioEl || !flowUrl || !flowUrl.startsWith('http')) {
+      runFallback();
+      return;
+    }
+
+    const cacheKey = `${safeLang}|${plain}`;
+    if (_showcaseTts.cache.has(cacheKey)) {
+      audioEl.src = _showcaseTts.cache.get(cacheKey);
+      _showcaseTts.audioEl = audioEl;
+      if (btnEl) {
+        _showcaseTts.btnEl = btnEl;
+        btnEl.textContent = stopLbl;
+        btnEl.classList.add('is-speaking');
+      }
+      audioEl.onended = () => stopShowcaseSpeech();
+      audioEl.play().catch(() => runFallback());
+      return;
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 11000);
+    _showcaseTts.ctrl = ctrl;
+    if (btnEl) {
+      _showcaseTts.btnEl = btnEl;
+      btnEl.textContent = safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...');
+    }
+    const voiceName = safeLang === 'ar' ? 'Charon' : (safeLang === 'fr' ? 'Aoede' : 'Kore');
+    const dirPrefix = safeLang === 'ar'
+      ? 'تحدث بنبرة تنفيذية دافئة وواضحة: '
+      : (safeLang === 'fr' ? 'Parlez sur un ton exécutif chaleureux et clair : ' : 'Speak in a warm, natural executive tone: ');
+
+    fetch(flowUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        key: flowKey,
+        op: 'tts',
+        model: 'gemini-3.8-flash-lite-tts',
+        voiceName,
+        lang: safeLang,
+        text: dirPrefix + plain.slice(0, 1800)
+      }),
+      signal: ctrl.signal
+    }).then(r => r.ok ? r.json() : null).then(j => {
+      clearTimeout(timer);
+      if (ctrl.signal.aborted) return;
+      _showcaseTts.ctrl = null;
+      if (j && j.ok && j.mode === 'gemini_tts' && j.audioBase64) {
+        const bin = atob(String(j.audioBase64).trim());
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const objUrl = URL.createObjectURL(new Blob([bytes], { type: j.mimeType || 'audio/wav' }));
+        if (_showcaseTts.cache.size >= 20) {
+          _showcaseTts.cache.delete(_showcaseTts.cache.keys().next().value);
+        }
+        _showcaseTts.cache.set(cacheKey, objUrl);
+        audioEl.src = objUrl;
+        _showcaseTts.audioEl = audioEl;
+        if (btnEl) {
+          btnEl.textContent = stopLbl;
+          btnEl.classList.add('is-speaking');
+        }
+        audioEl.onended = () => stopShowcaseSpeech();
+        audioEl.onerror = () => runFallback();
+        audioEl.play().catch(() => runFallback());
+      } else {
+        runFallback();
+      }
+    }).catch(() => {
+      clearTimeout(timer);
+      if (!ctrl.signal.aborted) runFallback();
+    });
+  }
+
   async function callAskIsabiCloud(cleanQ, lang, fallbackResp) {
     if (navigator.webdriver || window.__ISABI_SYNC_TEST) return fallbackResp;
     const messages = buildConversationMessages(cleanQ, lang);
@@ -3482,28 +3630,39 @@ JS = r"""
 
     if (flowUrl && flowUrl.startsWith('http')) {
       const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
+      const deepQuery = cleanQ.length > 140 || /\b(why|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat)/i.test(cleanQ);
+      const targetModel = deepQuery ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+      const geminiContents = messages.slice(1).map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(m.content || '') }]
+      }));
+      const reqBody = {
+        key: flowKey,
+        op: 'ask',
+        surface: 'showcase',
+        q: cleanQ,
+        lang: lang,
+        industry: state.sboxInd || 'holding',
+        currency: state.sboxCurr || 'USD',
+        period: state.sboxPeriod || 'mtd',
+        scale: cfg.scale || '',
+        range: cfg.range || '',
+        replyTitle: fallbackResp.title || '',
+        model: targetModel,
+        systemPrompt: buildGeminiSystemPrompt(lang),
+        userPrompt: buildGeminiUserPrompt(cleanQ),
+        geminiContents: geminiContents,
+        messages: messages
+      };
+      if (deepQuery) reqBody.thinkingBudget = 512;
+
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
+      const timer = setTimeout(() => ctrl.abort(), deepQuery ? 12500 : 10000);
       try {
         const res = await fetch(flowUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({
-            key: flowKey,
-            op: 'ask',
-            surface: 'showcase',
-            q: cleanQ,
-            lang: lang,
-            industry: state.sboxInd || 'holding',
-            currency: state.sboxCurr || 'USD',
-            period: state.sboxPeriod || 'mtd',
-            scale: cfg.scale || '',
-            range: cfg.range || '',
-            replyTitle: fallbackResp.title || '',
-            systemPrompt: buildGeminiSystemPrompt(lang),
-            userPrompt: buildGeminiUserPrompt(cleanQ),
-            messages: messages
-          }),
+          body: JSON.stringify(reqBody),
           signal: ctrl.signal
         });
         clearTimeout(timer);
@@ -4107,6 +4266,18 @@ JS = r"""
         return;
       }
 
+      const speakReplyBtn = e.target.closest('[data-ai-speak-reply]');
+      if (speakReplyBtn) {
+        const followupWrap = speakReplyBtn.closest('.ai-msg-followup');
+        const botWrap = followupWrap ? followupWrap.previousElementSibling : speakReplyBtn.closest('.ai-msg-bot');
+        const bubbleEl = botWrap ? botWrap.querySelector('.ai-bot-bubble') : null;
+        const pEl = bubbleEl ? bubbleEl.querySelector('p') : null;
+        const liEls = bubbleEl ? Array.from(bubbleEl.querySelectorAll('li')).map(li => li.textContent.trim()) : [];
+        const combinedTxt = [pEl ? pEl.textContent.trim() : '', ...liEls].filter(Boolean).join('. ');
+        speakShowcaseReply(combinedTxt, speakReplyBtn.getAttribute('data-ai-speak-reply') || 'en', speakReplyBtn);
+        return;
+      }
+
       const openAiBtn = e.target.closest('[data-open-ai]');
       if (openAiBtn) {
         openAiDrawer(openAiBtn.dataset.openAi);
@@ -4163,6 +4334,7 @@ JS = r"""
 
     // Header & Mobile Ask ISABI buttons
     function stopAllShowcaseAskTools(clearFiles = false) {
+      stopShowcaseSpeech();
       ['ai-inline-form', 'ai-drawer-form'].forEach(fid => {
         const f = document.getElementById(fid);
         if (f && typeof f._stopRec === 'function') f._stopRec();
