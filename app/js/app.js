@@ -14635,7 +14635,7 @@
       });
       monthlyRows = ascMonths.reverse();
     } else {
-      const mdl = (SEED.models && SEED.models[coKey]) || getModel() || {};
+      const mdl = (SEED.models && (SEED.models[coKey] || SEED.models['manufacturing-group'])) || {};
       const mSrc = getScopedMonthly(mdl.monthly);
       let mRun = openingTankL;
       monthlyRows = mSrc.map(mr => {
@@ -30811,6 +30811,7 @@
   function getCanonicalEnDomText(el) {
     if (!el) return '';
     if (el.dataset && el.dataset.colCleanLabel) return String(el.dataset.colCleanLabel).trim();
+    if (el.__enText !== undefined) return String(el.__enText).replace(/[▲▼▾▴]/g, '').replace(/\s+/g, ' ').trim();
     let out = '';
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -51263,10 +51264,14 @@
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
   }
 
+  const _indGlInFlight = new Set();
   function getIndustryGlModel(ind, rawKey, baseModel) {
     ensureMultiIndustrySpineSeeded();
     const cacheKey = `${ind}|${rawKey}|${SEED._recordsReady ? 1 : 0}|${SEED._customRev || 0}`;
     if (_indGlModelCache.has(cacheKey)) return _indGlModelCache.get(cacheKey);
+    if (_indGlInFlight.has(cacheKey)) return baseModel || { periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: [] };
+    _indGlInFlight.add(cacheKey);
+    try {
 
     const kSnap = getIndustryKpiSnapshot(ind, rawKey, {});
     const coLbl = COMPANY_LABELS[rawKey] || (ind === 'Holding & Treasury' ? 'Bdeir Holding' : ind);
@@ -51651,6 +51656,9 @@
     if (_indGlModelCache.size > 32) _indGlModelCache.clear();
     _indGlModelCache.set(cacheKey, merged);
     return merged;
+    } finally {
+      _indGlInFlight.delete(cacheKey);
+    }
   }
 
   const INDUSTRY_QUICK_ENTRY_TEMPLATES = {
@@ -105897,6 +105905,7 @@
     // Purge legacy auto-login key from localStorage so opening the app always presents #authGate first
     try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     let swResumeEmail = '';
+    let swResumeView = '';
     try {
       const rawSw = sessionStorage.getItem('isabi_mfg_sw_resume');
       sessionStorage.removeItem('isabi_mfg_sw_resume');
@@ -105905,7 +105914,7 @@
         if (parsedSw && parsedSw.email && (Date.now() - Number(parsedSw.ts || 0)) < 30000) {
           swResumeEmail = parsedSw.email;
           if (parsedSw.company && COMPANY_LABELS[parsedSw.company] && !PARAMS.get('industry')) STATE.company = parsedSw.company;
-          if (parsedSw.view && VIEW_TITLES[parsedSw.view] && !PARAMS.get('view') && !location.hash) STATE.view = parsedSw.view;
+          if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
           if (parsedSw.activeTableKey) STATE.activeTableKey = parsedSw.activeTableKey;
           if (parsedSw.activeUnivRegKey) STATE.activeUnivRegKey = parsedSw.activeUnivRegKey;
         }
@@ -105914,6 +105923,7 @@
     const rawQView = PARAMS.get('view') || (location.hash || '').replace(/^#/, '');
     const qView = rawQView === 'cashflow_analytics' ? 'cashflow' : (rawQView === 'sales_vat' ? 'customers' : (rawQView === 'sales_analytics' ? 'sales' : (rawQView === 'raw_analytics' ? 'raw' : (rawQView === 'expenses_analytics' ? 'expenses' : (rawQView === 'fleet_analytics' ? 'fleet_drivers' : (rawQView === 'payroll_analytics' ? 'payroll' : (rawQView === 'jv' ? 'raw_jv' : rawQView)))))));
     if (qView && VIEW_TITLES[qView]) STATE.view = qView;
+    if (swResumeView && !PARAMS.get('view')) STATE.view = swResumeView;
     const qKiosk = PARAMS.get('kiosk');
     const savedStationCfg = loadKioskStationConfig();
     if (savedStationCfg) {
