@@ -320,34 +320,36 @@
   function computeLiveFleetAnalysis() {
     const recs = (window.MFG_SEED && window.MFG_SEED.records) || {};
     const sales = typeof window.scopedRecords === 'function' ? window.scopedRecords('sales_tickets') : (recs.sales_tickets || []);
-    const raw = typeof window.scopedRecords === 'function' ? window.scopedRecords('raw_material_intake') : (recs.raw_material_intake || []);
-    const diesel = typeof window.scopedRecords === 'function' ? window.scopedRecords('diesel_logs') : (recs.diesel_logs || []);
-    const oils = typeof window.scopedRecords === 'function' ? window.scopedRecords('oil_logs') : (recs.oil_logs || []);
-    const maint = typeof window.scopedRecords === 'function' ? window.scopedRecords('maintenance_logs') : (recs.maintenance_logs || []);
+    const raw = typeof window.scopedRecords === 'function' ? window.scopedRecords('raw_purchases') : (recs.raw_purchases || []);
+    const diesel = typeof window.scopedRecords === 'function' ? window.scopedRecords('fuel_intakes') : (recs.fuel_intakes || []);
+    const oils = typeof window.scopedRecords === 'function' ? window.scopedRecords('equipment_oil_logs') : (recs.equipment_oil_logs || []);
+    const maint = typeof window.scopedRecords === 'function' ? window.scopedRecords('equipment_repairs') : (recs.equipment_repairs || []);
+    const exps = typeof window.scopedRecords === 'function' ? window.scopedRecords('expenses') : (recs.expenses || []);
 
-    const bdeirSet = new Set(['TB1', 'TB7', 'TB9']);
-    const normCode = (c) => {
-      const u = String(c || '').trim().toUpperCase();
-      if (u === 'TB7') return 'Tb7';
-      if (u === 'TB9') return 'Tb9';
-      return u;
+    const matchBdeirCode = (rawStr) => {
+      const s = String(rawStr || '').trim().toUpperCase();
+      if (!s) return null;
+      if (s === 'TB1' || s.startsWith('TB1 ') || s.includes('360676')) return 'TB1';
+      if (s === 'TB7' || s.startsWith('TB7 ') || s.includes('364656')) return 'Tb7';
+      if (s === 'TB9' || s.startsWith('TB9 ') || s.includes('364168')) return 'Tb9';
+      return null;
     };
 
     const truckMap = {
-      TB1: { code: 'TB1', plate: '360676', owner: 'Karim Bdeir', driver: 'Majed Karam / Ahmad Hamoud', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 0, totalCost: 0, netProfit: 0 },
-      Tb7: { code: 'Tb7', plate: '364656', owner: 'Hussein Bdeir', driver: 'Mohamad Habib', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 0, totalCost: 0, netProfit: 0 },
-      Tb9: { code: 'Tb9', plate: '364168', owner: 'Jad Bdeir', driver: 'Ali Saleh', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 0, totalCost: 0, netProfit: 0 }
+      TB1: { code: 'TB1', plate: '360676', owner: 'Karim Bdeir', driver: 'Majed Karam / Ahmad Hamoud', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 2504.67, totalCost: 0, netProfit: 0 },
+      Tb7: { code: 'Tb7', plate: '364656', owner: 'Hussein Bdeir', driver: 'Mohamad Habib', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 2796.99, totalCost: 0, netProfit: 0 },
+      Tb9: { code: 'Tb9', plate: '364168', owner: 'Jad Bdeir', driver: 'Ali Saleh', trips: 0, paidTrips: 0, zeroTrips: 0, vol: 0, salesTrips: 0, salesPaid: 0, salesZero: 0, salesRev: 0, rawTrips: 0, rawPaid: 0, rawZero: 0, rawRev: 0, adjRev: 0, totalRev: 0, dieselL: 0, dieselCost: 0, lubes: 0, repairs: 0, insurance: 0, driverPay: 2194.00, totalCost: 0, netProfit: 0 }
     };
 
     let wtcTrips = 0, bbcTrips = 0, wtcVol = 0, bbcVol = 0;
 
     for (const r of sales) {
-      const u = String(r.truck_code || '').trim().toUpperCase();
-      if (!bdeirSet.has(u)) continue;
-      const k = normCode(u);
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.truck || r.truck_code || r.equipment);
+      if (!k) continue;
       const t = truckMap[k];
-      const q = Number(r.qty_m3) || 0;
-      const tr = Number(r.trans_total_usd) || 0;
+      const q = Number(r.qty != null ? r.qty : r.qty_m3) || 0;
+      const tr = Number(r.trans_price != null ? r.trans_price : r.trans_total_usd) || 0;
       t.trips++;
       t.salesTrips++;
       t.vol += q;
@@ -360,12 +362,12 @@
     }
 
     for (const r of raw) {
-      const u = String(r.truck_code || '').trim().toUpperCase();
-      if (!bdeirSet.has(u)) continue;
-      const k = normCode(u);
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.truck || r.truck_code || r.equipment);
+      if (!k) continue;
       const t = truckMap[k];
-      const q = Number(r.qty_m3) || 0;
-      const tr = Number(r.transport_usd || r.trans_total_usd) || 0;
+      const q = Number(r.qty != null ? r.qty : r.qty_m3) || 0;
+      const tr = Number(r.trans_cost != null ? r.trans_cost : r.transport_usd) || 0;
       t.trips++;
       t.rawTrips++;
       t.vol += q;
@@ -378,28 +380,37 @@
     }
 
     for (const r of diesel) {
-      const u = String(r.equipment_code || r.truck_code || '').trim().toUpperCase();
-      if (!bdeirSet.has(u)) continue;
-      const k = normCode(u);
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.equipment || r.truck);
+      if (!k) continue;
+      if (!/diesel|mazout/i.test(String(r.item || r.fuel_type || 'Diesel'))) continue;
       const t = truckMap[k];
-      const l = Number(r.liters) || 0;
-      const c = Number(r.total_usd) || (l * 1.3878);
+      const l = Number(r.litres != null ? r.litres : r.liters) || 0;
+      const c = Number(r.total_usd || r.cost_usd) || (l * 1.3878);
       t.dieselL += l;
       t.dieselCost += c;
     }
 
     for (const r of oils) {
-      const u = String(r.equipment_code || r.truck_code || '').trim().toUpperCase();
-      if (!bdeirSet.has(u)) continue;
-      const k = normCode(u);
-      truckMap[k].lubes += (Number(r.total_usd) || 0);
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.equipment || r.truck);
+      if (!k) continue;
+      truckMap[k].lubes += (Number(r.cost_usd || r.total_usd) || 0);
     }
 
     for (const r of maint) {
-      const u = String(r.equipment_code || r.truck_code || '').trim().toUpperCase();
-      if (!bdeirSet.has(u)) continue;
-      const k = normCode(u);
-      truckMap[k].repairs += (Number(r.cost_usd || r.total_usd) || 0);
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.equipment || r.truck);
+      if (!k) continue;
+      truckMap[k].repairs += (Number(r.total_cost_usd || r.cost_usd) || 0);
+    }
+
+    for (const r of exps) {
+      if (r.voided) continue;
+      const k = matchBdeirCode(r.equipment || r.truck);
+      if (!k) continue;
+      if (/diesel|mazout/i.test(String(r.subcategory || r.category || ''))) continue;
+      truckMap[k].repairs += (Number(r.amount || r.total_usd) || 0);
     }
 
     let totTrips = 0, totVol = 0, totRev = 0, totCost = 0, totZero = 0;
@@ -417,6 +428,10 @@
       totRev += t.totalRev;
       totCost += t.totalCost;
       totZero += (useAdj ? 0 : t.zeroTrips);
+    }
+
+    if (totTrips === 0) {
+      return CUTOVER_PNL_MODES[state.mode] || CUTOVER_PNL_MODES.recorded;
     }
 
     const net = totRev - totCost;
@@ -1544,104 +1559,116 @@
     `;
   }
 
-  function wireCockpitEvents(root) {
-    if (!root) return;
-    const refresh = () => {
-      const target = root.closest('[data-fpnl-cockpit="1"]') || document.querySelector('[data-fpnl-cockpit="1"]');
-      if (!target) return;
+  function refreshAllCockpits() {
+    const activeId = document.activeElement ? document.activeElement.id : null;
+    const selStart = document.activeElement && typeof document.activeElement.selectionStart === 'number' ? document.activeElement.selectionStart : null;
+    document.querySelectorAll('[data-fpnl-cockpit="1"]').forEach(target => {
       const cid = target.id || 'fleetRevCostCockpit';
-      const activeId = document.activeElement ? document.activeElement.id : null;
-      const selStart = document.activeElement && typeof document.activeElement.selectionStart === 'number' ? document.activeElement.selectionStart : null;
       target.outerHTML = renderCockpitHtml({ containerId: cid });
-      const nextRoot = document.getElementById(cid);
-      wireCockpitEvents(nextRoot);
-      if (activeId) {
-        const el = document.getElementById(activeId);
-        if (el) {
-          el.focus();
-          if (selStart !== null && typeof el.setSelectionRange === 'function') {
-            try { el.setSelectionRange(selStart, selStart); } catch (_) {}
-          }
+    });
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) {
+        el.focus();
+        if (selStart !== null && typeof el.setSelectionRange === 'function') {
+          try { el.setSelectionRange(selStart, selStart); } catch (_) {}
         }
       }
-    };
-
-    root.querySelectorAll('[data-fpnl-scope]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.scope = btn.getAttribute('data-fpnl-scope') || 'cutover';
-        refresh();
-      });
-    });
-
-    root.querySelectorAll('[data-fpnl-mode]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.mode = btn.getAttribute('data-fpnl-mode') || 'recorded';
-        refresh();
-      });
-    });
-
-    root.querySelectorAll('[data-fpnl-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.tab = btn.getAttribute('data-fpnl-tab') || 'pnl';
-        refresh();
-      });
-    });
-
-    const bindInput = (id, key, evt = 'input') => {
-      const el = root.querySelector('#' + id);
-      if (!el) return;
-      el.addEventListener(evt, () => {
-        state[key] = el.value;
-        refresh();
-      });
-    };
-
-    bindInput('fpnlZeroSearch', 'zeroSearch', 'input');
-    bindInput('fpnlZeroStream', 'zeroStream', 'change');
-    bindInput('fpnlZeroTruck', 'zeroTruck', 'change');
-    bindInput('fpnlZeroCompany', 'zeroCompany', 'change');
-
-    bindInput('fpnlRouteSearch', 'routeSearch', 'input');
-    bindInput('fpnlRouteStream', 'routeStream', 'change');
-    bindInput('fpnlRouteTruck', 'routeTruck', 'change');
-    bindInput('fpnlRouteCompany', 'routeCompany', 'change');
-    bindInput('fpnlRoutePricing', 'routePricing', 'change');
-
-    bindInput('fpnlExpSearch', 'expSearch', 'input');
-    bindInput('fpnlExpTruck', 'expTruck', 'change');
-    bindInput('fpnlExpCat', 'expCat', 'change');
-
-    bindInput('fpnlOtSearch', 'otSearch', 'input');
-    bindInput('fpnlOtTruck', 'otTruck', 'change');
-    bindInput('fpnlOtDriver', 'otDriver', 'change');
+    }
   }
 
-  function mountAllCockpits() {
-    document.querySelectorAll('[data-fpnl-cockpit="1"]').forEach(el => {
-      wireCockpitEvents(el);
+  let _delegatedBound = false;
+  function ensureDelegatedEvents() {
+    if (_delegatedBound || typeof document === 'undefined') return;
+    _delegatedBound = true;
+
+    document.addEventListener('click', (e) => {
+      const jumpBtn = e.target.closest('[data-fpnl-jump]');
+      if (jumpBtn) {
+        e.preventDefault();
+        const tab = jumpBtn.getAttribute('data-fpnl-jump') || 'pnl';
+        const mode = jumpBtn.getAttribute('data-fpnl-jump-mode') || '';
+        window.MFG_FLEET_PNL.openTab(tab, mode || undefined);
+        return;
+      }
+      const scopeBtn = e.target.closest('[data-fpnl-scope]');
+      if (scopeBtn) {
+        state.scope = scopeBtn.getAttribute('data-fpnl-scope') || 'cutover';
+        refreshAllCockpits();
+        return;
+      }
+      const modeBtn = e.target.closest('[data-fpnl-mode]');
+      if (modeBtn) {
+        state.mode = modeBtn.getAttribute('data-fpnl-mode') || 'recorded';
+        refreshAllCockpits();
+        return;
+      }
+      const tabBtn = e.target.closest('[data-fpnl-tab]');
+      if (tabBtn) {
+        state.tab = tabBtn.getAttribute('data-fpnl-tab') || 'pnl';
+        refreshAllCockpits();
+        return;
+      }
+    });
+
+    const inputMap = {
+      fpnlZeroSearch: 'zeroSearch',
+      fpnlRouteSearch: 'routeSearch',
+      fpnlExpSearch: 'expSearch',
+      fpnlOtSearch: 'otSearch'
+    };
+
+    const selectMap = {
+      fpnlZeroStream: 'zeroStream',
+      fpnlZeroTruck: 'zeroTruck',
+      fpnlZeroCompany: 'zeroCompany',
+      fpnlRouteStream: 'routeStream',
+      fpnlRouteTruck: 'routeTruck',
+      fpnlRouteCompany: 'routeCompany',
+      fpnlRoutePricing: 'routePricing',
+      fpnlExpTruck: 'expTruck',
+      fpnlExpCat: 'expCat',
+      fpnlOtTruck: 'otTruck',
+      fpnlOtDriver: 'otDriver'
+    };
+
+    document.addEventListener('input', (e) => {
+      const id = e.target && e.target.id;
+      if (id && inputMap[id]) {
+        state[inputMap[id]] = e.target.value;
+        refreshAllCockpits();
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const id = e.target && e.target.id;
+      if (id && selectMap[id]) {
+        state[selectMap[id]] = e.target.value;
+        refreshAllCockpits();
+      }
     });
   }
+
+  ensureDelegatedEvents();
 
   window.MFG_FLEET_PNL = {
     state,
     data: CUTOVER_DATA,
     modes: CUTOVER_PNL_MODES,
     renderCockpitHtml,
-    mountAllCockpits,
+    mountAllCockpits: ensureDelegatedEvents,
+    refreshAllCockpits,
     openTab(tabName, modeName) {
       if (tabName) state.tab = tabName;
       if (modeName) state.mode = modeName;
-      if (typeof window.navigateToView === 'function') {
-        window.navigateToView('fleet_equip');
-      }
+      const navBtn = document.querySelector('[data-view="fleet_equip"]');
+      if (navBtn) navBtn.click();
+      else if (typeof window.navigateToView === 'function') window.navigateToView('fleet_equip');
+      else location.hash = '#fleet_equip';
       setTimeout(() => {
-        const el = document.getElementById('fleetRevCostCockpit');
-        if (el) {
-          el.outerHTML = renderCockpitHtml({ containerId: 'fleetRevCostCockpit' });
-          const next = document.getElementById('fleetRevCostCockpit');
-          wireCockpitEvents(next);
-          next.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        refreshAllCockpits();
+        const next = document.getElementById('fleetRevCostCockpit');
+        if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 60);
     }
   };

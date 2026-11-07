@@ -488,6 +488,101 @@ button {
   flex-shrink: 0;
 }
 
+.hdr-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.hdr-lang-switch .lang-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  white-space: nowrap;
+}
+
+.hdr-lang-switch .lang-pill:hover {
+  color: var(--ink);
+  background: var(--brass-tint);
+}
+
+.hdr-lang-switch .lang-pill.active {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: var(--brass-strong);
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .hdr-inner {
+    gap: 4px;
+    padding: 0 10px !important;
+  }
+  .brand-link {
+    gap: 5px;
+  }
+  .brand-badge {
+    width: 26px !important;
+    height: 26px !important;
+  }
+  .brand-wordmark {
+    height: 20px !important;
+  }
+  .hdr-actions {
+    gap: 4px;
+  }
+  .ask-isabi-trigger {
+    padding: 5px 7px !important;
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+  #theme-toggle-btn {
+    padding: 5px 6px !important;
+    font-size: 11px !important;
+  }
+  .hdr-signin-btn {
+    padding: 5px 7px !important;
+  }
+  .hdr-lang-switch {
+    height: 24px;
+    padding: 1.5px;
+    gap: 1px;
+  }
+  .hdr-lang-switch .lang-pill {
+    padding: 2.5px 4px;
+    font-size: 9.5px;
+  }
+}
+
+html[dir="rtl"] *,
+[dir="rtl"] * {
+  letter-spacing: 0 !important;
+}
+
+html[dir="rtl"] .num,
+html[dir="rtl"] .kpi-val,
+html[dir="rtl"] .price-val,
+html[dir="rtl"] .calc-num {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .hdr-signin-btn {
   padding: 7px 11px;
   font-size: 13px;

@@ -30,6 +30,11 @@ BODY = f"""
       <a href="#ingenuity" data-sec-link="ingenuity">Why ISABI</a>
       <a href="#pricing" data-sec-link="pricing">Pricing</a>
     </nav>
+    <div class="hdr-lang-switch" id="hdr-lang-switch" role="group" aria-label="Language">
+      <span role="button" tabindex="0" class="lang-pill active" data-lang-switch="en">EN</span>
+      <span role="button" tabindex="0" class="lang-pill" data-lang-switch="ar">عربي</span>
+      <span role="button" tabindex="0" class="lang-pill" data-lang-switch="fr">FR</span>
+    </div>
     <div class="hdr-actions">
       <button type="button" class="ask-isabi-trigger" id="hdr-ask-btn" title="Open Ask ISABI System Intelligence">
         {MARK_ON_DARK_SVG}

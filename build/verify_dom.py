@@ -443,7 +443,25 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     document.documentElement.setAttribute('data-theme', 'light');
 
+    // Verify Curated Trilingual Suite (EN | AR | FR) + Modular Locale Registry (registerLocale)
+    var i18nOk = false;
+    if (window.ISABI_I18N) {
+      window.ISABI_I18N.setLang('fr', false);
+      var frNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      window.ISABI_I18N.setLang('ar', false);
+      var arDir = document.documentElement.getAttribute('dir');
+      var arNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Features': 'Funciones' });
+      window.ISABI_I18N.setLang('es', false);
+      var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      window.ISABI_I18N.setLang('en', false);
+      var enNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
+      var enDir = document.documentElement.getAttribute('dir');
+      i18nOk = (frNav === 'Fonctionnalités' && arDir === 'rtl' && arNav === 'المميزات' && esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr');
+    }
+
     out.v4Test = {
+      i18nOk: i18nOk,
       spotTitle: spotTitle,
       indSubtabCount: indSubtabCount,
       flowCardCount: flowCardCount,
@@ -565,6 +583,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['zeroAiForbidden'] is True, f"Forbidden em-dash/arrow found in AI replies: {ai}"
 
         v4 = d_desk['v4Test']
+        assert v4.get('i18nOk') is True, f"Showcase ISABI_I18N trilingual & registerLocale check failed: {v4}"
         assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
         assert v4['indSubtabCount'] == 3, f"Expected 3 distinct industry sub-tabs, got {v4['indSubtabCount']}"
         assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"

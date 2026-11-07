@@ -75,7 +75,13 @@
 
   function safeNotes(ctx, s) {
     const raw = ctx.cleanNotesText ? ctx.cleanNotesText(s) : String(s || '');
-    return String(raw || '').replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').replace(/\s+/g, ' ').trim();
+    return String(raw || '')
+      .replace(/\s*\[LEGACY_PARITY[\s\S]*$/i, '')
+      .replace(/\s*\[Items:[^\]]*\]/gi, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   // Identifies Sales or Raw tickets logged via the "Yesterday's After-Hours" toggle
@@ -252,7 +258,7 @@
       }
     }
 
-    // Universal Registry additions logged via app (entered_at / created_at)
+    // Universal Registry additions logged via app (entered_at / created_at / start_date)
     const regAdditionsByDate = new Map();
     const regSpecs = [
       ['customers', 'New Customer'],
@@ -260,7 +266,9 @@
       ['sites', 'New Site'],
       ['products', 'New Product'],
       ['equipment', 'New Equipment'],
-      ['drivers', 'New Driver']
+      ['drivers', 'New Driver'],
+      ['staff_members', 'New Staff'],
+      ['staff_assignments', 'Staff Role']
     ];
     for (let sIdx = 0; sIdx < regSpecs.length; sIdx++) {
       const [rk, lbl] = regSpecs[sIdx];
@@ -268,7 +276,8 @@
       for (let i = 0; i < list.length; i++) {
         const row = list[i];
         if (!row || row.voided) continue;
-        const d = enteredDateOf(row);
+        if (row.company && !matchCo(row)) continue;
+        const d = enteredDateOf(row) || (rk === 'staff_assignments' ? String(row.start_date || '').slice(0, 10) : '');
         if (d.length === 10 && d >= MIN_DATE && d <= MAX_DATE) {
           let arr = regAdditionsByDate.get(d);
           if (!arr) { arr = []; regAdditionsByDate.set(d, arr); }
@@ -510,13 +519,15 @@
     if (r.product && r.product !== party) subBits.push(r.product);
     if (r.site && r.site !== party) subBits.push(r.site);
     const rateBits = [];
-    if (up > 0) rateBits.push(`${ctx.fmtUSD(up, 2)}/${uom}`);
-    if (tp > 0) rateBits.push(`Haul ${ctx.fmtUSD(tp, 2)}/${uom}`);
+    if (up > 0) rateBits.push(`${ctx.fmtUSD(up, Number.isInteger(up) ? 0 : 2)}/${uom}`);
+    if (tp > 0) rateBits.push(`Haul ${ctx.fmtUSD(tp, Number.isInteger(tp) ? 0 : 2)}/${uom}`);
     if (!rateBits.length && ind > 0) rateBits.push(`Flat ${ctx.fmtUSD(ind, 0)}/Truck`);
     return {
       badge,
       party,
       sub: subBits.join(' · '),
+      primaryRate: rateBits[0] || 'Custom Rate',
+      haulRate: rateBits.length > 1 ? `+${rateBits.slice(1).join(' ')}` : '',
       rateTxt: rateBits.join(' + ') || 'Custom Rate'
     };
   }
@@ -771,20 +782,33 @@
     const dayExps = idx.expByDate.get(targetDate) || [];
     const dayExpItems = idx.expItemsByDate.get(targetDate) || [];
     const dayWhMoves = idx.whByDate.get(targetDate) || [];
+    const expItemsByBill = new Map();
+    for (let i = 0; i < dayExpItems.length; i++) {
+      const it = dayExpItems[i];
+      const eid = String(it.expense_id || '');
+      if (!eid) continue;
+      let arr = expItemsByBill.get(eid);
+      if (!arr) { arr = []; expItemsByBill.set(eid, arr); }
+      arr.push(it);
+    }
     let expTotal = 0, expExVat = 0, cashExp = 0, creditExp = 0, cashExpLbp = 0, expCount = 0;
     const pendingExps = [];
     const expCatMap = new Map();
+    const expenseBillRows = [];
     for (let i = 0; i < dayExps.length; i++) {
       const x = dayExps[i];
-      if (ctx.isPendingPriceExpense(x)) pendingExps.push(x);
+      const isPend = Boolean(ctx.isPendingPriceExpense(x));
+      if (isPend) pendingExps.push(x);
       const sgn = ctx.expenseSign(x);
-      if (sgn === 0 && !ctx.isPendingPriceExpense(x)) continue;
+      if (sgn === 0 && !isPend) continue;
       if (sgn !== 0) expCount += 1;
-      const a = Number(x.amount || 0) * (sgn || 1);
+      const a = round2(Number(x.amount || 0) * (sgn || 1));
       expTotal += a;
       if (ctx.expenseKind(x) !== 'VAT') expExVat += a;
-      if (ctx.isApCreditExpense(x)) creditExp += a;
-      else if (ctx.isCashExpense(x)) {
+      const isCred = Boolean(ctx.isApCreditExpense(x));
+      const isCash = !isCred && Boolean(ctx.isCashExpense(x));
+      if (isCred) creditExp += a;
+      else if (isCash) {
         cashExp += a;
         cashExpLbp += Number(x.lbp_amount || 0) * (sgn || 1);
       }
@@ -796,14 +820,38 @@
         expCatMap.set(ck, cur);
       }
       cur.count += 1;
-      if (ctx.isPendingPriceExpense(x)) cur.pending += 1;
+      if (isPend) cur.pending += 1;
       cur.amount = round2(cur.amount + a);
+
+      const linkedItems = expItemsByBill.get(String(x.id || '')) || [];
+      const cleanDesc = safeNotes(ctx, x.notes || x.description);
+      const itemNames = linkedItems.map(li => li.item_name || li.subcategory).filter(Boolean);
+      const eqTarget = x.equipment || (linkedItems[0] && (linkedItems[0].target_equipment || linkedItems[0].warehouse_location)) || '';
+      expenseBillRows.push({
+        id: x.id,
+        company: x.company || 'WTC',
+        supplier: x.supplier || x.category || 'Expense',
+        category: x.category || 'General',
+        subcategory: x.subcategory || '',
+        catLabel: catLbl,
+        equipment: eqTarget,
+        notes: cleanDesc,
+        itemsCount: linkedItems.length || Number(x.qty || 1),
+        itemNames,
+        method: isPend ? 'Pending' : (isCred ? 'Credit' : (x.method || 'Cash')),
+        isCredit: isCred,
+        isCash,
+        isPending: isPend,
+        amount: a,
+        lbpAmount: Math.round(Number(x.lbp_amount || 0) * (sgn || 1))
+      });
     }
     expTotal = round2(expTotal);
     expExVat = round2(expExVat);
     cashExp = round2(cashExp);
     creditExp = round2(creditExp);
     const expCategoryRows = Array.from(expCatMap.values()).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    expenseBillRows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 
     let whStockedItems = 0, whAllocatedItems = 0;
     dayExpItems.forEach(it => {
@@ -1047,7 +1095,7 @@
     malfNetL = round2(malfNetL);
 
     const dayAtt = idx.attByDate.get(targetDate) || [];
-    let attOtHours = 0, absentCount = 0, presentAttCount = 0;
+    let attOtHours = 0, attOtPayUsd = 0, attOtStaffCount = 0, absentCount = 0, presentAttCount = 0;
     dayAtt.forEach(a => {
       const st = String(a.status || a.type || '').toLowerCase();
       if (/absent|leave|off|sick/.test(st) || Number(a.leave_days || 0) > 0) {
@@ -1056,8 +1104,21 @@
         presentAttCount += 1;
         if (a.staff) activeStaffSet.add(norm(a.staff));
       }
-      attOtHours += Number(a.overtime_hours || 0);
+      const oth = Number(a.overtime_hours || 0);
+      if (oth > 0) {
+        attOtHours += oth;
+        attOtStaffCount += 1;
+        attOtPayUsd += Number(a.payroll_impact_usd || 0);
+      }
     });
+    attOtPayUsd = round2(attOtPayUsd);
+    const attSortedRows = dayAtt.slice().sort((a, b) => {
+      const aAbs = /absent|leave|off|sick/i.test(String(a.status || a.type || '')) || Number(a.leave_days || 0) > 0 ? 1 : 0;
+      const bAbs = /absent|leave|off|sick/i.test(String(b.status || b.type || '')) || Number(b.leave_days || 0) > 0 ? 1 : 0;
+      if (aAbs !== bAbs) return bAbs - aAbs;
+      return Number(b.overtime_hours || 0) - Number(a.overtime_hours || 0) || Number(b.payroll_impact_usd || 0) - Number(a.payroll_impact_usd || 0);
+    });
+    const fuelSortedRows = dayFuels.slice().sort((a, b) => Number(b.litres || 0) - Number(a.litres || 0));
     let kioskPunchTodayCount = 0;
     (STATE.kioskPunches || []).forEach(p => {
       if (p && !p.voided && String(p.date || p.timestamp || '').slice(0, 10) === targetDate) {
@@ -1188,13 +1249,38 @@
       const ck = norm(s.customer);
       let cur = custMap.get(ck);
       if (!cur) {
-        cur = { name: s.customer, loads: 0, ahLoads: 0, m3: 0, ttc: 0, cashTtc: 0, creditTtc: 0, collected: 0 };
+        cur = {
+          name: s.customer,
+          company: s.company || 'WTC',
+          loads: 0,
+          ahLoads: 0,
+          delivLoads: 0,
+          pickupLoads: 0,
+          otLoads: 0,
+          m3: 0,
+          ttc: 0,
+          cashTtc: 0,
+          creditTtc: 0,
+          collected: 0,
+          sites: [],
+          products: [],
+          unitPrices: [],
+          sampleId: s.id,
+          sampleRkey: 'sales_tickets'
+        };
         custMap.set(ck, cur);
       }
       if (sgn === 1) {
         cur.loads += 1;
         if (ahIdSet.has(s.id)) cur.ahLoads += 1;
+        if (s.sale_type === 'Delivery') cur.delivLoads += 1;
+        else if (s.sale_type === 'Pickup') cur.pickupLoads += 1;
+        if (s.overtime) cur.otLoads += 1;
       }
+      if (s.site && !cur.sites.includes(s.site)) cur.sites.push(s.site);
+      if (s.product && !cur.products.includes(s.product)) cur.products.push(s.product);
+      const up = Number(s.unit_price || 0);
+      if (up > 0 && !cur.unitPrices.includes(up)) cur.unitPrices.push(up);
       const rowTtc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * sgn;
       cur.m3 = round2(cur.m3 + Number(ctx.ticketMeters(s) || 0) * sgn);
       cur.ttc = round2(cur.ttc + rowTtc);
@@ -1206,12 +1292,81 @@
       const ck = norm(r.customer);
       let cur = custMap.get(ck);
       if (!cur) {
-        cur = { name: r.customer, loads: 0, ahLoads: 0, m3: 0, ttc: 0, cashTtc: 0, creditTtc: 0, collected: 0 };
+        cur = {
+          name: r.customer,
+          company: r.company || 'WTC',
+          loads: 0,
+          ahLoads: 0,
+          delivLoads: 0,
+          pickupLoads: 0,
+          otLoads: 0,
+          m3: 0,
+          ttc: 0,
+          cashTtc: 0,
+          creditTtc: 0,
+          collected: 0,
+          sites: [],
+          products: [],
+          unitPrices: [],
+          sampleId: r.id,
+          sampleRkey: 'receipts'
+        };
         custMap.set(ck, cur);
       }
       cur.collected = round2(cur.collected + Number(r.amount || 0) + Number(r.discount || 0));
     });
     const customerRows = Array.from(custMap.values()).sort((a, b) => (b.ttc - a.ttc) || (b.collected - a.collected));
+
+    // Quarry Sites, Suppliers & 3rd-Party Haulers Breakdown
+    const quarryMap = new Map();
+    effRaw.forEach(r => {
+      const site = r.site || 'Quarry Site';
+      const supplier = r.site_owner || r.supplier || 'Quarry Supplier';
+      const product = r.product || 'Raw Material';
+      const qk = `${norm(site)}|${norm(supplier)}|${norm(product)}`;
+      let cur = quarryMap.get(qk);
+      if (!cur) {
+        cur = {
+          site,
+          supplier,
+          product,
+          company: r.company || 'WTC',
+          loads: 0,
+          ahLoads: 0,
+          ownLoads: 0,
+          haulerLoads: 0,
+          haulersMap: new Map(),
+          m3: 0,
+          tons: 0,
+          matCost: 0,
+          haulCost: 0,
+          totalCost: 0,
+          sampleId: r.id
+        };
+        quarryMap.set(qk, cur);
+      }
+      cur.loads += 1;
+      if (ahIdSet.has(r.id)) cur.ahLoads += 1;
+      if (r.transport_by === 'Company fleet') {
+        cur.ownLoads += 1;
+      } else {
+        cur.haulerLoads += 1;
+        const hName = r.truck_owner || r.driver || '3P Hauler';
+        cur.haulersMap.set(hName, (cur.haulersMap.get(hName) || 0) + 1);
+      }
+      const mat = Number(r.cost || 0);
+      const haul = Number(r.trans_cost || 0);
+      const tot = Number(r.total != null ? r.total : (mat + haul));
+      cur.m3 = round2(cur.m3 + Number(ctx.ticketMeters(r) || 0));
+      cur.tons = round2(cur.tons + Number(ctx.ticketTons(r) || 0));
+      cur.matCost = round2(cur.matCost + mat);
+      cur.haulCost = round2(cur.haulCost + haul);
+      cur.totalCost = round2(cur.totalCost + tot);
+    });
+    const quarryGroupRows = Array.from(quarryMap.values()).map(q => {
+      const hList = Array.from(q.haulersMap.entries()).sort((a, b) => b[1] - a[1]).map(([nm, cnt]) => cnt > 1 ? `${nm} (${cnt})` : nm);
+      return Object.assign({}, q, { haulersTxt: hList.join(', ') });
+    }).sort((a, b) => (b.totalCost - a.totalCost) || (b.loads - a.loads));
 
     const prodMap = new Map();
     effSales.forEach(s => {
@@ -1241,6 +1396,145 @@
       cur.rawCost = round2(cur.rawCost + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))));
     });
     const productRows = Array.from(prodMap.values()).sort((a, b) => (b.salesTtc - a.salesTtc) || (b.rawCost - a.rawCost));
+
+    // Unified Cash & Treasury Movements for Panel 4 (Cash Sales, AR, AP, Ext In/Out, Loans, Cash Expenses, Payroll, FX)
+    const cashMoveRows = [];
+    dayRcpts.forEach(r => {
+      if (ctx.receiptKind(r) === 'Excluded') return;
+      const amt = round2(Number(r.amount || 0) + Number(r.discount || 0));
+      cashMoveRows.push({
+        rkey: 'receipts',
+        rid: r.id,
+        company: r.company || 'WTC',
+        badgeCls: 'cash',
+        badgeTxt: 'AR In',
+        party: r.customer || 'Customer',
+        detail: [r.reference ? `#${r.reference}` : '', `${r.method || 'Cash'} Receipt`, Number(r.discount || 0) > 0 ? `Disc ${ctx.fmtUSD(r.discount, 0)}` : ''].filter(Boolean).join(' · '),
+        amount: amt,
+        isInflow: true,
+        mag: Math.abs(amt),
+        orderGroup: 1
+      });
+    });
+    effSales.forEach(s => {
+      const sgn = ctx.ticketSign(s);
+      if (!sgn || !ctx.isCashSaleTicket(s)) return;
+      const rowTtc = round2(Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * sgn);
+      const rowNet = round2(Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn);
+      const m3 = round2(Number(ctx.ticketMeters(s) || 0) * sgn);
+      cashMoveRows.push({
+        rkey: 'sales_tickets',
+        rid: s.id,
+        company: s.company || 'WTC',
+        badgeCls: 'sales',
+        badgeTxt: 'Cash Sale',
+        party: s.customer || 'Walk-in',
+        detail: [s.ticket_no ? `#${s.ticket_no}` : '', s.product || '', m3 ? `${ctx.fmtNum(m3, 0)} m³` : ''].filter(Boolean).join(' · '),
+        amount: rowNet,
+        ttcAmt: rowTtc,
+        isInflow: rowNet >= 0,
+        mag: Math.abs(rowNet),
+        orderGroup: 2
+      });
+    });
+    extItems.forEach(ex => {
+      const refStr = ex.row && ex.row.reference ? `#${ex.row.reference}` : '';
+      cashMoveRows.push({
+        rkey: 'external_movements',
+        rid: ex.id,
+        company: ex.company || 'WTC',
+        badgeCls: ex.isOut ? 'exp' : 'ext',
+        badgeTxt: ex.isOut ? 'Ext Out' : 'Ext In',
+        party: ex.counterparty,
+        detail: [ex.notes || ex.kind, refStr && !(ex.notes || '').includes(refStr) ? refStr : '', ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : ''].filter(Boolean).join(' · '),
+        amount: ex.isOut ? -ex.eqAmt : ex.eqAmt,
+        isInflow: !ex.isOut,
+        mag: Math.abs(ex.eqAmt),
+        orderGroup: ex.isOut ? 4 : 3
+      });
+    });
+    loanEvents.forEach(ln => {
+      cashMoveRows.push({
+        rkey: ln.rkey,
+        rid: ln.id,
+        company: ln.company || 'WTC',
+        badgeCls: 'loan',
+        badgeTxt: ln.isInflow ? 'Loan In' : 'Loan Out',
+        party: ln.party,
+        detail: [ln.badge, ln.notes || '', ln.lbp ? fmtCompactLbp(ln.lbp) : ''].filter(Boolean).join(' · '),
+        amount: ln.isInflow ? ln.eqAmt : -ln.eqAmt,
+        isInflow: ln.isInflow,
+        mag: Math.abs(ln.eqAmt),
+        orderGroup: ln.isInflow ? 3 : 4
+      });
+    });
+    daySets.forEach(s => {
+      if (ctx.settlementKind(s) === 'Excluded') return;
+      const amt = round2(Number(s.amount || 0) + Number(s.discount || 0));
+      cashMoveRows.push({
+        rkey: 'settlements',
+        rid: s.id,
+        company: s.company || 'WTC',
+        badgeCls: 'pay',
+        badgeTxt: 'AP Out',
+        party: s.supplier || 'Supplier',
+        detail: [s.invoice || s.reference || '', `${s.method || 'Cash'} Settlement`].filter(Boolean).join(' · '),
+        amount: -amt,
+        isInflow: false,
+        mag: Math.abs(amt),
+        orderGroup: 5
+      });
+    });
+    daySals.forEach(sa => {
+      const lbp = Number(sa.lbp_amount || 0);
+      const usd = lbp ? Number(sa.usd_amount || 0) : Number(sa.amount || 0);
+      const eq = round2(usd + (lbp ? lbp / fxRate : 0));
+      cashMoveRows.push({
+        rkey: 'salaries',
+        rid: sa.id,
+        company: sa.company || 'WTC',
+        badgeCls: 'team',
+        badgeTxt: 'Salary Out',
+        party: sa.staff || 'Staff',
+        detail: [sa.payroll_month, sa.method || 'Cash', lbp ? fmtCompactLbp(lbp) : ''].filter(Boolean).join(' · '),
+        amount: -eq,
+        isInflow: false,
+        mag: Math.abs(eq),
+        orderGroup: 6
+      });
+    });
+    expenseBillRows.filter(b => b.isCash && b.amount !== 0).forEach(b => {
+      cashMoveRows.push({
+        rkey: 'expenses',
+        rid: b.id,
+        company: b.company || 'WTC',
+        badgeCls: 'exp',
+        badgeTxt: 'Cash Exp',
+        party: b.supplier,
+        detail: [b.equipment, b.subcategory || b.category, b.notes].filter(Boolean).join(' · '),
+        amount: -b.amount,
+        isInflow: false,
+        mag: Math.abs(b.amount),
+        orderGroup: 7
+      });
+    });
+    convItems.forEach(cv => {
+      cashMoveRows.push({
+        rkey: 'conversions',
+        rid: cv.id,
+        company: cv.company || 'WTC',
+        badgeCls: 'fx',
+        badgeTxt: 'FX Conv',
+        party: cv.dirLabel,
+        detail: `${fmtCompactLbp(cv.lbpMag)} @ ${ctx.fmtNum(cv.rate, 0)}${cv.notes ? ' · ' + cv.notes : ''}`,
+        amount: cv.usdMag,
+        isInflow: !cv.u2l,
+        isFx: true,
+        mag: Math.abs(cv.usdMag),
+        orderGroup: 8
+      });
+    });
+    cashMoveRows.sort((a, b) => (b.mag - a.mag) || (a.orderGroup - b.orderGroup));
 
     // ---- 5. UNIFIED DISCRETE RECORDS STREAM ACROSS ALL DOMAINS ----
     const compactRef = (raw, id, prefix, seq) => {
@@ -1583,6 +1877,7 @@
       expCount,
       pendingExps,
       expCategoryRows,
+      expenseBillRows,
       dayExpItems,
       dayWhMoves,
       whStockedItems,
@@ -1624,6 +1919,7 @@
       loanInEq,
       loanOutEq,
       loanEvents,
+      cashMoveRows,
       grossMargin,
       gmPct,
       operatingProfit,
@@ -1643,6 +1939,7 @@
       greaseKg: round2(greaseKg),
       fuelFillsCount: dayFuels.length,
       dayFuels,
+      fuelSortedRows,
       closingTankL,
       closingTankLbl,
       dayMalfs,
@@ -1659,6 +1956,7 @@
       kioskPunchTodayCount,
       absentCount,
       dayAtt,
+      attSortedRows,
       dayEmps,
       dayLogAllows,
       dayFlEntries,
@@ -1666,6 +1964,8 @@
       dayRegAdds,
       otTotalLoads: salesSum.otLoads + rawSum.otLoads,
       attOtHours: round2(attOtHours),
+      attOtStaffCount,
+      attOtPayUsd,
       repShiftedCount,
       avg7Sales,
       avg7Profit,
@@ -1673,6 +1973,7 @@
       hourBuckets,
       entityRows,
       customerRows,
+      quarryGroupRows,
       productRows,
       stream
     };
@@ -1792,56 +2093,68 @@
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="7-day transaction pulse">${grid}${bars}${polyLine}${dots}</svg>`;
   }
 
-  function renderQuadrant1(ctx, dm, lens, isSingleCo) {
+  function renderMiniSparkBars(ctx, dm) {
+    const { esc, fmtUSD, fmtNum } = ctx;
+    const rows = dm.pulseRows || [];
+    if (!rows.length) return '';
+    let maxVal = 100;
+    rows.forEach(r => {
+      if (r.salesTtc > maxVal) maxVal = r.salesTtc;
+      if (r.outlay > maxVal) maxVal = r.outlay;
+    });
+    return `
+      <div class="dops-mini-spark" role="group" aria-label="7-day operating pulse">
+        ${rows.map(r => {
+          const isSel = r.date === dm.targetDate;
+          const hSalesPx = Math.max(r.salesTtc > 0 ? 4 : 2, Math.min(20, Math.round((r.salesTtc / maxVal) * 20)));
+          const hRawPx = Math.max(r.outlay > 0 ? 3 : 2, Math.min(20, Math.round((r.outlay / maxVal) * 20)));
+          const popSpec = JSON.stringify({
+            title: fmtHumanDay(r.date),
+            badge: isSel ? 'Selected Day' : 'Click to open',
+            badgeTone: r.opProfit >= 0 ? 'good' : 'crit',
+            rows: [
+              { label: 'Sales Revenue (TTC)', value: `${fmtUSD(r.salesTtc, 0)} (${fmtNum(r.salesLoads)} loads)`, color: '#2356A8' },
+              { label: 'Quarry + Expenses', value: `${fmtUSD(r.outlay, 0)} (${fmtNum(r.rawLoads)} raw)`, color: '#C0892F' },
+              { label: 'Operating Profit', value: fmtUSD(r.opProfit, 0), color: r.opProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }
+            ]
+          });
+          return `
+            <button type="button" class="dops-spark-col${isSel ? ' is-sel' : ''}" data-dops-pick-date="${esc(r.date)}" data-chart-pop="${esc(popSpec)}">
+              <span class="dops-spark-track"><span class="dops-spark-bar sales" style="height:${hSalesPx}px"></span><span class="dops-spark-bar raw" style="height:${hRawPx}px"></span></span>
+              <span class="dops-spark-lbl">${esc(fmtAxisDay(r.date).split(' ')[0])}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderPanel1Sales(ctx, dm, lens, isSingleCo) {
     const { esc, ic, fmtUSD, fmtUSDk, fmtNum, coBadge, relLink } = ctx;
 
-    if (lens === 'customers') {
-      const rows = dm.customerRows;
-      if (!rows.length) {
-        return `<div class="dops-card-body"><div class="dops-empty">No customer sales or AR collections recorded on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
-      }
-      const maxTtc = Math.max(1, ...rows.map(r => Math.abs(r.ttc)));
+    if (lens === 'chart') {
+      const topCusts = dm.customerRows.filter(c => c.ttc > 0).slice(0, 3);
+      const maxCust = topCusts.length ? Math.max(1, topCusts[0].ttc) : 1;
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th class="r">Loads</th>
-                <th class="r">Volume</th>
-                <th class="r">Sales TTC</th>
-                <th class="r">AR Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map(r => {
-                const pct = Math.min(100, Math.max(0, Math.round((Math.abs(r.ttc) / maxTtc) * 100)));
-                return `
-                  <tr>
-                    <td>${relLink('customers', r.name, r.name, true)}${r.ahLoads > 0 ? ` <span class="dops-ah-badge">${ic('moon')}+${r.ahLoads}</span>` : ''}</td>
-                    <td class="r">${r.loads ? fmtNum(r.loads) : '-'}</td>
-                    <td class="r">${r.m3 ? `${fmtNum(r.m3, 0)} m³` : '-'}</td>
-                    <td class="r">
-                      <div class="dops-bar-inline" style="justify-content:flex-end">
-                        <div class="dops-bar-track"><div class="dops-bar-fill" style="width:${pct}%"></div></div>
-                        <strong>${fmtUSD(r.ttc, 0)}</strong>
-                      </div>
-                    </td>
-                    <td class="r" style="color:${r.collected > 0 ? 'var(--good)' : 'var(--muted)'}">${r.collected > 0 ? fmtUSD(r.collected, 0) : '-'}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>Total (${rows.length} Clients)</td>
-                <td class="r">${fmtNum(dm.salesSum.loads)}</td>
-                <td class="r">${fmtNum(dm.salesSum.m3, 0)} m³</td>
-                <td class="r">${fmtUSD(dm.salesSum.ttc, 0)}</td>
-                <td class="r">${fmtUSD(dm.arCollected, 0)}</td>
-              </tr>
-            </tfoot>
-          </table>
+        <div class="dops-card-body">
+          <div class="dops-pulse-wrap is-tall" id="dopsChartWrap">
+            ${renderPulseSvg(ctx, dm, 'pulse')}
+          </div>
+          <div class="dops-top-bars">
+            ${topCusts.map(c => {
+              const pct = Math.min(100, Math.max(4, Math.round((c.ttc / maxCust) * 100)));
+              return `
+                <div class="dops-hbar-row" data-dops-lens="comm:pulse">
+                  <div class="dops-hbar-name">${esc(c.name)}</div>
+                  <div class="dops-hbar-meta">${fmtNum(c.loads)} loads · ${fmtNum(c.m3, 0)} m³</div>
+                  <div class="dops-hbar-val">
+                    <div class="dops-bar-track"><div class="dops-bar-fill" style="width:${pct}%"></div></div>
+                    <strong>${fmtUSD(c.ttc, 0)}</strong>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
         </div>
       `;
     }
@@ -1853,55 +2166,51 @@
         return `<div class="dops-card-body"><div class="dops-empty">No material grades or entity dispatches on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
       }
       return `
-        <div class="dops-card-body no-pad">
-          ${eRows.length ? `
-            <table class="dops-table">
-              <thead>
-                <tr>
-                  <th>Entity (BU)</th>
-                  <th class="r">S / R</th>
-                  <th class="r">Sales TTC</th>
-                  <th class="r">Profit</th>
-                  <th class="r">Net Cash</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${eRows.map(r => `
-                  <tr class="dops-click-row" data-jump-co="${esc(r.key)}">
-                    <td>${coBadge(r.name)} <strong>${esc(r.name)}</strong></td>
-                    <td class="r">${fmtNum(r.salesLoads)} / ${fmtNum(r.rawLoads)}</td>
-                    <td class="r"><strong>${fmtUSD(r.salesTtc, 0)}</strong></td>
-                    <td class="r" style="color:${r.opProfit < 0 ? 'var(--crit)' : 'var(--good)'}"><strong>${fmtUSD(r.opProfit, 0)}</strong></td>
-                    <td class="r">${fmtUSD(r.netCash, 0)}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          ` : ''}
-          ${pRows.length ? `
-            <table class="dops-table">
-              <thead>
-                <tr>
-                  <th>Material Grade</th>
-                  <th class="r">Sold Vol</th>
-                  <th class="r">Sales TTC</th>
-                  <th class="r">Quarry In</th>
-                  <th class="r">Raw Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${pRows.map(r => `
+        <div class="dops-card-body no-pad dops-flex-col">
+          <div class="dops-tbl-scroll">
+            ${eRows.length ? `
+              <table class="dops-table dops-fixed-3">
+                <colgroup><col style="width:38%"><col style="width:34%"><col style="width:28%"></colgroup>
+                <thead>
                   <tr>
-                    <td>${relLink('products', r.name, r.name, true)}</td>
-                    <td class="r">${r.salesLoads ? `${fmtNum(r.salesM3, 0)} m³ (${r.salesLoads})` : '-'}</td>
-                    <td class="r">${r.salesTtc ? `<strong>${fmtUSD(r.salesTtc, 0)}</strong>` : '-'}</td>
-                    <td class="r">${r.rawLoads ? `${fmtNum(r.rawM3, 0)} m³ (${r.rawLoads})` : '-'}</td>
-                    <td class="r">${r.rawCost ? fmtUSD(r.rawCost, 0) : '-'}</td>
+                    <th>Entity (BU)</th>
+                    <th class="r">Sales TTC (Loads)</th>
+                    <th class="r">Profit · Cash</th>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          ` : ''}
+                </thead>
+                <tbody>
+                  ${eRows.map(r => `
+                    <tr class="dops-click-row" data-jump-co="${esc(r.key)}">
+                      <td class="dops-trunc">${coBadge(r.name)} <strong>${esc(r.name)}</strong></td>
+                      <td class="r"><strong>${fmtUSD(r.salesTtc, 0)}</strong> <small style="color:var(--muted)">(${r.salesLoads}S/${r.rawLoads}R)</small></td>
+                      <td class="r"><strong style="color:${r.opProfit < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(r.opProfit, 0)}</strong> <small style="color:var(--muted)">(${fmtUSD(r.netCash, 0)})</small></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : ''}
+            ${pRows.length ? `
+              <table class="dops-table dops-fixed-3">
+                <colgroup><col style="width:40%"><col style="width:32%"><col style="width:28%"></colgroup>
+                <thead>
+                  <tr>
+                    <th>Material Grade</th>
+                    <th class="r">Sold · Sales TTC</th>
+                    <th class="r">Quarry · Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pRows.map(r => `
+                    <tr>
+                      <td class="dops-trunc">${relLink('products', r.name, r.name, true)}</td>
+                      <td class="r">${r.salesLoads ? `<strong>${fmtUSD(r.salesTtc, 0)}</strong> <small style="color:var(--muted)">(${fmtNum(r.salesM3, 0)}m³)</small>` : '-'}</td>
+                      <td class="r">${r.rawLoads ? `${fmtUSD(r.rawCost, 0)} <small style="color:var(--muted)">(${fmtNum(r.rawM3, 0)}m³)</small>` : '-'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : ''}
+          </div>
         </div>
       `;
     }
@@ -1913,18 +2222,14 @@
           <div class="dops-pulse-wrap is-tall" id="dopsChartWrap">
             ${renderPulseSvg(ctx, dm, 'hours')}
           </div>
-          <div class="dops-stat-strip-4">
+          <div class="dops-stat-strip-3">
             <div class="dops-stat-box" data-dops-open-drawer="sales">
               <small>Peak Window</small>
               <b>${peak && (peak.salesLoads + peak.rawLoads) > 0 ? `${esc(peak.label)} (${peak.salesLoads + peak.rawLoads})` : 'Quiet Day'}</b>
             </div>
             <div class="dops-stat-box" data-dops-open-drawer="sales">
-              <small>Deliv. / Pickup</small>
-              <b>${fmtNum(dm.salesSum.deliveryLoads)} / ${fmtNum(dm.salesSum.pickupLoads)} loads</b>
-            </div>
-            <div class="dops-stat-box" data-dops-open-drawer="all">
-              <small>Overtime Loads</small>
-              <b>${fmtNum(dm.otTotalLoads)} (${fmtNum(dm.salesSum.otLoads)}S · ${fmtNum(dm.rawSum.otLoads)}R)</b>
+              <small>Deliv · Pick · OT</small>
+              <b>${fmtNum(dm.salesSum.deliveryLoads)}D · ${fmtNum(dm.salesSum.pickupLoads)}P · ${fmtNum(dm.otTotalLoads)} OT</b>
             </div>
             <div class="dops-stat-box${dm.ahAvailableCount > 0 ? ' tone-brass' : ''}" data-dops-toggle-ah="1">
               <small>After-Hours (${esc(fmtShortDay(dm.yestDate))})</small>
@@ -1935,99 +2240,151 @@
       `;
     }
 
-    // Default: 'pulse' - 7-Day Transaction Pulse + Top 3 Customers & Dispatch Mix Strip
-    const topCusts = dm.customerRows.filter(c => c.ttc > 0).slice(0, 3);
-    const maxCust = topCusts.length ? Math.max(1, topCusts[0].ttc) : 1;
-    const topGrade = dm.productRows[0];
+    // Default ('pulse' or 'customers'): Compact 7d Spark + Grades Mix Strip + All Active Clients Dispatch Table
+    const rows = dm.customerRows;
+    const maxTtc = rows.length ? Math.max(1, ...rows.map(r => Math.abs(r.ttc))) : 1;
+    const soldGrades = dm.productRows.filter(p => p.salesLoads > 0 || p.salesM3 > 0);
+
     return `
-      <div class="dops-card-body">
-        <div class="dops-pulse-wrap" id="dopsChartWrap">
-          ${renderPulseSvg(ctx, dm, 'pulse')}
-        </div>
-        <div class="dops-q1-bottom">
-          <div class="dops-top-bars">
-            ${topCusts.length ? topCusts.map(c => {
-              const pct = Math.min(100, Math.max(4, Math.round((c.ttc / maxCust) * 100)));
-              return `
-                <div class="dops-hbar-row" data-dops-lens="comm:customers">
-                  <div class="dops-hbar-name">${c.ahLoads > 0 ? `<span class="dops-ah-badge">${ic('moon')}+${c.ahLoads}</span>` : ''}${esc(c.name)}</div>
-                  <div class="dops-hbar-meta">${fmtNum(c.loads)} ${c.loads === 1 ? 'load' : 'loads'} · ${fmtNum(c.m3, 0)} m³</div>
-                  <div class="dops-hbar-val">
-                    <div class="dops-bar-track"><div class="dops-bar-fill" style="width:${pct}%"></div></div>
-                    <strong>${fmtUSD(c.ttc, 0)}</strong>
-                  </div>
-                </div>
-              `;
-            }).join('') : `<div class="dops-hbar-row" data-dops-open-drawer="raw"><div class="dops-hbar-name" style="color:var(--muted)">No sales dispatches on ${esc(fmtShortDay(dm.targetDate))}</div><div class="dops-hbar-meta">${fmtNum(dm.rawSum.loads)} quarry loads</div><div class="dops-hbar-val"><strong>${fmtUSD(dm.rawSum.totalCost, 0)}</strong></div></div>`}
-          </div>
-          <div class="dops-chip-row">
-            <span class="dops-micro-pill" data-dops-open-drawer="sales">Deliv <b>${fmtNum(dm.salesSum.deliveryLoads)}</b> · Pickup <b>${fmtNum(dm.salesSum.pickupLoads)}</b></span>
-            ${topGrade ? `<span class="dops-micro-pill" data-dops-lens="comm:grades">Top Grade: <b>${esc(topGrade.name)}</b> (${fmtNum(topGrade.salesM3 || topGrade.rawM3, 0)} m³)</span>` : ''}
-            ${dm.salesSum.chainedLoads > 0 ? `<span class="dops-micro-pill" data-dops-open-drawer="sales">${ic('link')} <b>${fmtNum(dm.salesSum.chainedLoads)}</b> Chained</span>` : ''}
-            ${dm.customerRows.length > 3 ? `<span class="dops-micro-pill" data-dops-lens="comm:customers">+${fmtNum(dm.customerRows.length - 3)} more clients</span>` : (!isSingleCo ? `<span class="dops-micro-pill" data-dops-lens="comm:grades"><b>${dm.entityRows.filter(e => e.salesLoads + e.rawLoads > 0).length}</b> Active BUs</span>` : '')}
+      <div class="dops-card-body no-pad dops-flex-col">
+        <div class="dops-substrip dops-sales-top-strip">
+          ${renderMiniSparkBars(ctx, dm)}
+          <div class="dops-mix-pills">
+            ${soldGrades.slice(0, 2).map(g => `<span class="dops-micro-pill" data-dops-lens="comm:grades"><b>${esc(g.name)}</b> ${fmtNum(g.salesM3, 0)}m³ · ${fmtUSD(g.salesTtc, 0)}</span>`).join('')}
+            ${soldGrades.length > 2 ? `<span class="dops-micro-pill" data-dops-lens="comm:grades">+${soldGrades.length - 2} grade${soldGrades.length - 2 === 1 ? '' : 's'}</span>` : ''}
+            <span class="dops-micro-pill" data-dops-open-drawer="sales">Deliv <b>${fmtNum(dm.salesSum.deliveryLoads)}</b> · Pick <b>${fmtNum(dm.salesSum.pickupLoads)}</b>${dm.salesSum.otLoads > 0 ? ` · <b>${dm.salesSum.otLoads}</b> OT` : ''}</span>
           </div>
         </div>
+        ${rows.length ? `
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:42%"><col style="width:34%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Client &amp; Site</th>
+                  <th>Grade · Loads &amp; Vol</th>
+                  <th class="r">Sales TTC</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => {
+                  const pct = Math.min(100, Math.max(0, Math.round((Math.abs(r.ttc) / maxTtc) * 100)));
+                  const siteTxt = r.sites && r.sites.length ? r.sites.slice(0, 2).join(', ') : '';
+                  const prodTxt = r.products && r.products.length ? r.products.join(', ') : (r.collected > 0 ? 'AR Collection' : '-');
+                  const isCash = r.cashTtc > 0 && r.creditTtc === 0;
+                  const rateTxt = r.unitPrices && r.unitPrices.length ? `@${fmtUSD(r.unitPrices[0], 1)}` : '';
+                  return `
+                    <tr class="rrow" data-rkey="${esc(r.sampleRkey || 'sales_tickets')}" data-rid="${esc(String(r.sampleId || ''))}" data-dops-summary="1">
+                      <td class="dops-trunc">
+                        ${relLink('customers', r.name, r.name, true)}${r.ahLoads > 0 ? ` <span class="dops-ah-badge">${ic('moon')}+${r.ahLoads}</span>` : ''}
+                        ${siteTxt ? `<small class="dops-cell-sub">${esc(siteTxt)}</small>` : ''}
+                      </td>
+                      <td class="dops-trunc">
+                        <span class="dops-kind ${isCash ? 'cash' : (r.loads > 0 ? 'sales' : 'pay')}">${isCash ? 'Cash' : (r.loads > 0 ? 'Cr' : 'AR')}</span>
+                        <span class="dops-cell-inline">${esc(prodTxt)}${rateTxt ? ` <small>${esc(rateTxt)}</small>` : ''}</span>
+                        ${r.loads ? `<small class="dops-cell-sub"><b>${fmtNum(r.loads)}</b> loads · <b>${fmtNum(r.m3, 0)} m³</b></small>` : ''}
+                      </td>
+                      <td class="r">
+                        ${r.ttc > 0 ? `
+                          <div class="dops-bar-inline" style="justify-content:flex-end">
+                            <div class="dops-bar-track"><div class="dops-bar-fill" style="width:${pct}%"></div></div>
+                            <strong>${fmtUSD(r.ttc, 0)}</strong>
+                          </div>
+                        ` : ''}
+                        ${r.collected > 0 ? `<small class="dops-ar-tag">AR +${fmtUSD(r.collected, 0)}</small>` : ''}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>${fmtNum(rows.length)} Clients (${fmtNum(dm.salesSum.loads)} loads · ${fmtNum(dm.salesSum.m3, 0)} m³)</td>
+                  <td>Cash ${fmtUSD(dm.salesSum.cashTtc, 0)} · Cr ${fmtUSD(dm.salesSum.creditTtc, 0)}</td>
+                  <td class="r">${fmtUSD(dm.salesSum.ttc, 0)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ` : `<div class="dops-empty">No customer sales or AR collections recorded on ${esc(fmtShortDay(dm.targetDate))}.</div>`}
       </div>
     `;
   }
 
-  function renderQuadrant2(ctx, dm, lens, isSingleCo) {
-    const { esc, fmtUSD, fmtNum, coBadge } = ctx;
+  function renderPanel2QuarryPricing(ctx, dm, lens, isSingleCo) {
+    const { esc, fmtUSD, fmtNum, coBadge, relLink } = ctx;
     const totalDispatched = Math.max(0, dm.salesSum.loads);
     const agreedPct = totalDispatched > 0 ? Math.round((dm.agreedSalesLoads / totalDispatched) * 100) : 100;
     const totDiscAll = ctx.round2(dm.salesSum.discUsd + dm.rawSum.discUsd + dm.arDiscUsd + dm.apDiscUsd);
+
+    const topStripHtml = `
+      <div class="dops-stat-strip-3 dops-substrip">
+        <div class="dops-stat-box" data-dops-open-drawer="raw">
+          <small>Quarry Material (${fmtNum(dm.rawSum.loads)} loads)</small>
+          <b>${fmtUSD(dm.rawSum.matCost, 0)} <span class="dops-stat-muted">· ${fmtNum(dm.rawSum.m3, 0)} m³ (${fmtNum(dm.rawSum.tons, 0)} t)</span></b>
+        </div>
+        <div class="dops-stat-box" data-dops-open-drawer="raw">
+          <small>Haulage Split (Own vs 3P)</small>
+          <b>${fmtUSD(dm.rawSum.haulCost, 0)} <span class="dops-stat-muted">· Own ${fmtNum(dm.rawSum.ownLoads)} / 3P ${fmtNum(dm.rawSum.haulerLoads)}</span></b>
+        </div>
+        <div class="dops-stat-box${dm.belowAgreedLoads > 0 ? ' tone-crit' : (dm.agreedSalesLoads > 0 ? ' tone-good' : '')}" data-dops-lens="deals:audit">
+          <small>Rate Compliance &amp; VAT</small>
+          <b>${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below (-${fmtUSD(dm.belowShortfallUsd, 0)})` : `${agreedPct}% Agreed (${dm.agreedSalesLoads}/${totalDispatched})`} <span class="dops-stat-muted">· VAT ${fmtUSD(dm.salesSum.vat, 0)}</span></b>
+        </div>
+      </div>
+    `;
 
     if (lens === 'rules') {
       const todayRules = dm.dayPriceRules;
       const showRules = todayRules.length ? todayRules : dm.recentWeekRules;
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>${todayRules.length ? 'New Rule Today' : 'Recent 7-Day Rule'}</th>
-                <th>Counterparty / Site</th>
-                <th>Grade</th>
-                <th class="r">Agreed Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${showRules.map(pr => {
-                const info = describePriceRule(ctx, pr);
-                const dLbl = String(pr.start_date || pr.date || '').slice(5, 10);
-                return `
-                  <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
-                    <td><span class="dops-kind rule">${esc(info.badge)}</span>${!todayRules.length && dLbl ? ` <small style="color:var(--muted)">${esc(dLbl)}</small>` : ''}</td>
-                    <td class="dops-trunc">${!isSingleCo ? `${coBadge(pr.company)} ` : ''}<strong>${esc(info.party)}</strong></td>
-                    <td class="dops-trunc">${esc(pr.product || pr.site || '-')}</td>
-                    <td class="r"><strong>${esc(info.rateTxt)}</strong></td>
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${topStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:42%"><col style="width:32%"><col style="width:26%"></colgroup>
+              <thead>
+                <tr>
+                  <th>${todayRules.length ? 'New Rule Today' : 'Recent 7-Day Rule'}</th>
+                  <th>Grade / Site</th>
+                  <th class="r">Agreed Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${showRules.map(pr => {
+                  const info = describePriceRule(ctx, pr);
+                  const dLbl = String(pr.start_date || pr.date || '').slice(5, 10);
+                  return `
+                    <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
+                      <td class="dops-trunc"><span class="dops-kind rule">${esc(info.badge)}</span> <strong>${esc(info.party)}</strong>${!todayRules.length && dLbl ? ` <small style="color:var(--muted)">${esc(dLbl)}</small>` : ''}</td>
+                      <td class="dops-trunc">${esc(pr.product || pr.site || '-')}</td>
+                      <td class="r"><strong>${esc(info.rateTxt)}</strong></td>
+                    </tr>
+                  `;
+                }).join('') || `<tr><td colspan="3" class="dops-empty">No price agreements created on this date or trailing 7 days.</td></tr>`}
+                ${dm.dayCreditTerms.map(ct => `
+                  <tr class="rrow" data-rkey="credit_terms" data-rid="${esc(String(ct.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind rule">Credit</span> <strong>${esc(ct.customer || '-')}</strong></td>
+                    <td>Net Terms</td>
+                    <td class="r"><strong>${fmtNum(ct.credit_days || 0)} Days</strong></td>
                   </tr>
-                `;
-              }).join('') || `<tr><td colspan="4" class="dops-empty">No price agreements created on this date or trailing 7 days.</td></tr>`}
-              ${dm.dayCreditTerms.map(ct => `
-                <tr class="rrow" data-rkey="credit_terms" data-rid="${esc(String(ct.id || ''))}">
-                  <td><span class="dops-kind rule">Credit Policy</span></td>
-                  <td class="dops-trunc"><strong>${esc(ct.customer || '-')}</strong></td>
-                  <td>Net Terms</td>
-                  <td class="r"><strong>${fmtNum(ct.credit_days || 0)} Days</strong></td>
+                `).join('')}
+                ${dm.dayOtRates.map(ot => `
+                  <tr class="rrow" data-rkey="overtime_rates" data-rid="${esc(String(ot.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind rule">OT Rate</span> <strong>${esc(ot.region || 'Zone')}</strong></td>
+                    <td>Driver Trip</td>
+                    <td class="r"><strong>${fmtUSD(Number(ot.amount || 0), 2)}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">${todayRules.length ? `${fmtNum(dm.newPoliciesCount)} New Policies on ${esc(fmtShortDay(dm.targetDate))}` : `0 New on ${esc(fmtShortDay(dm.targetDate))} (Trailing 7d)`}</td>
+                  <td class="r">${fmtNum(dm.activeRulesUsed.length)} Rules Active</td>
                 </tr>
-              `).join('')}
-              ${dm.dayOtRates.map(ot => `
-                <tr class="rrow" data-rkey="overtime_rates" data-rid="${esc(String(ot.id || ''))}">
-                  <td><span class="dops-kind rule">OT Trip Rate</span></td>
-                  <td class="dops-trunc"><strong>${esc(ot.region || 'Zone')}</strong></td>
-                  <td>Driver Trip</td>
-                  <td class="r"><strong>${fmtUSD(Number(ot.amount || 0), 2)}</strong></td>
-                </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">${todayRules.length ? `${fmtNum(dm.newPoliciesCount)} New Policies on ${esc(fmtShortDay(dm.targetDate))}` : `0 New on ${esc(fmtShortDay(dm.targetDate))} (Showing trailing 7d)`}</td>
-                <td colspan="2" class="r">${fmtNum(dm.activeRulesUsed.length)} Active Rules Used Today</td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
@@ -2035,50 +2392,46 @@
     if (lens === 'audit') {
       const rows = dm.rateAuditRows;
       if (!rows.length) {
-        return `<div class="dops-card-body"><div class="dops-empty">No customer sales dispatches to audit on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
+        return `<div class="dops-card-body no-pad dops-flex-col">${topStripHtml}<div class="dops-empty">No customer sales dispatches to audit on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
       }
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Customer &amp; Grade</th>
-                <th class="r">Loads</th>
-                <th class="r">Agreed</th>
-                <th class="r">Billed</th>
-                <th class="r">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map(r => {
-                const stCls = r.status === 'Below Rate' ? 'crit' : (r.status === 'Lapsed' ? 'maint' : (r.status === 'Agreed' ? 'cash' : 'pay'));
-                return `
-                  <tr class="rrow" data-rkey="${r.ruleId && r.status === 'Agreed' ? 'price_rules' : 'sales_tickets'}" data-rid="${esc(String((r.ruleId && r.status === 'Agreed' ? r.ruleId : r.sampleTicketId) || ''))}">
-                    <td class="dops-trunc"><strong>${esc(r.customer)}</strong> <span style="color:var(--muted)">· ${esc(r.product)}</span></td>
-                    <td class="r">${fmtNum(r.loads)}</td>
-                    <td class="r">${r.agreedRate != null ? fmtUSD(r.agreedRate, 2) : '-'}</td>
-                    <td class="r"><strong>${fmtUSD(r.billedAvg, 2)}</strong></td>
-                    <td class="r"><span class="dops-kind ${stCls}">${r.status === 'Below Rate' ? `-${fmtUSD(r.shortfall, 0)}` : esc(r.status)}</span></td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">Agreed ${fmtNum(dm.agreedSalesLoads)} · Spot ${fmtNum(dm.spotSalesLoads)}</td>
-                <td colspan="3" class="r">${dm.belowAgreedLoads > 0 ? `Below Agreed: ${dm.belowAgreedLoads} (-${fmtUSD(dm.belowShortfallUsd, 0)})` : '0 Below-Agreed Shortfalls'}</td>
-              </tr>
-            </tfoot>
-          </table>
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${topStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:44%"><col style="width:32%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Customer &amp; Grade</th>
+                  <th class="r">Agreed vs Billed</th>
+                  <th class="r">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => {
+                  const stCls = r.status === 'Below Rate' ? 'crit' : (r.status === 'Lapsed' ? 'maint' : (r.status === 'Agreed' ? 'cash' : 'pay'));
+                  return `
+                    <tr class="rrow" data-rkey="${r.ruleId && r.status === 'Agreed' ? 'price_rules' : 'sales_tickets'}" data-rid="${esc(String((r.ruleId && r.status === 'Agreed' ? r.ruleId : r.sampleTicketId) || ''))}">
+                      <td class="dops-trunc"><strong>${esc(r.customer)}</strong> <small class="dops-cell-sub">${esc(r.product)} (${r.loads} loads)</small></td>
+                      <td class="r">${r.agreedRate != null ? fmtUSD(r.agreedRate, 1) : 'Spot'} / <strong>${fmtUSD(r.billedAvg, 1)}</strong></td>
+                      <td class="r"><span class="dops-kind ${stCls}">${r.status === 'Below Rate' ? `-${fmtUSD(r.shortfall, 0)}` : esc(r.status)}</span></td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">Agreed ${fmtNum(dm.agreedSalesLoads)} · Spot ${fmtNum(dm.spotSalesLoads)}</td>
+                  <td class="r">${dm.belowAgreedLoads > 0 ? `Short: -${fmtUSD(dm.belowShortfallUsd, 0)}` : '100% On Rate'}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
 
     if (lens === 'vat_jv') {
-      const hasRows = dm.dayVatInvoices.length || dm.dayJvDists.length || dm.salesSum.vat > 0 || dm.salesSum.commUsd > 0 || totDiscAll > 0;
-      if (!hasRows) {
-        return `<div class="dops-card-body"><div class="dops-empty">No VAT invoices, commissions, discounts, or JV distributions on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
-      }
       return `
         <div class="dops-card-body">
           <div class="dops-stat-strip-4">
@@ -2118,562 +2471,621 @@
                 <span class="dops-event-right">${fmtUSD(jv.amount || jv.total || 0, 0)}</span>
               </div>
             `).join('')}
-            ${!dm.dayVatInvoices.length && !dm.dayJvDists.length ? `
-              <div class="dops-event-item" data-dops-open-drawer="sales">
-                <div class="dops-event-left">
-                  <span class="dops-kind sales">Commercial</span>
-                  <div class="dops-event-txt"><strong>Transport ${fmtUSD(dm.salesSum.transRev, 0)}</strong> <span>· Comm ${fmtUSD(dm.salesSum.commUsd, 0)} · Total Disc ${fmtUSD(totDiscAll, 0)}</span></div>
-                </div>
-                <span class="dops-event-right">${fmtUSD(dm.salesSum.ttc, 0)} Total</span>
+            <div class="dops-event-item" data-dops-open-drawer="sales">
+              <div class="dops-event-left">
+                <span class="dops-kind sales">Commercial</span>
+                <div class="dops-event-txt"><strong>Transport Rev ${fmtUSD(dm.salesSum.transRev, 0)}</strong> <span>· Comm ${fmtUSD(dm.salesSum.commUsd, 0)} · Disc ${fmtUSD(totDiscAll, 0)}</span></div>
               </div>
-            ` : ''}
+              <span class="dops-event-right">${fmtUSD(dm.salesSum.ttc, 0)} TTC</span>
+            </div>
           </div>
         </div>
       `;
     }
 
-    // Default: 'highlights' - 4-Stat Commercial Governance Strip + Priority Interactive Feed
-    const items = [];
-    dm.dayPriceRules.forEach(pr => {
-      const info = describePriceRule(ctx, pr);
-      items.push({
-        cls: 'is-new-rule',
-        rkey: 'price_rules',
-        rid: pr.id,
-        badgeCls: 'rule',
-        badgeTxt: `New · ${info.badge}`,
-        title: info.party,
-        sub: info.sub || pr.company || '',
-        rightTxt: info.rateTxt,
-        rightCls: 'brass'
-      });
-    });
-    dm.dayCreditTerms.forEach(ct => {
-      items.push({
-        cls: 'is-new-rule',
-        rkey: 'credit_terms',
-        rid: ct.id,
-        badgeCls: 'rule',
-        badgeTxt: 'New Credit',
-        title: ct.customer || 'Customer',
-        sub: ct.company || '',
-        rightTxt: `${ct.credit_days || 0} Days`,
-        rightCls: 'brass'
-      });
-    });
-    dm.dayVatInvoices.forEach(vi => {
-      items.push({
-        cls: 'is-new-rule',
-        rkey: 'vat_invoices',
-        rid: vi.id,
-        badgeCls: 'rule',
-        badgeTxt: `VAT #${vi.invoice_no || ''}`,
-        title: vi.customer || 'Customer',
-        sub: `${vi.tickets_count || 0} tickets billed`,
-        rightTxt: fmtUSD(vi.total_ttc || 0, 0),
-        rightCls: 'good'
-      });
-    });
-    dm.belowTicketEvents.forEach(ev => {
-      items.push({
-        cls: 'is-alert-item',
-        rkey: 'sales_tickets',
-        rid: ev.ticket.id,
-        badgeCls: 'crit',
-        badgeTxt: 'Below Rate',
-        title: ev.ticket.customer || 'Customer',
-        sub: `${ev.ticket.product || ''} · ${fmtUSD(ev.soldPrice, 2)} vs ${fmtUSD(ev.agreedPrice, 2)}`,
-        rightTxt: `-${fmtUSD(ev.shortfall, 0)}`,
-        rightCls: 'crit'
-      });
-    });
-    if (items.length < 3) {
-      dm.activeRulesUsed.slice(0, 3 - items.length).forEach(ru => {
-        const info = describePriceRule(ctx, ru.rule);
-        items.push({
-          cls: '',
-          rkey: 'price_rules',
-          rid: ru.rule.id,
-          badgeCls: 'cash',
-          badgeTxt: 'Agreed Used',
-          title: info.party,
-          sub: `${info.sub ? info.sub + ' · ' : ''}${ru.loads} ${ru.loads === 1 ? 'load' : 'loads'}`,
-          rightTxt: info.rateTxt,
-          rightCls: ''
-        });
-      });
-    }
-    if (!items.length && dm.recentWeekRules.length) {
-      dm.recentWeekRules.slice(0, 2).forEach(pr => {
-        const info = describePriceRule(ctx, pr);
-        items.push({
-          cls: '',
-          rkey: 'price_rules',
-          rid: pr.id,
-          badgeCls: 'rule',
-          badgeTxt: fmtShortDay(String(pr.start_date || '').slice(0, 10)),
-          title: info.party,
-          sub: info.sub || pr.rule_type || '',
-          rightTxt: info.rateTxt,
-          rightCls: ''
-        });
-      });
-    }
-
+    // Default ('highlights'): 3-Stat Quarry/Haulage/Compliance Strip + Quarry Sites & Suppliers + Active Agreements Table
+    const qRows = dm.quarryGroupRows || [];
     return `
-      <div class="dops-card-body">
-        <div class="dops-stat-strip-4">
-          <div class="dops-stat-box${dm.newPoliciesCount > 0 ? ' tone-brass' : ''}" data-dops-lens="deals:rules">
-            <small>New Agreements</small>
-            <b>${dm.newPoliciesCount > 0 ? `+${fmtNum(dm.newPoliciesCount)} Today` : `0 Today · ${fmtNum(dm.activeRulesUsed.length)} Used`}</b>
-          </div>
-          <div class="dops-stat-box${dm.belowAgreedLoads > 0 ? ' tone-crit' : (dm.agreedSalesLoads > 0 ? ' tone-good' : '')}" data-dops-lens="deals:audit">
-            <small>Rate Compliance</small>
-            <b>${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below (-${fmtUSD(dm.belowShortfallUsd, 0)})` : (totalDispatched > 0 ? `${agreedPct}% Agreed (${dm.agreedSalesLoads}/${totalDispatched})` : 'No Sales')}</b>
-          </div>
-          <div class="dops-stat-box" data-dops-lens="deals:vat_jv">
-            <small>Disc. &amp; Comm.</small>
-            <b>${fmtUSD(totDiscAll, 0)} · ${fmtUSD(dm.salesSum.commUsd, 0)}</b>
-          </div>
-          <div class="dops-stat-box" data-dops-lens="deals:vat_jv">
-            <small>VAT (${fmtNum(dm.dayVatInvoices.length)} Inv)</small>
-            <b>${dm.dayVatInvoices.length > 0 ? fmtUSD(dm.vatBilledTodayTtc, 0) : fmtUSD(dm.salesSum.vat, 0)}</b>
-          </div>
-        </div>
-        <div class="dops-event-list">
-          ${items.slice(0, 3).map(it => `
-            <div class="dops-event-item ${it.cls}" data-dops-inspect-rkey="${esc(it.rkey)}" data-dops-inspect-rid="${esc(String(it.rid || ''))}">
-              <div class="dops-event-left">
-                <span class="dops-kind ${it.badgeCls}">${esc(it.badgeTxt)}</span>
-                <div class="dops-event-txt"><strong>${esc(it.title)}</strong>${it.sub ? ` <span>· ${esc(it.sub)}</span>` : ''}</div>
-              </div>
-              <span class="dops-event-right ${it.rightCls}">${esc(it.rightTxt)}</span>
-            </div>
-          `).join('') || `<div class="dops-empty" style="padding:10px">All dispatches priced on standard terms · 0 commercial exceptions.</div>`}
+      <div class="dops-card-body no-pad dops-flex-col">
+        ${topStripHtml}
+        <div class="dops-tbl-scroll">
+          <table class="dops-table dops-fixed-3">
+            <colgroup><col style="width:42%"><col style="width:34%"><col style="width:24%"></colgroup>
+            <thead>
+              <tr>
+                <th>Quarry Site / Agreement</th>
+                <th>Grade · Loads &amp; Haul</th>
+                <th class="r">Cost / Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dm.belowTicketEvents.map(ev => `
+                <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(String(ev.ticket.id || ''))}">
+                  <td class="dops-trunc"><span class="dops-kind crit">Below Rate</span> <strong>${esc(ev.ticket.customer || '-')}</strong></td>
+                  <td class="dops-trunc">${esc(ev.ticket.product || '')} · ${fmtUSD(ev.soldPrice, 1)} vs ${fmtUSD(ev.agreedPrice, 1)}</td>
+                  <td class="r"><strong style="color:var(--crit)">-${fmtUSD(ev.shortfall, 0)}</strong></td>
+                </tr>
+              `).join('')}
+              ${dm.dayPriceRules.map(pr => {
+                const info = describePriceRule(ctx, pr);
+                return `
+                  <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(pr.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind rule">New</span> <strong>${esc(info.party)}</strong></td>
+                    <td class="dops-trunc">${esc(info.sub || pr.rule_type || 'Agreement')}</td>
+                    <td class="r"><strong>${esc(info.primaryRate)}</strong>${info.haulRate ? `<small class="dops-cell-sub">${esc(info.haulRate)}</small>` : ''}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${qRows.map(q => `
+                <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(String(q.sampleId || ''))}" data-dops-summary="1">
+                  <td class="dops-trunc">
+                    <span class="dops-kind raw">Quarry</span> <strong>${esc(q.site)}</strong>
+                    <small class="dops-cell-sub">${relLink('suppliers', q.supplier, q.supplier, true)}</small>
+                  </td>
+                  <td class="dops-trunc">
+                    <strong>${esc(q.product)}</strong> · ${fmtNum(q.loads)} loads (${fmtNum(q.m3, 0)}m³)
+                    <small class="dops-cell-sub">Own ${fmtNum(q.ownLoads)} · 3P ${fmtNum(q.haulerLoads)}${q.haulersTxt ? ` (${esc(q.haulersTxt)})` : ''}</small>
+                  </td>
+                  <td class="r">
+                    <strong>${fmtUSD(q.totalCost, 0)}</strong>
+                    <small class="dops-cell-sub">M ${fmtUSD(q.matCost, 0)} · H ${fmtUSD(q.haulCost, 0)}</small>
+                  </td>
+                </tr>
+              `).join('')}
+              ${dm.activeRulesUsed.slice(0, 5).map(ru => {
+                const info = describePriceRule(ctx, ru.rule);
+                return `
+                  <tr class="rrow" data-rkey="price_rules" data-rid="${esc(String(ru.rule.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind cash">Agreed</span> <strong>${esc(info.party)}</strong></td>
+                    <td class="dops-trunc">${esc(info.sub || info.badge)} (${fmtNum(ru.loads)}L)</td>
+                    <td class="r"><strong>${esc(info.primaryRate)}</strong>${info.haulRate ? `<small class="dops-cell-sub">${esc(info.haulRate)}</small>` : ''}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${!qRows.length && !dm.activeRulesUsed.length && !dm.dayPriceRules.length ? `<tr><td colspan="3" class="dops-empty">No quarry purchases or rate agreements active on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>${fmtNum(qRows.length)} Quarry ${qRows.length === 1 ? 'Site' : 'Sites'} (${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³)</td>
+                <td>${fmtNum(dm.activeRulesUsed.length)} Active Rules Used</td>
+                <td class="r">${fmtUSD(dm.rawSum.totalCost, 0)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     `;
   }
 
-  function renderQuadrant3(ctx, dm, lens, isSingleCo) {
-    const { esc, ic, fmtUSD, fmtLBP, fmtNum, coBadge } = ctx;
+  function renderPanel3ExpensesPnl(ctx, dm, lens, isSingleCo) {
+    const { esc, fmtUSD, fmtNum, coBadge, relLink } = ctx;
+    const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
+    const payAndComm = ctx.round2(dm.salariesPaid + dm.salesSum.commUsd);
 
-    if (lens === 'external') {
-      if (!dm.extItems.length) {
-        return `<div class="dops-card-body"><div class="dops-empty">No external treasury inflows or outflows recorded on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
-      }
+    const pnlStripHtml = `
+      <div class="dops-pnl-bridge dops-substrip" data-dops-open-drawer="expenses">
+        <div class="dops-pnl-step">
+          <small>Sales Ex-VAT</small>
+          <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b>
+        </div>
+        <span class="dops-pnl-op">-</span>
+        <div class="dops-pnl-step">
+          <small>Quarry &amp; Haul</small>
+          <b>${fmtUSD(dm.rawSum.totalCost, 0)}</b>
+        </div>
+        <span class="dops-pnl-op">-</span>
+        <div class="dops-pnl-step">
+          <small>Expenses (${fmtNum(dm.expCount)})</small>
+          <b>${fmtUSD(dm.expExVat, 0)}</b>
+        </div>
+        ${payAndComm > 0 ? `
+          <span class="dops-pnl-op">-</span>
+          <div class="dops-pnl-step">
+            <small>Pay &amp; Comm</small>
+            <b>${fmtUSD(payAndComm, 0)}</b>
+          </div>
+        ` : ''}
+        <span class="dops-pnl-op">=</span>
+        <div class="dops-pnl-step is-profit ${dm.operatingProfit < 0 ? 'crit' : 'good'}">
+          <small>Op. Profit (${esc(profPctTxt)})</small>
+          <b>${fmtUSD(dm.operatingProfit, 0)}</b>
+        </div>
+      </div>
+    `;
+
+    if (lens === 'categories') {
+      const rows = dm.expCategoryRows;
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${pnlStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:48%"><col style="width:28%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Expense Category &amp; Subcategory</th>
+                  <th>Terms · Bills</th>
+                  <th class="r">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(r.sampleId || ''))}" data-dops-summary="1">
+                    <td class="dops-trunc"><strong>${esc(r.label)}</strong></td>
+                    <td><span class="dops-kind ${r.pending ? 'maint' : (r.method === 'Credit' ? 'pay' : 'exp')}">${r.pending ? 'Pending' : esc(r.method)}</span> · ${fmtNum(r.count)}</td>
+                    <td class="r"><strong>${fmtUSD(r.amount, 0)}</strong></td>
+                  </tr>
+                `).join('') || `<tr><td colspan="3" class="dops-empty">No expense categories recorded on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">Cash ${fmtUSD(dm.cashExp, 0)} · Credit ${fmtUSD(dm.creditExp, 0)}</td>
+                  <td class="r">${fmtUSD(dm.expTotal, 0)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (lens === 'stock') {
+      const items = dm.dayExpItems;
+      const wh = dm.dayWhMoves;
+      return `
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${pnlStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:44%"><col style="width:32%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Part / Expense Line Item</th>
+                  <th>Target Asset · Qty</th>
+                  <th class="r">Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map(it => `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(it.expense_id || ''))}">
+                    <td class="dops-trunc"><strong>${esc(it.item_name || it.subcategory || 'Item')}</strong> <small class="dops-cell-sub">${esc(it.category || '')}</small></td>
+                    <td class="dops-trunc">${esc(it.target_equipment || it.warehouse_location || 'Plant')} · ×${fmtNum(it.qty || 1, 0)}</td>
+                    <td class="r"><strong>${fmtUSD(it.line_total || 0, 0)}</strong></td>
+                  </tr>
+                `).join('')}
+                ${wh.map(wm => `
+                  <tr class="rrow" data-rkey="warehouse_movements" data-rid="${esc(String(wm.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind fuel">Stock</span> <strong>${esc(wm.item_name || 'Warehouse Item')}</strong></td>
+                    <td class="dops-trunc">${esc([wm.warehouse_location, wm.target_equipment].filter(Boolean).join(' · '))}</td>
+                    <td class="r">${fmtNum(wm.qty_delta || wm.qty || 0, 0)} ${esc(wm.uom || '')}</td>
+                  </tr>
+                `).join('')}
+                ${!items.length && !wh.length ? `<tr><td colspan="3" class="dops-empty">No part items or warehouse stock movements on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">${fmtNum(items.length)} Line Items · ${fmtNum(wh.length)} Stock Moves</td>
+                  <td class="r">${fmtUSD(dm.expTotal, 0)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // Default ('bills'): Visual Day P&L Bridge + Itemized Expense Bills & Parts Table
+    const bills = dm.expenseBillRows || [];
+    return `
+      <div class="dops-card-body no-pad dops-flex-col">
+        ${pnlStripHtml}
+        <div class="dops-tbl-scroll">
+          <table class="dops-table dops-fixed-3">
+            <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
             <thead>
               <tr>
-                <th>Dir</th>
-                <th>Counterparty</th>
-                <th>Notes / Purpose</th>
+                <th>Supplier &amp; Asset</th>
+                <th>Category, Terms &amp; Note</th>
                 <th class="r">Amount</th>
               </tr>
             </thead>
             <tbody>
-              ${dm.extItems.map(ex => `
-                <tr class="rrow" data-rkey="external_movements" data-rid="${esc(String(ex.id || ''))}">
-                  <td><span class="dops-kind ${ex.isOut ? 'exp' : 'cash'}">${ex.isOut ? 'Outflow' : 'Inflow'}</span></td>
-                  <td class="dops-trunc">${!isSingleCo ? `${coBadge(ex.company)} ` : ''}<strong>${esc(ex.counterparty)}</strong></td>
-                  <td class="dops-trunc" style="color:var(--muted)">${esc(ex.notes || ex.kind)}</td>
-                  <td class="r"><strong style="color:${ex.isOut ? 'var(--ink)' : 'var(--good)'}">${ex.isOut ? '-' : '+'}${ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : fmtUSD(ex.eqAmt, 0)}</strong></td>
+              ${bills.map(b => {
+                const badgeCls = b.isPending ? 'maint' : (b.isCredit ? 'rule' : 'exp');
+                const noteOrItem = b.notes || (b.itemNames && b.itemNames.length ? b.itemNames.join(', ') : '');
+                return `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(b.id || ''))}">
+                    <td class="dops-trunc">
+                      ${!isSingleCo ? `${coBadge(b.company)} ` : ''}${relLink('suppliers', b.supplier, b.supplier, true)}
+                      ${b.equipment ? `<small class="dops-cell-sub">Unit: <b>${esc(b.equipment)}</b></small>` : ''}
+                    </td>
+                    <td class="dops-trunc">
+                      <span class="dops-kind ${badgeCls}">${esc(b.method)}</span> <strong>${esc(b.subcategory || b.category)}</strong>
+                      ${noteOrItem ? `<small class="dops-cell-sub">${esc(noteOrItem)}</small>` : ''}
+                    </td>
+                    <td class="r"><strong>${b.isPending && b.amount === 0 ? 'Pending' : fmtUSD(b.amount, 0)}</strong></td>
+                  </tr>
+                `;
+              }).join('')}
+              ${dm.dayWhMoves.map(wm => `
+                <tr class="rrow" data-rkey="warehouse_movements" data-rid="${esc(String(wm.id || ''))}">
+                  <td class="dops-trunc"><strong>${esc(wm.item_name || 'Stock Move')}</strong></td>
+                  <td class="dops-trunc"><span class="dops-kind fuel">Stock</span> ${esc([wm.warehouse_location, wm.target_equipment].filter(Boolean).join(' · '))}</td>
+                  <td class="r">${fmtNum(wm.qty_delta || wm.qty || 0, 0)} ${esc(wm.uom || '')}</td>
                 </tr>
               `).join('')}
+              ${!bills.length && !dm.dayWhMoves.length ? `<tr><td colspan="3" class="dops-empty">No operational expenses or stock bills recorded on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="2">In +${fmtUSD(dm.extInEq, 0)} (${dm.extInCount}) · Out -${fmtUSD(dm.extOutEq, 0)} (${dm.extOutCount})</td>
-                <td colspan="2" class="r">Net Ext: ${dm.extInEq - dm.extOutEq >= 0 ? '+' : ''}${fmtUSD(dm.extInEq - dm.extOutEq, 0)}</td>
+                <td>${fmtNum(dm.expCount)} ${dm.expCount === 1 ? 'Bill' : 'Bills'} · ${fmtNum(dm.dayExpItems.length)} ${dm.dayExpItems.length === 1 ? 'Item' : 'Items'}</td>
+                <td>Cash ${fmtUSD(dm.cashExp, 0)} · Cr ${fmtUSD(dm.creditExp, 0)}</td>
+                <td class="r">${fmtUSD(dm.expTotal, 0)}</td>
               </tr>
             </tfoot>
           </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPanel4Treasury(ctx, dm, lens, isSingleCo) {
+    const { esc, fmtUSD, fmtNum, coBadge } = ctx;
+    const totFlow = Math.max(1, dm.cashInflow + dm.cashOutflow);
+    const inPct = (dm.cashInflow + dm.cashOutflow) > 0 ? Math.round((dm.cashInflow / totFlow) * 100) : 0;
+    const outPct = (dm.cashInflow + dm.cashOutflow) > 0 ? (100 - inPct) : 0;
+
+    const cashTopBarHtml = `
+      <div class="dops-cash-bar-box dops-substrip">
+        <div class="dops-cash-bar-top">
+          <span><strong style="color:var(--good)">In +${fmtUSD(dm.cashInflow, 0)}</strong> · <strong>Out -${fmtUSD(dm.cashOutflow, 0)}</strong> · <strong style="color:${dm.netCashFlow < 0 ? 'var(--warn)' : 'var(--good)'}">Net ${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}</strong></span>
+          <span>Till: <strong>${fmtUSD(dm.liveTillUsd, 0)}</strong>${dm.liveTillLbp ? ` + <strong>${fmtCompactLbp(dm.liveTillLbp)}</strong>` : ''}</span>
+        </div>
+        <div class="dops-dual-track" role="img" aria-label="Day cash inflow versus outflow">
+          <div class="dops-dual-seg inflow" style="width:${inPct}%"></div>
+          <div class="dops-dual-seg outflow" style="width:${outPct}%"></div>
+        </div>
+      </div>
+    `;
+
+    if (lens === 'external') {
+      if (!dm.extItems.length) {
+        return `<div class="dops-card-body no-pad dops-flex-col">${cashTopBarHtml}<div class="dops-empty">No external treasury inflows or outflows recorded on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
+      }
+      return `
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${cashTopBarHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:44%"><col style="width:34%"><col style="width:22%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Dir &amp; Counterparty</th>
+                  <th>Notes / Purpose</th>
+                  <th class="r">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${dm.extItems.map(ex => `
+                  <tr class="rrow" data-rkey="external_movements" data-rid="${esc(String(ex.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind ${ex.isOut ? 'exp' : 'cash'}">${ex.isOut ? 'Out' : 'In'}</span> ${!isSingleCo ? `${coBadge(ex.company)} ` : ''}<strong>${esc(ex.counterparty)}</strong></td>
+                    <td class="dops-trunc" style="color:var(--muted)">${esc(ex.notes || ex.kind)}</td>
+                    <td class="r"><strong style="color:${ex.isOut ? 'var(--ink)' : 'var(--good)'}">${ex.isOut ? '-' : '+'}${ex.lbp && !ex.usd ? fmtCompactLbp(ex.lbp) : fmtUSD(ex.eqAmt, 0)}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">In +${fmtUSD(dm.extInEq, 0)} (${dm.extInCount}) · Out -${fmtUSD(dm.extOutEq, 0)} (${dm.extOutCount})</td>
+                  <td class="r">Net: ${dm.extInEq - dm.extOutEq >= 0 ? '+' : ''}${fmtUSD(dm.extInEq - dm.extOutEq, 0)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
 
     if (lens === 'fx_loans') {
       if (!dm.convItems.length && !dm.loanEvents.length && !dm.dayFxRates.length) {
-        return `<div class="dops-card-body"><div class="dops-empty">No FX currency conversions or loan movements on ${esc(fmtShortDay(dm.targetDate))} · Active FX ${fmtNum(dm.fxRate, 0)} LBP/$.</div></div>`;
+        return `<div class="dops-card-body no-pad dops-flex-col">${cashTopBarHtml}<div class="dops-empty">No FX currency conversions or loan movements on ${esc(fmtShortDay(dm.targetDate))} · Active FX ${fmtNum(dm.fxRate, 0)} LBP/$.</div></div>`;
       }
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Counterparty / Pair</th>
-                <th>Rate / Currency</th>
-                <th class="r">USD Eq.</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dm.convItems.map(cv => `
-                <tr class="rrow" data-rkey="conversions" data-rid="${esc(String(cv.id || ''))}">
-                  <td><span class="dops-kind fx">FX Conv</span></td>
-                  <td class="dops-trunc">${!isSingleCo ? `${coBadge(cv.company)} ` : ''}<strong>${esc(cv.dirLabel)}</strong>${cv.notes ? ` <span style="color:var(--muted)">· ${esc(cv.notes)}</span>` : ''}</td>
-                  <td>${fmtCompactLbp(cv.lbpMag)} @ <strong>${fmtNum(cv.rate, 0)}</strong></td>
-                  <td class="r"><strong>${fmtUSD(cv.usdMag, 0)}</strong></td>
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${cashTopBarHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:44%"><col style="width:32%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Type &amp; Counterparty</th>
+                  <th>Rate / Currency</th>
+                  <th class="r">USD Eq.</th>
                 </tr>
-              `).join('')}
-              ${dm.loanEvents.map(ln => `
-                <tr class="rrow" data-rkey="${esc(ln.rkey)}" data-rid="${esc(String(ln.id || ''))}">
-                  <td><span class="dops-kind loan">${esc(ln.badge)}</span></td>
-                  <td class="dops-trunc">${!isSingleCo ? `${coBadge(ln.company)} ` : ''}<strong>${esc(ln.party)}</strong>${ln.notes ? ` <span style="color:var(--muted)">· ${esc(ln.notes)}</span>` : ''}</td>
-                  <td>${ln.lbp ? fmtCompactLbp(ln.lbp) : 'USD Principal'}</td>
-                  <td class="r"><strong style="color:${ln.isInflow ? 'var(--good)' : 'var(--ink)'}">${ln.isInflow ? '+' : '-'}${fmtUSD(ln.eqAmt, 0)}</strong></td>
+              </thead>
+              <tbody>
+                ${dm.convItems.map(cv => `
+                  <tr class="rrow" data-rkey="conversions" data-rid="${esc(String(cv.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind fx">FX</span> <strong>${esc(cv.dirLabel)}</strong>${cv.notes ? ` <small class="dops-cell-sub">${esc(cv.notes)}</small>` : ''}</td>
+                    <td>${fmtCompactLbp(cv.lbpMag)} @ <strong>${fmtNum(cv.rate, 0)}</strong></td>
+                    <td class="r"><strong>${fmtUSD(cv.usdMag, 0)}</strong></td>
+                  </tr>
+                `).join('')}
+                ${dm.loanEvents.map(ln => `
+                  <tr class="rrow" data-rkey="${esc(ln.rkey)}" data-rid="${esc(String(ln.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind loan">${esc(ln.badge)}</span> <strong>${esc(ln.party)}</strong>${ln.notes ? ` <small class="dops-cell-sub">${esc(ln.notes)}</small>` : ''}</td>
+                    <td>${ln.lbp ? fmtCompactLbp(ln.lbp) : 'USD Principal'}</td>
+                    <td class="r"><strong style="color:${ln.isInflow ? 'var(--good)' : 'var(--ink)'}">${ln.isInflow ? '+' : '-'}${fmtUSD(ln.eqAmt, 0)}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">FX Converted: ${fmtUSD(dm.totConvUsd, 0)} (${dm.convItems.length})</td>
+                  <td class="r">Loans: ${dm.loanInEq - dm.loanOutEq >= 0 ? '+' : ''}${fmtUSD(dm.loanInEq - dm.loanOutEq, 0)}</td>
                 </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">FX Converted: ${fmtUSD(dm.totConvUsd, 0)} (${dm.convItems.length})</td>
-                <td colspan="2" class="r">Loans In +${fmtUSD(dm.loanInEq, 0)} · Out -${fmtUSD(dm.loanOutEq, 0)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
 
     if (lens === 'ar_ap') {
       if (!dm.dayRcpts.length && !dm.daySets.length) {
-        return `<div class="dops-card-body"><div class="dops-empty">No customer AR receipts or supplier AP settlements on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
+        return `<div class="dops-card-body no-pad dops-flex-col">${cashTopBarHtml}<div class="dops-empty">No customer AR receipts or supplier AP settlements on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
       }
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Flow</th>
-                <th>Counterparty</th>
-                <th>Method</th>
-                <th class="r">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dm.dayRcpts.filter(r => ctx.receiptKind(r) !== 'Excluded').map(r => `
-                <tr class="rrow" data-rkey="receipts" data-rid="${esc(String(r.id || ''))}">
-                  <td><span class="dops-kind cash">AR In</span></td>
-                  <td class="dops-trunc"><strong>${esc(r.customer || '-')}</strong></td>
-                  <td>${esc(r.method || 'Cash')}</td>
-                  <td class="r"><strong style="color:var(--good)">+${fmtUSD(Number(r.amount || 0) + Number(r.discount || 0), 0)}</strong></td>
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${cashTopBarHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:46%"><col style="width:30%"><col style="width:24%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Flow &amp; Counterparty</th>
+                  <th>Method &amp; Ref</th>
+                  <th class="r">Amount</th>
                 </tr>
-              `).join('')}
-              ${dm.daySets.filter(s => ctx.settlementKind(s) !== 'Excluded').map(s => `
-                <tr class="rrow" data-rkey="settlements" data-rid="${esc(String(s.id || ''))}">
-                  <td><span class="dops-kind pay">AP Out</span></td>
-                  <td class="dops-trunc"><strong>${esc(s.supplier || '-')}</strong></td>
-                  <td>${esc(s.method || 'Cash')}</td>
-                  <td class="r"><strong>-${fmtUSD(Number(s.amount || 0) + Number(s.discount || 0), 0)}</strong></td>
+              </thead>
+              <tbody>
+                ${dm.dayRcpts.filter(r => ctx.receiptKind(r) !== 'Excluded').map(r => `
+                  <tr class="rrow" data-rkey="receipts" data-rid="${esc(String(r.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind cash">AR In</span> <strong>${esc(r.customer || '-')}</strong></td>
+                    <td>${esc(r.method || 'Cash')}${r.reference ? ` · #${esc(r.reference)}` : ''}</td>
+                    <td class="r"><strong style="color:var(--good)">+${fmtUSD(Number(r.amount || 0) + Number(r.discount || 0), 0)}</strong></td>
+                  </tr>
+                `).join('')}
+                ${dm.daySets.filter(s => ctx.settlementKind(s) !== 'Excluded').map(s => `
+                  <tr class="rrow" data-rkey="settlements" data-rid="${esc(String(s.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind pay">AP Out</span> <strong>${esc(s.supplier || '-')}</strong></td>
+                    <td>${esc(s.method || 'Cash')}${s.reference ? ` · #${esc(s.reference)}` : ''}</td>
+                    <td class="r"><strong>-${fmtUSD(Number(s.amount || 0) + Number(s.discount || 0), 0)}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">AR In +${fmtUSD(dm.arCollected, 0)} (${dm.arRcptCount})</td>
+                  <td class="r">AP Out -${fmtUSD(dm.apPaid, 0)}</td>
                 </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">AR In +${fmtUSD(dm.arCollected, 0)} (${dm.arRcptCount})</td>
-                <td colspan="2" class="r">AP Out -${fmtUSD(dm.apPaid, 0)} (${dm.apSetCount})</td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
 
-    // Default: 'bridge' - Visual Inflow vs Outflow Balance Bar + 6-Lane Waterfall + FX & Loans Spotlight
-    const totFlow = Math.max(1, dm.cashInflow + dm.cashOutflow);
-    const inPct = (dm.cashInflow + dm.cashOutflow) > 0 ? Math.round((dm.cashInflow / totFlow) * 100) : 0;
-    const outPct = (dm.cashInflow + dm.cashOutflow) > 0 ? (100 - inPct) : 0;
-
-    const topExtIn = dm.extItems.find(e => !e.isOut);
-    const topExtOut = dm.extItems.find(e => e.isOut);
-    const topRcpt = dm.dayRcpts[0];
-    const topSet = dm.daySets[0];
-
-    const fxSpotCopy = dm.convItems.length > 0
-      ? (dm.convItems.length === 1
-          ? `${dm.convItems[0].dirLabel}: ${fmtUSD(dm.convItems[0].usdMag, 0)} @ ${fmtNum(dm.convItems[0].rate, 0)}`
-          : `${dm.convItems.length} FX (${fmtUSD(dm.totConvUsd, 0)} @ avg ${fmtNum(dm.avgConvRate, 0)})`)
-      : `0 Conversions · Rate ${fmtNum(dm.fxRate, 0)} LBP/$`;
-
-    const loanSpotCopy = dm.loanEvents.length > 0
-      ? `${dm.loanEvents.length} ${dm.loanEvents.length === 1 ? 'Move' : 'Moves'} · In +${fmtUSD(dm.loanInEq, 0)} / Out -${fmtUSD(dm.loanOutEq, 0)}`
-      : '0 Loan Draws or Repayments';
-
+    // Default ('bridge'): Cash Inflow/Outflow Balance Bar + Complete Named Cash, External, AR/AP & Loans Table
+    const moves = dm.cashMoveRows || [];
     return `
-      <div class="dops-card-body">
-        <div class="dops-cash-bar-box">
-          <div class="dops-cash-bar-top">
-            <span><strong style="color:var(--good)">In +${fmtUSD(dm.cashInflow, 0)}</strong> · <strong>Out -${fmtUSD(dm.cashOutflow, 0)}</strong></span>
-            <span>Till: <strong>${fmtUSD(dm.liveTillUsd, 0)}</strong>${dm.liveTillLbp ? ` + <strong>${fmtCompactLbp(dm.liveTillLbp)}</strong>` : ''}</span>
-          </div>
-          <div class="dops-dual-track" role="img" aria-label="Day cash inflow versus outflow">
-            <div class="dops-dual-seg inflow" style="width:${inPct}%"></div>
-            <div class="dops-dual-seg outflow" style="width:${outPct}%"></div>
-          </div>
-        </div>
-
-        <div class="dops-lanes-grid">
-          <div class="dops-lane-col">
-            <div class="dops-lane-hdr"><span>Inflows</span><span>+${fmtUSD(dm.cashInflow, 0)}</span></div>
-            <div class="dops-lane-item" data-dops-open-drawer="sales">
-              <div class="dops-lane-lbl"><strong>Cash Sales</strong><small>${fmtUSD(dm.salesSum.cashTtc, 0)} TTC cash tickets</small></div>
-              <span class="dops-lane-amt ${dm.salesSum.cashNet > 0 ? 'in' : 'zero'}">${dm.salesSum.cashNet > 0 ? `+${fmtUSD(dm.salesSum.cashNet, 0)}` : '$0'}</span>
-            </div>
-            <div class="dops-lane-item" data-dops-lens="treasury:ar_ap">
-              <div class="dops-lane-lbl"><strong>AR Collected (${fmtNum(dm.arRcptCount)})</strong><small>${topRcpt ? esc(topRcpt.customer || 'Client receipt') : 'Customer collections'}</small></div>
-              <span class="dops-lane-amt ${dm.arCollected > 0 ? 'in' : 'zero'}">${dm.arCollected > 0 ? `+${fmtUSD(dm.arCollected, 0)}` : '$0'}</span>
-            </div>
-            <div class="dops-lane-item${dm.extInCount > 0 ? ' is-ext-active' : ''}" data-dops-lens="treasury:external">
-              <div class="dops-lane-lbl"><strong>External In (${fmtNum(dm.extInCount)})</strong><small>${topExtIn ? esc(`${topExtIn.counterparty}${topExtIn.notes ? ' · ' + topExtIn.notes : ''}`) : 'Owner & intercompany in'}</small></div>
-              <span class="dops-lane-amt ${dm.extInEq > 0 ? 'in' : 'zero'}">${dm.extInEq > 0 ? `+${fmtUSD(dm.extInEq, 0)}` : '$0'}</span>
-            </div>
-          </div>
-
-          <div class="dops-lane-col">
-            <div class="dops-lane-hdr"><span>Outflows</span><span>-${fmtUSD(dm.cashOutflow, 0)}</span></div>
-            <div class="dops-lane-item" data-dops-lens="treasury:ar_ap">
-              <div class="dops-lane-lbl"><strong>AP Settled (${fmtNum(dm.apSetCount)})</strong><small>${topSet ? esc(topSet.supplier || 'Supplier payment') : 'Supplier payments'}</small></div>
-              <span class="dops-lane-amt ${dm.apPaid > 0 ? 'out' : 'zero'}">${dm.apPaid > 0 ? `-${fmtUSD(dm.apPaid, 0)}` : '$0'}</span>
-            </div>
-            <div class="dops-lane-item${dm.extOutCount > 0 ? ' is-ext-active' : ''}" data-dops-lens="treasury:external">
-              <div class="dops-lane-lbl"><strong>External Out (${fmtNum(dm.extOutCount)})</strong><small>${topExtOut ? esc(`${topExtOut.counterparty}${topExtOut.notes ? ' · ' + topExtOut.notes : ''}`) : 'External disbursements'}</small></div>
-              <span class="dops-lane-amt ${dm.extOutEq > 0 ? 'out' : 'zero'}">${dm.extOutEq > 0 ? `-${fmtUSD(dm.extOutEq, 0)}` : '$0'}</span>
-            </div>
-            <div class="dops-lane-item" data-dops-open-drawer="expenses">
-              <div class="dops-lane-lbl"><strong>Cash Exp &amp; Payroll</strong><small>Exp ${fmtUSD(dm.cashExp, 0)} · Sal ${fmtUSD(dm.salariesPaid, 0)}</small></div>
-              <span class="dops-lane-amt ${(dm.cashExp + dm.salariesPaid) > 0 ? 'out' : 'zero'}">${(dm.cashExp + dm.salariesPaid) > 0 ? `-${fmtUSD(dm.cashExp + dm.salariesPaid, 0)}` : '$0'}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="dops-fx-loan-strip">
-          <div class="dops-spot-pill${dm.convItems.length > 0 ? ' active-fx' : ''}" ${dm.convItems.length === 1 ? `data-dops-inspect-rkey="conversions" data-dops-inspect-rid="${esc(String(dm.convItems[0].id || ''))}"` : `data-dops-lens="treasury:fx_loans"`}>
-            <div class="dops-spot-left">
-              ${ic('conversions')}
-              <div class="dops-spot-copy">
-                <small>FX Conversions (${fmtNum(dm.convItems.length)})</small>
-                <b>${esc(fxSpotCopy)}</b>
-              </div>
-            </div>
-          </div>
-          <div class="dops-spot-pill${dm.loanEvents.length > 0 ? ' active-loan' : ''}" ${dm.loanEvents.length === 1 ? `data-dops-inspect-rkey="${esc(dm.loanEvents[0].rkey)}" data-dops-inspect-rid="${esc(String(dm.loanEvents[0].id || ''))}"` : `data-dops-lens="treasury:fx_loans"`}>
-            <div class="dops-spot-left">
-              ${ic('ledger_treasury')}
-              <div class="dops-spot-copy">
-                <small>Loans &amp; Advances (${fmtNum(dm.loanEvents.length)})</small>
-                <b>${esc(loanSpotCopy)}</b>
-              </div>
-            </div>
-          </div>
+      <div class="dops-card-body no-pad dops-flex-col">
+        ${cashTopBarHtml}
+        <div class="dops-tbl-scroll">
+          <table class="dops-table dops-fixed-3">
+            <colgroup><col style="width:44%"><col style="width:34%"><col style="width:22%"></colgroup>
+            <thead>
+              <tr>
+                <th>Flow &amp; Counterparty</th>
+                <th>Reference / Purpose</th>
+                <th class="r">Cash Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${moves.map(m => `
+                <tr class="rrow" data-rkey="${esc(m.rkey)}" data-rid="${esc(String(m.rid || ''))}">
+                  <td class="dops-trunc"><span class="dops-kind ${m.badgeCls}">${esc(m.badgeTxt)}</span> ${!isSingleCo ? `${coBadge(m.company)} ` : ''}<strong>${esc(m.party)}</strong></td>
+                  <td class="dops-trunc"><span style="color:var(--muted)">${esc(m.detail || '-')}</span></td>
+                  <td class="r"><strong style="color:${m.isFx ? 'var(--chart-navy)' : (m.isInflow ? 'var(--good)' : 'var(--ink)')}">${m.isFx ? fmtUSD(m.amount, 0) : `${m.amount >= 0 ? '+' : '-'}${fmtUSD(Math.abs(m.amount), 0)}`}</strong></td>
+                </tr>
+              `).join('') || `<tr><td colspan="3" class="dops-empty">No cash, AR/AP, external, or loan movements on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>AR +${fmtUSD(dm.arCollected, 0)} · Cash Sales +${fmtUSD(dm.salesSum.cashNet, 0)}</td>
+                <td>Ext/Ln ${dm.extInEq + dm.loanInEq - dm.extOutEq - dm.loanOutEq >= 0 ? '+' : ''}${fmtUSD(dm.extInEq + dm.loanInEq - dm.extOutEq - dm.loanOutEq, 0)} · FX ${fmtNum(dm.fxRate, 0)}</td>
+                <td class="r">${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     `;
   }
 
-  function renderQuadrant4(ctx, dm, lens, isSingleCo) {
-    const { esc, ic, fmtUSD, fmtNum, coBadge } = ctx;
+  function renderPanel5FleetFuel(ctx, dm, lens, isSingleCo) {
+    const { esc, fmtUSD, fmtNum, coBadge } = ctx;
+    const maintCount = dm.dayOilLogs.length + dm.dayRepairs.length + dm.dayDefects.length + dm.dayPartMoves.length;
 
-    if (lens === 'exp_stock') {
-      const hasAny = dm.expCategoryRows.length || dm.dayExpItems.length || dm.dayWhMoves.length;
-      if (!hasAny) {
-        return `<div class="dops-card-body"><div class="dops-empty">No operational expenses, spare parts, or warehouse movements on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
-      }
+    const topStripHtml = `
+      <div class="dops-stat-strip-3 dops-substrip">
+        <div class="dops-stat-box" data-dops-open-drawer="fuel_maint">
+          <small>${esc(dm.closingTankLbl)} Closing</small>
+          <b>${dm.closingTankL != null ? `${fmtNum(dm.closingTankL, 0)} L` : 'N/A'} <span class="dops-stat-muted">· ${fmtNum(dm.dieselIssuedL, 0)} L issued</span></b>
+        </div>
+        <div class="dops-stat-box" data-dops-open-drawer="fuel_maint">
+          <small>Active Fleet (${fmtNum(dm.activeTrucksCount)} Units)</small>
+          <b>Own ${fmtNum(dm.companyFleetTrips)} <span class="dops-stat-muted">· 3P Haul ${fmtNum(dm.haulerTrips)} trips</span></b>
+        </div>
+        <div class="dops-stat-box${dm.openCritDefects.length > 0 ? ' tone-crit' : (dm.dayMalfs.length > 0 ? ' tone-brass' : '')}" data-dops-lens="fuel:maint">
+          <small>Maint, Lube &amp; Var</small>
+          <b>${dm.dayMalfs.length > 0 ? `${fmtNum(dm.malfNetL, 0)} L Var` : `${fmtNum(maintCount)} Maint`} <span class="dops-stat-muted">· Lube ${fmtNum(dm.lubeL, 0)}L · Gr ${fmtNum(dm.greaseKg, 0)}kg</span></b>
+        </div>
+      </div>
+    `;
+
+    if (lens === 'maint' || lens === 'maint_only') {
+      const hasMaint = dm.dayMalfs.length || dm.dayOilLogs.length || dm.dayRepairs.length || dm.dayDefects.length || dm.dayCoEquip.length || dm.openCritDefects.length;
       return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Category / Item</th>
-                <th>Type</th>
-                <th class="r">Count</th>
-                <th class="r">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dm.expCategoryRows.map(r => `
-                <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(r.sampleId || ''))}" data-dops-summary="1">
-                  <td class="dops-trunc"><strong>${esc(r.label)}</strong></td>
-                  <td><span class="dops-kind ${r.pending ? 'maint' : 'exp'}">${r.pending ? 'Pending' : esc(r.method)}</span></td>
-                  <td class="r">${fmtNum(r.count)}</td>
-                  <td class="r"><strong>${r.pending && r.amount === 0 ? 'Pending ($0)' : fmtUSD(r.amount, 0)}</strong></td>
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${topStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:42%"><col style="width:36%"><col style="width:22%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Type &amp; Asset</th>
+                  <th>Maintenance / Variance Detail</th>
+                  <th class="r">Impact</th>
                 </tr>
-              `).join('')}
-              ${dm.dayExpItems.slice(0, 6).map(it => `
-                <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(it.expense_id || ''))}">
-                  <td class="dops-trunc"><strong>${esc(it.item_name || it.subcategory || 'Part')}</strong> <span style="color:var(--muted)">· ${esc(it.target_equipment || it.warehouse_location || '')}</span></td>
-                  <td><span class="dops-kind fuel">${it.warehouse_location ? 'Stock In' : 'Allocated'}</span></td>
-                  <td class="r">${fmtNum(it.qty || 1, 0)}</td>
-                  <td class="r">${fmtUSD(it.line_total || 0, 0)}</td>
+              </thead>
+              <tbody>
+                ${dm.dayMalfs.map(mf => {
+                  const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+                  const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
+                  const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
+                  return `
+                    <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
+                      <td class="dops-trunc"><span class="dops-kind crit">Var</span> <strong>${esc(mfItem)}</strong></td>
+                      <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.discrepancy_type || '-')}</td>
+                      <td class="r"><strong>${fmtNum(mfQty, 0)} ${esc(mfUom)}</strong></td>
+                    </tr>
+                  `;
+                }).join('')}
+                ${dm.dayRepairs.map(rp => `
+                  <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong></td>
+                    <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
+                    <td class="r"><strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong></td>
+                  </tr>
+                `).join('')}
+                ${dm.dayOilLogs.map(ol => `
+                  <tr class="rrow" data-rkey="equipment_oil_logs" data-rid="${esc(String(ol.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind maint">Oil</span> <strong>${esc(ol.equipment || '-')}</strong></td>
+                    <td class="dops-trunc">${esc([ol.oil_type, ol.service_action].filter(Boolean).join(' · '))}</td>
+                    <td class="r"><strong>${fmtNum(ol.qty || 0, 0)} L</strong></td>
+                  </tr>
+                `).join('')}
+                ${dm.dayDefects.concat(dm.openCritDefects.filter(d => !dm.dayDefects.includes(d))).map(df => `
+                  <tr class="rrow" data-rkey="equipment_defects" data-rid="${esc(String(df.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind crit">Defect</span> <strong>${esc(df.equipment || '-')}</strong></td>
+                    <td class="dops-trunc">${esc([df.severity, df.part_name, safeNotes(ctx, df.description || df.notes)].filter(Boolean).join(' · '))}</td>
+                    <td class="r">${esc(df.status || 'Open')}</td>
+                  </tr>
+                `).join('')}
+                ${!hasMaint ? `<tr><td colspan="3" class="dops-empty">0 tank variances, breakdowns, oil logs, or open critical defects on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">Oil ${fmtNum(dm.dayOilLogs.length)} · Repairs ${fmtNum(dm.dayRepairs.length)} · Defects ${fmtNum(dm.dayDefects.length)}</td>
+                  <td class="r">Var: ${fmtNum(dm.malfNetL, 0)} L</td>
                 </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">Cash ${fmtUSD(dm.cashExp, 0)} · Credit ${fmtUSD(dm.creditExp, 0)}</td>
-                <td colspan="2" class="r">Total Spend: ${fmtUSD(dm.expTotal, 0)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </div>
       `;
     }
 
-    if (lens === 'fuel_maint') {
-      const hasAny = dm.dayFuels.length || dm.dayMalfs.length || dm.dayOilLogs.length || dm.dayRepairs.length || dm.dayDefects.length || dm.dayCoEquip.length;
-      if (!hasAny) {
-        return `<div class="dops-card-body"><div class="dops-empty">No fuel intakes, oil changes, repairs, or fleet assignments on ${esc(fmtShortDay(dm.targetDate))}.</div></div>`;
-      }
-      return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
+    // Default ('fuel_maint'): 3-Stat Tank/Fleet Strip + All Equipment Fuel Intakes, Odometer Deltas & Maintenance Table
+    const fuels = dm.fuelSortedRows || [];
+    return `
+      <div class="dops-card-body no-pad dops-flex-col">
+        ${topStripHtml}
+        <div class="dops-tbl-scroll">
+          <table class="dops-table dops-fixed-3">
+            <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
             <thead>
               <tr>
-                <th>Event</th>
                 <th>Equipment / Unit</th>
-                <th>Detail</th>
-                <th class="r">Qty / Cost</th>
+                <th>Driver, Category &amp; Odo</th>
+                <th class="r">Issued</th>
               </tr>
             </thead>
             <tbody>
               ${dm.dayMalfs.map(mf => {
                 const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
-                const mfUom = String(mf.uom || (/grease|تشحيم|مشحمة/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
+                const mfUom = String(mf.uom || (/grease/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
                 const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
-                const isDieselMf = /diesel|mazout/i.test(mfItem);
                 return `
-                <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
-                  <td><span class="dops-kind crit">${isDieselMf ? 'Tank Var' : 'Stock Var'}</span></td>
-                  <td><strong>${esc(mfItem)} · ${esc(mf.discrepancy_type || 'Malfunction')}</strong></td>
-                  <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.equipment || (mf.category || '-'))}</td>
-                  <td class="r"><strong style="color:${mfQty < 0 ? 'var(--good)' : 'var(--crit)'}">${fmtNum(mfQty, mfQty % 1 ? 1 : 0)} ${esc(mfUom)}</strong></td>
-                </tr>
-              `;
+                  <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind crit">Tank Var</span> <strong>${esc(mfItem)}</strong></td>
+                    <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.discrepancy_type || '-')}</td>
+                    <td class="r"><strong style="color:${mfQty < 0 ? 'var(--good)' : 'var(--crit)'}">${fmtNum(mfQty, 0)} ${esc(mfUom)}</strong></td>
+                  </tr>
+                `;
               }).join('')}
-              ${dm.dayOilLogs.map(ol => `
-                <tr class="rrow" data-rkey="equipment_oil_logs" data-rid="${esc(String(ol.id || ''))}">
-                  <td><span class="dops-kind maint">Oil Log</span></td>
-                  <td><strong>${esc(ol.equipment || '-')}</strong></td>
-                  <td class="dops-trunc">${esc([ol.oil_type, ol.service_action].filter(Boolean).join(' · '))}</td>
-                  <td class="r"><strong>${fmtNum(ol.qty || 0, 0)} L</strong></td>
-                </tr>
-              `).join('')}
               ${dm.dayRepairs.map(rp => `
                 <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(String(rp.id || ''))}">
-                  <td><span class="dops-kind maint">Repair</span></td>
-                  <td><strong>${esc(rp.equipment || '-')}</strong></td>
+                  <td class="dops-trunc"><span class="dops-kind maint">Repair</span> <strong>${esc(rp.equipment || '-')}</strong></td>
                   <td class="dops-trunc">${esc(safeNotes(ctx, rp.notes) || rp.repair_source || '-')}</td>
                   <td class="r"><strong>${fmtUSD(rp.total_cost || rp.cost || 0, 0)}</strong></td>
                 </tr>
               `).join('')}
-              ${dm.dayDefects.map(df => `
-                <tr class="rrow" data-rkey="equipment_defects" data-rid="${esc(String(df.id || ''))}">
-                  <td><span class="dops-kind crit">Defect</span></td>
-                  <td><strong>${esc(df.equipment || '-')}</strong></td>
-                  <td class="dops-trunc">${esc([df.severity, df.part_name].filter(Boolean).join(' · '))}</td>
-                  <td class="r">${esc(df.status || 'Open')}</td>
-                </tr>
-              `).join('')}
-              ${dm.dayCoEquip.map(ce => `
-                <tr class="rrow" data-rkey="company_equipment" data-rid="${esc(String(ce.id || ''))}">
-                  <td><span class="dops-kind fuel">New Unit</span></td>
-                  <td>${!isSingleCo ? `${coBadge(ce.company)} ` : ''}<strong>${esc(ce.equipment || '-')}</strong></td>
-                  <td class="dops-trunc">${esc([ce.ownership, ce.supplier].filter(Boolean).join(' · '))}</td>
-                  <td class="r">Active</td>
-                </tr>
-              `).join('')}
-              ${dm.dayFuels.slice(0, 12).map(fl => `
-                <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(String(fl.id || ''))}">
-                  <td><span class="dops-kind fuel">Fuel</span></td>
-                  <td><strong>${esc(fl.equipment || 'Tank')}</strong></td>
-                  <td class="dops-trunc">${esc([fl.item || fl.fuel_type, fl.driver].filter(Boolean).join(' · '))}</td>
-                  <td class="r"><strong>${fmtNum(fl.litres || 0, 0)} ${/grease/i.test(String(fl.item || '')) ? 'kg' : 'L'}</strong></td>
-                </tr>
-              `).join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2">Diesel Issued ${fmtNum(dm.dieselIssuedL, 0)} L · Bought ${fmtNum(dm.dieselBoughtL, 0)} L</td>
-                <td colspan="2" class="r">${dm.closingTankL != null ? `${esc(dm.closingTankLbl)}: ${fmtNum(dm.closingTankL, 0)} L` : `${fmtNum(dm.fuelFillsCount)} Fills`}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      `;
-    }
-
-    if (lens === 'team') {
-      const hasAny = dm.dayEmps.length || dm.daySals.length || dm.dayAtt.length || dm.dayLogAllows.length;
-      if (!hasAny) {
-        return `<div class="dops-card-body"><div class="dops-empty">No attendance logs, salary payouts, or new contracts on ${esc(fmtShortDay(dm.targetDate))} (${fmtNum(dm.activeStaffCount)} active dispatch drivers).</div></div>`;
-      }
-      return `
-        <div class="dops-card-body no-pad">
-          <table class="dops-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Staff Member</th>
-                <th>Detail</th>
-                <th class="r">Hours / USD</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dm.dayEmps.map(em => `
-                <tr class="rrow" data-rkey="employments" data-rid="${esc(String(em.id || ''))}">
-                  <td><span class="dops-kind team">New Contract</span></td>
-                  <td>${!isSingleCo ? `${coBadge(em.company)} ` : ''}<strong>${esc(em.staff || '-')}</strong></td>
-                  <td>${esc(em.type || 'Staff')} · ${fmtNum(em.working_days || 30)}d</td>
-                  <td class="r"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
-                </tr>
-              `).join('')}
-              ${dm.daySals.map(sa => `
-                <tr class="rrow" data-rkey="salaries" data-rid="${esc(String(sa.id || ''))}">
-                  <td><span class="dops-kind pay">Salary Paid</span></td>
-                  <td>${!isSingleCo ? `${coBadge(sa.company)} ` : ''}<strong>${esc(sa.staff || '-')}</strong></td>
-                  <td>${esc(sa.payroll_month || '')} · ${esc(sa.method || 'Cash')}</td>
-                  <td class="r"><strong>${sa.lbp_amount ? fmtCompactLbp(sa.lbp_amount) : fmtUSD(sa.amount || 0, 0)}</strong></td>
-                </tr>
-              `).join('')}
-              ${dm.dayLogAllows.slice(0, 6).map(lg => `
-                <tr class="rrow" data-rkey="logistics_allowances" data-rid="${esc(String(lg.id || ''))}">
-                  <td><span class="dops-kind team">Site Transport</span></td>
-                  <td>${!isSingleCo ? `${coBadge(lg.company)} ` : ''}<strong>${esc(lg.staff || '-')}</strong></td>
-                  <td>${esc([lg.site, lg.working_days].filter(Boolean).join(' · ') || 'Site Transport')}</td>
-                  <td class="r"><strong>${lg.lbp_amount ? fmtCompactLbp(lg.lbp_amount) : fmtUSD(lg.daily_usd || lg.usd_amount || 0, 2)}/d</strong></td>
-                </tr>
-              `).join('')}
-              ${dm.dayAtt.slice(0, 12).map(at => {
-                const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
+              ${fuels.map(fl => {
+                const prevOdo = Number(fl.prev_odometer || 0);
+                const curOdo = Number(fl.odometer || 0);
+                const odoDelta = (curOdo > prevOdo && prevOdo > 0) ? (curOdo - prevOdo) : 0;
+                const uom = /grease/i.test(String(fl.item || '')) ? 'kg' : 'L';
+                const isRefill = ctx.isDieselTankRefillIntake && ctx.isDieselTankRefillIntake(fl);
+                const odoTag = odoDelta > 0 ? ` <span class="dops-odo-tag">+${fmtNum(odoDelta, 0)} km</span>` : (curOdo > 0 ? ` <span class="dops-odo-tag">${fmtNum(curOdo, 0)}</span>` : '');
                 return `
-                  <tr class="rrow" data-rkey="attendance" data-rid="${esc(String(at.id || ''))}">
-                    <td><span class="dops-kind ${isAbs ? 'maint' : 'team'}">${isAbs ? 'Absent/Off' : 'Present'}</span></td>
-                    <td><strong>${esc(at.staff || '-')}</strong></td>
-                    <td>${esc([at.in_time && at.out_time ? `${at.in_time}-${at.out_time}` : (at.status || at.type || 'Shift'), at.overtime_hours ? `+${at.overtime_hours}h OT` : ''].filter(Boolean).join(' · '))}</td>
-                    <td class="r">${at.worked_hours ? `${fmtNum(at.worked_hours, 1)} h` : '-'}</td>
+                  <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(String(fl.id || ''))}">
+                    <td class="dops-trunc">
+                      ${!isSingleCo ? `${coBadge(fl.company)} ` : ''}<strong>${esc(fl.equipment || 'Plant Tank')}</strong>
+                      ${fl.equipment_category ? `<small class="dops-cell-sub">${esc(fl.equipment_category)}</small>` : ''}
+                    </td>
+                    <td class="dops-trunc">
+                      ${fl.driver ? `<strong>${esc(fl.driver)}</strong>` : `<span style="color:var(--muted)">${esc(fl.item || 'Diesel')}</span>`}${odoTag}
+                    </td>
+                    <td class="r"><strong style="color:${isRefill ? 'var(--good)' : 'var(--ink)'}">${isRefill ? '+' : ''}${fmtNum(fl.litres || 0, 0)} ${uom}</strong></td>
                   </tr>
                 `;
               }).join('')}
+              ${!fuels.length && !dm.dayMalfs.length && !dm.dayRepairs.length ? `<tr><td colspan="3" class="dops-empty">No diesel fills, lube issues, or fleet repairs on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>` : ''}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="2">Active ${fmtNum(dm.activeStaffCount)} · Absent ${fmtNum(dm.absentCount)}</td>
-                <td colspan="2" class="r">Salaries ${fmtUSD(dm.salariesPaid, 0)} · OT ${fmtNum(dm.otTotalLoads)} loads / ${fmtNum(dm.attOtHours, 1)}h</td>
+                <td>${fmtNum(dm.fuelFillsCount)} Fills · Bought ${fmtNum(dm.dieselBoughtL, 0)} L</td>
+                <td>Issued ${fmtNum(dm.dieselIssuedL, 0)} L</td>
+                <td class="r">${dm.closingTankL != null ? `Tank ${fmtNum(dm.closingTankL, 0)} L` : ''}</td>
               </tr>
             </tfoot>
           </table>
         </div>
-      `;
-    }
+      </div>
+    `;
+  }
 
-    // Default: 'overview' - 2x2 Operational Mini-Tiles + Governance & Exceptions Strip
-    const topExpCat = dm.expCategoryRows[0];
-    const maintCount = dm.dayOilLogs.length + dm.dayRepairs.length + dm.dayDefects.length + dm.dayPartMoves.length;
-    const stockPartsNote = dm.dayExpItems.length > 0 || dm.dayWhMoves.length > 0
-      ? `${fmtNum(dm.dayExpItems.length)} parts/items${dm.dayWhMoves.length ? ` · ${dm.dayWhMoves.length} stock moves` : ''}`
-      : (topExpCat ? `${topExpCat.category}: ${fmtUSD(topExpCat.amount, 0)}` : '0 bills posted');
+  function renderPanel6Workforce(ctx, dm, lens, isSingleCo) {
+    const { esc, ic, fmtUSD, fmtNum, coBadge } = ctx;
+
+    const topStripHtml = `
+      <div class="dops-stat-strip-3 dops-substrip">
+        <div class="dops-stat-box" data-dops-lens="plant:overview">
+          <small>Active Workforce</small>
+          <b>${fmtNum(dm.activeStaffCount)} Staff <span class="dops-stat-muted">· ${fmtNum(dm.presentAttCount)} Shift · ${fmtNum(dm.absentCount)} Abs</span></b>
+        </div>
+        <div class="dops-stat-box${dm.attOtHours > 0 || dm.otTotalLoads > 0 ? ' tone-brass' : ''}" data-dops-lens="plant:overview">
+          <small>Overtime (${fmtNum(dm.attOtStaffCount)} staff)</small>
+          <b>+${fmtNum(dm.attOtHours, 1)}h <span class="dops-stat-muted">${dm.attOtPayUsd > 0 ? `(${fmtUSD(dm.attOtPayUsd, 0)})` : ''} · ${fmtNum(dm.otTotalLoads)} OT loads</span></b>
+        </div>
+        <div class="dops-stat-box${dm.dayRegAdds.length > 0 ? ' tone-good' : ''}" data-dops-lens="plant:master">
+          <small>Master &amp; Governance</small>
+          <b>+${fmtNum(dm.dayRegAdds.length)} Master <span class="dops-stat-muted">· ${fmtNum(dm.repShiftedCount)} Rep-Shifted</span></b>
+        </div>
+      </div>
+    `;
 
     const digestPills = [];
     if (dm.ahAvailableCount > 0) {
@@ -2684,69 +3096,129 @@
       }
     }
     if (dm.pendingExps.length > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill warn" data-dops-lens="plant:exp_stock">${ic('clock')} ${fmtNum(dm.pendingExps.length)} Pending Price ($0)</button>`);
-    }
-    if (dm.openCritDefects.length > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill crit" data-nav-jump="fleet_maint">${ic('wrench')} ${fmtNum(dm.openCritDefects.length)} Crit Defects</button>`);
-    }
-    if (dm.dayMalfs.length > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill warn" data-dops-lens="plant:fuel_maint">${ic('fuel')} Tank Var ${fmtNum(dm.malfNetL, 0)} L</button>`);
-    }
-    if (dm.salesSum.returnsCount > 0) {
-      digestPills.push(`<button type="button" class="dops-dpill crit" data-dops-open-drawer="sales">${fmtNum(dm.salesSum.returnsCount)} Rejected/Return</button>`);
+      digestPills.push(`<button type="button" class="dops-dpill warn" data-dops-lens="exp:bills">${ic('clock')} ${fmtNum(dm.pendingExps.length)} Pending Price ($0)</button>`);
     }
     if (dm.repShiftedCount > 0) {
       digestPills.push(`<span class="dops-dpill" data-ui-tip="${dm.repShiftedCount} entries transacted on ${dm.targetDate} carry a shifted statutory Reporting Date. Daily Operations always reflects physical Transaction Date activity.">${ic('calendar')} ${fmtNum(dm.repShiftedCount)} Rep-Date Shifted</span>`);
     }
     if (dm.dayRegAdds.length > 0) {
-      digestPills.push(`<span class="dops-dpill">${ic('plus')} ${fmtNum(dm.dayRegAdds.length)} New Master ${dm.dayRegAdds.length === 1 ? 'Record' : 'Records'}</span>`);
+      digestPills.push(`<button type="button" class="dops-dpill" data-dops-lens="plant:master">${ic('plus')} ${fmtNum(dm.dayRegAdds.length)} New Master ${dm.dayRegAdds.length === 1 ? 'Record' : 'Records'}</button>`);
     }
     if (!digestPills.length) {
       digestPills.push(`<span class="dops-dpill good">${ic('check_circle')} All plant, fuel &amp; ledger controls clean</span>`);
     }
 
-    return `
-      <div class="dops-card-body">
-        <div class="dops-plant-grid">
-          <div class="dops-plant-tile" data-dops-lens="plant:exp_stock">
-            <div class="dops-pt-top">
-              <span class="dops-pt-lbl">${ic('warehouse')} Expenses &amp; Stock</span>
-              <span class="dops-kpi-delta ${dm.pendingExps.length > 0 ? 'warn' : 'neutral'}">${dm.pendingExps.length > 0 ? `${dm.pendingExps.length} Pending` : `${fmtNum(dm.expCount)} Bills`}</span>
-            </div>
-            <div class="dops-pt-main">${fmtUSD(dm.expTotal, 0)} <span style="font-size:10.5px;font-weight:600;color:var(--muted)">Cash ${fmtUSD(dm.cashExp, 0)} · Cr ${fmtUSD(dm.creditExp, 0)}</span></div>
-            <div class="dops-pt-sub">${esc(stockPartsNote)}</div>
+    if (lens === 'master' || lens === 'master_gov') {
+      const adds = dm.dayRegAdds || [];
+      return `
+        <div class="dops-card-body no-pad dops-flex-col">
+          ${topStripHtml}
+          <div class="dops-tbl-scroll">
+            <table class="dops-table dops-fixed-3">
+              <colgroup><col style="width:48%"><col style="width:32%"><col style="width:20%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Registry &amp; Record</th>
+                  <th>Details / Role</th>
+                  <th class="r">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${adds.map(ad => {
+                  const r = ad.row || {};
+                  const nm = r.name || r.staff || r.equipment || r.site || r.product || r.id || '-';
+                  const sub = r.role || r.category || r.type || r.company || 'Master Registry';
+                  return `
+                    <tr class="rrow" data-rkey="${esc(ad.rkey)}" data-rid="${esc(String(r.id || ''))}">
+                      <td class="dops-trunc"><span class="dops-kind rule">${esc(ad.label)}</span> <strong>${esc(nm)}</strong></td>
+                      <td class="dops-trunc">${esc(sub)}</td>
+                      <td class="r"><span class="dops-kind cash">Active</span></td>
+                    </tr>
+                  `;
+                }).join('') || `<tr><td colspan="3" class="dops-empty">No new master counterparties, staff, or equipment created on ${esc(fmtShortDay(dm.targetDate))}.</td></tr>`}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2">${fmtNum(adds.length)} New Master Additions</td>
+                  <td class="r">${fmtNum(dm.repShiftedCount)} Shifted</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-
-          <div class="dops-plant-tile" data-dops-lens="plant:fuel_maint">
-            <div class="dops-pt-top">
-              <span class="dops-pt-lbl">${ic('fuel')} Diesel, Tank &amp; Lube</span>
-              <span class="dops-kpi-delta ${dm.dayMalfs.length > 0 ? 'warn' : 'neutral'}">${dm.dayMalfs.length > 0 ? `${fmtNum(dm.malfNetL, 0)} L Var` : `${fmtNum(dm.fuelFillsCount)} Fills`}</span>
-            </div>
-            <div class="dops-pt-main">${fmtNum(dm.dieselIssuedL, 0)} L <span style="font-size:10.5px;font-weight:600;color:var(--muted)">${dm.dieselBoughtL > 0 ? `+${fmtNum(dm.dieselBoughtL, 0)} L refill` : 'issued'}</span></div>
-            <div class="dops-pt-sub">${dm.closingTankL != null ? `${esc(dm.closingTankLbl)} <b>${fmtNum(dm.closingTankL, 0)} L</b> · ` : ''}Lube <b>${fmtNum(dm.lubeL, 0)} L</b> · Grease <b>${fmtNum(dm.greaseKg, 1)} kg</b></div>
-          </div>
-
-          <div class="dops-plant-tile" data-dops-lens="plant:fuel_maint">
-            <div class="dops-pt-top">
-              <span class="dops-pt-lbl">${ic('wrench')} Fleet &amp; Maintenance</span>
-              <span class="dops-kpi-delta ${dm.dayCoEquip.length > 0 ? 'brass' : (maintCount > 0 ? 'good' : 'neutral')}">${dm.dayCoEquip.length > 0 ? `+${dm.dayCoEquip.length} New Units` : `${fmtNum(maintCount)} Maint`}</span>
-            </div>
-            <div class="dops-pt-main">${fmtNum(dm.activeTrucksCount)} Units <span style="font-size:10.5px;font-weight:600;color:var(--muted)">Own ${fmtNum(dm.companyFleetTrips)} · Haul ${fmtNum(dm.haulerTrips)}</span></div>
-            <div class="dops-pt-sub">Oil <b>${fmtNum(dm.dayOilLogs.length)}</b> · Repairs <b>${fmtNum(dm.dayRepairs.length)}</b> · Defects <b>${fmtNum(dm.dayDefects.length)}</b>${dm.dayAdjWins.length ? ` · <b>${dm.dayAdjWins.length}</b> Cap Win` : ''}</div>
-          </div>
-
-          <div class="dops-plant-tile" data-dops-lens="plant:team">
-            <div class="dops-pt-top">
-              <span class="dops-pt-lbl">${ic('payroll')} Team, OT &amp; HR</span>
-              <span class="dops-kpi-delta ${dm.dayEmps.length > 0 ? 'brass' : (dm.absentCount > 0 ? 'warn' : 'neutral')}">${dm.dayEmps.length > 0 ? `+${dm.dayEmps.length} Contracts` : (dm.absentCount > 0 ? `${dm.absentCount} Absent` : 'On Shift')}</span>
-            </div>
-            <div class="dops-pt-main">${fmtNum(dm.activeStaffCount)} Staff <span style="font-size:10.5px;font-weight:600;color:var(--muted)">OT ${fmtNum(dm.otTotalLoads)} loads${dm.attOtHours > 0 ? ` · ${fmtNum(dm.attOtHours, 1)}h` : ''}</span></div>
-            <div class="dops-pt-sub">Paid <b>${fmtUSD(dm.salariesPaid, 0)}</b> (${fmtNum(dm.salCount)})${dm.dayEmps.length > 0 ? ` · <b>${dm.dayEmps.length}</b> new hired` : ''}${dm.dayLogAllows.length > 0 ? ` · <b>${dm.dayLogAllows.length}</b> site transp.` : ''}</div>
-          </div>
+          <div class="dops-digest-bar dops-workforce-foot">${digestPills.slice(0, 3).join('')}</div>
         </div>
+      `;
+    }
 
-        <div class="dops-digest-bar">
-          ${digestPills.slice(0, 4).join('')}
+    // Default ('overview' or 'team'): 3-Stat Strip + Exceptions, Salaries, New Master & Overtime Attendance Table + Governance Bar
+    const attRows = dm.attSortedRows || [];
+    const adds = dm.dayRegAdds || [];
+    return `
+      <div class="dops-card-body no-pad dops-flex-col">
+        ${topStripHtml}
+        <div class="dops-tbl-scroll">
+          <table class="dops-table dops-fixed-3">
+            <colgroup><col style="width:46%"><col style="width:32%"><col style="width:22%"></colgroup>
+            <thead>
+              <tr>
+                <th>Status &amp; Staff</th>
+                <th>Shift / Role / Detail</th>
+                <th class="r">OT / Impact</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dm.dayEmps.map(em => `
+                <tr class="rrow" data-rkey="employments" data-rid="${esc(String(em.id || ''))}">
+                  <td class="dops-trunc"><span class="dops-kind team">Contract</span> <strong>${esc(em.staff || '-')}</strong></td>
+                  <td class="dops-trunc">${esc(em.type || 'Staff')} · ${fmtNum(em.working_days || 30)}d/mo</td>
+                  <td class="r"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
+                </tr>
+              `).join('')}
+              ${dm.daySals.map(sa => `
+                <tr class="rrow" data-rkey="salaries" data-rid="${esc(String(sa.id || ''))}">
+                  <td class="dops-trunc"><span class="dops-kind pay">Salary</span> <strong>${esc(sa.staff || '-')}</strong></td>
+                  <td class="dops-trunc">${esc(sa.payroll_month || '')} · ${esc(sa.method || 'Cash')}</td>
+                  <td class="r"><strong>${sa.lbp_amount ? fmtCompactLbp(sa.lbp_amount) : fmtUSD(sa.amount || 0, 0)}</strong></td>
+                </tr>
+              `).join('')}
+              ${adds.map(ad => {
+                const r = ad.row || {};
+                const nm = r.name || r.staff || r.equipment || r.site || r.product || r.id || '-';
+                const sub = r.role || r.category || r.type || r.company || 'Added Today';
+                return `
+                  <tr class="rrow" data-rkey="${esc(ad.rkey)}" data-rid="${esc(String(r.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind rule">${esc(ad.label)}</span> <strong>${esc(nm)}</strong></td>
+                    <td class="dops-trunc"><span style="color:var(--muted)">${esc(sub)}</span></td>
+                    <td class="r"><span class="dops-kind cash">New</span></td>
+                  </tr>
+                `;
+              }).join('')}
+              ${attRows.map(at => {
+                const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
+                const oth = Number(at.overtime_hours || 0);
+                const payUsd = Number(at.payroll_impact_usd || 0);
+                const shiftTxt = at.in_time && at.out_time ? `${at.in_time}-${at.out_time}` : (at.status || 'Shift');
+                return `
+                  <tr class="rrow" data-rkey="attendance" data-rid="${esc(String(at.id || ''))}">
+                    <td class="dops-trunc"><span class="dops-kind ${isAbs ? 'crit' : (oth > 0 ? 'loan' : 'team')}">${isAbs ? 'Absent' : (oth > 0 ? `+${fmtNum(oth, 0)}h OT` : 'Shift')}</span> <strong>${esc(at.staff || '-')}</strong></td>
+                    <td class="dops-trunc"><span style="color:var(--muted)">${esc(shiftTxt)}${at.worked_hours ? ` · ${fmtNum(at.worked_hours, 0)}h` : ''}</span></td>
+                    <td class="r">${isAbs ? '<strong style="color:var(--crit)">Absent</strong>' : (payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(at.worked_hours || 0, 0)}h`))}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${!attRows.length && !adds.length && !dm.daySals.length && !dm.dayEmps.length ? `<tr><td colspan="3" class="dops-empty">No attendance logs, salaries, or master additions on ${esc(fmtShortDay(dm.targetDate))} (${fmtNum(dm.activeStaffCount)} active dispatch drivers).</td></tr>` : ''}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>Active ${fmtNum(dm.activeStaffCount)} · Absent ${fmtNum(dm.absentCount)}</td>
+                <td>OT +${fmtNum(dm.attOtHours, 1)}h · ${fmtNum(dm.otTotalLoads)} OT Loads</td>
+                <td class="r">${fmtUSD(dm.attOtPayUsd, 0)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="dops-digest-bar dops-workforce-foot">
+          ${digestPills.slice(0, 3).join('')}
         </div>
       </div>
     `;
@@ -2832,7 +3304,7 @@
   }
 
   function render(ctx) {
-    const { STATE, esc, ic, fmtUSD, fmtUSDk, fmtNum } = ctx;
+    const { STATE, esc, ic, fmtUSD, fmtUSDk, fmtNum, coBadge } = ctx;
     const dm = buildDayModel(ctx);
     _lastDayModel = { ctx, dm };
     const today = ctx.todayISO();
@@ -2843,7 +3315,9 @@
 
     const commLens = STATE.dailyOpsCommLens || 'pulse';
     const dealsLens = STATE.dailyOpsDealsLens || 'highlights';
+    const expLens = STATE.dailyOpsExpLens || 'bills';
     const treasuryLens = STATE.dailyOpsTreasuryLens || 'bridge';
+    const fuelLens = STATE.dailyOpsFuelLens || 'fuel_maint';
     const plantLens = STATE.dailyOpsPlantLens || 'overview';
     const drawerOpen = Boolean(STATE.dailyOpsDrawerOpen);
     const streamFilter = STATE.dailyOpsStreamFilter || 'all';
@@ -2857,29 +3331,21 @@
       ? `<span class="dops-kpi-delta ${salesVs7 >= 0 ? 'good' : (salesVs7 <= -25 ? 'warn' : 'neutral')}">${salesVs7 >= 0 ? '+' : ''}${salesVs7}% vs 7d</span>`
       : `<span class="dops-kpi-delta neutral">${dm.salesSum.loads === 0 ? '0 Dispatches' : 'Tx Date'}</span>`;
 
-    // KPI 3: Profit %
+    // KPI 3: Expenses & Bills
+    const topExpBill = dm.expenseBillRows[0] || null;
+    const expDeltaBadge = dm.pendingExps.length > 0
+      ? `<span class="dops-kpi-delta warn">${dm.pendingExps.length} Pending</span>`
+      : `<span class="dops-kpi-delta ${dm.expCount > 0 ? 'neutral' : 'good'}">${fmtNum(dm.expCount)} ${dm.expCount === 1 ? 'bill' : 'bills'}</span>`;
+
+    // KPI 4: Operating Profit %
     const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
     const profDeltaCls = dm.operatingProfit < 0 ? 'crit' : 'good';
 
-    // KPI 5: Commercial Agreements, FX & Deals
+    // Legacy Deals value kept hidden for backward compatibility
     const dealsCountToday = dm.newPoliciesCount + dm.convItems.length + dm.loanEvents.length + dm.dayVatInvoices.length;
-    const dealsBadge = dm.belowAgreedLoads > 0
-      ? `<span class="dops-kpi-delta crit">${dm.belowAgreedLoads} Below</span>`
-      : (dm.newPoliciesCount > 0
-          ? `<span class="dops-kpi-delta brass">+${dm.newPoliciesCount} ${dm.newPoliciesCount === 1 ? 'Rule' : 'Rules'}</span>`
-          : `<span class="dops-kpi-delta good">On Rate</span>`);
     const dealsValTxt = dealsCountToday > 0
       ? `${dm.newPoliciesCount} ${dm.newPoliciesCount === 1 ? 'Rule' : 'Rules'} · ${dm.convItems.length} FX`
       : `${dm.activeRulesUsed.length} ${dm.activeRulesUsed.length === 1 ? 'Rule' : 'Rules'} Used`;
-    const dealsSubBits = [];
-    if (dm.convItems.length > 0) dealsSubBits.push(`FX <b>${fmtUSD(dm.totConvUsd, 0)}</b>`);
-    if (dm.loanEvents.length > 0) dealsSubBits.push(`Loans <b>${dm.loanEvents.length}</b>`);
-    if (dm.dayVatInvoices.length > 0) dealsSubBits.push(`VAT Inv <b>${dm.dayVatInvoices.length}</b>`);
-    if (!dealsSubBits.length) {
-      dealsSubBits.push(`Agreed <b>${dm.agreedSalesLoads}/${dm.salesSum.loads}</b>`);
-      if (dm.salesSum.discUsd + dm.salesSum.commUsd > 0) dealsSubBits.push(`Disc/Comm <b>${fmtUSD(dm.salesSum.discUsd + dm.salesSum.commUsd, 0)}</b>`);
-      else dealsSubBits.push(`FX <b>${fmtNum(dm.fxRate, 0)}</b>`);
-    }
 
     // Hover Popovers for all 6 KPI Cards
     const salesMatDisplay = ctx.round2(Number(dm.salesSum.ttc || 0) - Number(dm.salesSum.transRev || 0));
@@ -2896,15 +3362,27 @@
     });
 
     const rawPop = JSON.stringify({
-      title: `Quarry & Haulage · ${fmtHumanDay(dm.targetDate)}`,
+      title: `Quarry, Haulage & Pricing · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.rawSum.loads)} loads`,
       rows: [
         { label: 'Total Quarry & Haulage', value: fmtUSD(dm.rawSum.totalCost, 0), color: '#C0892F', isTotal: true },
         { label: 'Quarry Material Cost', value: fmtUSD(dm.rawSum.matCost, 0), color: '#2356A8' },
         { label: 'Third-Party Haulage', value: fmtUSD(dm.rawSum.haulCost, 0), color: '#4A90D9' },
-        { label: 'Fleet Split', value: `${dm.rawSum.ownLoads} Own · ${dm.rawSum.haulerLoads} Hauler`, color: '#1F7A4C' }
+        { label: 'Rate Compliance', value: `${dm.agreedSalesLoads}/${dm.salesSum.loads} Agreed · ${dm.belowAgreedLoads} Below`, color: dm.belowAgreedLoads > 0 ? '#C8333B' : '#1F7A4C' }
       ],
       footer: 'Click to inspect quarry & haulage tickets'
+    });
+
+    const expPop = JSON.stringify({
+      title: `Expenses & Stock Bills · ${fmtHumanDay(dm.targetDate)}`,
+      badge: `${fmtNum(dm.expCount)} bills`,
+      rows: [
+        { label: 'Total Expenses (TTC)', value: fmtUSD(dm.expTotal, 0), color: '#C96A22', isTotal: true },
+        { label: 'Cash vs Credit Bills', value: `${fmtUSD(dm.cashExp, 0)} Cash · ${fmtUSD(dm.creditExp, 0)} Credit`, color: '#2356A8' },
+        { label: 'Largest Expense Today', value: topExpBill ? `${topExpBill.supplier}: ${fmtUSD(topExpBill.total, 0)}` : 'None', color: '#C8333B' },
+        { label: 'Warehouse & Stock Items', value: `${fmtNum(dm.dayExpItems.length)} item lines`, color: '#1F7A4C' }
+      ],
+      footer: 'Click to inspect expense bills & stock purchases'
     });
 
     const profPop = JSON.stringify({
@@ -2933,16 +3411,16 @@
       footer: `Closing Till: ${fmtUSD(dm.liveTillUsd, 0)}${dm.liveTillLbp ? ' + ' + fmtCompactLbp(dm.liveTillLbp) : ''}`
     });
 
-    const dealsPop = JSON.stringify({
-      title: `Agreements, FX & Deals · ${fmtHumanDay(dm.targetDate)}`,
-      badge: `${dm.newPoliciesCount} New Rules`,
+    const plantPop = JSON.stringify({
+      title: `Plant, Diesel & Workforce · ${fmtHumanDay(dm.targetDate)}`,
+      badge: `${fmtNum(dm.activeTrucksCount)} units · ${fmtNum(dm.activeStaffCount)} staff`,
       rows: [
-        { label: 'New Agreements & Credit', value: `${dm.dayPriceRules.length} Price · ${dm.dayCreditTerms.length} Credit · ${dm.dayOtRates.length} OT`, color: '#6B5CE7' },
-        { label: 'Rate Compliance', value: `${dm.agreedSalesLoads} Agreed · ${dm.spotSalesLoads} Spot · ${dm.belowAgreedLoads} Below`, color: dm.belowAgreedLoads > 0 ? '#C8333B' : '#1F7A4C' },
-        { label: 'FX Conversions', value: `${dm.convItems.length} (${fmtUSD(dm.totConvUsd, 0)})`, color: '#4A90D9' },
-        { label: 'Loans & VAT Invoices', value: `${dm.loanEvents.length} Loans · ${dm.dayVatInvoices.length} VAT Inv`, color: '#C0892F' }
+        { label: 'Diesel Issued Today', value: `${fmtNum(dm.dieselIssuedL, 0)} L (${fmtNum(dm.dayFuels.length)} fills)`, color: '#2356A8', isTotal: true },
+        { label: 'WTC Closing Diesel Tank', value: dm.closingTankL != null ? `${fmtNum(dm.closingTankL, 0)} L` : 'N/A', color: '#1F7A4C' },
+        { label: 'Overtime Logged', value: `+${dm.attOtHours.toFixed(1)}h (${fmtNum(dm.attOtStaffCount)} staff · ${fmtNum(dm.salesSum.otLoads)} OT loads)`, color: '#C0892F' },
+        { label: 'Fleet Dispatch Split', value: `${fmtNum(dm.companyFleetTrips)} Own · ${fmtNum(dm.haulerTrips)} 3P Hauler`, color: '#4A90D9' }
       ],
-      footer: 'Click to inspect commercial agreements & FX'
+      footer: 'Click to inspect diesel, fleet & attendance'
     });
 
     const ahBtnTip = dm.ahAvailableCount > 0
@@ -2962,15 +3440,30 @@
     const fmCnt = cntByGroup('fuel_maint');
     const teamCnt = cntByGroup('team');
 
+    // Multi-Entity BU Attribution Strip when viewing All Group
+    const buStripHtml = (!isSingleCo && dm.entityRows && dm.entityRows.length > 1)
+      ? `<div class="dops-bu-strip" id="dopsBuStrip" aria-label="Business Unit Attribution">
+          ${dm.entityRows.map(r => {
+            const active = r.salesTtc > 0 || r.outlay > 0 || r.salesLoads > 0 || r.rawLoads > 0 || r.netCash !== 0;
+            return `<button type="button" class="dops-bu-pill${active ? ' is-active' : ' is-idle'}" data-jump-co="${esc(r.key)}" data-ui-tip="Filter Daily Operations to ${esc(r.name)}: Sales ${fmtUSD(r.salesTtc, 0)} · Outlay ${fmtUSD(r.outlay, 0)} · Op Profit ${fmtUSD(r.opProfit, 0)}">
+              ${coBadge(r.name)}
+              <span class="dops-bu-val">${fmtUSD(r.salesTtc, 0)}</span>
+              ${active ? `<span class="dops-bu-prof ${r.opProfit >= 0 ? 'pos' : 'neg'}">${r.opProfit >= 0 ? '+' : ''}${fmtUSD(r.opProfit, 0)}</span>` : ''}
+            </button>`;
+          }).join('')}
+        </div>`
+      : '';
+
     return `
       <div class="dops-stage" id="dailyOpsStage" data-target-date="${esc(dm.targetDate)}" data-include-ah="${dm.includeAh ? '1' : '0'}">
-        <!-- BAND 1: EXECUTIVE DAY, AFTER-HOURS & DISCRETE RECORDS BAR -->
+        <!-- BAND 1: EXECUTIVE DAY, BU ATTRIBUTION, AFTER-HOURS & DISCRETE RECORDS BAR -->
         <div class="dops-bar" id="dopsHeaderBar">
           <div class="dops-bar-left">
             <div class="dops-title-group">
               <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
               <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(fmtHumanDay(dm.targetDate))}</span>
               <span class="dops-basis-tag" id="dopsTxBasisBadge" data-ui-tip="Always anchored to physical Transaction Date regardless of whether the global system filter is set to Reporting Date or Transaction Date.">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis</span></span></span>
+              ${buStripHtml}
             </div>
           </div>
 
@@ -2993,7 +3486,7 @@
               <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${dm.nextDate ? `data-dops-pick-date="${esc(dm.nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
             </div>
 
-            <button type="button" class="dops-records-trigger" id="dopsOpenRecordsBtn" data-dops-open-drawer="all" data-ui-tip="Open discrete Day Records Drawer to search and inspect individual entries across all tables without cluttering the overview.">
+            <button type="button" class="dops-records-trigger" id="dopsOpenRecordsBtn" data-dops-open-drawer="all" data-ui-tip="Open discrete Day Records Drawer to search and inspect individual entries across all tables.">
               ${ic('ledger')}
               <span>Records</span>
               <span class="dops-records-trigger-cnt" id="dopsTotalRecordsCount">${fmtNum(dm.stream.length)}</span>
@@ -3001,7 +3494,7 @@
           </div>
         </div>
 
-        <!-- BAND 2: 6-PILLAR EXECUTIVE SCORECARD -->
+        <!-- BAND 2: 6-PILLAR CEO EXECUTIVE SCORECARD -->
         <section class="dops-kpis" id="dopsKpiGrid" aria-label="Daily Shareholder Scorecard">
           <div class="dops-kpi accent-sales" data-dops-open-drawer="sales" data-chart-pop="${esc(salesPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
@@ -3010,7 +3503,7 @@
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiSalesVal">${fmtUSD(dm.salesSum.ttc, 0)}</span>
-              <span class="dops-kpi-unit">${fmtNum(dm.salesSum.loads)} loads · ${fmtNum(dm.salesSum.m3, 0)} m³</span>
+              <span class="dops-kpi-unit">${fmtNum(dm.salesSum.loads)} loads · ${fmtNum(dm.salesSum.m3, 0)} m³ · ${fmtNum(dm.customerRows.length)} clients</span>
             </div>
             <div class="dops-kpi-sub">
               ${dm.includeAh && dm.salesAhSum.count > 0
@@ -3022,20 +3515,33 @@
           <div class="dops-kpi accent-raw" data-dops-open-drawer="raw" data-chart-pop="${esc(rawPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Quarry &amp; Haul</span>
-              <span class="dops-kpi-delta neutral">${fmtNum(dm.rawSum.tons, 0)} t</span>
+              <span class="dops-kpi-delta ${dm.belowAgreedLoads > 0 ? 'crit' : 'neutral'}">${dm.belowAgreedLoads > 0 ? `${dm.belowAgreedLoads} Below Rate` : `${fmtNum(dm.rawSum.tons, 0)} t`}</span>
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiRawVal">${fmtUSD(dm.rawSum.totalCost, 0)}</span>
               <span class="dops-kpi-unit">${fmtNum(dm.rawSum.loads)} loads · ${fmtNum(dm.rawSum.m3, 0)} m³</span>
             </div>
             <div class="dops-kpi-sub">
-              ${dm.includeAh && dm.rawAhSum.count > 0
-                ? `<span class="dops-kpi-ah">${ic('moon')} +${fmtUSD(dm.rawAhSum.totalCost, 0)} (${dm.rawAhSum.loads})</span> · Today <b>${fmtUSD(dm.rawTodayOnly.totalCost, 0)}</b>`
-                : `Mat <b>${fmtUSD(dm.rawSum.matCost, 0)}</b> · Haul <b>${fmtUSD(dm.rawSum.haulCost, 0)}</b>`}
+              Mat <b>${fmtUSD(dm.rawSum.matCost, 0)}</b> · Haul <b>${fmtUSD(dm.rawSum.haulCost, 0)}</b> · Agreed <b>${dm.agreedSalesLoads}/${dm.salesSum.loads}</b>
             </div>
           </div>
 
-          <div class="dops-kpi accent-profit${dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="plant:exp_stock" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-exp" data-dops-open-drawer="expenses" data-chart-pop="${esc(expPop)}" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">Expenses &amp; Bills</span>
+              ${expDeltaBadge}
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(dm.expTotal, 0)}</span>
+              <span class="dops-kpi-unit">${fmtNum(dm.expCount)} bills · ${fmtNum(dm.dayExpItems.length)} items</span>
+              <span id="dopsKpiDealsVal" hidden>${esc(dealsValTxt)}</span>
+            </div>
+            <div class="dops-kpi-sub">
+              Cash <b>${fmtUSD(dm.cashExp, 0)}</b> · Cr <b>${fmtUSD(dm.creditExp, 0)}</b>${topExpBill ? ` · Top <b>${esc(topExpBill.supplier)}</b>` : ''}
+            </div>
+          </div>
+
+          <div class="dops-kpi accent-profit${dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="exp:bills" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
               <span class="dops-kpi-delta ${profDeltaCls}">${esc(profPctTxt)}</span>
@@ -3045,13 +3551,13 @@
               <span class="dops-kpi-unit">GM ${fmtUSD(dm.grossMargin, 0)}</span>
             </div>
             <div class="dops-kpi-sub">
-              Exp <b>${fmtUSD(dm.expTotal, 0)}</b> (${fmtNum(dm.expCount)})${dm.avg7Profit ? ` · 7d <b>${fmtUSD(dm.avg7Profit, 0)}</b>` : ''}
+              Ex-VAT <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b> · VAT <b>${fmtUSD(dm.salesSum.vat, 0)}</b>${dm.avg7Profit ? ` · 7d <b>${fmtUSD(dm.avg7Profit, 0)}</b>` : ''}
             </div>
           </div>
 
           <div class="dops-kpi accent-cash" data-dops-lens="treasury:bridge" data-chart-pop="${esc(cashPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
-              <span class="dops-kpi-lbl">Treasury &amp; Ext.</span>
+              <span class="dops-kpi-lbl">Treasury &amp; Cash</span>
               <span class="dops-kpi-delta ${dm.netCashFlow > 0 ? 'good' : (dm.netCashFlow < 0 ? 'warn' : 'neutral')}">${dm.netCashFlow > 0 ? 'Net In' : (dm.netCashFlow < 0 ? 'Net Out' : 'Even')}</span>
             </div>
             <div class="dops-kpi-val-row">
@@ -3059,120 +3565,138 @@
               <span class="dops-kpi-unit">In ${fmtUSDk(dm.cashInflow)} · Out ${fmtUSDk(dm.cashOutflow)}</span>
             </div>
             <div class="dops-kpi-sub">
-              ${(dm.extInCount + dm.extOutCount) > 0
-                ? `Ext <b>+${fmtUSDk(dm.extInEq)}/-${fmtUSDk(dm.extOutEq)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>`
-                : `AR <b>${fmtUSDk(dm.arCollected)}</b> · AP <b>${fmtUSDk(dm.apPaid)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>`}
+              AR <b>+${fmtUSDk(dm.arCollected)}</b> · Ext <b>+${fmtUSDk(dm.extInEq)}/-${fmtUSDk(dm.extOutEq)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>
             </div>
           </div>
 
-          <div class="dops-kpi accent-deals" data-dops-lens="deals:rules" data-chart-pop="${esc(dealsPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-plant" data-dops-lens="fuel:fuel_maint" data-chart-pop="${esc(plantPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
-              <span class="dops-kpi-lbl">Agreements &amp; FX</span>
-              ${dealsBadge}
-            </div>
-            <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiDealsVal">${esc(dealsValTxt)}</span>
-            </div>
-            <div class="dops-kpi-sub">
-              ${dealsSubBits.join(' · ')}
-            </div>
-          </div>
-
-          <div class="dops-kpi accent-plant" data-dops-lens="plant:fuel_maint" role="button" tabindex="0">
-            <div class="dops-kpi-top">
-              <span class="dops-kpi-lbl">Plant &amp; Team</span>
-              <span class="dops-kpi-delta ${dm.openCritDefects.length > 0 ? 'crit' : (dm.dayMalfs.length > 0 ? 'warn' : 'neutral')}">${dm.openCritDefects.length > 0 ? `${dm.openCritDefects.length} Crit` : `${fmtNum(dm.activeStaffCount)} Staff`}</span>
+              <span class="dops-kpi-lbl">Plant, Fuel &amp; Team</span>
+              <span class="dops-kpi-delta ${dm.openCritDefects.length > 0 ? 'crit' : (dm.absentCount > 0 ? 'warn' : 'neutral')}">${dm.openCritDefects.length > 0 ? `${dm.openCritDefects.length} Crit` : (dm.absentCount > 0 ? `${dm.absentCount} Absent` : `${fmtNum(dm.activeStaffCount)} Staff`)}</span>
             </div>
             <div class="dops-kpi-val-row">
               <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(dm.activeTrucksCount)} Units</span>
-              <span class="dops-kpi-unit">${fmtNum(dm.dieselIssuedL, 0)} L</span>
+              <span class="dops-kpi-unit">${fmtNum(dm.dieselIssuedL, 0)} L · +${dm.attOtHours.toFixed(0)}h OT</span>
             </div>
             <div class="dops-kpi-sub">
-              ${dm.closingTankL != null ? `Tank <b>${fmtNum(dm.closingTankL, 0)} L</b> · ` : ''}Own <b>${fmtNum(dm.companyFleetTrips)}</b> · Haul <b>${fmtNum(dm.haulerTrips)}</b>
+              ${dm.closingTankL != null ? `Tank <b>${fmtNum(dm.closingTankL, 0)} L</b> · ` : ''}Own <b>${fmtNum(dm.companyFleetTrips)}</b> · 3P <b>${fmtNum(dm.haulerTrips)}</b> · <b>${fmtNum(dm.activeStaffCount)}</b> Staff
             </div>
           </div>
         </section>
 
-        <!-- BAND 3: INTERACTIVE 2x2 EXECUTIVE STORY MATRIX (ZERO RAW RECORD CLUTTER) -->
+        <!-- BAND 3: 6-PANEL CEO INSIGHT BOARD (3x2 ON DESKTOP, FULL ITEMIZED BREAKDOWN) -->
         <div class="dops-bento-grid">
-          <!-- QUADRANT 1: COMMERCIAL PULSE, SHIFT RHYTHM & CUSTOMERS -->
+          <!-- PANEL 1: SALES & CLIENT DISPATCH -->
           <div class="dops-card" id="dopsPulseMixCard">
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
                 <span class="dops-card-ico navy">${ic('sales')}</span>
-                <h2 class="dops-card-title">Sales Pulse &amp; Dispatch</h2>
+                <h2 class="dops-card-title">1 · Sales &amp; Dispatch</h2>
               </div>
               <div class="dops-card-actions">
                 <div class="dops-seg" role="tablist" aria-label="Commercial Lens">
-                  <button type="button" class="dops-seg-btn${commLens === 'pulse' ? ' active' : ''}" data-dops-lens="comm:pulse">Pulse</button>
-                  <button type="button" class="dops-seg-btn${commLens === 'hours' ? ' active' : ''}" data-dops-lens="comm:hours">By Shift</button>
-                  <button type="button" class="dops-seg-btn${commLens === 'customers' ? ' active' : ''}" data-dops-lens="comm:customers">Clients (${fmtNum(dm.customerRows.length)})</button>
-                  <button type="button" class="dops-seg-btn${commLens === 'grades' ? ' active' : ''}" data-dops-lens="comm:grades">${isSingleCo ? 'Grades' : 'BUs &amp; Grades'}</button>
+                  <button type="button" class="dops-seg-btn${commLens === 'pulse' || commLens === 'customers' ? ' active' : ''}" data-dops-lens="comm:pulse">Clients (${fmtNum(dm.customerRows.length)})</button>
+                  <button type="button" class="dops-seg-btn${commLens === 'hours' ? ' active' : ''}" data-dops-lens="comm:hours">Shift</button>
+                  <button type="button" class="dops-seg-btn${commLens === 'grades' ? ' active' : ''}" data-dops-lens="comm:grades">${isSingleCo ? 'Grades' : 'Grades'}</button>
                 </div>
-                <button type="button" class="dops-disc-link" data-dops-open-drawer="sales" data-ui-tip="Inspect individual Sales & Quarry tickets">${fmtNum(salesCnt + rawCnt)}</button>
+                <button type="button" class="dops-disc-link" data-dops-open-drawer="sales" data-ui-tip="Inspect all ${salesCnt} sales dispatch tickets">${fmtNum(salesCnt)}</button>
               </div>
             </div>
-            ${renderQuadrant1(ctx, dm, commLens, isSingleCo)}
+            ${renderPanel1Sales(ctx, dm, commLens, isSingleCo)}
           </div>
 
-          <!-- QUADRANT 2: PRICE AGREEMENTS, COMPLIANCE, VAT & DEALS -->
+          <!-- PANEL 2: QUARRY SUPPLY, HAULAGE & PRICING -->
           <div class="dops-card" id="dopsAgreementsCard">
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
-                <span class="dops-card-ico deals">${ic('pricing')}</span>
-                <h2 class="dops-card-title">Price Agreements &amp; Rates</h2>
+                <span class="dops-card-ico brass">${ic('quarry')}</span>
+                <h2 class="dops-card-title">2 · Quarry &amp; Pricing</h2>
               </div>
               <div class="dops-card-actions">
-                <div class="dops-seg" role="tablist" aria-label="Agreements Lens">
-                  <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Summary</button>
-                  <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules (${fmtNum(dm.newPoliciesCount)})</button>
-                  <button type="button" class="dops-seg-btn${dm.belowAgreedLoads > 0 ? ' has-alert' : ''}${dealsLens === 'audit' ? ' active' : ''}" data-dops-lens="deals:audit">Rate Audit</button>
-                  <button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">VAT &amp; Comm</button>
+                <div class="dops-seg" role="tablist" aria-label="Quarry & Pricing Lens">
+                  <button type="button" class="dops-seg-btn${dealsLens === 'highlights' ? ' active' : ''}" data-dops-lens="deals:highlights">Quarry</button>
+                  <button type="button" class="dops-seg-btn${dm.newPoliciesCount > 0 ? ' has-alert' : ''}${dealsLens === 'rules' ? ' active' : ''}" data-dops-lens="deals:rules">Rules (${fmtNum(dm.newPoliciesCount || dm.activeRulesUsed.length)})</button>
+                  <button type="button" class="dops-seg-btn${dm.belowAgreedLoads > 0 ? ' has-alert' : ''}${dealsLens === 'audit' ? ' active' : ''}" data-dops-lens="deals:audit">Audit</button>
+                  <button type="button" class="dops-seg-btn${dealsLens === 'vat_jv' ? ' active' : ''}" data-dops-lens="deals:vat_jv">VAT</button>
                 </div>
-                <button type="button" class="dops-disc-link" data-dops-open-drawer="agreements" data-ui-tip="Inspect agreement, VAT & JV records">${fmtNum(agrCnt)}</button>
+                <button type="button" class="dops-disc-link" data-dops-open-drawer="raw" data-ui-tip="Inspect quarry & agreement records">${fmtNum(rawCnt + agrCnt)}</button>
               </div>
             </div>
-            ${renderQuadrant2(ctx, dm, dealsLens, isSingleCo)}
+            ${renderPanel2QuarryPricing(ctx, dm, dealsLens, isSingleCo)}
           </div>
 
-          <!-- QUADRANT 3: TREASURY, EXTERNAL TRANSACTIONS, FX CONVERSIONS & LOANS -->
+          <!-- PANEL 3: DAY P&L BRIDGE, EXPENSES & BILLS -->
+          <div class="dops-card" id="dopsExpensesCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico amber">${ic('expenses')}</span>
+                <h2 class="dops-card-title">3 · P&amp;L &amp; Expenses</h2>
+              </div>
+              <div class="dops-card-actions">
+                <div class="dops-seg" role="tablist" aria-label="Expenses Lens">
+                  <button type="button" class="dops-seg-btn${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills (${fmtNum(dm.expCount)})</button>
+                  <button type="button" class="dops-seg-btn${expLens === 'cats' ? ' active' : ''}" data-dops-lens="exp:cats">Categories</button>
+                </div>
+                <button type="button" class="dops-disc-link" data-dops-open-drawer="expenses" data-ui-tip="Inspect expense bills & stock purchases">${fmtNum(expCnt)}</button>
+              </div>
+            </div>
+            ${renderPanel3ExpensesPnl(ctx, dm, expLens, isSingleCo)}
+          </div>
+
+          <!-- PANEL 4: CASH FLOW, EXTERNAL, AR/AP & LOANS -->
           <div class="dops-card" id="dopsTreasuryCard">
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
                 <span class="dops-card-ico teal">${ic('cashflow')}</span>
-                <h2 class="dops-card-title">Treasury, External &amp; FX</h2>
+                <h2 class="dops-card-title">4 · Treasury</h2>
               </div>
               <div class="dops-card-actions">
                 <div class="dops-seg" role="tablist" aria-label="Treasury Lens">
-                  <button type="button" class="dops-seg-btn${treasuryLens === 'bridge' ? ' active' : ''}" data-dops-lens="treasury:bridge">Cash Bridge</button>
-                  <button type="button" class="dops-seg-btn${dm.extItems.length > 0 ? ' has-alert' : ''}${treasuryLens === 'external' ? ' active' : ''}" data-dops-lens="treasury:external">External (${fmtNum(dm.extItems.length)})</button>
-                  <button type="button" class="dops-seg-btn${(dm.convItems.length + dm.loanEvents.length) > 0 ? ' has-alert' : ''}${treasuryLens === 'fx_loans' ? ' active' : ''}" data-dops-lens="treasury:fx_loans">FX &amp; Loans (${fmtNum(dm.convItems.length + dm.loanEvents.length)})</button>
-                  <button type="button" class="dops-seg-btn${treasuryLens === 'ar_ap' ? ' active' : ''}" data-dops-lens="treasury:ar_ap">AR / AP (${fmtNum(dm.arRcptCount + dm.apSetCount)})</button>
+                  <button type="button" class="dops-seg-btn${treasuryLens === 'bridge' ? ' active' : ''}" data-dops-lens="treasury:bridge">All (${fmtNum(dm.cashMoveRows.length)})</button>
+                  <button type="button" class="dops-seg-btn${dm.extItems.length > 0 ? ' has-alert' : ''}${treasuryLens === 'external' ? ' active' : ''}" data-dops-lens="treasury:external">Ext (${fmtNum(dm.extItems.length)})</button>
+                  <button type="button" class="dops-seg-btn${(dm.convItems.length + dm.loanEvents.length) > 0 ? ' has-alert' : ''}${treasuryLens === 'fx_loans' ? ' active' : ''}" data-dops-lens="treasury:fx_loans">FX/Ln (${fmtNum(dm.convItems.length + dm.loanEvents.length)})</button>
+                  <button type="button" class="dops-seg-btn${treasuryLens === 'ar_ap' ? ' active' : ''}" data-dops-lens="treasury:ar_ap">AR/AP (${fmtNum(dm.arRcptCount + dm.apSetCount)})</button>
                 </div>
                 <button type="button" class="dops-disc-link" data-dops-open-drawer="treasury" data-ui-tip="Inspect treasury, external, FX & loan records">${fmtNum(extCnt + fxlCnt + arapCnt)}</button>
               </div>
             </div>
-            ${renderQuadrant3(ctx, dm, treasuryLens, isSingleCo)}
+            ${renderPanel4Treasury(ctx, dm, treasuryLens, isSingleCo)}
           </div>
 
-          <!-- QUADRANT 4: PLANT, EXPENSES, WAREHOUSE, FLEET & WORKFORCE -->
+          <!-- PANEL 5: DIESEL TANK, FUEL CONSUMERS & FLEET -->
+          <div class="dops-card" id="dopsFleetFuelCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico steel">${ic('fleet')}</span>
+                <h2 class="dops-card-title">5 · Diesel, Fuel &amp; Fleet</h2>
+              </div>
+              <div class="dops-card-actions">
+                <div class="dops-seg" role="tablist" aria-label="Fleet & Fuel Lens">
+                  <button type="button" class="dops-seg-btn${fuelLens === 'fuel_maint' ? ' active' : ''}" data-dops-lens="fuel:fuel_maint">Fills (${fmtNum(dm.dayFuels.length)})</button>
+                  <button type="button" class="dops-seg-btn${(dm.dayMalfs.length + dm.openCritDefects.length) > 0 ? ' has-alert' : ''}${fuelLens === 'maint_only' ? ' active' : ''}" data-dops-lens="fuel:maint_only">Maint (${fmtNum(dm.dayMalfs.length + dm.dayRepairs.length + dm.dayOilLogs.length)})</button>
+                </div>
+                <button type="button" class="dops-disc-link" data-dops-open-drawer="fuel_maint" data-ui-tip="Inspect diesel, lubricant & maintenance logs">${fmtNum(fmCnt)}</button>
+              </div>
+            </div>
+            ${renderPanel5FleetFuel(ctx, dm, fuelLens, isSingleCo)}
+          </div>
+
+          <!-- PANEL 6: WORKFORCE, OVERTIME & GOVERNANCE -->
           <div class="dops-card" id="dopsPlantCard">
             <div class="dops-card-hd">
               <div class="dops-card-title-wrap">
-                <span class="dops-card-ico steel">${ic('plant')}</span>
-                <h2 class="dops-card-title">Plant, Stock &amp; Workforce</h2>
+                <span class="dops-card-ico deals">${ic('payroll')}</span>
+                <h2 class="dops-card-title">6 · Workforce &amp; Audit</h2>
               </div>
               <div class="dops-card-actions">
-                <div class="dops-seg" role="tablist" aria-label="Plant Lens">
-                  <button type="button" class="dops-seg-btn${plantLens === 'overview' ? ' active' : ''}" data-dops-lens="plant:overview">Overview</button>
-                  <button type="button" class="dops-seg-btn${plantLens === 'exp_stock' ? ' active' : ''}" data-dops-lens="plant:exp_stock">Exp &amp; Stock (${fmtNum(dm.expCount)})</button>
-                  <button type="button" class="dops-seg-btn${plantLens === 'fuel_maint' ? ' active' : ''}" data-dops-lens="plant:fuel_maint">Fuel &amp; Maint</button>
-                  <button type="button" class="dops-seg-btn${plantLens === 'team' ? ' active' : ''}" data-dops-lens="plant:team">Team (${fmtNum(dm.activeStaffCount)})</button>
+                <div class="dops-seg" role="tablist" aria-label="Workforce Lens">
+                  <button type="button" class="dops-seg-btn${plantLens === 'overview' || plantLens === 'team' ? ' active' : ''}" data-dops-lens="plant:overview">Team (${fmtNum(dm.activeStaffCount)})</button>
+                  <button type="button" class="dops-seg-btn${dm.dayRegAdds.length > 0 ? ' has-alert' : ''}${plantLens === 'master_gov' ? ' active' : ''}" data-dops-lens="plant:master_gov">Audit (+${fmtNum(dm.dayRegAdds.length)})</button>
                 </div>
-                <button type="button" class="dops-disc-link" data-dops-open-drawer="plant" data-ui-tip="Inspect expenses, stock, fuel, maintenance & HR records">${fmtNum(expCnt + fmCnt + teamCnt)}</button>
+                <button type="button" class="dops-disc-link" data-dops-open-drawer="team" data-ui-tip="Inspect attendance, salaries & master records">${fmtNum(teamCnt)}</button>
               </div>
             </div>
-            ${renderQuadrant4(ctx, dm, plantLens, isSingleCo)}
+            ${renderPanel6Workforce(ctx, dm, plantLens, isSingleCo)}
           </div>
         </div>
 
@@ -3258,7 +3782,7 @@
       });
     });
 
-    // Interactive Sub-Lens switchers across all 4 Quadrants
+    // Interactive Sub-Lens switchers across all 6 Panels
     container.querySelectorAll('[data-dops-lens]').forEach(el => {
       el.addEventListener('click', ev => {
         if (ev.target && ev.target.closest && ev.target.closest('a, .rel-link')) return;
@@ -3268,8 +3792,14 @@
         if (!quad || !tab) return;
         if (quad === 'comm') STATE.dailyOpsCommLens = tab;
         else if (quad === 'deals') STATE.dailyOpsDealsLens = tab;
+        else if (quad === 'exp') STATE.dailyOpsExpLens = tab;
         else if (quad === 'treasury') STATE.dailyOpsTreasuryLens = tab;
-        else if (quad === 'plant') STATE.dailyOpsPlantLens = tab;
+        else if (quad === 'fuel') STATE.dailyOpsFuelLens = tab;
+        else if (quad === 'plant') {
+          if (tab === 'exp_stock') STATE.dailyOpsExpLens = 'bills';
+          else if (tab === 'fuel_maint') STATE.dailyOpsFuelLens = 'fuel_maint';
+          else STATE.dailyOpsPlantLens = tab;
+        }
         renderApp();
       });
     });

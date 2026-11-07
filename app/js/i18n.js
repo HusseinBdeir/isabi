@@ -747,6 +747,18 @@
       const repl = lang === 'ar' ? `+ إضافة ${inner}` : `+ Nouveau : ${inner}`;
       return seg.replace(trimmed, repl);
     }
+    m = trimmed.match(/^New\s+(.+)$/i);
+    if (m) {
+      const inner = translateSegment(m[1], lang);
+      const repl = lang === 'ar' ? `إضافة ${inner}` : `Nouveau : ${inner}`;
+      return seg.replace(trimmed, repl);
+    }
+    m = trimmed.match(/^Edit\s+(.+)$/i);
+    if (m) {
+      const inner = translateSegment(m[1], lang);
+      const repl = lang === 'ar' ? `تعديل ${inner}` : `Modifier : ${inner}`;
+      return seg.replace(trimmed, repl);
+    }
     m = trimmed.match(/^(\d+)\s+Rows?\s+Selected$/i);
     if (m) {
       const repl = lang === 'ar' ? `تم تحديد ${m[1]} سطر` : `${m[1]} Lignes Sélectionnées`;

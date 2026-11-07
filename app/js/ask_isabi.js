@@ -1804,6 +1804,35 @@
       };
     }
 
+    // 16A. Bdeir Truck Fleet Revenue & Cost Analysis (TB1 · 360676, Tb7 · 364656, Tb9 · 364168)
+    if (/\b(truck\s+fleet\s+revenue|bdeir\s+fleet|fleet\s+revenue\s+(?:and|&)\s+cost|tb1|tb7|tb9|360676|364656|364168|zero[- ]haulage)\b/i.test(effLow)) {
+      return {
+        q: cleanQ,
+        lang,
+        instantLocal: true,
+        topic: 'fleet_pnl',
+        title: 'Truck Fleet Revenue & Cost Analysis (TB1 · Tb7 · Tb9)',
+        answer: 'Across the 2-month post-cutover audit (Aug 24 - Oct 23, 2026), Bdeir trucks <b>TB1 (360676)</b>, <b>Tb7 (364656)</b>, and <b>Tb9 (364168)</b> completed <b>999 trips</b> (748 WTC + 251 BBConstruction · <b>28,440.2 m³</b>). Recorded ledger transport revenue is <b>$46,124.02</b> against <b>$44,378.48</b> in de-duplicated operating costs (Net <b>+$1,745.54</b> · 3.8%). Unbundling the 165 external/partner $0.00 trips adds <b>+$16,896.40</b> for a Strict Adjusted P&L of <b>$63,020.42</b> revenue and <b>+$18,641.94</b> net profit (29.6%), or <b>$68,952.42</b> revenue and <b>+$24,573.94</b> net profit (35.6%) at full commercial benchmark across all 265 $0.00 trips.',
+        headers: ['Truck & Owner', 'Trips (Paid / $0)', 'Recorded Rev', 'Strict Adj Rev', 'Total Cost', 'Recorded / Strict Net'],
+        rows: [
+          ['TB1 · 360676 (Karim Bdeir)', '365 (251 / 114 $0)', '$19,687.00', '$29,277.80', '$16,904.89', '+$2,782.11 / +$12,372.91'],
+          ['Tb7 · 364656 (Hussein Bdeir)', '282 (205 / 77 $0)', '$11,965.51', '$15,503.91', '$13,342.07', '-$1,376.56 / +$2,161.84'],
+          ['Tb9 · 364168 (Jad Bdeir)', '352 (278 / 74 $0)', '$14,471.51', '$18,238.71', '$14,131.52', '+$339.99 / +$4,107.19']
+        ],
+        total: ['Fleet Total (3 Trucks)', '+$1,745.54 Recorded / +$18,641.94 Strict Adj'],
+        promptText: 'Open Fleet & Running Costs to inspect all 6 tabs (Executive P&L, 265 Zero-Haulage Audit, 108 Routes Explorer, Diesel De-Dup & 85 Repair Bills, 172 Overtime Trips, and 4 Reconciliation Findings).',
+        actions: [
+          ...(canView('fleet_equip', user) ? [{ type: 'view', view: 'fleet_equip', label: 'Open Truck Fleet P&L Cockpit' }] : []),
+          ...(canView('pbi', user) ? [{ type: 'view', view: 'pbi', label: 'Dashboards & Reports' }] : [])
+        ],
+        followUps: [
+          'Show fleet diesel consumption',
+          'Show driver overtime trips',
+          'Compare entity sales & operating profit'
+        ]
+      };
+    }
+
     // 16B. Monthly Trajectory & Peak / Best / Worst Month ("peak month", "which month was highest", "monthly trend")
     if (/\b(peak\s+month|best\s+month|highest\s+month|strongest\s+month|worst\s+month|lowest\s+month|which\s+month|monthly\s+(?:trend|trajectory|breakdown|sales|performance))\b/i.test(effLow) ||
         /(أعلى شهر|أفضل شهر|الأداء الشهري)/.test(cleanQ)) {
@@ -4598,6 +4627,7 @@
     cancelVoice: cancelVoiceRecording,
     setVoiceLang,
     setPreferredLang,
+    getPreferredLang: () => _chatState.voiceLang,
     speak: speakBotReply,
     syncScope: syncHeaderAndChips,
     answer: answerHtmlSnapshot,
