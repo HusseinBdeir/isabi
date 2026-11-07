@@ -5831,7 +5831,13 @@
       "Resorts": "المنتجعات",
       "Real Est": "العقارات",
       "Insur.": "التأمين",
-      "Rep Diff": "فروق تاريخ التقرير"
+      "Rep Diff": "فروق تاريخ التقرير",
+      "Enrol Staff": "تسجيل الموظفين",
+      "+ New Staff": "+ موظف جديد",
+      "Register & Enrol New Staff Member": "إضافة وتسجيل بصمة موظف جديد",
+      "Save & Capture Face ID": "حفظ والتقاط بصمة الوجه",
+      "Staff Enrolment Face ID": "بصمة الوجه لتسجيل الموظفين",
+      "Station Admin & Enrolment Face ID": "بصمة المشرف أو مدخل البيانات"
     },
     fr: {
       "ISABI Systems": "ISABI Systems",
@@ -11640,7 +11646,13 @@
       "Resorts": "Resorts",
       "Real Est": "Immobilier",
       "Insur.": "Assur.",
-      "Rep Diff": "Écarts Date Rapp."
+      "Rep Diff": "Écarts Date Rapp.",
+      "Enrol Staff": "Enrôler Personnel",
+      "+ New Staff": "+ Nouveau Collaborateur",
+      "Register & Enrol New Staff Member": "Inscrire & Enrôler un Nouveau Collaborateur",
+      "Save & Capture Face ID": "Enregistrer & Capturer Face ID",
+      "Staff Enrolment Face ID": "Face ID Enrôlement du Personnel",
+      "Station Admin & Enrolment Face ID": "Face ID Admin & Opérateur de Saisie"
     }
   };
 

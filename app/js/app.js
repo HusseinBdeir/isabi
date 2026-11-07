@@ -132,20 +132,24 @@
     { id: 'u12', full_name: 'Rami Haddad', email: 'hosp.entry@bhfirms.com', pin_code: '9292', role: 'Entry', companies: 'Blanca, La Una', pbi_access: 'none', statements_access: 'partial', status: 'Active', last_login_at: '' },
     { id: 'u13', full_name: 'Karim Mansour', email: 'trading.ops@bhfirms.com', pin_code: '9393', role: 'Supervisor + Entry', companies: 'Korri Auto, Shacman', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u14', full_name: 'Maya Nassar', email: 're.sup@bhfirms.com', pin_code: '9494', role: 'Supervisor', companies: 'Properties, 4235 Company S.A.L', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
-    { id: 'u15', full_name: 'Tarek Farah', email: 'ins.ops@bhfirms.com', pin_code: '9595', role: 'Supervisor + Entry', companies: 'Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' }
+    { id: 'u15', full_name: 'Tarek Farah', email: 'ins.ops@bhfirms.com', pin_code: '9595', role: 'Supervisor + Entry', companies: 'Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
+    { id: 'u16', full_name: 'Aya Hammoud', email: 'ayahammoud@bhfirms.com', pin_code: '3434', role: 'Entry', companies: 'WTC', pbi_access: 'partial', statements_access: 'partial', status: 'Active', last_login_at: '' }
   ];
 
   function ensureMultiIndustryRoleSeats(list) {
     const arr = Array.isArray(list) ? list.slice() : [];
     const seenIds = new Set(arr.map(u => String((u && u.id) || '').toLowerCase()));
     const seenEmails = new Set(arr.map(u => String((u && u.email) || '').trim().toLowerCase()));
+    const seenNames = new Set(arr.map(u => norm((u && u.full_name) || '')));
     MULTI_INDUSTRY_ROLE_SEATS.forEach(seedSeat => {
       const sid = seedSeat.id.toLowerCase();
       const sem = seedSeat.email.toLowerCase();
-      if (!seenIds.has(sid) && !seenEmails.has(sem)) {
+      const snm = norm(seedSeat.full_name);
+      if (!seenIds.has(sid) && !seenEmails.has(sem) && (!snm || !seenNames.has(snm))) {
         arr.push(Object.assign({}, seedSeat));
         seenIds.add(sid);
         seenEmails.add(sem);
+        if (snm) seenNames.add(snm);
       }
     });
     return arr;
@@ -416,6 +420,8 @@
     rosterFilter: 'active',
     rosterCo: '',
     rosterSearch: '',
+    operatorUser: null,
+    newStaffOpen: false,
     staffName: '',
     camActive: false,
     camStarting: false,
@@ -70484,7 +70490,7 @@
     const origEditRepDate = editCtx && editCtx.orig ? String(editCtx.orig.rep_date || editCtx.orig.set_date || origEditDate || '').slice(0, 10) : '';
     const isUniversalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
     const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
-    if (!isUniversalForm && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
+    if ((!isUniversalForm || f === 'staff') && company && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
       const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
@@ -87812,6 +87818,9 @@
     unlocked: false,
     sessionActive: false,
     verifiedAdmin: '',
+    verifiedUser: null,
+    sessionRole: '',
+    targetAction: 'admin',
     expiresAt: 0,
     inactivityTimer: null,
     countdownTicker: null,
@@ -88102,24 +88111,91 @@
     } catch (_) {}
   }
 
+  function resolveIsabiSeatForFaceEntry(entry) {
+    if (!entry) return null;
+    const rawId = String(entry.id || '');
+    const nName = norm(entry.name || entry.full_name || '');
+    const nEmail = norm(entry.email || '');
+    const users = ensureMultiIndustryRoleSeats(STATE.users || DEFAULT_USERS);
+    const matched = users.find(su => {
+      if (!su || su.status === 'Suspended' || isGenericTerminalSeat(su)) return false;
+      if (!rawId.startsWith('stfbio:') && rawId && String(su.id || '') === rawId) return true;
+      if (nEmail && norm(su.email) === nEmail) return true;
+      if (nName && norm(su.full_name) === nName) return true;
+      return false;
+    });
+    if (matched) return matched;
+    if (nName === 'hussein bdeir' || nEmail === 'husseinbdeir@bhfirms.com') {
+      return users.find(su => su && (norm(su.email) === 'husseinbdeir@bhfirms.com' || norm(su.full_name) === 'hussein bdeir')) || DEFAULT_USERS[0];
+    }
+    return null;
+  }
+
   function isAuthorizedKioskAdminFace(entry) {
     if (!entry) return false;
-    const nName = norm(entry.name || '');
+    const nName = norm(entry.name || entry.full_name || '');
     const nEmail = norm(entry.email || '');
     if (nName === 'hussein bdeir' || nEmail === 'husseinbdeir@bhfirms.com') return true;
-    const matchedUser = (STATE.users || []).find(su => {
-      if (!su || su.status === 'Suspended') return false;
-      return (nEmail && norm(su.email) === nEmail) || (nName && norm(su.full_name) === nName);
-    });
+    const matchedUser = resolveIsabiSeatForFaceEntry(entry);
     if (matchedUser) {
       const r = String(matchedUser.role || '').toLowerCase();
       if (isOwner(matchedUser) || isAdminUser(matchedUser) || /owner|admin|manager|supervisor|director/.test(r)) {
         return true;
       }
+      return false;
     }
-    const entryRole = String(entry.role || '').toLowerCase();
-    if (/owner|admin|manager|supervisor|director/.test(entryRole)) return true;
+    if (!String(entry.id || '').startsWith('stfbio:') && entry.email) {
+      const entryRole = String(entry.role || '').toLowerCase();
+      if (/owner|admin|manager|supervisor|director/.test(entryRole)) return true;
+    }
     return false;
+  }
+
+  function canUserEnrolStaff(u) {
+    const target = u || getActiveEnrolOperatorUser();
+    if (!target || target.status === 'Suspended' || isGenericTerminalSeat(target)) return false;
+    const seat = resolveIsabiSeatForFaceEntry({
+      id: target.id,
+      name: target.full_name || target.name,
+      email: target.email,
+      role: target.role
+    }) || ((target.email || target.id) ? target : null);
+    if (!seat || seat.status === 'Suspended' || isGenericTerminalSeat(seat)) return false;
+    const r = String(seat.role || '').toLowerCase();
+    if (isOwner(seat) || isAdminUser(seat) || /owner|admin|manager|supervisor|director/.test(r)) return true;
+    if (resolveCanonicalRoleKey(seat.role) === 'Entry' || /entry/i.test(r)) return true;
+    if (canEnterForm('staff', seat) || canEnterForm('employment', seat)) return true;
+    return false;
+  }
+
+  function isAuthorizedKioskStaffEnrolFace(entry) {
+    if (!entry) return false;
+    if (isAuthorizedKioskAdminFace(entry)) return true;
+    const seat = resolveIsabiSeatForFaceEntry(entry);
+    if (!seat) return false;
+    return canUserEnrolStaff(seat);
+  }
+
+  function getActiveEnrolOperatorUser() {
+    if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.operatorUser) {
+      return STAFF_FACE_MODAL_STATE.operatorUser;
+    }
+    if (KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser) {
+      return KIOSK_ADMIN_MODAL_STATE.verifiedUser;
+    }
+    return activeUser();
+  }
+
+  function isProtectedAdminSeatForEntry(targetUserObj, operatorUser) {
+    if (!targetUserObj) return false;
+    const op = operatorUser || getActiveEnrolOperatorUser();
+    if (!op) return false;
+    const opRole = String(op.role || '').toLowerCase();
+    const opIsAdminOrSup = isOwner(op) || isAdminUser(op) || /owner|admin|manager|supervisor|director/.test(opRole);
+    if (opIsAdminOrSup) return false;
+    const targetRole = String(targetUserObj.role || '').toLowerCase();
+    const targetIsAdminOrSup = isOwner(targetUserObj) || isAdminUser(targetUserObj) || /owner|admin|manager|supervisor|director/.test(targetRole);
+    return targetIsAdminOrSup;
   }
 
   // PIN unlock is disabled on Kiosk Admin (Admin access is strictly Face ID only)
@@ -88179,11 +88255,20 @@
     });
   }
 
-  function startOrResetKioskAdminSession(adminName = '') {
+  function startOrResetKioskAdminSession(adminName = '', verifiedUserObj = null, sessionRole = '') {
     wireKioskAdminActivityListenersOnce();
+    const resolvedSeat = verifiedUserObj
+      || (adminName ? resolveIsabiSeatForFaceEntry({ name: adminName }) : null)
+      || KIOSK_ADMIN_MODAL_STATE.verifiedUser
+      || activeUser();
+    const effRole = sessionRole
+      || (isAuthorizedKioskAdminFace({ name: adminName || (resolvedSeat && resolvedSeat.full_name), email: resolvedSeat && resolvedSeat.email, role: resolvedSeat && resolvedSeat.role }) ? 'admin' : 'entry');
     KIOSK_ADMIN_MODAL_STATE.sessionActive = true;
-    KIOSK_ADMIN_MODAL_STATE.unlocked = true;
+    KIOSK_ADMIN_MODAL_STATE.sessionRole = effRole;
+    KIOSK_ADMIN_MODAL_STATE.unlocked = (effRole === 'admin');
+    if (resolvedSeat) KIOSK_ADMIN_MODAL_STATE.verifiedUser = resolvedSeat;
     if (adminName) KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = adminName;
+    else if (resolvedSeat && resolvedSeat.full_name) KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = resolvedSeat.full_name;
     if (['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk)) {
       KIOSK_ADMIN_MODAL_STATE.originKioskTab = STATE.activeKiosk;
     }
@@ -88295,19 +88380,25 @@
       syncKioskAdminFaceDomInPlace();
       return { ok: false, reason: dec.status || 'unrecognized' };
     }
-    if (!isAuthorizedKioskAdminFace(dec.best)) {
+    const isFullAdmin = isAuthorizedKioskAdminFace(dec.best);
+    const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(dec.best);
+    if (!isEnrolAllowed) {
+      const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best);
       KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
       KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
-      KIOSK_ADMIN_MODAL_STATE.err = `Access denied: ${dec.best.name} is not an Administrator. Admin or Manager Face ID required.`;
+      KIOSK_ADMIN_MODAL_STATE.err = matchedSeat
+        ? `Access denied: ${dec.best.name} (${matchedSeat.role || 'Viewer'}) is not authorized for Station Admin or Staff Enrolment.`
+        : `Access denied: ${dec.best.name} is a company employee, not an ISABI Entry or Admin user. Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.`;
       KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
       syncKioskAdminFaceDomInPlace();
       const card = document.querySelector('#kioskStationAdminModal .ksa-modal-card');
       if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
-      return { ok: false, reason: 'not-admin', staff: dec.best.name };
+      return { ok: false, reason: 'not-admin', isEmployeeOnly: !matchedSeat, staff: dec.best.name };
     }
 
-    const adminName = dec.best.name;
+    const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best) || activeUser();
+    const adminName = (matchedSeat && matchedSeat.full_name) || dec.best.name;
     if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === adminName) {
       KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
     } else {
@@ -88317,24 +88408,39 @@
     const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : 2);
     if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames) {
       KIOSK_ADMIN_MODAL_STATE.err = '';
-      KIOSK_ADMIN_MODAL_STATE.statusText = `Verifying Admin ${adminName}...`;
+      KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
       syncKioskAdminFaceDomInPlace();
-      return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName };
+      return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
     }
 
     KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
     KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
     KIOSK_ADMIN_MODAL_STATE.err = '';
-    KIOSK_ADMIN_MODAL_STATE.statusText = `✓ Admin verified: ${adminName}`;
+    const opAllowedCos = allowedCompanyNames(matchedSeat);
+    const openEnrolDirectly = !isFullAdmin || KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol';
+    KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin
+      ? `✓ Admin verified: ${adminName}`
+      : `✓ Entry Operator verified: ${adminName} (${opAllowedCos.join(', ') || 'Scoped BU'})`;
     KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
     stopKioskAdminFaceCamera(false);
-    startOrResetKioskAdminSession(adminName);
+    startOrResetKioskAdminSession(adminName, matchedSeat, isFullAdmin ? 'admin' : 'entry');
+    if (openEnrolDirectly) {
+      closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
+      openStaffFaceEnrolModal('', { operatorUser: matchedSeat });
+      toast(
+        isFullAdmin
+          ? `Verified ${adminName} · Staff Face ID & Enrolment Studio opened`
+          : `Entry Operator verified: ${adminName} · Scoped to ${opAllowedCos.join(', ') || 'assigned BU'}`,
+        'ok'
+      );
+      return { ok: true, admin: adminName, role: isFullAdmin ? 'admin' : 'entry', openedEnrolModal: true, allowedCompanies: opAllowedCos };
+    }
     if (KIOSK_ADMIN_MODAL_STATE.open && typeof KIOSK_ADMIN_MODAL_STATE.renderInnerFn === 'function') {
       KIOSK_ADMIN_MODAL_STATE.renderInnerFn();
     }
     toast(`Admin verified via Face ID: ${adminName} (auto-locks after 5 min of inactivity)`, 'ok');
-    return { ok: true, admin: adminName };
+    return { ok: true, admin: adminName, role: 'admin', openedEnrolModal: false, allowedCompanies: opAllowedCos };
   }
 
   async function kioskAdminFaceTick() {
@@ -88424,6 +88530,9 @@
     KIOSK_ADMIN_MODAL_STATE.unlocked = false;
     KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
     KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = '';
+    KIOSK_ADMIN_MODAL_STATE.verifiedUser = null;
+    KIOSK_ADMIN_MODAL_STATE.sessionRole = '';
+    KIOSK_ADMIN_MODAL_STATE.targetAction = 'admin';
     KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
     KIOSK_ADMIN_MODAL_STATE.err = '';
     const m = $('kioskStationAdminModal');
@@ -88431,6 +88540,8 @@
     if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) {
       stopStaffEnrolModalCamera();
       STAFF_FACE_MODAL_STATE.open = false;
+      STAFF_FACE_MODAL_STATE.operatorUser = null;
+      STAFF_FACE_MODAL_STATE.newStaffOpen = false;
       $('staffFaceEnrolModal').hidden = true;
     }
     document.body.classList.remove('modal-open', 'kiosk-idle-dimmed', 'kiosk-night-sleep');
@@ -88866,6 +88977,9 @@
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
       KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
       KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = '';
+      KIOSK_ADMIN_MODAL_STATE.verifiedUser = null;
+      KIOSK_ADMIN_MODAL_STATE.sessionRole = '';
+      KIOSK_ADMIN_MODAL_STATE.targetAction = 'admin';
       KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
     }
     const m = $('kioskStationAdminModal');
@@ -88898,12 +89012,27 @@
   function openKioskStationAdminModal(opts = {}) {
     wireKioskStationAdminKeyboardOnce();
     wireKioskAdminActivityListenersOnce();
+    const targetAction = opts && opts.targetAction === 'enrol' ? 'enrol' : 'admin';
+    KIOSK_ADMIN_MODAL_STATE.targetAction = targetAction;
+    if (STATE.kioskLocked && KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser) {
+      if (targetAction === 'enrol' || KIOSK_ADMIN_MODAL_STATE.sessionRole === 'entry') {
+        touchKioskAdminActivity();
+        openStaffFaceEnrolModal('', { operatorUser: KIOSK_ADMIN_MODAL_STATE.verifiedUser });
+        return $('staffFaceEnrolModal');
+      }
+    }
     KIOSK_ADMIN_MODAL_STATE.open = true;
     KIOSK_ADMIN_MODAL_STATE.err = '';
-    KIOSK_ADMIN_MODAL_STATE.statusText = 'Position Admin or Manager face inside the oval guide';
+    KIOSK_ADMIN_MODAL_STATE.statusText = targetAction === 'enrol'
+      ? 'Position ISABI Entry Operator, Supervisor, or Admin face inside the oval guide'
+      : 'Position Admin, Supervisor, or ISABI Entry Operator face inside the oval guide';
     KIOSK_ADMIN_MODAL_STATE.statusCls = '';
     if (!STATE.kioskLocked) {
-      startOrResetKioskAdminSession(activeUser().full_name || 'Admin');
+      startOrResetKioskAdminSession(activeUser().full_name || 'Admin', activeUser(), isAuthorizedKioskAdminFace({ name: activeUser().full_name, email: activeUser().email, role: activeUser().role }) ? 'admin' : 'entry');
+      if (targetAction === 'enrol' || KIOSK_ADMIN_MODAL_STATE.sessionRole === 'entry') {
+        KIOSK_ADMIN_MODAL_STATE.open = false;
+        return openStaffFaceEnrolModal('', { operatorUser: activeUser() });
+      }
     } else if (!KIOSK_ADMIN_MODAL_STATE.sessionActive) {
       KIOSK_ADMIN_MODAL_STATE.unlocked = false;
     }
@@ -88929,7 +89058,8 @@
         attSites.unshift(STATE.kioskAttSite);
       }
       const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
-      const allAllowedKeys = getAllowedCompanyKeys(activeUser());
+      const opAdminUser = KIOSK_ADMIN_MODAL_STATE.verifiedUser || activeUser();
+      const allAllowedKeys = getAllowedCompanyKeys(opAdminUser);
       const adminIndCoCatalogMap = {
         'Manufacturing': [
           { key: 'manufacturing-group', short: 'All Group' },
@@ -89010,8 +89140,10 @@
           <div class="modal-card ksa-modal-card ksa-face-stage" id="ksaFaceStage">
             <div class="modal-head">
               <div>
-                <div class="modal-title">${ic('camera')} Station Admin Face ID</div>
-                <div class="modal-sub">Admin or Manager Face ID is required to switch kiosk mode or adjust station settings (auto-locks after 5 min of inactivity)</div>
+                <div class="modal-title">${ic('camera')} ${KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol' ? 'Staff Enrolment Face ID' : 'Station Admin &amp; Enrolment Face ID'}</div>
+                <div class="modal-sub">${KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol'
+                  ? 'Scan an ISABI Entry Operator, Supervisor, or Admin Face ID to enrol staff in your assigned Business Unit'
+                  : 'Scan Admin/Supervisor Face ID for Station Setup, or ISABI Entry Operator Face ID to enrol staff in your Business Unit'}</div>
               </div>
               <button type="button" class="icon-btn" id="ksaCloseBtn" aria-label="Close">✕</button>
             </div>
@@ -89385,9 +89517,10 @@
 
       $('ksaEnrolFaceBtn')?.addEventListener('click', () => {
         stopKioskAttCamera();
-        startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin');
+        const opUser = KIOSK_ADMIN_MODAL_STATE.verifiedUser || activeUser();
+        startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || opUser.full_name || 'Admin', opUser, KIOSK_ADMIN_MODAL_STATE.sessionRole || 'admin');
         closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
-        openStaffFaceEnrolModal('');
+        openStaffFaceEnrolModal('', { operatorUser: opUser });
       });
 
       $('ksaToggleCamBtn')?.addEventListener('click', async () => {
@@ -91522,9 +91655,37 @@
   }
 
   async function enrolStaffFacePose(staffName, detOrVec, thumbStr = '', slotOverride = null) {
-    const dir = getKioskStaffDirectory();
+    const operatorUser = getActiveEnrolOperatorUser();
+    if (!canUserEnrolStaff(operatorUser)) {
+      return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can enrol staff biometrics.' };
+    }
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
-    if (!entry) return { ok: false, reason: 'no-staff', error: 'Staff member not found in active roster' };
+    if (!entry) {
+      const opAllowed = allowedCompanyNames(operatorUser);
+      return {
+        ok: false,
+        reason: 'bu-restricted',
+        error: opAllowed.length
+          ? `${staffName} is not in your assigned Business Unit (${opAllowed.join(', ')}).`
+          : 'Staff member not found in active roster'
+      };
+    }
+    const opAllowedCos = allowedCompanyNames(operatorUser);
+    if (opAllowedCos.length && entry.company && !opAllowedCos.includes(entry.company)) {
+      return {
+        ok: false,
+        reason: 'bu-restricted',
+        error: `Access restricted: ${operatorUser.full_name} can only enrol staff in ${opAllowedCos.join(', ')}.`
+      };
+    }
+    if (isProtectedAdminSeatForEntry(entry.userObj, operatorUser)) {
+      return {
+        ok: false,
+        reason: 'protected-admin-seat',
+        error: 'Entry Operators cannot overwrite Admin or Supervisor Face ID.'
+      };
+    }
 
     const rawDesc = (detOrVec && detOrVec.descriptor) ? detOrVec.descriptor : detOrVec;
     if (!rawDesc || (rawDesc.length !== 128)) {
@@ -91605,9 +91766,20 @@
   }
 
   async function clearStaffFaceId(staffName) {
-    const dir = getKioskStaffDirectory();
+    const operatorUser = getActiveEnrolOperatorUser();
+    if (!canUserEnrolStaff(operatorUser)) {
+      return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can clear staff Face ID.' };
+    }
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
-    if (!entry) return { ok: false, error: 'Staff member not found' };
+    if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
+    const opAllowedCos = allowedCompanyNames(operatorUser);
+    if (opAllowedCos.length && entry.company && !opAllowedCos.includes(entry.company)) {
+      return { ok: false, reason: 'bu-restricted', error: `Access restricted to ${opAllowedCos.join(', ')}` };
+    }
+    if (isProtectedAdminSeatForEntry(entry.userObj, operatorUser)) {
+      return { ok: false, reason: 'protected-admin-seat', error: 'Entry Operators cannot clear Admin or Supervisor Face ID.' };
+    }
     const nowIso = new Date().toISOString();
     const targetKey = norm(entry.name);
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
@@ -91640,22 +91812,32 @@
 
   function getKioskStaffDirectory(opts = {}) {
     ensureMultiIndustrySpineSeeded();
+    ensureStaffMembersSeeded();
     const out = [];
     const seen = new Set();
     const usedPins = new Set();
-    const allowedCos = allowedCompanyNames();
-    const defCo = defaultEntryCompany();
+    const operatorUser = (opts && opts.operatorUser) || getActiveEnrolOperatorUser();
+    const allowedCos = allowedCompanyNames(operatorUser);
+    const viewerIsOwner = isOwner(operatorUser);
+    const rawDefCo = defaultEntryCompany();
+    const defCo = (allowedCos.length && !allowedCos.includes(rawDefCo)) ? allowedCos[0] : rawDefCo;
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const allEmpRecords = (SEED.records.employments || []).concat(STATE.customRecords.employments || []);
-    const rawScopedCo = opts.companyOverride != null
+    let rawScopedCo = opts.companyOverride != null
       ? String(opts.companyOverride || '')
       : (opts.scopeBySelectedCompany ? (COMPANY_BU_MATCH[STATE.company] || '') : '');
+    if (rawScopedCo && allowedCos.length && !allowedCos.includes(rawScopedCo)) {
+      rawScopedCo = allowedCos.length === 1 ? allowedCos[0] : '';
+    }
+    if (!rawScopedCo && allowedCos.length === 1) {
+      rawScopedCo = allowedCos[0];
+    }
     const scopedCoHasEmps = rawScopedCo
-      ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
+      ? (allowedCos.length === 1 || allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo))
       : true;
     const scopedCo = (rawScopedCo && (scopedCoHasEmps || opts.strictCompanyScope)) ? rawScopedCo : '';
     const indCoSet = (opts.scopeByActiveIndustry || (opts.scopeBySelectedCompany && !scopedCo))
-      ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name))
+      ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!allowedCos.length || allowedCos.includes(c.name))).map(c => c.name))
       : null;
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
     const statusFilter = String(opts.statusFilter || 'all').toLowerCase();
@@ -91689,8 +91871,9 @@
       return p;
     };
 
-    // 1. Contract Workforce per Company (Active + Ended/Inactive contracts)
+    // 1. Contract Workforce per Company (Active + Ended/Inactive contracts, strictly filtered by operator's allowedCos)
     const activeEmps = [];
+    const activeStaffKeys = new Set();
     const endedEmpsMap = new Map();
     allEmpRecords.forEach(emp => {
       if (!emp || emp.voided) return;
@@ -91701,9 +91884,12 @@
       const empCo = emp.company || 'WTC';
       if (allowedCos.length && !allowedCos.includes(empCo)) return;
       if (scopedCo && empCo !== scopedCo) return;
-      if (indCoSet && !indCoSet.has(empCo)) return;
+      if (indCoSet && indCoSet.size > 0 && !indCoSet.has(empCo)) return;
       if (isEmploymentActiveToday(emp, today)) {
-        activeEmps.push({ emp, nm, k, empCo, isActive: true });
+        if (!activeStaffKeys.has(k)) {
+          activeStaffKeys.add(k);
+          activeEmps.push({ emp, nm, k, empCo, isActive: true });
+        }
       } else if (includeEnded) {
         const prev = endedEmpsMap.get(k);
         const curEnd = String(emp.end_date || emp.start_date || '');
@@ -91712,6 +91898,40 @@
           endedEmpsMap.set(k, { emp, nm, k, empCo, isActive: false });
         }
       }
+    });
+    activeStaffKeys.forEach(k => endedEmpsMap.delete(k));
+
+    // 1b. Include newly registered staff_members (created via Smart Entry or Enrol Studio) in the operator's allowed BUs
+    const allAssigns = ((SEED.records && SEED.records.staff_assignments) || []).concat((STATE.customRecords && STATE.customRecords.staff_assignments) || []);
+    const allStaffMembers = ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []);
+    allStaffMembers.forEach(sm => {
+      if (!sm || sm.voided) return;
+      const nm = String(sm.name || sm.staff || '').trim();
+      const k = norm(nm);
+      if (!k || activeStaffKeys.has(k) || endedEmpsMap.has(k)) return;
+      const isAppSm = Boolean(sm.source === 'app' || sm.is_app || (STATE.customRecords && Array.isArray(STATE.customRecords.staff_members) && STATE.customRecords.staff_members.some(c => c && !c.voided && norm(c.name || c.staff) === k)));
+      if (!isAppSm && !sm.company) return;
+      const matchSa = allAssigns.find(sa => sa && !sa.voided && norm(sa.staff) === k && sa.company);
+      const smCo = sm.company || (matchSa && matchSa.company) || (isAppSm ? (scopedCo || defCo) : '');
+      if (!smCo) return;
+      if (allowedCos.length && !allowedCos.includes(smCo)) return;
+      if (scopedCo && smCo !== scopedCo) return;
+      if (indCoSet && indCoSet.size > 0 && !indCoSet.has(smCo)) return;
+      activeStaffKeys.add(k);
+      activeEmps.push({
+        emp: {
+          id: sm.id || ('sm-' + k),
+          staff: nm,
+          company: smCo,
+          role: sm.role || (matchSa && matchSa.role) || 'Active Staff',
+          status: 'Active',
+          working_hours: 8
+        },
+        nm,
+        k,
+        empCo: smCo,
+        isActive: true
+      });
     });
 
     // 2. Named Human Seats (Owner / Supervisor / Entry individuals, excluding generic terminal accounts)
@@ -91722,25 +91942,26 @@
       if (!k || seen.has(k)) return;
       const uCos = parseUserCompanies(u);
       const matchingEmp = activeEmps.find(x => x.k === k) || endedEmpsMap.get(k) || null;
-      const viewerIsOwner = isOwner(activeUser());
-      if (scopedCo) {
-        const hasCoAccess = Boolean(matchingEmp) || uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u));
-        if (!hasCoAccess) return;
-      } else if (indCoSet) {
-        const hasIndAccess = Boolean(matchingEmp) || uCos.some(c => indCoSet.has(c)) || (viewerIsOwner && isAdminUser(u));
-        if (!hasIndAccess) return;
-      } else if (allowedCos.length && uCos.length && !uCos.some(c => allowedCos.includes(c)) && !(viewerIsOwner && isAdminUser(u))) {
+      const uAllowedCos = allowedCos.length ? uCos.filter(c => allowedCos.includes(c)) : uCos.slice();
+      if (allowedCos.length && !matchingEmp && !uAllowedCos.length && !(viewerIsOwner && isAdminUser(u))) {
         return;
+      }
+      if (scopedCo) {
+        const hasCoAccess = Boolean(matchingEmp && matchingEmp.empCo === scopedCo) || uAllowedCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u));
+        if (!hasCoAccess) return;
+      } else if (indCoSet && indCoSet.size > 0) {
+        const hasIndAccess = Boolean(matchingEmp && indCoSet.has(matchingEmp.empCo)) || uAllowedCos.some(c => indCoSet.has(c)) || (viewerIsOwner && isAdminUser(u));
+        if (!hasIndAccess) return;
       }
       seen.add(k);
       const bio = bioMap[k] || null;
       const co = matchingEmp
         ? matchingEmp.empCo
-        : ((scopedCo && (uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u))))
+        : ((scopedCo && (uAllowedCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u))))
           ? scopedCo
-          : (indCoSet
-            ? (uCos.find(c => indCoSet.has(c) && (!allowedCos.length || allowedCos.includes(c))) || defCo)
-            : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo)));
+          : ((indCoSet && indCoSet.size > 0)
+            ? (uAllowedCos.find(c => indCoSet.has(c)) || defCo)
+            : (uAllowedCos[0] || defCo)));
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
       const shiftToday = resolveStaffShiftForDate(nm, co, today);
@@ -91868,9 +92089,20 @@
   }
 
   function setKioskStaffPin(staffName, rawPin) {
-    const dir = getKioskStaffDirectory();
+    const operatorUser = getActiveEnrolOperatorUser();
+    if (!canUserEnrolStaff(operatorUser)) {
+      return { ok: false, reason: 'unauthorized-role', error: 'Only ISABI Entry Operators, Supervisors, or Admins can set staff PINs.' };
+    }
+    const dir = getKioskStaffDirectory({ operatorUser, includeEnded: true });
     const entry = dir.find(s => norm(s.name) === norm(staffName));
-    if (!entry) return { ok: false, error: 'Staff member not found in active roster' };
+    if (!entry) return { ok: false, reason: 'bu-restricted', error: 'Staff member not found in your assigned Business Unit' };
+    const opAllowedCos = allowedCompanyNames(operatorUser);
+    if (opAllowedCos.length && entry.company && !opAllowedCos.includes(entry.company)) {
+      return { ok: false, reason: 'bu-restricted', error: `Access restricted: ${operatorUser.full_name} can only manage staff in ${opAllowedCos.join(', ')}.` };
+    }
+    if (isProtectedAdminSeatForEntry(entry.userObj, operatorUser)) {
+      return { ok: false, reason: 'protected-admin-seat', error: 'Entry Operators cannot change Admin or Supervisor PINs.' };
+    }
     const clean = String(rawPin == null ? '' : rawPin).trim();
     if (clean !== '' && !/^\d{4}$/.test(clean)) {
       return { ok: false, error: 'PIN must be exactly 4 digits (0000 to 9999)' };
@@ -93103,6 +93335,18 @@
     const hadActiveCam = Boolean(STAFF_FACE_MODAL_STATE.camActive || STAFF_FACE_MODAL_STATE.camStarting || streamAlive());
     stopStaffEnrolModalCamera();
     STAFF_FACE_MODAL_STATE.open = false;
+    STAFF_FACE_MODAL_STATE.operatorUser = null;
+    STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+    if (STATE.kioskLocked && KIOSK_ADMIN_MODAL_STATE.sessionRole === 'entry') {
+      clearKioskAdminTimers();
+      KIOSK_ADMIN_MODAL_STATE.unlocked = false;
+      KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
+      KIOSK_ADMIN_MODAL_STATE.verifiedAdmin = '';
+      KIOSK_ADMIN_MODAL_STATE.verifiedUser = null;
+      KIOSK_ADMIN_MODAL_STATE.sessionRole = '';
+      KIOSK_ADMIN_MODAL_STATE.targetAction = 'admin';
+      KIOSK_ADMIN_MODAL_STATE.expiresAt = 0;
+    }
     const modal = $('staffFaceEnrolModal');
     if (modal) modal.hidden = true;
     document.body.classList.remove('modal-open');
@@ -93192,10 +93436,289 @@
     return candidates[0];
   }
 
-  function getEnrolModalStaffPool() {
-    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true });
+  function getEnrolModalStaffPool(operatorUser = null) {
+    const op = operatorUser || getActiveEnrolOperatorUser();
+    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true, operatorUser: op, includeEnded: true });
     if (indScoped.length) return indScoped;
-    return getKioskStaffDirectory();
+    return getKioskStaffDirectory({ operatorUser: op, includeEnded: true });
+  }
+
+  function getEnrolOperatorAllowedCompanies(operatorUser = null) {
+    const op = operatorUser || getActiveEnrolOperatorUser();
+    const opAllowed = allowedCompanyNames(op);
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    const indCos = getCompanyCatalog()
+      .filter(c => (c.industry || 'Manufacturing') === activeInd && (!opAllowed.length || opAllowed.includes(c.name)))
+      .map(c => c.name);
+    if (indCos.length) return indCos;
+    if (opAllowed.length) return opAllowed.slice();
+    return [defaultEntryCompany() || 'WTC'];
+  }
+
+  function getFrequencyRankedRolesForEnrol(companyName = '') {
+    ensureStaffRolesSeeded();
+    const roleCounts = new Map();
+    const bump = (r, w = 1) => {
+      const clean = String(r || '').trim();
+      const k = norm(clean);
+      if (!k || k === 'active staff' || k === 'staff') return;
+      const cur = roleCounts.get(k);
+      if (cur) cur.count += w;
+      else roleCounts.set(k, { name: clean, count: w });
+    };
+    const emps = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+    emps.forEach(e => {
+      if (!e || e.voided || !e.role) return;
+      const matchCo = !companyName || norm(e.company || 'WTC') === norm(companyName);
+      bump(e.role, matchCo ? 5 : 1);
+    });
+    const sms = ((SEED.records && SEED.records.staff_members) || []).concat((STATE.customRecords && STATE.customRecords.staff_members) || []);
+    sms.forEach(s => {
+      if (!s || s.voided || !s.role) return;
+      bump(s.role, 2);
+    });
+    const srList = ((SEED.records && SEED.records.staff_roles) || []).concat((STATE.customRecords && STATE.customRecords.staff_roles) || []);
+    srList.forEach(sr => {
+      if (!sr || sr.voided) return;
+      bump(sr.name || sr.role, 1);
+    });
+    ['General Labour', 'Plant Operator', 'Driver', 'Technician', 'Site Foreman', 'Waiter', 'Housekeeping', 'Sales Executive', 'Accountant'].forEach(d => bump(d, 0.5));
+    return Array.from(roleCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .map(x => x.name);
+  }
+
+  function registerNewStaffFromEnrolStudio(spec = {}) {
+    const operatorUser = (spec && spec.operatorUser) || getActiveEnrolOperatorUser();
+    if (!canUserEnrolStaff(operatorUser)) {
+      return {
+        ok: false,
+        reason: 'unauthorized-role',
+        error: 'Access denied: Only ISABI Entry Operators, Supervisors, or Admins can register and enrol new staff.'
+      };
+    }
+    const opAllowedCos = allowedCompanyNames(operatorUser);
+    const rawName = String((spec && (spec.name || spec.fullName || spec.staff)) || '').trim().replace(/\s+/g, ' ');
+    if (!rawName || rawName.length < 2) {
+      return { ok: false, reason: 'invalid-name', error: 'Enter the new staff member\'s full name (at least 2 characters).' };
+    }
+    const requestedCo = String((spec && spec.company) || '').trim();
+    let canonicalCo = '';
+    if (requestedCo) {
+      const matchedAllowed = opAllowedCos.find(c => norm(c) === norm(requestedCo));
+      if (opAllowedCos.length && !matchedAllowed) {
+        return {
+          ok: false,
+          reason: 'bu-restricted',
+          error: `Access restricted: ${operatorUser.full_name} is restricted to ${opAllowedCos.join(', ')} and cannot enroll staff in ${requestedCo}.`
+        };
+      }
+      const catHit = getCompanyCatalog().find(c => norm(c.name) === norm(requestedCo) || norm(c.key) === norm(requestedCo));
+      canonicalCo = matchedAllowed || (catHit && catHit.name) || requestedCo;
+    } else {
+      const scopedAllowed = getEnrolOperatorAllowedCompanies(operatorUser);
+      canonicalCo = scopedAllowed[0] || opAllowedCos[0] || defaultEntryCompany() || 'WTC';
+    }
+    if (opAllowedCos.length && !opAllowedCos.includes(canonicalCo)) {
+      return {
+        ok: false,
+        reason: 'bu-restricted',
+        error: `Access restricted: ${operatorUser.full_name} can only enroll staff in ${opAllowedCos.join(', ')}.`
+      };
+    }
+
+    ensureStaffMembersSeeded();
+    const targetKey = norm(rawName);
+    const allEmps = ((SEED.records && SEED.records.employments) || []).concat((STATE.customRecords && STATE.customRecords.employments) || []);
+    const otherBuActiveEmp = allEmps.find(e =>
+      e && !e.voided
+      && norm(e.staff) === targetKey
+      && String(e.status || 'Active').toLowerCase() !== 'ended'
+      && e.company
+      && opAllowedCos.length
+      && !opAllowedCos.includes(e.company)
+    );
+    if (otherBuActiveEmp) {
+      return {
+        ok: false,
+        reason: 'bu-restricted',
+        error: `${rawName} is already registered under ${otherBuActiveEmp.company}, outside your assigned Business Unit (${opAllowedCos.join(', ')}).`
+      };
+    }
+
+    const rankedRoles = getFrequencyRankedRolesForEnrol(canonicalCo);
+    const cleanRole = String((spec && (spec.role || spec.roleTitle)) || '').trim() || rankedRoles[0] || 'General Labour';
+    const roleCat = resolveRoleCategory(cleanRole, 'Site & Operations') || 'Site & Operations';
+    const cleanPhone = String((spec && spec.phone) || '').trim();
+    const today = todayISO();
+    const nowIso = new Date().toISOString();
+    const whoName = (operatorUser && operatorUser.full_name) || activeUser().full_name || 'Entry Operator';
+    const whoEmail = (operatorUser && operatorUser.email) || activeUser().email || '';
+
+    if (!STATE.customRecords || typeof STATE.customRecords !== 'object') STATE.customRecords = {};
+    if (!Array.isArray(STATE.customRecords.staff_members)) STATE.customRecords.staff_members = [];
+    if (!Array.isArray(STATE.customRecords.staff_assignments)) STATE.customRecords.staff_assignments = [];
+    if (!Array.isArray(STATE.customRecords.employments)) STATE.customRecords.employments = [];
+    if (!SEED.records) SEED.records = {};
+    if (!Array.isArray(SEED.records.staff_members)) SEED.records.staff_members = [];
+    if (!Array.isArray(SEED.records.staff_assignments)) SEED.records.staff_assignments = [];
+    if (!Array.isArray(SEED.records.employments)) SEED.records.employments = [];
+
+    // 1. Upsert staff_members record
+    let smRec = STATE.customRecords.staff_members.find(r => r && !r.voided && norm(r.name || r.staff) === targetKey)
+      || SEED.records.staff_members.find(r => r && !r.voided && norm(r.name || r.staff) === targetKey);
+    const cleanName = (smRec && (smRec.name || smRec.staff)) ? String(smRec.name || smRec.staff).trim() : rawName;
+    if (smRec) {
+      smRec.company = canonicalCo;
+      smRec.role = cleanRole || smRec.role || 'General Labour';
+      smRec.role_category = roleCat;
+      smRec.worker_category = roleCat;
+      if (cleanPhone) smRec.phone = cleanPhone;
+      smRec.modified_by = whoEmail;
+      smRec.modified_at = nowIso;
+      const cIdx = STATE.customRecords.staff_members.findIndex(r => r && norm(r.name || r.staff) === targetKey);
+      if (cIdx >= 0) Object.assign(STATE.customRecords.staff_members[cIdx], smRec);
+      else STATE.customRecords.staff_members.unshift(Object.assign({}, smRec));
+    } else {
+      smRec = {
+        id: uid('stf'),
+        name: cleanName,
+        staff: cleanName,
+        company: canonicalCo,
+        date: today,
+        rep_date: today,
+        role: cleanRole,
+        role_category: roleCat,
+        worker_category: roleCat,
+        phone: cleanPhone,
+        default_equipment: '',
+        assign_start: today,
+        reference: '',
+        notes: `Enrolled by ${whoName} (${canonicalCo})`,
+        source: 'app',
+        is_app: true,
+        entered_by: whoName,
+        entered_by_email: whoEmail,
+        entered_at: nowIso,
+        voided: false
+      };
+      STATE.customRecords.staff_members.unshift(smRec);
+      SEED.records.staff_members.unshift(Object.assign({}, smRec));
+    }
+
+    // 2. Ensure active staff_assignments row in canonicalCo
+    const hasSa = SEED.records.staff_assignments.concat(STATE.customRecords.staff_assignments).some(sa =>
+      sa && !sa.voided && norm(sa.staff) === targetKey && norm(sa.company || canonicalCo) === norm(canonicalCo)
+    );
+    const stSlug = String(cleanName || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
+    if (!hasSa) {
+      const saRec = {
+        id: uid('sa'),
+        name: `ASGN-${today.replace(/-/g, '')}-${stSlug}-001`,
+        company: canonicalCo,
+        date: today,
+        rep_date: today,
+        staff: cleanName,
+        role: cleanRole,
+        role_category: roleCat,
+        equipment: '',
+        start_date: today,
+        end_date: '',
+        status: 'Current',
+        notes: `Initial BU role assignment (${canonicalCo})`,
+        source: 'app',
+        is_app: true,
+        entered_by: whoName,
+        entered_by_email: whoEmail,
+        entered_at: nowIso,
+        voided: false
+      };
+      STATE.customRecords.staff_assignments.unshift(saRec);
+      SEED.records.staff_assignments.unshift(Object.assign({}, saRec));
+      postRecordToLocalApi('staff_assignments', saRec);
+    }
+
+    // 3. Ensure active employments contract row in canonicalCo (with salary_pending: true so HR/Supervisor can finalize pay rate later)
+    let empRec = allEmps.find(e =>
+      e && !e.voided
+      && norm(e.staff) === targetKey
+      && norm(e.company || 'WTC') === norm(canonicalCo)
+      && String(e.status || 'Active').toLowerCase() !== 'ended'
+    );
+    if (!empRec) {
+      const empSeq = String((allEmps.filter(e => e && norm(e.staff) === targetKey).length) + 1).padStart(3, '0');
+      empRec = {
+        id: uid('emp'),
+        name: `EMPL-${today.replace(/-/g, '')}-${stSlug}-${empSeq}`,
+        company: canonicalCo,
+        date: today,
+        rep_date: today,
+        staff: cleanName,
+        role: cleanRole,
+        role_category: roleCat,
+        pay_type: 'Monthly',
+        type: 'Staff',
+        salary_usd: 0,
+        daily_rate: 0,
+        reimbursement: 0,
+        deduction: 0,
+        working_days: 30,
+        working_hours: 8,
+        vacation_days: 0,
+        overtime_multiplier: 1,
+        lateness_multiplier: 1,
+        base_salary: 0,
+        amount: 0,
+        salary_pending: true,
+        start_date: today,
+        end_date: '',
+        status: 'Active',
+        notes: `New staff enrolled by ${whoName} (${canonicalCo}) · Salary Pending`,
+        source: 'app',
+        is_app: true,
+        entered_by: whoName,
+        entered_by_email: whoEmail,
+        entered_at: nowIso,
+        voided: false
+      };
+      STATE.customRecords.employments.unshift(empRec);
+      SEED.records.employments.unshift(Object.assign({}, empRec));
+      postRecordToLocalApi('employments', empRec);
+    }
+
+    postRecordToLocalApi('staff_members', smRec);
+    SEED._staffMembersSeededRev = '';
+    if (SEED._tableRev) {
+      SEED._tableRev.staff_members = (SEED._tableRev.staff_members || 0) + 1;
+      SEED._tableRev.employments = (SEED._tableRev.employments || 0) + 1;
+    }
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    applyCustomRecordsToSeed();
+    invalidateAllSeedCaches();
+    ensureStaffMembersSeeded();
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+
+    if (STAFF_FACE_MODAL_STATE.open && (!spec || spec.openCapture !== false)) {
+      STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+      STAFF_FACE_MODAL_STATE.rosterSearch = '';
+      if (STAFF_FACE_MODAL_STATE.rosterCo && norm(STAFF_FACE_MODAL_STATE.rosterCo) !== norm(canonicalCo)) {
+        STAFF_FACE_MODAL_STATE.rosterCo = canonicalCo;
+      }
+      selectStaffForEnrolModal(cleanName, { autoStartCam: Boolean(spec && spec.autoStartCam) });
+      STAFF_FACE_MODAL_STATE.statusText = `✓ Registered ${cleanName} in ${canonicalCo} (${cleanRole}). Now capture 3 Face ID poses below.`;
+      STAFF_FACE_MODAL_STATE.statusCls = 'ok';
+      syncStaffFaceEnrolModalDom();
+    }
+
+    return {
+      ok: true,
+      staff: cleanName,
+      company: canonicalCo,
+      role: cleanRole,
+      staffId: smRec.id,
+      employmentId: empRec.id
+    };
   }
 
   function computeFaceHorizontalYaw(det) {
@@ -93246,25 +93769,45 @@
     }
     if (!gridEl) return;
     if (!filtered.length) {
+      const qTrim = String(STAFF_FACE_MODAL_STATE.rosterSearch || '').trim();
+      const opAllowed = getEnrolOperatorAllowedCompanies();
+      const defBu = STAFF_FACE_MODAL_STATE.rosterCo || opAllowed[0] || defaultEntryCompany() || 'WTC';
       gridEl.innerHTML = `
         <div class="sfe-roster-empty">
-          <strong>No matching staff members</strong>
-          <span>Try clearing the search box or switching the filter chip above.</span>
+          <strong>No matching staff members${qTrim ? ` for "${esc(qTrim)}"` : ''}</strong>
+          <span>${qTrim ? `Register "${esc(qTrim)}" as a new staff member in ${esc(defBu)} and capture their Face ID immediately.` : 'Try clearing the search box, switching the filter chip above, or tap + New Staff to add a new employee.'}</span>
+          ${canUserEnrolStaff() ? `
+            <button type="button" class="btn btn-primary sfe-empty-add-btn" id="sfeEmptyAddStaffBtn" data-prefill-name="${esc(qTrim)}">
+              + Register ${qTrim ? `"${esc(qTrim)}"` : 'New Staff'} in ${esc(defBu)}
+            </button>
+          ` : ''}
         </div>
       `;
+      $('sfeEmptyAddStaffBtn')?.addEventListener('click', e => {
+        const prefill = e.currentTarget.getAttribute('data-prefill-name') || '';
+        STAFF_FACE_MODAL_STATE.newStaffOpen = true;
+        syncStaffFaceEnrolModalDom();
+        const nmInp = $('sfeNewStaffName');
+        if (nmInp) {
+          if (prefill) nmInp.value = prefill;
+          setTimeout(() => { try { nmInp.focus({ preventScroll: true }); } catch (_) {} }, 25);
+        }
+      });
       return;
     }
     const curNorm = norm(STAFF_FACE_MODAL_STATE.staffName || '');
+    const opUserNow = getActiveEnrolOperatorUser();
     gridEl.innerHTML = filtered.map(s => {
       const fc = Number(s.faceCount || 0);
       const isDone = fc >= 3;
       const isPartial = fc > 0 && fc < 3;
       const isPicked = curNorm && norm(s.name) === curNorm;
-      const pillCls = isDone ? 'is-done' : (isPartial ? 'is-partial' : 'is-missing');
-      const pillTxt = isDone ? '✓ 3/3 Enrolled' : (isPartial ? `${fc}/3 Poses` : 'Enrol Face ID');
+      const isProtAdmin = isProtectedAdminSeatForEntry(s.userObj, opUserNow);
+      const pillCls = isProtAdmin ? 'is-done' : (isDone ? 'is-done' : (isPartial ? 'is-partial' : 'is-missing'));
+      const pillTxt = isProtAdmin ? 'Protected Admin Seat' : (isDone ? '✓ 3/3 Enrolled' : (isPartial ? `${fc}/3 Poses` : 'Enrol Face ID'));
       const roleTxt = s.role && norm(s.role) !== 'active staff' ? s.role : (s.isEndedContract ? 'Inactive' : 'Staff');
       return `
-        <button type="button" class="sfe-staff-card ${isDone ? 'is-enrolled' : ''} ${isPicked ? 'is-current' : ''}" data-sfe-pick-staff="${esc(s.name)}">
+        <button type="button" class="sfe-staff-card ${isDone ? 'is-enrolled' : ''} ${isPicked ? 'is-current' : ''} ${isProtAdmin ? 'is-protected-seat' : ''}" data-sfe-pick-staff="${esc(s.name)}" ${isProtAdmin ? 'data-sfe-protected-seat="1"' : ''}>
           <span class="sfe-avatar ${isDone ? 'is-done' : ''}">${esc(getStaffInitialsMonogram(s.name))}</span>
           <span class="sfe-card-main">
             <strong class="sfe-card-name">${esc(s.name)}</strong>
@@ -93279,6 +93822,10 @@
     }).join('');
     gridEl.querySelectorAll('[data-sfe-pick-staff]').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (btn.getAttribute('data-sfe-protected-seat') === '1') {
+          toast('Entry Operators cannot modify Admin or Supervisor Face ID', 'warn');
+          return;
+        }
         const pickedName = btn.getAttribute('data-sfe-pick-staff') || '';
         if (pickedName) selectStaffForEnrolModal(pickedName, { autoStartCam: true });
       });
@@ -93287,7 +93834,16 @@
 
   function selectStaffForEnrolModal(staffName, opts = {}) {
     stopStaffEnrolModalCamera();
-    STAFF_FACE_MODAL_STATE.staffName = String(staffName || '').trim();
+    const cleanTarget = String(staffName || '').trim();
+    if (cleanTarget) {
+      const opNow = getActiveEnrolOperatorUser();
+      const hit = getEnrolModalStaffPool(opNow).find(s => norm(s.name) === norm(cleanTarget));
+      if (hit && isProtectedAdminSeatForEntry(hit.userObj, opNow)) {
+        toast('Entry Operators cannot modify Admin or Supervisor Face ID', 'warn');
+        return { ok: false, reason: 'protected-admin-seat' };
+      }
+    }
+    STAFF_FACE_MODAL_STATE.staffName = cleanTarget;
     STAFF_FACE_MODAL_STATE.step = STAFF_FACE_MODAL_STATE.staffName ? 'capture' : 'roster';
     STAFF_FACE_MODAL_STATE.lastDet = null;
     STAFF_FACE_MODAL_STATE.lastSnap = '';
@@ -93612,20 +94168,61 @@
       });
     }
 
+    const opUser = getActiveEnrolOperatorUser();
+    const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
+    const scopeBadgeEl = $('sfeOperatorScopeBadge');
+    if (scopeBadgeEl) {
+      const opRoleLbl = isOwner(opUser) ? 'Owner' : (resolveCanonicalRoleKey(opUser && opUser.role) || (opUser && opUser.role) || 'Operator');
+      scopeBadgeEl.innerHTML = `${ic('building')} <span><strong>${esc((opUser && opUser.full_name) || 'Operator')}</strong> (${esc(opRoleLbl)}) · BU Scope: <strong>${esc(opAllowedCos.join(', '))}</strong></span>`;
+    }
+    const nsToggleBtn = $('sfeNewStaffToggleBtn');
+    if (nsToggleBtn) {
+      nsToggleBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.newStaffOpen));
+      nsToggleBtn.setAttribute('aria-expanded', STAFF_FACE_MODAL_STATE.newStaffOpen ? 'true' : 'false');
+    }
+    const nsDrawer = $('sfeNewStaffDrawer');
+    if (nsDrawer) {
+      nsDrawer.hidden = !STAFF_FACE_MODAL_STATE.newStaffOpen;
+      const nsCoSel = $('sfeNewStaffCo');
+      if (nsCoSel) {
+        const curSelCo = (STAFF_FACE_MODAL_STATE.rosterCo && opAllowedCos.includes(STAFF_FACE_MODAL_STATE.rosterCo))
+          ? STAFF_FACE_MODAL_STATE.rosterCo
+          : (nsCoSel.value && opAllowedCos.includes(nsCoSel.value) ? nsCoSel.value : opAllowedCos[0] || 'WTC');
+        nsCoSel.innerHTML = opAllowedCos.map(c => `<option value="${esc(c)}" ${c === curSelCo ? 'selected' : ''}>${esc(c)}</option>`).join('');
+        nsCoSel.disabled = opAllowedCos.length <= 1;
+      }
+      const nsRoleDl = $('sfeNewStaffRoleList');
+      if (nsRoleDl) {
+        const targetCoForRoles = ($('sfeNewStaffCo') && $('sfeNewStaffCo').value) || opAllowedCos[0] || 'WTC';
+        const rolesList = getFrequencyRankedRolesForEnrol(targetCoForRoles);
+        nsRoleDl.innerHTML = rolesList.map(r => `<option value="${esc(r)}"></option>`).join('');
+        const nsRoleInp = $('sfeNewStaffRole');
+        if (nsRoleInp && !nsRoleInp.value && rolesList[0]) {
+          nsRoleInp.placeholder = `e.g. ${rolesList.slice(0, 3).join(', ')}`;
+        }
+      }
+    }
+
     const coBar = $('sfeCompanyChips');
     if (coBar) {
       const uniqueCos = [];
+      opAllowedCos.forEach(c => {
+        if (c && !uniqueCos.includes(c)) uniqueCos.push(c);
+      });
       allStaff.forEach(s => {
-        if (s.company && !uniqueCos.includes(s.company)) uniqueCos.push(s.company);
+        if (s.company && (!opAllowedCos.length || opAllowedCos.includes(s.company)) && !uniqueCos.includes(s.company)) {
+          uniqueCos.push(s.company);
+        }
       });
       if (uniqueCos.length <= 1) {
+        if (uniqueCos.length === 1) STAFF_FACE_MODAL_STATE.rosterCo = uniqueCos[0];
         coBar.hidden = true;
         coBar.innerHTML = '';
       } else {
         coBar.hidden = false;
         const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
         coBar.innerHTML = [
-          `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Entities</button>`
+          `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Permitted BUs (${uniqueCos.length})</button>`
         ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
         coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
           b.addEventListener('click', () => {
@@ -93826,26 +94423,34 @@
     stripNativeTitles(document);
   }
 
-  function openStaffFaceEnrolModal(staffName = '') {
+  function openStaffFaceEnrolModal(staffName = '', opts = {}) {
     stopKioskAttCamera();
     stopStaffEnrolModalCamera();
-    const indStaff = getEnrolModalStaffPool();
-    const fullStaff = indStaff.length ? indStaff : getKioskStaffDirectory();
-    if (!fullStaff.length) {
-      toast('No active staff available to enrol', 'warn');
+    const opUser = (opts && opts.operatorUser)
+      || (KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.verifiedUser)
+      || activeUser();
+    if (!canUserEnrolStaff(opUser)) {
+      toast('Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.', 'warn');
       return null;
     }
+    STAFF_FACE_MODAL_STATE.operatorUser = opUser;
+    STAFF_FACE_MODAL_STATE.newStaffOpen = Boolean(opts && opts.openNewStaff);
+    const opAllowedCos = getEnrolOperatorAllowedCompanies(opUser);
+    const indStaff = getEnrolModalStaffPool(opUser);
+    const fullStaff = indStaff.length ? indStaff : getKioskStaffDirectory({ operatorUser: opUser, includeEnded: true });
     let picked = staffName
-      ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || getKioskStaffDirectory().find(s => norm(s.name) === norm(staffName)) || null)
+      ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || null)
       : null;
     if (!picked && STATE.kioskAttRosterSearch) {
       const rq = norm(STATE.kioskAttRosterSearch);
       const hits = fullStaff.filter(s => norm(s.name).includes(rq));
       if (hits.length === 1) picked = hits[0];
     }
-    const defaultScopedCo = (COMPANY_BU_MATCH[STATE.company] && fullStaff.some(s => s.company === COMPANY_BU_MATCH[STATE.company]))
-      ? COMPANY_BU_MATCH[STATE.company]
-      : '';
+    const defaultScopedCo = opAllowedCos.length === 1
+      ? opAllowedCos[0]
+      : ((COMPANY_BU_MATCH[STATE.company] && opAllowedCos.includes(COMPANY_BU_MATCH[STATE.company]) && fullStaff.some(s => s.company === COMPANY_BU_MATCH[STATE.company]))
+        ? COMPANY_BU_MATCH[STATE.company]
+        : '');
     let savedHf = false;
     try { savedHf = localStorage.getItem('isabi_mfg_sfe_handsfree_v1') === '1'; } catch (_) {}
     STAFF_FACE_MODAL_STATE.open = true;
@@ -93900,6 +94505,44 @@
             </div>
 
             <div class="sfe-controls-bar">
+              <div class="sfe-operator-scope-row">
+                <span class="sfe-operator-scope-pill" id="sfeOperatorScopeBadge"></span>
+                <button type="button" class="btn btn-primary sfe-new-staff-toggle-btn" id="sfeNewStaffToggleBtn" aria-expanded="false">
+                  + New Staff
+                </button>
+              </div>
+              <div class="sfe-new-staff-drawer" id="sfeNewStaffDrawer" hidden>
+                <div class="sfe-ns-head">
+                  <strong>Register &amp; Enrol New Staff Member</strong>
+                  <span>Restricted to your assigned Business Unit (${esc(opAllowedCos.join(', '))}) · Creates active roster profile &amp; opens 3-Pose Face ID capture</span>
+                </div>
+                <div class="sfe-ns-grid">
+                  <label class="sfe-ns-field">
+                    <span>Full Name *</span>
+                    <input type="text" id="sfeNewStaffName" class="sfe-search-input" placeholder="e.g. Rami Kassis" autocomplete="off" spellcheck="false">
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Business Unit *</span>
+                    <select id="sfeNewStaffCo" class="kiosk-select sfe-ns-select" data-native-select="1" ${opAllowedCos.length <= 1 ? 'disabled' : ''}>
+                      ${opAllowedCos.map(c => `<option value="${esc(c)}" ${c === (defaultScopedCo || opAllowedCos[0]) ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+                    </select>
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Role / Job Title *</span>
+                    <input type="text" id="sfeNewStaffRole" class="sfe-search-input" list="sfeNewStaffRoleList" placeholder="e.g. General Labour" value="General Labour" autocomplete="off">
+                    <datalist id="sfeNewStaffRoleList"></datalist>
+                  </label>
+                  <label class="sfe-ns-field">
+                    <span>Phone (Optional)</span>
+                    <input type="tel" id="sfeNewStaffPhone" class="sfe-search-input" placeholder="e.g. 03 123 456" autocomplete="off">
+                  </label>
+                </div>
+                <div class="sfe-ns-err" id="sfeNewStaffErr" hidden></div>
+                <div class="sfe-ns-actions">
+                  <button type="button" class="btn" id="sfeNewStaffCancelBtn">Cancel</button>
+                  <button type="button" class="btn btn-primary" id="sfeNewStaffSaveBtn">${ic('camera')} Save &amp; Capture Face ID</button>
+                </div>
+              </div>
               <div class="sfe-chip-row" id="sfeStatusChips"></div>
               <div class="sfe-chip-row sfe-co-chips" id="sfeCompanyChips"></div>
               <div class="sfe-search-row">
@@ -93999,6 +94642,58 @@
       const inp = $('staffEnrolRosterSearch');
       if (inp) inp.value = '';
       renderStaffEnrolRosterGridOnly();
+    });
+    $('sfeNewStaffToggleBtn')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.newStaffOpen = !STAFF_FACE_MODAL_STATE.newStaffOpen;
+      const errEl = $('sfeNewStaffErr');
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      syncStaffFaceEnrolModalDom();
+      if (STAFF_FACE_MODAL_STATE.newStaffOpen) {
+        const nmInp = $('sfeNewStaffName');
+        if (nmInp) setTimeout(() => { try { nmInp.focus({ preventScroll: true }); } catch (_) {} }, 25);
+      }
+    });
+    $('sfeNewStaffCancelBtn')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.newStaffOpen = false;
+      const errEl = $('sfeNewStaffErr');
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      syncStaffFaceEnrolModalDom();
+    });
+    $('sfeNewStaffCo')?.addEventListener('change', () => {
+      syncStaffFaceEnrolModalDom();
+    });
+    const commitNewStaffFromStudio = () => {
+      const nmInp = $('sfeNewStaffName');
+      const coSel = $('sfeNewStaffCo');
+      const roleInp = $('sfeNewStaffRole');
+      const phInp = $('sfeNewStaffPhone');
+      const errEl = $('sfeNewStaffErr');
+      const res = registerNewStaffFromEnrolStudio({
+        name: nmInp ? nmInp.value : '',
+        company: coSel ? coSel.value : '',
+        role: roleInp ? roleInp.value : 'General Labour',
+        phone: phInp ? phInp.value : '',
+        autoStartCam: true
+      });
+      if (!res.ok) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = res.error || 'Could not register staff member';
+        }
+        toast(res.error || 'Could not register staff member', 'warn');
+        return;
+      }
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      if (nmInp) nmInp.value = '';
+      if (phInp) phInp.value = '';
+      toast(`Registered ${res.staff} (${res.company} · ${res.role}) — ready for 3-pose Face ID`, 'ok');
+    };
+    $('sfeNewStaffSaveBtn')?.addEventListener('click', commitNewStaffFromStudio);
+    $('sfeNewStaffName')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitNewStaffFromStudio();
+      }
     });
     $('staffEnrolSwitchStaffBtn')?.addEventListener('click', () => {
       stopStaffEnrolModalCamera();
@@ -96574,10 +97269,11 @@
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
     const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
-    const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name));
+    const viewerAllowedCos = allowedCompanyNames(activeUser());
+    const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name))).map(c => c.name));
     const punches = scopedCo
-      ? allPunches.filter(p => !p.company || p.company === scopedCo)
-      : allPunches.filter(p => !p.company || indCoNames.has(p.company));
+      ? allPunches.filter(p => (!p.company || p.company === scopedCo) && (!viewerAllowedCos.length || !p.company || viewerAllowedCos.includes(p.company)))
+      : allPunches.filter(p => (!p.company || indCoNames.has(p.company)) && (!viewerAllowedCos.length || !p.company || viewerAllowedCos.includes(p.company)));
 
     const nowMs = Date.now();
     const latestByStaff = new Map();
@@ -96799,10 +97495,14 @@
         <div class="sched-filter-group kiosk-filter-pod">
           <span class="kiosk-bar-lbl">Business Unit</span>
           <div class="kiosk-filter-chips">
-            <button type="button" class="kiosk-qchip ${!effectiveScopedCo ? 'active' : ''}" data-kiosk-policy-co="manufacturing-group">All BUs</button>
-            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'WTC' ? 'active' : ''}" data-kiosk-policy-co="wtc">WTC</button>
-            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'BBConstruction' ? 'active' : ''}" data-kiosk-policy-co="bbconstruction">BBConstruction</button>
-            <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'Lions Transport' ? 'active' : ''}" data-kiosk-policy-co="lionstransport">Lions Transport</button>
+            ${(() => {
+              const allowedInInd = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd && (!viewerAllowedCos.length || viewerAllowedCos.includes(c.name)));
+              const groupKey = activeInd === 'Manufacturing' ? 'manufacturing-group' : ('industry:' + activeInd);
+              const allChip = allowedInInd.length > 1
+                ? `<button type="button" class="kiosk-qchip ${!effectiveScopedCo ? 'active' : ''}" data-kiosk-policy-co="${esc(groupKey)}">All BUs</button>`
+                : '';
+              return allChip + allowedInInd.map(c => `<button type="button" class="kiosk-qchip ${(effectiveScopedCo === c.name || (allowedInInd.length === 1 && !effectiveScopedCo)) ? 'active' : ''}" data-kiosk-policy-co="${esc(c.key)}">${esc(c.name)}</button>`).join('');
+            })()}
           </div>
         </div>
         <div class="sched-filter-group kiosk-filter-pod">
@@ -97440,7 +98140,12 @@
         { key: 'insurance', label: 'Insurance Company', short: 'Insurance Company' }
       ]
     };
-    const coChipCatalog = (indCoCatalogMap[activeInd] || indCoCatalogMap['Manufacturing']).filter(c => c.key.startsWith('industry:') || allAllowedKeys.includes(c.key));
+    const rawIndChips = indCoCatalogMap[activeInd] || indCoCatalogMap['Manufacturing'];
+    const permittedUnitChips = rawIndChips.filter(c => !c.key.startsWith('industry:') && c.key !== 'manufacturing-group' && allAllowedKeys.includes(c.key));
+    const coChipCatalog = rawIndChips.filter(c => {
+      if (c.key.startsWith('industry:') || c.key === 'manufacturing-group') return permittedUnitChips.length > 1;
+      return allAllowedKeys.includes(c.key);
+    });
 
     const salesRows = kMode === 'sales' ? filterRecords(SEED.records.sales_tickets, { ignorePeriod: true }).slice(0, 8) : [];
     const rawRows = kMode === 'raw' ? filterRecords(SEED.records.raw_purchases, { ignorePeriod: true }).slice(0, 8) : [];
@@ -97525,6 +98230,11 @@
             <span class="kwh-clock-time mono" id="kioskWallClockTime">${esc(wallClockNow.time)}</span>
             <span class="kwh-clock-date" id="kioskWallClockDate">${esc(wallClockNow.date)}</span>
           </div>
+          ${kMode === 'attendance' ? `
+            <button type="button" class="btn btn-ghost-bar kiosk-wall-admin-btn kiosk-wall-enrol-btn" id="kioskWallEnrolBtn" aria-label="Enrol New Staff and Face ID">
+              ${ic('camera')} <span>Enrol Staff</span>
+            </button>
+          ` : ''}
           <button type="button" class="btn btn-ghost-bar kiosk-wall-admin-btn" id="kioskWallAdminBtn" aria-label="Station Admin and Kiosk Switcher">
             ${ic('cog')} <span>Admin</span>
           </button>
@@ -98373,13 +99083,7 @@
     feedCard.querySelectorAll('[data-kiosk-policy-co]').forEach(btn => {
       btn.addEventListener('click', () => {
         const coKey = btn.getAttribute('data-kiosk-policy-co') || 'manufacturing-group';
-        STATE.industry = 'manufacturing';
-        STATE.company = coKey;
-        const indSel = $('industrySelect');
-        if (indSel) indSel.value = 'manufacturing';
-        const coSel = $('companySelect');
-        if (coSel) coSel.value = coKey;
-        renderApp();
+        selectCompanyScope(coKey, true);
       });
     });
     feedCard.querySelectorAll('[data-late-pen-filter]').forEach(btn => {
@@ -98691,11 +99395,17 @@
     if (!container) return;
     wireKioskAttendanceKeyboardOnce();
 
-    // 0. Wall Header Admin Button & Switch Role Button & Flash Dismiss
+    // 0. Wall Header Enrol Staff Button, Admin Button, Switch Role Button & Flash Dismiss
+    const wallEnrolBtn = $('kioskWallEnrolBtn');
+    if (wallEnrolBtn) {
+      wallEnrolBtn.addEventListener('click', () => {
+        openKioskStationAdminModal({ targetAction: 'enrol' });
+      });
+    }
     const wallAdminBtn = $('kioskWallAdminBtn');
     if (wallAdminBtn) {
       wallAdminBtn.addEventListener('click', () => {
-        openKioskStationAdminModal();
+        openKioskStationAdminModal({ targetAction: 'admin' });
       });
     }
     const stationSwitchBtn = $('kioskStationSwitchOpenBtn');
@@ -103775,7 +104485,12 @@
       evaluateShiftPunchTiming: (staff, co, dateStr, inTime, outTime, opts = {}) => evaluateShiftPunchTiming(staff, co, dateStr, inTime, outTime, opts),
       enrolStaffFacePose: (staff, vec, opts = {}) => enrolStaffFacePose(staff, vec, (opts && opts.thumb) || '', (opts && typeof opts.poseIndex === 'number') ? opts.poseIndex : null),
       clearStaffFaceId: staff => clearStaffFaceId(staff),
-      openStaffFaceEnrolModal: staff => openStaffFaceEnrolModal(staff),
+      openStaffFaceEnrolModal: (staff, opts = {}) => openStaffFaceEnrolModal(staff, opts),
+      registerNewStaffForEnrol: (spec = {}) => registerNewStaffFromEnrolStudio(spec),
+      isAuthorizedKioskAdminFace: entry => isAuthorizedKioskAdminFace(entry),
+      isAuthorizedKioskStaffEnrolFace: entry => isAuthorizedKioskStaffEnrolFace(entry),
+      canUserEnrolStaff: u => canUserEnrolStaff(u),
+      resolveIsabiSeatForFaceEntry: entry => resolveIsabiSeatForFaceEntry(entry),
       closeStaffFaceEnrolModal: () => closeStaffFaceEnrolModal(),
       openStaffScheduleModal: (staff, opts = {}) => openStaffScheduleModal(staff, opts),
       closeStaffScheduleModal: () => closeStaffScheduleModal(),
