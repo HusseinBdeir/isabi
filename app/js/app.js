@@ -220,6 +220,7 @@
     wfZoneFilter: 'all',
     wfShowAllRosterStaff: false,
     activeStatement: '01',
+    ceoPulseTab: 'attention',
     stmtCatFilter: 'all',
     pbiPage: 'p01_overview',
     pbiSlicer: {},
