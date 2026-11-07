@@ -8697,11 +8697,25 @@
     return !finOnlyTables.includes(tableKey);
   }
 
+  const RDL_VERTICAL_INDUSTRY = {
+    '23': 'Holding & Treasury',
+    '24': 'Hospitality & Resorts',
+    '25': 'Automotive & Heavy Trading',
+    '26': 'Real Estate & Property',
+    '27': 'Insurance & Brokerage'
+  };
+
   function canAccessRdlReport(report, u) {
     u = u || activeUser();
     const role = String(u.role || '');
     const st = u.statements_access || 'partial';
     const code = String((typeof report === 'string' ? report : (report && (report.id || report.code))) || '').padStart(2, '0');
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+    if (RDL_VERTICAL_INDUSTRY[code]) {
+      if (activeInd !== RDL_VERTICAL_INDUSTRY[code]) return false;
+    } else if (activeInd !== 'Manufacturing' && (code === '11' || code === '12' || code === '17')) {
+      return false;
+    }
     if (code === '18' && !canSeeTaxBreakdown(u)) return false;
     if (/^Custom/i.test(role) || st === 'custom') {
       const p = getEffectivePermissions(u);
@@ -28326,6 +28340,7 @@
         }
       });
     }
+    ensureMultiIndustrySpineSeeded();
     return SEED.records.documents;
   }
 
@@ -38412,7 +38427,7 @@
             </thead>
             <tbody>
               ${pnlRows.map(r => `
-                <tr class="rrow ${r.bold ? 'totals-row' : ''}">
+                <tr class="rrow" data-ind-inspect-row="1" ${r.bold ? 'style="font-weight:700;background:var(--surface-2,rgba(148,163,184,0.08))"' : ''}>
                   <td>${r.bold ? `<strong>${esc(r.line)}</strong>` : esc(r.line)}</td>
                   <td class="r mono">${fmtSignedUSD(r.mfg, 2)}</td>
                   <td class="r mono">${fmtSignedUSD(r.hsp, 2)}</td>
@@ -45443,99 +45458,392 @@
   }
 
   function renderIndustryDailyOps(indOverride) {
+    ensureMultiIndustrySpineSeeded();
+    ensureDocumentsVaultSeeded();
     const ind = indOverride || getActiveIndustry(STATE.company);
-    const ds = buildIndustryDomainDataset(ind, 0);
+    const ds0 = buildIndustryDomainDataset(ind, 0);
+    const ds1 = buildIndustryDomainDataset(ind, 1);
+    const ds2 = buildIndustryDomainDataset(ind, 2);
     const sentinels = buildIndustrySentinelItems(ind);
     const openSn = sentinels.filter(s => s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
-    const todayStr = typeof todayISO === 'function' ? todayISO() : '2026-11-06';
+    const today = typeof todayISO === 'function' ? todayISO() : '2026-11-06';
+    const yestWall = typeof yesterdayISO === 'function' ? yesterdayISO() : '2026-11-05';
+    const latestOpDate = '2026-09-26';
+    const targetDate = (STATE.dailyOpsDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.dailyOpsDate)) ? STATE.dailyOpsDate : latestOpDate;
+    const stepDay = (iso, delta) => {
+      const dt = new Date(`${iso}T12:00:00Z`);
+      if (Number.isNaN(dt.getTime())) return iso;
+      dt.setUTCDate(dt.getUTCDate() + delta);
+      return dt.toISOString().slice(0, 10);
+    };
+    const prevDate = targetDate > MIN_DATE ? stepDay(targetDate, -1) : '';
+    const nextDate = targetDate < MAX_DATE ? stepDay(targetDate, 1) : '';
+
+    const indCos = getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === ind);
+    const rollupKey = indCos.length > 1 ? `industry:${ind}` : (indCos[0] ? indCos[0].key : STATE.company);
+    const buStripHtml = `
+      <div class="dops-bu-strip" id="dopsBuStrip" aria-label="Business Unit Attribution">
+        ${indCos.length > 1 ? `
+          <button type="button" class="dops-bu-pill${STATE.company === rollupKey ? ' is-active' : ''}" data-jump-co="${esc(rollupKey)}">
+            <span class="badge badge-brass">All ${esc(ind.split('&')[0].trim())} (${indCos.length})</span>
+          </button>
+        ` : ''}
+        ${indCos.map(c => {
+          const snap = getIndustryKpiSnapshot(ind, c.key, {});
+          const active = STATE.company === c.key;
+          const prof = round2((snap.salesTotal || 0) - (snap.directCost || 0) - (snap.opEx || 0));
+          return `<button type="button" class="dops-bu-pill${active ? ' is-active' : ''}" data-jump-co="${esc(c.key)}">
+            ${coBadge(c.name)}
+            <span class="dops-bu-val">${fmtUSDk(snap.salesTotal || 0)}</span>
+            <span class="dops-bu-prof ${prof >= 0 ? 'pos' : 'neg'}">${prof >= 0 ? '+' : ''}${fmtUSDk(prof)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    `;
+
+    const kSnap = getIndustryKpiSnapshot(ind, STATE.company, {});
+    const expRows = filterRecords(SEED.records.expenses || [], { ignorePeriod: true, tableKey: 'expenses' });
+    const docRows = filterRecords(SEED.records.documents || [], { ignorePeriod: true, tableKey: 'documents' });
+    const extRows = filterRecords(SEED.records.external_movements || [], { ignorePeriod: true, tableKey: 'external_movements' });
+    const loanRows = filterRecords(SEED.records.loans || [], { ignorePeriod: true, tableKey: 'loans' });
+    const empRows = filterRecords(SEED.records.employments || [], { ignorePeriod: true, tableKey: 'employments' });
+    const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
+    const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
+    const cashMoves = buildIndustryCashMoves(ind);
+
+    const revUsd = round2(Number(kSnap.salesTotal || 0));
+    const directUsd = round2(Number(kSnap.directCost || 0));
+    const expTotal = round2(expRows.reduce((s, r) => s + Number(r.total_ttc || r.amount || 0), 0) || Number(kSnap.opEx || 0));
+    const opProfit = round2(revUsd - directUsd - Number(kSnap.opEx || 0));
+    const marginPct = revUsd > 0 ? Math.round((opProfit / revUsd) * 100) : 0;
+    const cashIn = round2(cashMoves.reduce((s, m) => s + Number(m.in_usd || 0), 0));
+    const cashOut = round2(cashMoves.reduce((s, m) => s + Number(m.out_usd || 0), 0));
+    const netCash = round2(cashIn - cashOut);
+    const otHours = round2(attRows.reduce((s, a) => s + Number(a.overtime_hours || 0), 0));
+
+    const domainLabels = {
+      'Holding & Treasury': { rev: 'Intercompany & Advisory', direct: 'Facility & Funding Cost', p1: '1 · Sister Clearing & Flows', p2: '2 · Partner Split & Facilities', p5: '5 · HQ Assets & Treasury Desk' },
+      'Hospitality & Resorts': { rev: 'Venue POS & Chalet Sales', direct: 'Kitchen, Cellar & Energy', p1: '1 · Venue POS & Admissions', p2: '2 · Memberships & Banquets', p5: '5 · Kitchen, Cellar & Generators' },
+      'Automotive & Heavy Trading': { rev: 'Vehicles & Parts Sales', direct: 'FOB & Landed Import Cost', p1: '1 · Showroom & Parts Invoices', p2: '2 · Import Containers & Landed Cost', p5: '5 · 5-Warehouse Stock & PDI' },
+      'Real Estate & Property': { rev: 'Lease Rent & Deed Sales', direct: 'Property Tax & Fit-Out Cost', p1: '1 · Rent Roll & Collections', p2: '2 · Lease Renewals & Deed Sales', p5: '5 · Buildings, Units & MEP' },
+      'Insurance & Brokerage': { rev: 'Gross Written Premium & Comm', direct: 'Carrier Net Remittances', p1: '1 · Policies & Endorsements', p2: '2 · Renewal Queue & Bordereaux', p5: '5 · Claims FNOL & Survey Units' }
+    }[ind] || { rev: 'Operating Revenue', direct: 'Direct Operating Cost', p1: '1 · Commercial & Revenue', p2: '2 · Contracts & Pricing', p5: '5 · Domain Operations & Assets' };
+
+    const totalStreamCount = ds0.rows.length + ds1.rows.length + expRows.length + docRows.length + extRows.length + empRows.length;
 
     return `
-      <div class="dops-shell" id="industryDailyOpsCockpit">
-        <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
-          <div class="panel-head" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
-            <div>
-              <div class="panel-title"><span>${ic('daily_ops')} ${esc(coLbl.toUpperCase())} · SHAREHOLDER DAILY OPERATIONS COCKPIT (TX-DATE LOCKED)</span></div>
-              <div class="panel-meta" style="margin-top:2px">Transaction-Date Basis (${esc(todayStr)}) · Live ${esc(ind)} Operational &amp; Treasury Stream · Zero Reporting-Date Shift</div>
+      <div class="dops-stage" id="dailyOpsStage" data-target-date="${esc(targetDate)}">
+        <div class="dops-bar" id="dopsHeaderBar">
+          <div class="dops-bar-left">
+            <div class="dops-title-group">
+              <h1 class="dops-page-title cockpit-title">Daily Operations</h1>
+              <span class="dops-active-date-lbl" id="dopsActiveDateLabel">${esc(targetDate)} · ${esc(coLbl)}</span>
+              <span class="dops-basis-tag" id="dopsTxBasisBadge">${ic('lock')} <span>Tx Date<span class="dops-basis-long"> Basis</span></span></span>
+              ${buStripHtml}
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <span class="badge badge-brass">Tx Date Locked</span>
-              <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="overview">Executive Overview</button>
-              <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="pbi">Industry Dashboards</button>
-              <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="sentinels">${openSn.length} Sentinel Alerts</button>
+          </div>
+          <div class="dops-bar-controls">
+            <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
+              <button type="button" class="dops-qpill${targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
+              <button type="button" class="dops-qpill${targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
+              <button type="button" class="dops-qpill${targetDate === latestOpDate ? ' active' : ''}" data-dops-pick-date="${esc(latestOpDate)}">Latest (${esc(latestOpDate.slice(5))})</button>
+            </div>
+            <div class="dops-day-nav" role="group" aria-label="Step Operating Day">
+              <button type="button" class="dops-step-btn" id="dopsPrevDayBtn" ${prevDate ? `data-dops-pick-date="${esc(prevDate)}"` : 'disabled'} aria-label="Previous Day">&lsaquo;</button>
+              <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}" value="${esc(targetDate)}" aria-label="Operating Transaction Date">
+              <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${nextDate ? `data-dops-pick-date="${esc(nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
+            </div>
+            <button type="button" class="dops-records-trigger" data-nav-jump="tables">
+              ${ic('ledger')}
+              <span>Tables</span>
+              <span class="dops-records-trigger-cnt" id="dopsTotalRecordsCount">${fmtNum(totalStreamCount)}</span>
+            </button>
+          </div>
+        </div>
+
+        <section class="dops-kpis" id="dopsKpiGrid" aria-label="Daily Shareholder Scorecard">
+          <div class="dops-kpi accent-sales" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'overview')}" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">${esc(domainLabels.rev)}</span>
+              <span class="dops-kpi-delta good">${fmtNum(ds0.rows.length)} entries</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiSalesVal">${fmtUSD(revUsd, 0)}</span>
+              <span class="dops-kpi-unit">${esc(coLbl)}</span>
+            </div>
+            <div class="dops-kpi-sub">AR Open <b>${fmtUSDk(kSnap.arOpen || 0)}</b> · Verified ledger tie-out</div>
+          </div>
+
+          <div class="dops-kpi accent-raw" data-nav-jump="${esc((spec.slots && spec.slots[1] && spec.slots[1].view) || 'expenses')}" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">${esc(domainLabels.direct)}</span>
+              <span class="dops-kpi-delta neutral">${fmtNum(ds1.rows.length)} schedules</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiRawVal">${fmtUSD(directUsd, 0)}</span>
+              <span class="dops-kpi-unit">AP Open ${fmtUSDk(kSnap.apOpen || 0)}</span>
+            </div>
+            <div class="dops-kpi-sub">Active contracts &amp; direct operational cost</div>
+          </div>
+
+          <div class="dops-kpi accent-exp" data-nav-jump="expenses" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">Expenses &amp; Vault</span>
+              <span class="dops-kpi-delta neutral">${fmtNum(docRows.length)} scans</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(expTotal, 0)}</span>
+              <span class="dops-kpi-unit">${fmtNum(expRows.length)} bills · ${fmtNum(docRows.length)} docs</span>
+            </div>
+            <div class="dops-kpi-sub">Document Vault <b>${fmtNum(docRows.length)} filed</b> · 11% VAT tracked</div>
+          </div>
+
+          <div class="dops-kpi accent-profit${opProfit < 0 ? ' is-neg' : ''}" data-nav-jump="ledger" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">Operating Profit</span>
+              <span class="dops-kpi-delta ${opProfit >= 0 ? 'good' : 'crit'}">${marginPct}% Margin</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val ${opProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${fmtUSD(opProfit, 0)}</span>
+              <span class="dops-kpi-unit">Net Contribution</span>
+            </div>
+            <div class="dops-kpi-sub">Double-entry Lebanese PCG tied ($0 variance)</div>
+          </div>
+
+          <div class="dops-kpi accent-cash" data-nav-jump="cashflow" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">Treasury &amp; Cash</span>
+              <span class="dops-kpi-delta ${netCash >= 0 ? 'good' : 'warn'}">${netCash >= 0 ? 'Net In' : 'Net Out'}</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiCashVal">${netCash > 0 ? '+' : ''}${fmtUSD(netCash, 0)}</span>
+              <span class="dops-kpi-unit">In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}</span>
+            </div>
+            <div class="dops-kpi-sub">Ext <b>${fmtNum(extRows.length)}</b> · Facilities <b>${fmtNum(loanRows.length)}</b></div>
+          </div>
+
+          <div class="dops-kpi accent-plant" data-nav-jump="payroll" role="button" tabindex="0">
+            <div class="dops-kpi-top">
+              <span class="dops-kpi-lbl">Workforce &amp; Controls</span>
+              <span class="dops-kpi-delta ${openSn.length > 0 ? 'warn' : 'good'}">${openSn.length > 0 ? `${openSn.length} Watchdogs` : 'All Clear'}</span>
+            </div>
+            <div class="dops-kpi-val-row">
+              <span class="dops-kpi-val" id="dopsKpiPlantVal">${fmtNum(empRows.length)} Staff</span>
+              <span class="dops-kpi-unit">${fmtNum(eqRows.length)} Units · +${fmtNum(otHours, 0)}h OT</span>
+            </div>
+            <div class="dops-kpi-sub">Biometric logs <b>${fmtNum(attRows.length)}</b> · Active contracts <b>${fmtNum(empRows.length)}</b></div>
+          </div>
+        </section>
+
+        <div class="dops-bento-grid">
+          <div class="dops-card" id="dopsPulseMixCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico navy">${ic('sales')}</span>
+                <h2 class="dops-card-title">${esc(domainLabels.p1)}</h2>
+              </div>
+              <div class="dops-card-actions">
+                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[0] && spec.slots[0].view) || 'pbi')}">${fmtNum(ds0.rows.length)}</button>
+              </div>
+            </div>
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:38%"><col style="width:38%"><col style="width:24%"></colgroup>
+                  <thead><tr><th>${esc(ds0.headers[0] || 'Reference')}</th><th>${esc(ds0.headers[1] || 'Counterparty')}</th><th class="r">${esc(ds0.headers[ds0.headers.length - 1] || 'Amount')}</th></tr></thead>
+                  <tbody>
+                    ${ds0.rows.slice(0, 6).map((r, rIdx) => `
+                      <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops">
+                        <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
+                        <td class="dops-trunc">${esc(r[1] || r[2] || '-')}</td>
+                        <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-          <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:10px;margin-bottom:14px">
-            ${ds.kpis.map(k => `
-              <div class="kpi-card">
-                <div class="kpi-label">${esc(k.label)}</div>
-                <div class="kpi-val ${esc(k.cls || '')}">${esc(k.val)}</div>
-                <div class="kpi-sub">${esc(k.sub)}</div>
+          <div class="dops-card" id="dopsAgreementsCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico brass">${ic('pricing')}</span>
+                <h2 class="dops-card-title">${esc(domainLabels.p2)}</h2>
               </div>
-            `).join('')}
-          </div>
-
-          <div class="grid-2" style="gap:12px;margin-bottom:14px">
-            <div class="panel-card" style="padding:12px 14px">
-              <div class="panel-head" style="margin-bottom:8px">
-                <div class="panel-title"><span>1 · Commercial &amp; Revenue Pulse (${esc(ind)})</span></div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:6px">
-                ${ds.bars.slice(0, 4).map(b => `
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-alt,#F8FAFC);border-radius:6px">
-                    <div>
-                      <div style="font-weight:600;font-size:12px">${esc(b.label)}</div>
-                      <div style="font-size:11px;color:var(--muted)">${esc(b.sub)}</div>
-                    </div>
-                    <b style="font-size:12.5px">${fmtUSD(b.val, 0)}</b>
-                  </div>
-                `).join('')}
+              <div class="dops-card-actions">
+                <button type="button" class="dops-disc-link" data-nav-jump="${esc((spec.slots && spec.slots[1] && spec.slots[1].view) || 'pbi')}">${fmtNum(ds1.rows.length)}</button>
               </div>
             </div>
-
-            <div class="panel-card" style="padding:12px 14px">
-              <div class="panel-head" style="margin-bottom:8px">
-                <div class="panel-title"><span>2 · Domain Operations, Stock &amp; Watchdog Queue</span></div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:6px">
-                ${sentinels.slice(0, 4).map(s => `
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg-alt,#F8FAFC);border-radius:6px;cursor:pointer" data-nav-jump="${esc(s.navView || s.targetView || 'sentinels')}">
-                    <div>
-                      <div style="font-weight:600;font-size:12px">${esc(s.code)} · ${esc(s.title)}</div>
-                      <div style="font-size:11px;color:var(--muted)">${esc(s.company || s.category || ind)} · Click to inspect</div>
-                    </div>
-                    <span class="badge ${s.severity === 'ok' ? 'badge-good' : (s.severity === 'crit' ? 'badge-crit' : 'badge-warn')}">${esc(s.badge || s.metric || ((s.count || 0) + ' flags'))}</span>
-                  </div>
-                `).join('')}
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:38%"><col style="width:38%"><col style="width:24%"></colgroup>
+                  <thead><tr><th>${esc(ds1.headers[0] || 'Schedule')}</th><th>${esc(ds1.headers[1] || 'Party / Scope')}</th><th class="r">${esc(ds1.headers[ds1.headers.length - 1] || 'Value')}</th></tr></thead>
+                  <tbody>
+                    ${ds1.rows.slice(0, 6).map((r, rIdx) => `
+                      <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops_2">
+                        <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
+                        <td class="dops-trunc">${esc(r[1] || r[2] || '-')}</td>
+                        <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
-          <div class="panel-card" style="padding:12px 14px">
-            <div class="panel-head" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
-              <div class="panel-title"><span>3 · Transaction-Date Operational Activity Stream (${esc(ds.tableTitle)})</span></div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                ${(spec.slots || []).map(sl => `
-                  <button type="button" class="btn btn-ghost-bar" style="padding:3px 8px;font-size:11px" data-nav-jump="${esc(sl.view)}">${esc(sl.label)}</button>
-                `).join('')}
+          <div class="dops-card" id="dopsExpensesCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico amber">${ic('expenses')}</span>
+                <h2 class="dops-card-title">3 · P&amp;L, Bills &amp; Document Vault</h2>
+              </div>
+              <div class="dops-card-actions">
+                <button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(docRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(expRows.length)}</button>
               </div>
             </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>${ds.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
-                </thead>
-                <tbody>
-                  ${ds.rows.slice(0, 12).map((r, rIdx) => `
-                    <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr class="total-row">${ds.totals.map((t, idx) => `<td class="${idx >= ds.totals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
-                </tfoot>
-              </table>
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
+                  <thead><tr><th>Supplier / Vault Scan</th><th>Category &amp; Method</th><th class="r">Amount</th></tr></thead>
+                  <tbody>
+                    ${expRows.slice(0, 4).map(ex => `
+                      <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
+                        <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong></td>
+                        <td class="dops-trunc">${esc(ex.category || 'Expense')} · ${esc(ex.method || 'Credit')}</td>
+                        <td class="r mono"><strong>${fmtUSD(ex.total_ttc || ex.amount || 0, 0)}</strong></td>
+                      </tr>
+                    `).join('')}
+                    ${docRows.slice(0, 2).map(dc => `
+                      <tr class="rrow" data-rkey="documents" data-rid="${esc(dc.id)}">
+                        <td class="dops-trunc"><span class="badge badge-brass">Doc</span> <strong>${esc(dc.name || dc.title)}</strong></td>
+                        <td class="dops-trunc">${esc(dc.doc_type || 'Filed Scan')} · ${esc(dc.counterparty || dc.company)}</td>
+                        <td class="r mono"><strong>${fmtUSD(dc.amount || 0, 0)}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="dops-card" id="dopsTreasuryCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico teal">${ic('cashflow')}</span>
+                <h2 class="dops-card-title">4 · Treasury, External &amp; Loans</h2>
+              </div>
+              <div class="dops-card-actions">
+                <button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(extRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(loanRows.length)}</button>
+              </div>
+            </div>
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:40%"><col style="width:36%"><col style="width:24%"></colgroup>
+                  <thead><tr><th>Counterparty / Facility</th><th>Movement Type</th><th class="r">USD Flow</th></tr></thead>
+                  <tbody>
+                    ${extRows.slice(0, 4).map(ex => {
+                      const isOut = /out/i.test(String(ex.direction || ex.type || ''));
+                      const amt = Number(ex.usd_amount || ex.amount || 0);
+                      return `
+                        <tr class="rrow" data-rkey="external_movements" data-rid="${esc(ex.id)}">
+                          <td class="dops-trunc"><strong>${esc(ex.party || ex.counterparty || ex.company)}</strong></td>
+                          <td class="dops-trunc">${esc(ex.direction || ex.kind || 'Treasury')}</td>
+                          <td class="r mono"><strong class="${isOut ? 'warn' : 'good'}">${isOut ? '-' : '+'}${fmtUSD(amt, 0)}</strong></td>
+                        </tr>
+                      `;
+                    }).join('')}
+                    ${loanRows.slice(0, 2).map(ln => `
+                      <tr class="rrow" data-rkey="loans" data-rid="${esc(ln.id)}">
+                        <td class="dops-trunc"><strong>${esc(ln.name)}</strong> · ${esc(ln.counterparty || '')}</td>
+                        <td class="dops-trunc">${esc(ln.direction || 'Facility')}</td>
+                        <td class="r mono"><strong>${fmtUSD(ln.principal || ln.amount || 0, 0)}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="dops-card" id="dopsFleetFuelCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico steel">${ic('fleet')}</span>
+                <h2 class="dops-card-title">${esc(domainLabels.p5)}</h2>
+              </div>
+              <div class="dops-card-actions">
+                <button type="button" class="dops-disc-link" data-nav-jump="reg_equipment">${fmtNum(eqRows.length)}</button>
+              </div>
+            </div>
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:42%"><col style="width:36%"><col style="width:22%"></colgroup>
+                  <thead><tr><th>Unit / Operational Asset</th><th>Assigned Site &amp; Lead</th><th class="r">Status</th></tr></thead>
+                  <tbody>
+                    ${eqRows.slice(0, 4).map(eq => `
+                      <tr class="rrow" data-rkey="company_equipment" data-rid="${esc(eq.id)}">
+                        <td class="dops-trunc"><strong>${esc(eq.equipment || eq.name)}</strong></td>
+                        <td class="dops-trunc">${esc(eq.site || eq.company)} · ${esc(eq.default_driver || '-')}</td>
+                        <td class="r"><span class="badge badge-good">${esc(eq.status || 'Active')}</span></td>
+                      </tr>
+                    `).join('')}
+                    ${ds2.rows.slice(0, 2).map((r, rIdx) => `
+                      <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="daily_ops_5">
+                        <td class="dops-trunc"><strong>${esc(r[0] || '-')}</strong></td>
+                        <td class="dops-trunc">${esc(r[1] || '-')}</td>
+                        <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="dops-card" id="dopsPlantCard">
+            <div class="dops-card-hd">
+              <div class="dops-card-title-wrap">
+                <span class="dops-card-ico deals">${ic('payroll')}</span>
+                <h2 class="dops-card-title">6 · Workforce &amp; Operational Controls</h2>
+              </div>
+              <div class="dops-card-actions">
+                <button type="button" class="dops-seg-btn" data-nav-jump="sentinels">Alerts (${fmtNum(openSn.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="payroll">${fmtNum(empRows.length)}</button>
+              </div>
+            </div>
+            <div class="dops-card-body no-pad dops-flex-col">
+              <div class="dops-tbl-scroll">
+                <table class="dops-table dops-fixed-3">
+                  <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
+                  <thead><tr><th>Staff / Control Watchdog</th><th>Role or Rule Scope</th><th class="r">Metric</th></tr></thead>
+                  <tbody>
+                    ${empRows.slice(0, 3).map(em => `
+                      <tr class="rrow" data-rkey="employments" data-rid="${esc(em.id)}">
+                        <td class="dops-trunc"><strong>${esc(em.staff || em.name)}</strong></td>
+                        <td class="dops-trunc">${esc(em.role || 'Staff')} · ${esc(em.company)}</td>
+                        <td class="r mono"><strong>${fmtUSD(em.salary_usd || 0, 0)}/mo</strong></td>
+                      </tr>
+                    `).join('')}
+                    ${sentinels.slice(0, 3).map(s => `
+                      <tr class="rrow" data-nav-jump="${esc(s.navView || s.targetView || 'sentinels')}">
+                        <td class="dops-trunc"><strong>${esc(s.title)}</strong></td>
+                        <td class="dops-trunc">${esc(s.company || s.category || ind)}</td>
+                        <td class="r"><span class="badge ${s.severity === 'ok' ? 'badge-good' : (s.severity === 'crit' ? 'badge-crit' : 'badge-warn')}">${esc(s.badge || s.metric || 'Active')}</span></td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -45748,7 +46056,8 @@
 
   function ensureMultiIndustrySpineSeeded() {
     if (!SEED || !SEED.records || !SEED._recordsReady) return;
-    if (SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed && SEED.records.customers && SEED.records.customers._hasMultiIndustrySeed) return;
+    if (SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed && SEED.records.customers && SEED.records.customers._hasMultiIndustrySeed && SEED.records.documents && SEED.records.documents._hasMultiIndustrySeed) return;
+    const alreadySeededCore = Boolean(SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed);
     SEED._multiIndustrySpineSeeded = true;
     const recs = SEED.records;
     const ensureArr = k => {
@@ -45756,6 +46065,8 @@
       recs[k]._hasMultiIndustrySeed = true;
       return recs[k];
     };
+    const docArr = ensureArr('documents');
+    if (alreadySeededCore && docArr.some(d => d && d._multiIndustrySeed)) return;
     const supArr = ensureArr('suppliers');
     const custArr = ensureArr('customers');
     const regArr = ensureArr('regions');
@@ -46109,8 +46420,10 @@
     ];
 
     const seenRegionsByInd = new Set();
+    const existingDocIds = new Set(docArr.map(d => d && String(d.id)));
     ENTITIES.forEach((ent, eIdx) => {
       const pfx = ent.code.toLowerCase();
+      if (!alreadySeededCore) {
       const regKey = `${ent.ind}|${ent.region}`;
       if (!seenRegionsByInd.has(regKey)) {
         seenRegionsByInd.add(regKey);
@@ -46681,6 +46994,99 @@
           _industry: ent.ind
         }
       );
+      }
+
+      const sup0 = ent.suppliers[0];
+      const vat0 = sup0.iva ? round2(sup0.expAmt * 0.11) : 0;
+      const ttc0 = round2(sup0.expAmt + vat0);
+      const pay0 = round2(sup0.expAmt * 0.55);
+      const certTitleByInd = {
+        'Holding & Treasury': `Group Intercompany & Treasury Governance Charter (${ent.co})`,
+        'Hospitality & Resorts': `Ministry of Tourism Operating Permit & HACCP Certificate (${ent.co})`,
+        'Automotive & Heavy Trading': `Beirut Port Bonded Warehouse & OEM Dealership Certificate (${ent.co})`,
+        'Real Estate & Property': `Real Estate Cadastral Title Deed (/2400 Shares) & Lease Schedule (${ent.co})`,
+        'Insurance & Brokerage': `Ministry of Economy Brokerage License & Carrier Bordereau Agreement (${ent.co})`
+      };
+      const entityDocs = [
+        {
+          id: `mi-doc-${pfx}-1`,
+          name: `DOC-${ent.code}-001`,
+          date: '2026-09-22',
+          rep_date: '2026-09-22',
+          company: ent.co,
+          doc_type: 'Invoice & Bill',
+          title: `Supplier Tax Invoice · ${sup0.name}`,
+          counterparty: sup0.name,
+          reference: `INV-${ent.code}-20260`,
+          parent_table: 'expenses',
+          parent_id: `mi-exp-${pfx}-1`,
+          parent_label: `EXP-${ent.code}-101`,
+          amount: ttc0,
+          file_name: `${ent.code}_EXP_101_Tax_Invoice.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 46800,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: `${sup0.recItem} (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-doc-${pfx}-2`,
+          name: `DOC-${ent.code}-002`,
+          date: '2026-09-27',
+          rep_date: '2026-09-27',
+          company: ent.co,
+          doc_type: 'Receipt & Payment Voucher',
+          title: `Supplier Settlement Voucher · ${sup0.name}`,
+          counterparty: sup0.name,
+          reference: `PAY-${ent.code}-01`,
+          parent_table: 'settlements',
+          parent_id: `mi-set-${pfx}-1`,
+          parent_label: `SET-${ent.code}-01`,
+          amount: pay0,
+          file_name: `${ent.code}_SET_01_Payment_Voucher.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 41200,
+          capture_method: 'Camera Scan',
+          status: 'Verified & Filed',
+          notes: `Signed AP settlement receipt (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        },
+        {
+          id: `mi-doc-${pfx}-3`,
+          name: `DOC-${ent.code}-003`,
+          date: '2026-09-01',
+          rep_date: '2026-09-01',
+          company: ent.co,
+          doc_type: 'Contract & Agreement',
+          title: certTitleByInd[ent.ind] || `Annual Statutory & Operational Agreement (${ent.co})`,
+          counterparty: ent.customers[0].name,
+          reference: `AGR-${ent.code}-2026`,
+          parent_table: '',
+          parent_id: '',
+          parent_label: '',
+          amount: round2(Number(ent.customers[0].sales || 25000)),
+          file_name: `${ent.code}_Statutory_Agreement_2026.svg`,
+          mime_type: 'image/svg+xml',
+          file_size: 82400,
+          capture_method: 'File Upload',
+          status: 'Verified & Filed',
+          notes: `Standalone company archive document stored in Document Vault (${ent.co})`,
+          _multiIndustrySeed: true,
+          _industry: ent.ind
+        }
+      ];
+      entityDocs.forEach(d => {
+        if (!existingDocIds.has(d.id)) {
+          existingDocIds.add(d.id);
+          if (typeof buildSampleDocSvgDataUrl === 'function') {
+            d.data_url = buildSampleDocSvgDataUrl(d);
+          }
+          docArr.push(d);
+        }
+      });
     });
 
     _PAYROLL_INTEL_CACHE = null;
@@ -47025,8 +47431,8 @@
   const INDUSTRY_QUICK_ENTRY_TEMPLATES = {
     'Holding & Treasury': [
       { id: 'hld_ic', form: 'external', label: 'Intercompany Transfer', title: 'New Intercompany Sister Transfer', prefill: { party: 'WTC', notes: 'Intercompany transfer (voucher match)' } },
-      { id: 'hld_split', form: 'treasury', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
-      { id: 'hld_loan', form: 'loan', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
+      { id: 'hld_split', form: 'jv', label: 'Partner Split / Draw', title: 'New Partner Split & Current Account Entry', prefill: { notes: 'Partner profit-share distribution (10-slot matrix)' } },
+      { id: 'hld_loan', form: 'treasury', label: 'Central Loan Facility', title: 'New Central Holding Loan / Facility Agreement', prefill: { notes: 'Central treasury facility agreement' } },
       { id: 'hld_exp', form: 'expense', label: 'Holding Shared Expense', title: 'New Holding Corporate Overhead Voucher', prefill: { notes: 'HQ shared services & statutory advisory' } }
     ],
     'Hospitality & Resorts': [
@@ -47039,7 +47445,7 @@
       { id: 'trd_inv', form: 'sales', label: 'Vehicle / Spare Parts Invoice', title: 'New Commercial Truck VIN or Spare Parts Invoice', prefill: { notes: 'Pre-printed invoice book sale (Korri Auto / Shacman)' } },
       { id: 'trd_imp', form: 'raw', label: 'Import Shipment & Landed Cost', title: 'New Import Container & Landed Cost Voucher', prefill: { notes: 'FOB + customs duty + ocean freight allocation' } },
       { id: 'trd_rcpt', form: 'receipt', label: 'Customer AR / Advance', title: 'New Trading Customer Receipt or Advance Deposit', prefill: { notes: 'Customer trade collection or unapplied reservation deposit' } },
-      { id: 'trd_wh', form: 'partmove', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
+      { id: 'trd_wh', form: 'warehousestock', label: '5-Warehouse Stock Transfer', title: 'New Multi-Warehouse Spare Parts Movement', prefill: { notes: 'Inter-branch warehouse stock transfer' } }
     ],
     'Real Estate & Property': [
       { id: 're_rent', form: 'sales', label: 'Rent Invoice (4235 VAT)', title: 'New Period Lease Rent Invoice (Properties / 4235 S.A.L)', prefill: { notes: 'Scheduled lease rent billing (11% VAT sequence check)' } },
@@ -47148,11 +47554,11 @@
     const amountCell = cells.slice().reverse().find(c => /\$|\d/.test(String(c))) || '$0.00';
 
     const stmtMap = {
-      'Holding & Treasury': { id: '23', label: 'Print RDL-23 Intercompany & Partner Statement', glDr: '181 · Intercompany Liaison', glCr: '5121 · Central Treasury Bank', form: 'external', ruleHint: '3-Tier Intercompany Auto-Pairing & Chronological Partner Split Guard' },
-      'Hospitality & Resorts': { id: '24', label: 'Print RDL-24 Venue & Membership Statement', glDr: '5300 · Resort POS Till & Bank', glCr: '701 · Venue & Chalet Revenue', form: 'sales', ruleHint: 'Zero-VAT on Diesel & Staff Tips · Recipe BOM Depletion · Generator L/hr Guard' },
-      'Automotive & Heavy Trading': { id: '25', label: 'Print RDL-25 Trading Invoice & Stock Statement', glDr: '4111 · Customer Gross AR', glCr: '707 · Commercial Vehicles & Parts Sales', form: 'sales', ruleHint: 'Serial VIN Qty = 1 Lock · Landed Cost Allocation · Customer Advances Separated' },
-      'Real Estate & Property': { id: '26', label: 'Print RDL-26 Official 4235 VAT Rent Roll', glDr: '4111 · Tenant Lease Rent AR', glCr: '706 · Lease Rent & 4427 VAT (11%)', form: 'sales', ruleHint: '11% VAT Auto-Calc on 4235 Company S.A.L vs 0% VAT on Properties · /2400 Deed Shares' },
-      'Insurance & Brokerage': { id: '27', label: 'Print RDL-27 Policy & Carrier Recon Statement', glDr: '4112 · Policyholder Premium AR', glCr: '7063 · Gross Commission & 4017 Carrier AP', form: 'sales', ruleHint: 'Gross Comm = GWP × Rate% · Client Discount <= Gross Comm Guard · Carrier Payable = GWP − Gross Comm' }
+      'Holding & Treasury': { id: '23', label: 'Print Statement #23 · Intercompany & Partner Split', glDr: 'Intercompany Liaison Account', glCr: 'Central Treasury Bank', form: 'external', ruleHint: '3-Tier Intercompany Auto-Pairing & Chronological Partner Split Guard' },
+      'Hospitality & Resorts': { id: '24', label: 'Print Statement #24 · Venue & Membership Register', glDr: 'Resort POS Till & Bank', glCr: 'Venue & Chalet Revenue', form: 'sales', ruleHint: 'Zero-VAT on Diesel & Staff Tips · Recipe BOM Depletion · Generator L/hr Guard' },
+      'Automotive & Heavy Trading': { id: '25', label: 'Print Statement #25 · Invoice Books & Stock Valuation', glDr: 'Customer Gross Receivables', glCr: 'Commercial Vehicles & Parts Sales', form: 'sales', ruleHint: 'Serial VIN Qty = 1 Lock · Landed Cost Allocation · Customer Advances Separated' },
+      'Real Estate & Property': { id: '26', label: 'Print Statement #26 · Official 4235 VAT Rent Roll', glDr: 'Tenant Lease Rent Receivables', glCr: 'Lease Rent & Collectible VAT (11%)', form: 'sales', ruleHint: '11% VAT Auto-Calc on 4235 Company S.A.L vs 0% VAT on Properties · /2400 Deed Shares' },
+      'Insurance & Brokerage': { id: '27', label: 'Print Statement #27 · Policy & Carrier Reconciliation', glDr: 'Policyholder Premium Receivables', glCr: 'Gross Commission & Carrier Payables', form: 'sales', ruleHint: 'Gross Comm = GWP × Rate% · Client Discount <= Gross Comm Guard · Carrier Payable = GWP − Gross Comm' }
     };
     const meta = stmtMap[ind] || stmtMap['Holding & Treasury'];
 
@@ -48606,6 +49012,19 @@
   }
 
   function renderStatements() {
+    ensureMultiIndustrySpineSeeded();
+    const curInd = getActiveIndustry(STATE.company);
+    const defStmtByInd = {
+      'Manufacturing': '01',
+      'Holding & Treasury': '23',
+      'Hospitality & Resorts': '24',
+      'Automotive & Heavy Trading': '25',
+      'Real Estate & Property': '26',
+      'Insurance & Brokerage': '27'
+    };
+    if (!STATE.activeStatement || !canAccessRdlReport(STATE.activeStatement, activeUser())) {
+      STATE.activeStatement = defStmtByInd[curInd] || '01';
+    }
     const baseHtml = (window.MFG_RDL && typeof window.MFG_RDL.renderStatementsView === 'function')
       ? window.MFG_RDL.renderStatementsView(SEED, STATE)
       : renderStatementSheet((STATEMENT_CATALOG.find(x => x.code === STATE.activeStatement) || STATEMENT_CATALOG[0]).code);
@@ -68277,6 +68696,14 @@
           : String(editTargetRow.invoice_no || editTargetRow.name || editTargetRow.id || '').replace(/[—→]/g, '-');
         title.textContent = 'Edit ' + cleanBaseTitle + (recIdent ? ' · ' + recIdent : '');
       } else {
+        const curIndForModal = getActiveIndustry(STATE.company);
+        const indTplMatch = (curIndForModal && curIndForModal !== 'Manufacturing' && Array.isArray(INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal]))
+          ? (opts && opts.indQuickTpl
+            ? INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal].find(t => t.id === opts.indQuickTpl)
+            : (['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(STATE.view)
+              ? INDUSTRY_QUICK_ENTRY_TEMPLATES[curIndForModal].find(t => t.form === form)
+              : null))
+          : null;
         title.textContent = pendingSalRow
           ? ('Enter Final Salary · ' + (pendingSalRow.staff || pendingSalRow.name || pendingSalRow.id))
           : (pendingTargetRow
@@ -68289,7 +68716,9 @@
                   ? 'New Raw Material Site Agreement'
                   : (preselectHaulPrice
                     ? 'New Quarry Haulage Agreement'
-                    : (preselectCommPrice ? 'New Sales Commission Agreement' : FORM_TITLES[form]))))));
+                    : (preselectCommPrice
+                      ? 'New Sales Commission Agreement'
+                      : ((indTplMatch && indTplMatch.title) || FORM_TITLES[form])))))));
       }
     }
     const openInspBtn = $('modalOpenInspectorBtn');
@@ -80378,6 +80807,17 @@
     STATE.shown = {};
     STATE.pbiTablePage = {};
     const nextView = resolveIndustryCompatibleView(STATE.view, nextInd);
+    if (prevInd !== nextInd) {
+      const defStmtByInd = {
+        'Manufacturing': '01',
+        'Holding & Treasury': '23',
+        'Hospitality & Resorts': '24',
+        'Automotive & Heavy Trading': '25',
+        'Real Estate & Property': '26',
+        'Insurance & Brokerage': '27'
+      };
+      STATE.activeStatement = defStmtByInd[nextInd] || '01';
+    }
     if (nextView !== STATE.view || prevInd !== nextInd) {
       STATE.view = nextView;
       STATE.search = '';
@@ -80393,7 +80833,8 @@
       if (location.hash !== targetHash || STATE.view !== prevView) {
         try {
           history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
-        } catch (_) {
+        } catch (_) {}
+        if (location.hash !== targetHash) {
           try { location.hash = targetHash; } catch (__) {}
         }
       }
@@ -80929,7 +81370,8 @@
         if (location.hash !== targetHash) {
           try {
             history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
-          } catch (_) {
+          } catch (_) {}
+          if (location.hash !== targetHash) {
             try { location.hash = targetHash; } catch (__) {}
           }
         }
@@ -81493,6 +81935,11 @@
       reg_fx_rates: 'fxrate', reg_currencies: 'currency', reg_vat_rates: 'vatrate'
     };
     let preferred = map[view] || 'sales';
+    const activeIndForForm = getActiveIndustry(STATE.company);
+    if (activeIndForForm !== 'Manufacturing' && ['overview', 'daily_ops', 'entities', 'pbi', 'statements'].includes(view)) {
+      const indTpl0 = (INDUSTRY_QUICK_ENTRY_TEMPLATES[activeIndForForm] || [])[0];
+      if (indTpl0 && indTpl0.form && FORM_TITLES[indTpl0.form]) preferred = indTpl0.form;
+    }
     if (view === 'tables' && window.MFG_PBI) { // the hub's active table owns the form (e.g. Loans → Treasury desk)
       const meta = (window.MFG_PBI.TABLE_CATALOG || []).find(t => t.key === STATE.activeTableKey);
       if (meta && meta.form && FORM_TITLES[meta.form]) preferred = meta.form;
@@ -84982,11 +85429,13 @@
   }
 
   function getKioskStaffDirectory(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
     const out = [];
     const seen = new Set();
     const usedPins = new Set();
     const allowedCos = allowedCompanyNames();
     const defCo = defaultEntryCompany();
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const allEmpRecords = (SEED.records.employments || []).concat(STATE.customRecords.employments || []);
     const rawScopedCo = opts.companyOverride != null
       ? String(opts.companyOverride || '')
@@ -84995,6 +85444,9 @@
       ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
       : true;
     const scopedCo = (rawScopedCo && (scopedCoHasEmps || opts.strictCompanyScope)) ? rawScopedCo : '';
+    const indCoSet = (opts.scopeBySelectedCompany && !scopedCo)
+      ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name))
+      : null;
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
     const statusFilter = String(opts.statusFilter || 'all').toLowerCase();
     const today = todayISO();
@@ -85032,12 +85484,14 @@
     const endedEmpsMap = new Map();
     allEmpRecords.forEach(emp => {
       if (!emp || emp.voided) return;
+      if (activeInd === 'Manufacturing' && emp._multiIndustrySeed) return;
       const nm = String(emp.staff || emp.name || '').trim();
       const k = norm(nm);
       if (!k || nm === '(Unassigned)') return;
       const empCo = emp.company || 'WTC';
       if (allowedCos.length && !allowedCos.includes(empCo)) return;
       if (scopedCo && empCo !== scopedCo) return;
+      if (indCoSet && !indCoSet.has(empCo)) return;
       if (isEmploymentActiveToday(emp, today)) {
         activeEmps.push({ emp, nm, k, empCo, isActive: true });
       } else if (includeEnded) {
@@ -85062,6 +85516,9 @@
       if (scopedCo) {
         const hasCoAccess = Boolean(matchingEmp) || uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u));
         if (!hasCoAccess) return;
+      } else if (indCoSet) {
+        const hasIndAccess = Boolean(matchingEmp) || uCos.some(c => indCoSet.has(c)) || (viewerIsOwner && isAdminUser(u));
+        if (!hasIndAccess) return;
       } else if (allowedCos.length && uCos.length && !uCos.some(c => allowedCos.includes(c)) && !(viewerIsOwner && isAdminUser(u))) {
         return;
       }
@@ -85071,12 +85528,15 @@
         ? matchingEmp.empCo
         : ((scopedCo && (uCos.includes(scopedCo) || (viewerIsOwner && isAdminUser(u))))
           ? scopedCo
-          : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo));
+          : (indCoSet
+            ? (uCos.find(c => indCoSet.has(c) && (!allowedCos.length || allowedCos.includes(c))) || defCo)
+            : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo)));
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
       const shiftToday = resolveStaffShiftForDate(nm, co, today);
       const otToday = describeStaffOvertimeRule(nm, co, today);
       const lateToday = describeStaffLatenessRule(nm, co, today);
+      const policyToday = describeStaffPolicyGroup(nm, co);
       out.push({
         id: u.id,
         name: nm,
@@ -85087,6 +85547,7 @@
         shift: shiftToday,
         otDesc: otToday,
         lateDesc: lateToday,
+        policyDesc: policyToday,
         pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
         hasExplicitPin: Boolean(explicitPin),
         hasFace: faceInfo.samples.length > 0,
@@ -85127,6 +85588,7 @@
         const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
         const otToday = describeStaffOvertimeRule(nm, empCo, today);
         const lateToday = describeStaffLatenessRule(nm, empCo, today);
+        const policyToday = describeStaffPolicyGroup(nm, empCo);
         out.push({
           id: emp.id || ('emp-' + k),
           name: nm,
@@ -85137,6 +85599,7 @@
           shift: shiftToday,
           otDesc: otToday,
           lateDesc: lateToday,
+          policyDesc: policyToday,
           pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
           hasExplicitPin: Boolean(explicitPin),
           hasFace: faceInfo.samples.length > 0,
@@ -85164,6 +85627,7 @@
           const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
           const otToday = describeStaffOvertimeRule(nm, empCo, today);
           const lateToday = describeStaffLatenessRule(nm, empCo, today);
+          const policyToday = describeStaffPolicyGroup(nm, empCo);
           out.push({
             id: emp.id || ('emp-ended-' + k),
             name: nm,
@@ -85174,6 +85638,7 @@
             shift: shiftToday,
             otDesc: otToday,
             lateDesc: lateToday,
+            policyDesc: policyToday,
             pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
             hasExplicitPin: Boolean(explicitPin),
             hasFace: faceInfo.samples.length > 0,
@@ -89575,7 +90040,53 @@
 
     // Quick-preset chips for touch operators on Kiosks 1, 2, 3
     let quickStripHtml = '';
-    if (kMode === 'sales') {
+    if (activeInd !== 'Manufacturing') {
+      ensureMultiIndustrySpineSeeded();
+      const indProds = filterRecords(SEED.records.products || [], { ignorePeriod: true, ignoreCompany: true }).slice(0, 4);
+      const indCusts = filterRecords(SEED.records.customers || [], { ignorePeriod: true }).slice(0, 4);
+      const indSites = filterRecords(SEED.records.sites || [], { ignorePeriod: true }).slice(0, 4);
+      const indUnits = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true }).slice(0, 4);
+      if (kMode === 'sales') {
+        quickStripHtml = `
+          <div class="kiosk-quick-strip" id="kioskQuickStrip">
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">1-Tap Catalog:</span>
+              ${indProds.map(p => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_product" data-kiosk-preset-val="${esc(p.name)}">${esc(p.name)}</button>`).join('')}
+            </div>
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">Top Counterparties:</span>
+              ${indCusts.map(c => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_customer" data-kiosk-preset-val="${esc(c.name)}">${esc(c.name)}</button>`).join('')}
+            </div>
+          </div>
+        `;
+      } else if (kMode === 'raw') {
+        quickStripHtml = `
+          <div class="kiosk-quick-strip" id="kioskQuickStrip">
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">Receiving Site:</span>
+              ${indSites.map(s => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_site" data-kiosk-preset-val="${esc(s.name)}">${esc(s.name)}</button>`).join('')}
+            </div>
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">1-Tap Item:</span>
+              ${indProds.map(p => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_product" data-kiosk-preset-val="${esc(p.name)}">${esc(p.name)}</button>`).join('')}
+            </div>
+          </div>
+        `;
+      } else if (kMode === 'fuel') {
+        quickStripHtml = `
+          <div class="kiosk-quick-strip" id="kioskQuickStrip">
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">Assigned Asset / Generator:</span>
+              ${indUnits.map(u => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_equipment" data-kiosk-preset-val="${esc(u.equipment || u.name)}">${esc(u.equipment || u.name)}</button>`).join('')}
+            </div>
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">Quick Litres:</span>
+              ${[25, 50, 100, 200].map(l => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_qty" data-kiosk-preset-val="${l}">${l} L</button>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+    } else if (kMode === 'sales') {
       const topProds = productList(true, 'sales', defCo).slice(0, 6);
       const topCusts = customerNames().slice(0, 5);
       quickStripHtml = `
@@ -89852,16 +90363,26 @@
         </div>
       `;
     } else {
-      // Kiosks 1, 2, 3: Weighbridge Sales Dispatch, Raw Material, Fuel & Lubricants
-      const kioskHeadTitles = {
-        sales: 'Sales Weighbridge & Dispatch',
-        raw: 'Quarry & Raw Material Receiving',
-        fuel: fSub === 'refill'
-          ? 'Bulk Fuel Tank Refill & Lubricant Purchase'
-          : (fSub === 'malfunction'
-            ? 'Malfunction, Leakage & Stock Variance'
-            : 'Fuel, Diesel & Lubricant Dispense')
-      };
+      // Kiosks 1, 2, 3: Weighbridge Sales Dispatch, Raw Material, Fuel & Lubricants (or Domain Kiosks)
+      const kioskHeadTitles = activeInd !== 'Manufacturing' && kTabMap
+        ? {
+          sales: `${kTabMap.sales} · ${defCo}`,
+          raw: `${kTabMap.raw} · ${defCo}`,
+          fuel: `${kTabMap.fuel} · ${defCo}`
+        }
+        : {
+          sales: 'Sales Weighbridge & Dispatch',
+          raw: 'Quarry & Raw Material Receiving',
+          fuel: fSub === 'refill'
+            ? 'Bulk Fuel Tank Refill & Lubricant Purchase'
+            : (fSub === 'malfunction'
+              ? 'Malfunction, Leakage & Stock Variance'
+              : 'Fuel, Diesel & Lubricant Dispense')
+        };
+      const indRecentDs = (activeInd !== 'Manufacturing' && activeRecentRows.length === 0)
+        ? buildIndustryDomainDataset(activeInd, kMode === 'raw' ? 1 : (kMode === 'fuel' ? 2 : 0))
+        : null;
+      const recentCountVal = indRecentDs ? Math.min(8, indRecentDs.rows.length) : activeRecentRows.length;
       const showThermalPane = !(kMode === 'fuel' && fSub === 'malfunction');
       const footerThermalNote = showThermalPane
         ? ` · Print: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm${(kMode === 'sales' || kMode === 'raw') ? ` · ${pCfg.priceMode === 'unpriced' ? (kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass') : (kMode === 'raw' ? 'Priced 2-Leg Voucher' : 'Priced Invoice')}` : ' Pump Slip'}</b>`
@@ -89916,38 +90437,61 @@
 
               <div class="panel-card kiosk-recent-card">
                 <div class="panel-head">
-                  <div class="panel-title"><span>Recent ${kMode === 'raw' ? 'Raw Material Intakes' : (kMode === 'fuel' ? 'Fuel &amp; Lube Logs' : 'Sales Dispatch Tickets')}</span></div>
-                  <span class="panel-meta">${fmtNum(activeRecentRows.length)} Recent</span>
+                  <div class="panel-title"><span>Recent ${activeInd !== 'Manufacturing' && kTabMap ? esc(kTabMap[kMode]) + ' Activity' : (kMode === 'raw' ? 'Raw Material Intakes' : (kMode === 'fuel' ? 'Fuel &amp; Lube Logs' : 'Sales Dispatch Tickets'))}</span></div>
+                  <span class="panel-meta">${fmtNum(recentCountVal)} Recent</span>
                 </div>
                 <div class="table-wrap">
-                  <table class="ledger-table" id="kioskRecentTable">
-                    <thead>
-                      <tr>
-                        <th>Ticket</th>
-                        <th>${kMode === 'raw' ? 'Site / Material' : (kMode === 'fuel' ? 'Unit / Fuel' : 'Customer / Grade')}</th>
-                        <th class="r">Qty</th>
-                        <th class="r">${kMode === 'fuel' ? 'Meter' : 'Total ($)'}</th>
-                        <th>Reprint</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${activeRecentRows.map(r => `
-                        <tr class="rrow" data-rkey="${kMode === 'raw' ? 'raw_purchases' : (kMode === 'fuel' ? 'fuel_intakes' : 'sales_tickets')}" data-rid="${esc(r.id)}">
-                          <td class="mono"><span class="tkt-cell-inline"><strong>#${esc(r.ticket_no || '-')}</strong>${kMode !== 'fuel' ? `${tktOtBadge(r)}${tktAhBadge(r)}${kMode === 'raw' && isPendingPriceRaw(r) ? '<span class="badge badge-warn tkt-ot-badge">Pending $</span>' : ''}${isRemovedTicket(r) ? '<span class="badge badge-neutral tkt-ot-badge">0 km</span>' : (isReturnTicket(r) ? '<span class="badge badge-warn tkt-ot-badge">Return</span>' : '')}` : ''}</span><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
-                          <td class="kiosk-rec-name-cell">
-                            <strong>${esc(kMode === 'raw' ? (r.site || r.site_owner) : (kMode === 'fuel' ? r.equipment : r.customer))}</strong>
-                            <div class="drv-sub">${esc(kMode === 'raw' ? (r.product || '') : (kMode === 'fuel' ? (r.item || r.fuel_type || 'Diesel') : (r.product || '')))}</div>
-                          </td>
-                          <td class="r mono">${kMode === 'fuel' ? `${fmtNum(r.litres, 0)} L` : `${fmtNum(r.qty, 1)} ${esc(r.uom || 'm³')}`}</td>
-                          <td class="r mono">${kMode === 'fuel' ? (() => { const em = effectiveFuelMeter(r); return em.reading != null ? fmtNum(em.reading, em.type === 'hours' && em.reading % 1 !== 0 ? 1 : 0) + ' ' + em.unit : '-'; })() : fmtUSD(r.total_ttc != null ? r.total_ttc : r.total, 0)}</td>
-                          <td class="kiosk-rec-print-cell">
-                            <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" aria-label="${kMode === 'fuel' ? 'Reprint Pump Slip' : 'Print Priced Copy'}">${ic(kMode === 'fuel' ? 'printer' : 'dollar')}</button>
-                            ${kMode !== 'fuel' ? `<button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" aria-label="Print Unpriced Gate Pass or Slip">${ic('truck')}</button>` : ''}
-                          </td>
+                  ${indRecentDs ? `
+                    <table class="ledger-table" id="kioskRecentTable">
+                      <thead>
+                        <tr>
+                          <th>${esc(indRecentDs.headers[0] || 'Reference')}</th>
+                          <th>${esc(indRecentDs.headers[1] || 'Counterparty')}</th>
+                          <th>${esc(indRecentDs.headers[2] || 'Scope')}</th>
+                          <th class="r">${esc(indRecentDs.headers[indRecentDs.headers.length - 1] || 'Amount')}</th>
                         </tr>
-                      `).join('') || emptyRow(5, 'No recent kiosk tickets')}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        ${indRecentDs.rows.slice(0, 8).map((r, rIdx) => `
+                          <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="kiosk_recent">
+                            <td class="mono"><strong>${esc(r[0] || '-')}</strong></td>
+                            <td class="kiosk-rec-name-cell"><strong>${esc(r[1] || '-')}</strong></td>
+                            <td>${esc(r[2] || '-')}</td>
+                            <td class="r mono"><strong>${esc(r[r.length - 1] || '-')}</strong></td>
+                          </tr>
+                        `).join('') || emptyRow(4, 'No recent terminal entries')}
+                      </tbody>
+                    </table>
+                  ` : `
+                    <table class="ledger-table" id="kioskRecentTable">
+                      <thead>
+                        <tr>
+                          <th>Ticket</th>
+                          <th>${kMode === 'raw' ? 'Site / Material' : (kMode === 'fuel' ? 'Unit / Fuel' : 'Customer / Grade')}</th>
+                          <th class="r">Qty</th>
+                          <th class="r">${kMode === 'fuel' ? 'Meter' : 'Total ($)'}</th>
+                          <th>Reprint</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${activeRecentRows.map(r => `
+                          <tr class="rrow" data-rkey="${kMode === 'raw' ? 'raw_purchases' : (kMode === 'fuel' ? 'fuel_intakes' : 'sales_tickets')}" data-rid="${esc(r.id)}">
+                            <td class="mono"><span class="tkt-cell-inline"><strong>#${esc(r.ticket_no || '-')}</strong>${kMode !== 'fuel' ? `${tktOtBadge(r)}${tktAhBadge(r)}${kMode === 'raw' && isPendingPriceRaw(r) ? '<span class="badge badge-warn tkt-ot-badge">Pending $</span>' : ''}${isRemovedTicket(r) ? '<span class="badge badge-neutral tkt-ot-badge">0 km</span>' : (isReturnTicket(r) ? '<span class="badge badge-warn tkt-ot-badge">Return</span>' : '')}` : ''}</span><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
+                            <td class="kiosk-rec-name-cell">
+                              <strong>${esc(kMode === 'raw' ? (r.site || r.site_owner) : (kMode === 'fuel' ? r.equipment : r.customer))}</strong>
+                              <div class="drv-sub">${esc(kMode === 'raw' ? (r.product || '') : (kMode === 'fuel' ? (r.item || r.fuel_type || 'Diesel') : (r.product || '')))}</div>
+                            </td>
+                            <td class="r mono">${kMode === 'fuel' ? `${fmtNum(r.litres, 0)} L` : `${fmtNum(r.qty, 1)} ${esc(r.uom || 'm³')}`}</td>
+                            <td class="r mono">${kMode === 'fuel' ? (() => { const em = effectiveFuelMeter(r); return em.reading != null ? fmtNum(em.reading, em.type === 'hours' && em.reading % 1 !== 0 ? 1 : 0) + ' ' + em.unit : '-'; })() : fmtUSD(r.total_ttc != null ? r.total_ttc : r.total, 0)}</td>
+                            <td class="kiosk-rec-print-cell">
+                              <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" aria-label="${kMode === 'fuel' ? 'Reprint Pump Slip' : 'Print Priced Copy'}">${ic(kMode === 'fuel' ? 'printer' : 'dollar')}</button>
+                              ${kMode !== 'fuel' ? `<button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" aria-label="Print Unpriced Gate Pass or Slip">${ic('truck')}</button>` : ''}
+                            </td>
+                          </tr>
+                        `).join('') || emptyRow(5, 'No recent kiosk tickets')}
+                      </tbody>
+                    </table>
+                  `}
                 </div>
               </div>
             </div>
@@ -94011,14 +94555,16 @@
       if (location.hash !== h) {
         try {
           history.pushState({ view, company: STATE.company }, '', h);
-        } catch (_) {
+        } catch (_) {}
+        if (location.hash !== h) {
           try { location.hash = h; } catch (__) {}
         }
       }
     } else if (STATE.authed && location.hash !== h) {
       try {
         history.replaceState({ view, company: STATE.company }, '', h);
-      } catch (_) {
+      } catch (_) {}
+      if (location.hash !== h) {
         try { location.hash = h; } catch (__) {}
       }
     }

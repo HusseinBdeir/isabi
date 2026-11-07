@@ -84,7 +84,7 @@
     short: 'Bdeir Holding',
     legal: 'Bdeir Holding Group Treasury & Shared Overhead',
     ar: 'مجموعة بدير القابضة · الخزينة والمركز الرئيسي',
-    mof: 'ROOT-BU · Group Consolidation',
+    mof: 'Group Treasury & Consolidation',
     address: 'Ras Beirut, Hamra Street 776, Beirut, Lebanon',
     phone: 'Tel: 01/998550-1 · 03/224839'
   };
@@ -337,10 +337,23 @@
     return 'ALL';
   }
 
+  const RDL_GROUP_COMPANIES = {
+    'ALL': ['WTC', 'BBConstruction', 'Lions Transport'],
+    'Hospitality Group': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+    'Trading Group': ['Korri Auto', 'Shacman'],
+    'Real Estate Group': ['Properties', '4235 Company S.A.L']
+  };
+
   function coMatch(rowCo, normCo, allowedCos) {
-    if (allowedCos && allowedCos.length && rowCo && !allowedCos.includes(String(rowCo))) return false;
-    if (!normCo || normCo === 'ALL') return true;
-    return String(rowCo || '') === String(normCo);
+    const rc = String(rowCo || '');
+    if (allowedCos && allowedCos.length && rc && !allowedCos.includes(rc)) return false;
+    if (!normCo || normCo === 'ALL') {
+      return !rc || RDL_GROUP_COMPANIES.ALL.includes(rc);
+    }
+    if (RDL_GROUP_COMPANIES[normCo]) {
+      return RDL_GROUP_COMPANIES[normCo].includes(rc);
+    }
+    return rc === String(normCo);
   }
 
   function rowDate(r, basis) {
@@ -422,7 +435,7 @@
     const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
     return `
       <div class="rdl-page-footer">
-        <span>Generated ${esc(stamp)} · ${esc(L.short)} · Paginated RDL Suite (m20_rdls)</span>
+        <span>Generated ${esc(stamp)} · ${esc(L.short)} · ISABI Financial &amp; Operational Statements</span>
         <span>Page ${pageNum || 1} of ${totalPages || 1}</span>
       </div>
     `;
@@ -464,6 +477,9 @@
   let _cachedCtxData = null;
 
   function buildRdlContext(SEED, STATE) {
+    if (typeof window !== 'undefined' && window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.ensureMultiIndustrySpineSeeded === 'function') {
+      window.MFG_ENTERPRISE.ensureMultiIndustrySpineSeeded();
+    }
     const rdl = ensureRdlState(STATE, SEED);
     const co = normalizeStateCo(STATE.company);
     const basis = STATE.basis || STATE.dateBasis || 'tx';
@@ -471,18 +487,20 @@
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
     const allowedSig = allowedCos ? allowedCos.join(',') : 'ALL';
     const offScope = Boolean(STATE._officialScopeActive);
-    const sig = `${co}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
+    const sig = `${co}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
+      const isMfgAll = !co || co === 'ALL';
+      const seedGuard = r => !(isMfgAll && r._multiIndustrySeed);
       const offPred = (r, tk) => !offScope || typeof STATE.isOfficialRecord !== 'function' || STATE.isOfficialRecord(r, tk);
-      const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'sales_tickets'));
-      const rawExp = (recs.expenses || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'expenses'));
-      const rawPay = (recs.salaries || recs.payroll || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawRm = (recs.raw_purchases || recs.rm || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'raw_purchases'));
-      const rawFuel = (recs.fuel_intakes || recs.fuel || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawReceipts = (recs.receipts || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'receipts'));
-      const rawSettlements = (recs.settlements || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'settlements'));
-      const rawVatInvs = (recs.vat_invoices || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'vat_invoices'));
+      const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'sales_tickets'));
+      const rawExp = (recs.expenses || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'expenses'));
+      const rawPay = (recs.salaries || recs.payroll || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos));
+      const rawRm = (recs.raw_purchases || recs.rm || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'raw_purchases'));
+      const rawFuel = (recs.fuel_intakes || recs.fuel || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos));
+      const rawReceipts = (recs.receipts || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'receipts'));
+      const rawSettlements = (recs.settlements || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'settlements'));
+      const rawVatInvs = (recs.vat_invoices || []).filter(r => r && !r.voided && seedGuard(r) && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'vat_invoices'));
 
       // Map official VAT invoices by customer+date window so sales tickets inherit vat_inv when matching
       const vatInvByCust = new Map();
