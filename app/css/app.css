@@ -33566,6 +33566,24 @@ video::-webkit-media-controls-start-playback-button {
 
 #multiIndustryEntitiesPanel .ledger-table th,
 #multiIndustryEntitiesPanel .ledger-table td {
+  padding: 5px 5px;
+  font-size: 11px;
+}
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(3) {
+  max-width: 145px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#snWorkforce .ledger-table th,
+#snWorkforce .ledger-table td {
+  padding: 5px 6px;
+  font-size: 11px;
+}
+
+
+#multiIndustryEntitiesPanel .ledger-table th,
+#multiIndustryEntitiesPanel .ledger-table td {
   padding: 4px 3px;
   font-size: 10px;
 }

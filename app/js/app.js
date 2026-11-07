@@ -9397,7 +9397,7 @@
     if (_iifeBooted && typeof computeTradingOperations === 'function') {
       const trdD = computeTradingOperations({ company: 'industry:Automotive & Heavy Trading', ignoreSearch: true });
       incDomainRows(trdD.salesRows, '', 1, r => r.is_gap);
-      [trdD.receivableRows, trdD.targetRows, trdD.importRows, trdD.landedRows, trdD.grnRows, trdD.serialUnits, trdD.warrantyRows].forEach(arr => incDomainRows(arr, '', 1));
+      [trdD.receivableRows, trdD.targetRows, trdD.importRows, trdD.landedRows, trdD.grnRows, trdD.serialUnits, trdD.warrantyRows].forEach(arr => incDomainRows(arr, '', 0.45));
       [trdD.stockRows, trdD.movementRows, trdD.reconRows].forEach(arr => incDomainRows(arr, '', 0.05));
     }
     if (_iifeBooted && typeof computeRealEstateOperations === 'function') {
@@ -107036,31 +107036,43 @@
   }
 
   function unpackIndustrySeedPayload(P) {
-    if (!P || typeof P !== 'object' || !P.industries) return;
+    if (!P || typeof P !== 'object' || (!P.industries && !P.tables)) return;
     const S = P._s || [];
-    const live = {};
-    for (const [indKey, tables] of Object.entries(P.industries)) {
-      if (!tables || typeof tables !== 'object') continue;
-      live[indKey] = {};
-      for (const [tblKey, t] of Object.entries(tables)) {
-        if (!t || !t.c) {
-          live[indKey][tblKey] = Array.isArray(t) ? t : [];
-          continue;
+    const live = { until: P.cutoff_date || P.until || '2026-11-06' };
+    const unpackTable = t => {
+      if (!t || !t.c) return Array.isArray(t) ? t : [];
+      const cols = t.c, sc = t.sc, rows = t.r || [];
+      const out = new Array(rows.length);
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const o = {};
+        for (let i = 0; i < row.length; i++) {
+          let v = row[i];
+          if (v === null || v === undefined) continue;
+          if (sc[i] && typeof v === 'number') v = S[v];
+          o[cols[i]] = v;
         }
-        const cols = t.c, sc = t.sc, rows = t.r || [];
-        const out = new Array(rows.length);
-        for (let idx = 0; idx < rows.length; idx++) {
-          const row = rows[idx];
-          const o = {};
-          for (let i = 0; i < row.length; i++) {
-            let v = row[i];
-            if (v === null || v === undefined) continue;
-            if (sc[i] && typeof v === 'number') v = S[v];
-            o[cols[i]] = v;
-          }
-          out[idx] = o;
+        out[idx] = o;
+      }
+      return out;
+    };
+    if (P.tables && typeof P.tables === 'object') {
+      for (const [dotKey, t] of Object.entries(P.tables)) {
+        const dotIdx = dotKey.indexOf('.');
+        if (dotIdx <= 0) continue;
+        const indKey = dotKey.slice(0, dotIdx);
+        const tblKey = dotKey.slice(dotIdx + 1);
+        if (!live[indKey]) live[indKey] = {};
+        live[indKey][tblKey] = unpackTable(t);
+      }
+    }
+    if (P.industries && typeof P.industries === 'object') {
+      for (const [indKey, tables] of Object.entries(P.industries)) {
+        if (!tables || typeof tables !== 'object') continue;
+        if (!live[indKey]) live[indKey] = {};
+        for (const [tblKey, t] of Object.entries(tables)) {
+          live[indKey][tblKey] = unpackTable(t);
         }
-        live[indKey][tblKey] = out;
       }
     }
     const setCoId = (arr, co, nth, newId) => {
@@ -107099,6 +107111,12 @@
       setCoId(live.hospitality.membershipRows, 'Blanca', 0, 'MEM-2026-001');
       setCoId(live.hospitality.membershipRows, 'Palms', 0, 'MEM-2026-003');
       setCoId(live.hospitality.membershipRows, 'Voile', 0, 'MEM-2026-005');
+      if (Array.isArray(live.hospitality.membershipRows)) {
+        const pinIds = new Set(['MEM-2026-001', 'MEM-2026-003', 'MEM-2026-005']);
+        const pinned = live.hospitality.membershipRows.filter(r => r && pinIds.has(r.id));
+        const rest = live.hospitality.membershipRows.filter(r => !r || !pinIds.has(r.id));
+        live.hospitality.membershipRows = pinned.concat(rest);
+      }
       setCoId(live.hospitality.stockRows, 'La Una', 0, 'STK-HSP-01');
       setCoId(live.hospitality.stockRows, 'Blanca', 0, 'STK-HSP-03');
       setCoId(live.hospitality.stockRows, 'Platinum', 0, 'STK-HSP-06');
@@ -107113,12 +107131,16 @@
       setCoId(live.trading.grnRows, 'Korri Auto', 0, 'GRN-KA-2026-058');
       setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
       setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
+      if (Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
+        live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', year: 2026, location: 'Al-Ghazieh Service Bay', landed_cost_usd: 34200, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
+      }
     }
     if (live.realestate) {
       setCoId(live.realestate.leases, '4235 Company S.A.L', 0, 'LSE-4235-001');
       setCoId(live.realestate.leases, '4235 Company S.A.L', 2, 'LSE-4235-002');
       setCoId(live.realestate.invoices, '4235 Company S.A.L', 5, 'INV-4235-010');
       setCoId(live.realestate.receipts, '4235 Company S.A.L', 0, 'RCT-4235-101');
+      setCoId(live.realestate.receipts, 'Properties', 0, 'RCT-PROP-106');
     }
     if (live.insurance) {
       if (Array.isArray(live.insurance.policies) && live.insurance.policies[0]) {
@@ -107148,9 +107170,15 @@
     if (!SEED || !SEED.records || !SEED._recordsReady || !SEED.industryLive) return;
     if (SEED._industryLiveSpineMergedRev === SEED._industryRev) return;
     SEED._industryLiveSpineMergedRev = SEED._industryRev;
-    const insSpine = (SEED.industryLive.insurance && Array.isArray(SEED.industryLive.insurance.spine))
-      ? SEED.industryLive.insurance.spine
-      : [];
+    const insSpine = [];
+    if (SEED.industryLive.spine && typeof SEED.industryLive.spine === 'object') {
+      for (const [tbl, rows] of Object.entries(SEED.industryLive.spine)) {
+        if (Array.isArray(rows)) rows.forEach(r => { if (r) insSpine.push(Object.assign({ tbl }, r)); });
+      }
+    }
+    if (SEED.industryLive.insurance && Array.isArray(SEED.industryLive.insurance.spine)) {
+      SEED.industryLive.insurance.spine.forEach(r => { if (r) insSpine.push(r); });
+    }
     insSpine.forEach(r => {
       if (!r || !r.tbl || !r.id) return;
       const tbl = r.tbl;
@@ -107160,20 +107188,27 @@
       const row = Object.assign({}, r);
       delete row.tbl;
       row._multiIndustrySeed = true;
-      row._industry = 'Insurance & Brokerage';
+      const co = String(row.company || '').trim();
+      row._industry = co === 'Properties' || co === '4235 Company S.A.L'
+        ? 'Real Estate & Property'
+        : (co === 'Shacman' || co === 'Korri Auto'
+          ? 'Automotive & Heavy Trading'
+          : (['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'].includes(co)
+            ? 'Hospitality & Resorts'
+            : (co === 'Bdeir Holding' ? 'Holding & Treasury' : 'Insurance & Brokerage')));
       if (tbl === 'expenses') {
-        row.rep_date = row.date;
-        row.usd_amount = row.amount;
+        if (!row.rep_date) row.rep_date = row.date;
+        if (row.usd_amount == null) row.usd_amount = row.amount;
       } else if (tbl === 'salaries') {
-        row.rep_date = row.date;
-        row.currency = 'USD';
-        row.usd_amount = row.amount;
-        row.lbp_amount = 0;
+        if (!row.rep_date) row.rep_date = row.date;
+        if (!row.currency) row.currency = 'USD';
+        if (row.usd_amount == null) row.usd_amount = row.amount;
+        if (row.lbp_amount == null) row.lbp_amount = 0;
       } else if (tbl === 'settlements') {
-        row.rep_date = row.date;
-        row.payable_leg = 'expense';
-        row.kind = 'Payment';
-        row.discount = 0;
+        if (!row.rep_date) row.rep_date = row.date;
+        if (!row.payable_leg) row.payable_leg = 'expense';
+        if (!row.kind) row.kind = 'Payment';
+        if (row.discount == null) row.discount = 0;
       }
       arr.push(row);
     });
@@ -107717,6 +107752,10 @@
     computeThreeLegPayablesBreakdown: typeof computeThreeLegPayablesBreakdown === 'function' ? computeThreeLegPayablesBreakdown : null,
     computeStaffPayrollRegister: typeof computeStaffPayrollRegister === 'function' ? computeStaffPayrollRegister : null,
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
+    computeHospitalityOperations: typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations : null,
+    computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
+    computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
+    computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,
