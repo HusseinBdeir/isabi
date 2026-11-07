@@ -28,7 +28,7 @@
     'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories', 'employments', 'attendance',
     'freelance_entries', 'freelance_payments', 'logistics_allowances', 'overtime_rates', 'external_movements',
-    'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'daily_totals'
+    'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'documents', 'daily_totals'
   ];
   SEED_RECORD_KEYS.forEach(k => {
     if (!Array.isArray(SEED.records[k])) SEED.records[k] = [];
@@ -27535,6 +27535,7 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('with_items', `With Items (${withItemsCnt})`)}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="documents">${ic('receipt')} Document Vault</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="recurring_expenses">${ic('recurring_expenses')} Recurring Schedules</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} Suppliers &amp; Payables</button>
@@ -28175,19 +28176,18 @@
     if (!Array.isArray(SEED.records.documents)) SEED.records.documents = [];
     if (!Array.isArray(STATE.customRecords.documents)) STATE.customRecords.documents = [];
 
-    if (!SEED.records._documentsSeeded) {
-      SEED.records._documentsSeeded = true;
+    if (!SEED.records.documents.some(d => d && d.id === 'doc-seed-001')) {
       const exps = (SEED.records.expenses || []).filter(r => r && !r.voided);
       const raws = (SEED.records.raw_purchases || []).filter(r => r && !r.voided);
       const vats = (SEED.records.vat_invoices || []).filter(r => r && !r.voided);
       const sets = (SEED.records.settlements || []).filter(r => r && !r.voided);
       const recs = (SEED.records.receipts || []).filter(r => r && !r.voided);
 
-      const e0 = exps[0] || { id: 'exp-seed-1', name: 'EXP-2026-0001', company: 'WTC', date: '2026-10-12', supplier: 'IPT Diesel Supply', amount: 4850, category: 'Fuel', reference: 'INV-88412' };
-      const r0 = raws[0] || { id: 'raw-seed-1', ticket_no: '44210', name: 'RAW-44210', company: 'WTC', date: '2026-10-14', site_owner: 'Dahr El Baidar Quarry', total: 1620 };
-      const v0 = vats[0] || { id: 'vat-seed-1', invoice_no: 'VAT-2026-0108', name: 'VAT-2026-0108', company: 'WTC', date: '2026-10-15', customer: 'MAN Enterprise', total_ttc: 6993 };
-      const s0 = sets[0] || { id: 'set-seed-1', name: 'SET-2026-0041', company: 'BBConstruction', date: '2026-10-18', supplier: 'Holcim Liban', amount: 5200, reference: 'BNK-99201' };
-      const c0 = recs[0] || { id: 'rec-seed-1', name: 'REC-2026-0082', company: 'Lions Transport', date: '2026-10-20', customer: 'Arabian Construction Co.', amount: 3400, reference: 'RV-3049' };
+      const e0 = exps[exps.length - 1] || { id: 'exp-seed-1', name: 'EXP-2026-0001', company: 'WTC', date: '2026-10-12', supplier: 'IPT Diesel Supply', amount: 4850, category: 'Fuel', reference: 'INV-88412' };
+      const r0 = raws[raws.length - 1] || { id: 'raw-seed-1', ticket_no: '44210', name: 'RAW-44210', company: 'WTC', date: '2026-10-14', site_owner: 'Dahr El Baidar Quarry', total: 1620 };
+      const v0 = vats[vats.length - 1] || { id: 'vat-seed-1', invoice_no: 'VAT-2026-0108', name: 'VAT-2026-0108', company: 'WTC', date: '2026-10-15', customer: 'MAN Enterprise', total_ttc: 6993 };
+      const s0 = sets[sets.length - 1] || { id: 'set-seed-1', name: 'SET-2026-0041', company: 'BBConstruction', date: '2026-10-18', supplier: 'Holcim Liban', amount: 5200, reference: 'BNK-99201' };
+      const c0 = recs[recs.length - 1] || { id: 'rec-seed-1', name: 'REC-2026-0082', company: 'Lions Transport', date: '2026-10-20', customer: 'Arabian Construction Co.', amount: 3400, reference: 'RV-3049' };
 
       const defaults = [
         {
@@ -28676,6 +28676,35 @@
 
   function openDocumentPreviewModal(docOrAtt, contextMeta = {}) {
     if (!docOrAtt) return;
+    ensureDocumentsVaultSeeded();
+    if (docOrAtt.docId && !docOrAtt.data_url && !docOrAtt.file_name) {
+      const qId = String(docOrAtt.docId);
+      const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
+      const foundDoc = docsPool.find(d => d && !d.voided && (String(d.id) === qId || norm(d.name) === norm(qId)));
+      if (!foundDoc) return;
+      docOrAtt = foundDoc;
+    } else if (docOrAtt.crKey && docOrAtt.id && !docOrAtt.data_url && !docOrAtt.file_name) {
+      const rk = docOrAtt.crKey;
+      const rid = String(docOrAtt.id);
+      const rPool = (STATE.customRecords[rk] || []).concat((SEED.records && SEED.records[rk]) || []);
+      const foundRow = (typeof resolveInspectorRecord === 'function' ? resolveInspectorRecord(rk, rid) : null) ||
+        rPool.find(x => x && !x.voided && (String(x.id) === rid || norm(x.name || x.ticket_no || x.invoice_no) === norm(rid)));
+      if (!foundRow) return;
+      const recAtts = getRecordAttachmentsList(rk, foundRow);
+      if (!recAtts.length) return;
+      const idx = Math.max(0, Math.min(recAtts.length - 1, Number(docOrAtt.attIdx || 0)));
+      contextMeta = Object.assign({}, contextMeta, {
+        allAttachments: recAtts,
+        activeIdx: idx,
+        company: foundRow.company || '',
+        date: foundRow.date || '',
+        counterparty: foundRow.supplier || foundRow.customer || foundRow.site_owner || foundRow.truck_owner || foundRow.counterparty || foundRow.staff || '',
+        parent_table: rk,
+        parent_id: String(foundRow.id || rid),
+        parent_label: foundRow.ticket_no ? `#${foundRow.ticket_no}` : (foundRow.invoice_no || foundRow.name || String(foundRow.id || rid))
+      });
+      docOrAtt = recAtts[idx];
+    }
     const modal = ensureDocPreviewModalDom();
     const titleEl = $('docPrevTitle');
     const eyeEl = $('docPrevEyebrow');
@@ -28818,14 +28847,14 @@
     const standaloneDocs = docsAll.filter(d => !d.parent_label && !d.parent_id);
     const totalVaultUsd = docsAll.reduce((s, d) => s + Number(d.amount || 0), 0);
 
-    const filteredDocs = sortRows('documents', docsAll.filter(d => {
+    const filteredDocs = sortRows(docsAll.filter(d => {
       if (dChipKey === 'invoices' && !/invoice|bill|tax|mof/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'receipts' && !/receipt|voucher|bank|transfer/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'slips' && !/delivery|weighbridge|contract|equipment/i.test(d.doc_type || '')) return false;
       if (dChipKey === 'linked' && !(d.parent_label || d.parent_id)) return false;
       if (dChipKey === 'standalone' && (d.parent_label || d.parent_id)) return false;
       return matchQ([d.date, d.name, d.company, d.doc_type, d.title, d.counterparty, d.reference, d.parent_label, d.file_name, d.status, d.notes]);
-    }));
+    }), 'documents', 'date', 'desc');
 
     const shownDocs = filteredDocs.slice(0, shownCount('documents'));
     const sumFilteredUsd = filteredDocs.reduce((s, d) => s + Number(d.amount || 0), 0);
@@ -76645,6 +76674,7 @@
     ensureGlobalFinanceTablesSeeded();
     ensureItemsCatalogSeeded();
     ensureStaffMembersSeeded();
+    ensureDocumentsVaultSeeded();
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
     if (!SEED._tableRev) SEED._tableRev = {};
