@@ -32768,6 +32768,659 @@ html[dir="rtl"] .ceo-ent-rev-cell {
   z-index: 1200;
 }
 
+/* ============================================================================
+   v19.6.177 — Touch-Calm Contained-Scroll Select Menus Across All 6 Industries,
+   Android WebView <video> Play-Icon Suppression & 2-Step Staff Face ID Studio
+   ============================================================================ */
+video::-webkit-media-controls,
+video::-webkit-media-controls-enclosure,
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-overlay-play-button,
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.kiosk-att-viewport:not(.is-live) video,
+#staffEnrolViewport:not(.is-live) video {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.kiosk-cam-standby-card {
+  z-index: 4;
+  background: radial-gradient(circle at 50% 30%, #FCFBF8 0%, #F1EEE5 100%);
+}
+:root[data-theme="dark"] .kiosk-cam-standby-card {
+  background: radial-gradient(circle at 50% 30%, #15233E 0%, #0D172B 100%);
+}
+.kiosk-cam-standby-ico.is-done {
+  background: rgba(31, 122, 76, 0.12);
+  border-color: rgba(31, 122, 76, 0.34);
+  color: #1F7A4C;
+}
+:root[data-theme="dark"] .kiosk-cam-standby-ico.is-done {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.38);
+  color: #4ADE80;
+}
+
+/* Contained smooth touch scrolling on all custom <select> popovers */
+.pa-select-menu {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 46vh);
+}
+.pa-select-menu .pa-select-filter-wrap {
+  flex-shrink: 0;
+}
+.pa-select-menu .pa-suggest-list-rows {
+  max-height: min(268px, 38vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+@media (pointer: coarse) {
+  .pa-select-menu .pa-suggest-item {
+    min-height: 40px;
+    padding: 9px 11px;
+    font-size: 13.5px;
+  }
+  .pa-select-menu .pa-select-filter {
+    font-size: 16px !important;
+    padding: 8px 10px !important;
+    border-radius: 6px !important;
+  }
+}
+
+/* Rock-steady centered submodal geometry on tablets (no 100dvh soft-keyboard bounce) */
+@media (min-width: 520px) {
+  #staffFaceEnrolModal.kiosk-submodal-backdrop,
+  #kioskStationAdminModal.kiosk-submodal-backdrop {
+    align-items: center;
+    padding: 14px;
+  }
+  #staffFaceEnrolModal .staff-enrol-modal-card {
+    border-radius: 12px;
+    width: min(860px, calc(100vw - 28px));
+    max-width: 860px;
+    max-height: min(780px, calc(100vh - 28px));
+  }
+}
+
+.staff-enrol-modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 96vw);
+  max-width: 860px;
+  max-height: min(780px, calc(100vh - 20px));
+  overflow: hidden;
+}
+.staff-enrol-modal-card .modal-head,
+.staff-enrol-modal-card .sfe-modal-foot {
+  flex-shrink: 0;
+}
+.staff-enrol-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Step 1: Tactile Staff Roster Stage */
+.sfe-roster-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.sfe-coverage-bar {
+  padding: 10px 13px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sfe-cov-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sfe-cov-lbl {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.sfe-cov-lbl strong {
+  font-weight: 800;
+}
+.sfe-cov-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 106, 34, 0.34);
+  background: rgba(201, 106, 34, 0.10);
+  color: #B45309;
+}
+:root[data-theme="dark"] .sfe-cov-pill {
+  color: #FBBF24;
+  background: rgba(245, 158, 11, 0.16);
+}
+.sfe-cov-pill.is-complete {
+  border-color: rgba(31, 122, 76, 0.36);
+  background: rgba(31, 122, 76, 0.10);
+  color: #1F7A4C;
+}
+:root[data-theme="dark"] .sfe-cov-pill.is-complete {
+  color: #4ADE80;
+}
+.sfe-cov-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(122, 136, 155, 0.18);
+  overflow: hidden;
+}
+.sfe-cov-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #1F7A4C;
+  transition: width 0.25s ease;
+}
+
+.sfe-controls-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sfe-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sfe-chip {
+  appearance: none;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6.5px 12px;
+  min-height: 34px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.sfe-chip:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.sfe-chip.active {
+  background: var(--brass, #C89D54);
+  border-color: var(--brass, #C89D54);
+  color: #281D15;
+}
+.sfe-chip.is-co {
+  font-size: 11.4px;
+  padding: 5px 10px;
+  min-height: 30px;
+}
+.sfe-chip.is-co.active {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--ink);
+}
+
+.sfe-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sfe-search-wrap {
+  position: relative;
+  flex: 1 1 260px;
+  display: flex;
+  align-items: center;
+}
+.sfe-search-ico {
+  position: absolute;
+  left: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.sfe-search-ico svg {
+  width: 15px;
+  height: 15px;
+}
+.sfe-search-input {
+  width: 100%;
+  height: 38px;
+  padding: 6px 34px 6px 34px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--line-strong) !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  font-size: 14px;
+  outline: none;
+}
+.sfe-search-input:focus {
+  border-color: var(--brass) !important;
+  box-shadow: 0 0 0 2px var(--brass-tint);
+}
+.sfe-search-clear {
+  position: absolute;
+  right: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sfe-roster-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sfe-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: min(395px, calc(100vh - 320px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 2px 2px 4px 0;
+}
+@media (max-width: 640px) {
+  .sfe-roster-grid {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: min(440px, calc(100vh - 310px));
+  }
+}
+.sfe-staff-card {
+  appearance: none;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.08s ease;
+}
+.sfe-staff-card:hover {
+  border-color: var(--brass);
+  background: var(--surface-2);
+}
+.sfe-staff-card:active {
+  transform: scale(0.992);
+}
+.sfe-staff-card.is-enrolled {
+  border-color: rgba(31, 122, 76, 0.28);
+}
+.sfe-staff-card.is-current {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1.5px var(--brass-tint);
+}
+.sfe-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Archivo", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: rgba(200, 157, 84, 0.16);
+  border: 1px solid rgba(200, 157, 84, 0.36);
+  color: #7C5312;
+}
+:root[data-theme="dark"] .sfe-avatar {
+  background: rgba(217, 165, 74, 0.18);
+  border-color: rgba(217, 165, 74, 0.38);
+  color: #F3D18E;
+}
+.sfe-avatar.is-done {
+  background: rgba(31, 122, 76, 0.12);
+  border-color: rgba(31, 122, 76, 0.34);
+  color: #1F7A4C;
+}
+:root[data-theme="dark"] .sfe-avatar.is-done {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.38);
+  color: #4ADE80;
+}
+.sfe-avatar.is-lg {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+.sfe-card-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sfe-card-name {
+  font-size: 13.4px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sfe-card-sub {
+  font-size: 11.2px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sfe-card-right {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sfe-status-pill {
+  font-size: 10.6px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid rgba(200, 157, 84, 0.38);
+  background: rgba(200, 157, 84, 0.12);
+  color: #8C5E14;
+}
+:root[data-theme="dark"] .sfe-status-pill {
+  color: #F3D18E;
+}
+.sfe-status-pill.is-done {
+  border-color: rgba(31, 122, 76, 0.36);
+  background: rgba(31, 122, 76, 0.10);
+  color: #1F7A4C;
+}
+:root[data-theme="dark"] .sfe-status-pill.is-done {
+  color: #4ADE80;
+  background: rgba(34, 197, 94, 0.14);
+}
+.sfe-status-pill.is-partial {
+  border-color: rgba(35, 86, 168, 0.32);
+  background: rgba(35, 86, 168, 0.09);
+  color: #2356A8;
+}
+:root[data-theme="dark"] .sfe-status-pill.is-partial {
+  color: #93C5FD;
+}
+.sfe-card-chev {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+}
+.sfe-card-chev svg {
+  width: 14px;
+  height: 14px;
+}
+.sfe-roster-empty {
+  grid-column: 1 / -1;
+  padding: 28px 16px;
+  text-align: center;
+  border-radius: 9px;
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.sfe-roster-empty strong {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+/* Step 2: Guided 3-Pose Biometric Capture Stage */
+.sfe-capture-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sfe-active-staff-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+}
+.sfe-active-ident {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sfe-active-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sfe-active-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sfe-active-name-row strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.sfe-active-meta {
+  font-size: 11.8px;
+  color: var(--muted);
+}
+.sfe-active-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.sfe-switch-btn,
+.sfe-next-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12.2px;
+  font-weight: 700;
+}
+.sfe-next-btn {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: var(--ink);
+}
+.sfe-primary-capture-btn {
+  flex: 1 1 auto;
+  min-height: 42px;
+  font-size: 13.5px;
+  font-weight: 700;
+  justify-content: center;
+}
+.sfe-standby-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.staff-enrol-pose-prompt {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.sfe-pose-coach {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--brass-tint);
+  border: 1px solid var(--brass-border);
+  color: var(--ink);
+}
+.sfe-pose-coach.is-complete {
+  background: rgba(31, 122, 76, 0.08);
+  border-color: rgba(31, 122, 76, 0.34);
+}
+.sfe-pose-coach-svg {
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.sfe-pose-coach-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sfe-pose-coach-copy strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.sfe-pose-coach-copy span {
+  font-size: 11.6px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.36;
+}
+
+.staff-pose-slot {
+  min-height: 108px;
+  padding: 8px 6px;
+  gap: 4px;
+}
+.staff-pose-step-tag {
+  font-size: 9.6px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.staff-pose-slot.is-next .staff-pose-step-tag {
+  color: var(--brass-strong, #9A6B1A);
+}
+.staff-pose-slot.is-done .staff-pose-step-tag {
+  color: var(--good);
+}
+.staff-pose-sub {
+  font-size: 9.8px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sfe-pin-drawer {
+  margin-top: 2px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sfe-pin-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sfe-pin-lbl {
+  font-size: 11.6px;
+  font-weight: 700;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sfe-pin-copy small {
+  font-size: 10.6px;
+  color: var(--muted);
+}
+.sfe-pin-tag {
+  font-size: 9.8px;
+  font-weight: 700;
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.sfe-pin-tag.is-set {
+  border-color: rgba(31, 122, 76, 0.35);
+  background: rgba(31, 122, 76, 0.10);
+  color: #1F7A4C;
+}
+.sfe-pin-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sfe-pin-input {
+  width: 92px !important;
+  height: 36px !important;
+  text-align: center;
+}
+
+
 
 
 

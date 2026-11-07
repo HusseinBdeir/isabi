@@ -385,8 +385,13 @@
 
   const STAFF_FACE_MODAL_STATE = {
     open: false,
+    step: 'roster',
+    rosterFilter: 'active',
+    rosterCo: '',
+    rosterSearch: '',
     staffName: '',
     camActive: false,
+    camStarting: false,
     loopTimer: null,
     busy: false,
     captures: [],
@@ -29282,7 +29287,7 @@
         </div>
         <div class="doc-cam-body">
           <div class="doc-cam-stage" id="docCamStage">
-            <video id="docCamVideo" class="doc-cam-video" autoplay muted playsinline></video>
+            <video id="docCamVideo" class="doc-cam-video" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
             <div class="doc-cam-guide" id="docCamGuide"><span>Position invoice, receipt, or slip clearly inside frame</span></div>
             <img id="docCamPreviewImg" class="doc-cam-preview-img" alt="Captured receipt preview" hidden>
             <div class="doc-cam-fallback" id="docCamFallback" hidden>
@@ -52476,7 +52481,7 @@
         <div class="enrol-studio-grid">
           <div class="enrol-cam-col">
             <div class="enrol-cam-viewport" id="enrolCamViewport">
-              <video id="enrolFaceVideo" autoplay playsinline muted></video>
+              <video id="enrolFaceVideo" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
               <canvas id="enrolFaceOverlay"></canvas>
               <div class="enrol-cam-vignette"></div>
               <div class="enrol-hud-corners" aria-hidden="true">
@@ -63474,7 +63479,10 @@
           m.hidden = true;
           if (!m.classList.contains('pa-time24-menu')) m.innerHTML = '';
           const w = m.closest('.pa-suggest-wrap');
-          if (w) w.classList.remove('open');
+          if (w) {
+            w.classList.remove('open');
+            w.classList.remove('menu-drop-up');
+          }
         }
       });
     };
@@ -64055,11 +64063,13 @@
         }
         const allOpts = getSelectOptions();
         if (!allOpts.length) { closeAll(null); return; }
-        const MAX_SHOW = 16;
-        const needsFilter = allOpts.length > MAX_SHOW;
+        const isCoarsePointer = Boolean(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        const FILTER_THRESHOLD = 10;
+        const RENDER_CAP = 120;
+        const needsFilter = allOpts.length > FILTER_THRESHOLD;
         closeAll(menu);
         menu.innerHTML = (needsFilter
-          ? `<div class="pa-select-filter-wrap"><input type="search" class="pa-select-filter" placeholder="Type to filter ${allOpts.length} options..." autocomplete="off" spellcheck="false"></div>`
+          ? `<div class="pa-select-filter-wrap"><input type="search" class="pa-select-filter" placeholder="${isCoarsePointer ? `Tap to search ${allOpts.length} options...` : `Type to filter ${allOpts.length} options...`}" autocomplete="off" spellcheck="false"></div>`
           : '') + `<div class="pa-suggest-list-rows"></div>`;
         const rowsBox = menu.querySelector('.pa-suggest-list-rows');
         const filterInput = menu.querySelector('.pa-select-filter');
@@ -64080,11 +64090,11 @@
             filtered = exact.concat(freqOrdered);
           }
           let sliceStart = 0;
-          if (!ql && filtered.length > MAX_SHOW) {
+          if (!ql && filtered.length > RENDER_CAP) {
             const curPos = filtered.findIndex(o => String(o.value) === String(selEl.value));
-            if (curPos >= MAX_SHOW) sliceStart = Math.min(curPos - 2, filtered.length - MAX_SHOW);
+            if (curPos >= RENDER_CAP) sliceStart = Math.min(curPos - 2, filtered.length - RENDER_CAP);
           }
-          currentMatches = filtered.slice(sliceStart, sliceStart + MAX_SHOW);
+          currentMatches = filtered.slice(sliceStart, sliceStart + RENDER_CAP);
           activeIdx = ql ? 0 : Math.max(0, currentMatches.findIndex(o => String(o.value) === String(selEl.value)));
           if (!currentMatches.length) {
             rowsBox.innerHTML = `<div class="pa-suggest-more" style="text-align:center;border-top:0">No matching options</div>`;
@@ -64098,8 +64108,8 @@
                 ${(o.meta || isSel) ? `<span class="pa-suggest-right">${o.meta ? `<span class="pa-suggest-meta">${highlightMatch(o.meta, q)}</span>` : ''}${isSel ? '<span class="pa-suggest-check">✓</span>' : ''}</span>` : ''}
               </div>
             `;
-          }).join('') + (filtered.length > MAX_SHOW
-            ? `<div class="pa-suggest-more">Top ${MAX_SHOW} of ${filtered.length} options · type to filter</div>`
+          }).join('') + (filtered.length > RENDER_CAP
+            ? `<div class="pa-suggest-more">Top ${RENDER_CAP} of ${filtered.length} options · search above to narrow</div>`
             : '');
 
           rowsBox.querySelectorAll('.pa-suggest-item').forEach(row => {
@@ -64113,7 +64123,7 @@
               const idx = Number(row.getAttribute('data-suggest-idx'));
               if (currentMatches[idx] != null) chooseOption(currentMatches[idx].value);
             };
-            row.addEventListener('mousedown', onPickOpt);
+            if (!isCoarsePointer) row.addEventListener('mousedown', onPickOpt);
             row.addEventListener('click', onPickOpt);
             row.addEventListener('mouseenter', () => {
               activeIdx = Number(row.getAttribute('data-suggest-idx'));
@@ -64124,14 +64134,25 @@
 
         try {
           const r = wrap.getBoundingClientRect();
+          const vh = window.innerHeight || 800;
+          const spaceBelow = vh - r.bottom;
+          const spaceAbove = r.top;
           wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+          wrap.classList.toggle('menu-drop-up', spaceBelow < 230 && spaceAbove > spaceBelow + 40);
         } catch (_) {}
         renderRows('');
         menu.hidden = false;
         wrap.classList.add('open');
+        try {
+          const selRow = rowsBox.querySelector('.pa-suggest-item.is-selected');
+          if (selRow && rowsBox.scrollHeight > rowsBox.clientHeight) {
+            rowsBox.scrollTop = Math.max(0, selRow.offsetTop - Math.round(rowsBox.clientHeight * 0.35));
+          }
+        } catch (_) {}
 
         if (filterInput) {
           filterInput.addEventListener('mousedown', ev => ev.stopPropagation());
+          filterInput.addEventListener('click', ev => ev.stopPropagation());
           filterInput.addEventListener('input', () => renderRows(filterInput.value));
           filterInput.addEventListener('keydown', ev => {
             if (ev.key === 'ArrowDown' && currentMatches.length) {
@@ -64154,8 +64175,10 @@
               closeAll(null);
             }
           });
-          try { filterInput.focus({ preventScroll: true }); } catch (_) {}
-          setTimeout(() => { try { filterInput.focus({ preventScroll: true }); } catch (_) {} }, 15);
+          if (!isCoarsePointer) {
+            try { filterInput.focus({ preventScroll: true }); } catch (_) {}
+            setTimeout(() => { try { filterInput.focus({ preventScroll: true }); } catch (_) {} }, 15);
+          }
         }
       };
 
@@ -64180,7 +64203,10 @@
         if (!menu.hidden) {
           closeAll(null);
         } else {
-          try { selEl.focus({ preventScroll: true }); } catch (_) {}
+          const coarseNow = Boolean(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+          if (!coarseNow) {
+            try { selEl.focus({ preventScroll: true }); } catch (_) {}
+          }
           openSelectMenu();
         }
       };
@@ -80200,9 +80226,12 @@
         if (FACE_STATE.stream) { try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {} }
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
         const portrait = window.innerHeight > window.innerWidth;
-        const prefVideo = portrait
-          ? { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }
-          : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } };
+        const isKiosk43 = videoEl.id === 'staffEnrolVideo' || videoEl.id === 'enrolFaceVideo';
+        const prefVideo = isKiosk43
+          ? { facingMode: 'user', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
+          : (portrait
+            ? { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }
+            : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } });
         const s = await navigator.mediaDevices.getUserMedia({
           video: prefVideo,
           audio: false
@@ -85500,7 +85529,7 @@
                 <span class="panel-meta">5-Min Inactivity Auto-Logout</span>
               </div>
               <div class="kiosk-att-viewport ksa-face-viewport ${KIOSK_ADMIN_MODAL_STATE.camActive ? 'is-live' : 'is-standby'}" id="ksaFaceViewport">
-                <video id="ksaAdminFaceVideo" autoplay muted playsinline></video>
+                <video id="ksaAdminFaceVideo" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
                 <div class="kiosk-att-reticle" aria-hidden="true">
                   <span class="kiosk-finder-corner tl"></span>
                   <span class="kiosk-finder-corner tr"></span>
@@ -89532,6 +89561,7 @@
 
   function stopStaffEnrolModalCamera() {
     STAFF_FACE_MODAL_STATE.camActive = false;
+    STAFF_FACE_MODAL_STATE.camStarting = false;
     clearTimeout(STAFF_FACE_MODAL_STATE.loopTimer);
     STAFF_FACE_MODAL_STATE.loopTimer = null;
     STAFF_FACE_MODAL_STATE.busy = false;
@@ -89548,6 +89578,7 @@
   }
 
   function closeStaffFaceEnrolModal() {
+    const hadActiveCam = Boolean(STAFF_FACE_MODAL_STATE.camActive || STAFF_FACE_MODAL_STATE.camStarting || streamAlive());
     stopStaffEnrolModalCamera();
     STAFF_FACE_MODAL_STATE.open = false;
     const modal = $('staffFaceEnrolModal');
@@ -89555,7 +89586,157 @@
     document.body.classList.remove('modal-open');
     if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
     if (STATE.view === 'kiosks' && STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
-      ensureLockedWallCameraRunning();
+      if (hadActiveCam) {
+        releaseAllKioskCameraHardware(380).then(() => {
+          if (STATE.view === 'kiosks' && STATE.kioskLocked && STATE.activeKiosk === 'attendance' && !STAFF_FACE_MODAL_STATE.open && !KIOSK_ADMIN_MODAL_STATE.open) {
+            ensureLockedWallCameraRunning();
+          }
+        });
+      } else {
+        ensureLockedWallCameraRunning();
+      }
+    }
+  }
+
+  function getStaffInitialsMonogram(nameStr) {
+    const parts = String(nameStr || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return 'ST';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function buildSfePoseCoachSvg(stepIdx) {
+    if (stepIdx >= 3) {
+      return `<svg viewBox="0 0 48 48" width="40" height="40" fill="none" aria-hidden="true">
+        <circle cx="24" cy="24" r="20" fill="rgba(31,122,76,0.12)" stroke="#1F7A4C" stroke-width="1.8"/>
+        <path d="M15.5 24.5l5.5 5.5 11.5-11.5" stroke="#1F7A4C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    }
+    const shift = stepIdx === 1 ? -4.5 : (stepIdx === 2 ? 4.5 : 0);
+    const arrowPath = stepIdx === 1
+      ? `<path d="M30 9.5c-4.5-2-9.5-2-14 0" stroke="#B88228" stroke-width="1.8" stroke-linecap="round"/><path d="M18.5 7.2L15.2 9.8l3.6 1.8" stroke="#B88228" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
+      : (stepIdx === 2
+        ? `<path d="M18 9.5c4.5-2 9.5-2 14 0" stroke="#B88228" stroke-width="1.8" stroke-linecap="round"/><path d="M29.5 7.2l3.3 2.6-3.6 1.8" stroke="#B88228" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`
+        : `<circle cx="24" cy="6.5" r="2" fill="#B88228"/><line x1="24" y1="9.5" x2="24" y2="12.5" stroke="#B88228" stroke-width="1.5" stroke-dasharray="1.5 1.5"/>`);
+    return `<svg viewBox="0 0 48 48" width="40" height="40" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="44" height="44" rx="11" fill="rgba(200,157,84,0.10)" stroke="rgba(200,157,84,0.34)" stroke-width="1.2"/>
+      ${arrowPath}
+      <ellipse cx="24" cy="27" rx="10.5" ry="13" fill="var(--surface, #FFFFFF)" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="${20.5 + shift * 0.65}" cy="25" r="1.35" fill="currentColor"/>
+      <circle cx="${27.5 + shift * 0.65}" cy="25" r="1.35" fill="currentColor"/>
+      <path d="M${24 + shift * 0.75} 26.5v3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      <path d="M${20.8 + shift * 0.55} 33c1.9 1.4 4.5 1.4 6.4 0" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+    </svg>`;
+  }
+
+  function getFilteredStaffEnrolRoster(fullStaff) {
+    const flt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
+    const coFlt = STAFF_FACE_MODAL_STATE.rosterCo || '';
+    const qRaw = String(STAFF_FACE_MODAL_STATE.rosterSearch || '').trim();
+    const ql = qRaw.toLowerCase();
+
+    let base = fullStaff.filter(s => {
+      if (coFlt && s.company !== coFlt) return false;
+      if (flt === 'active') return !s.isEndedContract;
+      if (flt === 'missing') return !s.isEndedContract && Number(s.faceCount || 0) < 3;
+      if (flt === 'enrolled') return Number(s.faceCount || 0) >= 3;
+      if (flt === 'inactive') return Boolean(s.isEndedContract);
+      return true;
+    });
+
+    if (ql) {
+      const exact = [];
+      const freqOrdered = [];
+      for (const s of base) {
+        const nl = String(s.name || '').toLowerCase();
+        const hay = `${nl} ${String(s.company || '').toLowerCase()} ${String(s.role || '').toLowerCase()}`;
+        if (nl === ql) exact.push(s);
+        else if (hay.includes(ql)) freqOrdered.push(s);
+      }
+      base = exact.concat(freqOrdered);
+    }
+    return base;
+  }
+
+  function findNextUnenrolledStaffEntry(fullStaff, excludeName = '') {
+    const exNorm = norm(excludeName);
+    const coPref = STAFF_FACE_MODAL_STATE.rosterCo || '';
+    const candidates = fullStaff.filter(s => !s.isEndedContract && Number(s.faceCount || 0) < 3 && norm(s.name) !== exNorm);
+    if (!candidates.length) return null;
+    if (coPref) {
+      const sameCo = candidates.find(s => s.company === coPref);
+      if (sameCo) return sameCo;
+    }
+    return candidates[0];
+  }
+
+  function renderStaffEnrolRosterGridOnly() {
+    const modal = $('staffFaceEnrolModal');
+    if (!modal || modal.hidden) return;
+    const fullStaff = getKioskStaffDirectory();
+    const filtered = getFilteredStaffEnrolRoster(fullStaff);
+    const gridEl = $('staffEnrolRosterGrid');
+    const sumEl = $('staffEnrolRosterSummary');
+    const clrBtn = $('staffEnrolRosterClear');
+    if (clrBtn) clrBtn.hidden = !String(STAFF_FACE_MODAL_STATE.rosterSearch || '').trim();
+    if (sumEl) {
+      sumEl.textContent = filtered.length === 1 ? '1 staff member shown · tap to enrol' : `${filtered.length} staff shown · tap a card to start`;
+    }
+    if (!gridEl) return;
+    if (!filtered.length) {
+      gridEl.innerHTML = `
+        <div class="sfe-roster-empty">
+          <strong>No matching staff members</strong>
+          <span>Try clearing the search box or switching the filter chip above.</span>
+        </div>
+      `;
+      return;
+    }
+    const curNorm = norm(STAFF_FACE_MODAL_STATE.staffName || '');
+    gridEl.innerHTML = filtered.map(s => {
+      const fc = Number(s.faceCount || 0);
+      const isDone = fc >= 3;
+      const isPartial = fc > 0 && fc < 3;
+      const isPicked = curNorm && norm(s.name) === curNorm;
+      const pillCls = isDone ? 'is-done' : (isPartial ? 'is-partial' : 'is-missing');
+      const pillTxt = isDone ? '✓ 3/3 Enrolled' : (isPartial ? `${fc}/3 Poses` : 'Enrol Face ID');
+      const roleTxt = s.role && norm(s.role) !== 'active staff' ? s.role : (s.isEndedContract ? 'Inactive' : 'Staff');
+      return `
+        <button type="button" class="sfe-staff-card ${isDone ? 'is-enrolled' : ''} ${isPicked ? 'is-current' : ''}" data-sfe-pick-staff="${esc(s.name)}">
+          <span class="sfe-avatar ${isDone ? 'is-done' : ''}">${esc(getStaffInitialsMonogram(s.name))}</span>
+          <span class="sfe-card-main">
+            <strong class="sfe-card-name">${esc(s.name)}</strong>
+            <span class="sfe-card-sub">${esc(s.company)} · ${esc(roleTxt)}${s.hasExplicitPin ? ' · PIN Set' : ''}</span>
+          </span>
+          <span class="sfe-card-right">
+            <span class="sfe-status-pill ${pillCls}">${pillTxt}</span>
+            <span class="sfe-card-chev" aria-hidden="true">${ic('chevron_right')}</span>
+          </span>
+        </button>
+      `;
+    }).join('');
+    gridEl.querySelectorAll('[data-sfe-pick-staff]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pickedName = btn.getAttribute('data-sfe-pick-staff') || '';
+        if (pickedName) selectStaffForEnrolModal(pickedName, { autoStartCam: true });
+      });
+    });
+  }
+
+  function selectStaffForEnrolModal(staffName, opts = {}) {
+    stopStaffEnrolModalCamera();
+    STAFF_FACE_MODAL_STATE.staffName = String(staffName || '').trim();
+    STAFF_FACE_MODAL_STATE.step = STAFF_FACE_MODAL_STATE.staffName ? 'capture' : 'roster';
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
+    STAFF_FACE_MODAL_STATE.statusText = '';
+    STAFF_FACE_MODAL_STATE.statusCls = '';
+    syncStaffFaceEnrolModalDom();
+    if (opts.autoStartCam && STAFF_FACE_MODAL_STATE.staffName && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      const capLen = (STAFF_FACE_MODAL_STATE.captures || []).length;
+      if (capLen < 3 || opts.forceCam) {
+        startStaffEnrolModalCamera();
+      }
     }
   }
 
@@ -89588,7 +89769,7 @@
               const confPct = m.best ? Math.max(50, Math.min(99, Math.round((1 - (m.bestDist / 1.25)) * 100))) : pct;
               if (m.best && m.bestDist <= thr) {
                 badgeEl.textContent = `✓ Verified: ${m.best.name} (${confPct}%)`;
-                badgeEl.className = 'badge badge-ok';
+                badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
                 const stEl = $('staffEnrolStatusMsg');
                 if (stEl) {
                   stEl.textContent = `✓ Live recognition verified: ${m.best.name} (${confPct}% confidence).`;
@@ -89596,15 +89777,15 @@
                 }
               } else {
                 badgeEl.textContent = 'Unrecognized Face';
-                badgeEl.className = 'badge badge-warn';
+                badgeEl.className = 'badge badge-warn staff-enrol-live-pill';
               }
             } else {
-              badgeEl.textContent = `Face Ready · ${pct}% · Click Capture Pose (${cLen + 1}/3)`;
-              badgeEl.className = 'badge badge-ok';
+              badgeEl.textContent = `Face Ready (${pct}%) · Tap Capture (${cLen + 1}/3)`;
+              badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
             }
           } else {
             badgeEl.textContent = STAFF_FACE_MODAL_STATE.captures.length >= 3 ? 'Live Verify · Look at Camera' : 'Center face inside oval';
-            badgeEl.className = 'badge';
+            badgeEl.className = 'badge staff-enrol-live-pill';
           }
         }
         STAFF_FACE_MODAL_STATE.autoStreak = 0;
@@ -89618,25 +89799,37 @@
 
   async function startStaffEnrolModalCamera() {
     if (!STAFF_FACE_MODAL_STATE.staffName) {
-      STAFF_FACE_MODAL_STATE.statusText = 'Select a staff member from the dropdown above first before starting the camera.';
-      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+      STAFF_FACE_MODAL_STATE.step = 'roster';
       syncStaffFaceEnrolModalDom();
-      toast('Select a staff member first before starting the camera', 'warn');
+      toast('Tap a staff member first to start Face ID capture', 'warn');
       return false;
     }
+    if (STAFF_FACE_MODAL_STATE.camStarting) return false;
+    const targetStaffAtStart = STAFF_FACE_MODAL_STATE.staffName;
     const videoEl = $('staffEnrolVideo');
     if (!videoEl) return false;
+    STAFF_FACE_MODAL_STATE.camStarting = true;
     stopKioskAttCamera();
     STAFF_FACE_MODAL_STATE.statusText = 'Starting front camera...';
     STAFF_FACE_MODAL_STATE.statusCls = '';
     STAFF_FACE_MODAL_STATE.autoStreak = 0;
     syncStaffFaceEnrolModalDom();
+    await releaseAllKioskCameraHardware(260);
+    if (!STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture' || STAFF_FACE_MODAL_STATE.staffName !== targetStaffAtStart) {
+      STAFF_FACE_MODAL_STATE.camStarting = false;
+      return false;
+    }
     const modelsP = ensureFaceModelsLoaded().catch(() => {});
     const ok = await startFaceCamera(videoEl);
     await modelsP;
+    STAFF_FACE_MODAL_STATE.camStarting = false;
+    if (!STAFF_FACE_MODAL_STATE.open || STAFF_FACE_MODAL_STATE.step !== 'capture' || STAFF_FACE_MODAL_STATE.staffName !== targetStaffAtStart) {
+      stopStaffEnrolModalCamera();
+      return false;
+    }
     STAFF_FACE_MODAL_STATE.camActive = ok;
     if (ok) {
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 16; i++) {
         if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) break;
         await new Promise(r => setTimeout(r, 25));
       }
@@ -89644,8 +89837,8 @@
       STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 20);
       const nextPose = Math.min(3, (STAFF_FACE_MODAL_STATE.captures.length || 0) + 1);
       STAFF_FACE_MODAL_STATE.statusText = STAFF_FACE_MODAL_STATE.captures.length >= 3
-        ? 'Camera live for verification. Click Retake All 3 Poses if you want to replace stored photos.'
-        : `Camera ready: position face in the oval and click Capture Pose (${nextPose}/3).`;
+        ? 'Live camera active. Look at the lens to verify recognition in real time.'
+        : `Camera live: hold pose ${nextPose} of 3 inside the oval and tap Capture Pose.`;
       STAFF_FACE_MODAL_STATE.statusCls = 'ok';
     } else {
       STAFF_FACE_MODAL_STATE.statusText = 'Camera unavailable or permission denied on this device.';
@@ -89658,8 +89851,7 @@
   async function captureStaffModalPose(syntheticDet = null, syntheticThumb = '', slotOverride = null) {
     const staffName = STAFF_FACE_MODAL_STATE.staffName;
     if (!staffName) {
-      STAFF_FACE_MODAL_STATE.statusText = 'Select a staff member from the dropdown above first.';
-      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+      STAFF_FACE_MODAL_STATE.step = 'roster';
       syncStaffFaceEnrolModalDom();
       toast('Select a staff member first', 'warn');
       return { ok: false, reason: 'no-staff' };
@@ -89685,13 +89877,13 @@
       }
     }
     if (!det || !det.descriptor) {
-      STAFF_FACE_MODAL_STATE.statusText = 'No face detected. Position face inside the oval guide and click Capture Pose.';
+      STAFF_FACE_MODAL_STATE.statusText = 'No face detected yet. Center face inside the oval guide with both eyes visible.';
       STAFF_FACE_MODAL_STATE.statusCls = 'warn';
       syncStaffFaceEnrolModalDom();
       return { ok: false, reason: 'no-face' };
     }
     if (det.multiple) {
-      STAFF_FACE_MODAL_STATE.statusText = 'Multiple faces in frame. Only one staff member should be in view during enrolment.';
+      STAFF_FACE_MODAL_STATE.statusText = 'Multiple faces in frame. Keep only one person in view during enrolment.';
       STAFF_FACE_MODAL_STATE.statusCls = 'crit';
       syncStaffFaceEnrolModalDom();
       return { ok: false, reason: 'multiple' };
@@ -89703,6 +89895,11 @@
       syncStaffFaceEnrolModalDom();
       return res;
     }
+    const flashEl = $('staffEnrolShutterFlash');
+    if (flashEl) {
+      flashEl.classList.add('active');
+      setTimeout(() => flashEl.classList.remove('active'), 180);
+    }
     const dir = getKioskStaffDirectory();
     const entry = dir.find(s => norm(s.name) === norm(staffName));
     const faceInfo = getStaffFaceSamplesAndThumbs(staffName, entry ? entry.userObj : null);
@@ -89710,9 +89907,9 @@
     STAFF_FACE_MODAL_STATE.thumbs = faceInfo.thumbs;
     if (res.count >= 3) {
       stopStaffEnrolModalCamera();
-      STAFF_FACE_MODAL_STATE.statusText = `✓ All 3 Face ID poses enrolled and saved for ${staffName}. Camera stopped automatically.`;
+      STAFF_FACE_MODAL_STATE.statusText = `✓ All 3 Face ID poses saved for ${staffName}. Ready for instant wall clock-in.`;
     } else {
-      STAFF_FACE_MODAL_STATE.statusText = `✓ Saved Pose ${res.count} of 3 for ${staffName}. Click Capture Pose (${res.count + 1}/3) for the next angle.`;
+      STAFF_FACE_MODAL_STATE.statusText = `✓ Pose ${res.count} of 3 saved. Follow the next head angle above and tap Capture Pose (${res.count + 1}/3).`;
     }
     STAFF_FACE_MODAL_STATE.statusCls = 'ok';
     syncStaffFaceEnrolModalDom();
@@ -89730,11 +89927,21 @@
       ? (allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null)
       : null;
     if (curEntry) STAFF_FACE_MODAL_STATE.staffName = curEntry.name;
+    if (!curEntry) STAFF_FACE_MODAL_STATE.step = 'roster';
+
     const faceInfo = curEntry ? getStaffFaceSamplesAndThumbs(curEntry.name, curEntry.userObj) : { samples: [], thumbs: [] };
     STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
     STAFF_FACE_MODAL_STATE.thumbs = faceInfo.thumbs;
     const capCount = faceInfo.samples.length;
 
+    const activeStaff = allStaff.filter(s => !s.isEndedContract);
+    const enrolledActiveCount = activeStaff.filter(s => Number(s.faceCount || 0) >= 3).length;
+    const missingActiveCount = Math.max(0, activeStaff.length - enrolledActiveCount);
+    const enrolledAllCount = allStaff.filter(s => Number(s.faceCount || 0) >= 3).length;
+    const endedCount = allStaff.length - activeStaff.length;
+    const covPct = activeStaff.length ? Math.round((enrolledActiveCount / activeStaff.length) * 100) : 0;
+
+    // Sync hidden programmatic <select> for backwards compatibility
     const sel = $('staffEnrolSelect');
     if (sel) {
       Array.from(sel.options).forEach(opt => {
@@ -89749,30 +89956,174 @@
         }
       });
     }
+
+    const isRosterStep = STAFF_FACE_MODAL_STATE.step === 'roster' || !curEntry;
+    const rosterStage = $('staffEnrolRosterStage');
+    const captureStage = $('staffEnrolCaptureStage');
+    if (rosterStage) rosterStage.hidden = !isRosterStep;
+    if (captureStage) captureStage.hidden = isRosterStep;
+
+    const hdrSub = $('staffEnrolModalSub');
+    if (hdrSub) {
+      hdrSub.textContent = isRosterStep
+        ? `Tap an employee below to enrol or update their 3-pose Face ID (${enrolledActiveCount} of ${activeStaff.length} active staff enrolled)`
+        : `Guided 3-angle biometric capture for ${curEntry.name} (${curEntry.company})`;
+    }
+
+    // Update Step 1 Roster coverage + chips + cards
+    const covLabel = $('sfeCoverageText');
+    if (covLabel) covLabel.innerHTML = `<strong>${enrolledActiveCount} of ${activeStaff.length}</strong> Active Staff Enrolled`;
+    const covBadge = $('sfeCoverageBadge');
+    if (covBadge) {
+      covBadge.textContent = missingActiveCount > 0 ? `${missingActiveCount} Need Face ID` : '100% Enrolled';
+      covBadge.className = `sfe-cov-pill ${missingActiveCount > 0 ? 'is-pending' : 'is-complete'}`;
+    }
+    const covFill = $('sfeCoverageFill');
+    if (covFill) covFill.style.width = `${Math.max(0, Math.min(100, covPct))}%`;
+
+    const fltBar = $('sfeStatusChips');
+    if (fltBar) {
+      const curFlt = STAFF_FACE_MODAL_STATE.rosterFilter || 'active';
+      const chips = [
+        { k: 'active', lbl: `All Active (${activeStaff.length})` },
+        { k: 'missing', lbl: `Needs Face ID (${missingActiveCount})` },
+        { k: 'enrolled', lbl: `Enrolled (${enrolledAllCount})` }
+      ];
+      if (endedCount > 0) chips.push({ k: 'inactive', lbl: `Inactive (${endedCount})` });
+      fltBar.innerHTML = chips.map(c => `<button type="button" class="sfe-chip ${curFlt === c.k ? 'active' : ''}" data-sfe-filter="${c.k}">${esc(c.lbl)}</button>`).join('');
+      fltBar.querySelectorAll('[data-sfe-filter]').forEach(b => {
+        b.addEventListener('click', () => {
+          STAFF_FACE_MODAL_STATE.rosterFilter = b.getAttribute('data-sfe-filter') || 'active';
+          syncStaffFaceEnrolModalDom();
+        });
+      });
+    }
+
+    const coBar = $('sfeCompanyChips');
+    if (coBar) {
+      const uniqueCos = [];
+      allStaff.forEach(s => {
+        if (s.company && !uniqueCos.includes(s.company)) uniqueCos.push(s.company);
+      });
+      if (uniqueCos.length <= 1) {
+        coBar.hidden = true;
+        coBar.innerHTML = '';
+      } else {
+        coBar.hidden = false;
+        const curCo = STAFF_FACE_MODAL_STATE.rosterCo || '';
+        coBar.innerHTML = [
+          `<button type="button" class="sfe-chip is-co ${!curCo ? 'active' : ''}" data-sfe-co="">All Entities</button>`
+        ].concat(uniqueCos.map(c => `<button type="button" class="sfe-chip is-co ${curCo === c ? 'active' : ''}" data-sfe-co="${esc(c)}">${esc(c)}</button>`)).join('');
+        coBar.querySelectorAll('[data-sfe-co]').forEach(b => {
+          b.addEventListener('click', () => {
+            STAFF_FACE_MODAL_STATE.rosterCo = b.getAttribute('data-sfe-co') || '';
+            syncStaffFaceEnrolModalDom();
+          });
+        });
+      }
+    }
+
+    const searchInp = $('staffEnrolRosterSearch');
+    if (searchInp && document.activeElement !== searchInp) {
+      searchInp.value = STAFF_FACE_MODAL_STATE.rosterSearch || '';
+    }
+    renderStaffEnrolRosterGridOnly();
+
+    if (!curEntry) {
+      stripNativeTitles(document);
+      return;
+    }
+
+    // Update Step 2 Selected Staff Identity Bar & Biometric Studio
+    const avEl = $('sfeActiveAvatar');
+    if (avEl) {
+      avEl.textContent = getStaffInitialsMonogram(curEntry.name);
+      avEl.className = `sfe-avatar is-lg ${capCount >= 3 ? 'is-done' : ''}`;
+    }
+    const nmEl = $('sfeActiveName');
+    if (nmEl) nmEl.textContent = curEntry.name;
+    const metaEl = $('sfeActiveMeta');
+    if (metaEl) {
+      const roleTxt = curEntry.role && norm(curEntry.role) !== 'active staff' ? curEntry.role : 'Staff';
+      metaEl.textContent = `${curEntry.company} · ${roleTxt}`;
+    }
+    const stPill = $('sfeStaffStatusPill');
+    if (stPill) {
+      stPill.textContent = capCount >= 3 ? '✓ 3/3 Enrolled' : `${capCount}/3 Poses Saved`;
+      stPill.className = `sfe-status-pill ${capCount >= 3 ? 'is-done' : (capCount > 0 ? 'is-partial' : 'is-missing')}`;
+    }
+
+    const nextCandidate = findNextUnenrolledStaffEntry(allStaff, curEntry.name);
+    const nextBtn = $('staffEnrolNextUnenrolledBtn');
+    if (nextBtn) {
+      nextBtn.hidden = !nextCandidate;
+      if (nextCandidate) {
+        nextBtn.dataset.nextStaff = nextCandidate.name;
+        nextBtn.innerHTML = `<span>Next Unenrolled</span> ${ic('chevron_right')}`;
+      }
+    }
+
     const vp = $('staffEnrolViewport');
     if (vp) vp.classList.toggle('is-live', STAFF_FACE_MODAL_STATE.camActive);
     const ph = $('staffEnrolStandby');
-    if (ph) ph.hidden = STAFF_FACE_MODAL_STATE.camActive;
+    if (ph) {
+      ph.hidden = STAFF_FACE_MODAL_STATE.camActive;
+      if (!STAFF_FACE_MODAL_STATE.camActive) {
+        if (STAFF_FACE_MODAL_STATE.camStarting) {
+          ph.innerHTML = `
+            <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
+            <strong>Starting Front Camera...</strong>
+            <p>Preparing lens for ${esc(curEntry.name)}. Hold tablet steady at eye level.</p>
+          `;
+        } else if (capCount >= 3) {
+          ph.innerHTML = `
+            <div class="kiosk-cam-standby-ico is-done">${ic('check_circle')}</div>
+            <strong>Face ID Ready for ${esc(curEntry.name)}</strong>
+            <p>All 3 biometric angles are stored and synced for hands-free clock-in.</p>
+            <div class="sfe-standby-actions">
+              ${nextCandidate ? `<button type="button" class="btn btn-primary" id="staffEnrolStandbyNextBtn">Enrol Next: ${esc(nextCandidate.name)}</button>` : ''}
+              <button type="button" class="btn" id="staffEnrolStandbyVerifyBtn">${ic('camera')} Test Live Match</button>
+            </div>
+          `;
+          $('staffEnrolStandbyNextBtn')?.addEventListener('click', ev => {
+            ev.stopPropagation();
+            selectStaffForEnrolModal(nextCandidate.name, { autoStartCam: true });
+          });
+          $('staffEnrolStandbyVerifyBtn')?.addEventListener('click', ev => {
+            ev.stopPropagation();
+            startStaffEnrolModalCamera();
+          });
+        } else {
+          ph.innerHTML = `
+            <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
+            <strong>Pose ${capCount + 1} of 3 · ${esc(curEntry.name)}</strong>
+            <p>Tap below to activate the front camera and capture each guided angle.</p>
+            <span class="enrol-cam-wake-pill" style="margin-top:4px">${ic('camera')} <span>Tap to Start Camera</span></span>
+          `;
+        }
+      }
+    }
+
     const badgeEl = $('staffEnrolLiveBadge');
     if (badgeEl && !STAFF_FACE_MODAL_STATE.camActive) {
-      badgeEl.textContent = capCount >= 3 ? '✓ 3/3 Poses Saved' : 'Camera Standby';
+      badgeEl.textContent = STAFF_FACE_MODAL_STATE.camStarting
+        ? 'Starting Camera...'
+        : (capCount >= 3 ? '✓ 3/3 Poses Saved' : `Pose ${capCount + 1} of 3`);
       badgeEl.className = capCount >= 3 ? 'badge badge-ok staff-enrol-live-pill' : 'badge staff-enrol-live-pill';
     }
     const camBtn = $('staffEnrolStartCamBtn');
     if (camBtn) {
       camBtn.hidden = !STAFF_FACE_MODAL_STATE.camActive;
-      camBtn.innerHTML = '■ Stop Camera';
+      camBtn.innerHTML = '■ Stop';
     }
     const capBtn = $('staffEnrolCaptureBtn');
     if (capBtn) {
-      capBtn.disabled = !curEntry;
-      capBtn.innerHTML = !curEntry
-        ? `${ic('camera')} Select Staff Member First`
-        : (capCount >= 3
-          ? `${ic('rotate')} Retake All 3 Poses`
-          : (STAFF_FACE_MODAL_STATE.camActive
-              ? `${ic('camera')} Capture Pose (${capCount + 1}/3)`
-              : `${ic('camera')} ${capCount === 0 ? 'Enable Camera (Pose 1/3)' : `Enable Camera (Pose ${capCount + 1}/3)`}`));
+      capBtn.disabled = Boolean(STAFF_FACE_MODAL_STATE.camStarting);
+      capBtn.innerHTML = capCount >= 3
+        ? `${ic('rotate')} Retake All 3 Poses`
+        : (STAFF_FACE_MODAL_STATE.camActive
+            ? `${ic('camera')} Capture Pose ${capCount + 1} of 3`
+            : `${ic('camera')} ${STAFF_FACE_MODAL_STATE.camStarting ? 'Starting Camera...' : `Start Camera (Pose ${capCount + 1}/3)`}`);
     }
     const clrBtn = $('staffEnrolClearBtn');
     if (clrBtn) {
@@ -89782,28 +90133,43 @@
 
     const poseGuide = $('staffEnrolPosePrompt');
     if (poseGuide) {
-      const prompts = [
-        'Step 1 of 3: Look straight ahead at the camera, then click Capture Pose (1/3)',
-        'Step 2 of 3: Turn head slightly left, then click Capture Pose (2/3)',
-        'Step 3 of 3: Turn head slightly right, then click Capture Pose (3/3)'
+      const titles = [
+        'Pose 1 of 3 · Look Straight Ahead',
+        'Pose 2 of 3 · Turn Slightly Left',
+        'Pose 3 of 3 · Turn Slightly Right'
       ];
-      poseGuide.textContent = !curEntry
-        ? 'Select a staff member from the dropdown above to enrol their Face ID or 4-digit PIN.'
-        : (capCount >= 3
-          ? `✓ Face ID profile complete for ${curEntry.name} (3/3 poses saved). Ready for Kiosk clock-in.`
-          : prompts[capCount]);
+      const subs = [
+        'Center face inside the oval guide at normal standing distance.',
+        'Turn your head just a little left while keeping both eyes on the lens.',
+        'Turn your head just a little right while keeping both eyes on the lens.'
+      ];
+      const idx = Math.min(3, capCount);
+      poseGuide.innerHTML = `
+        <div class="sfe-pose-coach ${capCount >= 3 ? 'is-complete' : ''}">
+          <div class="sfe-pose-coach-svg">${buildSfePoseCoachSvg(idx)}</div>
+          <div class="sfe-pose-coach-copy">
+            <strong>${capCount >= 3 ? `✓ Profile Complete for ${esc(curEntry.name)}` : titles[idx]}</strong>
+            <span>${capCount >= 3 ? '3 biometric angles stored. Use Test Live Match to verify or tap Next Unenrolled above.' : subs[idx]}</span>
+          </div>
+        </div>
+      `;
     }
 
     const strip = $('staffEnrolThumbs');
     if (strip) {
-      const poseNames = ['1 · Straight', '2 · Slight Left', '3 · Slight Right'];
+      const poseNames = ['Straight', 'Slight Left', 'Slight Right'];
       strip.innerHTML = [0, 1, 2].map(idx => {
         const done = idx < capCount;
+        const isNext = idx === capCount && capCount < 3;
         const th = faceInfo.thumbs[idx] || '';
         return `
-          <button type="button" class="staff-pose-slot ${done ? 'is-done' : (idx === capCount ? 'is-next' : '')}" data-staff-pose-slot="${idx}" ${!curEntry ? 'disabled' : ''}>
-            ${th ? `<img src="${esc(th)}" alt="Pose ${idx + 1}">` : `<span class="staff-pose-placeholder">${done ? '✓ Saved' : 'Empty'}</span>`}
-            <span class="staff-pose-lbl">${poseNames[idx]}${done ? ' · Retake' : ''}</span>
+          <button type="button" class="staff-pose-slot ${done ? 'is-done' : (isNext ? 'is-next' : '')}" data-staff-pose-slot="${idx}">
+            <span class="staff-pose-step-tag">Pose ${idx + 1}</span>
+            ${th
+              ? `<img src="${esc(th)}" alt="Pose ${idx + 1}">`
+              : `<span class="staff-pose-placeholder">${done ? '✓ Saved' : (isNext ? 'Active' : `0${idx + 1}`)}</span>`}
+            <span class="staff-pose-lbl">${poseNames[idx]}</span>
+            <span class="staff-pose-sub">${done ? 'Tap to retake' : (isNext ? 'Next capture' : 'Pending')}</span>
           </button>
         `;
       }).join('');
@@ -89817,17 +90183,26 @@
 
     const stEl = $('staffEnrolStatusMsg');
     if (stEl) {
-      stEl.textContent = STAFF_FACE_MODAL_STATE.statusText || (!curEntry ? 'Choose the employee above first so photos are saved to the right person.' : (capCount > 0 ? `${capCount}/3 Face ID poses stored for ${curEntry.name}.` : `Click Enable Camera, then click Capture Pose once for each of the 3 angles.`));
-      stEl.className = 'kiosk-att-status ' + (STAFF_FACE_MODAL_STATE.statusCls || '');
+      stEl.textContent = STAFF_FACE_MODAL_STATE.statusText || (capCount >= 3
+        ? `3/3 Face ID poses stored for ${curEntry.name}.`
+        : (STAFF_FACE_MODAL_STATE.camActive
+          ? `Position ${curEntry.name} in the oval and tap Capture Pose ${capCount + 1} of 3.`
+          : `Tap Start Camera to capture Pose ${capCount + 1} of 3 for ${curEntry.name}.`));
+      stEl.className = 'kiosk-att-status ' + (STAFF_FACE_MODAL_STATE.statusCls || (capCount >= 3 ? 'ok' : ''));
     }
 
     const pinInp = $('staffEnrolPinInput');
     if (pinInp && document.activeElement !== pinInp) {
-      pinInp.value = (curEntry && curEntry.hasExplicitPin) ? curEntry.pin : '';
-      pinInp.disabled = !curEntry;
+      pinInp.value = curEntry.hasExplicitPin ? curEntry.pin : '';
+      pinInp.disabled = false;
+    }
+    const pinBadge = $('staffEnrolPinBadge');
+    if (pinBadge) {
+      pinBadge.textContent = curEntry.hasExplicitPin ? 'PIN Set' : 'Optional';
+      pinBadge.className = `sfe-pin-tag ${curEntry.hasExplicitPin ? 'is-set' : ''}`;
     }
     const pinSaveBtn = $('staffEnrolPinSaveBtn');
-    if (pinSaveBtn) pinSaveBtn.disabled = !curEntry;
+    if (pinSaveBtn) pinSaveBtn.disabled = false;
     stripNativeTitles(document);
   }
 
@@ -89847,8 +90222,15 @@
       const hits = pool.filter(s => norm(s.name).includes(rq));
       if (hits.length === 1) picked = hits[0];
     }
+    const defaultScopedCo = (COMPANY_BU_MATCH[STATE.company] && fullStaff.some(s => s.company === COMPANY_BU_MATCH[STATE.company]))
+      ? COMPANY_BU_MATCH[STATE.company]
+      : '';
     STAFF_FACE_MODAL_STATE.open = true;
     STAFF_FACE_MODAL_STATE.staffName = picked ? picked.name : '';
+    STAFF_FACE_MODAL_STATE.step = picked ? 'capture' : 'roster';
+    STAFF_FACE_MODAL_STATE.rosterFilter = 'active';
+    STAFF_FACE_MODAL_STATE.rosterCo = defaultScopedCo;
+    STAFF_FACE_MODAL_STATE.rosterSearch = '';
     STAFF_FACE_MODAL_STATE.lastDet = null;
     STAFF_FACE_MODAL_STATE.lastSnap = '';
     STAFF_FACE_MODAL_STATE.statusText = '';
@@ -89869,65 +90251,105 @@
       <div class="modal-card staff-enrol-modal-card">
         <div class="modal-head">
           <div>
-            <div class="modal-title">${ic('camera')} Staff Face ID &amp; PIN Enrolment</div>
-            <div class="modal-sub">Enrol 3-pose Face ID (1 click per pose) and 4-digit PIN for any active employee</div>
+            <div class="modal-title">${ic('camera')} Staff Face ID Studio</div>
+            <div class="modal-sub" id="staffEnrolModalSub">Tap an employee below to enrol or update their 3-pose Face ID</div>
           </div>
           <button type="button" class="icon-btn" id="closeStaffEnrolModalBtn" aria-label="Close">✕</button>
         </div>
         <div class="modal-body staff-enrol-modal-body">
-          <div class="staff-enrol-top-row">
-            <div class="staff-enrol-field" style="flex:1;min-width:220px">
-              <label for="staffEnrolSelect">Staff Member</label>
-              <select id="staffEnrolSelect" class="kiosk-select" data-plain-options="1">
-                <option value="" ${!picked ? 'selected' : ''}>-- Select staff member to enrol --</option>
-                ${fullStaff.map(s => `<option value="${esc(s.name)}" ${picked && norm(s.name) === norm(picked.name) ? 'selected' : ''}>${esc(s.name)} · ${esc(s.company)} (${s.faceCount ? s.faceCount + '/3 Face ID' : 'No Face ID'})</option>`).join('')}
-              </select>
+          <select id="staffEnrolSelect" data-native-select="1" hidden aria-hidden="true" tabindex="-1">
+            <option value="" ${!picked ? 'selected' : ''}>Select staff member</option>
+            ${fullStaff.map(s => `<option value="${esc(s.name)}" ${picked && norm(s.name) === norm(picked.name) ? 'selected' : ''}>${esc(s.name)} · ${esc(s.company)}</option>`).join('')}
+          </select>
+
+          <!-- STEP 1: TACTILE STAFF ROSTER PICKER (ZERO KEYBOARD AUTO-POPUP) -->
+          <div class="sfe-roster-stage" id="staffEnrolRosterStage" ${picked ? 'hidden' : ''}>
+            <div class="sfe-coverage-bar">
+              <div class="sfe-cov-top">
+                <span class="sfe-cov-lbl" id="sfeCoverageText">Active Staff Enrolled</span>
+                <span class="sfe-cov-pill" id="sfeCoverageBadge">0 Need Face ID</span>
+              </div>
+              <div class="sfe-cov-track"><div class="sfe-cov-fill" id="sfeCoverageFill" style="width:0%"></div></div>
             </div>
-            <div class="staff-enrol-pin-inline">
-              <label for="staffEnrolPinInput">4-Digit Kiosk PIN</label>
-              <div style="display:flex;gap:6px;align-items:center">
-                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" id="staffEnrolPinInput" class="kiosk-inline-pin-input" style="width:96px;height:36px" placeholder="4 digits" value="${esc(picked && picked.hasExplicitPin ? picked.pin : '')}">
-                <button type="button" class="btn" id="staffEnrolPinSaveBtn">Save PIN</button>
+
+            <div class="sfe-controls-bar">
+              <div class="sfe-chip-row" id="sfeStatusChips"></div>
+              <div class="sfe-chip-row sfe-co-chips" id="sfeCompanyChips"></div>
+              <div class="sfe-search-row">
+                <div class="sfe-search-wrap">
+                  <span class="sfe-search-ico" aria-hidden="true">${ic('search')}</span>
+                  <input type="text" id="staffEnrolRosterSearch" class="sfe-search-input" placeholder="Tap to search staff by name or role..." autocomplete="off" spellcheck="false">
+                  <button type="button" class="sfe-search-clear" id="staffEnrolRosterClear" hidden aria-label="Clear search">✕</button>
+                </div>
+                <span class="sfe-roster-count" id="staffEnrolRosterSummary"></span>
               </div>
             </div>
+
+            <div class="sfe-roster-grid" id="staffEnrolRosterGrid" role="listbox" aria-label="Staff members"></div>
           </div>
 
-          <div class="staff-enrol-grid">
-            <div class="staff-enrol-cam-col">
-              <div class="kiosk-att-viewport" id="staffEnrolViewport">
-                <video id="staffEnrolVideo" autoplay muted playsinline></video>
-                <canvas id="staffEnrolOverlay" class="staff-enrol-overlay"></canvas>
-                <div class="kiosk-att-reticle" aria-hidden="true">
-                  <span class="kiosk-finder-corner tl"></span>
-                  <span class="kiosk-finder-corner tr"></span>
-                  <span class="kiosk-finder-corner bl"></span>
-                  <span class="kiosk-finder-corner br"></span>
-                  <div class="kiosk-att-oval"></div>
-                </div>
-                <span class="badge staff-enrol-live-pill" id="staffEnrolLiveBadge">Camera Standby</span>
-                <button type="button" class="enrol-hud-stop-btn staff-hud-stop-btn" id="staffEnrolStartCamBtn" hidden>■ Stop Camera</button>
-                <div class="kiosk-cam-standby-card" id="staffEnrolStandby" style="cursor:pointer">
-                  <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
-                  <strong>3-Pose Staff Face ID</strong>
-                  <p>Enable the camera, then click Capture Pose once for each of the 3 guided angles.</p>
-                  <span class="enrol-cam-wake-pill" style="margin-top:4px">${ic('camera')} <span>Click to Enable Camera</span></span>
+          <!-- STEP 2: GUIDED 3-POSE BIOMETRIC CAPTURE STUDIO -->
+          <div class="sfe-capture-stage" id="staffEnrolCaptureStage" ${picked ? '' : 'hidden'}>
+            <div class="sfe-active-staff-bar">
+              <div class="sfe-active-ident">
+                <span class="sfe-avatar is-lg" id="sfeActiveAvatar">ST</span>
+                <div class="sfe-active-copy">
+                  <div class="sfe-active-name-row">
+                    <strong id="sfeActiveName">${esc(picked ? picked.name : '')}</strong>
+                    <span class="sfe-status-pill" id="sfeStaffStatusPill">0/3 Poses</span>
+                  </div>
+                  <span class="sfe-active-meta" id="sfeActiveMeta">${esc(picked ? picked.company : '')}</span>
                 </div>
               </div>
-              <div class="staff-enrol-btn-bar">
-                <button type="button" class="btn btn-primary" id="staffEnrolCaptureBtn">${ic('camera')} Enable Camera (Pose 1/3)</button>
-                <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face ID</button>
+              <div class="sfe-active-actions">
+                <button type="button" class="btn sfe-switch-btn" id="staffEnrolSwitchStaffBtn">${ic('swap')} <span>Switch Staff</span></button>
+                <button type="button" class="btn sfe-next-btn" id="staffEnrolNextUnenrolledBtn" hidden><span>Next Unenrolled</span> ${ic('chevron_right')}</button>
               </div>
             </div>
 
-            <div class="staff-enrol-poses-col">
-              <div class="staff-enrol-pose-prompt" id="staffEnrolPosePrompt"></div>
-              <div class="staff-enrol-thumbs" id="staffEnrolThumbs"></div>
-              <div class="kiosk-att-status" id="staffEnrolStatusMsg"></div>
+            <div class="staff-enrol-grid">
+              <div class="staff-enrol-cam-col">
+                <div class="kiosk-att-viewport" id="staffEnrolViewport">
+                  <video id="staffEnrolVideo" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
+                  <canvas id="staffEnrolOverlay" class="staff-enrol-overlay"></canvas>
+                  <div class="enrol-shutter-flash" id="staffEnrolShutterFlash"></div>
+                  <div class="kiosk-att-reticle" aria-hidden="true">
+                    <span class="kiosk-finder-corner tl"></span>
+                    <span class="kiosk-finder-corner tr"></span>
+                    <span class="kiosk-finder-corner bl"></span>
+                    <span class="kiosk-finder-corner br"></span>
+                    <div class="kiosk-att-oval"></div>
+                  </div>
+                  <span class="badge staff-enrol-live-pill" id="staffEnrolLiveBadge">Pose 1 of 3</span>
+                  <button type="button" class="enrol-hud-stop-btn staff-hud-stop-btn" id="staffEnrolStartCamBtn" hidden>■ Stop</button>
+                  <div class="kiosk-cam-standby-card" id="staffEnrolStandby" style="cursor:pointer"></div>
+                </div>
+                <div class="staff-enrol-btn-bar">
+                  <button type="button" class="btn btn-primary sfe-primary-capture-btn" id="staffEnrolCaptureBtn">${ic('camera')} Capture Pose 1 of 3</button>
+                  <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face ID</button>
+                </div>
+              </div>
+
+              <div class="staff-enrol-poses-col">
+                <div class="staff-enrol-pose-prompt" id="staffEnrolPosePrompt"></div>
+                <div class="staff-enrol-thumbs" id="staffEnrolThumbs"></div>
+                <div class="kiosk-att-status" id="staffEnrolStatusMsg"></div>
+                <div class="sfe-pin-drawer">
+                  <div class="sfe-pin-copy">
+                    <span class="sfe-pin-lbl">Backup 4-Digit PIN <span class="sfe-pin-tag" id="staffEnrolPinBadge">Optional</span></span>
+                    <small>Used only on PIN-enabled terminals</small>
+                  </div>
+                  <div class="sfe-pin-controls">
+                    <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" id="staffEnrolPinInput" class="kiosk-inline-pin-input sfe-pin-input" placeholder="4 digits" value="${esc(picked && picked.hasExplicitPin ? picked.pin : '')}">
+                    <button type="button" class="btn" id="staffEnrolPinSaveBtn">Save PIN</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div class="modal-foot">
-          <span class="muted" style="font-size:12px">Face ID profiles sync across plant kiosks and never grant back-office ERP login unless the employee also holds a user seat.</span>
+        <div class="modal-foot sfe-modal-foot">
+          <span class="muted" style="font-size:11.8px">Biometric profiles sync across station kiosks and never grant back-office ERP access without a user seat.</span>
           <button type="button" class="btn btn-primary" id="doneStaffEnrolModalBtn">Done</button>
         </div>
       </div>
@@ -89938,22 +90360,40 @@
     $('closeStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
     $('doneStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
     $('staffEnrolSelect')?.addEventListener('change', e => {
+      selectStaffForEnrolModal(e.target.value || '', { autoStartCam: false });
+    });
+    $('staffEnrolRosterSearch')?.addEventListener('input', e => {
+      STAFF_FACE_MODAL_STATE.rosterSearch = e.target.value || '';
+      renderStaffEnrolRosterGridOnly();
+    });
+    $('staffEnrolRosterClear')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.rosterSearch = '';
+      const inp = $('staffEnrolRosterSearch');
+      if (inp) inp.value = '';
+      renderStaffEnrolRosterGridOnly();
+    });
+    $('staffEnrolSwitchStaffBtn')?.addEventListener('click', () => {
       stopStaffEnrolModalCamera();
-      STAFF_FACE_MODAL_STATE.staffName = e.target.value || '';
-      STAFF_FACE_MODAL_STATE.lastDet = null;
-      STAFF_FACE_MODAL_STATE.lastSnap = '';
+      STAFF_FACE_MODAL_STATE.step = 'roster';
       STAFF_FACE_MODAL_STATE.statusText = '';
       STAFF_FACE_MODAL_STATE.statusCls = '';
       syncStaffFaceEnrolModalDom();
     });
-    $('staffEnrolStandby')?.addEventListener('click', () => {
-      startStaffEnrolModalCamera();
+    $('staffEnrolNextUnenrolledBtn')?.addEventListener('click', e => {
+      const nxt = e.currentTarget.dataset.nextStaff || '';
+      if (nxt) selectStaffForEnrolModal(nxt, { autoStartCam: true });
+    });
+    $('staffEnrolStandby')?.addEventListener('click', e => {
+      if (e.target && e.target.closest('button')) return;
+      if (STAFF_FACE_MODAL_STATE.captures.length < 3) {
+        startStaffEnrolModalCamera();
+      }
     });
     $('staffEnrolStartCamBtn')?.addEventListener('click', e => {
       e.stopPropagation();
       if (STAFF_FACE_MODAL_STATE.camActive) {
         stopStaffEnrolModalCamera();
-        STAFF_FACE_MODAL_STATE.statusText = 'Camera stopped.';
+        STAFF_FACE_MODAL_STATE.statusText = 'Camera paused. Tap Start Camera when ready.';
         STAFF_FACE_MODAL_STATE.statusCls = '';
         syncStaffFaceEnrolModalDom();
       } else {
@@ -89962,14 +90402,14 @@
     });
     $('staffEnrolCaptureBtn')?.addEventListener('click', async () => {
       if (!STAFF_FACE_MODAL_STATE.staffName) {
-        toast('Select a staff member from the dropdown first', 'warn');
+        STAFF_FACE_MODAL_STATE.step = 'roster';
         syncStaffFaceEnrolModalDom();
         return;
       }
       if (STAFF_FACE_MODAL_STATE.captures.length >= 3) {
         await clearStaffFaceId(STAFF_FACE_MODAL_STATE.staffName);
         await startStaffEnrolModalCamera();
-        STAFF_FACE_MODAL_STATE.statusText = `Cleared previous poses for ${STAFF_FACE_MODAL_STATE.staffName}. Position face and click Capture Pose (1/3).`;
+        STAFF_FACE_MODAL_STATE.statusText = `Cleared previous poses for ${STAFF_FACE_MODAL_STATE.staffName}. Position face and tap Capture Pose 1 of 3.`;
         STAFF_FACE_MODAL_STATE.statusCls = 'ok';
         syncStaffFaceEnrolModalDom();
         return;
@@ -90006,8 +90446,10 @@
       syncStaffFaceEnrolModalDom();
     });
 
-    wireModalSuggestions(modal);
     syncStaffFaceEnrolModalDom();
+    if (picked && (STAFF_FACE_MODAL_STATE.captures || []).length < 3 && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      startStaffEnrolModalCamera();
+    }
     return modal;
   }
 
