@@ -29587,6 +29587,81 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   text-align: center;
 }
 
+/* Wall Kiosk Smart Camera & Display Power Saver + Night Deep Sleep (1-Tap Instant Wake) */
+body.kiosk-locked.kiosk-idle-dimmed .app-shell {
+  filter: brightness(0.76);
+  transition: filter 0.35s ease;
+}
+body.kiosk-locked.kiosk-night-sleep .app-shell {
+  filter: brightness(0.36);
+  transition: filter 0.45s ease;
+}
+.kiosk-att-viewport.is-idle-saver {
+  cursor: pointer;
+}
+.kiosk-att-viewport.is-idle-saver video {
+  opacity: 0;
+}
+.kiosk-att-viewport.is-idle-saver .kiosk-att-reticle {
+  opacity: 0.22;
+}
+.kiosk-idle-saver-card {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.8s ease;
+  gap: 8px !important;
+  padding: 20px 24px !important;
+}
+.kiosk-idle-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(184, 130, 40, 0.12);
+  border: 1px solid rgba(184, 130, 40, 0.32);
+  color: var(--brass, #B88228);
+}
+.kiosk-idle-clock {
+  font-family: "Archivo", sans-serif;
+  font-size: clamp(36px, 7vw, 54px);
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-top: 2px;
+}
+.kiosk-idle-date {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.kiosk-idle-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.10);
+  border: 1px solid rgba(22, 163, 74, 0.30);
+}
+.kiosk-idle-cta strong {
+  font-size: 13px !important;
+  color: var(--ink);
+}
+.kiosk-idle-tap-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #16A34A;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18);
+  flex-shrink: 0;
+}
+
 @media (max-width: 719px) {
   body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-viewport {
     width: 100%;
@@ -31202,7 +31277,3 @@ html[dir="rtl"] th.num {
   border-radius: 6px;
   background: #FFFFFF;
 }
-
-
-
-

@@ -256,6 +256,8 @@
     kioskAttDir: 'auto',
     kioskAttSite: 'WTC Main Plant',
     kioskAttSiteCustom: false,
+    kioskIdleStandbySec: 60,
+    kioskNightSleep: true,
     kioskAttStaff: '',
     kioskAttPin: '',
     kioskAttPinMsg: '',
@@ -82077,6 +82079,15 @@
     camActive: false,
     camStarting: false,
     camPausedByUser: false,
+    standbyIdle: false,
+    nightSleep: false,
+    idleWakeWired: false,
+    justWokeAt: 0,
+    lastActivityAt: Date.now(),
+    lastVersionPollAt: 0,
+    otaChecking: false,
+    blackFrameStreak: 0,
+    consecutiveBlackRestarts: 0,
     cooldownUntil: 0,
     flashPunch: null,
     flashTimer: null,
@@ -82154,12 +82165,224 @@
       kioskAttSite: STATE.kioskAttSite || 'WTC Main Plant',
       kioskAttSiteCustom: !!STATE.kioskAttSiteCustom,
       kioskAttDir: STATE.kioskAttDir || 'auto',
+      kioskIdleStandbySec: Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60),
+      kioskNightSleep: STATE.kioskNightSleep !== false,
       kioskLocked: !!STATE.kioskLocked,
       updatedAt: Date.now()
     }, extra || {});
     try {
       localStorage.setItem('isabi_mfg_kiosk_station_cfg_v1', JSON.stringify(next));
     } catch (_) {}
+  }
+
+  function isKioskNightOffShiftNow(d = new Date()) {
+    if (STATE.kioskNightSleep === false) return false;
+    const h = d.getHours();
+    const m = d.getMinutes();
+    return h >= 23 || h < 5 || (h === 5 && m < 30);
+  }
+
+  function getEffectiveKioskIdleStandbyMs(d = new Date()) {
+    if (isKioskNightOffShiftNow(d)) return 20 * 1000;
+    const sec = Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60);
+    return sec > 0 ? sec * 1000 : 0;
+  }
+
+  function touchKioskAttActivity() {
+    KIOSK_ATT_STATE.lastActivityAt = Date.now();
+  }
+
+  async function releaseAllKioskCameraHardware(settleMs = 380) {
+    ['kioskAttVideo', 'ksaAdminFaceVideo', 'staffEnrolVideo', 'authFaceVideo', 'enrolFaceVideo'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      if (el.srcObject) {
+        try { el.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+        el.srcObject = null;
+      }
+      try { el.pause(); } catch (_) {}
+    });
+    if (FACE_STATE.stream) {
+      try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      FACE_STATE.stream = null;
+    }
+    if (window.Face && typeof window.Face.stopAllStreams === 'function') {
+      try { window.Face.stopAllStreams(); } catch (_) {}
+    }
+    const waitMs = Math.max(0, Number(settleMs || 0));
+    if (waitMs > 0 && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+
+  function buildKioskIdleStandbyCardHtml() {
+    const parts = formatKioskWallClockNow();
+    const hhmm = String(parts.time || '').slice(0, 5);
+    const isNight = !!KIOSK_ATT_STATE.nightSleep;
+    const siteLbl = STATE.kioskAttSite || 'Main Station';
+    return `
+      <div class="kiosk-cam-standby-card kiosk-idle-saver-card ${isNight ? 'is-night-saver' : ''}" id="kioskIdleStandbyCard">
+        <span class="kiosk-idle-pill">${isNight ? 'Night Power Saver (23:00-05:30)' : 'Camera Power Saver'}</span>
+        <div class="kiosk-idle-clock mono" id="kioskIdleClockTime">${esc(hhmm)}</div>
+        <div class="kiosk-idle-date" id="kioskIdleClockDate">${esc(parts.date)} · ${esc(siteLbl)}</div>
+        <div class="kiosk-idle-cta">
+          <span class="kiosk-idle-tap-dot"></span>
+          <strong>Tap Anywhere on Screen to Activate Camera</strong>
+        </div>
+        <p>${isNight
+          ? 'Camera and display dimmed during off-shift hours. Single tap wakes Face ID instantly.'
+          : 'Camera powers down automatically when idle to keep this wall terminal cool and responsive.'}</p>
+      </div>
+    `;
+  }
+
+  function enterKioskAttIdleStandby(mode = 'idle') {
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST || IS_AUTOMATED_TEST) return false;
+    if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || !STATE.kioskLocked) return false;
+    if (KIOSK_ADMIN_MODAL_STATE.open) return false;
+    const isNight = mode === 'night' || isKioskNightOffShiftNow();
+    stopKioskAttCamera();
+    KIOSK_ATT_STATE.standbyIdle = true;
+    KIOSK_ATT_STATE.nightSleep = isNight;
+    KIOSK_ATT_STATE.blackFrameStreak = 0;
+    KIOSK_ATT_STATE.statusText = isNight
+      ? 'Night power saver active. Tap screen once to wake Face ID camera.'
+      : 'Display in power saver. Tap anywhere on screen to activate camera.';
+    KIOSK_ATT_STATE.statusCls = '';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('kiosk-idle-dimmed');
+      document.body.classList.toggle('kiosk-night-sleep', isNight);
+    }
+    wireKioskAttIdleWakeOnce();
+    syncKioskAttLiveUiInPlace();
+    return true;
+  }
+
+  function wakeKioskAttFromStandby() {
+    if (!KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.nightSleep) return false;
+    KIOSK_ATT_STATE.standbyIdle = false;
+    KIOSK_ATT_STATE.nightSleep = false;
+    KIOSK_ATT_STATE.camPausedByUser = false;
+    KIOSK_ATT_STATE.blackFrameStreak = 0;
+    KIOSK_ATT_STATE.justWokeAt = Date.now();
+    KIOSK_ATT_STATE.lastActivityAt = Date.now();
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('kiosk-idle-dimmed', 'kiosk-night-sleep');
+    }
+    const idleCard = $('kioskIdleStandbyCard');
+    if (idleCard) idleCard.remove();
+    const vpEl = $('kioskAttViewport');
+    if (vpEl) vpEl.classList.remove('is-idle-saver');
+    KIOSK_ATT_STATE.statusText = 'Waking camera... Look inside the oval guide';
+    KIOSK_ATT_STATE.statusCls = 'ok';
+    syncKioskAttLiveUiInPlace();
+    startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
+    return true;
+  }
+
+  function wireKioskAttIdleWakeOnce() {
+    if (KIOSK_ATT_STATE.idleWakeWired || typeof window === 'undefined') return;
+    KIOSK_ATT_STATE.idleWakeWired = true;
+    const onWakePointer = e => {
+      if (!STATE.kioskLocked || STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return;
+      if (KIOSK_ADMIN_MODAL_STATE.open) return;
+      const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn'));
+      if (KIOSK_ATT_STATE.standbyIdle || KIOSK_ATT_STATE.nightSleep) {
+        if (hitAdmin) {
+          KIOSK_ATT_STATE.standbyIdle = false;
+          KIOSK_ATT_STATE.nightSleep = false;
+          KIOSK_ATT_STATE.lastActivityAt = Date.now();
+          document.body.classList.remove('kiosk-idle-dimmed', 'kiosk-night-sleep');
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        wakeKioskAttFromStandby();
+        return;
+      }
+      KIOSK_ATT_STATE.lastActivityAt = Date.now();
+    };
+    const onWakeClickCapture = e => {
+      if ((Date.now() - (KIOSK_ATT_STATE.justWokeAt || 0)) < 450) {
+        const hitAdmin = Boolean(e.target && e.target.closest && e.target.closest('#kioskWallAdminBtn'));
+        if (!hitAdmin) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+    window.addEventListener('pointerdown', onWakePointer, { capture: true });
+    window.addEventListener('click', onWakeClickCapture, { capture: true });
+  }
+
+  function stashKioskSwResumeAndReload() {
+    try {
+      const u = activeUser();
+      if (u && u.email) {
+        sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({ email: u.email, ts: Date.now() }));
+      }
+      saveKioskStationConfig();
+    } catch (_) {}
+    location.reload();
+  }
+
+  async function checkAndApplyKioskOtaUpdate(opts = {}) {
+    if (KIOSK_ATT_STATE.otaChecking || typeof window === 'undefined') return { ok: false, reason: 'busy' };
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return { ok: false, reason: 'headless' };
+    KIOSK_ATT_STATE.otaChecking = true;
+    const btn = $('ksaCheckUpdateBtn');
+    const curVer = String(window.__MFG_SHELL_VER || '');
+    if (btn && !opts.silent) {
+      btn.disabled = true;
+      btn.textContent = 'Checking Update...';
+    }
+    try {
+      let remoteVer = '';
+      try {
+        const res = await fetch('./sw.js?_ota=' + Date.now(), { cache: 'no-store' });
+        if (res && res.ok) {
+          const txt = await res.text();
+          const m = txt.match(/SHELL_CACHE\s*=\s*['"]isabi-mfg-v([^'"]+)['"]/);
+          if (m && m[1]) remoteVer = m[1];
+        }
+      } catch (_) {}
+      if ('serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) await reg.update().catch(() => {});
+        } catch (_) {}
+      }
+      if (remoteVer && curVer && remoteVer !== curVer) {
+        if (!opts.silent) toast(`Updating terminal from v${curVer} to v${remoteVer}...`, 'ok');
+        if (window.caches) {
+          try {
+            const keys = await caches.keys();
+            for (const k of keys) {
+              if (k.startsWith('isabi-mfg-v') && k !== ('isabi-mfg-v' + remoteVer)) {
+                await caches.delete(k);
+              }
+            }
+          } catch (_) {}
+        }
+        await new Promise(r => setTimeout(r, 600));
+        stashKioskSwResumeAndReload();
+        return { ok: true, updated: true, remoteVer };
+      }
+      if (opts.forceReload) {
+        stashKioskSwResumeAndReload();
+        return { ok: true, reloaded: true, remoteVer: remoteVer || curVer };
+      }
+      if (!opts.silent) {
+        toast(`Terminal is up to date (v${remoteVer || curVer})`, 'ok');
+      }
+      return { ok: true, updated: false, remoteVer: remoteVer || curVer };
+    } finally {
+      KIOSK_ATT_STATE.otaChecking = false;
+      if (btn && !opts.silent) {
+        btn.disabled = false;
+        btn.innerHTML = `${ic('rotate')} Check &amp; Update (v${esc(curVer)})`;
+      }
+    }
   }
 
   function syncNativeStationPreset(roleKey) {
@@ -82283,7 +82506,7 @@
     KIOSK_ADMIN_MODAL_STATE.countdownTicker = null;
   }
 
-  function stopKioskAdminFaceCamera(keepSharedStream = true) {
+  function stopKioskAdminFaceCamera(keepSharedStream = false) {
     KIOSK_ADMIN_MODAL_STATE.camActive = false;
     clearTimeout(KIOSK_ADMIN_MODAL_STATE.loopTimer);
     KIOSK_ADMIN_MODAL_STATE.loopTimer = null;
@@ -82296,6 +82519,11 @@
         try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
       }
       v.srcObject = null;
+      try { v.pause(); } catch (_) {}
+    }
+    if (!keepSharedStream && FACE_STATE.stream) {
+      try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      FACE_STATE.stream = null;
     }
   }
 
@@ -82406,7 +82634,7 @@
     KIOSK_ADMIN_MODAL_STATE.err = '';
     KIOSK_ADMIN_MODAL_STATE.statusText = `✓ Admin verified: ${adminName}`;
     KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
-    stopKioskAdminFaceCamera(true);
+    stopKioskAdminFaceCamera(false);
     startOrResetKioskAdminSession(adminName);
     if (KIOSK_ADMIN_MODAL_STATE.open && typeof KIOSK_ADMIN_MODAL_STATE.renderInnerFn === 'function') {
       KIOSK_ADMIN_MODAL_STATE.renderInnerFn();
@@ -82444,18 +82672,32 @@
       return false;
     }
     try {
-      clearTimeout(KIOSK_ATT_STATE.loopTimer);
-      KIOSK_ATT_STATE.loopTimer = null;
-      KIOSK_ATT_STATE.camActive = false;
-      const modelsP = ensureFaceModelsLoaded();
-      let stream = (FACE_STATE.stream && streamAlive()) ? FACE_STATE.stream : null;
-      if (!stream) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-        FACE_STATE.stream = stream;
+      stopKioskAttCamera();
+      KIOSK_ATT_STATE.standbyIdle = false;
+      KIOSK_ATT_STATE.nightSleep = false;
+      if (typeof document !== 'undefined' && document.body) {
+        document.body.classList.remove('kiosk-idle-dimmed', 'kiosk-night-sleep');
       }
+      await releaseAllKioskCameraHardware(380);
+      if (!KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+        return false;
+      }
+      const modelsP = ensureFaceModelsLoaded();
+      const stream = await requestKioskUserMediaWithTimeout({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 20 } },
+        audio: false
+      }, 6000).catch(() => requestKioskUserMediaWithTimeout({
+        video: { facingMode: 'user' },
+        audio: false
+      }, 6000));
+      if (!KIOSK_ADMIN_MODAL_STATE.open || KIOSK_ADMIN_MODAL_STATE.unlocked) {
+        try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+        return false;
+      }
+      if (window.Face && typeof window.Face.trackStream === 'function') {
+        window.Face.trackStream(stream);
+      }
+      FACE_STATE.stream = stream;
       KIOSK_ADMIN_MODAL_STATE.camActive = true;
       KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
       KIOSK_ADMIN_MODAL_STATE.err = '';
@@ -82473,7 +82715,7 @@
       return true;
     } catch (_) {
       KIOSK_ADMIN_MODAL_STATE.camActive = false;
-      KIOSK_ADMIN_MODAL_STATE.err = 'Camera permission denied or busy. Allow camera access for Admin Face ID.';
+      KIOSK_ADMIN_MODAL_STATE.err = 'Camera permission denied or busy. Tap Restart Scanner to retry.';
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
       syncKioskAdminFaceDomInPlace();
       return false;
@@ -82483,7 +82725,7 @@
   function expireKioskAdminSession(reason = 'inactivity') {
     const wasActive = Boolean(KIOSK_ADMIN_MODAL_STATE.sessionActive || KIOSK_ADMIN_MODAL_STATE.unlocked || KIOSK_ADMIN_MODAL_STATE.open);
     clearKioskAdminTimers();
-    stopKioskAdminFaceCamera(true);
+    stopKioskAdminFaceCamera(false);
     KIOSK_ADMIN_MODAL_STATE.open = false;
     KIOSK_ADMIN_MODAL_STATE.unlocked = false;
     KIOSK_ADMIN_MODAL_STATE.sessionActive = false;
@@ -82497,7 +82739,7 @@
       STAFF_FACE_MODAL_STATE.open = false;
       $('staffFaceEnrolModal').hidden = true;
     }
-    document.body.classList.remove('modal-open');
+    document.body.classList.remove('modal-open', 'kiosk-idle-dimmed', 'kiosk-night-sleep');
     const targetKiosk = ['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk)
       ? STATE.activeKiosk
       : (KIOSK_ADMIN_MODAL_STATE.originKioskTab || 'attendance');
@@ -82512,6 +82754,9 @@
     renderApp();
     if (targetKiosk === 'attendance') {
       KIOSK_ATT_STATE.camPausedByUser = false;
+      KIOSK_ATT_STATE.standbyIdle = false;
+      KIOSK_ATT_STATE.nightSleep = false;
+      KIOSK_ATT_STATE.lastActivityAt = Date.now();
       ensureLockedWallCameraRunning();
     }
     if (wasActive) {
@@ -82538,25 +82783,117 @@
 
   function ensureKioskWallClockTicker() {
     if (KIOSK_ATT_STATE.wallClockTimer || typeof window === 'undefined') return;
+    wireKioskAttIdleWakeOnce();
     KIOSK_ATT_STATE.wallClockTimer = setInterval(() => {
+      const nowDt = new Date();
+      const now = nowDt.getTime();
+      const parts = formatKioskWallClockNow();
       const elTime = $('kioskWallClockTime');
       const elDate = $('kioskWallClockDate');
-      if (elTime || elDate) {
-        const parts = formatKioskWallClockNow();
-        if (elTime && elTime.textContent !== parts.time) elTime.textContent = parts.time;
-        if (elDate && elDate.textContent !== parts.date) elDate.textContent = parts.date;
+      if (elTime && elTime.textContent !== parts.time) elTime.textContent = parts.time;
+      if (elDate && elDate.textContent !== parts.date) elDate.textContent = parts.date;
+
+      const idleTimeEl = $('kioskIdleClockTime');
+      const idleDateEl = $('kioskIdleClockDate');
+      if (idleTimeEl) {
+        const hhmm = parts.time.slice(0, 5);
+        if (idleTimeEl.textContent !== hhmm) idleTimeEl.textContent = hhmm;
       }
+      if (idleDateEl) {
+        const dTxt = `${parts.date} · ${STATE.kioskAttSite || 'Main Station'}`;
+        if (idleDateEl.textContent !== dTxt) idleDateEl.textContent = dTxt;
+      }
+      const idleCardEl = $('kioskIdleStandbyCard');
+      if (idleCardEl) {
+        // Gentle pixel-shift orbit every minute (-4px..+4px) to prevent LCD image retention on 24/7 wall tablets
+        const minIdx = nowDt.getHours() * 60 + nowDt.getMinutes();
+        const dx = ((minIdx % 5) - 2) * 2;
+        const dy = (((Math.floor(minIdx / 5)) % 5) - 2) * 2;
+        idleCardEl.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+
+      if (navigator.webdriver || window.__MFG_HEADLESS_TEST || IS_AUTOMATED_TEST) return;
+
+      const modalEnrolOpen = Boolean($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden);
+      const hasActiveFlash = Boolean(KIOSK_ATT_STATE.flashPunch && KIOSK_ATT_STATE.flashPunch.expiresAt > now);
+
+      // 1. Scheduled Daily 05:25 AM Self-Healing Clean Reload (resets WebView V8 heap, WebGL & Camera2 before morning shift)
+      if (
+        STATE.kioskLocked &&
+        STATE.view === 'kiosks' &&
+        !KIOSK_ADMIN_MODAL_STATE.open &&
+        !modalEnrolOpen &&
+        !hasActiveFlash &&
+        !KIOSK_ATT_STATE.streakCount &&
+        !KIOSK_ATT_STATE.busy &&
+        nowDt.getHours() === 5 &&
+        nowDt.getMinutes() >= 25 &&
+        nowDt.getMinutes() <= 45 &&
+        typeof performance !== 'undefined' &&
+        performance.now() > 120000
+      ) {
+        try {
+          const todayKey = todayISO();
+          if (localStorage.getItem('isabi_mfg_kiosk_last_daily_reload') !== todayKey) {
+            localStorage.setItem('isabi_mfg_kiosk_last_daily_reload', todayKey);
+            stashKioskSwResumeAndReload();
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Background 60s OTA Version Poller (auto-pulls new deployments when wall terminal is idle)
+      if (
+        STATE.kioskLocked &&
+        STATE.view === 'kiosks' &&
+        !KIOSK_ADMIN_MODAL_STATE.open &&
+        !modalEnrolOpen &&
+        !hasActiveFlash &&
+        !KIOSK_ATT_STATE.streakCount &&
+        (now - (KIOSK_ATT_STATE.lastVersionPollAt || 0) >= 60000)
+      ) {
+        KIOSK_ATT_STATE.lastVersionPollAt = now;
+        checkAndApplyKioskOtaUpdate({ silent: true }).catch(() => {});
+      }
+
+      // 3. Attendance Wall Camera Supervisor & Configurable Power Saver / Night Deep Sleep
       if (
         STATE.view === 'kiosks' &&
         STATE.activeKiosk === 'attendance' &&
         (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) &&
         !KIOSK_ATT_STATE.camPausedByUser &&
         !KIOSK_ADMIN_MODAL_STATE.open &&
-        !($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) &&
-        !navigator.webdriver &&
-        !window.__MFG_HEADLESS_TEST
+        !modalEnrolOpen
       ) {
-        const now = Date.now();
+        if (STATE.kioskLocked && KIOSK_ATT_STATE.standbyIdle) {
+          const nightNow = isKioskNightOffShiftNow(nowDt);
+          if (nightNow !== !!KIOSK_ATT_STATE.nightSleep) {
+            KIOSK_ATT_STATE.nightSleep = nightNow;
+            document.body.classList.toggle('kiosk-night-sleep', nightNow);
+            if (!nightNow && Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60) === 0) {
+              wakeKioskAttFromStandby();
+              return;
+            }
+            syncKioskAttLiveUiInPlace();
+          }
+          return;
+        }
+
+        if (STATE.kioskLocked) {
+          const effIdleMs = getEffectiveKioskIdleStandbyMs(nowDt);
+          const lastAct = KIOSK_ATT_STATE.lastActivityAt || now;
+          if (
+            effIdleMs > 0 &&
+            !hasActiveFlash &&
+            !KIOSK_ATT_STATE.streakCount &&
+            !KIOSK_ATT_STATE.camStarting &&
+            (now - lastAct) >= effIdleMs
+          ) {
+            enterKioskAttIdleStandby(isKioskNightOffShiftNow(nowDt) ? 'night' : 'idle');
+            return;
+          }
+        }
+
         if (KIOSK_ATT_STATE.camStarting && (now - (KIOSK_ATT_STATE.camStartingSince || 0) > 8500)) {
           KIOSK_ATT_STATE.camStarting = false;
         }
@@ -82654,10 +82991,17 @@
     }
     const badgeEl = $('kioskAttLiveBadge') || document.querySelector('.kiosk-att-cam-card .panel-head .badge');
     if (badgeEl) {
-      badgeEl.className = 'badge' + (KIOSK_ATT_STATE.camActive ? ' badge-ok' : '');
-      if (KIOSK_ATT_STATE.camActive) {
+      if (KIOSK_ATT_STATE.camActive && (KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4) {
+        badgeEl.className = 'badge badge-warn';
+        badgeEl.textContent = 'Reconnecting Camera...';
+      } else if (KIOSK_ATT_STATE.camActive) {
+        badgeEl.className = 'badge badge-ok';
         badgeEl.textContent = 'Live Camera';
+      } else if (KIOSK_ATT_STATE.standbyIdle) {
+        badgeEl.className = 'badge';
+        badgeEl.textContent = KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake';
       } else if (STATE.kioskLocked) {
+        badgeEl.className = 'badge';
         badgeEl.textContent = KIOSK_ATT_STATE.camStarting ? 'Starting Camera...' : 'Tap to Start';
       }
     }
@@ -82665,9 +83009,23 @@
     if (vpEl) {
       vpEl.classList.toggle('is-live', !!KIOSK_ATT_STATE.camActive);
       vpEl.classList.toggle('is-standby', !KIOSK_ATT_STATE.camActive);
+      vpEl.classList.toggle('is-idle-saver', !!KIOSK_ATT_STATE.standbyIdle && !KIOSK_ATT_STATE.camActive);
       if (KIOSK_ATT_STATE.camActive) {
-        const standbyCard = vpEl.querySelector('.kiosk-cam-standby-card');
-        if (standbyCard) standbyCard.remove();
+        vpEl.querySelectorAll('.kiosk-cam-standby-card').forEach(c => c.remove());
+      } else if (KIOSK_ATT_STATE.standbyIdle) {
+        const html = buildKioskIdleStandbyCardHtml();
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html.trim();
+        const nextCard = tpl.content.firstElementChild;
+        if (nextCard) {
+          const prevCards = vpEl.querySelectorAll('.kiosk-cam-standby-card');
+          if (prevCards.length === 1 && prevCards[0].id === 'kioskIdleStandbyCard') {
+            prevCards[0].replaceWith(nextCard);
+          } else {
+            prevCards.forEach(c => c.remove());
+            vpEl.appendChild(nextCard);
+          }
+        }
       }
     }
     const wsShell = $('kioskAttendanceWorkspace');
@@ -82699,6 +83057,7 @@
     clearTimeout(KIOSK_ATT_STATE.flashTimer);
     KIOSK_ATT_STATE.flashTimer = null;
     KIOSK_ATT_STATE.flashPunch = null;
+    KIOSK_ATT_STATE.lastActivityAt = Date.now();
     const b = $('kioskWallFlashBanner');
     if (b) b.remove();
     if (reRender && STATE.view === 'kiosks' && !(STATE.kioskLocked || KIOSK_ATT_STATE.camActive)) {
@@ -82709,12 +83068,14 @@
   function setKioskFlashPunch(spec = {}) {
     clearTimeout(KIOSK_ATT_STATE.flashTimer);
     const ttlMs = Number(spec.ttlMs || 5500);
+    KIOSK_ATT_STATE.lastActivityAt = Date.now();
     KIOSK_ATT_STATE.flashPunch = Object.assign({}, spec, {
       expiresAt: Date.now() + ttlMs
     });
     KIOSK_ATT_STATE.flashTimer = setTimeout(() => {
       KIOSK_ATT_STATE.flashTimer = null;
       KIOSK_ATT_STATE.flashPunch = null;
+      KIOSK_ATT_STATE.lastActivityAt = Date.now();
       if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance') {
         const b = $('kioskWallFlashBanner');
         if (b) b.remove();
@@ -82727,12 +83088,13 @@
     if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
     if (!STATE.authed || STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || !STATE.kioskLocked) return;
     if (KIOSK_ADMIN_MODAL_STATE.open) return;
+    if (KIOSK_ATT_STATE.standbyIdle) return;
     if ((KIOSK_ATT_STATE.camActive && streamAlive()) || KIOSK_ATT_STATE.camStarting || KIOSK_ATT_STATE.camPausedByUser) return;
     if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) return;
     clearTimeout(KIOSK_ATT_STATE.ensureTimer);
     KIOSK_ATT_STATE.ensureTimer = setTimeout(() => {
       KIOSK_ATT_STATE.ensureTimer = null;
-      if (STATE.authed && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked && !KIOSK_ADMIN_MODAL_STATE.open && !(KIOSK_ATT_STATE.camActive && streamAlive()) && !KIOSK_ATT_STATE.camStarting && !KIOSK_ATT_STATE.camPausedByUser) {
+      if (STATE.authed && STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && STATE.kioskLocked && !KIOSK_ADMIN_MODAL_STATE.open && !KIOSK_ATT_STATE.standbyIdle && !(KIOSK_ATT_STATE.camActive && streamAlive()) && !KIOSK_ATT_STATE.camStarting && !KIOSK_ATT_STATE.camPausedByUser) {
         startKioskAttCamera();
       }
     }, 90);
@@ -82802,7 +83164,7 @@
   }
 
   function closeKioskStationAdminModal(opts = {}) {
-    stopKioskAdminFaceCamera(true);
+    stopKioskAdminFaceCamera(false);
     KIOSK_ADMIN_MODAL_STATE.open = false;
     KIOSK_ADMIN_MODAL_STATE.err = '';
     if (STATE.kioskLocked && !opts.keepAdminSession) {
@@ -82814,19 +83176,14 @@
     }
     const m = $('kioskStationAdminModal');
     if (m) m.hidden = true;
-    document.body.classList.remove('modal-open');
-    if (STATE.view === 'kiosks' && STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
-      if (!KIOSK_ATT_STATE.camPausedByUser && streamAlive()) {
-        KIOSK_ATT_STATE.camActive = true;
-        const kv = $('kioskAttVideo');
-        if (kv) {
-          kv.srcObject = FACE_STATE.stream;
-          kv.play().catch(() => {});
-        }
-        clearTimeout(KIOSK_ATT_STATE.loopTimer);
-        KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 25);
-      } else {
-        ensureLockedWallCameraRunning();
+    document.body.classList.remove('modal-open', 'kiosk-idle-dimmed', 'kiosk-night-sleep');
+    if (!opts.skipCameraResume && STATE.view === 'kiosks' && STATE.kioskLocked && STATE.activeKiosk === 'attendance') {
+      KIOSK_ATT_STATE.standbyIdle = false;
+      KIOSK_ATT_STATE.nightSleep = false;
+      KIOSK_ATT_STATE.blackFrameStreak = 0;
+      KIOSK_ATT_STATE.lastActivityAt = Date.now();
+      if (!KIOSK_ATT_STATE.camPausedByUser && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+        startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
       }
     }
   }
@@ -82873,13 +83230,41 @@
       const defCo = defaultEntryCompany();
       const attSites = getKioskStationSites(defCo);
       if (!attSites.includes(STATE.kioskAttSite)) attSites.unshift(STATE.kioskAttSite || 'WTC Main Plant');
-      const allowedCoKeys = getAllowedCompanyKeys(activeUser()).filter(k => ['manufacturing-group', 'wtc', 'bbconstruction', 'lionstransport'].includes(k));
-      const coChipCatalog = [
-        { key: 'manufacturing-group', short: 'All Group' },
-        { key: 'wtc', short: 'WTC' },
-        { key: 'bbconstruction', short: 'BBC' },
-        { key: 'lionstransport', short: 'Lions' }
-      ].filter(c => allowedCoKeys.includes(c.key));
+      const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
+      const allAllowedKeys = getAllowedCompanyKeys(activeUser());
+      const adminIndCoCatalogMap = {
+        'Manufacturing': [
+          { key: 'manufacturing-group', short: 'All Group' },
+          { key: 'wtc', short: 'WTC' },
+          { key: 'bbconstruction', short: 'BBC' },
+          { key: 'lionstransport', short: 'Lions' }
+        ],
+        'Holding & Treasury': [
+          { key: 'bdeirholding', short: 'Holding' }
+        ],
+        'Hospitality & Resorts': [
+          { key: 'industry:Hospitality & Resorts', short: 'All Resorts' },
+          { key: 'blanca', short: 'Blanca' },
+          { key: 'launa', short: 'La Una' },
+          { key: 'palms', short: 'Palms' },
+          { key: 'voile', short: 'Voile' },
+          { key: 'platinum', short: 'Platinum' }
+        ],
+        'Automotive & Heavy Trading': [
+          { key: 'industry:Automotive & Heavy Trading', short: 'All Trading' },
+          { key: 'korriauto', short: 'Korri Auto' },
+          { key: 'shacman', short: 'Shacman' }
+        ],
+        'Real Estate & Property': [
+          { key: 'industry:Real Estate & Property', short: 'All RE' },
+          { key: 'properties', short: 'Properties' },
+          { key: '4235company', short: '4235 S.A.L' }
+        ],
+        'Insurance & Brokerage': [
+          { key: 'insurance', short: 'Insurance' }
+        ]
+      };
+      const coChipCatalog = (adminIndCoCatalogMap[activeInd] || adminIndCoCatalogMap['Manufacturing']).filter(c => c.key.startsWith('industry:') || allAllowedKeys.includes(c.key));
       const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', bleDeviceName: '' };
       const nb = window.IsabiNativeBridge || null;
       const hasNative = Boolean(nb && typeof nb.isAndroidKiosk === 'function');
@@ -82887,6 +83272,9 @@
       if (hasNative && typeof nb.getOrientationMode === 'function') {
         try { nativeOrient = String(nb.getOrientationMode() || 'auto'); } catch (_) {}
       }
+      const curIdleSec = Number(STATE.kioskIdleStandbySec != null ? STATE.kioskIdleStandbySec : 60);
+      const curNightSleep = STATE.kioskNightSleep !== false;
+      const shellVer = String(window.__MFG_SHELL_VER || '');
 
       if (!KIOSK_ADMIN_MODAL_STATE.unlocked) {
         const hintMsg = KIOSK_ADMIN_MODAL_STATE.err || KIOSK_ADMIN_MODAL_STATE.statusText || 'Look at the camera to verify Admin or Manager Face ID.';
@@ -82938,11 +83326,19 @@
         return;
       }
 
+      const adminRoleMap = {
+        'Holding & Treasury': { attendance: 'HQ Staff Clock', sales: 'Sister Transfer Desk', raw: 'Partner Draw Desk', fuel: 'HQ Expense Intake' },
+        'Hospitality & Resorts': { attendance: 'Resort Staff Clock', sales: 'POS & Gate Desk', raw: 'Kitchen & Cellar Intake', fuel: 'Generator & Solar Log' },
+        'Automotive & Heavy Trading': { attendance: 'Showroom Staff Clock', sales: 'Counter & Parts POS', raw: 'Container Receiving', fuel: 'Workshop & PDI Bay' },
+        'Real Estate & Property': { attendance: 'Building Staff Clock', sales: 'Tenant Rent Cashier', raw: 'Contractor Work Order', fuel: 'Utility & Meter Log' },
+        'Insurance & Brokerage': { attendance: 'Brokerage Office Clock', sales: 'Policy & Quote Desk', raw: 'Premium Cashier Till', fuel: 'Claims FNOL Intake' }
+      }[activeInd] || null;
+
       const roleCards = [
-        { id: 'attendance', icon: ic('kiosks'), title: 'Staff Attendance', desc: 'Hands-free wall Face ID clock' },
-        { id: 'sales', icon: ic('truck'), title: 'Sales Dispatch', desc: 'Weighbridge tickets & gate passes' },
-        { id: 'raw', icon: ic('quarry'), title: 'Quarry & Raw Material', desc: 'Aggregate intakes & scale slips' },
-        { id: 'fuel', icon: ic('fuel'), title: 'Fuel & Lubricants', desc: 'Diesel dispense, refills & variance' }
+        { id: 'attendance', icon: ic('kiosks'), title: adminRoleMap ? adminRoleMap.attendance : 'Staff Attendance', desc: 'Hands-free wall Face ID clock' },
+        { id: 'sales', icon: ic('truck'), title: adminRoleMap ? adminRoleMap.sales : 'Sales Dispatch', desc: 'Weighbridge tickets & gate passes' },
+        { id: 'raw', icon: ic('quarry'), title: adminRoleMap ? adminRoleMap.raw : 'Quarry & Raw Material', desc: 'Aggregate intakes & scale slips' },
+        { id: 'fuel', icon: ic('fuel'), title: adminRoleMap ? adminRoleMap.fuel : 'Fuel & Lubricants', desc: 'Diesel dispense, refills & variance' }
       ];
       const remMs = Math.max(0, (KIOSK_ADMIN_MODAL_STATE.expiresAt || (Date.now() + KIOSK_ADMIN_INACTIVITY_MS)) - Date.now());
       const adminLabel = KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin';
@@ -83022,6 +83418,22 @@
                     </div>
                   </div>
                   <div class="ksa-cfg-row">
+                    <span class="kiosk-bar-lbl">${ic('sliders')} Screen &amp; Cam Saver</span>
+                    <div class="kiosk-seg-group">
+                      <button type="button" class="kiosk-seg-btn ${curIdleSec === 30 ? 'active' : ''}" data-tone="emerald" data-ksa-idle-sec="30">30s</button>
+                      <button type="button" class="kiosk-seg-btn ${curIdleSec === 60 ? 'active' : ''}" data-tone="emerald" data-ksa-idle-sec="60">1 min</button>
+                      <button type="button" class="kiosk-seg-btn ${curIdleSec === 120 ? 'active' : ''}" data-tone="emerald" data-ksa-idle-sec="120">2 min</button>
+                      <button type="button" class="kiosk-seg-btn ${curIdleSec === 0 ? 'active' : ''}" data-tone="amber" data-ksa-idle-sec="0">Always On</button>
+                    </div>
+                  </div>
+                  <div class="ksa-cfg-row">
+                    <span class="kiosk-bar-lbl">${ic('clock')} Night Sleep (23:00-05:30)</span>
+                    <div class="kiosk-seg-group">
+                      <button type="button" class="kiosk-seg-btn ${curNightSleep ? 'active' : ''}" data-tone="emerald" data-ksa-night-sleep="1">Auto Sleep (1-Tap Wake)</button>
+                      <button type="button" class="kiosk-seg-btn ${!curNightSleep ? 'active' : ''}" data-tone="amber" data-ksa-night-sleep="0">Off</button>
+                    </div>
+                  </div>
+                  <div class="ksa-cfg-row">
                     <span class="kiosk-bar-lbl">${ic('camera')} Biometrics</span>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
                       <button type="button" class="btn btn-primary" id="ksaEnrolFaceBtn">${ic('camera')} Enrol Staff Face ID</button>
@@ -83062,10 +83474,18 @@
 
             <div class="ksa-section" id="ksaHardwareBox">
               <div class="ksa-sec-head">
-                <strong>3. Tablet Hardware &amp; Session</strong>
-                <span>Seat: ${esc(activeUser().full_name)}</span>
+                <strong>3. Tablet Hardware &amp; Software Version</strong>
+                <span>Seat: ${esc(activeUser().full_name)}${shellVer ? ` · Build v${esc(shellVer)}` : ''}</span>
               </div>
               <div class="ksa-config-grid">
+                <div class="ksa-cfg-row">
+                  <span class="kiosk-bar-lbl">${ic('rotate')} App Version</span>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <span class="badge badge-ok mono">v${esc(shellVer || 'live')}</span>
+                    <button type="button" class="btn btn-primary" id="ksaCheckUpdateBtn">${ic('rotate')} Check &amp; Update${shellVer ? ` (v${esc(shellVer)})` : ''}</button>
+                    <span class="panel-meta">Auto-checks OTA every 60s + daily 05:25 AM refresh</span>
+                  </div>
+                </div>
                 ${hasNative ? `
                   <div class="ksa-cfg-row">
                     <span class="kiosk-bar-lbl">${ic('expand')} Screen Rotation</span>
@@ -83130,12 +83550,12 @@
           stopKioskAttCamera();
           STATE.kioskLocked = false;
           STATE.kioskUnlockPromptOpen = false;
-          document.body.classList.remove('kiosk-locked');
+          document.body.classList.remove('kiosk-locked', 'kiosk-idle-dimmed', 'kiosk-night-sleep');
           document.documentElement.classList.remove('kiosk-prelock');
           saveKioskStationConfig({ kioskLocked: false });
           syncNativeStationPreset('command');
           startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin');
-          closeKioskStationAdminModal({ keepAdminSession: true });
+          closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
           setView(dest);
         });
       });
@@ -83143,7 +83563,7 @@
       modal.querySelectorAll('[data-ksa-co]').forEach(btn => {
         btn.addEventListener('click', () => {
           const targetCo = btn.getAttribute('data-ksa-co') || 'manufacturing-group';
-          if (!getAllowedCompanyKeys(activeUser()).includes(targetCo)) return;
+          if (!targetCo.startsWith('industry:') && !getAllowedCompanyKeys(activeUser()).includes(targetCo)) return;
           STATE.company = targetCo;
           STATE.kioskAttSiteCustom = false;
           STATE.kioskAttStaff = '';
@@ -83173,10 +83593,43 @@
         });
       });
 
+      modal.querySelectorAll('[data-ksa-idle-sec]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const nextSec = Math.max(0, Number(btn.getAttribute('data-ksa-idle-sec') || 0));
+          STATE.kioskIdleStandbySec = [0, 30, 60, 120].includes(nextSec) ? nextSec : 60;
+          saveKioskStationConfig({ kioskIdleStandbySec: STATE.kioskIdleStandbySec });
+          renderAdminInner();
+          toast(
+            STATE.kioskIdleStandbySec === 0
+              ? 'Screen & camera saver set to Always On'
+              : `Screen & camera saver set to ${STATE.kioskIdleStandbySec === 60 ? '1 minute' : (STATE.kioskIdleStandbySec === 120 ? '2 minutes' : '30 seconds')} (1-tap wake)`,
+            'ok'
+          );
+        });
+      });
+
+      modal.querySelectorAll('[data-ksa-night-sleep]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskNightSleep = btn.getAttribute('data-ksa-night-sleep') !== '0';
+          saveKioskStationConfig({ kioskNightSleep: STATE.kioskNightSleep });
+          renderAdminInner();
+          toast(
+            STATE.kioskNightSleep
+              ? 'Night Deep Sleep enabled (23:00-05:30, 1-tap instant wake)'
+              : 'Night Deep Sleep disabled',
+            'ok'
+          );
+        });
+      });
+
+      $('ksaCheckUpdateBtn')?.addEventListener('click', () => {
+        checkAndApplyKioskOtaUpdate({ silent: false });
+      });
+
       $('ksaEnrolFaceBtn')?.addEventListener('click', () => {
         stopKioskAttCamera();
         startOrResetKioskAdminSession(KIOSK_ADMIN_MODAL_STATE.verifiedAdmin || activeUser().full_name || 'Admin');
-        closeKioskStationAdminModal({ keepAdminSession: true });
+        closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
         openStaffFaceEnrolModal('');
       });
 
@@ -83249,18 +83702,18 @@
       });
 
       $('ksaOpenAndroidVaultBtn')?.addEventListener('click', () => {
-        closeKioskStationAdminModal({ keepAdminSession: true });
+        stopKioskAttCamera();
+        closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
         try { nb?.openAndroidVault?.(); } catch (_) {}
       });
 
       $('ksaReloadAppBtn')?.addEventListener('click', () => {
-        saveKioskStationConfig();
-        location.reload();
+        stashKioskSwResumeAndReload();
       });
 
       $('ksaSignOutBtn')?.addEventListener('click', () => {
         stopKioskAttCamera();
-        closeKioskStationAdminModal();
+        closeKioskStationAdminModal({ skipCameraResume: true });
         signOut();
       });
     };
@@ -86211,6 +86664,7 @@
   function stopKioskAttCamera() {
     KIOSK_ATT_STATE.camActive = false;
     KIOSK_ATT_STATE.camStarting = false;
+    KIOSK_ATT_STATE.blackFrameStreak = 0;
     KIOSK_ATT_STATE.cooldownUntil = 0;
     clearTimeout(KIOSK_ATT_STATE.loopTimer);
     KIOSK_ATT_STATE.loopTimer = null;
@@ -86228,10 +86682,14 @@
     if (v && v.srcObject) {
       try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
       v.srcObject = null;
+      try { v.pause(); } catch (_) {}
     }
     if (FACE_STATE.stream) {
       try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
       FACE_STATE.stream = null;
+    }
+    if (window.Face && typeof window.Face.stopAllStreams === 'function') {
+      try { window.Face.stopAllStreams(); } catch (_) {}
     }
   }
 
@@ -86280,23 +86738,30 @@
     try { v.requestVideoFrameCallback(onFrame); } catch (_) { v.__kioskRvfcWired = false; }
   }
 
-  function scheduleKioskAttCameraWatchdogRestart(reason = 'watchdog') {
+  function scheduleKioskAttCameraWatchdogRestart(reason = 'watchdog', opts = {}) {
     if (typeof window === 'undefined') return false;
     if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return false;
-    if (KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) return false;
+    if (KIOSK_ATT_STATE.camPausedByUser || KIOSK_ATT_STATE.standbyIdle || KIOSK_ADMIN_MODAL_STATE.open) return false;
     if ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden) return false;
     KIOSK_ATT_STATE.lastWatchdogReason = String(reason || 'watchdog');
     if (KIOSK_ATT_STATE.camStarting && (Date.now() - (KIOSK_ATT_STATE.camStartingSince || 0) < 8000)) return true;
-    if (KIOSK_ATT_STATE.watchdogTimer) return true;
+    if (KIOSK_ATT_STATE.watchdogTimer) {
+      if (!opts.immediate) return true;
+      clearTimeout(KIOSK_ATT_STATE.watchdogTimer);
+      KIOSK_ATT_STATE.watchdogTimer = null;
+    }
     const elapsed = Date.now() - (KIOSK_ATT_STATE.lastRestartAt || 0);
-    const delayMs = Math.max(500, 4500 - elapsed);
+    const delayMs = opts.immediate ? 150 : Math.max(500, 4500 - elapsed);
     KIOSK_ATT_STATE.watchdogTimer = setTimeout(() => {
       KIOSK_ATT_STATE.watchdogTimer = null;
-      if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+      if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ADMIN_MODAL_STATE.open) {
         KIOSK_ATT_STATE.lastRestartAt = Date.now();
         KIOSK_ATT_STATE.restartCount = (KIOSK_ATT_STATE.restartCount || 0) + 1;
+        if (reason === 'black-frames') {
+          KIOSK_ATT_STATE.consecutiveBlackRestarts = (KIOSK_ATT_STATE.consecutiveBlackRestarts || 0) + 1;
+        }
         if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
-          startKioskAttCamera({ forceRestart: true, silentWatchdog: true });
+          startKioskAttCamera({ forceRestart: true, silentWatchdog: true, reason });
         }
       }
     }, delayMs);
@@ -86317,7 +86782,12 @@
       if (Date.now() - (KIOSK_ATT_STATE.camStartingSince || 0) < 8000) return false;
       KIOSK_ATT_STATE.camStarting = false;
     }
-    if (!opts.forceRestart && KIOSK_ATT_STATE.camActive && streamAlive()) {
+    KIOSK_ATT_STATE.standbyIdle = false;
+    KIOSK_ATT_STATE.nightSleep = false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('kiosk-idle-dimmed', 'kiosk-night-sleep');
+    }
+    if (!opts.forceRestart && KIOSK_ATT_STATE.camActive && streamAlive() && !(KIOSK_ATT_STATE.blackFrameStreak > 0)) {
       ['authFaceVideo', 'enrolFaceVideo', 'ksaAdminFaceVideo'].forEach(id => {
         const ov = $(id);
         if (ov && ov.srcObject) {
@@ -86359,27 +86829,22 @@
       }
       if (!reusableStream) {
         stopFaceCamera();
+        const blkRetries = Number(KIOSK_ATT_STATE.consecutiveBlackRestarts || 0);
+        const settleMs = opts.forceRestart
+          ? (blkRetries >= 2 ? 1050 : (blkRetries === 1 ? 650 : 380))
+          : 120;
+        await releaseAllKioskCameraHardware(settleMs);
         const prevVid = $('kioskAttVideo');
-        if (prevVid) {
-          if (prevVid.srcObject) {
-            try { prevVid.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
-            prevVid.srcObject = null;
-          }
-          try { prevVid.pause(); } catch (_) {}
-          if (opts.forceRestart && prevVid.parentNode) {
-            try {
-              const freshV = document.createElement('video');
-              freshV.id = 'kioskAttVideo';
-              freshV.autoplay = true;
-              freshV.muted = true;
-              freshV.playsInline = true;
-              freshV.setAttribute('playsinline', '');
-              prevVid.replaceWith(freshV);
-            } catch (_) {}
-          }
-        }
-        if (opts.forceRestart) {
-          await new Promise(r => setTimeout(r, 90));
+        if (prevVid && opts.forceRestart && prevVid.parentNode) {
+          try {
+            const freshV = document.createElement('video');
+            freshV.id = 'kioskAttVideo';
+            freshV.autoplay = true;
+            freshV.muted = true;
+            freshV.playsInline = true;
+            freshV.setAttribute('playsinline', '');
+            prevVid.replaceWith(freshV);
+          } catch (_) {}
         }
       }
       if (!opts.silentWatchdog) {
@@ -86399,7 +86864,7 @@
         video: { facingMode: 'user' },
         audio: false
       }, 6000));
-      if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ADMIN_MODAL_STATE.open) {
+      if (STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance' || KIOSK_ATT_STATE.camPausedByUser || KIOSK_ATT_STATE.standbyIdle || KIOSK_ADMIN_MODAL_STATE.open) {
         try { stream.getTracks().forEach(t => t.stop()); } catch (_) {}
         KIOSK_ATT_STATE.camStarting = false;
         return false;
@@ -86411,7 +86876,7 @@
         if (!track.__kioskEndedWired) {
           track.__kioskEndedWired = true;
           track.addEventListener('ended', () => {
-            if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ADMIN_MODAL_STATE.open) {
+            if (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance' && (STATE.kioskLocked || KIOSK_ATT_STATE.camActive) && !KIOSK_ATT_STATE.camPausedByUser && !KIOSK_ATT_STATE.standbyIdle && !KIOSK_ADMIN_MODAL_STATE.open) {
               scheduleKioskAttCameraWatchdogRestart('track-ended');
             }
           });
@@ -86423,9 +86888,13 @@
       KIOSK_ATT_STATE.busy = false;
       KIOSK_ATT_STATE.missedFrames = 0;
       KIOSK_ATT_STATE.unknownStreak = 0;
+      KIOSK_ATT_STATE.blackFrameStreak = 0;
       KIOSK_ATT_STATE.softRebindAt = 0;
       KIOSK_ATT_STATE.lastProbePixels = null;
       KIOSK_ATT_STATE.lastPixelDiffAt = Date.now();
+      if (!opts.silentWatchdog || !KIOSK_ATT_STATE.lastActivityAt) {
+        KIOSK_ATT_STATE.lastActivityAt = Date.now();
+      }
       KIOSK_ATT_STATE.idleTickCounter = 0;
       KIOSK_ATT_STATE.statusText = STATE.kioskLocked
         ? 'Look inside the oval guide to clock in or out'
@@ -86501,6 +86970,9 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ATT_STATE.missedFrames = 0;
+    if (Number(det.score || det.detScore || 0.9) >= 0.42) {
+      KIOSK_ATT_STATE.lastActivityAt = Date.now();
+    }
     const pool = getKioskFacePoolWithAdminSeed();
     if (!pool.length || !window.Face) {
       KIOSK_ATT_STATE.statusText = 'No Face ID profiles enrolled yet. Enrol staff in Station Admin.';
@@ -86688,6 +87160,34 @@
     const curTime = typeof v.currentTime === 'number' ? v.currentTime : -1;
     const isSyntheticTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     const probe = (!isSyntheticTest && hasDimensions) ? probeKioskVideoFrameDiff(v) : { ok: false, pixelsChanged: true, meanDiff: 10, nonBlack: true };
+    if (!isSyntheticTest && hasDimensions && probe.ok && !v.paused && document.visibilityState === 'visible') {
+      if (!probe.nonBlack) {
+        KIOSK_ATT_STATE.blackFrameStreak = (KIOSK_ATT_STATE.blackFrameStreak || 0) + 1;
+        if (KIOSK_ATT_STATE.blackFrameStreak === 4) {
+          KIOSK_ATT_STATE.statusText = 'Reconnecting camera...';
+          KIOSK_ATT_STATE.statusCls = 'warn';
+          syncKioskAttLiveUiInPlace();
+        } else if (KIOSK_ATT_STATE.blackFrameStreak >= 8) {
+          KIOSK_ATT_STATE.blackFrameStreak = 0;
+          scheduleKioskAttCameraWatchdogRestart('black-frames', { immediate: true });
+          clearTimeout(KIOSK_ATT_STATE.loopTimer);
+          KIOSK_ATT_STATE.loopTimer = setTimeout(kioskAttFaceTick, 1800);
+          return;
+        }
+      } else {
+        if ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4) {
+          KIOSK_ATT_STATE.blackFrameStreak = 0;
+          KIOSK_ATT_STATE.statusText = STATE.kioskLocked
+            ? 'Look inside the oval guide to clock in or out'
+            : 'Camera live: look straight ahead inside the oval guide';
+          KIOSK_ATT_STATE.statusCls = 'ok';
+          syncKioskAttLiveUiInPlace();
+        } else {
+          KIOSK_ATT_STATE.blackFrameStreak = 0;
+        }
+        KIOSK_ATT_STATE.consecutiveBlackRestarts = 0;
+      }
+    }
     const frameAdvanced = isSyntheticTest
       ? (hasDimensions && curTime >= 0 && (curTime !== KIOSK_ATT_STATE.lastVideoTime || KIOSK_ATT_STATE.lastVideoTime < 0))
       : (hasDimensions && probe.ok && probe.pixelsChanged);
@@ -86767,7 +87267,7 @@
       } catch (_) {
       } finally {
         const inferDurMs = Math.max(0, Date.now() - inferStartAt);
-        if (KIOSK_ATT_STATE.lastTimeMoveAt > 0) {
+        if (frameAdvanced && KIOSK_ATT_STATE.lastTimeMoveAt > 0) {
           KIOSK_ATT_STATE.lastTimeMoveAt += inferDurMs;
         }
         KIOSK_ATT_STATE.busy = false;
@@ -90259,10 +90759,10 @@
             <div class="panel-card kiosk-att-cam-card">
               <div class="panel-head">
                 <div class="panel-title"><span>${ic('camera')} Face ID Clock-In</span></div>
-                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}" id="kioskAttLiveBadge">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : (STATE.kioskLocked ? 'Tap to Start' : `${fmtNum(enrolledFaceCount)} Face ID Ready`)}</span>
+                <span class="badge ${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? 'badge-warn' : 'badge-ok') : ''}" id="kioskAttLiveBadge">${KIOSK_ATT_STATE.camActive ? ((KIOSK_ATT_STATE.blackFrameStreak || 0) >= 4 ? 'Reconnecting Camera...' : 'Live Camera') : (KIOSK_ATT_STATE.standbyIdle ? (KIOSK_ATT_STATE.nightSleep ? 'Night Sleep · Tap to Wake' : 'Power Saver · Tap to Wake') : (STATE.kioskLocked ? 'Tap to Start' : `${fmtNum(enrolledFaceCount)} Face ID Ready`))}</span>
               </div>
               <div class="kiosk-att-cam-body">
-                <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'}" id="kioskAttViewport">
+                <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'} ${!KIOSK_ATT_STATE.camActive && KIOSK_ATT_STATE.standbyIdle ? 'is-idle-saver' : ''}" id="kioskAttViewport">
                   <video id="kioskAttVideo" autoplay muted playsinline></video>
                   <div class="kiosk-att-reticle" aria-hidden="true">
                     <span class="kiosk-finder-corner tl"></span>
@@ -90271,7 +90771,7 @@
                     <span class="kiosk-finder-corner br"></span>
                     <div class="kiosk-att-oval"></div>
                   </div>
-                  ${!KIOSK_ATT_STATE.camActive ? (!STATE.kioskLocked && lastScan && lastScan.punch ? `
+                  ${!KIOSK_ATT_STATE.camActive ? (KIOSK_ATT_STATE.standbyIdle ? buildKioskIdleStandbyCardHtml() : (!STATE.kioskLocked && lastScan && lastScan.punch ? `
                     <div class="kiosk-cam-standby-card">
                       <div class="kiosk-cam-standby-ico">${ic(lastScan.punch.direction === 'OUT' ? 'clock_out' : 'check_circle')}</div>
                       <strong>${lastScan.reason === 'already-clocked-in-recent'
@@ -90304,7 +90804,7 @@
                         ${ic('camera')} ${STATE.kioskLocked ? 'Start Camera' : 'Start Face Camera'}
                       </button>
                     </div>
-                  `) : ''}
+                  `)) : ''}
                 </div>
 
                 <div class="kiosk-att-cam-foot">
@@ -91134,7 +91634,8 @@
     });
 
     if (STATE.activeKiosk === 'attendance') {
-      if (STATE.kioskLocked) {
+      wireKioskAttIdleWakeOnce();
+      if (STATE.kioskLocked && !KIOSK_ATT_STATE.standbyIdle) {
         ensureLockedWallCameraRunning();
       }
       if (KIOSK_ATT_STATE.camActive && streamAlive()) {
@@ -91698,7 +92199,16 @@
     if (_uiTipObserver) _uiTipObserver.disconnect();
     try {
       const liveKioskVid = (STATE.view === 'kiosks' && STATE.activeKiosk === 'attendance') ? $('kioskAttVideo') : null;
-      const keepLiveKioskVid = Boolean(liveKioskVid && liveKioskVid.srcObject && streamAlive());
+      const keepLiveKioskVid = Boolean(
+        liveKioskVid &&
+        liveKioskVid.srcObject &&
+        streamAlive() &&
+        KIOSK_ATT_STATE.camActive &&
+        !KIOSK_ADMIN_MODAL_STATE.open &&
+        !KIOSK_ATT_STATE.standbyIdle &&
+        !KIOSK_ATT_STATE.nightSleep &&
+        !(KIOSK_ATT_STATE.blackFrameStreak > 0)
+      );
       setContainerHtmlPreservingActiveInput(container, wsHtml);
       if (keepLiveKioskVid) {
         const nextKioskVid = $('kioskAttVideo');
@@ -94632,6 +95142,14 @@
     if (qView && VIEW_TITLES[qView]) STATE.view = qView;
     const qKiosk = PARAMS.get('kiosk');
     const savedStationCfg = loadKioskStationConfig();
+    if (savedStationCfg) {
+      if (savedStationCfg.kioskIdleStandbySec != null && [0, 30, 60, 120].includes(Number(savedStationCfg.kioskIdleStandbySec))) {
+        STATE.kioskIdleStandbySec = Number(savedStationCfg.kioskIdleStandbySec);
+      }
+      if (savedStationCfg.kioskNightSleep != null) {
+        STATE.kioskNightSleep = savedStationCfg.kioskNightSleep !== false;
+      }
+    }
     const isAndroidKioskUa = /ISABIKiosk\//i.test(navigator.userAgent || '');
     const hasValidQKiosk = !!(qKiosk && ['sales', 'raw', 'fuel', 'attendance'].includes(qKiosk.toLowerCase()));
     const dedicatedKioskBoot = !IS_AUTOMATED_TEST && (hasValidQKiosk || (isAndroidKioskUa && savedStationCfg && savedStationCfg.kioskLocked));
