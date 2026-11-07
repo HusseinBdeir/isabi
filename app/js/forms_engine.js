@@ -2605,8 +2605,69 @@
         const who = r.supplier || r.customer || r.site_owner || r.truck_owner || r.equipment || '';
         return who ? `${token} · ${who} (${tblLbl})` : `${token} · ${tblLbl}`;
       };
+      const lowCo = String(company || '').toLowerCase();
+      const docInd = stCo.startsWith('industry:') ? stCo.slice(9)
+        : (['bdeirholding', 'bdeir-holding'].includes(stCo) || lowCo.includes('holding') ? 'Holding & Treasury'
+        : (['blanca', 'launa', 'la-una', 'palms', 'voile', 'platinum'].includes(stCo) || ['blanca', 'la una', 'palms', 'voile', 'platinum'].includes(lowCo) ? 'Hospitality & Resorts'
+        : (['korriauto', 'korri-auto', 'shacman'].includes(stCo) || ['korri auto', 'shacman'].includes(lowCo) ? 'Automotive & Heavy Trading'
+        : (['properties', '4235company', 'company4235'].includes(stCo) || lowCo.includes('4235') || lowCo === 'properties' ? 'Real Estate & Property'
+        : (['insurance', 'insurance-co'].includes(stCo) || lowCo.includes('insurance') ? 'Insurance & Brokerage' : 'Manufacturing')))));
+      const domainParentTableOptsByInd = {
+        'Holding & Treasury': [
+          ['expenses', 'Capital Asset Outlay & Corporate Expense'],
+          ['loans', 'Group Credit Facility & Partner Loan']
+        ],
+        'Hospitality & Resorts': [
+          ['hsp_memberships', 'Seasonal Chalet & Cabana Contract'],
+          ['hsp_stock', 'Commissary, Kitchen & Cellar Delivery Note']
+        ],
+        'Automotive & Heavy Trading': [
+          ['trd_imports', 'Import File & Ocean Bill of Lading (B/L)'],
+          ['trd_landed', 'Customs Declaration & Landed Cost Voucher'],
+          ['trd_grn', 'Warehouse Goods Receipt Note (GRN)'],
+          ['trd_trucks', 'Serial Chassis / VIN Unit Sheet'],
+          ['trd_warranty', 'PDI & Workshop Warranty Job']
+        ],
+        'Real Estate & Property': [
+          ['re_leases', 'Registered Lease Contract & Municipal Tax'],
+          ['re_invoicing', 'Official Rent & 4235 VAT Invoice'],
+          ['re_receipts', 'Tenant Rent & Deposit Settlement']
+        ],
+        'Insurance & Brokerage': [
+          ['ins_remittances', 'Insurer Net Premium Bordereau'],
+          ['ins_statements', 'Carrier Commission Statement'],
+          ['ins_claims', 'FNOL Claim & Surveyor Photo Pack']
+        ]
+      };
+      const baseParentOpts = [
+        ['expenses', 'Operating Expense'],
+        ['raw_purchases', 'Raw Material Ticket'],
+        ['sales_tickets', 'Sales Ticket'],
+        ['settlements', 'Supplier Settlement'],
+        ['receipts', 'Customer Receipt'],
+        ['vat_invoices', 'Statutory VAT Invoice'],
+        ['fuel_intakes', 'Fuel & Lubricant Intake'],
+        ['equipment_repairs', 'Equipment Repair'],
+        ['external_movements', 'External Cash / Bank Movement'],
+        ['loans', 'Partner / Shareholder Loan'],
+        ['loan_settlements', 'Loan Repayment / Settlement'],
+        ['conversions', 'FX Currency Conversion'],
+        ['employments', 'Staff Employment / Contract']
+      ];
+      const domOpts = domainParentTableOptsByInd[docInd] || [];
+      const domKeys = new Set(domOpts.map(o => o[0]));
+      const parentTableOptions = [['', 'Standalone Document (No Linked Transaction)']]
+        .concat(domOpts)
+        .concat(baseParentOpts.filter(o => !domKeys.has(o[0])));
+      const fullDocsPool = (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records && Array.isArray(window.MFG_SEED.records.documents))
+        ? window.MFG_SEED.records.documents
+        : (rec.documents || []);
+      const domainDocRefs = fullDocsPool
+        .filter(d => d && !d.voided && d.parent_label && (!docInd || docInd === 'Manufacturing' || !d._industry || d._industry === docInd))
+        .map(d => d.counterparty ? `${d.parent_label} · ${d.counterparty}` : String(d.parent_label));
       const docRecordRefs = uniqSorted(
-        ((rec.expenses || []).filter(r => r && !r.voided).slice(-80).reverse().map(r => fmtParentRef(r, 'Expense')))
+        domainDocRefs
+          .concat((rec.expenses || []).filter(r => r && !r.voided).slice(-80).reverse().map(r => fmtParentRef(r, 'Expense')))
           .concat((rec.raw_purchases || []).filter(r => r && !r.voided).slice(-60).reverse().map(r => fmtParentRef(r, 'Raw Ticket')))
           .concat((rec.sales_tickets || []).filter(r => r && !r.voided).slice(-60).reverse().map(r => fmtParentRef(r, 'Sales Ticket')))
           .concat((rec.settlements || []).filter(r => r && !r.voided).slice(-50).reverse().map(r => fmtParentRef(r, 'Settlement')))
@@ -2614,7 +2675,8 @@
           .concat((rec.vat_invoices || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'VAT Invoice')))
           .concat((rec.fuel_intakes || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'Fuel Intake')))
           .concat((rec.equipment_repairs || []).filter(r => r && !r.voided).slice(-40).reverse().map(r => fmtParentRef(r, 'Repair')))
-          .filter(Boolean)
+          .filter(Boolean),
+        fIdx && typeof fIdx.forCol === 'function' ? fIdx.forCol('parent_label') : undefined
       );
       return `
         ${adminHeaderHtml}
@@ -2633,28 +2695,13 @@
             ['Equipment & Permit Document', 'Equipment & Permit Document'],
             ['General Document', 'General Document']
           ], 'Invoice & Bill'), { id: 'wrap_f_doc_type' })}
-          ${fld('Document Title / Subject *', inp('f_doc_title', 'text', '', 'placeholder="e.g. Supplier Invoice #4812, Diesel Receipt, MoF VAT Q3..."'), { id: 'wrap_f_doc_title', cls: 'span-2' })}
+          ${fld('Document Title / Subject *', inp('f_doc_title', 'text', '', 'placeholder="e.g. Supplier Invoice #4812, Signed Lease PDF, Ocean B/L, FNOL Claim..."'), { id: 'wrap_f_doc_title', cls: 'span-2' })}
           ${fld('Counterparty (Supplier / Customer / Authority)', inp('f_counterparty', 'text', '', 'list="dl_doc_parties" placeholder="Select or type vendor, client, bank, or authority..."') + dl('dl_doc_parties', docPartyNames), { id: 'wrap_f_doc_party' })}
-          ${fld('External Invoice / Receipt Ref #', inp('f_reference', 'text', '', 'placeholder="Paper invoice #, voucher #, or slip ref..."'), { id: 'wrap_f_doc_ref' })}
+          ${fld('External Invoice / Receipt Ref #', inp('f_reference', 'text', '', 'placeholder="Paper invoice #, voucher #, B/L #, or slip ref..."'), { id: 'wrap_f_doc_ref' })}
           ${fld('Document Amount ($ · Optional)', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_f_doc_amount' })}
-          ${secHdr('2. Linked Record & Filing Status (Optional)', 'Link this document to an Expense, Raw Ticket, Sales Ticket, Settlement, or keep it as a standalone vault file')}
-          ${fld('Linked Record Module', sel('f_parent_table', [
-            ['', 'Standalone Document (No Linked Transaction)'],
-            ['expenses', 'Operating Expense'],
-            ['raw_purchases', 'Raw Material Ticket'],
-            ['sales_tickets', 'Sales Ticket'],
-            ['settlements', 'Supplier Settlement'],
-            ['receipts', 'Customer Receipt'],
-            ['vat_invoices', 'Statutory VAT Invoice'],
-            ['fuel_intakes', 'Fuel & Lubricant Intake'],
-            ['equipment_repairs', 'Equipment Repair'],
-            ['external_movements', 'External Cash / Bank Movement'],
-            ['loans', 'Partner / Shareholder Loan'],
-            ['loan_settlements', 'Loan Repayment / Settlement'],
-            ['conversions', 'FX Currency Conversion'],
-            ['employments', 'Staff Employment / Contract']
-          ], ''), { id: 'wrap_f_parent_table' })}
-          ${fld('Linked Ticket / Voucher #', inp('f_parent_label', 'text', '', 'list="dl_doc_parent_records" placeholder="Optional ticket or voucher # (e.g. EXP-2026-0001 or #44210)..."') + dl('dl_doc_parent_records', docRecordRefs), { id: 'wrap_f_parent_label' })}
+          ${secHdr('2. Linked Record & Filing Status (Optional)', 'Link this document to any operational transaction, contract, import dossier, lease, or claim, or keep it standalone')}
+          ${fld('Linked Record Module', sel('f_parent_table', parentTableOptions, ''), { id: 'wrap_f_parent_table' })}
+          ${fld('Linked Ticket / Voucher #', inp('f_parent_label', 'text', '', 'list="dl_doc_parent_records" placeholder="Optional ticket, contract, B/L, lease, or claim #..."') + dl('dl_doc_parent_records', docRecordRefs), { id: 'wrap_f_parent_label' })}
           ${fld('Filing Status *', sel('f_status', [
             ['Verified & Filed', 'Verified & Filed'],
             ['Pending Review', 'Pending Review'],

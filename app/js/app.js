@@ -486,7 +486,13 @@
     external_movements: 'external movement', loans: 'partner loan', loan_settlements: 'loan settlement',
     conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution',
     documents: 'document & receipt',
-    currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate', gl_accounts: 'GL account'
+    currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate', gl_accounts: 'GL account',
+    hsp_memberships: 'membership contract', hsp_stock: 'commissary stock intake',
+    trd_imports: 'import file', trd_landed: 'landed cost voucher', trd_grn: 'goods receipt note',
+    trd_trucks: 'serial chassis unit', trd_warranty: 'PDI & warranty job',
+    re_leases: 'lease contract', re_invoicing: 'rent invoice', re_receipts: 'tenant receipt',
+    ins_remittances: 'carrier bordereau', ins_statements: 'commission statement', ins_claims: 'insurance claim',
+    ind_domain: 'domain record'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
   if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(u => ({ ...u }));
@@ -29229,21 +29235,35 @@
       case 'recurring_expenses':
       case 'raw_purchases':
       case 'equipment_repairs':
+      case 'trd_imports':
+      case 'ins_remittances':
+      case 'ins_statements':
         return 'Invoice & Bill';
       case 'receipts':
       case 'settlements':
       case 'salaries':
+      case 're_receipts':
         return 'Receipt & Payment Voucher';
       case 'vat_invoices':
+      case 'trd_landed':
+      case 're_invoicing':
         return 'Tax & MoF Filing';
       case 'sales_tickets':
       case 'fuel_intakes':
+      case 'hsp_stock':
+      case 'trd_grn':
         return 'Delivery & Weighbridge Slip';
       case 'employments':
       case 'price_rules':
       case 'credit_terms':
       case 'jv_partnerships':
+      case 'hsp_memberships':
+      case 're_leases':
         return 'Contract & Agreement';
+      case 'trd_trucks':
+      case 'trd_warranty':
+      case 'ins_claims':
+        return 'Equipment & Permit Document';
       case 'external_movements':
       case 'loans':
       case 'loan_settlements':
@@ -30199,6 +30219,7 @@
   function getRecordAttachmentsList(crKey, row) {
     if (!row || row.voided) return [];
     ensureDocumentsVaultSeeded();
+    if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
     const out = [];
     const seen = new Set();
     const removedDocIds = new Set(Array.isArray(row._removed_doc_ids) ? row._removed_doc_ids.map(String) : []);
@@ -30287,6 +30308,7 @@
 
   function _ensureAttachmentCountIndex() {
     ensureDocumentsVaultSeeded();
+    if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
     const cRev = (SEED && SEED._customRev) || 0;
     const sLen = (SEED.records && Array.isArray(SEED.records.documents)) ? SEED.records.documents.length : 0;
     const cLen = Array.isArray(STATE.customRecords.documents) ? STATE.customRecords.documents.length : 0;
@@ -30587,9 +30609,298 @@
     return modal;
   }
 
+  const DOMAIN_PARENT_VIEW_MAP = {
+    hsp_memberships: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Membership Contract' },
+    hsp_stock: { view: 'hsp_stock', ind: 'Hospitality & Resorts', label: 'Commissary & Cellar Stock' },
+    trd_imports: { view: 'trd_purchases', ind: 'Automotive & Heavy Trading', label: 'Import File & Ocean B/L' },
+    trd_landed: { view: 'trd_landed', ind: 'Automotive & Heavy Trading', label: 'Landed Cost Voucher' },
+    trd_grn: { view: 'trd_grn', ind: 'Automotive & Heavy Trading', label: 'Goods Receipt Note' },
+    trd_trucks: { view: 'trd_trucks', ind: 'Automotive & Heavy Trading', label: 'Serial Chassis Unit' },
+    trd_warranty: { view: 'trd_warranty', ind: 'Automotive & Heavy Trading', label: 'PDI & Warranty Job' },
+    re_leases: { view: 're_leases', ind: 'Real Estate & Property', label: 'Registered Lease Contract' },
+    re_invoicing: { view: 're_invoicing', ind: 'Real Estate & Property', label: 'Official Rent Invoice' },
+    re_receipts: { view: 're_receipts', ind: 'Real Estate & Property', label: 'Tenant Settlement Receipt' },
+    ins_remittances: { view: 'ins_remittances', ind: 'Insurance & Brokerage', label: 'Carrier Bordereau' },
+    ins_statements: { view: 'ins_statements', ind: 'Insurance & Brokerage', label: 'Commission Statement' },
+    ins_claims: { view: 'ins_claims', ind: 'Insurance & Brokerage', label: 'FNOL Insurance Claim' }
+  };
+
+  function inferDomainTblKey(ind, viewKey, primaryId) {
+    const pid = String(primaryId || '').trim();
+    if (/^MEM-/i.test(pid)) return 'hsp_memberships';
+    if (/^STK-/i.test(pid)) return 'hsp_stock';
+    if (/^IMP-/i.test(pid)) return 'trd_imports';
+    if (/^LC-/i.test(pid)) return 'trd_landed';
+    if (/^GRN-/i.test(pid)) return 'trd_grn';
+    if (/^SU-/i.test(pid)) return 'trd_trucks';
+    if (/^(PDI|SVC|WAR)-/i.test(pid)) return 'trd_warranty';
+    if (/^LSE-/i.test(pid)) return 're_leases';
+    if (/^INV-(4235|PROP)-/i.test(pid)) return 're_invoicing';
+    if (/^RCT-(4235|PROP)-/i.test(pid)) return 're_receipts';
+    if (/^REM-/i.test(pid)) return 'ins_remittances';
+    if (/^STM-/i.test(pid)) return 'ins_statements';
+    if (/^CLM-/i.test(pid)) return 'ins_claims';
+    if (viewKey === 'trd_purchases') return 'trd_imports';
+    if (viewKey && DOMAIN_PARENT_VIEW_MAP[viewKey]) return viewKey;
+    return 'ind_domain';
+  }
+
+  function cleanDomainCellText(tdEl) {
+    if (!tdEl) return '';
+    if (!tdEl.querySelector || !tdEl.querySelector('.att-inline-badge, .sr-only')) {
+      return (tdEl.textContent || '').trim();
+    }
+    const clone = tdEl.cloneNode(true);
+    clone.querySelectorAll('.att-inline-badge, .sr-only').forEach(n => n.remove());
+    return (clone.textContent || '').trim();
+  }
+
+  function getDomainRemovedDocIds(primaryId) {
+    const pid = String(primaryId || '').trim();
+    if (!pid || typeof getIndustryRowEditStore !== 'function') return [];
+    const store = getIndustryRowEditStore() || {};
+    const out = [];
+    Object.values(store).forEach(entry => {
+      if (entry && String(entry.primaryId || '').trim() === pid && Array.isArray(entry.removedDocIds)) {
+        entry.removedDocIds.forEach(id => { if (id && !out.includes(String(id))) out.push(String(id)); });
+      }
+    });
+    return out;
+  }
+
+  function buildDomainSyntheticRow(crKey, primaryId, extraMeta = {}) {
+    const pid = String(primaryId || '').trim();
+    const docsPool = ((STATE.customRecords && STATE.customRecords.documents) || []).concat((SEED.records && SEED.records.documents) || []);
+    const matchedDoc = docsPool.find(d => d && !d.voided && norm(d.parent_table) === norm(crKey) && (String(d.parent_id) === pid || norm(d.parent_label) === norm(pid)));
+    return {
+      id: pid,
+      name: pid,
+      company: extraMeta.company || (matchedDoc && matchedDoc.company) || '',
+      date: extraMeta.date || (matchedDoc && matchedDoc.date) || '',
+      counterparty: extraMeta.counterparty || (matchedDoc && matchedDoc.counterparty) || '',
+      _removed_doc_ids: getDomainRemovedDocIds(pid)
+    };
+  }
+
+  function renderDomainRowAttBadgeHtml(crKey, rowId) {
+    const rid = String(rowId || '').trim();
+    if (!crKey || !rid) return '';
+    const synth = buildDomainSyntheticRow(crKey, rid);
+    const cnt = getRecordAttachmentCount(crKey, synth);
+    if (!(cnt > 0)) return '';
+    return ` <button type="button" class="att-inline-badge" data-preview-rec-att="${esc(crKey)}" data-preview-rec-id="${esc(rid)}" data-ui-tip="Preview ${cnt} attached receipt${cnt === 1 ? '' : 's'} / document${cnt === 1 ? '' : 's'}">${ic('receipt')}<span>${cnt}</span></button>`;
+  }
+
+  function renderSpineInlineAttBadgeHtml(crKey, row) {
+    if (!crKey || !row || !row.id) return '';
+    const cnt = getRecordAttachmentCount(crKey, row);
+    if (!(cnt > 0)) return '';
+    return ` <button type="button" class="att-inline-badge" data-preview-rec-att="${esc(crKey)}" data-preview-rec-id="${esc(row.id)}" data-ui-tip="Preview ${cnt} attached receipt${cnt === 1 ? '' : 's'} / document${cnt === 1 ? '' : 's'}">${ic('receipt')}<span>${cnt}</span></button>`;
+  }
+
+  function navigateToRecordOrDomainRow(parentTbl, parentId, parentLbl, docCo) {
+    const targetId = String(parentId || parentLbl || '').replace(/^#/, '').trim();
+    const domHit = DOMAIN_PARENT_VIEW_MAP[parentTbl];
+    if (domHit || parentTbl === 'ind_domain') {
+      closeRecordInspector();
+      if (domHit) {
+        const curInd = getActiveIndustry(STATE.company);
+        if (curInd !== domHit.ind) {
+          const coKey = docCo ? Object.keys(COMPANY_BU_MATCH).find(k => COMPANY_BU_MATCH[k] === docCo) : '';
+          STATE.company = coKey || ('industry:' + domHit.ind);
+        }
+        STATE.search = '';
+        STATE.chipFilter = 'all';
+        if (STATE.view !== domHit.view) setView(domHit.view);
+        else renderApp();
+      }
+      const ws = $('workspace');
+      if (ws && targetId) {
+        const rows = Array.from(ws.querySelectorAll('tbody tr'));
+        const hitTr = rows.find(tr => {
+          const attrId = tr.getAttribute('data-ind-row-id');
+          if (attrId && norm(attrId) === norm(targetId)) return true;
+          const firstTd = Array.from(tr.querySelectorAll('td')).find(td => td.style.display !== 'none');
+          return firstTd && norm(cleanDomainCellText(firstTd)) === norm(targetId);
+        });
+        if (hitTr && typeof openIndustryDomainInspector === 'function') {
+          const tbl = hitTr.closest('table');
+          const headers = tbl ? Array.from(tbl.querySelectorAll('thead tr:first-child th')).filter(thEl => thEl.style.display !== 'none').map(thEl => (thEl.textContent || '').replace(/[▲▼▾▴]/g, '').trim()) : [];
+          const cells = Array.from(hitTr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
+          const cardEl = hitTr.closest('.panel-card, .panel');
+          const titleNode = cardEl ? cardEl.querySelector('.panel-title, h3') : null;
+          const tableTitle = titleNode ? (titleNode.textContent || '').trim() : (VIEW_TITLES[STATE.view] || 'Domain Register');
+          openIndustryDomainInspector({
+            ind: (domHit && domHit.ind) || getActiveIndustry(STATE.company),
+            headers,
+            cells,
+            tableTitle,
+            trEl: hitTr,
+            domainTblKey: hitTr.getAttribute('data-ind-row-tbl') || parentTbl,
+            rowCompany: hitTr.getAttribute('data-ind-row-co') || docCo || ''
+          });
+        }
+      }
+      return;
+    }
+    showRecordInspector(parentTbl, targetId);
+  }
+
+  async function attachFilesToDomainRecord(domainMeta, fileList, captureMethod = 'File Upload') {
+    if (!domainMeta || !domainMeta.primaryId || !fileList || !fileList.length) return [];
+    ensureDocumentsVaultSeeded();
+    if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
+    const crKey = domainMeta.crKey || 'ind_domain';
+    const pid = String(domainMeta.primaryId).trim();
+    const whoUser = (typeof activeUser === 'function' && activeUser()) || {};
+    const whoName = whoUser.name || whoUser.email || 'Admin';
+    const whoEmail = whoUser.email || 'admin';
+    try {
+      const addedDocs = [];
+      for (const file of Array.from(fileList)) {
+        const att = await readAndCompressAttachmentFile(file, captureMethod);
+        if (!att) continue;
+        const fName = att.file_name || att.name || 'Document.jpg';
+        const fMime = att.mime_type || att.type || inferAttachmentMimeType({ name: fName });
+        const fSize = Number(att.file_size || att.size || 42000);
+        const docId = `doc-dom-${pid.replace(/[^A-Za-z0-9_-]/g, '')}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const blobKey = att._blob_id || att.id || docId;
+        const attUrl = resolveDocDataUrl(att);
+        if (attUrl) putDocBlob(blobKey, attUrl);
+        const seqNum = String((SEED.records.documents.length + STATE.customRecords.documents.length + 1)).padStart(4, '0');
+        const dtIso = (domainMeta.date && /^\d{4}-\d{2}-\d{2}$/.test(domainMeta.date)) ? domainMeta.date : todayISO();
+        const coName = domainMeta.company || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'Bdeir Holding';
+        const docRow = {
+          id: docId,
+          att_id: att.id || docId,
+          _blob_id: blobKey,
+          name: `DOC-${dtIso.slice(0, 4)}-${seqNum}`,
+          date: dtIso,
+          rep_date: dtIso,
+          company: coName,
+          doc_type: inferDocTypeFromCrKey(crKey),
+          title: `${(CR_LABEL[crKey] || 'Domain Record').replace(/^./, c => c.toUpperCase())} ${pid} · ${fName}`,
+          counterparty: domainMeta.counterparty || '',
+          reference: pid,
+          parent_table: crKey,
+          parent_id: pid,
+          parent_label: pid,
+          amount: round2(Number(domainMeta.amount || 0)),
+          file_name: fName,
+          mime_type: fMime,
+          file_size: fSize,
+          capture_method: att.capture_method || captureMethod || 'File Upload',
+          status: 'Verified & Filed',
+          data_url: attUrl,
+          notes: `Attached to ${(CR_LABEL[crKey] || 'record')} ${pid} (${coName})`,
+          source: 'app',
+          entered_by: whoName,
+          entered_by_email: whoEmail,
+          entered_at: nowStamp(),
+          voided: false,
+          _industry: domainMeta.ind || getActiveIndustry(STATE.company)
+        };
+        STATE.customRecords.documents.unshift(docRow);
+        SEED.records.documents.unshift(docRow);
+        postRecordToLocalApi('documents', docRow);
+        addedDocs.push(docRow);
+      }
+      if (!addedDocs.length) return [];
+      _attCacheRev++;
+      applyCustomRecordsToSeed();
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+      toast(`Attached ${addedDocs.length} file${addedDocs.length === 1 ? '' : 's'} to ${pid}`, 'ok');
+      renderApp();
+      return addedDocs;
+    } catch (err) {
+      toast((err && err.message) || 'Could not attach file', 'err');
+      return [];
+    }
+  }
+
+  function removeAttachmentFromDomainRecord(domainMeta, attIdx) {
+    if (!domainMeta || !domainMeta.primaryId) return false;
+    const crKey = domainMeta.crKey || 'ind_domain';
+    const pid = String(domainMeta.primaryId).trim();
+    const synth = buildDomainSyntheticRow(crKey, pid, domainMeta);
+    const currentList = getRecordAttachmentsList(crKey, synth);
+    if (attIdx < 0 || attIdx >= currentList.length) return false;
+    const removed = currentList[attIdx];
+    const targetDocId = String((removed && (removed.doc_id || removed.id)) || '');
+    const whoUser = (typeof activeUser === 'function' && activeUser()) || {};
+    const whoName = whoUser.name || whoUser.email || 'Admin';
+    if (targetDocId) {
+      if (domainMeta.editKey && typeof getIndustryRowEditStore === 'function') {
+        const store = getIndustryRowEditStore();
+        const curEntry = store[domainMeta.editKey] || { ind: domainMeta.ind, tableTitle: domainMeta.tableTitle, primaryId: pid };
+        if (!Array.isArray(curEntry.removedDocIds)) curEntry.removedDocIds = [];
+        if (!curEntry.removedDocIds.includes(targetDocId)) curEntry.removedDocIds.push(targetDocId);
+        store[domainMeta.editKey] = curEntry;
+        saveIndustryRowEditStore(store);
+      }
+      const markVoid = list => {
+        if (!Array.isArray(list)) return null;
+        const hit = list.find(d => d && String(d.id) === targetDocId);
+        if (hit) {
+          hit.voided = true;
+          hit.voided_by = whoName;
+          hit.voided_at = nowStamp();
+        }
+        return hit || null;
+      };
+      const sHit = markVoid(SEED.records && SEED.records.documents);
+      let cHit = markVoid(STATE.customRecords && STATE.customRecords.documents);
+      if (!cHit && sHit) {
+        cHit = Object.assign({}, sHit);
+        STATE.customRecords.documents.unshift(cHit);
+      }
+      if (cHit) postRecordToLocalApi('documents', cHit);
+    }
+    _attCacheRev++;
+    applyCustomRecordsToSeed();
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    renderApp();
+    return true;
+  }
+
+  function voidDomainRecordAttachments(crKey, primaryId) {
+    const pid = String(primaryId || '').trim();
+    if (!pid) return;
+    const whoUser = (typeof activeUser === 'function' && activeUser()) || {};
+    const whoName = whoUser.name || whoUser.email || 'Admin';
+    let changed = false;
+    const docsById = new Map();
+    ((SEED.records && SEED.records.documents) || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    ((STATE.customRecords && STATE.customRecords.documents) || []).forEach(d => { if (d && d.id) docsById.set(String(d.id), d); });
+    docsById.forEach(d => {
+      if (!d || d.voided) return;
+      if (crKey && d.parent_table && norm(d.parent_table) !== norm(crKey)) return;
+      if (String(d.parent_id || '') !== pid && norm(d.parent_label || '') !== norm(pid)) return;
+      d.voided = true;
+      d.voided_by = whoName;
+      d.voided_at = nowStamp();
+      const sIdx = (SEED.records.documents || []).findIndex(x => x && String(x.id) === String(d.id));
+      if (sIdx >= 0) SEED.records.documents[sIdx].voided = true;
+      const cIdx = (STATE.customRecords.documents || []).findIndex(x => x && String(x.id) === String(d.id));
+      if (cIdx >= 0) STATE.customRecords.documents[cIdx] = Object.assign({}, STATE.customRecords.documents[cIdx], { voided: true, voided_by: whoName, voided_at: d.voided_at });
+      else STATE.customRecords.documents.unshift(Object.assign({}, d));
+      postRecordToLocalApi('documents', d);
+      changed = true;
+    });
+    if (changed) {
+      _attCacheRev++;
+      applyCustomRecordsToSeed();
+      saveLocalAuthAndRecords();
+      syncWithCloud(true);
+    }
+  }
+
   function openDocumentPreviewModal(docOrAtt, contextMeta = {}) {
     if (!docOrAtt) return;
     ensureDocumentsVaultSeeded();
+    if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
     if (docOrAtt.docId && !docOrAtt.data_url && !docOrAtt.file_name) {
       const qId = String(docOrAtt.docId);
       const docsPool = (STATE.customRecords.documents || []).concat((SEED.records && SEED.records.documents) || []);
@@ -30601,7 +30912,8 @@
       const rid = String(docOrAtt.id);
       const rPool = (STATE.customRecords[rk] || []).concat((SEED.records && SEED.records[rk]) || []);
       const foundRow = (typeof resolveInspectorRecord === 'function' ? resolveInspectorRecord(rk, rid) : null) ||
-        rPool.find(x => x && !x.voided && (String(x.id) === rid || norm(x.name || x.ticket_no || x.invoice_no) === norm(rid)));
+        rPool.find(x => x && !x.voided && (String(x.id) === rid || norm(x.name || x.ticket_no || x.invoice_no) === norm(rid))) ||
+        ((DOMAIN_PARENT_VIEW_MAP[rk] || rk === 'ind_domain') ? buildDomainSyntheticRow(rk, rid) : null);
       if (!foundRow) return;
       const recAtts = getRecordAttachmentsList(rk, foundRow);
       if (!recAtts.length) return;
@@ -30704,7 +31016,7 @@
     if (jumpBtn && parentTbl && (parentId || parentLbl)) {
       jumpBtn.addEventListener('click', () => {
         closeDocumentPreviewModal();
-        showRecordInspector(parentTbl, parentId || String(parentLbl).replace(/^#/, ''));
+        navigateToRecordOrDomainRow(parentTbl, parentId, parentLbl, co);
       });
     }
 
@@ -41113,9 +41425,17 @@
       Array.from(partyFreq.entries()).map(([p, cnt]) => ({ value: p, label: p, count: cnt })),
       `All Facilities (${partyFreq.size})`
     );
-    const loansList = selParty === 'ALL' ? rawLoans : rawLoans.filter(r => getParty(r) === selParty);
-    const settleList = selParty === 'ALL' ? rawSettle : rawSettle.filter(r => getParty(r) === selParty);
-    const assetExps = selParty === 'ALL' ? rawAssetExps : rawAssetExps.filter(r => getParty(r) === selParty);
+    const sortHoldingFirst = arr => arr.slice().sort((a, b) => {
+      const aHld = a && a.company === 'Bdeir Holding' ? 1 : 0;
+      const bHld = b && b.company === 'Bdeir Holding' ? 1 : 0;
+      if (aHld !== bHld) return bHld - aHld;
+      const da = String((a && (a.date || a.start_date)) || '');
+      const db = String((b && (b.date || b.start_date)) || '');
+      return db > da ? 1 : (db < da ? -1 : 0);
+    });
+    const loansList = sortHoldingFirst(selParty === 'ALL' ? rawLoans : rawLoans.filter(r => getParty(r) === selParty));
+    const settleList = sortHoldingFirst(selParty === 'ALL' ? rawSettle : rawSettle.filter(r => getParty(r) === selParty));
+    const assetExps = sortHoldingFirst(selParty === 'ALL' ? rawAssetExps : rawAssetExps.filter(r => getParty(r) === selParty));
 
     let givenUsd = 0, takenUsd = 0;
     loansList.forEach(l => {
@@ -41227,7 +41547,7 @@
                 ${shownAssets.length ? shownAssets.map(x => `
                   <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
                     <td class="mono">${esc(recordDateDMY(x))}</td>
-                    <td class="mono"><strong>${esc(x.name || x.id)}</strong></td>
+                    <td class="mono"><strong>${esc(x.name || x.id)}</strong>${renderSpineInlineAttBadgeHtml('expenses', x)}</td>
                     <td>${coBadge(x.company)}</td>
                     <td><strong>${esc([x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay')}</strong></td>
                     <td>${esc(x.supplier || '—')}</td>
@@ -41282,7 +41602,7 @@
                 return `
                   <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
                     <td class="mono">${esc(fmtDateDMY(l.date || l.start_date))}</td>
-                    <td class="mono"><strong>${esc(l.name || l.id)}</strong></td>
+                    <td class="mono"><strong>${esc(l.name || l.id)}</strong>${renderSpineInlineAttBadgeHtml('loans', l)}</td>
                     <td>${coBadge(l.company)}</td>
                     <td><strong>${esc(l.counterparty || l.party || l.borrower || '—')}</strong></td>
                     <td><span class="badge badge-info">${esc(dir)}</span></td>
@@ -42146,8 +42466,8 @@
             </thead>
             <tbody>
               ${shownMem.length ? shownMem.map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="hsp_memberships" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_memberships', r.id)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.member)}</strong></td>
                   <td>${esc(r.unit)}</td>
@@ -42404,8 +42724,8 @@
             </thead>
             <tbody>
               ${shownStk.length ? shownStk.map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="hsp_stock" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_stock', r.id)}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.store)}</strong></td>
@@ -43472,8 +43792,8 @@
               </thead>
               <tbody>
                 ${shownLc.length ? shownLc.map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="trd_landed" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_landed', r.id)}</td>
                     <td class="mono">${esc(r.import_file)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
@@ -43567,8 +43887,8 @@
               </thead>
               <tbody>
                 ${shownGrn.length ? shownGrn.map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="trd_grn" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_grn', r.id)}</td>
                     <td class="mono">${esc(r.import_file)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
@@ -43665,8 +43985,8 @@
             </thead>
             <tbody>
               ${shownImp.length ? shownImp.map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="trd_imports" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_imports', r.id)}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.supplier)}</strong></td>
@@ -43850,8 +44170,8 @@
               </thead>
               <tbody>
                 ${shownWar.length ? shownWar.map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="trd_warranty" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_warranty', r.id)}</td>
                     <td class="mono">${esc(fmtDateDMY(r.date))}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.chassis_vin)}</td>
@@ -43947,8 +44267,8 @@
             </thead>
             <tbody>
               ${shownUnits.length ? shownUnits.map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="trd_trucks" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('trd_trucks', r.id)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td><strong>${esc(r.model)}</strong></td>
                   <td class="mono">${esc(r.chassis_vin)}</td>
@@ -44638,8 +44958,8 @@
               </thead>
               <tbody>
                 ${filteredInv.length ? sliceRows('re_invoicing', filteredInv).map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="re_invoicing" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('re_invoicing', r.id)}</td>
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td class="mono">${esc(r.tax_seq)}</td>
@@ -44706,8 +45026,8 @@
               </thead>
               <tbody>
                 ${filteredRct.length ? sliceRows('re_receipts', filteredRct).map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="re_receipts" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('re_receipts', r.id)}</td>
                     <td class="mono">${esc(r.date)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
                     <td><strong>${esc(r.tenant)}</strong><div class="muted" style="font-size:11px">${esc(r.audit_flag)}</div></td>
@@ -44830,8 +45150,8 @@
             </thead>
             <tbody>
               ${filteredLeases.length ? sliceRows('re_leases', filteredLeases).map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="re_leases" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('re_leases', r.id)}</td>
                   <td${coStyle}>${coBadge(r.company)}</td>
                   <td>${esc(r.property)}</td>
                   <td>${esc(r.unit)}</td>
@@ -46205,8 +46525,8 @@
               </thead>
               <tbody>
                 ${filteredRem.length ? sliceRows('ins_remittances', filteredRem).map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="ins_remittances" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('ins_remittances', r.id)}</td>
                     <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.carrier)}</strong><div class="muted" style="font-size:11px">${esc(r.settlement_mode)}</div></td>
                     <td class="mono">${esc(r.gl_payable)}</td>
@@ -46269,8 +46589,8 @@
               </thead>
               <tbody>
                 ${filteredStm.length ? sliceRows('ins_statements', filteredStm).map(r => `
-                  <tr class="rrow">
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
+                  <tr class="rrow" data-ind-row-tbl="ins_statements" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                    <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('ins_statements', r.id)}</td>
                     <td class="mono">${esc(r.period)}</td>
                     <td style="display:none">${coBadge(r.company)}</td>
                     <td><strong>${esc(r.carrier)}</strong></td>
@@ -46478,8 +46798,8 @@
             </thead>
             <tbody>
               ${filteredClm.length ? sliceRows('ins_claims', filteredClm).map(r => `
-                <tr class="rrow">
-                  <td class="mono"><strong>${esc(r.id)}</strong></td>
+                <tr class="rrow" data-ind-row-tbl="ins_claims" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
+                  <td class="mono"><strong>${esc(r.id)}</strong>${renderDomainRowAttBadgeHtml('ins_claims', r.id)}</td>
                   <td class="mono">${esc(r.loss_date)}</td>
                   <td style="display:none">${coBadge(r.company)}</td>
                   <td class="mono">${esc(r.policy_no)}</td>
@@ -49502,9 +49822,94 @@
     return rows;
   }
 
+  function ensureDomainSpecificDocumentsSeeded(docArr) {
+    if (!Array.isArray(docArr) || docArr._hasDomainDocsSeed) return;
+    docArr._hasDomainDocsSeed = true;
+    const seenIds = new Set(docArr.map(d => d && String(d.id)));
+    const mk = (id, name, date, co, ind, docType, title, party, ref, pTbl, pId, pLbl, amt, fName, capMethod, notes) => ({
+      id,
+      name,
+      date,
+      rep_date: date,
+      company: co,
+      doc_type: docType,
+      title,
+      counterparty: party,
+      reference: ref,
+      parent_table: pTbl,
+      parent_id: pId,
+      parent_label: pLbl,
+      amount: round2(Number(amt || 0)),
+      file_name: fName,
+      mime_type: 'image/svg+xml',
+      file_size: 54200,
+      capture_method: capMethod || 'File Upload',
+      status: 'Verified & Filed',
+      notes,
+      _multiIndustrySeed: true,
+      _industry: ind
+    });
+    const domainDocs = [
+      // 1. Holding & Treasury: Capital Outlay Deeds, Board Resolutions & Facility Schedules
+      mk('mi-domdoc-hld-cap-1', 'DOC-HLD-104', '2026-09-24', 'Bdeir Holding', 'Holding & Treasury', 'Contract & Agreement', 'Board Capital Resolution & Cadastral Deed Extract · EXP-HLD-102', 'Matouk Bassiouny Corporate Law', 'RES-HLD-2026-09', 'expenses', 'mi-exp-hld-2', 'EXP-HLD-102', 9102, 'HLD_EXP_102_Board_Resolution_Deed.svg', 'File Upload', 'Notarized board capital resolution and cadastral deed extract attached to holding legal outlay'),
+      mk('mi-domdoc-hld-ln-1', 'DOC-HLD-105', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Contract & Agreement', 'Signed Group Credit Facility Agreement · LN-HLD-101', 'Bdeir Family Holding Trust', 'FAC-HLD-2026-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Credit_Facility_Schedule.svg', 'File Upload', 'Executed central treasury facility agreement and drawdown schedule'),
+      mk('mi-domdoc-hld-ln-2', 'DOC-HLD-106', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Bank & Transfer Slip', 'Swift Drawdown Confirmation Advice · LN-HLD-101', 'Bdeir Family Holding Trust', 'SWF-HLD-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Drawdown_Wire_Slip.svg', 'Camera Scan', 'Bank credit advice confirming facility disbursement'),
+
+      // 2. Hospitality & Resorts: Signed Chalet/Cabana Contracts & Commissary HACCP Delivery Notes
+      mk('mi-domdoc-hsp-mem-1', 'DOC-BLA-104', '2026-05-01', 'Blanca', 'Hospitality & Resorts', 'Contract & Agreement', 'Signed Royal Cabana Seasonal Contract · MEM-2026-001', 'Khoury Family Trust', 'MEM-2026-001', 'hsp_memberships', 'MEM-2026-001', 'MEM-2026-001', 28000, 'Blanca_MEM_2026_001_Cabana_Contract.svg', 'File Upload', 'Executed Summer 2026 Royal Cabana #B-01 membership contract'),
+      mk('mi-domdoc-hsp-mem-2', 'DOC-PLM-104', '2026-05-05', 'Palms', 'Hospitality & Resorts', 'Contract & Agreement', 'Signed Horizon Chalet Contract · MEM-2026-003', 'Saab & Associates', 'MEM-2026-003', 'hsp_memberships', 'MEM-2026-003', 'MEM-2026-003', 36000, 'Palms_MEM_2026_003_Chalet_Contract.svg', 'File Upload', 'Executed Horizon Chalet #P-04 corporate beach pass contract'),
+      mk('mi-domdoc-hsp-mem-3', 'DOC-VOI-104', '2026-05-12', 'Voile', 'Hospitality & Resorts', 'Contract & Agreement', 'Signed Marina Berth & Deck Contract · MEM-2026-005', 'Horizon Marine Club', 'MEM-2026-005', 'hsp_memberships', 'MEM-2026-005', 'MEM-2026-005', 19500, 'Voile_MEM_2026_005_Marina_Contract.svg', 'File Upload', 'Signed seasonal marina berth and deck cabana agreement'),
+      mk('mi-domdoc-hsp-stk-1', 'DOC-LAU-104', '2026-09-28', 'La Una', 'Hospitality & Resorts', 'Delivery & Weighbridge Slip', 'Cold-Chain Seafood & Prime Cuts HACCP Delivery Note · STK-HSP-01', 'Boecker & Fresh Cold-Chain Supply', 'DN-LAU-0928', 'hsp_stock', 'STK-HSP-01', 'STK-HSP-01', 14800, 'LaUna_STK_HSP_01_HACCP_Delivery_Note.svg', 'Camera Scan', 'Signed kitchen cold-room receiving slip and temperature log'),
+      mk('mi-domdoc-hsp-stk-2', 'DOC-BLA-105', '2026-09-28', 'Blanca', 'Hospitality & Resorts', 'Delivery & Weighbridge Slip', 'Beverage Cellar & Spirits Bonded Delivery Slip · STK-HSP-03', 'Malia Group Cellar Distribution', 'DN-BLA-0928', 'hsp_stock', 'STK-HSP-03', 'STK-HSP-03', 11400, 'Blanca_STK_HSP_03_Cellar_Delivery_Slip.svg', 'Camera Scan', 'Verified beach bar and cellar intake voucher'),
+      mk('mi-domdoc-hsp-stk-3', 'DOC-PLT-104', '2026-09-26', 'Platinum', 'Hospitality & Resorts', 'Delivery & Weighbridge Slip', 'Executive Lounge Artisan Pantry Intake · STK-HSP-06', 'Gourmet Fine Foods SAL', 'DN-PLT-0926', 'hsp_stock', 'STK-HSP-06', 'STK-HSP-06', 8900, 'Platinum_STK_HSP_06_Pantry_Delivery.svg', 'Camera Scan', 'Signed executive lounge pantry receiving note'),
+
+      // 3. Automotive & Heavy Trading: Ocean B/L, Customs Bayane, GRN & Chassis VIN PDI Sheets
+      mk('mi-domdoc-trd-imp-1', 'DOC-SHC-104', '2026-09-10', 'Shacman', 'Automotive & Heavy Trading', 'Invoice & Bill', 'Ocean Bill of Lading COSU6891204410 & Commercial Invoice · IMP-SH-2026-014', 'Shaanxi Heavy Duty Automobile Export', 'COSU6891204410', 'trd_imports', 'IMP-SH-2026-014', 'IMP-SH-2026-014', 418800, 'Shacman_IMP_014_Ocean_BL_Dossier.svg', 'File Upload', 'Original clean-on-board Ocean B/L and OEM commercial invoice for 6 heavy units'),
+      mk('mi-domdoc-trd-imp-2', 'DOC-KOR-104', '2026-09-18', 'Korri Auto', 'Automotive & Heavy Trading', 'Invoice & Bill', 'Ocean B/L OOLU7728192001 & Packing List · IMP-KA-2026-021', 'Bosch &zf European Auto Parts GmbH', 'OOLU7728192001', 'trd_imports', 'IMP-KA-2026-021', 'IMP-KA-2026-021', 47420, 'KorriAuto_IMP_021_BL_PackingList.svg', 'File Upload', 'Hamburg port B/L and spare parts commercial packing list'),
+      mk('mi-domdoc-trd-imp-3', 'DOC-SHC-109', '2026-09-24', 'Shacman', 'Automotive & Heavy Trading', 'Invoice & Bill', 'Ocean B/L MSCU9021847120 & Weichai Parts Invoice · IMP-SH-2026-015', 'Weichai Power & Fast Gear OEM Export', 'MSCU9021847120', 'trd_imports', 'IMP-SH-2026-015', 'IMP-SH-2026-015', 71650, 'Shacman_IMP_015_Weichai_BL_Invoice.svg', 'File Upload', 'Shanghai port B/L and OEM spare parts commercial invoice'),
+      mk('mi-domdoc-trd-lc-1', 'DOC-SHC-105', '2026-09-14', 'Shacman', 'Automotive & Heavy Trading', 'Tax & MoF Filing', 'Beirut Port Customs Declaration (Bayane) & Duty Receipt · LC-SH-2026-014', 'Lebanese Customs Directorate · Beirut Port', 'BAY-2026-88412', 'trd_landed', 'LC-SH-2026-014', 'LC-SH-2026-014', 34800, 'Shacman_LC_014_Customs_Bayane.svg', 'Camera Scan', 'Official customs clearance Bayane, ocean freight, and port handling vouchers'),
+      mk('mi-domdoc-trd-lc-2', 'DOC-KOR-106', '2026-09-19', 'Korri Auto', 'Automotive & Heavy Trading', 'Tax & MoF Filing', 'Customs Duty Bayane & Forwarder Freight Bill · LC-KA-2026-021', 'Lebanese Customs Directorate · Beirut Port', 'BAY-2026-89104', 'trd_landed', 'LC-KA-2026-021', 'LC-KA-2026-021', 5620, 'KorriAuto_LC_021_Customs_Bayane.svg', 'Camera Scan', 'Cleared radial tyres customs Bayane and port clearance voucher'),
+      mk('mi-domdoc-trd-grn-1', 'DOC-SHC-106', '2026-09-15', 'Shacman', 'Automotive & Heavy Trading', 'Delivery & Weighbridge Slip', 'Bonded Yard Arrival & Gate-In GRN Slip · GRN-SH-2026-041', 'Shaanxi Heavy Duty Automobile Export', 'GRN-SH-2026-041', 'trd_grn', 'GRN-SH-2026-041', 'GRN-SH-2026-041', 418800, 'Shacman_GRN_041_Yard_Inspection.svg', 'Camera Scan', 'Signed yard arrival tally and seal verification sheet'),
+      mk('mi-domdoc-trd-grn-2', 'DOC-KOR-107', '2026-09-20', 'Korri Auto', 'Automotive & Heavy Trading', 'Delivery & Weighbridge Slip', 'Al-Ghazieh Warehouse Tyre Tally & DOT QC GRN · GRN-KA-2026-058', 'Shandong Heavy Tyre & Radial Works', 'GRN-KA-2026-058', 'trd_grn', 'GRN-KA-2026-058', 'GRN-KA-2026-058', 47420, 'KorriAuto_GRN_058_Warehouse_Tally.svg', 'Camera Scan', 'Signed Al-Ghazieh warehouse unloading tally and DOT batch check'),
+      mk('mi-domdoc-trd-vin-1', 'DOC-SHC-107', '2026-09-16', 'Shacman', 'Automotive & Heavy Trading', 'Equipment & Permit Document', 'Factory Certificate of Origin & Chassis VIN Rubbing · SU-SH-001', 'Shacman Showroom Yard', 'LZGJLDR44PX019281', 'trd_trucks', 'SU-SH-001', 'SU-SH-001', 87690, 'Shacman_SU_SH_001_VIN_Homologation.svg', 'Camera Scan', 'Chassis LZGJLDR44PX019281 conformity certificate and traffic registration dossier'),
+      mk('mi-domdoc-trd-vin-2', 'DOC-KOR-105', '2026-09-19', 'Korri Auto', 'Automotive & Heavy Trading', 'Equipment & Permit Document', 'Customs Homologation & VIN Sheet · SU-KA-001', 'Korri Auto Showroom', 'WDB9066571P391042', 'trd_trucks', 'SU-KA-001', 'SU-KA-001', 42900, 'KorriAuto_SU_KA_001_VIN_Certificate.svg', 'File Upload', 'Commercial van VIN WDB9066571P391042 inspection & title dossier'),
+      mk('mi-domdoc-trd-pdi-1', 'DOC-SHC-108', '2026-09-17', 'Shacman', 'Automotive & Heavy Trading', 'Equipment & Permit Document', '52-Point Pre-Delivery Inspection (PDI) Checklist · PDI-SH-2026-081', 'Shacman Heavy Service Bay #1', 'PDI-SH-2026-081', 'trd_warranty', 'PDI-SH-2026-081', 'PDI-SH-2026-081', 600, 'Shacman_PDI_081_Signed_Checklist.svg', 'Camera Scan', 'Signed workshop PDI sign-off sheet prior to customer handover'),
+      mk('mi-domdoc-trd-pdi-2', 'DOC-KOR-108', '2026-09-25', 'Korri Auto', 'Automotive & Heavy Trading', 'Equipment & Permit Document', 'Lowbed Hydraulic Valve Warranty Diagnostic Report · WAR-KA-2026-065', 'Al-Ghazieh Service Bay', 'WAR-KA-2026-065', 'trd_warranty', 'WAR-KA-2026-065', 'WAR-KA-2026-065', 660, 'KorriAuto_WAR_065_Diagnostic_Sheet.svg', 'Camera Scan', 'Signed supplier warranty bench test and replacement authorization'),
+
+      // 4. Real Estate & Property: Registered Lease PDFs, Municipal Rental Tax & Official 4235 VAT Receipts
+      mk('mi-domdoc-re-lse-1', 'DOC-4235-104', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Commercial Lease Contract PDF · LSE-4235-001', 'Mazen (Unesco Pharmacy)', 'LSE-4235-001', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 55500, '4235_LSE_001_Signed_Lease_Contract.svg', 'File Upload', 'Municipally registered commercial pharmacy lease contract with 11% VAT clause'),
+      mk('mi-domdoc-re-lse-1b', 'DOC-4235-105', '2026-02-10', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Beirut Municipality Rental Tax Registration Receipt · LSE-4235-001', 'Municipality of Beirut · Msaytbeh', 'MUN-4235-2026-01', 're_leases', 'LSE-4235-001', 'LSE-4235-001', 2775, '4235_LSE_001_Municipal_Tax_Receipt.svg', 'Camera Scan', 'Official municipal lease registration stamp and tax clearance'),
+      mk('mi-domdoc-re-lse-2', 'DOC-4235-106', '2026-01-01', '4235 Company S.A.L', 'Real Estate & Property', 'Contract & Agreement', 'Registered Anchor Commercial Lease PDF · LSE-4235-002', 'Infinitas S.A.L', 'LSE-4235-002', 're_leases', 'LSE-4235-002', 'LSE-4235-002', 77700, '4235_LSE_002_Infinitas_Lease_PDF.svg', 'File Upload', 'Executed anchor commercial lease contract at 4235 Msaytbeh Center'),
+      mk('mi-domdoc-re-lse-3', 'DOC-PRP-104', '2026-01-01', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Marina Tower Luxury Showroom Lease PDF · LSE-PROP-007', 'Levant Luxury Retail SAL', 'LSE-PROP-007', 're_leases', 'LSE-PROP-007', 'LSE-PROP-007', 96000, 'Properties_LSE_PROP_007_Marina_Lease.svg', 'File Upload', 'Signed Mina el Hosn showroom lease contract and bank guarantee annex'),
+      mk('mi-domdoc-re-lse-4', 'DOC-PRP-106', '2026-01-15', 'Properties', 'Real Estate & Property', 'Contract & Agreement', 'Hamra Pavillon Medical Floors Lease PDF · LSE-PROP-008', 'Hamra Medical & Diagnostics', 'LSE-PROP-008', 're_leases', 'LSE-PROP-008', 'LSE-PROP-008', 78000, 'Properties_LSE_PROP_008_Hamra_Lease.svg', 'File Upload', 'Registered medical center commercial lease contract'),
+      mk('mi-domdoc-re-inv-1', 'DOC-4235-107', '2026-05-01', '4235 Company S.A.L', 'Real Estate & Property', 'Tax & MoF Filing', 'Official 4235 S.A.L 11% VAT Tax Invoice Scan · INV-4235-010', 'Infinitas S.A.L', 'INV-2026-Q2-INF', 're_invoicing', 'INV-4235-010', 'INV-4235-010', 19425, '4235_INV_010_Official_VAT_Invoice.svg', 'Camera Scan', 'Pre-numbered statutory 11% VAT commercial rent invoice'),
+      mk('mi-domdoc-re-inv-2', 'DOC-PRP-107', '2026-07-01', 'Properties', 'Real Estate & Property', 'Invoice & Bill', 'Marina Showroom Q3 Rent Debit Note · INV-PROP-013', 'Levant Luxury Retail SAL', 'INV-2026-Q3-MAR', 're_invoicing', 'INV-PROP-013', 'INV-PROP-013', 24000, 'Properties_INV_013_Rent_Debit_Note.svg', 'File Upload', 'Signed quarterly showroom rent debit note (0% VAT non-corporate entity)'),
+      mk('mi-domdoc-re-rct-1', 'DOC-4235-108', '2026-05-05', '4235 Company S.A.L', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Tenant Bank Transfer Credit Advice · RCT-4235-101', 'Mazen (Unesco Pharmacy)', 'BNK-4235-0505', 're_receipts', 'RCT-4235-101', 'RCT-4235-101', 19425, '4235_RCT_101_Tenant_Wire_Receipt.svg', 'File Upload', 'Fresh USD wire transfer slip flagged in Q2 cross-tenant swap audit'),
+      mk('mi-domdoc-re-rct-2', 'DOC-PRP-105', '2026-07-03', 'Properties', 'Real Estate & Property', 'Receipt & Payment Voucher', 'Quarterly Rent & Security Deposit Wire Slip · RCT-PROP-106', 'Levant Luxury Retail SAL', 'BNK-PROP-0703', 're_receipts', 'RCT-PROP-106', 'RCT-PROP-106', 96000, 'Properties_RCT_106_Marina_Wire_Slip.svg', 'File Upload', 'Escrow bank confirmation for Marina Tower showroom rent and deposit'),
+
+      // 5. Insurance & Brokerage: Carrier Bordereau PDFs, Commission Recon Statements & FNOL Claim Photo Packs
+      mk('mi-domdoc-ins-rem-1', 'DOC-INS-104', '2026-09-25', 'Insurance Company', 'Insurance & Brokerage', 'Invoice & Bill', 'Signed Net Premium Remittance Bordereau PDF · REM-2026-MGF-01', 'MedGulf', 'REM-2026-MGF-01', 'ins_remittances', 'REM-2026-MGF-01', 'REM-2026-MGF-01', 62100, 'Ins_REM_MGF_01_Carrier_Bordereau.svg', 'File Upload', 'Counter-signed carrier net-of-commission bordereau and wire release'),
+      mk('mi-domdoc-ins-rem-2', 'DOC-INS-105', '2026-09-28', 'Insurance Company', 'Insurance & Brokerage', 'Invoice & Bill', 'Allianz SNA Monthly Bordereau Settlement · REM-2026-ALZ-01', 'Allianz SNA', 'REM-2026-ALZ-01', 'ins_remittances', 'REM-2026-ALZ-01', 'REM-2026-ALZ-01', 16200, 'Ins_REM_ALZ_01_Bordereau_PDF.svg', 'File Upload', 'Allianz SNA technical account bordereau schedule'),
+      mk('mi-domdoc-ins-stm-1', 'DOC-INS-106', '2026-08-31', 'Insurance Company', 'Insurance & Brokerage', 'Invoice & Bill', 'AXA Middle East Commission Statement PDF · STM-AXA-2026-08', 'AXA Middle East', 'STM-AXA-2026-08', 'ins_statements', 'STM-AXA-2026-08', 'STM-AXA-2026-08', 5977, 'Ins_STM_AXA_08_Commission_Statement.svg', 'File Upload', 'Reconciled 0-variance carrier commission statement'),
+      mk('mi-domdoc-ins-stm-2', 'DOC-INS-107', '2026-09-30', 'Insurance Company', 'Insurance & Brokerage', 'Invoice & Bill', 'Allianz SNA Statement & -$25 Rate Variance Note · STM-ALZ-2026-09', 'Allianz SNA', 'STM-ALZ-2026-09', 'ins_statements', 'STM-ALZ-2026-09', 'STM-ALZ-2026-09', 6005, 'Ins_STM_ALZ_09_Discrepancy_Audit.svg', 'Camera Scan', 'Annotated carrier commission statement highlighting -$25 credit note hold'),
+      mk('mi-domdoc-ins-clm-1', 'DOC-INS-108', '2026-09-12', 'Insurance Company', 'Insurance & Brokerage', 'Equipment & Permit Document', 'FNOL Accident Scene Photo Pack · CLM-2026-001', 'Transmed Distribution Fleet', 'CLM-2026-001', 'ins_claims', 'CLM-2026-001', 'CLM-2026-001', 6850, 'Ins_CLM_001_FNOL_Scene_Photos.svg', 'Camera Scan', 'Timestamped roadside collision photo pack captured by field rapid response'),
+      mk('mi-domdoc-ins-clm-1b', 'DOC-INS-109', '2026-09-15', 'Insurance Company', 'Insurance & Brokerage', 'Equipment & Permit Document', 'Loss Adjuster Survey & Garage Estimate Report · CLM-2026-001', 'Transmed Distribution Fleet', 'SRV-2026-001', 'ins_claims', 'CLM-2026-001', 'CLM-2026-001', 6350, 'Ins_CLM_001_Surveyor_Assessment.svg', 'File Upload', 'Signed independent motor expert survey report net of deductible'),
+      mk('mi-domdoc-ins-clm-2', 'DOC-INS-110', '2026-08-29', 'Insurance Company', 'Insurance & Brokerage', 'Equipment & Permit Document', 'Industrial Warehouse Peril Survey & Indemnity Release · CLM-2026-003', 'Unipak Tissue Mill S.A.L.', 'CLM-2026-003', 'ins_claims', 'CLM-2026-003', 'CLM-2026-003', 28500, 'Ins_CLM_003_Property_Survey_Pack.svg', 'File Upload', 'Commercial property loss adjuster dossier and discharge voucher')
+    ];
+    domainDocs.forEach(d => {
+      if (!seenIds.has(d.id)) {
+        seenIds.add(d.id);
+        if (typeof buildSampleDocSvgDataUrl === 'function') {
+          d.data_url = buildSampleDocSvgDataUrl(d);
+        }
+        docArr.push(d);
+      }
+    });
+  }
+
   function ensureMultiIndustrySpineSeeded() {
     if (!SEED || !SEED.records || !SEED._recordsReady) return;
-    if (SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed && SEED.records.customers && SEED.records.customers._hasMultiIndustrySeed && SEED.records.documents && SEED.records.documents._hasMultiIndustrySeed) return;
+    if (SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed && SEED.records.customers && SEED.records.customers._hasMultiIndustrySeed && SEED.records.documents && SEED.records.documents._hasMultiIndustrySeed && SEED.records.documents._hasDomainDocsSeed) return;
     const alreadySeededCore = Boolean(SEED._multiIndustrySpineSeeded && SEED.records.expenses && SEED.records.expenses._hasMultiIndustrySeed);
     SEED._multiIndustrySpineSeeded = true;
     const recs = SEED.records;
@@ -49514,7 +49919,10 @@
       return recs[k];
     };
     const docArr = ensureArr('documents');
-    if (alreadySeededCore && docArr.some(d => d && d._multiIndustrySeed)) return;
+    if (alreadySeededCore && docArr.some(d => d && d._multiIndustrySeed)) {
+      ensureDomainSpecificDocumentsSeeded(docArr);
+      return;
+    }
     const supArr = ensureArr('suppliers');
     const custArr = ensureArr('customers');
     const regArr = ensureArr('regions');
@@ -50536,6 +50944,7 @@
         }
       });
     });
+    ensureDomainSpecificDocumentsSeeded(docArr);
 
     _PAYROLL_INTEL_CACHE = null;
     _threeLegApCacheKey = '';
@@ -51013,6 +51422,26 @@
     return `${ind || 'IND'}::${cleanTbl}::${String(primaryId || '').trim()}`;
   }
 
+  function setDomainCellTextPreservingBadge(tdEl, newVal) {
+    if (!tdEl) return;
+    const v = String(newVal ?? '');
+    const attBadge = tdEl.querySelector ? tdEl.querySelector('.att-inline-badge') : null;
+    const strong = tdEl.querySelector ? tdEl.querySelector('strong, b, .badge:not(.att-inline-badge)') : null;
+    if (attBadge) {
+      if (strong && tdEl.children.length <= 2) {
+        strong.textContent = v;
+      } else {
+        const badgeClone = attBadge.cloneNode(true);
+        tdEl.textContent = v;
+        tdEl.appendChild(document.createTextNode(' '));
+        tdEl.appendChild(badgeClone);
+      }
+      return;
+    }
+    if (strong && tdEl.children.length === 1) strong.textContent = v;
+    else tdEl.textContent = v;
+  }
+
   function applyIndustryDomRowEdits(root) {
     if (!root || getActiveIndustry(STATE.company) === 'Manufacturing') return;
     const store = getIndustryRowEditStore();
@@ -51022,7 +51451,7 @@
       if (tr.hasAttribute('data-rid') || tr.classList.contains('total-row') || tr.classList.contains('totals-row')) return;
       const tds = Array.from(tr.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
       if (tds.length < 2) return;
-      const primaryId = (tds[0].textContent || '').trim();
+      const primaryId = tr.getAttribute('data-ind-row-id') || cleanDomainCellText(tds[0]);
       const cardEl = tr.closest('.panel-card, .panel');
       const titleNode = cardEl ? cardEl.querySelector('.panel-title, h3') : null;
       const tableTitle = titleNode ? (titleNode.textContent || '').trim() : (VIEW_TITLES[STATE.view] || 'Domain Register');
@@ -51035,10 +51464,8 @@
       }
       if (Array.isArray(saved.cells)) {
         saved.cells.forEach((val, idx) => {
-          if (tds[idx] && val != null && String(val) !== (tds[idx].textContent || '').trim()) {
-            const strong = tds[idx].querySelector('strong, b, .badge');
-            if (strong && tds[idx].children.length === 1) strong.textContent = String(val);
-            else tds[idx].textContent = String(val);
+          if (tds[idx] && val != null && String(val) !== cleanDomainCellText(tds[idx])) {
+            setDomainCellTextPreservingBadge(tds[idx], val);
           }
         });
       }
@@ -52184,15 +52611,43 @@
     const headers = Array.isArray(opts.headers) && opts.headers.length ? opts.headers : ['Field', 'Value'];
     const rawCells = Array.isArray(opts.cells) && opts.cells.length ? opts.cells : ['Record', COMPANY_LABELS[STATE.company] || ind];
     const tableTitle = opts.tableTitle || `${ind} Operational Register`;
-    const primaryId = String(rawCells[0] || 'REC-01').trim();
+    const primaryId = String((opts.trEl && opts.trEl.getAttribute('data-ind-row-id')) || rawCells[0] || 'REC-01').trim();
     const editKey = makeIndustryRowEditKey(ind, tableTitle, primaryId);
     const editStore = getIndustryRowEditStore();
     const savedEntry = editStore[editKey];
     const cells = (savedEntry && Array.isArray(savedEntry.cells) && savedEntry.cells.length === rawCells.length)
       ? savedEntry.cells.slice()
       : rawCells.slice();
+    if (cells.length) cells[0] = primaryId;
     const secondaryLbl = String(cells[1] || cells[2] || COMPANY_LABELS[STATE.company] || ind).trim();
     const amountCell = cells.slice().reverse().find(c => /\$|\d/.test(String(c))) || '$0.00';
+    const domainTblKey = opts.domainTblKey || (opts.trEl && opts.trEl.getAttribute('data-ind-row-tbl')) || inferDomainTblKey(ind, STATE.view, primaryId);
+    const rowCompany = opts.rowCompany || (opts.trEl && opts.trEl.getAttribute('data-ind-row-co')) || COMPANY_BU_MATCH[STATE.company] || (!/^industry:/i.test(String(STATE.company || '')) ? COMPANY_LABELS[STATE.company] : '') || '';
+    const dateCell = cells.find(c => /^\d{4}-\d{2}-\d{2}$/.test(String(c || '').trim())) || todayISO();
+    const numericAmt = parseFloat(String(amountCell || '').replace(/[^0-9.-]/g, '')) || 0;
+    const domainMeta = {
+      crKey: domainTblKey,
+      primaryId,
+      company: rowCompany,
+      ind,
+      date: dateCell,
+      counterparty: secondaryLbl,
+      amount: numericAmt,
+      tableTitle,
+      editKey
+    };
+    const domSynthRow = buildDomainSyntheticRow(domainTblKey, primaryId, domainMeta);
+    const domAtts = getRecordAttachmentsList(domainTblKey, domSynthRow);
+    const canUploadAtt = canModifyRecord();
+    const canDeleteAtt = canModifyData();
+    const attSectionTitles = {
+      'Holding & Treasury': 'Deeds, Board Resolutions & Facility Schedules',
+      'Hospitality & Resorts': 'Signed Contracts, Delivery Notes & HACCP Scans',
+      'Automotive & Heavy Trading': 'Ocean B/L, Customs Bayane, GRN & VIN PDI Dossiers',
+      'Real Estate & Property': 'Registered Lease PDFs, Municipal Tax & 4235 VAT Receipts',
+      'Insurance & Brokerage': 'Carrier Bordereaux, Commission Statements & FNOL Claim Photo Packs'
+    };
+    const attSectionTitle = attSectionTitles[ind] || 'Attached Receipts, Contracts & Supporting Documents';
 
     const textOnlyLock = canModifyTextOnly();
     const canEditAny = canModifyRecord();
@@ -52249,6 +52704,59 @@
       `;
     }).join('');
 
+    const attachmentsBoxHtml = `
+      <div class="pa-subgrid-box" id="indInspAttachmentsBox" data-can-edit="${canUploadAtt ? '1' : '0'}">
+        <div class="pa-subgrid-hdr">
+          <div>
+            <strong>${ic('receipt')} ${esc(attSectionTitle)}</strong>
+            <span class="pa-subgrid-sub">Scanned PDFs, signed contracts, official receipts, or inspection photos linked to <b>${esc(primaryId)}</b>. Every file attached here syncs automatically with the Document Vault.</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="badge ${domAtts.length ? 'badge-ok' : 'badge-neutral'}" id="indInspAttCountBadge">${domAtts.length} ${domAtts.length === 1 ? 'File' : 'Files'}</span>
+            ${canUploadAtt ? `
+              <input type="file" id="indInspAttFileInput" accept="image/*,application/pdf,.pdf,.png,.jpg,.jpeg,.webp" multiple hidden>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="indInspBtnUploadAtt">${ic('upload')} Upload File / PDF</button>
+              <button type="button" class="btn btn-outline-bar btn-sm" id="indInspBtnSnapAtt">${ic('camera')} Snap Photo</button>
+            ` : ''}
+          </div>
+        </div>
+        <div style="padding:12px">
+          ${domAtts.length ? `
+            <div class="insp-att-grid">
+              ${domAtts.map((a, idx) => {
+                const fName = a.file_name || a.name || `Attachment ${idx + 1}`;
+                const fMime = a.mime_type || a.type || '';
+                const fSize = a.file_size || a.size || 0;
+                const dUrl = resolveDocDataUrl(a);
+                const isPdf = /pdf/i.test(String(fMime)) || /\.pdf$/i.test(String(fName));
+                return `
+                  <div class="att-file-chip insp-att-card">
+                    <div class="att-chip-thumb" data-ind-insp-preview-att="${idx}" role="button" tabindex="0">
+                      ${!isPdf && dUrl ? `<img src="${esc(dUrl)}" alt="${esc(fName)}">` : `<span class="att-pdf-badge">${isPdf ? 'PDF' : 'DOC'}</span>`}
+                    </div>
+                    <div class="att-chip-meta" data-ind-insp-preview-att="${idx}" role="button" tabindex="0">
+                      <strong class="att-chip-name">${esc(fName)}</strong>
+                      <small class="att-chip-sub">${esc(formatFileSizeShort(fSize))}${a.capture_method ? ' · ' + esc(a.capture_method) : ''}${a.uploaded_by ? ' · ' + esc(a.uploaded_by) : ''}</small>
+                    </div>
+                    <div class="att-chip-actions">
+                      <button type="button" class="btn btn-sm" data-ind-insp-preview-att="${idx}">Preview</button>
+                      ${dUrl ? `<button type="button" class="btn btn-sm" data-ind-insp-dl-att="${idx}">Download</button>` : ''}
+                      ${canDeleteAtt ? `<button type="button" class="btn btn-sm" data-ind-insp-del-att="${idx}" aria-label="Remove attachment">✕</button>` : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : `
+            <div class="mu" style="padding:10px 4px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <span>No contract PDF, official receipt, or inspection scan is attached to <b>${esc(primaryId)}</b> yet.</span>
+              ${canUploadAtt ? `<span style="color:var(--ink-soft)">Click <b>Upload File / PDF</b>, <b>Snap Photo</b>, or paste/drop a file here to attach one now.</span>` : ''}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+
     if (bodyEl) {
       bodyEl.innerHTML = `
         <div id="industryDomainInspectorView" style="display:flex;flex-direction:column;gap:14px">
@@ -52288,6 +52796,8 @@
             </div>
             <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
           </div>
+
+          ${attachmentsBoxHtml}
 
           <div class="panel-card" style="padding:12px 14px">
             <div class="panel-head" style="margin-bottom:8px">
@@ -52331,6 +52841,116 @@
           </div>
         </div>
       `;
+
+      const reopenDomainInspectorInPlace = () => {
+        const ws = $('workspace');
+        let liveTr = (opts.trEl && opts.trEl.isConnected) ? opts.trEl : null;
+        if (!liveTr && ws) {
+          liveTr = Array.from(ws.querySelectorAll('tbody tr')).find(tr => {
+            const attrId = tr.getAttribute('data-ind-row-id');
+            if (attrId && norm(attrId) === norm(primaryId)) return true;
+            const firstTd = Array.from(tr.querySelectorAll('td')).find(td => td.style.display !== 'none');
+            return firstTd && norm(cleanDomainCellText(firstTd)) === norm(primaryId);
+          }) || null;
+        }
+        openIndustryDomainInspector(Object.assign({}, opts, {
+          ind,
+          headers,
+          cells: inputs.map(el => el.value.trim()),
+          tableTitle,
+          trEl: liveTr,
+          domainTblKey,
+          rowCompany
+        }));
+      };
+
+      const indAttBox = $('indInspAttachmentsBox');
+      if (indAttBox) {
+        const fInp = $('indInspAttFileInput');
+        const uBtn = $('indInspBtnUploadAtt');
+        const sBtn = $('indInspBtnSnapAtt');
+        const handleDomainFiles = async (fileList, method) => {
+          const added = await attachFilesToDomainRecord(domainMeta, fileList, method || 'File Upload');
+          if (added && added.length) reopenDomainInspectorInPlace();
+        };
+        bodyEl._handleDomainInspectorFiles = handleDomainFiles;
+        if (!bodyEl.dataset.domAttPasteWired) {
+          bodyEl.dataset.domAttPasteWired = '1';
+          bodyEl.addEventListener('paste', ev => {
+            const curPanel = $('recordInspector');
+            const curBox = $('indInspAttachmentsBox');
+            if (!curPanel || curPanel.hidden || !curBox || curBox.getAttribute('data-can-edit') !== '1') return;
+            const items = ev.clipboardData && ev.clipboardData.items ? Array.from(ev.clipboardData.items) : [];
+            const files = items.filter(it => it && it.kind === 'file' && (/^image\//i.test(it.type || '') || /pdf/i.test(it.type || ''))).map(it => it.getAsFile()).filter(Boolean);
+            if (files.length && typeof bodyEl._handleDomainInspectorFiles === 'function') {
+              ev.preventDefault();
+              bodyEl._handleDomainInspectorFiles(files, 'Clipboard Paste');
+            }
+          });
+        }
+        if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
+        if (sBtn) {
+          sBtn.addEventListener('click', () => {
+            openDocumentCameraCapture((files, method) => handleDomainFiles(files, method || 'Camera Scan'));
+          });
+        }
+        if (fInp) {
+          fInp.addEventListener('change', async () => {
+            try {
+              if (fInp.files && fInp.files.length) await handleDomainFiles(fInp.files, 'File Upload');
+            } finally {
+              fInp.value = '';
+            }
+          });
+        }
+        if (canUploadAtt) {
+          indAttBox.addEventListener('dragover', ev => { ev.preventDefault(); indAttBox.classList.add('drag-over'); });
+          indAttBox.addEventListener('dragleave', () => indAttBox.classList.remove('drag-over'));
+          indAttBox.addEventListener('drop', async ev => {
+            ev.preventDefault();
+            indAttBox.classList.remove('drag-over');
+            if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
+              await handleDomainFiles(ev.dataTransfer.files, 'File Upload');
+            }
+          });
+        }
+        indAttBox.querySelectorAll('[data-ind-insp-preview-att]').forEach(el => {
+          el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const idx = Number(el.getAttribute('data-ind-insp-preview-att') || 0);
+            openDocumentPreviewModal({ crKey: domainTblKey, id: primaryId, attIdx: idx });
+          });
+        });
+        indAttBox.querySelectorAll('[data-ind-insp-dl-att]').forEach(el => {
+          el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const idx = Number(el.getAttribute('data-ind-insp-dl-att') || 0);
+            const attsNow = getRecordAttachmentsList(domainTblKey, buildDomainSyntheticRow(domainTblKey, primaryId, domainMeta));
+            const item = attsNow[idx];
+            if (!item) return;
+            const dUrl = resolveDocDataUrl(item);
+            if (!dUrl) return;
+            const bUrl = dataUrlToBlobUrl(dUrl);
+            const aTag = document.createElement('a');
+            aTag.href = bUrl || dUrl;
+            aTag.download = item.file_name || item.name || 'document';
+            document.body.appendChild(aTag);
+            aTag.click();
+            aTag.remove();
+            if (bUrl) setTimeout(() => { try { URL.revokeObjectURL(bUrl); } catch (_) {} }, 5000);
+          });
+        });
+        indAttBox.querySelectorAll('[data-ind-insp-del-att]').forEach(el => {
+          el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const idx = Number(el.getAttribute('data-ind-insp-del-att'));
+            if (removeAttachmentFromDomainRecord(domainMeta, idx)) {
+              toast('Attachment removed from record', 'ok');
+              reopenDomainInspectorInPlace();
+            }
+          });
+        });
+      }
 
       const parseNumVal = v => {
         const n = parseFloat(String(v || '').replace(/[^0-9.-]/g, ''));
@@ -52439,23 +53059,21 @@
         }
         const nextCells = inputs.map((el, idx) => lockedNumericIndices.has(idx) ? String(cells[idx] || '').trim() : el.value.trim());
         const store = getIndustryRowEditStore();
+        const prevEntry = store[editKey] || {};
         store[editKey] = {
           ind,
           tableTitle,
           primaryId,
           headers,
           cells: nextCells,
+          removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
           updatedAt: new Date().toISOString()
         };
         saveIndustryRowEditStore(store);
         if (opts.trEl && opts.trEl.isConnected) {
           const tds = Array.from(opts.trEl.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none');
           nextCells.forEach((val, idx) => {
-            if (tds[idx]) {
-              const strong = tds[idx].querySelector('strong, b, .badge');
-              if (strong && tds[idx].children.length === 1) strong.textContent = val;
-              else tds[idx].textContent = val;
-            }
+            if (tds[idx]) setDomainCellTextPreservingBadge(tds[idx], val);
           });
         }
         applyIndustryDomRowEdits($('workspace'));
@@ -52470,9 +53088,18 @@
           return;
         }
         const store = getIndustryRowEditStore();
-        store[editKey] = { ind, tableTitle, primaryId, voided: true, updatedAt: new Date().toISOString() };
+        const prevEntry = store[editKey] || {};
+        store[editKey] = {
+          ind,
+          tableTitle,
+          primaryId,
+          voided: true,
+          removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
+          updatedAt: new Date().toISOString()
+        };
         saveIndustryRowEditStore(store);
         const wasCustom = voidIndustryCustomRowById(primaryId);
+        voidDomainRecordAttachments(domainTblKey, primaryId);
         if (opts.trEl && opts.trEl.isConnected) opts.trEl.style.display = 'none';
         closeRecordInspector();
         if (wasCustom) renderApp();
@@ -65254,8 +65881,14 @@
         const amt = num('f_amount');
         const pTbl = val('f_parent_table');
         const pLbl = val('f_parent_label');
-        if (FORM_UI.lastDocParentTbl !== pTbl) {
-          FORM_UI.lastDocParentTbl = pTbl;
+        const selCo = val('f_company') || defaultEntryCompany();
+        const stCo = String(STATE.company || '');
+        const curInd = stCo.startsWith('industry:')
+          ? stCo.slice(9)
+          : (COMPANY_INDUSTRY_BY_KEY[stCo] || inferIndustryForCompany(selCo));
+        const pScopeKey = `${pTbl}|${curInd}|${selCo}`;
+        if (FORM_UI.lastDocParentTbl !== pScopeKey) {
+          FORM_UI.lastDocParentTbl = pScopeKey;
           const dlParent = $('dl_doc_parent_records');
           if (dlParent) {
             const pModLabels = {
@@ -65264,18 +65897,34 @@
               fuel_intakes: 'Fuel Intake', equipment_repairs: 'Repair', external_movements: 'External Movement',
               loans: 'Loan', loan_settlements: 'Loan Settlement', conversions: 'FX Conversion', employments: 'Staff Contract'
             };
-            const keysToList = pTbl ? [pTbl] : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'fuel_intakes', 'equipment_repairs', 'external_movements', 'loans'];
             const opts = [];
+            if (DOMAIN_PARENT_VIEW_MAP[pTbl] || (!pTbl && curInd !== 'Manufacturing')) {
+              const allDocs = ((SEED.records && SEED.records.documents) || []).concat((STATE.customRecords && STATE.customRecords.documents) || []);
+              allDocs.forEach(d => {
+                if (!d || d.voided || !d.parent_label) return;
+                if (pTbl ? d.parent_table !== pTbl : !DOMAIN_PARENT_VIEW_MAP[d.parent_table]) return;
+                if (!pTbl && d._industry && d._industry !== curInd) return;
+                const dLbl = CR_LABEL[d.parent_table] || (DOMAIN_PARENT_VIEW_MAP[d.parent_table] && DOMAIN_PARENT_VIEW_MAP[d.parent_table].label) || d.parent_table;
+                opts.push(`${d.parent_label}${d.counterparty ? ' · ' + d.counterparty : ''} (${dLbl})`);
+              });
+            }
+            const keysToList = pTbl
+              ? (DOMAIN_PARENT_VIEW_MAP[pTbl] ? [] : [pTbl])
+              : ['expenses', 'raw_purchases', 'sales_tickets', 'settlements', 'receipts', 'vat_invoices', 'fuel_intakes', 'equipment_repairs', 'external_movements', 'loans'];
             keysToList.forEach(k => {
-              const rows = ((SEED.records && SEED.records[k]) || []).filter(r => r && !r.voided).slice(0, pTbl ? 60 : 12);
-              const mLbl = pModLabels[k] || k;
+              const allRows = ((SEED.records && SEED.records[k]) || []).filter(r => r && !r.voided);
+              const scoped = allRows.filter(r => !r.company || r.company === selCo || inferIndustryForCompany(r.company) === curInd);
+              const rows = (scoped.length ? scoped : allRows).slice(-(pTbl ? 60 : 16)).reverse();
+              const mLbl = pModLabels[k] || CR_LABEL[k] || k;
               rows.forEach(r => {
                 const ref = r.ticket_no ? `#${r.ticket_no}` : (r.invoice_no || r.name || r.id || '');
-                const party = r.supplier || r.customer || r.site_owner || r.staff || r.equipment || '';
+                const party = r.supplier || r.customer || r.counterparty || r.site_owner || r.staff || r.equipment || '';
                 if (ref) opts.push(`${ref}${party ? ' · ' + party : ''} (${mLbl})`);
               });
             });
-            dlParent.innerHTML = opts.map(o => `<option value="${esc(o)}">`).join('');
+            const fIdx = getFreqIndex();
+            const rankedOpts = uniqSorted(opts, fIdx && typeof fIdx.forCol === 'function' ? fIdx.forCol('parent_label') : undefined);
+            dlParent.innerHTML = rankedOpts.map(o => `<option value="${esc(o)}">`).join('');
           }
         }
         const attCnt = Array.isArray(FORM_UI.attachments) ? FORM_UI.attachments.length : 0;
@@ -71969,6 +72618,14 @@
             pId = String(hit.id || '');
             pLbl = hit.ticket_no ? `#${hit.ticket_no}` : String(hit.invoice_no || hit.name || hit.reference || hit.id || pNameToken);
             break;
+          }
+        }
+        if (!pId && pNoHash) {
+          const inferredDom = inferDomainTblKey(getActiveIndustry(STATE.company), STATE.view, pNoHash);
+          if (DOMAIN_PARENT_VIEW_MAP[pTbl] || DOMAIN_PARENT_VIEW_MAP[inferredDom]) {
+            pTbl = pTbl || inferredDom;
+            pId = pNoHash;
+            pLbl = pNoHash;
           }
         }
       }
@@ -81086,7 +81743,7 @@
       if (jpBtn && row && row.parent_table && (row.parent_id || row.parent_label)) {
         jpBtn.addEventListener('click', ev => {
           ev.stopPropagation();
-          showRecordInspector(row.parent_table, row.parent_id || String(row.parent_label || '').replace(/^#/, ''));
+          navigateToRecordOrDomainRow(row.parent_table, row.parent_id, row.parent_label, row.company);
         });
       }
       if (uBtn && fInp) uBtn.addEventListener('click', () => fInp.click());
@@ -99473,8 +100130,9 @@
         if (t.closest('[data-rel-key], button, a, input, select, label')) return;
         const tbl = indRow.closest('table');
         const headers = tbl ? Array.from(tbl.querySelectorAll('thead tr:first-child th')).filter(thEl => thEl.style.display !== 'none').map(thEl => (thEl.textContent || '').replace(/[▲▼▾▴]/g, '').trim()) : [];
-        const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(tdEl => (tdEl.textContent || '').trim());
+        const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
         if (cells.length >= 2) {
+          if (indRow.getAttribute('data-ind-row-id')) cells[0] = indRow.getAttribute('data-ind-row-id');
           const cardEl = indRow.closest('.panel-card, .panel');
           const titleNode = cardEl ? cardEl.querySelector('.panel-title, h3') : null;
           const tableTitle = titleNode ? (titleNode.textContent || '').trim() : (VIEW_TITLES[STATE.view] || 'Domain Register');
@@ -99483,7 +100141,9 @@
             headers,
             cells,
             tableTitle,
-            trEl: indRow
+            trEl: indRow,
+            domainTblKey: indRow.getAttribute('data-ind-row-tbl') || '',
+            rowCompany: indRow.getAttribute('data-ind-row-co') || ''
           });
         }
       }
