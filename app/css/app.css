@@ -31961,41 +31961,57 @@ html[dir="rtl"] .ceo-ent-rev-cell {
   color: #F8FAFC;
 }
 
-/* Live Camera Scanner Modal (Desktop Webcam + Mobile Rear/Front Camera) */
+/* Live Document, Receipt & ID Camera Studio (Desktop Webcam + Tablet/Mobile Rear/Front Camera + Multi-Page Batch) */
 .doc-cam-card {
-  max-width: 720px;
-  width: 94vw;
-  background: #FFFFFF;
-  color: #0F172A;
+  max-width: 760px;
+  width: min(760px, 95vw);
+  background: var(--surface, #FFFFFF);
+  color: var(--ink, #1E1B18);
   display: flex;
   flex-direction: column;
-  max-height: min(92dvh, 820px);
+  max-height: min(810px, calc(100vh - 24px));
   overflow: hidden;
+  border-radius: 12px;
 }
 
-:root[data-theme="dark"] .doc-cam-card {
-  background: #0F1D38;
-  color: #F8FAFC;
+.doc-cam-live-pill {
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .doc-cam-body {
-  padding: 14px 18px 16px;
+  padding: 12px 18px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   min-height: 0;
+}
+
+.doc-cam-preset-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.doc-preset-pill {
+  font-size: 11.5px;
+  padding: 5.5px 12px;
+  min-height: 32px;
 }
 
 .doc-cam-stage {
   position: relative;
   width: 100%;
-  min-height: 260px;
-  max-height: min(52dvh, 440px);
+  min-height: 250px;
+  max-height: min(50vh, 430px);
   aspect-ratio: 16 / 10;
   border-radius: 10px;
-  border: 1.5px solid #CBD5E1;
-  background: #F1F5F9;
+  border: 1.5px solid var(--line-strong, #CBD5E1);
+  background: var(--surface-2, #F4F2EE);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -32007,11 +32023,25 @@ html[dir="rtl"] .ceo-ent-rev-cell {
   border-color: #29406B;
 }
 
+.doc-cam-stage:not(.is-live) .doc-cam-video {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+.doc-cam-warmup-card {
+  z-index: 4;
+  pointer-events: none;
+}
+
+.doc-cam-warmup-card[hidden] {
+  display: none !important;
+}
+
 .doc-cam-video,
 .doc-cam-preview-img {
   width: 100%;
   height: 100%;
-  max-height: min(52dvh, 440px);
+  max-height: min(50vh, 430px);
   object-fit: contain;
   display: block;
 }
@@ -32019,40 +32049,130 @@ html[dir="rtl"] .ceo-ent-rev-cell {
 .doc-cam-video[hidden],
 .doc-cam-preview-img[hidden],
 .doc-cam-guide[hidden],
-.doc-cam-fallback[hidden] {
+.doc-cam-fallback[hidden],
+.doc-cam-batch-tray[hidden] {
   display: none !important;
 }
 
 .doc-cam-guide {
   position: absolute;
   inset: 14px;
-  border: 1.5px dashed rgba(200, 157, 84, 0.85);
+  border: 1.5px dashed rgba(200, 157, 84, 0.72);
   border-radius: 8px;
   pointer-events: none;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 8px;
+  z-index: 3;
+  transition: inset 0.18s ease;
 }
+
+.doc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide {
+  inset: 10px 22%;
+}
+
+.doc-cam-stage[data-doc-preset="card"] .doc-cam-guide {
+  inset: 18% 14%;
+}
+
+@media (max-width: 640px) {
+  .doc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide {
+    inset: 10px 12%;
+  }
+  .doc-cam-stage[data-doc-preset="card"] .doc-cam-guide {
+    inset: 16% 8%;
+  }
+}
+
+.doc-cam-guide .dc-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: var(--brass, #C89D54);
+  border-style: solid;
+  border-width: 0;
+}
+.doc-cam-guide .dc-corner.tl { top: -1.5px; left: -1.5px; border-top-width: 2.5px; border-left-width: 2.5px; border-top-left-radius: 6px; }
+.doc-cam-guide .dc-corner.tr { top: -1.5px; right: -1.5px; border-top-width: 2.5px; border-right-width: 2.5px; border-top-right-radius: 6px; }
+.doc-cam-guide .dc-corner.bl { bottom: -1.5px; left: -1.5px; border-bottom-width: 2.5px; border-left-width: 2.5px; border-bottom-left-radius: 6px; }
+.doc-cam-guide .dc-corner.br { bottom: -1.5px; right: -1.5px; border-bottom-width: 2.5px; border-right-width: 2.5px; border-bottom-right-radius: 6px; }
 
 .doc-cam-guide span {
   font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #334155;
-  border: 1px solid #E2E8F0;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink, #1E1B18);
+  border: 1px solid var(--line, #E2E8F0);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  text-align: center;
+  max-width: 94%;
 }
 
 :root[data-theme="dark"] .doc-cam-guide span {
-  background: rgba(15, 29, 56, 0.9);
+  background: rgba(15, 29, 56, 0.92);
   color: #E2E8F0;
   border-color: #29406B;
 }
 
+.doc-cam-batch-tray {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.doc-cam-batch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px 4px 5px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.doc-cam-batch-chip.active {
+  border-color: var(--brass, #C89D54);
+  background: var(--brass-tint);
+}
+
+.doc-cam-batch-chip img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+.doc-cam-batch-del {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .doc-cam-fallback {
+  position: relative;
+  z-index: 5;
   padding: 24px 18px;
   text-align: center;
   max-width: 460px;
@@ -32840,7 +32960,8 @@ video::-webkit-media-controls-start-playback-button {
 /* Rock-steady centered submodal geometry on tablets (no 100dvh soft-keyboard bounce) */
 @media (min-width: 520px) {
   #staffFaceEnrolModal.kiosk-submodal-backdrop,
-  #kioskStationAdminModal.kiosk-submodal-backdrop {
+  #kioskStationAdminModal.kiosk-submodal-backdrop,
+  #docCameraModal.kiosk-submodal-backdrop {
     align-items: center;
     padding: 14px;
   }
@@ -33418,6 +33539,29 @@ video::-webkit-media-controls-start-playback-button {
   width: 92px !important;
   height: 36px !important;
   text-align: center;
+}
+
+.sfe-handsfree-pill {
+  font-size: 11.6px;
+  padding: 6px 11px;
+  min-height: 36px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.sfe-handsfree-pill.active {
+  background: rgba(31, 122, 76, 0.12);
+  border-color: rgba(31, 122, 76, 0.42);
+  color: #1F7A4C;
+}
+:root[data-theme="dark"] .sfe-handsfree-pill.active {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ADE80;
+}
+
+.enrol-cam-viewport:has(.enrol-cam-placeholder:not([hidden])) video {
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 

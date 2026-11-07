@@ -392,6 +392,8 @@
     staffName: '',
     camActive: false,
     camStarting: false,
+    handsFree: false,
+    pose2Yaw: null,
     loopTimer: null,
     busy: false,
     captures: [],
@@ -29259,19 +29261,52 @@
     });
   }
 
-  // ---- Live Camera Document / Receipt Scanner (Desktop Webcam + Mobile Rear/Front Camera) ----
+  // ---- Live Camera Document / Receipt / ID Studio (Desktop Webcam + Tablet/Mobile Rear/Front Camera + Multi-Page Batch) ----
   const _docCamState = {
     open: false,
     stream: null,
+    camStarting: false,
+    camLive: false,
     facingMode: 'environment',
+    preset: 'receipt',
     devices: [],
     deviceIdx: -1,
     capturedFile: null,
     capturedPreviewUrl: '',
+    batchFiles: [],
+    batchPreviews: [],
+    activePreviewIdx: -1,
     onCapture: null
   };
 
+  function resolveDefaultDocCamPreset() {
+    const v = String(STATE.view || '');
+    const mForm = String(STATE.modalForm || '');
+    if (/trd_trucks|equipment|driver|ins_items/i.test(v) || /equipment|driver/i.test(mForm)) return 'card';
+    if (/re_|ins_policies|ins_agreements|hld_|ledger|statements|settlement|jv/i.test(v) || /settlement|jv|document/i.test(mForm)) return 'document';
+    return 'receipt';
+  }
+
+  function getDocCamPresetGuideText(preset) {
+    if (preset === 'card') return 'Align ID card, VIN plate, license, or registration inside frame';
+    if (preset === 'document') return 'Align full A4 invoice, lease, policy, or contract inside corner marks';
+    return 'Align receipt, delivery ticket, or scale slip clearly inside frame';
+  }
+
+  function revokeAllDocCamPreviews() {
+    if (_docCamState.capturedPreviewUrl) {
+      try { URL.revokeObjectURL(_docCamState.capturedPreviewUrl); } catch (_) {}
+      _docCamState.capturedPreviewUrl = '';
+    }
+    (_docCamState.batchPreviews || []).forEach(u => {
+      if (u) { try { URL.revokeObjectURL(u); } catch (_) {} }
+    });
+    _docCamState.batchPreviews = [];
+  }
+
   function stopDocCameraStream() {
+    _docCamState.camStarting = false;
+    _docCamState.camLive = false;
     if (_docCamState.stream) {
       try {
         _docCamState.stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
@@ -29283,19 +29318,142 @@
       try { vid.pause(); } catch (_) {}
       vid.srcObject = null;
     }
+    const stg = $('docCamStage');
+    if (stg) stg.classList.remove('is-live');
   }
 
   function closeDocumentCameraModal() {
     _docCamState.open = false;
     _docCamState.onCapture = null;
     _docCamState.capturedFile = null;
-    if (_docCamState.capturedPreviewUrl) {
-      try { URL.revokeObjectURL(_docCamState.capturedPreviewUrl); } catch (_) {}
-      _docCamState.capturedPreviewUrl = '';
-    }
+    _docCamState.batchFiles = [];
+    _docCamState.activePreviewIdx = -1;
+    revokeAllDocCamPreviews();
     stopDocCameraStream();
     const modal = $('docCameraModal');
     if (modal) modal.hidden = true;
+  }
+
+  function syncDocCameraStudioDom() {
+    const preset = _docCamState.preset || 'receipt';
+    const batchLen = (_docCamState.batchFiles || []).length;
+    const isPreviewMode = Boolean(_docCamState.capturedFile && !_docCamState.camLive && !_docCamState.camStarting);
+    const stg = $('docCamStage');
+    if (stg) {
+      stg.classList.toggle('is-live', Boolean(_docCamState.camLive));
+      stg.classList.toggle('is-preview', isPreviewMode);
+      stg.setAttribute('data-doc-preset', preset);
+    }
+    document.querySelectorAll('#docCamPresetBar [data-doc-preset]').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-doc-preset') === preset);
+    });
+    const guideSpan = document.querySelector('#docCamGuide span');
+    if (guideSpan) guideSpan.textContent = getDocCamPresetGuideText(preset);
+
+    const warmEl = $('docCamWarmupCard');
+    const fb = $('docCamFallback');
+    if (warmEl) {
+      warmEl.hidden = Boolean(_docCamState.camLive || isPreviewMode || (fb && !fb.hidden));
+    }
+
+    const liveBadge = $('docCamLiveBadge');
+    if (liveBadge) {
+      if (_docCamState.camLive) {
+        const lensTxt = _docCamState.facingMode === 'user' ? 'Front Camera' : 'Rear / Desk Camera';
+        liveBadge.textContent = batchLen > 0 ? `${lensTxt} · Page ${batchLen + 1}` : `${lensTxt} · Live`;
+        liveBadge.className = 'badge badge-ok doc-cam-live-pill';
+      } else if (_docCamState.camStarting) {
+        liveBadge.textContent = 'Starting Camera...';
+        liveBadge.className = 'badge doc-cam-live-pill';
+      } else if (batchLen > 0) {
+        liveBadge.textContent = batchLen === 1 ? '1 Page Ready' : `${batchLen} Pages Ready`;
+        liveBadge.className = 'badge badge-ok doc-cam-live-pill';
+      } else {
+        liveBadge.textContent = 'Camera Standby';
+        liveBadge.className = 'badge doc-cam-live-pill';
+      }
+    }
+
+    const confirmBtn = $('docCamConfirmBtn');
+    if (confirmBtn) {
+      confirmBtn.innerHTML = batchLen > 1
+        ? `${ic('check')} Attach ${batchLen} Photos`
+        : `${ic('check')} Attach Photo`;
+    }
+    const addMoreBtn = $('docCamAddMoreBtn');
+    if (addMoreBtn) {
+      addMoreBtn.hidden = !(isPreviewMode && batchLen >= 1 && batchLen < 8);
+    }
+
+    const tray = $('docCamBatchTray');
+    if (tray) {
+      if (!batchLen) {
+        tray.hidden = true;
+        tray.innerHTML = '';
+      } else {
+        tray.hidden = false;
+        tray.innerHTML = (_docCamState.batchFiles || []).map((f, idx) => {
+          const u = _docCamState.batchPreviews[idx] || '';
+          const active = idx === _docCamState.activePreviewIdx;
+          return `
+            <div class="doc-cam-batch-chip ${active ? 'active' : ''}" data-doc-pick-idx="${idx}">
+              ${u ? `<img src="${esc(u)}" alt="Page ${idx + 1}">` : ''}
+              <span>Page ${idx + 1}</span>
+              <button type="button" class="doc-cam-batch-del" data-doc-remove-idx="${idx}" aria-label="Remove page ${idx + 1}">✕</button>
+            </div>
+          `;
+        }).join('');
+        tray.querySelectorAll('[data-doc-pick-idx]').forEach(chip => {
+          chip.addEventListener('click', ev => {
+            if (ev.target && ev.target.closest('[data-doc-remove-idx]')) return;
+            const idx = Number(chip.getAttribute('data-doc-pick-idx'));
+            if (!Number.isFinite(idx) || !_docCamState.batchFiles[idx]) return;
+            stopDocCameraStream();
+            _docCamState.activePreviewIdx = idx;
+            _docCamState.capturedFile = _docCamState.batchFiles[idx];
+            const prevImg = $('docCamPreviewImg');
+            if (prevImg) {
+              prevImg.src = _docCamState.batchPreviews[idx] || '';
+              prevImg.hidden = false;
+            }
+            const vid = $('docCamVideo');
+            if (vid) vid.hidden = true;
+            const guide = $('docCamGuide');
+            if (guide) guide.hidden = true;
+            if ($('docCamSnapBtn')) $('docCamSnapBtn').hidden = true;
+            if ($('docCamRetakeBtn')) $('docCamRetakeBtn').hidden = false;
+            if ($('docCamConfirmBtn')) $('docCamConfirmBtn').hidden = false;
+            if ($('docCamSwitchBtn')) $('docCamSwitchBtn').hidden = true;
+            syncDocCameraStudioDom();
+          });
+        });
+        tray.querySelectorAll('[data-doc-remove-idx]').forEach(delBtn => {
+          delBtn.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const idx = Number(delBtn.getAttribute('data-doc-remove-idx'));
+            if (!Number.isFinite(idx) || idx < 0 || idx >= _docCamState.batchFiles.length) return;
+            const oldUrl = _docCamState.batchPreviews[idx];
+            if (oldUrl) { try { URL.revokeObjectURL(oldUrl); } catch (_) {} }
+            _docCamState.batchFiles.splice(idx, 1);
+            _docCamState.batchPreviews.splice(idx, 1);
+            if (!_docCamState.batchFiles.length) {
+              _docCamState.capturedFile = null;
+              _docCamState.activePreviewIdx = -1;
+              startDocCameraLiveStream();
+              return;
+            }
+            const nextIdx = Math.min(idx, _docCamState.batchFiles.length - 1);
+            _docCamState.activePreviewIdx = nextIdx;
+            _docCamState.capturedFile = _docCamState.batchFiles[nextIdx];
+            const prevImg = $('docCamPreviewImg');
+            if (prevImg && !prevImg.hidden) {
+              prevImg.src = _docCamState.batchPreviews[nextIdx] || '';
+            }
+            syncDocCameraStudioDom();
+          });
+        });
+      }
+    }
   }
 
   function ensureDocCameraModalDom() {
@@ -29303,43 +29461,60 @@
     if (modal) return modal;
     modal = document.createElement('div');
     modal.id = 'docCameraModal';
-    modal.className = 'modal-backdrop';
+    modal.className = 'modal-backdrop kiosk-submodal-backdrop';
     modal.hidden = true;
     modal.innerHTML = `
       <div class="modal-card doc-cam-card" role="dialog" aria-modal="true" aria-labelledby="docCamTitle">
         <div class="modal-header">
           <div>
-            <span class="modal-eyebrow">ISABI LIVE CAMERA SCANNER · RECEIPT &amp; INVOICE CAPTURE</span>
-            <h2 id="docCamTitle">Snap Receipt or Document Photo</h2>
+            <span class="modal-eyebrow">ISABI DOCUMENT &amp; ID CAMERA STUDIO</span>
+            <h2 id="docCamTitle">Snap Receipt, Document or ID</h2>
           </div>
           <div class="modal-header-actions">
-            <button type="button" class="btn btn-outline-bar btn-sm" id="docCamSwitchBtn" hidden>${ic('rotate')} Switch Camera</button>
+            <span class="badge doc-cam-live-pill" id="docCamLiveBadge">Starting Camera...</span>
+            <button type="button" class="btn btn-outline-bar btn-sm" id="docCamSwitchBtn" hidden>${ic('rotate')} Flip Lens</button>
             <button type="button" class="modal-close-btn" id="docCamCloseBtn" aria-label="Close camera">✕</button>
           </div>
         </div>
         <div class="doc-cam-body">
-          <div class="doc-cam-stage" id="docCamStage">
+          <div class="doc-cam-preset-bar" id="docCamPresetBar" role="group" aria-label="Document frame guide">
+            <button type="button" class="sfe-chip doc-preset-pill active" data-doc-preset="receipt">Receipt / Slip</button>
+            <button type="button" class="sfe-chip doc-preset-pill" data-doc-preset="document">Document / A4</button>
+            <button type="button" class="sfe-chip doc-preset-pill" data-doc-preset="card">ID / VIN / Card</button>
+          </div>
+          <div class="doc-cam-stage" id="docCamStage" data-doc-preset="receipt">
             <video id="docCamVideo" class="doc-cam-video" autoplay muted playsinline poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
-            <div class="doc-cam-guide" id="docCamGuide"><span>Position invoice, receipt, or slip clearly inside frame</span></div>
-            <img id="docCamPreviewImg" class="doc-cam-preview-img" alt="Captured receipt preview" hidden>
+            <div class="enrol-shutter-flash" id="docCamShutterFlash"></div>
+            <div class="doc-cam-guide" id="docCamGuide">
+              <i class="dc-corner tl"></i><i class="dc-corner tr"></i><i class="dc-corner bl"></i><i class="dc-corner br"></i>
+              <span>Align receipt, delivery ticket, or scale slip clearly inside frame</span>
+            </div>
+            <img id="docCamPreviewImg" class="doc-cam-preview-img" alt="Captured document preview" hidden>
+            <div class="kiosk-cam-standby-card doc-cam-warmup-card" id="docCamWarmupCard">
+              <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
+              <strong>Starting Document Camera...</strong>
+              <p>Hold steady over the receipt, A4 contract, or ID card.</p>
+            </div>
             <div class="doc-cam-fallback" id="docCamFallback" hidden>
               <span style="color:var(--brass,#C89D54);font-size:24px">${ic('camera')}</span>
               <strong id="docCamFallbackTitle">Camera Unavailable</strong>
-              <p id="docCamFallbackMsg">Allow browser camera access above, connect a webcam, or select an image directly from your device.</p>
+              <p id="docCamFallbackMsg">Allow browser camera access above, connect a camera, or select an image directly from your device.</p>
               <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px">
                 <button type="button" class="btn btn-outline-bar btn-sm" id="docCamRetryBtn">${ic('rotate')} Retry Camera</button>
                 <button type="button" class="btn btn-brass btn-sm" id="docCamFallbackPickBtn">${ic('upload')} Choose Photo from Device</button>
               </div>
             </div>
           </div>
+          <div class="doc-cam-batch-tray" id="docCamBatchTray" hidden></div>
           <div class="doc-cam-foot">
             <div class="doc-cam-foot-left">
-              <input type="file" id="docCamNativeInput" accept="image/*" capture="environment" hidden>
-              <button type="button" class="btn btn-ghost-bar btn-sm" id="docCamNativeBtn">${ic('upload')} Choose Image / Phone Camera</button>
+              <input type="file" id="docCamNativeInput" accept="image/*" multiple capture="environment" hidden>
+              <button type="button" class="btn btn-ghost-bar btn-sm" id="docCamNativeBtn">${ic('upload')} Choose Image / Files</button>
             </div>
             <div class="doc-cam-foot-right">
               <button type="button" class="btn btn-ghost-bar" id="docCamCancelBtn">Cancel</button>
               <button type="button" class="btn btn-outline-bar" id="docCamRetakeBtn" hidden>${ic('rotate')} Retake</button>
+              <button type="button" class="btn btn-outline-bar" id="docCamAddMoreBtn" hidden>+ Add Page</button>
               <button type="button" class="btn btn-brass" id="docCamSnapBtn">${ic('camera')} Capture Photo</button>
               <button type="button" class="btn btn-brass" id="docCamConfirmBtn" hidden>${ic('check')} Attach Photo</button>
             </div>
@@ -29353,6 +29528,13 @@
     $('docCamCancelBtn').addEventListener('click', closeDocumentCameraModal);
     modal.addEventListener('click', e => { if (e.target === modal) closeDocumentCameraModal(); });
 
+    modal.querySelectorAll('#docCamPresetBar [data-doc-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _docCamState.preset = btn.getAttribute('data-doc-preset') || 'receipt';
+        syncDocCameraStudioDom();
+      });
+    });
+
     const nativeInp = $('docCamNativeInput');
     const triggerNativePick = () => { if (nativeInp) nativeInp.click(); };
     $('docCamNativeBtn').addEventListener('click', triggerNativePick);
@@ -29362,9 +29544,10 @@
         const files = nativeInp.files ? Array.from(nativeInp.files) : [];
         nativeInp.value = '';
         if (!files.length) return;
+        const combined = (_docCamState.batchFiles || []).concat(files);
         const cb = _docCamState.onCapture;
         closeDocumentCameraModal();
-        if (typeof cb === 'function') await cb(files, 'Camera Scan');
+        if (typeof cb === 'function') await cb(combined, 'Camera Scan');
       });
     }
 
@@ -29386,8 +29569,13 @@
         }
       }
       if (!vid || !vid.videoWidth || !vid.videoHeight) {
-        toast('Camera stream is still warming up — wait a moment or click Choose Image.', 'err');
+        toast('Camera stream is still warming up. Wait a moment or tap Choose Image.', 'err');
         return;
+      }
+      const flashEl = $('docCamShutterFlash');
+      if (flashEl) {
+        flashEl.classList.add('active');
+        setTimeout(() => flashEl.classList.remove('active'), 180);
       }
       const maxEdge = 2000;
       let w = vid.videoWidth;
@@ -29406,7 +29594,9 @@
       canvas.toBlob(blob => {
         if (!blob) { toast('Could not capture photo frame', 'err'); return; }
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const fileName = `Receipt_Scan_${stamp}.jpg`;
+        const pageNo = (_docCamState.batchFiles ? _docCamState.batchFiles.length : 0) + 1;
+        const prefix = _docCamState.preset === 'card' ? 'ID_Scan' : (_docCamState.preset === 'document' ? 'Doc_Scan' : 'Receipt_Scan');
+        const fileName = `${prefix}_${stamp}_p${pageNo}.jpg`;
         let fileObj;
         try {
           fileObj = new File([blob], fileName, { type: 'image/jpeg', lastModified: Date.now() });
@@ -29414,15 +29604,25 @@
           blob.name = fileName;
           fileObj = blob;
         }
-        _docCamState.capturedFile = fileObj;
-        if (_docCamState.capturedPreviewUrl) {
-          try { URL.revokeObjectURL(_docCamState.capturedPreviewUrl); } catch (_) {}
+        const previewUrl = URL.createObjectURL(blob);
+        if (_docCamState.replaceLastOnCapture && _docCamState.activePreviewIdx >= 0 && _docCamState.batchFiles[_docCamState.activePreviewIdx]) {
+          const idx = _docCamState.activePreviewIdx;
+          if (_docCamState.batchPreviews[idx]) {
+            try { URL.revokeObjectURL(_docCamState.batchPreviews[idx]); } catch (_) {}
+          }
+          _docCamState.batchFiles[idx] = fileObj;
+          _docCamState.batchPreviews[idx] = previewUrl;
+        } else {
+          _docCamState.batchFiles.push(fileObj);
+          _docCamState.batchPreviews.push(previewUrl);
+          _docCamState.activePreviewIdx = _docCamState.batchFiles.length - 1;
         }
-        _docCamState.capturedPreviewUrl = URL.createObjectURL(blob);
+        _docCamState.replaceLastOnCapture = false;
+        _docCamState.capturedFile = fileObj;
         stopDocCameraStream();
         const prevImg = $('docCamPreviewImg');
         if (prevImg) {
-          prevImg.src = _docCamState.capturedPreviewUrl;
+          prevImg.src = previewUrl;
           prevImg.hidden = false;
         }
         if (vid) vid.hidden = true;
@@ -29432,21 +29632,29 @@
         $('docCamRetakeBtn').hidden = false;
         $('docCamConfirmBtn').hidden = false;
         $('docCamSwitchBtn').hidden = true;
+        syncDocCameraStudioDom();
       }, 'image/jpeg', 0.88);
     });
 
     $('docCamRetakeBtn').addEventListener('click', () => {
-      _docCamState.capturedFile = null;
+      _docCamState.replaceLastOnCapture = true;
+      startDocCameraLiveStream();
+    });
+
+    $('docCamAddMoreBtn')?.addEventListener('click', () => {
+      _docCamState.replaceLastOnCapture = false;
       startDocCameraLiveStream();
     });
 
     $('docCamConfirmBtn').addEventListener('click', async () => {
-      const f = _docCamState.capturedFile;
-      if (!f) return;
+      const files = (_docCamState.batchFiles && _docCamState.batchFiles.length)
+        ? _docCamState.batchFiles.slice()
+        : (_docCamState.capturedFile ? [_docCamState.capturedFile] : []);
+      if (!files.length) return;
       const cb = _docCamState.onCapture;
       closeDocumentCameraModal();
       if (typeof cb === 'function') {
-        await cb([f], 'Camera Scan');
+        await cb(files, 'Camera Scan');
       }
     });
 
@@ -29470,13 +29678,17 @@
     const snapBtn = $('docCamSnapBtn');
     const retakeBtn = $('docCamRetakeBtn');
     const confirmBtn = $('docCamConfirmBtn');
+    const addMoreBtn = $('docCamAddMoreBtn');
     const switchBtn = $('docCamSwitchBtn');
 
     if (prevImg) { prevImg.hidden = true; prevImg.removeAttribute('src'); }
     if (retakeBtn) retakeBtn.hidden = true;
-    if (confirmBtn) confirmBtn.hidden = true;
+    if (addMoreBtn) addMoreBtn.hidden = true;
+    if (confirmBtn) confirmBtn.hidden = !(_docCamState.batchFiles && _docCamState.batchFiles.length);
 
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      _docCamState.camStarting = false;
+      _docCamState.camLive = false;
       if (vid) vid.hidden = true;
       if (guide) guide.hidden = true;
       if (snapBtn) snapBtn.hidden = true;
@@ -29485,13 +29697,17 @@
         $('docCamFallbackMsg').textContent = 'Open ISABI over HTTPS (https://isabisystems.com/app/) for live camera scanning, or choose a photo from your device below.';
         fb.hidden = false;
       }
+      syncDocCameraStudioDom();
       return;
     }
 
+    _docCamState.camStarting = true;
+    _docCamState.camLive = false;
     if (fb) fb.hidden = true;
     if (vid) vid.hidden = false;
     if (guide) guide.hidden = false;
     if (snapBtn) { snapBtn.hidden = false; snapBtn.disabled = true; }
+    syncDocCameraStudioDom();
 
     try {
       const chosenDev = (_docCamState.deviceIdx >= 0 && _docCamState.devices[_docCamState.deviceIdx])
@@ -29513,6 +29729,8 @@
         return;
       }
       _docCamState.stream = stream;
+      _docCamState.camStarting = false;
+      _docCamState.camLive = true;
       if (snapBtn) snapBtn.disabled = false;
       if (vid) {
         vid.srcObject = stream;
@@ -29525,7 +29743,10 @@
         const isTouchMobile = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
         if (switchBtn) switchBtn.hidden = !(cams.length > 1 || isTouchMobile);
       }
+      syncDocCameraStudioDom();
     } catch (err) {
+      _docCamState.camStarting = false;
+      _docCamState.camLive = false;
       if (vid) vid.hidden = true;
       if (guide) guide.hidden = true;
       if (snapBtn) snapBtn.hidden = true;
@@ -29536,24 +29757,38 @@
           $('docCamFallbackTitle').textContent = 'Camera Permission Blocked';
           $('docCamFallbackMsg').textContent = 'Allow camera access in your browser address bar and click Retry Camera, or select an existing photo from your device.';
         } else if (/NotFound|DevicesNotFound/i.test(errName)) {
-          $('docCamFallbackTitle').textContent = 'No Camera Detected on This Computer';
-          $('docCamFallbackMsg').textContent = 'Connect a webcam or USB document camera and click Retry Camera, or choose an image file from your computer.';
+          $('docCamFallbackTitle').textContent = 'No Camera Detected on This Device';
+          $('docCamFallbackMsg').textContent = 'Connect a camera and click Retry Camera, or choose an image file from your device.';
         } else {
           $('docCamFallbackTitle').textContent = 'Could Not Start Camera';
           $('docCamFallbackMsg').textContent = `${(err && err.message) || 'Camera is currently in use by another app.'} Click Retry Camera or choose an image file.`;
         }
         fb.hidden = false;
       }
+      syncDocCameraStudioDom();
     }
   }
 
-  function openDocumentCameraCapture(onCaptureFiles) {
+  function openDocumentCameraCapture(onCaptureFiles, opts = {}) {
     const modal = ensureDocCameraModalDom();
+    revokeAllDocCamPreviews();
     _docCamState.open = true;
     _docCamState.capturedFile = null;
+    _docCamState.batchFiles = [];
+    _docCamState.batchPreviews = [];
+    _docCamState.activePreviewIdx = -1;
+    _docCamState.replaceLastOnCapture = false;
+    _docCamState.preset = (opts && opts.preset) || resolveDefaultDocCamPreset();
     _docCamState.onCapture = onCaptureFiles;
     modal.hidden = false;
-    startDocCameraLiveStream();
+    syncDocCameraStudioDom();
+    if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      startDocCameraLiveStream();
+    } else {
+      _docCamState.camStarting = false;
+      _docCamState.camLive = false;
+      syncDocCameraStudioDom();
+    }
   }
 
   function getRecordAttachmentsList(crKey, row) {
@@ -52702,6 +52937,7 @@
                   <label class="enrol-config-lbl" for="enrolUserSelect">${hideRoleAndRlsCols ? 'My Account' : 'Seat or Active Staff'}</label>
                   ${canSwitchEnrolTarget ? `
                     <div class="enrol-seat-step-btns">
+                      <button type="button" class="enrol-step-btn" id="enrolOpenStaffStudioBtn">${ic('camera')} Staff Studio</button>
                       <button type="button" class="enrol-step-btn" id="enrolPrevUserBtn" aria-label="Previous seat or staff">‹ Prev</button>
                       <button type="button" class="enrol-step-btn" id="enrolNextUserBtn" aria-label="Next seat or staff">Next ›</button>
                     </div>
@@ -52721,7 +52957,7 @@
                       `).join('')}
                     </optgroup>
                     <optgroup label="Active Staff (Kiosk Face ID)">
-                      ${getKioskStaffDirectory().filter(s => !s.userObj).map(s => {
+                      ${getKioskStaffDirectory({ scopeByActiveIndustry: true }).filter(s => !s.userObj).map(s => {
                         const stVal = 'stfbio:' + norm(s.name);
                         const fCnt = s.faceCount || 0;
                         return `
@@ -85651,7 +85887,11 @@
       const kMode = ['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk) ? STATE.activeKiosk : 'attendance';
       const defCo = defaultEntryCompany();
       const attSites = getKioskStationSites(defCo);
-      if (!attSites.includes(STATE.kioskAttSite)) attSites.unshift(STATE.kioskAttSite || 'WTC Main Plant');
+      if (!STATE.kioskAttSite || (!STATE.kioskAttSiteCustom && !attSites.includes(STATE.kioskAttSite))) {
+        STATE.kioskAttSite = attSites[0] || 'WTC Main Plant';
+      } else if (!attSites.includes(STATE.kioskAttSite)) {
+        attSites.unshift(STATE.kioskAttSite);
+      }
       const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
       const allAllowedKeys = getAllowedCompanyKeys(activeUser());
       const adminIndCoCatalogMap = {
@@ -85686,7 +85926,36 @@
           { key: 'insurance', short: 'Insurance' }
         ]
       };
-      const coChipCatalog = (adminIndCoCatalogMap[activeInd] || adminIndCoCatalogMap['Manufacturing']).filter(c => c.key.startsWith('industry:') || allAllowedKeys.includes(c.key));
+      const indShortMap = {
+        'Manufacturing': 'Manufacturing',
+        'Hospitality & Resorts': 'Hospitality',
+        'Real Estate & Property': 'Real Estate',
+        'Automotive & Heavy Trading': 'Trading',
+        'Insurance & Brokerage': 'Insurance',
+        'Holding & Treasury': 'Holding'
+      };
+      const orderedIndIds = (window.MFG_HOLDING && typeof window.MFG_HOLDING.getIndustryGroups === 'function')
+        ? window.MFG_HOLDING.getIndustryGroups().map(g => g.id)
+        : ['Manufacturing', 'Hospitality & Resorts', 'Real Estate & Property', 'Automotive & Heavy Trading', 'Insurance & Brokerage', 'Holding & Treasury'];
+      const indChipCatalog = orderedIndIds
+        .map(indId => {
+          const cos = (adminIndCoCatalogMap[indId] || []).filter(c => !c.key.startsWith('industry:') && (c.key === 'manufacturing-group' ? ['wtc', 'bbconstruction', 'lionstransport'].some(k => allAllowedKeys.includes(k)) : allAllowedKeys.includes(c.key)));
+          if (!cos.length) return null;
+          const groupEntry = (adminIndCoCatalogMap[indId] || []).find(c => c.key === 'manufacturing-group' || c.key.startsWith('industry:'));
+          const defaultKey = (cos.length > 1 && groupEntry) ? groupEntry.key : cos[0].key;
+          return { id: indId, short: indShortMap[indId] || indId, defaultKey };
+        })
+        .filter(Boolean);
+      const coChipCatalog = (adminIndCoCatalogMap[activeInd] || adminIndCoCatalogMap['Manufacturing']).filter(c => {
+        if (c.key.startsWith('industry:')) {
+          const realCos = (adminIndCoCatalogMap[activeInd] || []).filter(x => !x.key.startsWith('industry:') && allAllowedKeys.includes(x.key));
+          return realCos.length > 1;
+        }
+        if (c.key === 'manufacturing-group') {
+          return ['wtc', 'bbconstruction', 'lionstransport'].filter(k => allAllowedKeys.includes(k)).length > 1;
+        }
+        return allAllowedKeys.includes(c.key);
+      });
       const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', bleDeviceName: '' };
       const nb = window.IsabiNativeBridge || null;
       const hasNative = Boolean(nb && typeof nb.isAndroidKiosk === 'function');
@@ -85813,10 +86082,20 @@
                 <span>Applies only to this station</span>
               </div>
               <div class="ksa-config-grid">
+                ${indChipCatalog.length > 1 ? `
+                  <div class="ksa-cfg-row">
+                    <span class="kiosk-bar-lbl">${ic('layers') || ic('building')} Industry</span>
+                    <div class="kiosk-seg-group" id="ksaIndustryGroup">
+                      ${indChipCatalog.map(ind => `
+                        <button type="button" class="kiosk-seg-btn ${activeInd === ind.id ? 'active' : ''}" data-tone="sapphire" data-ksa-ind="${esc(ind.defaultKey)}">${esc(ind.short)}</button>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
                 ${coChipCatalog.length > 1 ? `
                   <div class="ksa-cfg-row">
                     <span class="kiosk-bar-lbl">${ic('building')} Company</span>
-                    <div class="kiosk-seg-group">
+                    <div class="kiosk-seg-group" id="ksaCompanyGroup">
                       ${coChipCatalog.map(c => `
                         <button type="button" class="kiosk-seg-btn ${STATE.company === c.key ? 'active' : ''}" data-tone="sapphire" data-ksa-co="${esc(c.key)}">${esc(c.short)}</button>
                       `).join('')}
@@ -85982,17 +86261,37 @@
         });
       });
 
+      const applyKioskAdminScopeChange = targetCo => {
+        if (!targetCo) return;
+        if (!targetCo.startsWith('industry:') && targetCo !== 'manufacturing-group' && !getAllowedCompanyKeys(activeUser()).includes(targetCo)) return;
+        if (window.MFG_HOLDING && typeof window.MFG_HOLDING.selectCompanyScope === 'function') {
+          window.MFG_HOLDING.selectCompanyScope(targetCo, true);
+        } else {
+          STATE.company = targetCo;
+          saveFilterState();
+        }
+        STATE.kioskAttSiteCustom = false;
+        STATE.kioskAttStaff = '';
+        const nextSites = getKioskStationSites(defaultEntryCompany());
+        if (nextSites.length) STATE.kioskAttSite = nextSites[0];
+        saveKioskStationConfig({
+          company: STATE.company,
+          kioskAttSite: STATE.kioskAttSite,
+          kioskAttSiteCustom: false
+        });
+        renderApp();
+        renderAdminInner();
+      };
+
+      modal.querySelectorAll('[data-ksa-ind]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          applyKioskAdminScopeChange(btn.getAttribute('data-ksa-ind') || 'manufacturing-group');
+        });
+      });
+
       modal.querySelectorAll('[data-ksa-co]').forEach(btn => {
         btn.addEventListener('click', () => {
-          const targetCo = btn.getAttribute('data-ksa-co') || 'manufacturing-group';
-          if (!targetCo.startsWith('industry:') && !getAllowedCompanyKeys(activeUser()).includes(targetCo)) return;
-          STATE.company = targetCo;
-          STATE.kioskAttSiteCustom = false;
-          STATE.kioskAttStaff = '';
-          saveFilterState();
-          saveKioskStationConfig({ company: targetCo });
-          renderApp();
-          renderAdminInner();
+          applyKioskAdminScopeChange(btn.getAttribute('data-ksa-co') || 'manufacturing-group');
         });
       });
 
@@ -88319,7 +88618,7 @@
       ? allEmpRecords.some(emp => emp && !emp.voided && (emp.company || 'WTC') === rawScopedCo)
       : true;
     const scopedCo = (rawScopedCo && (scopedCoHasEmps || opts.strictCompanyScope)) ? rawScopedCo : '';
-    const indCoSet = (opts.scopeBySelectedCompany && !scopedCo)
+    const indCoSet = (opts.scopeByActiveIndustry || (opts.scopeBySelectedCompany && !scopedCo))
       ? new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name))
       : null;
     const includeEnded = opts.includeEnded != null ? Boolean(opts.includeEnded) : !opts.activeOnly;
@@ -89857,10 +90156,50 @@
     return candidates[0];
   }
 
+  function getEnrolModalStaffPool() {
+    const indScoped = getKioskStaffDirectory({ scopeByActiveIndustry: true });
+    if (indScoped.length) return indScoped;
+    return getKioskStaffDirectory();
+  }
+
+  function computeFaceHorizontalYaw(det) {
+    if (!det || !det.landmarks) return null;
+    try {
+      const lm = det.landmarks;
+      const pts = Array.isArray(lm.positions) ? lm.positions : (Array.isArray(lm._positions) ? lm._positions : null);
+      if (pts && pts.length >= 48) {
+        let lx = 0, rx = 0;
+        for (let i = 36; i <= 41; i++) lx += Number(pts[i].x || 0);
+        for (let i = 42; i <= 47; i++) rx += Number(pts[i].x || 0);
+        lx /= 6;
+        rx /= 6;
+        const nosePt = pts[30] || pts[29];
+        const eyeDist = Math.abs(rx - lx);
+        if (nosePt && eyeDist > 8) {
+          const midX = (lx + rx) / 2;
+          return (Number(nosePt.x || 0) - midX) / eyeDist;
+        }
+      }
+      if (typeof lm.getLeftEye === 'function' && typeof lm.getRightEye === 'function' && typeof lm.getNose === 'function') {
+        const le = lm.getLeftEye();
+        const re = lm.getRightEye();
+        const ns = lm.getNose();
+        if (le && le.length && re && re.length && ns && ns.length) {
+          const lx = le.reduce((a, p) => a + Number(p.x || 0), 0) / le.length;
+          const rx = re.reduce((a, p) => a + Number(p.x || 0), 0) / re.length;
+          const nx = Number((ns[3] || ns[Math.floor(ns.length / 2)]).x || 0);
+          const eyeDist = Math.abs(rx - lx);
+          if (eyeDist > 8) return (nx - ((lx + rx) / 2)) / eyeDist;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function renderStaffEnrolRosterGridOnly() {
     const modal = $('staffFaceEnrolModal');
     if (!modal || modal.hidden) return;
-    const fullStaff = getKioskStaffDirectory();
+    const fullStaff = getEnrolModalStaffPool();
     const filtered = getFilteredStaffEnrolRoster(fullStaff);
     const gridEl = $('staffEnrolRosterGrid');
     const sumEl = $('staffEnrolRosterSummary');
@@ -89967,15 +90306,59 @@
                 badgeEl.className = 'badge badge-warn staff-enrol-live-pill';
               }
             } else {
-              badgeEl.textContent = `Face Ready (${pct}%) · Tap Capture (${cLen + 1}/3)`;
-              badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
+              const yaw = computeFaceHorizontalYaw(det);
+              let angleReady = true;
+              if (yaw != null) {
+                if (cLen === 0) angleReady = Math.abs(yaw) <= 0.24;
+                else if (cLen === 1) angleReady = Math.abs(yaw) >= 0.055;
+                else if (cLen === 2) {
+                  angleReady = STAFF_FACE_MODAL_STATE.pose2Yaw != null
+                    ? Math.abs(yaw - STAFF_FACE_MODAL_STATE.pose2Yaw) >= 0.08
+                    : Math.abs(yaw) >= 0.055;
+                }
+              }
+              if (STAFF_FACE_MODAL_STATE.handsFree && !det.multiple && Number(det.score || det.detScore || 0.85) >= 0.68) {
+                const nowMs = Date.now();
+                if (nowMs < (STAFF_FACE_MODAL_STATE.nextAutoAt || 0)) {
+                  STAFF_FACE_MODAL_STATE.autoStreak = 0;
+                  badgeEl.textContent = `Saved! Turn slightly for Pose ${cLen + 1}/3...`;
+                  badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
+                } else if (!angleReady) {
+                  STAFF_FACE_MODAL_STATE.autoStreak = 0;
+                  badgeEl.textContent = cLen === 0 ? 'Look straight ahead' : `Turn head slightly (${cLen + 1}/3)`;
+                  badgeEl.className = 'badge staff-enrol-live-pill';
+                } else {
+                  STAFF_FACE_MODAL_STATE.autoStreak = (STAFF_FACE_MODAL_STATE.autoStreak || 0) + 1;
+                  const st = Math.min(4, STAFF_FACE_MODAL_STATE.autoStreak);
+                  badgeEl.textContent = `Hands-Free Hold ${st}/4 · Pose ${cLen + 1}/3`;
+                  badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
+                  if (STAFF_FACE_MODAL_STATE.autoStreak >= 4) {
+                    STAFF_FACE_MODAL_STATE.autoStreak = 0;
+                    STAFF_FACE_MODAL_STATE.nextAutoAt = nowMs + 1350;
+                    if (cLen === 1 && yaw != null) STAFF_FACE_MODAL_STATE.pose2Yaw = yaw;
+                    const snapNow = (window.Face && window.Face.snapshot && window.Face.snapshot(videoEl)) || STAFF_FACE_MODAL_STATE.lastSnap || '';
+                    STAFF_FACE_MODAL_STATE.busy = false;
+                    await captureStaffModalPose(det, snapNow);
+                    if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
+                      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 90);
+                    }
+                    return;
+                  }
+                }
+              } else {
+                STAFF_FACE_MODAL_STATE.autoStreak = 0;
+                badgeEl.textContent = angleReady
+                  ? `Face Ready (${pct}%) · Tap Capture (${cLen + 1}/3)`
+                  : (cLen === 0 ? `Look Straight (${pct}%)` : `Turn Slightly · Tap Capture (${cLen + 1}/3)`);
+                badgeEl.className = 'badge badge-ok staff-enrol-live-pill';
+              }
             }
           } else {
+            STAFF_FACE_MODAL_STATE.autoStreak = 0;
             badgeEl.textContent = STAFF_FACE_MODAL_STATE.captures.length >= 3 ? 'Live Verify · Look at Camera' : 'Center face inside oval';
             badgeEl.className = 'badge staff-enrol-live-pill';
           }
         }
-        STAFF_FACE_MODAL_STATE.autoStreak = 0;
       } catch (_) {}
       STAFF_FACE_MODAL_STATE.busy = false;
     }
@@ -90109,10 +90492,17 @@
   function syncStaffFaceEnrolModalDom() {
     const modal = $('staffFaceEnrolModal');
     if (!modal || modal.hidden) return;
-    const allStaff = getKioskStaffDirectory();
-    const curEntry = STAFF_FACE_MODAL_STATE.staffName
+    let allStaff = getEnrolModalStaffPool();
+    let curEntry = STAFF_FACE_MODAL_STATE.staffName
       ? (allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null)
       : null;
+    if (!curEntry && STAFF_FACE_MODAL_STATE.staffName) {
+      const globalHit = getKioskStaffDirectory().find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null;
+      if (globalHit) {
+        curEntry = globalHit;
+        allStaff = [globalHit].concat(allStaff);
+      }
+    }
     if (curEntry) STAFF_FACE_MODAL_STATE.staffName = curEntry.name;
     if (!curEntry) STAFF_FACE_MODAL_STATE.step = 'roster';
 
@@ -90317,6 +90707,13 @@
       clrBtn.hidden = capCount === 0;
       clrBtn.disabled = capCount === 0;
     }
+    const hfBtn = $('sfeHandsFreeBtn');
+    if (hfBtn) {
+      hfBtn.hidden = capCount >= 3;
+      hfBtn.classList.toggle('active', Boolean(STAFF_FACE_MODAL_STATE.handsFree));
+      hfBtn.setAttribute('aria-pressed', STAFF_FACE_MODAL_STATE.handsFree ? 'true' : 'false');
+      hfBtn.innerHTML = STAFF_FACE_MODAL_STATE.handsFree ? '✓ Hands-Free On' : 'Hands-Free Auto';
+    }
 
     const poseGuide = $('staffEnrolPosePrompt');
     if (poseGuide) {
@@ -90396,28 +90793,35 @@
   function openStaffFaceEnrolModal(staffName = '') {
     stopKioskAttCamera();
     stopStaffEnrolModalCamera();
-    const allStaff = getKioskStaffDirectory({ scopeBySelectedCompany: true });
-    const fullStaff = getKioskStaffDirectory();
-    const pool = allStaff.length ? allStaff : fullStaff;
-    if (!pool.length) {
+    const indStaff = getEnrolModalStaffPool();
+    const fullStaff = indStaff.length ? indStaff : getKioskStaffDirectory();
+    if (!fullStaff.length) {
       toast('No active staff available to enrol', 'warn');
       return null;
     }
-    let picked = staffName ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || null) : null;
+    let picked = staffName
+      ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || getKioskStaffDirectory().find(s => norm(s.name) === norm(staffName)) || null)
+      : null;
     if (!picked && STATE.kioskAttRosterSearch) {
       const rq = norm(STATE.kioskAttRosterSearch);
-      const hits = pool.filter(s => norm(s.name).includes(rq));
+      const hits = fullStaff.filter(s => norm(s.name).includes(rq));
       if (hits.length === 1) picked = hits[0];
     }
     const defaultScopedCo = (COMPANY_BU_MATCH[STATE.company] && fullStaff.some(s => s.company === COMPANY_BU_MATCH[STATE.company]))
       ? COMPANY_BU_MATCH[STATE.company]
       : '';
+    let savedHf = false;
+    try { savedHf = localStorage.getItem('isabi_mfg_sfe_handsfree_v1') === '1'; } catch (_) {}
     STAFF_FACE_MODAL_STATE.open = true;
     STAFF_FACE_MODAL_STATE.staffName = picked ? picked.name : '';
     STAFF_FACE_MODAL_STATE.step = picked ? 'capture' : 'roster';
     STAFF_FACE_MODAL_STATE.rosterFilter = 'active';
     STAFF_FACE_MODAL_STATE.rosterCo = defaultScopedCo;
     STAFF_FACE_MODAL_STATE.rosterSearch = '';
+    STAFF_FACE_MODAL_STATE.handsFree = savedHf;
+    STAFF_FACE_MODAL_STATE.pose2Yaw = null;
+    STAFF_FACE_MODAL_STATE.autoStreak = 0;
+    STAFF_FACE_MODAL_STATE.nextAutoAt = 0;
     STAFF_FACE_MODAL_STATE.lastDet = null;
     STAFF_FACE_MODAL_STATE.lastSnap = '';
     STAFF_FACE_MODAL_STATE.statusText = '';
@@ -90513,6 +90917,7 @@
                 </div>
                 <div class="staff-enrol-btn-bar">
                   <button type="button" class="btn btn-primary sfe-primary-capture-btn" id="staffEnrolCaptureBtn">${ic('camera')} Capture Pose 1 of 3</button>
+                  <button type="button" class="sfe-chip sfe-handsfree-pill" id="sfeHandsFreeBtn" aria-pressed="false">Hands-Free Auto</button>
                   <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face ID</button>
                 </div>
               </div>
@@ -90606,6 +91011,13 @@
         return;
       }
       await captureStaffModalPose();
+    });
+    $('sfeHandsFreeBtn')?.addEventListener('click', () => {
+      STAFF_FACE_MODAL_STATE.handsFree = !STAFF_FACE_MODAL_STATE.handsFree;
+      STAFF_FACE_MODAL_STATE.autoStreak = 0;
+      STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 350;
+      try { localStorage.setItem('isabi_mfg_sfe_handsfree_v1', STAFF_FACE_MODAL_STATE.handsFree ? '1' : '0'); } catch (_) {}
+      syncStaffFaceEnrolModalDom();
     });
     $('staffEnrolClearBtn')?.addEventListener('click', async () => {
       const res = await clearStaffFaceId(STAFF_FACE_MODAL_STATE.staffName);
@@ -93124,8 +93536,12 @@
     sanitizeKioskPunchesState();
     const defCo = defaultEntryCompany();
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const activeInd = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
     const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
-    const punches = scopedCo ? allPunches.filter(p => !p.company || p.company === scopedCo) : allPunches;
+    const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name));
+    const punches = scopedCo
+      ? allPunches.filter(p => !p.company || p.company === scopedCo)
+      : allPunches.filter(p => !p.company || indCoNames.has(p.company));
 
     const nowMs = Date.now();
     const latestByStaff = new Map();
@@ -93995,7 +94411,10 @@
     const fuelRows = kMode === 'fuel' ? filterRecords(SEED.records.fuel_intakes, { ignorePeriod: true }).slice(0, 8) : [];
 
     const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
-    const punches = scopedCo ? allPunches.filter(p => !p.company || p.company === scopedCo) : allPunches;
+    const indCoNames = new Set(getCompanyCatalog().filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name));
+    const punches = scopedCo
+      ? allPunches.filter(p => !p.company || p.company === scopedCo)
+      : allPunches.filter(p => !p.company || indCoNames.has(p.company));
 
     // Count currently ON SITE staff strictly within the 16h active shift window
     const nowMs = Date.now();
@@ -98680,6 +99099,15 @@
       if (prevTargetBtn) prevTargetBtn.addEventListener('click', () => stepEnrolTarget(-1));
       const nextTargetBtn = $('enrolNextUserBtn');
       if (nextTargetBtn) nextTargetBtn.addEventListener('click', () => stepEnrolTarget(1));
+      const openStfStudioBtn = $('enrolOpenStaffStudioBtn');
+      if (openStfStudioBtn) {
+        openStfStudioBtn.addEventListener('click', () => {
+          if (FACE_STATE.enrolCamActive) stopFaceCamera();
+          const curTarget = enrolTargetUser();
+          const initName = curTarget && curTarget.isKioskStaffOnly ? curTarget.full_name : '';
+          openStaffFaceEnrolModal(initName);
+        });
+      }
 
       const seatAuthSel = $('enrolSeatAuthModeSelect');
       if (seatAuthSel) seatAuthSel.addEventListener('change', async e => {
