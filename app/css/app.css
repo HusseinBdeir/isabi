@@ -25811,8 +25811,9 @@ label.exp-inline-bar-lbl {
 
 /* Staff Schedule & Overtime Modal */
 .staff-sched-modal-card {
-  width: min(860px, 95vw);
-  max-width: 860px;
+  width: min(960px, 96vw);
+  max-width: 960px;
+  border-top: 3px solid var(--brass);
 }
 .staff-sched-modal-body {
   display: flex;
@@ -25823,11 +25824,15 @@ label.exp-inline-bar-lbl {
 .ssm-section {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 11px 13px;
-  border-radius: 9px;
+  gap: 10px;
+  padding: 13px 15px;
+  border-radius: 10px;
   border: 1px solid var(--line);
-  background: var(--surface-2);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+.ssm-section[hidden] {
+  display: none !important;
 }
 .ssm-sec-head {
   display: flex;
@@ -28468,15 +28473,22 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
 
 .ssm-live-pills {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .ssm-live-pills {
+    grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  }
 }
 
 .ssm-live-kpi {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 7px 10px;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -28484,18 +28496,30 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
 
 .ssm-live-kpi .ssm-lk-lbl,
 .ssm-live-kpi .slk-lbl {
-  font-size: 9.6px;
+  font-size: 9.5px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
+  white-space: normal;
+  line-height: 1.2;
 }
 
 .ssm-live-kpi strong {
-  font-size: 11.4px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--ink);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.28;
+}
+
+.ssm-live-kpi .ssm-lk-sub {
+  font-size: 10.4px;
+  color: var(--ink-soft);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .ssm-bio-quick-bar {
@@ -28504,8 +28528,15 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
-  padding-top: 8px;
+  padding-top: 9px;
   border-top: 1px dashed var(--line);
+}
+
+.ssm-bio-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 
 .ssm-quick-pin-box {
@@ -28515,18 +28546,34 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
 }
 
 .ssm-quick-pin-lbl {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.2px;
   font-weight: 700;
   color: var(--ink-soft);
 }
 
-.ssm-quick-pin-input {
-  width: 78px !important;
-  height: 28px !important;
+.ssm-quick-pin-lbl svg {
+  width: 13px;
+  height: 13px;
+}
+
+.ssm-quick-pin-input,
+.ssm-pin-wide {
+  width: 112px !important;
+  height: 30px !important;
   padding: 2px 8px !important;
   text-align: center;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
+}
+
+.ssm-pin-wide::placeholder,
+.ssm-quick-pin-input::placeholder {
+  letter-spacing: 0;
+  font-weight: 500;
+  font-size: 11.2px;
 }
 
 .kiosk-late-workspace {
@@ -31276,4 +31323,596 @@ html[dir="rtl"] th.num {
   border: 0;
   border-radius: 6px;
   background: #FFFFFF;
+}
+
+/* ==========================================================================
+   Staff Shift, Policy, Multipliers & Perks Studio + Inline Table Types
+   ========================================================================== */
+
+.ssm-studio-head {
+  padding: 13px 16px;
+  background: color-mix(in srgb, var(--brass-tint) 42%, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.ssm-head-id {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.kiosk-staff-avatar.is-lg {
+  width: 40px;
+  height: 40px;
+  font-size: 13.5px;
+  font-weight: 800;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brass) 22%, var(--surface));
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--brass) 45%, var(--line));
+  flex-shrink: 0;
+}
+
+.ssm-studio-head .modal-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.ssm-head-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.ssm-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ssm-staff-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.ssm-step-pos {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.ssm-studio-nav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.ssm-studio-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 11.4px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.ssm-studio-tab:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.ssm-studio-tab.active {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: color-mix(in srgb, var(--brass) 85%, #000000);
+}
+
+/* Policy & Perks Group Selector Cards in Studio */
+.ssm-policy-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 9px;
+}
+
+.ssm-policy-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.ssm-policy-group-card:hover {
+  border-color: color-mix(in srgb, var(--brass) 55%, var(--line));
+  background: var(--surface);
+}
+
+.ssm-policy-group-card.active {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 11%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 45%, transparent);
+}
+
+.ssm-pg-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ssm-pg-top strong {
+  font-size: 12.2px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.ssm-pg-edit-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ssm-pg-edit-link:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+
+.ssm-pg-metrics {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  line-height: 1.3;
+}
+
+.ssm-pg-perks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.ssm-pg-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+/* Multipliers, Overtime, Vacation & Basis Workbench */
+.ssm-comp-workbench {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+  gap: 9px;
+}
+
+.ssm-comp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.ssm-comp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ssm-comp-head label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.ssm-seg-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.ssm-seg-pills input[type="number"] {
+  width: 64px;
+  height: 28px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Perks & Functions Interactive Chips */
+.ssm-perks-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.ssm-perks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ssm-custom-perk-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ssm-custom-perk-add input[type="text"] {
+  width: 200px;
+  max-width: 56vw;
+  height: 28px;
+  padding: 2px 8px;
+  font-size: 11.8px;
+}
+
+.ssm-perks-studio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 7px;
+}
+
+.ssm-perk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 11.8px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.ssm-perk-chip:hover {
+  border-color: color-mix(in srgb, var(--brass) 55%, var(--line));
+  color: var(--ink);
+}
+
+.ssm-perk-chip.active {
+  border-color: color-mix(in srgb, #1F7A4C 55%, var(--brass));
+  background: color-mix(in srgb, #1F7A4C 9%, var(--surface));
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ssm-perk-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brass);
+  flex-shrink: 0;
+}
+
+.ssm-perk-chip.active .ssm-perk-ico {
+  color: #1F7A4C;
+}
+
+.ssm-perk-ico svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ssm-perk-chk {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.ssm-perk-chip.active .ssm-perk-chk {
+  color: #1F7A4C;
+}
+
+/* Tolerances & Visual Choice Cards (Replacing plain full-width selects) */
+.ssm-tol-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 9px;
+}
+
+.ssm-choice-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.ssm-subhead-lbl {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.ssm-choice-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+@media (max-width: 560px) {
+  .ssm-choice-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ssm-choice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.ssm-choice-card:hover {
+  border-color: color-mix(in srgb, var(--brass) 55%, var(--line));
+  background: var(--surface);
+}
+
+.ssm-choice-card.active {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 12%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 40%, transparent);
+}
+
+.ssm-choice-card strong {
+  font-size: 11.8px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ssm-choice-card span {
+  font-size: 10.6px;
+  color: var(--ink-soft);
+  line-height: 1.28;
+}
+
+/* Policy & Perks Groups Strip Above Workforce Tables */
+.policy-groups-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--brass-tint) 26%, var(--surface));
+}
+
+.policy-group-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.policy-group-card:hover {
+  border-color: color-mix(in srgb, var(--brass) 55%, var(--line));
+}
+
+.policy-group-card.active {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass) 12%, var(--surface));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 45%, transparent);
+}
+
+.policy-group-card.is-add {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+
+.policy-group-card.is-add:hover {
+  background: var(--surface);
+  border-color: var(--brass);
+}
+
+.pgc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pgc-head strong {
+  font-size: 11.8px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pgc-cnt {
+  font-size: 10.2px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.pgc-metrics {
+  font-size: 10.8px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pgc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+.pgc-perks {
+  font-size: 10.3px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pgc-edit-btn {
+  appearance: none;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 10.2px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.pgc-edit-btn:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+
+/* Inline Shift Type & Policy Group Cells on Workforce Tables */
+.kiosk-inline-type-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 156px;
+  max-width: 224px;
+}
+
+.kiosk-inline-shift-select,
+.kiosk-inline-policy-select {
+  width: 100%;
+  max-width: 220px;
+  min-width: 0;
+  height: 27px;
+  padding: 2px 22px 2px 8px;
+  font-size: 11.6px;
+  font-weight: 700;
+  border-radius: 6px;
+  text-overflow: ellipsis;
+  background-color: var(--surface);
+}
+
+.kiosk-inline-policy-select {
+  border-color: color-mix(in srgb, var(--brass) 42%, var(--line));
+  background-color: color-mix(in srgb, var(--brass-tint) 28%, var(--surface));
+}
+
+.kiosk-cell-sublink {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font-size: 10.6px;
+  color: var(--ink-soft);
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kiosk-cell-sublink:hover {
+  color: var(--brass);
+  text-decoration: underline;
+}
+
+.kiosk-perks-sub {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.3px;
+}
+
+#policyGroupModal .pa-select-menu {
+  z-index: 1200;
 }

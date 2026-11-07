@@ -8827,8 +8827,8 @@
   }
 
   // ---- master-data lookups for the entry desk ---------------------------------
-  let _FREQ_IDX = null;
-  let _FREQ_TKT_CACHE = null;
+  var _FREQ_IDX = null;
+  var _FREQ_TKT_CACHE = null;
   const _cloneMap = m => new Map(m);
   const _cloneMapOfMaps = m => {
     const out = new Map();
@@ -84042,7 +84042,7 @@
   const AVAILABLE_STAFF_PERKS = [
     { id: 'Site Transport', label: 'Site Transport', icon: 'truck' },
     { id: 'Paid Leave', label: 'Paid Leave', icon: 'check_circle' },
-    { id: 'Meal Allowance', label: 'Meal Allowance', icon: 'spark' },
+    { id: 'Meal Allowance', label: 'Meal Allowance', icon: 'dollar' },
     { id: 'Driver Trip OT', label: 'Driver Trip OT', icon: 'truck' },
     { id: 'Fuel & Phone Perk', label: 'Fuel & Phone Perk', icon: 'fuel' },
     { id: 'Attendance Bonus', label: 'Attendance Bonus', icon: 'check_circle' }
@@ -84336,7 +84336,7 @@
     saveLocalAuthAndRecords();
     postWorkScheduleMutation({ op: 'upsert_policy_group', item: normalized });
     syncWithCloud(true);
-    return { ok: true, policyGroup: normalized, backfilledStaff };
+    return { ok: true, policyGroup: normalized, group: normalized, backfilledStaff };
   }
 
   function deletePolicyGroup(groupId) {
@@ -87825,6 +87825,7 @@
     const focusDate = opts.focusDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.focusDate) ? opts.focusDate : today;
 
     let draftShiftId = rule.shift_id || 'day_8_4';
+    let draftPolicyGroupId = rule.policy_group_id || 'pkg_15_open_15d';
     let draftCustomStart = rule.custom_start || '08:00';
     let draftCustomEnd = rule.custom_end || '16:00';
     let draftCustomName = rule.custom_name || 'Custom Shift';
@@ -87834,6 +87835,11 @@
     let draftLateCountFrom = rule.late_count_from || 'shift_start';
     let draftLatePenaltyMode = rule.late_penalty_mode || 'exact_hours';
     let draftLateMultiplier = Number(rule.late_multiplier != null ? rule.late_multiplier : 1.5);
+    let draftOtMultiplier = Number(rule.ot_multiplier != null ? rule.ot_multiplier : 1.5);
+    let draftVacationDays = Number(rule.vacation_days != null ? rule.vacation_days : 15);
+    let draftSickDays = Number(rule.sick_days != null ? rule.sick_days : 7);
+    let draftWorkingDays = [26, 30].includes(Number(rule.working_days)) ? Number(rule.working_days) : 30;
+    let draftPerks = Array.isArray(rule.perks) ? rule.perks.slice() : ['Site Transport', 'Paid Leave'];
     let draftLateHalfDayMin = Number(rule.late_half_day_after_min != null ? rule.late_half_day_after_min : 60);
     let draftNoClockOutRule = rule.no_clock_out_rule || 'half_day';
     const activeShiftObj = shiftTypes.find(t => t.id === draftShiftId);
@@ -87847,7 +87853,8 @@
     let draftDayTimings = normalizeDayTimingsMap(rule.day_timings || (activeShiftObj && activeShiftObj.day_timings), draftSatDiff, draftSatStart, draftSatEnd);
     let draftUseCustomDayTimings = Boolean(rule.use_custom_day_timings);
     let draftExpandAllDays = false;
-    let draftShowShiftTable = opts.openShiftTable != null ? Boolean(opts.openShiftTable) : true;
+    let draftShowShiftTable = Boolean(opts.openShiftTable);
+    let draftStudioSection = ['all', 'shift', 'policy', 'lateness', 'ot'].includes(opts.studioTab) ? opts.studioTab : 'all';
     let draftOtMode = rule.ot_mode || 'none';
     let draftOtMaxHours = Number(rule.ot_max_hours != null ? rule.ot_max_hours : 2);
     let draftOtWinStart = rule.ot_window_start || '';
@@ -87868,7 +87875,8 @@
 
     const renderModalInner = () => {
       ensureWorkShiftsSeeded();
-      const liveShiftTypes = getShiftTypes();
+      const liveShiftTypes = getShiftTypes(entry.company);
+      const livePolicyGroups = getPolicyGroups();
       const prevBodyEl = modal.querySelector('.staff-sched-modal-body');
       const prevCardEl = modal.querySelector('.staff-sched-modal-card');
       const prevBodyTop = prevBodyEl ? prevBodyEl.scrollTop : 0;
@@ -87888,19 +87896,22 @@
       const curShiftObj = draftShiftId === 'custom'
         ? { name: draftCustomName || 'Custom Shift', start_time: draftCustomStart, end_time: draftCustomEnd, hours: cDur }
         : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
+      const curPolicyGrp = livePolicyGroups.find(g => g.id === draftPolicyGroupId) || null;
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
         .filter(r => r && !r.voided)
         .map(r => hydrateWorkShiftRowComputed(r));
       const buCompanies = ['WTC', 'BBConstruction', 'Lions Transport'];
+      if (entry.company && !buCompanies.includes(entry.company)) buCompanies.unshift(entry.company);
       const dayTimingsSummaryTxt = formatDayTimingsSummary(draftDayTimings, draftSatDiff, draftSatStart, draftSatEnd);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
       const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
       const endMinVal = endMinRaw <= startMinVal ? (endMinRaw + 1440) : endMinRaw;
       const cutoffClockLbl = formatMinutesAsClockTime(startMinVal + draftGrace);
       const outCutoffClockLbl = formatMinutesAsClockTime(endMinVal - draftEarlyGrace);
+      const effLateMultVal = draftLatePenaltyMode === 'multiplier' ? draftLateMultiplier : 1.0;
       const penSummaryMap = {
-        exact_hours: '1x Hours',
-        multiplier: `${fmtNum(draftLateMultiplier, 1)}x Rate`,
+        exact_hours: '1.0x Exact',
+        multiplier: `${fmtNum(draftLateMultiplier, draftLateMultiplier % 1 ? 2 : 1)}x Rate`,
         round_hour: 'Round 1h',
         tiered_half_day: `>=${draftLateHalfDayMin}m = 0.5d`,
         half_day_any: 'Late = 0.5d',
@@ -87914,19 +87925,28 @@
       };
       const otSummaryMap = {
         none: 'No Overtime (0h)',
-        always: 'Anytime Open OT',
+        always: 'Whenever (Open OT)',
         max_hours: `Max ${fmtNum(draftOtMaxHours || 2, 1)}h / Day`,
         date_range: draftPasses.length ? `${draftPasses.length} Approved Date Pass${draftPasses.length === 1 ? '' : 'es'}` : 'Specific Date Pass'
       };
+      const knownPerkIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
+      const extraCustomPerks = (draftPerks || []).filter(p => p && !knownPerkIds.has(p));
+      const allPerkCatalog = AVAILABLE_STAFF_PERKS.concat(extraCustomPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
+      const showSec = key => draftStudioSection === 'all' || draftStudioSection === key;
 
       modal.innerHTML = `
         <div class="modal-card staff-sched-modal-card">
-          <div class="modal-head">
+          <div class="modal-head ssm-studio-head">
             <div class="ssm-head-id">
               <span class="kiosk-staff-avatar is-lg">${esc(initials)}</span>
               <div>
-                <div class="modal-title">${esc(entry.name)} <span class="ssm-head-role">${esc(entry.role)}</span> ${coBadge(entry.company)}</div>
-                <div class="modal-sub">Modify shift timing, IN &amp; OUT tolerances (0, 5, 10, 15, 20, 30 min), single-punch penalties, overtime, and biometric credentials</div>
+                <div class="modal-title">
+                  <span>${esc(entry.name)}</span>
+                  <span class="ssm-head-role">${esc(entry.role)}</span>
+                  ${coBadge(entry.company)}
+                  ${freshEntry.isEndedContract ? `<span class="badge badge-warn">Ended</span>` : `<span class="badge badge-ok">Active</span>`}
+                </div>
+                <div class="modal-sub">Interactive shift schedule, policy &amp; perks group, multipliers, vacation days, tolerances, and biometric PIN studio</div>
               </div>
             </div>
             <div class="ssm-head-actions">
@@ -87941,43 +87961,62 @@
             </div>
           </div>
           <div class="modal-body staff-sched-modal-body">
-            <!-- LIVE RULE SUMMARY & BIOMETRICS STRIP -->
+            <!-- LIVE TELEMETRY DECK & BIOMETRICS BAR -->
             <div class="ssm-live-summary-strip" id="ssmLiveSummaryStrip">
               <div class="ssm-live-pills">
                 <div class="ssm-live-kpi">
-                  <span class="ssm-lk-lbl">Shift Window</span>
-                  <strong class="mono">${esc(curShiftObj.start_time)} - ${esc(curShiftObj.end_time)} (${fmtNum(curShiftObj.hours || cDur, 1)}h)${draftSatDiff ? ` · Sat ${esc(draftSatStart)}-${esc(draftSatEnd)}` : ''}</strong>
+                  <span class="ssm-lk-lbl">Regular Shift</span>
+                  <strong class="mono">${esc(curShiftObj.name)} · ${esc(curShiftObj.start_time)}-${esc(curShiftObj.end_time)}</strong>
+                  <span class="ssm-lk-sub mono">${fmtNum(curShiftObj.hours || cDur, 1)}h${draftSatDiff ? ` · Sat ${esc(draftSatStart)}-${esc(draftSatEnd)}` : ` · ${esc(formatWorkdaysCompact(draftDays))}`}</span>
                 </div>
                 <div class="ssm-live-kpi">
-                  <span class="ssm-lk-lbl">IN &amp; OUT Cutoffs (${draftGrace}m / ${draftEarlyGrace}m)</span>
+                  <span class="ssm-lk-lbl">Policy &amp; Perks Group</span>
+                  <strong>${esc(curPolicyGrp ? curPolicyGrp.name : 'Custom Policy')}</strong>
+                  <span class="ssm-lk-sub mono">${fmtNum(draftVacationDays)}d Vac · ${draftWorkingDays}d Basis · ${fmtNum(draftPerks.length)} Perks</span>
+                </div>
+                <div class="ssm-live-kpi">
+                  <span class="ssm-lk-lbl">Multipliers (Late / OT)</span>
+                  <strong class="mono">Late ${esc(penSummaryMap[draftLatePenaltyMode] || '1.0x')} · OT ${fmtNum(draftOtMultiplier, draftOtMultiplier % 1 ? 2 : 1)}x</strong>
+                  <span class="ssm-lk-sub">${esc(noOutSummaryMap[draftNoClockOutRule] || 'Only IN/OUT: 0.5d')}</span>
+                </div>
+                <div class="ssm-live-kpi">
+                  <span class="ssm-lk-lbl">IN &amp; OUT Cutoffs</span>
                   <strong class="mono">IN &gt; ${esc(cutoffClockLbl)} · OUT &lt; ${esc(outCutoffClockLbl)}</strong>
+                  <span class="ssm-lk-sub mono">${draftGrace}m IN Tol. · ${draftEarlyGrace}m OUT Tol.</span>
                 </div>
                 <div class="ssm-live-kpi">
-                  <span class="ssm-lk-lbl">Lateness &amp; 1-Punch</span>
-                  <strong>${esc(penSummaryMap[draftLatePenaltyMode] || '1x Hours')} · ${esc(noOutSummaryMap[draftNoClockOutRule] || 'Only IN/OUT: 0.5d')}</strong>
-                </div>
-                <div class="ssm-live-kpi">
-                  <span class="ssm-lk-lbl">Overtime Rule</span>
+                  <span class="ssm-lk-lbl">Allowable Overtime</span>
                   <strong>${esc(otSummaryMap[draftOtMode] || 'No Overtime')}</strong>
+                  <span class="ssm-lk-sub mono">${draftOtMode === 'none' ? '0h Paid OT' : `Paid at ${fmtNum(draftOtMultiplier, draftOtMultiplier % 1 ? 2 : 1)}x rate`}</span>
                 </div>
               </div>
               <div class="ssm-bio-quick-bar">
-                <button type="button" class="kiosk-bio-btn ${freshEntry.hasFace ? 'is-enrolled' : ''}" id="ssmOpenFaceStudioBtn">
-                  ${ic('camera')} ${freshEntry.hasFace ? `Face ID (${freshEntry.faceCount}/3)` : 'Enrol Face ID'}
-                </button>
-                <div class="ssm-quick-pin-box">
-                  <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" class="kiosk-inline-pin-input" id="ssmQuickPinInput" placeholder="4-digit PIN" value="${esc(freshEntry.hasExplicitPin ? freshEntry.pin : '')}" aria-label="4-digit Kiosk PIN">
-                  <button type="button" class="btn kiosk-mini-btn" id="ssmQuickPinSaveBtn">${freshEntry.hasExplicitPin ? 'Update PIN' : 'Set PIN'}</button>
+                <div class="ssm-bio-left">
+                  <button type="button" class="kiosk-bio-btn ${freshEntry.hasFace ? 'is-enrolled' : ''}" id="ssmOpenFaceStudioBtn">
+                    ${ic('camera')} ${freshEntry.hasFace ? `Face ID Enrolled (${freshEntry.faceCount}/3)` : 'Enrol 3-Pose Face ID'}
+                  </button>
+                  <div class="ssm-quick-pin-box">
+                    <span class="ssm-quick-pin-lbl">${ic('lock')} Kiosk PIN</span>
+                    <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" class="kiosk-inline-pin-input ssm-pin-wide" id="ssmQuickPinInput" placeholder="4-digit PIN" value="${esc(freshEntry.hasExplicitPin ? freshEntry.pin : '')}" aria-label="4-digit Kiosk PIN">
+                    <button type="button" class="btn kiosk-mini-btn" id="ssmQuickPinSaveBtn">${freshEntry.hasExplicitPin ? 'Update PIN' : 'Set PIN'}</button>
+                  </div>
+                </div>
+                <div class="ssm-studio-nav" role="tablist" aria-label="Studio Sections">
+                  <button type="button" class="ssm-studio-tab ${draftStudioSection === 'all' ? 'active' : ''}" data-ssm-studio-tab="all">All Sections</button>
+                  <button type="button" class="ssm-studio-tab ${draftStudioSection === 'shift' ? 'active' : ''}" data-ssm-studio-tab="shift">1. Shift &amp; Days</button>
+                  <button type="button" class="ssm-studio-tab ${draftStudioSection === 'policy' ? 'active' : ''}" data-ssm-studio-tab="policy">2. Policy &amp; Perks</button>
+                  <button type="button" class="ssm-studio-tab ${draftStudioSection === 'lateness' ? 'active' : ''}" data-ssm-studio-tab="lateness">3. Tolerances</button>
+                  <button type="button" class="ssm-studio-tab ${draftStudioSection === 'ot' ? 'active' : ''}" data-ssm-studio-tab="ot">4. OT &amp; Rotations</button>
                 </div>
               </div>
             </div>
 
             <!-- SECTION 1: REGULAR SHIFT TIMING -->
-            <div class="ssm-section">
+            <div class="ssm-section" id="ssmShiftSection" ${showSec('shift') ? '' : 'hidden'}>
               <div class="ssm-sec-head" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
                 <div>
-                  <strong>1. Regular Shift &amp; Clock Timing</strong>
-                  <span class="muted" style="margin-left:8px">Arrival lateness and shift completion are measured against this exact window</span>
+                  <strong>1. Regular Shift &amp; Day-Specific Clock Timing</strong>
+                  <span class="muted" style="margin-left:8px">Choose this employee's regular shift, Saturday early schedule, or manage BU shift defaults</span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                   <button type="button" class="btn kiosk-mini-btn ${draftShowShiftTable ? 'btn-primary' : ''}" id="ssmToggleShiftTableBtn">
@@ -88028,18 +88067,18 @@
                   return `<span class="ssm-tl-tick mono" style="left:${pct.toFixed(2)}%"><i></i><b>${lbl}</b></span>`;
                 }).join('');
                 const customPresets = [
-                  { s: '07:00', e: '15:00', lbl: '07:00–15:00 (8h)' },
-                  { s: '08:00', e: '16:00', lbl: '08:00–16:00 (8h)' },
-                  { s: '08:00', e: '17:00', lbl: '08:00–17:00 (9h)' },
-                  { s: '09:00', e: '17:00', lbl: '09:00–17:00 (8h)' },
-                  { s: '07:00', e: '16:00', lbl: '07:00–16:00 (9h)' },
-                  { s: '19:00', e: '03:00', lbl: '19:00–03:00 (8h Night)' }
+                  { s: '07:00', e: '15:00', lbl: '07:00-15:00 (8h)' },
+                  { s: '08:00', e: '16:00', lbl: '08:00-16:00 (8h)' },
+                  { s: '08:00', e: '17:00', lbl: '08:00-17:00 (9h)' },
+                  { s: '09:00', e: '17:00', lbl: '09:00-17:00 (8h)' },
+                  { s: '07:00', e: '16:00', lbl: '07:00-16:00 (9h)' },
+                  { s: '19:00', e: '03:00', lbl: '19:00-03:00 (8h Night)' }
                 ];
                 return `
                   <div class="ssm-timeline-studio" id="ssmInteractiveTimeline">
                     <div class="ssm-tl-header">
-                      <span class="ssm-tl-title">Interactive 24-Hour Shift Timeline <small class="muted">Drag IN / OUT handles or click any time input below</small></span>
-                      <span class="ssm-tl-live-pill mono" id="ssmTlLiveSummary">IN ${esc(tlSStr)} → OUT ${esc(tlEStr)} · ${fmtNum(tlDur, 1)}h${tlOvn ? ' (+1d)' : ''}</span>
+                      <span class="ssm-tl-title">Interactive 24-Hour Shift Timeline <small class="muted">Drag IN / OUT handles or pick a preset window</small></span>
+                      <span class="ssm-tl-live-pill mono" id="ssmTlLiveSummary">IN ${esc(tlSStr)} to OUT ${esc(tlEStr)} · ${fmtNum(tlDur, 1)}h${tlOvn ? ' (+1d)' : ''}</span>
                     </div>
                     <div class="ssm-tl-track-wrap">
                       <div class="ssm-tl-track" id="ssmTimelineTrack">
@@ -88161,190 +88200,336 @@
                 ` : ''}
               </div>
 
-              <!-- BU SHIFT DEFAULTS & SHIFT TIMINGS TABLE (INSERT BU DEFAULTS, ADD SHIFTS, EFFECTIVE DATE & BACKFILL) -->
-              ${draftShowShiftTable ? `
-                <div class="ssm-ot-subpanel" id="ssmShiftTableWrap" style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
-                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-                    <div>
-                      <strong style="font-size:12.5px">${ic('clock')} BU Shift Defaults &amp; Shift Timings Table</strong>
-                      <div class="muted" style="font-size:11.5px">Set each BU's default shift, add new shifts, or change shift timings with an Effective Date to automatically backfill all associated people</div>
-                    </div>
-                  </div>
-                  <!-- BU DEFAULT SELECTOR BAR -->
-                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px" id="ssmBuDefaultBar">
-                    ${buCompanies.map(bu => {
-                      const curDef = getBuDefaultShift(bu);
-                      const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
-                      return `
-                        <div class="ssm-field" style="margin:0">
-                          <label style="font-size:11px;display:flex;align-items:center;gap:5px">${coBadge(bu)} <span>Default Shift</span></label>
-                          <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:30px;font-size:12px">
-                            ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
-                          </select>
-                        </div>
-                      `;
-                    }).join('')}
-                  </div>
-                  <!-- SHIFT TIMINGS TABLE WITH EFFECTIVE DATE & BACKFILL -->
-                  <div class="table-wrap" style="max-height:260px">
-                    <table class="ledger-table" id="ssmShiftTimingsTable" style="font-size:12px">
-                      <thead>
-                        <tr>
-                          <th>BU</th>
-                          <th>Shift Name</th>
-                          <th>BU Default</th>
-                          <th>Regular Start / End</th>
-                          <th>Saturday / Day Timing</th>
-                          <th>Effective Date</th>
-                          <th class="r">Staff</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${workShiftRows.map(ws => {
-                          const hasSat = Boolean(ws.sat_diff_enabled || (ws.day_timings && ws.day_timings['6']));
-                          const satS = ws.sat_start_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].start_time) || '07:00';
-                          const satE = ws.sat_end_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].end_time) || '14:00';
-                          return `
-                            <tr data-ssm-ws-row="${esc(ws.id)}">
-                              <td>${coBadge(ws.company || 'WTC')}</td>
-                              <td>
-                                <strong>${esc(ws.shift_name)}</strong>
-                                <div class="muted mono" style="font-size:10.5px">${esc(ws.workdays_label || 'Mon-Sat')} · ${fmtNum(ws.scheduled_hours || 8, 1)}h</div>
-                              </td>
-                              <td>
-                                <button type="button" class="kiosk-qchip ${ws.is_bu_default ? 'active' : ''}" data-ssm-row-set-def="${esc(ws.id)}" style="font-size:11px;padding:2px 7px">
-                                  ${ws.is_bu_default ? '★ BU Default' : 'Set Default'}
-                                </button>
-                              </td>
-                              <td>
-                                <div style="display:flex;gap:4px;align-items:center">
-                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-start="${esc(ws.id)}" value="${esc(ws.start_time || '08:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
-                                  <span>-</span>
-                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-end="${esc(ws.id)}" value="${esc(ws.end_time || '16:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
-                                </div>
-                              </td>
-                              <td>
-                                <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                                  <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
-                                    <input type="checkbox" data-ssm-row-sat-chk="${esc(ws.id)}" ${hasSat ? 'checked' : ''}>
-                                    <span>Sat</span>
-                                  </label>
-                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-start="${esc(ws.id)}" value="${esc(satS)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
-                                  <span>-</span>
-                                  <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-end="${esc(ws.id)}" value="${esc(satE)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
-                                </div>
-                              </td>
-                              <td>
-                                <input type="date" data-ssm-row-effdate="${esc(ws.id)}" value="${esc(ws.start_date || today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
-                              </td>
-                              <td class="r mono"><b>${fmtNum(ws.associated_staff_count || 0)}</b></td>
-                              <td>
-                                <button type="button" class="btn kiosk-mini-btn btn-primary" data-ssm-save-shift-row="${esc(ws.id)}" style="font-size:11px;padding:3px 8px">
-                                  Save &amp; Backfill
-                                </button>
-                              </td>
-                            </tr>
-                          `;
-                        }).join('')}
-                        <!-- INLINE ADD NEW SHIFT ROW -->
-                        <tr id="ssmNewShiftInlineRow" style="background:var(--bg)">
-                          <td>
-                            <select id="ssmNewShiftCo" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11.5px;padding:2px 4px">
-                              ${buCompanies.map(bu => `<option value="${esc(bu)}" ${bu === entry.company ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
-                            </select>
-                          </td>
-                          <td>
-                            <input type="text" id="ssmNewShiftName" placeholder="New shift name..." style="height:26px;font-size:11.5px;padding:2px 6px;width:125px">
-                          </td>
-                          <td>
-                            <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;cursor:pointer">
-                              <input type="checkbox" id="ssmNewShiftDef">
-                              <span>BU Default</span>
-                            </label>
-                          </td>
-                          <td>
-                            <div style="display:flex;gap:4px;align-items:center">
-                              <input type="text" data-time24="1" id="ssmNewShiftStart" class="pa-time24-input mono" value="08:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
-                              <span>-</span>
-                              <input type="text" data-time24="1" id="ssmNewShiftEnd" class="pa-time24-input mono" value="16:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
-                            </div>
-                          </td>
-                          <td>
-                            <div style="display:flex;gap:4px;align-items:center">
-                              <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
-                                <input type="checkbox" id="ssmNewShiftSatChk">
-                                <span>Sat</span>
-                              </label>
-                              <input type="text" data-time24="1" id="ssmNewShiftSatStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
-                              <span>-</span>
-                              <input type="text" data-time24="1" id="ssmNewShiftSatEnd" class="pa-time24-input mono" value="14:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
-                            </div>
-                          </td>
-                          <td>
-                            <input type="date" id="ssmNewShiftEffDate" value="${esc(today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
-                          </td>
-                          <td class="r muted">New</td>
-                          <td>
-                            <button type="button" class="btn kiosk-mini-btn btn-primary" id="ssmAddShiftRowBtn" style="font-size:11px;padding:3px 8px">
-                              + Add Shift
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+              <!-- BU SHIFT DEFAULTS & SHIFT TIMINGS TABLE (COLLAPSED BY DEFAULT, EXPANDS ON DEMAND) -->
+              <div class="ssm-ot-subpanel" id="ssmShiftTableWrap" ${draftShowShiftTable ? '' : 'hidden'} style="margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev)">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                  <div>
+                    <strong style="font-size:12.5px">${ic('clock')} BU Shift Defaults &amp; Shift Timings Table</strong>
+                    <div class="muted" style="font-size:11.5px">Set each BU's default shift, add new shifts, or change shift timings with an Effective Date to automatically backfill all associated people</div>
                   </div>
                 </div>
-              ` : ''}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px" id="ssmBuDefaultBar">
+                  ${buCompanies.map(bu => {
+                    const curDef = getBuDefaultShift(bu);
+                    const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+                    return `
+                      <div class="ssm-field" style="margin:0">
+                        <label style="font-size:11px;display:flex;align-items:center;gap:5px">${coBadge(bu)} <span>Default Shift</span></label>
+                        <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:30px;font-size:12px">
+                          ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                        </select>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+                <div class="table-wrap" style="max-height:260px">
+                  <table class="ledger-table" id="ssmShiftTimingsTable" style="font-size:12px">
+                    <thead>
+                      <tr>
+                        <th>BU</th>
+                        <th>Shift Name</th>
+                        <th>BU Default</th>
+                        <th>Regular Start / End</th>
+                        <th>Saturday / Day Timing</th>
+                        <th>Effective Date</th>
+                        <th class="r">Staff</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${workShiftRows.map(ws => {
+                        const hasSat = Boolean(ws.sat_diff_enabled || (ws.day_timings && ws.day_timings['6']));
+                        const satS = ws.sat_start_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].start_time) || '07:00';
+                        const satE = ws.sat_end_time || (ws.day_timings && ws.day_timings['6'] && ws.day_timings['6'].end_time) || '14:00';
+                        return `
+                          <tr data-ssm-ws-row="${esc(ws.id)}">
+                            <td>${coBadge(ws.company || 'WTC')}</td>
+                            <td>
+                              <strong>${esc(ws.shift_name)}</strong>
+                              <div class="muted mono" style="font-size:10.5px">${esc(ws.workdays_label || 'Mon-Sat')} · ${fmtNum(ws.scheduled_hours || 8, 1)}h</div>
+                            </td>
+                            <td>
+                              <button type="button" class="kiosk-qchip ${ws.is_bu_default ? 'active' : ''}" data-ssm-row-set-def="${esc(ws.id)}" style="font-size:11px;padding:2px 7px">
+                                ${ws.is_bu_default ? '★ BU Default' : 'Set Default'}
+                              </button>
+                            </td>
+                            <td>
+                              <div style="display:flex;gap:4px;align-items:center">
+                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-start="${esc(ws.id)}" value="${esc(ws.start_time || '08:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                                <span>-</span>
+                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-end="${esc(ws.id)}" value="${esc(ws.end_time || '16:00')}" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                              </div>
+                            </td>
+                            <td>
+                              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                                <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
+                                  <input type="checkbox" data-ssm-row-sat-chk="${esc(ws.id)}" ${hasSat ? 'checked' : ''}>
+                                  <span>Sat</span>
+                                </label>
+                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-start="${esc(ws.id)}" value="${esc(satS)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
+                                <span>-</span>
+                                <input type="text" data-time24="1" class="pa-time24-input mono" data-ssm-row-sat-end="${esc(ws.id)}" value="${esc(satE)}" style="width:54px;height:26px;font-size:11px;padding:2px 4px" ${hasSat ? '' : 'disabled'}>
+                              </div>
+                            </td>
+                            <td>
+                              <input type="date" data-ssm-row-effdate="${esc(ws.id)}" value="${esc(ws.start_date || today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
+                            </td>
+                            <td class="r mono"><b>${fmtNum(ws.associated_staff_count || 0)}</b></td>
+                            <td>
+                              <button type="button" class="btn kiosk-mini-btn btn-primary" data-ssm-save-shift-row="${esc(ws.id)}" style="font-size:11px;padding:3px 8px">
+                                Save &amp; Backfill
+                              </button>
+                            </td>
+                          </tr>
+                        `;
+                      }).join('')}
+                      <tr id="ssmNewShiftInlineRow" style="background:var(--bg)">
+                        <td>
+                          <select id="ssmNewShiftCo" class="kiosk-select" data-plain-options="1" style="height:26px;font-size:11.5px;padding:2px 4px">
+                            ${buCompanies.map(bu => `<option value="${esc(bu)}" ${bu === entry.company ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+                          </select>
+                        </td>
+                        <td>
+                          <input type="text" id="ssmNewShiftName" placeholder="New shift name..." style="height:26px;font-size:11.5px;padding:2px 6px;width:125px">
+                        </td>
+                        <td>
+                          <label style="display:flex;align-items:center;gap:4px;font-size:11px;margin:0;cursor:pointer">
+                            <input type="checkbox" id="ssmNewShiftDef">
+                            <span>BU Default</span>
+                          </label>
+                        </td>
+                        <td>
+                          <div style="display:flex;gap:4px;align-items:center">
+                            <input type="text" data-time24="1" id="ssmNewShiftStart" class="pa-time24-input mono" value="08:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                            <span>-</span>
+                            <input type="text" data-time24="1" id="ssmNewShiftEnd" class="pa-time24-input mono" value="16:00" style="width:58px;height:26px;font-size:11.5px;padding:2px 5px">
+                          </div>
+                        </td>
+                        <td>
+                          <div style="display:flex;gap:4px;align-items:center">
+                            <label style="display:flex;align-items:center;gap:3px;font-size:11px;margin:0;cursor:pointer">
+                              <input type="checkbox" id="ssmNewShiftSatChk">
+                              <span>Sat</span>
+                            </label>
+                            <input type="text" data-time24="1" id="ssmNewShiftSatStart" class="pa-time24-input mono" value="07:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                            <span>-</span>
+                            <input type="text" data-time24="1" id="ssmNewShiftSatEnd" class="pa-time24-input mono" value="14:00" style="width:54px;height:26px;font-size:11px;padding:2px 4px">
+                          </div>
+                        </td>
+                        <td>
+                          <input type="date" id="ssmNewShiftEffDate" value="${esc(today)}" style="height:26px;font-size:11.5px;padding:2px 5px;width:122px">
+                        </td>
+                        <td class="r muted">New</td>
+                        <td>
+                          <button type="button" class="btn kiosk-mini-btn btn-primary" id="ssmAddShiftRowBtn" style="font-size:11px;padding:3px 8px">
+                            + Add Shift
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
 
-            <!-- SECTION 2: LATENESS TOLERANCE, WHEN LATENESS OCCURS & PUNISHMENT RULES -->
-            <div class="ssm-section" id="ssmLatenessSection">
+            <!-- SECTION 2: POLICY & PERKS GROUP, MULTIPLIERS, VACATION DAYS & FUNCTIONS -->
+            <div class="ssm-section" id="ssmPolicySection" ${showSec('policy') ? '' : 'hidden'}>
+              <div class="ssm-sec-head" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div>
+                  <strong>2. Policy &amp; Perks Group (Multipliers, Vacation Days &amp; Functions)</strong>
+                  <span class="muted" style="margin-left:8px">Select a grouped policy package or customize lateness &amp; overtime multipliers, allowable OT, annual leave, and staff perks</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <button type="button" class="btn kiosk-mini-btn" id="ssmSaveAsPolicyGroupBtn">+ Save Current as Group</button>
+                  <button type="button" class="btn kiosk-mini-btn btn-primary" id="ssmNewPolicyGroupBtn">+ New Policy Group</button>
+                </div>
+              </div>
+
+              <div class="ssm-policy-group-grid" id="ssmPolicyGroupGrid">
+                ${livePolicyGroups.map(pg => {
+                  const isSel = draftPolicyGroupId === pg.id;
+                  return `
+                    <div class="ssm-policy-group-card ${isSel ? 'active' : ''}" data-tone="${esc(pg.tone)}" data-ssm-policy-group="${esc(pg.id)}" role="button" tabindex="0">
+                      <div class="ssm-pg-top">
+                        <strong>${esc(pg.name)}</strong>
+                        <span class="ssm-pg-edit-link" data-ssm-edit-policy-group="${esc(pg.id)}" role="button" tabindex="0">Edit</span>
+                      </div>
+                      <div class="ssm-pg-metrics mono">${esc(pg.summaryText)}</div>
+                      <div class="ssm-pg-perks">${pg.perks.length ? pg.perks.slice(0, 3).map(p => `<span class="ssm-pg-tag">${esc(p)}</span>`).join('') : `<span class="ssm-pg-tag">${pg.working_days}d Basis</span>`}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+
+              <div class="ssm-comp-workbench">
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label for="ssmPolicyLateMultInput">Lateness Multiplier</label>
+                    <span class="badge mono">${draftLatePenaltyMode === 'multiplier' ? `${fmtNum(draftLateMultiplier, draftLateMultiplier % 1 ? 2 : 1)}x Rate` : (draftLatePenaltyMode === 'exact_hours' ? '1.0x Exact' : esc(penSummaryMap[draftLatePenaltyMode] || 'Custom'))}</span>
+                  </div>
+                  <div class="ssm-seg-pills">
+                    ${[1, 1.25, 1.5, 2].map(m => {
+                      const isAct = (m === 1 && draftLatePenaltyMode === 'exact_hours') || (m > 1 && draftLatePenaltyMode === 'multiplier' && Math.abs(Number(draftLateMultiplier) - m) < 0.01);
+                      return `<button type="button" class="kiosk-qchip mono ${isAct ? 'active' : ''}" data-ssm-policy-late-mult="${m}">${m === 1 ? '1.0x' : `${m}x`}</button>`;
+                    }).join('')}
+                    <input type="number" id="ssmPolicyLateMultInput" class="mono" min="1" max="5" step="0.25" value="${effLateMultVal}" aria-label="Lateness Multiplier">
+                  </div>
+                </div>
+
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label for="ssmOtMultInput">Overtime Multiplier</label>
+                    <span class="badge badge-brass mono">${fmtNum(draftOtMultiplier, draftOtMultiplier % 1 ? 2 : 1)}x OT</span>
+                  </div>
+                  <div class="ssm-seg-pills">
+                    ${[1, 1.25, 1.5, 2].map(m => `
+                      <button type="button" class="kiosk-qchip mono ${Math.abs(Number(draftOtMultiplier) - m) < 0.01 ? 'active' : ''}" data-ssm-ot-mult-chip="${m}">${m === 1 ? '1.0x' : `${m}x`}</button>
+                    `).join('')}
+                    <input type="number" id="ssmOtMultInput" class="mono" min="1" max="5" step="0.25" value="${draftOtMultiplier}" aria-label="Overtime Multiplier">
+                  </div>
+                </div>
+
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label>Allowable Overtime</label>
+                    <span class="badge">${esc(draftOtMode === 'always' ? 'Whenever' : (draftOtMode === 'date_range' ? 'Date Pass' : (draftOtMode === 'max_hours' ? `Max ${fmtNum(draftOtMaxHours || 2, 1)}h` : 'No OT')))}</span>
+                  </div>
+                  <div class="ssm-seg-pills">
+                    <button type="button" class="kiosk-qchip ${draftOtMode === 'always' ? 'active' : ''}" data-ssm-ot-mode="always">Whenever</button>
+                    <button type="button" class="kiosk-qchip ${draftOtMode === 'date_range' ? 'active' : ''}" data-ssm-ot-mode="date_range">Date Pass</button>
+                    <button type="button" class="kiosk-qchip ${draftOtMode === 'max_hours' ? 'active' : ''}" data-ssm-ot-mode="max_hours">Max Hrs</button>
+                    <button type="button" class="kiosk-qchip ${draftOtMode === 'none' ? 'active' : ''}" data-ssm-ot-mode="none">No OT</button>
+                  </div>
+                </div>
+
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label for="ssmVacationDaysInput">Annual Vacation Days</label>
+                    <span class="badge mono">${fmtNum(draftVacationDays)} days/yr</span>
+                  </div>
+                  <div class="ssm-seg-pills">
+                    ${[0, 7, 12, 15, 21, 30].map(vd => `
+                      <button type="button" class="kiosk-qchip mono ${Number(draftVacationDays) === vd ? 'active' : ''}" data-ssm-vac-chip="${vd}">${vd}d</button>
+                    `).join('')}
+                    <input type="number" id="ssmVacationDaysInput" class="mono" min="0" max="90" step="1" value="${draftVacationDays}" aria-label="Annual Vacation Days">
+                  </div>
+                </div>
+
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label for="ssmSickDaysInput">Paid Sick Leave &amp; Payroll Basis</label>
+                    <span class="badge mono">${fmtNum(draftSickDays)}d Sick · ${draftWorkingDays}d/mo</span>
+                  </div>
+                  <div class="ssm-seg-pills" style="justify-content:space-between">
+                    <div style="display:inline-flex;align-items:center;gap:5px">
+                      <span class="muted" style="font-size:11px">Sick (d):</span>
+                      <input type="number" id="ssmSickDaysInput" class="mono" min="0" max="60" step="1" value="${draftSickDays}" style="width:64px">
+                    </div>
+                    <div style="display:inline-flex;gap:4px">
+                      <button type="button" class="kiosk-qchip mono ${draftWorkingDays === 30 ? 'active' : ''}" data-ssm-workdays-basis="30">30d Monthly</button>
+                      <button type="button" class="kiosk-qchip mono ${draftWorkingDays === 26 ? 'active' : ''}" data-ssm-workdays-basis="26">26d Working</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ssm-perks-box">
+                <div class="ssm-perks-head">
+                  <span class="ssm-subhead-lbl" style="margin:0">Included Perks, Allowances &amp; Functions</span>
+                  <div class="ssm-custom-perk-add">
+                    <input type="text" id="ssmCustomPerkInput" placeholder="Add custom perk or function..." maxlength="36">
+                    <button type="button" class="btn kiosk-mini-btn" id="ssmAddCustomPerkBtn">+ Add Perk</button>
+                  </div>
+                </div>
+                <div class="ssm-perks-studio-grid" id="ssmPerksStudioGrid">
+                  ${allPerkCatalog.map(pk => {
+                    const on = draftPerks.includes(pk.id);
+                    return `
+                      <button type="button" class="ssm-perk-chip ${on ? 'active' : ''}" data-ssm-perk="${esc(pk.id)}">
+                        <span class="ssm-perk-ico">${ic(pk.icon || 'check_circle')}</span>
+                        <span>${esc(pk.label)}</span>
+                        <span class="ssm-perk-chk">${on ? '✓' : '+'}</span>
+                      </button>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 3: LATENESS TOLERANCE, WHEN LATENESS OCCURS & PUNISHMENT RULES -->
+            <div class="ssm-section" id="ssmLatenessSection" ${showSec('lateness') ? '' : 'hidden'}>
               <div class="ssm-sec-head">
-                <strong>2. Lateness Tolerance, When Lateness Occurs &amp; Punishment Rules</strong>
+                <strong>3. Lateness Tolerances, Scope &amp; Single-Punch Rules</strong>
                 <span class="muted">IN late after <b class="mono">${esc(cutoffClockLbl)}</b> (${draftGrace}m after ${esc(curShiftObj.start_time)}) · OUT early before <b class="mono">${esc(outCutoffClockLbl)}</b> (${draftEarlyGrace}m before ${esc(curShiftObj.end_time)})</span>
               </div>
 
-              <div class="ssm-late-grid">
-                <div class="ssm-field">
-                  <label>Clock-IN Tolerance (Minutes after ${esc(curShiftObj.start_time)})</label>
-                  <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+              <div class="ssm-tol-cards-grid">
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label>Clock-IN Tolerance (After ${esc(curShiftObj.start_time)})</label>
+                    <span class="badge mono">Cutoff ${esc(cutoffClockLbl)}</span>
+                  </div>
+                  <div class="ssm-seg-pills">
                     ${[0, 5, 10, 15, 20, 30].map(gm => `
-                      <button type="button" class="kiosk-qchip ${Number(draftGrace) === gm ? 'active' : ''}" data-ssm-grace-chip="${gm}">
-                        ${gm} min
-                      </button>
+                      <button type="button" class="kiosk-qchip mono ${Number(draftGrace) === gm ? 'active' : ''}" data-ssm-grace-chip="${gm}">${gm}m</button>
                     `).join('')}
                   </div>
                 </div>
 
-                <div class="ssm-field">
-                  <label>Clock-OUT Tolerance (Minutes before ${esc(curShiftObj.end_time)})</label>
-                  <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+                <div class="ssm-comp-card">
+                  <div class="ssm-comp-head">
+                    <label for="ssmEarlyGraceInput">Clock-OUT Tolerance (Before ${esc(curShiftObj.end_time)})</label>
+                    <span class="badge mono">Cutoff ${esc(outCutoffClockLbl)}</span>
+                  </div>
+                  <div class="ssm-seg-pills">
                     ${[0, 5, 10, 15, 20, 30].map(gm => `
-                      <button type="button" class="kiosk-qchip ${Number(draftEarlyGrace) === gm ? 'active' : ''}" data-ssm-early-grace-chip="${gm}">
-                        ${gm} min
-                      </button>
+                      <button type="button" class="kiosk-qchip mono ${Number(draftEarlyGrace) === gm ? 'active' : ''}" data-ssm-early-grace-chip="${gm}">${gm}m</button>
                     `).join('')}
-                    <input type="number" id="ssmEarlyGraceInput" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:64px;height:28px" aria-label="Clock-OUT Tolerance Minutes">
+                    <input type="number" id="ssmEarlyGraceInput" class="mono" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:64px" aria-label="Clock-OUT Tolerance Minutes">
                   </div>
                 </div>
+              </div>
 
-                <div class="ssm-field">
-                  <label for="ssmLateWhenSelect">When Lateness Occurs</label>
-                  <select id="ssmLateWhenSelect" class="kiosk-select" data-plain-options="1">
-                    <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>IN Late (&gt;${esc(cutoffClockLbl)}) + OUT Early (&lt;${esc(outCutoffClockLbl)})</option>
-                    <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>Clock-IN Late Only (After ${esc(cutoffClockLbl)})</option>
-                    <option value="early_out_only" ${draftLateWhen === 'early_out_only' ? 'selected' : ''}>Clock-OUT Early Only (Before ${esc(outCutoffClockLbl)})</option>
-                    <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours Shortfall (Worked &lt; Scheduled Shift)</option>
-                  </select>
+              <select id="ssmLateWhenSelect" hidden>
+                <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>IN + OUT</option>
+                <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>IN Only</option>
+                <option value="early_out_only" ${draftLateWhen === 'early_out_only' ? 'selected' : ''}>OUT Only</option>
+                <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours</option>
+              </select>
+              <select id="ssmLateCountFromSelect" hidden>
+                <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start</option>
+                <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>After Grace</option>
+              </select>
+
+              <div class="ssm-choice-split">
+                <div>
+                  <div class="ssm-subhead-lbl">When Lateness Occurs</div>
+                  <div class="ssm-choice-cards">
+                    ${[
+                      { id: 'both', title: 'IN Late + OUT Early', sub: `After ${cutoffClockLbl} or before ${outCutoffClockLbl}` },
+                      { id: 'arrival_only', title: 'Clock-IN Late Only', sub: `Arrival after ${cutoffClockLbl}` },
+                      { id: 'early_out_only', title: 'Clock-OUT Early Only', sub: `Departure before ${outCutoffClockLbl}` },
+                      { id: 'short_hours', title: 'Total Hours Shortfall', sub: 'Worked less than shift duration' }
+                    ].map(opt => `
+                      <button type="button" class="ssm-choice-card ${draftLateWhen === opt.id ? 'active' : ''}" data-ssm-late-when-card="${opt.id}">
+                        <strong>${esc(opt.title)}</strong>
+                        <span>${esc(opt.sub)}</span>
+                      </button>
+                    `).join('')}
+                  </div>
                 </div>
-
-                <div class="ssm-field">
-                  <label for="ssmLateCountFromSelect">How Late / Early Minutes Are Counted</label>
-                  <select id="ssmLateCountFromSelect" class="kiosk-select" data-plain-options="1">
-                    <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start (${esc(curShiftObj.start_time)}) / End (${esc(curShiftObj.end_time)}) once tolerance is exceeded</option>
-                    <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>Only Minutes Beyond Cutoff (&gt;${esc(cutoffClockLbl)} / &lt;${esc(outCutoffClockLbl)})</option>
-                  </select>
+                <div>
+                  <div class="ssm-subhead-lbl">How Late Minutes Are Counted</div>
+                  <div class="ssm-choice-cards is-two">
+                    <button type="button" class="ssm-choice-card ${draftLateCountFrom === 'shift_start' ? 'active' : ''}" data-ssm-count-from-card="shift_start">
+                      <strong>From Shift Start / End</strong>
+                      <span>Count from ${esc(curShiftObj.start_time)} / ${esc(curShiftObj.end_time)} once tolerance is exceeded</span>
+                    </button>
+                    <button type="button" class="ssm-choice-card ${draftLateCountFrom === 'after_grace' ? 'active' : ''}" data-ssm-count-from-card="after_grace">
+                      <strong>Only Beyond Cutoff</strong>
+                      <span>Count only minutes after ${esc(cutoffClockLbl)} or before ${esc(outCutoffClockLbl)}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -88425,11 +88610,11 @@
               </div>
             </div>
 
-            <!-- SECTION 3: OVERTIME ELIGIBILITY -->
-            <div class="ssm-section" id="ssmOvertimeSection">
+            <!-- SECTION 4: OVERTIME ELIGIBILITY & ROTATIONS -->
+            <div class="ssm-section" id="ssmOvertimeSection" ${showSec('ot') ? '' : 'hidden'}>
               <div class="ssm-sec-head">
-                <strong>3. Overtime Eligibility &amp; Approval</strong>
-                <span class="muted">Prevent unauthorized late clock-outs from generating paid overtime</span>
+                <strong>4. Overtime Eligibility, Date Passes &amp; Shift Rotations</strong>
+                <span class="muted">Authorized overtime pays at <b class="mono">${fmtNum(draftOtMultiplier, draftOtMultiplier % 1 ? 2 : 1)}x</b> hourly rate</span>
               </div>
               <div class="ot-mode-grid">
                 <button type="button" class="ot-mode-card ${draftOtMode === 'none' ? 'active' : ''}" data-ssm-ot-mode="none">
@@ -88437,7 +88622,7 @@
                   <div class="ot-mc-desc">Late clock-outs record real departure time with 0h paid overtime.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftOtMode === 'always' ? 'active' : ''}" data-ssm-ot-mode="always">
-                  <div class="ot-mc-title"><span class="ot-dot emerald"></span>Anytime (Open OT)</div>
+                  <div class="ot-mc-title"><span class="ot-dot emerald"></span>Whenever (Open OT)</div>
                   <div class="ot-mc-desc">Authorized to receive paid overtime whenever working past shift hours.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftOtMode === 'max_hours' ? 'active' : ''}" data-ssm-ot-mode="max_hours">
@@ -88514,19 +88699,13 @@
                   </div>
                 </div>
               ` : ''}
-            </div>
 
-            <!-- SECTION 4: DATE / ROTATION SHIFT OVERRIDES -->
-            <div class="ssm-section">
-              <div class="ssm-sec-head">
-                <strong>4. Temporary Shift Rotation (Specific Date or Range)</strong>
-                <span class="muted">Temporarily assign Night Shift, Day Shift, or Day Off on specific dates</span>
-              </div>
+              <div class="ssm-subhead-lbl" style="margin-top:8px">Temporary Shift Rotation (Specific Date or Range)</div>
               <div class="ssm-pass-builder">
                 <div class="ssm-field" style="min-width:165px">
                   <label for="ssmOvShift">Rotation Shift</label>
                   <select id="ssmOvShift" class="kiosk-select" data-plain-options="1">
-                    ${shiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === 'night_7_3' ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
+                    ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === 'night_7_3' ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
                     <option value="off">Scheduled Day Off</option>
                   </select>
                 </div>
@@ -88543,7 +88722,7 @@
               ${draftOverrides.length ? `
                 <div class="ssm-pass-list">
                   ${draftOverrides.map(ov => {
-                    const stMatch = shiftTypes.find(t => t.id === ov.shift_id);
+                    const stMatch = liveShiftTypes.find(t => t.id === ov.shift_id);
                     const ovLbl = ov.shift_id === 'off' ? 'Scheduled Day Off' : (stMatch ? `${stMatch.name} (${stMatch.start_time}-${stMatch.end_time})` : 'Custom Rotation');
                     return `
                       <div class="ot-pass-row">
@@ -88559,11 +88738,11 @@
           <div class="modal-foot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="btn" id="ssmResetBtn">Reset Default</button>
-              <button type="button" class="btn" id="ssmApplyCompanyLateBtn">Apply Lateness Policy to All ${esc(entry.company)} Staff</button>
+              <button type="button" class="btn" id="ssmApplyCompanyLateBtn">Apply Policy &amp; Rules to All ${esc(entry.company)} Staff</button>
             </div>
             <div style="display:flex;gap:8px">
               <button type="button" class="btn" id="ssmCancelBtn">Cancel</button>
-              <button type="button" class="btn btn-primary" id="ssmSaveBtn">${ic('check_circle')} Save Schedule &amp; Rules</button>
+              <button type="button" class="btn btn-primary" id="ssmSaveBtn">${ic('check_circle')} Save Schedule, Policy &amp; Perks</button>
             </div>
           </div>
         </div>
@@ -88577,7 +88756,18 @@
         if ($('ssmEarlyGraceInput')) draftEarlyGrace = Math.max(0, Math.min(120, Number($('ssmEarlyGraceInput').value || 0)));
         if ($('ssmLateWhenSelect')) draftLateWhen = $('ssmLateWhenSelect').value || 'both';
         if ($('ssmLateCountFromSelect')) draftLateCountFrom = $('ssmLateCountFromSelect').value || 'shift_start';
-        if ($('ssmLateMultInput')) draftLateMultiplier = Math.max(1, Math.min(5, Number($('ssmLateMultInput').value || 1.5)));
+        if ($('ssmLateMultInput')) {
+          draftLateMultiplier = Math.max(1, Math.min(5, Number($('ssmLateMultInput').value || 1.5)));
+        } else if ($('ssmPolicyLateMultInput')) {
+          const plm = Math.max(1, Math.min(5, Number($('ssmPolicyLateMultInput').value || 1)));
+          if (plm > 1) {
+            draftLateMultiplier = plm;
+            if (draftLatePenaltyMode === 'exact_hours') draftLatePenaltyMode = 'multiplier';
+          }
+        }
+        if ($('ssmOtMultInput')) draftOtMultiplier = Math.max(1, Math.min(5, Number($('ssmOtMultInput').value || 1.5)));
+        if ($('ssmVacationDaysInput')) draftVacationDays = Math.max(0, Math.min(90, Math.round(Number($('ssmVacationDaysInput').value || 0))));
+        if ($('ssmSickDaysInput')) draftSickDays = Math.max(0, Math.min(60, Math.round(Number($('ssmSickDaysInput').value || 0))));
         if ($('ssmLateHdMinInput')) draftLateHalfDayMin = Math.max(5, Math.min(360, Number($('ssmLateHdMinInput').value || 60)));
         if ($('ssmOtMaxHours')) draftOtMaxHours = Math.max(0, Number($('ssmOtMaxHours').value || 0));
         if ($('ssmOtWinStart')) {
@@ -88622,7 +88812,16 @@
       modal.querySelectorAll('[data-switch-staff]').forEach(btn => {
         btn.addEventListener('click', () => {
           const targetName = btn.getAttribute('data-switch-staff') || '';
-          if (targetName) openStaffScheduleModal(targetName, opts);
+          if (targetName) openStaffScheduleModal(targetName, Object.assign({}, opts, { studioTab: draftStudioSection }));
+        });
+      });
+      modal.querySelectorAll('[data-ssm-studio-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftStudioSection = btn.getAttribute('data-ssm-studio-tab') || 'all';
+          renderModalInner();
+          const bodyEl = modal.querySelector('.staff-sched-modal-body');
+          if (bodyEl) bodyEl.scrollTop = 0;
         });
       });
       $('ssmOpenFaceStudioBtn')?.addEventListener('click', () => {
@@ -88645,6 +88844,188 @@
             try { nmInp.focus({ preventScroll: true }); } catch (_) {}
           }
         }, 25);
+      });
+
+      const applyPolicyGroupToDraft = grpId => {
+        const grp = getPolicyGroups().find(g => g.id === grpId);
+        if (!grp) return;
+        draftPolicyGroupId = grp.id;
+        draftLatePenaltyMode = grp.late_penalty_mode;
+        draftLateMultiplier = grp.late_multiplier;
+        draftOtMultiplier = grp.ot_multiplier;
+        draftOtMode = grp.ot_mode;
+        draftOtMaxHours = grp.ot_max_hours;
+        draftVacationDays = grp.vacation_days;
+        draftSickDays = grp.sick_days;
+        draftWorkingDays = grp.working_days;
+        draftGrace = grp.grace_min;
+        draftEarlyGrace = grp.early_leave_grace_min;
+        draftNoClockOutRule = grp.no_clock_out_rule;
+        draftPerks = grp.perks.slice();
+      };
+
+      modal.querySelectorAll('[data-ssm-policy-group]').forEach(card => {
+        card.addEventListener('click', e => {
+          if (e.target.closest('[data-ssm-edit-policy-group]')) return;
+          syncLiveInputs();
+          applyPolicyGroupToDraft(card.getAttribute('data-ssm-policy-group') || '');
+          renderModalInner();
+        });
+        card.addEventListener('keydown', e => {
+          if (e.target !== card) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            syncLiveInputs();
+            applyPolicyGroupToDraft(card.getAttribute('data-ssm-policy-group') || '');
+            renderModalInner();
+          }
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-edit-policy-group]').forEach(editEl => {
+        editEl.addEventListener('click', e => {
+          e.stopPropagation();
+          syncLiveInputs();
+          const gid = editEl.getAttribute('data-ssm-edit-policy-group') || '';
+          openPolicyGroupModal(gid, null, savedGrp => {
+            if (savedGrp && savedGrp.id === draftPolicyGroupId) applyPolicyGroupToDraft(savedGrp.id);
+            renderModalInner();
+          });
+        });
+      });
+
+      $('ssmNewPolicyGroupBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        openPolicyGroupModal('', null, savedGrp => {
+          if (savedGrp && savedGrp.id) applyPolicyGroupToDraft(savedGrp.id);
+          renderModalInner();
+        });
+      });
+
+      $('ssmSaveAsPolicyGroupBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        openPolicyGroupModal('', {
+          name: `${entry.company} Custom Perks`,
+          late_penalty_mode: draftLatePenaltyMode,
+          late_multiplier: draftLateMultiplier,
+          ot_multiplier: draftOtMultiplier,
+          ot_mode: draftOtMode,
+          ot_max_hours: draftOtMaxHours,
+          vacation_days: draftVacationDays,
+          sick_days: draftSickDays,
+          working_days: draftWorkingDays,
+          grace_min: draftGrace,
+          early_leave_grace_min: draftEarlyGrace,
+          no_clock_out_rule: draftNoClockOutRule,
+          perks: draftPerks.slice()
+        }, savedGrp => {
+          if (savedGrp && savedGrp.id) draftPolicyGroupId = savedGrp.id;
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-policy-late-mult]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const m = Number(btn.getAttribute('data-ssm-policy-late-mult') || 1);
+          if (m <= 1) {
+            draftLatePenaltyMode = 'exact_hours';
+            draftLateMultiplier = 1.0;
+          } else {
+            draftLatePenaltyMode = 'multiplier';
+            draftLateMultiplier = m;
+          }
+          renderModalInner();
+        });
+      });
+
+      $('ssmPolicyLateMultInput')?.addEventListener('change', e => {
+        const m = Math.max(1, Math.min(5, Number(e.target.value || 1)));
+        if (m <= 1) {
+          draftLatePenaltyMode = 'exact_hours';
+          draftLateMultiplier = 1.0;
+        } else {
+          draftLatePenaltyMode = 'multiplier';
+          draftLateMultiplier = m;
+        }
+        syncLiveInputs();
+        renderModalInner();
+      });
+
+      modal.querySelectorAll('[data-ssm-ot-mult-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftOtMultiplier = Number(btn.getAttribute('data-ssm-ot-mult-chip') || 1.5);
+          renderModalInner();
+        });
+      });
+
+      ['ssmOtMultInput', 'ssmVacationDaysInput', 'ssmSickDaysInput'].forEach(id => {
+        $(id)?.addEventListener('change', () => {
+          syncLiveInputs();
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-vac-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftVacationDays = Number(btn.getAttribute('data-ssm-vac-chip') || 15);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-workdays-basis]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftWorkingDays = Number(btn.getAttribute('data-ssm-workdays-basis') || 30) === 26 ? 26 : 30;
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-perk]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const pk = btn.getAttribute('data-ssm-perk') || '';
+          if (!pk) return;
+          if (draftPerks.includes(pk)) draftPerks = draftPerks.filter(x => x !== pk);
+          else draftPerks = draftPerks.concat([pk]);
+          renderModalInner();
+        });
+      });
+
+      const commitCustomPerk = () => {
+        syncLiveInputs();
+        const inp = $('ssmCustomPerkInput');
+        const val = String((inp && inp.value) || '').trim();
+        if (!val) return;
+        if (!draftPerks.includes(val)) draftPerks = draftPerks.concat([val]);
+        renderModalInner();
+      };
+      $('ssmAddCustomPerkBtn')?.addEventListener('click', commitCustomPerk);
+      $('ssmCustomPerkInput')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commitCustomPerk();
+        }
+      });
+
+      modal.querySelectorAll('[data-ssm-late-when-card]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftLateWhen = btn.getAttribute('data-ssm-late-when-card') || 'both';
+          if ($('ssmLateWhenSelect')) $('ssmLateWhenSelect').value = draftLateWhen;
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-count-from-card]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftLateCountFrom = btn.getAttribute('data-ssm-count-from-card') || 'shift_start';
+          if ($('ssmLateCountFromSelect')) $('ssmLateCountFromSelect').value = draftLateCountFrom;
+          renderModalInner();
+        });
       });
       $('ssmSatDiffChk')?.addEventListener('change', e => {
         draftSatDiff = Boolean(e.target.checked);
@@ -88871,19 +89252,27 @@
         coStaff.forEach(s => {
           saveStaffWorkRule(s.name, {
             company: s.company,
+            policy_group_id: draftPolicyGroupId,
             grace_min: draftGrace,
             early_leave_grace_min: draftEarlyGrace,
             late_when: draftLateWhen,
             late_count_from: draftLateCountFrom,
             late_penalty_mode: draftLatePenaltyMode,
             late_multiplier: draftLateMultiplier,
+            ot_multiplier: draftOtMultiplier,
+            ot_mode: draftOtMode,
+            ot_max_hours: draftOtMaxHours,
+            vacation_days: draftVacationDays,
+            sick_days: draftSickDays,
+            working_days: draftWorkingDays,
+            perks: draftPerks.slice(),
             late_half_day_after_min: draftLateHalfDayMin,
             no_clock_out_rule: draftNoClockOutRule
           }, { deferSave: true });
         });
         saveLocalAuthAndRecords();
         syncWithCloud(true);
-        toast(`Applied lateness & missing clock-out rules to all ${coStaff.length} active staff in ${entry.company}`, 'ok');
+        toast(`Applied policy, multipliers, perks & tolerances to all ${coStaff.length} active staff in ${entry.company}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -88944,7 +89333,7 @@
         if (hEnd) hEnd.style.left = `${ePct.toFixed(2)}%`;
         if (tStart) tStart.textContent = `IN ${draftCustomStart}`;
         if (tEnd) tEnd.textContent = `OUT ${draftCustomEnd}`;
-        if (tlSum) tlSum.textContent = `IN ${draftCustomStart} → OUT ${draftCustomEnd} · ${fmtNum(dur, 1)}h${ovn ? ' (+1d)' : ''}`;
+        if (tlSum) tlSum.textContent = `IN ${draftCustomStart} to OUT ${draftCustomEnd} · ${fmtNum(dur, 1)}h${ovn ? ' (+1d)' : ''}`;
         modal.querySelectorAll('[data-ssm-custom-preset]').forEach(chip => {
           chip.classList.toggle('active', chip.getAttribute('data-ssm-custom-preset') === `${draftCustomStart}|${draftCustomEnd}`);
         });
@@ -88961,8 +89350,8 @@
           const outCutMin = (((eMin != null ? eMin : 960) - draftEarlyGrace) + 24 * 60) % (24 * 60);
           const outCutLbl = `${String(Math.floor(outCutMin / 60)).padStart(2, '0')}:${String(outCutMin % 60).padStart(2, '0')}`;
           const kpis = modal.querySelectorAll('#ssmLiveSummaryStrip .ssm-live-kpi strong');
-          if (kpis[0]) kpis[0].textContent = `${draftCustomStart} - ${draftCustomEnd} (${fmtNum(dur, 1)}h)`;
-          if (kpis[1]) kpis[1].textContent = `IN > ${cutLbl} · OUT < ${outCutLbl}`;
+          if (kpis[0]) kpis[0].textContent = `${draftCustomName || 'Custom Shift'} · ${draftCustomStart}-${draftCustomEnd}`;
+          if (kpis[3]) kpis[3].textContent = `IN > ${cutLbl} · OUT < ${outCutLbl}`;
           const secSub = modal.querySelector('#ssmLatenessSection .ssm-sec-head .muted');
           if (secSub) {
             secSub.innerHTML = `IN late after <b class="mono">${esc(cutLbl)}</b> (${draftGrace}m after ${esc(draftCustomStart)}) · OUT early before <b class="mono">${esc(outCutLbl)}</b> (${draftEarlyGrace}m before ${esc(draftCustomEnd)})`;
@@ -89202,6 +89591,7 @@
         saveStaffWorkRule(entry.name, {
           company: entry.company,
           shift_id: draftShiftId,
+          policy_group_id: draftPolicyGroupId,
           custom_name: draftCustomName,
           custom_start: draftCustomStart,
           custom_end: draftCustomEnd,
@@ -89218,6 +89608,11 @@
           late_count_from: draftLateCountFrom,
           late_penalty_mode: draftLatePenaltyMode,
           late_multiplier: draftLateMultiplier,
+          ot_multiplier: draftOtMultiplier,
+          vacation_days: draftVacationDays,
+          sick_days: draftSickDays,
+          working_days: draftWorkingDays,
+          perks: draftPerks.slice(),
           late_half_day_after_min: draftLateHalfDayMin,
           no_clock_out_rule: draftNoClockOutRule,
           ot_mode: draftOtMode,
@@ -89227,7 +89622,7 @@
           ot_passes: draftPasses,
           shift_overrides: draftOverrides
         });
-        toast(`Saved shift, day timings, lateness & overtime rules for ${entry.name}`, 'ok');
+        toast(`Saved shift, policy & perks group, multipliers & rules for ${entry.name}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -89246,6 +89641,8 @@
       setTimeout(() => { $('ssmOvertimeSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
     } else if (opts.focusSection === 'lateness') {
       setTimeout(() => { $('ssmLatenessSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
+    } else if (opts.focusSection === 'policy') {
+      setTimeout(() => { $('ssmPolicySection')?.scrollIntoView({ block: 'nearest' }); }, 20);
     }
     return modal;
   }
@@ -89295,7 +89692,11 @@
             <div class="ssm-field">
               <label for="stmCompany">Business Unit (BU)</label>
               <select id="stmCompany" class="kiosk-select" data-plain-options="1">
-                ${['WTC', 'BBConstruction', 'Lions Transport', 'All BUs'].map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('')}
+                ${(() => {
+                  const buList = ['WTC', 'BBConstruction', 'Lions Transport', 'All BUs'];
+                  if (defCo && !buList.includes(defCo)) buList.unshift(defCo);
+                  return buList.map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('');
+                })()}
               </select>
             </div>
             <div class="ssm-field">
@@ -89481,6 +89882,362 @@
     return modal;
   }
 
+  function closePolicyGroupModal() {
+    const m = $('policyGroupModal');
+    if (m) m.hidden = true;
+    const ssm = $('staffScheduleModal');
+    if (!ssm || ssm.hidden) {
+      document.body.classList.remove('modal-open');
+      if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+    }
+  }
+
+  function openPolicyGroupModal(groupId = '', seedSpec = null, onSaved = null) {
+    const groups = getPolicyGroups();
+    const existing = groupId ? groups.find(g => g.id === groupId) : null;
+    const base = normalizePolicyGroupObj(Object.assign({}, existing || seedSpec || {
+      name: '',
+      short: '',
+      late_penalty_mode: 'multiplier',
+      late_multiplier: 1.5,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 3,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Site Transport', 'Paid Leave', 'Meal Allowance'],
+      tone: 'emerald'
+    }));
+    let draftName = existing ? existing.name : ((seedSpec && seedSpec.name) || '');
+    let draftShort = existing ? existing.short : '';
+    let draftLateMode = base.late_penalty_mode;
+    let draftLateMult = base.late_multiplier;
+    let draftOtMult = base.ot_multiplier;
+    let draftOtMode = base.ot_mode;
+    let draftOtMaxHrs = base.ot_max_hours || 2;
+    let draftVacDays = base.vacation_days;
+    let draftSickDays = base.sick_days;
+    let draftWorkDays = base.working_days;
+    let draftGrace = base.grace_min;
+    let draftEarlyGrace = base.early_leave_grace_min;
+    let draftNoOut = base.no_clock_out_rule;
+    let draftPerks = base.perks.slice();
+    let draftTone = base.tone || 'emerald';
+    let draftBackfill = true;
+
+    let modal = $('policyGroupModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'policyGroupModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.style.zIndex = '1160';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      wireBackdropDismiss(modal, closePolicyGroupModal);
+      document.body.appendChild(modal);
+    }
+
+    const renderGroupModal = () => {
+      const knownIds = new Set(AVAILABLE_STAFF_PERKS.map(p => p.id));
+      const extraPerks = draftPerks.filter(p => p && !knownIds.has(p));
+      const perkItems = AVAILABLE_STAFF_PERKS.concat(extraPerks.map(p => ({ id: p, label: p, icon: 'check_circle' })));
+      const assignedCnt = existing
+        ? getKioskStaffDirectory({ includeEnded: true }).filter(s => getStaffWorkRule(s.name, s.company).policy_group_id === existing.id).length
+        : 0;
+
+      modal.innerHTML = `
+        <div class="modal-card" style="width:min(760px,95vw);max-width:760px">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">${ic('sliders')} ${existing ? `Edit Policy &amp; Perks Group: ${esc(existing.name)}` : 'New Policy, Multipliers &amp; Perks Group'}</div>
+              <div class="modal-sub">Bundle lateness &amp; overtime multipliers, allowable OT, annual vacation days, tolerances, and staff perks into one selectable type</div>
+            </div>
+            <button type="button" class="icon-btn" id="pgmCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:10px">
+              <div class="ssm-field">
+                <label for="pgmName">Policy &amp; Perks Group Name</label>
+                <input type="text" id="pgmName" value="${esc(draftName)}" placeholder="e.g. Standard 1.5x Open OT &amp; 15d Leave">
+              </div>
+              <div class="ssm-field">
+                <label for="pgmShort">Short Table Label (Optional)</label>
+                <input type="text" id="pgmShort" maxlength="26" value="${esc(draftShort)}" placeholder="Auto-generated if blank">
+              </div>
+              <div class="ssm-field">
+                <label>Badge Color</label>
+                <div class="ssm-seg-pills">
+                  ${[
+                    { id: 'emerald', lbl: 'Green' },
+                    { id: 'amber', lbl: 'Brass' },
+                    { id: 'sapphire', lbl: 'Blue' },
+                    { id: 'indigo', lbl: 'Indigo' },
+                    { id: 'rose', lbl: 'Rose' }
+                  ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-pgm-tone="${t.id}">${t.lbl}</button>`).join('')}
+                </div>
+              </div>
+            </div>
+
+            <div class="ssm-comp-workbench">
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label for="pgmLateMult">Lateness Multiplier</label>
+                  <span class="badge mono">${draftLateMode === 'multiplier' ? `${fmtNum(draftLateMult, draftLateMult % 1 ? 2 : 1)}x` : (draftLateMode === 'none' ? '$0 Track' : '1.0x Exact')}</span>
+                </div>
+                <div class="ssm-seg-pills">
+                  <button type="button" class="kiosk-qchip mono ${draftLateMode === 'none' ? 'active' : ''}" data-pgm-late-mult="0">$0</button>
+                  ${[1, 1.25, 1.5, 2].map(m => {
+                    const on = (m === 1 && draftLateMode === 'exact_hours') || (m > 1 && draftLateMode === 'multiplier' && Math.abs(draftLateMult - m) < 0.01);
+                    return `<button type="button" class="kiosk-qchip mono ${on ? 'active' : ''}" data-pgm-late-mult="${m}">${m === 1 ? '1.0x' : `${m}x`}</button>`;
+                  }).join('')}
+                  <input type="number" id="pgmLateMult" class="mono" min="1" max="5" step="0.25" value="${draftLateMode === 'multiplier' ? draftLateMult : 1}">
+                </div>
+              </div>
+
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label for="pgmOtMult">Overtime Multiplier</label>
+                  <span class="badge badge-brass mono">${fmtNum(draftOtMult, draftOtMult % 1 ? 2 : 1)}x OT</span>
+                </div>
+                <div class="ssm-seg-pills">
+                  ${[1, 1.25, 1.5, 2].map(m => `<button type="button" class="kiosk-qchip mono ${Math.abs(draftOtMult - m) < 0.01 ? 'active' : ''}" data-pgm-ot-mult="${m}">${m === 1 ? '1.0x' : `${m}x`}</button>`).join('')}
+                  <input type="number" id="pgmOtMult" class="mono" min="1" max="5" step="0.25" value="${draftOtMult}">
+                </div>
+              </div>
+
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label>Allowable Overtime</label>
+                  <span class="badge">${esc(draftOtMode === 'always' ? 'Whenever' : (draftOtMode === 'date_range' ? 'Date Pass' : (draftOtMode === 'max_hours' ? `Max ${draftOtMaxHrs}h` : 'No OT')))}</span>
+                </div>
+                <div class="ssm-seg-pills">
+                  <button type="button" class="kiosk-qchip ${draftOtMode === 'always' ? 'active' : ''}" data-pgm-ot-mode="always">Whenever</button>
+                  <button type="button" class="kiosk-qchip ${draftOtMode === 'date_range' ? 'active' : ''}" data-pgm-ot-mode="date_range">Date Pass</button>
+                  <button type="button" class="kiosk-qchip ${draftOtMode === 'max_hours' ? 'active' : ''}" data-pgm-ot-mode="max_hours">Max Hrs</button>
+                  <button type="button" class="kiosk-qchip ${draftOtMode === 'none' ? 'active' : ''}" data-pgm-ot-mode="none">No OT</button>
+                  ${draftOtMode === 'max_hours' ? `<input type="number" id="pgmOtMaxHrs" class="mono" min="0.5" max="12" step="0.5" value="${draftOtMaxHrs}" style="width:62px">` : ''}
+                </div>
+              </div>
+
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label for="pgmVacDays">Annual Vacation Days</label>
+                  <span class="badge mono">${fmtNum(draftVacDays)} days</span>
+                </div>
+                <div class="ssm-seg-pills">
+                  ${[0, 7, 12, 15, 21, 30].map(vd => `<button type="button" class="kiosk-qchip mono ${draftVacDays === vd ? 'active' : ''}" data-pgm-vac="${vd}">${vd}d</button>`).join('')}
+                  <input type="number" id="pgmVacDays" class="mono" min="0" max="90" step="1" value="${draftVacDays}">
+                </div>
+              </div>
+
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label>Sick Days, Payroll Basis &amp; Tolerances</label>
+                  <span class="badge mono">${draftWorkDays}d · IN ${draftGrace}m / OUT ${draftEarlyGrace}m</span>
+                </div>
+                <div class="ssm-seg-pills" style="gap:6px">
+                  <span class="muted" style="font-size:11px">Sick:</span>
+                  <input type="number" id="pgmSickDays" class="mono" min="0" max="60" value="${draftSickDays}" style="width:54px">
+                  <button type="button" class="kiosk-qchip mono ${draftWorkDays === 30 ? 'active' : ''}" data-pgm-wd="30">30d</button>
+                  <button type="button" class="kiosk-qchip mono ${draftWorkDays === 26 ? 'active' : ''}" data-pgm-wd="26">26d</button>
+                  <span class="muted" style="font-size:11px">Tol(m):</span>
+                  <input type="number" id="pgmGrace" class="mono" min="0" max="60" step="5" value="${draftGrace}" style="width:54px">
+                </div>
+              </div>
+
+              <div class="ssm-comp-card">
+                <div class="ssm-comp-head">
+                  <label>Single / Incomplete Punch Rule</label>
+                </div>
+                <div class="ssm-seg-pills">
+                  <button type="button" class="kiosk-qchip ${draftNoOut === 'half_day' ? 'active' : ''}" data-pgm-noout="half_day">0.5d Half Day</button>
+                  <button type="button" class="kiosk-qchip ${draftNoOut === 'full_absence' ? 'active' : ''}" data-pgm-noout="full_absence">1.0d Absent</button>
+                  <button type="button" class="kiosk-qchip ${draftNoOut === 'deduct_2h' ? 'active' : ''}" data-pgm-noout="deduct_2h">-2.0h Late</button>
+                  <button type="button" class="kiosk-qchip ${draftNoOut === 'auto_shift_end' ? 'active' : ''}" data-pgm-noout="auto_shift_end">Full Shift</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="ssm-perks-box">
+              <div class="ssm-perks-head">
+                <span class="ssm-subhead-lbl" style="margin:0">Group Perks &amp; Functions</span>
+                <div class="ssm-custom-perk-add">
+                  <input type="text" id="pgmCustomPerkInp" placeholder="Add custom perk..." maxlength="36">
+                  <button type="button" class="btn kiosk-mini-btn" id="pgmAddPerkBtn">+ Add</button>
+                </div>
+              </div>
+              <div class="ssm-perks-studio-grid">
+                ${perkItems.map(pk => {
+                  const on = draftPerks.includes(pk.id);
+                  return `
+                    <button type="button" class="ssm-perk-chip ${on ? 'active' : ''}" data-pgm-perk="${esc(pk.id)}">
+                      <span class="ssm-perk-ico">${ic(pk.icon || 'check_circle')}</span>
+                      <span>${esc(pk.label)}</span>
+                      <span class="ssm-perk-chk">${on ? '✓' : '+'}</span>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            ${existing ? `
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;cursor:pointer;margin:0">
+                <input type="checkbox" id="pgmBackfillChk" ${draftBackfill ? 'checked' : ''}>
+                <span>Automatically backfill all ${fmtNum(assignedCnt)} staff currently assigned to ${esc(existing.name)}</span>
+              </label>
+            ` : ''}
+          </div>
+          <div class="modal-foot" style="justify-content:space-between">
+            <div>
+              ${existing && !existing.isBuiltin ? `<button type="button" class="btn" id="pgmDeleteBtn">Delete Group</button>` : ''}
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn" id="pgmCancelBtn">Cancel</button>
+              <button type="button" class="btn btn-primary" id="pgmSaveBtn">${ic('check_circle')} ${existing ? 'Save Group &amp; Backfill' : 'Create Policy &amp; Perks Group'}</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const syncPgmDom = () => {
+        if ($('pgmName')) draftName = $('pgmName').value;
+        if ($('pgmShort')) draftShort = $('pgmShort').value;
+        if ($('pgmOtMult')) draftOtMult = Math.max(1, Math.min(5, Number($('pgmOtMult').value || 1.5)));
+        if ($('pgmOtMaxHrs')) draftOtMaxHrs = Math.max(0.5, Math.min(12, Number($('pgmOtMaxHrs').value || 2)));
+        if ($('pgmVacDays')) draftVacDays = Math.max(0, Math.min(90, Math.round(Number($('pgmVacDays').value || 0))));
+        if ($('pgmSickDays')) draftSickDays = Math.max(0, Math.min(60, Math.round(Number($('pgmSickDays').value || 0))));
+        if ($('pgmGrace')) {
+          draftGrace = Math.max(0, Math.min(60, Math.round(Number($('pgmGrace').value || 0))));
+          draftEarlyGrace = draftGrace;
+        }
+        if ($('pgmBackfillChk')) draftBackfill = Boolean($('pgmBackfillChk').checked);
+      };
+
+      $('pgmCloseBtn')?.addEventListener('click', closePolicyGroupModal);
+      $('pgmCancelBtn')?.addEventListener('click', closePolicyGroupModal);
+      modal.querySelectorAll('[data-pgm-tone]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftTone = b.getAttribute('data-pgm-tone') || 'emerald';
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-late-mult]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        const m = Number(b.getAttribute('data-pgm-late-mult') || 0);
+        if (m <= 0) { draftLateMode = 'none'; draftLateMult = 1.0; }
+        else if (m <= 1) { draftLateMode = 'exact_hours'; draftLateMult = 1.0; }
+        else { draftLateMode = 'multiplier'; draftLateMult = m; }
+        renderGroupModal();
+      }));
+      $('pgmLateMult')?.addEventListener('change', e => {
+        syncPgmDom();
+        const m = Math.max(1, Math.min(5, Number(e.target.value || 1)));
+        draftLateMode = m > 1 ? 'multiplier' : 'exact_hours';
+        draftLateMult = m;
+        renderGroupModal();
+      });
+      modal.querySelectorAll('[data-pgm-ot-mult]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftOtMult = Number(b.getAttribute('data-pgm-ot-mult') || 1.5);
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-ot-mode]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftOtMode = b.getAttribute('data-pgm-ot-mode') || 'always';
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-vac]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftVacDays = Number(b.getAttribute('data-pgm-vac') || 15);
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-wd]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftWorkDays = Number(b.getAttribute('data-pgm-wd') || 30) === 26 ? 26 : 30;
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-noout]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        draftNoOut = b.getAttribute('data-pgm-noout') || 'half_day';
+        renderGroupModal();
+      }));
+      modal.querySelectorAll('[data-pgm-perk]').forEach(b => b.addEventListener('click', () => {
+        syncPgmDom();
+        const pk = b.getAttribute('data-pgm-perk') || '';
+        if (!pk) return;
+        if (draftPerks.includes(pk)) draftPerks = draftPerks.filter(x => x !== pk);
+        else draftPerks = draftPerks.concat([pk]);
+        renderGroupModal();
+      }));
+      const addCustomPgmPerk = () => {
+        syncPgmDom();
+        const v = String($('pgmCustomPerkInp')?.value || '').trim();
+        if (!v) return;
+        if (!draftPerks.includes(v)) draftPerks = draftPerks.concat([v]);
+        renderGroupModal();
+      };
+      $('pgmAddPerkBtn')?.addEventListener('click', addCustomPgmPerk);
+      $('pgmCustomPerkInp')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); addCustomPgmPerk(); }
+      });
+      $('pgmDeleteBtn')?.addEventListener('click', () => {
+        if (!existing) return;
+        const r = deletePolicyGroup(existing.id);
+        if (r.ok) {
+          toast(`Deleted policy group ${existing.name}`, 'ok');
+          closePolicyGroupModal();
+        } else {
+          toast(r.error || 'Cannot delete group', 'warn');
+        }
+      });
+      $('pgmSaveBtn')?.addEventListener('click', () => {
+        syncPgmDom();
+        const cleanName = String(draftName || '').trim();
+        if (!cleanName) {
+          toast('Enter a name for the Policy & Perks group', 'warn');
+          $('pgmName')?.focus();
+          return;
+        }
+        const res = savePolicyGroup({
+          id: existing ? existing.id : ('pkg_' + cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 22) + '_' + String(Date.now()).slice(-4)),
+          name: cleanName,
+          short: String(draftShort || '').trim(),
+          late_penalty_mode: draftLateMode,
+          late_multiplier: draftLateMult,
+          ot_multiplier: draftOtMult,
+          ot_mode: draftOtMode,
+          ot_max_hours: draftOtMaxHrs,
+          vacation_days: draftVacDays,
+          sick_days: draftSickDays,
+          working_days: draftWorkDays,
+          grace_min: draftGrace,
+          early_leave_grace_min: draftEarlyGrace,
+          no_clock_out_rule: draftNoOut,
+          perks: draftPerks,
+          tone: draftTone,
+          backfill: draftBackfill
+        });
+        if (res.ok) {
+          toast(`Saved group "${res.policyGroup.name}" (${res.policyGroup.summaryText})${res.backfilledStaff ? ` · Backfilled ${res.backfilledStaff} staff` : ''}`, 'ok');
+          closePolicyGroupModal();
+          if (typeof onSaved === 'function') onSaved(res.policyGroup);
+        } else {
+          toast(res.error || 'Could not save group', 'err');
+        }
+      });
+      wireModalSuggestions(modal);
+      stripNativeTitles(modal);
+    };
+
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    renderGroupModal();
+    return modal;
+  }
+
   function renderPayrollBiometricPolicySectionHtml() {
     const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
     const shiftTypes = getShiftTypes();
@@ -89571,6 +90328,8 @@
     const lateWhenFilter = STATE.kioskLateWhenFilter || 'all';
     const lateOtFilter = STATE.kioskLateOtFilter || 'all';
     const lateTodayFilter = STATE.kioskLateTodayFilter || 'all';
+    const policyGroupFilter = STATE.kioskPolicyGroupFilter || 'all';
+    const policyGroupsCatalog = getPolicyGroups();
 
     const checkStaffFilterCriteria = (s, criteria = {}) => {
       const penF = criteria.pen != null ? criteria.pen : latePenFilter;
@@ -89578,8 +90337,11 @@
       const whenF = criteria.when != null ? criteria.when : lateWhenFilter;
       const otF = criteria.ot != null ? criteria.ot : lateOtFilter;
       const todayF = criteria.today != null ? criteria.today : lateTodayFilter;
+      const pkgF = criteria.pkg != null ? criteria.pkg : policyGroupFilter;
       const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
       const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+      const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
+      if (pkgF !== 'all' && pg.id !== pkgF) return false;
       if (penF !== 'all') {
         if (penF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
         if (penF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
@@ -89626,6 +90388,9 @@
         || norm(s.role).includes(rosterQuery)
         || norm(s.company).includes(rosterQuery)
         || norm(s.shift && s.shift.name).includes(rosterQuery)
+        || norm(s.policyDesc && s.policyDesc.name).includes(rosterQuery)
+        || norm(s.policyDesc && s.policyDesc.summaryLine).includes(rosterQuery)
+        || norm((s.policyDesc && s.policyDesc.perks || []).join(' ')).includes(rosterQuery)
         || norm(s.lateDesc && s.lateDesc.badgeText).includes(rosterQuery)
         || norm(s.lateDesc && s.lateDesc.subText).includes(rosterQuery)
         || norm(s.otDesc && s.otDesc.badgeText).includes(rosterQuery)
@@ -89653,7 +90418,7 @@
       return true;
     });
 
-    const shiftTypesCatalog = getShiftTypes();
+    const shiftTypesCatalog = getShiftTypes(effectiveScopedCo || defCo);
     const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
     const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
     const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
@@ -89672,9 +90437,68 @@
       return true;
     });
 
-    const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all';
+    const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all' || staffStatusFilter !== 'all' || policyGroupFilter !== 'all';
     const fCnt = n => `<span class="kf-cnt ${Number(n) === 0 ? 'is-zero' : ''}">${fmtNum(n)}</span>`;
     const staffInitials = nm => String(nm || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || 'ST';
+
+    const renderInlineShiftTypeCell = (s, sh, subText) => {
+      const ruleObj = getStaffWorkRule(s.name, s.company);
+      const staffShifts = getShiftTypes(s.company);
+      const curShiftId = ruleObj.shift_id || 'day_8_4';
+      const hasMatch = curShiftId === 'custom' || staffShifts.some(st => st.id === curShiftId);
+      const effectiveSelId = hasMatch ? curShiftId : (staffShifts[0] ? staffShifts[0].id : 'day_8_4');
+      return `
+        <div class="kiosk-inline-type-cell">
+          <select class="kiosk-select kiosk-inline-shift-select" data-plain-options="1" data-inline-shift-staff="${esc(s.name)}" aria-label="Shift Type for ${esc(s.name)}">
+            ${staffShifts.map(st => `<option value="${esc(st.id)}" ${effectiveSelId === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
+            <option value="custom" ${effectiveSelId === 'custom' ? 'selected' : ''}>Custom (${esc(ruleObj.custom_start || '08:00')}-${esc(ruleObj.custom_end || '16:00')})</option>
+            <option value="__new_shift__">+ New Shift Type...</option>
+          </select>
+          <button type="button" class="kiosk-cell-sublink mono" data-open-staff-sched="${esc(s.name)}">${esc(subText || sh.dayScheduleSub || sh.windowLabel)}</button>
+        </div>
+      `;
+    };
+
+    const renderInlinePolicyGroupCell = (s, pg) => {
+      return `
+        <div class="kiosk-inline-type-cell">
+          <select class="kiosk-select kiosk-inline-policy-select" data-plain-options="1" data-inline-policy-group-staff="${esc(s.name)}" aria-label="Policy, Multipliers & Perks Group for ${esc(s.name)}">
+            ${policyGroupsCatalog.map(grp => `<option value="${esc(grp.id)}" ${pg.id === grp.id ? 'selected' : ''}>${esc(grp.name)} (${esc(grp.short)})</option>`).join('')}
+            <option value="__new_policy_group__">+ New Policy &amp; Perks Group...</option>
+          </select>
+          <button type="button" class="kiosk-cell-sublink mono" data-open-staff-policy="${esc(s.name)}">${esc(pg.summaryLine)}</button>
+          <div class="drv-sub kiosk-perks-sub">${esc(pg.perksLine)}</div>
+        </div>
+      `;
+    };
+
+    const policyGroupsStripHtml = `
+      <div class="policy-groups-strip">
+        ${policyGroupsCatalog.map(grp => {
+          const grpCnt = staffDir.filter(s => (s.policyDesc || describeStaffPolicyGroup(s.name, s.company)).id === grp.id).length;
+          const isF = policyGroupFilter === grp.id;
+          return `
+            <div class="policy-group-card ${isF ? 'active' : ''}" data-tone="${esc(grp.tone)}" data-policy-group-filter="${esc(isF ? 'all' : grp.id)}" role="button" tabindex="0">
+              <div class="pgc-head">
+                <strong>${esc(grp.name)}</strong>
+                <span class="pgc-cnt">${fmtNum(grpCnt)} staff</span>
+              </div>
+              <div class="pgc-metrics mono">${esc(grp.summaryText)}</div>
+              <div class="pgc-foot">
+                <span class="pgc-perks">${esc(grp.perks.length ? grp.perks.slice(0, 2).join(' · ') : `${grp.working_days}d Basis`)}</span>
+                <button type="button" class="pgc-edit-btn" data-edit-policy-group="${esc(grp.id)}">Edit</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+        <button type="button" class="policy-group-card is-add" data-new-policy-group="1">
+          <div class="pgc-head"><strong>+ New Policy &amp; Perks Group</strong></div>
+          <div class="pgc-metrics">Multipliers · Leave · Perks</div>
+          <div class="pgc-foot"><span class="pgc-perks">Group OT, lateness, vacation &amp; perks</span></div>
+        </button>
+      </div>
+    `;
+
     const lateFilterBarHtml = `
       <div class="kiosk-late-filter-bar" id="kioskLateFilterBar">
         <div class="sched-filter-group kiosk-filter-pod">
@@ -89692,6 +90516,16 @@
             <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'WTC' ? 'active' : ''}" data-kiosk-policy-co="wtc">WTC</button>
             <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'BBConstruction' ? 'active' : ''}" data-kiosk-policy-co="bbconstruction">BBConstruction</button>
             <button type="button" class="kiosk-qchip ${effectiveScopedCo === 'Lions Transport' ? 'active' : ''}" data-kiosk-policy-co="lionstransport">Lions Transport</button>
+          </div>
+        </div>
+        <div class="sched-filter-group kiosk-filter-pod">
+          <span class="kiosk-bar-lbl">Policy &amp; Perks Group</span>
+          <div class="kiosk-filter-chips">
+            <button type="button" class="kiosk-qchip ${policyGroupFilter === 'all' ? 'active' : ''}" data-policy-group-filter="all">All Groups ${fCnt(countByCriteria({ pkg: 'all' }))}</button>
+            ${policyGroupsCatalog.map(grp => {
+              const c = countByCriteria({ pkg: grp.id });
+              return `<button type="button" class="kiosk-qchip ${policyGroupFilter === grp.id ? 'active' : ''} ${c === 0 ? 'is-empty-chip' : ''}" data-policy-group-filter="${esc(grp.id)}">${esc(grp.name)} ${fCnt(c)}</button>`;
+            }).join('')}
           </div>
         </div>
         <div class="sched-filter-group kiosk-filter-pod">
@@ -89755,11 +90589,11 @@
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard" data-policy-host="${host}">
             <div class="panel-head kiosk-feed-head">
               <div class="panel-title">
-                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Lateness Tolerances (IN &amp; OUT), Single-Punch &amp; Overtime Rules' : 'Staff Roster, Biometrics &amp; Daily Clock Log')}</span>
+                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types, Policy Groups &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Policy &amp; Perks Groups, Multipliers, Tolerances &amp; Overtime Rules' : 'Staff Roster, Shift Types, Policy Groups &amp; Biometrics')}</span>
                 <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(filteredRoster.length)} of ${fmtNum(fullStaffDir.length)} Staff (${fmtNum(activeStaffTotal)} Active · ${fmtNum(endedStaffTotal)} Inactive/Ended) · Station: ${esc(STATE.kioskAttSite)}</small>
               </div>
               <div class="kiosk-feed-tools">
-                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, role, shift, overtime, or penalty rule..." value="${esc(STATE.kioskAttRosterSearch || '')}">
+                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, shift type, policy group, perks, or penalty..." value="${esc(STATE.kioskAttRosterSearch || '')}">
                 <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
                     Staff Roster (${fmtNum(filteredRoster.length)})
@@ -89791,6 +90625,7 @@
                 <div class="shift-types-strip">
                   ${shiftTypesCatalog.map(st => {
                     const assignedCnt = staffDir.filter(s => (getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === st.id).length;
+                    const satNote = st.sat_diff_enabled ? ` · Sat ${st.sat_start_time}-${st.sat_end_time}` : '';
                     return `
                       <button type="button" class="shift-type-card" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}">
                         <div class="stc-head">
@@ -89798,7 +90633,7 @@
                           <span class="stc-cnt">${fmtNum(assignedCnt)} staff</span>
                         </div>
                         <div class="stc-time mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}</div>
-                        <div class="stc-sub">${fmtNum(st.hours, 1)}h · ${esc(formatWorkdaysCompact(st.days))} · Edit</div>
+                        <div class="stc-sub">${fmtNum(st.hours, 1)}h · ${esc(formatWorkdaysCompact(st.days))}${esc(satNote)} · Edit</div>
                       </button>
                     `;
                   }).join('')}
@@ -89808,6 +90643,7 @@
                     <div class="stc-sub">Add split, early, or custom shift</div>
                   </button>
                 </div>
+                ${policyGroupsStripHtml}
 
                 <div class="sched-toolbar">
                   <div class="sched-filter-group">
@@ -89830,23 +90666,23 @@
                   </div>
                 </div>
 
-                <div class="table-wrap" style="max-height:360px">
+                <div class="table-wrap" style="max-height:400px">
                   <table class="ledger-table sched-matrix-table" id="kioskShiftScheduleTable">
                     <thead>
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Regular Shift</th>
-                        <th>Lateness &amp; Penalty Rule</th>
-                        <th>Overtime Rule</th>
+                        <th>Shift Type</th>
+                        <th>Policy, Multipliers &amp; Perks</th>
+                        <th>Tolerances &amp; 1-Punch</th>
                         ${weekDates.map(wd => `<th class="c ${wd.isToday ? 'is-today-col' : ''}">${esc(wd.short)} <small class="mono">${esc(wd.dayNum)}</small></th>`).join('')}
                       </tr>
                     </thead>
                     <tbody>
                       ${schedRoster.map(s => {
                         const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
-                        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
                         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
+                        const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
                         const lp = latestByStaff.get(norm(s.name));
                         const onNow = isPunchActiveOnSite(lp, nowMs);
                         return `
@@ -89858,28 +90694,19 @@
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
                                     ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
-                                    <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
                                   <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
                             ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
-                            <td>
-                              <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
-                                ${esc(sh.badgeLabel)}
-                              </button>
-                            </td>
+                            <td>${renderInlineShiftTypeCell(s, sh, sh.dayScheduleSub)}</td>
+                            <td>${renderInlinePolicyGroupCell(s, pg)}</td>
                             <td>
                               <button type="button" class="kiosk-late-pill" data-tone="${esc(lt.tone || 'sapphire')}" data-open-staff-late="${esc(s.name)}">
                                 ${esc(lt.badgeText)}
                               </button>
                               <div class="drv-sub mono">${esc(lt.subText)}</div>
-                            </td>
-                            <td>
-                              <button type="button" class="kiosk-ot-pill" data-tone="${esc(ot.tone || 'muted')}" data-open-staff-ot="${esc(s.name)}">
-                                ${esc(ot.badgeText)}
-                              </button>
                             </td>
                             ${weekDates.map(wd => {
                               const dayShift = resolveStaffShiftForDate(s.name, s.company, wd.iso);
@@ -89899,19 +90726,27 @@
                             }).join('')}
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 12 : 11, 'No active staff match the selected shift, lateness, or overtime filter')}
+                      }).join('') || emptyRow(showCoCol ? 12 : 11, 'No staff match the selected shift, policy group, lateness, or overtime filter')}
                     </tbody>
                   </table>
                 </div>
               </div>
             ` : (feedFilter === 'lateness' && !STATE.kioskLocked ? `
               <div class="kiosk-late-workspace" id="kioskLatenessWorkspace">
+                ${policyGroupsStripHtml}
                 <div class="late-policy-bulk-bar" id="kioskLateBulkPolicyBar">
                   <div class="lp-bulk-title">
-                    <strong>${ic('warn')} Bulk Lateness, Tolerance, Single-Punch &amp; Overtime Policy</strong>
-                    <span class="muted">Apply tolerance (0–30m for IN &amp; OUT), when lateness occurs, punishment, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
+                    <strong>${ic('warn')} Bulk Policy Group, Lateness, Tolerance &amp; Overtime</strong>
+                    <span class="muted">Apply policy &amp; perks group, tolerance (0-30m for IN &amp; OUT), when lateness occurs, punishment, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
                   </div>
                   <div class="lp-bulk-controls">
+                    <div class="ssm-field">
+                      <label for="kioskBulkPolicyGroup">Policy &amp; Perks Group</label>
+                      <select id="kioskBulkPolicyGroup" class="kiosk-select" data-plain-options="1">
+                        <option value="keep" selected>Keep Current Group</option>
+                        ${policyGroupsCatalog.map(grp => `<option value="${esc(grp.id)}">${esc(grp.name)} (${esc(grp.short)})</option>`).join('')}
+                      </select>
+                    </div>
                     <div class="ssm-field">
                       <label for="kioskBulkLateGrace">Tolerance (IN &amp; OUT)</label>
                       <select id="kioskBulkLateGrace" class="kiosk-select" data-plain-options="1">
@@ -89976,7 +90811,8 @@
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Shift &amp; Cutoffs</th>
+                        <th>Shift Type</th>
+                        <th>Policy, Multipliers &amp; Perks</th>
                         <th>Tolerance (IN &amp; OUT)</th>
                         <th>When Late Occurs</th>
                         <th>Lateness Punishment</th>
@@ -89994,6 +90830,7 @@
                         const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
                         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
                         const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+                        const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
                         const ruleRow = getStaffWorkRule(s.name, s.company);
                         const stdTolSteps = [0, 5, 10, 15, 20, 30];
                         const curTol = Number(lt.graceMin != null ? lt.graceMin : 10);
@@ -90006,7 +90843,7 @@
                         }
                         let otComboVal = 'none';
                         if (ot.mode === 'always') otComboVal = 'always';
-                        else if (ot.mode === 'hours') otComboVal = 'max_2';
+                        else if (ot.mode === 'max_hours' || ot.mode === 'hours') otComboVal = 'max_2';
                         else if (ot.mode === 'date_range') {
                           otComboVal = (ot.pass && (ot.pass.start_date || ot.pass.from) === todayISO() && (ot.pass.end_date || ot.pass.to) === todayISO()) ? 'today_pass' : 'date_range';
                         }
@@ -90020,19 +90857,14 @@
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
                                     ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
-                                    <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
                                   <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
                             ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
-                            <td>
-                              <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
-                                ${esc(sh.badgeLabel)}
-                              </button>
-                              <div class="drv-sub mono">${esc(lt.cutoffSummary)}</div>
-                            </td>
+                            <td>${renderInlineShiftTypeCell(s, sh, lt.cutoffSummary)}</td>
+                            <td>${renderInlinePolicyGroupCell(s, pg)}</td>
                             <td>
                               <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="grace_min" aria-label="Tolerance minutes for ${esc(s.name)}">
                                 ${tolSteps.map(m => `<option value="${m}" ${curTol === m ? 'selected' : ''}>${m} min</option>`).join('')}
@@ -90086,19 +90918,19 @@
                                       ? (!lp.in_time
                                         ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">Only OUT ${esc(lp.time)} (${lp.penalty_leave_days >= 1 ? '1.0d' : (lp.penalty_leave_days >= 0.5 ? '0.5d' : 'No IN')})</span><div class="drv-sub mono">${lp.early_out_min > 0 ? `OUT Early ${lp.early_out_min}m (<${esc(lt.outCutoffTime)})` : 'Missing Clock-IN'}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
                                         : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : (lp.late_hours > 0 ? 'badge-warn' : 'badge-ok')}">IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? `Late -${fmtNum(lp.late_hours, 1)}h` : 'Full Shift (0 Ded.)')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : (lp.unapproved_ot_hours > 0 ? ' · 0h Paid OT' : '')}</div>`)
-                                      : `<span class="kiosk-today-pill is-off"><span class="ktp-dot"></span>Off Site</span><div class="drv-sub mono">${esc(ot.badgeText)}</div>`)}
+                                       : `<span class="kiosk-today-pill is-off"><span class="ktp-dot"></span>Off Site</span><div class="drv-sub mono">${esc(ot.badgeText)}</div>`)}
                                 </div>
-                                <button type="button" class="btn kiosk-mini-btn kiosk-modify-btn" data-open-staff-late="${esc(s.name)}">Rules</button>
                               </div>
                             </td>
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 9 : 8, 'No active staff match the selected lateness, tolerance, overtime, or punishment filter')}
+                      }).join('') || emptyRow(showCoCol ? 10 : 9, 'No staff match the selected lateness, policy group, tolerance, overtime, or punishment filter')}
                     </tbody>
                   </table>
                 </div>
               </div>
             ` : `
+              ${feedFilter === 'roster' && !STATE.kioskLocked ? policyGroupsStripHtml : ''}
               <div class="table-wrap" style="max-height:420px">
                 ${feedFilter === 'roster' && !STATE.kioskLocked ? `
                   <table class="ledger-table" id="kioskAttFeedTable">
@@ -90106,7 +90938,8 @@
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Shift &amp; Cutoffs</th>
+                        <th>Shift Type</th>
+                        <th>Policy, Multipliers &amp; Perks</th>
                         <th>Lateness &amp; Penalty Rule</th>
                         <th>Overtime Rule</th>
                         <th>Today's Clock IN / OUT</th>
@@ -90124,12 +90957,13 @@
                         const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
                         const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
                         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
+                        const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
                         const ruleRow = getStaffWorkRule(s.name, s.company);
                         const otSubLbl = ot.mode === 'none'
                           ? '0h Paid OT'
                           : (ot.mode === 'always'
                             ? 'Open Beyond Shift'
-                            : (ot.mode === 'max_hours'
+                            : (ot.mode === 'max_hours' || ot.mode === 'hours'
                               ? `Cap ${fmtNum(ruleRow.ot_max_hours || 2, 1)}h/day`
                               : (ot.activeToday ? 'Approved Today' : 'Date Pass')));
                         return `
@@ -90141,19 +90975,14 @@
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(s.name)}</strong>
                                     ${s.isEndedContract ? `<span class="badge badge-warn" style="font-size:9.5px;padding:1px 5px">Ended</span>` : `<span class="badge badge-ok" style="font-size:9.5px;padding:1px 5px">Active</span>`}
-                                    <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
                                   <div class="drv-sub">${esc(s.role)}${s.isEndedContract && s.endDate ? ` · Ended ${esc(fmtDateDMY(s.endDate))}` : ''}</div>
                                 </div>
                               </div>
                             </td>
                             ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
-                            <td>
-                              <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
-                                ${esc(sh.badgeLabel)}
-                              </button>
-                              <div class="drv-sub mono kiosk-nowrap-sub">${esc(lt.cutoffSummary)}</div>
-                            </td>
+                            <td>${renderInlineShiftTypeCell(s, sh, `${sh.dayScheduleSub} · ${lt.cutoffSummary}`)}</td>
+                            <td>${renderInlinePolicyGroupCell(s, pg)}</td>
                             <td>
                               <button type="button" class="kiosk-late-pill" data-tone="${esc(lt.tone || 'sapphire')}" data-open-staff-late="${esc(s.name)}">
                                 ${esc(lt.badgeText)}
@@ -90202,7 +91031,7 @@
                             </td>
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 8 : 7, 'No active staff match the selected lateness or search filter')}
+                      }).join('') || emptyRow(showCoCol ? 9 : 8, 'No staff match the selected policy group, lateness, or search filter')}
                     </tbody>
                   </table>
                 ` : `
@@ -90211,7 +91040,7 @@
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Shift</th>
+                        <th>Shift Type</th>
                         <th>Status</th>
                         <th>Clock IN / OUT</th>
                         <th>Lateness / Penalty</th>
@@ -90224,6 +91053,7 @@
                     <tbody>
                       ${feedRows.map(p => {
                         const pDate = p.shift_date || p.date || todayISO();
+                        const shP = resolveStaffShiftForDate(p.staff, p.company, pDate);
                         const ltP = describeStaffLatenessRule(p.staff, p.company, pDate);
                         const otP = describeStaffOvertimeRule(p.staff, p.company, pDate);
                         const isOutWithoutIn = p.direction === 'OUT' && !p.in_time;
@@ -90239,13 +91069,12 @@
                                 <div class="kiosk-staff-id-txt">
                                   <div class="kiosk-staff-name-line">
                                     <strong>${esc(p.staff)}</strong>
-                                    <span class="kiosk-row-edit-hint">Modify ▸</span>
                                   </div>
                                 </div>
                               </div>
                             </td>
                             ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
-                            <td><span class="kiosk-shift-tag">${esc(p.shift_label || 'Day · 08:00-16:00')}</span></td>
+                            <td><span class="kiosk-shift-tag">${esc((shP && shP.badgeLabel) || p.shift_label || 'Day Shift · 08:00-16:00')}</span></td>
                             <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : (isOutWithoutIn ? 'badge-err' : 'badge-warn')}">${p.direction === 'IN' ? 'Only IN · On Site' : (isOutWithoutIn ? 'Only OUT · No IN' : 'IN & OUT · Completed')}</span></td>
                             <td class="mono">${p.direction === 'OUT' ? (p.in_time ? `IN ${esc(p.in_time)} · OUT ${esc(p.time)}` : `Only OUT ${esc(p.time)} (No IN)`) : `Only IN ${esc(p.time)}`} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
                             <td>
@@ -91046,6 +91875,7 @@
         || ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
         || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
         || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)
+        || ($('policyGroupModal') && !$('policyGroupModal').hidden)
         || ($('kioskStationAdminModal') && !$('kioskStationAdminModal').hidden)
         || ($('aiDrawer') && !$('aiDrawer').hidden);
       if (openModal) return;
@@ -91150,6 +91980,82 @@
         openStaffScheduleModal(btn.getAttribute('data-open-staff-ot') || '', { focusSection: 'ot' });
       });
     });
+    feedCard.querySelectorAll('[data-open-staff-policy]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openStaffScheduleModal(btn.getAttribute('data-open-staff-policy') || '', { focusSection: 'policy' });
+      });
+    });
+    feedCard.querySelectorAll('[data-policy-group-filter]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('[data-edit-policy-group]')) return;
+        STATE.kioskPolicyGroupFilter = el.getAttribute('data-policy-group-filter') || 'all';
+        renderApp();
+      });
+      el.addEventListener('keydown', e => {
+        if (e.target !== el) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          STATE.kioskPolicyGroupFilter = el.getAttribute('data-policy-group-filter') || 'all';
+          renderApp();
+        }
+      });
+    });
+    feedCard.querySelectorAll('[data-edit-policy-group]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openPolicyGroupModal(btn.getAttribute('data-edit-policy-group') || '');
+      });
+    });
+    feedCard.querySelectorAll('[data-new-policy-group]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openPolicyGroupModal('');
+      });
+    });
+    feedCard.querySelectorAll('[data-inline-shift-staff]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const stf = sel.getAttribute('data-inline-shift-staff') || '';
+        if (!stf) return;
+        const val = sel.value || 'day_8_4';
+        if (val === '__new_shift__') {
+          openShiftTypeModal('');
+          renderApp();
+          return;
+        }
+        if (val === 'custom') {
+          openStaffScheduleModal(stf, { focusSection: 'shift' });
+          return;
+        }
+        saveStaffWorkRule(stf, { shift_id: val });
+        const shUpd = resolveStaffShiftForDate(stf, '', todayISO());
+        toast(`Updated shift for ${stf} (${shUpd.name} · ${shUpd.windowLabel})`, 'ok');
+        renderApp();
+      });
+    });
+    feedCard.querySelectorAll('[data-inline-policy-group-staff]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const stf = sel.getAttribute('data-inline-policy-group-staff') || '';
+        if (!stf) return;
+        const val = sel.value || '';
+        if (val === '__new_policy_group__') {
+          openPolicyGroupModal('', null, grp => {
+            if (grp && grp.id) {
+              saveStaffWorkRule(stf, { apply_policy_group_id: grp.id });
+              toast(`Assigned ${grp.name} to ${stf}`, 'ok');
+              renderApp();
+            }
+          });
+          renderApp();
+          return;
+        }
+        if (!val) return;
+        saveStaffWorkRule(stf, { apply_policy_group_id: val });
+        const pgUpd = describeStaffPolicyGroup(stf, '');
+        toast(`Assigned ${pgUpd.name} (${pgUpd.summaryLine}) to ${stf}`, 'ok');
+        renderApp();
+      });
+    });
     feedCard.querySelectorAll('tr[data-staff-row]').forEach(tr => {
       tr.addEventListener('click', e => {
         if (e.target.closest('button, select, input, a, label, .pa-select-wrap, .pa-select-menu, .kiosk-inline-pin-form')) return;
@@ -91218,6 +92124,7 @@
     });
     $('kioskClearLateFiltersBtn')?.addEventListener('click', () => {
       STATE.kioskStaffStatusFilter = 'all';
+      STATE.kioskPolicyGroupFilter = 'all';
       STATE.kioskLatePenFilter = 'all';
       STATE.kioskLateTolFilter = 'all';
       STATE.kioskLateWhenFilter = 'all';
@@ -91246,7 +92153,7 @@
       const cv = String(comboVal || 'none');
       const curRule = getStaffWorkRule(stfName);
       if (cv === 'always') return { ot_mode: 'always' };
-      if (cv === 'max_2') return { ot_mode: 'hours', ot_max_hours: Number(curRule.ot_max_hours || 2) };
+      if (cv === 'max_2') return { ot_mode: 'max_hours', ot_max_hours: Number(curRule.ot_max_hours || 2) };
       if (cv === 'today_pass') {
         const td = todayISO();
         const existingPasses = Array.isArray(curRule.ot_passes) ? curRule.ot_passes.filter(p => !((p.start_date || p.from) === td && (p.end_date || p.to) === td)) : [];
@@ -91291,11 +92198,13 @@
       });
     });
     $('kioskBulkApplyLateBtn')?.addEventListener('click', () => {
+      const pkgEl = $('kioskBulkPolicyGroup');
       const wEl = $('kioskBulkLateWhen');
       const gEl = $('kioskBulkLateGrace');
       const pEl = $('kioskBulkLatePenalty');
       const nEl = $('kioskBulkNoOutRule');
       const oEl = $('kioskBulkOtRule');
+      const pkgBulkVal = pkgEl ? pkgEl.value : 'keep';
       const otBulkVal = oEl ? oEl.value : 'keep';
       const baseBulkPatch = {
         late_when: wEl ? wEl.value : 'both',
@@ -91303,16 +92212,23 @@
         ...parsePenaltyComboPatch(pEl ? pEl.value : 'exact_hours'),
         no_clock_out_rule: nEl ? nEl.value : 'half_day'
       };
-      const dirList = getKioskStaffDirectory();
+      const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true, includeEnded: true });
+      const statusF = ['all', 'active', 'inactive'].includes(STATE.kioskStaffStatusFilter) ? STATE.kioskStaffStatusFilter : 'all';
+      const dirList = statusF === 'active'
+        ? fullDir.filter(s => !s.isEndedContract)
+        : (statusF === 'inactive' ? fullDir.filter(s => s.isEndedContract) : fullDir);
       const q = norm(STATE.kioskAttRosterSearch || '');
+      const pkgF = STATE.kioskPolicyGroupFilter || 'all';
       const latePenF = STATE.kioskLatePenFilter || 'all';
       const lateTolF = STATE.kioskLateTolFilter || 'all';
       const lateWhenF = STATE.kioskLateWhenFilter || 'all';
       const lateOtF = STATE.kioskLateOtFilter || 'all';
       const targetStaff = dirList.filter(s => {
-        if (q && !norm(`${s.name} ${s.role} ${s.company} ${s.shift && s.shift.label || ''}`).includes(q)) return false;
+        if (q && !norm(`${s.name} ${s.role} ${s.company} ${s.shift && s.shift.name || ''} ${s.policyDesc && s.policyDesc.name || ''}`).includes(q)) return false;
         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
         const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+        const pg = s.policyDesc || describeStaffPolicyGroup(s.name, s.company);
+        if (pkgF !== 'all' && pg.id !== pkgF) return false;
         if (latePenF !== 'all') {
           if (latePenF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
           if (latePenF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
@@ -91337,12 +92253,25 @@
         return true;
       });
       targetStaff.forEach(s => {
-        const staffPatch = otBulkVal && otBulkVal !== 'keep'
-          ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name) }
-          : baseBulkPatch;
-        saveStaffWorkRule(s.name, staffPatch);
+        let staffPatch;
+        if (pkgBulkVal && pkgBulkVal !== 'keep') {
+          staffPatch = {
+            apply_policy_group_id: pkgBulkVal,
+            late_when: wEl ? wEl.value : 'both',
+            ...(otBulkVal && otBulkVal !== 'keep' ? buildOtComboPatchForStaff(otBulkVal, s.name) : {})
+          };
+        } else {
+          staffPatch = otBulkVal && otBulkVal !== 'keep'
+            ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name) }
+            : baseBulkPatch;
+        }
+        saveStaffWorkRule(s.name, staffPatch, { deferSave: true });
       });
-      toast(`Applied lateness, tolerance & overtime rules to ${targetStaff.length} staff`, 'ok');
+      if (targetStaff.length > 0) {
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+      }
+      toast(`Applied policy, lateness & overtime rules to ${targetStaff.length} staff`, 'ok');
       renderApp();
     });
     feedCard.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
@@ -96083,6 +97012,8 @@
           return;
         }
         if (_dateFacState.open) { closeDateFacilitator(); return; }
+        const pgmModal = $('policyGroupModal');
+        if (pgmModal && !pgmModal.hidden) { closePolicyGroupModal(); return; }
         const stmModal = $('shiftTypeModal');
         if (stmModal && !stmModal.hidden) { closeShiftTypeModal(); return; }
         const ssmModal = $('staffScheduleModal');
@@ -96403,6 +97334,10 @@
       getShiftTypes: () => getShiftTypes(),
       saveShiftType: (spec = {}) => saveShiftType(spec),
       deleteShiftType: shiftId => deleteShiftType(shiftId),
+      getPolicyGroups: () => getPolicyGroups(),
+      savePolicyGroup: (spec = {}) => savePolicyGroup(spec),
+      deletePolicyGroup: groupId => deletePolicyGroup(groupId),
+      describeStaffPolicyGroup: (name, co) => describeStaffPolicyGroup(name, co),
       hasExplicitStaffWorkRule: staff => hasExplicitStaffWorkRule(staff),
       getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
       saveStaffWorkRule: (staff, patch = {}) => saveStaffWorkRule(staff, patch),
@@ -96423,6 +97358,8 @@
       closeStaffScheduleModal: () => closeStaffScheduleModal(),
       openShiftTypeModal: shiftId => openShiftTypeModal(shiftId),
       closeShiftTypeModal: () => closeShiftTypeModal(),
+      openPolicyGroupModal: (groupId, seedSpec) => openPolicyGroupModal(groupId, seedSpec),
+      closePolicyGroupModal: () => closePolicyGroupModal(),
       clearTestStaffConfig: (staffNames = [], shiftTypeIds = []) => {
         (staffNames || []).forEach(nm => {
           const k = norm(nm);
