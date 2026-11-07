@@ -8895,7 +8895,7 @@
       if (indEditsStore[indEditsKeys[ei]] && indEditsStore[indEditsKeys[ei]].voided) indEditsVoidCnt++;
     }
     const indEditsRev = `${indEditsKeys.length}:${indEditsVoidCnt}`;
-    if (_FREQ_IDX && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev && _FREQ_IDX._epActive === epActive && _FREQ_IDX._indEditsRev === indEditsRev) {
+    if (_FREQ_IDX && _FREQ_IDX._iifeBooted === _iifeBooted && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev && _FREQ_IDX._epActive === epActive && _FREQ_IDX._indEditsRev === indEditsRev) {
       const wKeys = _FREQ_IDX._watchedKeys;
       const wLens = _FREQ_IDX._watchedLens;
       const wRevs = _FREQ_IDX._watchedRevs;
@@ -8938,7 +8938,7 @@
     const watchedKeys = [];
     const watchedLens = [];
     const watchedRevs = [];
-    let dynKey = `${_WIN_REV}:${curCustomRev}:${epActive ? 1 : 0}:${indEditsRev}`;
+    let dynKey = `${_iifeBooted ? 1 : 0}:${_WIN_REV}:${curCustomRev}:${epActive ? 1 : 0}:${indEditsRev}`;
     for (let ki = 0; ki < allRecKeys.length; ki++) {
       const tk = allRecKeys[ki];
       if (tk === 'journal_lines' || tk === 'daily_totals') continue;
@@ -9432,6 +9432,7 @@
       uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company, industry,
       byCol, forCol, any, _indexedTableCount: allRecKeys.length
     };
+    _FREQ_IDX._iifeBooted = _iifeBooted;
     _FREQ_IDX._winRev = _WIN_REV;
     _FREQ_IDX._customRev = curCustomRev;
     _FREQ_IDX._epActive = epActive;
@@ -100510,6 +100511,7 @@
     }
   }
 
+  _iifeBooted = true;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
