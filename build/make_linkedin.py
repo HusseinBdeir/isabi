@@ -28,17 +28,17 @@ LOGO_LIGHT_HTML = """<!doctype html>
   <defs>
     <linearGradient id="c1plate" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#FCF9F2"/>
-      <stop offset="100%" stop-color="#F1E9D8"/>
+      <stop offset="100%" stop-color="#EFE7D6"/>
     </linearGradient>
   </defs>
   <rect width="800" height="800" fill="url(#c1plate)"/>
   <g fill="#281D15">
-    <rect x="220" y="136" width="128" height="384"/>
-    <rect x="452" y="136" width="128" height="384"/>
+    <rect x="263" y="180" width="100" height="337"/>
+    <rect x="437" y="180" width="100" height="337"/>
   </g>
   <g fill="#B88228">
-    <rect x="194" y="556" width="412" height="38" rx="6"/>
-    <rect x="194" y="630" width="412" height="38" rx="6"/>
+    <rect x="263" y="564" width="274" height="17" rx="2.5"/>
+    <rect x="263" y="603" width="274" height="17" rx="2.5"/>
   </g>
 </svg>
 </body></html>
@@ -61,12 +61,12 @@ LOGO_DARK_HTML = """<!doctype html>
   </defs>
   <rect width="800" height="800" fill="url(#c1dark)"/>
   <g fill="#FAF6EE">
-    <rect x="220" y="136" width="128" height="384"/>
-    <rect x="452" y="136" width="128" height="384"/>
+    <rect x="263" y="180" width="100" height="337"/>
+    <rect x="437" y="180" width="100" height="337"/>
   </g>
   <g fill="#D9A54A">
-    <rect x="194" y="556" width="412" height="38" rx="6"/>
-    <rect x="194" y="630" width="412" height="38" rx="6"/>
+    <rect x="263" y="564" width="274" height="17" rx="2.5"/>
+    <rect x="263" y="603" width="274" height="17" rx="2.5"/>
   </g>
 </svg>
 </body></html>

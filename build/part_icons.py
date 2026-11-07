@@ -28,9 +28,9 @@ ICONS = {
     # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge
     "ai": (
         '<svg class="ic ic-isabi" viewBox="0 0 120 120" width="1em" height="1em" aria-hidden="true">'
-        '<g fill="var(--badge-ii, #281D15)"><rect x="32" y="18" width="20" height="60"/><rect x="68" y="18" width="20" height="60"/></g>'
-        '<g fill="var(--badge-rule, #B88228)"><rect x="28" y="84" width="64" height="6" rx="1"/>'
-        '<rect x="28" y="96" width="64" height="6" rx="1"/></g></svg>'
+        '<g fill="var(--badge-ii, #281D15)"><rect x="33" y="16" width="20" height="67"/><rect x="67" y="16" width="20" height="67"/></g>'
+        '<g fill="var(--badge-rule, #B88228)"><rect x="33" y="92" width="54" height="3.6" rx="0.5"/>'
+        '<rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/></g></svg>'
     ),
 
     # Bare ISABI II mark (adapts to button/tab text color + brass double rule)

@@ -5,8 +5,8 @@ from part_icons import ICONS
 def badge_svg(uid="og"):
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Mark">'
-        '<g class="badge-ii" fill="#281D15"><rect x="32" y="18" width="20" height="60"/><rect x="68" y="18" width="20" height="60"/></g>'
-        '<g class="badge-rule" fill="#B88228"><rect x="28" y="84" width="64" height="6" rx="1"/><rect x="28" y="96" width="64" height="6" rx="1"/></g>'
+        '<g class="badge-ii" fill="#281D15"><rect x="33" y="16" width="20" height="67"/><rect x="67" y="16" width="20" height="67"/></g>'
+        '<g class="badge-rule" fill="#B88228"><rect x="33" y="92" width="54" height="3.6" rx="0.5"/><rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/></g>'
         '</svg>'
     )
 
