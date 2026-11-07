@@ -7095,11 +7095,12 @@
     if (!u || !userHasFaceId(u)) return false;
     return effectiveSeatAuthMode(u) === 'both';
   }
-  function buildKioskStaffTargetObject(staffNameOrKey) {
+  function buildKioskStaffTargetObject(staffNameOrKey, dirMap) {
     const k = norm(String(staffNameOrKey || '').replace(/^stfbio:/i, ''));
     if (!k) return null;
-    const dir = typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : [];
-    const entry = dir.find(s => norm(s.name) === k);
+    const entry = dirMap instanceof Map
+      ? dirMap.get(k)
+      : ((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : []).find(s => norm(s.name) === k));
     const bio = (STATE.staffBiometrics && STATE.staffBiometrics[k]) || {};
     const dispName = (entry && entry.name) || bio.name || String(staffNameOrKey || '').replace(/^stfbio:/i, '').trim();
     if (!dispName) return null;
@@ -9390,13 +9391,14 @@
     };
     if (_iifeBooted && typeof computeHospitalityOperations === 'function') {
       const hspD = computeHospitalityOperations({ company: 'industry:Hospitality & Resorts', ignoreSearch: true });
-      incDomainRows(hspD.venueRows, '', 1, r => String(r.id || '').startsWith('HSP-CUST-'));
-      [hspD.posRows, hspD.vatRows, hspD.membershipRows, hspD.partnerSplitRows, hspD.stockRows, hspD.menuRows, hspD.energyRows, hspD.maintRows].forEach(arr => incDomainRows(arr, '', 1));
+      incDomainRows(hspD.venueRows, '', 0.15, r => String(r.id || '').startsWith('HSP-CUST-'));
+      [hspD.posRows, hspD.vatRows, hspD.membershipRows, hspD.partnerSplitRows, hspD.stockRows, hspD.menuRows, hspD.energyRows, hspD.maintRows].forEach(arr => incDomainRows(arr, '', 0.15));
     }
     if (_iifeBooted && typeof computeTradingOperations === 'function') {
       const trdD = computeTradingOperations({ company: 'industry:Automotive & Heavy Trading', ignoreSearch: true });
       incDomainRows(trdD.salesRows, '', 1, r => r.is_gap);
-      [trdD.receivableRows, trdD.targetRows, trdD.importRows, trdD.landedRows, trdD.grnRows, trdD.serialUnits, trdD.warrantyRows, trdD.stockRows, trdD.movementRows, trdD.reconRows].forEach(arr => incDomainRows(arr, '', 1));
+      [trdD.receivableRows, trdD.targetRows, trdD.importRows, trdD.landedRows, trdD.grnRows, trdD.serialUnits, trdD.warrantyRows].forEach(arr => incDomainRows(arr, '', 1));
+      [trdD.stockRows, trdD.movementRows, trdD.reconRows].forEach(arr => incDomainRows(arr, '', 0.05));
     }
     if (_iifeBooted && typeof computeRealEstateOperations === 'function') {
       const reD = computeRealEstateOperations({ company: 'industry:Real Estate & Property', ignoreSearch: true });
@@ -9405,8 +9407,8 @@
     }
     if (_iifeBooted && typeof computeInsuranceOperations === 'function') {
       const insD = computeInsuranceOperations();
-      [insD.policies, insD.renewals, insD.items, insD.billing, insD.remittances, insD.statements, insD.claims, insD.agreements].forEach(arr => incDomainRows(arr, 'Insurance Company', 1));
-      incDomainRows(insD.catalogue, 'Insurance Company', 0.25);
+      [insD.policies, insD.renewals, insD.items, insD.billing, insD.remittances, insD.statements, insD.claims, insD.agreements].forEach(arr => incDomainRows(arr, 'Insurance Company', 0.65));
+      incDomainRows(insD.catalogue, 'Insurance Company', 0.2);
     }
 
     // Universal Future-Table Auto-Indexer: automatically indexes every non-explicit present & future (49th+) table
@@ -39928,12 +39930,18 @@
     'la una': 'La Una',
     'palms': 'Palms',
     'the palms': 'Palms',
+    'warshe palms': 'Palms',
     'voile': 'Voile',
     'platinum': 'Platinum',
     'korri auto': 'Korri Auto',
     'korri': 'Korri Auto',
+    'shacman': 'Shacman',
     'properties': 'Properties',
-    '4235': 'Properties'
+    '4235': 'Properties',
+    '4235 company': '4235 Company S.A.L',
+    '4235 company s.a.l': '4235 Company S.A.L',
+    'insurance': 'Insurance Company',
+    'insurance company': 'Insurance Company'
   };
 
   function resolveSisterEntityName(rawParty) {
@@ -39948,9 +39956,13 @@
   let _icInteractionsCache = null;
   let _icInteractionsSig = '';
   function computeIntercompanyInteractions(opts = {}) {
-    const extList = (SEED && SEED.records && SEED.records.external_movements) || [];
+    const baseExtList = (SEED && SEED.records && SEED.records.external_movements) || [];
+    const liveSisterLegs = (SEED && SEED.industryLive && SEED.industryLive.holding && Array.isArray(SEED.industryLive.holding.sisterExternalLegs))
+      ? SEED.industryLive.holding.sisterExternalLegs
+      : [];
+    const extList = liveSisterLegs.length ? baseExtList.concat(liveSisterLegs) : baseExtList;
     const ignoreSearch = Boolean(opts.ignoreSearch);
-    const sig = `${(SEED && SEED._customRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (_icInteractionsCache && _icInteractionsSig === sig) return _icInteractionsCache;
 
     const scoped = filterRecords(extList, {
@@ -41700,13 +41712,18 @@
     return pool;
   }
 
+  const _hspOpsCache = new Map();
   function computeHospitalityOperations(opts) {
     const scopeCo = (opts && opts.company) || STATE.company;
     const activeResorts = getActiveHospitalityResorts(scopeCo);
     const activeNames = new Set(activeResorts.map(r => r.name));
     const q = (opts && opts.ignoreSearch) ? '' : norm(STATE.search);
+    const _hspCacheKey = `${scopeCo}|${Array.from(activeNames).join(',')}|${q}|${(SEED && SEED._industryRev) || 0}|${(SEED && SEED._customRev) || 0}|${((SEED && SEED.records && SEED.records.sales_tickets) || []).length}|${JSON.stringify(STATE.industryRowEdits || {})}|${JSON.stringify(STATE.industryCustomRows || {})}`;
+    if (_hspOpsCache.has(_hspCacheKey)) return _hspOpsCache.get(_hspCacheKey);
+    const liveHsp = (SEED && SEED.industryLive && SEED.industryLive.hospitality) || null;
+    const pickHsp = (key, fallback) => (liveHsp && Array.isArray(liveHsp[key]) && liveHsp[key].length) ? liveHsp[key].slice() : fallback;
 
-    const baseVenueRows = [
+    const baseVenueRows = pickHsp('venueRows', [
       { id: 'HSP-REV-001', date: '2026-09-28', company: 'Blanca', outlet: 'Chalets & Cabanas', category: 'Chalet Rental', rooms: 44, capacity: 48, covers: 132, ht_usd: 11800, vat_usd: 1298, ttc_usd: 13098, method: 'Card / Whish', notes: 'Weekend chalet & VIP cabana full-board occupancy' },
       { id: 'HSP-REV-002', date: '2026-09-28', company: 'Blanca', outlet: 'Blanca Restaurant & Terrace', category: 'Restaurant F&B', rooms: 0, capacity: 0, covers: 285, ht_usd: 9450, vat_usd: 1039.5, ttc_usd: 10489.5, method: 'Cash & Card', notes: 'Sunday seafood lunch & sunset terrace service' },
       { id: 'HSP-REV-003', date: '2026-09-27', company: 'Blanca', outlet: 'Beach & Pool Gate', category: 'Beach Entrance', rooms: 0, capacity: 0, covers: 410, ht_usd: 8200, vat_usd: 902, ttc_usd: 9102, method: 'Cash', notes: 'Day-pass admissions & sunbed packages' },
@@ -41718,7 +41735,7 @@
       { id: 'HSP-REV-009', date: '2026-09-25', company: 'Voile', outlet: 'Voile Valet & Marina', category: 'Valet & Services', rooms: 0, capacity: 0, covers: 165, ht_usd: 1950, vat_usd: 214.5, ttc_usd: 2164.5, method: 'Cash', notes: 'VIP valet parking & jetty tender mooring' },
       { id: 'HSP-REV-010', date: '2026-09-24', company: 'Platinum', outlet: 'Platinum Executive Suites', category: 'Chalet Rental', rooms: 33, capacity: 36, covers: 88, ht_usd: 12600, vat_usd: 1386, ttc_usd: 13986, method: 'Card / Corporate', notes: 'Executive suites & penthouse hospitality' },
       { id: 'HSP-REV-011', date: '2026-09-24', company: 'Platinum', outlet: 'Platinum Ballroom', category: 'Events & Weddings', rooms: 0, capacity: 0, covers: 250, ht_usd: 14800, vat_usd: 1628, ttc_usd: 16428, method: 'Bank Transfer', notes: 'Corporate gala dinner & stage production' }
-    ];
+    ]);
 
     // Also include any custom sales_tickets entered for Hospitality resorts
     const customSales = ((SEED && SEED.records && SEED.records.sales_tickets) || []).filter(t => t && !t.voided && activeNames.has(String(t.company || '').trim()));
@@ -41746,7 +41763,7 @@
     getIndustryCustomRows('hsp_revenue').forEach(cr => baseVenueRows.unshift(cr));
     const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
 
-    const posRows = [
+    const posRows = pickHsp('posRows', [
       { id: 'POS-CL-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una RawBT Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'RawBT thermal shift close verified 100% against physical drawer' },
       { id: 'POS-CL-902', date: '2026-09-28', company: 'Blanca', terminal: 'Blanca Terrace POS #1', shift: 'Full Day', cashier: 'Maya S.', bills_count: 192, pos_billed_ttc: 10489.5, cash_usd: 5120, card_whish_usd: 5219.5, comp_usd: 150, variance_usd: 0, status: 'Balanced', notes: 'All credit slips & Whish QR receipts reconciled' },
       { id: 'POS-CL-903', date: '2026-09-27', company: 'Blanca', terminal: 'Blanca Pool Bar POS #2', shift: 'Sunset Shift', cashier: 'Rami H.', bills_count: 164, pos_billed_ttc: 9102, cash_usd: 6810, card_whish_usd: 2110, comp_usd: 0, variance_usd: -182, status: 'Close Variance', notes: 'Till Close Alert: Unclosed cabana tab #B-14 ($182) pending guest checkout' },
@@ -41754,12 +41771,12 @@
       { id: 'POS-CL-905', date: '2026-09-26', company: 'Palms', terminal: 'Palms Main Reception POS', shift: 'Day Shift', cashier: 'Lara M.', bills_count: 138, pos_billed_ttc: 17094, cash_usd: 7400, card_whish_usd: 9434, comp_usd: 260, variance_usd: 0, status: 'Balanced', notes: 'Chalet check-in & beach gate shift close matched' },
       { id: 'POS-CL-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'Close Variance', notes: 'Till Close Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
       { id: 'POS-CL-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
-    ];
+    ]);
     getIndustryCustomRows('hsp_pos').forEach(cr => posRows.unshift(cr));
     const scopedPosRows = posRows.filter(r => activeNames.has(r.company));
     posRows.length = 0; posRows.push(...scopedPosRows);
 
-    const vatRows = [
+    const vatRows = pickHsp('vatRows', [
       { id: 'HSP-VAT-101', date: '2026-09-28', company: 'Blanca', doc_ref: 'VAT-BL-2026-091', category: 'Chalet & F&B Sales', tax_rule: '11% Standard VAT', ht_usd: 29450, vat_usd: 3239.5, ttc_usd: 32689.5, direction: 'Output VAT', notes: 'Official 11% fiscal declaration on resort rooms & dining' },
       { id: 'HSP-VAT-102', date: '2026-09-28', company: 'La Una', doc_ref: 'VAT-LU-2026-084', category: 'Restaurant & Lounge', tax_rule: '11% Standard VAT', ht_usd: 19800, vat_usd: 2178, ttc_usd: 21978, direction: 'Output VAT', notes: 'La Una fiscal POS shift close 11% output tax' },
       { id: 'HSP-VAT-103', date: '2026-09-27', company: 'Blanca', doc_ref: 'EX-BL-2026-412', category: 'Generator Diesel Intake', tax_rule: 'Zero-VAT Exempt', ht_usd: 4850, vat_usd: 0, ttc_usd: 4850, direction: 'Exempt (Zero-VAT)', notes: 'Zero-VAT Enforced: Excised generator fuel carries $0 VAT' },
@@ -41767,9 +41784,9 @@
       { id: 'HSP-VAT-105', date: '2026-09-26', company: 'Palms', doc_ref: 'VAT-PL-2026-067', category: 'Chalets & Wedding Banquets', tax_rule: '11% Standard VAT', ht_usd: 33900, vat_usd: 3729, ttc_usd: 37629, direction: 'Output VAT', notes: 'Palms seasonal chalet & event fiscal batch' },
       { id: 'HSP-VAT-106', date: '2026-09-25', company: 'Voile', doc_ref: 'AP-VL-2026-308', category: 'Cellar & Kitchen Imports', tax_rule: '11% Deductible Input', ht_usd: 11200, vat_usd: 1232, ttc_usd: 12432, direction: 'Input VAT', notes: 'Deductible supplier VAT on F&B commissary invoices' },
       { id: 'HSP-VAT-107', date: '2026-09-24', company: 'Platinum', doc_ref: 'VAT-PT-2026-052', category: 'Suites & Gala Ballroom', tax_rule: '11% Standard VAT', ht_usd: 27400, vat_usd: 3014, ttc_usd: 30414, direction: 'Output VAT', notes: 'Platinum corporate suites & ballroom 11% output VAT' }
-    ].filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company));
 
-    const membershipRows = [
+    const membershipRows = pickHsp('membershipRows', [
       { id: 'MEM-2026-001', company: 'Blanca', member: 'Khoury Family Trust', unit: 'Royal Chalet #A-01', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 28000, paid_usd: 28000, balance_usd: 0, due_date: '2026-06-15', status: 'Paid in Full', notes: 'Front-row beach chalet + 6 VIP beach passes' },
       { id: 'MEM-2026-002', company: 'Blanca', member: 'Nassar Holdings SAL', unit: 'Duplex Chalet #B-08', season: 'Summer 2026', start_date: '2026-05-01', end_date: '2026-10-31', contract_usd: 24000, paid_usd: 16500, balance_usd: 7500, due_date: '2026-08-30', status: 'Overdue Arrears', notes: '3rd installment ($7,500) past due · follow-up scheduled' },
       { id: 'MEM-2026-003', company: 'Palms', member: 'Saab & Associates', unit: 'Presidential Villa #P-04', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 36000, paid_usd: 27000, balance_usd: 9000, due_date: '2026-09-10', status: 'Overdue Arrears', notes: 'Q3 villa installment overdue · statement dispatched' },
@@ -41777,33 +41794,33 @@
       { id: 'MEM-2026-005', company: 'Voile', member: 'Horizon Marine Club', unit: 'Sunset Cabana #V-02 + Jetty', season: 'Summer 2026', start_date: '2026-05-15', end_date: '2026-10-15', contract_usd: 19500, paid_usd: 15000, balance_usd: 4500, due_date: '2026-10-05', status: 'Partial / Active', notes: 'Final closing installment due Oct 5' },
       { id: 'MEM-2026-006', company: 'La Una', member: 'Gourmet Circle VIP (12 Cards)', unit: 'Private Cellar Locker #L-03', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 18000, paid_usd: 18000, balance_usd: 0, due_date: '2026-02-01', status: 'Paid in Full', notes: 'Corporate dining & private cellar membership' },
       { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
-    ];
+    ]);
     getIndustryCustomRows('hsp_memberships').forEach(cr => membershipRows.unshift(cr));
     const scopedMemRows = membershipRows.filter(r => activeNames.has(r.company));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
 
-    const partnerSplitRows = [
+    const partnerSplitRows = pickHsp('partnerSplitRows', [
       { id: 'HSP-JV-01', company: 'Blanca', category: 'Restaurant & Terrace F&B', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Chef Operator (30%) · Co-Investor (20%)', gross_pool_usd: 148500, operator_share_usd: 44550, holding_share_usd: 74250, coinvest_share_usd: 29700, paid_drawings_usd: 125000, open_payable_usd: 23500, status: 'Active Split' },
       { id: 'HSP-JV-02', company: 'Blanca', category: 'Shisha & Sunset Lounge', start_date: '2026-05-01', end_date: 'Open', slot_count: 2, partners_summary: 'Blanca Resort (60%) · Shisha Concessionaire (40%)', gross_pool_usd: 54000, operator_share_usd: 21600, holding_share_usd: 32400, coinvest_share_usd: 0, paid_drawings_usd: 54000, open_payable_usd: 0, status: 'Settled' },
       { id: 'HSP-JV-03', company: 'La Una', category: 'Fine Dining & RawBT Till Pool', start_date: '2026-01-01', end_date: 'Open', slot_count: 4, partners_summary: 'Bdeir Holding (55%) · Managing Partner (25%) · Culinary Dir (10%) · Backer (10%)', gross_pool_usd: 212000, operator_share_usd: 74200, holding_share_usd: 116600, coinvest_share_usd: 21200, paid_drawings_usd: 190000, open_payable_usd: 22000, status: 'Active Split' },
       { id: 'HSP-JV-04', company: 'Palms', category: 'Weddings, Banquets & Chalets', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (60%) · Event Partner (25%) · Resort GM Pool (15%)', gross_pool_usd: 265000, operator_share_usd: 106000, holding_share_usd: 159000, coinvest_share_usd: 0, paid_drawings_usd: 240000, open_payable_usd: 25000, status: 'Active Split' },
       { id: 'HSP-JV-05', company: 'Voile', category: 'Beach Deck, DJ & Valet Pool', start_date: '2026-05-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Beach Club Promoter (35%) · Valet Operator (15%)', gross_pool_usd: 118000, operator_share_usd: 59000, holding_share_usd: 59000, coinvest_share_usd: 0, paid_drawings_usd: 104000, open_payable_usd: 14000, status: 'Active Split' },
       { id: 'HSP-JV-06', company: 'Platinum', category: 'Suites & Corporate Ballroom', start_date: '2026-01-01', end_date: 'Open', slot_count: 2, partners_summary: 'Bdeir Holding (70%) · Hospitality Equity Partner (30%)', gross_pool_usd: 184000, operator_share_usd: 55200, holding_share_usd: 128800, coinvest_share_usd: 0, paid_drawings_usd: 184000, open_payable_usd: 0, status: 'Settled' }
-    ].filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company));
 
-    const stockRows = [
+    const stockRows = pickHsp('stockRows', [
       { id: 'STK-HSP-01', date: '2026-09-28', company: 'La Una', store: 'Main Kitchen & Cold Room', item_group: 'Prime Cuts & Imported Seafood', opening_usd: 6400, purchases_in_usd: 14800, transfers_net_usd: -1200, recipe_usage_usd: 12900, closing_usd: 7100, r3_ratio: 1.05, status: 'Optimal', notes: 'Transferred $1,200 vacuum-sealed cuts to Blanca terrace kitchen' },
       { id: 'STK-HSP-02', date: '2026-09-28', company: 'La Una', store: 'Sommelier Cellar & Bar', item_group: 'Vintage Wines & Single Malts', opening_usd: 18200, purchases_in_usd: 9600, transfers_net_usd: 0, recipe_usage_usd: 7400, closing_usd: 20400, r3_ratio: 1.30, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.30x): Cellar restock ahead of October private tastings' },
       { id: 'STK-HSP-03', date: '2026-09-28', company: 'Blanca', store: 'Beach Bar & Terrace Commissary', item_group: 'Spirits, Mixers & Draft', opening_usd: 8900, purchases_in_usd: 11400, transfers_net_usd: 1200, recipe_usage_usd: 11850, closing_usd: 9650, r3_ratio: 1.06, status: 'Optimal', notes: 'Includes $1,200 inter-resort commissary transfer from La Una' },
       { id: 'STK-HSP-04', date: '2026-09-27', company: 'Palms', store: 'Banquet & Wedding Commissary', item_group: 'Banquet Proteins, Dairy & Pastry', opening_usd: 9500, purchases_in_usd: 16200, transfers_net_usd: -800, recipe_usage_usd: 14900, closing_usd: 10000, r3_ratio: 1.03, status: 'Optimal', notes: '320-guest wedding banquet consumption reconciled to recipe BOM' },
       { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
       { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: 'VIP suite minibars & ballroom catering stock balanced' }
-    ];
+    ]);
     getIndustryCustomRows('hsp_stock').forEach(cr => stockRows.unshift(cr));
     const scopedStkRows = stockRows.filter(r => activeNames.has(r.company));
     stockRows.length = 0; stockRows.push(...scopedStkRows);
 
-    const menuRows = [
+    const menuRows = pickHsp('menuRows', [
       { id: 'MNU-001', company: 'La Una', item: 'Dry-Aged Ribeye 450g (Josper Grill)', category: 'Main Course · Kitchen', price_ttc: 68.00, price_ht: 61.26, recipe_cost: 19.60, margin_usd: 41.66, food_cost_pct: 32.0, units_sold: 184, menu_class: 'Star (High Margin · High Vol)', notes: 'Top gross margin contributor on RawBT Till #1' },
       { id: 'MNU-002', company: 'La Una', item: 'Truffle Burrata & Heirloom Carpaccio', category: 'Starter · Kitchen', price_ttc: 26.00, price_ht: 23.42, recipe_cost: 5.85, margin_usd: 17.57, food_cost_pct: 25.0, units_sold: 260, menu_class: 'Star (High Margin · High Vol)', notes: '25.0% food cost · highest table attachment rate' },
       { id: 'MNU-003', company: 'Blanca', item: 'Mediterranean Catch of the Day (1kg)', category: 'Seafood · Kitchen', price_ttc: 75.00, price_ht: 67.57, recipe_cost: 27.70, margin_usd: 39.87, food_cost_pct: 41.0, units_sold: 142, menu_class: 'Plowhorse (High Vol · Watch Cost)', notes: 'Fresh wild catch cost rose 4% this week · review market price' },
@@ -41811,27 +41828,27 @@
       { id: 'MNU-005', company: 'Palms', item: 'Royal Wedding Banquet Package (Per Guest)', category: 'Banquet · Events', price_ttc: 65.00, price_ht: 58.56, recipe_cost: 18.15, margin_usd: 40.41, food_cost_pct: 31.0, units_sold: 320, menu_class: 'Star (High Margin · High Vol)', notes: 'Includes 4-course plated service + live stations' },
       { id: 'MNU-006', company: 'Voile', item: 'Sunset Sushi & Sashimi Boat (36 pcs)', category: 'Raw Bar · Deck', price_ttc: 95.00, price_ht: 85.59, recipe_cost: 33.38, margin_usd: 52.21, food_cost_pct: 39.0, units_sold: 96, menu_class: 'Puzzle (High Margin $ · Niche)', notes: 'High dollar contribution per daybed order' },
       { id: 'MNU-007', company: 'Platinum', item: 'Executive Gala Surf & Turf Menu', category: 'Ballroom · Events', price_ttc: 82.00, price_ht: 73.87, recipe_cost: 22.90, margin_usd: 50.97, food_cost_pct: 31.0, units_sold: 250, menu_class: 'Star (High Margin · High Vol)', notes: 'Standardized banquet BOM locked at 31% food cost' }
-    ].filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company));
 
-    const energyRows = [
+    const energyRows = pickHsp('energyRows', [
       { id: 'NRG-001', date: '2026-09-28', company: 'Blanca', asset: 'Perkins 500kVA Prime Gen #1 + 180kWp Solar', tank_level_l: 6420, refill_l: 3000, run_hours: 14.5, diesel_used_l: 435, l_per_hr: 30.0, rated_l_hr: 31.0, kwh_gen: 1980, solar_offset_pct: 38, status: 'Normal Burn', notes: 'Solar PV covered 38% of peak afternoon chiller & pool pump load' },
       { id: 'NRG-002', date: '2026-09-28', company: 'La Una', asset: 'Cummins 250kVA Silent Gen + Hybrid Inverter', tank_level_l: 3180, refill_l: 0, run_hours: 16.0, diesel_used_l: 272, l_per_hr: 17.0, rated_l_hr: 18.0, kwh_gen: 1120, solar_offset_pct: 29, status: 'Normal Burn', notes: 'Cold rooms & Josper extraction running within rated curve' },
       { id: 'NRG-003', date: '2026-09-27', company: 'Palms', asset: 'Caterpillar 650kVA Banquet Gen #1', tank_level_l: 4850, refill_l: 4000, run_hours: 18.0, diesel_used_l: 792, l_per_hr: 44.0, rated_l_hr: 36.0, kwh_gen: 2840, solar_offset_pct: 24, status: 'Burn Spike (+22%)', notes: 'Burn Rate Alert: 44.0 L/hr vs 36.0 L/hr rated (+22%) during wedding HVAC peak · inspect injectors' },
       { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
-    ];
+    ]);
     getIndustryCustomRows('hsp_energy').forEach(cr => energyRows.unshift(cr));
     const scopedNrgRows = energyRows.filter(r => activeNames.has(r.company));
     energyRows.length = 0; energyRows.push(...scopedNrgRows);
 
-    const maintRows = [
+    const maintRows = pickHsp('maintRows', [
       { id: 'MNT-HSP-01', date: '2026-09-28', company: 'Palms', asset: 'Caterpillar 650kVA Gen #1', zone: 'Power House', type: 'Corrective · Fuel Injector Calibration', priority: 'Urgent', downtime_hrs: 2.5, cost_usd: 680, vendor: 'jounieh marine & power', status: 'Open Work Order', notes: 'Triggered by 44.0 L/hr generator burn spike alert' },
       { id: 'MNT-HSP-02', date: '2026-09-27', company: 'Blanca', asset: 'Infinity Pool Filtration & Salt Chlorinator', zone: 'Main Pool Deck', type: 'Preventive · Membrane & Pump Service', priority: 'Standard', downtime_hrs: 0, cost_usd: 420, vendor: 'aqua-tech lebanon', status: 'Completed', notes: 'Overnight backwash & dosing pump calibration' },
       { id: 'MNT-HSP-03', date: '2026-09-26', company: 'La Una', asset: 'Walk-In Cold Room #2 Compressor', zone: 'Main Commissary', type: 'Preventive · Refrigerant & Thermostat Check', priority: 'High', downtime_hrs: 0.5, cost_usd: 310, vendor: 'frio-serv commercial', status: 'Completed', notes: 'Held -2.0°C steady under full weekend load' },
       { id: 'MNT-HSP-04', date: '2026-09-25', company: 'Blanca', asset: 'Chalet Block B Split HVAC Units (8 Units)', zone: 'Chalet Village', type: 'Preventive · Coil Deep Clean & Gas Top-Up', priority: 'Standard', downtime_hrs: 1.0, cost_usd: 540, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'End-of-September guest turnover HVAC service' },
       { id: 'MNT-HSP-05', date: '2026-09-24', company: 'Voile', asset: 'Reverse Osmosis Desalination Skid (80m³/day)', zone: 'Utility Plant', type: 'Corrective · High-Pressure Seal Replacement', priority: 'High', downtime_hrs: 3.0, cost_usd: 890, vendor: 'aqua-tech lebanon', status: 'Open Work Order', notes: 'Scheduled Tuesday morning between guest check-outs' },
       { id: 'MNT-HSP-06', date: '2026-09-23', company: 'Platinum', asset: 'Ballroom Acoustic Dimmers & Chiller AHU #3', zone: 'Grand Ballroom', type: 'Preventive · Pre-Gala Inspection', priority: 'Standard', downtime_hrs: 0, cost_usd: 390, vendor: 'climasol s.a.r.l.', status: 'Completed', notes: 'Verified 100% ahead of corporate gala season' }
-    ].filter(r => activeNames.has(r.company));
+    ]).filter(r => activeNames.has(r.company));
 
     const matchSearch = row => {
       if (!q) return true;
@@ -41871,7 +41888,7 @@
     const totalMaintUsd = round2(maintRows.reduce((s, r) => s + r.cost_usd, 0));
     const openMaintCount = maintRows.filter(r => r.status === 'Open Work Order').length;
 
-    return {
+    const _hspRes = {
       activeResorts,
       venueRows: venueRows.filter(matchSearch),
       posRows: posRows.filter(matchSearch),
@@ -41911,6 +41928,8 @@
         openMaintCount
       }
     };
+    _hspOpsCache.set(_hspCacheKey, _hspRes);
+    return _hspRes;
   }
 
   function renderHospitalityRevenue(submode = 'main') {
@@ -42552,10 +42571,11 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
 
     const chartW = 780, chartH = 195;
-    const maxStk = Math.max(1, ...hsp.stockRows.map(r => Math.max(r.purchases_in_usd, r.recipe_usage_usd, r.closing_usd)));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, hsp.stockRows.length));
+    const chartStkRows = hsp.stockRows.slice(0, 12);
+    const maxStk = Math.max(1, ...chartStkRows.map(r => Math.max(r.purchases_in_usd, r.recipe_usage_usd, r.closing_usd)));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, chartStkRows.length));
     const barW = Math.min(28, Math.max(12, Math.floor((slotW - 18) / 3)));
-    const stkSvgBars = hsp.stockRows.map((r, i) => {
+    const stkSvgBars = chartStkRows.map((r, i) => {
       const gx = 50 + i * slotW;
       const hPur = Math.max(3, Math.round((r.purchases_in_usd / maxStk) * 120));
       const hUse = Math.max(3, Math.round((r.recipe_usage_usd / maxStk) * 120));
@@ -42844,10 +42864,11 @@
     const coStyle = hideCo ? ' style="display:none"' : '';
 
     const chartW = 780, chartH = 195;
-    const maxLhr = Math.max(1, ...hsp.energyRows.map(r => Math.max(r.l_per_hr, r.rated_l_hr)));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, hsp.energyRows.length));
+    const chartNrgRows = hsp.energyRows.slice(0, 12);
+    const maxLhr = Math.max(1, ...chartNrgRows.map(r => Math.max(r.l_per_hr, r.rated_l_hr)));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, chartNrgRows.length));
     const barW = Math.min(34, Math.max(14, Math.floor((slotW - 20) / 2)));
-    const nrgSvgBars = hsp.energyRows.map((r, i) => {
+    const nrgSvgBars = chartNrgRows.map((r, i) => {
       const gx = 55 + i * slotW;
       const hRated = Math.max(4, Math.round((r.rated_l_hr / maxLhr) * 120));
       const hAct = Math.max(4, Math.round((r.l_per_hr / maxLhr) * 120));
@@ -43113,9 +43134,11 @@
     const scopeSet = new Set(scopedCompanies);
     const q = opts.ignoreSearch ? '' : norm(STATE.search || '');
     const matchQ = (...fields) => !q || fields.some(v => norm(v).includes(q));
+    const liveTrd = (SEED && SEED.industryLive && SEED.industryLive.trading) || null;
+    const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : fallback;
 
     // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
-    const rawSalesRows = getIndustryCustomRows('trd_sales').concat([
+    const rawSalesRows = getIndustryCustomRows('trd_sales').concat(pickTrd('salesRows', [
       { id: 'INV-SH-2026-019', book: 'BK-SH-2026-01', seq: 19, date: '2026-10-28', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', category: 'Heavy Truck Sale', item: 'Shacman X3000 6x4 Tractor Head (WP12.430E201)', chassis: 'LZGJLDR44PX019281', qty: 2, net_usd: 158000, vat_usd: 17380, ttc_usd: 175380, cost_usd: 131200, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-020', book: 'BK-SH-2026-01', seq: 20, date: '2026-10-30', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', category: 'Heavy Truck Sale', item: 'Shacman F3000 8x4 Heavy Tipper 380HP', chassis: 'LZGJLDR44PX019288', qty: 1, net_usd: 92000, vat_usd: 10120, ttc_usd: 102120, cost_usd: 75400, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-018', book: 'BK-SH-2026-01', seq: 18, date: '2026-10-24', company: 'Shacman', customer: 'Mediterranean Haulage Group', category: 'Heavy Truck Sale', item: 'Shacman M3000 6x4 Transit Concrete Mixer 10m³', chassis: 'LZGJLDR44PX019274', qty: 2, net_usd: 184000, vat_usd: 20240, ttc_usd: 204240, cost_usd: 151000, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
@@ -43124,15 +43147,15 @@
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
-    ]).map(r => {
+    ])).map(r => {
       const margin_usd = round2(r.ttc_usd - r.cost_usd);
       const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
-      const is_gap = r.id === 'PH-KA-2026-D02';
+      const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02');
       return { ...r, margin_usd, margin_pct, is_gap };
     });
 
     // 2. Receivables, Customer Advances & Collection Promises
-    const rawReceivableRows = [
+    const rawReceivableRows = pickTrd('receivableRows', [
       { id: 'AR-SH-001', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', invoiced_ttc: 615400, settled_usd: 194800, gross_ar_usd: 420600, advance_usd: 0, dso_days: 148.4, promise_date: '2026-11-12', promise_usd: 125000, status: 'Active Promise' },
       { id: 'AR-SH-002', company: 'Shacman', customer: 'Mediterranean Haulage Group', invoiced_ttc: 488200, settled_usd: 132000, gross_ar_usd: 356200, advance_usd: 0, dso_days: 142.0, promise_date: '2026-11-18', promise_usd: 95000, status: 'Active Promise' },
       { id: 'AR-SH-003', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', invoiced_ttc: 384116.37, settled_usd: 130000, gross_ar_usd: 254116.37, advance_usd: 0, dso_days: 139.6, promise_date: '2026-11-08', promise_usd: 80000, status: 'Due This Week' },
@@ -43140,51 +43163,51 @@
       { id: 'AR-KA-001', company: 'Korri Auto', customer: 'South Coast Auto Fleet', invoiced_ttc: 28450.99, settled_usd: 19618, gross_ar_usd: 8832.99, advance_usd: 0, dso_days: 261.2, promise_date: '2026-11-10', promise_usd: 4500, status: 'Overdue > 180d' },
       { id: 'AR-KA-002', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', invoiced_ttc: 19200, settled_usd: 14400, gross_ar_usd: 4800, advance_usd: 0, dso_days: 245.9, promise_date: '2026-11-14', promise_usd: 2500, status: 'Active Promise' },
       { id: 'AR-KA-003', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', invoiced_ttc: 14850, settled_usd: 14853.29, gross_ar_usd: 0, advance_usd: 3.29, dso_days: 0, promise_date: 'Open Credit', promise_usd: 0, status: 'Customer Advance (Credit)' }
-    ].map(r => ({
+    ]).map(r => ({
       ...r,
       net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
     }));
 
     // 3. Monthly Sales Targets & Chronological Price Lists
-    const rawTargetRows = [
+    const rawTargetRows = pickTrd('targetRows', [
       { id: 'TGT-SH-2026-10', month: '2026-10', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 / M3000 Heavy Trucks', target_ttc: 480000, actual_ttc: 513375, price_list: 'PL-SH-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 78500, status: 'Target Exceeded' },
       { id: 'TGT-SH-2026-09', month: '2026-09', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'Heavy Chassis & Mixer Units', target_ttc: 450000, actual_ttc: 441200, price_list: 'PL-SH-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 77900, status: '98.0% Attained' },
       { id: 'TGT-KA-2026-10', month: '2026-10', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts, Tyres & Lubricants', target_ttc: 24000, actual_ttc: 24730.80, price_list: 'PL-KA-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 360, status: 'Target Exceeded' },
       { id: 'TGT-KA-2026-09', month: '2026-09', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts & Filters', target_ttc: 22000, actual_ttc: 20480, price_list: 'PL-KA-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 350, status: '93.1% Attained' }
-    ].map(r => ({
+    ]).map(r => ({
       ...r,
       attainment_pct: r.target_ttc > 0 ? round2((r.actual_ttc / r.target_ttc) * 100) : 0
     }));
 
     // 4. Import Files, Purchase Orders & Backorders
-    const rawImportRows = getIndustryCustomRows('trd_purchases').concat([
+    const rawImportRows = getIndustryCustomRows('trd_purchases').concat(pickTrd('importRows', [
       { id: 'IMP-SH-2026-014', date: '2026-10-12', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Xi\'an / Qingdao Port', container_bl: 'COSU6891204410 · 6 Ro-Ro Units', ordered_qty: 6, received_qty: 6, backorder_qty: 0, fob_usd: 384000, landed_add_usd: 34800, total_landed_usd: 418800, status: 'Cleared & Costed' },
       { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc' },
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
       { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
-    ]);
+    ]));
 
     // 5. Landed Cost Allocations
-    const rawLandedRows = [
+    const rawLandedRows = pickTrd('landedRows', [
       { id: 'LC-SH-2026-014', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', freight_usd: 16800, customs_usd: 11200, clearance_usd: 4400, insurance_usd: 2400, total_landed_add: 34800, allocated_usd: 34800, unallocated_usd: 0, basis: 'By CIF Value & Chassis Weight', status: '100% Allocated to Units' },
       { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: '$2,650 Unallocated' },
       { id: 'LC-SH-2026-016', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', freight_usd: 11200, customs_usd: 7400, clearance_usd: 2600, insurance_usd: 1200, total_landed_add: 22400, allocated_usd: 22400, unallocated_usd: 0, basis: 'By Chassis CIF Value', status: '100% Allocated to Units' },
       { id: 'LC-KA-2026-021', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', freight_usd: 2800, customs_usd: 1820, clearance_usd: 680, insurance_usd: 320, total_landed_add: 5620, allocated_usd: 5620, unallocated_usd: 0, basis: 'By Cubic Meter & Value', status: '100% Allocated to Stock' },
       { id: 'LC-KA-2026-022', import_file: 'IMP-KA-2026-022', date: '2026-10-29', company: 'Korri Auto', freight_usd: 1480, customs_usd: 1050, clearance_usd: 450, insurance_usd: 200, total_landed_add: 3180, allocated_usd: 1980, unallocated_usd: 1200, basis: 'By Line Value (Weighted Avg)', status: '$1,200 Unallocated' }
-    ];
+    ]);
 
     // 6. Goods Receipt Notes & Lines (GRNs across 5 warehouses)
-    const rawGrnRows = [
+    const rawGrnRows = pickTrd('grnRows', [
       { id: 'GRN-SH-2026-041', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', warehouse: 'Bonded Yard', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '6x Shacman X3000/F3000 Heavy Chassis Units', lines_cnt: 6, qty_received: 6, fob_usd: 384000, landed_cost_usd: 418800, inspection: 'Passed Chassis & VIN Check' },
       { id: 'GRN-SH-2026-042', import_file: 'IMP-SH-2026-015', date: '2026-10-27', company: 'Shacman', warehouse: 'Bchamoun Yard', supplier: 'Weichai Power & Fast Gear OEM Export', items_desc: 'Weichai Engine Assemblies, Injectors & Fast Gearboxes', lines_cnt: 18, qty_received: 112, fob_usd: 64200, landed_cost_usd: 69000, inspection: '28 Backordered · 112 Shelved' },
       { id: 'GRN-SH-2026-043', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', warehouse: 'Main Showroom', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', items_desc: '2x Shacman F3000 8x4 Heavy Tipper Units', lines_cnt: 2, qty_received: 2, fob_usd: 134000, landed_cost_usd: 145200, inspection: 'In Pre-Delivery Inspection (PDI)' },
       { id: 'GRN-KA-2026-058', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', warehouse: 'Al Ghazieh', supplier: 'Shandong Heavy Tyre & Radial Works', items_desc: '315/80R22.5 & 12.00R24 Heavy Radial Tyres', lines_cnt: 8, qty_received: 220, fob_usd: 41800, landed_cost_usd: 47420, inspection: 'Passed DOT & Tread QC' },
       { id: 'GRN-KA-2026-059', import_file: 'IMP-KA-2026-022', date: '2026-10-28', company: 'Korri Auto', warehouse: 'Workshop', supplier: 'EuroDiesel Filters & Brake Components GmbH', items_desc: 'Fleetguard Filter Kits, Brake Pads & Air Dryers', lines_cnt: 14, qty_received: 390, fob_usd: 28400, landed_cost_usd: 30380, inspection: '90 Backordered · 390 Shelved' }
-    ];
+    ]);
 
     // 7. Showroom & Serial Units (44 Heavy Trucks & Commercial Units by Chassis/Engine/VIN)
-    const rawSerialUnits = getIndustryCustomRows('trd_trucks').concat([
+    const rawSerialUnits = getIndustryCustomRows('trd_trucks').concat(pickTrd('serialUnits', [
       { id: 'SU-SH-001', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019281', engine_no: 'WP12.430E201-882104', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-002', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019282', engine_no: 'WP12.430E201-882109', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-003', company: 'Shacman', model: 'Shacman F3000 8x4 Heavy Tipper 380HP', family: 'F3000 Series', chassis_vin: 'LZGJLDR44PX019288', engine_no: 'WP10.380E32-774190', year: 2026, warehouse: 'Bchamoun Yard', fob_usd: 69200, landed_add_usd: 6200, landed_cost_usd: 75400, list_price_usd: 102120, status: 'Sold & Delivered', buyer: 'Levant Quarry & Transit SAL' },
@@ -43194,23 +43217,23 @@
       { id: 'SU-SH-007', company: 'Shacman', model: 'Shacman L3000 4x2 Municipal Water Tanker', family: 'L3000 Series', chassis_vin: 'LZGJLDR44PX019312', engine_no: 'ISD245-50-440198', year: 2026, warehouse: 'Workshop', fob_usd: 46800, landed_add_usd: 4200, landed_cost_usd: 51000, list_price_usd: 69500, status: 'In PDI', buyer: 'Pre-Delivery Inspection Bay 2' },
       { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2025, warehouse: 'Al Ghazieh', fob_usd: 29500, landed_add_usd: 3100, landed_cost_usd: 32600, list_price_usd: 42900, status: 'In Showroom', buyer: 'Available (Al-Ghazieh Branch)' },
       { id: 'SU-KA-002', company: 'Korri Auto', model: 'Hydraulic Lowbed Recovery Trailer 60T', family: 'Heavy Trailers', chassis_vin: 'TRL60TLB2026KA009', engine_no: 'HYD-AXLE-BPW-3AX', year: 2026, warehouse: 'Al Ghazieh', fob_usd: 34200, landed_add_usd: 3600, landed_cost_usd: 37800, list_price_usd: 49500, status: 'Reserved', buyer: 'South Coast Auto Fleet' }
-    ]).map(r => {
+    ])).map(r => {
       const margin_usd = round2(r.list_price_usd - r.landed_cost_usd);
       const margin_pct = r.list_price_usd > 0 ? round2((margin_usd / r.list_price_usd) * 100) : 0;
       return { ...r, margin_usd, margin_pct };
     });
 
     // 8. Workshop, PDI & Warranty Claims
-    const rawWarrantyRows = [
+    const rawWarrantyRows = pickTrd('warrantyRows', [
       { id: 'PDI-SH-2026-081', date: '2026-10-30', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019312', model: 'Shacman L3000 4x2 Water Tanker', job_type: 'Pre-Delivery Inspection (PDI)', bay: 'Workshop Bay 2', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 420, labor_usd: 180, claim_recovery_usd: 600, status: 'Open PDI' },
       { id: 'WAR-SH-2026-082', date: '2026-10-28', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019281', model: 'Shacman X3000 6x4 Tractor Head', job_type: 'OEM Warranty Claim (Weichai ECU Sensor)', bay: 'Workshop Bay 1', technician: 'Ali H. (Diagnostics)', parts_cost_usd: 680, labor_usd: 150, claim_recovery_usd: 830, status: 'Open Claim' },
       { id: 'SVC-SH-2026-079', date: '2026-10-23', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019274', model: 'Shacman M3000 6x4 Mixer 10m³', job_type: '1,000-Hour First Service & PTO Calibration', bay: 'Bchamoun Service Pit', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 940, labor_usd: 260, claim_recovery_usd: 1200, status: 'Completed' },
       { id: 'SVC-KA-2026-064', date: '2026-10-29', company: 'Korri Auto', chassis_vin: 'WDB9066571P391042', model: 'Heavy Fleet Tyre & Brake Overhaul', job_type: 'Customer Workshop Job & Alignment', bay: 'Al-Ghazieh Service Bay', technician: 'bilal S. (Al-Ghazieh)', parts_cost_usd: 1120, labor_usd: 280, claim_recovery_usd: 1400, status: 'Completed' },
       { id: 'WAR-KA-2026-065', date: '2026-10-30', company: 'Korri Auto', chassis_vin: 'TRL60TLB2026KA009', model: 'Hydraulic Lowbed 60T Valve Block', job_type: 'Supplier Warranty Replacement', bay: 'Al-Ghazieh Service Bay', technician: 'Bilal S. (Al-Ghazieh)', parts_cost_usd: 540, labor_usd: 120, claim_recovery_usd: 660, status: 'Open Claim' }
-    ];
+    ]);
 
     // 9. Spare Parts & Multi-Warehouse Stock Valuation (593 code-keyed items across 5 Warehouses + Rule T4 Reorder Alerts)
-    const rawStockRows = getIndustryCustomRows('trd_stock').concat([
+    const rawStockRows = getIndustryCustomRows('trd_stock').concat(pickTrd('stockRows', [
       { id: 'PRT-WH-612600081335', code: '612600081335', name: 'Weichai WP12 High-Pressure Common Rail Injector', company: 'Shacman', warehouse: 'Bchamoun Yard', category: 'Engine & Fuel System', on_hand: 28, reorder_min: 15, wac_usd: 285, retail_usd: 395 },
       { id: 'PRT-WH-12JS200T-1701', code: '12JS200T-1701', name: 'Fast 12-Speed Synchronizer & Main Shaft Kit', company: 'Shacman', warehouse: 'Main Showroom', category: 'Transmission & Gearbox', on_hand: 6, reorder_min: 8, wac_usd: 1120, retail_usd: 1490 },
       { id: 'PRT-WH-DZ9525951003', code: 'DZ9525951003', name: 'Shacman X3000 Intercooler & Radiator Assembly', company: 'Shacman', warehouse: 'Bonded Yard', category: 'Cooling & Chassis', on_hand: 14, reorder_min: 6, wac_usd: 640, retail_usd: 880 },
@@ -43219,23 +43242,23 @@
       { id: 'PRT-KA-TYR-1200R24', code: 'TYR-1200R24', name: '12.00R24 20PR Mining & Quarry Lug Tyre', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Heavy Tyres', on_hand: 18, reorder_min: 24, wac_usd: 325, retail_usd: 430 },
       { id: 'PRT-KA-FLT-LF9009', code: 'FLT-LF9009', name: 'Fleetguard LF9009 / FS19732 Heavy Filter Service Pack', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Filters & Consumables', on_hand: 210, reorder_min: 80, wac_usd: 48, retail_usd: 68 },
       { id: 'PRT-KA-LUB-15W40-208L', code: 'LUB-15W40-208L', name: 'CI-4 15W-40 Heavy Diesel Engine Oil Drum (208L)', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Lubricants & Fluids', on_hand: 32, reorder_min: 12, wac_usd: 440, retail_usd: 620 }
-    ]).map(r => {
+    ])).map(r => {
       const stock_val_usd = round2(r.on_hand * r.wac_usd);
       const is_low = r.on_hand <= r.reorder_min;
       return { ...r, stock_val_usd, is_low, status: is_low ? 'Reorder Alert' : 'Optimal Stock' };
     });
 
     // 10. Stock Movements & Inter-Company Transfers
-    const rawMovementRows = [
+    const rawMovementRows = pickTrd('movementRows', [
       { id: 'IC-TRD-2026-011', date: '2026-10-29', company: 'Shacman', type: 'Inter-Company Transfer', from_wh: 'Bchamoun Yard (Shacman)', to_wh: 'Al Ghazieh (Korri Auto)', item_code: '612600081335', item_name: 'Weichai WP12 Injector & Filter Overhaul Pack', qty: 8, unit_cost_usd: 285, total_usd: 2280, status: 'Mirrored IC Transfer' },
       { id: 'IC-TRD-2026-012', date: '2026-10-27', company: 'Korri Auto', type: 'Inter-Company Transfer', from_wh: 'Al Ghazieh (Korri Auto)', to_wh: 'Workshop (Shacman)', item_code: 'TYR-31580R225', item_name: '315/80R22.5 18PR Heavy Radial Tyres (PDI Mount)', qty: 12, unit_cost_usd: 270, total_usd: 3240, status: 'Mirrored IC Transfer' },
       { id: 'MOV-SH-2026-104', date: '2026-10-30', company: 'Shacman', type: 'Warehouse Transfer', from_wh: 'Bonded Yard', to_wh: 'Main Showroom', item_code: 'LZGJLDR44PX019301', item_name: 'Shacman F3000 6x4 Dump Truck 340HP', qty: 1, unit_cost_usd: 69200, total_usd: 69200, status: 'Posted' },
       { id: 'MOV-SH-2026-103', date: '2026-10-28', company: 'Shacman', type: 'Workshop Issue', from_wh: 'Bchamoun Yard', to_wh: 'Workshop Bay 1', item_code: '12JS200T-1701', item_name: 'Fast 12-Speed Synchronizer Assembly', qty: 2, unit_cost_usd: 1120, total_usd: 2240, status: 'Issued to Job' },
       { id: 'MOV-KA-2026-089', date: '2026-10-30', company: 'Korri Auto', type: 'Customer Dispatch', from_wh: 'Al Ghazieh', to_wh: 'Customer Delivery', item_code: 'FLT-LF9009', item_name: 'Fleetguard LF9009 Heavy Filter Service Pack', qty: 40, unit_cost_usd: 48, total_usd: 1920, status: 'Dispatched' }
-    ];
+    ]);
 
     // 11. Parallel Stock & P&L Reconciliation (1,077 Stock Position rows & 268 Monthly P&L rows)
-    const rawReconRows = [
+    const rawReconRows = pickTrd('reconRows', [
       { id: 'REC-TRD-01', company: 'Korri Auto', domain: 'Sales Revenue', period: '2026 YTD', rows_checked: 34, live_app_usd: 45017.81, parallel_book_usd: 45017.81, variance_usd: 0, status: 'Tied $0.00 (100% Parity)' },
       { id: 'REC-TRD-02', company: 'Korri Auto', domain: 'Gross Receivables & Advances', period: '2026 YTD', rows_checked: 65, live_app_usd: 13632.99, parallel_book_usd: 13632.99, variance_usd: 0, status: 'Tied $0.00 (Advances $3.29)' },
       { id: 'REC-TRD-03', company: 'Korri Auto', domain: 'Parallel Stock Valuation (593 SKU Catalog)', period: '2026-10 Close', rows_checked: 642, live_app_usd: 57010, parallel_book_usd: 57010, variance_usd: 0, status: 'Tied $0.00 (642 Stock Rows)' },
@@ -43243,7 +43266,7 @@
       { id: 'REC-TRD-05', company: 'Shacman', domain: 'Gross Receivables & Advances', period: '2026 YTD', rows_checked: 48, live_app_usd: 1030916.37, parallel_book_usd: 1030916.37, variance_usd: 0, status: 'Tied $0.00 (Advances $37,500)' },
       { id: 'REC-TRD-06', company: 'Shacman', domain: 'Showroom Chassis & Parts Stock', period: '2026-10 Close', rows_checked: 435, live_app_usd: 534020, parallel_book_usd: 534020, variance_usd: 0, status: 'Tied $0.00 (435 Stock Rows)' },
       { id: 'REC-TRD-07', company: 'Shacman', domain: 'Monthly P&L & Landed COGS Parity', period: '2025–2026 (268 Rows)', rows_checked: 268, live_app_usd: 468452.97, parallel_book_usd: 468452.97, variance_usd: 0, status: 'Tied $0.00 (268 P&L Rows)' }
-    ];
+    ]);
 
     const salesRows = rawSalesRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.book, r.company, r.customer, r.category, r.item, r.chassis, r.vat_flag));
     const receivableRows = rawReceivableRows.filter(r => scopeSet.has(r.company) && matchQ(r.id, r.company, r.customer, r.status, r.promise_date));
@@ -43714,10 +43737,11 @@
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const chartW = 780, chartH = 195;
-    const maxImp = Math.max(1, ...trd.importRows.map(r => r.total_landed_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.importRows.length));
+    const chartImpRows = trd.importRows.slice(0, 12);
+    const maxImp = Math.max(1, ...chartImpRows.map(r => r.total_landed_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, chartImpRows.length));
     const barW = Math.min(36, Math.max(16, Math.floor((slotW - 18) / 2)));
-    const impSvgBars = trd.importRows.map((r, i) => {
+    const impSvgBars = chartImpRows.map((r, i) => {
       const gx = 55 + i * slotW;
       const hFob = Math.max(6, Math.round((r.fob_usd / maxImp) * 120));
       const hTot = Math.max(6, Math.round((r.total_landed_usd / maxImp) * 120));
@@ -44093,10 +44117,11 @@
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const chartW = 780, chartH = 195;
-    const maxPrice = Math.max(1, ...trd.serialUnits.map(r => r.list_price_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.serialUnits.length));
+    const chartUnitRows = trd.serialUnits.slice(0, 12);
+    const maxPrice = Math.max(1, ...chartUnitRows.map(r => r.list_price_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, chartUnitRows.length));
     const barW = Math.min(30, Math.max(12, Math.floor((slotW - 14) / 2)));
-    const unitSvgBars = trd.serialUnits.map((r, i) => {
+    const unitSvgBars = chartUnitRows.map((r, i) => {
       const gx = 55 + i * slotW;
       const hLanded = Math.max(6, Math.round((r.landed_cost_usd / maxPrice) * 120));
       const hList = Math.max(6, Math.round((r.list_price_usd / maxPrice) * 120));
@@ -44355,10 +44380,11 @@
     const chip = (key, label) => `<button type="button" class="filter-chip ${f === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
     const chartW = 780, chartH = 195;
-    const maxVal = Math.max(1, ...trd.stockRows.map(r => r.stock_val_usd));
-    const slotW = Math.floor((chartW - 70) / Math.max(1, trd.stockRows.length));
+    const chartTrdStkRows = trd.stockRows.slice(0, 12);
+    const maxVal = Math.max(1, ...chartTrdStkRows.map(r => r.stock_val_usd));
+    const slotW = Math.floor((chartW - 70) / Math.max(1, chartTrdStkRows.length));
     const barW = Math.min(44, Math.max(18, slotW - 18));
-    const stkSvgBars = trd.stockRows.map((r, i) => {
+    const stkSvgBars = chartTrdStkRows.map((r, i) => {
       const gx = 55 + i * slotW;
       const hVal = Math.max(6, Math.round((r.stock_val_usd / maxVal) * 120));
       const baseY = 150;
@@ -44694,10 +44720,19 @@
     const ignoreSearch = Boolean(opts.ignoreSearch);
     const activeCo = opts.company || STATE.company || 'manufacturing-group';
     const selectedEntityName = RE_ENTITY_KEYS.includes(activeCo) ? COMPANY_BU_MATCH[activeCo] : null;
-    const sig = `${activeCo}|${STATE._indCustomRev || 0}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const sig = `${activeCo}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${STATE.dateFilter}|${STATE.dateFrom}|${STATE.dateTo}|${ignoreSearch ? '' : (STATE.search || '')}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (!ignoreSearch && _reOpsCache && _reOpsSig === sig) return _reOpsCache;
+    const liveRe = (SEED && SEED.industryLive && SEED.industryLive.realestate) || null;
+    const pickRe = (key, fallback) => {
+      if (!liveRe || !Array.isArray(liveRe[key]) || !liveRe[key].length) return fallback;
+      const arr = liveRe[key].slice();
+      if ((key === 'leases' || key === 'invoices' || key === 'receipts' || key === 'sales' || key === 'instalments') && !arr.some(r => r && r.company === 'Properties')) {
+        fallback.forEach(fb => { if (fb && fb.company === 'Properties') arr.push(fb); });
+      }
+      return arr;
+    };
 
-    const properties = [
+    const properties = pickRe('properties', [
       { id: 'PROP-4235', code: 'PLOT-4235-MSY', company: '4235 Company S.A.L', name: '4235 Msaytbeh Commercial Center', cadastry: 'Msaytbeh (Beirut)', plot_no: '4235', asset_class: 'Commercial Mixed-Use Building', area_sqm: 3120, units_total: 9, units_occupied: 8, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 10000000, share_val_usd: 10000000, annual_rent_usd: 306700, annual_noi_usd: 268400, status: 'Income Producing' },
       { id: 'PROP-QROUH', code: 'PLOT-11-30-QRH', company: 'Properties', name: '11-30/13 Qrouh Coastal Development Land', cadastry: 'Qrouh (Keserwan)', plot_no: '11-30/13', asset_class: 'Prime Development Land', area_sqm: 18500, units_total: 1, units_occupied: 1, deed_shares: 1200, ownership_pct: 50.0, lgb_gross_usd: 15000000, share_val_usd: 7500000, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Land Bank (LGB Appraised)' },
       { id: 'PROP-KAAK', code: 'PLOT-KAAK-SNB', company: 'Properties', name: 'Kaakaayit al Snoubar Agricultural & Solar Estate', cadastry: 'Kaakaayit al Snoubar (South)', plot_no: 'KAAK-01', asset_class: 'Estate & Agricultural Plot', area_sqm: 42000, units_total: 2, units_occupied: 2, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 5000000, share_val_usd: 5000000, annual_rent_usd: 28000, annual_noi_usd: 24200, status: 'Income Producing' },
@@ -44710,9 +44745,9 @@
       { id: 'PROP-2908CH', code: 'PLOT-2908-CHIAH', company: 'Properties', name: '2908 Chiah Minority Co-Owned Plot', cadastry: 'Chiah (Baabda)', plot_no: '2908', asset_class: 'Urban Co-Owned Plot', area_sqm: 890, units_total: 1, units_occupied: 1, deed_shares: 4, ownership_pct: 0.17, lgb_gross_usd: 480000, share_val_usd: 800, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Co-Owned Hold' },
       { id: 'PROP-CANNES', code: 'INTL-CANNES-01', company: 'Properties', name: 'Cannes Croisette Luxury Residence (France)', cadastry: 'Cannes 06400 (Alpes-Maritimes)', plot_no: 'FR-CAN-42', asset_class: 'International Luxury Residential', area_sqm: 235, units_total: 1, units_occupied: 0, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 3400000, share_val_usd: 3400000, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Under Acquisition' },
       { id: 'PROP-BAGHDAD', code: 'INTL-BGW-01', company: 'Properties', name: 'Baghdad Mansour Commercial Unit (Iraq)', cadastry: 'Al-Mansour (Baghdad)', plot_no: 'IQ-BGW-18', asset_class: 'International Commercial Showroom', area_sqm: 360, units_total: 1, units_occupied: 1, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 950000, share_val_usd: 950000, annual_rent_usd: 36000, annual_noi_usd: 31800, status: 'Income Producing' }
-    ];
+    ]);
 
-    const units = [
+    const units = pickRe('units', [
       { id: 'UNIT-4235-GF', code: '4235-GF-MAIN', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Main Area GF (Unesco Pharmacy)', floor: 'Ground Floor', type: 'Retail Pharmacy', area_sqm: 280, tenant: 'Mazen (Unesco Pharmacy)', annual_rent_usd: 55500, occupancy: 'Occupied' },
       { id: 'UNIT-4235-1AB', code: '4235-1A-1B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 1A & Block 1B Corporate Floor', floor: 'Floor 1', type: 'Corporate Office', area_sqm: 420, tenant: 'Infinitas S.A.L', annual_rent_usd: 77700, occupancy: 'Occupied' },
       { id: 'UNIT-4235-0AB', code: '4235-0A-0B', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit_name: 'Block 0A & Block 0B Flagship Hall', floor: 'Lower Ground & GF', type: 'Commercial Anchor', area_sqm: 650, tenant: 'Mohamad Ali Fawz', annual_rent_usd: 99900, occupancy: 'Occupied' },
@@ -44726,9 +44761,9 @@
       { id: 'UNIT-NAB-01', code: 'NAB-2154-S01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit_name: 'South Anchor Retail Unit #1', floor: 'Ground Floor', type: 'Regional Retail', area_sqm: 390, tenant: 'Al-Janoub Medical Supplies', annual_rent_usd: 32000, occupancy: 'Occupied' },
       { id: 'UNIT-NAB-02', code: 'NAB-2154-S02', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit_name: 'First Floor Office Wing #2', floor: 'Floor 1', type: 'Commercial Office', area_sqm: 260, tenant: 'Available for Lease', annual_rent_usd: 0, occupancy: 'Vacant' },
       { id: 'UNIT-BGW-01', code: 'BGW-MANSOUR-01', company: 'Properties', property: 'Baghdad Mansour Commercial Unit (Iraq)', unit_name: 'Mansour Main Commercial Showroom', floor: 'Ground Floor', type: 'Commercial Showroom', area_sqm: 360, tenant: 'Baghdad Anchor Trading LLC', annual_rent_usd: 36000, occupancy: 'Occupied' }
-    ];
+    ]);
 
-    const leases = [
+    const leases = pickRe('leases', [
       { id: 'LSE-4235-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Main Area GF (280 m²)', tenant: 'Mazen (Unesco Pharmacy)', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, ttc_period_usd: 13875, annual_ttc_usd: 55500, deposit_usd: 12500, escalation: '9-Yr Stepped (+10% Yr 4 & Yr 7 · 2m Grace)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-4235-002', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 1A & Block 1B (420 m²)', tenant: 'Infinitas S.A.L', start_date: '2025-02-01', end_date: '2034-01-31', frequency: 'Quarterly', net_period_usd: 17500, vat_rate: 11, ttc_period_usd: 19425, annual_ttc_usd: 77700, deposit_usd: 17500, escalation: '9-Yr Stepped (+10% every 3 Yrs)', days_to_expiry: 2640, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-4235-003', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Block 0A & Block 0B (650 m²)', tenant: 'Mohamad Ali Fawz', start_date: '2025-01-01', end_date: '2029-12-31', frequency: 'Quarterly', net_period_usd: 22500, vat_rate: 11, ttc_period_usd: 24975, annual_ttc_usd: 99900, deposit_usd: 22500, escalation: '5-Yr Commercial (+5% Yr 3)', days_to_expiry: 1150, unbilled_periods: 1, status: 'Active' },
@@ -44739,9 +44774,9 @@
       { id: 'LSE-PROP-008', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Floors 1-2 (540 m²)', tenant: 'Hamra Medical & Diagnostics', start_date: '2024-07-01', end_date: '2029-06-30', frequency: 'Quarterly', net_period_usd: 19500, vat_rate: 0, ttc_period_usd: 19500, annual_ttc_usd: 78000, deposit_usd: 19500, escalation: '5-Yr Clinical Escalation (+6% Yr 3)', days_to_expiry: 965, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-009', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', unit: 'Commercial Hall A (480 m²)', tenant: 'Mazraa Commercial Logistics', start_date: '2025-01-01', end_date: '2027-12-31', frequency: 'Quarterly', net_period_usd: 13500, vat_rate: 0, ttc_period_usd: 13500, annual_ttc_usd: 54000, deposit_usd: 13500, escalation: '3-Yr Commercial Lease', days_to_expiry: 420, unbilled_periods: 0, status: 'Active' },
       { id: 'LSE-PROP-010', company: 'Properties', property: 'Baghdad Mansour Commercial Unit (Iraq)', unit: 'Mansour Showroom (360 m²)', tenant: 'Baghdad Anchor Trading LLC', start_date: '2025-04-01', end_date: '2028-03-31', frequency: 'Quarterly', net_period_usd: 9000, vat_rate: 0, ttc_period_usd: 9000, annual_ttc_usd: 36000, deposit_usd: 9000, escalation: '3-Yr Regional Anchor', days_to_expiry: 510, unbilled_periods: 0, status: 'Active' }
-    ];
+    ]);
 
-    const invoices = [
+    const invoices = pickRe('invoices', [
       { id: 'INV-4235-001', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#001', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2025-Q4 (Nov-Jan)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #1 (11% VAT Effective)' },
       { id: 'INV-4235-002', date: '2025-11-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#002', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', period: '2025-Q4 (Nov-Jan)', net_usd: 17500, vat_usd: 1925, amount_ttc_usd: 19425, collected_usd: 19425, open_ar_usd: 0, status: 'Paid', audit_note: 'Official VAT Seq #2 (11% VAT Effective)' },
       { id: 'INV-4235-005', date: '2026-02-01', company: '4235 Company S.A.L', tax_seq: 'VAT-4235-#005', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', period: '2026-Q1 (Feb-Apr)', net_usd: 12500, vat_usd: 1375, amount_ttc_usd: 13875, collected_usd: 13875, open_ar_usd: 0, status: 'Paid', audit_note: 'Seq #3-#4 Gap Flagged before #5' },
@@ -44753,9 +44788,9 @@
       { id: 'INV-PROP-013', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MAR', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', period: '2026-Q3 (Jul-Sep)', net_usd: 24000, vat_usd: 0, amount_ttc_usd: 24000, collected_usd: 24000, open_ar_usd: 0, status: 'Paid', audit_note: 'Settled via Bank Wire' },
       { id: 'INV-PROP-014', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-HAM', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', period: '2026-Q3 (Jul-Sep)', net_usd: 19500, vat_usd: 0, amount_ttc_usd: 19500, collected_usd: 12000, open_ar_usd: 7500, status: 'Overdue', audit_note: 'Second clinic tranche overdue' },
       { id: 'INV-PROP-015', date: '2026-07-01', company: 'Properties', tax_seq: 'INV-2026-Q3-MZR', property: '915 & 2557 Mazraa Commercial Complex', tenant: 'Mazraa Commercial Logistics', period: '2026-Q3 (Jul-Sep)', net_usd: 13500, vat_usd: 0, amount_ttc_usd: 13500, collected_usd: 13500, open_ar_usd: 0, status: 'Paid', audit_note: 'Cleared against tenant advance' }
-    ];
+    ]);
 
-    const receipts = [
+    const receipts = pickRe('receipts', [
       { id: 'RCT-4235-101', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Mazen (Unesco Pharmacy)', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 19425, allocated_inv_usd: 13875, unallocated_adv_usd: 5550, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $19,425 booked under Mazen (matches Infinitas Q2 invoice)', status: 'Swap Audit' },
       { id: 'RCT-4235-102', date: '2026-05-05', company: '4235 Company S.A.L', tenant: 'Infinitas S.A.L', property: '4235 Msaytbeh Commercial Center', type: 'Rent Collection (Swap Flag)', method: 'Bank Transfer USD', gross_usd: 13875, allocated_inv_usd: 13875, unallocated_adv_usd: 0, deposit_gl4196_usd: 0, audit_flag: 'Swap Alert: $13,875 booked under Infinitas (matches Mazen Q2 invoice)', status: 'Swap Audit' },
       { id: 'RCT-4235-103', date: '2026-02-04', company: '4235 Company S.A.L', tenant: 'Mohamad Ali Fawz', property: '4235 Msaytbeh Commercial Center', type: 'Advance Rent Tranche', method: 'Check / Fresh USD', gross_usd: 90000, allocated_inv_usd: 65025, unallocated_adv_usd: 24975, deposit_gl4196_usd: 22500, audit_flag: 'Annual advance pool ($302.7k ledger)', status: 'Advance Pool' },
@@ -44763,16 +44798,16 @@
       { id: 'RCT-4235-105', date: '2026-01-15', company: '4235 Company S.A.L', tenant: 'DR Sara Abed Latif', property: '4235 Msaytbeh Commercial Center', type: 'Annual Clinic Settlement', method: 'Bank Transfer USD', gross_usd: 24000, allocated_inv_usd: 18000, unallocated_adv_usd: 6000, deposit_gl4196_usd: 6000, audit_flag: 'Q4 advance held in Client Advances', status: 'Allocated' },
       { id: 'RCT-PROP-106', date: '2026-07-03', company: 'Properties', tenant: 'Levant Luxury Retail SAL', property: '1354/50 Mina el Hosn (Marina Tower)', type: 'Quarterly Rent Settlement', method: 'Bank Transfer USD', gross_usd: 96000, allocated_inv_usd: 72000, unallocated_adv_usd: 24000, deposit_gl4196_usd: 24000, audit_flag: 'Solidere showroom annual wire', status: 'Allocated' },
       { id: 'RCT-PROP-107', date: '2026-07-12', company: 'Properties', tenant: 'Hamra Medical & Diagnostics', property: '776 Ras Beirut (Hamra Pavillon)', type: 'Partial Rent Tranche', method: 'Bank Transfer USD', gross_usd: 51000, allocated_inv_usd: 51000, unallocated_adv_usd: 0, deposit_gl4196_usd: 19500, audit_flag: '$7,500 Q3 balance outstanding', status: 'Allocated' }
-    ];
+    ]);
 
-    const sales = [
+    const sales = pickRe('sales', [
       { id: 'RE-SAL-001', date: '2026-03-15', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Skyline Residence Wing B', buyer: 'Khoury International Holding SAL', contract_usd: 1850000, paid_usd: 1480000, balance_usd: 370000, broker_comm_usd: 37000, gl_stage: 'Buyer Deposit Held (80% Paid)', deed_status: 'Pending Final Deed Transfer' },
       { id: 'RE-SAL-002', date: '2026-05-20', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', unit: 'Sub-Parcel South Terrace (1,800 m²)', buyer: 'Cedar Coast Developers SAL', contract_usd: 1200000, paid_usd: 1200000, balance_usd: 0, broker_comm_usd: 24000, gl_stage: 'Capital Gain Recognized on Deed', deed_status: 'Deed Transferred & Registered' },
       { id: 'RE-SAL-003', date: '2026-06-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 3 Executive Medical Shell', buyer: 'Beirut Diagnostic Partners LLC', contract_usd: 680000, paid_usd: 340000, balance_usd: 340000, broker_comm_usd: 13600, gl_stage: 'Buyer Deposit Held (50% Paid)', deed_status: 'Instalment Schedule Active' },
       { id: 'RE-SAL-004', date: '2026-08-01', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', unit: 'Corner Commercial Lot C', buyer: 'Al-Rida Trading Co.', contract_usd: 420000, paid_usd: 210000, balance_usd: 210000, broker_comm_usd: 8400, gl_stage: 'Buyer Deposit Held (50% Paid)', deed_status: 'Overdue Milestone #3' }
-    ];
+    ]);
 
-    const instalments = [
+    const instalments = pickRe('instalments', [
       { id: 'INST-001', due_date: '2026-03-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 1 - Contract Signing (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
       { id: 'INST-002', due_date: '2026-07-15', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 2 - Handover Clearance (40%)', scheduled_usd: 740000, collected_usd: 740000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
       { id: 'INST-003', due_date: '2026-11-30', company: 'Properties', sale_ref: 'RE-SAL-001', buyer: 'Khoury International Holding SAL', milestone: 'Tranche 3 - Notary Deed Transfer (20%)', scheduled_usd: 370000, collected_usd: 0, open_usd: 370000, gl_account: 'Recognize Proceeds on Deed', status: 'Due Soon' },
@@ -44780,9 +44815,9 @@
       { id: 'INST-005', due_date: '2026-06-10', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 1 - Down Payment (50%)', scheduled_usd: 340000, collected_usd: 340000, open_usd: 0, gl_account: 'Client Advances (Pre-Deed)', status: 'Paid' },
       { id: 'INST-006', due_date: '2026-12-15', company: '4235 Company S.A.L', sale_ref: 'RE-SAL-003', buyer: 'Beirut Diagnostic Partners LLC', milestone: 'Tranche 2 - MEP Delivery & Deed (50%)', scheduled_usd: 340000, collected_usd: 0, open_usd: 340000, gl_account: 'Recognize Proceeds on Deed', status: 'Due Soon' },
       { id: 'INST-007', due_date: '2026-09-15', company: 'Properties', sale_ref: 'RE-SAL-004', buyer: 'Al-Rida Trading Co.', milestone: 'Tranche 2 - Municipal Clearance (50%)', scheduled_usd: 210000, collected_usd: 0, open_usd: 210000, gl_account: 'Client Advances (Pre-Deed)', status: 'Overdue' }
-    ];
+    ]);
 
-    const valuations = [
+    const valuations = pickRe('valuations', [
       { id: 'VAL-LGB-01', val_date: '2024-08-13', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Income & Replacement Cost', gross_val_usd: 10000000, deed_shares: '2400 / 2400', net_share_val_usd: 10000000, implied_cap_pct: 2.68, delta_pct: 4.2 },
       { id: 'VAL-LGB-02', val_date: '2024-08-13', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Comparable Coastal Land Sales', gross_val_usd: 15000000, deed_shares: '1200 / 2400', net_share_val_usd: 7500000, implied_cap_pct: 0.0, delta_pct: 6.5 },
       { id: 'VAL-LGB-03', val_date: '2024-08-13', company: 'Properties', property: 'Kaakaayit al Snoubar Agricultural & Solar Estate', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Land & Improvement Valuation', gross_val_usd: 5000000, deed_shares: '2400 / 2400', net_share_val_usd: 5000000, implied_cap_pct: 0.48, delta_pct: 2.1 },
@@ -44792,32 +44827,32 @@
       { id: 'VAL-LGB-07', val_date: '2024-08-13', company: 'Properties', property: '1388/614 Mina el Hosn Executive Suite', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Solidere Comparable', gross_val_usd: 3100000, deed_shares: '2400 / 2400', net_share_val_usd: 3100000, implied_cap_pct: 1.21, delta_pct: 3.1 },
       { id: 'VAL-LGB-08', val_date: '2024-08-13', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Regional Commercial Cap', gross_val_usd: 2650000, deed_shares: '700 / 2400', net_share_val_usd: 772917, implied_cap_pct: 3.48, delta_pct: 0.0 },
       { id: 'VAL-LGB-09', val_date: '2024-08-13', company: 'Properties', property: '617 Sibline Industrial & Logistics Land', appraiser: 'LGB Bank Official Certified Appraisal', basis: 'Industrial Land Benchmark', gross_val_usd: 2100000, deed_shares: '2400 / 2400', net_share_val_usd: 2100000, implied_cap_pct: 1.30, delta_pct: 2.4 }
-    ];
+    ]);
 
-    const ownership = [
+    const ownership = pickRe('ownership', [
       { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 268400, entitled_noi_usd: 268400, distributed_usd: 220000, retained_reserve_usd: 48400, status: 'Distributed' },
       { id: 'OWN-QROUH', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 0, entitled_noi_usd: 0, distributed_usd: 0, retained_reserve_usd: 0, status: 'Land Bank Hold' },
       { id: 'OWN-776RB', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', holder: 'Bdeir Holding Co-Ownership Pool (25%)', deed_shares: 600, share_pct: 25.0, gross_noi_usd: 66500, entitled_noi_usd: 16625, distributed_usd: 15000, retained_reserve_usd: 1625, status: 'Distributed' },
       { id: 'OWN-1354MH', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', holder: 'Bdeir Holding Wholly Owned (100%)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 84500, entitled_noi_usd: 84500, distributed_usd: 75000, retained_reserve_usd: 9500, status: 'Distributed' },
       { id: 'OWN-MAZRAA', company: 'Properties', property: '915 & 2557 Mazraa Commercial Complex', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 46800, entitled_noi_usd: 23400, distributed_usd: 20000, retained_reserve_usd: 3400, status: 'Distributed' },
       { id: 'OWN-2154NAB', company: 'Properties', property: '2154 Nabatieh el Tahta Commercial Hub', holder: 'Bdeir Holding Co-Ownership Pool (29.17%)', deed_shares: 700, share_pct: 29.17, gross_noi_usd: 26900, entitled_noi_usd: 7846, distributed_usd: 0, retained_reserve_usd: 7846, status: 'Pending Distribution' }
-    ];
+    ]);
 
-    const workorders = [
+    const workorders = pickRe('workorders', [
       { id: 'WO-4235-01', date: '2026-08-12', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Floor 2 East Medical Suite', contractor: 'MEP Tech Engineering SAL', category: 'Structural Fit-Out & HVAC (CAPEX)', gl_code: 'Building Improvements (CAPEX)', budget_usd: 48000, actual_usd: 42500, rechargeable: false, status: 'In Progress' },
       { id: 'WO-4235-02', date: '2026-09-02', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', unit: 'Common Area & Perkins 250kVA Gen', contractor: 'PowerGen Lebanon LLC', category: 'Generator Overhaul & ATS Sync', gl_code: 'Repairs & Maintenance', budget_usd: 8500, actual_usd: 8950, rechargeable: true, status: 'Completed' },
       { id: 'WO-PROP-03', date: '2026-08-25', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', unit: 'Elevator Shafts #1 & #2', contractor: 'Otis Levant Maintenance', category: 'Elevator Modernization (CAPEX)', gl_code: 'Building Improvements (CAPEX)', budget_usd: 32000, actual_usd: 32000, rechargeable: false, status: 'Completed' },
       { id: 'WO-PROP-04', date: '2026-09-14', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', unit: 'Marina Showroom GF-01', contractor: 'Solidere Facility Services', category: 'Chilled Water & Facade Glazing', gl_code: 'Repairs & Maintenance', budget_usd: 6200, actual_usd: 6400, rechargeable: true, status: 'In Progress' },
       { id: 'WO-PROP-05', date: '2026-09-19', company: 'Properties', property: 'Cannes Croisette Luxury Residence (France)', unit: 'Croisette Penthouse Suite', contractor: 'Azur Renovation SARL', category: 'Pre-Handover Acoustic & Marble Works', gl_code: 'Building Improvements (CAPEX)', budget_usd: 65000, actual_usd: 28000, rechargeable: false, status: 'In Progress' }
-    ];
+    ]);
 
-    const recharges = [
+    const recharges = pickRe('recharges', [
       { id: 'RCH-4235-01', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen (Unesco Pharmacy)', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & ATS Share', cost_usd: 2800, markup_usd: 280, total_recharge_usd: 3080, linked_invoice: 'INV-4235-009', status: 'Invoiced' },
       { id: 'RCH-4235-02', date: '2026-09-05', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Infinitas S.A.L', expense_ref: 'WO-4235-02 / EDL-GEN-08', category: 'Shared Generator Diesel & Common HVAC', cost_usd: 4200, markup_usd: 420, total_recharge_usd: 4620, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
       { id: 'RCH-4235-03', date: '2026-09-10', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mohamad Ali Fawz', expense_ref: 'MUN-4235-Q3', category: 'Municipal Sidewalk & Security Recharge', cost_usd: 1950, markup_usd: 0, total_recharge_usd: 1950, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' },
       { id: 'RCH-PROP-04', date: '2026-09-16', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', tenant: 'Levant Luxury Retail SAL', expense_ref: 'WO-PROP-04', category: 'Chilled Water Sub-Meter Recharge', cost_usd: 6400, markup_usd: 320, total_recharge_usd: 6720, linked_invoice: 'INV-PROP-013', status: 'Settled' },
       { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
-    ];
+    ]);
 
     getIndustryCustomRows('re_leases').forEach(cr => leases.unshift(cr));
     getIndustryCustomRows('re_invoicing').forEach(cr => invoices.unshift(cr));
@@ -45356,7 +45391,7 @@
         </div>
         <div style="padding:12px 16px">
           <svg viewBox="0 0 680 165" style="width:100%;height:155px;display:block" role="img" aria-label="Property Sales Progress Chart">
-            ${filteredSales.map((r, idx) => {
+            ${filteredSales.slice(0, 4).map((r, idx) => {
               const y = 10 + idx * 36;
               const wTotal = Math.max(20, Math.round((r.contract_usd / maxSaleVal) * 360));
               const wPaid = Math.round((r.paid_usd / Math.max(1, r.contract_usd)) * wTotal);
@@ -45913,7 +45948,7 @@
         </div>
         <div style="padding:12px 16px">
           <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Work Orders Budget vs Actual Chart">
-            ${filteredWo.map((r, idx) => {
+            ${filteredWo.slice(0, 5).map((r, idx) => {
               const y = 10 + idx * 33;
               const wBud = Math.max(14, Math.round((r.budget_usd / maxWo) * 340));
               const wAct = Math.max(10, Math.round((r.actual_usd / maxWo) * 340));
@@ -45992,7 +46027,11 @@
   // ============================================================================
   function computeInsuranceOperations() {
     const co = 'Insurance Company';
-    const policies = [
+    const liveIns = (SEED && SEED.industryLive && SEED.industryLive.insurance) || null;
+    const pickIns = (key, fallback) => (liveIns && Array.isArray(liveIns[key]) && liveIns[key].length)
+      ? (key === 'agreements' ? liveIns[key].map(a => ({ ...a })) : liveIns[key].slice())
+      : fallback;
+    const policies = pickIns('policies', [
       { id: 'MGF-MED-2026-52077', company: co, date: '2026-01-15', expiry: '2027-01-14', client: 'Holdal Abou Adal Group (250 Lives)', carrier: 'MedGulf', line: 'MED · Medical', product: 'Corporate Group Medical In/Out', producer: 'Carla Moubarak', type: 'Policy (Renewal)', sum_insured_usd: 12500000, gross_prem_usd: 185000, comm_rate_pct: 10.5, gross_comm_usd: 19425, discount_usd: 750, discount_reason: 'Multi-policy corporate rebate', net_comm_usd: 18675, policy_fee_usd: 125, net_payable_4017_usd: 165575, status: 'Active' },
       { id: 'BNK-PRP-2026-08510', company: co, date: '2026-02-01', expiry: '2027-01-31', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Property All Risks (PAR) Commercial', producer: 'Joseph Khalil', type: 'Policy (Renewal)', sum_insured_usd: 18400000, gross_prem_usd: 32000, comm_rate_pct: 17.5, gross_comm_usd: 5600, discount_usd: 500, discount_reason: 'Zero-claim renewal discount', net_comm_usd: 5100, policy_fee_usd: 75, net_payable_4017_usd: 26400, status: 'Active' },
       { id: 'ALZ-MOT-2026-12801', company: co, date: '2026-02-18', expiry: '2027-02-17', client: 'Transmed Distribution Fleet (18 Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Commercial Fleet All-Risk Gold', producer: 'Joseph Khalil', type: 'Policy (New)', sum_insured_usd: 640000, gross_prem_usd: 24000, comm_rate_pct: 18.0, gross_comm_usd: 4320, discount_usd: 400, discount_reason: 'Fleet volume commercial concession', net_comm_usd: 3920, policy_fee_usd: 60, net_payable_4017_usd: 19680, status: 'Active' },
@@ -46007,9 +46046,9 @@
       { id: 'END-2026-BNK-08510-A', company: co, date: '2026-08-05', expiry: '2027-01-31', client: 'Unipak Tissue Mill (Solar Roof Ext.)', carrier: 'Bankers Assurance', line: 'PROP · Property', product: 'Endorsement · 1.2MW Solar Array Cover', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 950000, gross_prem_usd: 2850, comm_rate_pct: 17.5, gross_comm_usd: 499, discount_usd: 0, discount_reason: '', net_comm_usd: 499, policy_fee_usd: 15, net_payable_4017_usd: 2351, status: 'Endorsed' },
       { id: 'END-2026-ALZ-12801-A', company: co, date: '2026-09-02', expiry: '2027-02-17', client: 'Transmed Distribution (+2 Reefer Vans)', carrier: 'Allianz SNA', line: 'MOT · Motor', product: 'Endorsement · Fleet Vehicle Addition', producer: 'Joseph Khalil', type: 'Endorsement (+)', sum_insured_usd: 88000, gross_prem_usd: 3100, comm_rate_pct: 18.0, gross_comm_usd: 558, discount_usd: 0, discount_reason: '', net_comm_usd: 558, policy_fee_usd: 0, net_payable_4017_usd: 2542, status: 'Endorsed' },
       { id: 'END-2026-AXA-31044-R', company: co, date: '2026-09-18', expiry: '2027-04-03', client: 'Khalil Fattal & Fils (Voyage Rebate)', carrier: 'AXA Middle East', line: 'MAR · Marine', product: 'Endorsement · Cancelled Shipment Return', producer: 'Carla Moubarak', type: 'Endorsement (-)', sum_insured_usd: -180000, gross_prem_usd: -800, comm_rate_pct: 15.0, gross_comm_usd: -120, discount_usd: 0, discount_reason: '', net_comm_usd: -120, policy_fee_usd: 0, net_payable_4017_usd: -680, status: 'Return Prem' }
-    ];
+    ]);
 
-    const renewals = [
+    const renewals = pickIns('renewals', [
       { id: 'REN-2026-11-001', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-11-28', days_left: 22, bucket: '0–30 Days', expiring_prem_usd: 3150, quoted_renewal_usd: 3050, producer: 'Joseph Khalil', stage: 'Quote Sent · WhatsApp Follow-Up', status: 'Due for renewal' },
       { id: 'REN-2026-11-002', policy_no: 'MGF-MED-2025-49102', company: co, client: 'Levant Beverage Bottling (42 Lives)', carrier: 'MedGulf', line: 'MED · Medical', expiry_date: '2026-11-24', days_left: 18, bucket: '0–30 Days', expiring_prem_usd: 38400, quoted_renewal_usd: 41200, producer: 'Carla Moubarak', stage: 'Loss-Ratio Review (64%)', status: 'Due for renewal' },
       { id: 'REN-2026-12-003', policy_no: 'BNK-PAR-2025-07119', company: co, client: 'Bekaa Cold Storage Warehouses', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2026-12-12', days_left: 36, bucket: '31–60 Days', expiring_prem_usd: 14800, quoted_renewal_usd: 14800, producer: 'Joseph Khalil', stage: 'Surveyor Inspection Booked', status: 'Due for renewal' },
@@ -46019,9 +46058,9 @@
       { id: 'REN-2027-01-007', policy_no: 'BNK-PRP-2026-08510', company: co, client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', expiry_date: '2027-01-31', days_left: 86, bucket: '61–90 Days', expiring_prem_usd: 34850, quoted_renewal_usd: 34500, producer: 'Joseph Khalil', stage: 'Reinsurance Treaty Placement', status: 'Due for renewal' },
       { id: 'REN-2026-10-008', policy_no: 'LBS-TRV-2025-88201', company: co, client: 'Karim Mansour (Annual Multi-Trip)', carrier: 'Libano-Suisse', line: 'TRV · Travel', expiry_date: '2026-10-15', days_left: -22, bucket: 'Expired (>0d Past)', expiring_prem_usd: 680, quoted_renewal_usd: 680, producer: 'Rita Farah', stage: 'Client Relocated Abroad', status: 'Expired (not renewed)' },
       { id: 'REN-2026-10-009', policy_no: 'AXA-MOT-2025-19044', company: co, client: 'Fadi Rizk (Mercedes GLE 450)', carrier: 'AXA Middle East', line: 'MOT · Motor', expiry_date: '2026-10-25', days_left: -12, bucket: 'Expired (>0d Past)', expiring_prem_usd: 2890, quoted_renewal_usd: 2750, producer: 'Joseph Khalil', stage: 'Vehicle Sold by Insured', status: 'Expired (not renewed)' }
-    ];
+    ]);
 
-    const items = [
+    const items = pickIns('items', [
       { id: 'ITM-MED-52077-01', policy_no: 'MGF-MED-2026-52077', company: co, client: 'Holdal Abou Adal Group', category: 'Group Medical Census', identifier: '264 Active Lives · Class A/B In+Out', location_or_vin: 'Beirut & Metn HQ + Warehouses', sum_insured_usd: 13200000, deductible_usd: 0, annual_prem_usd: 191400, status: 'Covered' },
       { id: 'ITM-PRP-08510-01', policy_no: 'BNK-PRP-2026-08510', company: co, client: 'Unipak Tissue Mill S.A.L.', category: 'Industrial Plant & Machinery', identifier: 'Halat Paper Mill + 1.2MW Solar Roof', location_or_vin: 'Halat Industrial Zone · Plot 1142', sum_insured_usd: 19350000, deductible_usd: 5000, annual_prem_usd: 34850, status: 'Covered' },
       { id: 'ITM-MOT-12801-01', policy_no: 'ALZ-MOT-2026-12801', company: co, client: 'Transmed Distribution Fleet', category: 'Commercial Fleet (20 Units)', identifier: '20× Isuzu NPR & Mercedes Sprinter Vans', location_or_vin: 'Plates M-419201 .. M-419220', sum_insured_usd: 728000, deductible_usd: 250, annual_prem_usd: 27100, status: 'Covered' },
@@ -46029,9 +46068,9 @@
       { id: 'ITM-MAR-31044-01', policy_no: 'AXA-MAR-2026-31044', company: co, client: 'Khalil Fattal & Fils', category: 'Marine Cargo Open Cover', identifier: 'FMCG & Pharma Container Shipments', location_or_vin: 'Med / Europe Ports to Beirut Port', sum_insured_usd: 4020000, deductible_usd: 1500, annual_prem_usd: 16000, status: 'Covered' },
       { id: 'ITM-MOT-10912-01', policy_no: 'ARP-MOT-2026-10912', company: co, client: 'Dr. Nabil Khoury', category: 'Motor Prestige VIP', identifier: '2025 Porsche Cayenne Coupe AWD', location_or_vin: 'VIN WP1ZZZ9Y8SDA41092 · Plate B-88412', sum_insured_usd: 135000, deductible_usd: 500, annual_prem_usd: 4250, status: 'Covered' },
       { id: 'ITM-MOT-RAMI-01', policy_no: 'POL-20251105-RAMISAAB-001', company: co, client: 'Rami Saab', category: 'Motor All-Risk Gold', identifier: '2024 BMW X5 xDrive40i M-Sport', location_or_vin: 'VIN WBA53EU04R9N11804 · Plate G-219044', sum_insured_usd: 92000, deductible_usd: 300, annual_prem_usd: 3150, status: 'Renewal Due' }
-    ];
+    ]);
 
-    const billing = [
+    const billing = pickIns('billing', [
       { id: 'INV-INS-2026-001', date: '2026-01-15', due_date: '2026-01-30', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', instalment: 'Q1 + Q2 Instalments (1–2/4)', gross_prem_usd: 92500, discount_7065_usd: 750, fee_7064_usd: 125, client_billed_4112_usd: 91875, collected_usd: 91875, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-004 (Bank Wire)', status: 'Paid' },
       { id: 'INV-INS-2026-018', date: '2026-07-15', due_date: '2026-08-15', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', instalment: 'Q3 Instalment + Endorsement A', gross_prem_usd: 52650, discount_7065_usd: 0, fee_7064_usd: 10, client_billed_4112_usd: 52660, collected_usd: 45160, open_ar_4112_usd: 7500, receipt_ref: 'RCP-INS-2026-019 (Partial)', status: 'Partial AR' },
       { id: 'INV-INS-2026-004', date: '2026-02-01', due_date: '2026-02-28', company: co, policy_no: 'BNK-PRP-2026-08510', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', instalment: 'Annual PAR + Solar Endorsement', gross_prem_usd: 34850, discount_7065_usd: 500, fee_7064_usd: 90, client_billed_4112_usd: 34440, collected_usd: 34440, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-008 (Check)', status: 'Paid' },
@@ -46040,35 +46079,35 @@
       { id: 'INV-INS-2026-021', date: '2026-04-04', due_date: '2026-05-04', company: co, policy_no: 'AXA-MAR-2026-31044', client: 'Khalil Fattal & Fils', carrier: 'AXA Middle East', instalment: 'Marine Deposit Prem (Net of Return)', gross_prem_usd: 16000, discount_7065_usd: 170, fee_7064_usd: 45, client_billed_4112_usd: 15875, collected_usd: 15875, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-022 (Bank Wire)', status: 'Paid' },
       { id: 'INV-INS-2026-029', date: '2026-05-12', due_date: '2026-06-12', company: co, policy_no: 'BNK-WC-2026-07741', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', instalment: 'Workmen Comp Annual Billing', gross_prem_usd: 11200, discount_7065_usd: 0, fee_7064_usd: 30, client_billed_4112_usd: 11230, collected_usd: 8230, open_ar_4112_usd: 3000, receipt_ref: 'RCP-INS-2026-025 (Partial)', status: 'Overdue 60d' },
       { id: 'INV-INS-2026-036', date: '2026-06-19', due_date: '2026-06-19', company: co, policy_no: 'ARP-MOT-2026-10912', client: 'Dr. Nabil Khoury', carrier: 'Arope Insurance', instalment: 'Annual VIP Motor Note', gross_prem_usd: 4250, discount_7065_usd: 75, fee_7064_usd: 20, client_billed_4112_usd: 4195, collected_usd: 4195, open_ar_4112_usd: 0, receipt_ref: 'RCP-INS-2026-027 (Cash Till)', status: 'Paid' }
-    ];
+    ]);
 
-    const remittances = [
+    const remittances = pickIns('remittances', [
       { id: 'REM-2026-MGF-01', carrier: 'MedGulf', company: co, gl_payable: 'MedGulf Carrier Account', gross_prem_usd: 191400, broker_comm_7063_usd: 20097, settled_to_carrier_usd: 109203, net_payable_4017_usd: 62100, client_cash_held_usd: 64800, settlement_mode: 'Net of Commission (Bordereau)', next_due: '2026-11-15', status: 'Covered by Cash' },
       { id: 'REM-2026-BNK-01', carrier: 'Bankers Assurance', company: co, gl_payable: 'Bankers Carrier Account', gross_prem_usd: 46050, broker_comm_7063_usd: 7779, settled_to_carrier_usd: 20271, net_payable_4017_usd: 18000, client_cash_held_usd: 19100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-20', status: 'Covered by Cash' },
       { id: 'REM-2026-ALZ-01', carrier: 'Allianz SNA', company: co, gl_payable: 'Allianz SNA Carrier Account', gross_prem_usd: 36700, broker_comm_7063_usd: 6030, settled_to_carrier_usd: 14470, net_payable_4017_usd: 16200, client_cash_held_usd: 15900, settlement_mode: 'Net of Commission (Quarterly)', next_due: '2026-11-25', status: 'Stmt Recon Hold' },
       { id: 'REM-2026-AXA-01', carrier: 'AXA Middle East', company: co, gl_payable: 'AXA Carrier Account', gross_prem_usd: 40650, broker_comm_7063_usd: 5977, settled_to_carrier_usd: 22973, net_payable_4017_usd: 11700, client_cash_held_usd: 12100, settlement_mode: 'Net of Commission (Monthly)', next_due: '2026-11-18', status: 'Covered by Cash' },
       { id: 'REM-2026-LBS-01', carrier: 'Libano-Suisse', company: co, gl_payable: 'Libano-Suisse Carrier Account', gross_prem_usd: 12400, broker_comm_7063_usd: 1984, settled_to_carrier_usd: 5116, net_payable_4017_usd: 5300, client_cash_held_usd: 5500, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' },
       { id: 'REM-2026-ARP-01', carrier: 'Arope Insurance', company: co, gl_payable: 'Arope Carrier Account', gross_prem_usd: 4250, broker_comm_7063_usd: 850, settled_to_carrier_usd: 600, net_payable_4017_usd: 2800, client_cash_held_usd: 3000, settlement_mode: 'Net of Commission', next_due: '2026-11-30', status: 'Covered by Cash' }
-    ];
+    ]);
 
-    const statements = [
+    const statements = pickIns('statements', [
       { id: 'STM-AXA-2026-08', period: '2026-08', company: co, carrier: 'AXA Middle East', policies_count: 8, expected_comm_4117_usd: 5977, statement_comm_usd: 5977, variance_usd: 0, note: '100% matched across CAR, Marine & Motor lines', status: 'Matched' },
       { id: 'STM-ALZ-2026-09', period: '2026-09', company: co, carrier: 'Allianz SNA', policies_count: 7, expected_comm_4117_usd: 6030, statement_comm_usd: 6005, variance_usd: -25, note: 'Flagged -$25.00 rate rounding diff on ALZ-MOT-2026-00419', status: 'Discrepancy' },
       { id: 'STM-MGF-2026-09', period: '2026-09', company: co, carrier: 'MedGulf', policies_count: 6, expected_comm_4117_usd: 20097, statement_comm_usd: 20097, variance_usd: 0, note: 'Group Medical Q1–Q3 commission settled in full ($0 diff)', status: 'Settled' },
       { id: 'STM-BNK-2026-10', period: '2026-10', company: co, carrier: 'Bankers Assurance', policies_count: 9, expected_comm_4117_usd: 7779, statement_comm_usd: 7779, variance_usd: 0, note: 'PAR & Workmen Comp bordereau verified', status: 'Matched' },
       { id: 'STM-LBS-2026-10', period: '2026-10', company: co, carrier: 'Libano-Suisse', policies_count: 5, expected_comm_4117_usd: 1984, statement_comm_usd: 1984, variance_usd: 0, note: 'Hospitality Liability commission cleared against carrier account', status: 'Settled' },
       { id: 'STM-ARP-2026-10', period: '2026-10', company: co, carrier: 'Arope Insurance', policies_count: 3, expected_comm_4117_usd: 850, statement_comm_usd: 810, variance_usd: -40, note: 'Accessory endorsement commission pending carrier credit note', status: 'Discrepancy' }
-    ];
+    ]);
 
-    const claims = [
+    const claims = pickIns('claims', [
       { id: 'CLM-2026-001', loss_date: '2026-03-14', company: co, policy_no: 'ALZ-MOT-2026-12801', client: 'Transmed Distribution Fleet', carrier: 'Allianz SNA', line: 'MOT · Motor', peril: 'Multi-Vehicle Highway Collision (Dbayeh)', adjuster: 'Expert Nabil Tabet', claimed_usd: 6850, deductible_usd: 250, approved_usd: 6400, paid_by_insurer_usd: 6400, status: 'Settled' },
       { id: 'CLM-2026-002', loss_date: '2026-05-22', company: co, policy_no: 'MGF-MED-2026-52077', client: 'Holdal Abou Adal Group', carrier: 'MedGulf', line: 'MED · Medical', peril: 'Cardiac Stent Inpatient Admission (AUBMC)', adjuster: 'MedGulf TPA Desk', claimed_usd: 14200, deductible_usd: 0, approved_usd: 13850, paid_by_insurer_usd: 13850, status: 'Settled' },
       { id: 'CLM-2026-003', loss_date: '2026-08-09', company: co, policy_no: 'BNK-PRP-2026-08510', client: 'Unipak Tissue Mill S.A.L.', carrier: 'Bankers Assurance', line: 'PROP · Property', peril: 'Chilled-Water Pipe Burst · Paper Roll Store', adjuster: 'Charles Taylor Adjusting', claimed_usd: 28500, deductible_usd: 5000, approved_usd: 22000, paid_by_insurer_usd: 0, status: 'Approved · Awaiting Release' },
       { id: 'CLM-2026-004', loss_date: '2026-09-29', company: co, policy_no: 'BNK-WC-2026-07741', client: 'Holcim Liban Quarry Contractors', carrier: 'Bankers Assurance', line: 'WC · Workmen Comp', peril: 'Quarry Rig Operator Hand Fracture + 21d TTD', adjuster: 'Dr. Fouad Salameh', claimed_usd: 4900, deductible_usd: 0, approved_usd: 4600, paid_by_insurer_usd: 0, status: 'Under Assessment' },
       { id: 'CLM-2026-005', loss_date: '2026-10-21', company: co, policy_no: 'AXA-MAR-2026-31044', client: 'Khalil Fattal & Fils', carrier: 'AXA Middle East', line: 'MAR · Marine', peril: 'Reefer Temperature Excursion · Antwerp Voyage', adjuster: 'Surveyor Lloyd Agency Beirut', claimed_usd: 11400, deductible_usd: 1500, approved_usd: 0, paid_by_insurer_usd: 0, status: 'FNOL · Survey Open' }
-    ];
+    ]);
 
-    const catalogue = [
+    const catalogue = pickIns('catalogue', [
       { code: 'MOT-AR-GOLD', line_code: 'MOT', line_name: 'Motor Insurance', carrier: 'Allianz SNA', product_name: 'Motor All-Risk Gold (Agency Repair <=5 Yrs)', base_comm_pct: 18.0, min_prem_usd: 650, active_policies: 12, gwp_usd: 34250, status: 'Active' },
       { code: 'MOT-VIP-PREST', line_code: 'MOT', line_name: 'Motor Insurance', carrier: 'Arope Insurance', product_name: 'Motor All-Risk Prestige VIP (> $100k SI)', base_comm_pct: 20.0, min_prem_usd: 1800, active_policies: 4, gwp_usd: 14100, status: 'Active' },
       { code: 'MED-GRP-CORP', line_code: 'MED', line_name: 'Medical & Health', carrier: 'MedGulf', product_name: 'Corporate Group Medical In/Out + Maternity', base_comm_pct: 10.5, min_prem_usd: 15000, active_policies: 6, gwp_usd: 191400, status: 'Active' },
@@ -46081,9 +46120,9 @@
       { code: 'PA-GRP-SYND', line_code: 'PA', line_name: 'Personal Accident', carrier: 'Arope Insurance', product_name: 'Group 24/7 Personal Accident & PTD', base_comm_pct: 20.0, min_prem_usd: 500, active_policies: 1, gwp_usd: 2100, status: 'Active' },
       { code: 'TRV-SCH-MULT', line_code: 'TRV', line_name: 'Travel & Assistance', carrier: 'Libano-Suisse', product_name: 'Schengen & Worldwide Executive Multi-Trip', base_comm_pct: 25.0, min_prem_usd: 120, active_policies: 2, gwp_usd: 950, status: 'Active' },
       { code: 'MNY-FID-3D', line_code: 'MNY', line_name: 'Money & Fidelity', carrier: 'Bankers Assurance', product_name: 'Cash-in-Safe, Cash-in-Transit & Fidelity Guarantee', base_comm_pct: 17.5, min_prem_usd: 800, active_policies: 2, gwp_usd: 3100, status: 'Active' }
-    ];
+    ]);
 
-    const agreements = [
+    const agreements = pickIns('agreements', [
       { id: 'AGR-MGF-MED-2026', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 10.5, renewal_pct: 10.5, override_bonus_pct: 2.0, prior_rate_pct: 10.0, backfill_status: 'Chrono Active · 6 Policies Synced', status: 'Active (Open)' },
       { id: 'AGR-BNK-PRP-2026', carrier: 'Bankers Assurance', line: 'PROP · Property', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 17.5, renewal_pct: 17.5, override_bonus_pct: 2.5, prior_rate_pct: 16.5, backfill_status: 'Chrono Active · 5 Policies Synced', status: 'Active (Open)' },
       { id: 'AGR-ALZ-MOT-2026', carrier: 'Allianz SNA', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 18.0, renewal_pct: 17.5, override_bonus_pct: 2.0, prior_rate_pct: 17.0, backfill_status: 'Chrono Active · 8 Policies Synced', status: 'Active (Open)' },
@@ -46092,7 +46131,7 @@
       { id: 'AGR-LBS-LIAB-2026', carrier: 'Libano-Suisse', line: 'LIAB · Liability', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 16.0, renewal_pct: 16.0, override_bonus_pct: 2.0, prior_rate_pct: 15.0, backfill_status: 'Chrono Active · 3 Policies Synced', status: 'Active (Open)' },
       { id: 'AGR-ARP-MOT-2026', carrier: 'Arope Insurance', line: 'MOT · Motor', start_date: '2026-01-01', end_date: 'Open', new_bus_pct: 20.0, renewal_pct: 18.5, override_bonus_pct: 2.5, prior_rate_pct: 18.5, backfill_status: 'Chrono Active · 4 Policies Synced', status: 'Active (Open)' },
       { id: 'AGR-MGF-MED-2025', carrier: 'MedGulf', line: 'MED · Medical', start_date: '2025-01-01', end_date: '2025-12-31', new_bus_pct: 10.0, renewal_pct: 10.0, override_bonus_pct: 1.5, prior_rate_pct: 9.5, backfill_status: 'Auto-Closed at 2025-12-31', status: 'Closed Window' }
-    ];
+    ]);
 
     const customInsPols = getIndustryCustomRows('ins_policies');
     let customPolOnlyCount = 0;
@@ -46221,12 +46260,12 @@
       catalogue,
       agreements,
       summary: {
-        totalPolicyCount: 38 + customPolOnlyCount,
-        endorsementCount: 4 + customEndOnlyCount,
+        totalPolicyCount: (liveIns ? policies.filter(p => !/endorsement/i.test(String(p.type || ''))).length : (38 + customPolOnlyCount)),
+        endorsementCount: (liveIns ? policies.filter(p => /endorsement/i.test(String(p.type || ''))).length : (4 + customEndOnlyCount)),
         carriersCount: 6,
         linesCount: 12,
-        productsCount: 52,
-        agreementsCount: 21 + customInsAgr.length,
+        productsCount: catalogue.length >= 52 ? catalogue.length : 52,
+        agreementsCount: liveIns ? agreements.length : (21 + customInsAgr.length),
         gwpUsd,
         grossComm7063Usd,
         discount7065Usd,
@@ -46826,7 +46865,7 @@
         </div>
         <div style="padding:12px 16px">
           <svg viewBox="0 0 680 185" style="width:100%;height:175px;display:block" role="img" aria-label="Insurance Claims Progression Chart">
-            ${filteredClm.map((r, idx) => {
+            ${filteredClm.slice(0, 5).map((r, idx) => {
               const y = 10 + idx * 33;
               const wClm = Math.max(16, Math.round((r.claimed_usd / maxClm) * 320));
               const wApp = Math.max(6, Math.round((r.approved_usd / maxClm) * 320));
@@ -49186,7 +49225,7 @@
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
     const today = typeof todayISO === 'function' ? todayISO() : '2026-11-06';
     const yestWall = typeof yesterdayISO === 'function' ? yesterdayISO() : '2026-11-05';
-    const latestOpDate = '2026-09-26';
+    const latestOpDate = ind === 'Automotive & Heavy Trading' ? '2026-08-31' : '2026-11-06';
     const targetDate = (STATE.dailyOpsDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.dailyOpsDate)) ? STATE.dailyOpsDate : latestOpDate;
     const stepDay = (iso, delta) => {
       const dt = new Date(`${iso}T12:00:00Z`);
@@ -49807,23 +49846,25 @@
         addMv(`trd-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, r.payment_term === 'Cash' ? 'Cash' : 'Cheque / Wire', r.ttc_usd);
       });
       (trd.importRows || []).slice(0, 4).forEach((im, idx) => {
-        addMv(`trd-imp-${idx + 1}`, im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_ref} · ${im.origin_port}`, im.id, 'LC / Wire', -round2(im.customs_usd + im.freight_usd + im.clearance_usd));
+        const impCost = Number(im.landed_add_usd != null ? im.landed_add_usd : (Number(im.customs_usd || 0) + Number(im.freight_usd || 0) + Number(im.clearance_usd || 0))) || round2(Number(im.total_landed_usd || im.fob_usd || 0) * 0.12);
+        addMv(`trd-imp-${idx + 1}`, im.date || im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_bl || im.container_ref || im.id} · ${im.origin || im.origin_port || 'Port'}`, im.id, 'LC / Wire', -round2(impCost));
       });
     } else if (ind === 'Real Estate & Property') {
       const re = computeRealEstateOperations({ ignoreSearch: true });
       (re.invoices || []).slice(0, 6).forEach((inv, idx) => {
-        addMv(`re-mv-${idx + 1}`, inv.date || '2026-10-25', inv.company, 'sales', 'Commercial & Residential Rent Receipt', inv.tenant, `${inv.property} · ${inv.period} (Seq ${inv.seq_no})`, inv.id, 'Bank / Cash', inv.paid_usd || inv.ttc_usd);
+        addMv(`re-mv-${idx + 1}`, inv.date || '2026-10-25', inv.company, 'sales', 'Commercial & Residential Rent Receipt', inv.tenant, `${inv.property} · ${inv.period} (${inv.tax_seq || inv.seq_no || inv.id})`, inv.id, 'Bank / Cash', Number(inv.collected_usd || inv.paid_usd || inv.amount_ttc_usd || inv.ttc_usd || 0));
       });
-      (re.workOrders || []).slice(0, 4).forEach((wo, idx) => {
-        addMv(`re-wo-${idx + 1}`, wo.date || '2026-10-21', wo.company, 'exp', 'Fit-Out & Building Work Order', wo.contractor, `${wo.property} · ${wo.unit} (${wo.scope})`, wo.id, 'Cash', -wo.actual_usd);
+      (re.workorders || re.workOrders || []).slice(0, 4).forEach((wo, idx) => {
+        addMv(`re-wo-${idx + 1}`, wo.date || '2026-10-21', wo.company, 'exp', 'Fit-Out & Building Work Order', wo.contractor, `${wo.property} · ${wo.unit} (${wo.category || wo.scope || 'Works'})`, wo.id, 'Cash', -Number(wo.actual_usd || 0));
       });
     } else {
       const ins = computeInsuranceOperations();
       (ins.billing || []).slice(0, 6).forEach((b, idx) => {
-        addMv(`ins-mv-${idx + 1}`, b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection', b.client, `Policy ${b.policy_id} · ${b.carrier}`, b.id, 'Cash / Wire', b.paid_usd || b.gross_prem_usd);
+        addMv(`ins-mv-${idx + 1}`, b.date || b.due_date || '2026-10-27', 'Insurance Company', 'sales', 'Policyholder Premium Collection', b.client, `Policy ${b.policy_no || b.policy_id || b.id} · ${b.carrier}`, b.id, 'Cash / Wire', Number(b.collected_usd || b.paid_usd || b.client_billed_4112_usd || b.gross_prem_usd || 0));
       });
-      (ins.statements || []).slice(0, 4).forEach((st, idx) => {
-        addMv(`ins-st-${idx + 1}`, '2026-10-24', 'Insurance Company', 'exp', 'Carrier Net Premium Remittance', st.carrier, `Bordereau ${st.period} (${st.policies_count} policies)`, st.id, 'Bank Wire', -round2(st.net_payable_4017_usd * 0.6));
+      (ins.remittances || ins.statements || []).slice(0, 4).forEach((st, idx) => {
+        const remOut = Number(st.settled_to_carrier_usd || st.net_payable_4017_usd || st.statement_comm_usd || 8500);
+        addMv(`ins-st-${idx + 1}`, st.next_due || '2026-10-24', 'Insurance Company', 'exp', 'Carrier Net Premium Remittance', st.carrier, `Bordereau ${st.period || st.settlement_mode || 'Monthly'}`, st.id, 'Bank Wire', -round2(remOut * 0.6));
       });
     }
 
@@ -49993,6 +50034,7 @@
     const docArr = ensureArr('documents');
     if (alreadySeededCore && docArr.some(d => d && d._multiIndustrySeed)) {
       ensureDomainSpecificDocumentsSeeded(docArr);
+      mergeIndustryLiveSpineIntoRecords();
       return;
     }
     const supArr = ensureArr('suppliers');
@@ -50599,7 +50641,7 @@
           _multiIndustrySeed: true,
           _industry: ent.ind
         });
-        ['2026-08', '2026-09'].forEach((ym, mIdx) => {
+        ['2026-08', '2026-09', '2026-10'].forEach((ym, mIdx) => {
           const payDate = `${ym}-28`;
           salArr.push({
             id: `mi-sal-${pfx}-${sfIdx + 1}-${mIdx + 1}`,
@@ -50618,7 +50660,7 @@
             _industry: ent.ind
           });
         });
-        ['2026-09-18', '2026-09-19', '2026-09-25'].forEach((attDate, aIdx) => {
+        ['2026-10-16', '2026-10-28', '2026-11-05'].forEach((attDate, aIdx) => {
           const isOt = aIdx === 0 && sfIdx === 0;
           attArr.push({
             id: `mi-att-${pfx}-${sfIdx + 1}-${aIdx + 1}`,
@@ -50626,7 +50668,7 @@
             set_date: attDate,
             tx_date: attDate,
             rep_date: attDate,
-            month: '2026-09',
+            month: attDate.slice(0, 7),
             company: ent.co,
             staff: stf.name,
             type: isOt ? 'Overtime' : 'Present',
@@ -50649,7 +50691,7 @@
       });
 
       ent.suppliers.forEach((sup, sIdx) => {
-        const expDate = sIdx === 0 ? '2026-09-22' : '2026-09-26';
+        const expDate = sIdx === 0 ? '2026-10-22' : '2026-11-04';
         const eqRef = sIdx === 0 ? ent.equipment[0].name : '';
         const itm = ent.items[sIdx % ent.items.length];
         const vatAmt = sup.iva ? round2(sup.expAmt * 0.11) : 0;
@@ -50720,8 +50762,8 @@
           const payAmt = round2(sup.expAmt * 0.55);
           setArr.push({
             id: `mi-set-${pfx}-1`,
-            date: '2026-09-27',
-            rep_date: '2026-09-27',
+            date: '2026-10-29',
+            rep_date: '2026-10-29',
             name: `SET-${ent.code}-01`,
             company: ent.co,
             supplier: sup.name,
@@ -51017,6 +51059,7 @@
       });
     });
     ensureDomainSpecificDocumentsSeeded(docArr);
+    mergeIndustryLiveSpineIntoRecords();
 
     _PAYROLL_INTEL_CACHE = null;
     _threeLegApCacheKey = '';
@@ -52929,6 +52972,7 @@
 
       closeIndustryDomainEntryModal();
       renderApp();
+      syncWithCloud(true);
       toast(`Posted ${recId} to ${ind}`);
 
       if (filesToAttach.length > 0) {
@@ -53677,6 +53721,7 @@
         }
         applyIndustryDomRowEdits($('workspace'));
         closeRecordInspector();
+        syncWithCloud(true);
         toast(`Saved changes to ${primaryId}`);
       };
 
@@ -53697,11 +53742,12 @@
           updatedAt: new Date().toISOString()
         };
         saveIndustryRowEditStore(store);
-        const wasCustom = voidIndustryCustomRowById(primaryId);
+        const wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true });
         voidDomainRecordAttachments(domainTblKey, primaryId);
         if (opts.trEl && opts.trEl.isConnected) opts.trEl.style.display = 'none';
         closeRecordInspector();
         if (wasCustom) renderApp();
+        syncWithCloud(true);
         toast(`Voided record ${primaryId}`);
       };
 
@@ -67026,6 +67072,7 @@
 
   function persistEquipmentLogMutation(targetEq) {
     if (!targetEq) return;
+    targetEq.modified_at = new Date().toISOString();
     if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
     const eqIdx = STATE.customRecords.equipment.findIndex(x =>
       x && ((targetEq.id && String(x.id) === String(targetEq.id)) || norm(x.name || x.equipment) === norm(targetEq.name || targetEq.equipment))
@@ -67036,6 +67083,8 @@
     _FLEET_IDX = null;
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
+    postRecordToLocalApi('equipment', targetEq);
+    syncWithCloud(true);
     renderApp();
   }
 
@@ -70208,9 +70257,11 @@
             default_location: defLoc
           });
           if (catRec) {
+            catRec.modified_at = new Date().toISOString();
             applyCustomRecordsToSeed();
             saveLocalAuthAndRecords();
             postRecordToLocalApi('items', catRec);
+            syncWithCloud(true);
           }
         } else if (subVal) {
           catRec.subcategory = catRec.subcategory || subVal;
@@ -70218,6 +70269,15 @@
           if (!prevSubs.some(s => norm(s) === norm(subVal))) {
             catRec._subcategories = [...prevSubs, subVal];
           }
+          catRec.modified_at = new Date().toISOString();
+          if (!Array.isArray(STATE.customRecords.items)) STATE.customRecords.items = [];
+          const ci = STATE.customRecords.items.findIndex(x => x && (String(x.id) === String(catRec.id) || norm(x.name) === norm(catRec.name)));
+          if (ci >= 0) Object.assign(STATE.customRecords.items[ci], catRec);
+          else STATE.customRecords.items.unshift(Object.assign({}, catRec));
+          applyCustomRecordsToSeed();
+          saveLocalAuthAndRecords();
+          postRecordToLocalApi('items', catRec);
+          syncWithCloud(true);
         }
         const effRec = catRec || resolveCatalogItem(rawNm);
         const rIdx = Number((qcDrawer && qcDrawer.dataset.targetRowIdx) || 0);
@@ -73608,6 +73668,8 @@
       delete record._pair_ow_km;
       delete record._pair_rt_km;
       delete record._assign_site_region;
+      const saveStampIso = new Date().toISOString();
+      record.modified_at = record.modified_at || saveStampIso;
       const preExtraApiPosts = [];
       if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
         ensureSiteHasRegion(assignSiteReg.site, assignSiteReg.region, assignSiteReg.supplier, preExtraApiPosts);
@@ -73621,6 +73683,7 @@
             if (pairOwKm != null) r.est_km = pairOwKm;
             if (pairRtKm != null) r.est_round_trip_km = pairRtKm;
             r.has_paired_return = true;
+            r.modified_at = saveStampIso;
             updatedOrig = Object.assign({}, r);
           }
         });
@@ -73630,6 +73693,7 @@
           if (pairOwKm != null) STATE.customRecords[crKey][cIdx].est_km = pairOwKm;
           if (pairRtKm != null) STATE.customRecords[crKey][cIdx].est_round_trip_km = pairRtKm;
           STATE.customRecords[crKey][cIdx].has_paired_return = true;
+          STATE.customRecords[crKey][cIdx].modified_at = saveStampIso;
           updatedOrig = Object.assign({}, STATE.customRecords[crKey][cIdx]);
         } else if (updatedOrig) {
           STATE.customRecords[crKey].unshift(updatedOrig);
@@ -74225,6 +74289,11 @@
         backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts);
         applyCustomRecordsToSeed();
       }
+      extraApiPosts.forEach(([ek, er]) => {
+        if (er && typeof er === 'object' && !er.voided && !er.modified_at) {
+          er.modified_at = saveStampIso;
+        }
+      });
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
       if (keepOpenNextDay) {
@@ -82580,12 +82649,15 @@
           if (targetEqRow.supplier !== undefined) row.supplier = targetEqRow.supplier;
           if (targetEqRow.default_driver) row.default_driver = targetEqRow.default_driver;
         }
+        targetEqRow.modified_at = new Date().toISOString();
         if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
         const eqIdx = STATE.customRecords.equipment.findIndex(x => String(x.id) === String(targetEqRow.id));
         if (eqIdx >= 0) Object.assign(STATE.customRecords.equipment[eqIdx], targetEqRow);
         else STATE.customRecords.equipment.unshift(Object.assign({}, targetEqRow));
         applyCustomRecordsToSeed();
         saveLocalAuthAndRecords();
+        postRecordToLocalApi('equipment', targetEqRow);
+        syncWithCloud(true);
         renderApp();
         const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
         toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}`);
@@ -82599,12 +82671,15 @@
       const idx = Number(btn.getAttribute('data-del-tw-idx'));
       if (idx >= 0 && idx < targetEqRow.adj_windows.length) {
         removeTruckWindowAt(targetEqRow, idx);
+        targetEqRow.modified_at = new Date().toISOString();
         if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
         const eqIdx = STATE.customRecords.equipment.findIndex(x => String(x.id) === String(targetEqRow.id));
         if (eqIdx >= 0) Object.assign(STATE.customRecords.equipment[eqIdx], targetEqRow);
         else STATE.customRecords.equipment.unshift(Object.assign({}, targetEqRow));
         applyCustomRecordsToSeed();
         saveLocalAuthAndRecords();
+        postRecordToLocalApi('equipment', targetEqRow);
+        syncWithCloud(true);
         renderApp();
         toast('✓ Removed equipment log window');
         showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab, tableContext: tc, preserveScroll: true });
@@ -83288,6 +83363,11 @@
     }
   }
 
+  function _recModTs(r) {
+    if (!r || typeof r !== 'object') return '';
+    return String(r.modified_at || r.updated_at || r.price_entered_at || r.salary_entered_at || r.restored_at || '');
+  }
+
   // Union-merge another device's app entries into ours. A void tombstone always wins.
   function mergeCustomRecords(remote) {
     if (!remote || typeof remote !== 'object') return false;
@@ -83301,7 +83381,35 @@
       const byId = new Map(mine.map(r => [r.id, r]));
       inc.forEach(r => {
         if (!r || !r.id) return;
-        const cur = byId.get(r.id);
+        let cur = byId.get(r.id);
+        if (!cur && !r.voided && k === 'receipts') {
+          const rDate = String(r.date || '').slice(0, 10);
+          const rCust = norm(r.customer || '');
+          const rAmt = Number(r.amount || 0);
+          const rMeth = norm(r.method || 'Payment');
+          const rRef = norm(r.reference || r.invoice_no || '');
+          const rCo = norm(r.company || 'WTC');
+          if (rDate && rCust && rAmt > 0) {
+            const natDupIdx = mine.findIndex(x =>
+              x && !x.voided && String(x.id) !== String(r.id) &&
+              norm(x.company || 'WTC') === rCo &&
+              String(x.date || '').slice(0, 10) === rDate &&
+              norm(x.customer || '') === rCust &&
+              norm(x.method || 'Payment') === rMeth &&
+              norm(x.reference || x.invoice_no || '') === rRef &&
+              Math.abs(Number(x.amount || 0) - rAmt) < 0.01
+            );
+            if (natDupIdx >= 0) {
+              const natDup = mine[natDupIdx];
+              byId.delete(natDup.id);
+              const canonId = String(r.id === 're-mw5p8k2m-megabeton' ? r.id : (natDup.id === 're-mw5p8k2m-megabeton' ? natDup.id : r.id));
+              Object.assign(natDup, r, { id: canonId });
+              byId.set(canonId, natDup);
+              changed = true;
+              return;
+            }
+          }
+        }
         if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
         else if (r.voided && !cur.voided) {
           const curRestTs = String(cur.restored_at || '');
@@ -83323,13 +83431,21 @@
           delete cur.voided_at;
           changed = true;
         }
-        else if (!cur.voided && !r.voided && r.modified_at && (!cur.modified_at || String(r.modified_at) > String(cur.modified_at))) {
-          _preserveClosedEffectiveDates(cur, r);
-          const prevSeedOrig = cur._seed_orig;
-          Object.assign(cur, r);
-          if (prevSeedOrig && !cur._seed_orig) cur._seed_orig = prevSeedOrig;
-          if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
-          changed = true;
+        else if (!cur.voided && !r.voided) {
+          const rModTs = _recModTs(r);
+          const curModTs = _recModTs(cur);
+          const completedPending = (cur.price_pending && !r.price_pending && Number(r.amount ?? r.total ?? 0) > 0)
+            || (cur.salary_pending && !r.salary_pending && Number(r.amount || 0) > 0)
+            || (!cur.out_time && Boolean(r.out_time))
+            || (Array.isArray(r.adj_windows) && (!Array.isArray(cur.adj_windows) || r.adj_windows.length > cur.adj_windows.length));
+          if ((rModTs && (!curModTs || rModTs > curModTs)) || (!curModTs && completedPending)) {
+            _preserveClosedEffectiveDates(cur, r);
+            const prevSeedOrig = cur._seed_orig;
+            Object.assign(cur, r);
+            if (prevSeedOrig && !cur._seed_orig) cur._seed_orig = prevSeedOrig;
+            if (!r.admin_overrides && cur.admin_overrides) delete cur.admin_overrides;
+            changed = true;
+          }
         }
       });
     });
@@ -83847,26 +83963,72 @@
     return changed;
   }
 
+  function _slimRecordForCloud(r) {
+    if (!r || typeof r !== 'object') return r;
+    if (r.voided) {
+      const vb = String(r.voided_by || '');
+      if (vb.startsWith('system-topup') || vb.startsWith('SharePoint Top-Up')) {
+        return { id: r.id, voided: true, voided_by: vb, voided_at: r.voided_at || '' };
+      }
+      if (r._seed_orig && typeof r._seed_orig === 'object') {
+        const copy = Object.assign({}, r);
+        copy._seed_orig = buildSeedOrigMeta(r._seed_orig);
+        return copy;
+      }
+      return r;
+    }
+    if (r.data_url && String(r.data_url).length > 2048) {
+      const copy = Object.assign({}, r);
+      delete copy.data_url;
+      return copy;
+    }
+    return r;
+  }
+
   function cloudPayload() {
     const trimmed = {};
-    CR_KEYS.forEach(k => { trimmed[k] = STATE.customRecords[k].slice(0, 1500); });
+    const allCrKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
+    allCrKeys.forEach(k => {
+      const arr = Array.isArray(STATE.customRecords[k]) ? STATE.customRecords[k] : [];
+      trimmed[k] = arr.slice(0, 1500).map(_slimRecordForCloud);
+    });
+    const slimUsers = (STATE.users || []).map(u => {
+      if (!u || typeof u !== 'object') return u;
+      if (Array.isArray(u.face_thumbs) && u.face_thumbs.some(t => String(t || '').length > 1024)) {
+        const copy = Object.assign({}, u);
+        copy.face_thumbs = [];
+        return copy;
+      }
+      return u;
+    });
+    const slimBio = {};
+    Object.entries(STATE.staffBiometrics || {}).forEach(([bk, bv]) => {
+      if (!bv || typeof bv !== 'object') return;
+      if (Array.isArray(bv.face_thumbs) && bv.face_thumbs.some(t => String(t || '').length > 1024)) {
+        const copy = Object.assign({}, bv);
+        copy.face_thumbs = [];
+        slimBio[bk] = copy;
+      } else {
+        slimBio[bk] = bv;
+      }
+    });
     return {
-      users: STATE.users,
+      users: slimUsers,
       sessions: STATE.sessions.slice(0, 25),
       customRecords: trimmed,
+      industryRowEdits: getIndustryRowEditStore(),
+      industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore()) : getIndustryCustomRowsStore(),
       kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
-      staffBiometrics: STATE.staffBiometrics || {},
+      staffBiometrics: slimBio,
       workSchedules: STATE.workSchedules || { shiftTypes: [], staffRules: {} },
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
-      industryCustomRows: offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore()),
-      industryRowEdits: getIndustryRowEditStore(),
       faceSettings: STATE.faceSettings,
       lbpFxRate: getLbpFxRate(),
       lbpFxUpdatedAt: STATE.lbpFxUpdatedAt || '',
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
-      appVersion: '4.7'
+      appVersion: '4.8'
     };
   }
 
@@ -84058,12 +84220,46 @@
     restoreScroll();
   }
 
+  const CLOUD_PENDING_PUSH_KEY = 'isabi_mfg_pending_push_v1';
   let syncInFlight = null;
+  let _cloudRetryTimer = null;
+  let _lastCloudSyncStartedAt = 0;
+  try {
+    if (!IS_AUTOMATED_TEST && localStorage.getItem(CLOUD_PENDING_PUSH_KEY) === '1') {
+      STATE.pendingCloudPush = true;
+    }
+  } catch (_) {}
+
+  function setPendingCloudPush(flag) {
+    STATE.pendingCloudPush = Boolean(flag);
+    if (!IS_AUTOMATED_TEST) {
+      try {
+        if (flag) localStorage.setItem(CLOUD_PENDING_PUSH_KEY, '1');
+        else localStorage.removeItem(CLOUD_PENDING_PUSH_KEY);
+      } catch (_) {}
+    }
+  }
+
+  function scheduleCloudPushRetry(delayMs = 6000) {
+    if (_cloudRetryTimer || IS_AUTOMATED_TEST) return;
+    _cloudRetryTimer = setTimeout(() => {
+      _cloudRetryTimer = null;
+      if (STATE.pendingCloudPush && navigator.onLine !== false) {
+        syncWithCloud(true);
+      }
+    }, delayMs);
+  }
+
   async function syncWithCloud(pushChanges = false) {
+    if (pushChanges) setPendingCloudPush(true);
     if (syncInFlight) { if (pushChanges) STATE.pushAfterSync = true; return syncInFlight; }
-    syncInFlight = doSync(pushChanges || STATE.pushAfterSync).finally(() => {
+    _lastCloudSyncStartedAt = Date.now();
+    const shouldPush = Boolean(pushChanges || STATE.pushAfterSync || STATE.pendingCloudPush);
+    STATE.pushAfterSync = false;
+    syncInFlight = doSync(shouldPush).finally(() => {
       syncInFlight = null;
       if (STATE.pushAfterSync) { STATE.pushAfterSync = false; syncWithCloud(true); }
+      else if (STATE.pendingCloudPush) { scheduleCloudPushRetry(6000); }
     });
     return syncInFlight;
   }
@@ -84156,11 +84352,11 @@
     }
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 15000);
+      const timer = setTimeout(() => ctrl.abort(), 25000);
       const getRes = await fetch(CLOUD_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ key: CLOUD_KEY, op: 'get' }),
+        body: JSON.stringify({ key: CLOUD_KEY, op: 'get_mfg', doc: CLOUD_DOC_KEY }),
         signal: ctrl.signal
       });
       clearTimeout(timer);
@@ -84168,7 +84364,7 @@
 
       const store = await getRes.json();
       const docs = (store && store.docs) || store || {};
-      const remote = docs[CLOUD_DOC_KEY] || {};
+      const remote = docs[CLOUD_DOC_KEY] || (store && store.customRecords ? store : {});
       let changed = false;
 
       if (Array.isArray(remote.users) && remote.users.length) {
@@ -84211,13 +84407,13 @@
       }
 
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
+      if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
+      if (remote.industryCustomRows && mergeIndustryCustomRows(remote.industryCustomRows)) { changed = true; }
       if (Array.isArray(remote.kioskPunches) && mergeKioskPunches(remote.kioskPunches)) { changed = true; }
       if (remote.staffBiometrics && mergeStaffBiometrics(remote.staffBiometrics)) { changed = true; }
       if (remote.workSchedules && mergeWorkSchedules(remote.workSchedules)) { changed = true; }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
       if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
-      if (remote.industryCustomRows && mergeIndustryCustomRows(remote.industryCustomRows)) { changed = true; }
-      if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
       if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
         if (setLbpFxRate(remote.lbpFxRate, { updatedAt: remote.lbpFxUpdatedAt, sync: false, render: false })) changed = true;
       } else if (!pushChanges && STATE.lbpFxUpdatedAt && String(STATE.lbpFxUpdatedAt) > String(remote.lbpFxUpdatedAt || '')) {
@@ -84253,28 +84449,47 @@
         });
       }
       if (!pushChanges && remote.customRecords) {
-        const remoteIds = new Set();
-        CR_KEYS.forEach(k => (remote.customRecords[k] || []).forEach(r => r && remoteIds.add(r.id + (r.voided ? '|v' : ''))));
-        CR_KEYS.forEach(k => STATE.customRecords[k].forEach(r => { if (!remoteIds.has(r.id + (r.voided ? '|v' : ''))) pushChanges = true; }));
-      }
-      if (!pushChanges && STATE.industryCustomRows && Object.keys(STATE.industryCustomRows).length) {
-        const remCr = remote.industryCustomRows || {};
-        Object.entries(STATE.industryCustomRows).forEach(([bk, arr]) => {
-          if (!Array.isArray(arr)) return;
-          const remMap = new Map((Array.isArray(remCr[bk]) ? remCr[bk] : []).filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code), x]));
-          arr.forEach(r => {
-            if (!r || !(r.id || r.code)) return;
-            const rr = remMap.get(String(r.id || r.code));
-            if (!rr || Number(r.rev || 1) > Number(rr.rev || 1) || Boolean(r.voided) !== Boolean(rr.voided)) pushChanges = true;
+        const remCr = remote.customRecords || {};
+        const allCrCheckKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
+        allCrCheckKeys.forEach(k => {
+          const remList = Array.isArray(remCr[k]) ? remCr[k] : [];
+          const remById = new Map(remList.filter(x => x && x.id).map(x => [String(x.id), x]));
+          (STATE.customRecords[k] || []).forEach(r => {
+            if (!r || !r.id) return;
+            const remR = remById.get(String(r.id));
+            if (!remR) { pushChanges = true; return; }
+            if (Boolean(r.voided) !== Boolean(remR.voided)) { pushChanges = true; return; }
+            if (!r.voided) {
+              const myMod = _recModTs(r);
+              const remMod = _recModTs(remR);
+              if (myMod && (!remMod || myMod > remMod)) { pushChanges = true; return; }
+            }
           });
         });
       }
-      if (!pushChanges && STATE.industryRowEdits && Object.keys(STATE.industryRowEdits).length) {
-        const remEd = remote.industryRowEdits || {};
-        Object.entries(STATE.industryRowEdits).forEach(([ek, ev]) => {
-          if (!ev) return;
-          const re = remEd[ek];
-          if (!re || Number(ev.rev || 1) > Number(re.rev || 1) || Boolean(ev.voided) !== Boolean(re.voided)) pushChanges = true;
+      if (!pushChanges) {
+        const remIndEdits = remote.industryRowEdits || {};
+        const myIndEdits = getIndustryRowEditStore();
+        Object.entries(myIndEdits).forEach(([ek, ev]) => {
+          if (!ev || typeof ev !== 'object') return;
+          const rv = remIndEdits[ek];
+          if (!rv || Boolean(ev.voided) !== Boolean(rv.voided) || String(ev.updatedAt || '') > String(rv.updatedAt || '')) {
+            pushChanges = true;
+          }
+        });
+        const remIndRows = remote.industryCustomRows || {};
+        const myIndRows = getIndustryCustomRowsStore();
+        Object.entries(myIndRows).forEach(([bk, bList]) => {
+          if (!Array.isArray(bList) || !bList.length) return;
+          const remB = new Map((Array.isArray(remIndRows[bk]) ? remIndRows[bk] : []).map(x => [String((x && (x.id || x.code)) || ''), x]));
+          bList.forEach(r => {
+            const pid = r && String(r.id || r.code || '').trim();
+            if (!pid) return;
+            const rr = remB.get(pid);
+            if (!rr || Boolean(r.voided) !== Boolean(rr.voided) || String(r._updatedAt || r._createdAt || '') > String(rr._updatedAt || rr._createdAt || '')) {
+              pushChanges = true;
+            }
+          });
         });
       }
       if (!pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
@@ -84304,24 +84519,36 @@
       STATE.cloudUpdatedAt = remote.updatedAt || '';
 
       if (pushChanges || !docs[CLOUD_DOC_KEY]) {
+        setPendingCloudPush(true);
         const payload = cloudPayload();
         const ctrl2 = new AbortController();
-        const timer2 = setTimeout(() => ctrl2.abort(), 15000);
+        const timer2 = setTimeout(() => ctrl2.abort(), 25000);
         const putRes = await fetch(CLOUD_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({ key: CLOUD_KEY, op: 'patch', patch: { [CLOUD_DOC_KEY]: payload } }),
+          body: JSON.stringify({ key: CLOUD_KEY, op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } }),
           signal: ctrl2.signal
         });
         clearTimeout(timer2);
-        if (putRes.ok) STATE.cloudUpdatedAt = payload.updatedAt;
-        else STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
+        if (putRes.ok) {
+          STATE.cloudUpdatedAt = payload.updatedAt;
+          setPendingCloudPush(false);
+        } else {
+          STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
+          scheduleCloudPushRetry(6000);
+        }
+      } else if (STATE.pendingCloudPush) {
+        setPendingCloudPush(false);
       }
       updateCloudBadges();
       if (changed) safeRender();
     } catch (_) {
       STATE.cloudStatus = navigator.onLine ? '● Relay unreachable' : '● Offline Cache';
       updateCloudBadges();
+      if (pushChanges || STATE.pendingCloudPush) {
+        setPendingCloudPush(true);
+        scheduleCloudPushRetry(6000);
+      }
     }
   }
 
@@ -86236,10 +86463,14 @@
 
     const sel = $('enrolUserSelect');
     if (sel) {
+      let staffDirMap = null;
       Array.from(sel.options).forEach(opt => {
         const valStr = String(opt.value || '');
         if (valStr.startsWith('stfbio:')) {
-          const stObj = buildKioskStaffTargetObject(valStr.slice(7));
+          if (!staffDirMap) {
+            staffDirMap = new Map((typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : []).map(s => [norm(s.name), s]));
+          }
+          const stObj = buildKioskStaffTargetObject(valStr.slice(7), staffDirMap);
           if (stObj) {
             const n = userFaceSamples(stObj).length;
             opt.textContent = `${stObj.full_name} · ${stObj.companies} (${n ? n + '/3 poses' : 'no Face ID'})`;
@@ -94039,6 +94270,7 @@
         entered_by: activeUser().full_name,
         entered_by_email: activeUser().email,
         entered_at: nowStamp(),
+        modified_at: new Date().toISOString(),
         voided: false,
         notes: noteParts.join(' · ')
       };
@@ -94067,6 +94299,7 @@
       attRec.shift_id = shiftObj.id;
       attRec.shift_label = shiftObj.badgeLabel;
       attRec.scheduled_hours = schedH;
+      attRec.modified_at = new Date().toISOString();
       attRec.notes = noteParts.join(' · ');
     }
     applyCustomRecordsToSeed();
@@ -104893,6 +105126,9 @@
     const ws = $('workspace');
     if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
     renderApp();
+    if (STATE.authed && !IS_AUTOMATED_TEST && Date.now() - _lastCloudSyncStartedAt > 8000) {
+      syncWithCloud(false);
+    }
   }
 
   // Global Event Listeners
@@ -106055,12 +106291,20 @@
     });
     window.addEventListener('focus', () => {
       if (document.visibilityState === 'visible') {
+        if (Date.now() - _lastCloudSyncStartedAt > 3000) syncWithCloud(false);
         resumeActiveCamerasIfNeeded();
       }
     });
+    if (!IS_AUTOMATED_TEST) {
+      setInterval(() => {
+        if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
+        if (Date.now() - _lastCloudSyncStartedAt < 10000) return;
+        syncWithCloud(Boolean(STATE.pendingCloudPush));
+      }, 12000);
+    }
     window.addEventListener('online', () => { toast('Back online — syncing'); syncWithCloud(true); });
     window.addEventListener('offline', () => { STATE.cloudStatus = '● Offline Cache'; updateCloudBadges(); toast('Offline — entries are kept on this device and sync later', 'err'); });
-    window.addEventListener('pagehide', () => { if (STATE.pushAfterSync) syncWithCloud(true); });
+    window.addEventListener('pagehide', () => { if (STATE.pushAfterSync || STATE.pendingCloudPush) syncWithCloud(true); });
 
     // Expose deterministic hooks for headless verification (build/verify_mfg.mjs)
     window.MFG_FACE_TEST = {
@@ -106363,6 +106607,9 @@
     window.__restoreVoidedRecord = (crKey, id) => restoreVoidedRecord(crKey, id);
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
+    window.__cloudPayload = () => cloudPayload();
+    window.__mergeIndustryRowEdits = incoming => mergeIndustryRowEdits(incoming);
+    window.__mergeIndustryCustomRows = incoming => mergeIndustryCustomRows(incoming);
     window.__sanitizeUniversalCustomRecords = cr => sanitizeUniversalCustomRecords(cr);
     window.__applyCustomRecordsToSeed = () => applyCustomRecordsToSeed();
     window.__getKPI = co => getKPI(co);
@@ -106549,8 +106796,157 @@
     if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
     _cashMovesCacheVal = null;
+    _reOpsCache = null;
+    _reOpsSig = '';
+    _icInteractionsCache = null;
+    _icInteractionsSig = '';
+    if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
     if (typeof FORM_UI !== 'undefined' && FORM_UI) FORM_UI.catCache = null;
     SEED._customRev = (SEED._customRev || 0) + 1;
+  }
+
+  function unpackIndustrySeedPayload(P) {
+    if (!P || typeof P !== 'object' || !P.industries) return;
+    const S = P._s || [];
+    const live = {};
+    for (const [indKey, tables] of Object.entries(P.industries)) {
+      if (!tables || typeof tables !== 'object') continue;
+      live[indKey] = {};
+      for (const [tblKey, t] of Object.entries(tables)) {
+        if (!t || !t.c) {
+          live[indKey][tblKey] = Array.isArray(t) ? t : [];
+          continue;
+        }
+        const cols = t.c, sc = t.sc, rows = t.r || [];
+        const out = new Array(rows.length);
+        for (let idx = 0; idx < rows.length; idx++) {
+          const row = rows[idx];
+          const o = {};
+          for (let i = 0; i < row.length; i++) {
+            let v = row[i];
+            if (v === null || v === undefined) continue;
+            if (sc[i] && typeof v === 'number') v = S[v];
+            o[cols[i]] = v;
+          }
+          out[idx] = o;
+        }
+        live[indKey][tblKey] = out;
+      }
+    }
+    const setCoId = (arr, co, nth, newId) => {
+      if (!Array.isArray(arr)) return;
+      let seen = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || (co && r.company !== co)) continue;
+        if (seen === nth) { r.id = newId; return; }
+        seen++;
+      }
+    };
+    if (live.hospitality) {
+      if (Array.isArray(live.hospitality.venueRows) && live.hospitality.venueRows.length > 30) {
+        const vr = live.hospitality.venueRows;
+        const resorts = ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
+        const buckets = new Map(resorts.map(c => [c, []]));
+        const picked = new Set();
+        for (let i = 0; i < vr.length; i++) {
+          const b = buckets.get(vr[i] && vr[i].company);
+          if (b && b.length < 5) { b.push(vr[i]); picked.add(i); }
+        }
+        const head = [];
+        for (let k = 0; k < 5; k++) {
+          for (const c of resorts) {
+            const b = buckets.get(c);
+            if (b && b[k]) head.push(b[k]);
+          }
+        }
+        const tail = [];
+        for (let i = 0; i < vr.length; i++) {
+          if (!picked.has(i)) tail.push(vr[i]);
+        }
+        live.hospitality.venueRows = head.concat(tail);
+      }
+      setCoId(live.hospitality.membershipRows, 'Blanca', 0, 'MEM-2026-001');
+      setCoId(live.hospitality.membershipRows, 'Palms', 0, 'MEM-2026-003');
+      setCoId(live.hospitality.membershipRows, 'Voile', 0, 'MEM-2026-005');
+      setCoId(live.hospitality.stockRows, 'La Una', 0, 'STK-HSP-01');
+      setCoId(live.hospitality.stockRows, 'Blanca', 0, 'STK-HSP-03');
+      setCoId(live.hospitality.stockRows, 'Platinum', 0, 'STK-HSP-06');
+    }
+    if (live.trading) {
+      setCoId(live.trading.importRows, 'Shacman', 0, 'IMP-SH-2026-014');
+      setCoId(live.trading.importRows, 'Shacman', 1, 'IMP-SH-2026-015');
+      setCoId(live.trading.importRows, 'Korri Auto', 0, 'IMP-KA-2026-021');
+      setCoId(live.trading.landedRows, 'Shacman', 0, 'LC-SH-2026-014');
+      setCoId(live.trading.landedRows, 'Korri Auto', 0, 'LC-KA-2026-021');
+      setCoId(live.trading.grnRows, 'Shacman', 0, 'GRN-SH-2026-041');
+      setCoId(live.trading.grnRows, 'Korri Auto', 0, 'GRN-KA-2026-058');
+      setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
+      setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
+    }
+    if (live.realestate) {
+      setCoId(live.realestate.leases, '4235 Company S.A.L', 0, 'LSE-4235-001');
+      setCoId(live.realestate.leases, '4235 Company S.A.L', 2, 'LSE-4235-002');
+      setCoId(live.realestate.invoices, '4235 Company S.A.L', 5, 'INV-4235-010');
+      setCoId(live.realestate.receipts, '4235 Company S.A.L', 0, 'RCT-4235-101');
+    }
+    if (live.insurance) {
+      if (Array.isArray(live.insurance.policies) && live.insurance.policies[0]) {
+        live.insurance.policies[0].client = 'Phoenicia Logistics SAL · Holdal Group';
+      }
+      if (Array.isArray(live.insurance.remittances)) {
+        const mgf = live.insurance.remittances.find(r => r && r.carrier === 'MedGulf');
+        if (mgf) mgf.id = 'REM-2026-MGF-01';
+        const alz = live.insurance.remittances.find(r => r && r.carrier === 'Allianz SNA');
+        if (alz) alz.id = 'REM-2026-ALZ-01';
+      }
+      if (Array.isArray(live.insurance.statements)) {
+        const axa = live.insurance.statements.find(r => r && r.carrier === 'AXA Middle East');
+        if (axa) axa.id = 'STM-AXA-2026-08';
+        const alzS = live.insurance.statements.find(r => r && r.carrier === 'Allianz SNA');
+        if (alzS) alzS.id = 'STM-ALZ-2026-09';
+      }
+      setCoId(live.insurance.claims, 'Insurance Company', 0, 'CLM-2026-001');
+      setCoId(live.insurance.claims, 'Insurance Company', 2, 'CLM-2026-003');
+    }
+    SEED.industryLive = live;
+    SEED._industryRev = (SEED._industryRev || 0) + 1;
+    mergeIndustryLiveSpineIntoRecords();
+  }
+
+  function mergeIndustryLiveSpineIntoRecords() {
+    if (!SEED || !SEED.records || !SEED._recordsReady || !SEED.industryLive) return;
+    if (SEED._industryLiveSpineMergedRev === SEED._industryRev) return;
+    SEED._industryLiveSpineMergedRev = SEED._industryRev;
+    const insSpine = (SEED.industryLive.insurance && Array.isArray(SEED.industryLive.insurance.spine))
+      ? SEED.industryLive.insurance.spine
+      : [];
+    insSpine.forEach(r => {
+      if (!r || !r.tbl || !r.id) return;
+      const tbl = r.tbl;
+      if (!Array.isArray(SEED.records[tbl])) SEED.records[tbl] = [];
+      const arr = SEED.records[tbl];
+      if (arr.some(x => x && x.id === r.id)) return;
+      const row = Object.assign({}, r);
+      delete row.tbl;
+      row._multiIndustrySeed = true;
+      row._industry = 'Insurance & Brokerage';
+      if (tbl === 'expenses') {
+        row.rep_date = row.date;
+        row.usd_amount = row.amount;
+      } else if (tbl === 'salaries') {
+        row.rep_date = row.date;
+        row.currency = 'USD';
+        row.usd_amount = row.amount;
+        row.lbp_amount = 0;
+      } else if (tbl === 'settlements') {
+        row.rep_date = row.date;
+        row.payable_leg = 'expense';
+        row.kind = 'Payment';
+        row.discount = 0;
+      }
+      arr.push(row);
+    });
   }
 
   async function unpackPackedRecordsIntoSeed(P, shouldYield) {
@@ -106978,8 +107374,16 @@
           collectedUsd: s.totalCollectedRentUsd,
           openArUsd: s.openRentArUsd,
           expiring90d: re.expiringLeaseCount,
-          maintTotalUsd: s.woActualUsd
+          maintTotalUsd: s.woActualUsd,
+          grossPortfolioUsd: s.grossPortfolioUsd,
+          netShareUsd: s.netShareUsd
         },
+        grossPortfolioUsd: s.grossPortfolioUsd,
+        netShareUsd: s.netShareUsd,
+        valuations: re.valuations || [],
+        properties: re.properties || [],
+        sales: re.sales || [],
+        instalments: re.instalments || [],
         leases: (re.leases || []).map(l => ({
           code: l.id,
           company: l.company,
@@ -107032,24 +107436,28 @@
         },
         policies: (ins.policies || []).map(p => ({
           policyNo: p.id,
-          insured: p.insured,
+          insured: p.insured || p.client,
           carrier: p.carrier,
           line: p.line,
-          endDate: p.end_date,
-          daysToExpiry: p.days_to_expiry,
-          gwpUsd: p.gwp_usd,
+          endDate: p.end_date || p.expiry,
+          daysToExpiry: p.days_to_expiry != null ? p.days_to_expiry : p.days_left,
+          gwpUsd: p.gwp_usd != null ? p.gwp_usd : p.gross_prem_usd,
           commUsd: p.net_comm_usd,
           clientBalanceUsd: p.open_ar_usd || 0
         })),
-        carrierMatrix: (ins.statements || []).map(c => ({
-          carrier: c.carrier,
-          policies: c.policies_count || 6,
-          gwpUsd: c.gwp_usd,
-          commUsd: c.expected_comm_usd,
-          netPayableUsd: round2(c.gwp_usd - c.expected_comm_usd),
-          remittedUsd: round2((c.gwp_usd - c.expected_comm_usd) * 0.75),
-          balanceDueUsd: round2((c.gwp_usd - c.expected_comm_usd) * 0.25)
-        }))
+        carrierMatrix: (ins.statements || []).map(c => {
+          const gwp = Number(c.gwp_usd || (Number(c.expected_comm_4117_usd || 0) * 6.5));
+          const comm = Number(c.expected_comm_usd != null ? c.expected_comm_usd : c.expected_comm_4117_usd || 0);
+          return {
+            carrier: c.carrier,
+            policies: c.policies_count || 6,
+            gwpUsd: round2(gwp),
+            commUsd: comm,
+            netPayableUsd: round2(gwp - comm),
+            remittedUsd: round2((gwp - comm) * 0.75),
+            balanceDueUsd: round2((gwp - comm) * 0.25)
+          };
+        })
       };
     },
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
@@ -107119,9 +107527,11 @@
     const shouldYield = !isAutoTest;
     const coreUrl = SEED_MANIFEST.core || './js/seed_core.json';
     const recordsUrl = SEED_MANIFEST.records || './js/seed_records.json';
+    const industriesUrl = SEED_MANIFEST.industries || './js/seed_industries.json';
 
     _seedHydrationPromise = (async () => {
       try {
+        const indFetchPromise = fetch(industriesUrl).then(r => r.ok ? r.json() : null).catch(() => null);
         const coreRes = await fetch(coreUrl);
         if (!coreRes.ok) throw new Error('seed_core HTTP ' + coreRes.status);
         const corePayload = await coreRes.json();
@@ -107141,14 +107551,16 @@
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) safeRender();
 
-        const recRes = await fetch(recordsUrl);
+        const [recRes, indPayload] = await Promise.all([fetch(recordsUrl), indFetchPromise]);
         if (!recRes.ok) throw new Error('seed_records HTTP ' + recRes.status);
         const recPayload = await recRes.json();
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
+        if (indPayload) unpackIndustrySeedPayload(indPayload);
         normalizeDistinctSiteCategories(SEED);
         SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._recordsReady = true;
+        if (indPayload) mergeIndustryLiveSpineIntoRecords();
         if (shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
         invalidateAllSeedCaches();
         applyCustomRecordsToSeed();

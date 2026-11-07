@@ -33564,6 +33564,49 @@ video::-webkit-media-controls-start-playback-button {
   visibility: hidden !important;
 }
 
+#multiIndustryEntitiesPanel .ledger-table th,
+#multiIndustryEntitiesPanel .ledger-table td {
+  padding: 4px 3px;
+  font-size: 10px;
+}
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(1) {
+  max-width: 118px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(2) {
+  max-width: 105px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(3) {
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(4) {
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#snWorkforce .ledger-table th,
+#snWorkforce .ledger-table td {
+  padding: 4px 3px;
+  font-size: 10px;
+}
+#snWorkforce .ledger-table td:nth-child(3),
+#snWorkforce .ledger-table td:nth-child(4) {
+  max-width: 115px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
 /* === ENTRY OPERATOR STAFF ENROLMENT & BU SCOPE DRAWER === */
 .kiosk-wall-enrol-btn {
   border-color: var(--brass-border, rgba(184, 130, 40, 0.36)) !important;
@@ -33663,6 +33706,58 @@ video::-webkit-media-controls-start-playback-button {
 .sfe-empty-add-btn {
   margin-top: 6px;
 }
+
+#multiIndustryEntitiesPanel .ledger-table th,
+#multiIndustryEntitiesPanel .ledger-table td {
+  padding: 3px 3px !important;
+  font-size: 9.8px !important;
+}
+#multiIndustryEntitiesPanel .ledger-table th:nth-child(1),
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(1) {
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table th:nth-child(2),
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(2) {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table th:nth-child(3),
+#multiIndustryEntitiesPanel .ledger-table td:nth-child(3) {
+  max-width: 102px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#multiIndustryEntitiesPanel .ledger-table .badge {
+  font-size: 9px !important;
+  padding: 1px 4px !important;
+}
+#multiIndustryEntitiesPanel .ledger-table .btn {
+  padding: 2px 5px !important;
+  font-size: 9.5px !important;
+}
+#snWorkforce .ledger-table th,
+#snWorkforce .ledger-table td {
+  padding: 3px 3px !important;
+  font-size: 10px !important;
+}
+#snWorkforce .ledger-table th:nth-child(4),
+#snWorkforce .ledger-table td:nth-child(4),
+#snWorkforce .ledger-table th:nth-child(6),
+#snWorkforce .ledger-table td:nth-child(6),
+#snWorkforce .ledger-table th:nth-child(7),
+#snWorkforce .ledger-table td:nth-child(7) {
+  max-width: 105px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sfe-empty-actions {
   display: flex;
   align-items: center;
