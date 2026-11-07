@@ -72,7 +72,10 @@
   }
 
   function isHeadlessEnv() {
-    return Boolean((typeof navigator !== 'undefined' && navigator.webdriver) || window.__MFG_HEADLESS_TEST);
+    return Boolean(
+      (typeof navigator !== 'undefined' && (navigator.webdriver || /HeadlessChrome|HeadlessEdg/i.test(navigator.userAgent || ''))) ||
+      window.__MFG_HEADLESS_TEST
+    );
   }
 
   function revokeScanPreviewBlob() {
@@ -1385,7 +1388,10 @@
     const pickNum = (a, b) => (Number(a) > 0 ? Number(a) : (Number(b) || 0));
     const validForms = ['sales', 'raw', 'receipt', 'vatinvoice', 'fuel', 'expense', 'recurringexpense', 'settlement', 'repair', 'oillog', 'partlog', 'defect', 'salary', 'attendance', 'external', 'treasury', 'conversion', 'jv', 'warehousestock', 'document'];
     const aiForm = String(ai.formType || '').toLowerCase().trim();
-    const finalForm = validForms.includes(aiForm) ? aiForm : det.formType;
+    const detIsCategorizedExpense = det.formType === 'expense' && Boolean(String(det.category || '').trim() || String(det.subcategory || '').trim());
+    const finalForm = (detIsCategorizedExpense && (aiForm === 'raw' || aiForm === 'sales' || aiForm === 'fuel'))
+      ? 'expense'
+      : (validForms.includes(aiForm) ? aiForm : det.formType);
     const aiLines = Array.isArray(ai.lineItems) ? ai.lineItems.filter(x => x && x.description) : [];
     const mergedLines = det.lineItems && det.lineItems.length >= aiLines.length ? det.lineItems : aiLines;
 
@@ -1626,12 +1632,28 @@
 
     // Switch industry/company scope if the document explicitly identifies a permitted company in another industry
     const targetCo = matched.targetCompany;
+    let resolvedNextInd = D.getActiveIndustry ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
     if (targetCo && D.COMPANY_KEY_BY_NAME && D.selectCompanyScope) {
       const coKey = D.COMPANY_KEY_BY_NAME[targetCo];
-      const curInd = D.getActiveIndustry ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+      const curInd = resolvedNextInd;
       const nextInd = D.getActiveIndustry && coKey ? D.getActiveIndustry(coKey) : curInd;
+      resolvedNextInd = nextInd || curInd;
       if (coKey && curInd !== nextInd) {
         try { D.selectCompanyScope(coKey); } catch (_) {}
+      }
+    }
+
+    // Never route non-Manufacturing vendor/delivery bills into quarry-only forms ('raw'/'fuel'/'malfunction')
+    let resolvedIndQuickTpl = overrideFormType ? '' : (parsed.indQuickTpl || '');
+    if (resolvedNextInd && resolvedNextInd !== 'Manufacturing') {
+      if (['raw', 'fuel', 'malfunction', 'pricerule', 'triprate'].includes(targetForm)) {
+        targetForm = canEnter('expense') ? 'expense' : (canEnter('document') ? 'document' : targetForm);
+      } else if (targetForm === 'sales' && !resolvedIndQuickTpl) {
+        if (parsed.supplier && !parsed.customer && canEnter('expense')) {
+          targetForm = 'expense';
+        } else {
+          resolvedIndQuickTpl = 'ss_ind_sales';
+        }
       }
     }
 
@@ -1640,7 +1662,7 @@
     try {
       D.openEntryModal(targetForm, null, {
         forceSwitch: true,
-        indQuickTpl: overrideFormType ? '' : (parsed.indQuickTpl || '')
+        indQuickTpl: resolvedIndQuickTpl
       });
     } finally {
       SCAN_STATE.suppressResetOnModalSwitch = false;
@@ -2075,14 +2097,15 @@
       const detParsed = deterministicParseDocument(extractedText, (attObj && attObj.file_name) || '');
       const prelimScope = collectRegistryCandidates(detParsed.company);
 
-      let aiResult = await tryLocalServerVisionScan({
+      const isBuiltInSample = captureMethod === 'Sample Smart Scan' && !window.__MFG_TEST_LIVE_AI;
+      let aiResult = isBuiltInSample ? null : await tryLocalServerVisionScan({
         fileName: (attObj && attObj.file_name) || '',
         mimeType: (attObj && attObj.mime_type) || '',
         dataUrl: (attObj && attObj.data_url) || '',
         extractedText: String(extractedText || '').slice(0, 6000),
         companies: prelimScope.companies.slice(0, 16)
       });
-      if (!aiResult) {
+      if (!aiResult && !isBuiltInSample) {
         aiResult = await tryCloudAiStructuredParse(extractedText, prelimScope);
       }
 

@@ -18553,18 +18553,40 @@
     const k = getKPI();
     const snSlice = sentinelSlice();
     const { fleet, pricing, parity } = snSlice;
-    const scope = STATE.company === 'manufacturing-group' ? 'WTC & BBConstruction' : COMPANY_BU_MATCH[STATE.company];
+    const activeIndForSn = getActiveIndustry(STATE.company);
+    const isNonMfgSn = Boolean(activeIndForSn && activeIndForSn !== 'Manufacturing');
+    const scope = isNonMfgSn
+      ? (COMPANY_LABELS[STATE.company] || activeIndForSn)
+      : (STATE.company === 'manufacturing-group' ? 'WTC & BBConstruction' : COMPANY_BU_MATCH[STATE.company]);
     const customList = getActiveCustomAlertRules();
     const customSig = customList.map(c => `${c.id}:${c.updated_at || ''}:${c.enabled !== false ? 1 : 0}:${c.threshold}:${c.op}:${c.metric}:${c.company || ''}:${c.target || ''}:${c.mode || ''}:${c.name || ''}:${c.why || ''}`).join(';');
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}`;
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
       rawItems = [];
-      const activeIndForSn = getActiveIndustry(STATE.company);
-      if (activeIndForSn && activeIndForSn !== 'Manufacturing') {
+      if (isNonMfgSn) {
+        const indGl = getIndustryGlModel(activeIndForSn, STATE.company);
+        const indTbRows = (indGl && indGl.gl_trial_balance) || [];
+        const indDr = round2(indTbRows.reduce((a, r) => a + Number(r.debit || 0), 0));
+        const indCr = round2(indTbRows.reduce((a, r) => a + Number(r.credit || 0), 0));
+        const indTbDiff = round2(indDr - indCr);
+        const s1TolInd = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
+        rawItems.push({
+          id: 'S1',
+          code: 'General Ledger · Trial Balance',
+          title: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
+          detail: `Total Debits (${fmtUSD(indDr, 0)}) vs Total Credits (${fmtUSD(indCr, 0)}) across all ${fmtNum(((indGl && indGl.soa_stream) || []).length)} ${activeIndForSn} double-entry journal lines: variance ${fmtUSD(indTbDiff, 2)}.`,
+          severity: Math.abs(indTbDiff) < s1TolInd ? 'ok' : 'crit',
+          badge: Math.abs(indTbDiff) < s1TolInd ? 'PASS · $0.00 DIFF' : 'FAIL · ' + fmtUSD(indTbDiff, 2),
+          company: scope,
+          rawMetric: Math.abs(indTbDiff) < s1TolInd ? 0 : round2(Math.abs(indTbDiff)),
+          rawSecondary: indTbRows.length,
+          navView: 'ledger',
+          navLabel: 'Open Ledger'
+        });
         buildIndustrySentinelItems(activeIndForSn).forEach(x => rawItems.push(x));
-      }
+      } else {
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
     const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
@@ -18771,6 +18793,7 @@
         navLabel: spec.jumpView ? 'Open Module' : ''
       });
     });
+      }
       if (_sentinelRawItemsCache.size > 16) _sentinelRawItemsCache.clear();
       _sentinelRawItemsCache.set(rawItemsKey, rawItems);
     }
@@ -19672,13 +19695,23 @@
     });
     const snChip = (key, lbl) => `<button type="button" class="filter-chip ${snFilter === key ? 'active' : ''}" data-sn-filter="${esc(key)}">${lbl}</button>`;
 
+    const activeInd = getActiveIndustry(STATE.company);
+    const isNonMfgSn = Boolean(activeInd && activeInd !== 'Manufacturing');
     const k = getKPI();
     const s1TolUi = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
     const s8DaysUi = getAlertParam('S8', 'audit_gap_days', 31);
-    const tbTied = Math.abs(Number(k.tb_check || 0)) < s1TolUi;
+    let tbDiffUi = Number(k.tb_check || 0);
+    if (isNonMfgSn) {
+      const indGl = getIndustryGlModel(activeInd, STATE.company);
+      const indTbRows = (indGl && indGl.gl_trial_balance) || [];
+      tbDiffUi = round2(indTbRows.reduce((a, r) => a + Number(r.debit || 0) - Number(r.credit || 0), 0));
+    }
+    const tbTied = Math.abs(tbDiffUi) < s1TolUi;
     const customHitRows = [];
+    const scopedMetricMap = isNonMfgSn ? getCustomAlertMetricsForIndustry(activeInd) : null;
     getActiveCustomAlertRules().forEach(cr => {
       if (cr.enabled === false) return;
+      if (scopedMetricMap && !scopedMetricMap[cr.metric]) return;
       evaluateSingleCustomAlert(cr).slice(0, 25).forEach(h => customHitRows.push(h));
     });
     const belowUsd = Number(pricing.sales_below_agreed_usd || 0);
@@ -19691,6 +19724,8 @@
     const healthSub = reviewedCnt > 0
       ? `<b>${open}</b> open · <b>${reviewedCnt}</b> checked · <b>${nativePassCnt}</b> native pass · <b>${esc(evalModeTxt)}</b>`
       : `<b>${open}</b> rule${open === 1 ? '' : 's'} flagged for review · Evaluated <b>${esc(evalModeTxt)}</b>`;
+    const domBuiltIn = isNonMfgSn ? items.filter(x => !x.isCustom && x.id !== 'S1') : [];
+    const domFlaggedCnt = domBuiltIn.filter(x => x.severity !== 'ok').length;
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
@@ -19714,13 +19749,22 @@
             label: 'Ledger & Trial Balance',
             badge: tbTied ? 'Balanced' : 'Variance',
             badgeCls: tbTied ? 'good' : 'warn',
-            val: tbTied ? '$0.00 Variance' : fmtUSD(k.tb_check || 0, 2),
+            val: tbTied ? '$0.00 Variance' : fmtUSD(tbDiffUi, 2),
             valCls: tbTied ? 'emerald' : 'amber',
             pct: tbTied ? 100 : 50,
             sub: `Lebanese CoA Classes 1-7 double-entry parity across <b>${esc(COMPANY_LABELS[STATE.company])}</b>`,
             tone: 'emerald'
           })}
-          ${insightCard({
+          ${isNonMfgSn ? insightCard({
+            label: 'Domain Controls & Compliance',
+            badge: domFlaggedCnt > 0 ? `${domFlaggedCnt} Active Flags` : 'All Clear',
+            badgeCls: domFlaggedCnt > 0 ? 'warn' : 'good',
+            val: `<span class="insight-drill" data-scroll-panel="industrySentinelsDetailPanel" title="Jump to Itemized Domain Audit Tables">${Math.max(0, domBuiltIn.length - domFlaggedCnt)}/${domBuiltIn.length} <small>Passing</small></span>`,
+            valCls: domFlaggedCnt > 0 ? 'amber' : 'emerald',
+            pct: domBuiltIn.length > 0 ? Math.round(((domBuiltIn.length - domFlaggedCnt) / domBuiltIn.length) * 100) : 100,
+            sub: `<b>${domBuiltIn.length}</b> ${esc(activeInd)} operational watchdogs · <b>${domFlaggedCnt}</b> requiring action`,
+            tone: 'steel'
+          }) : insightCard({
             label: 'Contract Price Compliance',
             badge: `${lapsedCnt} Lapsed Pairs`,
             badgeCls: (belowUsd > 0 || lapsedCnt > 0) ? 'warn' : 'good',
@@ -19730,7 +19774,16 @@
             sub: `<b>${(pricing.top_below_agreed_exceptions || []).length}</b> below-agreed pairs · <b>${lapsedCnt}</b> lapsed agreements trading`,
             tone: 'steel'
           })}
-          ${insightCard({
+          ${isNonMfgSn ? insightCard({
+            label: 'Custom Watchdogs & Sign-Off',
+            badge: customHitRows.length > 0 ? `${customHitRows.length} Custom Hits` : `${reviewedCnt} Signed Off`,
+            badgeCls: customHitRows.length > 0 ? 'warn' : 'good',
+            val: `${reviewedCnt} <small>Checked</small>`,
+            valCls: customHitRows.length > 0 ? 'amber' : 'emerald',
+            pct: Math.max(25, Math.min(100, 100 - customHitRows.length * 10)),
+            sub: `<b>${customHitRows.length}</b> custom rule hits · <span class="insight-drill" data-nav-jump="alert_rules">Tune thresholds</span>`,
+            tone: 'amber'
+          }) : insightCard({
             label: 'Fleet & Payroll Hygiene',
             badge: `${outlierCnt} Fuel Outliers`,
             badgeCls: (outlierCnt > 0 || Number(pricing.unmatched_salary_payments_usd || 0) > 0) ? 'warn' : 'good',
@@ -19798,6 +19851,14 @@
 
       ${renderIndustrySentinelDetailPanel()}
 
+      ${isNonMfgSn ? (customHitRows.length ? `
+      <div class="mini-table-grid">
+        ${miniTable('CUSTOM ALERT EXCEPTIONS', customHitRows, [
+          { label: 'Alert', key: 'rule_name' }, { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
+          { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
+          { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
+        ], 'snCustomAlerts')}
+      </div>` : '') : `
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
@@ -19858,7 +19919,7 @@
           { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
         ], 'snCustomAlerts') : ''}
       </div>
-      ${moduleAnalyticsHtml('sentinels')}
+      ${moduleAnalyticsHtml('sentinels')}`}
     `;
   }
 
@@ -40486,6 +40547,13 @@
     });
 
     getIndustryCustomRows('hld_interactions').forEach(cr => {
+      const crIdUp = String(cr.id || '').trim().toUpperCase();
+      if (crIdUp) {
+        for (let li = legs.length - 1; li >= 0; li--) {
+          const lidUp = String(legs[li].id || '').trim().toUpperCase();
+          if (lidUp === crIdUp || lidUp === `${crIdUp}-MIR`) legs.splice(li, 1);
+        }
+      }
       const fromCo = cr.fromCo || 'Bdeir Holding';
       const toCo = cr.toCo || 'WTC';
       const usd = round2(Math.abs(Number(cr.usd || 0)));
@@ -42233,7 +42301,8 @@
       });
     });
 
-    getIndustryCustomRows('hsp_revenue').forEach(cr => baseVenueRows.unshift(cr));
+    const mergedVenueRows = mergeCustomOverSeededRows(baseVenueRows, getIndustryCustomRows('hsp_revenue'));
+    baseVenueRows.length = 0; baseVenueRows.push(...mergedVenueRows);
     const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
 
     const posRows = pickHsp('posRows', [
@@ -42245,8 +42314,8 @@
       { id: 'POS-CL-906', date: '2026-09-25', company: 'Voile', terminal: 'Voile Deck POS #1', shift: 'Sunset DJ', cashier: 'Jad B.', bills_count: 176, pos_billed_ttc: 12099, cash_usd: 5940, card_whish_usd: 5894, comp_usd: 120, variance_usd: -145, status: 'Close Variance', notes: 'Till Close Alert: VIP bottle service bill #V-88 ($145) awaiting manager sign-off' },
       { id: 'POS-CL-907', date: '2026-09-24', company: 'Platinum', terminal: 'Platinum Concierge Till', shift: 'Full Day', cashier: 'Celine A.', bills_count: 94, pos_billed_ttc: 13986, cash_usd: 4200, card_whish_usd: 9786, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Executive suite folios & corporate banquet deposit cleared' }
     ]);
-    getIndustryCustomRows('hsp_pos').forEach(cr => posRows.unshift(cr));
-    const scopedPosRows = posRows.filter(r => activeNames.has(r.company));
+    const mergedPosRows = mergeCustomOverSeededRows(posRows, getIndustryCustomRows('hsp_pos'));
+    const scopedPosRows = mergedPosRows.filter(r => activeNames.has(r.company));
     posRows.length = 0; posRows.push(...scopedPosRows);
     posRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_pos', r.id); if (p) posRows[i] = Object.assign({}, r, p); });
 
@@ -42269,8 +42338,8 @@
       { id: 'MEM-2026-006', company: 'La Una', member: 'Gourmet Circle VIP (12 Cards)', unit: 'Private Cellar Locker #L-03', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 18000, paid_usd: 18000, balance_usd: 0, due_date: '2026-02-01', status: 'Paid in Full', notes: 'Corporate dining & private cellar membership' },
       { id: 'MEM-2026-007', company: 'Platinum', member: 'Levant Executive Group', unit: 'Penthouse Suite #PT-01', season: 'Annual 2026', start_date: '2026-01-01', end_date: '2026-12-31', contract_usd: 42000, paid_usd: 34000, balance_usd: 8000, due_date: '2026-09-01', status: 'Overdue Arrears', notes: 'Remaining corporate hospitality retainer balance' }
     ]);
-    getIndustryCustomRows('hsp_memberships').forEach(cr => membershipRows.unshift(cr));
-    const scopedMemRows = membershipRows.filter(r => activeNames.has(r.company));
+    const mergedMemRows = mergeCustomOverSeededRows(membershipRows, getIndustryCustomRows('hsp_memberships'));
+    const scopedMemRows = mergedMemRows.filter(r => activeNames.has(r.company));
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
     membershipRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_memberships', r.id); if (p) membershipRows[i] = Object.assign({}, r, p); });
 
@@ -42291,8 +42360,8 @@
       { id: 'STK-HSP-05', date: '2026-09-26', company: 'Voile', store: 'Sunset Deck Bar', item_group: 'Champagne, Rosé & Garnishes', opening_usd: 7200, purchases_in_usd: 10800, transfers_net_usd: 800, recipe_usage_usd: 8600, closing_usd: 10200, r3_ratio: 1.35, status: 'Ratio Watch', notes: 'Purchase/Use Watch (1.35x): High weekend bottle intake vs POS pour depletion' },
       { id: 'STK-HSP-06', date: '2026-09-25', company: 'Platinum', store: 'Executive Lounge Pantry', item_group: 'Gala Catering & VIP Amenities', opening_usd: 5400, purchases_in_usd: 8900, transfers_net_usd: 0, recipe_usage_usd: 8300, closing_usd: 6000, r3_ratio: 1.07, status: 'Optimal', notes: 'VIP suite minibars & ballroom catering stock balanced' }
     ]);
-    getIndustryCustomRows('hsp_stock').forEach(cr => stockRows.unshift(cr));
-    const scopedStkRows = stockRows.filter(r => activeNames.has(r.company));
+    const mergedStkRows = mergeCustomOverSeededRows(stockRows, getIndustryCustomRows('hsp_stock'));
+    const scopedStkRows = mergedStkRows.filter(r => activeNames.has(r.company));
     stockRows.length = 0; stockRows.push(...scopedStkRows);
 
     const menuRows = pickHsp('menuRows', [
@@ -42312,8 +42381,8 @@
       { id: 'NRG-004', date: '2026-09-26', company: 'Voile', asset: 'Volvo Penta 350kVA Beach Club Gen', tank_level_l: 2940, refill_l: 2000, run_hours: 15.0, diesel_used_l: 345, l_per_hr: 23.0, rated_l_hr: 24.0, kwh_gen: 1410, solar_offset_pct: 34, status: 'Normal Burn', notes: 'Sound system, deck chillers & desalination plant balanced' },
       { id: 'NRG-005', date: '2026-09-25', company: 'Platinum', asset: 'MTU 550kVA Twin Redundant Power Plant', tank_level_l: 5600, refill_l: 2500, run_hours: 17.0, diesel_used_l: 476, l_per_hr: 28.0, rated_l_hr: 29.5, kwh_gen: 2150, solar_offset_pct: 31, status: 'Normal Burn', notes: 'Automatic load-sharing between Gen A and roof solar array' }
     ]);
-    getIndustryCustomRows('hsp_energy').forEach(cr => energyRows.unshift(cr));
-    const scopedNrgRows = energyRows.filter(r => activeNames.has(r.company));
+    const mergedNrgRows = mergeCustomOverSeededRows(energyRows, getIndustryCustomRows('hsp_energy'));
+    const scopedNrgRows = mergedNrgRows.filter(r => activeNames.has(r.company));
     energyRows.length = 0; energyRows.push(...scopedNrgRows);
 
     const maintRows = pickHsp('maintRows', [
@@ -43613,7 +43682,7 @@
     const pickTrd = (key, fallback) => (liveTrd && Array.isArray(liveTrd[key]) && liveTrd[key].length) ? liveTrd[key].slice() : fallback;
 
     // 1. Sales Invoices, Lines & Invoice Books Sequence/Gap Check (t82 TTC plain-label, t83 11% VAT, t74 Invoice Books)
-    const rawSalesRows = getIndustryCustomRows('trd_sales').concat(pickTrd('salesRows', [
+    const rawSalesRows = mergeCustomOverSeededRows(pickTrd('salesRows', [
       { id: 'INV-SH-2026-019', book: 'BK-SH-2026-01', seq: 19, date: '2026-10-28', company: 'Shacman', customer: 'Bdeir Contracting & Earthworks', category: 'Heavy Truck Sale', item: 'Shacman X3000 6x4 Tractor Head (WP12.430E201)', chassis: 'LZGJLDR44PX019281', qty: 2, net_usd: 158000, vat_usd: 17380, ttc_usd: 175380, cost_usd: 131200, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-020', book: 'BK-SH-2026-01', seq: 20, date: '2026-10-30', company: 'Shacman', customer: 'Levant Quarry & Transit SAL', category: 'Heavy Truck Sale', item: 'Shacman F3000 8x4 Heavy Tipper 380HP', chassis: 'LZGJLDR44PX019288', qty: 1, net_usd: 92000, vat_usd: 10120, ttc_usd: 102120, cost_usd: 75400, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
       { id: 'INV-SH-2026-018', book: 'BK-SH-2026-01', seq: 18, date: '2026-10-24', company: 'Shacman', customer: 'Mediterranean Haulage Group', category: 'Heavy Truck Sale', item: 'Shacman M3000 6x4 Transit Concrete Mixer 10m³', chassis: 'LZGJLDR44PX019274', qty: 2, net_usd: 184000, vat_usd: 20240, ttc_usd: 204240, cost_usd: 151000, vat_flag: '11% Official VAT', book_status: '20/20 Complete (0 Missing)' },
@@ -43622,7 +43691,7 @@
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
-    ])).map(r => {
+    ]), getIndustryCustomRows('trd_sales')).map(r => {
       const margin_usd = round2(r.ttc_usd - r.cost_usd);
       const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
       const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02');
@@ -43655,13 +43724,13 @@
     }));
 
     // 4. Import Files, Purchase Orders & Backorders
-    const rawImportRows = getIndustryCustomRows('trd_purchases').concat(pickTrd('importRows', [
+    const rawImportRows = mergeCustomOverSeededRows(pickTrd('importRows', [
       { id: 'IMP-SH-2026-014', date: '2026-10-12', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Xi\'an / Qingdao Port', container_bl: 'COSU6891204410 · 6 Ro-Ro Units', ordered_qty: 6, received_qty: 6, backorder_qty: 0, fob_usd: 384000, landed_add_usd: 34800, total_landed_usd: 418800, status: 'Cleared & Costed' },
       { id: 'IMP-SH-2026-015', date: '2026-10-26', company: 'Shacman', supplier: 'Weichai Power & Fast Gear OEM Export', origin: 'Shanghai Port', container_bl: 'MSCU9021847120 · 1x40HC', ordered_qty: 140, received_qty: 112, backorder_qty: 28, fob_usd: 64200, landed_add_usd: 7450, total_landed_usd: 71650, status: 'Pending Landed Alloc' },
       { id: 'IMP-SH-2026-016', date: '2026-10-29', company: 'Shacman', supplier: 'Shaanxi Heavy Duty Automobile Imp & Exp Co.', origin: 'Qingdao Port', container_bl: 'CMAU4410928110 · 4 Tipper Units', ordered_qty: 4, received_qty: 2, backorder_qty: 2, fob_usd: 268000, landed_add_usd: 22400, total_landed_usd: 290400, status: 'Partial Arrival · Backorder' },
       { id: 'IMP-KA-2026-021', date: '2026-10-15', company: 'Korri Auto', supplier: 'Shandong Heavy Tyre & Radial Works', origin: 'Qingdao Port', container_bl: 'OOLU7728192001 · 1x40HC Tyres', ordered_qty: 220, received_qty: 220, backorder_qty: 0, fob_usd: 41800, landed_add_usd: 5620, total_landed_usd: 47420, status: 'Cleared & Costed' },
       { id: 'IMP-KA-2026-022', date: '2026-10-27', company: 'Korri Auto', supplier: 'EuroDiesel Filters & Brake Components GmbH', origin: 'Hamburg / Beirut Port', container_bl: 'HLXU3319084412 · 1x20FT', ordered_qty: 480, received_qty: 390, backorder_qty: 90, fob_usd: 28400, landed_add_usd: 3180, total_landed_usd: 31580, status: 'Pending Landed Alloc' }
-    ])).map(rawR => {
+    ]), getIndustryCustomRows('trd_purchases')).map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_purchases', rawR.id);
       const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const fob_usd = Number(r.fob_usd || 0);
@@ -43702,7 +43771,7 @@
     ]);
 
     // 7. Showroom & Serial Units (44 Heavy Trucks & Commercial Units by Chassis/Engine/VIN)
-    const rawSerialUnits = getIndustryCustomRows('trd_trucks').concat(pickTrd('serialUnits', [
+    const rawSerialUnits = mergeCustomOverSeededRows(pickTrd('serialUnits', [
       { id: 'SU-SH-001', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019281', engine_no: 'WP12.430E201-882104', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-002', company: 'Shacman', model: 'Shacman X3000 6x4 Tractor Head 430HP', family: 'X3000 Series', chassis_vin: 'LZGJLDR44PX019282', engine_no: 'WP12.430E201-882109', year: 2026, warehouse: 'Main Showroom', fob_usd: 60200, landed_add_usd: 5400, landed_cost_usd: 65600, list_price_usd: 87690, status: 'Sold & Delivered', buyer: 'Bdeir Contracting & Earthworks' },
       { id: 'SU-SH-003', company: 'Shacman', model: 'Shacman F3000 8x4 Heavy Tipper 380HP', family: 'F3000 Series', chassis_vin: 'LZGJLDR44PX019288', engine_no: 'WP10.380E32-774190', year: 2026, warehouse: 'Bchamoun Yard', fob_usd: 69200, landed_add_usd: 6200, landed_cost_usd: 75400, list_price_usd: 102120, status: 'Sold & Delivered', buyer: 'Levant Quarry & Transit SAL' },
@@ -43712,7 +43781,7 @@
       { id: 'SU-SH-007', company: 'Shacman', model: 'Shacman L3000 4x2 Municipal Water Tanker', family: 'L3000 Series', chassis_vin: 'LZGJLDR44PX019312', engine_no: 'ISD245-50-440198', year: 2026, warehouse: 'Workshop', fob_usd: 46800, landed_add_usd: 4200, landed_cost_usd: 51000, list_price_usd: 69500, status: 'In PDI', buyer: 'Pre-Delivery Inspection Bay 2' },
       { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2025, warehouse: 'Al Ghazieh', fob_usd: 29500, landed_add_usd: 3100, landed_cost_usd: 32600, list_price_usd: 42900, status: 'In Showroom', buyer: 'Available (Al-Ghazieh Branch)' },
       { id: 'SU-KA-002', company: 'Korri Auto', model: 'Hydraulic Lowbed Recovery Trailer 60T', family: 'Heavy Trailers', chassis_vin: 'TRL60TLB2026KA009', engine_no: 'HYD-AXLE-BPW-3AX', year: 2026, warehouse: 'Al Ghazieh', fob_usd: 34200, landed_add_usd: 3600, landed_cost_usd: 37800, list_price_usd: 49500, status: 'Reserved', buyer: 'South Coast Auto Fleet' }
-    ])).map(rawR => {
+    ]), getIndustryCustomRows('trd_trucks')).map(rawR => {
       const wp = getIndustryWorkflowPatch('trd_trucks', rawR.id);
       const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const landed_cost_usd = round2(Number(r.landed_cost_usd ?? r.landed_usd ?? 0));
@@ -43737,7 +43806,7 @@
     ]);
 
     // 9. Spare Parts & Multi-Warehouse Stock Valuation (593 code-keyed items across 5 Warehouses + Rule T4 Reorder Alerts)
-    const rawStockRows = getIndustryCustomRows('trd_stock').concat(pickTrd('stockRows', [
+    const rawStockRows = mergeCustomOverSeededRows(pickTrd('stockRows', [
       { id: 'PRT-WH-612600081335', code: '612600081335', name: 'Weichai WP12 High-Pressure Common Rail Injector', company: 'Shacman', warehouse: 'Bchamoun Yard', category: 'Engine & Fuel System', on_hand: 28, reorder_min: 15, wac_usd: 285, retail_usd: 395 },
       { id: 'PRT-WH-12JS200T-1701', code: '12JS200T-1701', name: 'Fast 12-Speed Synchronizer & Main Shaft Kit', company: 'Shacman', warehouse: 'Main Showroom', category: 'Transmission & Gearbox', on_hand: 6, reorder_min: 8, wac_usd: 1120, retail_usd: 1490 },
       { id: 'PRT-WH-DZ9525951003', code: 'DZ9525951003', name: 'Shacman X3000 Intercooler & Radiator Assembly', company: 'Shacman', warehouse: 'Bonded Yard', category: 'Cooling & Chassis', on_hand: 14, reorder_min: 6, wac_usd: 640, retail_usd: 880 },
@@ -43746,7 +43815,7 @@
       { id: 'PRT-KA-TYR-1200R24', code: 'TYR-1200R24', name: '12.00R24 20PR Mining & Quarry Lug Tyre', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Heavy Tyres', on_hand: 18, reorder_min: 24, wac_usd: 325, retail_usd: 430 },
       { id: 'PRT-KA-FLT-LF9009', code: 'FLT-LF9009', name: 'Fleetguard LF9009 / FS19732 Heavy Filter Service Pack', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Filters & Consumables', on_hand: 210, reorder_min: 80, wac_usd: 48, retail_usd: 68 },
       { id: 'PRT-KA-LUB-15W40-208L', code: 'LUB-15W40-208L', name: 'CI-4 15W-40 Heavy Diesel Engine Oil Drum (208L)', company: 'Korri Auto', warehouse: 'Al Ghazieh', category: 'Lubricants & Fluids', on_hand: 32, reorder_min: 12, wac_usd: 440, retail_usd: 620 }
-    ])).map(r => {
+    ]), getIndustryCustomRows('trd_stock')).map(r => {
       const on_hand = Number(r.on_hand ?? r.qty_on_hand ?? 0);
       const reorder_min = Number(r.reorder_min ?? r.min_qty ?? 0);
       const wac_usd = Number(r.wac_usd ?? r.unit_cost_usd ?? 0);
@@ -45362,10 +45431,14 @@
       { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
     ]);
 
-    getIndustryCustomRows('re_leases').forEach(cr => leases.unshift(cr));
-    getIndustryCustomRows('re_invoicing').forEach(cr => invoices.unshift(cr));
-    getIndustryCustomRows('re_sales').forEach(cr => sales.unshift(cr));
-    getIndustryCustomRows('re_workorders').forEach(cr => workorders.unshift(cr));
+    const mLeases = mergeCustomOverSeededRows(leases, getIndustryCustomRows('re_leases'));
+    leases.length = 0; leases.push(...mLeases);
+    const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'));
+    invoices.length = 0; invoices.push(...mInvoices);
+    const mSales = mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales'));
+    sales.length = 0; sales.push(...mSales);
+    const mWorkorders = mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'));
+    workorders.length = 0; workorders.push(...mWorkorders);
     leases.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_leases', r.id); if (p) leases[i] = Object.assign({}, r, p); });
     workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
 
@@ -46675,11 +46748,16 @@
         net_comm_usd: netCommN,
         net_payable_4017_usd: pay4017N
       });
-      policies.unshift(cp);
-      if (/endorsement/i.test(String(cp.type || ''))) customEndOnlyCount += 1;
-      else customPolOnlyCount += 1;
+      const existingPolIdx = policies.findIndex(p => p && String(p.id || '').trim().toUpperCase() === String(cp.id || '').trim().toUpperCase());
+      if (existingPolIdx >= 0) {
+        policies[existingPolIdx] = Object.assign({}, policies[existingPolIdx], cp);
+      } else {
+        policies.unshift(cp);
+        if (/endorsement/i.test(String(cp.type || ''))) customEndOnlyCount += 1;
+        else customPolOnlyCount += 1;
+      }
       const clientBilled = round2(Number(cp.gross_prem_usd || 0) - Number(cp.discount_usd || 0) + Number(cp.policy_fee_usd || 0));
-      billing.unshift({
+      const invObj = {
         id: `INV-${cp.id}`,
         date: cp.date || '2026-10-30',
         due_date: cp.date || '2026-11-30',
@@ -46696,8 +46774,11 @@
         open_ar_4112_usd: clientBilled,
         receipt_ref: 'Open Client Note',
         status: 'Open AR'
-      });
-      remittances.unshift({
+      };
+      const exBillIdx = billing.findIndex(b => b && (b.id === invObj.id || b.policy_no === cp.id));
+      if (exBillIdx >= 0) billing[exBillIdx] = Object.assign({}, billing[exBillIdx], invObj);
+      else billing.unshift(invObj);
+      const remObj = {
         id: `REM-${cp.id}`,
         carrier: cp.carrier,
         company: co,
@@ -46710,10 +46791,13 @@
         settlement_mode: 'Net of Commission',
         next_due: '2026-11-30',
         status: 'Pending Settlement'
-      });
+      };
+      const exRemIdx = remittances.findIndex(rm => rm && rm.id === remObj.id);
+      if (exRemIdx >= 0) remittances[exRemIdx] = Object.assign({}, remittances[exRemIdx], remObj);
+      else remittances.unshift(remObj);
       const dLeft = Number(cp.days_left);
       if (Number.isFinite(dLeft) && dLeft <= 90) {
-        renewals.unshift({
+        const renObj = {
           id: `REN-${cp.id}`,
           policy_no: cp.id,
           company: co,
@@ -46728,23 +46812,32 @@
           producer: cp.producer || 'Joseph Khalil',
           stage: 'Active Renewal Queue',
           status: dLeft < 0 ? 'Expired (not renewed)' : 'Due for renewal'
-        });
+        };
+        const exRenIdx = renewals.findIndex(rn => rn && (rn.id === renObj.id || rn.policy_no === cp.id));
+        if (exRenIdx >= 0) renewals[exRenIdx] = Object.assign({}, renewals[exRenIdx], renObj);
+        else renewals.unshift(renObj);
       }
     });
-    getIndustryCustomRows('ins_claims').forEach(cc => claims.unshift(cc));
-    getIndustryCustomRows('ins_remittances').forEach(cr => remittances.unshift(cr));
+    const mClaims = mergeCustomOverSeededRows(claims, getIndustryCustomRows('ins_claims'));
+    claims.length = 0; claims.push(...mClaims);
+    const mRemit = mergeCustomOverSeededRows(remittances, getIndustryCustomRows('ins_remittances'));
+    remittances.length = 0; remittances.push(...mRemit);
     const customInsAgr = getIndustryCustomRows('ins_agreements');
     customInsAgr.slice().reverse().forEach(ca => {
-      if (ca.autoClosePriorId) {
-        const hit = agreements.find(a => a.id === ca.autoClosePriorId);
+      const closeIds = Array.isArray(ca.autoClosePriorIds) ? ca.autoClosePriorIds : (ca.autoClosePriorId ? [ca.autoClosePriorId] : []);
+      closeIds.forEach(cid => {
+        const hit = agreements.find(a => a.id === cid);
         if (hit) {
           hit.end_date = ca.autoCloseDate || '2026-06-30';
           hit.status = 'Closed Window';
           hit.backfill_status = `Auto-Closed at ${hit.end_date}`;
         }
-      }
-      agreements.unshift(ca);
+      });
+      const exAgrIdx = agreements.findIndex(a => a && String(a.id || '').trim().toUpperCase() === String(ca.id || '').trim().toUpperCase());
+      if (exAgrIdx >= 0) agreements[exAgrIdx] = Object.assign({}, agreements[exAgrIdx], ca);
+      else agreements.unshift(ca);
     });
+    policies.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_policies', r.id); if (p) policies[i] = Object.assign({}, r, p); });
     renewals.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_renewals', r.id || r.policy_no); if (p) renewals[i] = Object.assign({}, r, p); });
     statements.forEach((r, i) => { const p = getIndustryWorkflowPatch('ins_statements', r.id); if (p) statements[i] = Object.assign({}, r, p); });
 
@@ -47631,7 +47724,9 @@
     if (!ind || ind === 'Manufacturing') return [];
     const scopeLabel = COMPANY_LABELS[STATE.company] || ind;
     const onlyEnabled = list => {
-      const base = list.filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId));
+      const base = list
+        .filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId))
+        .map(it => Object.assign({}, it, { scrollPanel: `snInd_${it.id}` }));
       const scopedMetrics = getCustomAlertMetricsForIndustry(ind);
       const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric]);
       if (!customRules.length) return base;
@@ -47653,7 +47748,7 @@
           company: (!cr.company || cr.company === 'all') ? scopeLabel : cr.company,
           rawMetric: hits.length,
           rawSecondary: top ? Math.round(Math.abs(Number(top.value || 0))) : 0,
-          scrollPanel: 'industrySentinelsDetailPanel',
+          scrollPanel: hits.length > 0 ? 'snCustomAlerts' : 'industrySentinelsDetailPanel',
           navView: spec.jumpView || 'alert_rules',
           navLabel: 'Open Register'
         };
@@ -48018,49 +48113,333 @@
     return [];
   }
 
+  function buildIndustrySentinelExceptionTables(ind) {
+    const canWf = canModifyRecord() || canEnterForm('sales') || canEnterForm('expense');
+    if (ind === 'Holding & Treasury') {
+      const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
+      const hldExps = filterRecords(SEED.records.expenses || [], { company: 'bdeirholding', strictBu: true, ignoreSearch: true });
+      const loans = getIndustryCustomRows('hld_loans').concat((filterRecords(SEED.records.loans || [], { ignorePeriod: true, ignoreCompany: true, ignoreSearch: true }) || []).slice(0, 10));
+      return [
+        {
+          id: 'H1', tbl: 'hld_interactions', title: 'ONE-SIDED INTERCOMPANY LEGS AWAITING MIRROR PAIRING',
+          headers: ['Voucher ID', 'Date', 'From Sister', 'To Sister', 'Channel', 'Open Amount ($)'],
+          rows: ((icRes.openLegs && icRes.openLegs.length ? icRes.openLegs : (icRes.interactions || []).slice(0, 6))).map(r => ({
+            rid: r.id || `IC-${r.date || '01'}`, co: r.fromCo || 'Bdeir Holding',
+            cells: [r.id || `IC-${r.date || '01'}`, r.date || SEED_DATE, r.fromCo || 'Bdeir Holding', r.toCo || 'WTC', r.method || 'Bank Transfer', fmtUSD(r.amountUsd || r.givenUsd || r.paidBackUsd || 0, 2)]
+          }))
+        },
+        {
+          id: 'H2', tbl: 'hld_interactions', title: 'BILATERAL SISTER CORRIDORS: GIVEN VS PAID BACK',
+          headers: ['Corridor', 'Transfers', 'Given ($)', 'Paid Back ($)', 'Repay %', 'Net Unpaid ($)'],
+          rows: (icRes.byBilateral || []).slice(0, 8).map((b, i) => ({
+            rid: `COR-${i + 1}`, co: 'Bdeir Holding',
+            cells: [String(b.corridorLabel || '').replace(/[↔→]/g, ' / '), fmtNum(b.count || 0), fmtUSD(b.givenUsd || 0, 0), fmtUSD(b.paidBackUsd || 0, 0), `${Number(b.repayPct || 0).toFixed(1)}%`, fmtUSD(b.netUnpaidUsd || 0, 0)]
+          }))
+        },
+        {
+          id: 'H3', tbl: 'expenses', title: 'HOLDING SHARED-SERVICES OVERHEAD VOUCHERS',
+          headers: ['Voucher #', 'Date', 'Entity', 'Category', 'Supplier / Advisory', 'Amount ($)'],
+          rows: (hldExps.length ? hldExps.slice(0, 8) : [{ id: 'HQ-EXP-01', date: '2026-10-28', company: 'Bdeir Holding', category: 'Audit & Statutory Advisory', supplier: 'Deloitte & Touche Advisory', total: 18500 }]).map((e, i) => ({
+            rid: e.id || `HQ-${i + 1}`, co: e.company || 'Bdeir Holding',
+            cells: [e.id || `HQ-${i + 1}`, String(e.date || SEED_DATE).slice(0, 10), e.company || 'Bdeir Holding', e.category || 'Shared Services', e.supplier || e.party || 'Advisory Vendor', fmtUSD(Math.abs(Number(e.total || e.amount || 0)), 2)]
+          }))
+        },
+        {
+          id: 'H4', tbl: 'hld_loans', title: 'CENTRAL BORROWING FACILITIES & REPAYMENT SCHEDULE',
+          headers: ['Facility ID', 'Entity', 'Lender / Counterparty', 'Principal ($)', 'Balance ($)', 'Action'],
+          rows: loans.slice(0, 8).map((l, i) => {
+            const fid = l.id || `LN-HLD-0${i + 1}`;
+            const prin = Number(l.principal_usd || l.principal || l.amount || 45000);
+            const rep = Number(l.repaid_usd || l.repaid || l.paid || Math.round(prin * 0.35));
+            const bal = Math.max(0, round2(prin - rep));
+            const wf = (canWf && bal > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hld_loan_repay" data-wf-id="${esc(fid)}" data-wf-co="${esc(l.company || 'Bdeir Holding')}" data-wf-party="${esc(l.lender || l.party || 'Central Facility')}" data-wf-amt="${bal}">+ Repay</button>` : '<span class="badge badge-ok">Settled</span>';
+            return { rid: fid, co: l.company || 'Bdeir Holding', cells: [fid, l.company || 'Bdeir Holding', l.lender || l.party || 'Central Facility', fmtUSD(prin, 0), fmtUSD(bal, 0)], rawLastHtml: wf };
+          })
+        },
+        {
+          id: 'H5', tbl: 'hld_interactions', title: 'CONSOLIDATED SISTER SUB-ACCOUNT CONTROL TIE-OUT',
+          headers: ['Directed Corridor', 'Entries', 'Matched ($)', 'Open ($)', 'Tie-Out Status'],
+          rows: (icRes.byPair || []).slice(0, 8).map((p, i) => ({
+            rid: `PAIR-${i + 1}`, co: 'Bdeir Holding',
+            cells: [String(p.pairKey || '').replace(/[↔→]/g, ' to '), fmtNum(p.count || 0), fmtUSD(p.matchedUsd || 0, 0), fmtUSD(p.openUsd || 0, 0), '100% Tied']
+          }))
+        }
+      ];
+    }
+    if (ind === 'Hospitality & Resorts') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+      const tillTol = getAlertParam('ind_hsp_02', 'till_tol_usd', 5);
+      const maxRatio = getAlertParam('ind_hsp_03', 'max_ratio_x', 1.25);
+      const spikePct = getAlertParam('ind_hsp_04', 'spike_pct', 15);
+      const arrWarn = getAlertParam('ind_hsp_05', 'arrears_warn_usd', 1000);
+      const posFlagged = hsp.posRows.filter(r => Math.abs(Number(r.variance_usd || 0)) > tillTol);
+      const ratioFlagged = hsp.stockRows.filter(r => Number(r.r3_ratio || 0) > maxRatio);
+      const spikeFlagged = hsp.energyRows.filter(r => Number(r.rated_l_hr || 0) > 0 && ((Number(r.l_per_hr || 0) - Number(r.rated_l_hr)) / Number(r.rated_l_hr)) * 100 > spikePct);
+      const arrFlagged = hsp.membershipRows.filter(r => Number(r.balance_usd || 0) > arrWarn);
+      return [
+        {
+          id: 'R1', tbl: 'hsp_revenue', title: 'DAILY VENUE REVENUE & CHALET CUT-OFF VERIFICATION',
+          headers: ['Sheet ID', 'Date', 'Resort', 'Venue / Outlet', 'Covers', 'Revenue ($)'],
+          rows: (hsp.venueRows || []).slice(0, 8).map(v => ({
+            rid: v.id, co: v.company,
+            cells: [v.id, v.date, v.company, v.outlet, fmtNum(v.covers || 0), fmtUSD(v.total_ttc || 0, 0)]
+          }))
+        },
+        {
+          id: 'R2', tbl: 'hsp_pos', title: 'POS TILL DAILY CLOSES & DRAWER VARIANCE EXCEPTIONS',
+          headers: ['Close ID', 'Date', 'Resort', 'POS Terminal', 'Billed ($)', 'Variance ($)', 'Action'],
+          rows: (posFlagged.length ? posFlagged : hsp.posRows).slice(0, 8).map(r => {
+            const hasVar = Math.abs(Number(r.variance_usd || 0)) > tillTol;
+            const wf = (canWf && hasVar) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hsp_pos_resolve" data-wf-id="${esc(r.id)}" data-wf-co="${esc(r.company)}" data-wf-terminal="${esc(r.terminal)}" data-wf-cashier="${esc(r.cashier)}" data-wf-billed="${r.pos_billed_ttc}" data-wf-cash="${r.cash_usd}" data-wf-card="${r.card_whish_usd}" data-wf-comp="${r.comp_promo_usd || 0}">Log Close</button>` : '<span class="badge badge-ok">Balanced</span>';
+            return { rid: r.id, co: r.company, cells: [r.id, r.date, r.company, `${r.terminal} (${r.cashier})`, fmtUSD(r.pos_billed_ttc, 0), fmtUSD(r.variance_usd, 2)], rawLastHtml: wf };
+          })
+        },
+        {
+          id: 'R3', tbl: 'hsp_stock', title: 'KITCHEN, BAR & CELLAR PURCHASE-TO-USAGE RATIO WATCHDOG',
+          headers: ['Stock ID', 'Resort', 'Store / Cellar', 'Purchases ($)', 'Recipe Usage ($)', 'Ratio'],
+          rows: (ratioFlagged.length ? ratioFlagged : hsp.stockRows).slice(0, 8).map(st => ({
+            rid: st.id, co: st.company,
+            cells: [st.id, st.company, `${st.store} · ${st.item_group}`, fmtUSD(st.purchases_in_usd, 0), fmtUSD(st.recipe_usage_usd, 0), `${st.r3_ratio.toFixed(2)}x (${st.status})`]
+          }))
+        },
+        {
+          id: 'R4', tbl: 'hsp_energy', title: 'RESORT GENERATOR DIESEL L/HR BURN SPIKE & SOLAR LOGS',
+          headers: ['Log ID', 'Date', 'Resort', 'Generator Asset', 'Diesel (L)', 'Actual vs Rated'],
+          rows: (spikeFlagged.length ? spikeFlagged : hsp.energyRows).slice(0, 8).map(e => ({
+            rid: e.id, co: e.company,
+            cells: [e.id, e.date, e.company, e.asset, `${fmtNum(e.diesel_used_l)} L`, `${e.l_per_hr.toFixed(1)} / ${e.rated_l_hr.toFixed(1)} L/hr (${e.status})`]
+          }))
+        },
+        {
+          id: 'R5', tbl: 'hsp_memberships', title: 'SEASONAL CHALET & CABANA MEMBERSHIP ARREARS QUEUE',
+          headers: ['Contract ID', 'Resort', 'Member Account', 'Unit', 'Contract ($)', 'Remaining ($)', 'Action'],
+          rows: (arrFlagged.length ? arrFlagged : hsp.membershipRows).slice(0, 8).map(m => {
+            const wf = (canWf && Number(m.balance_usd || 0) > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="hsp_mem_collect" data-wf-id="${esc(m.id)}" data-wf-co="${esc(m.company)}" data-wf-member="${esc(m.member)}" data-wf-unit="${esc(m.unit)}" data-wf-season="${esc(m.season)}" data-wf-contract="${m.contract_usd}">Collect</button>` : '<span class="badge badge-ok">Paid</span>';
+            return { rid: m.id, co: m.company, cells: [m.id, m.company, m.member, m.unit, fmtUSD(m.contract_usd, 0), fmtUSD(m.balance_usd, 0)], rawLastHtml: wf };
+          })
+        }
+      ];
+    }
+    if (ind === 'Automotive & Heavy Trading') {
+      const trd = computeTradingOperations({ ignoreSearch: true });
+      const minMargin = getAlertParam('ind_trd_02', 'min_margin_pct', 16);
+      const maxDso = getAlertParam('ind_trd_03', 'max_dso_days', 140);
+      const bufQty = getAlertParam('ind_trd_04', 'reorder_buffer_qty', 0);
+      const unallocTol = getAlertParam('ind_trd_05', 'unalloc_tol_usd', 100);
+      const gapRows = trd.salesRows.filter(r => r.is_gap);
+      const lowMargin = trd.salesRows.filter(r => !r.is_gap && r.margin_pct < minMargin);
+      const agedAr = trd.receivableRows.filter(r => r.gross_ar_usd > 0 && r.dso_days > maxDso);
+      const reorder = trd.stockRows.filter(r => Number(r.on_hand || 0) <= Number(r.reorder_min || 0) + bufQty);
+      const unalloc = trd.landedRows.filter(r => Number(r.unallocated_usd || 0) > unallocTol);
+      return [
+        {
+          id: 'T1', tbl: 'trd_sales', title: 'PHYSICAL INVOICE BOOK SEQUENCE GAPS & AUDIT TRAIL',
+          headers: ['Invoice / Serial', 'Book #', 'Entity', 'Date', 'Customer / Audit Note', 'Total ($)'],
+          rows: (gapRows.length ? gapRows : trd.salesRows.slice(0, 6)).map(r => ({
+            rid: r.id, co: r.company,
+            cells: [r.id, r.book_no || 'BK-2026', r.company, r.date, r.customer || r.item || 'Sequence Check', fmtUSD(r.total_ttc_usd || 0, 0)]
+          }))
+        },
+        {
+          id: 'T2', tbl: 'trd_sales', title: 'LOW-MARGIN HEAVY TRUCK & SPARE PARTS INVOICES',
+          headers: ['Invoice #', 'Date', 'Entity', 'Customer', 'Sale ($)', 'Landed Cost ($)', 'Margin %'],
+          rows: (lowMargin.length ? lowMargin : trd.salesRows.filter(r => !r.is_gap).slice(0, 6)).map(r => ({
+            rid: r.id, co: r.company,
+            cells: [r.id, r.date, r.company, r.customer, fmtUSD(r.total_ttc_usd, 0), fmtUSD(r.landed_cost_usd, 0), `${Number(r.margin_pct || 0).toFixed(1)}%`]
+          }))
+        },
+        {
+          id: 'T3', tbl: 'trd_sales', title: 'AGED CUSTOMER RECEIVABLES VS SEPARATED ADVANCES',
+          headers: ['Account ID', 'Entity', 'Customer', 'DSO (Days)', 'Advances ($)', 'Gross AR ($)'],
+          rows: (agedAr.length ? agedAr : trd.receivableRows).slice(0, 8).map(r => ({
+            rid: r.id, co: r.company,
+            cells: [r.id, r.company, r.customer, `${fmtNum(r.dso_days)}d`, fmtUSD(r.advances_usd || 0, 0), fmtUSD(r.gross_ar_usd || 0, 0)]
+          }))
+        },
+        {
+          id: 'T4', tbl: 'trd_stock', title: 'BELOW-REORDER SPARE PARTS SKUS ACROSS 5 WAREHOUSES',
+          headers: ['Part Code', 'Entity', 'Warehouse', 'Description', 'On Hand / Min', 'Stock Val ($)'],
+          rows: (reorder.length ? reorder : trd.stockRows).slice(0, 8).map(st => ({
+            rid: st.code || st.id, co: st.company,
+            cells: [st.code || st.id, st.company, st.warehouse, st.name, `${fmtNum(st.on_hand)} / ${fmtNum(st.reorder_min)}`, fmtUSD(st.stock_val_usd || 0, 0)]
+          }))
+        },
+        {
+          id: 'T5', tbl: 'trd_purchases', title: 'UNALLOCATED FREIGHT, CUSTOMS & CLEARANCE IMPORT FILES',
+          headers: ['Import File #', 'Entity', 'Supplier / Origin', 'FOB ($)', 'Unallocated ($)', 'Action'],
+          rows: (unalloc.length ? unalloc : trd.landedRows).slice(0, 8).map(f => {
+            const unUsd = Number(f.unallocated_usd || 0);
+            const wf = (canWf && unUsd > 0) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="trd_imp_landed" data-wf-id="${esc(f.id)}" data-wf-co="${esc(f.company)}" data-wf-supplier="${esc(f.supplier || '')}" data-wf-origin="${esc(f.origin || '')}" data-wf-bl="${esc(f.bl_no || '')}" data-wf-ord="${f.ordered_qty || 20}" data-wf-fob="${f.fob_usd || 40000}" data-wf-add="${unUsd}">+ Landed</button>` : '<span class="badge badge-ok">Capitalized</span>';
+            return { rid: f.id, co: f.company, cells: [f.id, f.company, `${f.supplier || 'OEM'} (${f.origin || 'Port'})`, fmtUSD(f.fob_usd || 0, 0), fmtUSD(unUsd, 0)], rawLastHtml: wf };
+          })
+        }
+      ];
+    }
+    if (ind === 'Real Estate & Property') {
+      const re = computeRealEstateOperations({ ignoreSearch: true });
+      const expDays = getAlertParam('ind_re_01', 'expiry_days', 90);
+      const openInstWarn = getAlertParam('ind_re_03', 'open_inst_usd', 50000);
+      const reLeases = re.leases || [];
+      const reInst = re.instalments || [];
+      const reWos = re.workorders || re.workOrders || [];
+      const reUnits = re.units || [];
+      const expLeases = reLeases.filter(l => Number(l.days_to_expiry || 0) >= 0 && Number(l.days_to_expiry || 0) <= expDays);
+      const unbilled = reLeases.filter(l => Number(l.unbilled_periods || 0) > 0);
+      const dueInst = reInst.filter(x => Number(x.open_usd || 0) > openInstWarn);
+      const unrech = reWos.filter(w => w.rechargeable && !/recharged/i.test(w.status || ''));
+      const vacUnits = reUnits.filter(u => !/leased|occupied/i.test(u.status || ''));
+      return [
+        {
+          id: 'P1', tbl: 're_leases', title: 'EXPIRING COMMERCIAL & RESIDENTIAL LEASES & ESCALATION QUEUE',
+          headers: ['Lease ID', 'Entity', 'Property & Unit', 'Tenant', 'End Date', 'Annual Rent ($)'],
+          rows: (expLeases.length ? expLeases : reLeases).slice(0, 8).map(l => ({
+            rid: l.id, co: l.company,
+            cells: [l.id, l.company, `${l.property} · ${l.unit}`, l.tenant, `${l.end_date} (${l.days_to_expiry}d)`, fmtUSD(l.annual_ttc_usd || 0, 0)]
+          }))
+        },
+        {
+          id: 'P2', tbl: 're_leases', title: 'UNBILLED ACTIVE LEASE PERIODS & OPEN RENT AR',
+          headers: ['Lease ID', 'Entity', 'Property', 'Tenant', 'Period Rent ($)', 'Unbilled', 'Action'],
+          rows: (unbilled.length ? unbilled : reLeases).slice(0, 8).map(l => {
+            const hasUnb = Number(l.unbilled_periods || 0) > 0;
+            const wf = (canWf && hasUnb) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="re_lease_bill" data-wf-id="${esc(l.id)}" data-wf-co="${esc(l.company)}" data-wf-prop="${esc(l.property)}" data-wf-tenant="${esc(l.tenant)}" data-wf-net="${l.net_period_usd}">+ Rent Inv</button>` : '<span class="badge badge-ok">Billed</span>';
+            return { rid: l.id, co: l.company, cells: [l.id, l.company, l.property, l.tenant, fmtUSD(l.ttc_period_usd || 0, 0), `${fmtNum(l.unbilled_periods || 0)} period(s)`], rawLastHtml: wf };
+          })
+        },
+        {
+          id: 'P3', tbl: 're_sales', title: 'PROPERTY DEED BUYER INSTALMENTS & TITLE TRANSFER GUARD',
+          headers: ['Instalment ID', 'Due Date', 'Property & Unit', 'Buyer', 'Scheduled ($)', 'Open Balance ($)'],
+          rows: (dueInst.length ? dueInst : reInst).slice(0, 8).map(x => ({
+            rid: x.id, co: x.company || 'Properties',
+            cells: [x.id, x.due_date, `${x.property} · ${x.unit}`, x.buyer, fmtUSD(x.amount_usd || 0, 0), fmtUSD(x.open_usd || 0, 0)]
+          }))
+        },
+        {
+          id: 'P4', tbl: 're_workorders', title: 'COMPLETED TENANT-FAULT WORK ORDERS PENDING RECHARGE',
+          headers: ['Work Order #', 'Entity', 'Property & Unit', 'Contractor', 'Actual ($)', 'Action'],
+          rows: (unrech.length ? unrech : reWos).slice(0, 8).map(w => {
+            const pend = w.rechargeable && !/recharged/i.test(w.status || '');
+            const wf = (canWf && pend) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="re_wo_recharge" data-wf-id="${esc(w.id)}" data-wf-co="${esc(w.company)}" data-wf-prop="${esc(w.property)}" data-wf-unit="${esc(w.unit)}" data-wf-amt="${w.actual_usd}">Bill Tenant</button>` : `<span class="badge badge-ok">${esc(w.status || 'Closed')}</span>`;
+            return { rid: w.id, co: w.company, cells: [w.id, w.company, `${w.property} · ${w.unit}`, w.contractor, fmtUSD(w.actual_usd || 0, 0)], rawLastHtml: wf };
+          })
+        },
+        {
+          id: 'P5', tbl: 're_leases', title: 'VACANT / FIT-OUT BUILDING UNITS & /2400 MULK DEED AUDIT',
+          headers: ['Unit ID', 'Property', 'Unit / Floor', 'Area (m2)', 'Target Rent ($)', 'Status'],
+          rows: (vacUnits.length ? vacUnits : reUnits).slice(0, 8).map(u => ({
+            rid: u.id, co: u.company || 'Properties',
+            cells: [u.id, u.property, u.unit_code || u.name, `${fmtNum(u.area_sqm || 0)} m2`, fmtUSD(u.market_rent_usd || u.annual_rent_usd || 0, 0), u.status || 'Occupied']
+          }))
+        }
+      ];
+    }
+    // Insurance & Brokerage
+    const ins = computeInsuranceOperations();
+    const renDays = getAlertParam('ind_ins_01', 'renewal_days', 90);
+    const stmtTol = getAlertParam('ind_ins_02', 'stmt_tol_usd', 10);
+    const dueRens = ins.renewals.filter(r => r.days_left <= renDays && !/renewed/i.test(r.status || ''));
+    const varStmts = ins.statements.filter(r => Math.abs(Number(r.variance_usd || 0)) > stmtTol);
+    const openClms = ins.claims.filter(c => !/settled|closed/i.test(c.status || ''));
+    return [
+      {
+        id: 'I1', tbl: 'ins_policies', title: '30/60/90-DAY EXPIRING & LAPSED POLICY RENEWAL QUEUE',
+        headers: ['Renewal ID', 'Policy #', 'Client', 'Carrier & Line', 'Days Left', 'Quoted ($)', 'Action'],
+        rows: (dueRens.length ? dueRens : ins.renewals).slice(0, 8).map(r => {
+          const isRen = /renewed/i.test(r.status || '');
+          const wf = (canWf && !isRen) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="ins_renew_pol" data-wf-id="${esc(r.id)}" data-wf-client="${esc(r.client)}" data-wf-carrier="${esc(r.carrier)}" data-wf-line="${esc(r.line)}" data-wf-prem="${r.quoted_renewal_usd}" data-wf-prod="${esc(r.producer || 'Joseph Khalil')}">Renew</button>` : '<span class="badge badge-ok">Renewed</span>';
+          return { rid: r.id, co: 'Insurance Company', cells: [r.id, r.policy_no, r.client, `${r.carrier} · ${r.line}`, `${r.days_left}d`, fmtUSD(r.quoted_renewal_usd || 0, 0)], rawLastHtml: wf };
+        })
+      },
+      {
+        id: 'I2', tbl: 'ins_remittances', title: 'CARRIER COMMISSION STATEMENT DISCREPANCIES VS AGREEMENTS',
+        headers: ['Statement ID', 'Carrier', 'Period', 'Expected Comm ($)', 'Statement ($)', 'Variance ($)', 'Action'],
+        rows: (varStmts.length ? varStmts : ins.statements).slice(0, 8).map(st => {
+          const expC = Number(st.expected_comm_4117_usd != null ? st.expected_comm_4117_usd : st.expected_comm_usd || 0);
+          const stmC = Number(st.statement_comm_usd != null ? st.statement_comm_usd : st.stmt_comm_usd || 0);
+          const hasV = Math.abs(Number(st.variance_usd || 0)) > stmtTol;
+          const wf = (canWf && hasV) ? `<button type="button" class="btn-ind-wf" data-ind-workflow="ins_stmt_settle" data-wf-id="${esc(st.id)}" data-wf-carrier="${esc(st.carrier)}" data-wf-comm="${expC}">Settle</button>` : '<span class="badge badge-ok">Tied</span>';
+          return { rid: st.id, co: 'Insurance Company', cells: [st.id, st.carrier, st.period, fmtUSD(expC, 0), fmtUSD(stmC, 0), fmtUSD(st.variance_usd || 0, 0)], rawLastHtml: wf };
+        })
+      },
+      {
+        id: 'I3', tbl: 'ins_remittances', title: 'FIDUCIARY CASH HELD & CARRIER BORDEREAU REMITTANCES',
+        headers: ['Remittance ID', 'Carrier', 'GWP ($)', 'Broker Comm ($)', 'Settled ($)', 'Net Payable ($)'],
+        rows: (ins.remittances || []).slice(0, 8).map(r => ({
+          rid: r.id, co: 'Insurance Company',
+          cells: [r.id, r.carrier, fmtUSD(r.gross_prem_usd || 0, 0), fmtUSD(r.broker_comm_7063_usd || 0, 0), fmtUSD(r.settled_to_carrier_usd || 0, 0), fmtUSD(r.net_payable_4017_usd || 0, 0)]
+        }))
+      },
+      {
+        id: 'I4', tbl: 'ins_policies', title: 'CLIENT REBATE / DISCOUNT VS GROSS COMMISSION AUDIT',
+        headers: ['Policy #', 'Client', 'Carrier & Line', 'GWP ($)', 'Gross Comm ($)', 'Client Disc ($)', 'Net Comm ($)'],
+        rows: (ins.policies || []).filter(p => Number(p.discount_usd || 0) > 0).concat((ins.policies || []).slice(0, 4)).slice(0, 8).map(p => ({
+          rid: p.id, co: 'Insurance Company',
+          cells: [p.id, p.client, `${p.carrier} · ${p.line}`, fmtUSD(p.gross_prem_usd, 0), fmtUSD(p.gross_comm_usd, 0), fmtUSD(p.discount_usd, 0), fmtUSD(p.net_comm_usd, 0)]
+        }))
+      },
+      {
+        id: 'I5', tbl: 'ins_claims', title: 'ACTIVE CLAIMS FNOL, SURVEYORS & INSURER RECOVERY QUEUE',
+        headers: ['Claim ID', 'Loss Date', 'Policy #', 'Client', 'Claimed ($)', 'Approved ($)', 'Status'],
+        rows: (openClms.length ? openClms : ins.claims).slice(0, 8).map(c => ({
+          rid: c.id, co: 'Insurance Company',
+          cells: [c.id, c.loss_date, c.policy_no, c.client, fmtUSD(c.claimed_usd, 0), fmtUSD(c.approved_usd, 0), c.status]
+        }))
+      }
+    ];
+  }
+
   function renderIndustrySentinelDetailPanel(indOverride) {
     const ind = indOverride || getActiveIndustry(STATE.company);
     if (!ind || ind === 'Manufacturing') return '';
     const rules = buildIndustrySentinelItems(ind);
     if (!rules.length) return '';
+    const activeRuleFilter = STATE.indSentinelRuleFilter || 'all';
+    const excTables = buildIndustrySentinelExceptionTables(ind);
+    const visibleExc = activeRuleFilter === 'all'
+      ? excTables
+      : excTables.filter(t => t.id === activeRuleFilter);
     return `
       <div class="panel-card" id="industrySentinelsDetailPanel" style="margin-top:14px">
-        <div class="panel-head">
-          <div class="panel-title"><span>${ic('sentinels')} ${esc(ind.toUpperCase())} DOMAIN AUDIT WATCHDOGS &amp; DRILL-DOWN MATRIX (${rules.length} RULES)</span></div>
-          <div style="display:flex;gap:6px;align-items:center">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('sentinels')} ${esc(ind.toUpperCase())} DOMAIN AUDIT WATCHDOGS &amp; ITEMIZED DRILL-DOWN (${rules.length} RULES)</span></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="filter-chip ${activeRuleFilter === 'all' ? 'active' : ''}" data-ind-sn-rule="all">All Rules (${excTables.length})</button>
+            ${excTables.map(t => `<button type="button" class="filter-chip ${activeRuleFilter === t.id ? 'active' : ''}" data-ind-sn-rule="${esc(t.id)}">${esc(t.id)}</button>`).join('')}
             ${exportBtn('industrySentinelsDetailPanel', 'Industry_Domain_Sentinels')}
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="ledger-table">
-            <thead>
-              <tr>
-                <th>Rule ID</th>
-                <th>Domain &amp; Control Code</th>
-                <th>Entity Scope</th>
-                <th>Audit Watchdog &amp; Live Findings</th>
-                <th class="r">Primary Metric</th>
-                <th>Status</th>
-                <th class="r">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rules.map(r => {
-                const bCls = r.severity === 'ok' ? 'badge-ok' : (r.severity === 'crit' ? 'badge-err' : 'badge-warn');
-                return `
-                  <tr>
-                    <td class="mono"><strong>${esc(r.id)}</strong></td>
-                    <td><span class="mono" style="font-size:11.5px;color:var(--brass)">${esc(r.code)}</span></td>
-                    <td>${coBadge(r.company)}</td>
-                    <td><strong>${esc(r.title)}</strong><div class="muted" style="font-size:11.5px;margin-top:2px">${esc(r.detail)}</div></td>
-                    <td class="r mono"><strong>${fmtNum(r.rawMetric || 0)}</strong></td>
-                    <td><span class="badge ${bCls}">${esc(r.badge)}</span></td>
-                    <td class="r"><button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="${esc(r.navView)}">${esc(r.navLabel)}</button></td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
+        <div class="mini-table-grid" style="margin-top:10px">
+          ${visibleExc.map(sec => {
+            const ruleMeta = rules.find(r => r.id === sec.id);
+            const bCls = !ruleMeta || ruleMeta.severity === 'ok' ? 'badge-ok' : (ruleMeta.severity === 'crit' ? 'badge-err' : 'badge-warn');
+            return `
+              <div class="panel-card" id="snInd_${esc(sec.id)}" style="padding:12px 14px">
+                <div class="panel-head" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
+                  <div class="panel-title"><span><span class="mono" style="color:var(--brass)">${esc(sec.id)}</span> · ${esc(sec.title)}</span></div>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    ${ruleMeta ? `<span class="badge ${bCls}">${esc(ruleMeta.badge)}</span>` : ''}
+                    ${ruleMeta && ruleMeta.navView ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="${esc(ruleMeta.navView)}">${esc(ruleMeta.navLabel || 'Open Hub')}</button>` : ''}
+                    ${exportBtn(`snInd_${sec.id}`, `Audit_${sec.id}`)}
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="ledger-table" data-ind-table-title="${esc(sec.title)}">
+                    <thead>
+                      <tr>${sec.headers.map((h, hIdx) => `<th class="${hIdx >= sec.headers.length - 2 ? 'r' : ''}">${esc(h)}</th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                      ${sec.rows.map((row, rIdx) => `
+                        <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(row.rid)}" data-ind-row-tbl="${esc(sec.tbl)}" data-ind-row-co="${esc(row.co || '')}">
+                          ${row.cells.map((c, cIdx) => `<td class="${cIdx === 0 ? 'mono' : (cIdx >= row.cells.length - (row.rawLastHtml ? 1 : 2) ? 'r mono' : '')}">${cIdx === 0 ? `<strong>${esc(c)}</strong>` : esc(c)}</td>`).join('')}
+                          ${row.rawLastHtml ? `<td class="r">${row.rawLastHtml}</td>` : ''}
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
@@ -48729,7 +49108,7 @@
           { mode: 'attendance', view: 'payroll_attendance', title: 'Staff Attendance Kiosk', sub: 'Camera-Only 128-d Face ID Clock-In/Out & Company Shift Rules' }
         ],
         'Hospitality & Resorts': [
-          { mode: 'sales', view: 'hsp_pos', title: 'Cashier POS & F&B Till', sub: 'RawBT 80mm/58mm Thermal Receipt & Waiter Table Close' },
+          { mode: 'sales', view: 'hsp_pos', title: 'Cashier POS & F&B Till', sub: 'Instant 80mm/58mm Thermal Receipt & Waiter Table Close' },
           { mode: 'raw', view: 'hsp_revenue', title: 'Entrance, Chalet & Cabana Desk', sub: 'Day-Pass Gate Admissions, Chalet Check-In & Memberships' },
           { mode: 'fuel', view: 'hsp_energy', title: 'Generator & Resort Fuel Kiosk', sub: 'Diesel Tank Intakes, Generator Run-Hours & Solar Meters' },
           { mode: 'attendance', view: 'payroll_attendance', title: 'Staff Attendance Kiosk', sub: 'Camera-Only 128-d Face ID Clock-In/Out & Company Shift Rules' }
@@ -48784,13 +49163,13 @@
       : (surface === 'pbi' ? `${ind} Executive Analytics & Dashboards` : `${ind} Printable Statements & Statutory Packs`);
 
     const stmtDomainMap = {
-      'Holding & Treasury': { id: '23', title: 'RDL-23 Intercompany & Partner Split Register' },
-      'Hospitality & Resorts': { id: '24', title: 'RDL-24 Venue Revenue, POS Till & Membership Register' },
-      'Automotive & Heavy Trading': { id: '25', title: 'RDL-25 Invoice Books, Serial VIN & Stock Valuation' },
-      'Real Estate & Property': { id: '26', title: 'RDL-26 Official 4235 VAT Rent Roll & Lease Expiry' },
-      'Insurance & Brokerage': { id: '27', title: 'RDL-27 Policy Schedule, Renewal Queue & Carrier Recon' }
+      'Holding & Treasury': { id: '23', title: 'Statement 23 · Intercompany & Partner Split Register' },
+      'Hospitality & Resorts': { id: '24', title: 'Statement 24 · Venue Revenue, POS Till & Membership Register' },
+      'Automotive & Heavy Trading': { id: '25', title: 'Statement 25 · Invoice Books, Serial VIN & Stock Valuation' },
+      'Real Estate & Property': { id: '26', title: 'Statement 26 · Official 4235 VAT Rent Roll & Lease Expiry' },
+      'Insurance & Brokerage': { id: '27', title: 'Statement 27 · Policy Schedule, Renewal Queue & Carrier Recon' }
     };
-    const domStmt = stmtDomainMap[ind] || { id: '01', title: 'RDL-01 Daily Operations' };
+    const domStmt = stmtDomainMap[ind] || { id: '01', title: 'Statement 01 · Daily Operations' };
 
     return `
       <div class="panel-card" id="industryContextDeck_${esc(surface)}" style="margin-bottom:14px;padding:12px 16px">
@@ -49636,6 +50015,92 @@
     };
   }
 
+  function fmtIndChartMetric(val, chartTitle) {
+    const n = Number(val || 0);
+    const t = String(chartTitle || '');
+    if (/\(%\)|percent|rates?\s*\(%\)|ratio\s*\(%\)/i.test(t)) return `${n.toFixed(1)}%`;
+    if (/\(liters\)|\(litres\)|diesel.*\((l|liters|litres)\)/i.test(t)) return `${fmtNum(n, 0)} L`;
+    if (/l\/hr/i.test(t)) return `${n.toFixed(1)} L/hr`;
+    if (/\(days\)/i.test(t)) return `${fmtNum(n, 0)}d`;
+    return fmtUSD(n, 0);
+  }
+
+  function parseIndSortableCell(cell) {
+    const s = String(cell == null ? '' : cell).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return { isNum: true, num: Date.parse(s.slice(0, 10) + 'T00:00:00Z') || 0, txt: s.toLowerCase() };
+    const cleaned = s.replace(/[$,%\s]|(L\/hr|hrs?|L|d|x)\b/gi, '').replace(/\([^)]*\)/g, '').trim();
+    if (/^[-+]?\d+(\.\d+)?$/.test(cleaned)) return { isNum: true, num: parseFloat(cleaned), txt: s.toLowerCase() };
+    return { isNum: false, num: 0, txt: s.toLowerCase() };
+  }
+
+  function sortIndMatrixRows(rows, sortCol, sortDir) {
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    if (sortCol == null || sortCol < 0) return list;
+    const mul = sortDir === 'asc' ? 1 : -1;
+    return list.sort((a, b) => {
+      const pa = parseIndSortableCell(a[sortCol]);
+      const pb = parseIndSortableCell(b[sortCol]);
+      if (pa.isNum && pb.isNum) return (pa.num - pb.num) * mul;
+      if (pa.txt === pb.txt) return 0;
+      return (pa.txt < pb.txt ? -1 : 1) * mul;
+    });
+  }
+
+  function computeDynamicDomainTotals(headers, filteredRows, baseTotals, unfilteredLen) {
+    const base = Array.isArray(baseTotals) ? baseTotals.slice() : [];
+    const rows = Array.isArray(filteredRows) ? filteredRows : [];
+    if (!base.length || rows.length === unfilteredLen) return base;
+    return base.map((bt, idx) => {
+      if (idx === 0) return `Filtered Total (${fmtNum(rows.length)} of ${fmtNum(unfilteredLen)})`;
+      const h = String((headers && headers[idx]) || '');
+      const bStr = String(bt == null ? '' : bt).trim();
+      if (/^\s*[-+]?\$/.test(bStr) || /\(\$\)|\$\s*$/i.test(h)) {
+        let dec = /\.\d{2}\b/.test(bStr) ? 2 : 0;
+        let sum = 0;
+        let hit = false;
+        rows.forEach(r => {
+          const raw = String(r[idx] == null ? '' : r[idx]);
+          const m = raw.match(/[-+]?\$\s*([\d,]+(?:\.\d+)?)/);
+          if (m) {
+            const sign = raw.trim().startsWith('-') || raw.includes('-$') ? -1 : 1;
+            const v = parseFloat(m[1].replace(/,/g, ''));
+            if (Number.isFinite(v)) { sum += sign * v; hit = true; }
+          }
+        });
+        return hit ? fmtUSD(round2(sum), dec) : (dec ? '$0.00' : '$0');
+      }
+      if (/^\d[\d,]*$/.test(bStr) && !/year|period|date|book|seq/i.test(h)) {
+        let sum = 0;
+        let hit = false;
+        rows.forEach(r => {
+          const raw = String(r[idx] == null ? '' : r[idx]).replace(/,/g, '').trim();
+          if (/^[-+]?\d+$/.test(raw)) { sum += parseInt(raw, 10); hit = true; }
+        });
+        if (hit) return fmtNum(sum);
+      }
+      return bt;
+    });
+  }
+
+  function rankIndFilterCandidates(colHint, rawValues) {
+    const counts = new Map();
+    (rawValues || []).forEach(v => {
+      const s = String(v == null ? '' : v).trim();
+      if (!s || s === '-') return;
+      counts.set(s, (counts.get(s) || 0) + 1);
+    });
+    const uniq = Array.from(counts.keys());
+    if (typeof freqRankCandidates === 'function' && window.MFG_FREQ) {
+      const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+      return uniq.sort((a, b) => {
+        const fa = (counts.get(a) || 0) * 1000 + (fIdx && fIdx.score ? fIdx.score(colHint, a) : 0);
+        const fb = (counts.get(b) || 0) * 1000 + (fIdx && fIdx.score ? fIdx.score(colHint, b) : 0);
+        return fb - fa;
+      });
+    }
+    return uniq.sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0));
+  }
+
   function renderIndustryPbiStudio(indOverride) {
     const ind = indOverride || getActiveIndustry(STATE.company);
     const pages = INDUSTRY_PBI_PAGES_SPEC[ind] || INDUSTRY_PBI_PAGES_SPEC['Holding & Treasury'];
@@ -49646,11 +50111,67 @@
     STATE.indPbiPageByInd[ind] = activePage.id;
 
     const ds = buildIndustryDomainDataset(ind, activePageIdx);
+    const allRows = ds.rows || [];
+    const headers = ds.headers || [];
+
+    const dateColIdx = headers.findIndex((h, idx) => /date|period|effective from|expiry/i.test(h) || (allRows[0] && /^\d{4}-\d{2}(-\d{2})?$/.test(String(allRows[0][idx] || '').trim())));
+    let dimColIdx = headers.findIndex((h, idx) => idx > 0 && /entity|resort|carrier|insurer|sister|property|customer|client|tenant|warehouse|category/i.test(h));
+    if (dimColIdx < 0 && headers.length > 1) dimColIdx = 1;
+    const dimLabel = headers[dimColIdx] || 'Dimension';
+
+    const rowDates = dateColIdx >= 0
+      ? allRows.map(r => String(r[dateColIdx] || '').trim()).filter(s => /^\d{4}-\d{2}/.test(s)).sort()
+      : [];
+    const latestYm = rowDates.length ? rowDates[rowDates.length - 1].slice(0, 7) : '2026-10';
+    const latestYear = latestYm.slice(0, 4) || '2026';
+    const latestMonNum = parseInt(latestYm.slice(5, 7) || '10', 10);
+    const qStartMon = Math.floor((latestMonNum - 1) / 3) * 3 + 1;
+    const qLabel = `${latestYear}-Q${Math.ceil(latestMonNum / 3)}`;
+
+    const pbiStateKey = `${ind}::${activePage.id}`;
+    if (!STATE.indPbiFilters) STATE.indPbiFilters = {};
+    const fState = STATE.indPbiFilters[pbiStateKey] || { period: 'all', dim: '', search: '', sortCol: -1, sortDir: 'desc' };
+    STATE.indPbiFilters[pbiStateKey] = fState;
+
+    const dimCandidates = dimColIdx >= 0
+      ? rankIndFilterCandidates('customer', allRows.map(r => r[dimColIdx]))
+      : [];
+    const dimCounts = new Map();
+    if (dimColIdx >= 0) {
+      allRows.forEach(r => {
+        const v = String(r[dimColIdx] || '').trim();
+        if (v) dimCounts.set(v, (dimCounts.get(v) || 0) + 1);
+      });
+    }
+
+    const searchNorm = norm(fState.search || '');
+    const filteredRows = allRows.filter(r => {
+      if (fState.period && fState.period !== 'all' && dateColIdx >= 0) {
+        const dVal = String(r[dateColIdx] || '').trim();
+        if (/^\d{4}-\d{2}/.test(dVal)) {
+          if (fState.period === 'year' && !dVal.startsWith(latestYear)) return false;
+          if (fState.period === 'month' && !dVal.startsWith(latestYm)) return false;
+          if (fState.period === 'quarter') {
+            const y = dVal.slice(0, 4);
+            const m = parseInt(dVal.slice(5, 7), 10);
+            if (y !== latestYear || m < qStartMon || m > qStartMon + 2) return false;
+          }
+        }
+      }
+      if (fState.dim && dimColIdx >= 0 && String(r[dimColIdx] || '').trim() !== fState.dim) return false;
+      if (searchNorm && !r.some(c => norm(c).includes(searchNorm))) return false;
+      return true;
+    });
+
+    const sortedRows = sortIndMatrixRows(filteredRows, fState.sortCol, fState.sortDir);
+    const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
+    const hasActiveFilter = (fState.period && fState.period !== 'all') || Boolean(fState.dim) || Boolean(searchNorm) || fState.sortCol >= 0;
+
     const maxBar = Math.max(1, ...ds.bars.map(b => Number(b.val || 0)));
     const maxBar2 = Math.max(1, ...ds.secondBars.map(b => Number(b.val || 0)));
 
     return `
-      <div class="panel-card" id="industryPbiStudio" style="margin-bottom:16px;padding:14px 16px">
+      <div class="panel-card" id="industryPbiStudio" data-ind-pbi-key="${esc(pbiStateKey)}" style="margin-bottom:16px;padding:14px 16px">
         <div class="panel-head" style="flex-wrap:wrap;gap:10px;margin-bottom:12px">
           <div>
             <div class="panel-title"><span>${ic('pbi')} ${esc(ind.toUpperCase())} · INTERACTIVE EXECUTIVE DASHBOARD SUITE (${pages.length} PAGES)</span></div>
@@ -49659,15 +50180,39 @@
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activePage.view)}">Open ${esc(activePage.label)} Hub</button>
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Printable A4 Statements</button>
+            ${exportBtn('industryPbiTableCard', `${activePage.id}_register`)}
           </div>
         </div>
 
-        <div class="pbi-page-tabs" role="tablist" aria-label="${esc(ind)} Dashboard Pages" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="pbi-page-tabs" role="tablist" aria-label="${esc(ind)} Dashboard Pages" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           ${pages.map(p => `
             <button type="button" class="btn ${p.id === activePage.id ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:5px 11px;font-size:11.5px" data-ind-pbi-page="${esc(p.id)}" role="tab" aria-selected="${p.id === activePage.id ? 'true' : 'false'}">
               <b>${esc(p.num)}</b> · ${esc(p.label)}
             </button>
           `).join('')}
+        </div>
+
+        <div class="table-toolbar" id="indPbiSlicerBar" style="margin-bottom:14px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div class="chip-bar" role="group" aria-label="Period Grain">
+              <button type="button" class="filter-chip ${fState.period === 'all' ? 'active' : ''}" data-ind-pbi-period="all">All Periods</button>
+              ${rowDates.length ? `
+                <button type="button" class="filter-chip ${fState.period === 'year' ? 'active' : ''}" data-ind-pbi-period="year">Year ${esc(latestYear)}</button>
+                <button type="button" class="filter-chip ${fState.period === 'quarter' ? 'active' : ''}" data-ind-pbi-period="quarter">${esc(qLabel)}</button>
+                <button type="button" class="filter-chip ${fState.period === 'month' ? 'active' : ''}" data-ind-pbi-period="month">Month ${esc(latestYm)}</button>
+              ` : ''}
+            </div>
+            ${dimCandidates.length > 1 ? `
+              <select id="indPbiDimSelect" data-plain-options="1" aria-label="Filter by ${esc(dimLabel)}" style="height:30px;padding:0 9px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:11.5px;font-weight:600">
+                <option value="">All ${esc(dimLabel)} (${allRows.length})</option>
+                ${dimCandidates.map(v => `<option value="${esc(v)}" ${fState.dim === v ? 'selected' : ''}>${esc(v)} (${dimCounts.get(v) || 0})</option>`).join('')}
+              </select>
+            ` : ''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <input type="search" id="indPbiSearchInput" class="search-input" style="height:30px;min-width:190px;font-size:11.5px" value="${esc(fState.search || '')}" placeholder="Search ${esc(activePage.label)} register...">
+            ${hasActiveFilter ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indPbiResetBtn">Reset Filters</button>` : ''}
+          </div>
         </div>
 
         <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:10px;margin-bottom:14px">
@@ -49692,7 +50237,7 @@
                   <div>
                     <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:2px">
                       <span>${esc(b.label)}</span>
-                      <span>${fmtUSD(b.val, 0)}</span>
+                      <span class="mono">${esc(fmtIndChartMetric(b.val, ds.chartTitle))}</span>
                     </div>
                     <div style="height:8px;background:var(--bg-alt,#F1F5F9);border-radius:4px;overflow:hidden">
                       <div style="width:${pct}%;height:100%;background:var(--brass,#C89D54);border-radius:4px"></div>
@@ -49715,7 +50260,7 @@
                   <div>
                     <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:2px">
                       <span>${esc(b.label)}</span>
-                      <span>${fmtUSD(b.val, 0)}</span>
+                      <span class="mono">${esc(fmtIndChartMetric(b.val, ds.secondTitle))}</span>
                     </div>
                     <div style="height:8px;background:var(--bg-alt,#F1F5F9);border-radius:4px;overflow:hidden">
                       <div style="width:${pct}%;height:100%;background:var(--chart-navy,#2356A8);border-radius:4px"></div>
@@ -49728,23 +50273,30 @@
           </div>
         </div>
 
-        <div class="panel-card" style="padding:12px 14px">
-          <div class="panel-head" style="margin-bottom:8px">
+        <div class="panel-card" id="industryPbiTableCard" style="padding:12px 14px">
+          <div class="panel-head" style="margin-bottom:8px;flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>${esc(ds.tableTitle)}</span></div>
-            <span class="badge badge-brass">${ds.rows.length} Rows · Signed Total Row</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span class="badge badge-brass">${fmtNum(sortedRows.length)}${sortedRows.length !== allRows.length ? ` / ${fmtNum(allRows.length)}` : ''} Rows · Signed Total Row</span>
+              ${exportBtn('industryPbiTableCard', activePage.id)}
+            </div>
           </div>
           <div class="table-wrap">
-            <table class="data-table">
+            <table class="data-table" data-ind-table-title="${esc(ds.tableTitle)}">
               <thead>
-                <tr>${ds.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
+                <tr>${headers.map((h, hIdx) => {
+                  const isSorted = fState.sortCol === hIdx;
+                  const arrow = isSorted ? (fState.sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+                  return `<th class="${hIdx >= headers.length - 2 ? 'num' : ''}" data-ind-pbi-sort="${hIdx}" style="cursor:pointer;user-select:none" title="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
+                }).join('')}</tr>
               </thead>
               <tbody>
-                ${ds.rows.map((r, rIdx) => `
-                  <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="pbi">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
-                `).join('')}
+                ${sortedRows.length ? sortedRows.map((r, rIdx) => `
+                  <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r[0])}" data-ind-inspect-surface="pbi">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
+                `).join('') : emptyRow(headers.length, 'No records match the active dashboard filter')}
               </tbody>
               <tfoot>
-                <tr class="total-row">${ds.totals.map((t, idx) => `<td class="${idx >= ds.totals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
+                <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${idx >= dynTotals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
               </tfoot>
             </table>
           </div>
@@ -50355,20 +50907,27 @@
     STATE.indActiveDomainTable[ind] = activeTab.key;
 
     const ds = buildIndustryDomainTableRegister(ind, activeTab.key);
+    const allRows = ds.rows || [];
+    const headers = ds.headers || [];
     const q = norm(STATE.indTablesSearch || '');
     const filteredRows = q
-      ? (ds.rows || []).filter(r => r.some(c => norm(c).includes(q)))
-      : (ds.rows || []);
+      ? allRows.filter(r => r.some(c => norm(c).includes(q)))
+      : allRows;
+    if (!STATE.indTablesSort) STATE.indTablesSort = {};
+    const sortSpec = STATE.indTablesSort[activeTab.key] || { col: -1, dir: 'desc' };
+    const sortedRows = sortIndMatrixRows(filteredRows, sortSpec.col, sortSpec.dir);
+    const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
 
     return `
-      <div class="panel-card" id="industryDomainTablesExplorer" style="margin-bottom:14px;padding:12px 16px">
+      <div class="panel-card" id="industryDomainTablesExplorer" data-ind-tbl-active="${esc(activeTab.key)}" style="margin-bottom:14px;padding:12px 16px">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
           <div>
             <div class="panel-title"><span>${ic('tables')} ${esc(ind.toUpperCase())} · DOMAIN RELATIONAL TABLES EXPLORER (${tabs.length} CORE REGISTERS)</span></div>
-            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(ds.tableTitle || activeTab.label)} · ${fmtNum(filteredRows.length)} of ${fmtNum((ds.rows || []).length)} records</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${esc(ds.tableTitle || activeTab.label)} · ${fmtNum(sortedRows.length)} of ${fmtNum(allRows.length)} records</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <input type="search" id="indTablesSearchInput" class="search-input" style="height:30px;min-width:190px;font-size:11.5px" value="${esc(STATE.indTablesSearch || '')}" placeholder="Filter ${esc(activeTab.label)}...">
+            ${(q || sortSpec.col >= 0) ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indTablesResetBtn">Reset</button>' : ''}
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-ind-open-new="${esc(activeTab.newView || activeTab.view)}">+ New Record</button>
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activeTab.view)}">Open Hub</button>
             ${exportBtn('industryDomainTablesExplorer', activeTab.key)}
@@ -50384,15 +50943,19 @@
         <div class="table-wrap">
           <table class="data-table" data-ind-table-title="${esc(ds.tableTitle || activeTab.label)}">
             <thead>
-              <tr>${ds.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>
+              <tr>${headers.map((h, hIdx) => {
+                const isSorted = sortSpec.col === hIdx;
+                const arrow = isSorted ? (sortSpec.dir === 'asc' ? ' ▲' : ' ▼') : '';
+                return `<th class="${hIdx >= headers.length - 2 ? 'num' : ''}" data-ind-tbl-sort="${hIdx}" style="cursor:pointer;user-select:none" title="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
+              }).join('')}</tr>
             </thead>
             <tbody>
-              ${filteredRows.map((r, rIdx) => `
-                <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-inspect-surface="tables">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
-              `).join('')}
+              ${sortedRows.length ? sortedRows.map((r, rIdx) => `
+                <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r[0])}" data-ind-inspect-surface="tables">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
+              `).join('') : emptyRow(headers.length, 'No records match the active filter')}
             </tbody>
             <tfoot>
-              <tr class="total-row">${ds.totals.map((t, idx) => `<td class="${idx >= ds.totals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
+              <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${idx >= dynTotals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
             </tfoot>
           </table>
         </div>
@@ -52345,6 +52908,25 @@
     return Array.isArray(arr) ? arr.filter(r => r && !r.voided) : [];
   }
 
+  function mergeCustomOverSeededRows(seededArr, customArr) {
+    const custList = Array.isArray(customArr) ? customArr : [];
+    const baseList = Array.isArray(seededArr) ? seededArr.slice() : [];
+    if (!custList.length) return baseList;
+    const prepend = [];
+    custList.forEach(cr => {
+      if (!cr || typeof cr !== 'object') return;
+      const cid = String(cr.id || cr.code || '').trim().toUpperCase();
+      if (!cid) { prepend.push(cr); return; }
+      const idx = baseList.findIndex(sr => sr && String(sr.id || sr.code || '').trim().toUpperCase() === cid);
+      if (idx >= 0) {
+        baseList[idx] = Object.assign({}, baseList[idx], cr);
+      } else {
+        prepend.push(cr);
+      }
+    });
+    return prepend.concat(baseList);
+  }
+
   function invalidateIndustryDomainCaches() {
     STATE._indCustomRev = (STATE._indCustomRev || 0) + 1;
     if (typeof SEED !== 'undefined' && SEED) {
@@ -52357,6 +52939,7 @@
     if (typeof _hspOpsCache !== 'undefined' && _hspOpsCache) _hspOpsCache.clear();
     if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
     if (typeof _customAlertEvalCache !== 'undefined' && _customAlertEvalCache instanceof Map) _customAlertEvalCache.clear();
+    if (typeof _sentinelRawItemsCache !== 'undefined' && _sentinelRawItemsCache instanceof Map) _sentinelRawItemsCache.clear();
     _liveSentinelCache = null;
     _FREQ_IDX = null;
   }
@@ -52563,6 +53146,99 @@
     return dt.toISOString().slice(0, 10);
   }
 
+  function nextCalendarDayISO(isoStr) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoStr || '').trim());
+    if (!m) return '2026-01-02';
+    const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function lookupActiveInsuranceAgreementRate(carrier, line, effDate, recType) {
+    const carStr = String(carrier || '').trim();
+    const lineStr = String(line || '').trim();
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const isRenewal = /renewal/i.test(String(recType || ''));
+    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : { agreements: [], catalogue: [] };
+    const agrs = Array.isArray(ops.agreements) ? ops.agreements : [];
+    const activeHits = agrs.filter(a => {
+      if (!a || a.carrier !== carStr || a.line !== lineStr) return false;
+      const sd = String(a.start_date || '1900-01-01').slice(0, 10);
+      const ed = (!a.end_date || a.end_date === 'Open') ? '9999-12-31' : String(a.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    }).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      const rate = Number(isRenewal ? (best.renewal_pct != null ? best.renewal_pct : best.new_bus_pct) : best.new_bus_pct);
+      return {
+        rate: Number.isFinite(rate) ? rate : 15,
+        agreementId: best.id || 'AGR-ACTIVE',
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const catList = Array.isArray(ops.catalogue) ? ops.catalogue : [];
+    const catHit = catList.find(c => c && c.carrier === carStr && c.line === lineStr)
+      || catList.find(c => c && c.line === lineStr);
+    const fbRate = Number(catHit && catHit.base_comm_pct != null ? catHit.base_comm_pct : 15);
+    return {
+      rate: Number.isFinite(fbRate) ? fbRate : 15,
+      agreementId: catHit && catHit.id ? catHit.id : 'CATALOGUE-BASELINE',
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillInsuranceAgreement(agrObj, oldWindow = null) {
+    if (!agrObj || !agrObj.carrier || !agrObj.line) return 0;
+    const minDateCandidates = [String(agrObj.start_date || '2026-01-01').slice(0, 10)];
+    if (oldWindow && oldWindow.start_date) minDateCandidates.push(String(oldWindow.start_date).slice(0, 10));
+    minDateCandidates.sort();
+    const sweepStart = minDateCandidates[0] || '2026-01-01';
+    const newEnd = (!agrObj.end_date || agrObj.end_date === 'Open') ? '9999-12-31' : String(agrObj.end_date).slice(0, 10);
+    const oldEnd = oldWindow ? ((!oldWindow.end_date || oldWindow.end_date === 'Open') ? '9999-12-31' : String(oldWindow.end_date).slice(0, 10)) : newEnd;
+    const sweepEnd = newEnd >= oldEnd ? newEnd : oldEnd;
+
+    const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : { policies: [] };
+    const customPols = getIndustryCustomRows('ins_policies');
+    const customIdSet = new Set(customPols.map(p => String(p.id || '').trim().toUpperCase()));
+    let syncedCount = 0;
+    (ops.policies || []).forEach(pol => {
+      if (!pol || pol.carrier !== agrObj.carrier || pol.line !== agrObj.line) return;
+      const pDate = String(pol.date || pol.start_date || '').slice(0, 10);
+      if (!pDate || pDate < sweepStart || pDate > sweepEnd) return;
+      const rateHit = lookupActiveInsuranceAgreementRate(pol.carrier, pol.line, pDate, pol.type);
+      const nextRate = Number(rateHit.rate || 0);
+      const gwp = Number(pol.gross_prem_usd != null ? pol.gross_prem_usd : (pol.gwp_usd || 0));
+      const gComm = round2(gwp * (nextRate / 100));
+      const disc = Math.min(Number(pol.discount_usd || 0), gComm);
+      const netComm = round2(gComm - disc);
+      const payable = round2(gwp - gComm);
+      const patch = {
+        comm_rate_pct: nextRate,
+        gross_comm_usd: gComm,
+        discount_usd: disc,
+        net_comm_usd: netComm,
+        net_payable_4017_usd: payable
+      };
+      if (customIdSet.has(String(pol.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('ins_policies', Object.assign({ id: pol.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('ins_policies', pol.id, patch);
+      }
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
   function freqRankCandidates(colHint, candidates) {
     const uniq = [];
     const seen = new Set();
@@ -52638,14 +53314,19 @@
       toast('Your seat has Read-Only view access', 'err');
       return;
     }
+    const isEditMode = Boolean(prefill && prefill._editMode);
+    if (isEditMode && canModifyTextOnly()) {
+      toast('Supervisor permission required to edit financial amounts in Smart Form', 'err');
+      return;
+    }
     const { ind, list, spec } = resolveDomainFormSpec(viewOrFormKey);
     const allowedCos = allowedCompanyNames();
     const cat = getCompanyCatalog();
-    const indCos = cat.filter(c => c.industry === ind && (isOwner(activeUser()) || allowedCos.some(a => a.toLowerCase() === c.name.toLowerCase()))).map(c => c.name);
+    const indCos = freqRankCandidates('company', cat.filter(c => c.industry === ind && (isOwner(activeUser()) || allowedCos.some(a => a.toLowerCase() === c.name.toLowerCase()))).map(c => c.name));
     const entityOptions = indCos.length ? indCos : [defaultEntryCompany() || 'Bdeir Holding'];
     const curMatch = COMPANY_BU_MATCH[STATE.company];
     const defCo = (prefill && prefill.company) || (curMatch && entityOptions.includes(curMatch) ? curMatch : entityOptions[0]);
-    const today = '2026-10-30';
+    const today = (typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06';
 
     let modal = $('indDomainEntryModal');
     if (!modal) {
@@ -52669,8 +53350,8 @@
       $('indEntryModalCloseBtn').addEventListener('click', closeIndustryDomainEntryModal);
     }
 
-    $('indEntryModalEyebrow').textContent = `${ind.toUpperCase()} · SMART DOMAIN REGISTER ENTRY`;
-    $('indEntryModalTitle').textContent = spec.title;
+    $('indEntryModalEyebrow').textContent = `${ind.toUpperCase()} · ${isEditMode ? 'EDIT DOMAIN RECORD' : 'SMART DOMAIN REGISTER ENTRY'}`;
+    $('indEntryModalTitle').textContent = isEditMode ? `Edit · ${prefill.id || prefill.code || spec.label}` : spec.title;
 
     const fldWrap = (label, inputHtml, hint = '') => `
       <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:7px">
@@ -52681,6 +53362,7 @@
     `;
     const inpStyle = 'padding:6px 9px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:12.5px;font-weight:600';
     const roStyle = 'padding:6px 9px;border:1px solid var(--line,#E2E8F0);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--ink,#0F172A);font-size:12.5px;font-weight:700';
+    const idLockAttr = isEditMode ? `readonly style="${roStyle}"` : `style="${inpStyle}"`;
 
     const coSelectHtml = `<select id="ide_company" data-plain-options="1" style="${inpStyle}">${entityOptions.map(c => `<option value="${esc(c)}" ${c === defCo ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`;
 
@@ -52691,90 +53373,108 @@
       const carriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
       const clients = freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'MAN Enterprise Contracting S.A.L.', 'Khalil Fattal & Fils', 'Phoenicia Hospitality Partners', 'Dr. Nabil Khoury']);
       const lines = ['MOT · Motor', 'MED · Medical', 'PROP · Property', 'ENG · Engineering', 'MAR · Marine', 'LIAB · Liability', 'WC · Workmen Comp', 'LIFE · Life'];
+      const defCarrier = prefill.carrier || carriers[0] || 'MedGulf';
+      const defLine = prefill.line || lines[0];
+      const defDate = prefill.date || today;
+      const defType = prefill.type || 'Policy (New)';
+      const initRateLookup = lookupActiveInsuranceAgreementRate(defCarrier, defLine, defDate, defType);
+      const defRate = prefill.comm_rate_pct != null ? prefill.comm_rate_pct : initRateLookup.rate;
       datalistsHtml = `
         <datalist id="dl_ide_ins_carriers">${carriers.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
         <datalist id="dl_ide_ins_clients">${clients.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
       `;
       fieldsHtml = `
         ${fldWrap('Brokerage Entity', coSelectHtml)}
-        ${fldWrap('Policy / Endorsement # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'POL-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Record Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Policy (New)" ${prefill.type === 'Policy (New)' ? 'selected' : ''}>Policy (New)</option><option value="Policy (Renewal)" ${prefill.type === 'Policy (Renewal)' ? 'selected' : ''}>Policy (Renewal)</option><option value="Endorsement (+)" ${prefill.type === 'Endorsement (+)' ? 'selected' : ''}>Endorsement (+)</option></select>`)}
-        ${fldWrap('Effective Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Policy / Endorsement # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'POL-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Record Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Policy (New)" ${defType === 'Policy (New)' ? 'selected' : ''}>Policy (New)</option><option value="Policy (Renewal)" ${defType === 'Policy (Renewal)' ? 'selected' : ''}>Policy (Renewal)</option><option value="Endorsement (+)" ${defType === 'Endorsement (+)' ? 'selected' : ''}>Endorsement (+)</option></select>`)}
+        ${fldWrap('Effective Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
         ${fldWrap('Expiry Date *', `<input type="date" id="ide_expiry" style="${inpStyle}" value="${esc(prefill.expiry || '2027-10-29')}">`)}
         ${fldWrap('Policyholder / Client *', `<input type="text" id="ide_client" list="dl_ide_ins_clients" style="${inpStyle}" value="${esc(prefill.client || '')}" placeholder="Select or type client...">`)}
-        ${fldWrap('Insurance Carrier *', `<input type="text" id="ide_carrier" list="dl_ide_ins_carriers" style="${inpStyle}" value="${esc(prefill.carrier || carriers[0] || 'MedGulf')}">`)}
-        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}">${lines.map(l => `<option value="${esc(l)}" ${prefill.line === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`)}
+        ${fldWrap('Insurance Carrier *', `<input type="text" id="ide_carrier" list="dl_ide_ins_carriers" style="${inpStyle}" value="${esc(defCarrier)}">`)}
+        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}">${lines.map(l => `<option value="${esc(l)}" ${defLine === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`)}
         ${fldWrap('Product / Cover Plan', `<input type="text" id="ide_product" style="${inpStyle}" value="${esc(prefill.product || 'Commercial All-Risk Cover')}">`)}
-        ${fldWrap('Sum Insured ($)', `<input type="number" id="ide_sum_insured" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.sum_insured_usd || '500000')}">`)}
-        ${fldWrap('Gross Written Premium ($ GWP) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="1" style="${inpStyle}" value="${esc(prefill.gross_prem_usd || '10000')}">`)}
-        ${fldWrap('Brokerage Comm Rate (%) *', `<input type="number" id="ide_rate" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="${esc(prefill.comm_rate_pct || '15')}">`)}
+        ${fldWrap('Sum Insured ($)', `<input type="number" id="ide_sum_insured" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.sum_insured_usd != null ? prefill.sum_insured_usd : '500000')}">`)}
+        ${fldWrap('Gross Written Premium ($ GWP) *', `<input type="number" id="ide_gwp" class="mono" step="0.01" min="1" style="${inpStyle}" value="${esc(prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '10000')}">`)}
+        ${fldWrap('Brokerage Comm Rate (%) *', `<input type="number" id="ide_rate" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="${esc(defRate)}">`, `<span id="ideRateSourceHint">${esc(initRateLookup.isFallback ? 'Baseline rate (' + initRateLookup.agreementId + ')' : 'Chrono Agreement ' + initRateLookup.agreementId + ' (' + initRateLookup.rate + '%)')}</span>`)}
         ${fldWrap('Gross Commission ($)', `<input type="text" id="ide_gross_comm" class="mono" readonly style="${roStyle}" value="$1,500.00">`, 'Auto: GWP x Comm Rate %')}
-        ${fldWrap('Client Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount_usd || '0')}">`, 'Must not exceed Gross Commission')}
-        ${fldWrap('Policy Admin Fee ($)', `<input type="number" id="ide_fee" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.policy_fee_usd || '35')}">`)}
+        ${fldWrap('Client Discount ($)', `<input type="number" id="ide_discount" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(prefill.discount_usd != null ? prefill.discount_usd : '0')}">`, 'Must not exceed Gross Commission')}
+        ${fldWrap('Policy Admin Fee ($)', `<input type="number" id="ide_fee" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.policy_fee_usd != null ? prefill.policy_fee_usd : '35')}">`)}
         ${fldWrap('Net Earned Commission ($)', `<input type="text" id="ide_net_comm" class="mono" readonly style="${roStyle}" value="$1,500.00">`, 'Gross Commission minus Client Discount')}
         ${fldWrap('Net Carrier Payable ($)', `<input type="text" id="ide_payable" class="mono" readonly style="${roStyle}" value="$8,500.00">`, 'GWP minus Gross Commission')}
         ${fldWrap('Producer / Account Exec', `<input type="text" id="ide_producer" style="${inpStyle}" value="${esc(prefill.producer || 'Joseph Khalil')}">`)}
       `;
     } else if (spec.key === 'ins_claims') {
+      const carriers = freqRankCandidates('carrier', ['Allianz SNA', 'MedGulf', 'Bankers Assurance', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
+      const clients = freqRankCandidates('customer', ['Transmed Distribution Fleet', 'Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'MAN Enterprise Contracting S.A.L.']);
+      datalistsHtml = `
+        <datalist id="dl_ide_clm_carriers">${carriers.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="dl_ide_clm_clients">${clients.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      `;
       fieldsHtml = `
         ${fldWrap('Brokerage Entity', coSelectHtml)}
-        ${fldWrap('Claim File # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="CLM-2026-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Loss Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Policy # *', `<input type="text" id="ide_policy_no" class="mono" style="${inpStyle}" value="ALZ-MOT-2026-12801">`)}
-        ${fldWrap('Policyholder / Client *', `<input type="text" id="ide_client" style="${inpStyle}" value="Transmed Distribution Fleet">`)}
-        ${fldWrap('Insurance Carrier *', `<input type="text" id="ide_carrier" style="${inpStyle}" value="Allianz SNA">`)}
-        ${fldWrap('Line of Business', `<input type="text" id="ide_line" style="${inpStyle}" value="MOT · Motor">`)}
-        ${fldWrap('Peril / Incident Description *', `<input type="text" id="ide_peril" style="${inpStyle}" value="Commercial Vehicle Front Impact Survey">`)}
-        ${fldWrap('Surveyor / Loss Adjuster', `<input type="text" id="ide_adjuster" style="${inpStyle}" value="Expert Nabil Tabet">`)}
-        ${fldWrap('Claimed Amount ($) *', `<input type="number" id="ide_claimed" class="mono" step="10" min="1" style="${inpStyle}" value="4500">`)}
-        ${fldWrap('Policy Deductible ($)', `<input type="number" id="ide_deductible" class="mono" step="10" min="0" style="${inpStyle}" value="250">`)}
-        ${fldWrap('Carrier Approved ($)', `<input type="number" id="ide_approved" class="mono" step="10" min="0" style="${inpStyle}" value="0">`)}
+        ${fldWrap('Claim File # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'CLM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Loss Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.loss_date || prefill.date || today)}">`)}
+        ${fldWrap('Policy # *', `<input type="text" id="ide_policy_no" class="mono" style="${inpStyle}" value="${esc(prefill.policy_no || 'ALZ-MOT-2026-12801')}">`)}
+        ${fldWrap('Policyholder / Client *', `<input type="text" id="ide_client" list="dl_ide_clm_clients" style="${inpStyle}" value="${esc(prefill.client || prefill.insured || 'Transmed Distribution Fleet')}">`)}
+        ${fldWrap('Insurance Carrier *', `<input type="text" id="ide_carrier" list="dl_ide_clm_carriers" style="${inpStyle}" value="${esc(prefill.carrier || 'Allianz SNA')}">`)}
+        ${fldWrap('Line of Business', `<input type="text" id="ide_line" style="${inpStyle}" value="${esc(prefill.line || 'MOT · Motor')}">`)}
+        ${fldWrap('Peril / Incident Description *', `<input type="text" id="ide_peril" style="${inpStyle}" value="${esc(prefill.peril || 'Commercial Vehicle Front Impact Survey')}">`)}
+        ${fldWrap('Surveyor / Loss Adjuster', `<input type="text" id="ide_adjuster" style="${inpStyle}" value="${esc(prefill.adjuster || 'Expert Nabil Tabet')}">`)}
+        ${fldWrap('Claimed Amount ($) *', `<input type="number" id="ide_claimed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.claimed_usd != null ? prefill.claimed_usd : '4500')}">`)}
+        ${fldWrap('Policy Deductible ($)', `<input type="number" id="ide_deductible" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.deductible_usd != null ? prefill.deductible_usd : '250')}">`)}
+        ${fldWrap('Carrier Approved ($)', `<input type="number" id="ide_approved" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.approved_usd != null ? prefill.approved_usd : '0')}">`)}
       `;
     } else if (spec.key === 'ins_agreements') {
+      const agrCarriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
+      const agrLines = ['MED · Medical', 'MOT · Motor', 'PROP · Property', 'ENG · Engineering', 'MAR · Marine', 'LIAB · Liability'];
+      const defCar = prefill.carrier || agrCarriers[0] || 'MedGulf';
+      const defLn = prefill.line || agrLines[0];
+      const endVal = (prefill.end_date && prefill.end_date !== 'Open') ? prefill.end_date : '';
       fieldsHtml = `
-        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="AGR-CAR-2026-${String(Math.floor(10 + Math.random() * 89))}">`)}
-        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}"><option value="MedGulf">MedGulf</option><option value="Bankers Assurance">Bankers Assurance</option><option value="Allianz SNA">Allianz SNA</option><option value="AXA Middle East">AXA Middle East</option><option value="Libano-Suisse">Libano-Suisse</option><option value="Arope Insurance">Arope Insurance</option></select>`)}
-        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}"><option value="MED · Medical">MED · Medical</option><option value="MOT · Motor">MOT · Motor</option><option value="PROP · Property">PROP · Property</option><option value="ENG · Engineering">ENG · Engineering</option><option value="MAR · Marine">MAR · Marine</option><option value="LIAB · Liability">LIAB · Liability</option></select>`)}
-        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="2026-01-02" value="2026-07-01">`, 'Forward chronology: auto-closes prior Open agreement at prev day')}
-        ${fldWrap('Effective End Date', `<input type="date" id="ide_end_date" style="${inpStyle}" value="">`, 'Leave blank for Open ongoing agreement')}
-        ${fldWrap('New Business Comm (%) *', `<input type="number" id="ide_new_pct" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="12.0">`)}
-        ${fldWrap('Renewal Comm (%) *', `<input type="number" id="ide_ren_pct" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="11.5">`)}
-        ${fldWrap('Override Bonus (%)', `<input type="number" id="ide_bonus_pct" class="mono" step="0.1" min="0" max="25" style="${inpStyle}" value="2.0">`)}
+        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'AGR-CAR-2026-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${agrCarriers.map(c => `<option value="${esc(c)}" ${defCar === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
+        ${fldWrap('Insurance Line *', `<select id="ide_line" data-plain-options="1" style="${inpStyle}">${agrLines.map(l => `<option value="${esc(l)}" ${defLn === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`)}
+        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-01-02'}" value="${esc(prefill.start_date || '2026-07-01')}">`, 'Forward chronology: auto-closes prior Open agreement at prev day')}
+        ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open agreement" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing agreement (preserves explicit closed gaps)')}
+        ${fldWrap('New Business Comm (%) *', `<input type="number" id="ide_new_pct" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="${esc(prefill.new_bus_pct != null ? prefill.new_bus_pct : '12.0')}">`)}
+        ${fldWrap('Renewal Comm (%) *', `<input type="number" id="ide_ren_pct" class="mono" step="0.1" min="0" max="60" style="${inpStyle}" value="${esc(prefill.renewal_pct != null ? prefill.renewal_pct : '11.5')}">`)}
+        ${fldWrap('Override Bonus (%)', `<input type="number" id="ide_bonus_pct" class="mono" step="0.1" min="0" max="25" style="${inpStyle}" value="${esc(prefill.override_bonus_pct != null ? prefill.override_bonus_pct : '2.0')}">`)}
       `;
     } else if (spec.key === 'ins_remittances') {
-      const remCarriers = ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance'];
+      const remCarriers = freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']);
       fieldsHtml = `
-        ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Bordereau / Remittance ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'REM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Insurance Carrier *', `<select id="ide_carrier" data-plain-options="1" style="${inpStyle}">${remCarriers.map(c => `<option value="${esc(c)}" ${prefill.carrier === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`)}
-        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : '15000')}">`)}
-        ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : '2250')}">`)}
-        ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.settled != null ? prefill.settled : '10000')}">`)}
+        ${fldWrap('Gross Premium Bordereau ($) *', `<input type="number" id="ide_gwp" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.gwp != null ? prefill.gwp : (prefill.gross_prem_usd != null ? prefill.gross_prem_usd : '15000'))}">`)}
+        ${fldWrap('Retained Broker Comm ($)', `<input type="number" id="ide_comm" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comm != null ? prefill.comm : (prefill.broker_comm_7063_usd != null ? prefill.broker_comm_7063_usd : '2250'))}">`)}
+        ${fldWrap('Settled Wire to Carrier ($)', `<input type="number" id="ide_settled" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.settled != null ? prefill.settled : (prefill.settled_to_carrier_usd != null ? prefill.settled_to_carrier_usd : '10000'))}">`)}
         ${fldWrap('Remaining Carrier Payable ($)', `<input type="text" id="ide_payable" class="mono" readonly style="${roStyle}" value="$2,750.00">`)}
-        ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="2026-11-30">`)}
+        ${fldWrap('Next Settlement Due Date', `<input type="date" id="ide_due" style="${inpStyle}" value="${esc(prefill.next_due || prefill.due_date || '2026-11-30')}">`)}
       `;
     } else if (spec.key === 're_leases') {
       const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
+      const defFreq = prefill.frequency || 'Quarterly';
       datalistsHtml = `<datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
-        ${fldWrap('Lease Contract ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'LSE-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Lease Contract ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'LSE-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Property / Building *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
         ${fldWrap('Leased Unit / Floor *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 Medical Suite (210 m2)')}">`)}
         ${fldWrap('Tenant Name *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(prefill.tenant || '')}" placeholder="Select or type tenant...">`)}
         ${fldWrap('Lease Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-11-01')}">`)}
         ${fldWrap('Lease End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="${esc(prefill.end_date || '2029-10-31')}">`)}
-        ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" selected>Quarterly (4x/yr)</option><option value="Monthly">Monthly (12x/yr)</option><option value="Annual">Annual (1x/yr)</option></select>`)}
-        ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_period_usd || '10000')}">`)}
+        ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" ${defFreq === 'Quarterly' ? 'selected' : ''}>Quarterly (4x/yr)</option><option value="Monthly" ${defFreq === 'Monthly' ? 'selected' : ''}>Monthly (12x/yr)</option><option value="Annual" ${defFreq === 'Annual' ? 'selected' : ''}>Annual (1x/yr)</option></select>`)}
+        ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_period_usd != null ? prefill.net_period_usd : '10000')}">`)}
         ${fldWrap('Applicable VAT Rate (%)', `<input type="text" id="ide_vat_rate" class="mono" readonly style="${roStyle}" value="${/4235/.test(defCo) ? '11%' : '0%'}">`)}
         ${fldWrap('Period Billed Rent ($)', `<input type="text" id="ide_period_tot" class="mono" readonly style="${roStyle}" value="$11,100.00">`)}
         ${fldWrap('Contracted Annual Rent ($)', `<input type="text" id="ide_annual_tot" class="mono" readonly style="${roStyle}" value="$44,400.00">`)}
-        ${fldWrap('Security Deposit Held ($)', `<input type="number" id="ide_deposit" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.deposit_usd || '10000')}">`)}
-        ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="3-Yr Commercial (+8% Yr 4)">`)}
+        ${fldWrap('Security Deposit Held ($)', `<input type="number" id="ide_deposit" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.deposit_usd != null ? prefill.deposit_usd : '10000')}">`)}
+        ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="${esc(prefill.escalation || '3-Yr Commercial (+8% Yr 4)')}">`)}
       `;
     } else if (spec.key === 're_invoicing') {
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
-        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'INV-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'INV-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Official Tax Sequence', `<input type="text" id="ide_tax_seq" class="mono" style="${inpStyle}" value="${esc(prefill.tax_seq || 'VAT-4235-#016')}">`)}
         ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
@@ -52788,41 +53488,44 @@
     } else if (spec.key === 're_sales') {
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml)}
-        ${fldWrap('Sale Contract # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="RE-SAL-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Contract Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Property / Plot *', `<input type="text" id="ide_property" style="${inpStyle}" value="1354/50 Mina el Hosn (Marina Tower)">`)}
-        ${fldWrap('Unit / Sub-Parcel *', `<input type="text" id="ide_unit" style="${inpStyle}" value="Executive Floor Residence C">`)}
-        ${fldWrap('Buyer Name *', `<input type="text" id="ide_buyer" style="${inpStyle}" value="Mediterranean Equity Partners SAL">`)}
-        ${fldWrap('Contract Sale Price ($) *', `<input type="number" id="ide_contract" class="mono" step="1000" min="1000" style="${inpStyle}" value="650000">`)}
-        ${fldWrap('Buyer Deposit Paid ($)', `<input type="number" id="ide_paid" class="mono" step="1000" min="0" style="${inpStyle}" value="325000">`)}
+        ${fldWrap('Sale Contract # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'RE-SAL-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Contract Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Property / Plot *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || '1354/50 Mina el Hosn (Marina Tower)')}">`)}
+        ${fldWrap('Unit / Sub-Parcel *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Executive Floor Residence C')}">`)}
+        ${fldWrap('Buyer Name *', `<input type="text" id="ide_buyer" style="${inpStyle}" value="${esc(prefill.buyer || 'Mediterranean Equity Partners SAL')}">`)}
+        ${fldWrap('Contract Sale Price ($) *', `<input type="number" id="ide_contract" class="mono" step="1000" min="1000" style="${inpStyle}" value="${esc(prefill.contract_usd != null ? prefill.contract_usd : '650000')}">`)}
+        ${fldWrap('Buyer Deposit Paid ($)', `<input type="number" id="ide_paid" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(prefill.paid_usd != null ? prefill.paid_usd : '325000')}">`)}
         ${fldWrap('Remaining Buyer Balance ($)', `<input type="text" id="ide_balance" class="mono" readonly style="${roStyle}" value="$325,000.00">`)}
       `;
     } else if (spec.key === 're_workorders') {
+      const defCat = prefill.category || 'Structural Fit-Out & HVAC (CAPEX)';
+      const isRech = prefill.rechargeable === true || prefill.rechargeable === 'yes';
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml)}
-        ${fldWrap('Work Order # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="WO-RE-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Order Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="4235 Msaytbeh Commercial Center">`)}
-        ${fldWrap('Unit / Common Area *', `<input type="text" id="ide_unit" style="${inpStyle}" value="Floor 2 East Medical Suite">`)}
-        ${fldWrap('Contractor / Vendor *', `<input type="text" id="ide_contractor" style="${inpStyle}" value="MEP Tech Engineering SAL">`)}
-        ${fldWrap('Work Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Structural Fit-Out & HVAC (CAPEX)">Structural Fit-Out & HVAC (CAPEX)</option><option value="Tenant-Fault Repair & Recharge">Tenant-Fault Repair & Recharge</option><option value="Generator & Common Area Maintenance">Generator & Common Area Maintenance</option></select>`)}
-        ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="100" min="1" style="${inpStyle}" value="12000">`)}
-        ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="100" min="0" style="${inpStyle}" value="11500">`)}
-        ${fldWrap('Tenant Rechargeable?', `<select id="ide_rechargeable" data-plain-options="1" style="${inpStyle}"><option value="no">Landlord Expense / CAPEX</option><option value="yes">Yes (Rechargeable to Tenant)</option></select>`)}
+        ${fldWrap('Work Order # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'WO-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Order Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || '4235 Msaytbeh Commercial Center')}">`)}
+        ${fldWrap('Unit / Common Area *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 East Medical Suite')}">`)}
+        ${fldWrap('Contractor / Vendor *', `<input type="text" id="ide_contractor" style="${inpStyle}" value="${esc(prefill.contractor || 'MEP Tech Engineering SAL')}">`)}
+        ${fldWrap('Work Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Structural Fit-Out & HVAC (CAPEX)" ${/CAPEX/i.test(defCat) ? 'selected' : ''}>Structural Fit-Out & HVAC (CAPEX)</option><option value="Tenant-Fault Repair & Recharge" ${/Tenant/i.test(defCat) ? 'selected' : ''}>Tenant-Fault Repair & Recharge</option><option value="Generator & Common Area Maintenance" ${/Generator/i.test(defCat) ? 'selected' : ''}>Generator & Common Area Maintenance</option></select>`)}
+        ${fldWrap('Approved Budget ($) *', `<input type="number" id="ide_budget" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.budget_usd != null ? prefill.budget_usd : '12000')}">`)}
+        ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.actual_usd != null ? prefill.actual_usd : '11500')}">`)}
+        ${fldWrap('Tenant Rechargeable?', `<select id="ide_rechargeable" data-plain-options="1" style="${inpStyle}"><option value="no" ${!isRech ? 'selected' : ''}>Landlord Expense / CAPEX</option><option value="yes" ${isRech ? 'selected' : ''}>Yes (Rechargeable to Tenant)</option></select>`)}
       `;
     } else if (spec.key === 'trd_sales') {
       const custs = freqRankCandidates('customer', ['Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Mediterranean Haulage Group', 'South Coast Auto Fleet', 'Al-Ghazieh Commercial Garage']);
+      const defCat = prefill.category || 'Heavy Truck Sale';
       datalistsHtml = `<datalist id="dl_ide_trd_custs">${custs.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
-        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="INV-TRD-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Physical Invoice Book', `<input type="text" id="ide_book" class="mono" style="${inpStyle}" value="BK-SH-2026-01">`)}
-        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
+        ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'INV-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Physical Invoice Book', `<input type="text" id="ide_book" class="mono" style="${inpStyle}" value="${esc(prefill.book || 'BK-SH-2026-01')}">`)}
+        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Customer *', `<input type="text" id="ide_customer" list="dl_ide_trd_custs" style="${inpStyle}" value="${esc(prefill.customer || custs[0] || '')}">`)}
-        ${fldWrap('Sale Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale">Heavy Truck Sale</option><option value="Spare Parts & Tyres">Spare Parts & Tyres</option><option value="Lubricants & Hydraulics">Lubricants & Hydraulics</option></select>`)}
+        ${fldWrap('Sale Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale" ${defCat === 'Heavy Truck Sale' ? 'selected' : ''}>Heavy Truck Sale</option><option value="Spare Parts & Tyres" ${defCat === 'Spare Parts & Tyres' ? 'selected' : ''}>Spare Parts & Tyres</option><option value="Lubricants & Hydraulics" ${defCat === 'Lubricants & Hydraulics' ? 'selected' : ''}>Lubricants & Hydraulics</option></select>`)}
         ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || 'Shacman F3000 6x4 Dump Truck 340HP')}">`)}
         ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || 'LZGJLDR44PX019301')}">`, 'Serial VIN (>=6 chars) locks Qty = 1')}
-        ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="1">`)}
+        ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.qty != null ? prefill.qty : '1')}">`)}
         ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '84500')}">`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
@@ -52830,13 +53533,15 @@
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
       `;
     } else if (spec.key === 'trd_purchases') {
+      const sups = freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'Shandong Heavy Tyre & Radial Works', 'EuroDiesel Filters & Brake Components GmbH']);
+      datalistsHtml = `<datalist id="dl_ide_trd_sups">${sups.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
-        ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'IMP-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'IMP-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" style="${inpStyle}" value="${esc(prefill.supplier || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
+        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(prefill.supplier || sups[0] || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
         ${fldWrap('Port of Origin', `<input type="text" id="ide_origin" style="${inpStyle}" value="${esc(prefill.origin || 'Qingdao Port')}">`)}
-        ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || 'COSU6891992014 · 2x40HC')}">`)}
+        ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || prefill.container_bl || 'COSU6891992014 · 2x40HC')}">`)}
         ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.ordered_qty != null ? prefill.ordered_qty : '50')}">`)}
         ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : '50')}">`)}
         ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '48000')}">`)}
@@ -52844,70 +53549,76 @@
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
     } else if (spec.key === 'trd_trucks') {
+      const whs = freqRankCandidates('site', ['Main Showroom', 'Bchamoun Yard', 'Bonded Yard', 'Al Ghazieh', 'Workshop']);
+      const defWh = prefill.warehouse || whs[0] || 'Main Showroom';
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
-        ${fldWrap('Unit Stock ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="SU-SH-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Vehicle Model *', `<input type="text" id="ide_model" style="${inpStyle}" value="Shacman X3000 6x4 Tractor Head 430HP">`)}
-        ${fldWrap('Series / Family', `<input type="text" id="ide_family" style="${inpStyle}" value="X3000 Series">`)}
-        ${fldWrap('Chassis VIN *', `<input type="text" id="ide_vin" class="mono" style="${inpStyle}" value="LZGJLDR44PX019399">`)}
-        ${fldWrap('Engine Serial # *', `<input type="text" id="ide_engine" class="mono" style="${inpStyle}" value="WP12.430E201-991024">`)}
-        ${fldWrap('Warehouse / Yard', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}"><option value="Main Showroom">Main Showroom</option><option value="Bchamoun Yard">Bchamoun Yard</option><option value="Bonded Yard">Bonded Yard</option><option value="Al Ghazieh">Al Ghazieh</option><option value="Workshop">Workshop</option></select>`)}
-        ${fldWrap('FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="60500">`)}
-        ${fldWrap('Allocated Landed Add ($)', `<input type="number" id="ide_landed_add" class="mono" step="100" min="0" style="${inpStyle}" value="5500">`)}
-        ${fldWrap('Showroom List Price ($) *', `<input type="number" id="ide_list" class="mono" step="100" min="1" style="${inpStyle}" value="88500">`)}
+        ${fldWrap('Unit Stock ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'SU-SH-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Vehicle Model *', `<input type="text" id="ide_model" style="${inpStyle}" value="${esc(prefill.model || 'Shacman X3000 6x4 Tractor Head 430HP')}">`)}
+        ${fldWrap('Series / Family', `<input type="text" id="ide_family" style="${inpStyle}" value="${esc(prefill.family || 'X3000 Series')}">`)}
+        ${fldWrap('Chassis VIN *', `<input type="text" id="ide_vin" class="mono" style="${inpStyle}" value="${esc(prefill.chassis_vin || prefill.vin || 'LZGJLDR44PX019399')}">`)}
+        ${fldWrap('Engine Serial # *', `<input type="text" id="ide_engine" class="mono" style="${inpStyle}" value="${esc(prefill.engine_no || 'WP12.430E201-991024')}">`)}
+        ${fldWrap('Warehouse / Yard', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}">${whs.map(w => `<option value="${esc(w)}" ${defWh === w ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select>`)}
+        ${fldWrap('FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '60500')}">`)}
+        ${fldWrap('Allocated Landed Add ($)', `<input type="number" id="ide_landed_add" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.landed_add_usd != null ? prefill.landed_add_usd : '5500')}">`)}
+        ${fldWrap('Showroom List Price ($) *', `<input type="number" id="ide_list" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.list_price_usd != null ? prefill.list_price_usd : '88500')}">`)}
       `;
     } else if (spec.key === 'trd_stock') {
+      const whs = freqRankCandidates('site', ['Al Ghazieh', 'Bchamoun Yard', 'Main Showroom', 'Workshop', 'Bonded Yard']);
+      const defWh = prefill.warehouse || whs[0] || 'Al Ghazieh';
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
-        ${fldWrap('OEM Part Code *', `<input type="text" id="ide_code" class="mono" style="${inpStyle}" value="DZ952595-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Part Description *', `<input type="text" id="ide_name" style="${inpStyle}" value="Heavy Duty Clutch Disc & Pressure Plate Assembly">`)}
-        ${fldWrap('Warehouse *', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}"><option value="Al Ghazieh">Al Ghazieh</option><option value="Bchamoun Yard">Bchamoun Yard</option><option value="Main Showroom">Main Showroom</option><option value="Workshop">Workshop</option><option value="Bonded Yard">Bonded Yard</option></select>`)}
-        ${fldWrap('Part Category', `<input type="text" id="ide_cat" style="${inpStyle}" value="Transmission & Clutch">`)}
-        ${fldWrap('Qty On Hand *', `<input type="number" id="ide_on_hand" class="mono" step="1" min="0" style="${inpStyle}" value="20">`)}
-        ${fldWrap('Minimum Reorder Point *', `<input type="number" id="ide_reorder" class="mono" step="1" min="0" style="${inpStyle}" value="8">`)}
-        ${fldWrap('Weighted Avg Cost ($ WAC) *', `<input type="number" id="ide_wac" class="mono" step="1" min="0.01" style="${inpStyle}" value="340">`)}
-        ${fldWrap('Counter Retail Price ($) *', `<input type="number" id="ide_retail" class="mono" step="1" min="0.01" style="${inpStyle}" value="465">`)}
+        ${fldWrap('OEM Part Code *', `<input type="text" id="ide_code" class="mono" ${idLockAttr} value="${esc(prefill.code || 'DZ952595-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Part Description *', `<input type="text" id="ide_name" style="${inpStyle}" value="${esc(prefill.name || 'Heavy Duty Clutch Disc & Pressure Plate Assembly')}">`)}
+        ${fldWrap('Warehouse *', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}">${whs.map(w => `<option value="${esc(w)}" ${defWh === w ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select>`)}
+        ${fldWrap('Part Category', `<input type="text" id="ide_cat" style="${inpStyle}" value="${esc(prefill.category || 'Transmission & Clutch')}">`)}
+        ${fldWrap('Qty On Hand *', `<input type="number" id="ide_on_hand" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.on_hand != null ? prefill.on_hand : '20')}">`)}
+        ${fldWrap('Minimum Reorder Point *', `<input type="number" id="ide_reorder" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.reorder_min != null ? prefill.reorder_min : '8')}">`)}
+        ${fldWrap('Weighted Avg Cost ($ WAC) *', `<input type="number" id="ide_wac" class="mono" step="1" min="0.01" style="${inpStyle}" value="${esc(prefill.wac_usd != null ? prefill.wac_usd : '340')}">`)}
+        ${fldWrap('Counter Retail Price ($) *', `<input type="number" id="ide_retail" class="mono" step="1" min="0.01" style="${inpStyle}" value="${esc(prefill.retail_usd != null ? prefill.retail_usd : '465')}">`)}
         ${fldWrap('Total Stock Value ($)', `<input type="text" id="ide_val" class="mono" readonly style="${roStyle}" value="$6,800.00">`)}
       `;
     } else if (spec.key === 'hsp_revenue') {
+      const defCat = prefill.category || 'Chalet Rental';
+      const defMth = prefill.method || 'Cash & Card';
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('Revenue Sheet # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="HSP-REV-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Operating Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="2026-09-29">`)}
-        ${fldWrap('Venue / Outlet *', `<input type="text" id="ide_outlet" style="${inpStyle}" value="Chalets & Beach Terrace">`)}
-        ${fldWrap('Revenue Stream *', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Chalet Rental">Chalet Rental (11% VAT)</option><option value="Restaurant F&B">Restaurant F&B (11% VAT)</option><option value="Beach Entrance">Beach Entrance (11% VAT)</option><option value="Events & Weddings">Events & Weddings (11% VAT)</option><option value="Staff Tips & Gratuities">Staff Tips & Gratuities (Zero-VAT)</option><option value="Generator Diesel Recharge">Generator Diesel Recharge (Zero-VAT)</option></select>`)}
-        ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="12">`)}
-        ${fldWrap('Guest Covers', `<input type="number" id="ide_covers" class="mono" step="1" min="1" style="${inpStyle}" value="95">`)}
-        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="10" min="1" style="${inpStyle}" value="8880">`)}
+        ${fldWrap('Revenue Sheet # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'HSP-REV-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Operating Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Venue / Outlet *', `<input type="text" id="ide_outlet" style="${inpStyle}" value="${esc(prefill.outlet || 'Chalets & Beach Terrace')}">`)}
+        ${fldWrap('Revenue Stream *', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Chalet Rental" ${/Chalet/i.test(defCat) ? 'selected' : ''}>Chalet Rental (11% VAT)</option><option value="Restaurant F&B" ${/Restaurant|F&B/i.test(defCat) ? 'selected' : ''}>Restaurant F&B (11% VAT)</option><option value="Beach Entrance" ${/Beach/i.test(defCat) ? 'selected' : ''}>Beach Entrance (11% VAT)</option><option value="Events & Weddings" ${/Event|Wedding/i.test(defCat) ? 'selected' : ''}>Events & Weddings (11% VAT)</option><option value="Staff Tips & Gratuities" ${/Tip|Gratuit/i.test(defCat) ? 'selected' : ''}>Staff Tips & Gratuities (Zero-VAT)</option><option value="Generator Diesel Recharge" ${/Diesel/i.test(defCat) ? 'selected' : ''}>Generator Diesel Recharge (Zero-VAT)</option></select>`)}
+        ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.rooms != null ? prefill.rooms : '12')}">`)}
+        ${fldWrap('Guest Covers', `<input type="number" id="ide_covers" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.covers != null ? prefill.covers : '95')}">`)}
+        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.ttc_usd != null ? prefill.ttc_usd : '8880')}">`)}
         ${fldWrap('Net Excl. Tax ($)', `<input type="text" id="ide_ht" class="mono" readonly style="${roStyle}" value="$8,000.00">`)}
         ${fldWrap('Output VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$880.00">`, 'Zero-VAT enforced on Tips & Diesel')}
-        ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card">Cash & Card</option><option value="POS Till #1">POS Till #1</option><option value="Card / Whish">Card / Whish</option><option value="Bank Transfer">Bank Transfer</option></select>`)}
-        ${fldWrap('Shift Close Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="Verified daily resort outlet close">`)}
+        ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card" ${defMth === 'Cash & Card' ? 'selected' : ''}>Cash & Card</option><option value="POS Till #1" ${defMth === 'POS Till #1' ? 'selected' : ''}>POS Till #1</option><option value="Card / Whish" ${defMth === 'Card / Whish' ? 'selected' : ''}>Card / Whish</option><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option></select>`)}
+        ${fldWrap('Shift Close Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Verified daily resort outlet close')}">`)}
       `;
     } else if (spec.key === 'hsp_pos') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('POS Shift Close # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'POS-CL-' + String(Math.floor(910 + Math.random() * 89)))}">`)}
-        ${fldWrap('Close Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || '2026-09-29')}">`)}
+        ${fldWrap('POS Shift Close # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'POS-CL-' + String(Math.floor(910 + Math.random() * 89)))}">`)}
+        ${fldWrap('Close Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('POS Terminal *', `<input type="text" id="ide_terminal" style="${inpStyle}" value="${esc(prefill.terminal || 'Main Terrace POS #1')}">`)}
         ${fldWrap('Shift Window', `<input type="text" id="ide_shift" style="${inpStyle}" value="${esc(prefill.shift || 'Full Day')}">`)}
         ${fldWrap('Cashier Name *', `<input type="text" id="ide_cashier" style="${inpStyle}" value="${esc(prefill.cashier || 'Maya S.')}">`)}
-        ${fldWrap('Closed Bills Count', `<input type="number" id="ide_bills" class="mono" step="1" min="1" style="${inpStyle}" value="120">`)}
-        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : '9500')}">`)}
+        ${fldWrap('Closed Bills Count', `<input type="number" id="ide_bills" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.bills_count != null ? prefill.bills_count : '120')}">`)}
+        ${fldWrap('POS Billed Total ($) *', `<input type="number" id="ide_billed" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.billed_usd != null ? prefill.billed_usd : (prefill.pos_billed_ttc != null ? prefill.pos_billed_ttc : '9500'))}">`)}
         ${fldWrap('Physical Cash Counted ($)', `<input type="number" id="ide_cash" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.cash_usd != null ? prefill.cash_usd : '5200')}">`)}
-        ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.card_usd != null ? prefill.card_usd : '4300')}">`)}
+        ${fldWrap('Card & Whish Slips ($)', `<input type="number" id="ide_card" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.card_usd != null ? prefill.card_usd : (prefill.card_whish_usd != null ? prefill.card_whish_usd : '4300'))}">`)}
         ${fldWrap('Approved Comp / Promo ($)', `<input type="number" id="ide_comp" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.comp_usd != null ? prefill.comp_usd : '0')}">`)}
         ${fldWrap('Drawer Variance ($)', `<input type="text" id="ide_var" class="mono" readonly style="${roStyle}" value="$0.00 (Balanced)">`)}
       `;
     } else if (spec.key === 'hsp_memberships') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('Membership Contract # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'MEM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Membership Contract # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'MEM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Member / Family Name *', `<input type="text" id="ide_member" style="${inpStyle}" value="${esc(prefill.member || 'Frem Family Beach Trust')}">`)}
         ${fldWrap('Assigned Chalet / Cabana *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'VIP Cabana #A-09')}">`)}
         ${fldWrap('Season Package', `<input type="text" id="ide_season" style="${inpStyle}" value="${esc(prefill.season || 'Summer 2026')}">`)}
-        ${fldWrap('Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="2026-05-01">`)}
-        ${fldWrap('End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="2026-10-31">`)}
+        ${fldWrap('Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-05-01')}">`)}
+        ${fldWrap('End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="${esc(prefill.end_date || '2026-10-31')}">`)}
         ${fldWrap('Seasonal Contract Value ($) *', `<input type="number" id="ide_contract" class="mono" step="100" min="100" style="${inpStyle}" value="${esc(prefill.contract_usd != null ? prefill.contract_usd : '22000')}">`)}
         ${fldWrap('Amount Collected ($)', `<input type="number" id="ide_paid" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.paid_usd != null ? prefill.paid_usd : '22000')}">`)}
         ${fldWrap('Remaining Balance ($)', `<input type="text" id="ide_balance" class="mono" readonly style="${roStyle}" value="$0.00">`)}
@@ -52915,62 +53626,67 @@
     } else if (spec.key === 'hsp_stock') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('Stock Sheet # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="STK-HSP-${String(Math.floor(10 + Math.random() * 89))}">`)}
-        ${fldWrap('Log Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="2026-09-29">`)}
-        ${fldWrap('Commissary / Cellar Store *', `<input type="text" id="ide_store" style="${inpStyle}" value="Main Kitchen & Cold Room">`)}
-        ${fldWrap('Item Group *', `<input type="text" id="ide_group" style="${inpStyle}" value="Prime Cuts & Seafood">`)}
-        ${fldWrap('Opening Stock ($)', `<input type="number" id="ide_open" class="mono" step="50" min="0" style="${inpStyle}" value="5000">`)}
-        ${fldWrap('Purchases In ($) *', `<input type="number" id="ide_purch" class="mono" step="50" min="0" style="${inpStyle}" value="8400">`)}
-        ${fldWrap('Recipe BOM Depletion ($) *', `<input type="number" id="ide_usage" class="mono" step="50" min="1" style="${inpStyle}" value="8000">`)}
+        ${fldWrap('Stock Sheet # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'STK-HSP-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Log Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Commissary / Cellar Store *', `<input type="text" id="ide_store" style="${inpStyle}" value="${esc(prefill.store || 'Main Kitchen & Cold Room')}">`)}
+        ${fldWrap('Item Group *', `<input type="text" id="ide_group" style="${inpStyle}" value="${esc(prefill.item_group || 'Prime Cuts & Seafood')}">`)}
+        ${fldWrap('Opening Stock ($)', `<input type="number" id="ide_open" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.opening_usd != null ? prefill.opening_usd : '5000')}">`)}
+        ${fldWrap('Purchases In ($) *', `<input type="number" id="ide_purch" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.purchases_in_usd != null ? prefill.purchases_in_usd : '8400')}">`)}
+        ${fldWrap('Recipe BOM Depletion ($) *', `<input type="number" id="ide_usage" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.recipe_usage_usd != null ? prefill.recipe_usage_usd : '8000')}">`)}
         ${fldWrap('Closing Stock & Ratio', `<input type="text" id="ide_close" class="mono" readonly style="${roStyle}" value="$5,400.00 (1.05x)">`)}
       `;
     } else if (spec.key === 'hsp_energy') {
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
-        ${fldWrap('Generator Log # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="NRG-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Log Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="2026-09-29">`)}
-        ${fldWrap('Generator & Solar Asset *', `<input type="text" id="ide_asset" style="${inpStyle}" value="Perkins 500kVA Prime Gen #1">`)}
-        ${fldWrap('Tank Level (Litres)', `<input type="number" id="ide_tank" class="mono" step="10" min="0" style="${inpStyle}" value="5800">`)}
-        ${fldWrap('Run Hours *', `<input type="number" id="ide_hours" class="mono" step="0.5" min="0.5" style="${inpStyle}" value="15">`)}
-        ${fldWrap('Diesel Consumed (Litres) *', `<input type="number" id="ide_diesel" class="mono" step="5" min="1" style="${inpStyle}" value="450">`)}
-        ${fldWrap('Rated Curve (L/hr) *', `<input type="number" id="ide_rated" class="mono" step="0.5" min="1" style="${inpStyle}" value="31">`)}
-        ${fldWrap('Solar PV Offset (%)', `<input type="number" id="ide_solar" class="mono" step="1" min="0" max="100" style="${inpStyle}" value="35">`)}
+        ${fldWrap('Generator Log # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'NRG-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Log Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Generator & Solar Asset *', `<input type="text" id="ide_asset" style="${inpStyle}" value="${esc(prefill.asset || 'Perkins 500kVA Prime Gen #1')}">`)}
+        ${fldWrap('Tank Level (Litres)', `<input type="number" id="ide_tank" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(prefill.tank_level_l != null ? prefill.tank_level_l : '5800')}">`)}
+        ${fldWrap('Run Hours *', `<input type="number" id="ide_hours" class="mono" step="0.5" min="0.5" style="${inpStyle}" value="${esc(prefill.run_hours != null ? prefill.run_hours : '15')}">`)}
+        ${fldWrap('Diesel Consumed (Litres) *', `<input type="number" id="ide_diesel" class="mono" step="5" min="1" style="${inpStyle}" value="${esc(prefill.diesel_used_l != null ? prefill.diesel_used_l : '450')}">`)}
+        ${fldWrap('Rated Curve (L/hr) *', `<input type="number" id="ide_rated" class="mono" step="0.5" min="1" style="${inpStyle}" value="${esc(prefill.rated_l_hr != null ? prefill.rated_l_hr : '31')}">`)}
+        ${fldWrap('Solar PV Offset (%)', `<input type="number" id="ide_solar" class="mono" step="1" min="0" max="100" style="${inpStyle}" value="${esc(prefill.solar_offset_pct != null ? prefill.solar_offset_pct : '35')}">`)}
         ${fldWrap('Computed Burn (L/hr)', `<input type="text" id="ide_burn" class="mono" readonly style="${roStyle}" value="30.0 L/hr (Normal Burn)">`)}
       `;
     } else if (spec.key === 'hld_partners') {
       fieldsHtml = `
-        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'HLD-PRT-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'HLD-PRT-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
         ${fldWrap('Operating Subsidiary Pool *', `<input type="text" id="ide_entity" style="${inpStyle}" value="${esc(prefill.entity || 'Bdeir Holding · Consolidated JV')}">`)}
         ${fldWrap('Partner / Shareholder Slot *', `<input type="text" id="ide_partner" style="${inpStyle}" value="${esc(prefill.partner || 'Strategic Co-Investor (Slot 6)')}">`)}
-        ${fldWrap('Effective From Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="2026-07-01">`)}
-        ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="20">`)}
+        ${fldWrap('Effective From Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-07-01')}">`)}
+        ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="${esc(prefill.pct != null ? prefill.pct : '20')}">`)}
         ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="1000" min="100" style="${inpStyle}" value="${esc(prefill.pool_usd != null ? prefill.pool_usd : '150000')}">`)}
-        ${fldWrap('Drawings Paid ($)', `<input type="number" id="ide_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="20000">`)}
+        ${fldWrap('Drawings Paid ($)', `<input type="number" id="ide_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.drawn_usd != null ? prefill.drawn_usd : '20000')}">`)}
         ${fldWrap('Entitled & Open Balance', `<input type="text" id="ide_entitled" class="mono" readonly style="${roStyle}" value="$30,000 Entitled · $10,000 Open">`)}
       `;
     } else if (spec.key === 'hld_loans') {
+      const defType = prefill.type || 'Term Facility';
       fieldsHtml = `
         ${fldWrap('Holding / Subsidiary Entity *', coSelectHtml)}
-        ${fldWrap('Facility ID *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="${esc(prefill.id || 'LN-HLD-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Facility ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'LN-HLD-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
         ${fldWrap('Agreement Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="${esc(prefill.lender || 'Central Shareholder Treasury Line')}">`)}
-        ${fldWrap('Facility Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Term Facility">Term Facility</option><option value="Revolving Sister Line">Revolving Sister Line</option><option value="Equipment Finance">Equipment Finance</option></select>`)}
+        ${fldWrap('Facility Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Term Facility" ${defType === 'Term Facility' ? 'selected' : ''}>Term Facility</option><option value="Revolving Sister Line" ${defType === 'Revolving Sister Line' ? 'selected' : ''}>Revolving Sister Line</option><option value="Equipment Finance" ${defType === 'Equipment Finance' ? 'selected' : ''}>Equipment Finance</option></select>`)}
         ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="1000" min="500" style="${inpStyle}" value="${esc(prefill.principal_usd != null ? prefill.principal_usd : '120000')}">`)}
         ${fldWrap('Principal Repaid ($)', `<input type="number" id="ide_rep" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.repaid_usd != null ? prefill.repaid_usd : '30000')}">`)}
         ${fldWrap('Outstanding Balance ($)', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
     } else {
       // hld_interactions (Sister Transfer)
-      const sisters = ['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Korri Auto', 'Shacman', 'Properties', '4235 Company S.A.L', 'Insurance Company'];
+      const sisters = freqRankCandidates('company', ['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Korri Auto', 'Shacman', 'Properties', '4235 Company S.A.L', 'Insurance Company']);
+      const defFrom = prefill.fromCo || 'Bdeir Holding';
+      const defTo = prefill.toCo || (defFrom === 'WTC' ? 'Bdeir Holding' : 'WTC');
+      const defMth = prefill.method || 'Bank Transfer';
+      const defMirror = prefill.bookMirror != null ? Boolean(prefill.bookMirror) : true;
       fieldsHtml = `
-        ${fldWrap('Transfer Voucher # *', `<input type="text" id="ide_id" class="mono" style="${inpStyle}" value="IC-2026-${String(Math.floor(100 + Math.random() * 899))}">`)}
-        ${fldWrap('Transfer Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${today}">`)}
-        ${fldWrap('From Sister Entity (Sender) *', `<select id="ide_from" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === 'Bdeir Holding' ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
-        ${fldWrap('To Sister Entity (Receiver) *', `<select id="ide_to" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === 'WTC' ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
-        ${fldWrap('Transfer Amount ($ USD) *', `<input type="number" id="ide_usd" class="mono" step="100" min="1" style="${inpStyle}" value="25000">`)}
-        ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Bank Transfer">Bank Transfer</option><option value="Cash">Cash</option><option value="Check">Check</option></select>`)}
-        ${fldWrap('Two-Sided Mirror Pairing', `<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding-top:4px"><input type="checkbox" id="ide_mirror" checked> Book Sister Mirror Entry Automatically</label>`, 'Uncheck to leave in Open One-Sided Queue')}
-        ${fldWrap('Treasury Purpose / Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="Working capital intercompany advance">`)}
+        ${fldWrap('Transfer Voucher # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'IC-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
+        ${fldWrap('Transfer Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('From Sister Entity (Sender) *', `<select id="ide_from" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === defFrom ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
+        ${fldWrap('To Sister Entity (Receiver) *', `<select id="ide_to" data-plain-options="1" style="${inpStyle}">${sisters.map(s => `<option value="${esc(s)}" ${s === defTo ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>`)}
+        ${fldWrap('Transfer Amount ($ USD) *', `<input type="number" id="ide_usd" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.usd != null ? prefill.usd : '25000')}">`)}
+        ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option><option value="Cash" ${defMth === 'Cash' ? 'selected' : ''}>Cash</option><option value="Check" ${defMth === 'Check' ? 'selected' : ''}>Check</option></select>`)}
+        ${fldWrap('Two-Sided Mirror Pairing', `<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;padding-top:4px"><input type="checkbox" id="ide_mirror" ${defMirror ? 'checked' : ''}> Book Sister Mirror Entry Automatically</label>`, 'Uncheck to leave in Open One-Sided Queue')}
+        ${fldWrap('Treasury Purpose / Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Working capital intercompany advance')}">`)}
       `;
     }
 
@@ -52999,7 +53715,7 @@
       ${datalistsHtml}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
         <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
-          ${list.map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
+          ${list.map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${isEditMode && f.key !== spec.key ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
         </div>
         <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
       </div>
@@ -53046,14 +53762,17 @@
           <span style="font-size:11.5px;color:var(--muted,#64748B)">Posts live to Domain Hub, Executive Rollup, Document Vault, Native Dashboards &amp; Balanced Lebanese PCG GL</span>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn btn-ghost-bar" id="ideCancelBtn">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="ideSaveBtn">Post Domain Record</button>
+            <button type="submit" class="btn btn-primary" id="ideSaveBtn">${isEditMode ? 'Save Record Changes' : 'Post Domain Record'}</button>
           </div>
         </div>
       </form>
     `;
 
     bodyEl.querySelectorAll('[data-ide-switch-form]').forEach(btn => {
-      btn.addEventListener('click', () => openIndustryDomainEntryModal(btn.getAttribute('data-ide-switch-form')));
+      btn.addEventListener('click', () => {
+        if (isEditMode) return;
+        openIndustryDomainEntryModal(btn.getAttribute('data-ide-switch-form'));
+      });
     });
     const sharedBtn = $('ideOpenSharedSpineBtn');
     if (sharedBtn) sharedBtn.onclick = () => {
@@ -53201,6 +53920,63 @@
     };
 
     const formEl = $('indDomainEntryForm');
+    if (spec.key === 'ins_policies') {
+      const syncPolicyAgreementRate = () => {
+        const car = strVal('ide_carrier');
+        const ln = strVal('ide_line');
+        const dt = strVal('ide_date') || today;
+        const tp = strVal('ide_type');
+        const hit = lookupActiveInsuranceAgreementRate(car, ln, dt, tp);
+        const rInp = $('ide_rate');
+        const hintEl = $('ideRateSourceHint');
+        if (rInp) rInp.value = String(hit.rate);
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.agreementId} · ${hit.rate}%)`
+            : `Chrono Agreement ${hit.agreementId} (${hit.rate}%)`;
+        }
+        recalcLive();
+      };
+      ['ide_carrier', 'ide_line', 'ide_date', 'ide_type'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncPolicyAgreementRate);
+      });
+    } else if (spec.key === 'ins_agreements') {
+      const clrBtn = $('ideClearEndDateBtn');
+      if (clrBtn) {
+        clrBtn.addEventListener('click', () => {
+          const edEl = $('ide_end_date');
+          if (edEl) {
+            edEl.value = '';
+            recalcLive();
+          }
+        });
+      }
+      const syncAgrChronoBounds = () => {
+        if (isEditMode) return;
+        const car = strVal('ide_carrier');
+        const ln = strVal('ide_line');
+        const sdInp = $('ide_start_date');
+        if (!sdInp) return;
+        const ops = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : { agreements: [] };
+        const peers = (ops.agreements || []).filter(a => a && a.carrier === car && a.line === ln && String(a.id || '') !== strVal('ide_id'));
+        let minBound = '2025-01-02';
+        peers.forEach(p => {
+          const nextAfterStart = nextCalendarDayISO(p.start_date);
+          if (nextAfterStart > minBound) minBound = nextAfterStart;
+          if (p.end_date && p.end_date !== 'Open') {
+            const nextAfterEnd = nextCalendarDayISO(p.end_date);
+            if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+          }
+        });
+        sdInp.min = minBound;
+      };
+      ['ide_carrier', 'ide_line'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncAgrChronoBounds);
+      });
+      syncAgrChronoBounds();
+    }
     formEl.querySelectorAll('input, select').forEach(el => {
       el.addEventListener('input', recalcLive);
       el.addEventListener('change', recalcLive);
@@ -53275,13 +54051,26 @@
         const line = strVal('ide_line');
         const sd = strVal('ide_start_date');
         const ed = strVal('ide_end_date') || 'Open';
-        const curOps = computeInsuranceOperations();
-        const priorOpen = (curOps.agreements || []).find(a => a.carrier === carrier && a.line === line && a.end_date === 'Open');
-        if (priorOpen && sd <= priorOpen.start_date) {
-          showMsg(`Chronological Rate Guard: Start Date (${sd}) must be strictly after active agreement start (${priorOpen.start_date}).`, true);
+        if (ed !== 'Open' && sd >= ed) {
+          showMsg('Chronological Rate Guard: Effective End Date must be after Effective Start Date (or left Open).', true);
           return;
         }
-        addIndustryCustomRow('ins_agreements', {
+        const curOps = computeInsuranceOperations();
+        const peers = (curOps.agreements || []).filter(a => a && a.carrier === carrier && a.line === line && String(a.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const existingSelf = (curOps.agreements || []).find(a => a && String(a.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(a => a.end_date === 'Open' || !a.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(a => sd <= a.start_date)) {
+          const latestOpenStart = priorOpens.map(a => a.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Rate Guard: Start Date (${sd}) must be strictly after active agreement start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(a => a.end_date && a.end_date !== 'Open' && sd <= a.end_date && ed >= a.start_date) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Rate Guard: Start Date (${sd}) overlaps closed window ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
+        const agrRec = {
           id: recId,
           carrier,
           line,
@@ -53290,12 +54079,19 @@
           new_bus_pct: numVal('ide_new_pct'),
           renewal_pct: numVal('ide_ren_pct'),
           override_bonus_pct: numVal('ide_bonus_pct'),
-          prior_rate_pct: priorOpen ? priorOpen.new_bus_pct : numVal('ide_new_pct'),
-          autoClosePriorId: priorOpen ? priorOpen.id : '',
-          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : '',
+          prior_rate_pct: priorOpen ? priorOpen.new_bus_pct : (existingSelf ? existingSelf.prior_rate_pct : numVal('ide_new_pct')),
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(a => a.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
           backfill_status: priorOpen ? `Chrono Active · Closed ${priorOpen.id} at ${prevCalendarDayISO(sd)}` : 'Chrono Active',
           status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
-        });
+        };
+        addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
+        const syncedPols = retroactiveBackfillInsuranceAgreement(agrRec, existingSelf);
+        if (syncedPols > 0) {
+          agrRec.backfill_status = `${priorOpen ? 'Closed ' + priorOpen.id + ' · ' : ''}Chrono Active · ${syncedPols} ${syncedPols === 1 ? 'Policy' : 'Policies'} Synced`;
+          addIndustryCustomRow('ins_agreements', agrRec, { skipCloudSync: true });
+        }
       } else if (spec.key === 'ins_remittances') {
         const gwp = numVal('ide_gwp');
         const comm = numVal('ide_comm');
@@ -53666,6 +54462,20 @@
       const dtGuess = strVal('ide_date') || strVal('ide_start_date') || today;
       const filesToAttach = pendingDomainFiles.slice();
 
+      if (isEditMode && prefill && prefill._editKey) {
+        const eStore = getIndustryRowEditStore();
+        const prevCellOverride = eStore[prefill._editKey];
+        if (prevCellOverride && typeof prevCellOverride === 'object') {
+          if (Array.isArray(prevCellOverride.removedDocIds) && prevCellOverride.removedDocIds.length) {
+            delete prevCellOverride.cells;
+            delete prevCellOverride.headers;
+          } else {
+            delete eStore[prefill._editKey];
+          }
+          saveIndustryRowEditStore(eStore);
+        }
+      }
+
       if (prefill && typeof prefill._onPosted === 'function') {
         try { prefill._onPosted(recId); } catch (_) {}
       }
@@ -53673,7 +54483,7 @@
       closeIndustryDomainEntryModal();
       renderApp();
       syncWithCloud(true);
-      toast(`Posted ${recId} to ${ind}`);
+      toast(isEditMode ? `Saved changes to ${recId}` : `Posted ${recId} to ${ind}`);
 
       if (filesToAttach.length > 0) {
         const domCrKey = inferDomainTblKey(ind, spec.key, recId);
@@ -53948,6 +54758,106 @@
     return true;
   }
 
+  function findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCompany, editKey) {
+    const pidUp = String(primaryId || '').trim().toUpperCase();
+    const basePrefill = { id: primaryId, company: rowCompany || undefined, _editMode: true, _editKey: editKey || '' };
+    const cleanTbl = String(domainTblKey || '').replace(/^ind_domain:/, '').trim();
+
+    const customStore = getIndustryCustomRowsStore();
+    for (const [bucket, arr] of Object.entries(customStore || {})) {
+      if (!Array.isArray(arr)) continue;
+      const hit = arr.find(r => r && !r.voided && (String(r.id || '').trim().toUpperCase() === pidUp || String(r.code || '').trim().toUpperCase() === pidUp));
+      if (hit) {
+        return { formKey: bucket, prefill: Object.assign({}, hit, basePrefill, { id: hit.id || primaryId, code: hit.code || undefined }) };
+      }
+    }
+
+    if (ind === 'Insurance & Brokerage') {
+      const ins = typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations() : null;
+      if (ins) {
+        const pol = (ins.policies || []).find(p => String(p.id || '').toUpperCase() === pidUp);
+        if (pol) {
+          return {
+            formKey: 'ins_policies',
+            prefill: Object.assign({}, basePrefill, {
+              id: pol.id, date: pol.date || pol.start_date, expiry: pol.expiry || pol.end_date,
+              client: pol.client || pol.insured, carrier: pol.carrier, line: pol.line,
+              product: pol.product, type: pol.type, producer: pol.producer,
+              sum_insured_usd: pol.sum_insured_usd, gross_prem_usd: pol.gross_prem_usd != null ? pol.gross_prem_usd : pol.gwp_usd,
+              comm_rate_pct: pol.comm_rate_pct, discount_usd: pol.discount_usd, policy_fee_usd: pol.policy_fee_usd
+            })
+          };
+        }
+        const agr = (ins.agreements || []).find(a => String(a.id || '').toUpperCase() === pidUp);
+        if (agr) {
+          return { formKey: 'ins_agreements', prefill: Object.assign({}, agr, basePrefill, { id: agr.id }) };
+        }
+        const clm = (ins.claims || []).find(c => String(c.id || '').toUpperCase() === pidUp);
+        if (clm) {
+          return { formKey: 'ins_claims', prefill: Object.assign({}, clm, basePrefill, { id: clm.id, client: clm.client || clm.insured }) };
+        }
+        const rem = (ins.remittances || []).find(r => String(r.id || '').toUpperCase() === pidUp);
+        if (rem) {
+          return {
+            formKey: 'ins_remittances',
+            prefill: Object.assign({}, rem, basePrefill, {
+              id: rem.id, gwp: rem.gross_prem_usd != null ? rem.gross_prem_usd : rem.gwp_usd,
+              comm: rem.broker_comm_7063_usd != null ? rem.broker_comm_7063_usd : rem.comm_usd,
+              settled: rem.settled_to_carrier_usd != null ? rem.settled_to_carrier_usd : rem.settled_usd
+            })
+          };
+        }
+      }
+    } else if (ind === 'Real Estate & Property') {
+      const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : null;
+      if (re) {
+        const lse = (re.leases || []).find(l => String(l.id || '').toUpperCase() === pidUp);
+        if (lse) return { formKey: 're_leases', prefill: Object.assign({}, lse, basePrefill, { id: lse.id }) };
+        const inv = (re.invoices || []).find(i => String(i.id || '').toUpperCase() === pidUp);
+        if (inv) return { formKey: 're_invoicing', prefill: Object.assign({}, inv, basePrefill, { id: inv.id, net_usd: inv.net_usd != null ? inv.net_usd : inv.base_usd }) };
+        const sal = (re.sales || []).find(s => String(s.id || '').toUpperCase() === pidUp);
+        if (sal) return { formKey: 're_sales', prefill: Object.assign({}, sal, basePrefill, { id: sal.id }) };
+        const wo = (re.workorders || []).find(w => String(w.id || '').toUpperCase() === pidUp);
+        if (wo) return { formKey: 're_workorders', prefill: Object.assign({}, wo, basePrefill, { id: wo.id }) };
+      }
+    } else if (ind === 'Automotive & Heavy Trading') {
+      const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
+      if (trd) {
+        const sl = (trd.salesRows || []).find(s => String(s.id || '').toUpperCase() === pidUp);
+        if (sl) return { formKey: 'trd_sales', prefill: Object.assign({}, sl, basePrefill, { id: sl.id }) };
+        const im = (trd.importRows || []).find(i => String(i.id || '').toUpperCase() === pidUp);
+        if (im) return { formKey: 'trd_purchases', prefill: Object.assign({}, im, basePrefill, { id: im.id, bl: im.container_bl || im.bl_no }) };
+        const un = (trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === pidUp);
+        if (un) return { formKey: 'trd_trucks', prefill: Object.assign({}, un, basePrefill, { id: un.id }) };
+        const st = (trd.stockRows || []).find(k => String(k.id || '').toUpperCase() === pidUp || String(k.code || '').toUpperCase() === pidUp);
+        if (st) return { formKey: 'trd_stock', prefill: Object.assign({}, st, basePrefill, { id: st.id, code: st.code }) };
+      }
+    } else if (ind === 'Hospitality & Resorts') {
+      const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : null;
+      if (hsp) {
+        const vn = (hsp.venueRows || []).find(v => String(v.id || '').toUpperCase() === pidUp);
+        if (vn) return { formKey: 'hsp_revenue', prefill: Object.assign({}, vn, basePrefill, { id: vn.id }) };
+        const ps = (hsp.posRows || []).find(p => String(p.id || '').toUpperCase() === pidUp);
+        if (ps) return { formKey: 'hsp_pos', prefill: Object.assign({}, ps, basePrefill, { id: ps.id, billed_usd: ps.pos_billed_ttc, card_usd: ps.card_whish_usd }) };
+        const mm = (hsp.membershipRows || []).find(m => String(m.id || '').toUpperCase() === pidUp);
+        if (mm) return { formKey: 'hsp_memberships', prefill: Object.assign({}, mm, basePrefill, { id: mm.id }) };
+        const sk = (hsp.stockRows || []).find(s => String(s.id || '').toUpperCase() === pidUp);
+        if (sk) return { formKey: 'hsp_stock', prefill: Object.assign({}, sk, basePrefill, { id: sk.id }) };
+        const ng = (hsp.energyRows || []).find(e => String(e.id || '').toUpperCase() === pidUp);
+        if (ng) return { formKey: 'hsp_energy', prefill: Object.assign({}, ng, basePrefill, { id: ng.id }) };
+      }
+    } else if (ind === 'Holding & Treasury') {
+      const icMod = typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions() : null;
+      const leg = icMod && Array.isArray(icMod.legs) ? icMod.legs.find(l => String(l.id || '').toUpperCase() === pidUp) : null;
+      if (leg) {
+        return { formKey: 'hld_interactions', prefill: Object.assign({}, basePrefill, { id: leg.id, date: leg.date, fromCo: leg.fromCo, toCo: leg.toCo, usd: leg.usd, method: leg.method, notes: leg.notes }) };
+      }
+    }
+
+    const fallbackSpec = resolveDomainFormSpec(cleanTbl || STATE.view);
+    return { formKey: fallbackSpec.spec.key, prefill: basePrefill };
+  }
+
   function openIndustryDomainInspector(opts = {}) {
     const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
     const headers = Array.isArray(opts.headers) && opts.headers.length ? opts.headers : ['Field', 'Value'];
@@ -54021,6 +54931,18 @@
     if (eyeEl) eyeEl.textContent = `360° RECORD INSPECTOR & MODIFY DRAWER · ${ind.toUpperCase()} · ${tableTitle.toUpperCase()}`;
     if (titleEl) titleEl.textContent = `${primaryId} · ${secondaryLbl}`;
 
+    const inspCatPool = {
+      party: freqRankCandidates('customer', ['Holdal Abou Adal Group', 'Unipak Tissue Mill S.A.L.', 'Transmed Distribution Fleet', 'Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Levant Luxury Retail SAL', 'Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Khoury Family Trust']),
+      carrier: freqRankCandidates('carrier', ['MedGulf', 'Bankers Assurance', 'Allianz SNA', 'AXA Middle East', 'Libano-Suisse', 'Arope Insurance']),
+      supplier: freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'MEP Tech Engineering SAL']),
+      site: freqRankCandidates('site', ['Main Showroom', 'Bchamoun Yard', 'Bonded Yard', 'Al Ghazieh', 'Workshop', '4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)'])
+    };
+    const inspDatalistsHtml = `
+      <datalist id="dl_ind_insp_party">${inspCatPool.party.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      <datalist id="dl_ind_insp_carrier">${inspCatPool.carrier.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      <datalist id="dl_ind_insp_supplier">${inspCatPool.supplier.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      <datalist id="dl_ind_insp_site">${inspCatPool.site.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+    `;
     const lockedNumericIndices = new Set();
     const editableFieldsHtml = headers.map((h, idx) => {
       const val = cells[idx] != null && String(cells[idx]).trim() !== '' ? String(cells[idx]).trim() : '';
@@ -54035,13 +54957,20 @@
       const isNumLocked = Boolean(textOnlyLock && isNumericCol);
       if (isNumLocked) lockedNumericIndices.add(idx);
       const isFieldLocked = isReadOnlyId || !canEditAny || isNumLocked;
+      let dlAttr = '';
+      if (!isFieldLocked && !isNumericCol) {
+        if (/carrier|insurer/i.test(hClean)) dlAttr = 'list="dl_ind_insp_carrier"';
+        else if (/client|insured|customer|tenant|buyer|member|partner/i.test(hClean)) dlAttr = 'list="dl_ind_insp_party"';
+        else if (/supplier|vendor|contractor/i.test(hClean)) dlAttr = 'list="dl_ind_insp_supplier"';
+        else if (/warehouse|property|outlet|store|yard/i.test(hClean)) dlAttr = 'list="dl_ind_insp_site"';
+      }
       return `
         <label style="display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:6px">
           <span style="display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted)">
             <span>${esc(hClean)}${isReadOnlyId ? ' (Primary Key)' : ''}</span>
             ${isNumLocked ? '<span class="badge" style="font-size:9.5px;padding:1px 5px;text-transform:none">🔒 Supervisor Only</span>' : ''}
           </span>
-          <input type="text" class="ind-domain-edit-input mono" data-ind-edit-idx="${idx}" data-ind-edit-col="${esc(hClean.toLowerCase())}" ${isNumLocked ? 'data-locked-numeric="1"' : ''} value="${esc(val)}" ${isFieldLocked ? `readonly ${isNumLocked || !canEditAny ? 'disabled' : ''} style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"` : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'} />
+          <input type="text" class="ind-domain-edit-input mono" data-ind-edit-idx="${idx}" data-ind-edit-col="${esc(hClean.toLowerCase())}" ${dlAttr} ${isNumLocked ? 'data-locked-numeric="1"' : ''} value="${esc(val)}" ${isFieldLocked ? `readonly ${isNumLocked || !canEditAny ? 'disabled' : ''} style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--bg,#F1F5F9);color:var(--muted);font-size:12.5px;font-weight:600"` : 'style="padding:5px 8px;border:1px solid var(--line,#CBD5E1);border-radius:5px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600"'} />
         </label>
       `;
     }).join('');
@@ -54134,6 +55063,7 @@
               <span class="badge ${textOnlyLock ? 'badge-brass' : 'badge-good'}" id="indInspRuleStatusBadge">${textOnlyLock ? 'Words-Only Seat · Numbers Locked (🔒 Supervisor Only)' : 'Live Domain Guardrails Active'}</span>
             </div>
             <div id="indDomainModifyForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:8px">
+              ${inspDatalistsHtml}
               ${editableFieldsHtml}
             </div>
             <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
@@ -54174,6 +55104,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-top:4px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${canEditAny ? '<button type="button" class="btn btn-primary" id="indInspSaveChangesBtn">Save Changes</button>' : ''}
+              ${(canEditAny && !textOnlyLock) ? '<button type="button" class="btn btn-outline-bar" id="indInspEditInModalBtn">Edit in Smart Form</button>' : ''}
               <button type="button" class="btn btn-ghost-bar" id="indInspNewEntryBtn">+ New Domain Record</button>
               <button type="button" class="btn btn-outline-bar" id="indInspThermalSlipBtn">${ic('printer')} Thermal Voucher</button>
               <button type="button" class="btn btn-ghost-bar" id="indInspPrintStmtBtn" data-rdl-jump="${esc(meta.id)}">${esc(meta.label)}</button>
@@ -54478,6 +55409,12 @@
       if (nBtn) nBtn.onclick = () => {
         closeRecordInspector();
         openIndustryDomainEntryModal(STATE.view);
+      };
+      const editModalBtn = $('indInspEditInModalBtn');
+      if (editModalBtn) editModalBtn.onclick = () => {
+        const resolved = findDomainRecordPrefillForModal(ind, domainTblKey, primaryId, headers, cells, rowCompany, editKey);
+        closeRecordInspector();
+        openIndustryDomainEntryModal(resolved.formKey, resolved.prefill);
       };
       const thermalBtn = $('indInspThermalSlipBtn');
       if (thermalBtn && window.MFG_PRINT) {
@@ -103301,7 +104238,7 @@
       case 'ins_catalogue': wsHtml = renderInsuranceCatalogue('main'); break;
       case 'ins_agreements': wsHtml = renderInsuranceCatalogue('agreements'); break;
       case 'pbi': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? (renderIndustryContextBanner('pbi') + renderIndustryPbiStudio(activeInd)) : (window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview()); break;
-      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
+      case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); ensureDocumentsVaultSeeded(); wsHtml = renderIndustryContextBanner('tables') + (window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, activeIndustry: activeInd, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview()); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'kiosks': wsHtml = (!STATE.kioskLocked ? renderIndustryContextBanner('kiosks') : '') + renderKiosks(); break;
@@ -104168,6 +105105,8 @@
             _onPosted: () => { if (wfId) saveIndustryWorkflowPatch('re_workorders', wfId, { status: 'Recharged' }); }
           });
         } else if (wfAction === 'ins_renew_pol') {
+          const tdNow = typeof todayISO === 'function' ? todayISO() : '2026-11-08';
+          const nxYr = `${Number(tdNow.slice(0, 4)) + 1}${tdNow.slice(4)}`;
           openIndustryDomainEntryModal('ins_policies', {
             type: 'Policy (Renewal)',
             client: wfBtn.getAttribute('data-wf-client') || '',
@@ -104175,8 +105114,8 @@
             line: wfBtn.getAttribute('data-wf-line') || 'MOT · Motor',
             gross_prem_usd: Number(wfBtn.getAttribute('data-wf-prem') || 3150),
             producer: wfBtn.getAttribute('data-wf-prod') || 'Joseph Khalil',
-            date: '2026-11-06',
-            expiry: '2027-11-05',
+            date: tdNow,
+            expiry: typeof prevDayISO === 'function' ? prevDayISO(nxYr) : nxYr,
             _onPosted: newPolId => { if (wfId) saveIndustryWorkflowPatch('ins_renewals', wfId, { status: 'Renewed', stage: `Converted (${newPolId})`, days_left: 365, bucket: 'Active Term' }); }
           });
         } else if (wfAction === 'ins_stmt_settle') {
@@ -104216,7 +105155,7 @@
       if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
         if (t.closest('[data-rel-key], button, a, input, select, label')) return;
         const tbl = indRow.closest('table');
-        const headers = getDomainTableEnHeaders(tbl);
+        const headers = getDomainTableEnHeaders(tbl).map(h => String(h || '').replace(/\s*[▲▼]$/, '').trim());
         const cells = Array.from(indRow.querySelectorAll('td')).filter(tdEl => tdEl.style.display !== 'none').map(cleanDomainCellText);
         if (cells.length >= 2) {
           if (indRow.getAttribute('data-ind-row-id')) cells[0] = indRow.getAttribute('data-ind-row-id');
@@ -104371,11 +105310,95 @@
       STATE.indPbiPageByInd[ind] = btn.getAttribute('data-ind-pbi-page');
       renderApp();
     }));
+    const getActiveIndPbiFilter = () => {
+      const studio = $('industryPbiStudio');
+      const pKey = studio ? (studio.getAttribute('data-ind-pbi-key') || '') : '';
+      if (!pKey) return null;
+      if (!STATE.indPbiFilters) STATE.indPbiFilters = {};
+      if (!STATE.indPbiFilters[pKey]) STATE.indPbiFilters[pKey] = { period: 'all', dim: '', search: '', sortCol: -1, sortDir: 'desc' };
+      return STATE.indPbiFilters[pKey];
+    };
+    container.querySelectorAll('[data-ind-pbi-period]').forEach(btn => btn.addEventListener('click', () => {
+      const f = getActiveIndPbiFilter();
+      if (!f) return;
+      f.period = btn.getAttribute('data-ind-pbi-period') || 'all';
+      renderApp();
+    }));
+    const indPbiDimSel = $('indPbiDimSelect');
+    if (indPbiDimSel) {
+      indPbiDimSel.addEventListener('change', e => {
+        const f = getActiveIndPbiFilter();
+        if (!f) return;
+        f.dim = e.target.value || '';
+        renderApp();
+      });
+    }
+    const indPbiSearchInp = $('indPbiSearchInput');
+    if (indPbiSearchInp) {
+      indPbiSearchInp.addEventListener('input', e => {
+        const f = getActiveIndPbiFilter();
+        if (!f) return;
+        f.search = e.target.value;
+        const pos = e.target.selectionStart || String(e.target.value || '').length;
+        renderApp();
+        const nextInp = $('indPbiSearchInput');
+        if (nextInp) {
+          nextInp.focus({ preventScroll: true });
+          try { nextInp.setSelectionRange(pos, pos); } catch (_) {}
+        }
+      });
+    }
+    const indPbiResetBtn = $('indPbiResetBtn');
+    if (indPbiResetBtn) {
+      indPbiResetBtn.addEventListener('click', () => {
+        const f = getActiveIndPbiFilter();
+        if (!f) return;
+        f.period = 'all';
+        f.dim = '';
+        f.search = '';
+        f.sortCol = -1;
+        f.sortDir = 'desc';
+        renderApp();
+      });
+    }
+    container.querySelectorAll('[data-ind-pbi-sort]').forEach(thEl => thEl.addEventListener('click', () => {
+      const f = getActiveIndPbiFilter();
+      const col = parseInt(thEl.getAttribute('data-ind-pbi-sort'), 10);
+      if (!f || !Number.isFinite(col)) return;
+      if (f.sortCol === col) f.sortDir = f.sortDir === 'asc' ? 'desc' : 'asc';
+      else { f.sortCol = col; f.sortDir = 'desc'; }
+      renderApp();
+    }));
     container.querySelectorAll('[data-ind-tbl-key]').forEach(btn => btn.addEventListener('click', () => {
       const ind = getActiveIndustry(STATE.company);
       if (!STATE.indActiveDomainTable) STATE.indActiveDomainTable = {};
       STATE.indActiveDomainTable[ind] = btn.getAttribute('data-ind-tbl-key');
       STATE.indTablesSearch = '';
+      renderApp();
+    }));
+    container.querySelectorAll('[data-ind-tbl-sort]').forEach(thEl => thEl.addEventListener('click', () => {
+      const expEl = $('industryDomainTablesExplorer');
+      const tKey = expEl ? (expEl.getAttribute('data-ind-tbl-active') || '') : '';
+      const col = parseInt(thEl.getAttribute('data-ind-tbl-sort'), 10);
+      if (!tKey || !Number.isFinite(col)) return;
+      if (!STATE.indTablesSort) STATE.indTablesSort = {};
+      const cur = STATE.indTablesSort[tKey] || { col: -1, dir: 'desc' };
+      const nextDir = cur.col === col ? (cur.dir === 'asc' ? 'desc' : 'asc') : 'desc';
+      STATE.indTablesSort[tKey] = { col, dir: nextDir };
+      renderApp();
+    }));
+    const indTblReset = $('indTablesResetBtn');
+    if (indTblReset) {
+      indTblReset.addEventListener('click', () => {
+        const expEl = $('industryDomainTablesExplorer');
+        const tKey = expEl ? (expEl.getAttribute('data-ind-tbl-active') || '') : '';
+        STATE.indTablesSearch = '';
+        if (STATE.indTablesSort && tKey) delete STATE.indTablesSort[tKey];
+        renderApp();
+      });
+    }
+    container.querySelectorAll('[data-ind-sn-rule]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.indSentinelRuleFilter = btn.getAttribute('data-ind-sn-rule') || 'all';
       renderApp();
     }));
     if (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(STATE.view || '')) && (canModifyRecord() || canEnterForm('sales'))) {
@@ -105178,6 +106201,10 @@
       if (item.padFilter) {
         STATE.salesPadFilter = item.padFilter;
         STATE.shown.spad = PAGE;
+        renderApp();
+      }
+      if (item.scrollPanel && item.scrollPanel.startsWith('snInd_') && STATE.indSentinelRuleFilter && STATE.indSentinelRuleFilter !== 'all' && STATE.indSentinelRuleFilter !== ruleId) {
+        STATE.indSentinelRuleFilter = 'all';
         renderApp();
       }
       const panelEl = item.scrollPanel ? $(item.scrollPanel) : null;
@@ -109001,7 +110028,13 @@
     getCustomAlertDomainsForIndustry: typeof getCustomAlertDomainsForIndustry === 'function' ? getCustomAlertDomainsForIndustry : null,
     getCustomAlertMetricsForIndustry: typeof getCustomAlertMetricsForIndustry === 'function' ? getCustomAlertMetricsForIndustry : null,
     getIndustryWorkflowPatch: typeof getIndustryWorkflowPatch === 'function' ? getIndustryWorkflowPatch : null,
-    saveIndustryWorkflowPatch: typeof saveIndustryWorkflowPatch === 'function' ? saveIndustryWorkflowPatch : null
+    saveIndustryWorkflowPatch: typeof saveIndustryWorkflowPatch === 'function' ? saveIndustryWorkflowPatch : null,
+    lookupActiveInsuranceAgreementRate: typeof lookupActiveInsuranceAgreementRate === 'function' ? lookupActiveInsuranceAgreementRate : null,
+    retroactiveBackfillInsuranceAgreement: typeof retroactiveBackfillInsuranceAgreement === 'function' ? retroactiveBackfillInsuranceAgreement : null,
+    fmtIndChartMetric: typeof fmtIndChartMetric === 'function' ? fmtIndChartMetric : null,
+    computeDynamicDomainTotals: typeof computeDynamicDomainTotals === 'function' ? computeDynamicDomainTotals : null,
+    buildIndustrySentinelExceptionTables: typeof buildIndustrySentinelExceptionTables === 'function' ? buildIndustrySentinelExceptionTables : null,
+    findDomainRecordPrefillForModal: typeof findDomainRecordPrefillForModal === 'function' ? findDomainRecordPrefillForModal : null
   };
 
   let _seedHydrationPromise = null;

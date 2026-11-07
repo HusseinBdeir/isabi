@@ -9852,13 +9852,25 @@
     return Array.from(new Set(out));
   }
 
+  const _MFG_ONLY_TABLE_KEYS = new Set([
+    'sales_tickets', 'raw_purchases', 'vat_invoices',
+    'fuel_intakes', 'fuel_malfunctions', 'equipment_warnings', 'oil_changes', 'part_changes',
+    'warehouse_adjustments', 'jv_partnerships', 'jv_distributions',
+    'price_rules', 'trip_rates', 'daily_totals',
+    'freelance_entries', 'logistics_allowances',
+    'products', 'product_types', 'sites', 'equipment', 'drivers', 'staff_assignments'
+  ]);
+
   function renderTablesHub(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
     _activePbiState = STATE;
-    const catalog = typeof ctx.canAccessTable === 'function' ? TABLE_CATALOG.filter(t => ctx.canAccessTable(t.key)) : TABLE_CATALOG;
-    const tablePool = catalog.length ? catalog : TABLE_CATALOG;
-    const activeKey = STATE.activeTableKey || 'sales_tickets';
-    const meta = tablePool.find(t => t.key === activeKey) || tablePool[0];
+    const isNonMfg = Boolean(ctx.activeIndustry && ctx.activeIndustry !== 'Manufacturing');
+    const baseCatalog = isNonMfg ? TABLE_CATALOG.filter(t => !_MFG_ONLY_TABLE_KEYS.has(t.key)) : TABLE_CATALOG;
+    const catalog = typeof ctx.canAccessTable === 'function' ? baseCatalog.filter(t => ctx.canAccessTable(t.key)) : baseCatalog;
+    const tablePool = catalog.length ? catalog : baseCatalog;
+    const defKey = isNonMfg ? 'expenses' : 'sales_tickets';
+    const activeKey = STATE.activeTableKey || defKey;
+    const meta = tablePool.find(t => t.key === activeKey) || tablePool.find(t => t.key === defKey) || tablePool[0];
     STATE.activeTableKey = meta.key;
     const rel = getHubRelIndex(SEED);
     const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, tablePool);

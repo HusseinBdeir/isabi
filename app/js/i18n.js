@@ -14080,7 +14080,25 @@
     'Renew': 'تجديد',
     'Settle': 'تسوية',
     'Latest Op Day': 'آخر يوم تشغيلي',
-    'CUSTOM WATCHDOG': 'مراقب مخصص'
+    'CUSTOM WATCHDOG': 'مراقب مخصص',
+    'All Periods': 'جميع الفترات',
+    'Reset Filters': 'إعادة ضبط الفلاتر',
+    'Reset': 'إعادة ضبط',
+    'Edit in Smart Form': 'تعديل في النموذج الذكي',
+    'Save Record Changes': 'حفظ تعديلات السجل',
+    'Domain Controls & Compliance': 'ضوابط القطاع والامتثال',
+    'Custom Watchdogs & Sign-Off': 'المراقبات المخصصة والاعتماد',
+    'Active Flags': 'تنبيهات نشطة',
+    'All Clear': 'مكتمل وسليم',
+    '✕ Open': '✕ مفتوح',
+    'No records match the active dashboard filter': 'لا توجد سجلات تطابق فلتر اللوحة الحالي',
+    'No records match the active filter': 'لا توجد سجلات تطابق الفلتر الحالي',
+    '+ New Record': '+ سجل جديد',
+    'Open Hub': 'فتح المركز',
+    'Billed': 'مفوتر',
+    'Tied': 'مطابق',
+    'Renewed': 'مجدّد',
+    'Capitalized': 'مرسمل'
   });
   registerLocale('fr', LOCALES.fr, {
     'Thermal Voucher': 'Bon thermique',
@@ -14124,7 +14142,25 @@
     'Renew': 'Renouveler',
     'Settle': 'Régler',
     'Latest Op Day': 'Dernier jour op.',
-    'CUSTOM WATCHDOG': 'Sentinelle personnalisée'
+    'CUSTOM WATCHDOG': 'Sentinelle personnalisée',
+    'All Periods': 'Toutes les périodes',
+    'Reset Filters': 'Réinitialiser les filtres',
+    'Reset': 'Réinitialiser',
+    'Edit in Smart Form': 'Modifier dans le formulaire',
+    'Save Record Changes': 'Enregistrer les modifications',
+    'Domain Controls & Compliance': 'Contrôles métier et conformité',
+    'Custom Watchdogs & Sign-Off': 'Sentinelles personnalisées et visa',
+    'Active Flags': 'Alertes actives',
+    'All Clear': 'Conforme',
+    '✕ Open': '✕ Ouvert',
+    'No records match the active dashboard filter': 'Aucun enregistrement ne correspond au filtre actif',
+    'No records match the active filter': 'Aucun enregistrement ne correspond au filtre',
+    '+ New Record': '+ Nouvel enregistrement',
+    'Open Hub': 'Ouvrir le module',
+    'Billed': 'Facturé',
+    'Tied': 'Rapproché',
+    'Renewed': 'Renouvelé',
+    'Capitalized': 'Incorporé'
   });
 
   function bootI18n() {
