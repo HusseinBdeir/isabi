@@ -1,2 +1,2 @@
 // Auto-generated content-addressed seed manifest (decouples data cache from UI ?v= deploys)
-(typeof self!=='undefined'?self:window).__MFG_SEED_MANIFEST={"generated_at":"2026-11-06T02:15:07+02:00","core":"./js/seed_core.json?d=0bd72e8641","records":"./js/seed_records.json?d=c894516725","coreHash":"0bd72e8641","recordsHash":"c894516725","industries":"./js/seed_industries.json?d=75ca91c9b0","industriesHash":"75ca91c9b0"};
+(typeof self!=='undefined'?self:window).__MFG_SEED_MANIFEST={"generated_at":"2026-11-07T20:22:16+02:00","core":"./js/seed_core.json?d=e4fd7e1e1e","records":"./js/seed_records.json?d=9501cf1087","coreHash":"e4fd7e1e1e","recordsHash":"9501cf1087","industries":"./js/seed_industries.json?d=75ca91c9b0","industriesHash":"75ca91c9b0"};
