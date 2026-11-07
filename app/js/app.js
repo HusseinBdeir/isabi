@@ -23359,16 +23359,56 @@
     return out;
   }
 
-  function formatDayTimingsSummary(dayTimings, baseStart = '08:00', baseEnd = '16:00') {
-    const dt = (dayTimings && typeof dayTimings === 'object') ? dayTimings : {};
+  function formatDayTimingsSummary(dayTimings, baseStartOrSatDiff = '08:00', baseEndOrSatStart = '16:00', maybeSatEnd = '') {
+    let dt = (dayTimings && typeof dayTimings === 'object') ? Object.assign({}, dayTimings) : {};
+    if (typeof baseStartOrSatDiff === 'boolean') {
+      dt = normalizeDayTimingsMap(dt, baseStartOrSatDiff, baseEndOrSatStart || '07:00', maybeSatEnd || '14:00');
+    }
     const keys = ['1', '2', '3', '4', '5', '6', '0'].filter(k => dt[k] && dt[k].start_time && dt[k].end_time);
-    if (!keys.length) return 'Standard All Days';
+    if (!keys.length) return 'Same Every Workday';
     const parts = keys.map(k => {
       const item = dt[k];
       const hrs = Number(item.hours || computeShiftWorkedHours(item.start_time, item.end_time) || 0);
       return `${SHIFT_DAY_SHORT_NAMES[k] || 'Day'} ${item.start_time}-${item.end_time}${hrs > 0 ? ` (${fmtNum(hrs, 1)}h)` : ''}`;
     });
     return parts.join(' · ');
+  }
+
+  function getCompanyIndustryName(companyRaw) {
+    const raw = String(companyRaw || '').trim();
+    const s = (raw.startsWith('industry:') ? raw.slice(9).trim() : raw).toLowerCase();
+    if (/hospitality|resort|blanca|las*una|launa|palms|voile|platinum/i.test(s)) return 'Hospitality';
+    if (/trading|auto|korri|shacman/i.test(s)) return 'Trading';
+    if (/reals*estate|propert|4235|company4235/i.test(s)) return 'Real Estate';
+    if (/insurance|broker/i.test(s)) return 'Insurance';
+    if (/holding|treasury|bdeirs*holding|bdeirholding/i.test(s)) return 'Holding';
+    const cNorm = norm(COMPANY_BU_MATCH[raw] || raw);
+    if (!cNorm || cNorm === 'manufacturing-group') return 'Manufacturing';
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const hit = cat.find(c => norm(c.name) === cNorm || norm(c.key) === cNorm);
+    if (hit && hit.industry) return getCompanyIndustryName(hit.industry);
+    return 'Manufacturing';
+  }
+
+  function getActiveIndustryBuList(companyOpt = '') {
+    const rawActive = companyOpt
+      ? companyOpt
+      : (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company);
+    const activeInd = getCompanyIndustryName(rawActive);
+    const cat = typeof getCompanyCatalog === 'function' ? getCompanyCatalog() : [];
+    const viewerAllowed = typeof allowedCompanyNames === 'function' && typeof activeUser === 'function'
+      ? allowedCompanyNames(activeUser())
+      : [];
+    const bus = cat
+      .filter(c => getCompanyIndustryName(c.industry || c.name) === activeInd && (!viewerAllowed.length || viewerAllowed.includes(c.name)))
+      .map(c => c.name);
+    if (bus.length) return bus;
+    if (activeInd === 'Hospitality') return ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'];
+    if (activeInd === 'Trading') return ['Korri Auto', 'Shacman'];
+    if (activeInd === 'Real Estate') return ['Properties', '4235 Company S.A.L'];
+    if (activeInd === 'Insurance') return ['Insurance Company'];
+    if (activeInd === 'Holding') return ['Bdeir Holding'];
+    return ['WTC', 'BBConstruction', 'Lions Transport'];
   }
 
   function resolveShiftTimingForWeekday(shiftOrRule, dayIdx) {
@@ -23455,10 +23495,27 @@
     const et = fmtAttClockTime(r.end_time || '16:00') || '16:00';
     r.start_time = st;
     r.end_time = et;
-    r.hours = computeShiftWorkedHours(st, et) || Number(r.hours || 8.0);
+    const isSplit = Boolean(r.split_enabled || r.shift_code === 'split_11_23' || r.shift_id === 'split_11_23' || /split/i.test(r.name || r.shift_name || ''));
+    r.split_enabled = isSplit;
+    if (isSplit) {
+      r.split_start_1 = fmtAttClockTime(r.split_start_1 || st || '11:00') || '11:00';
+      r.split_end_1 = fmtAttClockTime(r.split_end_1 || '15:00') || '15:00';
+      r.split_start_2 = fmtAttClockTime(r.split_start_2 || '19:00') || '19:00';
+      r.split_end_2 = fmtAttClockTime(r.split_end_2 || et || '23:00') || '23:00';
+      r.split_window_label = `${r.split_start_1}-${r.split_end_1} + ${r.split_start_2}-${r.split_end_2}`;
+      const h1 = computeShiftWorkedHours(r.split_start_1, r.split_end_1) || 4.0;
+      const h2 = computeShiftWorkedHours(r.split_start_2, r.split_end_2) || 4.0;
+      r.hours = Math.round((h1 + h2) * 100) / 100;
+    } else {
+      r.hours = computeShiftWorkedHours(st, et) || Number(r.hours || r.scheduled_hours || 8.0);
+    }
+    r.scheduled_hours = r.hours;
+    const nm = String(r.name || r.shift_name || 'Regular Shift').trim() || 'Regular Shift';
+    r.name = nm;
+    r.shift_name = nm;
     const sMin = parseClockMinutes(st);
     const eMin = parseClockMinutes(et);
-    r.overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
+    r.overnight = Boolean(!isSplit && sMin != null && eMin != null && eMin <= sMin);
     r.days = parseWorkdaysArrayFromLabel(r.days || r.working_days || r.workdays_label, [1, 2, 3, 4, 5, 6]);
     r.workdays_label = formatWorkdaysCompact(r.days);
     r.working_days = r.days.map(d => SHIFT_DAY_SHORT_NAMES[String(d)] || '').filter(Boolean).join(',');
@@ -23468,12 +23525,14 @@
     r.sat_start_time = satEntry ? satEntry.start_time : (r.sat_start_time || '07:00');
     r.sat_end_time = satEntry ? satEntry.end_time : (r.sat_end_time || '14:00');
     r.has_day_timings = Object.keys(r.day_timings).length > 0;
-    r.day_schedule_summary = formatDayTimingsSummary(r.day_timings, st, et);
+    r.day_schedule_summary = isSplit
+      ? `Split ${r.split_window_label} (${fmtNum(r.hours, 1)}h)`
+      : formatDayTimingsSummary(r.day_timings, st, et);
     r.grace_min = Math.max(0, Math.min(180, Number(r.grace_min != null ? r.grace_min : 10)));
     r.early_leave_grace_min = Math.max(0, Math.min(180, Number(r.early_leave_grace_min != null ? r.early_leave_grace_min : r.grace_min)));
     r.is_bu_default = Boolean(r.is_bu_default === true || r.is_bu_default === 'Yes' || r.is_bu_default === 1);
     if (!r.shift_code) {
-      r.shift_code = r.shift_id || (/night/i.test(r.name || '') ? 'night_7_3' : (/ext/i.test(r.name || '') ? 'ext_7_4' : 'day_8_4'));
+      r.shift_code = r.shift_id || (/split/i.test(nm) ? 'split_11_23' : (/night/i.test(nm) ? 'night_7_3' : (/ext/i.test(nm) ? 'ext_7_4' : 'day_8_4')));
     }
     if (!r.shift_id) r.shift_id = r.shift_code;
     const endIso = String(r.end_date || '').slice(0, 10);
@@ -23515,13 +23574,31 @@
       if (r && r.id) byId.set(String(r.id), r);
     });
 
-    // Seed BU defaults & standard shifts for WTC, BBConstruction, and Lions Transport
+    // Seed BU defaults & domain-equivalent shifts across all 6 ISABI industries
     const seedSpecs = [
+      // 1. Manufacturing (WTC, BBConstruction, Lions Transport)
       { id: 'ws_seed_wtc_day', company: 'WTC', shift_code: 'day_8_4', name: 'Day Shift', short: 'Day', is_bu_default: true, start_time: '08:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'WTC default regular plant & quarry shift (Saturday early 07:00-14:00)' },
       { id: 'ws_seed_wtc_night', company: 'WTC', shift_code: 'night_7_3', name: 'Night Shift', short: 'Night', is_bu_default: false, start_time: '19:00', end_time: '03:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'WTC overnight crusher & dispatch crew' },
       { id: 'ws_seed_wtc_ext', company: 'WTC', shift_code: 'ext_7_4', name: 'Extended Day', short: 'Ext', is_bu_default: false, start_time: '07:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'WTC 9h extended site & batching shift' },
       { id: 'ws_seed_bbc_day', company: 'BBConstruction', shift_code: 'day_8_4', name: 'Day Shift', short: 'Day', is_bu_default: true, start_time: '08:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'BBConstruction default regular site shift (Saturday early 07:00-14:00)' },
-      { id: 'ws_seed_lions_ext', company: 'Lions Transport', shift_code: 'ext_7_4', name: 'Extended Day', short: 'Ext', is_bu_default: true, start_time: '07:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 15, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'Lions Transport default fleet & haulage shift (Saturday early 07:00-14:00)' }
+      { id: 'ws_seed_lions_ext', company: 'Lions Transport', shift_code: 'ext_7_4', name: 'Extended Day', short: 'Ext', is_bu_default: true, start_time: '07:00', end_time: '16:00', sat_diff_enabled: true, sat_start_time: '07:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '07:00', end_time: '14:00', hours: 7.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 15, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'Lions Transport default fleet & haulage shift (Saturday early 07:00-14:00)' },
+      // 2. Hospitality (Blanca, La Una, Palms, Voile, Platinum) — Seasonal Split Shift (11:00-15:00 + 19:00-23:00, 8.0h)
+      { id: 'ws_seed_blanca_split', company: 'Blanca', shift_code: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', is_bu_default: true, split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'emerald', notes: 'Blanca default resort split service shift (11:00-15:00 lunch + 19:00-23:00 dinner, 8.0h)' },
+      { id: 'ws_seed_blanca_day', company: 'Blanca', shift_code: 'day_8_4', name: 'Day Shift', short: 'Day', is_bu_default: false, start_time: '08:00', end_time: '16:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'Blanca daytime beach, housekeeping & prep crew' },
+      { id: 'ws_seed_launa_split', company: 'La Una', shift_code: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', is_bu_default: true, split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'emerald', notes: 'La Una default F&B split service shift (11:00-15:00 + 19:00-23:00, 8.0h)' },
+      { id: 'ws_seed_launa_night', company: 'La Una', shift_code: 'night_7_3', name: 'Night Shift', short: 'Night', is_bu_default: false, start_time: '19:00', end_time: '03:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'La Una evening lounge, bar & closing service crew' },
+      { id: 'ws_seed_palms_split', company: 'Palms', shift_code: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', is_bu_default: true, split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'emerald', notes: 'The Palms default resort split service shift (11:00-15:00 + 19:00-23:00, 8.0h)' },
+      { id: 'ws_seed_voile_split', company: 'Voile', shift_code: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', is_bu_default: true, split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'emerald', notes: 'Le Voile Bleue default resort split service shift (11:00-15:00 + 19:00-23:00, 8.0h)' },
+      { id: 'ws_seed_platinum_split', company: 'Platinum', shift_code: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', is_bu_default: true, split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'emerald', notes: 'Platinum Bay default resort split service shift (11:00-15:00 + 19:00-23:00, 8.0h)' },
+      // 3. Trading (Korri Auto, Shacman) — Showroom & Workshop (08:30-17:00 Mon-Fri + Saturday Half-Day 08:30-13:30)
+      { id: 'ws_seed_korri_showroom', company: 'Korri Auto', shift_code: 'showroom_830_5', name: 'Showroom & Workshop', short: 'Showroom', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: true, sat_start_time: '08:30', sat_end_time: '13:30', day_timings: { '6': { start_time: '08:30', end_time: '13:30', hours: 5.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'Korri Auto default showroom & service bay shift (Mon-Fri 08:30-17:00, Sat half-day 08:30-13:30)' },
+      { id: 'ws_seed_shacman_showroom', company: 'Shacman', shift_code: 'showroom_830_5', name: 'Showroom & Workshop', short: 'Showroom', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: true, sat_start_time: '08:30', sat_end_time: '13:30', day_timings: { '6': { start_time: '08:30', end_time: '13:30', hours: 5.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'sapphire', notes: 'Shacman heavy-truck showroom & workshop shift (Mon-Fri 08:30-17:00, Sat half-day 08:30-13:30)' },
+      // 4. Real Estate (Properties, 4235 Company S.A.L) — Site Caretaker / Concierge (08:00-17:00 + Sat 08:00-14:00)
+      { id: 'ws_seed_prop_concierge', company: 'Properties', shift_code: 'concierge_8_5', name: 'Site Caretaker / Concierge', short: 'Concierge', is_bu_default: true, start_time: '08:00', end_time: '17:00', sat_diff_enabled: true, sat_start_time: '08:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '08:00', end_time: '14:00', hours: 6.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 15, early_leave_grace_min: 10, start_date: '2025-01-01', end_date: '', tone: 'amber', notes: 'Properties default building concierge & facility maintenance shift (Sat 08:00-14:00)' },
+      { id: 'ws_seed_4235_exec', company: '4235 Company S.A.L', shift_code: 'exec_mon_fri', name: 'Executive / Brokerage Mon-Fri', short: 'Mon-Fri', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5], grace_min: 15, early_leave_grace_min: 15, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: '4235 Company S.A.L corporate real-estate office schedule (Mon-Fri 08:30-17:00)' },
+      // 5. Insurance (Insurance Company) & Holding (Bdeir Holding) — Executive / Brokerage Mon-Fri (08:30-17:00 Mon-Fri)
+      { id: 'ws_seed_ins_exec', company: 'Insurance Company', shift_code: 'exec_mon_fri', name: 'Executive / Brokerage Mon-Fri', short: 'Mon-Fri', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5], grace_min: 15, early_leave_grace_min: 15, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'Insurance Company default brokerage & underwriting schedule (Mon-Fri 08:30-17:00)' },
+      { id: 'ws_seed_hld_exec', company: 'Bdeir Holding', shift_code: 'exec_mon_fri', name: 'Executive / Brokerage Mon-Fri', short: 'Mon-Fri', is_bu_default: true, start_time: '08:30', end_time: '17:00', sat_diff_enabled: false, day_timings: {}, days: [1, 2, 3, 4, 5], grace_min: 15, early_leave_grace_min: 15, start_date: '2025-01-01', end_date: '', tone: 'indigo', notes: 'Bdeir Holding default group executive & treasury schedule (Mon-Fri 08:30-17:00)' }
     ];
 
     seedSpecs.forEach(sp => {
@@ -35062,6 +35139,7 @@
           const maxStaff = Math.max(1, ...activeWs.map(r => Number(r.associated_staff_count || 0)));
           const sumWsStaff = sortedWs.reduce((a, r) => a + Number(r.associated_staff_count || 0), 0);
           const avgWsHrs = sortedWs.length ? (sortedWs.reduce((a, r) => a + Number(r.scheduled_hours || 0), 0) / sortedWs.length) : 8;
+          const activeBuList = getActiveIndustryBuList();
           const liveShiftTypes = getShiftTypes();
           return `
             <div class="grid-2" id="workShiftsChartsRow" style="margin-bottom:14px">
@@ -35079,11 +35157,12 @@
                     const satH = satObj ? (computeShiftWorkedHours(satObj.start_time, satObj.end_time) || regH) : (ws.sat_diff_enabled ? (computeShiftWorkedHours(ws.sat_start_time, ws.sat_end_time) || regH) : regH);
                     const pctReg = Math.min(100, Math.round((regH / maxHrs) * 100));
                     const pctSat = Math.min(100, Math.round((satH / maxHrs) * 100));
+                    const winTxt = ws.split_enabled && ws.split_window_label ? ws.split_window_label : `${ws.start_time}-${ws.end_time}`;
                     return `
                       <div style="display:flex;flex-direction:column;gap:3px">
                         <div style="display:flex;justify-content:space-between;font-size:12px">
                           <span>${coBadge(ws.company)} <b>${esc(ws.shift_name)}</b> ${ws.is_bu_default ? '<span class="badge badge-brass" style="font-size:10px">BU Default</span>' : ''}</span>
-                          <span class="mono">${esc(ws.start_time)}-${esc(ws.end_time)} (${fmtNum(regH, 1)}h)${satH !== regH ? ` · Sat ${fmtNum(satH, 1)}h` : ''}</span>
+                          <span class="mono">${esc(winTxt)} (${fmtNum(regH, 1)}h)${satH !== regH ? ` · Sat ${fmtNum(satH, 1)}h` : ''}</span>
                         </div>
                         <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden;display:flex;gap:2px">
                           <div style="width:${pctReg}%;background:var(--brass);border-radius:4px"></div>
@@ -35125,7 +35204,7 @@
               <div class="panel-head">
                 <div>
                   <div class="panel-title"><span>${ic('clock')} REGULAR SHIFT &amp; CLOCK TIMINGS (BU DEFAULTS, EFFECTIVE DATES &amp; DAY-SPECIFIC HOURS)</span></div>
-                  <span class="ph-sub">Configure default shifts per BU (WTC, BBConstruction, Lions Transport), add new shifts, set Saturday / day-specific hours, and change shift timings with an Effective Date to automatically backfill associated staff</span>
+                  <span class="ph-sub">Configure default shifts per BU (${esc(activeBuList.join(', '))}), add new shifts, set Saturday / day-specific hours, and change shift timings with an Effective Date to automatically backfill associated staff</span>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                   ${exportBtn('payShiftTimingsPanel', 'Regular_Shift_Timings')}
@@ -35133,14 +35212,15 @@
                 </div>
               </div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:10px 14px;background:var(--bg-elev);border-bottom:1px solid var(--line)" id="payBuDefaultBar">
-                ${['WTC', 'BBConstruction', 'Lions Transport'].map(bu => {
+                ${activeBuList.map(bu => {
                   const curDef = getBuDefaultShift(bu);
                   const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+                  const buShiftOpts = getShiftTypes(bu);
                   return `
                     <div class="ssm-field" style="margin:0">
                       <label style="font-size:11.5px;display:flex;align-items:center;gap:6px">${coBadge(bu)} <b>Default Regular Shift</b></label>
                       <select class="kiosk-select" data-pay-bu-default="${esc(bu)}" data-plain-options="1">
-                        ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                        ${buShiftOpts.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
                       </select>
                     </div>
                   `;
@@ -91921,9 +92001,13 @@
   }
 
   const DEFAULT_SHIFT_TYPES = [
-    { id: 'day_8_4', name: 'Day Shift', short: 'Day', start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'amber', isBuiltin: true },
-    { id: 'night_7_3', name: 'Night Shift', short: 'Night', start_time: '19:00', end_time: '03:00', hours: 8.0, overnight: true, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'indigo', isBuiltin: true },
-    { id: 'ext_7_4', name: 'Extended Day', short: 'Ext', start_time: '07:00', end_time: '16:00', hours: 9.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'sapphire', isBuiltin: true }
+    { id: 'day_8_4', name: 'Day Shift', short: 'Day', start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'amber', industries: ['Manufacturing', 'Hospitality', 'Trading', 'Real Estate'], isBuiltin: true },
+    { id: 'night_7_3', name: 'Night Shift', short: 'Night', start_time: '19:00', end_time: '03:00', hours: 8.0, overnight: true, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'indigo', industries: ['Manufacturing', 'Hospitality'], isBuiltin: true },
+    { id: 'ext_7_4', name: 'Extended Day', short: 'Ext', start_time: '07:00', end_time: '16:00', hours: 9.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'sapphire', industries: ['Manufacturing'], isBuiltin: true },
+    { id: 'split_11_23', name: 'Seasonal Split Shift', short: 'Split', split_enabled: true, split_start_1: '11:00', split_end_1: '15:00', split_start_2: '19:00', split_end_2: '23:00', start_time: '11:00', end_time: '23:00', hours: 8.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'emerald', industries: ['Hospitality'], isBuiltin: true },
+    { id: 'showroom_830_5', name: 'Showroom & Workshop', short: 'Showroom', start_time: '08:30', end_time: '17:00', hours: 8.5, overnight: false, sat_diff_enabled: true, sat_start_time: '08:30', sat_end_time: '13:30', day_timings: { '6': { start_time: '08:30', end_time: '13:30', hours: 5.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'sapphire', industries: ['Trading'], isBuiltin: true },
+    { id: 'concierge_8_5', name: 'Site Caretaker / Concierge', short: 'Concierge', start_time: '08:00', end_time: '17:00', hours: 9.0, overnight: false, sat_diff_enabled: true, sat_start_time: '08:00', sat_end_time: '14:00', day_timings: { '6': { start_time: '08:00', end_time: '14:00', hours: 6.0 } }, days: [1, 2, 3, 4, 5, 6], grace_min: 15, tone: 'amber', industries: ['Real Estate'], isBuiltin: true },
+    { id: 'exec_mon_fri', name: 'Executive / Brokerage Mon-Fri', short: 'Mon-Fri', start_time: '08:30', end_time: '17:00', hours: 8.5, overnight: false, days: [1, 2, 3, 4, 5], grace_min: 15, tone: 'indigo', industries: ['Insurance', 'Holding', 'Real Estate'], isBuiltin: true }
   ];
 
   const AVAILABLE_STAFF_PERKS = [
@@ -91932,7 +92016,13 @@
     { id: 'Meal Allowance', label: 'Meal Allowance', icon: 'dollar' },
     { id: 'Driver Trip OT', label: 'Driver Trip OT', icon: 'truck' },
     { id: 'Fuel & Phone Perk', label: 'Fuel & Phone Perk', icon: 'fuel' },
-    { id: 'Attendance Bonus', label: 'Attendance Bonus', icon: 'check_circle' }
+    { id: 'Attendance Bonus', label: 'Attendance Bonus', icon: 'check_circle' },
+    { id: 'Service Charge Share', label: 'Service Charge Share', icon: 'dollar' },
+    { id: 'Staff Meal', label: 'Staff Meal', icon: 'check_circle' },
+    { id: 'Late Shuttle', label: 'Late Shuttle', icon: 'truck' },
+    { id: 'Sales Commission Eligible', label: 'Sales Commission Eligible', icon: 'dollar' },
+    { id: 'On-Call Housing Perk', label: 'On-Call Housing Perk', icon: 'check_circle' },
+    { id: 'Utility Allowance', label: 'Utility Allowance', icon: 'dollar' }
   ];
 
   const DEFAULT_POLICY_GROUPS = [
@@ -91952,6 +92042,7 @@
       early_leave_grace_min: 10,
       no_clock_out_rule: 'half_day',
       perks: ['Site Transport', 'Paid Leave', 'Meal Allowance'],
+      industries: ['Manufacturing'],
       tone: 'emerald',
       isBuiltin: true
     },
@@ -91971,6 +92062,7 @@
       early_leave_grace_min: 10,
       no_clock_out_rule: 'half_day',
       perks: ['Site Transport', 'Paid Leave'],
+      industries: ['Manufacturing', 'Trading'],
       tone: 'amber',
       isBuiltin: true
     },
@@ -91990,6 +92082,7 @@
       early_leave_grace_min: 10,
       no_clock_out_rule: 'half_day',
       perks: ['Site Transport', 'Paid Leave'],
+      industries: ['Manufacturing', 'Hospitality', 'Trading', 'Real Estate'],
       tone: 'sapphire',
       isBuiltin: true
     },
@@ -92009,6 +92102,7 @@
       early_leave_grace_min: 10,
       no_clock_out_rule: 'auto_shift_end',
       perks: ['Site Transport', 'Fuel & Phone Perk', 'Paid Leave', 'Attendance Bonus'],
+      industries: ['Manufacturing', 'Hospitality', 'Trading', 'Real Estate', 'Insurance', 'Holding'],
       tone: 'indigo',
       isBuiltin: true
     },
@@ -92028,7 +92122,88 @@
       early_leave_grace_min: 10,
       no_clock_out_rule: 'half_day',
       perks: ['Driver Trip OT', 'Site Transport'],
+      industries: ['Manufacturing', 'Hospitality', 'Real Estate'],
       tone: 'rose',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_hsp_resort_tips',
+      name: 'Resort Service & Tips',
+      short: '1.5x OT · 15d · Tips/Meal',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 3,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Service Charge Share', 'Staff Meal', 'Late Shuttle', 'Paid Leave'],
+      industries: ['Hospitality'],
+      tone: 'emerald',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_trd_showroom_15d',
+      name: 'Showroom & Workshop',
+      short: 'Comm · 1.5x OT · 15d Vac',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.5,
+      ot_mode: 'date_range',
+      ot_max_hours: 2,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 30,
+      grace_min: 10,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['Sales Commission Eligible', 'Fuel & Phone Perk', 'Paid Leave', 'Site Transport'],
+      industries: ['Trading'],
+      tone: 'sapphire',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_re_caretaker',
+      name: 'Site Caretaker / Concierge',
+      short: 'Housing · 1.5x OT · 15d',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 3,
+      vacation_days: 15,
+      sick_days: 7,
+      working_days: 26,
+      grace_min: 15,
+      early_leave_grace_min: 10,
+      no_clock_out_rule: 'half_day',
+      perks: ['On-Call Housing Perk', 'Utility Allowance', 'Fuel & Phone Perk', 'Paid Leave'],
+      industries: ['Real Estate'],
+      tone: 'amber',
+      isBuiltin: true
+    },
+    {
+      id: 'pkg_ins_hld_exec_21d',
+      name: 'Executive / Brokerage Office',
+      short: 'Mon-Fri · $0 Late · 21d Vac',
+      late_penalty_mode: 'none',
+      late_multiplier: 1.0,
+      ot_multiplier: 1.5,
+      ot_mode: 'always',
+      ot_max_hours: 4,
+      vacation_days: 21,
+      sick_days: 10,
+      working_days: 30,
+      grace_min: 15,
+      early_leave_grace_min: 15,
+      no_clock_out_rule: 'auto_shift_end',
+      perks: ['Fuel & Phone Perk', 'Paid Leave', 'Attendance Bonus'],
+      industries: ['Insurance', 'Holding', 'Real Estate'],
+      tone: 'indigo',
       isBuiltin: true
     }
   ];
@@ -92087,6 +92262,7 @@
       early_leave_grace_min: earlyGraceM,
       no_clock_out_rule: noOutRule,
       perks: perksArr,
+      industries: Array.isArray(base.industries) ? base.industries.slice() : [],
       summaryText,
       tone: ['emerald', 'amber', 'sapphire', 'indigo', 'rose'].includes(base.tone) ? base.tone : 'emerald',
       isBuiltin: Boolean(base.isBuiltin || DEFAULT_POLICY_GROUPS.some(d => d.id === base.id)),
@@ -92095,8 +92271,9 @@
     };
   }
 
-  function getPolicyGroups() {
+  function getPolicyGroups(companyOpt = '') {
     const ws = ensureWorkSchedulesState();
+    const activeInd = getCompanyIndustryName(companyOpt || (typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : STATE.company));
     const customById = new Map();
     (ws.policyGroups || []).forEach(g => {
       if (g && g.id && !g.voided) customById.set(String(g.id), g);
@@ -92110,6 +92287,11 @@
     customById.forEach(custom => {
       if (custom && !custom.voided) out.push(normalizePolicyGroupObj(custom));
     });
+    out.sort((a, b) => {
+      const aPrimary = (a.id === 'pkg_ins_hld_exec_21d' && (activeInd === 'Insurance' || activeInd === 'Holding')) || (Array.isArray(a.industries) && a.industries[0] === activeInd) ? 2 : (Array.isArray(a.industries) && a.industries.includes(activeInd) ? 1 : 0);
+      const bPrimary = (b.id === 'pkg_ins_hld_exec_21d' && (activeInd === 'Insurance' || activeInd === 'Holding')) || (Array.isArray(b.industries) && b.industries[0] === activeInd) ? 2 : (Array.isArray(b.industries) && b.industries.includes(activeInd) ? 1 : 0);
+      return bPrimary - aPrimary;
+    });
     return out;
   }
 
@@ -92117,18 +92299,25 @@
     if (rawRule && !rawRule.reset_default && rawRule.policy_group_id) {
       return String(rawRule.policy_group_id);
     }
-    const prof = getStaffContractProfile(staffName, company);
+    const effCo = company || (rawRule && rawRule.company) || defaultEntryCompany() || 'WTC';
+    const indName = getCompanyIndustryName(effCo);
+    const prof = getStaffContractProfile(staffName, effCo);
     const roleStr = String((prof && prof.role) || '').toLowerCase();
-    const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director)\b/i.test(roleStr)
+    const isSeniorRole = /\b(owner|manager|supervisor|engineer|accounting|accountant|chief|foreman|director|broker|underwriter|executive)\b/i.test(roleStr)
       || norm(staffName) === norm('Hussein Bdeir');
     if (rawRule && !rawRule.reset_default) {
+      if (rawRule.late_penalty_mode === 'none') return 'pkg_ins_hld_exec_21d';
       if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
       if (rawRule.late_penalty_mode === 'multiplier' && rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
       if (rawRule.late_penalty_mode === 'multiplier') return 'pkg_15_open_15d';
-      if (rawRule.ot_mode === 'always' && isSeniorRole) return 'pkg_exec_21d';
-      if (rawRule.ot_mode === 'always') return 'pkg_15_open_15d';
-      if (rawRule.ot_mode === 'date_range') return 'pkg_15_pass_15d';
+      if (rawRule.ot_mode === 'always' && isSeniorRole) return (indName === 'Insurance' || indName === 'Holding') ? 'pkg_ins_hld_exec_21d' : 'pkg_exec_21d';
+      if (rawRule.ot_mode === 'always') return indName === 'Hospitality' ? 'pkg_hsp_resort_tips' : (indName === 'Real Estate' ? 'pkg_re_caretaker' : 'pkg_15_open_15d');
+      if (rawRule.ot_mode === 'date_range') return indName === 'Trading' ? 'pkg_trd_showroom_15d' : 'pkg_15_pass_15d';
     }
+    if (indName === 'Insurance' || indName === 'Holding') return 'pkg_ins_hld_exec_21d';
+    if (indName === 'Hospitality') return isSeniorRole ? 'pkg_exec_21d' : 'pkg_hsp_resort_tips';
+    if (indName === 'Trading') return isSeniorRole ? 'pkg_exec_21d' : 'pkg_trd_showroom_15d';
+    if (indName === 'Real Estate') return (/4235/i.test(effCo) || isSeniorRole) ? 'pkg_ins_hld_exec_21d' : 'pkg_re_caretaker';
     if (isSeniorRole && Number(prof.otMultiplier || 1.5) >= 1.5) {
       return Number(prof.vacationDays || 0) >= 21 ? 'pkg_exec_21d' : 'pkg_15_open_15d';
     }
@@ -92287,8 +92476,16 @@
     const et = fmtAttClockTime(base.end_time || '16:00') || '16:00';
     const sMin = parseClockMinutes(st);
     const eMin = parseClockMinutes(et);
-    const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
-    const durHrs = computeShiftWorkedHours(st, et) || 8.0;
+    const isSplit = Boolean(base.split_enabled || base.id === 'split_11_23' || base.shift_code === 'split_11_23' || /split/i.test(base.name || ''));
+    const overnight = Boolean(!isSplit && sMin != null && eMin != null && eMin <= sMin);
+    const splitS1 = isSplit ? (fmtAttClockTime(base.split_start_1 || st || '11:00') || '11:00') : '';
+    const splitE1 = isSplit ? (fmtAttClockTime(base.split_end_1 || '15:00') || '15:00') : '';
+    const splitS2 = isSplit ? (fmtAttClockTime(base.split_start_2 || '19:00') || '19:00') : '';
+    const splitE2 = isSplit ? (fmtAttClockTime(base.split_end_2 || et || '23:00') || '23:00') : '';
+    const splitWinLbl = isSplit ? `${splitS1}-${splitE1} + ${splitS2}-${splitE2}` : '';
+    const durHrs = isSplit
+      ? Math.round(((computeShiftWorkedHours(splitS1, splitE1) || 4.0) + (computeShiftWorkedHours(splitS2, splitE2) || 4.0)) * 100) / 100
+      : (computeShiftWorkedHours(st, et) || 8.0);
     const daysArr = Array.isArray(base.days) && base.days.length
       ? Array.from(new Set(base.days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b)
       : [1, 2, 3, 4, 5, 6];
@@ -92310,6 +92507,12 @@
       end_time: et,
       hours: durHrs,
       overnight,
+      split_enabled: isSplit,
+      split_start_1: splitS1,
+      split_end_1: splitE1,
+      split_start_2: splitS2,
+      split_end_2: splitE2,
+      split_window_label: splitWinLbl,
       days: daysArr,
       grace_min: graceM,
       early_leave_grace_min: earlyGraceM,
@@ -92317,7 +92520,8 @@
       sat_start_time: satSpec ? satSpec.start_time : (base.sat_start_time || '07:00'),
       sat_end_time: satSpec ? satSpec.end_time : (base.sat_end_time || '14:00'),
       day_timings: dayTimings,
-      day_schedule_summary: formatDayTimingsSummary(dayTimings, st, et),
+      day_schedule_summary: isSplit ? `Split ${splitWinLbl} (${fmtNum(durHrs, 1)}h)` : formatDayTimingsSummary(dayTimings, st, et),
+      industries: Array.isArray(base.industries) ? base.industries.slice() : [],
       start_date: String(base.start_date || '2025-01-01').slice(0, 10),
       end_date: String(base.end_date || '').slice(0, 10),
       tone: ['amber', 'indigo', 'sapphire', 'emerald'].includes(base.tone) ? base.tone : (overnight ? 'indigo' : 'amber'),
@@ -92330,12 +92534,17 @@
   function getShiftTypes(companyOpt = '') {
     ensureWorkShiftsSeeded();
     const ws = ensureWorkSchedulesState();
-    const coNorm = norm(companyOpt || COMPANY_BU_MATCH[STATE.company] || defaultEntryCompany() || 'WTC');
+    const rawScope = companyOpt || COMPANY_BU_MATCH[STATE.company] || STATE.company || defaultEntryCompany() || 'WTC';
+    const activeInd = getCompanyIndustryName(rawScope);
+    const indBuList = getActiveIndustryBuList(rawScope);
+    const indBuNormSet = new Set(indBuList.map(c => norm(c)));
+    const targetCo = COMPANY_BU_MATCH[rawScope] || (indBuNormSet.has(norm(rawScope)) ? rawScope : (indBuList[0] || 'WTC'));
+    const coNorm = norm(targetCo);
     const customById = new Map();
     ws.shiftTypes.forEach(s => {
       if (s && s.id && !s.voided) customById.set(String(s.id), s);
     });
-    // Overlay active work_shifts records for the active BU so getShiftTypes() always reflects the live work_shifts table
+    // Overlay active work_shifts records for the active industry / BU so getShiftTypes() always reflects the live work_shifts table
     const activeWsRows = ((SEED && SEED.records && SEED.records.work_shifts) || [])
       .filter(r => r && !r.voided && (!r.end_date || String(r.end_date).slice(0, 10) >= todayISO()))
       .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
@@ -92343,20 +92552,35 @@
       const code = String(r.shift_code || r.shift_id || r.id || '');
       if (!code) return;
       const rCoNorm = norm(r.company || 'WTC');
-      if (!customById.has(code) || rCoNorm === coNorm) {
+      if (rCoNorm === coNorm || (!customById.has(code) && indBuNormSet.has(rCoNorm))) {
         customById.set(code, Object.assign({}, customById.get(code) || {}, r, { id: code }));
       }
     });
+    const buDef = getBuDefaultShift(targetCo);
+    const buDefCode = (buDef && (buDef.shift_code || buDef.shift_id)) || '';
     const out = [];
     DEFAULT_SHIFT_TYPES.forEach(def => {
+      const inInd = !Array.isArray(def.industries) || !def.industries.length || def.industries.includes(activeInd) || def.id === buDefCode || customById.has(def.id);
+      if (!inInd) return;
       const ov = customById.get(def.id);
       out.push(normalizeShiftTypeObj(ov || def, def));
       customById.delete(def.id);
     });
     customById.forEach(custom => {
       if (custom && !custom.voided) {
-        out.push(normalizeShiftTypeObj(custom));
+        const cCoNorm = norm(custom.company || '');
+        if (!cCoNorm || cCoNorm === norm('All BUs') || indBuNormSet.has(cCoNorm) || cCoNorm === coNorm) {
+          out.push(normalizeShiftTypeObj(custom));
+        }
       }
+    });
+    out.sort((a, b) => {
+      const aDef = a.id === buDefCode ? 1 : 0;
+      const bDef = b.id === buDefCode ? 1 : 0;
+      if (aDef !== bDef) return bDef - aDef;
+      const aPri = Array.isArray(a.industries) && a.industries[0] === activeInd ? 1 : 0;
+      const bPri = Array.isArray(b.industries) && b.industries[0] === activeInd ? 1 : 0;
+      return bPri - aPri;
     });
     return out;
   }
@@ -92539,6 +92763,7 @@
   }
 
   function inferHabitualStaffShiftId(staffName, company) {
+    ensureWorkShiftsSeeded();
     const k = norm(staffName);
     const prof = getStaffContractProfile(staffName, company);
     const effCo = company || prof.company || 'WTC';
@@ -92550,7 +92775,8 @@
     const coNorm = norm(effCo);
     ensureHabitualNightCrewSet();
     if (_habitualNightCrewSet.has(`${coNorm}|${k}`)) return 'night_7_3';
-    if (_habitualExtCrewSet.has(`${coNorm}|${k}`) || (prof.hasContract && Number(prof.workingHours) >= 9)) return 'ext_7_4';
+    if (_habitualExtCrewSet.has(`${coNorm}|${k}`)) return 'ext_7_4';
+    if (getCompanyIndustryName(effCo) === 'Manufacturing' && prof.hasContract && Number(prof.workingHours) >= 9) return 'ext_7_4';
     return fallbackId;
   }
 
@@ -92570,7 +92796,7 @@
         ? buDefShiftId
         : inferHabitualStaffShiftId(staffName, effCo));
     const resolvedShiftRow = resolveShiftAtDate(defaultShiftId, effCo, todayISO()) || buDef;
-    const policyGroups = getPolicyGroups();
+    const policyGroups = getPolicyGroups(effCo);
     const defaultPkgId = inferDefaultPolicyGroupId(staffName, effCo, raw);
     const matchedPkg = policyGroups.find(g => g.id === defaultPkgId) || policyGroups[0] || DEFAULT_POLICY_GROUPS[0];
     const defGrace = resolvedShiftRow && resolvedShiftRow.grace_min != null
@@ -92666,7 +92892,7 @@
 
   function describeStaffPolicyGroup(staffName, company) {
     const rule = getStaffWorkRule(staffName, company);
-    const groups = getPolicyGroups();
+    const groups = getPolicyGroups(company || rule.company);
     const matched = groups.find(g => g.id === rule.policy_group_id) || groups[0] || DEFAULT_POLICY_GROUPS[0];
     const lateMultLbl = rule.late_penalty_mode === 'multiplier'
       ? `Late ${fmtNum(rule.late_multiplier || 1.5, (rule.late_multiplier || 1.5) % 1 ? 1 : 0)}x`
@@ -92947,8 +93173,12 @@
       }
     }
     const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
-    const windowLabel = `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
-    const regWindowLabel = `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
+    const windowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
+      ? chosenShift.split_window_label
+      : `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
+    const regWindowLabel = (chosenShift.split_enabled && chosenShift.split_window_label)
+      ? chosenShift.split_window_label
+      : `${regStart}-${regEnd}${regOvernight ? ' (+1d)' : ''}`;
     const satInfo = chosenShift.sat_diff_enabled
       ? `Sat ${chosenShift.sat_start_time || '07:00'}-${chosenShift.sat_end_time || '14:00'}`
       : '';
@@ -96790,14 +97020,14 @@
   }
 
   function openStaffScheduleModal(staffName, opts = {}) {
-    const fullDir = getKioskStaffDirectory();
+    const fullDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
     const entry = fullDir.find(s => norm(s.name) === norm(staffName)) || fullDir[0] || null;
     if (!entry) {
       toast('Staff member not found', 'warn');
       return null;
     }
     const rule = getStaffWorkRule(entry.name, entry.company);
-    const shiftTypes = getShiftTypes();
+    const shiftTypes = getShiftTypes(entry.company);
     const today = todayISO();
     const focusDate = opts.focusDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.focusDate) ? opts.focusDate : today;
 
@@ -96853,12 +97083,12 @@
     const renderModalInner = () => {
       ensureWorkShiftsSeeded();
       const liveShiftTypes = getShiftTypes(entry.company);
-      const livePolicyGroups = getPolicyGroups();
+      const livePolicyGroups = getPolicyGroups(entry.company);
       const prevBodyEl = modal.querySelector('.staff-sched-modal-body');
       const prevCardEl = modal.querySelector('.staff-sched-modal-card');
       const prevBodyTop = prevBodyEl ? prevBodyEl.scrollTop : 0;
       const prevCardTop = prevCardEl ? prevCardEl.scrollTop : 0;
-      const allDir = getKioskStaffDirectory();
+      const allDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
       const scopedDir = allDir.filter(s => s.company === entry.company);
       const freshDir = scopedDir.length > 0 ? scopedDir : allDir;
       const freshEntry = freshDir.find(s => norm(s.name) === norm(entry.name)) || entry;
@@ -96874,11 +97104,11 @@
         ? { name: draftCustomName || 'Custom Shift', start_time: draftCustomStart, end_time: draftCustomEnd, hours: cDur }
         : (liveShiftTypes.find(t => t.id === draftShiftId) || liveShiftTypes[0] || { name: 'Day Shift', start_time: '08:00', end_time: '16:00', hours: 8 });
       const curPolicyGrp = livePolicyGroups.find(g => g.id === draftPolicyGroupId) || null;
+      const buCompanies = getActiveIndustryBuList(entry.company);
+      const buCoNormSet = new Set(buCompanies.map(c => norm(c)));
       const workShiftRows = ((SEED.records && Array.isArray(SEED.records.work_shifts)) ? SEED.records.work_shifts : [])
-        .filter(r => r && !r.voided)
+        .filter(r => r && !r.voided && buCoNormSet.has(norm(r.company || 'WTC')))
         .map(r => hydrateWorkShiftRowComputed(r));
-      const buCompanies = ['WTC', 'BBConstruction', 'Lions Transport'];
-      if (entry.company && !buCompanies.includes(entry.company)) buCompanies.unshift(entry.company);
       const dayTimingsSummaryTxt = formatDayTimingsSummary(draftDayTimings, draftSatDiff, draftSatStart, draftSatEnd);
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
       const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
@@ -96943,7 +97173,7 @@
               <div class="ssm-live-pills">
                 <div class="ssm-live-kpi">
                   <span class="ssm-lk-lbl">Regular Shift</span>
-                  <strong class="mono">${esc(curShiftObj.name)} · ${esc(curShiftObj.start_time)}-${esc(curShiftObj.end_time)}</strong>
+                  <strong class="mono">${esc(curShiftObj.name)} · ${esc(curShiftObj.split_enabled && curShiftObj.split_window_label ? curShiftObj.split_window_label : `${curShiftObj.start_time}-${curShiftObj.end_time}`)}</strong>
                   <span class="ssm-lk-sub mono">${fmtNum(curShiftObj.hours || cDur, 1)}h${draftSatDiff ? ` · Sat ${esc(draftSatStart)}-${esc(draftSatEnd)}` : ` · ${esc(formatWorkdaysCompact(draftDays))}`}</span>
                 </div>
                 <div class="ssm-live-kpi">
@@ -97012,7 +97242,7 @@
                       <b>${esc(st.name)}${isBuDefForCo ? ` <span class="badge badge-brass" style="font-size:9.5px;padding:1px 5px;margin-left:3px">${esc(entry.company)} Default</span>` : ''}</b>
                       <span class="ssm-sc-hrs mono">${fmtNum(st.hours, 1)}h</span>
                     </span>
-                    <span class="ssm-sc-win mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}${stDaySum !== 'Same Every Workday' ? ` · ${esc(stDaySum)}` : ''}</span>
+                    <span class="ssm-sc-win mono">${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`)}${!st.split_enabled && stDaySum !== 'Same Every Workday' ? ` · ${esc(stDaySum)}` : ''}</span>
                   </button>
                 `;
                 }).join('')}
@@ -97189,11 +97419,12 @@
                   ${buCompanies.map(bu => {
                     const curDef = getBuDefaultShift(bu);
                     const curDefCode = (curDef && curDef.shift_code) || 'day_8_4';
+                    const buShiftTypes = getShiftTypes(bu);
                     return `
                       <div class="ssm-field" style="margin:0">
                         <label style="font-size:11px;display:flex;align-items:center;gap:5px">${coBadge(bu)} <span>Default Shift</span></label>
                         <select class="kiosk-select" data-ssm-bu-default="${esc(bu)}" data-plain-options="1" style="height:30px;font-size:12px">
-                          ${liveShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
+                          ${buShiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === curDefCode ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)}${st.sat_diff_enabled ? ` · Sat ${esc(st.sat_start_time)}-${esc(st.sat_end_time)}` : ''})</option>`).join('')}
                         </select>
                       </div>
                     `;
@@ -98258,7 +98489,7 @@
           syncLiveInputs();
           draftShiftId = btn.getAttribute('data-ssm-shift') || 'day_8_4';
           if (draftShiftId !== 'custom') {
-            const st = getShiftTypes().find(t => t.id === draftShiftId);
+            const st = getShiftTypes(entry.company).find(t => t.id === draftShiftId);
             if (st) {
               if (!draftUseCustomDays) draftDays = st.days.slice();
               if (!draftUseCustomDayTimings) {
@@ -98670,8 +98901,7 @@
               <label for="stmCompany">Business Unit (BU)</label>
               <select id="stmCompany" class="kiosk-select" data-plain-options="1">
                 ${(() => {
-                  const buList = ['WTC', 'BBConstruction', 'Lions Transport', 'All BUs'];
-                  if (defCo && !buList.includes(defCo)) buList.unshift(defCo);
+                  const buList = getActiveIndustryBuList(defCo).concat(['All BUs']);
                   return buList.map(bu => `<option value="${esc(bu)}" ${bu === defCo ? 'selected' : ''}>${esc(bu)}</option>`).join('');
                 })()}
               </select>
@@ -99311,7 +99541,7 @@
     const lateOtFilter = STATE.kioskLateOtFilter || 'all';
     const lateTodayFilter = STATE.kioskLateTodayFilter || 'all';
     const policyGroupFilter = STATE.kioskPolicyGroupFilter || 'all';
-    const policyGroupsCatalog = getPolicyGroups();
+    const policyGroupsCatalog = getPolicyGroups(effectiveScopedCo || defCo);
 
     const checkStaffFilterCriteria = (s, criteria = {}) => {
       const penF = criteria.pen != null ? criteria.pen : latePenFilter;
@@ -99432,7 +99662,7 @@
       return `
         <div class="kiosk-inline-type-cell">
           <select class="kiosk-select kiosk-inline-shift-select" data-plain-options="1" data-inline-shift-staff="${esc(s.name)}" aria-label="Shift Type for ${esc(s.name)}">
-            ${staffShifts.map(st => `<option value="${esc(st.id)}" ${effectiveSelId === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
+            ${staffShifts.map(st => `<option value="${esc(st.id)}" ${effectiveSelId === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time}-${st.end_time}`)})</option>`).join('')}
             <option value="custom" ${effectiveSelId === 'custom' ? 'selected' : ''}>Custom (${esc(ruleObj.custom_start || '08:00')}-${esc(ruleObj.custom_end || '16:00')})</option>
             <option value="__new_shift__">+ New Shift Type...</option>
           </select>
@@ -99568,7 +99798,7 @@
       </div>
     `;
 
-    const scopeTitleLabel = effectiveScopedCo || 'All Workforce (WTC & BBConstruction)';
+    const scopeTitleLabel = effectiveScopedCo || (activeInd === 'Manufacturing' ? 'All Workforce (WTC & BBConstruction)' : `All Workforce (${Array.from(indCoNames).join(', ')})`);
     const showCoCol = !effectiveScopedCo;
 
     return `
@@ -99618,7 +99848,7 @@
                           <strong>${esc(st.name)}</strong>
                           <span class="stc-cnt">${fmtNum(assignedCnt)} staff</span>
                         </div>
-                        <div class="stc-time mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}</div>
+                        <div class="stc-time mono">${esc(st.split_enabled && st.split_window_label ? st.split_window_label : `${st.start_time} - ${st.end_time}${st.overnight ? ' (+1d)' : ''}`)}</div>
                         <div class="stc-sub">${fmtNum(st.hours, 1)}h · ${esc(formatWorkdaysCompact(st.days))}${esc(satNote)} · Edit</div>
                       </button>
                     `;
@@ -99700,7 +99930,7 @@
                               const hasPass = Boolean(dayOt.pass && dayOt.activeToday);
                               const cellTxt = !dayShift.isWorkday
                                 ? 'Off'
-                                : `${dayShift.start_time.slice(0, 5)}-${dayShift.end_time.slice(0, 5)}`;
+                                : (dayShift.split_enabled ? '11-15+19-23' : `${dayShift.start_time.slice(0, 5)}-${dayShift.end_time.slice(0, 5)}`);
                               return `
                                 <td class="c ${wd.isToday ? 'is-today-col' : ''}">
                                   <button type="button" class="sched-day-cell ${!dayShift.isWorkday ? 'is-off' : ''} ${dayShift.isOverride ? 'is-override' : ''}" data-tone="${esc(dayShift.isWorkday ? (dayShift.tone || 'amber') : 'muted')}" data-sched-cell-staff="${esc(s.name)}" data-sched-cell-date="${esc(wd.iso)}">
