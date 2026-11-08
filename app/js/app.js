@@ -53863,7 +53863,7 @@
         ${fldWrap('Customer *', `<input type="text" id="ide_customer" list="dl_ide_trd_custs" style="${inpStyle}" value="${esc(prefill.customer || custs[0] || '')}">`)}
         ${fldWrap('Sale Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale" ${defCat === 'Heavy Truck Sale' ? 'selected' : ''}>Heavy Truck Sale</option><option value="Spare Parts & Tyres" ${defCat === 'Spare Parts & Tyres' ? 'selected' : ''}>Spare Parts & Tyres</option><option value="Lubricants & Hydraulics" ${defCat === 'Lubricants & Hydraulics' ? 'selected' : ''}>Lubricants & Hydraulics</option></select>`)}
         ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || 'Shacman F3000 6x4 Dump Truck 340HP')}">`)}
-        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || 'LZGJLDR44PX019301')}">`, 'Serial VIN (>=6 chars) locks Qty = 1')}
+        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || 'LZGJLDR41PX019301')}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
         ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.qty != null ? prefill.qty : '1')}">`)}
         ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '84500')}">`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
@@ -53895,7 +53895,7 @@
         ${fldWrap('Unit Stock ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'SU-SH-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Vehicle Model *', `<input type="text" id="ide_model" style="${inpStyle}" value="${esc(prefill.model || 'Shacman X3000 6x4 Tractor Head 430HP')}">`)}
         ${fldWrap('Series / Family', `<input type="text" id="ide_family" style="${inpStyle}" value="${esc(prefill.family || 'X3000 Series')}">`)}
-        ${fldWrap('Chassis VIN *', `<input type="text" id="ide_vin" class="mono" style="${inpStyle}" value="${esc(prefill.chassis_vin || prefill.vin || 'LZGJLDR44PX019399')}">`)}
+        ${fldWrap('Chassis VIN *', `<input type="text" id="ide_vin" class="mono" maxlength="17" style="${inpStyle}" value="${esc(prefill.chassis_vin || prefill.vin || 'LZGJLDR43PX019399')}">`, 'ISO 3779 17-char VIN check-digit & O/I/Q guard')}
         ${fldWrap('Engine Serial # *', `<input type="text" id="ide_engine" class="mono" style="${inpStyle}" value="${esc(prefill.engine_no || 'WP12.430E201-991024')}">`)}
         ${fldWrap('Warehouse / Yard', `<select id="ide_wh" data-plain-options="1" style="${inpStyle}">${whs.map(w => `<option value="${esc(w)}" ${defWh === w ? 'selected' : ''}>${esc(w)}</option>`).join('')}</select>`)}
         ${fldWrap('FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '60500')}">`)}
@@ -54188,8 +54188,18 @@
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
       } else if (spec.key === 'trd_sales') {
-        const vin = strVal('ide_chassis');
+        let vin = strVal('ide_chassis');
+        const vinValidator = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.validateAndDisambiguateVin17;
+        const vRes = vinValidator ? vinValidator(vin, { fromScan: false }) : null;
+        if (vRes && vRes.hasBannedIOQ && $('ide_chassis')) {
+          $('ide_chassis').value = vRes.ioqSanitized;
+          vin = vRes.ioqSanitized;
+          showMsg('ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0 in 17-character VIN.', false);
+        } else if (vRes && vRes.isVin17 && !vRes.checkDigitValid && vRes.enforcesMod11Wmi) {
+          showMsg(vRes.summaryText, false);
+        }
         const isSerialVin = vin.length >= 6 && !/^(parts|wh-)/i.test(vin);
+        if ($('ide_qty')) $('ide_qty').readOnly = Boolean(vRes && vRes.isVin17);
         if (isSerialVin && $('ide_qty') && numVal('ide_qty') !== 1) {
           $('ide_qty').value = '1';
           showMsg('Serial VIN Rule Active: Serialized Vehicle VIN enforces Qty = 1.', false);
@@ -54205,6 +54215,18 @@
         if ($('ide_margin')) $('ide_margin').value = `${fmtUSD(mUsd, 2)} (${mPct.toFixed(1)}%)`;
         if (tot > 0 && mPct < 16) {
           showMsg(`Low-Margin Watch: Invoice margin ${mPct.toFixed(1)}% is below the 16.0% floor.`, false);
+        }
+      } else if (spec.key === 'trd_trucks') {
+        const vinValidator = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.validateAndDisambiguateVin17;
+        const rawVin = strVal('ide_vin');
+        const vRes = vinValidator ? vinValidator(rawVin, { fromScan: false }) : null;
+        if (vRes && vRes.hasBannedIOQ && $('ide_vin')) {
+          $('ide_vin').value = vRes.ioqSanitized;
+          showMsg('ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0 in 17-character VIN.', false);
+        } else if (vRes && vRes.isVin17) {
+          showMsg(vRes.summaryText, false);
+        } else if (rawVin.length > 0 && rawVin.length < 17) {
+          showMsg(`ISO 3779 VIN Length: ${rawVin.length}/17 characters entered.`, false);
         }
       } else if (spec.key === 'trd_purchases') {
         if ($('ide_tot_landed')) $('ide_tot_landed').value = fmtUSD(round2(numVal('ide_fob') + numVal('ide_landed_add')), 2);
@@ -54899,12 +54921,8 @@
       scanFileInp.addEventListener('change', async () => {
         const picked = scanFileInp.files ? Array.from(scanFileInp.files) : [];
         scanFileInp.value = '';
-        if (picked[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
-          await window.MFG_SMART_SCAN.scanIntoDomainModal(picked[0], { captureMethod: 'File Upload' });
-        }
-        if (picked.length > 1) {
-          picked.slice(1).forEach(f => { f._captureMethod = 'File Upload'; pendingDomainFiles.push(f); });
-          renderPendingDomainAtts();
+        if (picked.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+          await window.MFG_SMART_SCAN.scanIntoDomainModal(picked, { captureMethod: 'File Upload' });
         }
       });
     }
@@ -54912,12 +54930,8 @@
       scanCamBtn.addEventListener('click', () => {
         openDocumentCameraCapture(async (files, method) => {
           const batch = Array.from(files || []);
-          if (batch[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
-            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch[0], { captureMethod: method || 'Camera Scan' });
-          }
-          if (batch.length > 1) {
-            batch.slice(1).forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
-            renderPendingDomainAtts();
+          if (batch.length && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch, { captureMethod: method || 'Camera Scan' });
           }
         });
       });
@@ -67526,10 +67540,27 @@
             if (hasCap && tRow.capacity > 0 && $('f_capacity')) $('f_capacity').value = String(tRow.capacity);
             if (hasSup && tRow.supplier && $('f_supplier') && !FORM_UI.ownerManuallyPicked) $('f_supplier').value = tRow.supplier;
             if (tRow.default_driver && $('f_driver') && !FORM_UI.driverManual) $('f_driver').value = tRow.default_driver;
+            if ((tRow.vin || tRow.chassis_vin) && $('f_vin') && !val('f_vin')) $('f_vin').value = tRow.vin || tRow.chassis_vin;
           } else if (!curTruck && prevRow) {
             if ($('f_plateno') && (val('f_plateno') === prevTruck || val('f_plateno') === (prevRow.plate_no || prevRow.name))) $('f_plateno').value = '';
             if (hasSup && $('f_supplier') && !FORM_UI.ownerManuallyPicked && prevRow.supplier && val('f_supplier') === prevRow.supplier) $('f_supplier').value = '';
             if ($('f_driver') && !FORM_UI.driverManual && prevRow.default_driver && val('f_driver') === prevRow.default_driver) $('f_driver').value = '';
+            if ($('f_vin') && (prevRow.vin || prevRow.chassis_vin) && val('f_vin') === (prevRow.vin || prevRow.chassis_vin)) $('f_vin').value = '';
+          }
+        }
+        if ($('f_vin')) {
+          const rawEqVin = val('f_vin');
+          const eqVinFn = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.validateAndDisambiguateVin17;
+          const eqVRes = eqVinFn && rawEqVin ? eqVinFn(rawEqVin, { fromScan: false }) : null;
+          if (eqVRes && eqVRes.hasBannedIOQ) {
+            $('f_vin').value = eqVRes.ioqSanitized;
+            setHint('hint_eq_vin', 'ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0.', 'ok');
+          } else if (eqVRes && eqVRes.isVin17) {
+            setHint('hint_eq_vin', eqVRes.summaryText, eqVRes.statusTone === 'warn' ? 'warn' : 'ok');
+          } else if (rawEqVin) {
+            setHint('hint_eq_vin', `ISO 3779 expects 17 characters (${rawEqVin.length}/17).`, 'warn');
+          } else {
+            setHint('hint_eq_vin', '', 'ok');
           }
         }
         const curSup = hasSup ? val('f_supplier') : company;
@@ -74227,6 +74258,8 @@
         supplier: effEqOwner,
         default_driver: val('f_driver'),
         model: val('f_model') || (targetExistingRow && targetExistingRow.model) || '',
+        vin: (val('f_vin') ? val('f_vin').toUpperCase().replace(/I/g, '1').replace(/[OQ]/g, '0').replace(/[^A-Z0-9]/g, '') : ((targetExistingRow && (targetExistingRow.vin || targetExistingRow.chassis_vin)) || '')),
+        chassis_vin: (val('f_vin') ? val('f_vin').toUpperCase().replace(/I/g, '1').replace(/[OQ]/g, '0').replace(/[^A-Z0-9]/g, '') : ((targetExistingRow && (targetExistingRow.chassis_vin || targetExistingRow.vin)) || '')),
         adj_windows: nextWins
       };
     } else if (f === 'driver') {
@@ -93113,9 +93146,14 @@
         if ($('ik_tot')) $('ik_tot').value = fmtUSD(tot, 2);
       }
     } else if (activeInd === 'Automotive & Heavy Trading') {
+      if ($('ik_vin') && window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.validateAndDisambiguateVin17) {
+        const kvRes = window.MFG_SMART_SCAN.validateAndDisambiguateVin17(strV('ik_vin'), { fromScan: false });
+        if (kvRes && kvRes.hasBannedIOQ) $('ik_vin').value = kvRes.ioqSanitized;
+      }
       if (kMode === 'sales') {
         const vin = strV('ik_vin');
-        if (vin.length === 17 && $('ik_qty')) $('ik_qty').value = '1';
+        if (vin.length === 17 && $('ik_qty')) { $('ik_qty').value = '1'; $('ik_qty').readOnly = true; }
+        else if ($('ik_qty')) { $('ik_qty').readOnly = false; }
         const qty = Math.max(1, numV('ik_qty'));
         const up = Math.max(0, numV('ik_price'));
         const uc = Math.max(0, numV('ik_cost'));
@@ -108937,6 +108975,7 @@
         openEntryModal,
         openIndustryDomainEntryModal,
         resolveDomainFormSpec,
+        computeTradingOperations,
         recalcForm,
         readAndCompressAttachmentFile,
         openDocumentCameraCapture,

@@ -315,14 +315,24 @@
   }
 
   function extractSvgReadableText(svgMarkup) {
+    const safeXml = String(svgMarkup || '').replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;');
     try {
-      const doc = new DOMParser().parseFromString(String(svgMarkup || ''), 'image/svg+xml');
-      const nodes = Array.from(doc.querySelectorAll('text, title, desc'));
-      if (nodes.length) {
-        return nodes.map(n => (n.textContent || '').trim()).filter(Boolean).join('\n');
+      const doc = new DOMParser().parseFromString(safeXml, 'image/svg+xml');
+      if (!doc.querySelector('parsererror')) {
+        const nodes = Array.from(doc.querySelectorAll('text, title, desc'));
+        if (nodes.length) {
+          return nodes.map(n => (n.textContent || '').trim()).filter(Boolean).join('\n');
+        }
       }
     } catch (_) {}
-    return String(svgMarkup || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return safeXml
+      .replace(/<\/(?:text|tspan|title|desc)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .split('\n')
+      .map(s => s.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
   }
 
   async function inflateBytes(compBytes, format) {
@@ -2527,6 +2537,38 @@
       } else if ((parsed.totalAmount || convertedLbpUsd) > 0 && $('f_usd')) {
         setInputValueAndFire('f_usd', parsed.totalAmount || convertedLbpUsd, filledSet, warnSet, convertedLbpUsd > 0);
       }
+    } else if (targetForm === 'equipment' || targetForm === 'companyequipment') {
+      const unitCode = matched.equipment || parsed.equipment || parsed.plateNo || (parsed.vin ? parsed.vin.slice(-6) : '');
+      if (unitCode && $('f_truck')) {
+        setInputValueAndFire('f_truck', unitCode, filledSet, warnSet, !matched.equipmentKnown);
+      }
+      if ((parsed.plateNo || matched.equipment) && $('f_plateno')) {
+        setInputValueAndFire('f_plateno', parsed.plateNo || matched.equipment, filledSet, warnSet, false);
+      }
+      if ((parsed.model || parsed.product) && $('f_model')) {
+        setInputValueAndFire('f_model', parsed.model || parsed.product, filledSet, warnSet, false);
+      }
+      if (parsed.vin && $('f_vin')) {
+        const isWarnVin = Boolean(parsed.vinAudit && parsed.vinAudit.statusTone === 'warn');
+        setInputValueAndFire('f_vin', parsed.vin, filledSet, warnSet, isWarnVin);
+      }
+      if (matched.supplier && $('f_supplier')) {
+        setInputValueAndFire('f_supplier', matched.supplier, filledSet, warnSet, !matched.supplierKnown);
+      }
+      if (matched.driver && $('f_driver')) {
+        setInputValueAndFire('f_driver', matched.driver, filledSet, warnSet, !matched.driverKnown);
+      }
+      if (parsed.date && $('f_effdate')) {
+        setInputValueAndFire('f_effdate', parsed.date, filledSet, warnSet, false);
+      }
+    }
+
+    if (parsed.vin && targetForm !== 'equipment' && targetForm !== 'companyequipment') {
+      if ($('f_vin')) {
+        setInputValueAndFire('f_vin', parsed.vin, filledSet, warnSet, Boolean(parsed.vinAudit && parsed.vinAudit.statusTone === 'warn'));
+      } else {
+        extraNotes.push(`VIN: ${parsed.vin}`);
+      }
     }
 
     // 5. Notes
@@ -2537,14 +2579,27 @@
       setInputValueAndFire('f_notes', combinedNotes, filledSet, warnSet, false);
     }
 
-    // 6. Attach scanned document into FORM_UI.attachments (auto-archived to Document Vault on Post)
-    if (FORM_UI && attObj) {
+    // 6. Attach all scanned pages (1..N) into FORM_UI.attachments without duplication
+    const bundleAtts = Array.isArray(scanBundle.attObjs) && scanBundle.attObjs.length
+      ? scanBundle.attObjs
+      : (attObj ? [attObj] : []);
+    if (FORM_UI && bundleAtts.length) {
       if (!Array.isArray(FORM_UI.attachments)) FORM_UI.attachments = [];
-      const dup = FORM_UI.attachments.some(a => a && a.file_name === attObj.file_name && Number(a.file_size || 0) === Number(attObj.file_size || 0));
-      if (!dup) {
-        FORM_UI.attachments.push(Object.assign({}, attObj));
-        if (D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
-      }
+      let addedAny = false;
+      bundleAtts.forEach(aItem => {
+        if (!aItem) return;
+        const dup = FORM_UI.attachments.some(a =>
+          a &&
+          a.file_name === aItem.file_name &&
+          Number(a.file_size || 0) === Number(aItem.file_size || 0) &&
+          String(a.data_url || '').slice(0, 120) === String(aItem.data_url || '').slice(0, 120)
+        );
+        if (!dup) {
+          FORM_UI.attachments.push(Object.assign({}, aItem));
+          addedAny = true;
+        }
+      });
+      if (addedAny && D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
     }
 
     // 7. Recalculate totals, price rules, VAT, locks & mark modal dirty so Unsaved Guard protects user work
@@ -2566,13 +2621,66 @@
     syncSplitPreviewDom();
   }
 
-  // ==================== MAIN SCAN ORCHESTRATOR ====================
+  async function normalizeSingleScanItem(item, captureMethod, idx) {
+    let fileObj = null;
+    let attObj = null;
+    if (typeof Blob !== 'undefined' && item instanceof Blob) {
+      fileObj = item;
+      if (D && D.readAndCompressAttachmentFile) {
+        attObj = await D.readAndCompressAttachmentFile(fileObj, captureMethod);
+      }
+      if (!attObj) {
+        const dataUrl = await new Promise(res => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result || ''));
+          r.onerror = () => res('');
+          r.readAsDataURL(fileObj);
+        });
+        attObj = {
+          id: 'att-ss-' + Date.now() + '-' + idx,
+          file_name: fileObj.name || `Scanned_Page_${idx + 1}`,
+          mime_type: fileObj.type || 'application/octet-stream',
+          file_size: fileObj.size || 0,
+          capture_method: captureMethod,
+          uploaded_at: new Date().toISOString(),
+          data_url: dataUrl
+        };
+      }
+    } else if (item && typeof item === 'object') {
+      const resolvedDataUrl = (D && D.resolveDocDataUrl && D.resolveDocDataUrl(item)) || item.data_url || '';
+      attObj = Object.assign({}, item, {
+        file_name: item.file_name || item.name || `Vault_Document_${idx + 1}.svg`,
+        mime_type: item.mime_type || item.type || 'image/svg+xml',
+        file_size: item.file_size || item.size || (resolvedDataUrl ? Math.round(resolvedDataUrl.length * 0.72) : 1024),
+        capture_method: item.capture_method || captureMethod,
+        data_url: resolvedDataUrl
+      });
+    }
+    return { fileObj, attObj };
+  }
+
+  function expandInputToScanBatch(inputFilesOrAtt) {
+    if (!inputFilesOrAtt) return [];
+    if (Array.isArray(inputFilesOrAtt)) return inputFilesOrAtt.filter(Boolean);
+    if (typeof FileList !== 'undefined' && inputFilesOrAtt instanceof FileList) return Array.from(inputFilesOrAtt).filter(Boolean);
+    if (typeof inputFilesOrAtt === 'object' && typeof inputFilesOrAtt.length === 'number' && !(typeof Blob !== 'undefined' && inputFilesOrAtt instanceof Blob) && !inputFilesOrAtt.data_url && !inputFilesOrAtt.file_name) {
+      return Array.from(inputFilesOrAtt).filter(Boolean);
+    }
+    return [inputFilesOrAtt];
+  }
+
+  // ==================== MAIN SCAN ORCHESTRATOR (SINGLE & MULTI-PAGE 1..N) ====================
   async function scanFileOrAttachment(inputFileOrAtt, captureMethod = 'AI Smart Scan') {
     if (!D || SCAN_STATE.busy) return null;
+    const rawItems = expandInputToScanBatch(inputFileOrAtt);
+    if (!rawItems.length) return null;
+
     SCAN_STATE.busy = true;
     SCAN_STATE.sampleMenuOpen = false;
     SCAN_STATE.imgRotateDeg = 0;
-    SCAN_STATE.progressMsg = 'Reading document and preparing preview...';
+    SCAN_STATE.progressMsg = rawItems.length > 1
+      ? `Reading ${rawItems.length}-page bundle and preparing stitched preview...`
+      : 'Reading document and preparing preview...';
 
     // Ensure #entryModal is open so user immediately sees live progress
     const modal = $('entryModal');
@@ -2596,69 +2704,79 @@
         }
       }
 
-      let fileObj = null;
-      let attObj = null;
+      const normPairs = [];
+      const pageEntries = [];
+      for (let i = 0; i < rawItems.length; i++) {
+        if (rawItems.length > 1) {
+          updateStatus(`Extracting page ${i + 1} of ${rawItems.length}...`);
+        }
+        const pair = await normalizeSingleScanItem(rawItems[i], captureMethod, i);
+        if (!pair.attObj) continue;
+        normPairs.push(pair);
 
-      if (inputFileOrAtt instanceof Blob) {
-        fileObj = inputFileOrAtt;
-        if (D.readAndCompressAttachmentFile) {
-          attObj = await D.readAndCompressAttachmentFile(fileObj, captureMethod);
+        const fName = pair.attObj.file_name || `Page_${i + 1}`;
+        const isPdfPair = /\.pdf$/i.test(fName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+        if (isPdfPair && pair.fileObj) {
+          const ab = await pair.fileObj.arrayBuffer();
+          const pdfPages = await extractPdfPagesTextClient(ab);
+          if (pdfPages.length > 1) {
+            pdfPages.forEach((pt, pIdx) => {
+              pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${fName} (p.${pIdx + 1})`, text: pt });
+            });
+            continue;
+          }
         }
-        if (!attObj) {
-          const dataUrl = await new Promise(res => {
-            const r = new FileReader();
-            r.onload = () => res(String(r.result || ''));
-            r.onerror = () => res('');
-            r.readAsDataURL(fileObj);
-          });
-          attObj = {
-            id: 'att-ss-' + Date.now(),
-            file_name: fileObj.name || 'Scanned_Document',
-            mime_type: fileObj.type || 'application/octet-stream',
-            file_size: fileObj.size || 0,
-            capture_method: captureMethod,
-            uploaded_at: new Date().toISOString(),
-            data_url: dataUrl
-          };
-        }
-      } else if (inputFileOrAtt && typeof inputFileOrAtt === 'object') {
-        const resolvedDataUrl = (D.resolveDocDataUrl && D.resolveDocDataUrl(inputFileOrAtt)) || inputFileOrAtt.data_url || '';
-        attObj = Object.assign({}, inputFileOrAtt, {
-          file_name: inputFileOrAtt.file_name || inputFileOrAtt.name || 'Vault_Document.svg',
-          mime_type: inputFileOrAtt.mime_type || inputFileOrAtt.type || 'image/svg+xml',
-          file_size: inputFileOrAtt.file_size || inputFileOrAtt.size || (resolvedDataUrl ? Math.round(resolvedDataUrl.length * 0.72) : 1024),
-          capture_method: inputFileOrAtt.capture_method || captureMethod,
-          data_url: resolvedDataUrl
-        });
+        const pageTxt = await extractAnyDocumentText(pair.fileObj, pair.attObj, rawItems.length === 1 ? updateStatus : () => {});
+        pageEntries.push({ pageNum: pageEntries.length + 1, fileName: fName, text: pageTxt });
       }
 
-      const extractedText = await extractAnyDocumentText(fileObj, attObj, updateStatus);
-      updateStatus('Classifying entry tab & matching ISABI registries...');
+      const attObjs = normPairs.map(p => p.attObj);
+      const attObj = attObjs[0] || null;
+      const totalPages = Math.max(1, pageEntries.length);
+      const combinedText = totalPages > 1
+        ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
+        : String((pageEntries[0] && pageEntries[0].text) || '');
 
-      const detParsed = deterministicParseDocument(extractedText, (attObj && attObj.file_name) || '');
+      let stitchedVisionAtt = null;
+      if (attObjs.length > 1) {
+        updateStatus(`Stitching ${attObjs.length} pages & synthesizing cross-page entries...`);
+        stitchedVisionAtt = await stitchMultiPageVisionSheet(attObjs);
+      } else {
+        updateStatus('Classifying entry tab & matching ISABI registries...');
+      }
+
+      const primaryFileName = (attObj && attObj.file_name) || '';
+      const detParsed = synthesizeMultiPageDeterministic(pageEntries, combinedText, primaryFileName);
       const prelimScope = collectRegistryCandidates(detParsed.company);
+      const visionTargetAtt = stitchedVisionAtt || attObj;
 
       const isBuiltInSample = captureMethod === 'Sample Smart Scan' && !window.__MFG_TEST_LIVE_AI;
       let aiResult = isBuiltInSample ? null : await tryLocalServerVisionScan({
-        fileName: (attObj && attObj.file_name) || '',
-        mimeType: (attObj && attObj.mime_type) || '',
-        dataUrl: (attObj && attObj.data_url) || '',
-        extractedText: String(extractedText || '').slice(0, 6000),
+        fileName: (visionTargetAtt && visionTargetAtt.file_name) || primaryFileName,
+        mimeType: (visionTargetAtt && visionTargetAtt.mime_type) || '',
+        dataUrl: (visionTargetAtt && visionTargetAtt.data_url) || '',
+        extractedText: String(combinedText || '').slice(0, 8000),
+        pageCount: totalPages,
         companies: prelimScope.companies.slice(0, 16)
       });
       if (!aiResult && !isBuiltInSample) {
-        aiResult = await tryCloudAiStructuredParse(extractedText, prelimScope, attObj);
+        aiResult = await tryCloudAiStructuredParse(combinedText, prelimScope, visionTargetAtt, totalPages);
       }
 
       const mergedParsed = mergeParsedResults(detParsed, aiResult && aiResult.parsed);
-      const matched = groundExtractedEntities(mergedParsed, extractedText);
+      mergedParsed.pageCount = totalPages;
+      mergedParsed.multiPageSynthesized = totalPages > 1;
+      const matched = groundExtractedEntities(mergedParsed, combinedText);
 
       const scanBundle = {
         attObj,
-        extractedText: String(extractedText || '').trim(),
+        attObjs,
+        stitchedDataUrl: stitchedVisionAtt ? stitchedVisionAtt.data_url : '',
+        activePageIdx: stitchedVisionAtt ? 'all' : 0,
+        extractedText: String(combinedText || '').trim(),
         parsed: mergedParsed,
         matched,
-        engineLabel: (aiResult && aiResult.engine) || 'ISABI Smart Parser + Frequency Grounding',
+        engineLabel: (aiResult && aiResult.engine) || (totalPages > 1 ? `ISABI ${totalPages}-Page Bundle Synthesizer` : 'ISABI Smart Parser + Frequency Grounding'),
         appliedForm: mergedParsed.formType,
         filledFields: [],
         warnFields: []
@@ -2670,7 +2788,8 @@
 
       if (D.toast) {
         const fTitle = (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES && window.MFG_FORMS.FORM_TITLES[scanBundle.appliedForm]) || scanBundle.appliedForm;
-        D.toast(`Smart Scan filled ${scanBundle.filledFields.length} field${scanBundle.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
+        const pagePrefix = totalPages > 1 ? `${totalPages}-page scan synthesized: ` : 'Smart Scan ';
+        D.toast(`${pagePrefix}filled ${scanBundle.filledFields.length} field${scanBundle.filledFields.length === 1 ? '' : 's'} on ${sanitizeOutwardText(fTitle)}. Review & Post.`, 'ok');
       }
       return scanBundle;
     } catch (err) {
@@ -2741,7 +2860,21 @@
     }
     unwrapSplitPreviewDom();
     const scan = SCAN_STATE.lastScan;
-    const att = scan.attObj;
+    const allAtts = Array.isArray(scan.attObjs) && scan.attObjs.length ? scan.attObjs : [scan.attObj];
+    const hasMulti = allAtts.length > 1;
+    const activeIdx = hasMulti ? (scan.activePageIdx != null ? scan.activePageIdx : (scan.stitchedDataUrl ? 'all' : 0)) : 0;
+
+    let att = scan.attObj;
+    if (hasMulti && activeIdx === 'all' && scan.stitchedDataUrl) {
+      att = {
+        file_name: `All ${allAtts.length} Pages (Stitched View)`,
+        mime_type: 'image/jpeg',
+        data_url: scan.stitchedDataUrl
+      };
+    } else if (hasMulti && typeof activeIdx === 'number' && allAtts[activeIdx]) {
+      att = allAtts[activeIdx];
+    }
+
     const dataUrl = String(att.data_url || '');
     const mime = String(att.mime_type || '').toLowerCase();
     const fileName = String(att.file_name || 'Document');
@@ -2760,16 +2893,24 @@
       } catch (_) {}
     }
 
+    const switcherHtml = hasMulti ? `
+      <div class="ss-page-switcher" id="ssPageSwitcher" role="tablist" aria-label="Scanned document pages">
+        ${scan.stitchedDataUrl ? `<button type="button" class="ss-page-pill ${activeIdx === 'all' ? 'active' : ''}" data-ss-page-idx="all">All Pages (${allAtts.length})</button>` : ''}
+        ${allAtts.map((aItem, pIdx) => `<button type="button" class="ss-page-pill ${activeIdx === pIdx ? 'active' : ''}" data-ss-page-idx="${pIdx}">Page ${pIdx + 1}</button>`).join('')}
+      </div>
+    ` : '';
+
     const pane = document.createElement('aside');
     pane.className = 'ss-split-preview-pane';
     pane.id = 'ssSplitPreviewPane';
     pane.innerHTML = `
-      <div class="ss-prev-hdr">
+      <div class="ss-prev-hdr" style="flex-wrap:wrap">
         <span>${ic('eye')} ${esc(fileName)}</span>
         <div style="display:flex;gap:4px;align-items:center">
           ${isImg ? `<button type="button" class="ss-alt-form-chip" id="ssRotateImgBtn" aria-label="Rotate image 90 degrees">${ic('rotate')} Rotate</button>` : ''}
           <button type="button" class="ss-alt-form-chip" id="ssCloseSplitBtn" aria-label="Hide side-by-side preview">Hide</button>
         </div>
+        ${switcherHtml}
       </div>
       <div class="ss-prev-stage">
         ${isImg && previewSrc
@@ -2800,6 +2941,16 @@
     }
     body.classList.add('ss-split-open');
 
+    pane.querySelectorAll('[data-ss-page-idx]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const raw = btn.getAttribute('data-ss-page-idx');
+        scan.activePageIdx = raw === 'all' ? 'all' : Number(raw || 0);
+        SCAN_STATE.imgRotateDeg = 0;
+        syncSplitPreviewDom();
+      });
+    });
+
     const rotBtn = $('ssRotateImgBtn');
     if (rotBtn) {
       rotBtn.addEventListener('click', e => {
@@ -2826,14 +2977,17 @@
       fInp = document.createElement('input');
       fInp.type = 'file';
       fInp.id = 'ssGlobalFileInput';
+      fInp.multiple = true;
       fInp.hidden = true;
       fInp.accept = 'image/*,application/pdf,.pdf,.svg,.jpg,.jpeg,.png,.webp,.xlsx,.docx,.csv,.tsv,.txt,.json,.xml';
       fInp.addEventListener('change', async () => {
-        const f = fInp.files && fInp.files[0];
+        const picked = fInp.files ? Array.from(fInp.files) : [];
         fInp.value = '';
-        if (f) await scanFileOrAttachment(f, 'AI Smart Scan Upload');
+        if (picked.length) await scanFileOrAttachment(picked, 'AI Smart Scan Upload');
       });
       document.body.appendChild(fInp);
+    } else {
+      fInp.multiple = true;
     }
     let cInp = $('ssGlobalCamInput');
     if (!cInp) {
@@ -2887,6 +3041,8 @@
       const filledCnt = (scan.filledFields || []).length;
       const warnCnt = (scan.warnFields || []).length + ((scan.matched && scan.matched.warnings) ? scan.matched.warnings.length : 0);
       const isPending = Boolean(scan.parsed && scan.parsed.pricePending);
+      const pageCnt = Math.max(1, Number((scan.parsed && scan.parsed.pageCount) || (scan.attObjs && scan.attObjs.length) || 1));
+      const vinAudit = scan.parsed && scan.parsed.vinAudit && scan.parsed.vinAudit.isVin17 ? scan.parsed.vinAudit : null;
       const canEnter = D && D.canEnterForm ? D.canEnterForm : (() => true);
       const alts = Array.from(new Set([scan.parsed.formType].concat(scan.parsed.altForms || [])))
         .filter(f => f && f !== scan.appliedForm && canEnter(f))
@@ -2899,6 +3055,8 @@
             <div class="ss-review-pills">
               <span class="ss-stat-pill is-form">${ic('bolt')} Routed: ${esc(buildFormDisplayLabel(scan.appliedForm))}</span>
               <span class="ss-stat-pill is-ok">${ic('check')} ${filledCnt} Field${filledCnt === 1 ? '' : 's'} Auto-Filled</span>
+              ${pageCnt > 1 ? `<span class="ss-multipage-pill">${pageCnt} Pages Synthesized</span>` : ''}
+              ${vinAudit ? `<span class="ss-vin-pill is-${esc(vinAudit.statusTone)}">${esc(vinAudit.badgeLabel)}</span>` : ''}
               ${isPending ? `<span class="ss-stat-pill is-warn">Price Pending ($0.00)</span>` : ''}
               ${warnCnt > 0 ? `<span class="ss-stat-pill is-warn">${ic('warn')} ${warnCnt} Item${warnCnt === 1 ? '' : 's'} to Verify</span>` : ''}
             </div>
@@ -2934,8 +3092,8 @@
           <div class="ss-bar-copy">
             <strong>Smart Scan &amp; Auto-Fill (Drop Invoice, Slip, PDF, Photo or Excel)</strong>
             <small>${hasResult
-              ? `Attached "${esc((scan.attObj && scan.attObj.file_name) || 'Document')}" (${esc(scan.engineLabel)}). Review highlighted fields below, adjust anything, then click Post.`
-              : 'Not sure which tab to pick? Upload or snap any receipt, bill, weighbridge slip, wire advice, or lease invoice and ISABI selects the form and fills it for your review.'}</small>
+              ? `Attached ${(scan.attObjs && scan.attObjs.length > 1) ? `${scan.attObjs.length} pages starting with ` : ''}"${esc((scan.attObj && scan.attObj.file_name) || 'Document')}" (${esc(scan.engineLabel)}). Review highlighted fields below, adjust anything, then click Post.`
+              : 'Not sure which tab to pick? Upload or snap single or multi-page receipts, bills, weighbridge slips, VIN plates, or leases and ISABI fills the form for your review.'}</small>
           </div>
         </div>
         <div class="ss-bar-actions">
@@ -2971,18 +3129,7 @@
           D.openDocumentCameraCapture(async captured => {
             const list = Array.isArray(captured) ? captured : (captured && captured.length ? Array.from(captured) : (captured ? [captured] : []));
             if (!list.length) return;
-            await scanFileOrAttachment(list[0], 'Live Camera Smart Scan');
-            if (list.length > 1 && D.readAndCompressAttachmentFile && D.getFormUi) {
-              const fui = D.getFormUi();
-              if (fui) {
-                if (!Array.isArray(fui.attachments)) fui.attachments = [];
-                for (let i = 1; i < list.length; i++) {
-                  const extraAtt = await D.readAndCompressAttachmentFile(list[i], 'Live Camera Smart Scan');
-                  if (extraAtt) fui.attachments.push(extraAtt);
-                }
-                if (D.renderEntryAttachmentsListUI) D.renderEntryAttachmentsListUI();
-              }
-            }
+            await scanFileOrAttachment(list, 'Live Camera Smart Scan');
           });
         } else {
           cInp.click();
@@ -3061,7 +3208,7 @@
       D.STATE.editingPendingSalaryId
     );
     const form = D.STATE.modalForm || 'sales';
-    const isUniv = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
+    const isUniv = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(form);
 
     // Header button in #entryModal .modal-header-actions
     const hdrActs = modal.querySelector('.modal-header-actions');
@@ -3127,7 +3274,7 @@
         if (files && files.length) {
           e.preventDefault();
           e.stopPropagation();
-          await scanFileOrAttachment(files[0], 'Drag & Drop Smart Scan');
+          await scanFileOrAttachment(Array.from(files), 'Drag & Drop Smart Scan');
         }
       });
       document.addEventListener('paste', async e => {
@@ -3323,8 +3470,11 @@
         ide_stream: 'Serial Unit (VIN)',
         ide_customer: 'Bekaa Heavy Haulage Co.',
         ide_item: 'Shacman X3000 6x4 Tractor Head',
-        ide_vin: 'LZGJLDR44PX019299',
+        ide_model: 'Shacman X3000 6x4 Tractor Head',
+        ide_chassis: 'LZGJLDR45PX019288',
+        ide_vin: 'LZGJLDR45PX019288',
         ide_qty: '1',
+        ide_net: '82000',
         ide_price: '82000',
         ide_cost: '67500'
       }
@@ -3351,7 +3501,7 @@
     {
       id: 'dom_hld_ic',
       ind: 'Holding & Treasury',
-      formKey: 'hld_consolidation',
+      formKey: 'hld_interactions',
       company: 'Bdeir Holding',
       label: 'Holding & Treasury · Intercompany Sister Wire Advice',
       fileName: 'Holding_Intercompany_Wire_995.svg',
@@ -3376,30 +3526,307 @@
     return allowed[0] || requestedCo || 'Bdeir Holding';
   }
 
+  // Deterministic Cross-Page Domain Bundle Parser across all 5 Domain-Modal Industries (1..N Pages)
+  function deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName) {
+    const cleanAll = normalizeDigits(String(combinedText || '')).replace(/\r/g, '');
+    if (cleanAll.trim().length < 10 && !extractVin17CandidateFromText(primaryFileName || '')) return null;
+
+    const perPageLines = (pageEntries || []).map(pe =>
+      normalizeDigits(String((pe && pe.text) || '')).replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean)
+    );
+    const allLines = cleanAll.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const findFirstLabel = rx => {
+      for (const pLines of perPageLines) {
+        const v = extractLabeledValue(pLines, rx);
+        if (v) return v;
+      }
+      return extractLabeledValue(allLines, rx);
+    };
+    const findLastMoneyLabel = rx => {
+      for (let pIdx = perPageLines.length - 1; pIdx >= 0; pIdx--) {
+        const pLines = perPageLines[pIdx];
+        for (let i = pLines.length - 1; i >= 0; i--) {
+          const m = pLines[i].match(rx);
+          if (m) {
+            const mv = parseMoneyValue(m[1] != null ? m[1] : pLines[i]);
+            if (mv >= 0 && /\d/.test(String(m[1] != null ? m[1] : pLines[i]))) return mv;
+          }
+        }
+      }
+      for (let i = allLines.length - 1; i >= 0; i--) {
+        const m = allLines[i].match(rx);
+        if (m) {
+          const mv = parseMoneyValue(m[1] != null ? m[1] : allLines[i]);
+          if (mv >= 0 && /\d/.test(String(m[1] != null ? m[1] : allLines[i]))) return mv;
+        }
+      }
+      return null;
+    };
+    const findIsoDateByLabel = rx => {
+      const raw = findFirstLabel(rx);
+      return raw ? parseDocumentDateISO(raw) : '';
+    };
+
+    const companyRaw = findFirstLabel(/^(?:company|entity|landlord|lessor|broker|seller|resort(?:\s*property)?|trading\s*entity|subsidiary)\s*:\s*(.+)$/i)
+      || (/4235\s*company/i.test(cleanAll) ? '4235 Company S.A.L'
+        : (/\bproperties\b/i.test(cleanAll) && /lease|rent|tenant/i.test(cleanAll) ? 'Properties'
+          : (/insurance\s*company/i.test(cleanAll) ? 'Insurance Company'
+            : (/\bshacman\b/i.test(cleanAll) ? 'Shacman'
+              : (/\bkorri\s*auto\b/i.test(cleanAll) ? 'Korri Auto'
+                : (/\bblanca\b/i.test(cleanAll) ? 'Blanca'
+                  : (/\bla\s*una\b/i.test(cleanAll) ? 'La Una' : '')))))));
+
+    const fields = {};
+    const docId = findFirstLabel(/^(?:(?:lease|policy|endorsement|claim|remittance|agreement|invoice|import\s*file|unit\s*stock|voucher|transfer|contract|slip|work\s*order)\s*(?:no|#|id)?|ref(?:erence)?)\s*[:#-]?\s*([A-Za-z0-9/_-]{3,36})/i)
+      || ((cleanAll.match(/\b(?:POL|END|ALZ|MGF|BNK|AXA|CLM|REM|AGR|LSE|INV-4235|INV-PROP|INV-TRD|IMP-TRD|IMP-SH|SU-SH|SU-KA|REV-HSP|POS-CL|MEM-2026|IC-HLD|IC-2026|LN-HLD)-[A-Z0-9-]{2,24}\b/i) || [])[0] || '');
+    if (docId) fields.ide_id = docId;
+
+    const issueDate = findIsoDateByLabel(/^(?:(?:invoice|issue|policy|effective|loss|arrival|operating|close|transfer|agreement|order)\s*date|date)\s*:\s*(.+)$/i) || parseDocumentDateISO(cleanAll);
+    if (issueDate) fields.ide_date = issueDate;
+
+    const startDate = findIsoDateByLabel(/^(?:(?:lease\s*)?start\s*date|commencement(?:\s*date)?|effective\s*from(?:\s*date)?|valid\s*from)\s*:\s*(.+)$/i);
+    if (startDate) fields.ide_start_date = startDate;
+
+    const endDate = findIsoDateByLabel(/^(?:(?:lease\s*)?end\s*date|termination(?:\s*date)?|expiry(?:\s*date)?|expiration(?:\s*date)?|valid\s*(?:to|until))\s*:\s*(.+)$/i);
+    if (endDate) {
+      fields.ide_end_date = endDate;
+      fields.ide_expiry = endDate;
+    }
+
+    // ISO 3779 17-Char VIN extraction + stamped-metal disambiguation
+    const rawVin = extractVin17CandidateFromText(cleanAll) || extractVin17CandidateFromText(primaryFileName || '');
+    const vinAudit = rawVin ? validateAndDisambiguateVin17(rawVin, { fromScan: true }) : null;
+    if (vinAudit && vinAudit.isVin17) {
+      fields.ide_vin = vinAudit.clean;
+      fields.ide_chassis = vinAudit.clean;
+      fields.ide_qty = '1';
+    }
+
+    const specKey = String((curSpec && curSpec.key) || '');
+
+    // 1. Real Estate & Property (re_leases, re_invoicing, re_sales, re_workorders, re_units)
+    const propVal = findFirstLabel(/^(?:property|building|tower|center|plaza)\s*:\s*(.+)$/i);
+    if (propVal) fields.ide_property = propVal;
+    const unitVal = findFirstLabel(/^(?:unit|suite|leased\s*unit|floor(?:\s*\/?\s*suite)?|cabana|chalet)\s*:\s*(.+)$/i);
+    if (unitVal) fields.ide_unit = unitVal;
+    const tenantVal = findFirstLabel(/^(?:tenant|lessee|occupant|rented\s*to)\s*:\s*(.+)$/i);
+    if (tenantVal) fields.ide_tenant = tenantVal;
+    const freqVal = findFirstLabel(/^(?:billing\s*frequency|payment\s*frequency|rent\s*frequency|frequency)\s*:\s*(.+)$/i);
+    if (freqVal) {
+      if (/month/i.test(freqVal)) fields.ide_freq = 'Monthly';
+      else if (/annual|year/i.test(freqVal)) fields.ide_freq = 'Annual';
+      else if (/quarter/i.test(freqVal)) fields.ide_freq = 'Quarterly';
+    }
+    const netRent = findLastMoneyLabel(/^(?:period\s*net\s*rent|net\s*rent(?:\s*ex-?vat)?|base\s*rent|net\s*sale\s*amount|net\s*amount(?:\s*ex-?vat)?|subtotal(?:\s*ex-?vat)?)\s*[:$-]*\s*(.+)$/i);
+    if (netRent !== null && netRent > 0) fields.ide_net = String(netRent);
+    const depVal = findLastMoneyLabel(/^(?:security\s*deposit|deposit(?:\s*held)?)\s*[:$-]*\s*(.+)$/i);
+    if (depVal !== null) fields.ide_deposit = String(depVal);
+    const escVal = findFirstLabel(/^(?:escalation(?:\s*clause)?|rent\s*escalation|indexation)\s*:\s*(.+)$/i);
+    if (escVal) fields.ide_escalation = escVal;
+    const buyerVal = findFirstLabel(/^(?:buyer|purchaser)\s*:\s*(.+)$/i);
+    if (buyerVal) fields.ide_buyer = buyerVal;
+    const contractVal = findLastMoneyLabel(/^(?:contract\s*(?:value|price)|seasonal\s*contract)\s*[:$-]*\s*(.+)$/i);
+    if (contractVal !== null && contractVal > 0) fields.ide_contract = String(contractVal);
+    const paidVal = findLastMoneyLabel(/^(?:amount\s*(?:collected|paid)|paid\s*to\s*date)\s*[:$-]*\s*(.+)$/i);
+    if (paidVal !== null) fields.ide_paid = String(paidVal);
+
+    // 2. Insurance & Brokerage (ins_policies, ins_claims, ins_remittances, ins_agreements)
+    const clientVal = findFirstLabel(/^(?:policyholder|insured|assured|client(?:\s*name)?)\s*:\s*(.+)$/i);
+    if (clientVal) fields.ide_client = clientVal;
+    const carrierVal = findFirstLabel(/^(?:carrier|insurer|underwriter|underwriting\s*carrier)\s*:\s*(.+)$/i);
+    if (carrierVal) {
+      if (/allianz/i.test(carrierVal)) fields.ide_carrier = 'Allianz SNA';
+      else if (/medgulf/i.test(carrierVal)) fields.ide_carrier = 'MedGulf';
+      else if (/bankers/i.test(carrierVal)) fields.ide_carrier = 'Bankers Assurance';
+      else if (/axa/i.test(carrierVal)) fields.ide_carrier = 'AXA Middle East';
+      else if (/libano/i.test(carrierVal)) fields.ide_carrier = 'Libano-Suisse';
+      else if (/arope/i.test(carrierVal)) fields.ide_carrier = 'Arope Insurance';
+      else fields.ide_carrier = carrierVal;
+    }
+    const lineVal = findFirstLabel(/^(?:line(?:\s*of\s*business)?|class\s*of\s*insurance|lob|branch)\s*:\s*(.+)$/i);
+    if (lineVal) {
+      if (/motor|fleet|auto|mot\b/i.test(lineVal)) fields.ide_line = 'MOT · Motor';
+      else if (/med|health|hospital/i.test(lineVal)) fields.ide_line = 'MED · Medical';
+      else if (/fire|property|prop\b|fir\b/i.test(lineVal)) fields.ide_line = 'PROP · Property';
+      else if (/marine|cargo|mar\b/i.test(lineVal)) fields.ide_line = 'MAR · Marine';
+      else if (/eng|car\b|all-?risk/i.test(lineVal)) fields.ide_line = 'ENG · Engineering';
+      else if (/liab|lia\b/i.test(lineVal)) fields.ide_line = 'LIAB · Liability';
+      else if (/workmen|wc\b/i.test(lineVal)) fields.ide_line = 'WC · Workmen Comp';
+      else if (/life|lif\b/i.test(lineVal)) fields.ide_line = 'LIFE · Life';
+      else fields.ide_line = lineVal;
+    }
+    const prodVal = findFirstLabel(/^(?:product|cover(?:age)?|plan)\s*:\s*(.+)$/i);
+    if (prodVal) fields.ide_product = prodVal;
+    const producerVal = findFirstLabel(/^(?:producer|account\s*exec(?:utive)?|broker\s*rep)\s*:\s*(.+)$/i);
+    if (producerVal) fields.ide_producer = producerVal;
+    const polTypeVal = findFirstLabel(/^(?:transaction\s*type|policy\s*type|endorsement\s*type)\s*:\s*(.+)$/i);
+    if (polTypeVal) {
+      if (/endorse/i.test(polTypeVal)) fields.ide_type = 'Endorsement';
+      else if (/renew/i.test(polTypeVal)) fields.ide_type = 'Renewal';
+      else fields.ide_type = 'Policy (New)';
+    }
+    const sumIns = findLastMoneyLabel(/^(?:sum\s*insured|insured\s*value|limit\s*of\s*liability)\s*[:$-]*\s*(.+)$/i);
+    if (sumIns !== null && sumIns > 0) fields.ide_sum_insured = String(sumIns);
+    const gwpVal = findLastMoneyLabel(/^(?:gross\s*(?:written\s*)?premium|gwp|total\s*gross\s*premium)\s*[:$-]*\s*(.+)$/i);
+    if (gwpVal !== null && gwpVal > 0) fields.ide_gwp = String(gwpVal);
+    const rateMatch = cleanAll.match(/(?:commission\s*rate|brokerage\s*rate|agreed\s*rate)\s*[:#-]?\s*(\d+(?:\.\d+)?)\s*%/i);
+    if (rateMatch) fields.ide_rate = String(Number(rateMatch[1]));
+    const discVal = findLastMoneyLabel(/^(?:client\s*(?:discount|rebate)|discount)\s*[:$-]*\s*(.+)$/i);
+    if (discVal !== null) fields.ide_discount = String(discVal);
+    const feeVal = findLastMoneyLabel(/^(?:policy\s*fee|admin(?:istration)?\s*fee|issuance\s*fee)\s*[:$-]*\s*(.+)$/i);
+    if (feeVal !== null) fields.ide_fee = String(feeVal);
+
+    // Claims fields
+    const polRef = findFirstLabel(/^(?:policy\s*(?:no|#|number))\s*[:#-]?\s*([A-Za-z0-9_-]{4,32})/i);
+    if (polRef) fields.ide_policy_no = polRef;
+    const perilVal = findFirstLabel(/^(?:peril|cause\s*of\s*loss|incident)\s*:\s*(.+)$/i);
+    if (perilVal) fields.ide_peril = perilVal;
+    const adjVal = findFirstLabel(/^(?:adjuster|loss\s*adjuster|surveyor|expert)\s*:\s*(.+)$/i);
+    if (adjVal) fields.ide_adjuster = adjVal;
+    const claimedVal = findLastMoneyLabel(/^(?:claimed\s*amount|reserve\s*claimed|initial\s*claim)\s*[:$-]*\s*(.+)$/i);
+    if (claimedVal !== null && claimedVal > 0) fields.ide_claimed = String(claimedVal);
+    const dedVal = findLastMoneyLabel(/^(?:deductible|policy\s*excess|excess)\s*[:$-]*\s*(.+)$/i);
+    if (dedVal !== null) fields.ide_deductible = String(dedVal);
+    const apprVal = findLastMoneyLabel(/^(?:adjuster\s*approved|approved\s*(?:settlement|amount)|net\s*approved)\s*[:$-]*\s*(.+)$/i);
+    if (apprVal !== null) fields.ide_approved = String(apprVal);
+
+    // 3. Automotive & Heavy Trading (trd_trucks, trd_sales, trd_purchases)
+    const custVal = findFirstLabel(/^(?:customer|sold\s*to|bill\s*to)\s*:\s*(.+)$/i);
+    if (custVal) fields.ide_customer = custVal;
+    const modelVal = findFirstLabel(/^(?:vehicle\s*model|model|item\s*description|truck\s*model)\s*:\s*(.+)$/i);
+    if (modelVal) {
+      fields.ide_model = modelVal;
+      fields.ide_item = modelVal;
+    }
+    const famVal = findFirstLabel(/^(?:series|family)\s*:\s*(.+)$/i);
+    if (famVal) fields.ide_family = famVal;
+    const engVal = findFirstLabel(/^(?:engine\s*(?:serial|no|#))\s*[:#-]?\s*([A-Za-z0-9._-]{4,32})/i);
+    if (engVal) fields.ide_engine = engVal;
+    const supVal = findFirstLabel(/^(?:foreign\s*oem\s*supplier|oem\s*supplier|supplier|exporter)\s*:\s*(.+)$/i);
+    if (supVal) fields.ide_supplier = supVal;
+    const origVal = findFirstLabel(/^(?:port\s*of\s*origin|origin\s*port|port\s*of\s*loading)\s*:\s*(.+)$/i);
+    if (origVal) fields.ide_origin = origVal;
+    const blVal = findFirstLabel(/^(?:bill\s*of\s*lading|ocean\s*b\/?l|container\s*\/?\s*b\/?l|b\/?l\s*(?:no|#))\s*[:#-]?\s*(.+)$/i);
+    if (blVal) fields.ide_bl = blVal;
+    const ordQtyM = cleanAll.match(/(?:ordered\s*qty|quantity\s*ordered)\s*[:#-]?\s*(\d+)/i);
+    if (ordQtyM) fields.ide_ord_qty = ordQtyM[1];
+    const recQtyM = cleanAll.match(/(?:received\s*qty|quantity\s*received|units\s*received)\s*[:#-]?\s*(\d+)/i);
+    if (recQtyM) fields.ide_rec_qty = recQtyM[1];
+    const fobVal = findLastMoneyLabel(/^(?:(?:supplier\s*)?fob\s*(?:cost|value|amount)|commercial\s*invoice\s*fob)\s*[:$-]*\s*(.+)$/i);
+    if (fobVal !== null && fobVal > 0) fields.ide_fob = String(fobVal);
+    // Sum freight + customs + clearance if itemized across Page 2, or read explicit landed add
+    const explicitAdd = findLastMoneyLabel(/^(?:allocated\s*landed\s*add|freight,?\s*customs\s*(?:&|and)\s*clearance|total\s*landed\s*add-?ons?)\s*[:$-]*\s*(.+)$/i);
+    if (explicitAdd !== null) {
+      fields.ide_landed_add = String(explicitAdd);
+    } else {
+      const freightV = findLastMoneyLabel(/^(?:ocean\s*freight|freight\s*charges?)\s*[:$-]*\s*(.+)$/i) || 0;
+      const customsV = findLastMoneyLabel(/^(?:customs\s*duty|port\s*(?:&|and)?\s*clearance)\s*[:$-]*\s*(.+)$/i) || 0;
+      if (freightV + customsV > 0) fields.ide_landed_add = String(round2(freightV + customsV));
+    }
+    const listVal = findLastMoneyLabel(/^(?:showroom\s*list\s*price|list\s*price)\s*[:$-]*\s*(.+)$/i);
+    if (listVal !== null && listVal > 0) fields.ide_list = String(listVal);
+    const costVal = findLastMoneyLabel(/^(?:capitalized\s*landed\s*cost|unit\s*landed\s*cost|cost\s*of\s*sale)\s*[:$-]*\s*(.+)$/i);
+    if (costVal !== null && costVal > 0) fields.ide_cost = String(costVal);
+
+    // 4. Hospitality & Resorts (hsp_revenue, hsp_pos, hsp_memberships)
+    const outletVal = findFirstLabel(/^(?:venue|outlet|venue\s*\/\s*outlet)\s*:\s*(.+)$/i);
+    if (outletVal) fields.ide_outlet = outletVal;
+    const revCat = findFirstLabel(/^(?:revenue\s*stream|stream)\s*:\s*(.+)$/i);
+    if (revCat) {
+      if (/diesel/i.test(revCat)) fields.ide_category = 'Generator Diesel Recharge';
+      else if (/tip|gratuit/i.test(revCat)) fields.ide_category = 'Staff Tips & Gratuities';
+      else if (/wedding|event/i.test(revCat)) fields.ide_category = 'Events & Weddings';
+      else if (/f&b|restaurant/i.test(revCat)) fields.ide_category = 'Restaurant F&B';
+      else if (/beach/i.test(revCat)) fields.ide_category = 'Beach Entrance';
+      else if (/chalet|cabana/i.test(revCat)) fields.ide_category = 'Chalet Rental';
+    }
+    const coversM = cleanAll.match(/(?:guest\s*covers|covers)\s*[:#-]?\s*(\d+)/i);
+    if (coversM) fields.ide_covers = coversM[1];
+    const roomsM = cleanAll.match(/(?:occupied\s*(?:chalets|rooms|suites)|rooms)\s*[:#-]?\s*(\d+)/i);
+    if (roomsM) fields.ide_rooms = roomsM[1];
+    const totRev = findLastMoneyLabel(/^(?:total\s*billed(?:\s*revenue)?|closing\s*total(?:\s*ttc)?|grand\s*total(?:\s*ttc)?)\s*[:$-]*\s*(.+)$/i);
+    if (totRev !== null && totRev > 0) fields.ide_tot = String(totRev);
+
+    // 5. Holding & Treasury (hld_interactions, hld_loans)
+    const fromCo = findFirstLabel(/^(?:from\s*(?:sister\s*)?entity|sender(?:\s*entity)?|remitter)\s*:\s*(.+)$/i);
+    if (fromCo) fields.ide_from = fromCo;
+    const toCo = findFirstLabel(/^(?:to\s*(?:sister\s*)?entity|receiver(?:\s*entity)?|beneficiary\s*sister)\s*:\s*(.+)$/i);
+    if (toCo) fields.ide_to = toCo;
+    const wireUsd = findLastMoneyLabel(/^(?:transfer\s*amount|wire\s*amount|advance\s*amount)\s*[:$-]*\s*(.+)$/i);
+    if (wireUsd !== null && wireUsd > 0) fields.ide_usd = String(wireUsd);
+    const notesVal = Array.from(new Set((pageEntries || []).map(pe => {
+      const ls = String((pe && pe.text) || '').split('\n').map(x => x.trim()).filter(Boolean);
+      return extractLabeledValue(ls, /^(?:notes?|purpose|remarks?|treasury\s*purpose)\s*:\s*(.+)$/i);
+    }).filter(Boolean))).join(' · ');
+    if (notesVal) fields.ide_notes = notesVal;
+
+    // Infer formKey if modal wasn't already locked to a specific specKey
+    let inferredFormKey = specKey;
+    if (!inferredFormKey) {
+      if (fields.ide_tenant || /commercial\s*lease|lease\s*agreement/i.test(cleanAll)) inferredFormKey = 're_leases';
+      else if (fields.ide_claimed || /loss\s*adjuster|claim/i.test(cleanAll)) inferredFormKey = 'ins_claims';
+      else if (fields.ide_gwp || /policy\s*schedule|gross\s*written\s*premium/i.test(cleanAll)) inferredFormKey = 'ins_policies';
+      else if (fields.ide_bl || /bill\s*of\s*lading|import\s*file/i.test(cleanAll)) inferredFormKey = 'trd_purchases';
+      else if (vinAudit && vinAudit.isVin17 && !fields.ide_customer) inferredFormKey = 'trd_trucks';
+      else if (vinAudit && vinAudit.isVin17) inferredFormKey = 'trd_sales';
+      else if (fields.ide_from && fields.ide_to) inferredFormKey = 'hld_interactions';
+      else if (fields.ide_outlet) inferredFormKey = 'hsp_revenue';
+    }
+
+    if (!Object.keys(fields).length) return null;
+    return {
+      company: companyRaw,
+      formKey: inferredFormKey,
+      fields,
+      vinAudit,
+      pageCount: Math.max(1, (pageEntries && pageEntries.length) || 1)
+    };
+  }
+
   function applyDomainExtractionToModal(sampleOrExt) {
     if (!D || !sampleOrExt) return { ok: false };
     const safeCo = resolveRlsSafeDomainCompany(sampleOrExt.company, sampleOrExt.ind);
     const modal = $('indDomainEntryModal');
     const curSpecKey = modal && modal._currentDomainSpec ? modal._currentDomainSpec.key : '';
-    if (!modal || modal.hidden || curSpecKey !== sampleOrExt.formKey) {
+    if (!modal || modal.hidden || (sampleOrExt.formKey && curSpecKey !== sampleOrExt.formKey)) {
       if (typeof D.openIndustryDomainEntryModal === 'function') {
-        D.openIndustryDomainEntryModal(sampleOrExt.formKey, { company: safeCo });
+        D.openIndustryDomainEntryModal(sampleOrExt.formKey || curSpecKey, { company: safeCo });
       }
     }
     const coSel = $('ide_company');
-    if (coSel) {
+    if (coSel && sampleOrExt.company) {
       const optMatch = Array.from(coSel.options || []).find(o => String(o.value || '').toLowerCase() === String(safeCo || '').toLowerCase());
       if (optMatch) coSel.value = optMatch.value;
       coSel.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    const fields = sampleOrExt.fields || {};
+    const fields = Object.assign({}, sampleOrExt.fields || {});
+
+    // Run deterministic ISO 3779 check-digit & stamped-metal disambiguation on any incoming VIN field
+    let vinAudit = sampleOrExt.vinAudit || null;
+    ['ide_vin', 'ide_chassis'].forEach(vk => {
+      if (fields[vk]) {
+        const va = validateAndDisambiguateVin17(fields[vk], { fromScan: true });
+        if (va && va.isVin17) {
+          fields[vk] = va.clean;
+          if (!vinAudit) vinAudit = va;
+        }
+      }
+    });
+
+    // Apply carrier & line BEFORE rate/discount so syncPolicyAgreementRate doesn't overwrite explicit scanned commission rate!
+    const orderedEntries = Object.entries(fields).sort(([a], [b]) => {
+      const prio = k => (k === 'ide_carrier' || k === 'ide_line' || k === 'ide_date' || k === 'ide_type') ? 0 : 1;
+      return prio(a) - prio(b);
+    });
+
     const fIdx = (D && typeof D.getFreqIndex === 'function') ? D.getFreqIndex() : null;
-    Object.entries(fields).forEach(([fId, rawVal]) => {
+    let appliedCount = 0;
+    orderedEntries.forEach(([fId, rawVal]) => {
       const el = $(fId);
       if (!el) return;
       let valToSet = String(rawVal ?? '');
       if (fIdx && typeof fIdx.forCol === 'function' && (fId === 'ide_client' || fId === 'ide_tenant' || fId === 'ide_customer')) {
-        // Ground against frequency-ranked datalist if available
         const listId = el.getAttribute('list');
         const dl = listId ? $(listId) : null;
         if (dl) {
@@ -3408,9 +3835,17 @@
           if (exact) valToSet = exact;
         }
       }
+      if (el.tagName === 'SELECT') {
+        const opt = Array.from(el.options || []).find(o =>
+          String(o.value || '').toLowerCase() === valToSet.toLowerCase() ||
+          String(o.textContent || '').toLowerCase().includes(valToSet.toLowerCase())
+        );
+        if (opt) valToSet = opt.value;
+      }
       el.value = valToSet;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      appliedCount++;
       const lbl = el.closest('label');
       if (lbl) {
         lbl.classList.add('ss-field-filled');
@@ -3425,33 +3860,67 @@
       }
     });
 
-    // Enforce 17-char VIN -> Qty = 1 on Trading sales
-    const vinEl = $('ide_vin');
+    // Enforce 17-char VIN -> Qty = 1 on Trading sales & trucks
+    const vinEl = $('ide_vin') || $('ide_chassis');
     const qtyEl = $('ide_qty');
     if (vinEl && qtyEl && String(vinEl.value || '').trim().length === 17) {
       qtyEl.value = '1';
       qtyEl.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+    // Deterministic Insurance Discount <= Gross Commission cap check when scanned
+    if ($('ide_gwp') && $('ide_rate') && $('ide_discount')) {
+      const gwpN = Number($('ide_gwp').value || 0);
+      const rateN = Number($('ide_rate').value || 0);
+      const gCommN = round2(gwpN * (rateN / 100));
+      const discN = Number($('ide_discount').value || 0);
+      if (gCommN > 0 && discN > gCommN && sampleOrExt.capDiscountToGrossComm) {
+        $('ide_discount').value = String(gCommN);
+        $('ide_discount').dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    const pageCnt = Math.max(1, Number(sampleOrExt.pageCount || 1));
     const statusBadge = $('indEntryScanStatusBadge');
     if (statusBadge) {
-      statusBadge.innerHTML = `<b style="color:#15803D">✓ AI Smart Scan Extracted:</b> ${esc(sampleOrExt.label || sampleOrExt.fileName || 'Document')} (${esc(safeCo)})`;
+      const multiTag = pageCnt > 1 ? ` · <span class="ss-multipage-pill">${pageCnt} Pages Synthesized</span>` : '';
+      const vinTag = vinAudit && vinAudit.isVin17 ? ` · <span class="ss-vin-pill is-${esc(vinAudit.statusTone)}">${esc(vinAudit.badgeLabel)}</span>` : '';
+      statusBadge.innerHTML = `<b style="color:#15803D">✓ AI Smart Scan Extracted:</b> ${esc(sanitizeOutwardText(sampleOrExt.label || sampleOrExt.fileName || 'Document'))} (${esc(safeCo)})${multiTag}${vinTag}`;
     }
 
     const liveModal = $('indDomainEntryModal');
     if (liveModal && typeof liveModal._addPendingDomainFile === 'function') {
-      if (sampleOrExt.rawFile && typeof Blob !== 'undefined' && sampleOrExt.rawFile instanceof Blob) {
-        sampleOrExt.rawFile._captureMethod = sampleOrExt.captureMethod || 'AI Smart Scan';
-        liveModal._addPendingDomainFile(sampleOrExt.rawFile);
-      } else {
-        const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#F8FAFC"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#0F172A">${esc(sampleOrExt.label || 'AI Smart Scan Document')}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#334155">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
+      const existingPending = typeof liveModal._getPendingDomainFiles === 'function' ? (liveModal._getPendingDomainFiles() || []) : [];
+      const rawFiles = Array.isArray(sampleOrExt.rawFiles) && sampleOrExt.rawFiles.length
+        ? sampleOrExt.rawFiles
+        : (sampleOrExt.rawFile ? [sampleOrExt.rawFile] : []);
+
+      if (rawFiles.length) {
+        rawFiles.forEach(rf => {
+          if (typeof Blob !== 'undefined' && rf instanceof Blob) {
+            if (!existingPending.includes(rf)) {
+              rf._captureMethod = sampleOrExt.captureMethod || 'AI Smart Scan';
+              liveModal._addPendingDomainFile(rf);
+            }
+          }
+        });
+      } else if (!sampleOrExt.skipSyntheticFile) {
+        const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360"><rect width="100%" height="100%" fill="#FAF8F4"/><text x="28" y="48" font-family="monospace" font-size="18" font-weight="bold" fill="#181512">${esc(sanitizeOutwardText(sampleOrExt.label || 'AI Smart Scan Document'))}</text><text x="28" y="84" font-family="monospace" font-size="14" fill="#4A443C">Entity: ${esc(safeCo)} · Ref: ${esc(fields.ide_id || 'SCAN-01')}</text></svg>`;
         const blob = new Blob([svgStr], { type: 'image/svg+xml' });
         const fakeFile = new File([blob], sampleOrExt.fileName || 'SmartScan_Domain_Voucher.svg', { type: 'image/svg+xml' });
         fakeFile._captureMethod = 'AI Smart Scan';
         liveModal._addPendingDomainFile(fakeFile);
       }
     }
-    return { ok: true, company: safeCo, formKey: sampleOrExt.formKey, fields };
+    return {
+      ok: true,
+      company: safeCo,
+      formKey: (liveModal && liveModal._currentDomainSpec && liveModal._currentDomainSpec.key) || sampleOrExt.formKey,
+      fields,
+      appliedCount,
+      pageCount: pageCnt,
+      vinAudit
+    };
   }
 
   function runDomainSampleScan(sampleId) {
@@ -3459,8 +3928,10 @@
     return applyDomainExtractionToModal(hit);
   }
 
-  async function scanIntoDomainModal(fileOrAtt, opts = {}) {
-    const fName = String((fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || '').toLowerCase();
+  async function scanIntoDomainModal(filesOrAtt, opts = {}) {
+    const batch = expandInputToScanBatch(filesOrAtt);
+    const firstItem = batch[0] || null;
+    const fName = String((firstItem && (firstItem.name || firstItem.file_name)) || '').toLowerCase();
     let sample = DOMAIN_SAMPLE_SCANS[0];
     if (/lease|4235|rent|prop/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[1];
     else if (/vin|shacman|korri|truck|bl/i.test(fName)) sample = DOMAIN_SAMPLE_SCANS[2];
@@ -3473,41 +3944,59 @@
 
     const liveModal = $('indDomainEntryModal');
     const curSpec = liveModal && !liveModal.hidden && liveModal._currentDomainSpec ? liveModal._currentDomainSpec : null;
-    const isRealUpload = typeof Blob !== 'undefined' && fileOrAtt instanceof Blob;
+    const rawFiles = batch.filter(it => typeof Blob !== 'undefined' && it instanceof Blob);
+
+    // Extract text & normalized attachments across all 1..N pages (works online, offline & headlessly)
+    const normPairs = [];
+    const pageEntries = [];
+    for (let i = 0; i < batch.length; i++) {
+      const pair = await normalizeSingleScanItem(batch[i], opts.captureMethod || 'AI Smart Scan', i);
+      if (!pair.attObj) continue;
+      normPairs.push(pair);
+      const pName = pair.attObj.file_name || `Page_${i + 1}`;
+      const isPdfPair = /\.pdf$/i.test(pName) || /application\/pdf/i.test(pair.attObj.mime_type || '');
+      if (isPdfPair && pair.fileObj) {
+        const ab = await pair.fileObj.arrayBuffer();
+        const pdfPages = await extractPdfPagesTextClient(ab);
+        if (pdfPages.length > 1) {
+          pdfPages.forEach((pt, pIdx) => pageEntries.push({ pageNum: pageEntries.length + 1, fileName: `${pName} (p.${pIdx + 1})`, text: pt }));
+          continue;
+        }
+      }
+      // Skip heavy raster OCR in headless mode unless text-bearing (SVG / PDF / TXT / DOCX / XLSX)
+      const isTextBearing = /\.(svg|pdf|txt|csv|tsv|json|xml|docx|xlsx)$/i.test(pName) ||
+        /svg|pdf|text|json|xml|word|sheet/i.test(pair.attObj.mime_type || '');
+      const txt = (!isHeadlessEnv() || isTextBearing || window.__MFG_TEST_LIVE_AI)
+        ? await extractAnyDocumentText(pair.fileObj, pair.attObj, () => {})
+        : '';
+      pageEntries.push({ pageNum: pageEntries.length + 1, fileName: pName, text: txt });
+    }
+
+    const totalPages = Math.max(1, pageEntries.length);
+    const combinedText = totalPages > 1
+      ? pageEntries.map((pe, idx) => `=== PAGE ${idx + 1} OF ${totalPages} (${pe.fileName}) ===\n${pe.text || ''}`).join('\n\n')
+      : String((pageEntries[0] && pageEntries[0].text) || '');
+
+    const primaryFileName = (normPairs[0] && normPairs[0].attObj && normPairs[0].attObj.file_name) || fName || sample.fileName;
+    const detBundle = deterministicParseDomainBundle(pageEntries, combinedText, curSpec, primaryFileName);
+
     const canRunLiveVision = (!isHeadlessEnv() || window.__MFG_TEST_LIVE_AI) &&
       (typeof navigator === 'undefined' || navigator.onLine !== false) &&
-      (isRealUpload || (fileOrAtt && fileOrAtt.data_url));
+      normPairs.length > 0;
 
     if (canRunLiveVision) {
       const statusBadge = $('indEntryScanStatusBadge');
-      if (statusBadge) statusBadge.textContent = 'Scanning document with ISABI Vision...';
+      if (statusBadge) {
+        statusBadge.textContent = totalPages > 1
+          ? `Synthesizing ${totalPages} pages with ISABI Vision...`
+          : 'Scanning document with ISABI Vision...';
+      }
       try {
-        let attObj = null;
-        if (isRealUpload) {
-          if (D && D.readAndCompressAttachmentFile) {
-            attObj = await D.readAndCompressAttachmentFile(fileOrAtt, opts.captureMethod || 'AI Smart Scan');
-          }
-          if (!attObj) {
-            const dataUrl = await new Promise(res => {
-              const r = new FileReader();
-              r.onload = () => res(String(r.result || ''));
-              r.onerror = () => res('');
-              r.readAsDataURL(fileOrAtt);
-            });
-            attObj = {
-              file_name: fileOrAtt.name || 'Document',
-              mime_type: fileOrAtt.type || 'application/octet-stream',
-              data_url: dataUrl
-            };
-          }
-        } else {
-          attObj = fileOrAtt;
-        }
-        const extractedText = await extractAnyDocumentText(isRealUpload ? fileOrAtt : null, attObj, () => {});
-        const inlinePart = extractVisionInlinePart(attObj);
+        const attObjs = normPairs.map(p => p.attObj);
+        const stitchedAtt = attObjs.length > 1 ? await stitchMultiPageVisionSheet(attObjs) : attObjs[0];
+        const inlinePart = extractVisionInlinePart(stitchedAtt);
         const relay = resolveAskRelayEndpoint();
 
-        // Collect live ide_* field IDs and labels from the open domain modal so all 20 forms across 5 industries work
         const fieldSchema = [];
         if (liveModal && !liveModal.hidden) {
           liveModal.querySelectorAll('input[id^="ide_"], select[id^="ide_"], textarea[id^="ide_"]').forEach(el => {
@@ -3523,19 +4012,22 @@
         }
         const allowedCos = (D && typeof D.allowedCompanyNames === 'function') ? D.allowedCompanyNames() : [sample.company];
         const domPrompt = [
-          'You are ISABI Smart Scan extracting structured domain fields for an enterprise voucher.',
+          'You are ISABI Smart Scan extracting structured domain fields across 1..N document pages.',
           'Return ONLY valid JSON: {"company":"","label":"Short document title","fields":{...}}',
           'Allowed companies: ' + allowedCos.slice(0, 16).join(', '),
           'Target field keys inside "fields": ' + fieldSchema.join(', '),
-          'Format dates as YYYY-MM-DD and numeric amounts without currency symbols or commas.'
+          'ISO 3779 VIN rule: 17-character VINs never contain I, O, or Q; disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
+          totalPages > 1
+            ? `Multi-Page Synthesis (${totalPages} pages): combine Page 1 identity headers (company, tenant/client/buyer/carrier, unit, policy/BL/VIN) with Page 2+ rent/premium/freight schedules, effective dates, and final net/gross figures.`
+            : 'Format dates as YYYY-MM-DD and numeric amounts without currency symbols or commas.'
         ].join('\n');
-        const userText = extractedText
-          ? ('DOCUMENT TEXT:\n' + String(extractedText).slice(0, 5000))
+        const userText = combinedText
+          ? ('DOCUMENT TEXT:\n' + String(combinedText).slice(0, 8000))
           : 'Extract all matching fields directly from this document image.';
 
         let aiDom = null;
-        if (relay.url && relay.url.startsWith('http') && (inlinePart || String(extractedText || '').trim().length >= 12)) {
-          const usePro = Boolean(inlinePart || String(extractedText || '').trim().length < 160);
+        if (relay.url && relay.url.startsWith('http') && (inlinePart || String(combinedText || '').trim().length >= 12)) {
+          const usePro = Boolean(inlinePart || String(combinedText || '').trim().length < 160);
           const parts = [{ text: userText }];
           if (inlinePart) parts.push({ inlineData: inlinePart });
           const reqBody = {
@@ -3568,24 +4060,43 @@
           }
         }
         if (aiDom && aiDom.fields && typeof aiDom.fields === 'object' && Object.keys(aiDom.fields).length > 0) {
+          const mergedFields = Object.assign({}, (detBundle && detBundle.fields) || {}, aiDom.fields);
           return applyDomainExtractionToModal({
             ind: (curSpec && curSpec.ind) || sample.ind,
-            formKey: (curSpec && curSpec.key) || sample.formKey,
-            company: aiDom.company || (($('ide_company') && $('ide_company').value) || sample.company),
-            label: aiDom.label || (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.label,
-            fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName,
-            rawFile: isRealUpload ? fileOrAtt : null,
+            formKey: (curSpec && curSpec.key) || (detBundle && detBundle.formKey) || sample.formKey,
+            company: aiDom.company || (detBundle && detBundle.company) || (($('ide_company') && $('ide_company').value) || sample.company),
+            label: aiDom.label || (totalPages > 1 ? `${totalPages}-Page Bundle (${primaryFileName})` : primaryFileName),
+            fileName: primaryFileName,
+            rawFiles,
+            pageCount: totalPages,
+            vinAudit: detBundle && detBundle.vinAudit,
             captureMethod: opts.captureMethod || 'AI Smart Scan',
-            fields: aiDom.fields
+            fields: mergedFields
           });
         }
       } catch (_) {}
     }
 
+    if (detBundle && Object.keys(detBundle.fields).length > 0) {
+      return applyDomainExtractionToModal({
+        ind: (curSpec && curSpec.ind) || sample.ind,
+        formKey: (curSpec && curSpec.key) || detBundle.formKey || sample.formKey,
+        company: detBundle.company || (($('ide_company') && $('ide_company').value) || sample.company),
+        label: totalPages > 1 ? `${totalPages}-Page Synthesized Pack (${primaryFileName})` : primaryFileName,
+        fileName: primaryFileName,
+        rawFiles,
+        pageCount: totalPages,
+        vinAudit: detBundle.vinAudit,
+        captureMethod: opts.captureMethod || 'AI Smart Scan',
+        fields: detBundle.fields
+      });
+    }
+
     const customExt = Object.assign({}, sample, {
       formKey: (curSpec && curSpec.key) || sample.formKey,
-      fileName: (fileOrAtt && (fileOrAtt.name || fileOrAtt.file_name)) || sample.fileName,
-      rawFile: isRealUpload ? fileOrAtt : null,
+      fileName: primaryFileName,
+      rawFiles,
+      pageCount: totalPages,
       captureMethod: opts.captureMethod || 'AI Smart Scan'
     });
     return applyDomainExtractionToModal(customExt);
@@ -3615,6 +4126,8 @@
     runSampleScanById,
     runDomainSampleScan,
     scanIntoDomainModal,
+    validateAndDisambiguateVin17,
+    computeIso3779CheckDigit,
     SAMPLE_SCANS,
     DOMAIN_SAMPLE_SCANS,
     _state: () => SCAN_STATE

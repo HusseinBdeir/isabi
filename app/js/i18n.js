@@ -425,7 +425,7 @@
       "ACTIVE STAKEHOLDERS & PARTNERS": "الشركاء وأصحاب المصالح النشطون",
       "AI Behavioral & Pattern Watchdogs": "رصد الأنماط والسلوك الذكي",
       "AI Carrier Bordereau Reconciler": "مطابقة جداول شركات التأمين الذكية",
-      "AI Filled": "معبأ ذكياً",
+      "AI Filled": "تعبئة ذكية",
       "AI Intercompany Semantic Matcher": "المطابقة الدلالية الذكية بين الشركات الشقيقة",
       "AI Match Basis": "أساس المطابقة الذكية",
       "AI Multi-Row Batch Intake": "الإدخال الدفعي الذكي متعدد الأسطر",
@@ -8594,10 +8594,44 @@
       "● OK": "● سليم",
       "✓ SAVED": "✓ محفوظ",
       "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
-      "ISO 3779 17-char VIN (no I, O, Q)": "رقم شاسيه ISO 3779 من 17 خانة (بدون I أو O أو Q)",
+      "ISO 3779 17-char VIN (no I, O, Q)": "رقم شاسيه ISO 3779 من 17 خانة (دون I أو O أو Q)",
       "Listening (English)": "قيد الاستماع (الإنجليزية)",
       "Listening (Arabic)": "قيد الاستماع (العربية)",
-      "Listening (French)": "قيد الاستماع (الفرنسية)"
+      "Listening (French)": "قيد الاستماع (الفرنسية)",
+      "Scanned document pages": "صفحات المستند الممسوحة ضوئياً",
+      "Chassis / 17-Char VIN": "رقم الشاسيه / الهيكل (17 خانة)",
+      "ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1": "رقم شاسيه ISO 3779 (17 خانة دون I/O/Q) يثبّت الكمية = 1",
+      "ISO 3779 17-char VIN check-digit & O/I/Q guard": "تدقيق خانة التحقق ISO 3779 وحظر الأحرف I/O/Q",
+      "ISO 3779 17-Char Format Valid": "صيغة ISO 3779 من 17 خانة صالحة",
+      "ISO 3779 17-char format valid (no I/O/Q; EU/RoW WMI model position 9).": "صيغة ISO 3779 من 17 خانة صالحة (دون I/O/Q؛ خانة الطراز 9 للمصنّع الدولي).",
+      "ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0 in 17-character VIN.": "حماية ISO 3779: تم استبدال الأحرف المحظورة I/O/Q بـ 1/0 في رقم الشاسيه.",
+      "ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0.": "حماية ISO 3779: تم استبدال الأحرف المحظورة I/O/Q بـ 1/0.",
+      "Not sure which tab to pick? Upload or snap single or multi-page receipts, bills, weighbridge slips, VIN plates, or leases and ISABI fills the form for your review.": "لست متأكداً من التبويب المناسب؟ ارفع أو صوّر إيصالات أو فواتير من صفحة أو عدة صفحات أو لوحة شاسيه أو عقد إيجار لتعبئة النموذج تلقائياً للمراجعة.",
+      "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
+      "Clear Scan": "مسح المسح الضوئي",
+      "Need a different entry tab?": "هل تريد تبويب إدخال آخر؟",
+      "+ Register Item": "+ تسجيل صنف",
+      "+ Register Supplier": "+ تسجيل مورّد",
+      "+ Register Customer": "+ تسجيل عميل",
+      "Rotate": "تدوير",
+      "IVA = Yes · Unit Price is Pre-VAT, Total includes +11% VAT": "خاضع للضريبة = نعم · سعر الوحدة قبل الضريبة والإجمالي يشمل +11% ض.ق.م",
+      "Invoice Lines": "بنود الفاتورة",
+      "Add Line": "إضافة بند",
+      "Unit / Store *": "الآلية / المستودع *",
+      "Catalog Item *": "صنف الدليل *",
+      "Equipment Line": "بند آلية",
+      "Warehouse Line": "بند مستودع",
+      "Overhead Line": "بند مصاريف عامة",
+      "· Total Incl. VAT": "· الإجمالي شامل الضريبة",
+      "Total Incl. 11% VAT ($) *": "الإجمالي شامل 11% ض.ق.م ($) *",
+      "Adds to Leg 3 AP": "يُضاف إلى ذمم الموردين",
+      "AP After": "الرصيد بعد القيد",
+      "Last Voucher": "آخر سند",
+      "Preview": "معاينة",
+      "Subcategory...": "الفئة الفرعية...",
+      "Description or catalog item...": "الوصف أو صنف الدليل...",
+      "Unit is frozen and set automatically when a Catalog Item is selected": "الوحدة مثبتة وتُحدد تلقائياً عند اختيار صنف من الدليل",
+      "Clear value": "مسح القيمة"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -9004,7 +9038,7 @@
       "ACTIVE STAKEHOLDERS & PARTNERS": "ASSOCIÉS & PARTIES PRENANTES ACTIFS",
       "AI Behavioral & Pattern Watchdogs": "Sentinelles IA de comportement et de motifs",
       "AI Carrier Bordereau Reconciler": "Rapprochement IA des bordereaux compagnies",
-      "AI Filled": "Pré-rempli IA",
+      "AI Filled": "Rempli IA",
       "AI Intercompany Semantic Matcher": "Appariement sémantique IA inter-sociétés",
       "AI Match Basis": "Base d'appariement IA",
       "AI Multi-Row Batch Intake": "Saisie par lot multi-lignes IA",
@@ -17176,7 +17210,41 @@
       "ISO 3779 17-char VIN (no I, O, Q)": "NIV ISO 3779 à 17 caractères (sans I, O, Q)",
       "Listening (English)": "Écoute en cours (Anglais)",
       "Listening (Arabic)": "Écoute en cours (Arabe)",
-      "Listening (French)": "Écoute en cours (Français)"
+      "Listening (French)": "Écoute en cours (Français)",
+      "Scanned document pages": "Pages du document numérisé",
+      "Chassis / 17-Char VIN": "Châssis / NIV 17 caractères",
+      "ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1": "NIV ISO 3779 à 17 caract. (sans I/O/Q) verrouille Qté = 1",
+      "ISO 3779 17-char VIN check-digit & O/I/Q guard": "Contrôle clé ISO 3779 à 17 caract. et blocage I/O/Q",
+      "ISO 3779 17-Char Format Valid": "Format ISO 3779 à 17 caract. valide",
+      "ISO 3779 17-char format valid (no I/O/Q; EU/RoW WMI model position 9).": "Format ISO 3779 à 17 caract. valide (sans I/O/Q ; position 9 modèle international).",
+      "ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0 in 17-character VIN.": "Garde ISO 3779 : lettres interdites I/O/Q remplacées par 1/0 dans le NIV.",
+      "ISO 3779 Guard: Replaced prohibited letter(s) I/O/Q with 1/0.": "Garde ISO 3779 : lettres interdites I/O/Q remplacées par 1/0.",
+      "Not sure which tab to pick? Upload or snap single or multi-page receipts, bills, weighbridge slips, VIN plates, or leases and ISABI fills the form for your review.": "Hésitation sur l’onglet ? Importez ou photographiez reçus, factures multi-pages, bons de bascule, plaques NIV ou baux et ISABI préremplit le formulaire.",
+      "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
+      "Clear Scan": "Effacer le scan",
+      "Need a different entry tab?": "Besoin d'un autre onglet de saisie ?",
+      "+ Register Item": "+ Enregistrer l'article",
+      "+ Register Supplier": "+ Enregistrer le fournisseur",
+      "+ Register Customer": "+ Enregistrer le client",
+      "Rotate": "Pivoter",
+      "IVA = Yes · Unit Price is Pre-VAT, Total includes +11% VAT": "TVA = Oui · Prix unitaire HT, le total inclut +11 % de TVA",
+      "Invoice Lines": "Lignes de facture",
+      "Add Line": "Ajouter une ligne",
+      "Unit / Store *": "Unité / Dépôt *",
+      "Catalog Item *": "Article du catalogue *",
+      "Equipment Line": "Ligne équipement",
+      "Warehouse Line": "Ligne entrepôt",
+      "Overhead Line": "Ligne frais généraux",
+      "· Total Incl. VAT": "· Total TTC",
+      "Total Incl. 11% VAT ($) *": "Total TTC 11 % TVA ($) *",
+      "Adds to Leg 3 AP": "S'ajoute au solde fournisseur",
+      "AP After": "Solde fourn. après",
+      "Last Voucher": "Dernière pièce",
+      "Preview": "Aperçu",
+      "Subcategory...": "Sous-catégorie...",
+      "Description or catalog item...": "Description ou article du catalogue...",
+      "Unit is frozen and set automatically when a Catalog Item is selected": "L'unité est figée et définie automatiquement lors du choix d'un article",
+      "Clear value": "Effacer la valeur"
     }
   };
 
@@ -19740,6 +19808,104 @@
       const p = translateCore(m[2].trim(), lang, depth + 1);
       return lang === 'ar' ? `إعادة التقاط الوضعية ${m[1]} (${p})` : `Reprendre la Pose ${m[1]} (${p})`;
     }
+
+    // Smart Scan Multi-Page Synthesis & ISO 3779 17-Char VIN Check-Digit Parametric Patterns
+    m = trimmed.match(/^Page\s+(\d+)$/i);
+    if (m) return lang === 'ar' ? `صفحة ${m[1]}` : `Page ${m[1]}`;
+
+    m = trimmed.match(/^All Pages\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `كل الصفحات (${m[1]})` : `Toutes les pages (${m[1]})`;
+
+    m = trimmed.match(/^All\s+(\d+)\s+Pages\s*\(Stitched View\)$/i);
+    if (m) return lang === 'ar' ? `كل الصفحات الـ ${m[1]} (عرض مدمج)` : `Les ${m[1]} pages (vue assemblée)`;
+
+    m = trimmed.match(/^(\d+)\s+Pages Synthesized$/i);
+    if (m) return lang === 'ar' ? `تم دمج ${m[1]} صفحات` : `${m[1]} pages synthétisées`;
+
+    m = trimmed.match(/^(\d+)-Page Synthesized Pack\s*\((.+)\)$/i);
+    if (m) return lang === 'ar' ? `حزمة مدمجة من ${m[1]} صفحات (${m[2]})` : `Liasse synthétisée ${m[1]} pages (${m[2]})`;
+
+    m = trimmed.match(/^(\d+)-Page Bundle\s*\((.+)\)$/i);
+    if (m) return lang === 'ar' ? `حزمة من ${m[1]} صفحات (${m[2]})` : `Liasse de ${m[1]} pages (${m[2]})`;
+
+    m = trimmed.match(/^ISO 3779 Verified\s*\(Pos 9 =\s*([0-9X])\)$/i);
+    if (m) return lang === 'ar' ? `تم التحقق ISO 3779 (الخانة 9 = ${m[1]})` : `ISO 3779 vérifié (Pos 9 = ${m[1]})`;
+
+    m = trimmed.match(/^ISO 3779 Auto-Disambiguated\s*\(([A-Z0-9]+)\)$/i);
+    if (m) return lang === 'ar' ? `تصحيح دمغ المعدن ISO 3779 (${m[1]})` : `NIV ISO 3779 désambiguïsé (${m[1]})`;
+
+    m = trimmed.match(/^ISO 3779 Sanitized\s*\(([A-Z0-9]+)\)$/i);
+    if (m) return lang === 'ar' ? `تنقية ISO 3779 (${m[1]})` : `NIV ISO 3779 nettoyé (${m[1]})`;
+
+    m = trimmed.match(/^Pos-9 Check Advisory\s*\(expected\s*([0-9X])\)$/i);
+    if (m) return lang === 'ar' ? `تنبيه خانة التحقق 9 (المتوقع ${m[1]})` : `Avis clé Pos-9 (attendu ${m[1]})`;
+
+    m = trimmed.match(/^VIN Length\s+(\d+)\/17$/i);
+    if (m) return lang === 'ar' ? `طول الشاسيه ${m[1]}/17` : `Longueur NIV ${m[1]}/17`;
+
+    m = trimmed.match(/^ISO 3779 17-char VIN verified\s*\(Position-9 check digit\s*([0-9X])\)\.$/i);
+    if (m) return lang === 'ar' ? `تم التحقق من رقم الشاسيه ISO 3779 من 17 خانة (خانة التحقق التاسعة ${m[1]}).` : `NIV ISO 3779 à 17 caract. vérifié (clé position 9 = ${m[1]}).`;
+
+    m = trimmed.match(/^Stamped VIN auto-corrected from\s+([A-Z0-9]+)\s+to\s+([A-Z0-9]+)(.*)$/i);
+    if (m) return lang === 'ar' ? `تم تصحيح رقم الشاسيه المدموغ تلقائياً من ${m[1]} إلى ${m[2]}.` : `NIV gravé corrigé automatiquement de ${m[1]} vers ${m[2]}.`;
+
+    m = trimmed.match(/^ISO 3779 check-digit advisory:\s*Position 9 is\s*([A-Z0-9]),\s*mod-11 formula expects\s*([0-9X])\.$/i);
+    if (m) return lang === 'ar' ? `تنبيه خانة التحقق ISO 3779: الخانة 9 هي ${m[1]} بينما معادلة mod-11 تتوقع ${m[2]}.` : `Avis clé ISO 3779 : la position 9 est ${m[1]}, la formule mod-11 attend ${m[2]}.`;
+
+    m = trimmed.match(/^ISO 3779 expects 17 characters\s*\((?:currently\s*)?(\d+)(?:\/17)?\)\.$/i);
+    if (m) return lang === 'ar' ? `معيار ISO 3779 يتطلب 17 خانة (${m[1]}/17).` : `ISO 3779 requiert 17 caractères (${m[1]}/17).`;
+
+    m = trimmed.match(/^ISO 3779 VIN Length:\s*(\d+)\/17 characters entered\.$/i);
+    if (m) return lang === 'ar' ? `طول رقم الشاسيه ISO 3779: تم إدخال ${m[1]}/17 خانة.` : `Longueur NIV ISO 3779 : ${m[1]}/17 caractères saisis.`;
+
+    m = trimmed.match(/^Attached\s+(\d+)\s+pages starting with\s+"([^"]+)"\s*\(([^)]+)\)\.\s*Review highlighted fields below, adjust anything, then click Post\.$/i);
+    if (m) return lang === 'ar' ? `تم إرفاق ${m[1]} صفحات بدءاً من "${m[2]}". راجع الحقول المظللة أدناه وعدّل ما يلزم ثم اضغط ترحيل.` : `${m[1]} pages jointes à partir de « ${m[2]} ». Vérifiez les champs surlignés ci-dessous puis cliquez sur Publier.`;
+
+    m = trimmed.match(/^Routed:\s*(.+)$/i);
+    if (m) {
+      const rLbl = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `التوجيه: ${rLbl}` : `Orienté : ${rLbl}`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+Fields?\s+Auto-Filled$/i);
+    if (m) return lang === 'ar' ? `تمت تعبئة ${m[1]} حقول تلقائياً` : `${m[1]} champs préremplis`;
+
+    m = trimmed.match(/^(\d+)\s+Items?\s+to\s+Verify$/i);
+    if (m) return lang === 'ar' ? `${m[1]} عناصر للمراجعة` : `${m[1]} éléments à vérifier`;
+
+    m = trimmed.match(/^(Supplier|Customer|Item)\s+"([^"]+)"\s+is not in the\s+(.+?)\s+yet\.\s*Review or click\s+\+\s*Register\s+\w+\.$/i);
+    if (m) {
+      const kind = m[1].toLowerCase();
+      if (lang === 'ar') {
+        const kAr = kind === 'supplier' ? 'المورّد' : (kind === 'customer' ? 'العميل' : 'الصنف');
+        const bAr = kind === 'supplier' ? '+ تسجيل مورّد' : (kind === 'customer' ? '+ تسجيل عميل' : '+ تسجيل صنف');
+        return `${kAr} "${m[2]}" غير مسجّل في الدليل بعد. راجعه أو اضغط ${bAr}.`;
+      }
+      const kFr = kind === 'supplier' ? 'Le fournisseur' : (kind === 'customer' ? 'Le client' : "L'article");
+      const bFr = kind === 'supplier' ? '+ Enregistrer le fournisseur' : (kind === 'customer' ? '+ Enregistrer le client' : "+ Enregistrer l'article");
+      return `${kFr} « ${m[2]} » ne figure pas encore au répertoire. Vérifiez ou cliquez sur ${bFr}.`;
+    }
+
+    m = trimmed.match(/^Extracted OCR \/ Text\s*\((\d+)\s*chars?\)$/i);
+    if (m) return lang === 'ar' ? `النص المستخرج (${m[1]} حرفاً)` : `Texte OCR extrait (${m[1]} caract.)`;
+
+    m = trimmed.match(/^For reports & statements\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `للتقارير والكشوفات (${m[1]})` : `Pour rapports et relevés (${m[1]})`;
+
+    m = trimmed.match(/^Pre-VAT\s*\((\d+)\s*lines?\)$/i);
+    if (m) return lang === 'ar' ? `قبل الضريبة (${m[1]} بنود)` : `HT (${m[1]} lignes)`;
+
+    m = trimmed.match(/^Pre-VAT:\s*(.+?)\s*\+\s*(\d+%)\s*VAT:\s*(.+?)\s*=\s*(.+?)\s*Total$/i);
+    if (m) return lang === 'ar' ? `قبل الضريبة: ${m[1]} + ضريبة ${m[2]}: ${m[3]} = الإجمالي ${m[4]}` : `HT : ${m[1]} + TVA ${m[2]} : ${m[3]} = Total ${m[4]}`;
+
+    m = trimmed.match(/^(\$[\d,.]+)\s+on\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بتاريخ ${m[2]}` : `${m[1]} le ${m[2]}`;
+
+    m = trimmed.match(/^(\d+)\s+Split Lines?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} بنود مجزأة` : `${m[1]} lignes ventilées`;
+
+    m = trimmed.match(/^Line\s+(\d+)\s+destination$/i);
+    if (m) return lang === 'ar' ? `وجهة البند ${m[1]}` : `Affectation ligne ${m[1]}`;
 
     return null;
   }
