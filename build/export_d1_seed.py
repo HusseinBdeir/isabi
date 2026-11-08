@@ -276,8 +276,10 @@ def apply_local_wrangler(batch_files: list[pathlib.Path]):
     if sqlite_files:
         target_sqlite = max(sqlite_files, key=lambda p: p.stat().st_mtime)
         conn = sqlite3.connect(str(target_sqlite))
+        conn.execute("PRAGMA synchronous = OFF")
+        conn.execute("PRAGMA journal_mode = MEMORY")
         for bf in batch_files:
-            conn.executescript(bf.read_text(encoding="utf-8"))
+            conn.executescript("BEGIN;\n" + bf.read_text(encoding="utf-8") + "\nCOMMIT;")
         conn.commit()
         conn.close()
         print(f"OK: Fast-loaded {len(batch_files)} batches directly into local Miniflare D1 ({target_sqlite.name})")
