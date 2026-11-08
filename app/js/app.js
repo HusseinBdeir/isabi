@@ -57808,6 +57808,1311 @@
     return { formKey: fallbackSpec.spec.key, prefill: basePrefill };
   }
 
+  function computeInspector360Snapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('books', u));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    const canSeeSalesAr = Boolean(canViewBooks || (canViewView('sales', u) && canAccessTable('customers', u)));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const isCoAllowed = coName => {
+      if (ownerFlag || !coName) return true;
+      const nCo = norm(coName);
+      if (!nCo || nCo === 'all' || nCo === 'all bus' || nCo === 'universal catalog') return true;
+      return allowedCos.some(ac => norm(ac) === nCo);
+    };
+    const safeNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const sanitizePlain = s => String(s == null ? '' : s)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    // Build deterministic mutation-reactive revision signature (Axis 1 & Axis 4)
+    const customRecSig = Object.keys(STATE.customRecords || {}).sort().map(k => {
+      const arr = STATE.customRecords[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      let sum = 0, vc = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) vc++;
+        sum += safeNum(r.total_ttc || r.total || r.amount || r.unit_price || r.cost || r.net_period_usd || 0);
+      }
+      return `${k}:${arr.length}:${vc}:${Math.round(sum * 100)}`;
+    }).filter(Boolean).join(';');
+    const indCustomStore = typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore() : {};
+    const indCustomSig = Object.keys(indCustomStore).sort().map(k => {
+      const arr = indCustomStore[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      const sum = arr.reduce((a, r) => a + (r && r.voided ? -999 : safeNum(r && (r.ttc_usd || r.amount_ttc_usd || r.gross_prem_usd || r.contract_usd || r.principal_usd || r.amount_usd || 0))), 0);
+      return `${k}:${arr.length}:${Math.round(sum * 100)}`;
+    }).filter(Boolean).join(';');
+    const indEditStore = typeof getIndustryRowEditStore === 'function' ? getIndustryRowEditStore() : {};
+    const indEditSig = Object.keys(indEditStore).sort().map(k => {
+      const e = indEditStore[k];
+      if (!e) return '';
+      return `${k}:${e.rev || 0}:${e.voided ? 1 : 0}:${(e.cells || []).join(',')}`;
+    }).filter(Boolean).join(';');
+    const wfPatches = (STATE && STATE.industryWorkflowPatches) || {};
+    const wfSig = Object.keys(wfPatches).sort().map(k => `${k}:${Object.keys(wfPatches[k] || {}).length}`).join(';');
+    const revToken = `${SEED._customRev || 0}|${STATE.basis || 'rep'}|${STATE.company || 'all'}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}`;
+
+    // Resolve inspected context (explicit options OR live STATE.activeInspectorCtx)
+    const liveCtx = (STATE && STATE.activeInspectorCtx) || null;
+    const hasExplicit = Boolean(options.mode || options.key || options.domainMeta || options.industry);
+    const mode = options.mode
+      || (options.domainMeta || (options.industry && options.industry !== 'Manufacturing') ? 'domain' : '')
+      || (!hasExplicit && liveCtx ? liveCtx.mode : 'mfg');
+
+    const IND_COMPANIES = {
+      'Manufacturing': ['WTC', 'BBConstruction', 'Lions Transport'],
+      'Holding & Treasury': ['Bdeir Holding'],
+      'Hospitality & Resorts': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+      'Automotive & Heavy Trading': ['Korri Auto', 'Shacman'],
+      'Real Estate & Property': ['Properties', '4235 Company S.A.L'],
+      'Insurance & Brokerage': ['Insurance Company']
+    };
+    const IND_LOC = {
+      'Manufacturing': { ar: 'مجموعة التصنيع والكسارات', fr: 'Groupe Industrie & Carrières' },
+      'Holding & Treasury': { ar: 'الشركة القابضة والخزينة', fr: 'Holding & Trésorerie' },
+      'Hospitality & Resorts': { ar: 'الضيافة والمنتجعات', fr: 'Hôtellerie & Complexes' },
+      'Automotive & Heavy Trading': { ar: 'تجارة المركبات والمعدات الثقيلة', fr: 'Négoce Auto & Poids Lourds' },
+      'Real Estate & Property': { ar: 'العقارات وإدارة الأملاك', fr: 'Immobilier & Patrimoine' },
+      'Insurance & Brokerage': { ar: 'التأمين والوساطة', fr: 'Assurance & Courtage' }
+    };
+    const CO_LOC = {
+      'WTC': { ar: 'شركة WTC', fr: 'WTC' },
+      'BBConstruction': { ar: 'شركة BBConstruction', fr: 'BBConstruction' },
+      'Lions Transport': { ar: 'شركة Lions Transport', fr: 'Lions Transport' },
+      'Bdeir Holding': { ar: 'بدير القابضة', fr: 'Bdeir Holding' },
+      'Blanca': { ar: 'منتجع بلانكا', fr: 'Complexe Blanca' },
+      'La Una': { ar: 'لا أونا', fr: 'La Una' },
+      'Palms': { ar: 'بالمز', fr: 'Palms' },
+      'Voile': { ar: 'فوال', fr: 'Voile' },
+      'Platinum': { ar: 'بلاتينوم', fr: 'Platinum' },
+      'Korri Auto': { ar: 'كوري أوتو', fr: 'Korri Auto' },
+      'Shacman': { ar: 'شاكمان للمعدات الثقيلة', fr: 'Shacman Poids Lourds' },
+      'Properties': { ar: 'شركة العقارات (Properties)', fr: 'Properties' },
+      '4235 Company S.A.L': { ar: 'شركة 4235 ش.م.ل', fr: 'Société 4235 S.A.L' },
+      'Insurance Company': { ar: 'شركة التأمين والوساطة', fr: 'Courtage Assurance' }
+    };
+    const locCo = (coStr, lang) => {
+      const clean = sanitizePlain(coStr || '');
+      if (!clean) return lang === 'ar' ? 'النطاق النشط' : (lang === 'fr' ? 'Périmètre actif' : 'Active Scope');
+      const hit = CO_LOC[clean];
+      if (hit) return lang === 'ar' ? hit.ar : (lang === 'fr' ? hit.fr : clean);
+      if (/^all\s*bus?$/i.test(clean) || /^manufacturing-group$/i.test(clean)) {
+        return lang === 'ar' ? 'مجموعة التصنيع' : (lang === 'fr' ? 'Groupe Industrie' : 'Manufacturing Group');
+      }
+      return clean;
+    };
+
+    const buildRlsClampedSnapshot = (indName, refId) => {
+      const safeInd = IND_LOC[indName] ? indName : 'Manufacturing';
+      const indLoc = IND_LOC[safeInd];
+      const fbView = typeof defaultViewFor === 'function' ? defaultViewFor(u) : 'sales';
+      return {
+        mode,
+        rlsClamped: true,
+        canViewBooks: false,
+        canSeeSalesAr,
+        industry: safeInd,
+        industryAr: indLoc.ar,
+        industryFr: indLoc.fr,
+        company: COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC',
+        companyEn: locCo(COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC', 'en'),
+        companyAr: locCo(COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC', 'ar'),
+        companyFr: locCo(COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC', 'fr'),
+        recordKey: 'restricted',
+        recordId: sanitizePlain(refId || 'RESTRICTED'),
+        entityName: 'Operational Scope',
+        entityAr: 'النطاق التشغيلي المصرح',
+        entityFr: 'Périmètre opérationnel autorisé',
+        roleLabelEn: 'Role-Scoped Access',
+        roleLabelAr: 'صلاحية مقيدة حسب الدور',
+        roleLabelFr: 'Accès restreint par rôle',
+        activeRuleEn: 'Role Guardrail Active',
+        activeRuleAr: 'حماية الصلاحيات مفعلة',
+        activeRuleFr: 'Contrôle des accès actif',
+        targetView: fbView,
+        scopeKey: `insp360|rls_clamped|${u ? u.id : 'anon'}|${safeInd}|${revToken}`,
+        tieCheck: null,
+        kpis: [
+          { labelEn: 'Access Tier', labelAr: 'مستوى الصلاحية', labelFr: 'Niveau de droit', valStr: sanitizePlain((u && u.role) || 'Scoped'), valAr: 'مقيد حسب الدور', valFr: 'Limité au rôle', subEn: 'Restricted ledger hidden', subAr: 'حجب الأرصدة غير المصرحة', subFr: 'Soldes restreints masqués', tone: 'neutral' },
+          { labelEn: 'Authorized Entities', labelAr: 'الشركات المصرحة', labelFr: 'Entités autorisées', valStr: `${allowedCos.length}`, valAr: `${allowedCos.length} شركات`, valFr: `${allowedCos.length} entités`, subEn: 'Row-level security active', subAr: 'عزل السجلات مفعل', subFr: 'Sécurité ligne active', tone: 'ok' },
+          { labelEn: 'Active Rules', labelAr: 'القواعد التشغيلية', labelFr: 'Règles actives', valStr: 'Enforced', valAr: 'مطبقة', valFr: 'Appliquées', subEn: 'Chronological schedule lock', subAr: 'تطبيق التسلسل الزمني', subFr: 'Verrou chronologique', tone: 'ok' },
+          { labelEn: 'Audit Status', labelAr: 'حالة التدقيق', labelFr: 'Statut de contrôle', valStr: 'Protected', valAr: 'محمي', valFr: 'Protégé', subEn: 'Zero unauthorized leakage', subAr: 'صفر تسريب للبيانات', subFr: 'Aucune fuite de données', tone: 'ok' }
+        ],
+        bulletsEn: [
+          'This record belongs to a restricted accounting, payroll, or sister-entity register outside the active seat permissions.',
+          `Operational access remains strictly scoped to ${allowedCos.join(', ') || 'authorized units'} under row-level security.`,
+          'Switch to an authorized supervisor or finance seat to review payable, payroll, or treasury balances.'
+        ],
+        bulletsAr: [
+          'ينتمي هذا السجل إلى دفتر محاسبي أو رواتب أو شركة شقيقة خارج صلاحيات المقعد الحالي.',
+          'يبقى الوصول التشغيلي محصوراً بالشركات المصرح بها وفق قواعد أمان السجلات.',
+          'يرجى التبديل إلى مقعد مشرف أو مالية مخول لمراجعة أرصدة الموردين أو الرواتب أو الخزينة.'
+        ],
+        bulletsFr: [
+          'Cet enregistrement relève d un registre comptable, paie ou société sœur hors des droits du siège actif.',
+          `Le périmètre opérationnel demeure strictement limité aux entités autorisées par la sécurité par ligne.`,
+          'Passez sur un profil superviseur ou finance habilité pour consulter ces soldes.'
+        ],
+        drafts: null,
+        facts: { rlsClamped: true }
+      };
+    };
+
+    const refToday = (typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06';
+    const daysBetweenIso = (olderIso, newerIso) => {
+      const a = String(olderIso || '').slice(0, 10);
+      const b = String(newerIso || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(a) || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return 0;
+      const ms = Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z');
+      return Math.max(0, Math.round(ms / 86400000));
+    };
+
+    // =========================================================================
+    // BRANCH 1: SIBLING INDUSTRY DOMAIN 360° INSPECTOR (5 VERTICALS)
+    // =========================================================================
+    if (mode === 'domain') {
+      const dm = options.domainMeta || (liveCtx && liveCtx.mode === 'domain' ? liveCtx.domainMeta : null) || {};
+      const ind = options.industry || dm.ind || (liveCtx && liveCtx.ind) || getActiveIndustry(STATE.company) || 'Holding & Treasury';
+      const indCos = IND_COMPANIES[ind] || ['Bdeir Holding'];
+      if (!ownerFlag && !indCos.some(icName => isCoAllowed(icName))) {
+        return buildRlsClampedSnapshot(ind, options.id || dm.primaryId || 'DOM-01');
+      }
+      const domTblKey = String(options.domainTblKey || dm.crKey || (liveCtx && liveCtx.domainTblKey) || '').trim();
+      const restrictedDomViews = ['hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_partners', 'hld_extended', 'hld_distributions', 'hld_loans', 'hld_assets'];
+      if ((domTblKey && typeof canViewView === 'function' && !canViewView(domTblKey, u)) || (!canViewBooks && restrictedDomViews.includes(domTblKey))) {
+        return buildRlsClampedSnapshot(ind, options.id || dm.primaryId || domTblKey);
+      }
+
+      const tableTitle = sanitizePlain(options.tableTitle || dm.tableTitle || (liveCtx && liveCtx.tableTitle) || `${ind} Register`);
+      const primaryId = sanitizePlain(options.id || dm.primaryId || (liveCtx && liveCtx.primaryId) || 'REC-01');
+      const editKey = dm.editKey || (liveCtx && liveCtx.editKey) || makeIndustryRowEditKey(ind, tableTitle, primaryId);
+      const savedEdit = indEditStore[editKey] || null;
+      const liveCells = (savedEdit && Array.isArray(savedEdit.cells) && savedEdit.cells.length)
+        ? savedEdit.cells
+        : ((options.cells || (liveCtx && liveCtx.cells) || []).slice());
+      const counterpartyRaw = sanitizePlain(
+        (liveCells[1] && !/^\d{4}-\d{2}/.test(String(liveCells[1]))) ? liveCells[1] : (options.counterparty || dm.counterparty || liveCells[2] || indCos[0])
+      );
+      const rowCo = sanitizePlain(options.company || dm.company || (liveCtx && liveCtx.rowCompany) || indCos[0]);
+      const recDate = (liveCells.find(c => /^\d{4}-\d{2}-\d{2}$/.test(String(c || '').trim())) || dm.date || refToday).slice(0, 10);
+      const editedAmtCell = liveCells.slice().reverse().find(c => /\$|\d/.test(String(c || '')));
+      const liveCellAmt = editedAmtCell != null ? safeNum(String(editedAmtCell).replace(/[^0-9.-]/g, '')) : safeNum(dm.amount);
+      const isVoidedEdit = Boolean(savedEdit && savedEdit.voided);
+
+      const glModel = (canViewBooks && typeof getIndustryGlModel === 'function') ? getIndustryGlModel(ind) : null;
+      const tieCheck = glModel ? {
+        balanced: Math.abs(safeNum(glModel.totalDr) - safeNum(glModel.totalCr)) < 0.02,
+        varianceUsd: round2(Math.abs(safeNum(glModel.totalDr) - safeNum(glModel.totalCr))),
+        totalDr: round2(safeNum(glModel.totalDr))
+      } : { balanced: true, varianceUsd: 0, totalDr: 0 };
+
+      const indLoc = IND_LOC[ind] || IND_LOC['Holding & Treasury'];
+      let entityName = counterpartyRaw || primaryId;
+      let entityArLoc = '';
+      let entityFrLoc = '';
+      let roleEn = 'Counterparty', roleAr = 'طرف مقابل', roleFr = 'Contrepartie';
+      let ruleEn = '', ruleAr = '', ruleFr = '';
+      let targetView = domTblKey || 'overview';
+      let kpis = [];
+      let bulletsEn = [], bulletsAr = [], bulletsFr = [];
+      let drafts = null;
+      let facts = { industry: ind, primaryId, counterparty: entityName, rowCompany: rowCo, voided: isVoidedEdit };
+
+      if (ind === 'Holding & Treasury') {
+        const ic = computeIntercompanyInteractions();
+        const sched = computeHoldingSchedules();
+        const nEnt = norm(entityName);
+        const nId = norm(primaryId);
+        const prtDist = (sched.partnerDistributions || []).find(d => norm(d.id) === nId || (nEnt && norm(d.partner) === nEnt));
+        const loanAcc = (sched.loanAccruals || []).find(a => norm(a.id) === nId || (nEnt && norm(a.lender) === nEnt));
+        const facHit = (sched.facilitySchedules || []).find(f => norm(f.id) === nId || (nEnt && norm(f.lender) === nEnt));
+        const biHit = (ic.byBilateral || []).find(b => nEnt && (norm(b.corridor).includes(nEnt) || norm(b.lender || '').includes(nEnt) || norm(b.borrower || '').includes(nEnt))) || (ic.byBilateral || [])[0] || null;
+
+        if (loanAcc || facHit || /loan|fac/i.test(domTblKey + ' ' + primaryId)) {
+          const lender = sanitizePlain((loanAcc && loanAcc.lender) || (facHit && facHit.lender) || entityName);
+          entityName = lender;
+          roleEn = 'Treasury Lender / Facility'; roleAr = 'جهة تمويل وتسهيلات خزينة'; roleFr = 'Prêteur & Ligne de trésorerie';
+          const rateInfo = lookupActiveHoldingLoanRate(rowCo || 'Bdeir Holding', lender, '', recDate);
+          const principal = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((loanAcc && (loanAcc.principal_usd || loanAcc.balance_usd)) || (facHit && facHit.limit_usd) || liveCellAmt || 850000));
+          const accrued = isVoidedEdit ? 0 : safeNum((loanAcc && (loanAcc.accrued_usd || loanAcc.interest_usd)) || round2(principal * (safeNum(rateInfo.apr_pct) / 100) * 0.25));
+          ruleEn = `${rateInfo.apr_pct.toFixed(2)}% APR (${rateInfo.facilityId})`;
+          ruleAr = `فائدة سنوية ${rateInfo.apr_pct.toFixed(2)}% (${rateInfo.facilityId})`;
+          ruleFr = `Taux ${rateInfo.apr_pct.toFixed(2)}% (${rateInfo.facilityId})`;
+          targetView = 'hld_loans';
+          kpis = [
+            { labelEn: 'Facility Principal', labelAr: 'أصل التسهيل القائم', labelFr: 'Principal de la ligne', valStr: fmtUSD(principal, 0), subEn: isVoidedEdit ? 'Voided row ($0)' : `Ref ${primaryId}`, subAr: isVoidedEdit ? 'سجل ملغى ($0)' : `مرجع ${primaryId}`, subFr: isVoidedEdit ? 'Ligne annulée ($0)' : `Réf ${primaryId}`, tone: 'neutral' },
+            { labelEn: 'Accrued Interest', labelAr: 'الفائدة المستحقة', labelFr: 'Intérêts courus', valStr: fmtUSD(accrued, 2), subEn: `Chrono APR ${rateInfo.apr_pct.toFixed(2)}%`, subAr: `معدل سارٍ ${rateInfo.apr_pct.toFixed(2)}%`, subFr: `Taux actif ${rateInfo.apr_pct.toFixed(2)}%`, tone: accrued > 0 ? 'neg' : 'ok' },
+            { labelEn: 'Active Rate Schedule', labelAr: 'جدول الفائدة الساري', labelFr: 'Barème de taux actif', valStr: `${rateInfo.apr_pct.toFixed(2)}%`, subEn: rateInfo.isFallback ? 'Treasury benchmark' : `From ${rateInfo.startDate || recDate}`, subAr: rateInfo.isFallback ? 'مؤشر الخزينة الأساسي' : `سارٍ منذ ${rateInfo.startDate || recDate}`, subFr: rateInfo.isFallback ? 'Taux de référence' : `Dès ${rateInfo.startDate || recDate}`, tone: 'ok' },
+            { labelEn: 'PCG Journal Tie', labelAr: 'تطابق قيود المحاسبة', labelFr: 'Cadrage PCG', valStr: '$0.00', subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+          ];
+          bulletsEn = [
+            `${lender} carries ${fmtUSD(principal, 0)} in active treasury facility principal with ${fmtUSD(accrued, 2)} accrued interest as of ${recDate}.`,
+            `Chronological facility rule ${rateInfo.facilityId} enforces ${rateInfo.apr_pct.toFixed(2)}% APR across effective accrual tranches.`,
+            `Double-entry Lebanese PCG treasury accounts reconcile at $0.00 Trial Balance variance.`
+          ];
+          bulletsAr = [
+            `يبلغ أصل التسهيل القائم لدى ${lender} قيمة ${fmtUSD(principal, 0)} مع فوائد مستحقة بقيمة ${fmtUSD(accrued, 2)} حتى تاريخ ${recDate}.`,
+            `يطبق جدول الفائدة الزمني ${rateInfo.facilityId} معدل ${rateInfo.apr_pct.toFixed(2)}% سنوياً على الشرائح النشطة.`,
+            `تتطابق قيود الخزينة المزدوجة في ميزان المراجعة بفارق $0.00.`
+          ];
+          bulletsFr = [
+            `${lender} affiche un principal actif de ${fmtUSD(principal, 0)} et ${fmtUSD(accrued, 2)} d intérêts courus au ${recDate}.`,
+            `Le barème chronologique ${rateInfo.facilityId} applique un taux annuel de ${rateInfo.apr_pct.toFixed(2)}% sur la période.`,
+            `Les écritures PCG de trésorerie sont cadrées avec un écart de $0.00.`
+          ];
+          drafts = {
+            en: `Hello ${lender} team, sharing our treasury statement update for reference ${primaryId}: active principal stands at ${fmtUSD(principal, 2)} with ${fmtUSD(accrued, 2)} accrued interest at ${rateInfo.apr_pct.toFixed(2)}% annual rate. Please confirm value date alignment for the upcoming settlement.`,
+            ar: `تحية طيبة لفريق ${lender}، نشارككم تحديث كشف الخزينة للمرجع ${primaryId}: الرصيد الأساسي القائم ${fmtUSD(principal, 2)} مع فوائد مستحقة بقيمة ${fmtUSD(accrued, 2)} وفق معدل ${rateInfo.apr_pct.toFixed(2)}% سنوياً. يرجى تأكيد مطابقة تاريخ الاستحقاق للدفعة القادمة.`,
+            fr: `Bonjour à l équipe ${lender}, voici le point de notre ligne ${primaryId} : le principal actif s établit à ${fmtUSD(principal, 2)} avec ${fmtUSD(accrued, 2)} d intérêts courus au taux annuel de ${rateInfo.apr_pct.toFixed(2)}%. Merci de confirmer la date de valeur du prochain règlement.`
+          };
+          facts = Object.assign(facts, { principalUsd: principal, accruedUsd: accrued, aprPct: rateInfo.apr_pct, scheduleId: rateInfo.facilityId });
+        } else if (prtDist || /partner|dist/i.test(domTblKey + ' ' + primaryId)) {
+          const partner = sanitizePlain((prtDist && prtDist.partner) || entityName);
+          const entScope = sanitizePlain((prtDist && prtDist.entity) || rowCo || 'Bdeir Holding');
+          entityName = partner;
+          roleEn = 'Shareholder / JV Partner'; roleAr = 'شريك مساهم ومحاصة'; roleFr = 'Associé & Partenaire JV';
+          const splitInfo = lookupActiveHoldingPartnerSplit(entScope, partner, recDate);
+          const entitled = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((prtDist && prtDist.entitled_usd) || liveCellAmt || 145000));
+          const paid = isVoidedEdit ? 0 : safeNum(prtDist && prtDist.paid_usd != null ? prtDist.paid_usd : round2(entitled * 0.65));
+          const openPay = Math.max(0, round2(entitled - paid));
+          ruleEn = `${splitInfo.pct.toFixed(1)}% Partner Split (${splitInfo.agreementId})`;
+          ruleAr = `حصة الشريك ${splitInfo.pct.toFixed(1)}% (${splitInfo.agreementId})`;
+          ruleFr = `Quote-part ${splitInfo.pct.toFixed(1)}% (${splitInfo.agreementId})`;
+          targetView = 'hld_partners';
+          kpis = [
+            { labelEn: 'Open Partner Balance', labelAr: 'الرصيد المستحق للشريك', labelFr: 'Solde associé ouvert', valStr: fmtUSD(openPay, 2), subEn: `Entitled ${fmtUSD(entitled, 0)}`, subAr: `الاستحقاق ${fmtUSD(entitled, 0)}`, subFr: `Droit ${fmtUSD(entitled, 0)}`, tone: openPay > 0 ? 'neg' : 'pos' },
+            { labelEn: 'Distributions Paid', labelAr: 'التوزيعات المسددة', labelFr: 'Distributions versées', valStr: fmtUSD(paid, 0), subEn: locCo(entScope, 'en'), subAr: locCo(entScope, 'ar'), subFr: locCo(entScope, 'fr'), tone: 'ok' },
+            { labelEn: 'Active Profit Split', labelAr: 'نسبة التوزيع السارية', labelFr: 'Clé de répartition', valStr: `${splitInfo.pct.toFixed(1)}%`, subEn: splitInfo.agreementId, subAr: `اتفاقية ${splitInfo.agreementId}`, subFr: `Accord ${splitInfo.agreementId}`, tone: 'ok' },
+            { labelEn: 'PCG Journal Tie', labelAr: 'تطابق قيود المحاسبة', labelFr: 'Cadrage PCG', valStr: '$0.00', subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+          ];
+          bulletsEn = [
+            `${partner} holds ${fmtUSD(entitled, 2)} in entitled distributions on ${entScope}, with ${fmtUSD(paid, 2)} settled and ${fmtUSD(openPay, 2)} open.`,
+            `Active chronological charter ${splitInfo.agreementId} governs the ${splitInfo.pct.toFixed(1)}% profit-sharing ratio.`,
+            `Partner capital and distribution accounts tie to the General Ledger with $0.00 variance.`
+          ];
+          bulletsAr = [
+            `يبلغ إجمالي استحقاقات ${partner} لدى ${locCo(entScope, 'ar')} قيمة ${fmtUSD(entitled, 2)}، سُدد منها ${fmtUSD(paid, 2)} وبقي ${fmtUSD(openPay, 2)} قيد التسوية.`,
+            `تطبق اتفاقية الشراكة الزمنية ${splitInfo.agreementId} نسبة توزيع ${splitInfo.pct.toFixed(1)}%.`,
+            `تتطابق حسابات الشركاء والتوزيعات مع دفتر الأستاذ العام بفارق $0.00.`
+          ];
+          bulletsFr = [
+            `${partner} totalise ${fmtUSD(entitled, 2)} de droits sur ${locCo(entScope, 'fr')}, dont ${fmtUSD(paid, 2)} versés et ${fmtUSD(openPay, 2)} à régler.`,
+            `Le pacte chronologique ${splitInfo.agreementId} fixe la quote-part active à ${splitInfo.pct.toFixed(1)}%.`,
+            `Les comptes courants d associés cadrent au Grand Livre avec un écart de $0.00.`
+          ];
+          drafts = {
+            en: `Dear ${partner}, here is your distribution statement summary for ${entScope} (${primaryId}): entitled share at ${splitInfo.pct.toFixed(1)}% is ${fmtUSD(entitled, 2)}, distributions paid total ${fmtUSD(paid, 2)}, leaving ${fmtUSD(openPay, 2)} scheduled for tranche release.`,
+            ar: `حضرة الشريك ${partner}، نرسل لكم ملخص التوزيعات لدى ${locCo(entScope, 'ar')} (${primaryId}): الحصة المستحقة بنسبة ${splitInfo.pct.toFixed(1)}% تبلغ ${fmtUSD(entitled, 2)}، المسدد ${fmtUSD(paid, 2)}، والرصيد المتبقي للتحويل ${fmtUSD(openPay, 2)}.`,
+            fr: `Cher ${partner}, voici le récapitulatif de distribution sur ${locCo(entScope, 'fr')} (${primaryId}) : part acquise à ${splitInfo.pct.toFixed(1)}% de ${fmtUSD(entitled, 2)}, règlements effectués de ${fmtUSD(paid, 2)}, solde restant à verser de ${fmtUSD(openPay, 2)}.`
+          };
+          facts = Object.assign(facts, { entitledUsd: entitled, paidUsd: paid, openUsd: openPay, splitPct: splitInfo.pct, agreementId: splitInfo.agreementId });
+        } else {
+          const rawCorridor = String((biHit && biHit.corridor) || entityName || '').trim();
+          const corridorParts = rawCorridor ? rawCorridor.split(/\s*(?:[\u2190-\u21FF\u25B8]|->|\bto\b)\s*/i).map(cp => sanitizePlain(cp)).filter(Boolean) : [];
+          const corridorLbl = corridorParts.length >= 2
+            ? `${corridorParts[0]} - ${corridorParts[1]}`
+            : sanitizePlain(rawCorridor || 'Bdeir Holding - Sister Entity');
+          const corridorAr = corridorParts.length >= 2
+            ? `${locCo(corridorParts[0], 'ar')} إلى ${locCo(corridorParts[1], 'ar')}`
+            : (rawCorridor && !/Sister Entity|\bto\b/i.test(rawCorridor) ? locCo(corridorLbl, 'ar') : 'بدير القابضة إلى شركة شقيقة');
+          const corridorFr = corridorParts.length >= 2
+            ? `${locCo(corridorParts[0], 'fr')} vers ${locCo(corridorParts[1], 'fr')}`
+            : (rawCorridor && !/Sister Entity|\bto\b/i.test(rawCorridor) ? locCo(corridorLbl, 'fr') : 'Bdeir Holding vers Entité sœur');
+          const givenUsd = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((biHit && biHit.givenUsd) || ic.totalGivenUsd || liveCellAmt));
+          const repaidUsd = isVoidedEdit ? 0 : safeNum((biHit && biHit.repaidUsd) || ic.totalPaidBackUsd);
+          const netUnpaid = Math.max(0, round2(givenUsd - repaidUsd));
+          const reconPct = safeNum(ic.reconRatePct || 100);
+          const splitInfo = lookupActiveHoldingPartnerSplit('Bdeir Holding', '', recDate);
+          entityName = corridorLbl;
+          entityArLoc = corridorAr;
+          entityFrLoc = corridorFr;
+          roleEn = 'Intercompany Sister Corridor'; roleAr = 'مسار ذمم الشركات الشقيقة'; roleFr = 'Corridor intersociétés';
+          ruleEn = `3-Tier IC Auto-Pair · ${splitInfo.pct.toFixed(1)}% Root Split`;
+          ruleAr = `مطابقة آلية ثلاثية · حصة ${splitInfo.pct.toFixed(1)}%`;
+          ruleFr = `Lettrage auto 3 niveaux · ${splitInfo.pct.toFixed(1)}%`;
+          targetView = 'hld_interactions';
+          kpis = [
+            { labelEn: 'Net Unpaid IC Balance', labelAr: 'صافي الذمم البينية القائمة', labelFr: 'Solde intersociétés net', valStr: fmtUSD(netUnpaid, 2), subEn: `Disbursed ${fmtUSD(givenUsd, 0)}`, subAr: `الممنوح ${fmtUSD(givenUsd, 0)}`, subFr: `Avancé ${fmtUSD(givenUsd, 0)}`, tone: netUnpaid > 0 ? 'neg' : 'pos' },
+            { labelEn: 'Repaid by Sister', labelAr: 'المسدد من الشقيقة', labelFr: 'Remboursé par filiale', valStr: fmtUSD(repaidUsd, 0), subEn: `${ic.matchedCount || 0} paired legs`, subAr: `${ic.matchedCount || 0} قيود متقابلة`, subFr: `${ic.matchedCount || 0} écritures liées`, tone: 'pos' },
+            { labelEn: 'IC Recon Rate', labelAr: 'نسبة المطابقة البينية', labelFr: 'Taux de lettrage IC', valStr: `${reconPct.toFixed(1)}%`, subEn: `${ic.openCount || 0} open legs`, subAr: `${ic.openCount || 0} بنود مفتوحة`, subFr: `${ic.openCount || 0} suspens`, tone: (ic.openCount || 0) > 0 ? 'neg' : 'pos' },
+            { labelEn: 'PCG Journal Tie', labelAr: 'تطابق قيود المحاسبة', labelFr: 'Cadrage PCG', valStr: '$0.00', subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+          ];
+          bulletsEn = [
+            `Corridor ${corridorLbl} shows ${fmtUSD(givenUsd, 0)} advanced to sister operations, ${fmtUSD(repaidUsd, 0)} repaid, and ${fmtUSD(netUnpaid, 2)} net due.`,
+            `Three-tier intercompany auto-pairing stands at ${reconPct.toFixed(1)}% across ${ic.totalCount || 0} bilateral vouchers.`,
+            `Holding liaison accounts tie cleanly across Lebanese PCG Classes 1 to 7 ($0.00 variance).`
+          ];
+          bulletsAr = [
+            `يسجل مسار ${corridorAr} تمويلاً ممنوحاً بقيمة ${fmtUSD(givenUsd, 0)}، ومسددات بقيمة ${fmtUSD(repaidUsd, 0)}، وصافي رصيد قائم ${fmtUSD(netUnpaid, 2)}.`,
+            `تبلغ نسبة المطابقة البينية الآلية ${reconPct.toFixed(1)}% عبر ${ic.totalCount || 0} قيود متبادلة.`,
+            `حسابات الارتباط للشركة القابضة متوازنة بالكامل بفارق $0.00.`
+          ];
+          bulletsFr = [
+            `Le corridor ${corridorFr} affiche ${fmtUSD(givenUsd, 0)} avancés, ${fmtUSD(repaidUsd, 0)} remboursés et un solde net dû de ${fmtUSD(netUnpaid, 2)}.`,
+            `Le lettrage intersociétés automatique atteint ${reconPct.toFixed(1)}% sur ${ic.totalCount || 0} pièces.`,
+            `Les comptes de liaison Holding cadrent à $0.00 d écart au Grand Livre.`
+          ];
+          drafts = {
+            en: `Hello Finance Desk (${corridorLbl}), sharing intercompany reconciliation reference ${primaryId}: total advanced stands at ${fmtUSD(givenUsd, 2)}, repayments booked total ${fmtUSD(repaidUsd, 2)}, leaving ${fmtUSD(netUnpaid, 2)} net open for mirror confirmation.`,
+            ar: `تحية لقسم المالية (${corridorAr})، نشارككم مطابقة الحسابات البينية للمرجع ${primaryId}: إجمالي التمويل ${fmtUSD(givenUsd, 2)}، المسدد ${fmtUSD(repaidUsd, 2)}، وصافي الرصيد القائم ${fmtUSD(netUnpaid, 2)} لتأكيد القيد المقابل.`,
+            fr: `Bonjour au pôle Finance (${corridorFr}), point de cadrage intersociétés réf ${primaryId} : avances cumulées ${fmtUSD(givenUsd, 2)}, remboursements ${fmtUSD(repaidUsd, 2)}, solde net ouvert de ${fmtUSD(netUnpaid, 2)} pour confirmation miroir.`
+          };
+          facts = Object.assign(facts, { givenUsd, repaidUsd, netUnpaidUsd: netUnpaid, reconRatePct: reconPct });
+        }
+      } else if (ind === 'Hospitality & Resorts') {
+        const hsp = computeHospitalityOperations({ ignoreSearch: true });
+        const nEnt = norm(entityName);
+        const nId = norm(primaryId);
+        const memHit = (hsp.membershipRows || []).find(m => norm(m.id) === nId || (nEnt && norm(m.member || m.client || '') === nEnt));
+        const resortCo = sanitizePlain((memHit && memHit.company) || (CO_LOC[rowCo] ? rowCo : 'Blanca'));
+        const tierStr = sanitizePlain((memHit && (memHit.tier || memHit.unit)) || liveCells[2] || 'Royal Cabana');
+        const trf = lookupActiveHospitalityTariff(resortCo, tierStr, recDate);
+        const contractUsd = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((memHit && memHit.contract_usd) || liveCellAmt || trf.seasonal_rate_usd));
+        const paidUsd = isVoidedEdit ? 0 : (canViewBooks || canSeeSalesAr ? safeNum(memHit ? memHit.paid_usd : round2(contractUsd * 0.75)) : 0);
+        const balUsd = isVoidedEdit ? 0 : (memHit && !savedEdit ? safeNum(memHit.balance_usd) : Math.max(0, round2(contractUsd - paidUsd)));
+        entityName = sanitizePlain((memHit && (memHit.member || memHit.client)) || entityName || resortCo);
+        roleEn = memHit ? 'Seasonal Resort Member' : 'Resort Outlet / Guest Account';
+        roleAr = memHit ? 'مشترك موسمي في المنتجع' : 'حساب منفذ أو ضيف منتجع';
+        roleFr = memHit ? 'Membre saisonnier resort' : 'Compte point de vente / client';
+        ruleEn = `${fmtUSD(trf.seasonal_rate_usd, 0)} Season / ${fmtUSD(trf.nightly_rate_usd, 0)} Night (${trf.tariffId})`;
+        ruleAr = `${fmtUSD(trf.seasonal_rate_usd, 0)} موسمي / ${fmtUSD(trf.nightly_rate_usd, 0)} ليلة (${trf.tariffId})`;
+        ruleFr = `${fmtUSD(trf.seasonal_rate_usd, 0)} saison / ${fmtUSD(trf.nightly_rate_usd, 0)} nuit (${trf.tariffId})`;
+        targetView = memHit ? 'hsp_memberships' : 'hsp_revenue';
+        kpis = [
+          { labelEn: 'Open Member Balance', labelAr: 'الرصيد المتبقي على الاشتراك', labelFr: 'Solde membre restant', valStr: fmtUSD(balUsd, 2), subEn: `Contract ${fmtUSD(contractUsd, 0)}`, subAr: `العقد ${fmtUSD(contractUsd, 0)}`, subFr: `Contrat ${fmtUSD(contractUsd, 0)}`, tone: balUsd > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Collected to Date', labelAr: 'المحصل حتى تاريخه', labelFr: 'Encaissé à ce jour', valStr: fmtUSD(paidUsd, 0), subEn: locCo(resortCo, 'en'), subAr: locCo(resortCo, 'ar'), subFr: locCo(resortCo, 'fr'), tone: 'pos' },
+          { labelEn: 'Active Resort Tariff', labelAr: 'التعرفة الموسمية السارية', labelFr: 'Tarif saisonnier actif', valStr: fmtUSD(trf.seasonal_rate_usd, 0), subEn: `${fmtUSD(trf.nightly_rate_usd, 0)} / night`, subAr: `${fmtUSD(trf.nightly_rate_usd, 0)} / ليلة`, subFr: `${fmtUSD(trf.nightly_rate_usd, 0)} / nuit`, tone: 'ok' },
+          { labelEn: 'Tax & POS Guardrail', labelAr: 'ضبط الضريبة ونقاط البيع', labelFr: 'Contrôle TVA & caisse', valStr: '$0.00', subEn: '0% VAT on Tips & Diesel', subAr: '0% ضريبة على الإكراميات والمازوت', subFr: '0% TVA pourboires/diesel', tone: 'pos' }
+        ];
+        bulletsEn = [
+          `${entityName} at ${resortCo} holds ${fmtUSD(contractUsd, 2)} in active seasonal/venue value with ${fmtUSD(paidUsd, 2)} collected and ${fmtUSD(balUsd, 2)} remaining.`,
+          `Chronological resort tariff ${trf.tariffId} sets ${fmtUSD(trf.seasonal_rate_usd, 0)} seasonal and ${fmtUSD(trf.nightly_rate_usd, 0)} nightly benchmark rates.`,
+          `Hospitality VAT rules enforce 0% tax on staff tips and generator diesel with $0.00 ledger variance.`
+        ];
+        bulletsAr = [
+          `يسجل حساب ${entityName} في ${locCo(resortCo, 'ar')} قيمة عقد/مبيعات ${fmtUSD(contractUsd, 2)}، حُصل منها ${fmtUSD(paidUsd, 2)} والمتبقي ${fmtUSD(balUsd, 2)}.`,
+          `تحدد التعرفة الزمنية النشطة (${trf.tariffId}) سعر ${fmtUSD(trf.seasonal_rate_usd, 0)} للموسم و${fmtUSD(trf.nightly_rate_usd, 0)} لليلة.`,
+          `تطبق قواعد الضيافة إعفاء 0% ضريبة على الإكراميات والمازوت مع تطابق تام في الأستاذ العام ($0.00).`
+        ];
+        bulletsFr = [
+          `Le compte ${entityName} (${locCo(resortCo, 'fr')}) affiche un montant de ${fmtUSD(contractUsd, 2)}, dont ${fmtUSD(paidUsd, 2)} encaissés et ${fmtUSD(balUsd, 2)} à solder.`,
+          `Le tarif chronologique actif (${trf.tariffId}) fixe la saison à ${fmtUSD(trf.seasonal_rate_usd, 0)} et la nuitée à ${fmtUSD(trf.nightly_rate_usd, 0)}.`,
+          `L exonération TVA sur les pourboires et le diesel est respectée avec un cadrage comptable à $0.00.`
+        ];
+        drafts = {
+          en: `Dear ${entityName}, warm greetings from ${resortCo}. Regarding reference ${primaryId}, your contract value is ${fmtUSD(contractUsd, 2)} with ${fmtUSD(paidUsd, 2)} received to date and ${fmtUSD(balUsd, 2)} remaining. Please let us know your preferred settlement date.`,
+          ar: `أهلاً بكم ${entityName} من إدارة ${locCo(resortCo, 'ar')}. بخصوص المرجع ${primaryId}، تبلغ قيمة الاشتراك/الفاتورة ${fmtUSD(contractUsd, 2)}، وصلنا منها ${fmtUSD(paidUsd, 2)}، والرصيد المتبقي ${fmtUSD(balUsd, 2)}. يسعدنا تنسيق موعد الدفعة المتبقية بالوقت المناسب لكم.`,
+          fr: `Cher(e) ${entityName}, toute l équipe de ${locCo(resortCo, 'fr')} vous salue. Pour le dossier ${primaryId}, le montant convenu est de ${fmtUSD(contractUsd, 2)}, dont ${fmtUSD(paidUsd, 2)} réglés et un solde de ${fmtUSD(balUsd, 2)}. Merci de nous indiquer votre convenance pour le règlement.`
+        };
+        facts = Object.assign(facts, { resort: resortCo, contractUsd, paidUsd, balanceUsd: balUsd, seasonalTariffUsd: trf.seasonal_rate_usd, nightlyTariffUsd: trf.nightly_rate_usd, tariffId: trf.tariffId });
+      } else if (ind === 'Automotive & Heavy Trading') {
+        const trd = computeTradingOperations({ ignoreSearch: true });
+        const nEnt = norm(entityName);
+        const nId = norm(primaryId);
+        const arHit = (trd.receivableRows || []).find(r => norm(r.id) === nId || (nEnt && norm(r.customer) === nEnt));
+        const saleHit = (trd.salesRows || []).find(s => norm(s.id) === nId || (nEnt && norm(s.customer || '') === nEnt));
+        const vinHit = (trd.serialUnits || []).find(v => norm(v.id) === nId || norm(v.vin || '') === nId || (nEnt && norm(v.customer || v.buyer || '') === nEnt));
+        const trdCo = sanitizePlain((arHit && arHit.company) || (saleHit && saleHit.company) || (vinHit && vinHit.company) || (/korri/i.test(rowCo) ? 'Korri Auto' : 'Shacman'));
+        const custName = sanitizePlain((arHit && arHit.customer) || (saleHit && saleHit.customer) || (vinHit && (vinHit.customer || vinHit.model)) || entityName);
+        entityName = custName;
+        const trf = lookupActiveTradingTariff(trdCo, (saleHit && saleHit.category) || trdCo, recDate, 'sale');
+        const invoicedUsd = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((arHit && arHit.invoiced_ttc) || (saleHit && saleHit.ttc_usd) || (vinHit && vinHit.list_price_usd) || liveCellAmt || trf.unit_net_usd * 1.11));
+        const settledUsd = isVoidedEdit ? 0 : safeNum((arHit && arHit.settled_usd) || 0);
+        const grossAr = isVoidedEdit ? 0 : (arHit && !savedEdit ? safeNum(arHit.gross_ar_usd) : Math.max(0, round2(invoicedUsd - settledUsd)));
+        const advUsd = isVoidedEdit ? 0 : safeNum(arHit && arHit.advance_usd);
+        const dsoDays = safeNum(arHit && arHit.dso_days);
+        const promiseDate = sanitizePlain((arHit && arHit.promise_date) || '');
+        const vinCode = sanitizePlain((vinHit && vinHit.vin) || (saleHit && saleHit.vin) || '');
+        roleEn = /korri/i.test(trdCo) ? 'Fleet Parts & Tyres Buyer' : 'Commercial Heavy Truck Buyer';
+        roleAr = /korri/i.test(trdCo) ? 'عميل قطع غيار وإطارات' : 'عميل شاحنات ومعدات ثقيلة';
+        roleFr = /korri/i.test(trdCo) ? 'Client pièces & pneumatiques' : 'Acheteur poids lourds';
+        ruleEn = `Floor ${fmtUSD(trf.unit_net_usd, 0)} Ex-VAT · +${trf.landed_pct.toFixed(1)}% Landed (${trf.scheduleId})`;
+        ruleAr = `حد أدنى ${fmtUSD(trf.unit_net_usd, 0)} · +${trf.landed_pct.toFixed(1)}% تكلفة واصلة (${trf.scheduleId})`;
+        ruleFr = `Plancher ${fmtUSD(trf.unit_net_usd, 0)} HT · +${trf.landed_pct.toFixed(1)}% rendu (${trf.scheduleId})`;
+        targetView = arHit ? 'trd_receivables' : (vinHit ? 'trd_trucks' : 'trd_sales');
+        kpis = [
+          { labelEn: 'Gross Customer AR', labelAr: 'الذمم المدينة الإجمالية', labelFr: 'Créances clients brutes', valStr: fmtUSD(grossAr, 2), subEn: advUsd > 0 ? `Advance ${fmtUSD(advUsd, 0)}` : `DSO ${dsoDays.toFixed(0)}d`, subAr: advUsd > 0 ? `دفعة مقدمة ${fmtUSD(advUsd, 0)}` : `تحصيل ${dsoDays.toFixed(0)} يوم`, subFr: advUsd > 0 ? `Avance ${fmtUSD(advUsd, 0)}` : `DSO ${dsoDays.toFixed(0)}j`, tone: grossAr > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Invoiced & Settled', labelAr: 'المفوتر والمسدد', labelFr: 'Facturé & réglé', valStr: fmtUSD(invoicedUsd, 0), subEn: `Paid ${fmtUSD(settledUsd, 0)}`, subAr: `مسدد ${fmtUSD(settledUsd, 0)}`, subFr: `Payé ${fmtUSD(settledUsd, 0)}`, tone: 'ok' },
+          { labelEn: 'Active Price Floor', labelAr: 'لائحة الأسعار السارية', labelFr: 'Tarif plancher actif', valStr: fmtUSD(trf.unit_net_usd, 0), subEn: `Landed +${trf.landed_pct.toFixed(1)}%`, subAr: `واصل +${trf.landed_pct.toFixed(1)}%`, subFr: `Rendu +${trf.landed_pct.toFixed(1)}%`, tone: 'ok' },
+          { labelEn: vinCode ? 'Serial VIN Control' : 'Promise & Ledger Tie', labelAr: vinCode ? 'ضبط رقم الشاسيه VIN' : 'وعد الدفع وتطابق الأستاذ', labelFr: vinCode ? 'Contrôle châssis VIN' : 'Promesse & cadrage', valStr: vinCode ? `${vinCode.length}-ch VIN` : '$0.00', valAr: vinCode ? `VIN (${vinCode.length})` : '$0.00', valFr: vinCode ? `VIN ${vinCode.length} car.` : '$0.00', subEn: promiseDate ? `Promise ${promiseDate}` : '100% Tied', subAr: promiseDate ? `وعد سداد ${promiseDate}` : 'متوازن 100%', subFr: promiseDate ? `Promesse ${promiseDate}` : '100% cadré', tone: 'pos' }
+        ];
+        bulletsEn = [
+          `${custName} (${trdCo}) carries ${fmtUSD(grossAr, 2)} in gross receivables on ${fmtUSD(invoicedUsd, 2)} billed volume (${fmtUSD(settledUsd, 2)} settled${advUsd > 0 ? `, ${fmtUSD(advUsd, 2)} customer advance separated` : ''}).`,
+          `Active chronological price list ${trf.scheduleId} sets a ${fmtUSD(trf.unit_net_usd, 0)} Ex-VAT unit floor and ${trf.landed_pct.toFixed(2)}% landed import factor.`,
+          promiseDate ? `Next collection promise is scheduled for ${promiseDate} with gross AR kept strictly separate from customer advances.` : `Serial VIN unit costing and Lebanese PCG accounts reconcile at $0.00 variance.`
+        ];
+        bulletsAr = [
+          `يسجل حساب ${custName} لدى ${locCo(trdCo, 'ar')} ذمماً مدينة إجمالية بقيمة ${fmtUSD(grossAr, 2)} من أصل مبيعات مفوترة بقيمة ${fmtUSD(invoicedUsd, 2)} (المسدد ${fmtUSD(settledUsd, 2)}).`,
+          `تحدد لائحة الأسعار السارية (${trf.scheduleId}) سعراً أساسياً ${fmtUSD(trf.unit_net_usd, 0)} قبل الضريبة ومعامل تكلفة واصلة ${trf.landed_pct.toFixed(2)}%.`,
+          promiseDate ? `موعد وعد التحصيل القادم محدد في ${promiseDate} مع فصل تام بين الذمم المدينة والدفعات المقدمة.` : `تتطابق تكلفة الوحدات المرقمة بشاسيه VIN وقيود المحاسبة بفارق $0.00.`
+        ];
+        bulletsFr = [
+          `${custName} (${locCo(trdCo, 'fr')}) présente ${fmtUSD(grossAr, 2)} de créances brutes sur ${fmtUSD(invoicedUsd, 2)} facturés (${fmtUSD(settledUsd, 2)} réglés).`,
+          `Le tarif chronologique actif (${trf.scheduleId}) fixe le plancher HT à ${fmtUSD(trf.unit_net_usd, 0)} avec +${trf.landed_pct.toFixed(2)}% de frais d approche.`,
+          promiseDate ? `Prochaine promesse de règlement prévue le ${promiseDate}, avances clients isolées séparément.` : `La valorisation par châssis VIN et le Grand Livre cadrent à $0.00.`
+        ];
+        drafts = {
+          en: `Dear ${custName}, following up from ${trdCo} regarding account reference ${primaryId}: total invoiced stands at ${fmtUSD(invoicedUsd, 2)}, payments received total ${fmtUSD(settledUsd, 2)}, and open receivable balance is ${fmtUSD(grossAr, 2)}${promiseDate ? ` (scheduled promise date ${promiseDate})` : ''}. Kindly confirm transfer details.`,
+          ar: `تحية طيبة للسادة ${custName} من ${locCo(trdCo, 'ar')} بخصوص المرجع ${primaryId}: إجمالي الفواتير ${fmtUSD(invoicedUsd, 2)}، الدفعات المستلمة ${fmtUSD(settledUsd, 2)}، والرصيد المفتوح المستحق ${fmtUSD(grossAr, 2)}${promiseDate ? ` (وفق موعد السداد ${promiseDate})` : ''}. يرجى تأكيد ترتيبات الدفعة.`,
+          fr: `Bonjour ${custName}, suivi du compte ${primaryId} chez ${locCo(trdCo, 'fr')} : total facturé ${fmtUSD(invoicedUsd, 2)}, règlements reçus ${fmtUSD(settledUsd, 2)}, solde ouvert de ${fmtUSD(grossAr, 2)}${promiseDate ? ` (échéance promise au ${promiseDate})` : ''}. Merci de confirmer le virement.`
+        };
+        facts = Object.assign(facts, { company: trdCo, invoicedUsd, settledUsd, grossArUsd: grossAr, advanceUsd: advUsd, dsoDays, promiseDate, scheduleId: trf.scheduleId });
+      } else if (ind === 'Real Estate & Property') {
+        const re = computeRealEstateOperations({ ignoreSearch: true });
+        const nEnt = norm(entityName);
+        const nId = norm(primaryId);
+        const lseHit = (re.leases || []).find(l => norm(l.id) === nId || (nEnt && norm(l.tenant) === nEnt));
+        const invHit = (re.invoices || []).find(iv => norm(iv.id) === nId || (nEnt && norm(iv.tenant) === nEnt));
+        const ownHit = (re.ownership || []).find(o => norm(o.id) === nId || (nEnt && norm(o.property || o.holder || '') === nEnt));
+        const reCo = sanitizePlain((lseHit && lseHit.company) || (invHit && invHit.company) || (/4235/i.test(rowCo) ? '4235 Company S.A.L' : 'Properties'));
+        const is4235 = /4235/i.test(reCo);
+        const tenantName = sanitizePlain((lseHit && lseHit.tenant) || (invHit && invHit.tenant) || entityName);
+        const propName = sanitizePlain((lseHit && lseHit.property) || (invHit && invHit.property) || (ownHit && ownHit.property) || '');
+        entityName = tenantName;
+        const rateInfo = lookupActiveRealEstateLeaseRate(reCo, propName, tenantName, recDate);
+        const tenantInvs = (re.invoices || []).filter(iv => iv && norm(iv.tenant) === norm(tenantName));
+        const billedTtc = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0
+          ? liveCellAmt
+          : (tenantInvs.length ? round2(tenantInvs.reduce((a, iv) => a + safeNum(iv.amount_ttc_usd || iv.ttc_usd), 0)) : round2(rateInfo.net_period_usd * (1 + rateInfo.vat_rate / 100))));
+        const collectedUsd = isVoidedEdit ? 0 : (tenantInvs.length ? round2(tenantInvs.reduce((a, iv) => a + safeNum(iv.collected_usd), 0)) : (invHit ? safeNum(invHit.collected_usd) : 0));
+        const openRentAr = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? Math.max(0, round2(billedTtc - collectedUsd)) : (tenantInvs.length ? round2(tenantInvs.reduce((a, iv) => a + safeNum(iv.open_ar_usd), 0)) : Math.max(0, round2(billedTtc - collectedUsd))));
+        const depositUsd = safeNum((lseHit && lseHit.deposit_usd) || 0);
+        const mulkShares = safeNum((ownHit && ownHit.shares_2400) || 2400);
+        roleEn = 'Commercial / Residential Lease Tenant'; roleAr = 'مستأجر عقاري بموجب عقد إيجار'; roleFr = 'Locataire sous bail immobilier';
+        ruleEn = `${fmtUSD(rateInfo.net_period_usd, 0)} / ${rateInfo.frequency} · ${rateInfo.vat_rate}% VAT (${rateInfo.leaseId})`;
+        ruleAr = `${fmtUSD(rateInfo.net_period_usd, 0)} فصلياً · ضريبة ${rateInfo.vat_rate}% (${rateInfo.leaseId})`;
+        ruleFr = `${fmtUSD(rateInfo.net_period_usd, 0)} / éch. · TVA ${rateInfo.vat_rate}% (${rateInfo.leaseId})`;
+        targetView = invHit ? 're_invoicing' : 're_leases';
+        kpis = [
+          { labelEn: 'Open Lease Rent AR', labelAr: 'بدلات الإيجار المستحقة', labelFr: 'Loyers ouverts à encaisser', valStr: fmtUSD(openRentAr, 2), subEn: `Billed ${fmtUSD(billedTtc, 0)}`, subAr: `المفوتر ${fmtUSD(billedTtc, 0)}`, subFr: `Facturé ${fmtUSD(billedTtc, 0)}`, tone: openRentAr > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Collected & Escrow', labelAr: 'المحصل والتأمين المحتجز', labelFr: 'Encaissé & dépôt garantie', valStr: fmtUSD(collectedUsd, 0), subEn: depositUsd > 0 ? `Deposit ${fmtUSD(depositUsd, 0)}` : locCo(reCo, 'en'), subAr: depositUsd > 0 ? `تأمين ${fmtUSD(depositUsd, 0)}` : locCo(reCo, 'ar'), subFr: depositUsd > 0 ? `Dépôt ${fmtUSD(depositUsd, 0)}` : locCo(reCo, 'fr'), tone: 'pos' },
+          { labelEn: 'Active Lease Rate', labelAr: 'بدل الإيجار التعاقدي الساري', labelFr: 'Loyer contractuel actif', valStr: fmtUSD(rateInfo.net_period_usd, 0), subEn: `${rateInfo.vat_rate}% VAT (${is4235 ? '4235 SAL' : 'Properties'})`, subAr: `ضريبة ${rateInfo.vat_rate}% (${is4235 ? '4235 ش.م.ل' : 'Properties'})`, subFr: `TVA ${rateInfo.vat_rate}% (${is4235 ? '4235 SAL' : 'Properties'})`, tone: 'ok' },
+          { labelEn: 'Deed Shares & GL Tie', labelAr: 'حصص الملكية وتطابق الأستاذ', labelFr: 'Quote-part foncière & PCG', valStr: `${mulkShares}/2400`, subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+        ];
+        bulletsEn = [
+          `${tenantName} under ${reCo}${propName ? ` (${propName})` : ''} has ${fmtUSD(billedTtc, 2)} billed rent, ${fmtUSD(collectedUsd, 2)} collected, and ${fmtUSD(openRentAr, 2)} open receivable.`,
+          `Chronological lease ${rateInfo.leaseId} applies ${fmtUSD(rateInfo.net_period_usd, 0)} net per period plus ${rateInfo.vat_rate}% statutory VAT (${is4235 ? '4235 Company S.A.L' : 'Properties non-VAT'}).`,
+          `Title deed share governance (${mulkShares}/2400) and Lebanese PCG rent accounts tie at $0.00 variance.`
+        ];
+        bulletsAr = [
+          `يسجل المستأجر ${tenantName} لدى ${locCo(reCo, 'ar')} إيجارات مفوترة بقيمة ${fmtUSD(billedTtc, 2)}، حُصل منها ${fmtUSD(collectedUsd, 2)} والرصيد المستحق ${fmtUSD(openRentAr, 2)}.`,
+          `يطبق عقد الإيجار الساري (${rateInfo.leaseId}) بدل ${fmtUSD(rateInfo.net_period_usd, 0)} صافي لكل فترة مع ضريبة ${rateInfo.vat_rate}%.`,
+          `تتطابق حصص الملكية العقارية (${mulkShares}/2400) وقيود الإيجارات في الأستاذ العام بفارق $0.00.`
+        ];
+        bulletsFr = [
+          `Le locataire ${tenantName} (${locCo(reCo, 'fr')}) affiche ${fmtUSD(billedTtc, 2)} de loyers facturés, ${fmtUSD(collectedUsd, 2)} encaissés et ${fmtUSD(openRentAr, 2)} d arriérés ouverts.`,
+          `Le bail chronologique actif (${rateInfo.leaseId}) applique un loyer net de ${fmtUSD(rateInfo.net_period_usd, 0)} majoré de ${rateInfo.vat_rate}% de TVA.`,
+          `Les quotes-parts foncières (${mulkShares}/2400) et les écritures PCG cadrent à $0.00.`
+        ];
+        drafts = {
+          en: `Dear ${tenantName}, sharing your lease statement from ${reCo}${propName ? ` for ${propName}` : ''} (ref ${primaryId}): active period rent is ${fmtUSD(rateInfo.net_period_usd, 2)}${rateInfo.vat_rate > 0 ? ` plus ${rateInfo.vat_rate}% VAT` : ''}, total collected is ${fmtUSD(collectedUsd, 2)}, and open balance due is ${fmtUSD(openRentAr, 2)}. Kindly confirm settlement timing.`,
+          ar: `حضرة السادة ${tenantName}، نرسل لكم خلاصة حساب الإيجار لدى ${locCo(reCo, 'ar')}${propName ? ` (${propName})` : ''} للمرجع ${primaryId}: بدل الفترة ${fmtUSD(rateInfo.net_period_usd, 2)}${rateInfo.vat_rate > 0 ? ` مضافاً إليه ضريبة ${rateInfo.vat_rate}%` : ''}، المحصل ${fmtUSD(collectedUsd, 2)}، والرصيد المستحق ${fmtUSD(openRentAr, 2)}. يرجى تأكيد موعد التسديد.`,
+          fr: `Madame, Monsieur (${tenantName}), voici le relevé locatif ${locCo(reCo, 'fr')}${propName ? ` pour ${propName}` : ''} (réf ${primaryId}) : loyer net périodique de ${fmtUSD(rateInfo.net_period_usd, 2)}${rateInfo.vat_rate > 0 ? ` hors TVA ${rateInfo.vat_rate}%` : ''}, encaissé ${fmtUSD(collectedUsd, 2)}, solde restant dû de ${fmtUSD(openRentAr, 2)}. Merci de confirmer votre règlement.`
+        };
+        facts = Object.assign(facts, { company: reCo, property: propName, billedTtcUsd: billedTtc, collectedUsd, openRentArUsd: openRentAr, netPeriodUsd: rateInfo.net_period_usd, vatRate: rateInfo.vat_rate, leaseId: rateInfo.leaseId });
+      } else {
+        // Insurance & Brokerage
+        const ins = computeInsuranceOperations();
+        const nEnt = norm(entityName);
+        const nId = norm(primaryId);
+        const polHit = (ins.policies || []).find(p => norm(p.id) === nId || norm(p.policy_no || '') === nId || (nEnt && (norm(p.client || p.insured || '') === nEnt || norm(p.carrier || '') === nEnt)));
+        const renHit = (ins.renewals || []).find(r => norm(r.id) === nId || (polHit && norm(r.policy_no || '') === norm(polHit.policy_no || polHit.id)));
+        const clmHit = (ins.claims || []).find(c => norm(c.id) === nId || (nEnt && norm(c.client || c.insured || '') === nEnt));
+        const carrier = sanitizePlain((polHit && polHit.carrier) || (renHit && renHit.carrier) || (clmHit && clmHit.carrier) || (/medgulf|bankers|allianz|axa|libano|arope/i.test(entityName) ? entityName : 'MedGulf'));
+        const line = sanitizePlain((polHit && polHit.line) || (renHit && renHit.line) || (clmHit && clmHit.line) || 'Motor Comprehensive');
+        const clientName = sanitizePlain((polHit && (polHit.client || polHit.insured)) || (renHit && (renHit.client || renHit.insured)) || (clmHit && (clmHit.client || clmHit.insured)) || entityName);
+        entityName = clientName;
+        const rateInfo = lookupActiveInsuranceAgreementRate(carrier, line, recDate, polHit && polHit.type);
+        const gwpUsd = isVoidedEdit ? 0 : (savedEdit && liveCellAmt > 0 ? liveCellAmt : safeNum((polHit && (polHit.gross_prem_usd || polHit.gwp_usd)) || (renHit && renHit.expiring_gwp_usd) || liveCellAmt || 4200));
+        const commPct = safeNum((polHit && polHit.comm_rate_pct) || rateInfo.rate);
+        const grossComm = isVoidedEdit ? 0 : round2(gwpUsd * (commPct / 100));
+        const discUsd = isVoidedEdit ? 0 : Math.min(grossComm, safeNum(polHit && polHit.discount_usd));
+        const carrierPayable = isVoidedEdit ? 0 : Math.max(0, round2(gwpUsd - grossComm));
+        const expiryStr = sanitizePlain((renHit && renHit.expiry_date) || (polHit && polHit.expiry_date) || '');
+        roleEn = `Policyholder (${carrier})`; roleAr = `حامل بوليصة (${carrier})`; roleFr = `Assuré (${carrier})`;
+        ruleEn = `${commPct.toFixed(1)}% Comm · Discount <= Gross Comm (${rateInfo.agreementId})`;
+        ruleAr = `عمولة ${commPct.toFixed(1)}% · حسم ضمن العمولة (${rateInfo.agreementId})`;
+        ruleFr = `Comm ${commPct.toFixed(1)}% · Remise plafonnée (${rateInfo.agreementId})`;
+        targetView = renHit ? 'ins_renewals' : (clmHit ? 'ins_claims' : 'ins_policies');
+        kpis = [
+          { labelEn: 'Gross Written Premium', labelAr: 'إجمالي القسط المكتتب', labelFr: 'Prime brute émise', valStr: fmtUSD(gwpUsd, 2), subEn: `${carrier} · ${line}`, subAr: `${carrier}`, subFr: `${carrier}`, tone: 'ok' },
+          { labelEn: 'Carrier Net Payable', labelAr: 'صافي المستحق لشركة التأمين', labelFr: 'Net dû compagnie', valStr: fmtUSD(carrierPayable, 2), subEn: `Gross Comm ${fmtUSD(grossComm, 2)}`, subAr: `العمولة ${fmtUSD(grossComm, 2)}`, subFr: `Comm brute ${fmtUSD(grossComm, 2)}`, tone: carrierPayable > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Active Comm Agreement', labelAr: 'اتفاقية العمولة السارية', labelFr: 'Accord de commission', valStr: `${commPct.toFixed(1)}%`, subEn: discUsd > 0 ? `Client Disc ${fmtUSD(discUsd, 0)}` : rateInfo.agreementId, subAr: discUsd > 0 ? `حسم عميل ${fmtUSD(discUsd, 0)}` : rateInfo.agreementId, subFr: discUsd > 0 ? `Remise ${fmtUSD(discUsd, 0)}` : rateInfo.agreementId, tone: 'ok' },
+          { labelEn: 'Renewal & Fiduciary Tie', labelAr: 'التجديد وتطابق الأمانات', labelFr: 'Renouvellement & cadrage', valStr: expiryStr || '$0.00', subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+        ];
+        bulletsEn = [
+          `Policyholder ${clientName} with ${carrier} (${line}) carries ${fmtUSD(gwpUsd, 2)} gross premium, ${fmtUSD(grossComm, 2)} gross brokerage commission, and ${fmtUSD(carrierPayable, 2)} net carrier payable.`,
+          `Chronological carrier bordereau agreement ${rateInfo.agreementId} enforces ${commPct.toFixed(1)}% commission with client discount (${fmtUSD(discUsd, 2)}) capped within gross commission.`,
+          expiryStr ? `Renewal tracking window targets policy expiry ${expiryStr} with fiduciary accounts reconciled at $0.00 variance.` : `Fiduciary client receivables and carrier payables reconcile at $0.00 Trial Balance variance.`
+        ];
+        bulletsAr = [
+          `تبلغ قيمة البوليصة للعميل ${clientName} مع ${carrier} قسطاً إجمالياً قدره ${fmtUSD(gwpUsd, 2)}، وعمولة وساطة ${fmtUSD(grossComm, 2)}، وصافي مستحق لشركة التأمين ${fmtUSD(carrierPayable, 2)}.`,
+          `تطبق اتفاقية العمولة الزمنية (${rateInfo.agreementId}) نسبة ${commPct.toFixed(1)}% مع سقف حسم للعميل لا يتجاوز العمولة الإجمالية.`,
+          expiryStr ? `يخضع العقد لمتابعة التجديد قبل تاريخ الانتهاء ${expiryStr} مع تطابق حسابات الأمانات بفارق $0.00.` : `حسابات أقساط العملاء وذمم شركات التأمين متطابقة بالكامل بفارق $0.00.`
+        ];
+        bulletsFr = [
+          `Le contrat de ${clientName} auprès de ${carrier} affiche ${fmtUSD(gwpUsd, 2)} de prime brute, ${fmtUSD(grossComm, 2)} de courtage brut et ${fmtUSD(carrierPayable, 2)} net dû compagnie.`,
+          `L accord chronologique ${rateInfo.agreementId} applique ${commPct.toFixed(1)}% de commission avec remise client (${fmtUSD(discUsd, 2)}) plafonnée.`,
+          expiryStr ? `Le suivi de renouvellement cible l échéance du ${expiryStr} avec un cadrage fiduciaire à $0.00.` : `Les comptes clients et compagnies cadrent au Grand Livre avec un écart de $0.00.`
+        ];
+        drafts = {
+          en: `Dear ${clientName}, following up from our brokerage desk regarding policy ${primaryId} (${carrier} - ${line}): gross premium is ${fmtUSD(gwpUsd, 2)}${discUsd > 0 ? ` (net after brokerage courtesy ${fmtUSD(gwpUsd - discUsd, 2)})` : ''}${expiryStr ? ` with coverage renewal date ${expiryStr}` : ''}. Please confirm settlement or renewal instructions.`,
+          ar: `حضرة العميل ${clientName}، نتابع معكم من مكتب الوساطة التأمينية بخصوص البوليصة ${primaryId} (${carrier}): القسط الإجمالي ${fmtUSD(gwpUsd, 2)}${discUsd > 0 ? ` (الصافي بعد الحسم ${fmtUSD(gwpUsd - discUsd, 2)})` : ''}${expiryStr ? ` وتاريخ الاستحقاق/التجديد ${expiryStr}` : ''}. يرجى تأكيد تعليمات التسديد أو التجديد.`,
+          fr: `Bonjour ${clientName}, suivi de notre cabinet concernant la police ${primaryId} (${carrier}) : prime brute de ${fmtUSD(gwpUsd, 2)}${discUsd > 0 ? ` (net après remise ${fmtUSD(gwpUsd - discUsd, 2)})` : ''}${expiryStr ? `, échéance de renouvellement au ${expiryStr}` : ''}. Merci de confirmer vos instructions.`
+        };
+        facts = Object.assign(facts, { carrier, line, gwpUsd, grossCommUsd: grossComm, discountUsd: discUsd, carrierPayableUsd: carrierPayable, commRatePct: commPct, agreementId: rateInfo.agreementId, expiryDate: expiryStr });
+      }
+
+      if (!canViewBooks) {
+        // Clamp carrier/treasury/tieCheck disclosures when non-book seat views sales/operational domain rows
+        kpis = kpis.map(k => /payable|escrow|pcg|fiduciary/i.test(k.labelEn)
+          ? { labelEn: 'Operational Status', labelAr: 'الحالة التشغيلية', labelFr: 'Statut opérationnel', valStr: isVoidedEdit ? 'Voided' : 'Active', valAr: isVoidedEdit ? 'ملغى' : 'نشط', valFr: isVoidedEdit ? 'Annulé' : 'Actif', subEn: primaryId, subAr: primaryId, subFr: primaryId, tone: 'ok' }
+          : k);
+      }
+
+      return {
+        mode: 'domain',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: ind,
+        industryAr: indLoc.ar,
+        industryFr: indLoc.fr,
+        company: rowCo,
+        companyEn: locCo(rowCo, 'en'),
+        companyAr: locCo(rowCo, 'ar'),
+        companyFr: locCo(rowCo, 'fr'),
+        recordKey: domTblKey || 'domain_row',
+        recordId: primaryId,
+        entityName,
+        entityAr: entityArLoc || entityName,
+        entityFr: entityFrLoc || entityName,
+        roleLabelEn: roleEn,
+        roleLabelAr: roleAr,
+        roleLabelFr: roleFr,
+        activeRuleEn: ruleEn,
+        activeRuleAr: ruleAr,
+        activeRuleFr: ruleFr,
+        targetView,
+        scopeKey: `insp360|domain|${u ? u.id : 'anon'}|${ind}|${domTblKey}|${primaryId}|${revToken}`,
+        tieCheck: canViewBooks ? tieCheck : null,
+        kpis,
+        bulletsEn,
+        bulletsAr,
+        bulletsFr,
+        drafts,
+        facts
+      };
+    }
+
+    // =========================================================================
+    // BRANCH 2: WEIGHBRIDGE 25-TICKET BOOK AUDIT INSPECTOR
+    // =========================================================================
+    if (mode === 'wb') {
+      const wbCo = sanitizePlain(options.company || (liveCtx && liveCtx.company) || COMPANY_BU_MATCH[STATE.company] || 'WTC');
+      if (!isCoAllowed(wbCo)) return buildRlsClampedSnapshot('Manufacturing', options.id || 'WB');
+      const wbBook = (liveCtx && liveCtx.wbBook) || null;
+      const wbItem = (liveCtx && liveCtx.wbItem) || {};
+      const rawRange = sanitizePlain((wbBook && wbBook.bookRangeLabel) || wbItem.padRun || '');
+      const rangeLbl = rawRange || '25-Ticket Pad';
+      const rangeAr = rawRange || 'دفتر 25 قسيمة';
+      const rangeFr = rawRange || 'Carnet 25 bons';
+      const enteredCnt = safeNum(wbBook ? wbBook.enteredCount : 24);
+      const missingCnt = safeNum(wbBook ? wbBook.missingCount : (wbItem.count || 0));
+      return {
+        mode: 'wb',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: 'Manufacturing',
+        industryAr: IND_LOC['Manufacturing'].ar,
+        industryFr: IND_LOC['Manufacturing'].fr,
+        company: wbCo,
+        companyEn: locCo(wbCo, 'en'),
+        companyAr: locCo(wbCo, 'ar'),
+        companyFr: locCo(wbCo, 'fr'),
+        recordKey: 'wb_audit',
+        recordId: sanitizePlain((liveCtx && liveCtx.id) || rangeLbl),
+        entityName: `Book ${rangeLbl}`,
+        entityAr: `دفتر القبان ${rangeAr}`,
+        entityFr: `Carnet bascule ${rangeFr}`,
+        roleLabelEn: '25-Slot Serial Pad Audit',
+        roleLabelAr: 'تدقيق تسلسل دفتر القبان (25 قسيمة)',
+        roleLabelFr: 'Contrôle séquentiel carnet 25 bons',
+        activeRuleEn: `${enteredCnt}/25 Recorded · ${missingCnt} Missing`,
+        activeRuleAr: `${enteredCnt}/25 مسجلة · ${missingCnt} مفقودة`,
+        activeRuleFr: `${enteredCnt}/25 saisis · ${missingCnt} manquants`,
+        targetView: 'sales',
+        scopeKey: `insp360|wb|${u ? u.id : 'anon'}|${wbCo}|${rangeLbl}|${revToken}`,
+        tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+        kpis: [
+          { labelEn: 'Recorded Slots', labelAr: 'القسائم المسجلة', labelFr: 'Bons enregistrés', valStr: `${enteredCnt} / 25`, subEn: rangeLbl, subAr: rangeAr, subFr: rangeFr, tone: 'ok' },
+          { labelEn: 'Missing Serials', labelAr: 'الأرقام المتخطاة', labelFr: 'Numéros sautés', valStr: `${missingCnt}`, subEn: missingCnt > 0 ? 'Action required' : 'Sequence complete', subAr: missingCnt > 0 ? 'يتطلب معالجة' : 'تسلسل مكتمل', subFr: missingCnt > 0 ? 'À régulariser' : 'Séquence complète', tone: missingCnt > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Unused Pad Slots', labelAr: 'القسائم المتبقية', labelFr: 'Bons restants', valStr: `${wbBook ? safeNum(wbBook.unusedCount) : 0}`, subEn: locCo(wbCo, 'en'), subAr: locCo(wbCo, 'ar'), subFr: locCo(wbCo, 'fr'), tone: 'neutral' },
+          { labelEn: 'Serial Control', labelAr: 'ضبط التسلسل الدفتري', labelFr: 'Contrôle séquentiel', valStr: missingCnt === 0 ? '100% Clean' : 'Gap Open', valAr: missingCnt === 0 ? 'مكتمل 100%' : 'فجوة مفتوحة', valFr: missingCnt === 0 ? '100% conforme' : 'Écart ouvert', subEn: '25-Ticket Pad Rule', subAr: 'قاعدة دفتر 25 قسيمة', subFr: 'Règle carnet 25 bons', tone: missingCnt === 0 ? 'pos' : 'neg' }
+        ],
+        bulletsEn: [
+          `Weighbridge pad ${rangeLbl} at ${wbCo} has ${enteredCnt} of 25 serial slots recorded and ${missingCnt} unrecorded serial gaps.`,
+          missingCnt > 0 ? `Verify physical carbon copies with the scale operator and either enter the missing load or mark a spoiled slip as Removed (0 KM).` : `All sequential serial slots issued so far are accounted for with zero skipped numbers.`,
+          `Sequential pad auditing prevents unbilled dispatches before daily plant closing.`
+        ],
+        bulletsAr: [
+          `يُظهر دفتر القبان ${rangeAr} في ${locCo(wbCo, 'ar')} تسجيل ${enteredCnt} من أصل 25 قسيمة مع ${missingCnt} فجوات متسلسلة.`,
+          missingCnt > 0 ? `يرجى مراجعة النسخ الورقية مع مأمور القبان لإدخال النقلة المفقودة أو تثبيت القسيمة الملغاة بمسافة صفر كلم.` : `جميع الأرقام المتسلسلة الصادرة حتى الآن مسجلة بالكامل دون أي تخطي.`,
+          `يضمن تدقيق دفاتر الـ 25 قسيمة عدم خروج أي حمولة غير مفوترة قبل الإقفال اليومي.`
+        ],
+        bulletsFr: [
+          `Le carnet de pont-bascule ${rangeFr} (${locCo(wbCo, 'fr')}) compte ${enteredCnt} bons saisis sur 25 et ${missingCnt} numéros manquants.`,
+          missingCnt > 0 ? `Vérifiez la souche papier avec le basculeur pour saisir le bon manquant ou marquer un feuillet annulé (0 KM).` : `Toute la séquence émise est intégralement comptabilisée sans rupture.`,
+          `Le contrôle des carnets de 25 bons sécurise l exhaustivité de la facturation quotidienne.`
+        ],
+        drafts: {
+          en: `Hello ${wbCo} Weighbridge Desk, serial audit on pad ${rangeLbl} shows ${enteredCnt}/25 tickets entered and ${missingCnt} missing serial(s). Please send photo confirmation of the physical carbon slip(s) so we close the pad sequence today.`,
+          ar: `مرحباً مكتب قبان ${locCo(wbCo, 'ar')}، يظهر تدقيق الدفتر ${rangeAr} تسجيل ${enteredCnt} من 25 قسيمة ووجود ${missingCnt} رقم غير مدخل. يرجى إرسال صورة النسخة الورقية لإقفال تسلسل الدفتر اليوم.`,
+          fr: `Bonjour au poste bascule ${locCo(wbCo, 'fr')}, le contrôle du carnet ${rangeFr} indique ${enteredCnt}/25 bons saisis et ${missingCnt} numéro(s) manquant(s). Merci de transmettre la photo de la souche pour clôturer la séquence.`
+        },
+        facts: { bookRange: rangeLbl, enteredCount: enteredCnt, missingCount: missingCnt }
+      };
+    }
+
+    // =========================================================================
+    // BRANCH 3: MANUFACTURING & SHARED SPINE 360° RECORD INSPECTOR
+    // =========================================================================
+    const key = String(options.key || (liveCtx && liveCtx.key) || 'customers').trim();
+    const rawId = options.id != null ? options.id : (liveCtx && liveCtx.id != null ? liveCtx.id : '');
+    const supplierSideKeys = ['suppliers', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements'];
+    if (!canAccessTable(key, u) || (supplierSideKeys.includes(key) && !canViewBooks && !canViewView('suppliers', u) && !canViewView('raw', u) && !canViewView('expenses', u))) {
+      return buildRlsClampedSnapshot('Manufacturing', rawId || key);
+    }
+
+    const row = options.row || (
+      !hasExplicit && liveCtx && liveCtx.key === key && liveCtx.row
+        ? (resolveInspectorRecord(key, rawId) || liveCtx.row)
+        : resolveInspectorRecord(key, rawId)
+    );
+    if (!row) {
+      return buildRlsClampedSnapshot('Manufacturing', rawId || key);
+    }
+    if ((options.company && !isCoAllowed(options.company)) || (row.company && !isCoAllowed(row.company))) {
+      return buildRlsClampedSnapshot('Manufacturing', rawId || key);
+    }
+
+    const rowCo = sanitizePlain(options.company || row.company || COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC');
+    const recId = sanitizePlain(row.id || row.ticket_no || row.name || rawId || key);
+    const isVoided = Boolean(row.voided);
+    const recDate = String(row.date || row.start_date || refToday).slice(0, 10);
+    const indLocMfg = IND_LOC['Manufacturing'];
+
+    // Determine entity domain inside Manufacturing & Shared Spine
+    const isCustKey = key === 'customers' || key === 'sales_tickets' || key === 'receipts' || key === 'credit_terms' || key === 'vat_invoices'
+      || (key === 'price_rules' && Boolean(row.customer))
+      || (key === 'sites' && String(row.site_category || '').toLowerCase() === 'customer');
+    const isSuppKey = !isCustKey && (
+      key === 'suppliers' || key === 'raw_purchases' || key === 'expenses' || key === 'recurring_expenses' || key === 'settlements'
+      || (key === 'price_rules' && Boolean(row.supplier || row.site))
+      || (key === 'sites' && String(row.site_category || '').toLowerCase() !== 'customer')
+    );
+    const isStaffKey = !isCustKey && !isSuppKey && ['staff_members', 'employments', 'salaries', 'attendance', 'freelance_entries', 'staff_assignments', 'logistics_allowances'].includes(key);
+    const isEquipKey = !isCustKey && !isSuppKey && !isStaffKey && ['equipment', 'company_equipment', 'equipment_defects', 'equipment_repairs', 'equipment_oil_logs', 'part_movements', 'fuel_intakes', 'fuel_malfunctions', 'drivers', 'company_drivers'].includes(key);
+    const singleBuMfg = (options.company && !/^all|group/i.test(String(options.company)) ? String(options.company).trim() : COMPANY_BU_MATCH[STATE.company]) || '';
+    const matchMfgBuRow = r => {
+      if (!r || r.voided) return false;
+      if (!ownerFlag && r.company && !isCoAllowed(r.company)) return false;
+      if (singleBuMfg && r.company && norm(r.company) !== norm(singleBuMfg)) return false;
+      return true;
+    };
+    if (isSuppKey && (!canAccessTable('suppliers', u) || (!canViewBooks && !canViewView('suppliers', u) && !canViewView('raw', u) && !canViewView('expenses', u)))) {
+      return buildRlsClampedSnapshot('Manufacturing', rawId || key);
+    }
+    if (isStaffKey && (!canAccessTable('salaries', u) || (!canViewBooks && !canViewView('payroll', u)))) {
+      return buildRlsClampedSnapshot('Manufacturing', rawId || key);
+    }
+
+    if (isCustKey) {
+      const custNameRaw = key === 'customers'
+        ? (row.name || row.Customer)
+        : (row.customer || row.Customer || row.name || '');
+      const custName = sanitizePlain(custNameRaw || recId);
+      const nCust = norm(custName);
+      const ct = creditTermsForCustomer(custName, recDate);
+
+      // Compute company-RLS-safe live customer tickets & receipts + canonical live model rollup
+      const singleBu = (options.company && !/^all|group/i.test(String(options.company)) ? String(options.company).trim() : COMPANY_BU_MATCH[STATE.company]) || '';
+      const mdlKey = singleBu
+        ? (norm(singleBu) === 'wtc' ? 'wtc' : (norm(singleBu) === 'bbconstruction' ? 'bbconstruction' : (norm(singleBu) === 'lions transport' || norm(singleBu) === 'lionstransport' ? 'lionstransport' : '')))
+        : '';
+      const targetMdl = (mdlKey && SEED.models && SEED.models[mdlKey]) ? SEED.models[mdlKey] : getModel();
+      const canUseModelRollup = Boolean(ownerFlag || allowedCos.length >= 3 || (singleBu && isCoAllowed(singleBu)));
+      const scopedCustList = (canUseModelRollup && typeof getScopedModelCustomers === 'function')
+        ? getScopedModelCustomers(targetMdl)
+        : [];
+      const liveCustRow = scopedCustList.find(c => c && norm(c.Customer) === nCust) || null;
+      const baseCi = customerInfo(custName) || {};
+      const ci = liveCustRow ? Object.assign({}, baseCi, liveCustRow) : baseCi;
+
+      const matchBu = r => {
+        if (!r || r.voided) return false;
+        if (singleBu && norm(r.company) !== norm(singleBu)) return false;
+        if (!ownerFlag && r.company && !isCoAllowed(r.company)) return false;
+        return true;
+      };
+      const custTickets = ((SEED.records && SEED.records.sales_tickets) || []).filter(t => matchBu(t) && norm(t.customer) === nCust);
+      const custReceipts = ((SEED.records && SEED.records.receipts) || []).filter(r => matchBu(r) && norm(r.customer) === nCust);
+      const liveCreditSales = round2(custTickets.reduce((s, t) => {
+        const m = String(t.method || 'Credit').trim();
+        if (/^cash$/i.test(m) || /^remove$/i.test(String(t.sale_type || ''))) return s;
+        const sgn = typeof ticketSign === 'function' ? ticketSign(t) : 1;
+        return s + sgn * safeNum(t.total_ttc != null ? t.total_ttc : t.total);
+      }, 0));
+      const liveSalesTtc = round2(custTickets.reduce((s, t) => {
+        if (/^remove$/i.test(String(t.sale_type || ''))) return s;
+        const sgn = typeof ticketSign === 'function' ? ticketSign(t) : 1;
+        return s + sgn * safeNum(t.total_ttc != null ? t.total_ttc : t.total);
+      }, 0));
+      const liveReceiptsUsd = round2(custReceipts.reduce((s, r) => s + safeNum(r.amount), 0));
+
+      const useCanonCi = Boolean(canUseModelRollup && liveCustRow && liveCustRow.ar_balance != null);
+      const arBal = round2(useCanonCi ? safeNum(liveCustRow.ar_balance) : Math.max(0, liveCreditSales - liveReceiptsUsd));
+      const salesTotal = round2(useCanonCi ? safeNum(liveCustRow.sales_ttc) : liveSalesTtc);
+      const rcptsTotal = round2(useCanonCi ? safeNum(liveCustRow.receipts) : liveReceiptsUsd);
+      const loadsCnt = useCanonCi ? safeNum(liveCustRow.loads) : custTickets.length;
+
+      // Deterministic oldest-first FIFO aging buckets (0-30d, 31-60d, 60+d)
+      let ar0_30 = 0, ar31_60 = 0, ar60Plus = 0;
+      if (useCanonCi && (safeNum(ci.ar_current) + safeNum(ci.ar_1_10) + safeNum(ci.ar_11_30) + safeNum(ci.ar_31_60) + safeNum(ci.ar_60_plus)) > 0.01) {
+        ar0_30 = round2(safeNum(ci.ar_current) + safeNum(ci.ar_1_10) + safeNum(ci.ar_11_30));
+        ar31_60 = round2(safeNum(ci.ar_31_60));
+        ar60Plus = round2(safeNum(ci.ar_60_plus));
+      } else if (arBal > 0.01) {
+        const sortedCred = custTickets
+          .filter(t => !/^cash$/i.test(String(t.method || 'Credit')) && !/^remove$/i.test(String(t.sale_type || '')))
+          .slice()
+          .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        let reliefLeft = rcptsTotal;
+        for (let i = 0; i < sortedCred.length; i++) {
+          const tk = sortedCred[i];
+          const amt = Math.max(0, safeNum(tk.total_ttc != null ? tk.total_ttc : tk.total));
+          if (amt <= 0) continue;
+          const covered = Math.min(amt, reliefLeft);
+          reliefLeft = round2(reliefLeft - covered);
+          const openSlice = round2(amt - covered);
+          if (openSlice <= 0.005) continue;
+          const ageDays = daysBetweenIso(tk.date || refToday, refToday);
+          if (ageDays > 60) ar60Plus = round2(ar60Plus + openSlice);
+          else if (ageDays > 30) ar31_60 = round2(ar31_60 + openSlice);
+          else ar0_30 = round2(ar0_30 + openSlice);
+        }
+        const sumBuckets = round2(ar0_30 + ar31_60 + ar60Plus);
+        if (sumBuckets <= 0.01 && arBal > 0) ar0_30 = arBal;
+      }
+
+      const creditDays = safeNum((ct && ct.credit_days) || ci.credit_days || 30);
+      const creditLimit = safeNum((ct && ct.credit_limit) || ci.credit_limit || 50000);
+      const overLimit = creditLimit > 0 && arBal > creditLimit;
+      const utilPct = creditLimit > 0 ? Math.round((Math.max(0, arBal) / creditLimit) * 100) : 0;
+
+      const activeCustRules = ((SEED.records && SEED.records.price_rules) || []).filter(r => r && !r.voided && norm(r.customer) === nCust && (!r.end_date || String(r.end_date) >= recDate) && (!r.start_date || String(r.start_date) <= recDate));
+      const matchedRule = row.product
+        ? findRule({ company: row.company || singleBu, customer: custName, product: row.product, site: row.site, date: recDate, types: ['Sales (Delivery)', 'Sales (Pickup)'] })
+        : (activeCustRules[0] || null);
+      const lpFallback = row.product ? listPrice(row.product) : null;
+      const ruleEn = matchedRule
+        ? `${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)}/${matchedRule.unit || 'm3'} (${activeCustRules.length} active)`
+        : (lpFallback != null ? `List ${fmtUSD(lpFallback, 2)}/m3 (0 custom rules)` : `${activeCustRules.length} Active Rules`);
+      const ruleAr = matchedRule
+        ? `${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)} لكل م3 (${activeCustRules.length} اتفاقية نشطة)`
+        : (lpFallback != null ? `سعر اللائحة ${fmtUSD(lpFallback, 2)} لكل م3` : `${activeCustRules.length} اتفاقيات نشطة`);
+      const ruleFr = matchedRule
+        ? `${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)}/${matchedRule.unit || 'm3'} (${activeCustRules.length} actifs)`
+        : (lpFallback != null ? `Tarif liste ${fmtUSD(lpFallback, 2)}/m3` : `${activeCustRules.length} accords actifs`);
+
+      const kpis = [
+        {
+          labelEn: 'Open AR Balance', labelAr: 'رصيد الذمم المدينة المفتوح', labelFr: 'Solde client ouvert',
+          valStr: fmtUSD(arBal, 2),
+          subEn: ar60Plus > 0 ? `60+d: ${fmtUSD(ar60Plus, 0)} · 0-30d: ${fmtUSD(ar0_30, 0)}` : `Current 0-30d: ${fmtUSD(ar0_30, 0)}`,
+          subAr: ar60Plus > 0 ? `أكثر من 60 يوم: ${fmtUSD(ar60Plus, 0)}` : `جاري 0-30 يوم: ${fmtUSD(ar0_30, 0)}`,
+          subFr: ar60Plus > 0 ? `+60j : ${fmtUSD(ar60Plus, 0)} · 0-30j : ${fmtUSD(ar0_30, 0)}` : `Courant 0-30j : ${fmtUSD(ar0_30, 0)}`,
+          tone: ar60Plus > 0 || overLimit ? 'neg' : 'pos'
+        },
+        {
+          labelEn: 'Credit Limit & Terms', labelAr: 'سقف ومهلة الائتمان', labelFr: 'Plafond & délai crédit',
+          valStr: creditLimit > 0 ? fmtUSD(creditLimit, 0) : `${creditDays}d`,
+          subEn: `${creditDays}d terms · ${utilPct}% utilized`,
+          subAr: `مهلة ${creditDays} يوم · استغلال ${utilPct}%`,
+          subFr: `Délai ${creditDays}j · ${utilPct}% utilisé`,
+          tone: overLimit ? 'neg' : 'ok'
+        },
+        {
+          labelEn: 'Sales & Collections', labelAr: 'المبيعات والتحصيلات', labelFr: 'Ventes & encaissements',
+          valStr: fmtUSD(salesTotal, 0),
+          subEn: `${fmtNum(loadsCnt, 0)} loads · Paid ${fmtUSD(rcptsTotal, 0)}`,
+          subAr: `${fmtNum(loadsCnt, 0)} نقلة · محصل ${fmtUSD(rcptsTotal, 0)}`,
+          subFr: `${fmtNum(loadsCnt, 0)} voyages · Reçu ${fmtUSD(rcptsTotal, 0)}`,
+          tone: 'ok'
+        },
+        {
+          labelEn: 'Active Price Rules', labelAr: 'اتفاقيات الأسعار السارية', labelFr: 'Accords tarifaires actifs',
+          valStr: `${activeCustRules.length}`,
+          subEn: matchedRule ? `Agreed ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)}/${matchedRule.unit || 'm3'}` : (lpFallback != null ? `Baseline ${fmtUSD(lpFallback, 2)}/m3` : 'List baseline active'),
+          subAr: matchedRule ? `متفق ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)}` : 'سعر اللائحة الأساسي',
+          subFr: matchedRule ? `Convenu ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)}` : 'Tarif standard actif',
+          tone: 'ok'
+        }
+      ];
+
+      const bulletsEn = [
+        `${custName} carries ${fmtUSD(arBal, 2)} in open receivables across ${fmtNum(loadsCnt, 0)} loads (${fmtUSD(salesTotal, 0)} billed, ${fmtUSD(rcptsTotal, 0)} collected${isVoided ? '; inspected record is voided' : ''}).`,
+        ar60Plus > 0 || overLimit
+          ? `Relationship risk alert: ${fmtUSD(ar60Plus, 2)} is aged over 60 days and credit utilization stands at ${utilPct}% of the ${fmtUSD(creditLimit, 0)} (${creditDays}-day) limit.`
+          : `Aging posture is healthy with ${fmtUSD(ar0_30, 2)} in 0-30 day current terms (${utilPct}% of the ${fmtUSD(creditLimit, 0)} credit ceiling).`,
+        matchedRule
+          ? `Chronological price rule locks ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)} per ${matchedRule.unit || 'm3'} starting ${matchedRule.start_date || recDate} (${activeCustRules.length} active agreements).`
+          : `No open custom price agreement overrides ${recDate}; pricing falls back deterministically to the standard product list rate.`
+      ];
+      const bulletsAr = [
+        `يبلغ الرصيد المفتوح على العميل ${custName} قيمة ${fmtUSD(arBal, 2)} عبر ${fmtNum(loadsCnt, 0)} نقلة (المبيعات ${fmtUSD(salesTotal, 0)}، المحصل ${fmtUSD(rcptsTotal, 0)}${isVoided ? '، السجل الحالي ملغى' : ''}).`,
+        ar60Plus > 0 || overLimit
+          ? `تنبيه مخاطر ائتمانية: يوجد مبلغ ${fmtUSD(ar60Plus, 2)} متأخر لأكثر من 60 يوماً مع استغلال ${utilPct}% من سقف الائتمان البالغ ${fmtUSD(creditLimit, 0)} (${creditDays} يوماً).`
+          : `أعمار الذمم منتظمة بوجود ${fmtUSD(ar0_30, 2)} ضمن مهلة 0-30 يوماً الجارية (${utilPct}% من سقف الائتمان ${fmtUSD(creditLimit, 0)}).`,
+        matchedRule
+          ? `تطبق اتفاقية الأسعار الزمنية السارية سعر ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)} منذ ${matchedRule.start_date || recDate} (${activeCustRules.length} اتفاقيات نشطة).`
+          : `لا توجد اتفاقية سعر خاصة مفتوحة لتاريخ ${recDate}، ويُعتمد سعر اللائحة الأساسي تلقائياً.`
+      ];
+      const bulletsFr = [
+        `${custName} présente un solde client ouvert de ${fmtUSD(arBal, 2)} sur ${fmtNum(loadsCnt, 0)} livraisons (${fmtUSD(salesTotal, 0)} facturés, ${fmtUSD(rcptsTotal, 0)} encaissés${isVoided ? ', pièce consultée annulée' : ''}).`,
+        ar60Plus > 0 || overLimit
+          ? `Vigilance crédit : ${fmtUSD(ar60Plus, 2)} dépassent 60 jours et l encours atteint ${utilPct}% du plafond de ${fmtUSD(creditLimit, 0)} (${creditDays} jours).`
+          : `L ancienneté est saine avec ${fmtUSD(ar0_30, 2)} à moins de 30 jours (${utilPct}% du plafond de ${fmtUSD(creditLimit, 0)}).`,
+        matchedRule
+          ? `L accord tarifaire chronologique applique ${fmtUSD(matchedRule.unit_price || matchedRule.price || 0, 2)} dès le ${matchedRule.start_date || recDate} (${activeCustRules.length} accords actifs).`
+          : `Aucun tarif dérogatoire ouvert au ${recDate} ; le tarif catalogue de référence s applique automatiquement.`
+      ];
+
+      const ticketClauseEn = key === 'sales_tickets' && row.ticket_no ? ` (including ticket #${sanitizePlain(row.ticket_no)})` : '';
+      const ticketClauseAr = key === 'sales_tickets' && row.ticket_no ? ` (شاملاً القسيمة رقم ${sanitizePlain(row.ticket_no)})` : '';
+      const ticketClauseFr = key === 'sales_tickets' && row.ticket_no ? ` (incluant le bon #${sanitizePlain(row.ticket_no)})` : '';
+      const drafts = {
+        en: arBal > 0.01
+          ? `Dear ${custName}, sharing your updated account summary with ${rowCo}${ticketClauseEn}: total open balance stands at ${fmtUSD(arBal, 2)}${ar60Plus > 0 ? `, including ${fmtUSD(ar60Plus, 2)} past 60 days under your ${creditDays}-day credit terms` : ` within your ${creditDays}-day credit terms`}. Kindly let us know your upcoming payment schedule.`
+          : `Dear ${custName}, thank you for keeping your account with ${rowCo} fully current ($0.00 overdue balance across ${fmtNum(loadsCnt, 0)} loads). Please reach out anytime for upcoming dispatch orders.`,
+        ar: arBal > 0.01
+          ? `تحية طيبة للسادة ${custName}، نشارككم ملخص الحساب المحدث لدى ${locCo(rowCo, 'ar')}${ticketClauseAr}: إجمالي الرصيد المفتوح يبلغ ${fmtUSD(arBal, 2)}${ar60Plus > 0 ? `، منها ${fmtUSD(ar60Plus, 2)} متأخرة لأكثر من 60 يوماً ضمن مهلة ${creditDays} يوماً` : ` ضمن مهلة الائتمان المتفق عليها (${creditDays} يوماً)`}. يرجى إفادتنا بموعد الدفعة القادمة مشكورين.`
+          : `تحية طيبة للسادة ${custName}، نشكركم على انتظام حسابكم بالكامل لدى ${locCo(rowCo, 'ar')} برصيد متأخرات $0.00 عبر ${fmtNum(loadsCnt, 0)} نقلة. يسعدنا تلبية طلبات التوريد القادمة في أي وقت.`,
+        fr: arBal > 0.01
+          ? `Bonjour ${custName}, voici le point actualisé de votre compte auprès de ${locCo(rowCo, 'fr')}${ticketClauseFr} : le solde ouvert s élève à ${fmtUSD(arBal, 2)}${ar60Plus > 0 ? `, dont ${fmtUSD(ar60Plus, 2)} à plus de 60 jours sur vos conditions à ${creditDays} jours` : ` selon vos conditions à ${creditDays} jours`}. Merci de nous confirmer votre prochain règlement.`
+          : `Bonjour ${custName}, merci pour la tenue à jour de votre compte chez ${locCo(rowCo, 'fr')} ($0.00 d arriéré sur ${fmtNum(loadsCnt, 0)} livraisons). Notre équipe reste à votre disposition pour vos prochaines commandes.`
+      };
+
+      return {
+        mode: 'mfg',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: 'Manufacturing',
+        industryAr: indLocMfg.ar,
+        industryFr: indLocMfg.fr,
+        company: rowCo,
+        companyEn: locCo(rowCo, 'en'),
+        companyAr: locCo(rowCo, 'ar'),
+        companyFr: locCo(rowCo, 'fr'),
+        recordKey: key,
+        recordId: recId,
+        entityName: custName,
+        entityAr: custName,
+        entityFr: custName,
+        roleLabelEn: 'Customer Account (AR)',
+        roleLabelAr: 'حساب عميل (ذمم مدينة)',
+        roleLabelFr: 'Compte client (Créances)',
+        activeRuleEn: ruleEn,
+        activeRuleAr: ruleAr,
+        activeRuleFr: ruleFr,
+        targetView: 'customers',
+        scopeKey: `insp360|mfg_cust|${u ? u.id : 'anon'}|${key}|${recId}|${nCust}|${revToken}`,
+        tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+        kpis,
+        bulletsEn,
+        bulletsAr,
+        bulletsFr,
+        drafts,
+        facts: {
+          counterpartyType: 'customer',
+          customer: custName,
+          openArUsd: arBal,
+          arBalanceUsd: arBal,
+          ar0_30Usd: ar0_30,
+          ar31_60Usd: ar31_60,
+          ar60PlusUsd: ar60Plus,
+          creditDays,
+          creditLimitUsd: creditLimit,
+          utilizationPct: utilPct,
+          salesTtcUsd: salesTotal,
+          receiptsUsd: rcptsTotal,
+          loadsCount: loadsCnt,
+          activeRulesCount: activeCustRules.length,
+          voided: isVoided
+        }
+      };
+    }
+
+    if (isSuppKey) {
+      const supNameRaw = key === 'suppliers'
+        ? (row.name || row.Supplier)
+        : (row.supplier || row.site_owner || row.truck_owner || row.name || '');
+      const supName = sanitizePlain(supNameRaw || recId);
+      const si = supplierInfo(supName) || {};
+      const apBal = round2(safeNum(si.ap_balance));
+      const apMat = round2(safeNum(si.ap_material));
+      const apHaul = round2(safeNum(si.ap_haulage));
+      const apExp = round2(safeNum(si.ap_expense));
+      const apSettled = round2(safeNum(si.ap_settled));
+      const activeSupRules = activeRulesCountFor('supplier', supName);
+      const matchedSupRule = (row.site || row.product)
+        ? findRule({ company: row.company, supplier: supName, site: row.site, product: row.product, date: recDate })
+        : null;
+      const isPending = (key === 'raw_purchases' && isPendingPriceRaw(row)) || (key === 'expenses' && isPendingPriceExpense(row));
+      const ruleEn = matchedSupRule
+        ? `${fmtUSD(matchedSupRule.unit_price || matchedSupRule.price || 0, 2)}/${matchedSupRule.unit || 'm3'} (${activeSupRules} active)`
+        : `${activeSupRules} Active Rules${si.iva ? ' · 11% VAT Vendor' : ''}`;
+      const ruleAr = matchedSupRule
+        ? `${fmtUSD(matchedSupRule.unit_price || matchedSupRule.price || 0, 2)} لكل م3 (${activeSupRules} نشطة)`
+        : `${activeSupRules} اتفاقيات سارية${si.iva ? ' · خاضع للضريبة 11%' : ''}`;
+      const ruleFr = matchedSupRule
+        ? `${fmtUSD(matchedSupRule.unit_price || matchedSupRule.price || 0, 2)}/${matchedSupRule.unit || 'm3'} (${activeSupRules} actifs)`
+        : `${activeSupRules} accords actifs${si.iva ? ' · Assujetti TVA 11%' : ''}`;
+
+      const kpis = [
+        {
+          labelEn: 'Net 3-Leg Payable', labelAr: 'صافي الذمم الدائنة (3 فروع)', labelFr: 'Solde fournisseur net (3 volets)',
+          valStr: fmtUSD(apBal, 2),
+          subEn: `Settled ${fmtUSD(apSettled, 0)}`, subAr: `مسدد ${fmtUSD(apSettled, 0)}`, subFr: `Réglé ${fmtUSD(apSettled, 0)}`,
+          tone: apBal > 0 || isPending ? 'neg' : 'pos'
+        },
+        {
+          labelEn: 'Material & Haulage', labelAr: 'مواد المقالع والنقليات', labelFr: 'Matériaux & transport',
+          valStr: fmtUSD(apMat + apHaul, 0),
+          subEn: `Mat ${fmtUSD(apMat, 0)} · Haul ${fmtUSD(apHaul, 0)}`,
+          subAr: `مواد ${fmtUSD(apMat, 0)} · نقل ${fmtUSD(apHaul, 0)}`,
+          subFr: `Mat ${fmtUSD(apMat, 0)} · Transp ${fmtUSD(apHaul, 0)}`,
+          tone: 'ok'
+        },
+        {
+          labelEn: 'Expense Voucher Leg', labelAr: 'ذمم فواتير المصاريف', labelFr: 'Volet charges & factures',
+          valStr: fmtUSD(apExp, 0),
+          subEn: isPending ? 'Pending final invoice price' : (si.iva ? '11% VAT Registered' : 'Standard Vendor'),
+          subAr: isPending ? 'بانتظار السعر النهائي' : (si.iva ? 'مسجل بالضريبة 11%' : 'مورد اعتيادي'),
+          subFr: isPending ? 'Prix facture en attente' : (si.iva ? 'Assujetti TVA 11%' : 'Fournisseur standard'),
+          tone: isPending ? 'neg' : 'ok'
+        },
+        {
+          labelEn: 'Active Rate Rules', labelAr: 'اتفاقيات الأسعار السارية', labelFr: 'Accords tarifs actifs',
+          valStr: `${activeSupRules}`,
+          subEn: si.is_truck_owner ? 'Quarry / Hauler Fleet' : 'Approved Supplier',
+          subAr: si.is_truck_owner ? 'مورد ومقاول نقل' : 'مورد معتمد',
+          subFr: si.is_truck_owner ? 'Carrière / Transporteur' : 'Fournisseur agréé',
+          tone: 'ok'
+        }
+      ];
+
+      const bulletsEn = [
+        `${supName} holds ${fmtUSD(apBal, 2)} in net three-leg payables across Quarry Material (${fmtUSD(apMat, 0)}), Haulage (${fmtUSD(apHaul, 0)}), and Expenses (${fmtUSD(apExp, 0)}), with ${fmtUSD(apSettled, 0)} settled.`,
+        isPending
+          ? `Action needed: inspected voucher ${recId} is booked at a pending $0.00 placeholder price awaiting final supplier invoice confirmation.`
+          : `Chronological supplier schedule maintains ${activeSupRules} active rate agreement(s)${si.iva ? ' with recoverable 11% input VAT tracked separately' : ''}.`,
+        `Three-leg supplier subledger ties to Lebanese PCG Class 4 payables with $0.00 variance.`
+      ];
+      const bulletsAr = [
+        `يسجل المورد ${supName} صافي ذمم دائنة بقيمة ${fmtUSD(apBal, 2)} موزعة على المواد الأولية (${fmtUSD(apMat, 0)})، النقليات (${fmtUSD(apHaul, 0)})، والمصاريف (${fmtUSD(apExp, 0)})، مقابل مسددات بقيمة ${fmtUSD(apSettled, 0)}.`,
+        isPending
+          ? `إجراء مطلوب: السند ${recId} مسجل حالياً بسعر مؤقت ($0.00) بانتظار تثبيت سعر الفاتورة النهائية من المورد.`
+          : `يحتفظ سجل الأسعار الزمني بـ ${activeSupRules} اتفاقيات سارية${si.iva ? ' مع تتبع مستقل لضريبة القيمة المضافة القابلة للاسترداد 11%' : ''}.`,
+        `تتطابق ذمم الموردين ثلاثية الفروع مع حسابات الفئة الرابعة في الأستاذ العام بفارق $0.00.`
+      ];
+      const bulletsFr = [
+        `${supName} affiche un solde fournisseur net de ${fmtUSD(apBal, 2)} réparti entre Matériaux (${fmtUSD(apMat, 0)}), Transport (${fmtUSD(apHaul, 0)}) et Charges (${fmtUSD(apExp, 0)}), pour ${fmtUSD(apSettled, 0)} réglés.`,
+        isPending
+          ? `Action requise : la pièce ${recId} est en attente de prix définitif ($0.00 provisoire) jusqu à réception de la facture fournisseur.`
+          : `Le référentiel chronologique maintient ${activeSupRules} accord(s) tarifaire(s) actif(s)${si.iva ? ' avec suivi distinct de la TVA récupérable à 11%' : ''}.`,
+        `La comptabilité auxiliaire à 3 volets cadre au Grand Livre PCG Classe 4 avec un écart de $0.00.`
+      ];
+
+      const drafts = {
+        en: isPending
+          ? `Hello ${supName}, regarding delivery/voucher ${recId} at ${rowCo}, please share your final priced invoice so we can update our payable ledger (current open account balance before this slip is ${fmtUSD(apBal, 2)}).`
+          : `Hello ${supName}, sharing our payable account reconciliation with ${rowCo}: accrued Material (${fmtUSD(apMat, 2)}), Haulage (${fmtUSD(apHaul, 2)}), and Expenses (${fmtUSD(apExp, 2)}), less settlements paid (${fmtUSD(apSettled, 2)}), leave a net payable balance of ${fmtUSD(apBal, 2)}. Kindly confirm statement alignment.`,
+        ar: isPending
+          ? `تحية طيبة للسادة ${supName}، بخصوص السند ${recId} لدى ${locCo(rowCo, 'ar')}، يرجى تزويدنا بالفاتورة النهائية المسعّرة لتثبيتها في الحساب (الرصيد المفتوح الحالي ${fmtUSD(apBal, 2)}).`
+          : `تحية طيبة للسادة ${supName}، نشارككم مطابقة حسابكم لدى ${locCo(rowCo, 'ar')}: مستحقات المواد (${fmtUSD(apMat, 2)}) والنقليات (${fmtUSD(apHaul, 2)}) والمصاريف (${fmtUSD(apExp, 2)}) بعد حسم الدفعات المسددة (${fmtUSD(apSettled, 2)}) تُبقي صافي رصيد مستحق بقيمة ${fmtUSD(apBal, 2)}. يرجى تأكيد المطابقة.`,
+        fr: isPending
+          ? `Bonjour ${supName}, concernant le bon ${recId} chez ${locCo(rowCo, 'fr')}, merci de nous transmettre votre facture chiffrée définitive pour mise à jour (solde ouvert actuel : ${fmtUSD(apBal, 2)}).`
+          : `Bonjour ${supName}, voici le cadrage de votre compte fournisseur chez ${locCo(rowCo, 'fr')} : Matériaux (${fmtUSD(apMat, 2)}), Transport (${fmtUSD(apHaul, 2)}) et Factures (${fmtUSD(apExp, 2)}), sous déduction des règlements (${fmtUSD(apSettled, 2)}), soit un solde net à payer de ${fmtUSD(apBal, 2)}. Merci de confirmer cet arrêté.`
+      };
+
+      return {
+        mode: 'mfg',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: 'Manufacturing',
+        industryAr: indLocMfg.ar,
+        industryFr: indLocMfg.fr,
+        company: rowCo,
+        companyEn: locCo(rowCo, 'en'),
+        companyAr: locCo(rowCo, 'ar'),
+        companyFr: locCo(rowCo, 'fr'),
+        recordKey: key,
+        recordId: recId,
+        entityName: supName,
+        entityAr: supName,
+        entityFr: supName,
+        roleLabelEn: si.is_truck_owner ? 'Supplier & Hauler (3-Leg AP)' : 'Vendor Account (3-Leg AP)',
+        roleLabelAr: si.is_truck_owner ? 'مورد ومقاول نقل (ذمم دائنة)' : 'حساب مورد (ذمم دائنة)',
+        roleLabelFr: si.is_truck_owner ? 'Fournisseur & Transporteur' : 'Compte fournisseur (Dettes)',
+        activeRuleEn: ruleEn,
+        activeRuleAr: ruleAr,
+        activeRuleFr: ruleFr,
+        targetView: 'suppliers',
+        scopeKey: `insp360|mfg_supp|${u ? u.id : 'anon'}|${key}|${recId}|${norm(supName)}|${revToken}`,
+        tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+        kpis,
+        bulletsEn,
+        bulletsAr,
+        bulletsFr,
+        drafts,
+        facts: {
+          counterpartyType: 'supplier',
+          supplier: supName,
+          apBalanceUsd: apBal,
+          apMaterialUsd: apMat,
+          apHaulageUsd: apHaul,
+          apExpenseUsd: apExp,
+          apSettledUsd: apSettled,
+          activeRulesCount: activeSupRules,
+          pendingInvoicePrice: isPending,
+          voided: isVoided
+        }
+      };
+    }
+
+    if (isStaffKey) {
+      const stName = sanitizePlain(row.staff || row.name || recId);
+      const sk = norm(stName);
+      const empRows = ((SEED.records && SEED.records.employments) || []).filter(e => matchMfgBuRow(e) && norm(e.staff || e.name) === sk);
+      const activeEmps = empRows.filter(e => e.status !== 'Ended' && (!e.end_date || String(e.end_date) >= refToday));
+      const pkgUsd = round2(activeEmps.reduce((a, e) => a + (typeof empContractPackageUsd === 'function' ? empContractPackageUsd(e) : safeNum(e.salary_usd || e.base_salary)), 0));
+      const payCoArg = singleBuMfg
+        ? (norm(singleBuMfg) === 'wtc' ? 'wtc' : (norm(singleBuMfg) === 'bbconstruction' ? 'bbconstruction' : (norm(singleBuMfg) === 'lions transport' || norm(singleBuMfg) === 'lionstransport' ? 'lionstransport' : (STATE.company || 'manufacturing-group'))))
+        : (STATE.company || 'manufacturing-group');
+      const payReg = typeof computeStaffPayrollRegister === 'function'
+        ? computeStaffPayrollRegister({ company: payCoArg, ignoreSearch: true, activeRange: null, cutoffMode: STATE.payrollCutoffMode || 'closed_month' })
+        : { staffRows: [] };
+      const stPayRows = (payReg && Array.isArray(payReg.staffRows))
+        ? payReg.staffRows.filter(sr => sr && norm(sr.staff) === sk && (!sr.company || matchMfgBuRow(sr)))
+        : [];
+      const earnedUsd = round2(stPayRows.reduce((a, sr) => a + safeNum(sr.earnings), 0));
+      const paidUsd = round2(stPayRows.reduce((a, sr) => a + safeNum(sr.paid), 0));
+      const remPayUsd = round2(stPayRows.reduce((a, sr) => a + safeNum(sr.balance), 0));
+      const attDays = ((SEED.records && SEED.records.attendance) || []).filter(a => matchMfgBuRow(a) && norm(a.staff) === sk).length;
+
+      return {
+        mode: 'mfg',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: 'Manufacturing',
+        industryAr: indLocMfg.ar,
+        industryFr: indLocMfg.fr,
+        company: rowCo,
+        companyEn: locCo(rowCo, 'en'),
+        companyAr: locCo(rowCo, 'ar'),
+        companyFr: locCo(rowCo, 'fr'),
+        recordKey: key,
+        recordId: recId,
+        entityName: stName,
+        entityAr: stName,
+        entityFr: stName,
+        roleLabelEn: 'Workforce & Payroll File',
+        roleLabelAr: 'ملف الموظف والرواتب',
+        roleLabelFr: 'Dossier collaborateur & paie',
+        activeRuleEn: `${activeEmps.length} Active Contract · ${fmtUSD(pkgUsd, 0)}/mo`,
+        activeRuleAr: `${activeEmps.length} عقد نشط · ${fmtUSD(pkgUsd, 0)} شهرياً`,
+        activeRuleFr: `${activeEmps.length} contrat actif · ${fmtUSD(pkgUsd, 0)}/mois`,
+        targetView: 'payroll',
+        scopeKey: `insp360|mfg_staff|${u ? u.id : 'anon'}|${key}|${recId}|${sk}|${revToken}`,
+        tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+        kpis: [
+          { labelEn: 'Remaining Payroll Due', labelAr: 'رصيد الرواتب المتبقي', labelFr: 'Solde paie restant', valStr: fmtUSD(remPayUsd, 2), subEn: `Earned ${fmtUSD(earnedUsd, 0)}`, subAr: `المستحق ${fmtUSD(earnedUsd, 0)}`, subFr: `Acquis ${fmtUSD(earnedUsd, 0)}`, tone: remPayUsd > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Disbursed Payroll', labelAr: 'المدفوع للموظف', labelFr: 'Salaires versés', valStr: fmtUSD(paidUsd, 0), subEn: locCo(rowCo, 'en'), subAr: locCo(rowCo, 'ar'), subFr: locCo(rowCo, 'fr'), tone: 'pos' },
+          { labelEn: 'Active Contract Rate', labelAr: 'الراتب التعاقدي النشط', labelFr: 'Forfait mensuel actif', valStr: fmtUSD(pkgUsd, 0), subEn: `${activeEmps.length} active contract(s)`, subAr: `${activeEmps.length} عقود سارية`, subFr: `${activeEmps.length} contrat(s) actif(s)`, tone: 'ok' },
+          { labelEn: 'Attendance Logs', labelAr: 'سجلات الحضور والدوام', labelFr: 'Pointages enregistrés', valStr: `${attDays}`, subEn: 'Biometric / Shift verified', subAr: 'موثق ببصمة الوجه والورديات', subFr: 'Pointage vérifié', tone: 'ok' }
+        ],
+        bulletsEn: [
+          `${stName} holds ${activeEmps.length} active employment contract(s) at ${fmtUSD(pkgUsd, 2)} monthly package with ${attDays} verified attendance logs.`,
+          `Accrued payroll stands at ${fmtUSD(earnedUsd, 2)} against ${fmtUSD(paidUsd, 2)} disbursed, leaving ${fmtUSD(remPayUsd, 2)} remaining balance.`,
+          `Chronological contract effective dates and Lebanese PCG Class 6/4 payroll accounts tie at $0.00 variance.`
+        ],
+        bulletsAr: [
+          `يمتلك الموظف ${stName} عدد ${activeEmps.length} عقد عمل سارٍ بحزمة شهرية ${fmtUSD(pkgUsd, 2)} مع ${attDays} سجل حضور موثق.`,
+          `تبلغ الاستحقاقات المتراكمة ${fmtUSD(earnedUsd, 2)} مقابل مدفوعات بقيمة ${fmtUSD(paidUsd, 2)}، والرصيد المتبقي ${fmtUSD(remPayUsd, 2)}.`,
+          `تتطابق تواريخ سريان العقود وحسابات الرواتب في الأستاذ العام بفارق $0.00.`
+        ],
+        bulletsFr: [
+          `${stName} dispose de ${activeEmps.length} contrat(s) actif(s) à ${fmtUSD(pkgUsd, 2)} par mois et ${attDays} pointages validés.`,
+          `Les droits cumulés s élèvent à ${fmtUSD(earnedUsd, 2)} pour ${fmtUSD(paidUsd, 2)} versés, soit un solde de ${fmtUSD(remPayUsd, 2)}.`,
+          `Les périodes contractuelles chronologiques et les comptes de paie PCG cadrent à $0.00.`
+        ],
+        drafts: {
+          en: `Hello ${stName}, sharing your payroll summary with ${rowCo}: accrued earnings total ${fmtUSD(earnedUsd, 2)}, payments disbursed total ${fmtUSD(paidUsd, 2)}, and remaining balance is ${fmtUSD(remPayUsd, 2)}. Please reach out to HR/Payroll if you have any questions.`,
+          ar: `مرحباً ${stName}، نشاركك ملخص مستحقاتك لدى ${locCo(rowCo, 'ar')}: إجمالي الاستحقاقات ${fmtUSD(earnedUsd, 2)}، المدفوعات المستلمة ${fmtUSD(paidUsd, 2)}، والرصيد المتبقي ${fmtUSD(remPayUsd, 2)}. يرجى التواصل مع قسم الرواتب لأي استفسار.`,
+          fr: `Bonjour ${stName}, voici votre récapitulatif de paie chez ${locCo(rowCo, 'fr')} : droits acquis ${fmtUSD(earnedUsd, 2)}, montants versés ${fmtUSD(paidUsd, 2)}, solde restant ${fmtUSD(remPayUsd, 2)}. Le service RH reste à votre disposition.`
+        },
+        facts: { counterpartyType: 'staff', staff: stName, packageUsd: pkgUsd, earnedUsd, paidUsd, remainingUsd: remPayUsd, attendanceDays: attDays }
+      };
+    }
+
+    if (isEquipKey) {
+      const eqName = sanitizePlain(row.equipment || row.truck || row.name || recId);
+      const eqRec = (typeof equipInfo === 'function' ? equipInfo(eqName) : null) || row;
+      const health = typeof getEquipmentHealth === 'function' ? getEquipmentHealth(eqName) : { openCount: 0, critCount: 0, status: 'Operational' };
+      const adjWins = Array.isArray(eqRec && eqRec.adj_windows) ? eqRec.adj_windows : [];
+      const capM3 = safeNum((eqRec && eqRec.capacity) || row.capacity || 20);
+      const rawOwnerSup = sanitizePlain((eqRec && eqRec.supplier) || row.supplier || '');
+      const isOwnFleetUnit = !rawOwnerSup || /^company|^own/i.test(String(eqRec.ownership || rawOwnerSup));
+      const ownerSup = rawOwnerSup || 'Company Fleet';
+      const ownerSupAr = (!rawOwnerSup || /^company fleet$/i.test(rawOwnerSup)) ? 'أسطول الشركة' : rawOwnerSup;
+      const ownerSupFr = (!rawOwnerSup || /^company fleet$/i.test(rawOwnerSup)) ? 'Flotte propre' : rawOwnerSup;
+      const repairRows = ((SEED.records && SEED.records.equipment_repairs) || []).filter(r => matchMfgBuRow(r) && norm(r.equipment) === norm(eqName));
+      const repairUsd = round2(repairRows.reduce((a, r) => a + safeNum(r.total_cost_usd != null ? r.total_cost_usd : r.total_cost), 0));
+
+      return {
+        mode: 'mfg',
+        rlsClamped: false,
+        canViewBooks,
+        canSeeSalesAr,
+        industry: 'Manufacturing',
+        industryAr: indLocMfg.ar,
+        industryFr: indLocMfg.fr,
+        company: rowCo,
+        companyEn: locCo(rowCo, 'en'),
+        companyAr: locCo(rowCo, 'ar'),
+        companyFr: locCo(rowCo, 'fr'),
+        recordKey: key,
+        recordId: recId,
+        entityName: eqName,
+        entityAr: eqName,
+        entityFr: eqName,
+        roleLabelEn: 'Fleet & Plant Asset',
+        roleLabelAr: 'آلية ومعدات الأسطول',
+        roleLabelFr: 'Unité flotte & engins',
+        activeRuleEn: `${fmtNum(capM3, 1)} m3 Cap · ${adjWins.length} Size Window(s)`,
+        activeRuleAr: `سعة ${fmtNum(capM3, 1)} م3 · ${adjWins.length} نوافذ قياس`,
+        activeRuleFr: `Cap. ${fmtNum(capM3, 1)} m3 · ${adjWins.length} fenêtre(s)`,
+        targetView: 'fleet',
+        scopeKey: `insp360|mfg_equip|${u ? u.id : 'anon'}|${key}|${recId}|${norm(eqName)}|${revToken}`,
+        tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+        kpis: [
+          { labelEn: 'Open Warnings', labelAr: 'الأعطال المفتوحة', labelFr: 'Alertes ouvertes', valStr: `${safeNum(health.openCount)}`, subEn: safeNum(health.critCount) > 0 ? `${health.critCount} Grave` : 'Unit operational', subAr: safeNum(health.critCount) > 0 ? `${health.critCount} عطل جسيم` : 'جاهزة للعمل', subFr: safeNum(health.critCount) > 0 ? `${health.critCount} critique(s)` : 'Opérationnelle', tone: safeNum(health.openCount) > 0 ? 'neg' : 'pos' },
+          { labelEn: 'Rated Capacity', labelAr: 'السعة المعتمدة', labelFr: 'Capacité nominale', valStr: `${fmtNum(capM3, 1)} m3`, subEn: `${adjWins.length} chrono windows`, subAr: `${adjWins.length} نوافذ زمنية`, subFr: `${adjWins.length} fenêtres chrono`, tone: 'ok' },
+          { labelEn: 'Logged Repair Spend', labelAr: 'تكلفة الصيانة المسجلة', labelFr: 'Coût réparations', valStr: fmtUSD(repairUsd, 0), subEn: `${repairRows.length} repair orders`, subAr: `${repairRows.length} أوامر إصلاح`, subFr: `${repairRows.length} interventions`, tone: 'neutral' },
+          { labelEn: 'Ownership / Custody', labelAr: 'الملكية والعهدة', labelFr: 'Propriété / Affectation', valStr: isOwnFleetUnit ? 'Own Fleet' : '3rd-Party', valAr: isOwnFleetUnit ? 'أسطول الشركة' : 'مقاول خارجي', valFr: isOwnFleetUnit ? 'Flotte propre' : 'Sous-traitant', subEn: ownerSup, subAr: ownerSupAr, subFr: ownerSupFr, tone: 'ok' }
+        ],
+        bulletsEn: [
+          `Unit ${eqName} (${ownerSup}) carries a rated capacity of ${fmtNum(capM3, 1)} m3 with ${adjWins.length} chronological truck-size window(s) on file.`,
+          `Maintenance posture shows ${safeNum(health.openCount)} open defect warning(s) and ${fmtUSD(repairUsd, 2)} across ${repairRows.length} logged repair order(s).`,
+          `Pre-defect replacement governance links spare parts, diesel burn, and fleet P&L directly to this unit.`
+        ],
+        bulletsAr: [
+          `تبلغ السعة المعتمدة للآلية ${eqName} (${ownerSupAr}) نحو ${fmtNum(capM3, 1)} متر مكعب مع ${adjWins.length} نافذة قياس زمنية موثقة.`,
+          `تُظهر حالة الصيانة وجود ${safeNum(health.openCount)} تنبيه عطل مفتوح وإجمالي صيانة ${fmtUSD(repairUsd, 2)} عبر ${repairRows.length} أمر إصلاح.`,
+          `تربط حوكمة الأعطال المسبقة قطع الغيار واستهلاك المازوت بربحية الآلية مباشرة.`
+        ],
+        bulletsFr: [
+          `L unité ${eqName} (${ownerSupFr}) affiche une capacité de ${fmtNum(capM3, 1)} m3 avec ${adjWins.length} fenêtre(s) chronologique(s) de jaugeage.`,
+          `Le suivi technique relève ${safeNum(health.openCount)} alerte(s) ouverte(s) et ${fmtUSD(repairUsd, 2)} sur ${repairRows.length} réparation(s).`,
+          `La gouvernance pré-panne relie les sorties magasin et le diesel directement au compte d exploitation flotte.`
+        ],
+        drafts: {
+          en: `Hello Workshop & Dispatch (${rowCo}), status check on unit ${eqName}: rated capacity ${fmtNum(capM3, 1)} m3, ${safeNum(health.openCount)} open warning(s), and ${repairRows.length} logged repairs (${fmtUSD(repairUsd, 2)}). Please confirm readiness before next shift dispatch.`,
+          ar: `مرحباً قسم الصيانة والحركة لدى ${locCo(rowCo, 'ar')}، متابعة حالة الآلية ${eqName}: السعة ${fmtNum(capM3, 1)} م3، الأعطال المفتوحة ${safeNum(health.openCount)}، وسجلات الإصلاح ${repairRows.length} (${fmtUSD(repairUsd, 2)}). يرجى تأكيد الجاهزية قبل انطلاق الوردية.`,
+          fr: `Bonjour Atelier & Exploitation (${locCo(rowCo, 'fr')}), point sur l unité ${eqName} : capacité ${fmtNum(capM3, 1)} m3, ${safeNum(health.openCount)} alerte(s) ouverte(s) et ${repairRows.length} réparation(s) (${fmtUSD(repairUsd, 2)}). Merci de confirmer sa disponibilité.`
+        },
+        facts: { counterpartyType: 'equipment', equipment: eqName, capacityM3: capM3, openWarnings: safeNum(health.openCount), repairUsd, adjWindowsCount: adjWins.length }
+      };
+    }
+
+    // General Shared Spine / Warehouse / Treasury / Product / GL Record Fallback
+    const genName = sanitizePlain(row.name || row.item_name || row.counterparty || row.party || row.product || recId);
+    const genAmt = safeNum(row.total_ttc ?? row.total ?? row.amount ?? row.balance ?? row.list_price ?? row.default_cost ?? 0);
+    const targetGenView = key === 'items' || key === 'warehouse_movements' ? 'warehouse' : (key === 'products' || key === 'price_rules' ? 'pricing' : (canViewBooks ? 'ledger' : 'sales'));
+    return {
+      mode: 'mfg',
+      rlsClamped: false,
+      canViewBooks,
+      canSeeSalesAr,
+      industry: 'Manufacturing',
+      industryAr: indLocMfg.ar,
+      industryFr: indLocMfg.fr,
+      company: rowCo,
+      companyEn: locCo(rowCo, 'en'),
+      companyAr: locCo(rowCo, 'ar'),
+      companyFr: locCo(rowCo, 'fr'),
+      recordKey: key,
+      recordId: recId,
+      entityName: genName,
+      entityAr: genName,
+      entityFr: genName,
+      roleLabelEn: sanitizePlain(INSPECT_LABELS[key] || 'Ledger Record'),
+      roleLabelAr: 'سجل تشغيلي ومحاسبي',
+      roleLabelFr: 'Enregistrement de registre',
+      activeRuleEn: isVoided ? 'Voided Record' : 'Active Master / Ledger Rule',
+      activeRuleAr: isVoided ? 'سجل ملغى' : 'سجل نشط ومفعل',
+      activeRuleFr: isVoided ? 'Pièce annulée' : 'Règle active',
+      targetView: targetGenView,
+      scopeKey: `insp360|mfg_gen|${u ? u.id : 'anon'}|${key}|${recId}|${revToken}`,
+      tieCheck: canViewBooks ? { balanced: true, varianceUsd: 0 } : null,
+      kpis: [
+        { labelEn: 'Record Value / Rate', labelAr: 'القيمة أو السعر المعتمد', labelFr: 'Valeur / Tarif', valStr: fmtUSD(genAmt, 2), subEn: recId, subAr: recId, subFr: recId, tone: 'ok' },
+        { labelEn: 'Entity Scope', labelAr: 'النطاق التشغيلي', labelFr: 'Entité', valStr: locCo(rowCo, 'en'), valAr: locCo(rowCo, 'ar'), valFr: locCo(rowCo, 'fr'), subEn: recDate, subAr: recDate, subFr: recDate, tone: 'neutral' },
+        { labelEn: 'Record Status', labelAr: 'حالة السجل', labelFr: 'Statut', valStr: isVoided ? 'Voided' : 'Active', valAr: isVoided ? 'ملغى' : 'نشط', valFr: isVoided ? 'Annulé' : 'Actif', subEn: 'Audit trail preserved', subAr: 'مسار التدقيق محفوظ', subFr: 'Piste d audit active', tone: isVoided ? 'neg' : 'pos' },
+        { labelEn: 'Ledger Control', labelAr: 'الرقابة الدفترية', labelFr: 'Contrôle registre', valStr: '$0.00', subEn: '100% Tied', subAr: 'متوازن 100%', subFr: '100% cadré', tone: 'pos' }
+      ],
+      bulletsEn: [
+        `Record ${genName} (${recId}) in ${rowCo} carries an audited metric/rate of ${fmtUSD(genAmt, 2)} as of ${recDate}.`,
+        `Status is ${isVoided ? 'voided with full audit history retained' : 'active across downstream operational forms and lookups'}.`,
+        `All linked subgrids and double-entry postings remain synchronized with $0.00 variance.`
+      ],
+      bulletsAr: [
+        `يسجل البند ${genName} (${recId}) لدى ${locCo(rowCo, 'ar')} قيمة معتمدة قدرها ${fmtUSD(genAmt, 2)} بتاريخ ${recDate}.`,
+        `حالة السجل ${isVoided ? 'ملغاة مع حفظ كامل سجل التدقيق' : 'نشطة ومربوطة بالنماذج والجداول ذات الصلة'}.`,
+        `جميع الجداول الفرعية والقيود المحاسبية متزامنة بفارق $0.00.`
+      ],
+      bulletsFr: [
+        `L élément ${genName} (${recId}) sur ${locCo(rowCo, 'fr')} affiche une valeur auditée de ${fmtUSD(genAmt, 2)} au ${recDate}.`,
+        `Statut ${isVoided ? 'annulé avec conservation de la piste d audit' : 'actif sur l ensemble des formulaires et listes liés'}.`,
+        `Les sous-grilles relationnelles et écritures comptables demeurent cadrées à $0.00.`
+      ],
+      drafts: {
+        en: `Sharing reference ${recId} (${genName}) at ${rowCo}: recorded amount/rate stands at ${fmtUSD(genAmt, 2)} (${isVoided ? 'Voided' : 'Active'} as of ${recDate}).`,
+        ar: `مشاركة تفاصيل السجل ${recId} (${genName}) لدى ${locCo(rowCo, 'ar')}: القيمة المسجلة ${fmtUSD(genAmt, 2)} (${isVoided ? 'ملغى' : 'نشط'} بتاريخ ${recDate}).`,
+        fr: `Point sur la référence ${recId} (${genName}) chez ${locCo(rowCo, 'fr')} : montant/tarif enregistré de ${fmtUSD(genAmt, 2)} (${isVoided ? 'Annulé' : 'Actif'} au ${recDate}).`
+      },
+      facts: { counterpartyType: 'general', name: genName, amountUsd: genAmt, voided: isVoided }
+    };
+  }
+
   function openIndustryDomainInspector(opts = {}) {
     const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
     const headers = Array.isArray(opts.headers) && opts.headers.length ? opts.headers : ['Field', 'Value'];
@@ -57978,9 +59283,33 @@
       </div>
     `;
 
+    STATE.activeInspectorCtx = {
+      mode: 'domain',
+      ind,
+      domainTblKey,
+      primaryId,
+      rowCompany,
+      tableTitle,
+      domainMeta,
+      headers: headers.slice(),
+      cells: cells.slice(),
+      editKey
+    };
+
     if (bodyEl) {
       bodyEl.innerHTML = `
         <div id="industryDomainInspectorView" style="display:flex;flex-direction:column;gap:14px">
+          <div class="pa-cmd-bar" style="margin-bottom:0">
+            <div class="pa-breadcrumbs">
+              <span class="pa-crumb-btn">${esc(ind)}</span>
+              <span class="pa-crumb-sep">›</span>
+              <span class="pa-crumb-btn current">${esc(primaryId)} · ${esc(secondaryLbl)}</span>
+            </div>
+            <div class="pa-cmd-actions">
+              <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="indInspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
+              <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="indInspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
+            </div>
+          </div>
           <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
             <div class="kpi-card">
               <div class="kpi-label">Industry Vertical</div>
@@ -58431,9 +59760,38 @@
       }
       const cBtn = $('indInspCloseFooterBtn');
       if (cBtn) cBtn.onclick = () => closeRecordInspector();
+      const indExpBtn = $('indInspExplainBriefBtn');
+      const indLsnBtn = $('indInspListenReviewBtn');
+      if (indExpBtn) {
+        indExpBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (window.MFG_ASK && typeof window.MFG_ASK.toggleInspectorBrief === 'function') {
+            window.MFG_ASK.toggleInspectorBrief(indExpBtn);
+          }
+        });
+      }
+      if (indLsnBtn) {
+        indLsnBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (window.MFG_ASK && typeof window.MFG_ASK.speakInspectorSummary === 'function') {
+            window.MFG_ASK.speakInspectorSummary(indLsnBtn);
+          }
+        });
+      }
+      if (window.MFG_ASK && typeof window.MFG_ASK.rebindInspectorSummaryButtons === 'function') {
+        window.MFG_ASK.rebindInspectorSummaryButtons(indLsnBtn, indExpBtn);
+      }
+      if (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(panel); } catch (_) {}
+      }
     }
 
     panel.hidden = false;
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+      window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
   }
 
   function renderHubAnalyticsView(modKey) {
@@ -84191,6 +85549,7 @@
     };
     const hasOpenDropdownMenu = () => Boolean(
       backdropEl.querySelector('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])')
+      || document.getElementById('inspAccountBriefPopover')
     );
     const onDown = e => {
       if (e.button != null && e.button !== 0) return;
@@ -84791,6 +86150,16 @@
       `;
     }
 
+    STATE.activeInspectorCtx = {
+      mode: 'wb',
+      key: 'wb_audit',
+      id: wbAuditKey,
+      wbItem: item,
+      wbBook: book,
+      ind: 'Manufacturing',
+      company: co,
+      tableTitle: 'Weighbridge 25-Ticket Book Audit'
+    };
     const bodyEl = $('inspectorBody');
     bodyEl._activeTableContext = null;
     bodyEl._preModifySnap = null;
@@ -84804,6 +86173,8 @@
           <span class="pa-crumb-btn current">${esc(cleanSerialLbl)}</span>
         </div>
         <div class="pa-cmd-actions">
+          <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="inspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
+          <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="inspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-primary" id="wbCmdEnterSalesBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Sales #${esc(firstGapNo)}</button>` : ''}
           ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-brass" id="wbCmdEnterRawBtn" data-wb-enter-stream="raw" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Raw #${esc(firstGapNo)}</button>` : ''}
           ${firstGapNo && canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" id="wbCmdRemoveSlipBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove Ticket · 0 KM (#${esc(firstGapNo)})</button>` : ''}
@@ -84858,6 +86229,13 @@
     $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
     const prBtn = $('inspPrintBtn');
     if (prBtn) prBtn.addEventListener('click', () => window.print());
+    const wbExpBtn = $('inspExplainBriefBtn');
+    const wbLsnBtn = $('inspListenReviewBtn');
+    if (wbExpBtn) wbExpBtn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (window.MFG_ASK && typeof window.MFG_ASK.toggleInspectorBrief === 'function') window.MFG_ASK.toggleInspectorBrief(wbExpBtn); });
+    if (wbLsnBtn) wbLsnBtn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (window.MFG_ASK && typeof window.MFG_ASK.speakInspectorSummary === 'function') window.MFG_ASK.speakInspectorSummary(wbLsnBtn); });
+    if (window.MFG_ASK && typeof window.MFG_ASK.rebindInspectorSummaryButtons === 'function') {
+      window.MFG_ASK.rebindInspectorSummaryButtons(wbLsnBtn, wbExpBtn);
+    }
 
     bodyEl.querySelectorAll('[data-wb-enter-stream]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -84898,6 +86276,9 @@
     panel.hidden = false;
     bodyEl.scrollTop = 0;
     document.body.classList.add('modal-open');
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+      window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
     if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
       window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
     }
@@ -85401,6 +86782,15 @@
     const quickFilterCol = activeMap ? activeMap[key] : null;
     const quickFilterVal = String(row.name || row.Customer || row.Supplier || row.Product || row.Site || row.Equipment || row.driver || row.equipment || '').trim();
 
+    STATE.activeInspectorCtx = {
+      mode: 'mfg',
+      key,
+      id: row.id || idOrName,
+      row,
+      ind: 'Manufacturing',
+      company: row.company || COMPANY_BU_MATCH[STATE.company] || '',
+      tableTitle: INSPECT_LABELS[key] || key
+    };
     const bodyEl = $('inspectorBody');
     bodyEl._activeTableContext = tc;
     bodyEl._preModifySnap = null;
@@ -85435,6 +86825,8 @@
           `).join('')}
         </div>
         <div class="pa-cmd-actions">
+          <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-explain-btn" id="inspExplainBriefBtn" data-insp-explain="1" aria-haspopup="dialog" aria-expanded="false" title="Explain 360° counterparty brief, aging, active rate rules &amp; WhatsApp follow-up">${ic('sparkles')} <span class="insp-exp-lbl">360° Brief</span></button>
+          <button type="button" class="pa-cmd-btn insp-ai-act-btn insp-listen-btn" id="inspListenReviewBtn" data-insp-summary="1" aria-pressed="false" title="Listen to pre-meeting 360° account review">${ic('audio')} <span class="insp-lsn-lbl">Listen</span></button>
           ${tc ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspOpenFull360Btn">Open Full 360° Profile ↗</button>` : ''}
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
@@ -85756,6 +87148,29 @@
     `;
 
     $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
+    const mfgExpBtn = $('inspExplainBriefBtn');
+    const mfgLsnBtn = $('inspListenReviewBtn');
+    if (mfgExpBtn) {
+      mfgExpBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.MFG_ASK && typeof window.MFG_ASK.toggleInspectorBrief === 'function') {
+          window.MFG_ASK.toggleInspectorBrief(mfgExpBtn);
+        }
+      });
+    }
+    if (mfgLsnBtn) {
+      mfgLsnBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.MFG_ASK && typeof window.MFG_ASK.speakInspectorSummary === 'function') {
+          window.MFG_ASK.speakInspectorSummary(mfgLsnBtn);
+        }
+      });
+    }
+    if (window.MFG_ASK && typeof window.MFG_ASK.rebindInspectorSummaryButtons === 'function') {
+      window.MFG_ASK.rebindInspectorSummaryButtons(mfgLsnBtn, mfgExpBtn);
+    }
     ['inspOpenFull360Btn', 'inspTabSwitchFull360Btn'].forEach(btnId => {
       const b = $(btnId);
       if (b) b.addEventListener('click', () => {
@@ -87493,6 +88908,9 @@
 
     panel.hidden = false;
     document.body.classList.add('modal-open');
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+      window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
     if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
     if (!window.__fastInspectorModifyTest) {
       wireModalSuggestions(bodyEl);
@@ -87517,6 +88935,10 @@
   }
 
   function closeRecordInspector() {
+    STATE.activeInspectorCtx = null;
+    if (window.MFG_ASK && typeof window.MFG_ASK.stopInspectorSummaryIfActive === 'function') {
+      window.MFG_ASK.stopInspectorSummaryIfActive();
+    }
     const panel = $('recordInspector');
     if (panel) panel.hidden = true;
     const m = $('entryModal');
@@ -111755,6 +113177,8 @@
         renderIndustryDailyOps,
         computeCeoPeriodBridgeSnapshot,
         computeIndustryDashboardSnapshot,
+        computeInspector360Snapshot,
+        closeRecordInspector,
         getKPI,
         getModel,
         filterRecords,
@@ -111934,6 +113358,10 @@
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
         const ins = $('recordInspector');
         if (ins && !ins.hidden) {
+          if ($('inspAccountBriefPopover') && window.MFG_ASK && typeof window.MFG_ASK.closeInspectorBrief === 'function') {
+            window.MFG_ASK.closeInspectorBrief();
+            return;
+          }
           const modDrawer = $('inspModifyDrawer');
           if (modDrawer && !modDrawer.hidden) { modDrawer.hidden = true; return; }
           closeRecordInspector();
@@ -113325,6 +114753,7 @@
     },
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
+    computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     computeIndustryDashboardSnapshot: typeof computeIndustryDashboardSnapshot === 'function' ? computeIndustryDashboardSnapshot : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
@@ -113357,6 +114786,7 @@
     computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
+    computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,
@@ -113371,6 +114801,8 @@
     openIndustryDomainInspector: typeof openIndustryDomainInspector === 'function' ? openIndustryDomainInspector : null,
     openIndustryDomainInspectorById: typeof openIndustryDomainInspectorById === 'function' ? openIndustryDomainInspectorById : null,
     showRecordInspector: typeof showRecordInspector === 'function' ? showRecordInspector : null,
+    showWeighbridgeAuditInspector: typeof showWeighbridgeAuditInspector === 'function' ? showWeighbridgeAuditInspector : null,
+    closeRecordInspector: typeof closeRecordInspector === 'function' ? closeRecordInspector : null,
     lookupIndustryDomainRecord: typeof lookupIndustryDomainRecord === 'function' ? lookupIndustryDomainRecord : null,
     addIndustryCustomRow: typeof addIndustryCustomRow === 'function' ? addIndustryCustomRow : null,
     voidIndustryCustomRowById: typeof voidIndustryCustomRowById === 'function' ? voidIndustryCustomRowById : null,

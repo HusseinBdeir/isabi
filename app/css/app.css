@@ -34710,6 +34710,207 @@ video::-webkit-media-controls-start-playback-button {
   }
 }
 
+/* 360° Record Inspector — 1-Tap Counterparty Brief, WhatsApp Drafts & Spoken Review */
+.insp-ai-act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  background: #FAF8F4 !important;
+  border: 1px solid #DFDAD0 !important;
+  color: #1F1C18 !important;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.insp-ai-act-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: #9A6B1F;
+}
+.insp-ai-act-btn:hover {
+  background: #F5EFE2 !important;
+  border-color: rgba(184, 136, 59, 0.52) !important;
+  color: #1F1C18 !important;
+}
+.insp-explain-btn.is-open,
+.insp-explain-btn.active,
+.insp-listen-btn.is-speaking,
+.insp-listen-btn.is-loading {
+  background: #FAF3E3 !important;
+  border-color: rgba(184, 136, 59, 0.65) !important;
+  color: #7A5012 !important;
+  font-weight: 700;
+}
+:root[data-theme="dark"] .insp-ai-act-btn {
+  background: #13223E !important;
+  border-color: #263B63 !important;
+  color: #E2E8F0 !important;
+}
+:root[data-theme="dark"] .insp-ai-act-btn svg {
+  color: #F3C36F;
+}
+:root[data-theme="dark"] .insp-ai-act-btn:hover {
+  background: #1B2F52 !important;
+  border-color: rgba(217, 165, 74, 0.48) !important;
+  color: #F8FAFC !important;
+}
+:root[data-theme="dark"] .insp-explain-btn.is-open,
+:root[data-theme="dark"] .insp-explain-btn.active,
+:root[data-theme="dark"] .insp-listen-btn.is-speaking,
+:root[data-theme="dark"] .insp-listen-btn.is-loading {
+  background: rgba(217, 165, 74, 0.18) !important;
+  border-color: rgba(217, 165, 74, 0.55) !important;
+  color: #FDE68A !important;
+}
+
+.insp-brief-popover {
+  z-index: 2650;
+  max-width: min(488px, calc(100vw - 20px));
+}
+.insp-brief-popover .ceo-pv-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.insp-brief-popover .ceo-pv-kpi .ceo-pv-v {
+  font-size: 12.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insp-brief-popover .ceo-pv-kpi .ceo-pv-d {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.insp-pv-draft-wrap {
+  margin: 0 12px 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #FAF8F4;
+  border: 1px solid #E5DFD2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+:root[data-theme="dark"] .insp-pv-draft-wrap {
+  background: #0F1D35;
+  border-color: #24385E;
+}
+.insp-pv-draft-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.insp-pv-draft-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #6B5B45;
+}
+:root[data-theme="dark"] .insp-pv-draft-lbl {
+  color: #F3C36F;
+}
+.insp-pv-draft-langs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #FFFFFF;
+  border: 1px solid #DFDAD0;
+  border-radius: 999px;
+  padding: 1.5px;
+}
+:root[data-theme="dark"] .insp-pv-draft-langs {
+  background: #13223E;
+  border-color: #263B63;
+}
+.insp-pv-dlang-btn {
+  border: none;
+  background: transparent;
+  color: #57534E;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.25;
+}
+:root[data-theme="dark"] .insp-pv-dlang-btn {
+  color: #CBD5E1;
+}
+.insp-pv-dlang-btn.active {
+  background: #FAF3E3;
+  color: #7A5012;
+  box-shadow: inset 0 0 0 1px rgba(184, 136, 59, 0.5);
+}
+:root[data-theme="dark"] .insp-pv-dlang-btn.active {
+  background: rgba(217, 165, 74, 0.22);
+  color: #FDE68A;
+}
+.insp-pv-draft-ta {
+  width: 100%;
+  min-height: 54px;
+  max-height: 98px;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid #DFDAD0;
+  background: #FFFFFF;
+  color: #1F1C18;
+  font-family: inherit;
+  font-size: 11.4px;
+  line-height: 1.42;
+  padding: 5px 7px;
+}
+:root[data-theme="dark"] .insp-pv-draft-ta {
+  background: #0B1629;
+  border-color: #263B63;
+  color: #F1F5F9;
+}
+.insp-pv-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.insp-pv-foot .ceo-pv-btn {
+  padding: 5px 8.5px;
+  font-size: 11px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.insp-pv-foot .ceo-pv-btn svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.insp-pv-foot .ceo-pv-btn.is-copied {
+  background: rgba(31, 122, 76, 0.1);
+  border-color: rgba(31, 122, 76, 0.42);
+  color: #166534;
+}
+:root[data-theme="dark"] .insp-pv-foot .ceo-pv-btn.is-copied {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #86EFAC;
+}
+@media (max-width: 640px) {
+  .insp-brief-popover .ceo-pv-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 768px) {
+  .insp-pv-draft-ta {
+    font-size: 16px !important;
+  }
+}
+
+
 
 
 
