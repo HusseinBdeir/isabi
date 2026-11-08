@@ -79,6 +79,11 @@
     stmtPopoverAnchor: null,
     stmtVarianceCache: new Map(),
     stmtVarianceInflight: new Map(),
+    activePbiSummaryScope: '',
+    pbiPopoverOpen: false,
+    pbiPopoverAnchor: null,
+    pbiVarianceCache: new Map(),
+    pbiVarianceInflight: new Map(),
     lastSpokenText: '',
     playbackRate: (function () {
       try {
@@ -4094,7 +4099,13 @@
       'Copy Note': 'نسخ المذكرة',
       'Copied!': 'تم النسخ!',
       'WhatsApp': 'واتساب',
-      'Remove from print': 'إزالة من الطباعة'
+      'Remove from print': 'إزالة من الطباعة',
+      'Explain active dashboard KPIs, top-3 concentration & outliers': 'تفسير مؤشرات اللوحة وتركز أعلى 3 محركات والحالات الشاذة',
+      'Listen to spoken walkthrough of active dashboard': 'الاستماع إلى شرح صوتي للوحة التحليلية النشطة',
+      'Dashboard Variance & Outlier Brief': 'ملخص تباين اللوحة والتركز التشغيلي',
+      'AI Outlier Brief': 'تحليل التركز الذكي',
+      'Open Hub': 'فتح المركز التشغيلي',
+      'Copy Brief': 'نسخ الملخص'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4129,23 +4140,29 @@
       'Copy Note': 'Copier la note',
       'Copied!': 'Copié !',
       'WhatsApp': 'WhatsApp',
-      'Remove from print': "Retirer de l'impression"
+      'Remove from print': "Retirer de l'impression",
+      'Explain active dashboard KPIs, top-3 concentration & outliers': 'Expliquer les indicateurs, la concentration Top 3 et les écarts du tableau',
+      'Listen to spoken walkthrough of active dashboard': 'Écouter la synthèse vocale du tableau analytique actif',
+      'Dashboard Variance & Outlier Brief': 'Synthèse des écarts et de la concentration',
+      'AI Outlier Brief': 'Synthèse IA des écarts',
+      'Open Hub': 'Ouvrir le module',
+      'Copy Brief': 'Copier la synthèse'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
@@ -4153,16 +4170,17 @@
     ensureDailyBriefingI18nRegistered();
     const isPeriodBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-ceo-period-summary'));
     const isStmtBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-stmt-summary'));
+    const isPbiBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-pbi-summary'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = isStmtBtn
+    const enLabel = (isStmtBtn || isPbiBtn)
       ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
       : (isPeriodBtn
         ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
         : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
-    const lblCls = isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl');
+    const lblCls = isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl'));
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4172,6 +4190,27 @@
     }
     syncCeoPopoverAudioButton();
     syncStmtPopoverAudioButton();
+    syncPbiPopoverAudioButton();
+  }
+
+  function syncPbiPopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('pbiVariancePopover');
+    if (!pop) return;
+    const spkBtn = pop.querySelector('[data-pbi-pv-speak]');
+    if (!spkBtn) return;
+    const isPbiActive = Boolean(
+      _chatState.activePbiSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-pbi-summary'))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const enLbl = isPbiActive ? 'Stop Summary' : 'Replay Summary';
+    const ico = isPbiActive ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    spkBtn.classList.toggle('is-speaking', isPbiActive);
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+    }
   }
 
   function syncStmtPopoverAudioButton() {
@@ -4245,6 +4284,7 @@
         !_chatState.activeBriefingScope &&
         !_chatState.activePeriodSummaryScope &&
         !_chatState.activeStmtSummaryScope &&
+        !_chatState.activePbiSummaryScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4262,6 +4302,7 @@
     syncVoiceModeDeckUi();
     syncCeoPopoverAudioButton();
     syncStmtPopoverAudioButton();
+    syncPbiPopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4272,6 +4313,7 @@
     _chatState.activeBriefingScope = '';
     _chatState.activePeriodSummaryScope = '';
     _chatState.activeStmtSummaryScope = '';
+    _chatState.activePbiSummaryScope = '';
     if (_chatState.activeSpeakBtn) {
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
@@ -4971,6 +5013,7 @@
         _chatState.activeBriefingScope = '';
         _chatState.activePeriodSummaryScope = '';
         _chatState.activeStmtSummaryScope = '';
+        _chatState.activePbiSummaryScope = '';
         _chatState.lastSpokenText = '';
         _chatState.activeSpeakCaption = '';
         _chatState.activeAudioPaused = false;
@@ -5010,8 +5053,21 @@
     if (!promptText) return '';
     const cacheKey = `${lang}|${promptText}`;
     if (_chatState.ttsAudioCache.has(cacheKey)) {
-      return _chatState.ttsAudioCache.get(cacheKey);
+      const hit = _chatState.ttsAudioCache.get(cacheKey);
+      _chatState.ttsAudioCache.delete(cacheKey);
+      _chatState.ttsAudioCache.set(cacheKey, hit);
+      return hit;
     }
+    const evictOldestTtsBlobIfNeeded = () => {
+      while (_chatState.ttsAudioCache.size >= 24) {
+        const oldest = _chatState.ttsAudioCache.keys().next().value;
+        const oldUrl = _chatState.ttsAudioCache.get(oldest);
+        _chatState.ttsAudioCache.delete(oldest);
+        if (oldUrl && String(oldUrl).startsWith('blob:') && (!_chatState.activeAudioEl || _chatState.activeAudioEl.src !== oldUrl)) {
+          try { URL.revokeObjectURL(oldUrl); } catch (_) {}
+        }
+      }
+    };
     const voiceName = lang === 'ar' ? 'Charon' : (lang === 'fr' ? 'Aoede' : 'Kore');
 
     // 1. Local / Cloudflare Edge API Server (./api/tts)
@@ -5029,10 +5085,7 @@
           const jL = await rLocal.json();
           if (jL && jL.ok && jL.audioBase64) {
             const url = base64ToBlobUrl(jL.audioBase64, jL.mimeType || 'audio/wav');
-            if (_chatState.ttsAudioCache.size >= 24) {
-              const oldest = _chatState.ttsAudioCache.keys().next().value;
-              _chatState.ttsAudioCache.delete(oldest);
-            }
+            evictOldestTtsBlobIfNeeded();
             _chatState.ttsAudioCache.set(cacheKey, url);
             return url;
           }
@@ -5068,10 +5121,7 @@
         const jC = await rCloud.json();
         if (jC && jC.ok && jC.mode === 'gemini_tts' && jC.audioBase64) {
           const url = base64ToBlobUrl(jC.audioBase64, jC.mimeType || 'audio/wav');
-          if (_chatState.ttsAudioCache.size >= 24) {
-            const oldest = _chatState.ttsAudioCache.keys().next().value;
-            _chatState.ttsAudioCache.delete(oldest);
-          }
+          evictOldestTtsBlobIfNeeded();
           _chatState.ttsAudioCache.set(cacheKey, url);
           return url;
         }
@@ -5173,6 +5223,8 @@
           _chatState.activeSpeakBtn = null;
           _chatState.activeBriefingScope = '';
           _chatState.activePeriodSummaryScope = '';
+          _chatState.activeStmtSummaryScope = '';
+          _chatState.activePbiSummaryScope = '';
           _chatState.lastSpokenText = '';
           _chatState.activeSpeakCaption = '';
           _chatState.activeAudioPaused = false;
@@ -5990,6 +6042,8 @@
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
           if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          const locCtrl = new AbortController();
+          const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
             const rLoc = await fetch(`${base}/api/ask`, {
               method: 'POST',
@@ -5999,7 +6053,8 @@
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
-              })
+              }),
+              signal: locCtrl.signal
             });
             if (rLoc.ok) {
               const jLoc = await rLoc.json();
@@ -6014,6 +6069,8 @@
             }
           } catch (eLoc) {
             debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          } finally {
+            clearTimeout(locTimer);
           }
         }
       }
@@ -6222,12 +6279,16 @@
       pop.style.left = '10px';
       pop.style.right = '10px';
       pop.style.width = 'auto';
-      pop.style.bottom = '12px';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
       pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 96px)';
+      pop.style.overflowY = 'auto';
       return;
     }
     pop.style.right = 'auto';
     pop.style.bottom = 'auto';
+    pop.style.maxHeight = '';
+    pop.style.overflowY = '';
     const rect = anchor.getBoundingClientRect();
     const popW = Math.min(440, vw - 24);
     pop.style.width = `${popW}px`;
@@ -6773,7 +6834,7 @@
     const scopeLine = `${s.companyLabel} | ${s.windowLabel}`;
     const kpiLine = (s.kpis || []).map(k => {
       const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
-      return `${lbl}: ${k.valStr}`;
+      return `${lbl}: ${_pbiKpiValLoc(k, s.lang)}`;
     }).join(' | ');
     const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeStmtCoverText(b, s.canViewBooks)}`).join('\n');
     return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
@@ -6864,6 +6925,8 @@
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
           if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          const locCtrl = new AbortController();
+          const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
             const rLoc = await fetch(`${base}/api/ask`, {
               method: 'POST',
@@ -6873,7 +6936,8 @@
                 systemPrompt: sysPrompt,
                 userPrompt: usrPrompt,
                 geminiContents
-              })
+              }),
+              signal: locCtrl.signal
             });
             if (rLoc.ok) {
               const jLoc = await rLoc.json();
@@ -6888,6 +6952,8 @@
             }
           } catch (eLoc) {
             debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          } finally {
+            clearTimeout(locTimer);
           }
         }
       }
@@ -7100,12 +7166,16 @@
       pop.style.left = '10px';
       pop.style.right = '10px';
       pop.style.width = 'auto';
-      pop.style.bottom = '12px';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
       pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 96px)';
+      pop.style.overflowY = 'auto';
       return;
     }
     pop.style.right = 'auto';
     pop.style.bottom = 'auto';
+    pop.style.maxHeight = '';
+    pop.style.overflowY = '';
     const rect = anchor.getBoundingClientRect();
     const popW = Math.min(472, vw - 24);
     pop.style.width = `${popW}px`;
@@ -7401,6 +7471,832 @@
     }
     if (_chatState.stmtPopoverOpen) {
       closeStatementVariancePopover();
+    }
+  }
+
+  // ============================================================================
+  // DASHBOARD VARIANCE, OUTLIER CONCENTRATION & READBACK (ALL 42 #pbi PAGES)
+  // ============================================================================
+  function sanitizePbiBriefText(raw, canViewBooks) {
+    return sanitizeStmtCoverText(raw, canViewBooks);
+  }
+
+  function _pbiKpiValLoc(item, lang) {
+    if (!item) return '$0';
+    if (lang === 'ar') return item.valStrAr || item.valStr || '$0';
+    if (lang === 'fr') return item.valStrFr || item.valStr || '$0';
+    return item.valStr || '$0';
+  }
+
+  function buildDashboardDeterministicBullets(snap, lang) {
+    const k = Array.isArray(snap.kpis) ? snap.kpis : [];
+    const k0 = k[0] || { labelEn: 'Primary KPI', labelAr: 'المؤشر الرئيسي', labelFr: 'Indicateur clé', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+    const k1 = k[1] || { labelEn: 'Secondary KPI', labelAr: 'المؤشر الثاني', labelFr: 'Indicateur secondaire', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+    const k2 = k[2] || { labelEn: 'Margin / Volume', labelAr: 'الهامش أو الحجم', labelFr: 'Marge ou volume', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+    const k3 = k[3] || { labelEn: 'Control Metric', labelAr: 'مؤشر الرقابة', labelFr: 'Contrôle', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+    const v0 = _pbiKpiValLoc(k0, lang);
+    const v1 = _pbiKpiValLoc(k1, lang);
+    const v2 = _pbiKpiValLoc(k2, lang);
+    const v3 = _pbiKpiValLoc(k3, lang);
+
+    const co = lang === 'ar' ? (snap.companyAr || snap.companyShort) : (lang === 'fr' ? (snap.companyFr || snap.companyShort) : snap.companyShort);
+    const win = lang === 'ar' ? snap.windowLabelAr : (lang === 'fr' ? snap.windowLabelFr : snap.windowLabelEn);
+    const slTxt = lang === 'ar' ? snap.slicerSummaryAr : (lang === 'fr' ? snap.slicerSummaryFr : snap.slicerSummaryEn);
+    const pageTitle = lang === 'ar' ? (snap.pageAr || snap.pageLabel) : (lang === 'fr' ? (snap.pageFr || snap.pageLabel) : snap.pageLabel);
+    const top = snap.topConcentration || { count: 0, top1Name: '', top1Pct: 0, top3Pct: 0, dimEn: 'items', dimAr: 'عناصر', dimFr: 'éléments' };
+    const top1Loc = lang === 'ar' ? (top.top1NameAr || top.top1Name) : (lang === 'fr' ? (top.top1NameFr || top.top1Name) : top.top1Name);
+    const tie = snap.canViewBooks ? snap.tieCheck : null;
+
+    let rawBullets = [];
+    if (lang === 'ar') {
+      const scopeDesc = slTxt ? `${win}، فلاتر: ${slTxt}` : win;
+      rawBullets.push(
+        `تعرض لوحة ${pageTitle} لدى ${co} (${scopeDesc}) ${k0.labelAr} بقيمة ${v0} و${k1.labelAr} بقيمة ${v1}.`
+      );
+      if (top && top.count > 0 && top1Loc) {
+        rawBullets.push(
+          `تركز المحركات: يتصدر ${top1Loc} بنسبة ${top.top1Pct}% بينما يستحوذ أعلى 3 من ${top.dimAr || 'المحركات'} على ${top.top3Pct}% إجمالاً، ويبلغ ${k2.labelAr} ${v2}.`
+        );
+      } else {
+        rawBullets.push(
+          `يسجل ${k2.labelAr} ${v2}${k2.subAr ? ` (${k2.subAr})` : ''}، بينما يبلغ ${k3.labelAr} ${v3}.`
+        );
+      }
+      if (tie) {
+        rawBullets.push(
+          tie.balanced
+            ? `المطابقة المحاسبية: ${tie.labelAr} متوازن بالكامل بفارق صفر ($0.00)، ويستقر ${k3.labelAr} عند ${v3}.`
+            : `المطابقة المحاسبية: يسجل ${tie.labelAr} فارقاً بقيمة $${Number(tie.varianceUsd || 0).toFixed(2)} للمراجعة مع ${k3.labelAr} عند ${v3}.`
+        );
+      } else {
+        rawBullets.push(
+          `الرقابة التشغيلية: يستقر ${k3.labelAr} عند ${v3}${k3.subAr ? ` (${k3.subAr})` : ''} مع جاهزية السجلات الميدانية.`
+        );
+      }
+    } else if (lang === 'fr') {
+      const scopeDesc = slTxt ? `${win}, filtres : ${slTxt}` : win;
+      rawBullets.push(
+        `Le tableau ${pageTitle} pour ${co} (${scopeDesc}) affiche ${k0.labelFr} à ${v0} et ${k1.labelFr} à ${v1}.`
+      );
+      if (top && top.count > 0 && top1Loc) {
+        rawBullets.push(
+          `Concentration : ${top1Loc} représente ${top.top1Pct}% et le Top 3 concentre ${top.top3Pct}% sur ${top.count} ${top.dimFr || 'postes'}, avec ${k2.labelFr} à ${v2}.`
+        );
+      } else {
+        rawBullets.push(
+          `Le poste ${k2.labelFr} ressort à ${v2}${k2.subFr ? ` (${k2.subFr})` : ''}, tandis que ${k3.labelFr} s'établit à ${v3}.`
+        );
+      }
+      if (tie) {
+        rawBullets.push(
+          tie.balanced
+            ? `Rapprochement : ${tie.labelFr} équilibrée à $0.00 d'écart, et ${k3.labelFr} ressort à ${v3}.`
+            : `Rapprochement : ${tie.labelFr} présente un écart de $${Number(tie.varianceUsd || 0).toFixed(2)} à vérifier, avec ${k3.labelFr} à ${v3}.`
+        );
+      } else {
+        rawBullets.push(
+          `Contrôle opérationnel : ${k3.labelFr} s'établit à ${v3}${k3.subFr ? ` (${k3.subFr})` : ''} sur les registres vérifiés.`
+        );
+      }
+    } else {
+      const scopeDesc = slTxt ? `${win}, filters: ${slTxt}` : win;
+      rawBullets.push(
+        `${pageTitle} for ${co} (${scopeDesc}) reports ${k0.labelEn} at ${v0} and ${k1.labelEn} at ${v1}.`
+      );
+      if (top && top.count > 0 && top1Loc) {
+        rawBullets.push(
+          `Concentration check: ${top1Loc} leads at ${top.top1Pct}% while the top 3 ${top.dimEn || 'drivers'} account for ${top.top3Pct}% across ${top.count} active entries, with ${k2.labelEn} at ${v2}.`
+        );
+      } else {
+        rawBullets.push(
+          `${k2.labelEn} stands at ${v2}${k2.subEn ? ` (${k2.subEn})` : ''}, while ${k3.labelEn} is ${v3}.`
+        );
+      }
+      if (tie) {
+        rawBullets.push(
+          tie.balanced
+            ? `Ledger control: ${tie.labelEn} ties with a verified $0.00 variance, and ${k3.labelEn} stands at ${v3}.`
+            : `Ledger control: ${tie.labelEn} shows a $${Number(tie.varianceUsd || 0).toFixed(2)} variance for review, with ${k3.labelEn} at ${v3}.`
+        );
+      } else {
+        rawBullets.push(
+          `Operational posture: ${k3.labelEn} stands at ${v3}${k3.subEn ? ` (${k3.subEn})` : ''} across verified field registers.`
+        );
+      }
+    }
+
+    return rawBullets.map(b => sanitizePbiBriefText(b, snap.canViewBooks));
+  }
+
+  function buildDashboardSummary(langOverride, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const safeLang = resolveActiveBriefingLang(langOverride || options.lang);
+    const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const canViewBooks = options.canViewBooks !== undefined
+      ? Boolean(options.canViewBooks)
+      : Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+
+    const activeInd = options.industry
+      || ((_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(_ctx.STATE && _ctx.STATE.company) : 'Manufacturing')
+      || 'Manufacturing';
+
+    let snap = null;
+    if (activeInd === 'Manufacturing' && typeof window !== 'undefined' && window.MFG_PBI && typeof window.MFG_PBI.computeDashboardSnapshot === 'function') {
+      snap = window.MFG_PBI.computeDashboardSnapshot(_ctx, Object.assign({
+        STATE: _ctx && _ctx.STATE,
+        SEED: _ctx && _ctx.SEED,
+        canViewBooks
+      }, options));
+    } else if (activeInd !== 'Manufacturing' && _ctx && typeof _ctx.computeIndustryDashboardSnapshot === 'function') {
+      snap = _ctx.computeIndustryDashboardSnapshot(activeInd, Object.assign({ canViewBooks }, options));
+    }
+
+    if (!snap) {
+      snap = {
+        industry: activeInd,
+        coKey: (_ctx && _ctx.STATE && _ctx.STATE.company) || 'ALL',
+        companyShort: 'Manufacturing Group',
+        companyAr: 'مجموعة التصنيع',
+        companyFr: 'Groupe Industrie',
+        pageId: 'p01_overview',
+        pageNum: '01',
+        pageLabel: 'Executive Pulse',
+        pageAr: 'النبض التنفيذي',
+        pageFr: 'Synthèse exécutive',
+        pageGroup: 'Executive',
+        targetView: 'overview',
+        windowLabelEn: 'All Periods',
+        windowLabelAr: 'كافة الفترات',
+        windowLabelFr: 'Toutes périodes',
+        slicerSummaryEn: '',
+        slicerSummaryAr: '',
+        slicerSummaryFr: '',
+        scopeKey: `pbi|${activeInd}|p01_overview`,
+        canViewBooks,
+        tieCheck: null,
+        topConcentration: { count: 0, top1Name: '', top1Pct: 0, top3Pct: 0 },
+        kpis: [],
+        facts: {}
+      };
+    }
+
+    const pageTitleLoc = safeLang === 'ar'
+      ? (snap.pageAr || snap.pageLabel)
+      : (safeLang === 'fr' ? (snap.pageFr || snap.pageLabel) : snap.pageLabel);
+    const headerTitle = safeLang === 'ar'
+      ? `الصفحة ${snap.pageNum}: ${pageTitleLoc}`
+      : (safeLang === 'fr'
+          ? `Page ${snap.pageNum} : ${pageTitleLoc}`
+          : `Page ${snap.pageNum}: ${pageTitleLoc}`);
+    const coDisplay = safeLang === 'ar'
+      ? (snap.companyAr || snap.companyShort)
+      : (safeLang === 'fr' ? (snap.companyFr || snap.companyShort) : snap.companyShort);
+    const baseWin = safeLang === 'ar' ? snap.windowLabelAr : (safeLang === 'fr' ? snap.windowLabelFr : snap.windowLabelEn);
+    const slLoc = safeLang === 'ar' ? snap.slicerSummaryAr : (safeLang === 'fr' ? snap.slicerSummaryFr : snap.slicerSummaryEn);
+    const winDisplay = slLoc ? `${baseWin} · ${slLoc}` : baseWin;
+    const windowSubtitle = `${headerTitle} · ${coDisplay} · ${winDisplay}`;
+
+    const detBullets = buildDashboardDeterministicBullets(snap, safeLang);
+    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cachedAi = _chatState.pbiVarianceCache.get(cacheKey);
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets
+      : detBullets;
+
+    const spokenLead = safeLang === 'ar'
+      ? `ملخص اللوحة التحليلية ${pageTitleLoc} لدى ${coDisplay}.`
+      : (safeLang === 'fr'
+          ? `Synthèse du tableau ${pageTitleLoc} pour ${coDisplay}.`
+          : `Dashboard walkthrough for ${pageTitleLoc}, ${coDisplay}.`);
+    const text = cleanOut([spokenLead, ...activeBullets].join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      industry: snap.industry,
+      company: snap.coKey,
+      companyLabel: coDisplay,
+      pageId: snap.pageId,
+      pageNum: snap.pageNum,
+      pageLabel: snap.pageLabel,
+      pageAr: snap.pageAr,
+      pageFr: snap.pageFr,
+      targetView: snap.targetView || 'overview',
+      headerTitle,
+      windowLabel: winDisplay,
+      slicerSummary: slLoc || '',
+      windowSubtitle,
+      canViewBooks: snap.canViewBooks,
+      tieCheck: snap.canViewBooks ? snap.tieCheck : null,
+      topConcentration: snap.topConcentration,
+      kpis: snap.kpis,
+      facts: snap.facts,
+      bullets: detBullets,
+      activeBullets,
+      isAiSource: Boolean(cachedAi && cachedAi.source === 'gemini'),
+      text
+    };
+  }
+
+  function formatDashboardBriefPlainText(sum, bulletsOverride) {
+    const s = sum || buildDashboardSummary();
+    const bullets = Array.isArray(bulletsOverride) && bulletsOverride.length ? bulletsOverride : (s.activeBullets || s.bullets || []);
+    const hdr = s.lang === 'ar'
+      ? `ملخص اللوحة التحليلية - ${s.headerTitle}`
+      : (s.lang === 'fr'
+          ? `Synthèse du tableau - ${s.headerTitle}`
+          : `Dashboard Outlier Brief - ${s.headerTitle}`);
+    const scopeLine = `${s.companyLabel} | ${s.windowLabel}`;
+    const kpiLine = (s.kpis || []).map(k => {
+      const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
+      return `${lbl}: ${_pbiKpiValLoc(k, s.lang)}`;
+    }).join(' | ');
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizePbiBriefText(b, s.canViewBooks)}`).join('\n');
+    return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
+  }
+
+  async function requestDashboardVarianceCommentary(detSum, opts = {}) {
+    const sum = detSum || buildDashboardSummary(opts.lang, opts);
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    if (!opts.force && _chatState.pbiVarianceCache.has(cacheKey)) {
+      return _chatState.pbiVarianceCache.get(cacheKey);
+    }
+    if (!opts.force && _chatState.pbiVarianceInflight.has(cacheKey)) {
+      return _chatState.pbiVarianceInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese executive business phrasing)'
+      : (sum.lang === 'fr' ? 'French' : 'English');
+
+    const groundedPayload = {
+      dashboardPage: `Page ${sum.pageNum}: ${sum.pageLabel}`,
+      industry: sum.industry,
+      company: sum.companyLabel,
+      reportingWindow: sum.windowLabel,
+      activeSlicers: sum.slicerSummary || 'None',
+      currency: 'USD',
+      topConcentration: sum.topConcentration && sum.topConcentration.count > 0 ? {
+        dimension: sum.topConcentration.dimEn,
+        activeCount: sum.topConcentration.count,
+        top1Name: sum.topConcentration.top1Name,
+        top1SharePct: sum.topConcentration.top1Pct,
+        top3Names: sum.topConcentration.top3Names,
+        top3SharePct: sum.topConcentration.top3Pct
+      } : undefined,
+      tieStatus: (sum.canViewBooks && sum.tieCheck) ? sum.tieCheck : undefined,
+      kpis: (sum.kpis || []).map(k => ({ label: k.labelEn, value: k.valStr, detail: k.subEn })),
+      dashboardFacts: sum.facts
+    };
+
+    const sysPrompt = [
+      'You are an executive CFO and Operational Analytics Advisor inside ISABI Command Center.',
+      `Write all bullet text strictly in ${langName}.`,
+      'Return ONLY valid JSON with the exact English property name "bullets" containing EXACTLY 3 separate string items: {"bullets":["sentence 1","sentence 2","sentence 3"]}. Never combine them into a single string, and do NOT rename the JSON key "bullets".',
+      'Rules:',
+      '1. Every dollar figure, percentage, entity/customer name, and count MUST come verbatim from the supplied JSON payload. Never invent or recompute numbers.',
+      '2. Bullet 1 summarizes the headline dashboard KPIs and active reporting/slicer scope.',
+      '3. Bullet 2 highlights Top-1 / Top-3 concentration share, margin dispersion, or primary operational driver.',
+      sum.canViewBooks
+        ? '4. Bullet 3 states ledger tie posture (cite $0.00 variance when tieStatus.balanced is true) or concrete management follow-up.'
+        : '4. Bullet 3 states operational control posture and field action (never mention cash till, bank balances, receivables, or restricted payables).',
+      '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, Power BI, or internal system names.'
+    ].join('\n');
+    const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate executive dashboard outlier/concentration bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
+
+    const runPromise = (async () => {
+      let rawReply = '';
+      let debugNote = '';
+      let usedModel = 'gemini-3.5-flash-lite';
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+      if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          const locCtrl = new AbortController();
+          const locTimer = setTimeout(() => locCtrl.abort(), 8000);
+          try {
+            const rLoc = await fetch(`${base}/api/ask`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents
+              }),
+              signal: locCtrl.signal
+            });
+            if (rLoc.ok) {
+              const jLoc = await rLoc.json();
+              if (jLoc && jLoc.ok && jLoc.rawReply) {
+                rawReply = String(jLoc.rawReply);
+                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+              } else if (jLoc) {
+                debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
+              }
+            } else {
+              debugNote = `loc_http_${rLoc.status}`;
+            }
+          } catch (eLoc) {
+            debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          } finally {
+            clearTimeout(locTimer);
+          }
+        }
+      }
+
+      if (!rawReply) {
+        const askCfg = window.MFG_ASK_CFG || {};
+        let flowUrl = '';
+        let flowKey = '';
+        try {
+          if (askCfg.u && askCfg.k) {
+            flowUrl = atob(askCfg.u);
+            flowKey = atob(askCfg.k);
+          }
+        } catch (_) {}
+        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 10000);
+          try {
+            const rCloud = await fetch(flowUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+              body: JSON.stringify({
+                key: flowKey,
+                op: 'ask',
+                surface: 'command_center',
+                q: `Dashboard ${sum.pageNum} ${sum.pageLabel} Outlier Brief`,
+                lang: sum.lang,
+                industry: sum.companyLabel,
+                currency: 'USD',
+                period: sum.windowLabel,
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents,
+                messages: [
+                  { role: 'system', content: sysPrompt },
+                  { role: 'user', content: usrPrompt }
+                ]
+              }),
+              signal: ctrl.signal
+            });
+            clearTimeout(timer);
+            if (rCloud.ok) {
+              const jCloud = await rCloud.json();
+              if (jCloud && jCloud.rawReply) {
+                rawReply = String(jCloud.rawReply);
+                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
+              }
+            }
+          } catch (_) {
+            clearTimeout(timer);
+          }
+        }
+      }
+
+      if (rawReply) {
+        try {
+          const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (_) {
+            const merged = [];
+            const objRe = /\{[^{}]*"bullets"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+            let m;
+            while ((m = objRe.exec(cleaned)) !== null) {
+              try {
+                const sub = JSON.parse(m[0]);
+                if (sub && Array.isArray(sub.bullets)) merged.push(...sub.bullets);
+              } catch (_2) {}
+            }
+            if (merged.length) {
+              parsed = { bullets: merged };
+            } else {
+              const fb = cleaned.indexOf('{');
+              let depth = 0, inStr = false, escCh = false, endIdx = -1;
+              for (let i = fb; fb >= 0 && i < cleaned.length; i++) {
+                const ch = cleaned[i];
+                if (escCh) { escCh = false; continue; }
+                if (ch === '\\') { escCh = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === '{') depth++;
+                  else if (ch === '}' && --depth === 0) { endIdx = i; break; }
+                }
+              }
+              if (fb >= 0 && endIdx > fb) parsed = JSON.parse(cleaned.slice(fb, endIdx + 1));
+            }
+          }
+          const rawBulletArr = Array.isArray(parsed && parsed.bullets)
+            ? parsed.bullets
+            : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
+          const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          let candBullets = Array.isArray(rawBulletArr)
+            ? rawBulletArr.map(b => sanitizePbiBriefText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            : [];
+          if (candBullets.length === 1 && candBullets[0].length >= 70) {
+            const splitParts = candBullets[0]
+              .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
+              .map(s => sanitizePbiBriefText(s, sum.canViewBooks))
+              .filter(s => s.length >= 12);
+            if (splitParts.length >= 2) candBullets = splitParts;
+          }
+          candBullets = candBullets.slice(0, 3);
+          if (candBullets.length >= 1 && candBullets.length < 3 && Array.isArray(sum.bullets)) {
+            for (let bi = candBullets.length; bi < 3 && bi < sum.bullets.length; bi++) {
+              candBullets.push(sum.bullets[bi]);
+            }
+          }
+          if (candBullets.length >= 2) {
+            const resObj = {
+              ok: true,
+              source: 'gemini',
+              model: usedModel,
+              lang: sum.lang,
+              scopeKey: sum.scopeKey,
+              bullets: candBullets
+            };
+            if (_chatState.pbiVarianceCache.size >= 32) {
+              const oldest = _chatState.pbiVarianceCache.keys().next().value;
+              _chatState.pbiVarianceCache.delete(oldest);
+            }
+            _chatState.pbiVarianceCache.set(cacheKey, resObj);
+            updateOpenPbiPopoverWithAi(resObj, sum);
+            return resObj;
+          }
+          debugNote = `short_bullets:${candBullets.length}:${rawReply.slice(0, 140)}`;
+        } catch (eParse) {
+          debugNote = `parse_err:${eParse && eParse.message ? eParse.message : ''}:${rawReply.slice(0, 140)}`;
+        }
+      }
+
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        note: debugNote,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    })().finally(() => {
+      _chatState.pbiVarianceInflight.delete(cacheKey);
+    });
+
+    _chatState.pbiVarianceInflight.set(cacheKey, runPromise);
+    return runPromise;
+  }
+
+  function updateOpenPbiPopoverWithAi(aiRes, baseSum) {
+    if (!aiRes || aiRes.source !== 'gemini' || typeof document === 'undefined') return;
+    const pop = document.getElementById('pbiVariancePopover');
+    if (!pop || pop.getAttribute('data-scope-key') !== aiRes.scopeKey || pop.getAttribute('data-lang') !== aiRes.lang) return;
+    const listEl = pop.querySelector('.ceo-pv-bullets');
+    if (listEl && Array.isArray(aiRes.bullets) && aiRes.bullets.length >= 2) {
+      listEl.innerHTML = aiRes.bullets.map(b => `<li>${esc(b)}</li>`).join('');
+    }
+    const badgeEl = pop.querySelector('.ceo-pv-badge');
+    if (badgeEl) {
+      badgeEl.classList.add('is-ai');
+      badgeEl.textContent = 'AI Outlier Brief';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
+    }
+    const waLink = pop.querySelector('[data-pbi-pv-wa]');
+    if (waLink) {
+      const plain = formatDashboardBriefPlainText(baseSum || buildDashboardSummary(aiRes.lang), aiRes.bullets);
+      waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(plain)}`);
+    }
+  }
+
+  let _pbiPopOutsideHandlerBound = false;
+  function ensurePbiPopoverGlobalDismiss() {
+    if (_pbiPopOutsideHandlerBound || typeof document === 'undefined') return;
+    _pbiPopOutsideHandlerBound = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.pbiPopoverOpen) return;
+      const pop = document.getElementById('pbiVariancePopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (
+        e.target.closest('[data-pbi-explain]') ||
+        e.target.closest('[data-pbi-summary]') ||
+        e.target.closest('.pbi-studio-hdr') ||
+        e.target.closest('#industryPbiStudio .pbi-page-tabs') ||
+        e.target.closest('#indPbiSlicerBar') ||
+        e.target.closest('.period-basis-row') ||
+        e.target.closest('#dateFacilitatorPopover') ||
+        e.target.closest('#companySwitch') ||
+        e.target.closest('#langSwitch')
+      )) return;
+      closeDashboardVariancePopover();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.pbiPopoverOpen) {
+        closeDashboardVariancePopover();
+      }
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.pbiPopoverOpen) positionDashboardVariancePopover();
+      });
+    }
+  }
+
+  function positionDashboardVariancePopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('pbiVariancePopover');
+    if (!pop) return;
+    const anchor = _chatState.pbiPopoverAnchor
+      || document.getElementById('pbiExplainOutliersBtn')
+      || document.getElementById('pbiListenSummaryBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 96px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = '';
+    pop.style.overflowY = '';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(476, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 284, vh - 24);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 52) {
+      top = rect.top - popH - 8;
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  function openDashboardVariancePopover(anchorEl, prebuiltSummary) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensurePbiPopoverGlobalDismiss();
+    const sum = prebuiltSummary || buildDashboardSummary();
+    const activeBullets = sum.activeBullets || sum.bullets || [];
+    const isAiSource = Boolean(sum.isAiSource);
+
+    let pop = document.getElementById('pbiVariancePopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'pbiVariancePopover';
+      pop.className = 'ceo-period-popover pbi-variance-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Dashboard Variance & Outlier Brief');
+      document.body.appendChild(pop);
+    }
+    _chatState.pbiPopoverOpen = true;
+    _chatState.pbiPopoverAnchor = anchorEl || document.getElementById('pbiExplainOutliersBtn') || document.getElementById('pbiListenSummaryBtn');
+    const expBtn = document.getElementById('pbiExplainOutliersBtn');
+    if (expBtn) {
+      expBtn.classList.add('is-open', 'active');
+      expBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    pop.setAttribute('data-scope-key', sum.scopeKey);
+    pop.setAttribute('data-page-id', sum.pageId);
+    pop.setAttribute('data-industry', sum.industry);
+    pop.setAttribute('data-lang', sum.lang);
+    pop.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(
+      _chatState.activePbiSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-pbi-summary'))
+    );
+    const speakBtnLbl = isSpeakingNow ? 'Stop Summary' : 'Replay Summary';
+    const speakBtnIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const sparkIco = icons ? icons.svg('sparkles') : AI_SVGS.audio;
+    const hubIco = icons ? icons.svg('overview') : '';
+    const copyIco = icons ? icons.svg('copy') : '';
+    const shareIco = icons ? icons.svg('send_msg') : '';
+    const plainBriefText = formatDashboardBriefPlainText(sum, activeBullets);
+    const waHref = `https://wa.me/?text=${encodeURIComponent(plainBriefText)}`;
+    const canOpenHub = Boolean(sum.targetView && (!_ctx || typeof _ctx.canViewView !== 'function' || _ctx.canViewView(sum.targetView)));
+
+    pop.innerHTML = `
+      <div class="ceo-pv-hdr">
+        <div class="ceo-pv-title-wrap">
+          <div class="ceo-pv-title-row">
+            <span class="ceo-pv-ico">${sparkIco}</span>
+            <strong class="ceo-pv-title">Dashboard Variance &amp; Outlier Brief</strong>
+            <span class="ceo-pv-badge${isAiSource ? ' is-ai' : ''}">${isAiSource ? 'AI Outlier Brief' : 'Deterministic Ledger'}</span>
+          </div>
+          <div class="ceo-pv-sub" data-no-i18n="1">${esc(sum.windowSubtitle)}</div>
+        </div>
+        <button type="button" class="ceo-pv-close" data-pbi-pv-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ceo-pv-kpis">
+        ${(sum.kpis || []).map(k => {
+          const lbl = sum.lang === 'ar' ? k.labelAr : (sum.lang === 'fr' ? k.labelFr : k.labelEn);
+          const sub = sum.lang === 'ar' ? k.subAr : (sum.lang === 'fr' ? k.subFr : k.subEn);
+          const valDisp = _pbiKpiValLoc(k, sum.lang);
+          const toneCls = (k.tone === 'pos' || k.tone === 'ok') ? 'good' : (k.tone === 'neg' ? 'warn' : '');
+          return `<div class="ceo-pv-kpi" data-no-i18n="1">
+            <span class="ceo-pv-k">${esc(lbl)}</span>
+            <strong class="ceo-pv-v num">${esc(valDisp)}</strong>
+            <small class="ceo-pv-d ${toneCls}">${esc(sub)}</small>
+          </div>`;
+        }).join('')}
+      </div>
+      <ul class="ceo-pv-bullets" data-no-i18n="1">
+        ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+      </ul>
+      <div class="ceo-pv-foot pbi-pv-foot">
+        <button type="button" class="ceo-pv-btn${isSpeakingNow ? ' is-speaking' : ''}" data-pbi-pv-speak="1">${speakBtnIco}<span>${esc(speakBtnLbl)}</span></button>
+        ${canOpenHub ? `<button type="button" class="ceo-pv-btn is-secondary" data-pbi-pv-hub="1">${hubIco}<span>Open Hub</span></button>` : ''}
+        <button type="button" class="ceo-pv-btn is-secondary" data-pbi-pv-copy="1">${copyIco}<span>Copy Brief</span></button>
+        <a class="ceo-pv-btn is-secondary pbi-pv-wa-link" data-pbi-pv-wa="1" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${shareIco}<span>WhatsApp</span></a>
+        <button type="button" class="ceo-pv-btn is-secondary" data-pbi-pv-ask="1"><span>Ask Follow-Up</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-pbi-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeDashboardVariancePopover();
+      });
+    }
+    const pvSpkBtn = pop.querySelector('[data-pbi-pv-speak]');
+    if (pvSpkBtn) {
+      pvSpkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const mainBtn = document.getElementById('pbiListenSummaryBtn');
+        speakDashboardSummary(mainBtn || null, sum.lang, { skipPopoverOpen: true });
+        syncPbiPopoverAudioButton();
+      });
+    }
+    const pvHubBtn = pop.querySelector('[data-pbi-pv-hub]');
+    if (pvHubBtn) {
+      pvHubBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const destView = sum.targetView || 'overview';
+        closeDashboardVariancePopover();
+        if (_ctx && typeof _ctx.setView === 'function' && (typeof _ctx.canViewView !== 'function' || _ctx.canViewView(destView))) {
+          _ctx.setView(destView);
+        }
+      });
+    }
+    const pvCopyBtn = pop.querySelector('[data-pbi-pv-copy]');
+    if (pvCopyBtn) {
+      pvCopyBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const latestSum = buildDashboardSummary(sum.lang);
+        const txt = formatDashboardBriefPlainText(latestSum, latestSum.activeBullets);
+        if (typeof window !== 'undefined') window.__LAST_COPIED_PBI_NOTE = txt;
+        let copied = false;
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            await navigator.clipboard.writeText(txt);
+            copied = true;
+          } catch (_) {}
+        }
+        if (!copied && typeof document !== 'undefined') {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (_) {}
+        }
+        pvCopyBtn.classList.add('is-copied');
+        pvCopyBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyBtn.isConnected) return;
+          pvCopyBtn.classList.remove('is-copied');
+          pvCopyBtn.innerHTML = `${copyIco}<span>Copy Brief</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+    const pvAskBtn = pop.querySelector('[data-pbi-pv-ask]');
+    if (pvAskBtn) {
+      pvAskBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeDashboardVariancePopover();
+        openDrawer();
+        const qPrompt = sum.lang === 'ar'
+          ? `اشرح محركات التركز والتباين في ${sum.headerTitle} لدى ${sum.companyLabel} (${sum.windowLabel})`
+          : (sum.lang === 'fr'
+              ? `Expliquez la concentration et les écarts sur la ${sum.headerTitle} pour ${sum.companyLabel} (${sum.windowLabel})`
+              : `Explain the top-3 concentration and variance drivers on ${sum.headerTitle} for ${sum.companyLabel} (${sum.windowLabel})`);
+        submitQuestion(qPrompt);
+      });
+    }
+
+    positionDashboardVariancePopover();
+    const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
+    if (!isAiSource && !skipBgAi) {
+      requestDashboardVarianceCommentary(sum).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closeDashboardVariancePopover() {
+    _chatState.pbiPopoverOpen = false;
+    _chatState.pbiPopoverAnchor = null;
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('pbiVariancePopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    const expBtn = document.getElementById('pbiExplainOutliersBtn');
+    if (expBtn) {
+      expBtn.classList.remove('is-open', 'active');
+      expBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleDashboardVariancePopover(anchorEl) {
+    if (_chatState.pbiPopoverOpen) {
+      closeDashboardVariancePopover();
+      return { open: false };
+    }
+    const sum = buildDashboardSummary();
+    openDashboardVariancePopover(anchorEl, sum);
+    return { open: true, summary: sum };
+  }
+
+  function speakDashboardSummary(btnEl, langOverride, opts = {}) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('pbiListenSummaryBtn') : null);
+    if (targetBtn && _chatState.activeSpeakBtn === targetBtn) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    if (!targetBtn && _chatState.activePbiSummaryScope) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const sum = buildDashboardSummary(langOverride, opts);
+    const ok = speakBotReply(sum.text, sum.lang, targetBtn || null);
+    if (ok) {
+      _chatState.activePbiSummaryScope = sum.scopeKey;
+      syncPbiPopoverAudioButton();
+    }
+    if (!opts.skipPopoverOpen) {
+      const expAnchor = (typeof document !== 'undefined' && document.getElementById('pbiExplainOutliersBtn')) || targetBtn;
+      openDashboardVariancePopover(expAnchor, sum);
+    }
+    return Object.assign({ ok }, sum);
+  }
+
+  function rebindDashboardSummaryButtons(listenBtnEl, explainBtnEl) {
+    ensureDailyBriefingI18nRegistered();
+    const sum = buildDashboardSummary();
+    if (_chatState.activePbiSummaryScope) {
+      if (_chatState.activePbiSummaryScope !== sum.scopeKey) {
+        stopActivePlayback();
+      } else if (listenBtnEl) {
+        _chatState.activeSpeakBtn = listenBtnEl;
+        applyBriefingButtonDomState(listenBtnEl, _chatState.activeSpeakCtrl ? 'loading' : 'speaking');
+      }
+    }
+    if (_chatState.pbiPopoverOpen) {
+      _chatState.pbiPopoverAnchor = explainBtnEl || listenBtnEl || null;
+      openDashboardVariancePopover(_chatState.pbiPopoverAnchor, sum);
+    }
+  }
+
+  function stopDashboardSummaryIfActive() {
+    if (_chatState.activePbiSummaryScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-pbi-summary'))) {
+      stopActivePlayback();
+    }
+    if (_chatState.pbiPopoverOpen) {
+      closeDashboardVariancePopover();
     }
   }
 
@@ -8875,7 +9771,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn'].forEach(id => {
+          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -8887,6 +9783,9 @@
         }
         if (_chatState.stmtPopoverOpen) {
           openStatementVariancePopover(_chatState.stmtPopoverAnchor, buildStatementSummary(curLang));
+        }
+        if (_chatState.pbiPopoverOpen) {
+          openDashboardVariancePopover(_chatState.pbiPopoverAnchor, buildDashboardSummary(curLang));
         }
         if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
           try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
@@ -8946,6 +9845,15 @@
     syncStatementSummaryOnChange,
     rebindStatementSummaryButtons,
     stopStatementSummaryIfActive,
+    buildDashboardSummary,
+    speakDashboardSummary,
+    requestDashboardVariance: requestDashboardVarianceCommentary,
+    openDashboardVariance: openDashboardVariancePopover,
+    toggleDashboardVariance: toggleDashboardVariancePopover,
+    closeDashboardVariance: closeDashboardVariancePopover,
+    formatDashboardBrief: formatDashboardBriefPlainText,
+    rebindDashboardSummaryButtons,
+    stopDashboardSummaryIfActive,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
     rebindBriefingButton,
@@ -8963,6 +9871,8 @@
       periodPopoverOpen: Boolean(_chatState.periodPopoverOpen),
       stmtSummaryScope: _chatState.activeStmtSummaryScope || '',
       stmtPopoverOpen: Boolean(_chatState.stmtPopoverOpen),
+      pbiSummaryScope: _chatState.activePbiSummaryScope || '',
+      pbiPopoverOpen: Boolean(_chatState.pbiPopoverOpen),
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0

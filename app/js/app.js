@@ -51307,6 +51307,527 @@
     return uniq.sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0));
   }
 
+  const IND_PBI_LOCALE_MAP = {
+    industries: {
+      'Holding & Treasury': { ar: 'القابضة والخزينة المركزية', fr: 'Holding et Trésorerie' },
+      'Hospitality & Resorts': { ar: 'الضيافة والمنتجعات', fr: 'Hôtellerie et Resorts' },
+      'Automotive & Heavy Trading': { ar: 'تجارة الآليات والشاحنات', fr: 'Négoce Auto et Poids Lourds' },
+      'Real Estate & Property': { ar: 'العقارات وإدارة الأملاك', fr: 'Immobilier et Patrimoine' },
+      'Insurance & Brokerage': { ar: 'التأمين والوساطة', fr: 'Assurance et Courtage' }
+    },
+    pages: {
+      'Holding & Treasury::p01_overview': { ar: 'نبض المجموعة الموحد', fr: 'Performance Groupe' },
+      'Holding & Treasury::p02_interactions': { ar: 'ذمم الشركات الشقيقة والتسديد', fr: 'Flux inter-sociétés et remboursements' },
+      'Holding & Treasury::p03_partners': { ar: 'توزيعات حصص الشركاء', fr: 'Répartition des associés' },
+      'Holding & Treasury::p04_loans': { ar: 'التسهيلات الائتمانية ورأس المال', fr: 'Emprunts et capitaux' },
+      'Holding & Treasury::p05_expenses': { ar: 'نفقات الإدارة المركزية', fr: 'Frais généraux Holding' },
+      'Holding & Treasury::p06_financial': { ar: 'الأستاذ العام الموحد', fr: 'Grand livre consolidé' },
+      'Hospitality & Resorts::p01_overview': { ar: 'نبض المنتجعات الخمسة', fr: 'Synthèse des 5 Resorts' },
+      'Hospitality & Resorts::p02_revenue': { ar: 'نقاط البيع والشاليهات', fr: 'Caisses POS et chalets' },
+      'Hospitality & Resorts::p03_memberships': { ar: 'الاشتراكات الموسمية والشركاء', fr: 'Abonnements et quotes-parts' },
+      'Hospitality & Resorts::p04_stock': { ar: 'المطبخ والمستودع والقبو', fr: 'Cuisine, économat et cave' },
+      'Hospitality & Resorts::p05_energy': { ar: 'المولدات والطاقة الشمسية', fr: 'Générateurs et solaire' },
+      'Hospitality & Resorts::p06_financial': { ar: 'الربحية والكادر والأستاذ العام', fr: 'Résultat, paie et comptabilité' },
+      'Automotive & Heavy Trading::p01_overview': { ar: 'نبض التجارة والمبيعات', fr: 'Synthèse Négoce et Marques' },
+      'Automotive & Heavy Trading::p02_sales': { ar: 'الفوترة وذمم الزبائن', fr: 'Facturation et créances clients' },
+      'Automotive & Heavy Trading::p03_imports': { ar: 'الاستيراد والكلفة الواصلة', fr: 'Importations et coût rendu' },
+      'Automotive & Heavy Trading::p04_trucks': { ar: 'الشاحنات والآليات المتسلسلة', fr: 'Camions et châssis VIN' },
+      'Automotive & Heavy Trading::p05_stock': { ar: 'مخزون المستودعات الخمسة', fr: 'Stocks des 5 entrepôts' },
+      'Automotive & Heavy Trading::p06_financial': { ar: 'المطابقة والأستاذ العام', fr: 'Rapprochement et grand livre' },
+      'Real Estate & Property::p01_overview': { ar: 'نبض المحفظة العقارية', fr: 'Synthèse du portefeuille' },
+      'Real Estate & Property::p02_leases': { ar: 'عقود الإيجار وضريبة 4235', fr: 'Baux locatifs et TVA 4235' },
+      'Real Estate & Property::p03_sales': { ar: 'مبيعات العقارات والأقساط', fr: 'Ventes immobilières et échéances' },
+      'Real Estate & Property::p04_properties': { ar: 'الوحدات والأسهم العقارية (2400)', fr: 'Unités et quotes-parts (/2400)' },
+      'Real Estate & Property::p05_workorders': { ar: 'أوامر الصيانة والتجهيز', fr: 'Travaux et refacturations' },
+      'Real Estate & Property::p06_financial': { ar: 'توزيعات المالكين والأستاذ العام', fr: 'Distributions et grand livre' },
+      'Insurance & Brokerage::p01_overview': { ar: 'نبض محفظة التأمين', fr: 'Synthèse Courtage' },
+      'Insurance & Brokerage::p02_policies': { ar: 'البوالص والحسومات والعمولات', fr: 'Polices, remises et commissions' },
+      'Insurance & Brokerage::p03_renewals': { ar: 'استحقاقات التجديد خلال 90 يوماً', fr: 'Renouvellements à 90 jours' },
+      'Insurance & Brokerage::p04_billing': { ar: 'التحصيل ومطابقة شركات التأمين', fr: 'Encaissements et décomptes compagnies' },
+      'Insurance & Brokerage::p05_claims': { ar: 'المطالبات ومعدل الخسائر', fr: 'Sinistres et ratio de sinistralité' },
+      'Insurance & Brokerage::p06_catalogue': { ar: 'فروع التأمين واتفاقيات العمولات', fr: 'Branches et barèmes de commission' }
+    }
+  };
+
+  function cleanIndPbiOut(v) {
+    return String(v == null ? '' : v)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTTC\b/g, '')
+      .replace(/\bRDL[-_\s]?\d*\b/gi, '')
+      .replace(/\bZ-Read\b/gi, 'till close')
+      .replace(/\bTHEO\b/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function parseIndMetricNumber(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return NaN;
+    const mUsd = s.match(/([-+]?)\s*\$\s*([\d,]+(?:\.\d+)?)/);
+    if (mUsd) {
+      const sign = mUsd[1] === '-' || s.startsWith('-') ? -1 : 1;
+      return sign * parseFloat(mUsd[2].replace(/,/g, ''));
+    }
+    const cleaned = s.replace(/[,%\s]|(L\/hr|hrs?|L|d|x|Claims|Policies|Lines|Windows|Stores)\b/gi, '').replace(/\([^)]*\)/g, '').trim();
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(cleaned)) return parseFloat(cleaned);
+    return NaN;
+  }
+
+  function computeIndTop3Share(items, nameFn, valFn) {
+    const map = new Map();
+    const arr = Array.isArray(items) ? items : [];
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i];
+      if (!it) continue;
+      const rawName = cleanIndPbiOut(nameFn(it));
+      const v = Math.abs(Number(valFn(it) || 0));
+      if (!rawName || !(v > 0.005)) continue;
+      const k = norm(rawName);
+      const prev = map.get(k);
+      if (prev) prev.val += v;
+      else map.set(k, { name: rawName, val: v });
+    }
+    const ranked = Array.from(map.values()).sort((a, b) => b.val - a.val);
+    const totalVal = round2(ranked.reduce((s, x) => s + x.val, 0));
+    if (!ranked.length || !(totalVal > 0.005)) {
+      return { count: 0, totalVal: 0, top1Name: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0 };
+    }
+    const top1 = ranked[0];
+    const top3 = ranked.slice(0, 3);
+    const top3Val = round2(top3.reduce((s, x) => s + x.val, 0));
+    return {
+      count: ranked.length,
+      totalVal,
+      top1Name: top1.name,
+      top1Val: round2(top1.val),
+      top1Pct: Number(((top1.val / totalVal) * 100).toFixed(1)),
+      top3Names: top3.map(x => x.name),
+      top3Val,
+      top3Pct: Number(Math.min(100, (top3Val / totalVal) * 100).toFixed(1))
+    };
+  }
+
+  function computeIndustryDashboardSnapshot(indOverride, opts) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const rawStateCo = String(options.company || STATE.company || 'bdeirholding');
+    const ind = indOverride || options.industry || getActiveIndustry(rawStateCo) || 'Holding & Treasury';
+    const indDefaultScope = {
+      'Holding & Treasury': 'bdeirholding',
+      'Hospitality & Resorts': 'industry:hospitality',
+      'Automotive & Heavy Trading': 'industry:trading',
+      'Real Estate & Property': 'industry:realestate',
+      'Insurance & Brokerage': 'insurance'
+    };
+    const coMatchesInd = Boolean(options.company) ? (getActiveIndustry(rawStateCo) === ind || rawStateCo === indDefaultScope[ind]) : (getActiveIndustry(rawStateCo) === ind);
+    const coKey = coMatchesInd ? rawStateCo : (indDefaultScope[ind] || 'bdeirholding');
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    const canViewBooks = options.canViewBooks !== undefined
+      ? Boolean(options.canViewBooks)
+      : Boolean(canViewHub('cashflow', u) && canViewHub('books', u));
+    const indRestrictedBookPages = {
+      'Holding & Treasury': ['p02_interactions', 'p03_partners', 'p04_loans', 'p06_financial'],
+      'Hospitality & Resorts': ['p03_memberships', 'p06_financial'],
+      'Automotive & Heavy Trading': ['p02_sales', 'p06_financial'],
+      'Real Estate & Property': ['p06_financial'],
+      'Insurance & Brokerage': ['p04_billing']
+    };
+    const pages = INDUSTRY_PBI_PAGES_SPEC[ind] || INDUSTRY_PBI_PAGES_SPEC['Holding & Treasury'];
+    const restrictedIds = indRestrictedBookPages[ind] || [];
+    const booksAllowedPages = canViewBooks ? pages : pages.filter(p => !restrictedIds.includes(p.id));
+    const viewAllowedPages = (typeof canViewView === 'function' && options.canViewBooks === undefined)
+      ? booksAllowedPages.filter(p => !p.view || canViewView(p.view, u))
+      : booksAllowedPages;
+    const pagePool = viewAllowedPages.length ? viewAllowedPages : [pages[0]];
+    const reqPageId = String(options.pageId || (STATE.indPbiPageByInd && STATE.indPbiPageByInd[ind]) || pagePool[0].id);
+    const activePage = pagePool.find(p => p.id === reqPageId) || pagePool[0] || pages[0];
+    const activePageIdx = Math.max(0, pages.findIndex(p => p.id === activePage.id));
+    const pageKey = `${ind}::${activePage.id}`;
+    const pageLoc = IND_PBI_LOCALE_MAP.pages[pageKey] || { ar: activePage.label, fr: activePage.label };
+    const indLoc = IND_PBI_LOCALE_MAP.industries[ind] || { ar: ind, fr: ind };
+    const restrictedBooksRe = /cash till|cash\s*&\s*bank|physical cash|fiduciary cash|consolidated cash|\bbank\b|\bar\b|receivable|payable|\bdebt\b|\bloan\b|arrears|credit facilit|trial balance|\bdebit\b|\bcredit\b|given to sisters|paid back by sisters|partner|drawing|entitled share|distributable pool/i;
+
+    const trPhrase = (enStr, lang) => {
+      const raw = String(enStr == null ? '' : enStr).trim();
+      const cleaned = cleanIndPbiOut(raw);
+      if (!cleaned || lang === 'en') return cleaned;
+      const mCountUnit = cleaned.match(/^([\d,]+(?:\.\d+)?)\s+(Entities|Resorts|Units|Policies|Vehicles|Trucks|Leases|Claims|Agreements|Partners)$/i);
+      if (mCountUnit) {
+        const unitKey = mCountUnit[2].toLowerCase();
+        const unitMap = {
+          entities: { ar: 'شركة', fr: 'entités' },
+          resorts: { ar: 'منتجع', fr: 'complexes' },
+          units: { ar: 'وحدة', fr: 'unités' },
+          policies: { ar: 'بوليصة', fr: 'polices' },
+          vehicles: { ar: 'مركبة', fr: 'véhicules' },
+          trucks: { ar: 'شاحنة', fr: 'camions' },
+          leases: { ar: 'عقد إيجار', fr: 'baux' },
+          claims: { ar: 'مطالبة', fr: 'sinistres' },
+          agreements: { ar: 'اتفاقية', fr: 'accords' },
+          partners: { ar: 'شريك', fr: 'associés' }
+        };
+        if (unitMap[unitKey]) {
+          return `${mCountUnit[1]} ${lang === 'ar' ? unitMap[unitKey].ar : unitMap[unitKey].fr}`;
+        }
+      }
+      if (/^100%\s*Tied$/i.test(cleaned)) {
+        return lang === 'ar' ? 'متوازن 100%' : '100% cadré';
+      }
+      const dict = window.MFG_I18N && window.MFG_I18N.DICT && window.MFG_I18N.DICT[lang];
+      if (dict && dict[raw]) return cleanIndPbiOut(dict[raw]);
+      if (dict && dict[cleaned]) return cleanIndPbiOut(dict[cleaned]);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateText === 'function') {
+        try {
+          const out = window.MFG_I18N.translateText(cleaned, lang);
+          if (out) return cleanIndPbiOut(out);
+        } catch (_) {}
+      }
+      return cleaned;
+    };
+
+    const ds = buildIndustryDomainDataset(ind, activePageIdx) || { kpis: [], bars: [], secondBars: [], headers: [], rows: [], totals: [] };
+    const allRows = Array.isArray(ds.rows) ? ds.rows : [];
+    const headers = Array.isArray(ds.headers) ? ds.headers : [];
+
+    const dateColIdx = headers.findIndex((h, idx) => /date|period|effective from|expiry/i.test(h) || (allRows[0] && /^\d{4}-\d{2}(-\d{2})?$/.test(String(allRows[0][idx] || '').trim())));
+    let dimColIdx = headers.findIndex((h, idx) => idx > 0 && /entity|resort|carrier|insurer|sister|property|customer|client|tenant|warehouse|category/i.test(h));
+    if (dimColIdx < 0 && headers.length > 1) dimColIdx = 1;
+    const dimLabel = cleanIndPbiOut(headers[dimColIdx] || 'Dimension');
+
+    const rowDates = dateColIdx >= 0
+      ? allRows.map(r => String(r[dateColIdx] || '').trim()).filter(s => /^\d{4}-\d{2}/.test(s)).sort()
+      : [];
+    const latestYm = rowDates.length ? rowDates[rowDates.length - 1].slice(0, 7) : '2026-10';
+    const latestYear = latestYm.slice(0, 4) || '2026';
+    const latestMonNum = parseInt(latestYm.slice(5, 7) || '10', 10);
+    const qStartMon = Math.floor((latestMonNum - 1) / 3) * 3 + 1;
+    const qLabel = `${latestYear}-Q${Math.ceil(latestMonNum / 3)}`;
+
+    const baseF = (STATE.indPbiFilters && STATE.indPbiFilters[pageKey]) || { period: 'all', dim: '', search: '', sortCol: -1, sortDir: 'desc' };
+    const fState = Object.assign({}, baseF, options.filterOverride || {});
+    const searchNorm = norm(fState.search || '');
+
+    const filteredRows = allRows.filter(r => {
+      if (fState.period && fState.period !== 'all' && dateColIdx >= 0) {
+        const dVal = String(r[dateColIdx] || '').trim();
+        if (/^\d{4}-\d{2}/.test(dVal)) {
+          if (fState.period === 'year' && !dVal.startsWith(latestYear)) return false;
+          if (fState.period === 'month' && !dVal.startsWith(latestYm)) return false;
+          if (fState.period === 'quarter') {
+            const y = dVal.slice(0, 4);
+            const m = parseInt(dVal.slice(5, 7), 10);
+            if (y !== latestYear || m < qStartMon || m > qStartMon + 2) return false;
+          }
+        }
+      }
+      if (fState.dim && dimColIdx >= 0 && String(r[dimColIdx] || '').trim() !== fState.dim) return false;
+      if (searchNorm && !r.some(c => norm(c).includes(searchNorm))) return false;
+      return true;
+    });
+
+    const dynTotals = computeDynamicDomainTotals(headers, filteredRows, ds.totals, allRows.length);
+    const isFiltered = Boolean((fState.period && fState.period !== 'all') || fState.dim || searchNorm);
+
+    let periodEn = 'All Periods';
+    let periodAr = 'كافة الفترات';
+    let periodFr = 'Toutes périodes';
+    if (fState.period === 'year') {
+      periodEn = `Year ${latestYear}`;
+      periodAr = `سنة ${latestYear}`;
+      periodFr = `Année ${latestYear}`;
+    } else if (fState.period === 'quarter') {
+      periodEn = qLabel;
+      periodAr = `الربع ${qLabel}`;
+      periodFr = `Trimestre ${qLabel}`;
+    } else if (fState.period === 'month') {
+      periodEn = `Month ${latestYm}`;
+      periodAr = `شهر ${latestYm}`;
+      periodFr = `Mois ${latestYm}`;
+    }
+
+    const slicerPartsEn = [];
+    const slicerPartsAr = [];
+    const slicerPartsFr = [];
+    if (fState.period && fState.period !== 'all') {
+      slicerPartsEn.push(periodEn);
+      slicerPartsAr.push(periodAr);
+      slicerPartsFr.push(periodFr);
+    }
+    if (fState.dim) {
+      const cleanDimVal = cleanIndPbiOut(fState.dim);
+      slicerPartsEn.push(`${dimLabel}: ${cleanDimVal}`);
+      slicerPartsAr.push(`${trPhrase(dimLabel, 'ar')}: ${cleanDimVal}`);
+      slicerPartsFr.push(`${trPhrase(dimLabel, 'fr')} : ${cleanDimVal}`);
+    }
+    if (searchNorm) {
+      const cleanQ = cleanIndPbiOut(fState.search);
+      slicerPartsEn.push(`Search: ${cleanQ}`);
+      slicerPartsAr.push(`بحث: ${cleanQ}`);
+      slicerPartsFr.push(`Recherche : ${cleanQ}`);
+    }
+    const slicerSummaryEn = slicerPartsEn.join(', ');
+    const slicerSummaryAr = slicerPartsAr.join('، ');
+    const slicerSummaryFr = slicerPartsFr.join(', ');
+
+    const hasSpecificEntity = Boolean(COMPANY_LABELS[coKey] && getActiveIndustry(coKey) === ind);
+    const rawCoLabel = hasSpecificEntity ? cleanIndPbiOut(COMPANY_LABELS[coKey]) : ind;
+    const companyShort = rawCoLabel || ind;
+    const companyAr = hasSpecificEntity ? (trPhrase(rawCoLabel, 'ar') || indLoc.ar) : indLoc.ar;
+    const companyFr = hasSpecificEntity ? (trPhrase(rawCoLabel, 'fr') || indLoc.fr) : indLoc.fr;
+
+    // Identify primary numeric/USD columns in register
+    const moneyCols = [];
+    headers.forEach((h, idx) => {
+      if (idx === 0) return;
+      if (!canViewBooks && restrictedBooksRe.test(String(h || ''))) return;
+      const totStr = String((dynTotals && dynTotals[idx]) || '');
+      if (/\(\$\)|\$\s*$/i.test(String(h || '')) || /^\s*[-+]?\$/.test(totStr)) {
+        moneyCols.push(idx);
+      }
+    });
+
+    const safeDsKpis = (ds.kpis || []).filter(k => {
+      if (canViewBooks) return true;
+      return !restrictedBooksRe.test(`${k.label || ''} ${k.sub || ''}`);
+    });
+
+    const mapClsTone = cls => (cls === 'good' ? 'pos' : (cls === 'warn' ? 'neg' : 'ok'));
+    let kpis = [];
+    if (isFiltered) {
+      const ratioStr = `${fmtNum(filteredRows.length)} / ${fmtNum(allRows.length)}`;
+      kpis.push({
+        key: 'filtered_rows',
+        labelEn: 'Filtered Register Rows',
+        labelAr: 'السجلات المصفاة',
+        labelFr: 'Lignes filtrées',
+        valStr: ratioStr,
+        valStrAr: ratioStr,
+        valStrFr: ratioStr,
+        subEn: slicerSummaryEn || periodEn,
+        subAr: slicerSummaryAr || periodAr,
+        subFr: slicerSummaryFr || periodFr,
+        tone: filteredRows.length > 0 ? 'pos' : 'neg'
+      });
+      moneyCols.slice(0, 3).forEach((colIdx, mPos) => {
+        const hClean = cleanIndPbiOut(String(headers[colIdx] || '').replace(/\s*\(\$\)\s*/g, ''));
+        const vTot = cleanIndPbiOut(dynTotals[colIdx] || '$0');
+        kpis.push({
+          key: `slice_col_${mPos}`,
+          labelEn: hClean,
+          labelAr: trPhrase(hClean, 'ar'),
+          labelFr: trPhrase(hClean, 'fr'),
+          valStr: vTot,
+          valStrAr: vTot,
+          valStrFr: vTot,
+          subEn: `Sum across ${fmtNum(filteredRows.length)} filtered rows`,
+          subAr: `مجموع ${fmtNum(filteredRows.length)} سجل مصفى`,
+          subFr: `Total sur ${fmtNum(filteredRows.length)} lignes filtrées`,
+          tone: 'pos'
+        });
+      });
+    }
+    safeDsKpis.forEach((k, idx) => {
+      if (kpis.length >= 4) return;
+      const lblEn = cleanIndPbiOut(k.label);
+      const subEn = cleanIndPbiOut(k.sub);
+      const valEn = cleanIndPbiOut(k.val);
+      kpis.push({
+        key: `ind_kpi_${idx}`,
+        labelEn: lblEn,
+        labelAr: trPhrase(lblEn, 'ar'),
+        labelFr: trPhrase(lblEn, 'fr'),
+        valStr: valEn,
+        valStrAr: trPhrase(valEn, 'ar'),
+        valStrFr: trPhrase(valEn, 'fr'),
+        subEn,
+        subAr: trPhrase(subEn, 'ar'),
+        subFr: trPhrase(subEn, 'fr'),
+        tone: mapClsTone(k.cls)
+      });
+    });
+    while (kpis.length < 4) {
+      const slotIdx = kpis.length;
+      if (slotIdx === 0) {
+        const cntStr = fmtNum(filteredRows.length);
+        kpis.push({
+          key: 'reg_rows',
+          labelEn: 'Active Register Rows',
+          labelAr: 'السجلات النشطة',
+          labelFr: 'Lignes actives',
+          valStr: cntStr,
+          valStrAr: cntStr,
+          valStrFr: cntStr,
+          subEn: cleanIndPbiOut(activePage.label),
+          subAr: pageLoc.ar,
+          subFr: pageLoc.fr,
+          tone: 'pos'
+        });
+      } else if (slotIdx === 1) {
+        kpis.push({
+          key: 'scope_ent',
+          labelEn: 'Operating Scope',
+          labelAr: 'النطاق التشغيلي',
+          labelFr: "Périmètre d'exploitation",
+          valStr: companyShort,
+          valStrAr: companyAr,
+          valStrFr: companyFr,
+          subEn: ind,
+          subAr: indLoc.ar,
+          subFr: indLoc.fr,
+          tone: 'ok'
+        });
+      } else if (slotIdx === 2) {
+        kpis.push({
+          key: 'period_win',
+          labelEn: 'Reporting Window',
+          labelAr: 'فترة التقرير',
+          labelFr: 'Période analysée',
+          valStr: periodEn,
+          valStrAr: periodAr,
+          valStrFr: periodFr,
+          subEn: 'Live operational register',
+          subAr: 'سجل تشغيلي مباشر',
+          subFr: 'Registre opérationnel en direct',
+          tone: 'ok'
+        });
+      } else {
+        kpis.push({
+          key: 'ctrl_posture',
+          labelEn: 'Operational Control',
+          labelAr: 'الجاهزية التشغيلية',
+          labelFr: 'Contrôle opérationnel',
+          valStr: 'Verified',
+          valStrAr: 'متحقق',
+          valStrFr: 'Vérifié',
+          subEn: `${fmtNum(pagePool.length)} vertical pages active`,
+          subAr: `${fmtNum(pagePool.length)} صفحات تحليلية نشطة`,
+          subFr: `${fmtNum(pagePool.length)} pages analytiques actives`,
+          tone: 'ok'
+        });
+      }
+    }
+
+    // Top-3 concentration from filtered rows when sliced (or bars when unfiltered)
+    let topConcentration = {
+      dimEn: dimLabel.toLowerCase(),
+      dimAr: trPhrase(dimLabel, 'ar'),
+      dimFr: trPhrase(dimLabel, 'fr').toLowerCase(),
+      count: 0, totalVal: 0, top1Name: '', top1NameAr: '', top1NameFr: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0
+    };
+    const primaryValCol = moneyCols.length ? moneyCols[0] : -1;
+    let groupColIdx = dimColIdx;
+    if (fState.dim && headers.length > 2) {
+      const altCol = headers.findIndex((h, idx) => idx !== dimColIdx && idx !== dateColIdx && idx !== primaryValCol && !/\(\$\)|%/i.test(String(h || '')));
+      if (altCol >= 0) groupColIdx = altCol;
+    }
+    if (isFiltered && filteredRows.length > 0 && groupColIdx >= 0) {
+      const grpHeader = cleanIndPbiOut(headers[groupColIdx] || dimLabel);
+      const rowShare = computeIndTop3Share(
+        filteredRows,
+        r => r[groupColIdx] || r[0],
+        r => {
+          if (primaryValCol >= 0) {
+            const n = parseIndMetricNumber(r[primaryValCol]);
+            if (Number.isFinite(n)) return Math.abs(n);
+          }
+          return 1;
+        }
+      );
+      topConcentration = Object.assign({
+        dimEn: grpHeader.toLowerCase(),
+        dimAr: trPhrase(grpHeader, 'ar'),
+        dimFr: trPhrase(grpHeader, 'fr').toLowerCase()
+      }, rowShare);
+    } else {
+      const safeBars = (ds.bars || []).filter(b => canViewBooks || !restrictedBooksRe.test(`${b.label || ''} ${b.sub || ''} ${ds.chartTitle || ''}`));
+      if (safeBars.length > 0) {
+        const barShare = computeIndTop3Share(safeBars, b => b.label, b => b.val);
+        topConcentration = Object.assign({
+          dimEn: dimLabel.toLowerCase(),
+          dimAr: trPhrase(dimLabel, 'ar'),
+          dimFr: trPhrase(dimLabel, 'fr').toLowerCase()
+        }, barShare);
+      } else if (filteredRows.length > 0 && groupColIdx >= 0 && (canViewBooks || !restrictedBooksRe.test(`${ds.tableTitle || ''} ${ds.chartTitle || ''}`))) {
+        const rowShareFallback = computeIndTop3Share(filteredRows, r => r[groupColIdx] || r[0], () => 1);
+        topConcentration = Object.assign({
+          dimEn: dimLabel.toLowerCase(),
+          dimAr: trPhrase(dimLabel, 'ar'),
+          dimFr: trPhrase(dimLabel, 'fr').toLowerCase()
+        }, rowShareFallback);
+      }
+    }
+    if (topConcentration.top1Name) {
+      topConcentration.top1NameAr = trPhrase(topConcentration.top1Name, 'ar') || topConcentration.top1Name;
+      topConcentration.top1NameFr = trPhrase(topConcentration.top1Name, 'fr') || topConcentration.top1Name;
+    }
+
+    let tieCheck = null;
+    let tbVar = 0;
+    if (canViewBooks) {
+      const glModel = getIndustryGlModel(ind, coKey, {});
+      const tb = (glModel && Array.isArray(glModel.gl_tb))
+        ? glModel.gl_tb
+        : ((glModel && Array.isArray(glModel.gl_trial_balance)) ? glModel.gl_trial_balance : []);
+      const tbDr = round2(tb.reduce((a, r) => a + Number(r.debit || 0), 0));
+      const tbCr = round2(tb.reduce((a, r) => a + Number(r.credit || 0), 0));
+      tbVar = round2(Math.abs(tbDr - tbCr));
+      tieCheck = {
+        balanced: tbVar < 0.01,
+        varianceUsd: tbVar,
+        labelEn: 'Classes 1-7 Trial Balance',
+        labelAr: 'ميزان المراجعة الفئات 1-7',
+        labelFr: 'Balance générale Classes 1-7'
+      };
+    }
+
+    const indRevTok = `r${(SEED && SEED._customRev) || 0}:${filteredRows.length}:${kpis.map(x => x.valStr).join('~')}`;
+    const scopeKey = `pbi|${ind}|${coKey}|${activePage.id}|${fState.period || 'all'}|${fState.dim || ''}|${searchNorm}|${canViewBooks ? 'b1' : 'b0'}|${indRevTok}`;
+    const facts = {
+      industry: ind,
+      pageId: activePage.id,
+      pageLabel: cleanIndPbiOut(activePage.label),
+      filteredRows: filteredRows.length,
+      totalRows: allRows.length,
+      activeSlicers: slicerSummaryEn || 'None',
+      leadDriver: topConcentration.top1Name || '',
+      leadDriverSharePct: topConcentration.top1Pct || 0,
+      top3SharePct: topConcentration.top3Pct || 0
+    };
+    if (canViewBooks) {
+      facts.trialBalanceVarianceUsd = tbVar;
+    }
+
+    return {
+      industry: ind,
+      industryAr: indLoc.ar,
+      industryFr: indLoc.fr,
+      coKey,
+      companyShort,
+      companyAr,
+      companyFr,
+      pageId: activePage.id,
+      pageNum: activePage.num || '01',
+      pageLabel: cleanIndPbiOut(activePage.label),
+      pageAr: pageLoc.ar,
+      pageFr: pageLoc.fr,
+      pageGroup: ind,
+      targetView: activePage.view || 'overview',
+      windowLabelEn: periodEn,
+      windowLabelAr: periodAr,
+      windowLabelFr: periodFr,
+      slicerSummaryEn,
+      slicerSummaryAr,
+      slicerSummaryFr,
+      scopeKey,
+      canViewBooks,
+      tieCheck,
+      topConcentration,
+      kpis,
+      facts
+    };
+  }
+
   function renderIndustryPbiStudio(indOverride) {
     const ind = indOverride || getActiveIndustry(STATE.company);
     const pages = INDUSTRY_PBI_PAGES_SPEC[ind] || INDUSTRY_PBI_PAGES_SPEC['Holding & Treasury'];
@@ -51384,6 +51905,8 @@
             <div class="panel-meta" style="margin-top:2px">Page ${esc(activePage.num)}: <b>${esc(activePage.label)}</b> · ${esc(activePage.title)}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${ic('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${ic('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activePage.view)}">Open ${esc(activePage.label)} Hub</button>
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="statements">Printable A4 Statements</button>
             ${exportBtn('industryPbiTableCard', `${activePage.id}_register`)}
@@ -51409,14 +51932,14 @@
               ` : ''}
             </div>
             ${dimCandidates.length > 1 ? `
-              <select id="indPbiDimSelect" data-plain-options="1" aria-label="Filter by ${esc(dimLabel)}" style="height:30px;padding:0 9px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-size:11.5px;font-weight:600">
+              <select id="indPbiDimSelect" data-plain-options="1" aria-label="Filter by ${esc(dimLabel)}" style="height:30px;padding:0 9px;border:1px solid var(--line,#CBD5E1);border-radius:6px;background:var(--card,#ffffff);color:var(--ink,#0F172A);font-weight:600">
                 <option value="">All ${esc(dimLabel)} (${allRows.length})</option>
                 ${dimCandidates.map(v => `<option value="${esc(v)}" ${fState.dim === v ? 'selected' : ''}>${esc(v)} (${dimCounts.get(v) || 0})</option>`).join('')}
               </select>
             ` : ''}
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <input type="search" id="indPbiSearchInput" class="search-input" style="height:30px;min-width:190px;font-size:11.5px" value="${esc(fState.search || '')}" placeholder="Search ${esc(activePage.label)} register...">
+            <input type="search" id="indPbiSearchInput" class="search-input" style="height:30px;min-width:190px" value="${esc(fState.search || '')}" placeholder="Search ${esc(activePage.label)} register...">
             ${hasActiveFilter ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indPbiResetBtn">Reset Filters</button>` : ''}
           </div>
         </div>
@@ -108018,7 +108541,7 @@
         const pos = e.target.selectionStart || String(e.target.value || '').length;
         renderApp();
         const nextInp = $('indPbiSearchInput');
-        if (nextInp) {
+        if (nextInp && (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches)) {
           nextInp.focus({ preventScroll: true });
           try { nextInp.setSelectionRange(pos, pos); } catch (_) {}
         }
@@ -109911,6 +110434,29 @@
     } else if (STATE.view !== 'overview' && window.MFG_ASK && typeof window.MFG_ASK.stopPeriodSummaryIfActive === 'function') {
       window.MFG_ASK.stopPeriodSummaryIfActive();
     }
+    if (STATE.view === 'pbi' && window.MFG_ASK) {
+      const pbiLsnBtn = container.querySelector('[data-pbi-summary]');
+      const pbiExpBtn = container.querySelector('[data-pbi-explain]');
+      if (typeof window.MFG_ASK.rebindDashboardSummaryButtons === 'function') {
+        window.MFG_ASK.rebindDashboardSummaryButtons(pbiLsnBtn, pbiExpBtn);
+      }
+      if (pbiLsnBtn && typeof window.MFG_ASK.speakDashboardSummary === 'function') {
+        pbiLsnBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.MFG_ASK.speakDashboardSummary(pbiLsnBtn);
+        });
+      }
+      if (pbiExpBtn && typeof window.MFG_ASK.toggleDashboardVariance === 'function') {
+        pbiExpBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.MFG_ASK.toggleDashboardVariance(pbiExpBtn);
+        });
+      }
+    } else if (STATE.view !== 'pbi' && window.MFG_ASK && typeof window.MFG_ASK.stopDashboardSummaryIfActive === 'function') {
+      window.MFG_ASK.stopDashboardSummaryIfActive();
+    }
     if (STATE.view === 'statements' && window.MFG_RDL && typeof window.MFG_RDL.wireStatementsEvents === 'function') {
       window.MFG_RDL.wireStatementsEvents(container, SEED, STATE, renderApp);
       if (window.MFG_ASK && typeof window.MFG_ASK.rebindStatementSummaryButtons === 'function') {
@@ -111208,6 +111754,7 @@
         getActiveIndustry,
         renderIndustryDailyOps,
         computeCeoPeriodBridgeSnapshot,
+        computeIndustryDashboardSnapshot,
         getKPI,
         getModel,
         filterRecords,
@@ -111226,6 +111773,7 @@
         canSeeTaxBreakdown,
         canViewHub,
         canViewView,
+        canAccessPbiPage,
         userHasFaceId,
         getVisibleDirectoryUsers,
         getUserDirectoryScopeTier,
@@ -112777,6 +113325,7 @@
     },
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
+    computeIndustryDashboardSnapshot: typeof computeIndustryDashboardSnapshot === 'function' ? computeIndustryDashboardSnapshot : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,

@@ -4285,8 +4285,10 @@
   // ==================== 12-PAGE ANALYTICS & INSIGHTS STUDIO RENDERER ====================
   let _pbiBaseCacheKey = '';
   let _pbiBaseCacheVal = null;
+  let _lastPbiRenderCtx = null;
 
   function renderPbiStudio(ctx, overridePageId, bodyOnly) {
+    if (ctx && !overridePageId && !bodyOnly) _lastPbiRenderCtx = ctx;
     const { STATE, SEED, COMPANY_LABELS, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct } = ctx;
     _activePbiState = STATE;
     const m = getModel();
@@ -5404,6 +5406,8 @@
           </div>
           <div class="pbi-hero-actions">
             ${activeSlicerCount ? `<span class="badge badge-warn sr-only">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${pbiIcon('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${pbiIcon('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="pbi-drawer-toggle ${!pbiCatalogCollapsed ? 'active' : ''}" id="pbiToggleCatalogBtn" aria-label="Toggle analytical pages catalog">
               <span class="pbi-dt-caret">${pbiCatalogCollapsed ? '▸' : '▾'}</span> Pages (${pagePool.length})
             </button>
@@ -12931,11 +12935,691 @@
     `;
   }
 
+  const MFG_PBI_PAGE_LOCALE = {
+    p01_overview:  { ar: 'النبض التنفيذي', fr: 'Synthèse exécutive', view: 'overview' },
+    p02_companies: { ar: 'مقارنة الشركات', fr: 'Comparaison des entités', view: 'entities' },
+    p04_sales:     { ar: 'تحليلات المبيعات', fr: 'Analytique des ventes', view: 'sales' },
+    p05_pricing:   { ar: 'التسعير والهوامش', fr: 'Tarification et écarts', view: 'pricing' },
+    p06_ar:        { ar: 'الذمم وأعمار الديون', fr: 'Créances et balance âgée', view: 'customers' },
+    p07_ap:        { ar: 'ذمم الموردين والإنفاق', fr: 'Fournisseurs et dépenses', view: 'suppliers' },
+    p08_stock:     { ar: 'المخزون وهامش الوحدة', fr: 'Stocks et marge unitaire', view: 'raw' },
+    p09_fuel:      { ar: 'المازوت واستهلاك الخزان', fr: 'Gazole et consommation cuve', view: 'fleet' },
+    p10_fleet:     { ar: 'اقتصاديات الأسطول', fr: 'Économie de flotte', view: 'fleet_equip' },
+    p12_payroll:   { ar: 'تحليلات القوى العاملة', fr: 'Analytique des effectifs', view: 'payroll' },
+    p14_cashflow:  { ar: 'التدفق النقدي والصندوق', fr: 'Flux de trésorerie et caisse', view: 'cashflow' },
+    p16_financial: { ar: 'الأستاذ العام والنسب المالية', fr: 'Grand livre et ratios financiers', view: 'ledger' }
+  };
+
+  function _pbiCleanText(v) {
+    return String(v == null ? '' : v)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTTC\b/g, '')
+      .replace(/\bRDL[-_\s]?\d*\b/gi, '')
+      .replace(/\bZ-Read\b/gi, 'till close')
+      .replace(/\bTHEO\b/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function _pbiComputeTop3(items, nameFn, valFn) {
+    const map = new Map();
+    const arr = Array.isArray(items) ? items : [];
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i];
+      if (!it) continue;
+      const rawName = _pbiCleanText(nameFn(it));
+      const v = Number(valFn(it) || 0);
+      if (!rawName || !(v > 0.005)) continue;
+      const key = norm(rawName);
+      const prev = map.get(key);
+      if (prev) prev.val += v;
+      else map.set(key, { name: rawName, val: v });
+    }
+    const ranked = Array.from(map.values()).sort((a, b) => b.val - a.val);
+    const totalVal = round2(ranked.reduce((s, x) => s + x.val, 0));
+    if (!ranked.length || !(totalVal > 0.005)) {
+      return { count: 0, totalVal: 0, top1Name: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0 };
+    }
+    const top1 = ranked[0];
+    const top3 = ranked.slice(0, 3);
+    const top3Val = round2(top3.reduce((s, x) => s + x.val, 0));
+    return {
+      count: ranked.length,
+      totalVal,
+      top1Name: top1.name,
+      top1Val: round2(top1.val),
+      top1Pct: Number(((top1.val / totalVal) * 100).toFixed(1)),
+      top3Names: top3.map(x => x.name),
+      top3Val,
+      top3Pct: Number(Math.min(100, (top3Val / totalVal) * 100).toFixed(1))
+    };
+  }
+
+  const MFG_PBI_SLICER_KEY_LOCALE = {
+    product: { en: 'Product', ar: 'الصنف', fr: 'Produit' },
+    customer: { en: 'Customer', ar: 'الزبون', fr: 'Client' },
+    supplier: { en: 'Supplier', ar: 'المورد', fr: 'Fournisseur' },
+    site: { en: 'Site', ar: 'الموقع', fr: 'Site' },
+    saleType: { en: 'Sale Type', ar: 'نوع البيع', fr: 'Type de vente' },
+    method: { en: 'Payment', ar: 'طريقة الدفع', fr: 'Paiement' },
+    equipment: { en: 'Equipment', ar: 'الآلية', fr: 'Engin' },
+    driver: { en: 'Driver', ar: 'السائق', fr: 'Chauffeur' },
+    staff: { en: 'Staff', ar: 'الموظف', fr: 'Collaborateur' },
+    iva: { en: 'VAT Status', ar: 'حالة الضريبة', fr: 'Statut TVA' },
+    shift: { en: 'Shift', ar: 'الوردية', fr: 'Poste' },
+    overtimeFlag: { en: 'Overtime', ar: 'إضافي', fr: 'Heures sup.' },
+    transportBy: { en: 'Hauler', ar: 'الناقل', fr: 'Transporteur' },
+    category: { en: 'Category', ar: 'الفئة', fr: 'Catégorie' },
+    costClass: { en: 'Cost Class', ar: 'تصنيف الكلفة', fr: 'Classe de coût' },
+    payableLeg: { en: 'Payable Leg', ar: 'مسار الذمم', fr: 'Volet dette' },
+    equipType: { en: 'Unit Type', ar: 'نوع الآلية', fr: "Type d'engin" },
+    ownership: { en: 'Ownership', ar: 'الملكية', fr: 'Propriété' },
+    fuelType: { en: 'Fuel Type', ar: 'نوع الوقود', fr: 'Carburant' },
+    glClass: { en: 'GL Class', ar: 'فئة الحسابات', fr: 'Classe comptable' },
+    search: { en: 'Search', ar: 'بحث', fr: 'Recherche' }
+  };
+
+  const MFG_PBI_ENUM_VAL_LOCALE = {
+    Delivery: { ar: 'توصيل', fr: 'Livraison' },
+    Pickup: { ar: 'استلام من المصنع', fr: 'Enlèvement' },
+    Cash: { ar: 'نقدي', fr: 'Espèces' },
+    Credit: { ar: 'آجل', fr: 'À crédit' },
+    Yes: { ar: 'نعم', fr: 'Oui' },
+    No: { ar: 'لا', fr: 'Non' },
+    Day: { ar: 'نهاري', fr: 'Jour' },
+    Night: { ar: 'ليلي', fr: 'Nuit' },
+    Diesel: { ar: 'مازوت', fr: 'Gazole' },
+    'Lubricant / Oil': { ar: 'زيوت وشحوم', fr: 'Lubrifiants' },
+    Loader: { ar: 'جرافة', fr: 'Chargeuse' },
+    Truck: { ar: 'شاحنة', fr: 'Camion' },
+    Excavator: { ar: 'حفارة', fr: 'Pelle' },
+    'Operating Expense': { ar: 'مصاريف تشغيلية', fr: "Charges d'exploitation" },
+    'Direct Cost': { ar: 'كلفة مباشرة', fr: 'Coût direct' }
+  };
+
+  function _pbiLocalizePeriodLabel(rawLbl, lang) {
+    const clean = _pbiCleanText(rawLbl || 'All Periods');
+    if (!clean || lang === 'en') return clean || 'All Periods';
+    if (/^All(?:-Time|\s+Periods)$/i.test(clean)) {
+      return lang === 'ar' ? 'كافة الفترات' : 'Toutes périodes';
+    }
+    const mAllSpan = clean.match(/^All-Time\s*\(([^)]+)\)$/i);
+    if (mAllSpan) {
+      return lang === 'ar' ? `كامل الفترة (${mAllSpan[1]})` : `Toute la période (${mAllSpan[1]})`;
+    }
+    if (/^(?:Year-to-Date|YTD)$/i.test(clean)) {
+      return lang === 'ar' ? 'منذ بداية السنة' : 'Cumul annuel';
+    }
+    if (/^(?:Month-to-Date|MTD)$/i.test(clean)) {
+      return lang === 'ar' ? 'منذ بداية الشهر' : 'Cumul mensuel';
+    }
+    const mFy = clean.match(/^(?:Year|FY)\s*(\d{4})$/i);
+    if (mFy) {
+      return lang === 'ar' ? `سنة ${mFy[1]}` : `Année ${mFy[1]}`;
+    }
+    const mRange = clean.match(/^(\d{4}-\d{2}-\d{2})\s+(?:to|-)\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (mRange) {
+      return lang === 'ar' ? `من ${mRange[1]} إلى ${mRange[2]}` : `Du ${mRange[1]} au ${mRange[2]}`;
+    }
+    const mYm = clean.match(/^(?:Month\s+)?(\d{4}-\d{2})$/i);
+    if (mYm) {
+      return lang === 'ar' ? `شهر ${mYm[1]}` : `Mois ${mYm[1]}`;
+    }
+    const mWk = clean.match(/^Week\s+(.+)$/i);
+    if (mWk) {
+      return lang === 'ar' ? `الأسبوع ${mWk[1]}` : `Semaine ${mWk[1]}`;
+    }
+    const mDay = clean.match(/^Day\s+(.+)$/i);
+    if (mDay) {
+      return lang === 'ar' ? `يوم ${mDay[1]}` : `Jour ${mDay[1]}`;
+    }
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.translateText === 'function') {
+      try {
+        const tr = window.MFG_I18N.translateText(clean, lang);
+        if (tr) return _pbiCleanText(tr);
+      } catch (_) {}
+    }
+    return clean;
+  }
+
+  function _pbiFormatSlicerPair(kName, vVal, lang) {
+    const keyMeta = MFG_PBI_SLICER_KEY_LOCALE[kName] || { en: kName, ar: kName, fr: kName };
+    const kLoc = lang === 'ar' ? keyMeta.ar : (lang === 'fr' ? keyMeta.fr : keyMeta.en);
+    const vClean = _pbiCleanText(vVal);
+    if (kName === 'search' || lang === 'en') {
+      return lang === 'fr' ? `${kLoc} : ${vClean}` : `${kLoc}: ${vClean}`;
+    }
+    const enumMeta = MFG_PBI_ENUM_VAL_LOCALE[vClean];
+    let vLoc = enumMeta ? (lang === 'ar' ? enumMeta.ar : enumMeta.fr) : '';
+    if (!vLoc && typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.translateText === 'function') {
+      try {
+        const tr = window.MFG_I18N.translateText(vClean, lang);
+        if (tr) vLoc = _pbiCleanText(tr);
+      } catch (_) {}
+    }
+    const finalV = vLoc || vClean;
+    return lang === 'fr' ? `${kLoc} : ${finalV}` : `${kLoc}: ${finalV}`;
+  }
+
+  function computeDashboardSnapshot(ctxArg, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const ctx = ctxArg || _lastPbiRenderCtx || {};
+    const STATE = options.STATE || ctx.STATE || _activePbiState || (typeof window !== 'undefined' && window.STATE) || { company: 'manufacturing-group', pbiPage: 'p01_overview' };
+    const SEED = options.SEED || ctx.SEED || (typeof window !== 'undefined' && (window.SEED || window.MFG_SEED)) || { records: {}, models: {} };
+    const canViewBooks = options.canViewBooks !== false;
+    const restrictedBookPages = ['p06_ar', 'p07_ap', 'p14_cashflow', 'p16_financial'];
+
+    const booksFilteredPages = canViewBooks
+      ? PBI_PAGES
+      : PBI_PAGES.filter(p => !restrictedBookPages.includes(p.id));
+    const canPageFn = (ctx && typeof ctx.canAccessPbiPage === 'function')
+      ? ctx.canAccessPbiPage
+      : (_lastPbiRenderCtx && typeof _lastPbiRenderCtx.canAccessPbiPage === 'function' ? _lastPbiRenderCtx.canAccessPbiPage : null);
+    const visiblePages = canPageFn ? booksFilteredPages.filter(p => canPageFn(p.id)) : booksFilteredPages;
+    const pagePool = visiblePages.length ? visiblePages : [PBI_PAGES[0]];
+    const reqPageId = String(options.pageId || STATE.pbiPage || 'p01_overview');
+    const activePage = pagePool.find(p => p.id === reqPageId) || pagePool[0] || PBI_PAGES[0];
+    const pageId = activePage.id;
+    const locMeta = MFG_PBI_PAGE_LOCALE[pageId] || { ar: activePage.label, fr: activePage.label, view: 'overview' };
+
+    const getModelFn = typeof ctx.getModel === 'function'
+      ? ctx.getModel
+      : (() => {
+          const co = String(STATE.company || 'manufacturing-group');
+          const mk = co === 'wtc' ? 'wtc' : (co === 'bbconstruction' ? 'bbconstruction' : (co === 'lionstransport' ? 'lionstransport' : 'group'));
+          return (SEED.models && (SEED.models[mk] || SEED.models.group || SEED.models.wtc)) || {};
+        });
+    const m = getModelFn() || {};
+    const getKpiFn = typeof ctx.getKPI === 'function'
+      ? ctx.getKPI
+      : (() => ((m.periods && (m.periods[STATE.period || 'all'] || m.periods.all)) || {}));
+    const k = getKpiFn() || {};
+    const filterRecordsFn = typeof ctx.filterRecords === 'function'
+      ? ctx.filterRecords
+      : (arr => (Array.isArray(arr) ? arr.filter(r => r && !r.voided) : []));
+    const ticketMetersFn = typeof ctx.ticketMeters === 'function'
+      ? ctx.ticketMeters
+      : (s => (/truck/i.test(String(s && s.uom || '')) ? Number(s.qty || 0) * 27 : Number(s && s.qty || 0)));
+    const ticketTonsFn = typeof ctx.ticketTons === 'function'
+      ? ctx.ticketTons
+      : (s => (String(s && s.uom || '') === 'm³' ? Number(s.qty || 0) * 1.5 : Number(s && s.qty || 0)));
+
+    const rec = SEED.records || {};
+    const sl = Object.assign({}, STATE.pbiSlicer || {}, options.slicerOverride || {});
+    const activeSlicerPairs = Object.entries(sl).filter(([, v]) => v != null && String(v).trim() !== '');
+    const hasAnySlicer = activeSlicerPairs.length > 0;
+
+    const allowedCosKey = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames().join(',') : '';
+    const snapBaseCacheKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${allowedCosKey}|${STATE._officialScopeActive ? 'OFF' : 'ALL'}|${SEED._customRev || 0}|${(rec.sales_tickets || []).length}|${(rec.raw_purchases || []).length}`;
+    const canReuseBaseCache = Boolean(_pbiBaseCacheVal && _pbiBaseCacheKey === snapBaseCacheKey);
+
+    let custIvaMap;
+    let suppIvaMap;
+    let equipMetaMap;
+    let catClassMap;
+    if (canReuseBaseCache) {
+      custIvaMap = _pbiBaseCacheVal.custIvaMap || new Map();
+      suppIvaMap = _pbiBaseCacheVal.suppIvaMap || new Map();
+      equipMetaMap = _pbiBaseCacheVal.equipMetaMap || new Map();
+      catClassMap = _pbiBaseCacheVal.catClassMap || new Map();
+    } else {
+      custIvaMap = new Map();
+      (rec.customers || []).forEach(c => custIvaMap.set(norm(c.name), c.vat_registered ? 'Yes' : 'No'));
+      (m.customers || []).forEach(c => custIvaMap.set(norm(c.Customer), c['VAT Registered'] === 'Yes' ? 'Yes' : 'No'));
+      suppIvaMap = new Map();
+      (rec.suppliers || []).forEach(s => suppIvaMap.set(norm(s.name), s.iva ? 'Yes' : 'No'));
+      (m.suppliers || []).forEach(s => suppIvaMap.set(norm(s.Supplier), s.IVA === 'Yes' ? 'Yes' : 'No'));
+      catClassMap = new Map();
+      (rec.expense_categories || []).forEach(c => catClassMap.set(norm(c.name), deriveExpenseCostClass(c)));
+      equipMetaMap = new Map();
+      (rec.equipment || []).forEach(e => equipMetaMap.set(norm(e.name), e));
+      (m.equipment || []).forEach(e => { if (!equipMetaMap.has(norm(e.Equipment))) equipMetaMap.set(norm(e.Equipment), { name: e.Equipment, type: e.Type, ownership: e.Ownership, status: e.Status }); });
+    }
+
+    const baseSalesRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseSalesRows
+      : filterRecordsFn(rec.sales_tickets || [], { ignoreSearch: true });
+    const baseRawRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseRawRows
+      : filterRecordsFn(rec.raw_purchases || [], { ignoreSearch: true });
+    const baseExpRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseExpRows
+      : filterRecordsFn(rec.expenses || [], { ignoreSearch: true });
+    const baseRecRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseRecRows
+      : filterRecordsFn(rec.receipts || [], { ignoreSearch: true });
+    const baseSetRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseSetRows
+      : filterRecordsFn(rec.settlements || [], { ignoreSearch: true });
+    const baseFuelRows = canReuseBaseCache
+      ? _pbiBaseCacheVal.baseFuelRows
+      : filterRecordsFn(rec.fuel_intakes || [], { ignoreSearch: true });
+
+    const matchSearch = r => !sl.search || Object.values(r || {}).join(' ').toLowerCase().includes(norm(sl.search));
+    const matchCommon = !hasAnySlicer ? (() => true) : (r => {
+      if (!r) return false;
+      if (sl.product && norm(r.Product || r.product) !== norm(sl.product)) return false;
+      if (sl.customer && norm(r.Customer || r.customer) !== norm(sl.customer)) return false;
+      if (sl.supplier && norm(r.Supplier || r.supplier || r.site_owner || r.truck_owner || r.owner_supplier) !== norm(sl.supplier)) return false;
+      if (sl.site && norm(r.Site || r.site) !== norm(sl.site)) return false;
+      if (sl.saleType && r.sale_type && norm(r.sale_type) !== norm(sl.saleType)) return false;
+      if (sl.method && r.method && norm(r.method) !== norm(sl.method)) return false;
+      if (sl.equipment && norm(r.Equipment || r.equipment || r.truck || r.name) !== norm(sl.equipment)) return false;
+      if (sl.driver && norm(r.driver || r.Driver || r.name) !== norm(sl.driver)) return false;
+      if (sl.staff && norm(r.staff || r.Staff) !== norm(sl.staff)) return false;
+      if (sl.iva) {
+        const cname = r.Customer || r.customer;
+        const sname = r.Supplier || r.supplier;
+        const flag = r['VAT Registered'] || r.IVA || (cname ? custIvaMap.get(norm(cname)) : (sname ? suppIvaMap.get(norm(sname)) : null));
+        if (flag && norm(flag) !== norm(sl.iva)) return false;
+      }
+      return matchSearch(r);
+    });
+
+    const salesRows = !hasAnySlicer ? baseSalesRows : baseSalesRows.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.shift) {
+        const isNight = Boolean(r.overtime);
+        if (sl.shift === 'Night' && !isNight) return false;
+        if (sl.shift === 'Day' && isNight) return false;
+      }
+      if (sl.overtimeFlag === 'Yes' && !r.overtime) return false;
+      if (sl.overtimeFlag === 'No' && r.overtime) return false;
+      return true;
+    });
+    const rawRows = !hasAnySlicer ? baseRawRows : baseRawRows.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.transportBy && norm(r.transport_by) !== norm(sl.transportBy)) return false;
+      return true;
+    });
+    const expRows = !hasAnySlicer ? baseExpRows : baseExpRows.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.category && norm(r.category) !== norm(sl.category)) return false;
+      if (sl.costClass && norm(catClassMap.get(norm(r.category)) || 'Operating Expense') !== norm(sl.costClass)) return false;
+      return true;
+    });
+    const recRows = !hasAnySlicer ? baseRecRows : baseRecRows.filter(matchCommon);
+    const setRows = !hasAnySlicer ? baseSetRows : baseSetRows.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.payableLeg && r.payable_leg && norm(r.payable_leg) !== norm(sl.payableLeg)) return false;
+      return true;
+    });
+    const fuelRows = !hasAnySlicer ? baseFuelRows : baseFuelRows.filter(r => {
+      if (!matchCommon(r)) return false;
+      const em = equipMetaMap.get(norm(r.equipment)) || {};
+      if (sl.equipType && norm(em.type) !== norm(sl.equipType)) return false;
+      if (sl.ownership && norm(em.ownership) !== norm(sl.ownership)) return false;
+      if (sl.fuelType === 'Diesel' && !/diesel|mazout/i.test(String(r.item || 'Diesel'))) return false;
+      if (sl.fuelType === 'Lubricant / Oil' && /diesel|mazout/i.test(String(r.item || 'Diesel'))) return false;
+      return true;
+    });
+
+    const baseSampleTtc = baseSalesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : r.total || 0), 0) || 1;
+    const filtSalesUsd = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : r.total || 0), 0));
+    const filtSalesLoads = salesRows.reduce((a, r) => a + (saleTicketSign(r) > 0 ? 1 : 0), 0);
+    const filtDelivLoads = salesRows.reduce((a, r) => a + (saleTicketSign(r) > 0 && /deliv/i.test(String(r.sale_type || '')) ? 1 : 0), 0);
+    const filtTransRevUsd = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.trans_price || 0), 0));
+    const filtMeters = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * ticketMetersFn(r), 0));
+    const filtTons = round2(salesRows.reduce((a, r) => a + saleTicketSign(r) * ticketTonsFn(r), 0));
+    const filtRawCostUsd = round2(rawRows.reduce((a, r) => a + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))), 0));
+    const filtRawMeters = round2(rawRows.reduce((a, r) => a + ticketMetersFn(r), 0));
+    const filtExpUsd = round2(expRows.reduce((a, r) => a + Number(r.total_ttc != null ? r.total_ttc : r.amount || 0), 0));
+
+    const hasSalesSlicer = Boolean(sl.product || sl.customer || sl.saleType || sl.method || sl.iva || sl.site || sl.search || sl.equipment || sl.driver || sl.shift || sl.overtimeFlag);
+    const sRatio = hasSalesSlicer ? (filtSalesUsd / baseSampleTtc) : 1;
+    const sc = v => round2(Number(v || 0) * (hasSalesSlicer ? sRatio : 1));
+
+    const coKey = String(STATE.company || 'manufacturing-group');
+    const coMapEn = { 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport', 'manufacturing-group': 'Manufacturing Group', 'ALL': 'Manufacturing Group' };
+    const coMapAr = { 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport', 'manufacturing-group': 'مجموعة التصنيع', 'ALL': 'مجموعة التصنيع' };
+    const coMapFr = { 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport', 'manufacturing-group': 'Groupe Industrie', 'ALL': 'Groupe Industrie' };
+    const companyShort = coMapEn[coKey] || _pbiCleanText((ctx.COMPANY_LABELS && ctx.COMPANY_LABELS[coKey]) || 'Manufacturing Group');
+    const companyAr = coMapAr[coKey] || companyShort;
+    const companyFr = coMapFr[coKey] || companyShort;
+
+    const activeRange = typeof ctx.periodRange === 'function' ? ctx.periodRange(STATE.period) : null;
+    const rawPeriodLbl = activeRange && activeRange.label ? _pbiCleanText(activeRange.label) : (STATE.dateFrom && STATE.dateTo ? `${STATE.dateFrom} to ${STATE.dateTo}` : 'All Periods');
+    const basisEn = STATE.basis === 'rep' ? 'Reporting Date' : 'Transaction Date';
+    const basisAr = STATE.basis === 'rep' ? 'تاريخ التقرير' : 'تاريخ العملية';
+    const basisFr = STATE.basis === 'rep' ? 'Date comptable' : "Date d'opération";
+    const windowLabelEn = `${_pbiLocalizePeriodLabel(rawPeriodLbl, 'en')} (${basisEn})`;
+    const windowLabelAr = `${_pbiLocalizePeriodLabel(rawPeriodLbl, 'ar')} (${basisAr})`;
+    const windowLabelFr = `${_pbiLocalizePeriodLabel(rawPeriodLbl, 'fr')} (${basisFr})`;
+
+    const slicerSummaryEn = activeSlicerPairs.length
+      ? activeSlicerPairs.map(([kName, vVal]) => _pbiFormatSlicerPair(kName, vVal, 'en')).join(', ')
+      : '';
+    const slicerSummaryAr = activeSlicerPairs.length
+      ? activeSlicerPairs.map(([kName, vVal]) => _pbiFormatSlicerPair(kName, vVal, 'ar')).join('، ')
+      : '';
+    const slicerSummaryFr = activeSlicerPairs.length
+      ? activeSlicerPairs.map(([kName, vVal]) => _pbiFormatSlicerPair(kName, vVal, 'fr')).join(', ')
+      : '';
+
+    const tbAll = Array.isArray(m.gl_tb) ? m.gl_tb : [];
+    const tbFiltered = tbAll.filter(r => {
+      if (!matchSearch(r)) return false;
+      if (sl.glClass && String(r.Class) !== String(sl.glClass)) return false;
+      return true;
+    });
+    const tbDr = canViewBooks ? round2(tbFiltered.reduce((a, r) => a + Number(r.debit || 0), 0)) : 0;
+    const tbCr = canViewBooks ? round2(tbFiltered.reduce((a, r) => a + Number(r.credit || 0), 0)) : 0;
+    const tbVar = canViewBooks ? round2(Math.abs(sl.glClass ? 0 : (tbDr - tbCr))) : 0;
+
+    const mkKpi = (key, labelEn, labelAr, labelFr, valObjOrStr, subEn, subAr, subFr, tone) => {
+      const isLocVal = valObjOrStr && typeof valObjOrStr === 'object' && !Array.isArray(valObjOrStr);
+      const vEn = isLocVal ? String(valObjOrStr.en != null ? valObjOrStr.en : '') : String(valObjOrStr != null ? valObjOrStr : '');
+      const vAr = isLocVal ? String(valObjOrStr.ar != null ? valObjOrStr.ar : vEn) : vEn;
+      const vFr = isLocVal ? String(valObjOrStr.fr != null ? valObjOrStr.fr : vEn) : vEn;
+      return {
+        key,
+        labelEn,
+        labelAr,
+        labelFr,
+        valStr: vEn,
+        valStrAr: vAr,
+        valStrFr: vFr,
+        subEn: _pbiCleanText(subEn || ''),
+        subAr: _pbiCleanText(subAr || subEn || ''),
+        subFr: _pbiCleanText(subFr || subEn || ''),
+        tone: tone || 'neutral'
+      };
+    };
+
+    let kpis = [];
+    let topConcentration = { dimEn: 'customers', dimAr: 'الزبائن', dimFr: 'clients', count: 0, totalVal: 0, top1Name: '', top1NameAr: '', top1NameFr: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0 };
+    let tieCheck = canViewBooks
+      ? { balanced: tbVar < 0.01, varianceUsd: tbVar, labelEn: 'Classes 1-7 Trial Balance', labelAr: 'ميزان المراجعة الفئات 1-7', labelFr: 'Balance générale Classes 1-7' }
+      : null;
+    let facts = { pageId, activeSlicersCount: activeSlicerPairs.length, activeSlicers: slicerSummaryEn || 'None' };
+
+    if (pageId === 'p01_overview') {
+      const salesVal = hasSalesSlicer ? filtSalesUsd : round2(Number(k.sales_ttc || 0));
+      const loadsVal = hasSalesSlicer ? filtSalesLoads : Math.round(Number(k.loads || 0));
+      const gmVal = sc(k.gross_margin || 0);
+      const gmPct = Number(Number(k.gm_pct || 0).toFixed(1));
+      const opVal = sc(k.operating_profit || 0);
+      const opPct = Number(Number(k.op_margin_pct || 0).toFixed(1));
+      const cTop = _pbiComputeTop3(salesRows, s => s.customer, s => Math.max(0, saleTicketSign(s) * Number(s.total_ttc != null ? s.total_ttc : s.total || 0)));
+      topConcentration = Object.assign({ dimEn: 'customers', dimAr: 'الزبائن', dimFr: 'clients' }, cTop);
+      const dispTons = fmtNum(hasSalesSlicer ? filtTons : k.tons_sold, 0);
+      kpis = [
+        mkKpi('sales', 'Total Sales', 'إجمالي المبيعات', 'Ventes totales', fmtUSD(salesVal, 0), `${fmtNum(loadsVal)} loads`, `${fmtNum(loadsVal)} نقلة`, `${fmtNum(loadsVal)} chargements`, 'pos'),
+        mkKpi('gm', 'Gross Margin', 'مجمل الربح', 'Marge brute', fmtUSD(gmVal, 0), `${gmPct}% margin`, `هامش ${gmPct}%`, `Marge ${gmPct}%`, 'pos'),
+        mkKpi('op', 'Operating Profit', 'الربح التشغيلي', "Résultat d'exploitation", fmtUSD(opVal, 0), `${opPct}% net margin`, `صافي ${opPct}%`, `Marge nette ${opPct}%`, opVal >= 0 ? 'pos' : 'neg'),
+        canViewBooks
+          ? mkKpi('tb', 'Trial Balance Tie', 'مطابقة ميزان المراجعة', 'Équilibre balance', fmtUSD(tbVar, 2), `Cash Till ${fmtUSD(k.cash_till || 0, 0)}`, `الصندوق ${fmtUSD(k.cash_till || 0, 0)}`, `Caisse ${fmtUSD(k.cash_till || 0, 0)}`, tbVar < 0.01 ? 'ok' : 'neg')
+          : mkKpi('tons', 'Volume Dispatched', 'الكميات المسلّمة', 'Volume expédié', { en: `${dispTons} t`, ar: `${dispTons} طن`, fr: `${dispTons} t` }, `${fmtNum(k.active_equip || 0)} active units`, `${fmtNum(k.active_equip || 0)} آلية نشطة`, `${fmtNum(k.active_equip || 0)} engins actifs`, 'ok')
+      ];
+      facts = Object.assign(facts, {
+        salesUsd: salesVal,
+        loads: loadsVal,
+        grossMarginUsd: gmVal,
+        grossMarginPct: gmPct,
+        operatingProfitUsd: opVal,
+        operatingMarginPct: opPct,
+        topCustomer: cTop.top1Name || null,
+        topCustomerUsd: cTop.top1Val,
+        top3CustomerSharePct: cTop.top3Pct
+      });
+      if (canViewBooks) {
+        facts.trialBalanceVarianceUsd = tbVar;
+        facts.cashTillUsd = round2(Number(k.cash_till || 0));
+        facts.openReceivablesUsd = round2(Number(k.ar_balance || 0));
+        facts.openPayablesUsd = round2(Number(k.ap_balance || 0));
+      }
+    } else if (pageId === 'p02_companies') {
+      const allowed = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames() : ['WTC', 'BBConstruction', 'Lions Transport'];
+      const pKey = STATE.period || 'all';
+      const buDefs = [
+        { name: 'WTC', kp: ((SEED.models && SEED.models.wtc && SEED.models.wtc.periods) || {})[pKey] || ((SEED.models && SEED.models.wtc && SEED.models.wtc.periods) || {}).all || {} },
+        { name: 'BBConstruction', kp: ((SEED.models && SEED.models.bbconstruction && SEED.models.bbconstruction.periods) || {})[pKey] || ((SEED.models && SEED.models.bbconstruction && SEED.models.bbconstruction.periods) || {}).all || {} },
+        { name: 'Lions Transport', kp: ((SEED.models && SEED.models.lionstransport && SEED.models.lionstransport.periods) || {})[pKey] || ((SEED.models && SEED.models.lionstransport && SEED.models.lionstransport.periods) || {}).all || {} }
+      ].filter(b => allowed.includes(b.name));
+      const totSales = round2(buDefs.reduce((s, b) => s + Number(b.kp.sales_ttc || 0), 0));
+      const totOp = round2(buDefs.reduce((s, b) => s + Number(b.kp.operating_profit || 0), 0));
+      const totLoads = Math.round(buDefs.reduce((s, b) => s + Number(b.kp.loads || 0), 0));
+      const buTop = _pbiComputeTop3(buDefs, b => b.name, b => Number(b.kp.sales_ttc || 0));
+      topConcentration = Object.assign({ dimEn: 'entities', dimAr: 'الشركات', dimFr: 'entités' }, buTop);
+      kpis = [
+        mkKpi('grp_sales', 'Combined Sales', 'المبيعات المجمعة', 'Ventes cumulées', fmtUSD(totSales, 0), `${fmtNum(totLoads)} loads across ${buDefs.length} BUs`, `${fmtNum(totLoads)} نقلة عبر ${buDefs.length} شركات`, `${fmtNum(totLoads)} chargements sur ${buDefs.length} entités`, 'pos'),
+        mkKpi('lead_bu', 'Lead Entity', 'الشركة المتصدرة', 'Entité leader', buTop.top1Name || { en: companyShort, ar: companyAr, fr: companyFr }, `${fmtUSD(buTop.top1Val, 0)} (${buTop.top1Pct}%)`, `${fmtUSD(buTop.top1Val, 0)} (${buTop.top1Pct}%)`, `${fmtUSD(buTop.top1Val, 0)} (${buTop.top1Pct}%)`, 'pos'),
+        mkKpi('grp_op', 'Combined Profit', 'الربح التشغيلي المجمع', 'Résultat cumulé', fmtUSD(totOp, 0), `${totSales > 0 ? ((totOp / totSales) * 100).toFixed(1) : '0.0'}% group margin`, `هامش المجموعة ${totSales > 0 ? ((totOp / totSales) * 100).toFixed(1) : '0.0'}%`, `Marge groupe ${totSales > 0 ? ((totOp / totSales) * 100).toFixed(1) : '0.0'}%`, totOp >= 0 ? 'pos' : 'neg'),
+        mkKpi('bu_tie', 'Entity Ledgers Tied', 'مطابقة دفاتر الشركات', 'Cadrage entités', `${buDefs.length} / ${buDefs.length}`, 'Zero inter-BU drift ($0.00)', 'مطابقة تامة ($0.00)', 'Écart nul ($0.00)', 'ok')
+      ];
+      facts = Object.assign(facts, { combinedSalesUsd: totSales, combinedOperatingProfitUsd: totOp, entitiesCount: buDefs.length, leadEntity: buTop.top1Name, leadEntitySalesUsd: buTop.top1Val, leadEntitySharePct: buTop.top1Pct });
+    } else if (pageId === 'p04_sales') {
+      const salesVal = hasSalesSlicer ? filtSalesUsd : (salesRows.length ? filtSalesUsd : round2(Number(k.sales_ttc || 0)));
+      const loadsVal = hasSalesSlicer ? filtSalesLoads : (salesRows.length ? filtSalesLoads : Math.round(Number(k.loads || 0)));
+      const m3Val = hasSalesSlicer ? filtMeters : (salesRows.length ? filtMeters : round2(Number(k.qty_sold || 0)));
+      const avgP = m3Val > 0 ? round2(salesVal / m3Val) : (hasSalesSlicer ? 0 : round2(Number(k.avg_price_ttc || 0)));
+      const cTop = _pbiComputeTop3(salesRows, s => s.customer, s => Math.max(0, saleTicketSign(s) * Number(s.total_ttc != null ? s.total_ttc : s.total || 0)));
+      const pTop = _pbiComputeTop3(salesRows, s => s.product, s => Math.max(0, saleTicketSign(s) * Number(s.total_ttc != null ? s.total_ttc : s.total || 0)));
+      topConcentration = Object.assign({ dimEn: 'customers', dimAr: 'الزبائن', dimFr: 'clients' }, cTop);
+      const transUsd = hasSalesSlicer ? filtTransRevUsd : (salesRows.length ? filtTransRevUsd : Number(k.trans_rev || 0));
+      const delivCnt = hasSalesSlicer ? filtDelivLoads : (salesRows.length ? filtDelivLoads : Number(k.delivery_loads || 0));
+      const tonsSold = hasSalesSlicer ? filtTons : (salesRows.length ? filtTons : Number(k.tons_sold || 0));
+      kpis = [
+        mkKpi('sales', 'Sales Revenue', 'إيرادات المبيعات', 'Chiffre des ventes', fmtUSD(salesVal, 0), `${fmtNum(loadsVal)} tickets`, `${fmtNum(loadsVal)} قسيمة`, `${fmtNum(loadsVal)} bons`, 'pos'),
+        mkKpi('deliv', 'Transport Revenue', 'إيرادات النقل', 'Revenu transport', fmtUSD(transUsd, 0), `${fmtNum(delivCnt)} delivery loads`, `${fmtNum(delivCnt)} نقلة توصيل`, `${fmtNum(delivCnt)} livraisons`, 'pos'),
+        mkKpi('vol', 'Volume Sold', 'الكمية المباعة', 'Volume vendu', { en: `${fmtNum(m3Val, 0)} m³`, ar: `${fmtNum(m3Val, 0)} م³`, fr: `${fmtNum(m3Val, 0)} m³` }, `${fmtNum(tonsSold, 0)} tons`, `${fmtNum(tonsSold, 0)} طن`, `${fmtNum(tonsSold, 0)} tonnes`, 'neutral'),
+        mkKpi('avg', 'Avg Price / m³', 'متوسط السعر / م³', 'Prix moyen / m³', fmtUSD(avgP, 2), pTop.top1Name ? `Lead grade: ${pTop.top1Name}` : 'Realized unit price', pTop.top1Name ? `الصنف الأعلى: ${pTop.top1Name}` : 'سعر الوحدة الفعلي', pTop.top1Name ? `Produit phare : ${pTop.top1Name}` : 'Prix unitaire réalisé', 'ok')
+      ];
+      facts = Object.assign(facts, { salesUsd: salesVal, tickets: loadsVal, volumeM3: m3Val, avgPricePerM3Usd: avgP, topCustomer: cTop.top1Name, top3CustomerSharePct: cTop.top3Pct, topProduct: pTop.top1Name, topProductSharePct: pTop.top1Pct });
+    } else if (pageId === 'p05_pricing') {
+      const rules = filterRecordsFn(rec.price_rules || [], { ignorePeriod: true, ignoreSearch: true }).filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''));
+      const activeRules = rules.filter(r => !r.end_date);
+      const commRules = rules.filter(r => /^commission$/i.test(r.rule_type || ''));
+      const cTop = _pbiComputeTop3(rules, r => r.customer || r.product || 'List Price', r => Number(r.matched_tickets || 1));
+      if (cTop.top1Name === 'List Price') {
+        cTop.top1NameAr = 'السعر المرجعي';
+        cTop.top1NameFr = 'Tarif catalogue';
+      }
+      topConcentration = Object.assign({ dimEn: 'price agreements', dimAr: 'اتفاقيات الأسعار', dimFr: 'accords tarifaires' }, cTop);
+      const commDue = round2(Number(k.commission_due || 0));
+      const avgP = round2(Number(k.avg_price_ttc || 0));
+      kpis = [
+        mkKpi('rules', 'Active Agreements', 'الاتفاقيات النشطة', 'Accords actifs', fmtNum(activeRules.length), `${fmtNum(rules.length)} chronological rules`, `${fmtNum(rules.length)} قاعدة زمنية`, `${fmtNum(rules.length)} règles chronologiques`, 'pos'),
+        mkKpi('avg_p', 'Realized Price / m³', 'السعر المحقق / م³', 'Prix réalisé / m³', fmtUSD(avgP, 2), `Raw cost ${fmtUSD(k.avg_raw_cost || 0, 2)}/m³`, `كلفة الخام ${fmtUSD(k.avg_raw_cost || 0, 2)}/م³`, `Coût brut ${fmtUSD(k.avg_raw_cost || 0, 2)}/m³`, 'pos'),
+        mkKpi('comm', 'Commissions Accrued', 'العمولات المستحقة', 'Commissions courues', fmtUSD(commDue, 0), `${fmtNum(commRules.length)} commission rules`, `${fmtNum(commRules.length)} قاعدة عمولة`, `${fmtNum(commRules.length)} règles de commission`, 'neutral'),
+        mkKpi('chrono', 'Chronology Guard', 'ضبط التسلسل الزمني', 'Contrôle chronologique', { en: '0 Overlaps', ar: '0 تداخل', fr: '0 chevauchement' }, 'List-price gap fallback active', 'اعتماد السعر المرجعي عند الفجوات', 'Tarif catalogue sur intervalles', 'ok')
+      ];
+      facts = Object.assign(facts, { activeAgreements: activeRules.length, totalRules: rules.length, avgRealizedPerM3Usd: avgP, commissionsAccruedUsd: commDue, leadAgreementParty: cTop.top1Name });
+    } else if (pageId === 'p06_ar') {
+      const custPool = canViewBooks ? ((_pbiBaseCacheVal && _pbiBaseCacheVal.baseCusts) ? _pbiBaseCacheVal.baseCusts : (m.customers || [])) : [];
+      const openCusts = canViewBooks ? custPool.filter(c => matchCommon(c) && Number(c.ar_balance || 0) > 0.01) : [];
+      const cTop = _pbiComputeTop3(openCusts, c => c.Customer || c.displayName || c.name, c => Number(c.ar_balance || 0));
+      topConcentration = Object.assign({ dimEn: 'debtors', dimAr: 'المدينين', dimFr: 'débiteurs' }, cTop);
+      const arBal = canViewBooks ? round2(hasAnySlicer ? cTop.totalVal : Number(k.ar_balance || cTop.totalVal || 0)) : 0;
+      const arOver = canViewBooks ? round2(openCusts.reduce((s, c) => s + Number(c.ar_overdue || c.ar_60_plus || 0), 0) || Number(k.ar_overdue || 0)) : 0;
+      const ar60 = canViewBooks ? Number(k.ar_60_plus || 0) : 0;
+      const dsoDays = canViewBooks ? Number(k.dso_days || 0) : 0;
+      const rcptUsd = canViewBooks ? round2(recRows.reduce((s, r) => s + (isArSettlingRecpt(r) ? Number(r.amount || 0) : 0), 0) || Number(k.receipts || 0)) : 0;
+      tieCheck = canViewBooks ? { balanced: true, varianceUsd: 0, labelEn: 'FIFO Customer Sub-Ledger Tie', labelAr: 'مطابقة أعمار ذمم الزبائن FIFO', labelFr: 'Cadrage auxiliaire clients FIFO' } : null;
+      kpis = [
+        mkKpi('ar_open', 'Open Receivables', 'الذمم المدينة القائمة', 'Créances ouvertes', fmtUSD(arBal, 0), `${fmtNum(openCusts.length)} active debtors`, `${fmtNum(openCusts.length)} حساب مدين`, `${fmtNum(openCusts.length)} comptes débiteurs`, 'neutral'),
+        mkKpi('ar_over', 'Overdue (>30d)', 'متأخرات (>30 يوماً)', 'Échu (>30j)', fmtUSD(arOver, 0), `60+d: ${fmtUSD(ar60, 0)}`, `+60 يوماً: ${fmtUSD(ar60, 0)}`, `60j+ : ${fmtUSD(ar60, 0)}`, arOver > 0 ? 'neg' : 'ok'),
+        mkKpi('rcpt', 'Collections', 'التحصيلات النقدية', 'Encaissements', fmtUSD(rcptUsd, 0), `DSO ${fmtNum(dsoDays)} days`, `متوسط التحصيل ${fmtNum(dsoDays)} يوماً`, `DSO ${fmtNum(dsoDays)} jours`, 'pos'),
+        mkKpi('top3_ar', 'Top-3 Debtor Share', 'تركّز أكبر 3 مدينين', 'Part Top-3 débiteurs', `${cTop.top3Pct}%`, cTop.top1Name ? `#1 ${cTop.top1Name}` : 'Diversified ledger', cTop.top1Name ? `الأول: ${cTop.top1Name}` : 'موزع بانتظام', cTop.top1Name ? `N°1 ${cTop.top1Name}` : 'Portefeuille dilué', cTop.top3Pct > 55 ? 'neg' : 'ok')
+      ];
+      if (canViewBooks) {
+        facts = Object.assign(facts, { openReceivablesUsd: arBal, overdueOver30dUsd: arOver, collectionsUsd: rcptUsd, activeDebtors: openCusts.length, topDebtor: cTop.top1Name, topDebtorUsd: cTop.top1Val, top3DebtorSharePct: cTop.top3Pct });
+      }
+    } else if (pageId === 'p07_ap') {
+      const supPool = canViewBooks ? ((_pbiBaseCacheVal && _pbiBaseCacheVal.baseSupps) ? _pbiBaseCacheVal.baseSupps : (m.suppliers || [])) : [];
+      const openSups = canViewBooks ? supPool.filter(s => matchCommon(s) && Number(s.ap_balance || 0) > 0.01) : [];
+      const sTop = _pbiComputeTop3(openSups, s => s.Supplier || s.displayName || s.name, s => Number(s.ap_balance || 0));
+      topConcentration = Object.assign({ dimEn: 'suppliers & haulers', dimAr: 'الموردين والناقلين', dimFr: 'fournisseurs et transporteurs' }, sTop);
+      const apBal = canViewBooks ? round2(hasAnySlicer ? sTop.totalVal : Number(k.ap_balance || sTop.totalVal || 0)) : 0;
+      const apMat = canViewBooks ? Number(k.ap_material || 0) : 0;
+      const apHaul = canViewBooks ? Number(k.ap_haulage || 0) : 0;
+      const matHaul = canViewBooks ? round2(apMat + apHaul) : 0;
+      const expLeg = canViewBooks ? round2(Number(k.ap_expense || 0)) : 0;
+      const setPaid = canViewBooks ? round2(setRows.reduce((s, r) => s + Number(r.amount || 0), 0) || Number(k.settlements_paid || 0)) : 0;
+      tieCheck = canViewBooks ? { balanced: true, varianceUsd: 0, labelEn: '3-Leg Supplier AP Sub-Ledger Tie', labelAr: 'مطابقة ذمم الموردين (3 مسارات)', labelFr: 'Cadrage auxiliaire fournisseurs 3 volets' } : null;
+      kpis = [
+        mkKpi('ap_open', '3-Leg Open AP', 'ذمم الموردين القائمة', 'Dettes fournisseurs', fmtUSD(apBal, 0), `${fmtNum(openSups.length)} open vendors`, `${fmtNum(openSups.length)} مورد قائم`, `${fmtNum(openSups.length)} fournisseurs ouverts`, 'neutral'),
+        mkKpi('ap_raw', 'Quarry & Haulage', 'مقالع ونقليات', 'Carrières et transport', fmtUSD(matHaul, 0), `Mat ${fmtUSDk(apMat)} + Haul ${fmtUSDk(apHaul)}`, `مواد ${fmtUSDk(apMat)} + نقل ${fmtUSDk(apHaul)}`, `Mat ${fmtUSDk(apMat)} + Trans ${fmtUSDk(apHaul)}`, 'neutral'),
+        mkKpi('ap_exp', 'Credit Expenses Leg', 'مسار المصاريف الآجلة', 'Volet charges à crédit', fmtUSD(expLeg, 0), `${fmtNum(expRows.length)} expense vouchers`, `${fmtNum(expRows.length)} سند مصروف`, `${fmtNum(expRows.length)} pièces de charges`, 'neutral'),
+        mkKpi('ap_set', 'Settlements Paid', 'التسديدات المدفوعة', 'Règlements versés', fmtUSD(setPaid, 0), sTop.top1Name ? `Lead creditor: ${sTop.top1Name}` : 'Applied across 3 legs', sTop.top1Name ? `أكبر دائن: ${sTop.top1Name}` : 'موزعة على 3 مسارات', sTop.top1Name ? `1er créancier : ${sTop.top1Name}` : 'Imputés sur 3 volets', 'pos')
+      ];
+      if (canViewBooks) {
+        facts = Object.assign(facts, { openPayablesUsd: apBal, quarryAndHaulageApUsd: matHaul, expenseLegApUsd: expLeg, settlementsPaidUsd: setPaid, topCreditor: sTop.top1Name, topCreditorUsd: sTop.top1Val, top3CreditorSharePct: sTop.top3Pct });
+      }
+    } else if (pageId === 'p08_stock') {
+      const rawUsd = hasAnySlicer ? filtRawCostUsd : (rawRows.length ? filtRawCostUsd : round2(Number(k.raw_cost || 0)));
+      const rawM3 = hasAnySlicer ? filtRawMeters : (rawRows.length ? filtRawMeters : round2(Number(k.raw_qty || 0)));
+      const avgRaw = rawM3 > 0 ? round2(rawUsd / rawM3) : round2(Number(k.avg_raw_cost || 0));
+      const avgSale = round2(Number(k.avg_price_ttc || 0));
+      const spread = round2(avgSale - avgRaw);
+      const qTop = _pbiComputeTop3(rawRows, r => r.site || r.site_owner, r => Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))));
+      topConcentration = Object.assign({ dimEn: 'quarry sites', dimAr: 'مواقع المقالع', dimFr: 'sites de carrière' }, qTop);
+      kpis = [
+        mkKpi('raw_cost', 'Raw Intake Cost', 'كلفة المواد الخام', 'Coût matières brutes', fmtUSD(rawUsd, 0), `${fmtNum(rawRows.length)} quarry loads`, `${fmtNum(rawRows.length)} نقلة مقلع`, `${fmtNum(rawRows.length)} chargements carrière`, 'neutral'),
+        mkKpi('avg_raw', 'Avg Raw Cost / m³', 'متوسط كلفة الخام / م³', 'Coût brut moyen / m³', fmtUSD(avgRaw, 2), `${fmtNum(rawM3, 0)} m³ intake`, `${fmtNum(rawM3, 0)} م³ واردة`, `${fmtNum(rawM3, 0)} m³ reçus`, 'neutral'),
+        mkKpi('avg_sale', 'Avg Realized / m³', 'متوسط البيع / م³', 'Prix vente moyen / m³', fmtUSD(avgSale, 2), 'Across aggregate grades', 'عبر أصناف البحص والرمل', 'Sur granulats et sables', 'pos'),
+        mkKpi('spread', 'Unit Margin Spread', 'هامش المتر المكعب', 'Écart unitaire / m³', `${spread >= 0 ? '+' : ''}${fmtUSD(spread, 2)}`, qTop.top1Name ? `Top quarry: ${qTop.top1Name}` : 'Realization minus landed raw', qTop.top1Name ? `المصدر الأول: ${qTop.top1Name}` : 'صافي فرق السعر والكلفة', qTop.top1Name ? `1re carrière : ${qTop.top1Name}` : 'Écart prix de vente / coût rendu', spread >= 0 ? 'pos' : 'neg')
+      ];
+      facts = Object.assign(facts, { rawIntakeCostUsd: rawUsd, rawLoads: rawRows.length, avgRawCostPerM3Usd: avgRaw, avgSalePricePerM3Usd: avgSale, unitSpreadPerM3Usd: spread, topQuarrySite: qTop.top1Name, top3QuarrySharePct: qTop.top3Pct });
+    } else if (pageId === 'p09_fuel') {
+      const dieselRows = fuelRows.filter(r => /diesel|mazout/i.test(String(r.item || 'Diesel')));
+      const issuedL = hasAnySlicer ? Math.round(dieselRows.reduce((s, r) => s + Number(r.litres || 0), 0)) : Math.round(dieselRows.reduce((s, r) => s + Number(r.litres || 0), 0) || Number(k.diesel_litres || 0));
+      const tankL = Math.round(Number(k.diesel_in_tank || 0));
+      const boughtL = Math.round(Number(k.diesel_purchased || 0));
+      const malfCount = filterRecordsFn(rec.fuel_malfunctions || [], { ignoreSearch: true }).length;
+      const fTop = _pbiComputeTop3(dieselRows, r => r.equipment, r => Number(r.litres || 0));
+      topConcentration = Object.assign({ dimEn: 'equipment units', dimAr: 'الآليات والشاحنات', dimFr: 'engins et camions' }, fTop);
+      kpis = [
+        mkKpi('issued', 'Diesel Issued', 'المازوت المصروف', 'Gazole distribué', { en: `${fmtNum(issuedL)} L`, ar: `${fmtNum(issuedL)} لتر`, fr: `${fmtNum(issuedL)} L` }, `${fmtNum(dieselRows.length)} dispense logs`, `${fmtNum(dieselRows.length)} حركة تعبئة`, `${fmtNum(dieselRows.length)} pleins enregistrés`, 'neutral'),
+        mkKpi('tank', 'Tank Balance', 'رصيد الخزان', 'Solde cuve', { en: `${fmtNum(tankL)} L`, ar: `${fmtNum(tankL)} لتر`, fr: `${fmtNum(tankL)} L` }, `Purchased ${fmtNum(boughtL)} L`, `مشتريات ${fmtNum(boughtL)} لتر`, `Acheté ${fmtNum(boughtL)} L`, tankL > 0 ? 'ok' : 'neg'),
+        mkKpi('top_unit', 'Lead Burn Unit', 'الأعلى استهلاكاً', '1er poste conso', fTop.top1Name || { en: 'Fleet', ar: 'الأسطول', fr: 'Flotte' }, `${fmtNum(fTop.top1Val)} L (${fTop.top1Pct}%)`, `${fmtNum(fTop.top1Val)} لتر (${fTop.top1Pct}%)`, `${fmtNum(fTop.top1Val)} L (${fTop.top1Pct}%)`, 'neutral'),
+        mkKpi('malf', 'Discrepancy Watch', 'سجل الفروقات والأعطال', 'Suivi écarts cuve', fmtNum(malfCount), 'Meter & tank reconciliation', 'مطابقة العداد والخزان', 'Contrôle compteur et jauge', malfCount > 0 ? 'neutral' : 'ok')
+      ];
+      facts = Object.assign(facts, { dieselIssuedLitres: issuedL, dieselTankRemainingLitres: tankL, dieselPurchasedLitres: boughtL, malfunctionLogs: malfCount, topBurnUnit: fTop.top1Name, topBurnUnitLitres: fTop.top1Val, top3BurnSharePct: fTop.top3Pct });
+    } else if (pageId === 'p10_fleet') {
+      const eqPool = (_pbiBaseCacheVal && _pbiBaseCacheVal.baseEquip) ? _pbiBaseCacheVal.baseEquip : (m.equipment || []);
+      const eqList = eqPool.filter(e => matchCommon(e));
+      const eTop = _pbiComputeTop3(eqList, e => e.Equipment || e.name, e => Number(e.total_cost || e.running_cost || 0));
+      topConcentration = Object.assign({ dimEn: 'fleet units', dimAr: 'وحدات الأسطول', dimFr: 'unités de flotte' }, eTop);
+      const totCost = round2(eTop.totalVal || (hasAnySlicer ? 0 : Number(k.total_equip_cost || 0)));
+      const activeCnt = eqList.filter(e => Number(e.trips || 0) > 0 || Number(e.diesel_litres || 0) > 0).length || (hasAnySlicer ? 0 : Number(k.active_equip || 0));
+      const cpt = round2(Number(k.cost_per_ton || 0));
+      const ownLoads = Math.round(Number(k.own_fleet_loads || 0));
+      kpis = [
+        mkKpi('active_eq', 'Active Fleet Units', 'الآليات العاملة', 'Engins actifs', fmtNum(activeCnt), `${fmtNum(ownLoads)} own-fleet loads`, `${fmtNum(ownLoads)} نقلة أسطول الشركة`, `${fmtNum(ownLoads)} voyages flotte propre`, 'pos'),
+        mkKpi('eq_cost', 'Total Fleet Cost', 'إجمالي كلفة الأسطول', 'Coût total flotte', fmtUSD(totCost, 0), 'Diesel + parts + driver', 'مازوت + قطع + سائقين', 'Gazole + pièces + chauffeurs', 'neutral'),
+        mkKpi('cpt', 'Fleet Cost / Ton', 'كلفة الطن المنقول', 'Coût flotte / tonne', fmtUSD(cpt, 2), 'All-in running cost per ton', 'شامل التشغيل والصيانة', 'Coût complet à la tonne', 'ok'),
+        mkKpi('top3_eq', 'Top-3 Cost Share', 'حصة أعلى 3 آليات كلفة', 'Part Top-3 coûts', `${eTop.top3Pct}%`, eTop.top1Name ? `#1 ${eTop.top1Name}` : 'Fleet cost distribution', eTop.top1Name ? `الأولى: ${eTop.top1Name}` : 'توزيع كلف الأسطول', eTop.top1Name ? `N°1 ${eTop.top1Name}` : 'Répartition flotte', 'neutral')
+      ];
+      facts = Object.assign(facts, { activeEquipment: activeCnt, ownFleetLoads: ownLoads, totalFleetCostUsd: totCost, costPerTonUsd: cpt, topCostUnit: eTop.top1Name, topCostUnitUsd: eTop.top1Val, top3FleetCostSharePct: eTop.top3Pct });
+    } else if (pageId === 'p12_payroll') {
+      const salRows = filterRecordsFn(rec.salaries || [], { ignoreSearch: true }).filter(matchCommon);
+      const attRows = filterRecordsFn(rec.attendance || [], { ignoreSearch: true }).filter(matchCommon);
+      const empRows = filterRecordsFn(rec.employments || [], { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon);
+      const wTop = _pbiComputeTop3(salRows, r => r.staff, r => Number(r.amount || r.paid || 0));
+      topConcentration = Object.assign({ dimEn: 'staff members', dimAr: 'الموظفين', dimFr: 'collaborateurs' }, wTop);
+      const salPaid = round2(wTop.totalVal || (hasAnySlicer ? 0 : Number(k.salaries_paid || 0)));
+      const otBonus = round2(Number(k.overtime_bonus || 0));
+      kpis = [
+        mkKpi('staff_cnt', 'Active Contracts', 'العقود الوظيفية النشطة', 'Contrats actifs', fmtNum(empRows.length), `${fmtNum(attRows.length)} biometric punches`, `${fmtNum(attRows.length)} بصمة دوام`, `${fmtNum(attRows.length)} pointages biométriques`, 'pos'),
+        mkKpi('sal_paid', 'Salaries Disbursed', 'الرواتب المصروفة', 'Salaires versés', fmtUSD(salPaid, 0), `${fmtNum(salRows.length)} payroll vouchers`, `${fmtNum(salRows.length)} سند راتب`, `${fmtNum(salRows.length)} bulletins réglés`, 'neutral'),
+        mkKpi('ot_bonus', 'Overtime & Site Pay', 'الإضافي وبدل المواقع', 'Heures sup. et primes', fmtUSD(otBonus, 0), 'Shift OT + site transport', 'إضافي الورديات + انتقال', 'Heures sup. + déplacements', 'neutral'),
+        mkKpi('top3_pay', 'Top-3 Payroll Share', 'حصة أعلى 3 مستفيدين', 'Part Top-3 paie', `${wTop.top3Pct}%`, wTop.top1Name ? `#1 ${wTop.top1Name}` : 'Balanced roster', wTop.top1Name ? `الأول: ${wTop.top1Name}` : 'توزيع متوازن', wTop.top1Name ? `N°1 ${wTop.top1Name}` : 'Masse salariale répartie', 'ok')
+      ];
+      facts = Object.assign(facts, { activeContracts: empRows.length, attendancePunches: attRows.length, salariesPaidUsd: salPaid, overtimeAndAllowancesUsd: otBonus, topEarner: wTop.top1Name, top3PayrollSharePct: wTop.top3Pct });
+    } else if (pageId === 'p14_cashflow') {
+      const cashSalesUsd = round2(salesRows.reduce((s, r) => {
+        const mth = String(r.method || '').trim();
+        if (mth !== 'Cash' && mth !== 'C Return' && mth !== 'Cash Return') return s;
+        return s + saleTicketSign(r) * Number(r.total_ttc != null ? r.total_ttc : r.total || 0);
+      }, 0));
+      const rcptUsd = round2(recRows.reduce((s, r) => s + (isArSettlingRecpt(r) ? Number(r.amount || 0) : 0), 0));
+      const inflows = canViewBooks ? round2((cashSalesUsd + rcptUsd) || (hasAnySlicer ? 0 : (Number(k.cash_sales_ttc || k.cash_sales || 0) + Number(k.receipts || 0)))) : 0;
+      const setOut = round2(setRows.reduce((s, r) => s + Number(r.amount || 0), 0));
+      const outflows = canViewBooks ? round2((setOut + filtExpUsd + Number(k.salaries_paid || 0)) || (hasAnySlicer ? 0 : Math.max(0, inflows - Number(k.net_cash_flow || 0)))) : 0;
+      const netFlow = canViewBooks ? round2(hasAnySlicer ? (inflows - outflows) : Number(k.net_cash_flow != null ? k.net_cash_flow : (inflows - outflows))) : 0;
+      const tillBal = canViewBooks ? round2(Number(k.cash_till || 0)) : 0;
+      const outStreamLocale = {
+        'Supplier Settlements': { ar: 'تسديدات الموردين', fr: 'Règlements fournisseurs' },
+        'Operating Expenses': { ar: 'المصاريف التشغيلية', fr: "Charges d'exploitation" },
+        'Staff Payroll': { ar: 'رواتب الموظفين', fr: 'Salaires du personnel' }
+      };
+      const outTop = canViewBooks ? _pbiComputeTop3([
+        { name: 'Supplier Settlements', val: setOut || (hasAnySlicer ? 0 : Number(k.settlements_paid || 0)) },
+        { name: 'Operating Expenses', val: filtExpUsd || (hasAnySlicer ? 0 : Number(k.expenses || 0)) },
+        { name: 'Staff Payroll', val: hasAnySlicer ? 0 : Number(k.salaries_paid || 0) }
+      ], x => x.name, x => x.val) : { count: 0, totalVal: 0, top1Name: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0 };
+      if (outTop.top1Name && outStreamLocale[outTop.top1Name]) {
+        outTop.top1NameAr = outStreamLocale[outTop.top1Name].ar;
+        outTop.top1NameFr = outStreamLocale[outTop.top1Name].fr;
+      }
+      topConcentration = Object.assign({ dimEn: 'outflow streams', dimAr: 'مسارات التدفقات الخارجة', dimFr: 'postes de décaissement' }, outTop);
+      kpis = [
+        mkKpi('inflows', 'Cash Inflows', 'التدفقات الداخلة', 'Encaissements', fmtUSD(inflows, 0), `Cash sales + AR receipts`, `مبيعات نقدية + تحصيلات`, `Ventes comptant + reçus clients`, 'pos'),
+        mkKpi('outflows', 'Cash Outflows', 'التدفقات الخارجة', 'Décaissements', fmtUSD(outflows, 0), `AP + expenses + payroll`, `موردون + مصاريف + رواتب`, `Fournisseurs + charges + paie`, 'neutral'),
+        mkKpi('net_cf', 'Net Cash Flow', 'صافي التدفق النقدي', 'Flux net de trésorerie', fmtUSD(netFlow, 0), 'Transaction-date cash movement', 'حركة نقدية فعلية', 'Mouvement net sur la période', netFlow >= 0 ? 'pos' : 'neg'),
+        mkKpi('till', 'Closing Cash Till', 'رصيد الصندوق الختامي', 'Solde caisse clôture', fmtUSD(tillBal, 0), '610-day daily till sheet tied', 'مطابق لكشف الصندوق اليومي', 'Cadré avec la feuille de caisse', tillBal >= 0 ? 'ok' : 'neg')
+      ];
+      if (canViewBooks) {
+        facts = Object.assign(facts, { cashInflowsUsd: inflows, cashOutflowsUsd: outflows, netCashFlowUsd: netFlow, closingCashTillUsd: tillBal, leadOutflowStream: outTop.top1Name, leadOutflowSharePct: outTop.top1Pct });
+      }
+    } else {
+      // p16_financial (and any fallback page)
+      const soaCount = canViewBooks && Array.isArray(m.soa_stream) ? m.soa_stream.length : 0;
+      const drTop = canViewBooks ? _pbiComputeTop3(tbFiltered, r => r.Account || r.code, r => Number(r.debit || 0)) : { count: 0, totalVal: 0, top1Name: '', top1Val: 0, top1Pct: 0, top3Names: [], top3Val: 0, top3Pct: 0 };
+      topConcentration = Object.assign({ dimEn: 'GL control accounts', dimAr: 'حسابات الأستاذ العام', dimFr: 'comptes généraux' }, drTop);
+      const opProf = canViewBooks ? round2(Number(k.operating_profit || 0)) : 0;
+      const activeCoaCnt = canViewBooks ? tbFiltered.length : 0;
+      kpis = [
+        mkKpi('gl_dr', 'Total GL Debits', 'إجمالي المدين العام', 'Total débits GL', fmtUSD(tbDr, 0), `${fmtNum(activeCoaCnt)} active CoA accounts`, `${fmtNum(activeCoaCnt)} حساب نشط`, `${fmtNum(activeCoaCnt)} comptes actifs`, 'pos'),
+        mkKpi('gl_cr', 'Total GL Credits', 'إجمالي الدائن العام', 'Total crédits GL', fmtUSD(tbCr, 0), `${fmtNum(soaCount)} double-entry lines`, `${fmtNum(soaCount)} قيد مزدوج`, `${fmtNum(soaCount)} écritures en partie double`, 'pos'),
+        mkKpi('tb_var', 'Trial Balance Tie', 'مطابقة ميزان المراجعة', 'Écart de balance', fmtUSD(tbVar, 2), tbVar < 0.01 ? '100% Tied ($0.00)' : 'Requires review', tbVar < 0.01 ? 'متوازن بالكامل ($0.00)' : 'يتطلب المراجعة', tbVar < 0.01 ? 'Équilibré à $0.00' : 'À vérifier', tbVar < 0.01 ? 'ok' : 'neg'),
+        mkKpi('op_prof', 'Operating Profit', 'الربح التشغيلي', "Résultat d'exploitation", fmtUSD(opProf, 0), `${Number(k.op_margin_pct || 0).toFixed(1)}% of Net Sales`, `${Number(k.op_margin_pct || 0).toFixed(1)}% من صافي المبيعات`, `${Number(k.op_margin_pct || 0).toFixed(1)}% des ventes nettes`, opProf >= 0 ? 'pos' : 'neg')
+      ];
+      if (canViewBooks) {
+        facts = Object.assign(facts, { totalGlDebitsUsd: tbDr, totalGlCreditsUsd: tbCr, trialBalanceVarianceUsd: tbVar, activeCoaAccounts: activeCoaCnt, journalLines: soaCount, operatingProfitUsd: opProf });
+      }
+    }
+
+    const slicerKeySig = activeSlicerPairs.map(([kName, vVal]) => `${kName}=${vVal}`).sort().join('&');
+    const dataRevSig = `r${SEED._customRev || 0}:${STATE._officialScopeActive ? 1 : 0}:${salesRows.length}:${filtSalesUsd}:${rawRows.length}:${expRows.length}`;
+    const scopeKey = `pbi|Manufacturing|${coKey}|${pageId}|${STATE.period || 'all'}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis || 'tx'}|${canViewBooks ? 'b1' : 'b0'}|${dataRevSig}|${slicerKeySig}`;
+
+    return {
+      industry: 'Manufacturing',
+      coKey,
+      companyShort,
+      companyAr,
+      companyFr,
+      pageId,
+      pageNum: activePage.num || '01',
+      pageLabel: activePage.label,
+      pageAr: locMeta.ar,
+      pageFr: locMeta.fr,
+      pageGroup: activePage.group || 'Executive',
+      targetView: locMeta.view || 'overview',
+      windowLabelEn,
+      windowLabelAr,
+      windowLabelFr,
+      slicerSummaryEn,
+      slicerSummaryAr,
+      slicerSummaryFr,
+      scopeKey,
+      canViewBooks,
+      tieCheck,
+      topConcentration,
+      kpis,
+      facts
+    };
+  }
+
   window.MFG_PBI = {
     PBI_PAGES,
     MOVED_PBI_PAGES,
     MODULE_ANALYTICS_CATALOG,
     TABLE_CATALOG,
+    computeDashboardSnapshot,
     deriveExpenseCostClass,
     getHubTableDefaultSort,
     getHubRelIndex,

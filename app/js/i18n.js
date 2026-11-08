@@ -9001,7 +9001,16 @@
       "Copy Note": "نسخ المذكرة",
       "Copied!": "تم النسخ!",
       "WhatsApp": "واتساب",
-      "Remove from print": "إزالة من الطباعة"
+      "Remove from print": "إزالة من الطباعة",
+      "Explain active dashboard KPIs, top-3 concentration & outliers": "تفسير مؤشرات اللوحة وتركز أعلى 3 محركات والحالات الشاذة",
+      "Listen to spoken walkthrough of active dashboard": "الاستماع إلى شرح صوتي للوحة التحليلية النشطة",
+      "Dashboard Variance & Outlier Brief": "ملخص تباين اللوحة والتركز التشغيلي",
+      "AI Outlier Brief": "تحليل التركز الذكي",
+      "Copy Brief": "نسخ الملخص",
+      "Filtered Register Rows": "السجلات المصفاة",
+      "Active Register Rows": "السجلات النشطة",
+      "Operating Scope": "النطاق التشغيلي",
+      "Operational Control": "الجاهزية التشغيلية"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -15389,7 +15398,7 @@
       "Reporting Date Basis": "Base Date de Reporting",
       "Reporting Date vs Transaction Date Guard": "Garde d'Écart Date de Reporting vs Date d'Opération",
       "Reporting Period": "Période de reporting",
-      "Reporting Window": "Période de Reporting",
+      "Reporting Window": "Période analysée",
       "Reprint": "Réimprimer",
       "Require PIN": "Exiger PIN",
       "Required": "Obligatoire",
@@ -17984,7 +17993,16 @@
       "Copy Note": "Copier la note",
       "Copied!": "Copié !",
       "WhatsApp": "WhatsApp",
-      "Remove from print": "Retirer de l'impression"
+      "Remove from print": "Retirer de l'impression",
+      "Explain active dashboard KPIs, top-3 concentration & outliers": "Expliquer les indicateurs, la concentration Top 3 et les écarts du tableau",
+      "Listen to spoken walkthrough of active dashboard": "Écouter la synthèse vocale du tableau analytique actif",
+      "Dashboard Variance & Outlier Brief": "Synthèse des écarts et de la concentration",
+      "AI Outlier Brief": "Synthèse IA des écarts",
+      "Copy Brief": "Copier la synthèse",
+      "Filtered Register Rows": "Lignes filtrées",
+      "Active Register Rows": "Lignes actives",
+      "Operating Scope": "Périmètre d'exploitation",
+      "Operational Control": "Contrôle opérationnel"
     }
   };
 
