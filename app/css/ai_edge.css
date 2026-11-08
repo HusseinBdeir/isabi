@@ -394,10 +394,81 @@
   line-height: 1.45;
 }
 
+/* Phase 16 Reconciliation KPI Strip & Tie-Out Banners */
+.aie-recon-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+@media (max-width: 900px) {
+  .aie-recon-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .aie-recon-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.aie-recon-kpi {
+  background: #FAF8F2;
+  border: 1px solid var(--line, #E2DCD0);
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:root[data-theme="dark"] .aie-recon-kpi {
+  background: rgba(250, 246, 238, 0.04);
+  border-color: rgba(250, 246, 238, 0.14);
+}
+
+.aie-recon-kpi small {
+  font-size: 10.8px;
+  color: var(--muted, #6E6254);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aie-recon-kpi strong {
+  font-size: 13.5px;
+  line-height: 1.25;
+}
+
+.aie-endorse-gap-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(217, 119, 6, 0.09);
+  border: 1px solid rgba(217, 119, 6, 0.34);
+  font-size: 11.8px;
+}
+
+:root[data-theme="dark"] .aie-endorse-gap-strip {
+  background: rgba(217, 165, 74, 0.1);
+  border-color: rgba(217, 165, 74, 0.35);
+}
+
 @media (max-width: 768px) {
   .aie-voice-input,
   .aie-batch-textarea,
   .aie-draft-text,
+  .aie-panel textarea,
+  .aie-panel input,
+  .aie-panel select,
   .aie-modal-card select,
   .aie-modal-card input {
     font-size: 16px !important;

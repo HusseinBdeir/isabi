@@ -44885,13 +44885,16 @@
     });
 
     // 5. Landed Cost Allocations
-    const rawLandedRows = pickTrd('landedRows', [
+    const rawLandedRows = mergeCustomOverSeededRows(pickTrd('landedRows', [
       { id: 'LC-SH-2026-014', import_file: 'IMP-SH-2026-014', date: '2026-10-16', company: 'Shacman', freight_usd: 16800, customs_usd: 11200, clearance_usd: 4400, insurance_usd: 2400, total_landed_add: 34800, allocated_usd: 34800, unallocated_usd: 0, basis: 'By CIF Value & Chassis Weight', status: '100% Allocated to Units' },
       { id: 'LC-SH-2026-015', import_file: 'IMP-SH-2026-015', date: '2026-10-28', company: 'Shacman', freight_usd: 3600, customs_usd: 2450, clearance_usd: 950, insurance_usd: 450, total_landed_add: 7450, allocated_usd: 4800, unallocated_usd: 2650, basis: 'By Line Value (Weighted Avg)', status: '$2,650 Unallocated' },
       { id: 'LC-SH-2026-016', import_file: 'IMP-SH-2026-016', date: '2026-10-30', company: 'Shacman', freight_usd: 11200, customs_usd: 7400, clearance_usd: 2600, insurance_usd: 1200, total_landed_add: 22400, allocated_usd: 22400, unallocated_usd: 0, basis: 'By Chassis CIF Value', status: '100% Allocated to Units' },
       { id: 'LC-KA-2026-021', import_file: 'IMP-KA-2026-021', date: '2026-10-18', company: 'Korri Auto', freight_usd: 2800, customs_usd: 1820, clearance_usd: 680, insurance_usd: 320, total_landed_add: 5620, allocated_usd: 5620, unallocated_usd: 0, basis: 'By Cubic Meter & Value', status: '100% Allocated to Stock' },
       { id: 'LC-KA-2026-022', import_file: 'IMP-KA-2026-022', date: '2026-10-29', company: 'Korri Auto', freight_usd: 1480, customs_usd: 1050, clearance_usd: 450, insurance_usd: 200, total_landed_add: 3180, allocated_usd: 1980, unallocated_usd: 1200, basis: 'By Line Value (Weighted Avg)', status: '$1,200 Unallocated' }
-    ]);
+    ]), getIndustryCustomRows('trd_landed')).map(rawR => {
+      const wp = getIndustryWorkflowPatch('trd_landed', rawR.id);
+      return wp ? Object.assign({}, rawR, wp) : rawR;
+    });
 
     // 6. Goods Receipt Notes & Lines (GRNs across 5 warehouses)
     const rawGrnRows = pickTrd('grnRows', [
@@ -44929,13 +44932,16 @@
     });
 
     // 8. Workshop, PDI & Warranty Claims
-    const rawWarrantyRows = pickTrd('warrantyRows', [
+    const rawWarrantyRows = mergeCustomOverSeededRows(pickTrd('warrantyRows', [
       { id: 'PDI-SH-2026-081', date: '2026-10-30', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019312', model: 'Shacman L3000 4x2 Water Tanker', job_type: 'Pre-Delivery Inspection (PDI)', bay: 'Workshop Bay 2', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 420, labor_usd: 180, claim_recovery_usd: 600, status: 'Open PDI' },
       { id: 'WAR-SH-2026-082', date: '2026-10-28', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019281', model: 'Shacman X3000 6x4 Tractor Head', job_type: 'OEM Warranty Claim (Weichai ECU Sensor)', bay: 'Workshop Bay 1', technician: 'Ali H. (Diagnostics)', parts_cost_usd: 680, labor_usd: 150, claim_recovery_usd: 830, status: 'Open Claim' },
       { id: 'SVC-SH-2026-079', date: '2026-10-23', company: 'Shacman', chassis_vin: 'LZGJLDR44PX019274', model: 'Shacman M3000 6x4 Mixer 10m³', job_type: '1,000-Hour First Service & PTO Calibration', bay: 'Bchamoun Service Pit', technician: 'Mahmoud K. (Master Tech)', parts_cost_usd: 940, labor_usd: 260, claim_recovery_usd: 1200, status: 'Completed' },
       { id: 'SVC-KA-2026-064', date: '2026-10-29', company: 'Korri Auto', chassis_vin: 'WDB9066571P391042', model: 'Heavy Fleet Tyre & Brake Overhaul', job_type: 'Customer Workshop Job & Alignment', bay: 'Al-Ghazieh Service Bay', technician: 'bilal S. (Al-Ghazieh)', parts_cost_usd: 1120, labor_usd: 280, claim_recovery_usd: 1400, status: 'Completed' },
       { id: 'WAR-KA-2026-065', date: '2026-10-30', company: 'Korri Auto', chassis_vin: 'TRL60TLB2026KA009', model: 'Hydraulic Lowbed 60T Valve Block', job_type: 'Supplier Warranty Replacement', bay: 'Al-Ghazieh Service Bay', technician: 'Bilal S. (Al-Ghazieh)', parts_cost_usd: 540, labor_usd: 120, claim_recovery_usd: 660, status: 'Open Claim' }
-    ]);
+    ]), getIndustryCustomRows('trd_warranty')).map(rawR => {
+      const wp = getIndustryWorkflowPatch('trd_warranty', rawR.id);
+      return wp ? Object.assign({}, rawR, wp) : rawR;
+    });
 
     // 9. Spare Parts & Multi-Warehouse Stock Valuation (593 code-keyed items across 5 Warehouses + Rule T4 Reorder Alerts)
     const rawStockRows = mergeCustomOverSeededRows(pickTrd('stockRows', [
@@ -46567,12 +46573,18 @@
     leases.length = 0; leases.push(...mLeases);
     const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'));
     invoices.length = 0; invoices.push(...mInvoices);
+    const mReceipts = mergeCustomOverSeededRows(receipts, getIndustryCustomRows('re_receipts'));
+    receipts.length = 0; receipts.push(...mReceipts);
     const mSales = mergeCustomOverSeededRows(sales, getIndustryCustomRows('re_sales'));
     sales.length = 0; sales.push(...mSales);
     const mWorkorders = mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'));
     workorders.length = 0; workorders.push(...mWorkorders);
+    const mRecharges = mergeCustomOverSeededRows(recharges, getIndustryCustomRows('re_recharges'));
+    recharges.length = 0; recharges.push(...mRecharges);
     invoices.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_invoicing', r.id); if (p) invoices[i] = Object.assign({}, r, p); });
+    receipts.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_receipts', r.id); if (p) receipts[i] = Object.assign({}, r, p); });
     workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
+    recharges.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_recharges', r.id); if (p) recharges[i] = Object.assign({}, r, p); });
 
     const reUser = activeUser();
     const rlsReSet = (!isOwner(reUser) && Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length)
@@ -111003,11 +111015,26 @@
         getActiveIndustry,
         canEnterForm,
         openEntryModal,
+        openIndustryDomainEntryModal,
         recalcForm,
         filterRecords,
+        computeThreeLegPayablesBreakdown,
         computeIntercompanyInteractions,
+        computeHoldingSchedules,
+        computeEnterpriseRollup,
+        computeHospitalityOperations,
+        computeTradingOperations,
+        computeRealEstateOperations,
         computeInsuranceOperations,
+        lookupActiveHospitalityTariff,
+        lookupActiveRealEstateLeaseRate,
+        lookupActiveTradingTariff,
+        lookupActiveHoldingPartnerSplit,
+        lookupActiveHoldingLoanRate,
         lookupActiveInsuranceAgreementRate,
+        saveIndustryWorkflowPatch,
+        getIndustryWorkflowPatch,
+        addIndustryCustomRow,
         getKPI,
         buildSentinelItems,
         showRecordInspector,
