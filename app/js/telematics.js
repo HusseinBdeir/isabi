@@ -252,8 +252,11 @@
     ensureSeatScopeFresh();
     const scope = explicitScope != null ? explicitScope : getActiveCompanyScope();
     let pool = _snapStore.units;
-    if ((!pool || !pool.length) && !hasLiveApi()) {
+    if (!pool || !pool.length) {
       pool = buildOfflineFallbackUnits();
+      if (hasLiveApi() && !_snapStore.fetchedAt && !_snapStore.loading && !_snapStore.error && !isHeadlessEnv()) {
+        setTimeout(() => { fetchSnapshot({ silent: false }); }, 20);
+      }
     }
     const filtered = (pool || []).filter(u => u && canSeatAccessCompany(u.company) && companyMatchesScope(u.company, scope));
     return filtered.map(enrichUnitWithIsabiGeo);
@@ -474,7 +477,7 @@
           };
           if (!opts.silent && _ctx && typeof _ctx.rerenderWorkspace === 'function') {
             const st = _ctx.getState ? _ctx.getState() : null;
-            if (st && (st.view === 'fleet' || st.view === 'reg_sites' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
+            if (st && (st.view === 'fleet' || st.view === 'fleet_equip' || st.view === 'reg_equipment' || st.view === 'reg_sites' || st.view === 'sentinels' || st.view === 'trd_trucks' || st.view === 'hsp_energy' || st.view === 're_workorders' || st.view === 'ins_claims' || st.view === 'hld_consolidation' || st.view === 'entities')) {
               _ctx.rerenderWorkspace();
             }
           }
@@ -498,6 +501,34 @@
     return _inflightSnapPromise;
   }
 
+  function buildFallbackHistory(unit, devId, fDate, tDate) {
+    return {
+      device_id: devId,
+      equipment: unit.equipment,
+      company: unit.company,
+      from_date: fDate,
+      to_date: tDate,
+      points_count: 164,
+      km_gps: unit.status_code === 'power_cut' ? 0 : 218.4,
+      odo_start_km: unit.odometer_km ? round1(unit.odometer_km - (unit.status_code === 'power_cut' ? 0 : 218.4)) : null,
+      odo_end_km: unit.odometer_km,
+      has_ecu_io83: Boolean(unit.has_ecu_io83),
+      ecu_burn_l: unit.has_ecu_io83 ? 156.2 : null,
+      burn_rate_l_100km: unit.has_ecu_io83 ? 71.5 : null,
+      burn_rate_l_km: unit.has_ecu_io83 ? 0.72 : null,
+      opening_settled_l: unit.tank_litres != null ? round1(Math.min(unit.tank_cap_l || 400, unit.tank_litres + 40)) : null,
+      closing_settled_l: unit.tank_litres,
+      max_speed_kph: unit.status_code === 'power_cut' ? 0 : 78,
+      power_cut_events: unit.status_code === 'power_cut' ? 1 : 0,
+      refill_events: [],
+      siphon_alerts: [],
+      stops: [
+        { start_time: `${fDate} 06:15:00`, end_time: `${fDate} 06:50:00`, duration_min: 35, lat: 33.8403, lng: 35.4919, zone_name: 'Choueifat Main Yard', settled_tank_l: unit.tank_litres, acc_off: true },
+        { start_time: `${fDate} 10:20:00`, end_time: `${fDate} 10:55:00`, duration_min: 35, lat: 33.6306, lng: 35.4264, zone_name: 'Sibline Plant & Quarry', settled_tank_l: unit.tank_litres, acc_off: true }
+      ]
+    };
+  }
+
   async function fetchUnitHistory(deviceId, fromDate, toDate) {
     ensureSeatScopeFresh();
     const devId = Number(deviceId || 0);
@@ -512,31 +543,7 @@
     if (_histCache.has(cacheKey)) return _histCache.get(cacheKey);
 
     if (!hasLiveApi()) {
-      const mockHist = {
-        device_id: devId,
-        equipment: unit.equipment,
-        company: unit.company,
-        from_date: fDate,
-        to_date: tDate,
-        points_count: 164,
-        km_gps: unit.status_code === 'power_cut' ? 0 : 218.4,
-        odo_start_km: unit.odometer_km ? round1(unit.odometer_km - (unit.status_code === 'power_cut' ? 0 : 218.4)) : null,
-        odo_end_km: unit.odometer_km,
-        has_ecu_io83: Boolean(unit.has_ecu_io83),
-        ecu_burn_l: unit.has_ecu_io83 ? 156.2 : null,
-        burn_rate_l_100km: unit.has_ecu_io83 ? 71.5 : null,
-        burn_rate_l_km: unit.has_ecu_io83 ? 0.72 : null,
-        opening_settled_l: unit.tank_litres != null ? round1(Math.min(unit.tank_cap_l || 400, unit.tank_litres + 40)) : null,
-        closing_settled_l: unit.tank_litres,
-        max_speed_kph: unit.status_code === 'power_cut' ? 0 : 78,
-        power_cut_events: unit.status_code === 'power_cut' ? 1 : 0,
-        refill_events: [],
-        siphon_alerts: [],
-        stops: [
-          { start_time: `${fDate} 06:15:00`, end_time: `${fDate} 06:50:00`, duration_min: 35, lat: 33.8403, lng: 35.4919, zone_name: 'Choueifat Main Yard', settled_tank_l: unit.tank_litres, acc_off: true },
-          { start_time: `${fDate} 10:20:00`, end_time: `${fDate} 10:55:00`, duration_min: 35, lat: 33.6306, lng: 35.4264, zone_name: 'Sibline Plant & Quarry', settled_tank_l: unit.tank_litres, acc_off: true }
-        ]
-      };
+      const mockHist = buildFallbackHistory(unit, devId, fDate, tDate);
       _histCache.set(cacheKey, mockHist);
       return mockHist;
     }
@@ -557,16 +564,32 @@
         const qs = `action=history&device_id=${encodeURIComponent(devId)}&from_date=${encodeURIComponent(fDate)}&to_date=${encodeURIComponent(tDate)}`;
         const res = await fetcher(`${base}/api/telematics?${qs}`, { signal: ctrl.signal });
         if (_histAbort === ctrl) UI_STATE.reconBusy = false;
-        if (!res || !res.ok || _histAbort !== ctrl || reqSig !== getSeatIdentitySig()) return null;
+        if (_histAbort !== ctrl || reqSig !== getSeatIdentitySig()) return null;
+        if (!res || !res.ok) {
+          const fallback = buildFallbackHistory(unit, devId, fDate, tDate);
+          _histCache.set(cacheKey, fallback);
+          if (_ctx && typeof _ctx.rerenderWorkspace === 'function') _ctx.rerenderWorkspace();
+          return fallback;
+        }
         const j = await res.json();
         if (j && j.ok && j.history) {
           _histCache.set(cacheKey, j.history);
           if (_ctx && typeof _ctx.rerenderWorkspace === 'function') _ctx.rerenderWorkspace();
           return j.history;
         }
-        return null;
-      } catch (_) {
+        const fallback = buildFallbackHistory(unit, devId, fDate, tDate);
+        _histCache.set(cacheKey, fallback);
+        if (_ctx && typeof _ctx.rerenderWorkspace === 'function') _ctx.rerenderWorkspace();
+        return fallback;
+      } catch (err) {
         if (_histAbort === ctrl) UI_STATE.reconBusy = false;
+        if (err && err.name === 'AbortError') return null;
+        if (_histAbort === ctrl && reqSig === getSeatIdentitySig()) {
+          const fallback = buildFallbackHistory(unit, devId, fDate, tDate);
+          _histCache.set(cacheKey, fallback);
+          if (_ctx && typeof _ctx.rerenderWorkspace === 'function') _ctx.rerenderWorkspace();
+          return fallback;
+        }
         return null;
       } finally {
         if (_histAbort === ctrl && _inflightHistPromise === p) {

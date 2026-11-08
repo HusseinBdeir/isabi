@@ -26582,6 +26582,8 @@
         </div>
       </div>
 
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function' ? window.MFG_TELEMATICS.renderFleetTelematicsDeck() : ''}
+
       ${(window.MFG_FLEET_PNL && typeof window.MFG_FLEET_PNL.renderCockpitHtml === 'function')
         ? window.MFG_FLEET_PNL.renderCockpitHtml({ containerId: 'fleetRevCostCockpit' })
         : ''}
@@ -43273,6 +43275,7 @@
           <option value="ALL" ${cur === 'ALL' ? 'selected' : ''}>${esc(allLabel || `Choose Specific (${items.length})`)}</option>
           ${items.map(it => `<option value="${esc(it.value)}" ${cur === it.value ? 'selected' : ''}>${esc(it.label)}${it.count != null ? ` (${fmtNum(it.count)})` : ''}</option>`).join('')}
         </select>
+        ${cur !== 'ALL' ? `<button type="button" class="ind-asset-pill" data-ind-asset-scope="${esc(scopeKey)}" data-ind-asset-pill="ALL">Reset Filter</button>` : ''}
       </div>
     `;
   }
@@ -112408,6 +112411,9 @@
       case 'reg_vat_rates':
         ensureStaffMembersSeeded();
         wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
+        if (STATE.view === 'reg_equipment' && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function') {
+          wsHtml = window.MFG_TELEMATICS.renderFleetTelematicsDeck() + wsHtml;
+        }
         break;
       case 'statements': wsHtml = renderStatements(); break;
       case 'users': wsHtml = renderUsers(); break;
@@ -118373,6 +118379,13 @@
     setView: typeof setView === 'function' ? setView : null,
     contextFormForView: typeof contextFormForView === 'function' ? contextFormForView : null,
     filterRecords: typeof filterRecords === 'function' ? filterRecords : null,
+    periodRange: typeof periodRange === 'function' ? periodRange : null,
+    setDateFilter: typeof setDateFilter === 'function' ? setDateFilter : null,
+    openDateFacilitator: typeof openDateFacilitator === 'function' ? openDateFacilitator : null,
+    allowedCompanyNames: typeof allowedCompanyNames === 'function' ? allowedCompanyNames : null,
+    ticketSign: typeof ticketSign === 'function' ? ticketSign : null,
+    rawSign: typeof rawSign === 'function' ? rawSign : null,
+    expenseSign: typeof expenseSign === 'function' ? expenseSign : null,
     getModel: typeof getModel === 'function' ? getModel : null,
     getKPI: typeof getKPI === 'function' ? getKPI : null,
     ensureMultiIndustrySpineSeeded: typeof ensureMultiIndustrySpineSeeded === 'function' ? ensureMultiIndustrySpineSeeded : null,
