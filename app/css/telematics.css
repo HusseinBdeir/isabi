@@ -1,0 +1,415 @@
+/* ============================================================================
+   ISABI Systems - Live Fleet GPS & Teltonika CAN-Bus Telematics Styles
+   Institutional Rev 10 Ledger palette: Warm Brass, Emerald, Cobalt, Amber, Crimson.
+   Zero dark-navy pill/header fills; 0px mobile & RTL overflow (`minmax(0, 1fr)`).
+   ============================================================================ */
+
+.tel-deck {
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.tel-deck-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 15px;
+  background: linear-gradient(180deg, rgba(200, 157, 84, 0.09) 0%, rgba(200, 157, 84, 0.02) 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+.tel-deck-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tel-deck-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(200, 157, 84, 0.18);
+  color: #9A6B21;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .tel-deck-icon {
+  color: #E5BC73;
+  background: rgba(200, 157, 84, 0.22);
+}
+
+.tel-deck-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
+.tel-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1F7A4C;
+  box-shadow: 0 0 0 3px rgba(31, 122, 76, 0.18);
+  margin-inline-end: 5px;
+  vertical-align: middle;
+}
+
+.tel-live-dot.is-warn {
+  background: #D97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2);
+}
+
+.tel-deck-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.tel-sync-meta {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+}
+
+.tel-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 15px 8px;
+}
+
+.tel-kpi-box {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.tel-kpi-box.is-alert {
+  border-color: rgba(185, 28, 28, 0.35);
+  background: rgba(185, 28, 28, 0.05);
+}
+
+.tel-kpi-box.is-warn {
+  border-color: rgba(217, 119, 6, 0.38);
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.tel-kpi-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+
+.tel-kpi-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  line-height: 1.2;
+}
+
+.tel-kpi-sub {
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-top: 4px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.tel-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.tel-status-pill.is-moving {
+  background: rgba(31, 122, 76, 0.14);
+  color: #166534;
+  border: 1px solid rgba(31, 122, 76, 0.32);
+}
+
+.tel-status-pill.is-idling {
+  background: rgba(217, 119, 6, 0.15);
+  color: #B45309;
+  border: 1px solid rgba(217, 119, 6, 0.34);
+}
+
+.tel-status-pill.is-parked {
+  background: rgba(35, 86, 168, 0.13);
+  color: #1D4ED8;
+  border: 1px solid rgba(35, 86, 168, 0.3);
+}
+
+.tel-status-pill.is-power_cut,
+.tel-status-pill.is-offline {
+  background: rgba(185, 28, 28, 0.13);
+  color: #B91C1C;
+  border: 1px solid rgba(185, 28, 28, 0.34);
+}
+
+[data-theme="dark"] .tel-status-pill.is-moving { color: #6EE7B7; }
+[data-theme="dark"] .tel-status-pill.is-idling { color: #FCD34D; }
+[data-theme="dark"] .tel-status-pill.is-parked { color: #93C5FD; }
+[data-theme="dark"] .tel-status-pill.is-power_cut,
+[data-theme="dark"] .tel-status-pill.is-offline { color: #FCA5A5; }
+
+.tel-tank-bar-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tel-tank-bar {
+  width: 48px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.26);
+  overflow: hidden;
+  display: inline-block;
+}
+
+.tel-tank-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #1F7A4C;
+}
+
+.tel-tank-bar.is-low > i {
+  background: #D97706;
+}
+
+.tel-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.tel-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.tel-mini-btn:hover {
+  border-color: #C89D54;
+  background: rgba(200, 157, 84, 0.1);
+}
+
+.tel-mini-btn.is-brass {
+  border-color: rgba(200, 157, 84, 0.55);
+  background: rgba(200, 157, 84, 0.16);
+  color: #8A5B13;
+}
+
+[data-theme="dark"] .tel-mini-btn.is-brass {
+  color: #F3CB82;
+}
+
+/* Closed-Loop Diesel & Trip Reconciliation Drawer */
+.tel-recon-drawer {
+  margin: 8px 15px 14px;
+  padding: 13px 15px;
+  border: 1px solid rgba(200, 157, 84, 0.45);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.tel-recon-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.tel-recon-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.tel-recon-controls input[type="date"],
+.tel-recon-controls select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.tel-recon-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tel-recon-cell {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tel-recon-cell small {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 3px;
+}
+
+.tel-recon-cell b {
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+
+.tel-recon-cell em {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+.tel-ai-brief {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border-inline-start: 3px solid #C89D54;
+  background: rgba(200, 157, 84, 0.08);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+/* Cross-Industry Telematics Bridge Card */
+.tel-ind-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 157, 84, 0.38);
+  background: linear-gradient(90deg, rgba(200, 157, 84, 0.08) 0%, rgba(35, 86, 168, 0.04) 100%);
+}
+
+.tel-ind-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.tel-ind-strip-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tel-ind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+
+/* Smart Entry Live GPS Meter Pill */
+.tel-meter-apply-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 122, 76, 0.4);
+  background: rgba(31, 122, 76, 0.1);
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+[data-theme="dark"] .tel-meter-apply-pill {
+  color: #6EE7B7;
+}
+
+/* Map Studio Truck Dot */
+.geo-dot.trucks {
+  background: #D97706;
+}
+
+@media (max-width: 980px) {
+  .tel-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tel-recon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .tel-kpi-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tel-recon-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tel-recon-controls input[type="date"],
+  .tel-recon-controls select {
+    font-size: 16px;
+  }
+}

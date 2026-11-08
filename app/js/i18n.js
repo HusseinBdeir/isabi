@@ -9082,7 +9082,146 @@
       "⚠ UNRECOGNIZED FACE": "⚠ وجه غير معروف",
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
       "✓ SAVED": "✓ محفوظ",
-      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة"
+      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
+      "Shift Handover": "تسليم المناوبة",
+      "Shift Handover Brief": "موجز تسليم المناوبة",
+      "Deterministic Handover": "تسليم حتمي مطابق",
+      "AI Shift Priorities": "أولويات المناوبة الذكية",
+      "Manager Shift Summary": "ملخص تسليم المناوبة عبر واتساب",
+      "Play Standup": "تشغيل الموجز الصوتي",
+      "Stop Standup": "إيقاف الموجز الصوتي",
+      "Copy Summary": "نسخ الملخص",
+      "Day Records": "سجلات اليوم",
+      "Chart of Accounts tied": "مطابق لدليل الحسابات",
+      "Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary": "فتح موجز تسليم المناوبة: مقارنة الأمس باليوم والتحصيل النقدي والآجل وجسر أرباح اليوم وأولويات الوردية ومسودة واتساب",
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": "تشغيل الموجز الصوتي الصباحي لإيرادات اليوم المحدد ورصيد الصندوق وأهم أولويات تسليم المناوبة",
+      "Even": "متعادل",
+      "0V Alert": "تنبيه انقطاع 0V",
+      "0V Power Cut": "انقطاع تغذية 0V",
+      "24V Power": "تغذية 24V",
+      "24V Power & Tamper Guard": "تغذية 24V وحماية التلاعب",
+      "AI Grade vs Siphon Check": "فحص ذكي للمنحدرات مقابل السحب",
+      "All 24V Nominal": "تغذية 24V سليمة بالكامل",
+      "All Within Interval": "ضمن نطاق الصيانة الدورية",
+      "Approaching 500,000 km major overhaul": "اقتراب عمرة 500,000 كم الكبرى",
+      "Awaiting stationary window": "بانتظار فترة توقف مستقرة",
+      "BU Row-Level Security": "أمان مستوى الصفوف لوحدة الأعمال",
+      "Building Generator Reserve & MEP Van GPS Dispatch": "احتياطي مولدات المباني وتتبع مركبات الصيانة GPS",
+      "CAN ECU Burn (io83)": "استهلاك محرك CAN (io83)",
+      "CAN GPS Distance": "مسافة GPS عبر CAN",
+      "CAN Mileage": "عداد المسافة CAN",
+      "CAN Overhaul & Service Radar": "رادار العمرات والصيانة عبر CAN",
+      "CAN fuel sensors": "حساسات وقود CAN",
+      "CAN io83 Fuel (0.1 L)": "عداد وقود CAN io83 (0.1 لتر)",
+      "Choueifat Main Yard": "ساحة الشويفات الرئيسية",
+      "Closed-Loop Diesel & Trip Reconciliation": "مطابقة المازوت والرحلات المغلقة",
+      "Common Diesel": "مازوت الخدمات المشتركة",
+      "Common Diesel: Settled Tank L": "مازوت مشترك: ليترات الخزان المستقرة",
+      "Connected Units": "آليات متصلة",
+      "Connected VIN & Shacman CAN-Bus Telematics Bridge": "جسر تتبع رقم الشاسيه وحساسات CAN لشاحنات شاكمان",
+      "Continuous 24V chassis feed verified": "تغذية شاسيه 24V متصلة ومؤكدة",
+      "Damour Coastal Corridor": "الممر الساحلي - الدامور",
+      "Demo Driver 1": "سائق تجريبي 1",
+      "Demo Driver 2": "سائق تجريبي 2",
+      "Demo Driver 3": "سائق تجريبي 3",
+      "Demo Driver 4": "سائق تجريبي 4",
+      "Demo Driver 5": "سائق تجريبي 5",
+      "Demo Driver 6": "سائق تجريبي 6",
+      "Demo Driver 7": "سائق تجريبي 7",
+      "Live GPS/CAN": "تتبع GPS/CAN الحي",
+      "Demo Telemetry": "تتبع تجريبي",
+      "Diesel & Trip Recon": "مطابقة المازوت والرحلات",
+      "ECU Fuel": "وقود المحرك ECU",
+      "ECU Fuel Counter": "عداد وقود المحرك ECU",
+      "ECU Fuel: io83 (0.1 L)": "وقود المحرك: io83 (0.1 لتر)",
+      "Engine Hrs": "ساعات المحرك",
+      "FNOL Proof": "إثبات الحادث FNOL",
+      "FNOL Proof: Speed & Lat/Lng": "إثبات الحادث: السرعة والإحداثيات",
+      "GPS ALERT": "تنبيه GPS",
+      "GPS ALERTS": "تنبيهات GPS",
+      "GPS virtual track": "مسار GPS افتراضي",
+      "Geofence Proof": "إثبات النطاق الجغرافي",
+      "Geofence Proof: Arrival Timestamp": "إثبات النطاق: ختم وقت الوصول",
+      "Greater Beirut": "بيروت الكبرى",
+      "Group Connected Fleet & Sensor Telemetry Rollup": "التجميع الموحد لتتبع الأسطول وحساسات المجموعة",
+      "Hino Service Crew": "طاقم خدمة هينو",
+      "ISABI Pump Slips": "قسائم محطة ISABI",
+      "Idling": "توقف والمحرك يعمل",
+      "Ignition & GPS telemetry": "تتبع التشغيل وGPS",
+      "Live CAN io87 mileage & engine hours synced": "مزامنة حية لعداد الكيلومترات io87 وساعات المحرك",
+      "Live Dispatch State": "حالة حركة الأسطول الحية",
+      "Live Fleet GPS & CAN-Bus Sensor Telematics": "التتبع الحي للأسطول وحساسات CAN-Bus",
+      "Live Fleet Map": "خريطة الأسطول الحية",
+      "Live GPS": "عداد GPS الحي",
+      "Live Status": "الحالة الحية",
+      "Loading historical CAN-bus & GPS telemetry...": "جاري تحميل سجل تتبع GPS وحساسات CAN...",
+      "Motor FNOL Telemetry & Incident GPS Playback": "تتبع حوادث المركبات FNOL وإعادة مسار GPS",
+      "Moving": "متحرك",
+      "No CAN Fuel": "بدون حساس وقود CAN",
+      "No live GPS-tracked trucks are assigned to the current Business Unit scope.": "لا توجد شاحنات متصلة بنظام GPS ضمن نطاق وحدة الأعمال الحالية.",
+      "Offline": "غير متصل",
+      "Onboard Diesel": "مازوت في الخزانات",
+      "Onboard Truck Tanks": "مخزون خزانات الشاحنات",
+      "Open Diesel & Lubricants": "فتح المازوت والزيوت",
+      "Pairs stationary settled diesel tank sensors (io89 siphon guard while ACC Off) and engine worktime (io103) directly against R4 generator L/hr burn thresholds.": "يربط حساسات خزانات المازوت المستقرة (حماية السحب io89 عند إطفاء المحرك) وساعات التشغيل (io103) مباشرة بعتبات استهلاك المولدات لتر/ساعة.",
+      "Parked": "متوقف",
+      "Parked Drop Alert": "تنبيه نقص وقود أثناء التوقف",
+      "Power Cut (0V)": "انقطاع تغذية (0V)",
+      "Protocol": "البروتوكول",
+      "Protocol: FMC150 J1939 CAN": "البروتوكول: FMC150 J1939 CAN",
+      "R4 Threshold": "عتبة R4",
+      "R4 Threshold: +15% L/hr": "عتبة R4: +15% لتر/ساعة",
+      "Recharge Audit": "تدقيق إعادة الفوترة",
+      "Recharge Audit: 100% Verified": "تدقيق الفوترة: موثق 100%",
+      "Recon": "مطابقة",
+      "Reconcile Day": "مطابقة اليوم",
+      "Reconciliation Date": "تاريخ المطابقة",
+      "Refresh GPS": "تحديث GPS",
+      "Resort Generator Tank & Run-Hour Sensor Bridge": "جسر حساسات خزانات المولدات وساعات التشغيل للمنتجعات",
+      "Run Hours": "ساعات التشغيل",
+      "Run Hours: CAN io103 Sync": "ساعات التشغيل: مزامنة CAN io103",
+      "Settled Tank Variance": "فارق الخزان المستقر",
+      "Settling": "قيد الاستقرار",
+      "Sibline Plant & Quarry": "معمل ومقلع سبلين",
+      "Siphon Guard": "حماية السحب",
+      "Siphon Guard: Settled ACC-Off": "حماية السحب: استقرار عند الإطفاء",
+      "Surveyor Pack": "ملف الخبير",
+      "Surveyor Pack: Route Track": "ملف الخبير: مسار الرحلة",
+      "Synced": "آخر مزامنة",
+      "Tamper Check": "فحص التلاعب",
+      "Tamper Check: 24V Power Log": "فحص التلاعب: سجل تغذية 24V",
+      "Telematics Actions": "إجراءات التتبع",
+      "Telemetry Audit Note": "ملاحظة تدقيق الحساسات",
+      "Teltonika FMC150 CAN-bus link tracks io87 chassis mileage, io83 cumulative Weichai ECU fuel injection (0.1 L), coolant io115, and 500,000 km warranty milestones.": "يرصد رابط Teltonika FMC150 عداد الشاسيه io87، والوقود التراكمي المحقون بمحرك Weichai عبر io83 بدقة 0.1 لتر، وحرارة التبريد io115، واستحقاقات الكفالة حتى 500,000 كم.",
+      "Tracked Trucks": "شاحنات متصلة",
+      "Trips & Siphon Guard": "الرحلات وحماية السحب",
+      "Unified server-side telematics bridge across subsidiary fleets, resort generators, and insured motor assets ($0 per-seat telemetry software fees).": "جسر تتبع خادمي موحد عبر أساطيل الشركات التابعة ومولدات المنتجعات والمركبات المؤمنة (بدون أي رسوم اشتراك لكل مستخدم).",
+      "Unit & Plate": "الآلية واللوحة",
+      "Unknown": "غير محدد",
+      "Verifies field service van arrival timestamps at managed properties and common-area generator diesel tank refills prior to posting tenant utility recharges.": "يتحقق من أوقات وصول مركبات الصيانة إلى العقارات المُدارة وتعبئة خزانات مازوت المولدات المشتركة قبل ترحيل فواتير الخدمات على المستأجرين.",
+      "Warranty Trigger": "مؤشر الكفالة",
+      "Warranty Trigger: io87 Odometer": "مؤشر الكفالة: عداد io87",
+      "Yard / Site": "في الساحة / الموقع",
+      "Zero Browser Secrets": "صفر مفاتيح في المتصفح",
+      "Zone / Site": "النطاق / الموقع",
+      "Attaches verified GPS coordinates, pre-incident speed (km/h), 24V battery cut events, and route playback to commercial fleet Motor First Notice of Loss files.": "يرفق إحداثيات GPS الموثقة والسرعة قبل الحادث (كم/س) وسجل انقطاع بطارية 24V وإعادة مسار الرحلة بملفات الإبلاغ الأولي عن حوادث المركبات.",
+      "fuel tickets posted": "قسائم وقود مرحّلة",
+      "idling": "تشغيل أثناء التوقف",
+      "parked drops": "حالات نقص أثناء التوقف",
+      "parked ignition off": "متوقف والمحرك مطفأ",
+      "settled io89": "قراءة io89 المستقرة",
+      "site stops": "توقفات بالمواقع",
+      "Restricted": "محجوب",
+      "Books Restricted": "الدفاتر مقيدة",
+      "Day P&L and Cash Till balances require Treasury & General Ledger hub permissions.": "تتطلب أرصدة أرباح اليوم وصندوق النقد صلاحيات مركزي السيولة والأستاذ العام.",
+      "Treasury and external cash flows require Cash Flow & General Ledger permissions.": "تتطلب حركات السيولة والتحويلات الخارجية صلاحيات التدفقات النقدية والأستاذ العام.",
+      "Expense bills require Expenses hub permission.": "تتطلب فواتير المصاريف صلاحية مركز المصاريف.",
+      "Beirut Ring": "طوق بيروت",
+      "Southern Corridor": "الممر الجنوبي",
+      "Choueifat": "الشويفات",
+      "Sibline": "سبلين",
+      "Damour": "الدامور",
+      "Beirut": "بيروت"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -9546,7 +9685,7 @@
       "AI Multi-VIN Landed-Cost & OEM Warranty Reconciler": "Rapprochement IA cout rendu multi-VIN et avoirs garantie constructeur",
       "AI Outlier Brief": "Synthèse IA des écarts",
       "AI Relationship Brief": "Analyse relationnelle IA",
-      "AI Root-Cause Plan": "Plan d action IA",
+      "AI Root-Cause Plan": "Plan d'action IA",
       "AI Sentinels & Analytics Bridge": "Sentinelles IA & Pont Analytique",
       "AI Sentinels & Audit": "Sentinelles IA & Audit",
       "AI Sentinels & Diesel Hub": "Sentinelles IA & Module Gasoil",
@@ -12034,7 +12173,7 @@
       "Expiry": "Expiration",
       "Expiry Date": "Date d'Échéance",
       "Explain": "Expliquer",
-      "Explain 360° counterparty brief, aging, active rate rules & WhatsApp follow-up": "Afficher la synthèse 360° du tiers, l ancienneté, les tarifs actifs et le suivi WhatsApp",
+      "Explain 360° counterparty brief, aging, active rate rules & WhatsApp follow-up": "Afficher la synthèse 360° du tiers, l'ancienneté, les tarifs actifs et le suivi WhatsApp",
       "Explain Drivers": "Expliquer les écarts",
       "Explain Screen": "Expliquer l'écran",
       "Explain active dashboard KPIs, top-3 concentration & outliers": "Expliquer les indicateurs, la concentration Top 3 et les écarts du tableau",
@@ -13593,7 +13732,7 @@
       "Marina Tower · Hamra Pavillon · Mazraa · Baghdad": "Marina Tower · Hamra Pavillon · Mazraa · Bagdad",
       "Mark All Checked": "Tout valider",
       "Mark All Flagged Checked": "Marquer Tout comme Vérifié",
-      "Mark Checked": "Marquer vérifié",
+      "Mark Checked": "Valider le contrôle",
       "Mark Pattern Checked": "Marquer le motif vérifié",
       "Mark linked Equipment Warning as Resolved and restore Fleet Status to Active": "Marquer l'alerte liée comme résolue et réactiver l'engin",
       "Mark linked prior defect report as \"Resolved - Part Changed\"": "Marquer l'anomalie liée \"Résolue - Pièce remplacée\"",
@@ -16230,7 +16369,7 @@
       "Senior Field Loss Adjuster & Surveyor": "Expert Sinistres & Inspecteur Principal",
       "Sent to your computer! Snap another page or close this tab.": "Envoyé à votre ordinateur ! Capturez une autre page ou fermez cet onglet.",
       "Sent!": "Envoyé !",
-      "Sentinel Exception Triage": "Triage des exceptions d audit",
+      "Sentinel Exception Triage": "Triage des exceptions d'audit",
       "Sentinel Health Score": "Score de Santé Sentinelles",
       "Sentinel S11": "Sentinelle S11",
       "Sentinel Triage engine is initializing.": "Initialisation du moteur de triage.",
@@ -16756,7 +16895,7 @@
       "Supervisor": "Superviseur",
       "Supervisor + Entry": "Superviseur + Saisie",
       "Supervisor / Admin PIN (2401)...": "Code PIN Superviseur / Admin (2401)...",
-      "Supervisor Escalation Note": "Note d escalade superviseur",
+      "Supervisor Escalation Note": "Note d'escalade superviseur",
       "Supervisor Lock (10%-50%)": "Verrou Superviseur (10 %-50 %)",
       "Supervisor Override": "Dérogation Superviseur",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "Retrait Superviseur : bon créé par erreur (0 KM · conserve le N° dans le carnet de 25)",
@@ -16877,7 +17016,7 @@
       "Tank Equation: Bought - Fleet Used - Malfunction/Adj - Sold = Remaining": "Équation Cuve : Acheté − Consommé Flotte − Écarts − Vendu = Restant",
       "Tank Impact": "Impact Cuve",
       "Tank Ledger": "Livre de Cuve",
-      "Tank Level": "Niveau Cuve",
+      "Tank Level": "Niveau réservoir",
       "Tank Level (L)": "Niveau Cuve (L)",
       "Tank Refills": "Remplissages Cuves",
       "Tank Rem. (L)": "Reste Cuve (L)",
@@ -18009,7 +18148,7 @@
       "matched supplier settlements posted": "reglements fournisseurs rapproches valides",
       "no Face ID": "sans Face ID",
       "note so you never forget": "pour toujours documenter la règle",
-      "odometer": "compteur km",
+      "odometer": "odomètre",
       "of": "sur",
       "of Hydraulic 68 in 30 days. Flags": "d'huile hydraulique 68 sur 30 jours. Signale",
       "of Net Base": "de la base nette",
@@ -18146,7 +18285,146 @@
       "⚠ UNRECOGNIZED FACE": "⚠ VISAGE NON RECONNU",
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
       "✓ SAVED": "✓ ENREGISTRÉ",
-      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues"
+      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues",
+      "Shift Handover": "Passation",
+      "Shift Handover Brief": "Synthèse de passation",
+      "Deterministic Handover": "Passation déterministe",
+      "AI Shift Priorities": "Priorités de poste IA",
+      "Manager Shift Summary": "Résumé de passation WhatsApp",
+      "Play Standup": "Écouter le briefing",
+      "Stop Standup": "Arrêter le briefing",
+      "Copy Summary": "Copier le résumé",
+      "Day Records": "Registres du jour",
+      "Chart of Accounts tied": "Plan comptable équilibré",
+      "Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary": "Ouvrir la synthèse de passation : écart hier/aujourd'hui, encaissements et crédit, pont résultat du jour, priorités et résumé WhatsApp",
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": "Écouter le briefing vocal matinal sur le revenu du jour, la caisse et les priorités de passation",
+      "Even": "Stable",
+      "0V Alert": "Alerte coupure 0V",
+      "0V Power Cut": "Coupure alimentation 0V",
+      "24V Power": "Alimentation 24V",
+      "24V Power & Tamper Guard": "Alimentation 24V et anti-sabotage",
+      "AI Grade vs Siphon Check": "Contrôle IA pente vs siphonnage",
+      "All 24V Nominal": "Alimentation 24V nominale",
+      "All Within Interval": "Dans l'intervalle d'entretien",
+      "Approaching 500,000 km major overhaul": "Approche révision majeure 500 000 km",
+      "Awaiting stationary window": "En attente d'arrêt stabilisé",
+      "BU Row-Level Security": "Sécurité RLS par unité d'affaires",
+      "Building Generator Reserve & MEP Van GPS Dispatch": "Réserve groupes électrogènes et suivi GPS fourgons MEP",
+      "CAN ECU Burn (io83)": "Consommation calculateur CAN (io83)",
+      "CAN GPS Distance": "Distance GPS CAN",
+      "CAN Mileage": "Kilométrage CAN",
+      "CAN Overhaul & Service Radar": "Radar révision et maintenance CAN",
+      "CAN fuel sensors": "capteurs carburant CAN",
+      "CAN io83 Fuel (0.1 L)": "Carburant CAN io83 (0,1 L)",
+      "Choueifat Main Yard": "Parc principal de Choueifat",
+      "Closed-Loop Diesel & Trip Reconciliation": "Rapprochement boucle fermée gasoil et trajets",
+      "Common Diesel": "Gasoil parties communes",
+      "Common Diesel: Settled Tank L": "Gasoil commun : Litres cuve stabilisés",
+      "Connected Units": "Unités connectées",
+      "Connected VIN & Shacman CAN-Bus Telematics Bridge": "Pont télématique VIN et bus CAN Shacman",
+      "Continuous 24V chassis feed verified": "Alimentation châssis 24V continue vérifiée",
+      "Damour Coastal Corridor": "Corridor côtier de Damour",
+      "Demo Driver 1": "Chauffeur démo 1",
+      "Demo Driver 2": "Chauffeur démo 2",
+      "Demo Driver 3": "Chauffeur démo 3",
+      "Demo Driver 4": "Chauffeur démo 4",
+      "Demo Driver 5": "Chauffeur démo 5",
+      "Demo Driver 6": "Chauffeur démo 6",
+      "Demo Driver 7": "Chauffeur démo 7",
+      "Live GPS/CAN": "GPS/CAN en direct",
+      "Demo Telemetry": "Télématique démo",
+      "Diesel & Trip Recon": "Rapprochement gasoil et trajets",
+      "ECU Fuel": "Carburant ECU",
+      "ECU Fuel Counter": "Compteur carburant ECU",
+      "ECU Fuel: io83 (0.1 L)": "Carburant ECU : io83 (0,1 L)",
+      "Engine Hrs": "Heures moteur",
+      "FNOL Proof": "Preuve sinistre FNOL",
+      "FNOL Proof: Speed & Lat/Lng": "Preuve FNOL : Vitesse et GPS",
+      "GPS ALERT": "ALERTE GPS",
+      "GPS ALERTS": "ALERTES GPS",
+      "GPS virtual track": "Tracé GPS virtuel",
+      "Geofence Proof": "Preuve géorepérage",
+      "Geofence Proof: Arrival Timestamp": "Géorepérage : Horodatage d'arrivée",
+      "Greater Beirut": "Grand Beyrouth",
+      "Group Connected Fleet & Sensor Telemetry Rollup": "Consolidation télématique flotte et capteurs du groupe",
+      "Hino Service Crew": "Équipe service Hino",
+      "ISABI Pump Slips": "Bons pompe ISABI",
+      "Idling": "Ralenti moteur",
+      "Ignition & GPS telemetry": "Télématique contact et GPS",
+      "Live CAN io87 mileage & engine hours synced": "Kilométrage CAN io87 et heures moteur synchronisés",
+      "Live Dispatch State": "État d'expédition en direct",
+      "Live Fleet GPS & CAN-Bus Sensor Telematics": "Télématique GPS et capteurs bus CAN en direct",
+      "Live Fleet Map": "Carte flotte en direct",
+      "Live GPS": "GPS en direct",
+      "Live Status": "Statut en direct",
+      "Loading historical CAN-bus & GPS telemetry...": "Chargement de l'historique GPS et bus CAN...",
+      "Motor FNOL Telemetry & Incident GPS Playback": "Télématique sinistres auto FNOL et tracé GPS",
+      "Moving": "En mouvement",
+      "No CAN Fuel": "Sans sonde CAN",
+      "No live GPS-tracked trucks are assigned to the current Business Unit scope.": "Aucun camion suivi par GPS n'est rattaché au périmètre actif.",
+      "Offline": "Hors ligne",
+      "Onboard Diesel": "Gasoil embarqué",
+      "Onboard Truck Tanks": "Réservoirs camions embarqués",
+      "Open Diesel & Lubricants": "Ouvrir Gasoil et Lubrifiants",
+      "Pairs stationary settled diesel tank sensors (io89 siphon guard while ACC Off) and engine worktime (io103) directly against R4 generator L/hr burn thresholds.": "Associe les sondes de cuve gasoil stabilisées (anti-siphonnage io89 contact coupé) et les heures moteur (io103) aux seuils R4 L/h des groupes.",
+      "Parked": "Stationné",
+      "Parked Drop Alert": "Alerte baisse carburant à l'arrêt",
+      "Power Cut (0V)": "Coupure 0V",
+      "Protocol": "Protocole",
+      "Protocol: FMC150 J1939 CAN": "Protocole : FMC150 J1939 CAN",
+      "R4 Threshold": "Seuil R4",
+      "R4 Threshold: +15% L/hr": "Seuil R4 : +15% L/h",
+      "Recharge Audit": "Audit refacturation",
+      "Recharge Audit: 100% Verified": "Audit refacturation : 100% vérifié",
+      "Recon": "Rapproch.",
+      "Reconcile Day": "Rapprocher le jour",
+      "Reconciliation Date": "Date de rapprochement",
+      "Refresh GPS": "Actualiser GPS",
+      "Resort Generator Tank & Run-Hour Sensor Bridge": "Pont capteurs cuves groupes électrogènes et heures moteur",
+      "Run Hours": "Heures moteur",
+      "Run Hours: CAN io103 Sync": "Heures moteur : Sync CAN io103",
+      "Settled Tank Variance": "Écart réservoir stabilisé",
+      "Settling": "Stabilisation",
+      "Sibline Plant & Quarry": "Usine et carrière de Sibline",
+      "Siphon Guard": "Anti-siphonnage",
+      "Siphon Guard: Settled ACC-Off": "Anti-siphonnage : Arrêt contact coupé",
+      "Surveyor Pack": "Dossier expert",
+      "Surveyor Pack: Route Track": "Dossier expert : Tracé GPS",
+      "Synced": "Synchronisé",
+      "Tamper Check": "Contrôle sabotage",
+      "Tamper Check: 24V Power Log": "Anti-sabotage : Journal 24V",
+      "Telematics Actions": "Actions télématiques",
+      "Telemetry Audit Note": "Note d'audit télématique",
+      "Teltonika FMC150 CAN-bus link tracks io87 chassis mileage, io83 cumulative Weichai ECU fuel injection (0.1 L), coolant io115, and 500,000 km warranty milestones.": "La liaison bus CAN Teltonika FMC150 suit le kilométrage châssis io87, l'injection cumulée ECU Weichai io83 (0,1 L), la température io115 et les jalons garantie 500 000 km.",
+      "Tracked Trucks": "Camions suivis",
+      "Trips & Siphon Guard": "Trajets et anti-siphonnage",
+      "Unified server-side telematics bridge across subsidiary fleets, resort generators, and insured motor assets ($0 per-seat telemetry software fees).": "Pont télématique serveur unifié pour les flottes filiales, groupes électrogènes et parcs assurés (0 $ de frais logiciel par siège).",
+      "Unit & Plate": "Unité et plaque",
+      "Unknown": "Non spécifié",
+      "Verifies field service van arrival timestamps at managed properties and common-area generator diesel tank refills prior to posting tenant utility recharges.": "Vérifie les horodatages d'arrivée des fourgons techniques sur les immeubles gérés et les pleins gasoil communs avant refacturation locative.",
+      "Warranty Trigger": "Seuil garantie",
+      "Warranty Trigger: io87 Odometer": "Seuil garantie : Odomètre io87",
+      "Yard / Site": "Parc / Chantier",
+      "Zero Browser Secrets": "Zéro secret navigateur",
+      "Zone / Site": "Zone / Chantier",
+      "Attaches verified GPS coordinates, pre-incident speed (km/h), 24V battery cut events, and route playback to commercial fleet Motor First Notice of Loss files.": "Joint les coordonnées GPS certifiées, la vitesse pré-impact (km/h), les coupures 24V et le tracé routier aux dossiers sinistres flotte FNOL.",
+      "fuel tickets posted": "bons carburant comptabilisés",
+      "idling": "au ralenti",
+      "parked drops": "baisses à l'arrêt",
+      "parked ignition off": "stationné contact coupé",
+      "settled io89": "sonde io89 stabilisée",
+      "site stops": "arrêts chantier",
+      "Restricted": "Restreint",
+      "Books Restricted": "Comptes restreints",
+      "Day P&L and Cash Till balances require Treasury & General Ledger hub permissions.": "Les soldes résultat du jour et caisse requièrent les droits Trésorerie et Grand Livre.",
+      "Treasury and external cash flows require Cash Flow & General Ledger permissions.": "Les flux de trésorerie et mouvements externes requièrent les droits Trésorerie et Grand Livre.",
+      "Expense bills require Expenses hub permission.": "Les factures de charges requièrent le droit Charges.",
+      "Beirut Ring": "Périphérique de Beyrouth",
+      "Southern Corridor": "Corridor Sud",
+      "Choueifat": "Choueifat",
+      "Sibline": "Sibline",
+      "Damour": "Damour",
+      "Beirut": "Beyrouth"
     }
   };
 
@@ -18676,7 +18954,7 @@
     'FOB', 'CIF', 'DSO', 'FNOL', 'PDI', 'VIN', 'VINs', 'BOM', 'LGB',
     'OEM', 'MEP', 'ISO', 'BLE', 'POS', 'PIN', 'PDF', 'CSV', 'SQL',
     'ATF', 'CAR', 'MOT', 'MED', 'PROP', 'ENG', 'MAR', 'LIFE',
-    'LIAB', 'WC', 'PA', 'TRV', 'MNY', 'MISC',
+    'LIAB', 'WC', 'PA', 'TRV', 'MNY', 'MISC', 'CAN', 'ECU', 'GPS', 'J1939', 'UTC',
     'WTC', 'BBC', 'KA', 'HB', 'BB', 'BS', 'LT', 'SK', 'WP', 'WS', 'ZR', 'DG', 'AC', 'MK', 'MN', 'RH', 'TF',
     'EN', 'FR', 'AR', 'ES', 'm³', 'kg', 'km', 'hr', 'hrs', 'min', 'pcs', 'RT km'
   ]);
@@ -18716,7 +18994,9 @@
       'bankers assurance sal', 'man enterprise', 'holcim liban', 'ipt diesel supply',
       'arabian construction co.', 'dahr el baidar quarry', 'agrimount', 'haj', 'sheikh rabih',
       'jad', 'ghafar saloum', 'mahmoud al mortada', 'mwafak', 'liwaa harb', 'yasser',
-      'ayman mousa', 'sultan', 'awad', 'hussein saleh', 'bechara srouji for contracting s.a.l'
+      'ayman mousa', 'sultan', 'awad', 'hussein saleh', 'bechara srouji for contracting s.a.l',
+      'majed karam', 'khalife', 'wissam mlaab', 'mohamad habib', 'ali saleh',
+      'shacman x3000', 'shacman f3000', 'hino 500', 'fmc150', 'fmc920'
     ]);
     try {
       const seed = (typeof window !== 'undefined' && window.MFG_SEED) ? window.MFG_SEED : null;
@@ -18769,7 +19049,7 @@
     const t = str.trim();
     if (!t || !/[A-Za-z]/.test(t)) return true;
     if (PRESERVE_ACRONYMS.has(t)) return true;
-    if (/^[▲▼▾▴]?\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?(?:\s*\/\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?)?(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|L|L\/hr|L\/100km|hrs?|h|d|KB|MB|TB))?$/i.test(t)) return true;
+    if (/^[▲▼▾▴]?\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?(?:\s*\/\s*[+-]?[$€£]?\s*[\d,.:/%×+-]+[kKMB]?)?(\s*(USD|LBP|EUR|AED|LL|m³|m³\/load|t|kg|km|km\/h|kph|L|L\/km|L\/hr|L\/100km|V|UTC|hrs?|h|d|KB|MB|TB))?$/i.test(t)) return true;
     if (/^(https?:\/\/\S+|\S+@\S+\.\S+|[a-z0-9.-]+\.(com|org|net|io|gov\.lb)(\/\S*)?)$/i.test(t)) return true;
     if (/^\S+\.(svg|pdf|png|jpe?g|webp|csv|xlsx|json|zip)$/i.test(t)) return true;
     if (/^S\d{1,2}$/.test(t)) return true;
@@ -19842,8 +20122,57 @@
     m = trimmed.match(/^([\d,]+)\s+machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute\s*·\s*([\d,]+)\s+lubricant or grease entries carry no operator on the ticket\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} قيود وقود أو زيوت أو تشحيم سُجّلت في أيام غياب السائق المعيّن دون بديل مسجل · ${m[2]} قيود زيوت أو تشحيم بدون اسم مشغّل على الإيصال.` : `${m[1]} sorties carburant/huile/graisse enregistrées un jour d'absence du chauffeur attitré sans remplaçant · ${m[2]} sorties sans opérateur.`;
 
-    m = trimmed.match(/^(\d+)\s+meter readings to check\s*·\s*(\d+)\s+consumption outliers(.*?)·\s*(\d+)\s+own units idle 30\+ days\.?$/i);
-    if (m) return lang === 'ar' ? `${m[1]} قراءات عدادات للمراجعة · ${m[2]} حالات شذوذ استهلاك${m[3]}· ${m[4]} آليات للشركة متوقفة +30 يوماً.` : `${m[1]} relevés compteurs à vérifier · ${m[2]} anomalies de consommation${m[3]}· ${m[4]} engins propres inactifs 30+ jours.`;
+    m = trimmed.match(/^(\d+)\s+meter readings to check\s*·\s*(\d+)\s+consumption outliers?(.*?)·\s*(\d+)\s+own units idle 30\+ days\.?(?:\s*·\s*Live GPS\/CAN:\s*(.+))?$/i);
+    if (m) {
+      let gpsTail = m[5] || '';
+      if (gpsTail) {
+        if (lang === 'ar') {
+          gpsTail = gpsTail
+            .replace(/has 0V external power cut at/gi, 'انقطاع تغذية 0V في')
+            .replace(/(\d+(?:\.\d+)?)\s*L in tank/gi, '$1 لتر في الخزان')
+            .replace(/\boffline\b/gi, 'غير متصل')
+            .replace(/\bat\s+([\d,]+)\s*km\s*\(Approaching 500,000 km major overhaul\)/gi, 'عند $1 كم (اقتراب عمرة 500,000 كم الكبرى)')
+            .replace(/Sibline Plant & Quarry/g, 'معمل ومقلع سبلين')
+            .replace(/Choueifat Main Yard/g, 'ساحة الشويفات الرئيسية')
+            .replace(/Damour Coastal Corridor/g, 'الممر الساحلي - الدامور')
+            .replace(/Southern Corridor/g, 'الممر الجنوبي')
+            .replace(/Beirut Ring/g, 'طوق بيروت')
+            .replace(/\bSibline\b/g, 'سبلين')
+            .replace(/\bChoueifat\b/g, 'الشويفات')
+            .replace(/\bDamour\b/g, 'الدامور')
+            .replace(/\bBeirut\b/g, 'بيروت')
+            .replace(/\bUnknown\b/g, 'غير معروف');
+          gpsTail = ` · تتبع GPS/CAN الحي: ${gpsTail}`;
+        } else {
+          gpsTail = gpsTail
+            .replace(/has 0V external power cut at/gi, 'coupure 0V à')
+            .replace(/(\d+(?:\.\d+)?)\s*L in tank/gi, '$1 L en réservoir')
+            .replace(/\boffline\b/gi, 'hors ligne')
+            .replace(/\bat\s+([\d,]+)\s*km\s*\(Approaching 500,000 km major overhaul\)/gi, 'à $1 km (Révision majeure 500 000 km proche)')
+            .replace(/Sibline Plant & Quarry/g, 'Usine et carrière de Sibline')
+            .replace(/Choueifat Main Yard/g, 'Parc principal Choueifat')
+            .replace(/Damour Coastal Corridor/g, 'Corridor côtier de Damour')
+            .replace(/Southern Corridor/g, 'Corridor Sud')
+            .replace(/Beirut Ring/g, 'Périphérique de Beyrouth')
+            .replace(/\bBeirut\b/g, 'Beyrouth')
+            .replace(/\bUnknown\b/g, 'Inconnu');
+          gpsTail = ` · GPS/CAN en direct : ${gpsTail}`;
+        }
+      }
+      return lang === 'ar'
+        ? `${m[1]} قراءات عدادات للمراجعة · ${m[2]} حالات شذوذ استهلاك${m[3]}· ${m[4]} آليات للشركة متوقفة +30 يوماً.${gpsTail}`
+        : `${m[1]} relevés compteurs à vérifier · ${m[2]} anomalies de consommation${m[3]}· ${m[4]} engins propres inactifs 30+ jours.${gpsTail}`;
+    }
+
+    m = trimmed.match(/^(?:Live GPS|عداد GPS الحي|GPS en direct):\s*([\d,]+)\s*km(?:\s*·\s*([\d,]+)\s*L)?\s*·\s*(?:Apply|تطبيق|Appliquer)$/i);
+    if (m) {
+      return lang === 'ar'
+        ? `عداد GPS الحي: ${m[1]} كم${m[2] ? ` · ${m[2]} لتر` : ''} · تطبيق`
+        : `GPS en direct : ${m[1]} km${m[2] ? ` · ${m[2]} L` : ''} · Appliquer`;
+    }
+
+    m = trimmed.match(/^(\d+)\s+GPS\s+ALERTS?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} تنبيهات GPS` : `${m[1]} ALERTE${Number(m[1]) > 1 ? 'S' : ''} GPS`;
 
     m = trimmed.match(/^(\d+)\s+rows carry a reporting date more than 31 days from the transaction date\s*·\s*(\d+)\s+VAT invoices not linked to tickets\s*·\s*(\d+)\s+VAT header variances\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} سطور يحمل تاريخ تقريرها فارقاً يتجاوز 31 يوماً عن تاريخ العملية · ${m[2]} فواتير ضريبية غير مرتبطة بإيصالات · ${m[3]} فروقات في ترويسة الضريبة.` : `${m[1]} lignes avec écart date reporting > 31 jours · ${m[2]} factures TVA non liées aux bons · ${m[3]} écarts d'entête TVA.`;

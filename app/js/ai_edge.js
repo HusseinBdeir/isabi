@@ -5477,6 +5477,28 @@
     }
   }
 
+  async function explainTelematicsRecon(opts) {
+    const o = opts || {};
+    const fallback = sanitizeOutward(String(o.fallback || ''));
+    if (!o.unit) return fallback;
+    const u = o.unit;
+    const h = o.hist || {};
+    const r = o.recon || {};
+    const prompt = [
+      'Analyze this deterministic heavy-truck CAN-bus & GPS daily fuel reconciliation in 2 concise operational sentences.',
+      'Do NOT recalculate arithmetic; use the exact figures below. Distinguish normal uphill loaded quarry burn (0.60 to 0.80 L/km) from stationary ACC-Off tank drops or unposted pump slips. Never use em-dashes or arrows.',
+      `Truck: ${u.equipment} (${u.plate_no}), Model: ${u.vehicle_model}, Status: ${u.status_label}, Power: ${u.ext_power_v}V, Zone: ${u.zone_name}`,
+      `Day GPS Distance: ${h.km_gps || 0} km, CAN ECU io83 Burn: ${h.ecu_burn_l != null ? h.ecu_burn_l + ' L' : 'N/A'}, Rate: ${h.burn_rate_l_km != null ? h.burn_rate_l_km + ' L/km' : 'N/A'}`,
+      `Settled Tank Open/Close: ${h.opening_settled_l != null ? h.opening_settled_l + ' L' : 'N/A'} to ${h.closing_settled_l != null ? h.closing_settled_l + ' L' : 'N/A'}, ISABI Pump Slips: ${r.pumpLitres || 0} L, Variance: ${r.tankVarianceL != null ? r.tankVarianceL + ' L' : 'N/A'}, Parked ACC-Off Drops: ${(h.siphon_alerts || []).length}`,
+      'Return ONLY JSON: {"note": "2 concise operational sentences"}'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson('telematics_recon', prompt);
+    if (aiRes && typeof aiRes.note === 'string' && aiRes.note.trim()) {
+      return sanitizeOutward(aiRes.note.trim());
+    }
+    return fallback;
+  }
+
   function init(deps) {
     D = deps || {};
     EDGE_STATE.voiceLang = curLang();
@@ -5559,6 +5581,7 @@
     computeBehavioralPatterns,
     buildDeterministicDailyBrief,
     buildGroundedFollowUpDraft,
+    explainTelematicsRecon,
     callAiEdgeJson,
     resolveAiEdgeRelayEndpoint,
     extractAiEdgeJsonObject,

@@ -2510,6 +2510,12 @@
     const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
     const selRegMemberSites = selRegObj ? (sitesByRegList.get(norm(selRegObj.name)) || []) : [];
     const selRegOt = selRegObj ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
+    const scopedTruckCnt = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
+      ? window.MFG_TELEMATICS.getScopedUnits().length
+      : 0;
+    if (STUDIO.pinFilter === 'trucks' && scopedTruckCnt === 0) {
+      STUDIO.pinFilter = 'all';
+    }
 
     return `
       <section class="geo-studio-deck" id="geoMapStudioDeck" aria-label="Regions and Sites Map">
@@ -2529,6 +2535,7 @@
                 <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Quarry</button>
                 <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Delivery</button>
                 <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
+                ${scopedTruckCnt > 0 ? `<button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'trucks' ? ' active' : ''}" data-geo-pin-filter="trucks"><span class="geo-dot trucks"></span>Trucks (${scopedTruckCnt})</button>` : ''}
               </div>
               ${STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
             ` : ''}
@@ -2799,7 +2806,13 @@
     }
 
     // 3. Draw Site Pins
-    if (STUDIO.pinFilter !== 'bu') {
+    const liveTruckPinCnt = (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getScopedUnits === 'function')
+      ? window.MFG_TELEMATICS.getScopedUnits().length
+      : 0;
+    if (STUDIO.pinFilter === 'trucks' && liveTruckPinCnt === 0) {
+      STUDIO.pinFilter = 'all';
+    }
+    if (STUDIO.pinFilter !== 'bu' && STUDIO.pinFilter !== 'trucks') {
       sites.forEach(s => {
         if (s.latitude == null || s.longitude == null || s.latitude === '' || s.longitude === '') return;
         const lat = Number(s.latitude), lng = Number(s.longitude);
@@ -2871,6 +2884,11 @@
         </div>
       `);
     });
+
+    // 4b. Draw Live Fleet GPS & CAN-Bus Truck Pins
+    if ((STUDIO.pinFilter === 'all' || STUDIO.pinFilter === 'trucks' || !STUDIO.pinFilter) && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderLeafletTruckMarkers === 'function') {
+      window.MFG_TELEMATICS.renderLeafletTruckMarkers(L, lg);
+    }
 
     // 5. Draw Live Draft Overlays (Search Boundary / Draggable Circle / Interactive Polygon / Pin)
     const containerEl = map.getContainer && map.getContainer();
@@ -2998,7 +3016,11 @@
       }).addTo(lg);
     }
 
-    if (focusBounds && focusBounds.isValid && focusBounds.isValid() && !STUDIO._userPanned) {
+    if (Array.isArray(STUDIO._focusTruckLatLng) && STUDIO._focusTruckLatLng.length === 2) {
+      map.setView(STUDIO._focusTruckLatLng, 13, { animate: false });
+      STUDIO._focusTruckLatLng = null;
+      STUDIO._userPanned = true;
+    } else if (focusBounds && focusBounds.isValid && focusBounds.isValid() && !STUDIO._userPanned) {
       map.fitBounds(focusBounds, { padding: [26, 26], maxZoom: 14, animate: false });
     } else if (!selRegNorm && !STUDIO._userPanned) {
       map.setView([33.76, 35.52], 9, { animate: false });

@@ -868,41 +868,44 @@
       };
     }
 
-    // 5. Equipment / Truck Code Match
-    const eqReg = _ctx.SEED.records.equipment || [];
-    let bestEq = null;
-    for (let i = 0; i < eqReg.length; i++) {
-      const eq = eqReg[i];
-      const label = String((eq && (eq.name || eq.code || eq.plate)) || '').trim();
-      if (!eq || eq.voided || label.length < 3 || coNameSet.has(norm(label))) continue;
-      if (hasWholeCandidate(label)) {
-        if (!bestEq || label.length > String(bestEq.name || bestEq.code).length) bestEq = eq;
+    // 5. Equipment / Truck Code Match (skip live GPS/location queries so 2B Telematics handles them; enforce fleet hub guard)
+    const isLiveTelLookup = /\b(where\s+is|where\s+are|gps|telematics|live\s+location|can[- ]bus|io83|0v|power\s+cut)\b|وين|موقع|تتبع|où\s+est|où\s+sont/i.test(cleanQ);
+    if (canHub('fleet', scope.user) && !isLiveTelLookup) {
+      const eqReg = _ctx.SEED.records.equipment || [];
+      let bestEq = null;
+      for (let i = 0; i < eqReg.length; i++) {
+        const eq = eqReg[i];
+        const label = String((eq && (eq.name || eq.code || eq.plate)) || '').trim();
+        if (!eq || eq.voided || label.length < 3 || coNameSet.has(norm(label))) continue;
+        if (hasWholeCandidate(label)) {
+          if (!bestEq || label.length > String(bestEq.name || bestEq.code).length) bestEq = eq;
+        }
       }
-    }
-    if (bestEq) {
-      const eqName = String(bestEq.name || bestEq.code || '');
-      const fRows = scopedRows('fuel_intakes', scope).filter(r => norm(r.equipment || r.truck) === norm(eqName));
-      const dRows = scopedRows('equipment_defects', scope, { ignorePeriod: true }).filter(r => norm(r.equipment) === norm(eqName) && !/resolved|closed/i.test(r.status || ''));
-      const repRows = scopedRows('equipment_repairs', scope).filter(r => norm(r.equipment) === norm(eqName));
-      const litres = fRows.reduce((a, r) => a + Number(r.litres || r.qty || 0), 0);
-      return {
-        q: cleanQ,
-        lang: detectLang(cleanQ),
-        instantLocal: true,
-        topic: 'maintenance',
-        title: `Equipment Unit · ${cleanOut(eqName)}`,
-        answer: `In <b>${esc(scope.fullScopeLabel)}</b>, unit <b>${esc(eqName)}</b> dispensed <b>${fmtInt(litres, 1)} L</b> across <b>${fmtInt(fRows.length)}</b> fuel logs, logged <b>${fmtInt(repRows.length)}</b> repair records, and currently has <b>${fmtInt(dRows.length)}</b> open defect warnings.`,
-        promptText: 'Would you like to inspect this unit in 360° view or open Repairs, Warnings & Oil Logs?',
-        actions: [
-          { type: 'inspect', crKey: 'equipment', id: bestEq.id, label: `360° ${eqName}` },
-          { type: 'view', view: 'fleet_maint', label: 'Repairs & Warnings' }
-        ],
-        followUps: [
-          'Show diesel tank & malfunction status',
-          'Show open equipment defects & repairs',
-          'Show warehouse spare parts stock'
-        ]
-      };
+      if (bestEq) {
+        const eqName = String(bestEq.name || bestEq.code || '');
+        const fRows = scopedRows('fuel_intakes', scope).filter(r => norm(r.equipment || r.truck) === norm(eqName));
+        const dRows = scopedRows('equipment_defects', scope, { ignorePeriod: true }).filter(r => norm(r.equipment) === norm(eqName) && !/resolved|closed/i.test(r.status || ''));
+        const repRows = scopedRows('equipment_repairs', scope).filter(r => norm(r.equipment) === norm(eqName));
+        const litres = fRows.reduce((a, r) => a + Number(r.litres || r.qty || 0), 0);
+        return {
+          q: cleanQ,
+          lang: detectLang(cleanQ),
+          instantLocal: true,
+          topic: 'maintenance',
+          title: `Equipment Unit · ${cleanOut(eqName)}`,
+          answer: `In <b>${esc(scope.fullScopeLabel)}</b>, unit <b>${esc(eqName)}</b> dispensed <b>${fmtInt(litres, 1)} L</b> across <b>${fmtInt(fRows.length)}</b> fuel logs, logged <b>${fmtInt(repRows.length)}</b> repair records, and currently has <b>${fmtInt(dRows.length)}</b> open defect warnings.`,
+          promptText: 'Would you like to inspect this unit in 360° view or open Repairs, Warnings & Oil Logs?',
+          actions: [
+            { type: 'inspect', crKey: 'equipment', id: bestEq.id, label: `360° ${eqName}` },
+            { type: 'view', view: 'fleet_maint', label: 'Repairs & Warnings' }
+          ],
+          followUps: [
+            'Show diesel tank & malfunction status',
+            'Show open equipment defects & repairs',
+            'Show warehouse spare parts stock'
+          ]
+        };
+      }
     }
 
     // 6. Staff / Driver Name Match
@@ -1606,9 +1609,44 @@
     }
 
     // Inherit prior turn's topic on bare entity/date follow-ups ("What about BBConstruction?", "And in March 2026?")
-    const hasNewTopic = /\b(daily\s+ops|daily\s+operations|after[- ]hours|what\s+happened|sentinel|sentinels|watchdog|watchdogs|alert|alerts|anomal|threshold|thresholds|expense|expenses|overhead|spending|recurring|pending\s+price|price\s+pending|warehouse|inventory|stock|spare\s+part|consumable|ar\b|overdue|receivable|receivables|debtor|credit\s+hold|dso|collections?|ap\b|payable|payables|quarry|quarries|raw\s+material|haulage|hauler|settlement|defect|repair|oil\s+log|preventive|workshop|maintenance|grease|lubricant|diesel|tank|fuel|litre|mazout|malfunction|cash|till|drawer|cashflow|lbp|treasury|loan|fx|conversion|trial\s+balance|coa|ledger|gl\b|double[- ]entry|pcg|payroll|salary|salaries|overtime|attendance|lateness|workforce|contract|freelance|pricing|price\s+agreement|agreed\s+price|commission|kiosk|thermal|printer|gate\s+pass|biometric|face\s+id|seat|permission|role|margin|gm\b|p&l|pnl|profit|compare|comparison|revenue|sales|loads|tons|volume|product|products|grade|grades|aggregate|aggregates|material|materials|peak\s+month|best\s+month|worst\s+month|which\s+month|monthly|top\s+\d*\s*(?:customer|client|supplier|product|grade)|briefing|overview|summary|status|health)\b/i.test(low) ||
-      /(مبيعات|أرباح|ارباح|مصاريف|ذمم|مازوت|رواتب|مستودع|ميزان|تنبيه|ملخص)/.test(cleanQ);
+    const hasNewTopic = /\b(gps|telematics|can[- ]bus|io83|where\s+is\s+tb\d*|where\s+are\s+(?:the\s+|our\s+)?trucks|truck\s+locations?|live\s+trucks?|power\s+cut|0v|onboard\s+diesel|daily\s+ops|daily\s+operations|after[- ]hours|what\s+happened|sentinel|sentinels|watchdog|watchdogs|alert|alerts|anomal|threshold|thresholds|expense|expenses|overhead|spending|recurring|pending\s+price|price\s+pending|warehouse|inventory|stock|spare\s+part|consumable|ar\b|overdue|receivable|receivables|debtor|credit\s+hold|dso|collections?|ap\b|payable|payables|quarry|quarries|raw\s+material|haulage|hauler|settlement|defect|repair|oil\s+log|preventive|workshop|maintenance|grease|lubricant|diesel|tank|fuel|litre|mazout|malfunction|cash|till|drawer|cashflow|lbp|treasury|loan|fx|conversion|trial\s+balance|coa|ledger|gl\b|double[- ]entry|pcg|payroll|salary|salaries|overtime|attendance|lateness|workforce|contract|freelance|pricing|price\s+agreement|agreed\s+price|commission|kiosk|thermal|printer|gate\s+pass|biometric|face\s+id|seat|permission|role|margin|gm\b|p&l|pnl|profit|compare|comparison|revenue|sales|loads|tons|volume|product|products|grade|grades|aggregate|aggregates|material|materials|peak\s+month|best\s+month|worst\s+month|which\s+month|monthly|top\s+\d*\s*(?:customer|client|supplier|product|grade)|briefing|overview|summary|status|health)\b/i.test(low) ||
+      /(وين الشاحنات|موقع الشاحنات|تتبع|مبيعات|أرباح|ارباح|مصاريف|ذمم|مازوت|رواتب|مستودع|ميزان|تنبيه|ملخص)/.test(cleanQ);
     const effLow = (!hasNewTopic && scope.inheritedTopic) ? `${low} ${scope.inheritedTopic}` : low;
+
+    // 2B. Live Fleet GPS & Teltonika CAN-Bus Sensor Telematics (Interactive + Programmatic)
+    if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.tryAnswerTelematicsQuestion === 'function') {
+      const scopeCoTel = scope && scope.coKey ? scope.coKey : undefined;
+      const telAns = window.MFG_TELEMATICS.tryAnswerTelematicsQuestion(effLow, scopeCoTel);
+      if (telAns && telAns.matched) {
+        if (!canHub('fleet', user)) return buildRestrictedReply(cleanQ, lang, 'Fleet & Telematics');
+        const units = Array.isArray(telAns.units) ? telAns.units : window.MFG_TELEMATICS.getScopedUnits(scopeCoTel);
+        const telActions = [];
+        if (canView('fleet', user)) telActions.push({ type: 'view', view: 'fleet', label: 'Open Diesel & Lubricants' });
+        if (canView('reg_sites', user)) telActions.push({ type: 'view', view: 'reg_sites', label: 'Live Fleet Map' });
+        return {
+          q: cleanQ,
+          lang,
+          instantLocal: !isReasoningQuery(cleanQ),
+          topic: 'fleet_telematics',
+          title: 'Live Fleet GPS & CAN-Bus Sensor Telematics',
+          answer: esc(telAns.text).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'),
+          headers: units.length ? ['Truck', 'Status', 'Zone', 'Odometer', 'Tank'] : undefined,
+          rows: units.length ? units.map(u => [
+            `${u.equipment} (${u.plate_no})`,
+            u.status_label,
+            u.isabi_region || u.zone_name || '-',
+            u.odometer_km != null ? `${Math.round(u.odometer_km).toLocaleString('en-US')} km` : '-',
+            u.tank_litres != null ? `${Math.round(u.tank_litres)} L` : '-'
+          ]) : undefined,
+          actions: telActions,
+          followUps: [
+            'Show diesel tank & malfunction status',
+            'Show equipment repairs & oil logs',
+            'Check open AI Sentinel alerts'
+          ]
+        };
+      }
+    }
 
     // 3. Daily Operations / Today / Yesterday / Explicit Single-Day ("today", "yesterday", "2026-10-30", "daily ops")
     if (/\b(daily\s+ops|daily\s+operations|after[- ]hours|what\s+happened\s+(today|yesterday))\b/i.test(effLow) ||
@@ -10034,12 +10072,16 @@
     const p17Line = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase17CloseSnapshot === 'function')
       ? cleanOut(window.MFG_AI_EDGE.getPhase17CloseSnapshot(activeInd).summaryLine || '')
       : '';
+    const telLine = (canHub('fleet', user) && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.buildAskContextSummary === 'function')
+      ? cleanOut(window.MFG_TELEMATICS.buildAskContextSummary(scopeCo) || '')
+      : '';
 
     const kpiLine = [
       `Scope: ${scope.fullScopeLabel} (Basis: ${scope.basis === 'tx' ? 'Transaction Date' : 'Reporting Date'})`,
       'Industry Domain Metrics:\n' + indLines.join('\n'),
       p16Line,
       p17Line,
+      telLine,
       screenLine,
       `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 4).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
       domainDetail,

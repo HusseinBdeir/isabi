@@ -98,6 +98,7 @@ const wranglerProc = spawn(NODE_BIN, [
   '--persist-to', tmpPersist,
   '--r2', 'BUCKET=isabi-vault',
   '-b', `ISABI_JWT_SECRET=${jwtSecret}`,
+  '-b', 'VT_TEST_FIXTURE=1',
   '--live-reload=false'
 ], {
   cwd: ROOT,
@@ -2245,6 +2246,118 @@ finally:
         hspInd: [e29SupHspInd.status, e29SupHspInd.json],
         forgery: [e29SupCrossForgery.status, e29SupCrossForgery.json],
         keys: Object.keys(e29Reviews)
+      }));
+    }
+
+    // 30. Server-Side Telematics Proxy (`/app/api/telematics`): 401 Anon, 403 Cross-BU RLS, Demo Sandbox, Device-ID Override, Secret Scrub & Slosh Physics
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-bbc-only-tel',
+        email: 'bbc.tel@bhfirms.com',
+        full_name: 'BBC Only Seat',
+        role: 'Entry',
+        companies: 'BBConstruction',
+        pin_code: '5858',
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const bbcTelLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'bbc.tel@bhfirms.com',
+      pin: '5858',
+      method: 'PIN'
+    });
+    const bbcTelTok = String(bbcTelLogin.json?.token || '');
+
+    const telAnon = await httpReq('GET', '/app/api/telematics');
+    const telCrossSnap = await httpReq('GET', '/app/api/telematics?company=WTC', null, { 'X-ISABI-Session': bbcTelTok });
+    const telCrossHist = await httpReq('GET', '/app/api/telematics?action=history&device_id=17733&from_date=2026-11-08&to_date=2026-11-08', null, { 'X-ISABI-Session': bbcTelTok });
+    const telBbcDefault = await httpReq('GET', '/app/api/telematics', null, { 'X-ISABI-Session': bbcTelTok });
+    const telDemo = await httpReq('GET', '/app/api/telematics', null, { 'X-ISABI-Demo': '1' });
+    const telWtcSnap = await httpReq('GET', '/app/api/telematics?company=WTC', null, { 'X-ISABI-Session': entryToken });
+    const telWtcHist = await httpReq('GET', '/app/api/telematics?action=history&device_id=17733&from_date=2026-11-08&to_date=2026-11-08', null, { 'X-ISABI-Session': entryToken });
+    const telUnknownWtcSeat = await httpReq('GET', '/app/api/telematics?action=history&device_id=999999&from_date=2026-11-08&to_date=2026-11-08', null, { 'X-ISABI-Session': entryToken });
+    const telUnknownOwner = await httpReq('GET', '/app/api/telematics?action=history&device_id=999999&from_date=2026-11-08&to_date=2026-11-08', null, { 'X-ISABI-Session': ownerToken });
+
+    const telSloshCheck = await httpReq('POST', '/app/api/telematics?action=verify_physics', {
+      tank_cap_l: 400,
+      points: [
+        { ts: 1000, speed: 65, acc_on: true, io89: 4, io83: 5000, io87: 100000 },
+        { ts: 1060, speed: 68, acc_on: true, io89: 33, io83: 5008, io87: 101100 },
+        { ts: 1120, speed: 62, acc_on: true, io89: 6, io83: 5015, io87: 102200 }
+      ]
+    }, { 'X-ISABI-Session': entryToken });
+
+    const telMixedOdoShortStopCheck = await httpReq('POST', '/app/api/telematics?action=verify_physics', {
+      tank_cap_l: 400,
+      points: [
+        { time: '08-11-2026 06:00:00 AM', lat: 33.8403, lng: 35.4919, speed: 0, other: '<info><totaldistance>42100000</totaldistance><io89>50</io89><di1>0</di1></info>' },
+        { time: '08-11-2026 06:00:10 AM', lat: 33.8403, lng: 35.4919, speed: 0, other: '<info><totaldistance>42100000</totaldistance><io89>38</io89><di1>0</di1></info>' },
+        { time: '08-11-2026 07:15:00 AM', lat: 33.7600, lng: 35.4800, speed: 62, other: '<info><io87>345510000</io87><totaldistance>42112000</totaldistance><io89>48</io89><di1>1</di1></info>' },
+        { time: '08-11-2026 08:00:00 AM', lat: 33.6308, lng: 35.4265, speed: 55, other: '<info><io87>345535000</io87><totaldistance>42137000</totaldistance><io89>47</io89><di1>1</di1></info>' }
+      ]
+    }, { 'X-ISABI-Session': entryToken });
+
+    const telSiphonCheck = await httpReq('POST', '/app/api/telematics?action=verify_physics', {
+      tank_cap_l: 400,
+      points: [
+        { ts: 2000, speed: 0, acc_on: false, io89: 55, io83: 6000, io87: 200000 },
+        { ts: 2120, speed: 0, acc_on: false, io89: 55, io83: 6000, io87: 200000 },
+        { ts: 2240, speed: 0, acc_on: false, io89: 43, io83: 6000, io87: 200000 },
+        { ts: 2360, speed: 0, acc_on: false, io89: 43, io83: 6000, io87: 200000 }
+      ]
+    }, { 'X-ISABI-Session': entryToken });
+
+    const wtcUnits = telWtcSnap.json?.units || [];
+    const tb3Unit = wtcUnits.find(u => u.device_id === 17733);
+    const tb4Unit = wtcUnits.find(u => u.device_id === 18460);
+    const tb9Unit = wtcUnits.find(u => u.device_id === 18571);
+    const noSecretLeak = !/user_api_hash|Gps@1234|vt-lb\.com/i.test(telWtcSnap.text + ' ' + telDemo.text);
+
+    if (
+      telAnon.status === 401 &&
+      telCrossSnap.status === 403 &&
+      telCrossHist.status === 403 &&
+      telUnknownWtcSeat.status === 403 &&
+      telUnknownOwner.status === 404 &&
+      telBbcDefault.status === 200 &&
+      (telBbcDefault.json?.units || []).length === 0 &&
+      telDemo.status === 200 &&
+      telDemo.json?.demo === true &&
+      telWtcSnap.status === 200 &&
+      wtcUnits.length === 7 &&
+      tb3Unit?.equipment === 'TB3' &&
+      tb3Unit?.plate_no === '358599' &&
+      tb9Unit?.equipment === 'Tb9' &&
+      tb9Unit?.plate_no === '364168' &&
+      tb4Unit?.status_code === 'power_cut' &&
+      telWtcHist.status === 200 &&
+      telWtcHist.json?.history?.ecu_burn_l > 0 &&
+      noSecretLeak &&
+      telSloshCheck.status === 200 &&
+      (telSloshCheck.json?.recon?.siphon_alerts || []).length === 0 &&
+      (telSloshCheck.json?.recon?.refill_events || []).length === 0 &&
+      telMixedOdoShortStopCheck.status === 200 &&
+      Math.abs((telMixedOdoShortStopCheck.json?.recon?.km_gps || 0) - 25) < 0.2 &&
+      (telMixedOdoShortStopCheck.json?.recon?.siphon_alerts || []).length === 0 &&
+      telSiphonCheck.status === 200 &&
+      (telSiphonCheck.json?.recon?.siphon_alerts || []).length === 1
+    ) {
+      pass('edge-30-telematics-rls-demo-and-slosh-physics', '401 anon + 403 cross-BU/unknown device_id + 0 BBC leak + Demo sandbox + 7 WTC device_id overrides + mixed CAN/GPS odo & 10s stop guard + siphon physics');
+    } else {
+      fail('edge-30-telematics-rls-demo-and-slosh-physics', JSON.stringify({
+        anon: telAnon.status,
+        crossSnap: telCrossSnap.status,
+        crossHist: telCrossHist.status,
+        bbcLen: (telBbcDefault.json?.units || []).length,
+        demo: [telDemo.status, telDemo.json?.demo],
+        wtcLen: wtcUnits.length,
+        tb3: [tb3Unit?.equipment, tb3Unit?.plate_no],
+        tb9: [tb9Unit?.equipment, tb9Unit?.plate_no],
+        tb4: tb4Unit?.status_code,
+        hist: [telWtcHist.status, telWtcHist.json?.history?.ecu_burn_l],
+        noSecretLeak,
+        slosh: telSloshCheck.json?.recon,
+        siphon: telSiphonCheck.json?.recon
       }));
     }
   } finally {

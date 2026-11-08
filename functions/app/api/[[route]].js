@@ -27,6 +27,7 @@ import {
   handleEdgeSmartScan,
   handleEdgeTts
 } from '../../_lib/gemini.js';
+import { handleTelematics } from '../../_lib/telematics.js';
 import {
   applyEdgeCors,
   checkD1RateLimit,
@@ -96,6 +97,9 @@ async function routeAppApi(context) {
   }
 
   const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';
+  if (isDemoReq && subPath === '/telematics' && request.method === 'GET') {
+    return handleTelematics(request, env, null, url, body);
+  }
   if (!session) {
     if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {
       if (subPath === '/sentinel_reviews') return jsonResponse({ ok: true, demo: true, reviews: {} });
@@ -165,6 +169,10 @@ async function routeAppApi(context) {
 
   if (subPath === '/blobs') {
     return handleBlobs(request, env, session, url, body);
+  }
+
+  if (subPath === '/telematics' && (request.method === 'GET' || request.method === 'POST')) {
+    return handleTelematics(request, env, session, url, body);
   }
 
   // Edge AI Endpoints

@@ -251,8 +251,11 @@ def ensure_pages_project(env: dict):
 def upload_secrets(env: dict):
     jwt_sec = load_or_create_jwt_secret()
     gem_key = read_gemini_key()
-    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}".encode("utf-8")).hexdigest()
     meta = load_edge_meta()
+    vt_hash = str(os.environ.get("VT_GPS_API_HASH") or meta.get("vt_gps_api_hash") or "").strip()
+    vt_email = str(os.environ.get("VT_GPS_EMAIL") or meta.get("vt_gps_email") or "").strip()
+    vt_pass = str(os.environ.get("VT_GPS_PASSWORD") or meta.get("vt_gps_password") or "").strip()
+    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}|{vt_hash}|{vt_email}|{vt_pass}".encode("utf-8")).hexdigest()
     if "--rotate-secrets" not in sys.argv and meta.get("last_secrets_sha256") == sec_sha:
         print("Edge secrets unchanged; skipping redundant secret upload.")
         return
@@ -265,6 +268,19 @@ def upload_secrets(env: dict):
         print("Uploading encrypted GEMINI_API_KEY to Cloudflare Pages...")
         r_gem = run_wrangler(["pages", "secret", "put", "GEMINI_API_KEY", "--project-name=isabi-systems"], env, input_text=gem_key, check=False)
         ok_sec = ok_sec and (r_gem.returncode == 0)
+
+    if vt_hash:
+        print("Uploading encrypted VT_GPS_API_HASH to Cloudflare Pages...")
+        r_vth = run_wrangler(["pages", "secret", "put", "VT_GPS_API_HASH", "--project-name=isabi-systems"], env, input_text=vt_hash, check=False)
+        ok_sec = ok_sec and (r_vth.returncode == 0)
+    if vt_email:
+        print("Uploading encrypted VT_GPS_EMAIL to Cloudflare Pages...")
+        r_vte = run_wrangler(["pages", "secret", "put", "VT_GPS_EMAIL", "--project-name=isabi-systems"], env, input_text=vt_email, check=False)
+        ok_sec = ok_sec and (r_vte.returncode == 0)
+    if vt_pass:
+        print("Uploading encrypted VT_GPS_PASSWORD to Cloudflare Pages...")
+        r_vtp = run_wrangler(["pages", "secret", "put", "VT_GPS_PASSWORD", "--project-name=isabi-systems"], env, input_text=vt_pass, check=False)
+        ok_sec = ok_sec and (r_vtp.returncode == 0)
 
     if ok_sec:
         meta = load_edge_meta()

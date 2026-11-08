@@ -19331,12 +19331,18 @@
 
     const meters = Number(fleet.meter_readings_to_check || 0);
     const outliers = fleet.consumption_outliers || [];
+    const telWatchdogs = window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getWatchdogAlertsForSentinels === 'function'
+      ? window.MFG_TELEMATICS.getWatchdogAlertsForSentinels(STATE.company)
+      : [];
+    const telNote = telWatchdogs.length
+      ? ` · Live GPS/CAN: ` + telWatchdogs.map(w => w.detail).join(' ')
+      : '';
     rawItems.push({
       id: 'S3',
       code: 'Rule #10 · Fuel & Meters', title: 'Odometer & Hour-Meter Tolerance Watchdog',
-      detail: `${fmtNum(meters)} meter readings to check · ${outliers.length} consumption outlier${outliers.length === 1 ? '' : 's'}${outliers.length ? ' (' + outliers.slice(0, 3).map(o => `${o.equipment} ${fmtNum(o.value, 1)} ${o.metric}`).join(', ') + ')' : ''} · ${fmtNum(fleet.own_units_idle_30d || 0)} own units idle 30+ days.`,
-      severity: meters > 0 || outliers.length ? 'warn' : 'ok',
-      badge: meters > 0 ? fmtNum(meters) + ' TO CHECK' : (outliers.length ? outliers.length + ' OUTLIER' + (outliers.length === 1 ? '' : 'S') : 'GUARD ACTIVE'),
+      detail: `${fmtNum(meters)} meter readings to check · ${outliers.length} consumption outlier${outliers.length === 1 ? '' : 's'}${outliers.length ? ' (' + outliers.slice(0, 3).map(o => `${o.equipment} ${fmtNum(o.value, 1)} ${o.metric}`).join(', ') + ')' : ''} · ${fmtNum(fleet.own_units_idle_30d || 0)} own units idle 30+ days.${telNote}`,
+      severity: meters > 0 || outliers.length || telWatchdogs.length ? 'warn' : 'ok',
+      badge: meters > 0 ? fmtNum(meters) + ' TO CHECK' : (outliers.length ? outliers.length + ' OUTLIER' + (outliers.length === 1 ? '' : 'S') : (telWatchdogs.length ? telWatchdogs.length + ' GPS ALERT' + (telWatchdogs.length === 1 ? '' : 'S') : 'GUARD ACTIVE')),
       company: `${fmtNum(fleet.active_equipment || k.active_equip || 0)} units`,
       rawMetric: meters + outliers.length,
       rawSecondary: meters,
@@ -22793,6 +22799,8 @@
       </div>
 
       ${malfBannerHtml}
+
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderFleetTelematicsDeck === 'function' ? window.MFG_TELEMATICS.renderFleetTelematicsDeck() : ''}
 
       <div class="panel-card" id="fuelPanel">
         <div class="table-toolbar">
@@ -42094,6 +42102,7 @@
     ];
 
     return `
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('hld_consolidation') : ''}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card" data-jump-view="hld_consolidation">
           <div class="kpi-label">6-INDUSTRY CONSOLIDATED REVENUE</div>
@@ -44831,6 +44840,7 @@
     }).join('');
 
     const kpiHtml = `
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('hsp_energy') : ''}
       ${filterBarHtml}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
@@ -46178,6 +46188,7 @@
 
     const totUnitGm = round2(s.totalUnitsListUsd - s.totalUnitsLandedUsd);
     const kpiHtml = `
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('trd_trucks') : ''}
       ${filterBarHtml}
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
@@ -47896,6 +47907,8 @@
         </div>
       </div>
 
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('re_workorders') : ''}
+
       <div class="kpi-row">
         <div class="kpi-card">
           <div class="kpi-lbl">Approved Fit-Out &amp; Maintenance Budget</div>
@@ -48903,6 +48916,8 @@
           ${exportBtn('ins_claims')}
         </div>
       </div>
+
+      ${window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.renderCrossIndustryStrip === 'function' ? window.MFG_TELEMATICS.renderCrossIndustryStrip('ins_claims') : ''}
 
       ${filterBarHtml}
 
@@ -70554,6 +70569,9 @@
         const activeDrv = val('f_driver') || defDriver;
         const absRec = (isAlertRuleEnabled('S9') && activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
         const refLastFill = unusedCheck.lastFill || prev;
+        const gpsHint = (!STATE.editingRecord && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.getLiveMeterHintForForm === 'function')
+          ? window.MFG_TELEMATICS.getLiveMeterHintForForm(equipment, company, Boolean(STATE.editingRecord))
+          : null;
         fuelStrip.hidden = false;
         fuelStrip.className = 'att-contract-strip' + ((bbcTankNegative || absRec || !guard.ok || unusedCheck.warn) ? ' is-warn' : '');
         fuelStrip.innerHTML = `
@@ -70562,6 +70580,7 @@
             <span class="badge ${s2Active && coTank.balance < 0 ? 'badge-crit' : (s2Active && coTank.balance < s2LowTankL ? 'badge-warn' : 'badge-ok')}">${fmtNum(coTank.balance, 0)} L Available</span>
             ${unusedCheck.warn && unusedCheck.badge ? `<span class="badge badge-warn" title="${esc(unusedCheck.message)}">${esc(unusedCheck.badge)}</span>` : ''}
             ${absRec ? `<span class="badge badge-crit">S9 Alert: ${esc(activeDrv)} marked ${esc(absRec.type || 'Absent')} on ${esc(effDate)}</span>` : ''}
+            ${gpsHint && gpsHint.odometer_km != null ? `<button type="button" class="tel-meter-apply-pill" data-apply-gps-meter="${gpsHint.odometer_km}">Live GPS: ${fmtNum(gpsHint.odometer_km, 0)} km${gpsHint.tank_litres != null ? ' · ' + fmtNum(gpsHint.tank_litres, 0) + ' L' : ''} · Apply</button>` : ''}
           </div>
           <div class="att-contract-metrics">
             ${!isLubricant && fuelType === 'Diesel' && litres > 0 ? `<span><small>Tank After Issue</small><b class="${tankAfter < 0 ? 'red' : ''}">${fmtNum(tankAfter, 0)} L</b></span>` : ''}
@@ -97002,6 +97021,12 @@
     const tEl = $('toast');
     if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
     closeEntryModal(true);
+    if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
+      window.MFG_ASK.clearSessionState();
+    }
+    if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.clearSessionCache === 'function') {
+      window.MFG_TELEMATICS.clearSessionCache();
+    }
     const keep = new URLSearchParams();
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
@@ -115794,6 +115819,21 @@
         fmtNum
       });
     }
+    if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.bindContext === 'function') {
+      window.MFG_TELEMATICS.bindContext({
+        getState: () => STATE,
+        getSeed: () => SEED,
+        activeUser,
+        allowedCompanyNames,
+        hasServerApi,
+        todayISO,
+        canEnterForm,
+        fmtNum,
+        rerenderWorkspace: renderApp,
+        openEntryModal,
+        jumpView: v => setView(v)
+      });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {
@@ -115880,6 +115920,9 @@
           return;
         }
         if (askDrawer && askDrawer.classList.contains('open')) { closeDrawer(); return; }
+        if ($('telHistoryReconDrawer') && window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.closeReconDrawer === 'function') {
+          if (window.MFG_TELEMATICS.closeReconDrawer()) return;
+        }
         if (sidebar && sidebar.classList.contains('open')) { closeRail(); return; }
         if (STATE.showAddUserForm) { STATE.showAddUserForm = false; renderApp(); }
       }
