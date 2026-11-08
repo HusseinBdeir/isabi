@@ -18,6 +18,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -101,6 +102,9 @@ def run_wrangler(args: list[str], env: dict, input_text: str | None = None, chec
 
 def ensure_logged_in(env: dict) -> tuple[bool, str]:
     r = run_wrangler(["whoami"], env, check=False)
+    if r.returncode != 0:
+        time.sleep(2)
+        r = run_wrangler(["whoami"], env, check=False)
     out = (r.stdout or "") + "\n" + (r.stderr or "")
     if r.returncode == 0 and ("Account ID" in out or "logged in" in out.lower() or "@" in out):
         print("Cloudflare auth verified:")
@@ -268,9 +272,11 @@ def upload_secrets(env: dict):
 
 
 def _upload_one_batch(bf: pathlib.Path, env: dict) -> str:
-    r = run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={bf}", "-y"], env, check=False)
-    if r.returncode != 0:
-        run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={bf}", "-y"], env, check=True)
+    for attempt in range(1, 5):
+        r = run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={bf}", "-y"], env, check=(attempt == 4))
+        if r.returncode == 0:
+            return bf.name
+        time.sleep(2 * attempt)
     return bf.name
 
 
@@ -304,20 +310,32 @@ def seed_remote_d1(env: dict):
         print("Delta seed found 0 changed D1 statements across SQLite + Snapshot + Spine + Cloud (0 remote writes).")
     else:
         mode_lbl = "DELTA" if use_delta else "FULL"
-        print(f"Uploading {total} {mode_lbl} SQL batch(es) to remote D1 `isabi-ledger`...")
-        done = 0
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            futs = {pool.submit(_upload_one_batch, bf, env): bf for bf in batches}
-            for fut in as_completed(futs):
-                name = fut.result()
-                done += 1
-                if done == 1 or done % 15 == 0 or done == total:
-                    print(f"  [{done}/{total}] {name} applied")
+        pending_sha = file_sha256(BATCH_DIR / "pending_manifest.json")
+        run_sig = f"{mode_lbl}:{pending_sha}"
+        meta = load_edge_meta()
+        done_shas = set(meta.get("applied_batch_shas") or []) if meta.get("applied_batch_run_sig") == run_sig else set()
+        meta["applied_batch_run_sig"] = run_sig
+        print(f"Uploading {total} {mode_lbl} SQL batch(es) sequentially to remote D1 `isabi-ledger` (zero import-lock contention)...")
+        for done, bf in enumerate(batches, 1):
+            b_sha = file_sha256(bf)
+            if b_sha and b_sha in done_shas:
+                if done == 1 or done % 20 == 0 or done == total:
+                    print(f"  [{done}/{total}] {bf.name} skipped (already checkpointed)")
+                continue
+            name = _upload_one_batch(bf, env)
+            if b_sha:
+                done_shas.add(b_sha)
+                meta["applied_batch_shas"] = sorted(done_shas)
+                save_edge_meta(meta)
+            if done == 1 or done % 15 == 0 or done == total:
+                print(f"  [{done}/{total}] {name} applied")
 
     # Promote manifest ONLY after 100% of remote D1 batches succeed
     if promote_pending_manifest():
         print(f"Promoted D1 row-hash manifest -> {COMMITTED_MANIFEST_JSON.name}")
     meta = load_edge_meta()
+    meta.pop("applied_batch_shas", None)
+    meta.pop("applied_batch_run_sig", None)
     meta["last_seeded_db_sha256"] = db_sha
     save_edge_meta(meta)
 

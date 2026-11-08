@@ -250,19 +250,81 @@ def _pick_newer_record(ra: dict, rb: dict) -> dict:
     return copy.deepcopy(ra)
 
 
+def _has_real_samples(u: dict) -> bool:
+    fs = u.get("face_samples")
+    if isinstance(fs, str):
+        try:
+            fs = json.loads(fs)
+        except Exception:
+            fs = []
+    return isinstance(fs, list) and len(fs) > 0 and not u.get("face_redacted")
+
+
+def _pick_authoritative_user_id(ua: dict, ub: dict) -> tuple[str, bool]:
+    id_a = str(ua.get("id") or "").strip()
+    id_b = str(ub.get("id") or "").strip()
+    auth_a = bool(ua.get("_d1_authoritative_id") and id_a)
+    auth_b = bool(ub.get("_d1_authoritative_id") and id_b)
+    if auth_a and not auth_b:
+        return id_a, True
+    if auth_b and not auth_a:
+        return id_b, True
+    if auth_a and auth_b:
+        sa = str(ua.get("seat_updated_at") or "")
+        sb = str(ub.get("seat_updated_at") or "")
+        return (id_b if sb > sa else id_a), True
+    canon_a = bool(re.match(r"^u\d+$", id_a))
+    canon_b = bool(re.match(r"^u\d+$", id_b))
+    if canon_a and not canon_b:
+        return id_a, False
+    if canon_b and not canon_a:
+        return id_b, False
+    sa = str(ua.get("seat_updated_at") or "")
+    sb = str(ub.get("seat_updated_at") or "")
+    return (id_b if (sb > sa and id_b) else (id_a or id_b)), False
+
+
 def _merge_user_rows(ua: dict, ub: dict) -> dict:
-    """Merge two user seat records, preserving newer seat_updated_at & face_cleared tombstones."""
-    sa = str(ua.get("seat_updated_at") or ua.get("last_login_at") or "")
-    sb = str(ub.get("seat_updated_at") or ub.get("last_login_at") or "")
+    """Merge two user seat records, preserving authoritative D1 IDs, unredacted biometrics/PINs, newer seat_updated_at & face_cleared tombstones."""
+    sa = str(ua.get("seat_updated_at") or "")
+    sb = str(ub.get("seat_updated_at") or "")
+    winner_ts = sb if sb > sa else sa
+    loser_ts = sa if sb > sa else sb
     out = copy.deepcopy(ub if sb > sa else ua)
+    other = ua if sb > sa else ub
+    best_id, is_d1_auth = _pick_authoritative_user_id(ua, ub)
+    if best_id:
+        out["id"] = best_id
+    if is_d1_auth:
+        out["_d1_authoritative_id"] = True
+    else:
+        out.pop("_d1_authoritative_id", None)
+    if out.get("pin_redacted"):
+        if winner_ts and winner_ts > loser_ts:
+            out["pin_code"] = ""
+        elif str(other.get("pin_code") or "").strip() and not other.get("pin_redacted"):
+            out["pin_code"] = other["pin_code"]
+        else:
+            out["pin_code"] = ""
+    elif not str(out.get("pin_code") or "").strip() and str(other.get("pin_code") or "").strip() and not other.get("pin_redacted"):
+        out["pin_code"] = other["pin_code"]
+    out.pop("pin_redacted", None)
+    out.pop("_verifiedPin", None)
     fa = str(ua.get("face_updated_at") or "")
     fb = str(ub.get("face_updated_at") or "")
-    f_win = ub if fb > fa else ua
+    if _has_real_samples(ua) and not _has_real_samples(ub) and not (ub.get("face_cleared") and fb > fa):
+        f_win = ua
+    elif _has_real_samples(ub) and not _has_real_samples(ua) and not (ua.get("face_cleared") and fa > fb):
+        f_win = ub
+    else:
+        f_win = ub if fb > fa else ua
     for fk in ("face_samples", "face_thumbs", "face_required", "face_updated_at", "face_cleared"):
         if fk in f_win:
             out[fk] = copy.deepcopy(f_win[fk])
         elif fk in out and fk == "face_cleared" and not f_win.get("face_cleared"):
             out.pop("face_cleared", None)
+    if _has_real_samples(out):
+        out.pop("face_redacted", None)
     la = str(ua.get("last_login_at") or "")
     lb = str(ub.get("last_login_at") or "")
     if max(la, lb):
@@ -296,7 +358,7 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
     if purged_overrides:
         out["_purgedOverrideIds"] = sorted(purged_overrides)
 
-    # 1. Users
+    # 1. Users (deduplicate by normalized email first so Edge + Relay seats never emit colliding UNIQUE(email) rows)
     u_map: dict[str, dict] = {}
     u_order: list[str] = []
     for src in (newer.get("users") or [], older.get("users") or []):
@@ -305,14 +367,18 @@ def merge_mfg_web_stores(doc_a: dict | None, doc_b: dict | None) -> dict:
         for u in src:
             if not isinstance(u, dict):
                 continue
-            uk = str(u.get("id") or str(u.get("email") or "").strip().lower()).strip()
+            em_u = str(u.get("email") or "").strip().lower()
+            uk = em_u or str(u.get("id") or "").strip()
             if not uk:
                 continue
+            u_norm = copy.deepcopy(u)
+            if em_u:
+                u_norm["email"] = em_u
             if uk not in u_map:
-                u_map[uk] = copy.deepcopy(u)
+                u_map[uk] = u_norm
                 u_order.append(uk)
             else:
-                u_map[uk] = _merge_user_rows(u_map[uk], u)
+                u_map[uk] = _merge_user_rows(u_map[uk], u_norm)
     if u_order:
         out["users"] = [u_map[k] for k in u_order]
 
@@ -545,6 +611,36 @@ def _fetch_edge_store() -> dict:
                 data if isinstance(data, dict) and "customRecords" in data else {}
             )
             if isinstance(remote, dict) and remote:
+                users_url = edge_url.rsplit("/sync", 1)[0] + "/users"
+                try:
+                    u_req = urllib.request.Request(
+                        users_url,
+                        headers={"User-Agent": "ISABI-D1-Seed/1.0", "X-ISABI-Session": cli_tok},
+                        method="GET",
+                    )
+                    with urllib.request.urlopen(u_req, timeout=10) as u_resp:
+                        u_data = json.loads(u_resp.read().decode("utf-8"))
+                    if isinstance(u_data, dict) and isinstance(u_data.get("users"), list) and u_data["users"]:
+                        d1_users = []
+                        for du in u_data["users"]:
+                            if isinstance(du, dict):
+                                du_c = copy.deepcopy(du)
+                                du_c["_d1_authoritative_id"] = True
+                                d1_users.append(du_c)
+                        merged_u: dict[str, dict] = {}
+                        order_u: list[str] = []
+                        for src_u in (d1_users, remote.get("users") or []):
+                            for u_item in src_u:
+                                if isinstance(u_item, dict) and u_item.get("email"):
+                                    ek = str(u_item["email"]).strip().lower()
+                                    if ek not in merged_u:
+                                        merged_u[ek] = copy.deepcopy(u_item)
+                                        order_u.append(ek)
+                                    else:
+                                        merged_u[ek] = _merge_user_rows(merged_u[ek], u_item)
+                        remote["users"] = [merged_u[k] for k in order_u]
+                except Exception:
+                    pass
                 print(f"Pulled live Edge D1 mfg_web_store from {edge_url} (updatedAt={remote.get('updatedAt')})")
                 return remote
         except Exception:
@@ -708,8 +804,63 @@ def build_upsert_stmt(table: str, target_cols: list[str], row_dict: dict) -> str
         if table == "users":
             base_payload.pop("face_samples", None)
             base_payload.pop("face_thumbs", None)
+            base_payload.pop("face_redacted", None)
+            base_payload.pop("face_sample_count", None)
+            base_payload.pop("face_enrolled", None)
+            base_payload.pop("pin_redacted", None)
+            base_payload.pop("_verifiedPin", None)
+            base_payload.pop("_d1_authoritative_id", None)
+            base_payload.pop("face_cleared", None)
         cols.append("payload_json")
         vals.append(sql_lit(base_payload))
+    if table == "users" and "id" in cols:
+        face_cleared = bool(norm_row.get("face_cleared"))
+        upd_parts: list[str] = []
+        for c in cols:
+            if c in ("id", "email"):
+                continue
+            if c == "pin_code":
+                upd_parts.append(
+                    "pin_code = CASE WHEN users.seat_updated_at > excluded.seat_updated_at AND users.pin_code != '' THEN users.pin_code "
+                    "WHEN excluded.pin_code = '' AND users.pin_code != '' THEN users.pin_code ELSE excluded.pin_code END"
+                )
+            elif c == "face_samples":
+                if face_cleared:
+                    upd_parts.append(
+                        "face_samples = CASE WHEN users.face_updated_at > excluded.face_updated_at AND users.face_samples NOT IN ('', '[]') THEN users.face_samples ELSE '[]' END"
+                    )
+                else:
+                    upd_parts.append(
+                        "face_samples = CASE WHEN users.face_updated_at > excluded.face_updated_at AND users.face_samples NOT IN ('', '[]') THEN users.face_samples "
+                        "WHEN excluded.face_samples IN ('', '[]') AND users.face_samples NOT IN ('', '[]') THEN users.face_samples ELSE excluded.face_samples END"
+                    )
+            elif c == "face_thumbs":
+                if face_cleared:
+                    upd_parts.append(
+                        "face_thumbs = CASE WHEN users.face_updated_at > excluded.face_updated_at AND users.face_thumbs NOT IN ('', '[]') THEN users.face_thumbs ELSE '[]' END"
+                    )
+                else:
+                    upd_parts.append(
+                        "face_thumbs = CASE WHEN users.face_updated_at > excluded.face_updated_at AND users.face_thumbs NOT IN ('', '[]') THEN users.face_thumbs "
+                        "WHEN excluded.face_thumbs IN ('', '[]') AND users.face_thumbs NOT IN ('', '[]') THEN users.face_thumbs ELSE excluded.face_thumbs END"
+                    )
+            elif c == "face_updated_at":
+                upd_parts.append(
+                    "face_updated_at = CASE WHEN users.face_updated_at > excluded.face_updated_at THEN users.face_updated_at ELSE excluded.face_updated_at END"
+                )
+            elif c == "last_login_at":
+                upd_parts.append(
+                    "last_login_at = CASE WHEN users.last_login_at > excluded.last_login_at THEN users.last_login_at ELSE excluded.last_login_at END"
+                )
+            else:
+                upd_parts.append(
+                    f"{c} = CASE WHEN users.seat_updated_at > excluded.seat_updated_at THEN users.{c} ELSE excluded.{c} END"
+                )
+        if "email" in cols:
+            upd_parts.append(
+                "email = CASE WHEN users.seat_updated_at > excluded.seat_updated_at AND users.email != '' THEN users.email ELSE excluded.email END"
+            )
+        return f"INSERT INTO users ({','.join(cols)}) VALUES ({','.join(vals)}) ON CONFLICT(id) DO UPDATE SET {', '.join(upd_parts)}"
     return f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({','.join(vals)})"
 
 
@@ -818,17 +969,45 @@ def collect_target_rows(
 
     # 3. Overlay live merged mfg_web_store state (overwriting matching PKs in-place with zero duplicate SQL)
     if remote:
+        email_to_rk: dict[str, str] = {}
+        merged_users_by_rk: dict[str, dict] = {}
+        for rk_u, (t_u, _pk_u, rd_u) in staged_dicts.items():
+            if t_u == "users":
+                u_init = dict(rd_u)
+                if u_init.get("email"):
+                    em_init = str(u_init["email"]).strip().lower()
+                    u_init["email"] = em_init
+                    email_to_rk[em_init] = rk_u
+                merged_users_by_rk[rk_u] = u_init
+
         for u in (remote.get("users") or []):
             if isinstance(u, dict) and u.get("email") and u.get("full_name"):
                 u_row = dict(u)
-                uid = str(u.get("id") or f"u-{u['email']}").strip()
+                em_norm = str(u["email"]).strip().lower()
+                u_row["email"] = em_norm
+                cand_id = str(u.get("id") or f"u-{em_norm}").strip()
+                u_row["id"] = cand_id
+                cand_rk = encode_row_key("users", (cand_id,))
+                prev_rk = email_to_rk.get(em_norm) or (cand_rk if cand_rk in merged_users_by_rk else None)
+                if prev_rk and prev_rk in merged_users_by_rk:
+                    u_row = _merge_user_rows(dict(merged_users_by_rk[prev_rk]), u_row)
+                    u_row["email"] = em_norm
+                uid = str(u_row.get("id") or cand_id).strip()
                 u_row["id"] = uid
                 rk = encode_row_key("users", (uid,))
-                if rk in staged_dicts:
-                    merged_u = dict(staged_dicts[rk][2])
-                    merged_u.update(u_row)
-                    u_row = merged_u
-                _put("users", (uid,), build_upsert_stmt("users", schema_cols["users"], u_row))
+                if prev_rk and prev_rk != rk:
+                    target_rows.pop(prev_rk, None)
+                    merged_users_by_rk.pop(prev_rk, None)
+                merged_users_by_rk[rk] = copy.deepcopy(u_row)
+                u_emit = dict(u_row)
+                u_emit.pop("face_redacted", None)
+                u_emit.pop("face_sample_count", None)
+                u_emit.pop("face_enrolled", None)
+                u_emit.pop("pin_redacted", None)
+                u_emit.pop("_verifiedPin", None)
+                u_emit.pop("_d1_authoritative_id", None)
+                email_to_rk[em_norm] = rk
+                _put("users", (uid,), build_upsert_stmt("users", schema_cols["users"], u_emit))
 
         for s in (remote.get("sessions") or [])[:40]:
             if isinstance(s, dict) and s.get("id"):
@@ -946,7 +1125,31 @@ def collect_target_rows(
             _put("edge_kv_store", ("work_schedules",), stmt)
 
         # Store complete mfg_web_store snapshot in <= 28,000-char / <= 64 KB UTF-8 chunks (< 95 KB D1 SQL statement cap)
-        raw_store_json = json.dumps(remote, ensure_ascii=False)
+        kv_remote = dict(remote)
+        if isinstance(kv_remote.get("users"), list):
+            redacted_users = []
+            for ku in kv_remote["users"]:
+                if not isinstance(ku, dict):
+                    redacted_users.append(ku)
+                    continue
+                ku_c = dict(ku)
+                fs_raw = ku_c.get("face_samples")
+                if isinstance(fs_raw, str):
+                    try:
+                        fs_raw = json.loads(fs_raw)
+                    except Exception:
+                        fs_raw = []
+                valid_cnt = len(fs_raw) if isinstance(fs_raw, list) else int(ku_c.get("face_sample_count") or (1 if ku_c.get("face_enrolled") else 0))
+                enrolled = bool(not ku_c.get("face_cleared") and (ku_c.get("face_enrolled") or valid_cnt > 0))
+                ku_c["face_enrolled"] = enrolled
+                ku_c["face_sample_count"] = max(1, valid_cnt) if enrolled else 0
+                ku_c["face_redacted"] = True
+                ku_c.pop("face_samples", None)
+                ku_c.pop("face_thumbs", None)
+                ku_c.pop("_d1_authoritative_id", None)
+                redacted_users.append(ku_c)
+            kv_remote["users"] = redacted_users
+        raw_store_json = json.dumps(kv_remote, ensure_ascii=False)
         kv_chunks = _chunk_str_for_kv(raw_store_json, KV_CHUNK_CHARS, 64_000)
         upd_ts = str(remote.get("updatedAt") or "")
         upd_by = str(remote.get("updatedBy") or "seed")
@@ -999,14 +1202,18 @@ def export_all(
     skipped_unchanged = 0
 
     if use_delta:
-        # 1. Delete any previously seeded rows that vanished in SharePoint or shrank in chunked KV
+        # 1. Delete vanished relational rows first; defer shrunk edge_kv_store tail chunks until after KV upserts
+        deferred_kv_deletes: list[str] = []
         for prev_key in prev_hashes.keys():
             if prev_key not in cur_hashes:
                 tbl, pk_vals = decode_row_key(prev_key)
                 del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
                 if del_stmt:
-                    writer.add(del_stmt)
-                    emitted_deletes += 1
+                    if tbl == "edge_kv_store":
+                        deferred_kv_deletes.append(del_stmt)
+                    else:
+                        writer.add(del_stmt)
+                        emitted_deletes += 1
 
         # 2. Upsert only newly added or modified rows (any field/code edit changes SHA-256)
         for rk, stmt in target_rows.items():
@@ -1015,18 +1222,22 @@ def export_all(
                 continue
             writer.add(stmt)
             emitted_upserts += 1
+
+        # 3. Clean up shrunk edge_kv_store tail chunks in the final batch AFTER updated KV head/chunks land
+        for kv_del in deferred_kv_deletes:
+            writer.add(kv_del)
+            emitted_deletes += 1
     else:
-        # Full export: ensure stale mfg_web_store__part_* tail chunks are cleared before full seed
+        for stmt in target_rows.values():
+            writer.add(stmt)
+            emitted_upserts += 1
+        # Clean up stale mfg_web_store__part_* tail chunks in the final batch AFTER all new chunks are inserted
         if remote:
-            raw_store_json = json.dumps(remote, ensure_ascii=False)
-            max_part = max(0, len(_chunk_str_for_kv(raw_store_json, KV_CHUNK_CHARS, 64_000)) - 1)
+            max_part = sum(1 for rk in target_rows if rk.startswith('["edge_kv_store","mfg_web_store__part_'))
             writer.add(
                 f"DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%' "
                 f"AND doc_key > 'mfg_web_store__part_{max_part:04d}'"
             )
-        for stmt in target_rows.values():
-            writer.add(stmt)
-            emitted_upserts += 1
 
     writer.flush()
 
