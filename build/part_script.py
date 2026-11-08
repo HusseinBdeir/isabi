@@ -66,7 +66,7 @@ JS = r"""
       badge: 'Industry Blueprint 02 · Trading & Dealership Operations',
       lead: 'Built for vehicle importers, heavy equipment distributors, and spare-parts wholesalers managing high-value inventory across bonded warehouses, showrooms, and workshop service bays with strict multi-currency accounting.',
       modules: [
-        'Vehicle VIN / Chassis Registry (In-Transit, Bonded Customs, Showroom, Sold)',
+        'Camera VIN Strip Scanner & Chassis Registry (In-Transit, Bonded, Showroom, Sold)',
         'Landed Cost Calculator (FOB, Freight, Insurance, Customs Duty, Clearance)',
         'Spare Parts SKU Inventory, Multi-Warehouse Transfers & Reorder Alerts',
         'Dealer & Fleet Customer Invoicing, Installment Schedules & Aged Receivables',
@@ -102,7 +102,7 @@ JS = r"""
         'Sales Tickets, Concrete Mix Grades, Pump Fees & Cement Silo Stock Control',
         'Touch Field Kiosks: Dispatch, Quarry Receiving, Fuel & Live Face Attendance',
         'Daily Plant & Workforce Map (Live On-Site Crews, Delivery Trucks & Absences)',
-        'Fleet Defect Reporting, 5-Stage Spare Parts Custody & Hydraulic Leak Watch',
+        'Specific-Truck Revenue & Cost Filter, Spare Parts Custody & Leak Watch',
         'Multi-Company Inter-Entity Billing (Batch Plant, Construction & Transport)'
       ],
       workflows: [
@@ -267,7 +267,7 @@ JS = r"""
         'Live Face + PIN Sign-In (Verifies a real person so photos cannot fake a punch)',
         'Offline Punch Queue (Clock-In, Break, Clock-Out) with Photo Audit Log',
         'Multi-Site & Branch Routing (Plant, Resort, Showroom, Head Office)',
-        'Automated Nightly Shift Pairing, Lateness & Overtime Calculation',
+        'Per-Company Shift Windows, Lateness Rules & Batch Staff Onboarding',
         'Direct Integration with Payroll, Staff Advances & Labor Cost Reports'
       ],
       workflows: [
@@ -599,26 +599,26 @@ JS = r"""
       id: 'pbi', cat: 'finance', emoji: ICONS.analytics, tone: 'tone-good',
       name: 'Executive Dashboards', sub: 'Year / Month / Week / Day',
       kicker: 'Live Analytics · Interactive Drilldowns',
-      desc: 'Interactive executive and operational dashboards with one-click Year, Month, Week, and Day switching plus instant KPI drilldowns.',
+      desc: 'Single-screen CEO cockpit, daily operations board, and interactive dashboards with one-tap spoken briefings and Year, Month, Week, and Day switching.',
       bullets: [
-        ICONS.calendar + ' Switch every chart across Year, Month, Week, and Day in one click',
+        ICONS.calendar + ' Single-screen CEO cockpit plus one-tap spoken Daily and Period Briefings',
         ICONS.trend + ' Plain-English chart breakdowns, MoM variance, and 360-degree drilldowns',
         ICONS.bolt + ' Zero third-party BI fees across unlimited internal viewers'
       ],
-      tables: ['Executive Cockpits', 'Operations Views', 'KPI Drilldowns'],
+      tables: ['CEO Cockpit', 'Daily Operations', 'Spoken Briefings'],
       sbox: 'holding', ask: 'How do the interactive executive dashboards work across Operations and Finance?'
     },
     {
       id: 'ai', cat: 'field', emoji: ICONS.ai, tone: 'tone-brass',
       name: 'Ask ISABI & Watchdogs', sub: 'Cited AI & Auto Audits',
       kicker: 'System Intelligence · EN / AR / FR',
-      desc: 'Plain-language executive assistant plus continuous audit watchdogs catching missing ticket numbers, fuel spikes, and invoice mismatches.',
+      desc: 'Two-way live voice and text assistant, Smart Scan with phone QR camera handoff, voice-to-form entry, and behavioral audit watchdogs.',
       bullets: [
-        ICONS.search + ' Flags missing or duplicate ticket numbers and off-contract pricing',
+        ICONS.search + ' Catches missing tickets, split bills, supplier price creep, and repeat repairs',
         ICONS.insurance + ' Strict company & role permissions so branch figures stay private',
-        ICONS.ai_mark + ' Multilingual EN, AR, and FR answers citing exact ledger vouchers'
+        ICONS.ai_mark + ' Live Voice Mode, Smart Scan, and cited EN, AR, and FR ledger answers'
       ],
-      tables: ['Audit Watchdogs', 'Cited Vouchers', 'Role-Scoped Access'],
+      tables: ['Live Voice AI', 'Smart Document Scan', 'Behavioral Watchdogs'],
       sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
     },
     {
@@ -692,7 +692,7 @@ JS = r"""
       kicker: 'Industry App 02 · Trading & Dealership Operations',
       desc: 'End-to-end vehicle, heavy equipment, and spare-parts trading from FOB shipment and bonded customs to showroom delivery and after-sales parts.',
       bullets: [
-        ICONS.trading + ' Per-VIN chassis registry (In-Transit, Bonded Customs, Showroom, Sold)',
+        ICONS.trading + ' Camera VIN strip scanner and per-VIN registry from customs to showroom',
         ICONS.globe + ' Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
         ICONS.box + ' Multi-warehouse spare parts SKU stock and minimum margin locks'
       ],
@@ -718,7 +718,7 @@ JS = r"""
       kicker: 'Heavy Transport & Maintenance · Live Plant Map',
       desc: 'Daily Plant & Workforce Map tracking on-site crews, delivery trucks, absent drivers, spare parts custody, and diesel & hydraulic leak benchmarks.',
       bullets: [
-        ICONS.bolt + ' Diesel, oil, grease, and hydraulic leak alerts per truck and m³ poured',
+        ICONS.bolt + ' Specific-unit fleet revenue and cost filter plus diesel and leak alerts',
         ICONS.fleet + ' Live site map showing active plant crews, road deliveries, and absences',
         ICONS.scope + ' Defect-first maintenance workflow and 5-stage spare parts custody'
       ],
@@ -785,7 +785,7 @@ JS = r"""
       bullets: [
         ICONS.kiosk + ' Live face check + PIN audit blocks buddy-punching and phone photos',
         ICONS.sync + ' Saves clock-in, break, and clock-out punches offline at remote sites',
-        ICONS.clock + ' Automatic overtime & overnight shift detection for payroll'
+        ICONS.clock + ' Per-company shift windows, lateness rules, and batch staff face enrolment'
       ],
       tables: ['Live Face Sign-In', 'Offline Punch Log', 'Shift & Overtime Sync'],
       sbox: 'manufacturing', ask: 'Tell me about the Face & PIN Attendance Kiosk'
@@ -2697,16 +2697,30 @@ JS = r"""
     }
 
     // 2c. Specific Functional & Operational Domain Handlers (conversational two-bubble replies)
-    if (/\b(attach\w*|document\w*|upload\w*|scan\w*|pdfs?|photos?|files?|paperwork)\b/i.test(low)) {
+    if (/\b(attach\w*|document\w*|upload\w*|scan\w*|pdfs?|photos?|files?|paperwork|qr|camera)\b/i.test(low)) {
       return {
         q: cleanQ,
         conversational: true,
-        title: 'Document Vault & Voucher Attachments',
-        answer: `Yes. Staff can attach supplier bills, signed delivery tickets, contracts, or photos directly onto any entry, customer, or asset record and preview them anytime from the 360° Record View.`,
+        title: 'Smart Scan, Phone QR & Document Vault',
+        answer: `Yes. Staff can scan multi-page invoices, receipts, or stamped VIN strips with the privacy document camera or instant phone QR handoff, attach files directly onto any voucher or asset, and preview them anytime from the 360° Record View.`,
         promptText: `Would you also like supervisor approval stamps on bills before they post, or missing-attachment alerts?`,
         followUps: [
           'How do approval rules and audit watchdogs work?',
           'What would a complete multi-branch system cost and include?',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
+        ]
+      };
+    }
+    if (/\b(voice\s+mode|spoken\s+brief\w*|daily\s+brief\w*|period\s+summar\w*|voice-to-form|dictat\w*|batch\s+intake)\b/i.test(low)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'Live Voice Mode, Spoken Briefings & Voice Entry',
+        answer: `Yes. Owners can tap Listen to Daily Briefing or Period Summary on the CEO cockpit in English, Arabic, or French, talk two-way with Ask ISABI in Live Voice Mode, dictate entries by voice, or paste multi-row supplier packs for instant batch review.`,
+        promptText: `Would you like to try Live Voice Mode right here or explore the full Command Center demo?`,
+        followUps: [
+          'How do Smart Scan and phone QR camera handoff work?',
+          'How do approval rules and audit watchdogs work?',
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
         ]
       };
@@ -3332,7 +3346,7 @@ JS = r"""
       'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://isabisystems.com/, Command Center app at https://isabisystems.com/app/).',
       'Company & Direct Principal Leadership: ISABI Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com. Never invent regional branch offices or fictional staff counts.',
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, launch the full interactive Command Center portal demo, or configure a custom quote in the Scope Configurator.',
-      'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, document attachments, warehouse stock controls, double-entry general ledgers (Class 1 to 7), interactive executive dashboards (Year/Month/Week/Day), bilingual printable A4 statements, automatic audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
+      'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, voice-to-form dictation and multi-row batch intake, Smart Scan with privacy document/VIN camera and instant phone QR handoff, warehouse stock controls, double-entry general ledgers (Class 1 to 7), a single-screen CEO cockpit and daily operations board with one-tap spoken Daily and Period Briefings, interactive executive dashboards (Year/Month/Week/Day), per-unit fleet P&L filters, bilingual printable A4 statements, behavioral audit watchdogs (missing tickets, split bills, supplier price creep, repeat repairs), and offline-ready field kiosks (live photo-proof face sign-in, per-company shift rules, batch staff onboarding, and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
       'Pricing & Ownership: Single-Entity Foundation from $3,000 one-time custom setup + $50/seat/month (1 week); Multi-Entity & AI Suite from $5,600 custom setup + $80/seat/month (1 to 2 weeks); Enterprise Holding Group from $11,000+ custom setup + $100/seat/month (2 weeks); $0 extra per field kiosk. Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Focus on business features & outcomes: Focus strictly on what business owners, CFOs, and operators experience. Do NOT overspecify internal technical plumbing (never mention database engines, math internals, printer protocols, or software acronyms).',

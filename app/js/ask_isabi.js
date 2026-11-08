@@ -5914,7 +5914,7 @@
         : '4. Bullet 3 covers operational execution and Sentinel control posture (never mention cash till or receivables).',
       '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, or internal system codes.'
     ].join('\n');
-    const usrPrompt = `Grounded deterministic period ledger JSON:\n${JSON.stringify(groundedPayload)}`;
+    const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate array elements grounded strictly on this period ledger JSON:\n${JSON.stringify(groundedPayload)}`;
 
     const runPromise = (async () => {
       let rawReply = '';
@@ -6013,9 +6013,32 @@
           try {
             parsed = JSON.parse(cleaned);
           } catch (_) {
-            const fb = cleaned.indexOf('{');
-            const lb = cleaned.lastIndexOf('}');
-            if (fb >= 0 && lb > fb) parsed = JSON.parse(cleaned.slice(fb, lb + 1));
+            const merged = [];
+            const objRe = /\{[^{}]*"bullets"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+            let m;
+            while ((m = objRe.exec(cleaned)) !== null) {
+              try {
+                const sub = JSON.parse(m[0]);
+                if (sub && Array.isArray(sub.bullets)) merged.push(...sub.bullets);
+              } catch (_2) {}
+            }
+            if (merged.length) {
+              parsed = { bullets: merged };
+            } else {
+              const fb = cleaned.indexOf('{');
+              let depth = 0, inStr = false, esc = false, endIdx = -1;
+              for (let i = fb; fb >= 0 && i < cleaned.length; i++) {
+                const ch = cleaned[i];
+                if (esc) { esc = false; continue; }
+                if (ch === '\\') { esc = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === '{') depth++;
+                  else if (ch === '}' && --depth === 0) { endIdx = i; break; }
+                }
+              }
+              if (fb >= 0 && endIdx > fb) parsed = JSON.parse(cleaned.slice(fb, endIdx + 1));
+            }
           }
           const rawBulletArr = Array.isArray(parsed && parsed.bullets)
             ? parsed.bullets
@@ -6024,14 +6047,23 @@
           let candBullets = Array.isArray(rawBulletArr)
             ? rawBulletArr.map(b => sanitizeVarianceBulletText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
             : [];
-          if (candBullets.length === 1 && candBullets[0].length >= 80) {
-            const splitParts = candBullets[0]
-              .split(/(?<=[.!?؟])\s+/)
+          if (candBullets.length === 1 && candBullets[0].length >= 70) {
+            let splitParts = candBullets[0]
+              .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
               .map(s => sanitizeVarianceBulletText(s, sum.canViewBooks))
               .filter(s => s.length >= 12);
+            if (splitParts.length < 2) {
+              splitParts = candBullets[0]
+                .split(/,\s+(?=(?:while|whereas|gross|operating|net|cash|tandis|alors|la marge|le résultat|la trésorerie|بينما|في حين|هامش|الربح|السيولة)\b)|،\s+(?=(?:بينما|في حين|هامش|الربح|السيولة))/i)
+                .map(s => sanitizeVarianceBulletText(s, sum.canViewBooks))
+                .filter(s => s.length >= 12);
+            }
             if (splitParts.length >= 2) candBullets = splitParts;
           }
           candBullets = candBullets.slice(0, 3);
+          if (candBullets.length === 1 && Array.isArray(sum.bullets) && sum.bullets.length >= 2) {
+            candBullets = [candBullets[0], ...sum.bullets.slice(1, 3)].slice(0, 3);
+          }
           if (candBullets.length >= 2) {
             const resObj = {
               ok: true,

@@ -30,6 +30,7 @@ def find_node_runtime() -> tuple[str, dict[str, str]]:
     if node_bin:
         return node_bin, env
     candidates = [
+        Path.home() / ".local" / "node" / "node.exe",
         Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
         Path(r"C:\Program Files\Microsoft VS Code\Code.exe"),
         Path(r"C:\Program Files\nodejs\node.exe"),

@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.211';
+const SHELL_CACHE = 'isabi-mfg-v19.6.212';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,41 +6,41 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.211',
-  './css/geo_dispatch.css?v=19.6.211',
-  './css/daily_ops.css?v=19.6.211',
-  './css/ask_isabi.css?v=19.6.211',
-  './css/fleet_pnl.css?v=19.6.211',
-  './css/smart_scan.css?v=19.6.211',
-  './css/doc_scanner.css?v=19.6.211',
-  './css/ai_edge.css?v=19.6.211',
-  './js/face.js?v=19.6.211',
-  './js/endpoints.js?v=19.6.211',
-  './js/seed_manifest.js?v=19.6.211',
-  './js/icons.js?v=19.6.211',
-  './js/geo_dispatch.js?v=19.6.211',
-  './js/forms_engine.js?v=19.6.211',
-  './js/pbi_pages.js?v=19.6.211',
-  './js/rdl_reports.js?v=19.6.211',
-  './js/kiosk_print.js?v=19.6.211',
-  './js/table_columns.js?v=19.6.211',
-  './js/daily_ops.js?v=19.6.211',
-  './js/i18n.js?v=19.6.211',
-  './js/ask_isabi.js?v=19.6.211',
-  './js/fleet_pnl.js?v=19.6.211',
-  './js/doc_scanner.js?v=19.6.211',
-  './js/smart_scan.js?v=19.6.211',
-  './js/ai_edge.js?v=19.6.211',
-  './js/app.js?v=19.6.211',
-  './manifest.json?v=19.6.211',
-  './favicon.ico?v=19.6.211',
-  './favicon-dark.ico?v=19.6.211',
-  './icon.svg?v=19.6.211',
-  './icon-dark.svg?v=19.6.211',
-  './icon-180.png?v=19.6.211',
-  './icon-192.png?v=19.6.211',
-  './icon-512.png?v=19.6.211',
-  './icon-512-maskable.png?v=19.6.211'
+  './css/app.css?v=19.6.212',
+  './css/geo_dispatch.css?v=19.6.212',
+  './css/daily_ops.css?v=19.6.212',
+  './css/ask_isabi.css?v=19.6.212',
+  './css/fleet_pnl.css?v=19.6.212',
+  './css/smart_scan.css?v=19.6.212',
+  './css/doc_scanner.css?v=19.6.212',
+  './css/ai_edge.css?v=19.6.212',
+  './js/face.js?v=19.6.212',
+  './js/endpoints.js?v=19.6.212',
+  './js/seed_manifest.js?v=19.6.212',
+  './js/icons.js?v=19.6.212',
+  './js/geo_dispatch.js?v=19.6.212',
+  './js/forms_engine.js?v=19.6.212',
+  './js/pbi_pages.js?v=19.6.212',
+  './js/rdl_reports.js?v=19.6.212',
+  './js/kiosk_print.js?v=19.6.212',
+  './js/table_columns.js?v=19.6.212',
+  './js/daily_ops.js?v=19.6.212',
+  './js/i18n.js?v=19.6.212',
+  './js/ask_isabi.js?v=19.6.212',
+  './js/fleet_pnl.js?v=19.6.212',
+  './js/doc_scanner.js?v=19.6.212',
+  './js/smart_scan.js?v=19.6.212',
+  './js/ai_edge.js?v=19.6.212',
+  './js/app.js?v=19.6.212',
+  './manifest.json?v=19.6.212',
+  './favicon.ico?v=19.6.212',
+  './favicon-dark.ico?v=19.6.212',
+  './icon.svg?v=19.6.212',
+  './icon-dark.svg?v=19.6.212',
+  './icon-180.png?v=19.6.212',
+  './icon-192.png?v=19.6.212',
+  './icon-512.png?v=19.6.212',
+  './icon-512-maskable.png?v=19.6.212'
 ];
 
 const VENDOR_ASSETS = [
@@ -86,7 +86,7 @@ self.addEventListener('install', event => {
                 .catch(() => null);
             });
           }
-          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.211' : url;
+          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.212' : url;
           return fetchDedup(fetchUrl, { cache: 'reload' })
             .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
             .catch(() => null);
@@ -188,7 +188,7 @@ self.addEventListener('fetch', event => {
           const res = await fetch(new Request(event.request, { cache: 'no-store' }));
           if (res && res.status === 200) {
             if (url.pathname.endsWith('/js/i18n.js')) {
-              cache.put('./js/i18n.js?v=19.6.211', res.clone());
+              cache.put('./js/i18n.js?v=19.6.212', res.clone());
             }
             return res;
           }
@@ -223,7 +223,7 @@ self.addEventListener('fetch', event => {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 3000);
-          const navUrl = new URL('./index.html?v=19.6.211', self.location.href).href;
+          const navUrl = new URL('./index.html?v=19.6.212', self.location.href).href;
           const res = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
           clearTimeout(timer);
           if (res && res.status === 200) {

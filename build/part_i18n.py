@@ -5880,6 +5880,130 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
       "sandbox, or answer questions about how we build around your accounting.": {
             "ar": "التجربة التفاعلية، أو الإجابة عن كيفية بناء النظام حول محاسبتكم.",
             "fr": "interactif, ou répondre à vos questions sur notre intégration comptable."
+      },
+      "Scan multi-page invoices or chassis VINs with the privacy document camera and phone QR handoff, dictate entries by voice, inspect any record in 360°, and print thermal slips.": {
+            "ar": "امسح الفواتير متعددة الصفحات أو أرقام الشاسيه VIN بكاميرا المستندات الخاصة وتمرير QR للهاتف، وأملِ القيود صوتياً، وافحص أي سجل بزاوية 360°، واطبع الإيصالات الحرارية.",
+            "fr": "Numérisez factures multi-pages ou châssis VIN avec la caméra document privée et le relais QR mobile, dictez les saisies à la voix, inspectez chaque fiche à 360° et imprimez les reçus thermiques."
+      },
+      "Smart Scan & Phone QR": {
+            "ar": "المسح الذكي وربط QR للهاتف",
+            "fr": "Scan Intelligent & QR Mobile"
+      },
+      "Review your single-screen CEO cockpit and daily operations board with one-tap spoken briefings, switch Year, Month, Week, and Day, or print bilingual A4 statements.": {
+            "ar": "استعرض مقصورة الرئيس التنفيذي الموحدة ولوحة العمليات اليومية مع ملخصات صوتية بلمسة واحدة، وبدّل بين السنة والشهر والأسبوع واليوم، أو اطبع كشوفات A4 ثنائية اللغة.",
+            "fr": "Consultez le cockpit PDG sur un seul écran et le tableau d'exploitation quotidienne avec briefings vocaux en un clic, basculez Année, Mois, Semaine et Jour, ou imprimez vos états A4 bilingues."
+      },
+      "CEO Cockpit & Spoken Brief": {
+            "ar": "مقصورة القيادة والملخص الصوتي",
+            "fr": "Cockpit PDG & Briefing Vocal"
+      },
+      "Photo-proof face and PIN sign-in, per-company shift rules and permissions, plus watchdogs catching missing tickets, split bills, price creep, and overdue balances.": {
+            "ar": "تسجيل دخول بالوجه الحي والرمز السري، وقواعد دوام وصلاحيات لكل شركة، مع مراقبين يكشفون القسائم المفقودة وتجزئة الفواتير وزحف الأسعار والأرصدة المتأخرة.",
+            "fr": "Connexion visage réel + code PIN, règles d'horaires et droits par société, et sentinelles détectant bons manquants, factures fractionnées, dérives tarifaires et impayés."
+      },
+      "Ask by text, two-way live voice, or attached files across balances, stock, and receivables in EN, AR, and FR, citing every voucher.": {
+            "ar": "اسأل كتابةً أو بالمحادثة الصوتية الحية أو بإرفاق الملفات عن الأرصدة والمخزون والذمم بالعربية والإنجليزية والفرنسية مع الاستشهاد بكل سند.",
+            "fr": "Interrogez par texte, voix bidirectionnelle en direct ou fichiers joints vos soldes, stocks et créances en EN, AR et FR avec référence à chaque pièce."
+      },
+      "Live Voice AI (EN/AR/FR), Smart Scan, Phone QR & Face Kiosks": {
+            "ar": "ذكاء صوتي حي (EN/AR/FR) ومسح ذكي وربط QR وأكشاك بصمة الوجه",
+            "fr": "IA Vocale en Direct (EN/AR/FR), Scan Intelligent, QR Mobile & Bornes Visage"
+      },
+      "Ask ISABI Live Voice (EN/AR/FR), Smart Scan & audit watchdogs": {
+            "ar": "المحادثة الصوتية في Ask ISABI (EN/AR/FR) والمسح الذكي ومراقبو التدقيق",
+            "fr": "Voix en direct Ask ISABI (EN/AR/FR), Scan Intelligent & sentinelles d'audit"
+      },
+      "CEO Daily Cockpit, Per-Unit Fleet P&L, Workforce Map & Parts Custody": {
+            "ar": "مقصورة القيادة اليومية وربحية كل آلية وخريطة القوى العاملة وعهدة القطع",
+            "fr": "Cockpit Quotidien PDG, P&L par Camion, Carte Effectifs & Garde Pièces"
+      },
+      "Camera VIN Strip Scanner & Chassis Registry (In-Transit, Bonded, Showroom, Sold)": {
+            "ar": "ماسح شريط الشاسيه VIN بالكاميرا وسجل الآليات (قيد الشحن، جمركي، صالة العرض، مباع)",
+            "fr": "Scanner Caméra VIN & Registre Châssis (En Transit, Sous Douane, Showroom, Vendu)"
+      },
+      "Specific-Truck Revenue & Cost Filter, Spare Parts Custody & Leak Watch": {
+            "ar": "تصفية إيرادات وتكاليف كل شاحنة وعهدة قطع الغيار ومراقبة التسريبات",
+            "fr": "Filtre Revenus & Coûts par Camion, Garde des Pièces & Suivi des Fuites"
+      },
+      "Per-Company Shift Windows, Lateness Rules & Batch Staff Onboarding": {
+            "ar": "نوافذ الدوام وقواعد التأخير لكل شركة وتسجيل الموظفين بالدفعة",
+            "fr": "Plages Horaires et Règles de Retard par Société & Enrôlement Groupé"
+      },
+      "Single-screen CEO cockpit, daily operations board, and interactive dashboards with one-tap spoken briefings and Year, Month, Week, and Day switching.": {
+            "ar": "مقصورة قيادة تنفيذية في شاشة واحدة ولوحة عمليات يومية ولوحات تفاعلية مع ملخصات صوتية بلمسة واحدة وتبديل السنة والشهر والأسبوع واليوم.",
+            "fr": "Cockpit PDG sur un seul écran, tableau des opérations quotidiennes et tableaux de bord interactifs avec briefings vocaux en un clic et vue Année, Mois, Semaine et Jour."
+      },
+      "Single-screen CEO cockpit plus one-tap spoken Daily and Period Briefings": {
+            "ar": "مقصورة قيادة في شاشة واحدة مع ملخصات صوتية يومية ودورية بلمسة واحدة",
+            "fr": "Cockpit PDG sur un écran avec briefings vocaux quotidiens et périodiques en un clic"
+      },
+      "CEO Cockpit": {
+            "ar": "مقصورة الرئيس التنفيذي",
+            "fr": "Cockpit PDG"
+      },
+      "Spoken Briefings": {
+            "ar": "الملخصات الصوتية",
+            "fr": "Briefings Vocaux"
+      },
+      "Two-way live voice and text assistant, Smart Scan with phone QR camera handoff, voice-to-form entry, and behavioral audit watchdogs.": {
+            "ar": "مساعد نصي وصوتي ثنائي الاتجاه، ومسح ذكي مع تمرير QR لكاميرا الهاتف، وإدخال صوتي للنماذج، ومراقبو تدقيق سلوكي.",
+            "fr": "Assistant texte et voix bidirectionnel, Scan Intelligent avec relais caméra QR mobile, saisie vocale des formulaires et sentinelles d'audit comportemental."
+      },
+      "Catches missing tickets, split bills, supplier price creep, and repeat repairs": {
+            "ar": "يرصد القسائم المفقودة وتجزئة الفواتير وزحف أسعار الموردين وتكرار الأعطال",
+            "fr": "Détecte bons manquants, factures fractionnées, hausses fournisseurs et pannes répétées"
+      },
+      "Live Voice Mode, Smart Scan, and cited EN, AR, and FR ledger answers": {
+            "ar": "الوضع الصوتي الحي والمسح الذكي وإجابات موثقة بالعربية والإنجليزية والفرنسية",
+            "fr": "Mode Vocal en Direct, Scan Intelligent et réponses comptables citées en EN, AR et FR"
+      },
+      "Live Voice AI": {
+            "ar": "ذكاء صوتي حي",
+            "fr": "IA Vocale en Direct"
+      },
+      "Smart Document Scan": {
+            "ar": "المسح الذكي للمستندات",
+            "fr": "Scan Intelligent de Documents"
+      },
+      "Behavioral Watchdogs": {
+            "ar": "مراقبو الأنماط والتدقيق",
+            "fr": "Sentinelles Comportementales"
+      },
+      "Camera VIN strip scanner and per-VIN registry from customs to showroom": {
+            "ar": "ماسح شريط VIN بالكاميرا وسجل لكل شاسيه من الجمارك إلى صالة العرض",
+            "fr": "Scanner caméra VIN et registre par châssis de la douane au showroom"
+      },
+      "Specific-unit fleet revenue and cost filter plus diesel and leak alerts": {
+            "ar": "تصفية إيرادات وتكاليف كل آلية مع تنبيهات المازوت والتسريبات",
+            "fr": "Filtre revenus et coûts par unité avec alertes gasoil et fuites"
+      },
+      "Per-company shift windows, lateness rules, and batch staff face enrolment": {
+            "ar": "نوافذ دوام وقواعد تأخير لكل شركة وتسجيل بصمة الوجه للموظفين بالدفعة",
+            "fr": "Horaires et règles de retard par société et enrôlement facial groupé"
+      },
+      "Smart Scan, Phone QR & Document Vault": {
+            "ar": "المسح الذكي وربط QR وخزنة المستندات",
+            "fr": "Scan Intelligent, QR Mobile & Coffre Documentaire"
+      },
+      "Yes. Staff can scan multi-page invoices, receipts, or stamped VIN strips with the privacy document camera or instant phone QR handoff, attach files directly onto any voucher or asset, and preview them anytime from the 360° Record View.": {
+            "ar": "نعم. يمكن للموظفين مسح الفواتير متعددة الصفحات أو الإيصالات أو أرقام الشاسيه بكاميرا المستندات الخاصة أو تمرير QR الفوري للهاتف، وإرفاق الملفات بأي سند أو أصل ومعاينتها في أي وقت من عرض السجل 360°.",
+            "fr": "Oui. Les équipes peuvent numériser factures multi-pages, reçus ou numéros VIN avec la caméra document privée ou le relais QR mobile instantané, joindre les pièces à tout écriture ou actif et les prévisualiser depuis la Vue 360°."
+      },
+      "Live Voice Mode, Spoken Briefings & Voice Entry": {
+            "ar": "الوضع الصوتي الحي والملخصات الناطقة والإدخال الصوتي",
+            "fr": "Mode Vocal en Direct, Briefings Parlés & Saisie Vocale"
+      },
+      "Yes. Owners can tap Listen to Daily Briefing or Period Summary on the CEO cockpit in English, Arabic, or French, talk two-way with Ask ISABI in Live Voice Mode, dictate entries by voice, or paste multi-row supplier packs for instant batch review.": {
+            "ar": "نعم. يمكن للإدارة الاستماع بلمسة واحدة إلى الملخص اليومي أو ملخص الفترة في مقصورة الرئيس التنفيذي بالعربية أو الإنجليزية أو الفرنسية، والتحدث مباشرة مع Ask ISABI في الوضع الصوتي الحي، أو إملاء القيود صوتياً ومراجعة كشوفات الموردين بالدفعة.",
+            "fr": "Oui. Les dirigeants peuvent écouter en un clic le Briefing Quotidien ou le Résumé de Période depuis le cockpit PDG en français, arabe ou anglais, dialoguer de vive voix avec Ask ISABI, dicter des saisies ou importer des lots fournisseurs."
+      },
+      "Would you like to try Live Voice Mode right here or explore the full Command Center demo?": {
+            "ar": "هل ترغب في تجربة الوضع الصوتي الحي هنا أو استكشاف العرض التفاعلي الكامل لمركز القيادة؟",
+            "fr": "Souhaitez-vous essayer le Mode Vocal en Direct ici ou explorer la démo complète du Command Center ?"
+      },
+      "How do Smart Scan and phone QR camera handoff work?": {
+            "ar": "كيف يعمل المسح الذكي وتمرير كاميرا الهاتف عبر QR؟",
+            "fr": "Comment fonctionnent le Scan Intelligent et le relais caméra QR mobile ?"
       }
 };
 

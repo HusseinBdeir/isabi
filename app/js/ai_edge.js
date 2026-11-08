@@ -279,28 +279,147 @@
     return scored;
   }
 
-  async function callAiEdgeJson(task, prompt, dataUrl, mimeType) {
-    if (isHeadlessEnv()) return null;
+  function extractAiEdgeJsonObject(raw) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    const fenced = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fenced ? fenced[1].trim() : s;
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        const parsed = JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function resolveAiEdgeRelayEndpoint() {
+    const askCfg = window.MFG_ASK_CFG || {};
+    if (askCfg.endpointUrl && askCfg.enabled) {
+      return { url: String(askCfg.endpointUrl), key: String(askCfg.key || '') };
+    }
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 9000);
-      const res = await fetch('/api/ai-edge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          task,
-          prompt,
-          dataUrl: dataUrl || '',
-          mimeType: mimeType || ''
-        }),
-        signal: ctrl.signal
-      });
-      clearTimeout(timer);
-      if (res && res.ok) {
-        const j = await res.json();
-        if (j && j.result && typeof j.result === 'object') return j.result;
+      if (askCfg.u && askCfg.k) {
+        return { url: atob(askCfg.u), key: atob(askCfg.k) };
       }
     } catch (_) {}
+    return { url: '', key: '' };
+  }
+
+  function extractAiEdgeInlinePart(dataUrl, mimeType) {
+    const rawUrl = String(dataUrl || '');
+    const mimeRaw = String(mimeType || '').toLowerCase().trim();
+    if (!rawUrl.includes(';base64,')) return null;
+    if (!/^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(mimeRaw)) return null;
+    const b64Part = rawUrl.split(';base64,')[1] || '';
+    if (!b64Part || b64Part.length > 4200000) return null;
+    const normMime = mimeRaw === 'image/jpg' ? 'image/jpeg' : mimeRaw;
+    return { mimeType: normMime, data: b64Part };
+  }
+
+  function isLocalOrEdgeApiHost(hostnameOverride) {
+    if (window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) return true;
+    const host = String(hostnameOverride != null ? hostnameOverride : ((typeof location !== 'undefined' && location.hostname) || '')).toLowerCase();
+    if (!host) return false;
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host.endsWith('.local') ||
+      /^10\.\d+\.\d+\.\d+$/.test(host) ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(host)
+    );
+  }
+
+  async function callAiEdgeJson(task, prompt, dataUrl, mimeType, opts) {
+    if (isHeadlessEnv() && !window.__MFG_TEST_LIVE_AI) return null;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+    const cleanPrompt = String(prompt || '').trim().slice(0, 12000);
+    if (!cleanPrompt) return null;
+
+    const inlinePart = extractAiEdgeInlinePart(dataUrl, mimeType);
+    const hostnameHint = opts && typeof opts.hostname === 'string' ? opts.hostname : undefined;
+
+    // 1. Local / Edge Server API (./api/ai-edge) when running on local/LAN server or explicit Edge API host
+    if (isLocalOrEdgeApiHost(hostnameHint)) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), inlinePart ? 12000 : 6500);
+      try {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        const res = await fetch(`${base}/api/ai-edge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task: String(task || 'generic'),
+            prompt: cleanPrompt,
+            dataUrl: dataUrl || '',
+            mimeType: mimeType || '',
+            model: inlinePart ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
+            thinkingBudget: 0
+          }),
+          signal: ctrl.signal
+        });
+        if (res && res.ok) {
+          const j = await res.json();
+          const parsedLocal = extractAiEdgeJsonObject(j && (j.result || j.rawReply || j.parsed));
+          if (parsedLocal) return parsedLocal;
+        }
+      } catch (_) {
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // 2. Cloud AI Relay (window.MFG_ASK_CFG -> op: 'ask') for static hosts (isabisystems.com/app/) & local keyless fallback
+    const relay = resolveAiEdgeRelayEndpoint();
+    if (relay.url && relay.url.startsWith('http')) {
+      const targetModel = inlinePart ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+      const sysPrompt = [
+        'You are ISABI AI Edge, an enterprise ERP structured JSON extractor and executive copilot.',
+        'Return ONLY a valid JSON object matching the requested schema.',
+        'Never include markdown commentary, em-dashes, or Unicode arrows.'
+      ].join(' ');
+      const parts = [{ text: cleanPrompt }];
+      if (inlinePart) parts.push({ inlineData: inlinePart });
+      const activeScope = (D && typeof D.getActiveCompanyLabel === 'function' && D.getActiveCompanyLabel()) || 'ISABI ERP';
+      const reqBody = {
+        key: relay.key,
+        op: 'ask',
+        surface: 'ai_edge',
+        q: 'ai_edge:' + String(task || 'generic').slice(0, 48),
+        companyScope: String(activeScope).slice(0, 80),
+        lang: curLang(),
+        model: targetModel,
+        systemPrompt: sysPrompt,
+        userPrompt: cleanPrompt,
+        geminiContents: [{ role: 'user', parts }]
+      };
+      if (inlinePart) reqBody.thinkingBudget = 0;
+
+      const ctrl2 = new AbortController();
+      const timer2 = setTimeout(() => ctrl2.abort(), inlinePart ? 13000 : 9000);
+      try {
+        const res2 = await fetch(relay.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify(reqBody),
+          signal: ctrl2.signal
+        });
+        if (res2 && res2.ok) {
+          const j2 = await res2.json();
+          const parsedRelay = extractAiEdgeJsonObject(j2 && (j2.result || j2.rawReply || j2.reply || j2.answer));
+          if (parsedRelay) return parsedRelay;
+        }
+      } catch (_) {
+      } finally {
+        clearTimeout(timer2);
+      }
+    }
+
     return null;
   }
 
@@ -3499,6 +3618,9 @@
     computeBehavioralPatterns,
     buildDeterministicDailyBrief,
     buildGroundedFollowUpDraft,
+    callAiEdgeJson,
+    resolveAiEdgeRelayEndpoint,
+    extractAiEdgeJsonObject,
     sanitizeOutward,
     getState: () => EDGE_STATE
   };

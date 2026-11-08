@@ -220,11 +220,11 @@ BODY = f"""
                   <h4>{ICONS["apps"]} 360° Record Views, Guided Forms &amp; Kiosks</h4>
                   <span>Daily Operations</span>
                 </div>
-                <p>Inspect any customer, truck, or voucher in one click, lock past dates, map daily site crews and equipment defects, and print priced invoices or gate passes.</p>
+                <p>Scan multi-page invoices or chassis VINs with the privacy document camera and phone QR handoff, dictate entries by voice, inspect any record in 360°, and print thermal slips.</p>
                 <div class="stack-tags">
+                  <span>Smart Scan &amp; Phone QR</span>
                   <span>360° Record View</span>
                   <span>Invoice / Gate Pass Print</span>
-                  <span>Plant &amp; Fleet Control</span>
                 </div>
               </div>
 
@@ -233,11 +233,11 @@ BODY = f"""
                   <h4>{ICONS["analytics"]} Executive Dashboards &amp; Printable Statements</h4>
                   <span>Reporting &amp; Close</span>
                 </div>
-                <p>Switch any dashboard between Year, Month, Week, and Day with instant KPI drilldowns, or print bilingual Statements of Account, Balance Sheet, and Tax Invoices.</p>
+                <p>Review your single-screen CEO cockpit and daily operations board with one-tap spoken briefings, switch Year, Month, Week, and Day, or print bilingual A4 statements.</p>
                 <div class="stack-tags">
+                  <span>CEO Cockpit &amp; Spoken Brief</span>
                   <span>Year / Month / Week / Day</span>
                   <span>Bilingual A4 Statements</span>
-                  <span>One-Click Drilldowns</span>
                 </div>
               </div>
 
@@ -246,7 +246,7 @@ BODY = f"""
                   <h4>{ICONS["lock"]} Live Face Sign-In, Permissions &amp; Watchdogs</h4>
                   <span>Security &amp; Audit</span>
                 </div>
-                <p>Photo-proof face and PIN sign-in, strict company and role permissions, and automatic watchdogs catching missing tickets, fuel anomalies, and overdue balances.</p>
+                <p>Photo-proof face and PIN sign-in, per-company shift rules and permissions, plus watchdogs catching missing tickets, split bills, price creep, and overdue balances.</p>
                 <div class="stack-tags">
                   <span>Live Face + PIN Sign-In</span>
                   <span>Per-Company Access</span>
@@ -263,7 +263,7 @@ BODY = f"""
                 {badge_svg("b3")}
                 <div>
                   <b>Ask ISABI · Multilingual Ledger Intelligence</b>
-                  <small>Answers plain-language questions about your balances, tickets, stock, and receivables in EN, AR, and FR, citing every voucher.</small>
+                  <small>Ask by text, two-way live voice, or attached files across balances, stock, and receivables in EN, AR, and FR, citing every voucher.</small>
                 </div>
               </div>
               <span class="hlc-status"><i></i>Live Sandbox</span>
@@ -414,7 +414,7 @@ BODY = f"""
             </tr>
             <tr>
               <td><b>{ICONS["ai"]} AI &amp; Field Kiosks</b></td>
-              <td class="isabi-col">{ICONS["check"]} Ask ISABI (EN/AR/FR), audit watchdogs, face sign-in &amp; receipt print</td>
+              <td class="isabi-col">{ICONS["check"]} Live Voice AI (EN/AR/FR), Smart Scan, Phone QR &amp; Face Kiosks</td>
               <td>{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
               <td>{ICONS["cross"]} Rarely available or requires external middleware</td>
             </tr>
@@ -525,7 +525,7 @@ BODY = f"""
               <li><i>✓</i> <span>Everything in Operational Foundation across multiple branches ($80/seat/mo)</span></li>
               <li><i>✓</i> <span>Full executive &amp; operational dashboards (Year / Month / Week / Day)</span></li>
               <li><i>✓</i> <span>Complete bilingual statements (SOA, aging, tax invoices &amp; Balance Sheet)</span></li>
-              <li><i>✓</i> <span>Multilingual <b>Ask ISABI</b> (EN/AR/FR) &amp; automatic audit watchdogs</span></li>
+              <li><i>✓</i> <span>Ask ISABI Live Voice (EN/AR/FR), Smart Scan &amp; audit watchdogs</span></li>
               <li><i>✓</i> <span>Companion Field Kiosk (POS or Face Attendance) &amp; parallel-run check</span></li>
             </ul>
             <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($5,600 Setup + $80/seat/mo)">Start with This Suite</button>
@@ -544,7 +544,7 @@ BODY = f"""
               <li><i>✓</i> <span>Multiple dedicated industry apps (Hospitality, Trading, Mfg, Real Estate, Insurance)</span></li>
               <li><i>✓</i> <span>Group treasury, partner profit-split engines &amp; intercompany ledgers</span></li>
               <li><i>✓</i> <span>Full Field Kiosk Suite (Dispatch, Quarry, Fuel &amp; Live Face Sign-In)</span></li>
-              <li><i>✓</i> <span>Daily Plant &amp; Workforce Map, Fleet Defects &amp; Spare Parts Custody</span></li>
+              <li><i>✓</i> <span>CEO Daily Cockpit, Per-Unit Fleet P&amp;L, Workforce Map &amp; Parts Custody</span></li>
               <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to go-live</span></li>
             </ul>
             <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($11,000+ Setup + $100/seat/mo)">Request Custom Group Proposal</button>
