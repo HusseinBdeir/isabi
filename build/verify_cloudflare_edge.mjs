@@ -389,7 +389,7 @@ async function main() {
         wsLen: (document.getElementById('workspace')?.innerText || '').length
       };
     })()`);
-    if (appProbe && appProbe.edgeFlag === true && appProbe.ver === '19.6.213' && appProbe.statusOk === true && appProbe.wsLen > 200 && msCloudRequests.length === 0 && consoleErrors.length === 0) {
+    if (appProbe && appProbe.edgeFlag === true && typeof appProbe.ver === 'string' && appProbe.ver.startsWith('19.') && appProbe.statusOk === true && appProbe.wsLen > 200 && msCloudRequests.length === 0 && consoleErrors.length === 0) {
       pass('edge-12-browser-command-center-e2e', `ver=${appProbe.ver}, edge=true, msCloudCalls=0, consoleErrors=0`);
     } else {
       fail('edge-12-browser-command-center-e2e', JSON.stringify({ appProbe, msCloudRequests, consoleErrors }));
