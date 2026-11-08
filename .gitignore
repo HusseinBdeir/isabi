@@ -3,3 +3,6 @@ __pycache__/
 
 exports/
 _*.html
+.wrangler/
+.dev.vars
+

@@ -4951,11 +4951,11 @@
     }
     const voiceName = lang === 'ar' ? 'Charon' : (lang === 'fr' ? 'Aoede' : 'Kore');
 
-    // 1. Local API Server (/api/tts) when hosted locally
+    // 1. Local / Cloudflare Edge API Server (./api/tts)
     const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
-    if (isLocalHost || window.ISABI_LOCAL_API) {
+    if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
       try {
-        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         const rLocal = await fetch(`${base}/api/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5923,8 +5923,8 @@
       const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
 
       const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
-      if (isLocalHost || window.ISABI_LOCAL_API) {
-        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+      if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
           if (attempt > 0) await new Promise(r => setTimeout(r, 450));
           try {
@@ -6697,11 +6697,11 @@
       });
     }
 
-    // Lane 0: Local Server (/api/ask) if running locally with GEMINI_API_KEY
+    // Lane 0: Local / Cloudflare Edge Server (./api/ask) with encrypted GEMINI_API_KEY
     const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
-    if (isLocalHost || window.ISABI_LOCAL_API) {
+    if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
       try {
-        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
         const rLoc = await fetch(`${base}/api/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -1,0 +1,34 @@
+/*
+  X-ISABI-Edge: 1
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
+
+/app/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/app/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/app/reset.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/app/vendor/models/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/js/seed_core.json
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/js/seed_records.json
+  Cache-Control: public, max-age=31536000, immutable
+
+/app/js/seed_industries.json
+  Cache-Control: public, max-age=31536000, immutable

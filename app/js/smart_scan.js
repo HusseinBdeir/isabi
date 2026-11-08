@@ -1790,12 +1790,12 @@
     if (isHeadlessEnv() && !window.__MFG_TEST_LIVE_AI) return null;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
     const isLocalHost = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
-    if (!isLocalHost && !window.ISABI_LOCAL_API) return null;
+    if (!isLocalHost && !window.ISABI_LOCAL_API && !window.ISABI_HAS_EDGE_API) return null;
     const hasBin = payload && payload.dataUrl && /^(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf)$/i.test(String(payload.mimeType || ''));
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), hasBin ? 12000 : 4800);
     try {
-      const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+      const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
       const res = await fetch(`${base}/api/smart-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1848,6 +1848,43 @@
     const userMsg = cleanTxt
       ? ('DOCUMENT TEXT:\n' + cleanTxt.slice(0, 8500))
       : 'Extract all accounting fields, counterparty, 17-character VIN if present, date, currency/VAT, and line items directly from this document image.';
+
+    // 0. Same-origin Cloudflare Edge / Local API Server (./api/smart-scan)
+    const isLocalHost = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+    if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+      const useVisionProEdge = Boolean(inlinePart || cleanTxt.length < 160);
+      const ctrlEdge = new AbortController();
+      const timerEdge = setTimeout(() => ctrlEdge.abort(), inlinePart ? 13000 : 8500);
+      try {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        const resEdge = await fetch(`${base}/api/smart-scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customPrompt: sysPrompt + '\n\n' + userMsg,
+            dataUrl: (attObj && attObj.data_url) || '',
+            mimeType: (attObj && attObj.mime_type) || '',
+            extractedText: cleanTxt,
+            companies: regScope.companies || [],
+            model: useVisionProEdge ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite',
+            thinkingBudget: 0
+          }),
+          signal: ctrlEdge.signal
+        });
+        if (resEdge.ok) {
+          const jEdge = await resEdge.json();
+          const parsedEdge = (jEdge && jEdge.parsed && typeof jEdge.parsed === 'object')
+            ? jEdge.parsed
+            : extractJsonBlock(jEdge && (jEdge.rawReply || jEdge.reply || jEdge.answer));
+          if (parsedEdge && typeof parsedEdge === 'object') {
+            return { parsed: parsedEdge, engine: inlinePart ? 'ISABI Vision Engine + Ledger Grounding' : 'ISABI Cloud AI + Ledger Grounding' };
+          }
+        }
+      } catch (_) {
+      } finally {
+        clearTimeout(timerEdge);
+      }
+    }
 
     // 1. Primary Cloud AI Relay (tiered: gemini-3.8-flash w/ thinkingBudget=0 for vision, gemini-3.5-flash-lite for clean text)
     const relay = resolveAskRelayEndpoint();

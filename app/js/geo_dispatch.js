@@ -1046,7 +1046,8 @@
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
     } catch (_) {}
-    if (pushServer && typeof window.fetch === 'function' && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+    const canPostGeoApi = (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
+    if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
         fetch('./api/geo_config', {
           method: 'POST',

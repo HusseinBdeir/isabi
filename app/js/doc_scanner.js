@@ -1158,14 +1158,15 @@
       }
     } catch (_) {}
 
-    // 2. Local server.py REST endpoint (/api/phone-scan) when on LAN/local
-    if (IS_LOCAL_HOST) {
+    // 2. Same-origin Cloudflare Edge / Local server.py REST endpoint (/api/phone-scan)
+    if (IS_LOCAL_HOST || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) {
       try {
-        await fetch('./api/phone-scan', {
+        const rEdge = await fetch('./api/phone-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(Object.assign({ sid, k: tok }, patchData))
         });
+        if (rEdge && rEdge.ok && (window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)) return;
       } catch (_) {}
     }
 
@@ -1213,12 +1214,13 @@
   }
 
   async function pollPhoneRelayState(sid, tok) {
-    if (IS_LOCAL_HOST) {
+    if (IS_LOCAL_HOST || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) {
       try {
         const r = await fetch(`./api/phone-scan?sid=${encodeURIComponent(sid)}&k=${encodeURIComponent(tok)}`);
         if (r.ok) {
           const j = await r.json();
           if (j && j.found && j.session) return j.session;
+          if (j && j.ok && (window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)) return null;
         }
       } catch (_) {}
     }

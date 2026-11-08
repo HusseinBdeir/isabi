@@ -67,7 +67,36 @@
   // Demo mode = the 1-click seat simulator shows PINs. Only on the local server.py host or with ?demo=1.
   const IS_DEMO = PARAMS.get('demo') !== '0' && (IS_LOCAL || PARAMS.get('demo') === '1');
   const IS_HEADLESS_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
-  const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints exist only on the local / LAN host (quarantined in headless test harness)
+  const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints on local / LAN host
+  let _edgeSessionToken = '';
+  try { _edgeSessionToken = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || ''; } catch (_) {}
+  function setEdgeSessionToken(tok) {
+    _edgeSessionToken = String(tok || '');
+    try {
+      if (_edgeSessionToken) localStorage.setItem('isabi_mfg_edge_sess_tok_v1', _edgeSessionToken);
+      else localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+    } catch (_) {}
+  }
+  function isDemoSandboxSession() {
+    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && (
+      PARAMS.get('demo') === '1' ||
+      PARAMS.get('autologin') === '1' ||
+      Boolean(typeof STATE !== 'undefined' && STATE && STATE.demoVisitor)
+    );
+  }
+  function hasServerApi() {
+    return Boolean(HAS_LOCAL_API || window.__ISABI_TEST_EDGE || (window.ISABI_HAS_EDGE_API && !IS_HEADLESS_HARNESS));
+  }
+  function edgeApiFetch(url, opts = {}) {
+    const headers = Object.assign({}, opts.headers || {});
+    if (_edgeSessionToken && !headers['X-ISABI-Session']) {
+      headers['X-ISABI-Session'] = _edgeSessionToken;
+    }
+    if (isDemoSandboxSession()) {
+      headers['X-ISABI-Demo'] = '1';
+    }
+    return fetch(url, Object.assign({ credentials: 'same-origin' }, opts, { headers }));
+  }
   const MIN_DATE = '2024-01-01';   // bhf_mindate on every manufacturing BU
   const MAX_DATE = '2030-12-31';   // Power BI Dates calendar ceiling (2024-01-01 .. 2030-12-31)
   const DEFAULT_VAT_RATE = 0.11;
@@ -15976,8 +16005,8 @@
 
   function persistSentinelReviewRows(changedMap) {
     saveLocalAuthAndRecords();
-    if (HAS_LOCAL_API && changedMap && Object.keys(changedMap).length) {
-      fetch('./api/sentinel_reviews', {
+    if (hasServerApi() && !isDemoSandboxSession() && changedMap && Object.keys(changedMap).length) {
+      edgeApiFetch('./api/sentinel_reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reviews: changedMap })
@@ -17849,8 +17878,8 @@
   function persistAlertRulesChange(changedOverrides, changedCustom) {
     invalidateAlertRuleCaches();
     saveLocalAuthAndRecords();
-    if (HAS_LOCAL_API) {
-      fetch('./api/alert_rules', {
+    if (hasServerApi() && !isDemoSandboxSession()) {
+      edgeApiFetch('./api/alert_rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -30408,16 +30437,27 @@
     return _docIdbPromise;
   }
 
+  const _docBlobEdgePending = new Set();
+
   function putDocBlob(blobId, dataUrl) {
     if (!blobId || !dataUrl || typeof dataUrl !== 'string') return;
-    _docBlobMem.set(String(blobId), dataUrl);
+    const bid = String(blobId);
+    _docBlobMem.set(bid, dataUrl);
     openDocBlobIdb().then(db => {
       if (!db) return;
       try {
         const tx = db.transaction('blobs', 'readwrite');
-        tx.objectStore('blobs').put({ id: String(blobId), data_url: dataUrl, updated_at: Date.now() });
+        tx.objectStore('blobs').put({ id: bid, data_url: dataUrl, updated_at: Date.now() });
       } catch (_) {}
     });
+    if (hasServerApi() && !isDemoSandboxSession() && dataUrl.includes(';base64,') && !/^data:image\/svg\+xml/i.test(dataUrl) && !/^(mi-doc-|dom-doc-)/.test(bid)) {
+      const co = (typeof STATE !== 'undefined' && STATE && STATE.company && STATE.company !== 'manufacturing-group' && STATE.company !== 'all') ? STATE.company : '';
+      edgeApiFetch('./api/blobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: bid, dataUrl, company: co })
+      }).catch(() => {});
+    }
   }
 
   function resolveDocDataUrl(item) {
@@ -30426,6 +30466,27 @@
     const keys = [item._blob_id, item.att_id, item.doc_id, item.id].filter(Boolean).map(String);
     for (let i = 0; i < keys.length; i++) {
       if (_docBlobMem.has(keys[i])) return _docBlobMem.get(keys[i]);
+    }
+    const primaryKey = keys[0];
+    if (primaryKey && hasServerApi() && !/^(mi-doc-|dom-doc-)/.test(primaryKey) && !_docBlobEdgePending.has(primaryKey)) {
+      _docBlobEdgePending.add(primaryKey);
+      edgeApiFetch(`./api/blobs?id=${encodeURIComponent(primaryKey)}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => {
+          if (j && j.ok && j.found && j.dataUrl) {
+            _docBlobMem.set(primaryKey, j.dataUrl);
+            openDocBlobIdb().then(db => {
+              if (!db) return;
+              try {
+                const tx = db.transaction('blobs', 'readwrite');
+                tx.objectStore('blobs').put({ id: primaryKey, data_url: j.dataUrl, updated_at: Date.now() });
+              } catch (_) {}
+            });
+            _attCacheRev++;
+            if (typeof STATE !== 'undefined' && STATE && STATE.view === 'documents') safeRender();
+          }
+        })
+        .catch(() => {});
     }
     return '';
   }
@@ -53972,9 +54033,9 @@
   }
 
   function postIndustryDomainStoreToLocalApi() {
-    if (!HAS_LOCAL_API) return;
+    if (!hasServerApi() || isDemoSandboxSession()) return;
     try {
-      fetch('./api/industry_domain_store', {
+      edgeApiFetch('./api/industry_domain_store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -59697,7 +59758,7 @@
           u.statements_access = sTier || 'partial';
           u.seat_updated_at = new Date().toISOString();
           saveLocalAuthAndRecords();
-          if (HAS_LOCAL_API) { try { fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
+          if (hasServerApi() && !isDemoSandboxSession()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
           syncWithCloud(true);
           if (STATE.showAddUserForm && String(STATE.editingUserId) === String(u.id)) {
             STATE.draftRoleOverride = u.role;
@@ -59735,7 +59796,7 @@
           }
           u.seat_updated_at = new Date().toISOString();
           saveLocalAuthAndRecords();
-          if (HAS_LOCAL_API) { try { fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
+          if (hasServerApi() && !isDemoSandboxSession()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
           syncWithCloud(true);
           if (STATE.showAddUserForm && String(STATE.editingUserId) === String(u.id)) {
             STATE.draftAccessOverride = `${u.pbi_access}|${u.statements_access}`;
@@ -77655,11 +77716,11 @@
 
   async function postRecordToLocalApi(crKey, record) {
     const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
-    if (!HAS_LOCAL_API || !tblName || !record || !record.id) return;
+    if (!hasServerApi() || isDemoSandboxSession() || !tblName || !record || !record.id) return;
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 8000);
-      await fetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
+      await edgeApiFetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
       clearTimeout(t);
     } catch (_) { /* offline or static host */ }
   }
@@ -86942,6 +87003,9 @@
     const out = preferExistingSeat
       ? Object.assign({}, incoming, existing)
       : Object.assign({}, existing, incoming);
+    if (!incoming.pin_code && existing.pin_code) {
+      out.pin_code = existing.pin_code;
+    }
     if (existing.id && /^u\d+$/i.test(String(existing.id)) && /^u-(hussein|zeinab|sabah)$/i.test(String(out.id || ''))) {
       out.id = existing.id;
     }
@@ -88508,12 +88572,31 @@
   }
 
   async function doSync(pushChanges) {
-    // 1. Local SQLite server (LAN host only)
-    if (HAS_LOCAL_API) {
+    const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
+    // Auto-mint Edge HMAC session token for already-authenticated browsers after cutover
+    if (isEdgeActive && STATE.authed && !_edgeSessionToken && !isDemoSandboxSession()) {
+      try {
+        const au = activeUser();
+        if (au && au.email) {
+          const rBoot = await edgeApiFetch('./api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: au.email, pin: au.pin_code || '', method: au.pin_code ? 'PIN' : 'Face ID', device: 'Session Resume' })
+          });
+          if (rBoot.ok) {
+            const jBoot = await rBoot.json();
+            if (jBoot && jBoot.token) setEdgeSessionToken(jBoot.token);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 1. Relational SQLite / Cloudflare D1 Edge API
+    if (hasServerApi()) {
       try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 6000);
-        const rLocal = await fetch('./api/users', { signal: ctrl.signal });
+        const rLocal = await edgeApiFetch('./api/users', { signal: ctrl.signal });
         clearTimeout(t);
         if (rLocal.ok) {
           const dLocal = await rLocal.json();
@@ -88533,7 +88616,7 @@
         }
         const ctrlSr = new AbortController();
         const tSr = setTimeout(() => ctrlSr.abort(), 5000);
-        const rSr = await fetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
+        const rSr = await edgeApiFetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
         clearTimeout(tSr);
         if (rSr.ok) {
           const dSr = await rSr.json();
@@ -88543,7 +88626,7 @@
         }
         const ctrlAr = new AbortController();
         const tAr = setTimeout(() => ctrlAr.abort(), 5000);
-        const rAr = await fetch('./api/alert_rules', { signal: ctrlAr.signal });
+        const rAr = await edgeApiFetch('./api/alert_rules', { signal: ctrlAr.signal });
         clearTimeout(tAr);
         if (rAr.ok) {
           const dAr = await rAr.json();
@@ -88553,7 +88636,7 @@
         }
         const ctrlSb = new AbortController();
         const tSb = setTimeout(() => ctrlSb.abort(), 5000);
-        const rSb = await fetch('./api/staff_biometrics', { signal: ctrlSb.signal });
+        const rSb = await edgeApiFetch('./api/staff_biometrics', { signal: ctrlSb.signal });
         clearTimeout(tSb);
         if (rSb.ok) {
           const dSb = await rSb.json();
@@ -88563,7 +88646,7 @@
         }
         const ctrlWs = new AbortController();
         const tWs = setTimeout(() => ctrlWs.abort(), 5000);
-        const rWs = await fetch('./api/work_schedules', { signal: ctrlWs.signal });
+        const rWs = await edgeApiFetch('./api/work_schedules', { signal: ctrlWs.signal });
         clearTimeout(tWs);
         if (rWs.ok) {
           const dWs = await rWs.json();
@@ -88573,7 +88656,7 @@
         }
         const ctrlId = new AbortController();
         const tId = setTimeout(() => ctrlId.abort(), 5000);
-        const rId = await fetch('./api/industry_domain_store', { signal: ctrlId.signal });
+        const rId = await edgeApiFetch('./api/industry_domain_store', { signal: ctrlId.signal });
         clearTimeout(tId);
         if (rId.ok) {
           const dId = await rId.json();
@@ -88582,28 +88665,55 @@
           if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
           if (idChanged) saveLocalAuthAndRecords();
         }
-      } catch (_) { /* server.py not running */ }
+      } catch (_) { /* API not reachable */ }
     }
 
-    // 2. BHFIRMS Multi-Device Cloud Relay (GitHub Pages + mobile + desktop)
-    // Public demo/autologin visitors on GitHub Pages stay in local sandbox so they never mutate live BHFIRMS cloud state
-    const isPublicDemoSandbox = !IS_LOCAL && (PARAMS.get('demo') === '1' || PARAMS.get('autologin') === '1' || STATE.demoVisitor);
-    if (!CLOUD_URL || !CLOUD_KEY || navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095) || isPublicDemoSandbox) {
+    // 2. Multi-Device Cloud Sync (Option A: Same-Origin Cloudflare D1 `/api/sync` -> Option C Relay Fallback)
+    const isPublicDemoSandbox = isDemoSandboxSession();
+    const allowHarnessEdge = Boolean(window.__ISABI_TEST_EDGE);
+    const useEdgeSyncPrimary = Boolean(isEdgeActive && (allowHarnessEdge || !IS_HEADLESS_HARNESS));
+    if ((!useEdgeSyncPrimary && (!CLOUD_URL || !CLOUD_KEY)) || (!allowHarnessEdge && (navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095))) || isPublicDemoSandbox) {
       STATE.cloudStatus = isPublicDemoSandbox ? '● Demo Sandbox' : '● Ready (Local)';
       updateCloudBadges();
       return;
     }
     try {
       const seqAtSyncStart = _localPushSeq;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 25000);
-      const getRes = await fetch(CLOUD_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ key: CLOUD_KEY, op: 'get_mfg', doc: CLOUD_DOC_KEY }),
-        signal: ctrl.signal
-      });
-      clearTimeout(timer);
+      let syncTargetIsEdge = useEdgeSyncPrimary;
+      let getRes = null;
+      if (syncTargetIsEdge) {
+        const ctrlE = new AbortController();
+        const timerE = setTimeout(() => ctrlE.abort(), 15000);
+        try {
+          const rE = await edgeApiFetch('./api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ op: 'get_mfg', doc: CLOUD_DOC_KEY }),
+            signal: ctrlE.signal
+          });
+          clearTimeout(timerE);
+          if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
+            getRes = rE;
+          } else {
+            syncTargetIsEdge = false;
+          }
+        } catch (_) {
+          clearTimeout(timerE);
+          syncTargetIsEdge = false;
+        }
+      }
+      if (!getRes) {
+        if (!CLOUD_URL || !CLOUD_KEY) throw new Error('no sync endpoint');
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 25000);
+        getRes = await fetch(CLOUD_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify({ key: CLOUD_KEY, op: 'get_mfg', doc: CLOUD_DOC_KEY }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+      }
       if (!getRes.ok) throw new Error('relay ' + getRes.status);
 
       const store = await getRes.json();
@@ -88733,14 +88843,21 @@
           const payload = cloudPayload();
           const ctrl2 = new AbortController();
           const timer2 = setTimeout(() => ctrl2.abort(), 25000);
-          const putBody = { key: CLOUD_KEY, op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
+          const putBody = { key: syncTargetIsEdge ? '' : CLOUD_KEY, op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
           if (expectedUpdatedAt) putBody.ifMatchUpdatedAt = expectedUpdatedAt;
-          const putRes = await fetch(CLOUD_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-            body: JSON.stringify(putBody),
-            signal: ctrl2.signal
-          });
+          const putRes = syncTargetIsEdge
+            ? await edgeApiFetch('./api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(putBody),
+                signal: ctrl2.signal
+              })
+            : await fetch(CLOUD_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                body: JSON.stringify(putBody),
+                signal: ctrl2.signal
+              });
           clearTimeout(timer2);
           if (!putRes.ok) {
             STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
@@ -89663,7 +89780,7 @@
     updateSeatEditorDom();
     updateEnrolStudioDom();
     toast(existingIdx >= 0 ? `✓ Seat updated · ${name} (${finalRole} · ${companies})` : `✓ Seat created · ${name} (PIN ${pin})`);
-    if (HAS_LOCAL_API) { try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: newUser }) }); } catch (_) { /* no server.py */ } }
+    if (hasServerApi() && !isDemoSandboxSession()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: newUser }) }); } catch (_) { /* offline */ } }
     await syncWithCloud(true);
     return true;
   }
@@ -90608,7 +90725,7 @@
       saveLocalAuthAndRecords();
       updateSeatEditorDom();
       updateEnrolStudioDom();
-      if (HAS_LOCAL_API) { try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) { /* no server.py */ } }
+      if (hasServerApi() && !isDemoSandboxSession()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) { /* offline */ } }
       syncWithCloud(true);
       toast(`${u.full_name} ${u.status === 'Suspended' ? 'suspended' : 're-activated'}`);
     }));
@@ -90911,9 +91028,9 @@
 
   async function persistStaffBiometricEntryNow(staffKey, entryObj) {
     if (!staffKey || !entryObj) return;
-    if (HAS_LOCAL_API) {
+    if (hasServerApi() && !isDemoSandboxSession()) {
       try {
-        await fetch('./api/staff_biometrics', {
+        await edgeApiFetch('./api/staff_biometrics', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: staffKey, entry: entryObj })
@@ -90958,8 +91075,8 @@
 
     saveLocalAuthAndRecords();
     const syncTask = async () => {
-      if (!target.isKioskStaffOnly && HAS_LOCAL_API) {
-        try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
+      if (!target.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+        try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
       }
       if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
       await syncWithCloud(true);
@@ -91154,8 +91271,8 @@
     saveLocalAuthAndRecords();
     updateEnrolStudioDom();
     toast(`Cleared Face ID for ${target.full_name}`);
-    if (!target.isKioskStaffOnly && HAS_LOCAL_API) {
-      try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
+    if (!target.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
     }
     if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
     await syncWithCloud(true);
@@ -92584,6 +92701,10 @@
   }
 
   function signOut() {
+    setEdgeSessionToken('');
+    if (hasServerApi()) {
+      try { fetch('./api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); } catch (_) {}
+    }
     try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
     try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
@@ -92618,8 +92739,9 @@
     let email = norm(emailRaw);
     const pin = String(pinRaw || '').trim();
     if (Date.now() < loginLockUntil) { authError(`Too many attempts. Wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)}s.`); return false; }
+    let serverVerifiedLogin = false;
     if (!email && pin) {
-      const matches = STATE.users.filter(u => u.status !== 'Suspended' && String(u.pin_code || '1111').trim() === pin);
+      const matches = STATE.users.filter(u => u.status !== 'Suspended' && u.pin_code && String(u.pin_code).trim() === pin);
       if (matches.length === 1) {
         email = norm(matches[0].email);
         const emEl = $('authEmailInput');
@@ -92629,6 +92751,39 @@
         setAuthSeatDrawerOpen(true, { silentFocus: true });
         authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
         return false;
+      } else if (hasServerApi()) {
+        try {
+          const rPin = await edgeApiFetch('./api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin, method: opts.method || 'PIN', device: 'PIN Lookup' })
+          });
+          const jPin = rPin ? await rPin.json().catch(() => null) : null;
+          if (rPin && rPin.status === 409 && jPin && jPin.ambiguous) {
+            FACE_STATE.disambiguatePin = pin;
+            setAuthSeatDrawerOpen(true, { silentFocus: true });
+            authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
+            return false;
+          }
+          if (rPin && rPin.ok && jPin && jPin.user && jPin.user.email) {
+            email = norm(jPin.user.email);
+            if (jPin.token) setEdgeSessionToken(jPin.token);
+            const uIdx = STATE.users.findIndex(u => norm(u.email) === email);
+            if (uIdx >= 0) STATE.users[uIdx] = mergeUserRow(STATE.users[uIdx], Object.assign({}, jPin.user, { pin_code: pin }));
+            else STATE.users.push(ensureCanonicalMultiIndustrySeat(Object.assign({}, jPin.user, { pin_code: pin })));
+            serverVerifiedLogin = true;
+          } else {
+            loginAttempts += 1;
+            if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
+            else authError('Incorrect Access PIN.');
+            return false;
+          }
+        } catch (_) {
+          loginAttempts += 1;
+          if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
+          else authError('Incorrect Access PIN.');
+          return false;
+        }
       } else {
         loginAttempts += 1;
         if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
@@ -92647,11 +92802,31 @@
     if (idx < 0) { authError('Account not found in this workspace.'); return false; }
     const user = STATE.users[idx];
     if (user.status === 'Suspended') { authError('This seat is suspended. Contact an administrator.'); return false; }
-    if (pin !== String(user.pin_code || '1111').trim()) {
-      loginAttempts += 1;
-      if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
-      else authError('Incorrect PIN for ' + user.full_name + '.');
-      return false;
+    const localPinStr = String(user.pin_code || '').trim();
+    if (!serverVerifiedLogin && (!localPinStr || pin !== localPinStr)) {
+      let verifiedViaApi = false;
+      if (hasServerApi()) {
+        try {
+          const rCheck = await edgeApiFetch('./api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: user.email, pin, method: opts.method || 'PIN', device: 'PIN Verify' })
+          });
+          if (rCheck && rCheck.ok) {
+            const jCheck = await rCheck.json().catch(() => null);
+            if (jCheck && jCheck.token) setEdgeSessionToken(jCheck.token);
+            user.pin_code = pin;
+            verifiedViaApi = true;
+            serverVerifiedLogin = true;
+          }
+        } catch (_) {}
+      }
+      if (!verifiedViaApi && (!localPinStr ? pin !== '1111' : true)) {
+        loginAttempts += 1;
+        if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
+        else authError('Incorrect PIN for ' + user.full_name + '.');
+        return false;
+      }
     }
     loginAttempts = 0;
 
@@ -92718,8 +92893,18 @@
     STATE.sessions = STATE.sessions.slice(0, 50);
     saveLocalAuthAndRecords();
 
-    if (HAS_LOCAL_API) {
-      try { await fetch('./api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: user.email, pin, device: devLabel, method: authMethod, confidence: authConf }) }); } catch (_) { /* no server.py */ }
+    if (hasServerApi() && !serverVerifiedLogin) {
+      try {
+        const rLogin = await edgeApiFetch('./api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, pin, device: devLabel, method: authMethod, confidence: authConf })
+        });
+        if (rLogin && rLogin.ok) {
+          const jLogin = await rLogin.json().catch(() => null);
+          if (jLogin && jLogin.token) setEdgeSessionToken(jLogin.token);
+        }
+      } catch (_) { /* offline / static fallback */ }
     }
 
     if (!getAllowedCompanyKeys(user).includes(STATE.company)) STATE.company = getAllowedCompanyKeys(user)[0];
@@ -96761,9 +96946,9 @@
   }
 
   async function postWorkScheduleMutation(bodyObj) {
-    if (!HAS_LOCAL_API) return;
+    if (!hasServerApi() || isDemoSandboxSession()) return;
     try {
-      await fetch('./api/work_schedules', {
+      await edgeApiFetch('./api/work_schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyObj)
@@ -98179,8 +98364,8 @@
 
     saveLocalAuthAndRecords();
     await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && HAS_LOCAL_API) {
-      try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    if (entry.userObj && hasServerApi() && !isDemoSandboxSession()) {
+      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
     }
     syncWithCloud(true);
     return { ok: true, staff: entry.name, count: samples.length, slot: usedSlot };
@@ -98224,8 +98409,8 @@
     }
     saveLocalAuthAndRecords();
     await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && HAS_LOCAL_API) {
-      try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    if (entry.userObj && hasServerApi() && !isDemoSandboxSession()) {
+      try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
     }
     syncWithCloud(true);
     return { ok: true, staff: entry.name };
@@ -111163,7 +111348,33 @@
       if (VIEW_TITLES[v] && v !== STATE.view) setView(v, { noPush: true });
     });
 
-    // SQLite API status (LAN host only)
+    // SQLite / Cloudflare D1 Edge API status & zero-404 first-visit Edge auto-detection
+    const probeEdgeStatus = () => {
+      edgeApiFetch('./api/status').then(r => {
+        if (r.status === 404 && !/\.pages\.dev$/i.test(location.hostname || '')) {
+          window.ISABI_HAS_EDGE_API = false;
+          try { localStorage.removeItem('isabi_edge_active_v1'); } catch (_) {}
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      }).then(st => {
+        if (!st || !st.ok) return;
+        const wasEdge = Boolean(window.ISABI_HAS_EDGE_API);
+        if (st.edge) {
+          window.ISABI_HAS_EDGE_API = true;
+          try { localStorage.setItem('isabi_edge_active_v1', '1'); } catch (_) {}
+          if (!wasEdge) syncWithCloud(false);
+        }
+        const el = $('sqlStatusText');
+        if (el) {
+          el.textContent = st.edge
+            ? (STATE.cloudStatus ? STATE.cloudStatus.replace('● ', '') : 'Cloud Live')
+            : `Cloud + SQLite (${Number(st.db_size_kb || 0).toLocaleString()} KB)`;
+          el.setAttribute('data-full-text', el.textContent);
+          el.removeAttribute('title');
+        }
+      }).catch(() => {});
+    };
     if (HAS_LOCAL_API) {
       fetch('./api/status').then(r => r.json()).then(st => {
         const el = $('sqlStatusText');
@@ -111176,9 +111387,22 @@
         const el = $('sqlStatusText');
         if (el) { el.textContent = 'Cloud relay (no local SQLite)'; el.setAttribute('data-full-text', el.textContent); el.removeAttribute('title'); }
       });
+    } else if (window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) {
+      const el = $('sqlStatusText');
+      if (el) { el.textContent = 'Cloud Live'; el.setAttribute('data-full-text', el.textContent); el.removeAttribute('title'); }
+      probeEdgeStatus();
     } else {
       const el = $('sqlStatusText');
       if (el) { el.textContent = 'Cloud relay'; el.setAttribute('data-full-text', el.textContent); el.removeAttribute('title'); }
+      if (!IS_HEADLESS_HARNESS) {
+        fetch('./manifest.json', { method: 'HEAD', cache: 'no-store' }).then(rh => {
+          if (rh && (rh.headers.get('x-isabi-edge') === '1' || rh.headers.get('cf-ray'))) {
+            window.ISABI_HAS_EDGE_API = true;
+            try { localStorage.setItem('isabi_edge_active_v1', '1'); } catch (_) {}
+            probeEdgeStatus();
+          }
+        }).catch(() => {});
+      }
     }
 
     // Cloud relay: on start, when the tab comes back, when the network returns

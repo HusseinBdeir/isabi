@@ -3438,6 +3438,21 @@ JS = r"""
 
   function logAskQuestionAsync(cleanQ, lang, replyTitle) {
     if (navigator.webdriver || window.__ISABI_SYNC_TEST) return;
+    if (window.ISABI_HAS_EDGE_API) {
+      fetch('./api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          surface: 'showcase',
+          q: cleanQ,
+          lang: lang,
+          industry: state.sboxInd || 'holding',
+          replyTitle: replyTitle || ''
+        }),
+        keepalive: true
+      }).catch(() => {});
+      return;
+    }
     let flowUrl = '';
     let flowKey = '';
     try {
@@ -3676,7 +3691,7 @@ JS = r"""
       flowUrl = atob(ASK_FLOW_U_B64);
       flowKey = atob(ASK_FLOW_K_B64);
     } catch (_) {}
-    if (!audioEl || !flowUrl || !flowUrl.startsWith('http')) {
+    if (!audioEl || (!window.ISABI_HAS_EDGE_API && (!flowUrl || !flowUrl.startsWith('http')))) {
       runFallback();
       return;
     }
@@ -3708,19 +3723,52 @@ JS = r"""
     const voiceName = safeLang === 'ar' ? 'Charon' : (safeLang === 'fr' ? 'Aoede' : 'Kore');
 
     // Pure spoken script only: zero tone stage-direction prefix so TTS never reads prompt instructions out loud
-    fetch(flowUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        key: flowKey,
-        op: 'tts',
-        model: 'gemini-3.8-flash-lite-tts',
-        voiceName,
-        lang: safeLang,
-        text: plain.slice(0, 1850)
-      }),
-      signal: ctrl.signal
-    }).then(r => r.ok ? r.json() : null).then(j => {
+    const ttsTextSlice = plain.slice(0, 1850);
+    const requestTtsJson = () => {
+      if (window.ISABI_HAS_EDGE_API) {
+        return fetch('./api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gemini-3.8-flash-lite-tts',
+            voiceName,
+            lang: safeLang,
+            text: ttsTextSlice
+          }),
+          signal: ctrl.signal
+        }).then(r => r.ok ? r.json() : null).then(jEdge => {
+          if (jEdge && jEdge.ok && jEdge.audioBase64) return jEdge;
+          if (!flowUrl || !flowUrl.startsWith('http')) return null;
+          return fetch(flowUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({
+              key: flowKey,
+              op: 'tts',
+              model: 'gemini-3.8-flash-lite-tts',
+              voiceName,
+              lang: safeLang,
+              text: ttsTextSlice
+            }),
+            signal: ctrl.signal
+          }).then(r2 => r2.ok ? r2.json() : null);
+        });
+      }
+      return fetch(flowUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({
+          key: flowKey,
+          op: 'tts',
+          model: 'gemini-3.8-flash-lite-tts',
+          voiceName,
+          lang: safeLang,
+          text: ttsTextSlice
+        }),
+        signal: ctrl.signal
+      }).then(r => r.ok ? r.json() : null);
+    };
+    requestTtsJson().then(j => {
       clearTimeout(timer);
       if (ctrl.signal.aborted) return;
       _showcaseTts.ctrl = null;
@@ -3765,6 +3813,58 @@ JS = r"""
     const hasMedia = Array.isArray(mediaParts) && mediaParts.length > 0;
     const hasAudio = hasMedia && mediaParts.some(p => p && /^audio\//i.test(p.mimeType || ''));
     const messages = buildConversationMessages(cleanQ, lang, hasAudio);
+    const deepQuery = hasMedia || cleanQ.length > 100 || /\b(why|how|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat|explain|analyze|custom)/i.test(cleanQ);
+    const targetModel = deepQuery ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+    const geminiContents = messages.slice(1).map((m, idx, arr) => {
+      const parts = [{ text: String(m.content || '') }];
+      if (hasMedia && idx === arr.length - 1 && m.role === 'user') {
+        mediaParts.slice(0, 3).forEach(mp => {
+          if (mp && mp.data && mp.mimeType) {
+            parts.push({ inlineData: { mimeType: mp.mimeType, data: mp.data } });
+          }
+        });
+      }
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts
+      };
+    });
+
+    // Lane 0: Same-origin Cloudflare Edge (/api/ask) with encrypted GEMINI_API_KEY
+    if (window.ISABI_HAS_EDGE_API) {
+      const ctrlEdge = new AbortController();
+      const timerEdge = setTimeout(() => ctrlEdge.abort(), deepQuery ? 13500 : 10000);
+      try {
+        const resEdge = await fetch('./api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            surface: 'showcase',
+            q: cleanQ,
+            lang: lang,
+            industry: state.sboxInd || 'holding',
+            replyTitle: fallbackResp.title || '',
+            model: targetModel,
+            thinkingBudget: deepQuery ? 512 : 0,
+            systemPrompt: buildGeminiSystemPrompt(lang, hasAudio),
+            userPrompt: buildGeminiUserPrompt(cleanQ),
+            geminiContents: geminiContents
+          }),
+          signal: ctrlEdge.signal
+        });
+        clearTimeout(timerEdge);
+        if (resEdge.ok) {
+          const dataEdge = await resEdge.json();
+          if (dataEdge && dataEdge.ok && dataEdge.rawReply) {
+            const parsedEdge = parseCloudAiReply(dataEdge.rawReply, cleanQ, lang, fallbackResp);
+            if (parsedEdge) return parsedEdge;
+          }
+        }
+      } catch (_) {
+        clearTimeout(timerEdge);
+      }
+    }
+
     let flowUrl = '';
     let flowKey = '';
     try {
@@ -3776,22 +3876,6 @@ JS = r"""
 
     if (flowUrl && flowUrl.startsWith('http')) {
       const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-      const deepQuery = hasMedia || cleanQ.length > 100 || /\b(why|how|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat|explain|analyze|custom)/i.test(cleanQ);
-      const targetModel = deepQuery ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
-      const geminiContents = messages.slice(1).map((m, idx, arr) => {
-        const parts = [{ text: String(m.content || '') }];
-        if (hasMedia && idx === arr.length - 1 && m.role === 'user') {
-          mediaParts.slice(0, 3).forEach(mp => {
-            if (mp && mp.data && mp.mimeType) {
-              parts.push({ inlineData: { mimeType: mp.mimeType, data: mp.data } });
-            }
-          });
-        }
-        return {
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts
-        };
-      });
       const reqBody = {
         key: flowKey,
         op: 'ask',
@@ -5158,8 +5242,31 @@ JS = r"""
       handleShowcaseAskSubmit('ai-drawer-form', 'ai-drawer-input');
     });
 
+    function persistShowcaseLeadToEdge(channelLabel) {
+      if (!window.ISABI_HAS_EDGE_API || navigator.webdriver || window.__ISABI_SYNC_TEST) return;
+      try {
+        const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel || '', range: '' };
+        const activeLang = (window.ISABI_I18N && typeof window.ISABI_I18N.getLang === 'function') ? window.ISABI_I18N.getLang() : 'en';
+        fetch('./api/leads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: (document.getElementById('lead-name')?.value || '').trim(),
+            company: (document.getElementById('lead-company')?.value || '').trim(),
+            industry: document.getElementById('lead-industry')?.value || state.cfgInd || '',
+            scale: `${cfg.scale || ''} | ${document.getElementById('lead-budget')?.value || cfg.range || ''}`.trim(),
+            contact: (document.getElementById('lead-contact')?.value || '').trim(),
+            notes: `[${channelLabel}] ` + ((document.getElementById('lead-notes')?.value || '').trim() || buildBriefText().slice(0, 900)),
+            lang: activeLang
+          }),
+          keepalive: true
+        }).catch(() => {});
+      } catch (_) {}
+    }
+
     // Configurator CTAs
     document.getElementById('cfg-wa-btn')?.addEventListener('click', () => {
+      persistShowcaseLeadToEdge('WhatsApp Scope');
       const brief = buildBriefText();
       window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(brief)}`, '_blank', 'noopener');
     });
@@ -5179,11 +5286,13 @@ JS = r"""
 
     // Portal Dispatch Buttons
     document.getElementById('portal-send-wa')?.addEventListener('click', () => {
+      persistShowcaseLeadToEdge('WhatsApp Portal');
       const brief = buildBriefText();
       window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(brief)}`, '_blank', 'noopener');
     });
 
     document.getElementById('portal-send-email')?.addEventListener('click', () => {
+      persistShowcaseLeadToEdge('Email Portal');
       const company = (document.getElementById('lead-company')?.value || '').trim() || 'Enterprise Inquiry';
       const ind = document.getElementById('lead-industry')?.value || state.cfgInd;
       const subj = `ISABI Systems Consultation - ${company} (${ind})`;
@@ -5235,6 +5344,25 @@ JS = r"""
     });
 
 __SHOWCASE_I18N_JS__
+
+    // Zero-404 Cloudflare Edge auto-detection (activates /api/* on Cloudflare Pages while staying silent on static hosts)
+    if (location.protocol.startsWith('http') && !navigator.webdriver && !window.__ISABI_SYNC_TEST) {
+      if (window.ISABI_HAS_EDGE_API) {
+        fetch('./api/health').then(r => {
+          if (r.status === 404 && !/\.pages\.dev$/i.test(location.hostname || '')) {
+            window.ISABI_HAS_EDGE_API = false;
+            try { localStorage.removeItem('isabi_edge_active_v1'); } catch (_) {}
+          }
+        }).catch(() => {});
+      } else {
+        fetch('./manifest.json', { method: 'HEAD', cache: 'no-store' }).then(rh => {
+          if (rh && (rh.headers.get('x-isabi-edge') === '1' || rh.headers.get('cf-ray'))) {
+            window.ISABI_HAS_EDGE_API = true;
+            try { localStorage.setItem('isabi_edge_active_v1', '1'); } catch (_) {}
+          }
+        }).catch(() => {});
+      }
+    }
 
     // Register Service Worker with immediate update check & single-reload controllerchange (only when upgrading an existing controller)
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

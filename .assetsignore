@@ -1,0 +1,15 @@
+.git
+.github
+.wrangler
+build
+exports
+migrations
+functions
+node_modules
+wrangler.toml
+package.json
+package-lock.json
+__pycache__
+*.pyc
+_*.html
+.dev.vars

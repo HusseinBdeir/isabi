@@ -1,0 +1,14 @@
+name = "isabi-systems"
+pages_build_output_dir = "."
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "isabi-ledger"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Uncommented automatically by build/deploy_cloudflare.py when R2 bucket is active:
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "isabi-vault"
