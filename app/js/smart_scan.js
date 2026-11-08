@@ -18,7 +18,7 @@
   const SCAN_STATE = {
     busy: false,
     progressMsg: '',
-    lastScan: null,       // { fileMeta, attObj, extractedText, parsed, matched, appliedForm, appliedIndTpl, filledFields, warnFields, warnings, altForms, engineLabel }
+    lastScan: null,       // { fileMeta, attObj, attObjs, stitchedDataUrl, activePageIdx, extractedText, parsed, matched, appliedForm, appliedIndTpl, filledFields, warnFields, warnings, altForms, engineLabel }
     splitOpen: false,
     imgRotateDeg: 0,
     sampleMenuOpen: false,
@@ -425,17 +425,17 @@
       .join('\n');
   }
 
-  async function extractPdfTextClient(arrayBuf) {
+  async function extractPdfPagesTextClient(arrayBuf) {
     const bytes = new Uint8Array(arrayBuf);
     const rawStr = arrayBufferToLatin1(bytes);
-    const outLines = [];
+    const pageTexts = [];
     const streamRx = /<<([\s\S]*?)>>\s*stream\r?\n/g;
     let m;
     let count = 0;
-    while ((m = streamRx.exec(rawStr)) !== null && count < 80) {
+    while ((m = streamRx.exec(rawStr)) !== null && count < 120) {
       count++;
       const dict = m[1] || '';
-      if (/\/Subtype\s*\/Image/i.test(dict)) continue;
+      if (/\/Subtype\s*\/(Image|Form|XML)|\/Type\s*\/Metadata/i.test(dict)) continue;
       const startOffset = m.index + m[0].length;
       const endOffset = rawStr.indexOf('endstream', startOffset);
       if (endOffset <= startOffset) continue;
@@ -452,14 +452,380 @@
       }
       if (decodedStr && /BT[\s\S]*ET/.test(decodedStr)) {
         const txt = parsePdfContentStreamText(decodedStr);
-        if (txt) outLines.push(txt);
+        if (txt) pageTexts.push(txt);
       }
     }
-    if (!outLines.length && /BT[\s\S]*ET/.test(rawStr)) {
+    if (!pageTexts.length && /BT[\s\S]*ET/.test(rawStr)) {
       const direct = parsePdfContentStreamText(rawStr);
-      if (direct) outLines.push(direct);
+      if (direct) pageTexts.push(direct);
     }
-    return outLines.join('\n').trim();
+    return pageTexts;
+  }
+
+  async function extractPdfTextClient(arrayBuf) {
+    const pages = await extractPdfPagesTextClient(arrayBuf);
+    if (pages.length <= 1) return (pages[0] || '').trim();
+    return pages.map((p, i) => `=== PAGE ${i + 1} OF ${pages.length} ===\n${p}`).join('\n').trim();
+  }
+
+  // ==================== ISO 3779 17-CHAR VIN CHECK-DIGIT & STAMPED-METAL DISAMBIGUATION ====================
+  const ISO3779_TRANSLIT = {
+    '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+    A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8,
+    J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9,
+    S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9
+  };
+  const ISO3779_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+  const STAMPED_METAL_PAIRS = {
+    '0': ['D'], D: ['0'],
+    '8': ['B'], B: ['8'],
+    '5': ['S'], S: ['5'],
+    '2': ['Z'], Z: ['2'],
+    '6': ['G'], G: ['6'],
+    '1': ['7'], '7': ['1']
+  };
+  const NUMERIC_ONLY_SUB = { D: '0', B: '8', S: '5', Z: '2', G: '6', O: '0', Q: '0', I: '1' };
+
+  function computeIso3779CheckDigit(vin17) {
+    const s = String(vin17 || '').toUpperCase();
+    if (s.length !== 17) return null;
+    let sum = 0;
+    for (let i = 0; i < 17; i++) {
+      if (i === 8) continue;
+      const tv = ISO3779_TRANSLIT[s[i]];
+      if (tv === undefined) return null;
+      sum += tv * ISO3779_WEIGHTS[i];
+    }
+    const rem = sum % 11;
+    return rem === 10 ? 'X' : String(rem);
+  }
+
+  function collectKnownFleetVins() {
+    const out = new Set();
+    try {
+      if (D && typeof D.computeTradingOperations === 'function') {
+        const ops = D.computeTradingOperations() || {};
+        (ops.serialUnits || []).forEach(u => {
+          const v = String((u && (u.chassis_vin || u.vin)) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (v.length === 17 && !/[IOQ]/.test(v)) out.add(v);
+        });
+        (ops.warrantyRows || []).forEach(w => {
+          const v = String((w && (w.vin || w.chassis_vin)) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (v.length === 17 && !/[IOQ]/.test(v)) out.add(v);
+        });
+      }
+      if (D && D.SEED && D.SEED.records) {
+        (D.SEED.records.equipment || []).concat(D.SEED.records.company_equipment || []).forEach(eq => {
+          const v = String((eq && (eq.vin || eq.chassis_vin)) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (v.length === 17 && !/[IOQ]/.test(v)) out.add(v);
+        });
+      }
+    } catch (_) {}
+    return Array.from(out);
+  }
+
+  function isStampedConfusionPair(a, b) {
+    if (a === b) return true;
+    const normA = a === 'O' || a === 'Q' ? '0' : (a === 'I' ? '1' : a);
+    const normB = b === 'O' || b === 'Q' ? '0' : (b === 'I' ? '1' : b);
+    if (normA === normB) return true;
+    return Boolean((STAMPED_METAL_PAIRS[normA] || []).includes(normB));
+  }
+
+  function extractVin17CandidateFromText(rawText) {
+    const src = String(rawText || '').toUpperCase();
+    // 1. Explicit labeled VIN / Chassis line (allows hyphens/spaces inside stamped serial)
+    const lblMatch = src.match(/(?:CHASSIS\s*(?:VIN|NO|#)?|VIN(?:\s*(?:NO|#|PLATE|SERIAL))?|FRAME\s*NO)\s*[:#-]?\s*([A-Z0-9][A-Z0-9 -]{15,22}[A-Z0-9])/i);
+    if (lblMatch) {
+      const compact = lblMatch[1].replace(/[^A-Z0-9]/g, '');
+      if (compact.length === 17) return compact;
+    }
+    // 2. Standalone 17-char alphanumeric token with at least 2 letters and 4 digits (avoids trailer/part codes like TRL60TLB2026KA009 if non-VIN, though still inspects WMI-style tokens)
+    const tokens = src.match(/\b[A-Z0-9]{17}\b/g) || [];
+    for (const tok of tokens) {
+      if (/^TRL\d/i.test(tok)) continue;
+      const letters = (tok.match(/[A-Z]/g) || []).length;
+      const digits = (tok.match(/[0-9]/g) || []).length;
+      if (letters >= 3 && digits >= 5) return tok;
+    }
+    return '';
+  }
+
+  function validateAndDisambiguateVin17(rawInput, opts = {}) {
+    const rawStr = String(rawInput == null ? '' : rawInput).trim();
+    const compact = rawStr.toUpperCase().replace(/[\s\-./_]+/g, '');
+    if (!compact || /^(WH-|PARTS|N\/A|NONE|OPEN)/i.test(compact) || /^TRL\d/i.test(compact)) {
+      return {
+        isVin17: false,
+        isPlaceholder: Boolean(compact),
+        raw: rawStr,
+        clean: rawStr,
+        ioqSanitized: rawStr,
+        hasBannedIOQ: false,
+        bannedFixed: false,
+        disambiguated: false,
+        edits: [],
+        expectedCheck: null,
+        actualCheck: null,
+        checkDigitValid: false,
+        enforcesMod11Wmi: false,
+        statusTone: 'neutral',
+        badgeLabel: '',
+        summaryText: ''
+      };
+    }
+
+    if (!/^[A-Z0-9]{17}$/.test(compact)) {
+      const hasIOQ = /[IOQ]/.test(compact);
+      const sanitizedAny = compact.replace(/I/g, '1').replace(/[OQ]/g, '0');
+      return {
+        isVin17: false,
+        isPlaceholder: false,
+        raw: rawStr,
+        clean: hasIOQ && opts.sanitizeBanned !== false ? sanitizedAny : compact,
+        ioqSanitized: sanitizedAny,
+        hasBannedIOQ: hasIOQ,
+        bannedFixed: hasIOQ && opts.sanitizeBanned !== false,
+        disambiguated: false,
+        edits: [],
+        expectedCheck: null,
+        actualCheck: null,
+        checkDigitValid: false,
+        enforcesMod11Wmi: false,
+        statusTone: compact.length >= 6 ? 'warn' : 'neutral',
+        badgeLabel: compact.length >= 6 ? `VIN Length ${compact.length}/17` : '',
+        summaryText: compact.length >= 6 ? `ISO 3779 expects 17 characters (currently ${compact.length}).` : ''
+      };
+    }
+
+    const edits = [];
+    const chars = compact.split('');
+    let hasBannedIOQ = false;
+
+    // Step 1: Deterministic ISO 3779 I / O / Q Character-Ban Enforcement (O -> 0, I -> 1, Q -> 0)
+    for (let i = 0; i < 17; i++) {
+      if (chars[i] === 'I' || chars[i] === 'O' || chars[i] === 'Q') {
+        hasBannedIOQ = true;
+        const rep = chars[i] === 'I' ? '1' : '0';
+        edits.push({ pos: i + 1, from: chars[i], to: rep, reason: 'ISO 3779 banned I/O/Q' });
+        chars[i] = rep;
+      }
+    }
+    const ioqSanitized = chars.join('');
+    let working = ioqSanitized;
+    let disambiguated = false;
+
+    const allowStampedFix = Boolean(opts.fromScan || opts.disambiguate);
+    if (allowStampedFix) {
+      // Step 2a: Disambiguate against known Showroom / Fleet VIN Registry (1-2 stamped-metal confusion edits)
+      const knownVins = collectKnownFleetVins();
+      let bestFleet = '';
+      let bestFleetDist = 99;
+      for (const kv of knownVins) {
+        if (kv === working) { bestFleet = kv; bestFleetDist = 0; break; }
+        let dist = 0;
+        let allConfusable = true;
+        for (let i = 0; i < 17; i++) {
+          if (working[i] !== kv[i]) {
+            dist++;
+            if (dist > 2 || !isStampedConfusionPair(working[i], kv[i])) {
+              allConfusable = false;
+              break;
+            }
+          }
+        }
+        if (allConfusable && dist > 0 && dist < bestFleetDist) {
+          bestFleet = kv;
+          bestFleetDist = dist;
+        }
+      }
+
+      if (bestFleet && bestFleetDist > 0) {
+        for (let i = 0; i < 17; i++) {
+          if (working[i] !== bestFleet[i]) {
+            edits.push({ pos: i + 1, from: working[i], to: bestFleet[i], reason: 'Stamped-metal fleet match' });
+          }
+        }
+        working = bestFleet;
+        disambiguated = true;
+      } else if (!bestFleet) {
+        // Step 2b: Deterministic ISO 3779 § 5.3 VIS numeric tail (positions 14-17 must be digits 0-9) & Pos 9 check digit alphabet (0-9 or X)
+        const wChars = working.split('');
+        for (let i = 13; i < 17; i++) {
+          if (!/[0-9]/.test(wChars[i]) && NUMERIC_ONLY_SUB[wChars[i]]) {
+            const toCh = NUMERIC_ONLY_SUB[wChars[i]];
+            edits.push({ pos: i + 1, from: wChars[i], to: toCh, reason: 'ISO 3779 VIS numeric serial' });
+            wChars[i] = toCh;
+            disambiguated = true;
+          }
+        }
+        const enforcesMod11 = /^[1-57L]/.test(wChars[0]);
+        if (enforcesMod11 && !/[0-9X]/.test(wChars[8]) && NUMERIC_ONLY_SUB[wChars[8]]) {
+          const toCh9 = NUMERIC_ONLY_SUB[wChars[8]];
+          edits.push({ pos: 9, from: wChars[8], to: toCh9, reason: 'ISO 3779 Pos-9 check digit' });
+          wChars[8] = toCh9;
+          disambiguated = true;
+        }
+        working = wChars.join('');
+
+        // Step 2c: Single-character stamped-metal confusion lattice (0<->D, 8<->B, 5<->S, 2<->Z, 6<->G) verified by Pos-9 Mod-11 Check Digit
+        const curExp = computeIso3779CheckDigit(working);
+        if (curExp !== null && working[8] !== curExp && enforcesMod11) {
+          const validCandidates = [];
+          for (let i = 0; i < 17; i++) {
+            if (i >= 13 && /[0-9]/.test(working[i])) {
+              // In numeric tail, only digit<->digit confusion (1<->7) applies
+              const dAlts = working[i] === '1' ? ['7'] : (working[i] === '7' ? ['1'] : []);
+              for (const alt of dAlts) {
+                const cand = working.slice(0, i) + alt + working.slice(i + 1);
+                if (computeIso3779CheckDigit(cand) === cand[8]) {
+                  validCandidates.push({ cand, pos: i + 1, from: working[i], to: alt });
+                }
+              }
+              continue;
+            }
+            const alts = STAMPED_METAL_PAIRS[working[i]] || [];
+            for (const alt of alts) {
+              if (i === 8 && !/[0-9X]/.test(alt)) continue;
+              const cand = working.slice(0, i) + alt + working.slice(i + 1);
+              if (computeIso3779CheckDigit(cand) === cand[8]) {
+                validCandidates.push({ cand, pos: i + 1, from: working[i], to: alt });
+              }
+            }
+          }
+          if (validCandidates.length === 1) {
+            const win = validCandidates[0];
+            edits.push({ pos: win.pos, from: win.from, to: win.to, reason: 'ISO 3779 mod-11 stamped-metal disambiguation' });
+            working = win.cand;
+            disambiguated = true;
+          }
+        }
+      }
+    }
+
+    const expectedCheck = computeIso3779CheckDigit(working);
+    const actualCheck = working[8];
+    const checkDigitValid = Boolean(expectedCheck !== null && actualCheck === expectedCheck);
+    // North America (1,2,3,4,5,7) and China GB16735 (L, e.g. Shacman LZG) enforce Pos-9 Mod-11 check digit
+    const enforcesMod11Wmi = /^[1-57L]/.test(working[0]);
+
+    let statusTone = 'ok';
+    let badgeLabel = `ISO 3779 Verified (Pos 9 = ${actualCheck})`;
+    let summaryText = `ISO 3779 17-char VIN verified (Position-9 check digit ${actualCheck}).`;
+
+    if (hasBannedIOQ || disambiguated) {
+      statusTone = checkDigitValid || !enforcesMod11Wmi ? 'fixed' : 'warn';
+      badgeLabel = checkDigitValid
+        ? `ISO 3779 Auto-Disambiguated (${working})`
+        : `ISO 3779 Sanitized (${working})`;
+      summaryText = `Stamped VIN auto-corrected from ${compact} to ${working}` +
+        (checkDigitValid ? ` (Pos-9 check digit ${actualCheck} verified).` : `.`);
+    } else if (!checkDigitValid && enforcesMod11Wmi) {
+      statusTone = 'warn';
+      badgeLabel = `Pos-9 Check Advisory (expected ${expectedCheck})`;
+      summaryText = `ISO 3779 check-digit advisory: Position 9 is ${actualCheck}, mod-11 formula expects ${expectedCheck}.`;
+    } else if (!checkDigitValid && !enforcesMod11Wmi) {
+      statusTone = 'ok';
+      badgeLabel = 'ISO 3779 17-Char Format Valid';
+      summaryText = 'ISO 3779 17-char format valid (no I/O/Q; EU/RoW WMI model position 9).';
+    }
+
+    return {
+      isVin17: true,
+      isPlaceholder: false,
+      raw: rawStr,
+      clean: working,
+      ioqSanitized,
+      hasBannedIOQ,
+      bannedFixed: hasBannedIOQ,
+      disambiguated,
+      edits,
+      expectedCheck,
+      actualCheck,
+      checkDigitValid,
+      enforcesMod11Wmi,
+      statusTone,
+      badgeLabel,
+      summaryText
+    };
+  }
+
+  // ==================== MULTI-PAGE BUNDLE COMPOSITE VISION SHEET ====================
+  function loadImageElementFromDataUrl(dataUrl) {
+    return new Promise(resolve => {
+      if (!dataUrl || typeof Image === 'undefined') { resolve(null); return; }
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  async function stitchMultiPageVisionSheet(attObjs) {
+    if (!Array.isArray(attObjs) || attObjs.length <= 1 || typeof document === 'undefined') return null;
+    const renderable = [];
+    for (let i = 0; i < Math.min(attObjs.length, 8); i++) {
+      const a = attObjs[i];
+      const dUrl = String((a && a.data_url) || '');
+      if (!/^data:image\//i.test(dUrl)) continue;
+      const img = await loadImageElementFromDataUrl(dUrl);
+      if (img && (img.naturalWidth || img.width) > 0) {
+        renderable.push({ idx: i + 1, name: a.file_name || `Page_${i + 1}`, img });
+      }
+    }
+    if (renderable.length <= 1) return null;
+
+    const targetW = 1120;
+    const pad = 16;
+    const hdrH = 30;
+    const scaledPages = renderable.map(p => {
+      const iw = p.img.naturalWidth || p.img.width || 800;
+      const ih = p.img.naturalHeight || p.img.height || 1000;
+      const drawW = targetW - pad * 2;
+      const drawH = Math.min(1380, Math.max(160, Math.round((ih / iw) * drawW)));
+      return Object.assign({}, p, { drawW, drawH });
+    });
+
+    let totalH = pad + scaledPages.reduce((s, p) => s + hdrH + p.drawH + pad, 0);
+    let yScale = 1;
+    if (totalH > 4000) {
+      yScale = 4000 / totalH;
+      totalH = 4000;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(targetW * yScale);
+    canvas.height = Math.round(totalH);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.scale(yScale, yScale);
+    ctx.fillStyle = '#F3EFE6';
+    ctx.fillRect(0, 0, targetW, totalH / yScale);
+
+    let curY = pad;
+    for (const p of scaledPages) {
+      ctx.fillStyle = '#EDE6D6';
+      ctx.fillRect(pad, curY, p.drawW, hdrH);
+      ctx.strokeStyle = '#C8B99B';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(pad, curY, p.drawW, hdrH + p.drawH);
+      ctx.fillStyle = '#181512';
+      ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`PAGE ${p.idx} OF ${attObjs.length} - ${sanitizeOutwardText(p.name)}`, pad + 10, curY + 20);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(pad, curY + hdrH, p.drawW, p.drawH);
+      ctx.drawImage(p.img, pad, curY + hdrH, p.drawW, p.drawH);
+      curY += hdrH + p.drawH + pad;
+    }
+
+    const stitchedDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+    return {
+      file_name: `Stitched_${attObjs.length}_Pages.jpg`,
+      mime_type: 'image/jpeg',
+      data_url: stitchedDataUrl,
+      pageCount: attObjs.length
+    };
   }
 
   async function extractZipXmlEntries(arrayBuf, wantedPathsRx) {
@@ -1168,9 +1534,26 @@
     let indQuickTpl = '';
     const altForms = [];
 
+    // Extract 17-Char ISO 3779 Chassis VIN (from text or Vin_Scan filename) and disambiguate stamped-metal OCR confusions
+    const rawVinToken = extractVin17CandidateFromText(cleanText) || extractVin17CandidateFromText(String(fileName || ''));
+    const vinAudit = rawVinToken ? validateAndDisambiguateVin17(rawVinToken, { fromScan: true }) : null;
+    const vinClean = vinAudit && vinAudit.isVin17 ? vinAudit.clean : '';
+    const modelHint = extractLabeledValue(lines, /^(?:vehicle\s*model|model|make\s*(?:&|\/)\s*model)\s*:\s*(.+)$/i);
+    const plateHint = extractLabeledValue(lines, /^(?:plate\s*(?:no|number|#)|registration\s*plate)\s*:\s*([A-Za-z0-9 -]{2,24})/i);
+
+    const isPureVinOrEquipCard = Boolean(
+      (vinClean && !totalUsd && !lineItems.length) ||
+      /^vin_scan_/i.test(String(fileName || '')) ||
+      /\b(chassis\s*identification\s*plate|equipment\s*registration\s*card|fleet\s*unit\s*registration)\b/i.test(cleanText)
+    );
+
     if (/(?:\b(?:weighbridge|quarry\s*weighbridge|raw\s*material\s*intake|aggregate\s*intake|raml|gravier)\b|\u0642\u0628\u0627\u0646|\u0645\u0648\u0627\u062f\s*\u0627\u0648\u0644\u064a\u0629)/i.test(cleanText)) {
       formType = 'raw';
       altForms.push('sales', 'expense', 'document');
+    } else if (isPureVinOrEquipCard) {
+      const curMForm = String((D && D.STATE && D.STATE.modalForm) || '');
+      formType = curMForm === 'equipment' ? 'equipment' : 'companyequipment';
+      altForms.push(formType === 'equipment' ? 'companyequipment' : 'equipment', 'repair', 'document');
     } else if (/\b(intercompany|sister\s*liquidity|central\s*treasury|capital\s*call|external\s*treasury)\b/i.test(cleanText)) {
       formType = 'external';
       indQuickTpl = 'hld_ic';
@@ -1205,6 +1588,7 @@
     } else {
       formType = 'expense';
       if (equipHint) altForms.push('repair');
+      if (vinClean) altForms.push('companyequipment', 'equipment');
       altForms.push('settlement', 'raw', 'document');
     }
 
@@ -1217,6 +1601,9 @@
         qty = Number(qm[1]) || 0;
         uom = normalizeUomToken(qm[2]);
       }
+    }
+    if (vinClean && formType === 'sales' && indQuickTpl === 'trd_inv') {
+      qty = 1;
     }
 
     return {
@@ -1234,6 +1621,10 @@
       product: productHint || (firstItem ? firstItem.description : ''),
       site: siteHint,
       equipment: equipHint,
+      plateNo: plateHint,
+      model: modelHint,
+      vin: vinClean,
+      vinAudit,
       driver: driverHint,
       staff: staffHint,
       paymentMethod,
@@ -1250,6 +1641,98 @@
       notes: notesHint,
       direction: /\b(cash\s*out|outgoing\s*wire|withdrawal|paid\s*out)\b/i.test(cleanText) ? 'Out' : 'In'
     };
+  }
+
+  function synthesizeMultiPageDeterministic(pageEntries, combinedText, primaryFileName) {
+    if (!Array.isArray(pageEntries) || pageEntries.length <= 1) {
+      const single = deterministicParseDocument(combinedText, primaryFileName);
+      single.pageCount = 1;
+      single.multiPageSynthesized = false;
+      return single;
+    }
+
+    const perPage = pageEntries.map(pe => deterministicParseDocument(pe.text || '', pe.fileName || primaryFileName));
+    const full = deterministicParseDocument(combinedText, primaryFileName);
+    const p1 = perPage[0];
+    const firstNonEmpty = getter => {
+      for (const p of perPage) {
+        const v = getter(p);
+        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+      }
+      return getter(full);
+    };
+
+    // Concatenate line items across Pages 1..N in page order, skipping carried-forward/subtotal lines
+    const mergedLines = [];
+    for (const p of perPage) {
+      for (const it of (p.lineItems || [])) {
+        if (!it || !it.description) continue;
+        if (/\b(carried\s*forward|brought\s*forward|subtotal\s*page|page\s*\d+\s*subtotal|continued\s*on\s*page)\b/i.test(it.description)) continue;
+        mergedLines.push(it);
+      }
+    }
+
+    // Final-page totals override Page 1 "Carried Forward / Page 1 Subtotal"
+    let finalSubtotal = 0;
+    let finalVat = 0;
+    let finalTotal = 0;
+    let finalLbp = 0;
+    for (let idx = perPage.length - 1; idx >= 0; idx--) {
+      const p = perPage[idx];
+      if (!finalTotal && p.totalAmount > 0) finalTotal = p.totalAmount;
+      if (!finalVat && p.vatAmount > 0) finalVat = p.vatAmount;
+      if (!finalSubtotal && p.subtotalExVat > 0) finalSubtotal = p.subtotalExVat;
+      if (!finalLbp && p.lbpAmount > 0) finalLbp = p.lbpAmount;
+    }
+    const linesSum = round2(mergedLines.reduce((s, it) => s + Number(it.lineTotal || 0), 0));
+    if (mergedLines.length > 1 && linesSum > finalSubtotal) {
+      finalSubtotal = linesSum;
+    }
+    if ((finalSubtotal > 0 || finalVat > 0) && finalTotal < finalSubtotal) {
+      finalTotal = round2(finalSubtotal + finalVat);
+    }
+
+    // Prefer first valid 17-char VIN audit across any page
+    let bestVinAudit = null;
+    for (const p of perPage) {
+      if (p.vinAudit && p.vinAudit.isVin17) { bestVinAudit = p.vinAudit; break; }
+    }
+    if (!bestVinAudit && full.vinAudit && full.vinAudit.isVin17) bestVinAudit = full.vinAudit;
+
+    const mergedNotes = Array.from(new Set(perPage.map(p => p.notes).filter(Boolean))).join(' · ');
+
+    return Object.assign({}, full, {
+      formType: p1.formType !== 'expense' ? p1.formType : full.formType,
+      indQuickTpl: firstNonEmpty(p => p.indQuickTpl),
+      company: firstNonEmpty(p => p.company),
+      date: firstNonEmpty(p => p.date),
+      reference: firstNonEmpty(p => p.reference),
+      supplier: firstNonEmpty(p => p.supplier),
+      customer: firstNonEmpty(p => p.customer),
+      counterparty: firstNonEmpty(p => p.counterparty),
+      category: firstNonEmpty(p => p.category),
+      subcategory: firstNonEmpty(p => p.subcategory),
+      product: firstNonEmpty(p => p.product),
+      site: firstNonEmpty(p => p.site),
+      equipment: firstNonEmpty(p => p.equipment),
+      plateNo: firstNonEmpty(p => p.plateNo),
+      model: firstNonEmpty(p => p.model),
+      vin: bestVinAudit ? bestVinAudit.clean : firstNonEmpty(p => p.vin),
+      vinAudit: bestVinAudit || full.vinAudit,
+      driver: firstNonEmpty(p => p.driver),
+      staff: firstNonEmpty(p => p.staff),
+      paymentMethod: firstNonEmpty(p => p.paymentMethod),
+      subtotalExVat: finalSubtotal || full.subtotalExVat,
+      vatAmount: finalVat || full.vatAmount,
+      totalAmount: finalTotal || full.totalAmount,
+      lbpAmount: finalLbp || full.lbpAmount,
+      hasVat: perPage.some(p => p.hasVat) || full.hasVat,
+      pricePending: perPage.every(p => p.pricePending) && finalTotal === 0,
+      lineItems: mergedLines.length ? mergedLines : full.lineItems,
+      notes: mergedNotes || full.notes,
+      pageCount: pageEntries.length,
+      multiPageSynthesized: true
+    });
   }
 
   // ==================== OPTIONAL SERVER VISION & CLOUD AI RELAY ====================
@@ -1324,7 +1807,7 @@
     return null;
   }
 
-  async function tryCloudAiStructuredParse(extractedText, regScope, attObj) {
+  async function tryCloudAiStructuredParse(extractedText, regScope, attObj, pageCount = 1) {
     const inlinePart = extractVisionInlinePart(attObj);
     const cleanTxt = String(extractedText || '').trim();
     if (cleanTxt.length < 18 && !inlinePart) return null;
@@ -1332,14 +1815,18 @@
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
 
     const sysPrompt = [
-      'You are ISABI Smart Scan, an enterprise accounting document parser.',
+      'You are ISABI Smart Scan, an enterprise multi-page accounting & fleet document parser.',
       'Return ONLY valid JSON (no markdown commentary) with these keys:',
-      '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|document",',
+      '{"formType":"expense|sales|raw|receipt|settlement|fuel|repair|salary|external|treasury|conversion|companyequipment|equipment|document",',
       '"company":"","date":"YYYY-MM-DD","reference":"","supplier":"","customer":"","counterparty":"",',
-      '"category":"","subcategory":"","product":"","site":"","equipment":"","driver":"","staff":"",',
+      '"category":"","subcategory":"","product":"","site":"","equipment":"","plateNo":"","model":"","vin":"","driver":"","staff":"",',
       '"paymentMethod":"Credit|Cash|Bank Transfer|Check","subtotalExVat":0,"vatAmount":0,"totalAmount":0,"lbpAmount":0,',
       '"hasVat":false,"pricePending":false,"qty":1,"uom":"","unitPrice":0,"notes":"",',
       '"lineItems":[{"description":"","qty":1,"uom":"Piece","unitCost":0,"lineTotal":0}]}',
+      'ISO 3779 VIN rule: 17-character chassis VINs NEVER contain I, O, or Q; carefully disambiguate stamped metal 0 vs D, 8 vs B, and 5 vs S.',
+      pageCount > 1
+        ? `Multi-Page Synthesis (${pageCount} pages): merge Page 1 identity headers (company, counterparty, reference, VIN) with Page 2+ schedules, continuation lineItems, and final-page Grand Total / VAT (ignore Page 1 Carried Forward subtotals).`
+        : 'Extract all line items and final payable totals accurately.',
       'Prefer exact matches from these active registries when clearly corresponding:',
       'Companies: ' + (regScope.companies || []).slice(0, 16).join(', '),
       'Top Suppliers: ' + (regScope.suppliers || []).slice(0, 28).join(', '),
@@ -1349,8 +1836,8 @@
     ].join('\n');
 
     const userMsg = cleanTxt
-      ? ('DOCUMENT TEXT:\n' + cleanTxt.slice(0, 5500))
-      : 'Extract all accounting fields, counterparty, date, currency/VAT, and line items directly from this document image.';
+      ? ('DOCUMENT TEXT:\n' + cleanTxt.slice(0, 8500))
+      : 'Extract all accounting fields, counterparty, 17-character VIN if present, date, currency/VAT, and line items directly from this document image.';
 
     // 1. Primary Cloud AI Relay (tiered: gemini-3.8-flash w/ thinkingBudget=0 for vision, gemini-3.5-flash-lite for clean text)
     const relay = resolveAskRelayEndpoint();
@@ -1430,7 +1917,7 @@
     if (!ai) return det;
     const pickStr = (a, b) => (String(a || '').trim() || String(b || '').trim());
     const pickNum = (a, b) => (Number(a) > 0 ? Number(a) : (Number(b) || 0));
-    const validForms = ['sales', 'raw', 'receipt', 'vatinvoice', 'fuel', 'expense', 'recurringexpense', 'settlement', 'repair', 'oillog', 'partlog', 'defect', 'salary', 'attendance', 'external', 'treasury', 'conversion', 'jv', 'warehousestock', 'document'];
+    const validForms = ['sales', 'raw', 'receipt', 'vatinvoice', 'fuel', 'expense', 'recurringexpense', 'settlement', 'repair', 'oillog', 'partlog', 'defect', 'salary', 'attendance', 'external', 'treasury', 'conversion', 'jv', 'warehousestock', 'equipment', 'companyequipment', 'document'];
     const aiForm = String(ai.formType || '').toLowerCase().trim();
     const detIsCategorizedExpense = det.formType === 'expense' && Boolean(String(det.category || '').trim() || String(det.subcategory || '').trim());
     const finalForm = (detIsCategorizedExpense && (aiForm === 'raw' || aiForm === 'sales' || aiForm === 'fuel'))
@@ -1438,6 +1925,12 @@
       : (validForms.includes(aiForm) ? aiForm : det.formType);
     const aiLines = Array.isArray(ai.lineItems) ? ai.lineItems.filter(x => x && x.description) : [];
     const mergedLines = det.lineItems && det.lineItems.length >= aiLines.length ? det.lineItems : aiLines;
+
+    let finalVinAudit = det.vinAudit || null;
+    if ((!finalVinAudit || !finalVinAudit.isVin17) && ai.vin) {
+      const candAudit = validateAndDisambiguateVin17(ai.vin, { fromScan: true });
+      if (candAudit && candAudit.isVin17) finalVinAudit = candAudit;
+    }
 
     return Object.assign({}, det, {
       formType: finalForm,
@@ -1452,6 +1945,10 @@
       product: pickStr(det.product, ai.product),
       site: pickStr(det.site, ai.site),
       equipment: pickStr(det.equipment, ai.equipment),
+      plateNo: pickStr(det.plateNo, ai.plateNo),
+      model: pickStr(det.model, ai.model),
+      vin: finalVinAudit && finalVinAudit.isVin17 ? finalVinAudit.clean : pickStr(det.vin, ai.vin),
+      vinAudit: finalVinAudit,
       driver: pickStr(det.driver, ai.driver),
       staff: pickStr(det.staff, ai.staff),
       paymentMethod: pickStr(det.paymentMethod, ai.paymentMethod),

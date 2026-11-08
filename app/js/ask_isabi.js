@@ -38,6 +38,10 @@
     wired: false,
     attachments: [],
     voiceActive: false,
+    liveVoiceMode: false,
+    voiceModePhase: 'idle',
+    handsFreeVoice: true,
+    voiceAutoSendOnSilence: false,
     voiceLang: 'en',
     voiceStartMs: 0,
     voiceTimerId: null,
@@ -45,15 +49,33 @@
     mediaRecorder: null,
     mediaRecorderMime: '',
     mediaStream: null,
+    audioCtx: null,
+    analyserNode: null,
+    vadRafId: null,
+    speechDetectedInTurn: false,
+    speechEnergyAccumMs: 0,
+    lastLoudMs: 0,
+    micLevel: 0,
     audioChunks: [],
     voiceBaseText: '',
     voiceInterimText: '',
     voiceStatusOverride: '',
     activeAudioEl: null,
+    activeAudioQueue: [],
+    activeAudioPaused: false,
+    activeAudioProgress: 0,
     activeSpeakBtn: null,
+    activeSpeakTurnIdx: -1,
     activeSpeakCtrl: null,
+    activeSpeakCaption: '',
     activeBriefingScope: '',
     lastSpokenText: '',
+    playbackRate: (function () {
+      try {
+        const r = Number(localStorage.getItem('isabi_ask_voice_rate') || 1);
+        return (r === 1.2 || r === 1.5 || r === 0.9) ? r : 1;
+      } catch (_) { return 1; }
+    })(),
     autoVoiceReadback: (function () {
       try { return localStorage.getItem('isabi_ask_auto_voice') === '1'; } catch (_) { return false; }
     })(),
@@ -111,11 +133,11 @@
 
   function isReasoningQuery(q) {
     const s = String(q || '').trim();
-    if (/\b(why|how\s+(?:can|could|should|do\s+we)|what\s+should|recommend|advise|advice|strategy|improve|reduce|mitigate|prioritize|what\s+do\s+you\s+think|is\s+it\s+better|root\s+cause)\b/i.test(s)) {
+    if (/\b(why|how\s+(?:can|could|should|do\s+we|to)|what\s+(?:should|stands?\s+out|needs?\s+attention|are\s+the\s+(?:key|main|biggest)\s+(?:risks?|drivers?|insights?|issues?))|recommend|advise|advice|strategy|improve|reduce|mitigate|prioritize|what\s+do\s+you\s+think|is\s+it\s+better|root\s+cause|anomal(?:y|ies)|unusual|underperform\w*|forecast|diagnos\w*|draft\s+a|write\s+a|spot\s+risks?)\b/i.test(s)) {
       return !/^explain\s+the\s+diesel\s+tank\s+reconciliation/i.test(s);
     }
-    if (/(لماذا|ليش|كيف\s+نقدر|كيف\s+يمكن|بماذا\s+تنصح|شو\s+رأيك|ما\s+رأيك|كيف\s+نحسن|كيف\s+نخفض)/.test(s)) return true;
-    if (/\b(pourquoi|comment\s+(?:réduire|reduire|améliorer|ameliorer)|que\s+conseillez|quel\s+conseil)\b/i.test(s)) return true;
+    if (/(لماذا|ليش|ما\s+سبب|كيف\s+نقدر|كيف\s+يمكن|بماذا\s+تنصح|شو\s+رأيك|ما\s+رأيك|كيف\s+نحسن|كيف\s+نخفض|ما\s+الأهم|أهم\s+الملاحظات|مخاطر)/.test(s)) return true;
+    if (/\b(pourquoi|comment\s+(?:réduire|reduire|améliorer|ameliorer)|que\s+conseillez|quel\s+conseil|anomalies?|risques?\s+principaux|que\s+faut-il\s+surveiller)\b/i.test(s)) return true;
     return false;
   }
 
@@ -488,8 +510,8 @@
     return !_ctx || typeof _ctx.canViewView !== 'function' || _ctx.canViewView(viewId, user);
   }
 
-  function salesLabel(user) {
-    return canTax(user) ? 'Sales (TTC)' : 'Sales';
+  function salesLabel() {
+    return 'Total Sales';
   }
 
   // ============================================================================
@@ -561,6 +583,15 @@
       }
     }
 
+    // Never hijack non-Manufacturing industry scopes or cross-industry domain prompts with quarry counterparty/product lookups
+    const activeLookupInd = (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+      ? window.MFG_ENTERPRISE.getActiveIndustry()
+      : 'Manufacturing';
+    if (activeLookupInd !== 'Manufacturing' ||
+        /\b(bdeir\s+holding|intercompany|partner\s+split|blanca|la\s+una|palms|voile|platinum|cabana|korri\s+auto|shacman|4235|rent\s+roll|rent\s+invoices?|tenant\s+arrears|gwp\b|bordereau|policy\s+renewal)\b/i.test(low)) {
+      return null;
+    }
+
     // Never hijack plural ranking, top-N, or monthly trajectory questions
     if (cleanQ.length < 4 ||
         /\b(top|biggest|largest|best|worst|highest|lowest|who\s+are)\s+\d*\s*(?:overdue\s+|open\s+|selling\s+)?(?:customers?|clients?|debtors?|accounts?|buyers?|suppliers?|vendors?|quarries|products?|grades?|aggregates?|materials?|drivers?|staff|employees?|months?)\b/i.test(cleanQ) ||
@@ -597,7 +628,9 @@
       'driver', 'drivers', 'staff', 'employee', 'employees', 'months', 'period', 'periods', 'performance', 'history',
       'alerts', 'alert', 'sentinels', 'sentinel', 'watchdog', 'watchdogs', 'thresholds', 'threshold', 'briefing',
       'daily', 'operations', 'ops', 'kiosks', 'kiosk', 'users', 'seats', 'today', 'yesterday', 'month', 'year', 'summary',
-      'overview', 'loans', 'loan', ...Object.keys(MONTH_MAP)
+      'overview', 'loans', 'loan', 'rent', 'lease', 'leases', 'tenant', 'tenants', 'arrears', 'holding', 'bdeir',
+      'treasury', 'intercompany', 'resort', 'venue', 'policy', 'policies', 'claim', 'claims', 'carrier', 'carriers',
+      ...Object.keys(MONTH_MAP)
     ]);
     const contentWords = low
       .replace(/\b202[4-9](?:-(?:0[1-9]|1[0-2])(?:-\d{2})?)?\b/g, ' ')
@@ -1028,15 +1061,25 @@
         const hk = h.kpis || {};
         const icRows = h.intercompany || [];
         const pRows = h.partners || [];
+        const fastTopic = !isReasoningQuery(cleanQ);
+        const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(intercompany|due[- ]from|due[- ]to|matrix|bilateral)\b/i.test(low)) {
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'holding_ic',
             title: 'Bilateral Intercompany Due-From / Due-To Matrix · Bdeir Holding',
             answer: `Across <b>${fmtInt(icRows.length)}</b> bilateral subsidiary pairs, total Intercompany Due-From receivable stands at <b>${fmtMoney(hk.dueFromTotal || 0, 0)}</b> against Due-To payable of <b>${fmtMoney(hk.dueToTotal || 0, 0)}</b>, leaving a net consolidated clearing position of <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b>.`,
-            bullets: icRows.slice(0, 5).map(r => `<b>${esc(r.pair || r.id || 'IC')} · ${esc(r.from || 'Bdeir Holding')} to ${esc(r.to || r.counterparty || 'Subsidiary')}</b>: Due-From <b>${fmtMoney(r.dueFrom || 0, 0)}</b> · Due-To <b>${fmtMoney(r.dueTo || 0, 0)}</b> · Net <b>${fmtMoney(r.net || ((r.dueFrom || 0) - (r.dueTo || 0)), 0)}</b> (${esc(r.status || 'Reconciled')})`),
+            bullets: icRows.slice(0, 4).map(r => `<b>${esc(r.pair || r.id || 'IC')} · ${esc(r.from || 'Bdeir Holding')} to ${esc(r.to || r.counterparty || 'Subsidiary')}</b>: Due-From <b>${fmtMoney(r.dueFrom || 0, 0)}</b> · Due-To <b>${fmtMoney(r.dueTo || 0, 0)}</b> · Net <b>${fmtMoney(r.net || ((r.dueFrom || 0) - (r.dueTo || 0)), 0)}</b> (${esc(r.status || 'Reconciled')})`),
+            headers: icRows.length ? ['Subsidiary Pair', 'Due-From', 'Due-To', 'Net Clearing'] : undefined,
+            rows: icRows.length ? icRows.slice(0, 6).map(r => [
+              cleanOut(`${r.from || 'Bdeir Holding'} / ${r.to || r.counterparty || 'Subsidiary'}`),
+              fmtMoney(r.dueFrom || 0, 0),
+              fmtMoney(r.dueTo || 0, 0),
+              fmtMoney(r.net != null ? r.net : ((r.dueFrom || 0) - (r.dueTo || 0)), 0)
+            ]) : undefined,
+            total: icRows.length ? [`Consolidated (${icRows.length} Pairs)`, fmtMoney(hk.netIntercompany || 0, 0)] : undefined,
             promptText: 'Open the Intercompany Consolidation hub or Statement 23:',
             actions: [
               { type: 'view', view: 'hld_consolidation', label: 'Intercompany Hub' },
@@ -1051,14 +1094,23 @@
           };
         }
         if (/\b(partner|shareholder|split|equity|draw|capital)\b/i.test(low)) {
+          const totClosing = pRows.reduce((s, p) => s + Number(p.closingBalance != null ? p.closingBalance : (p.balance || 0)), 0);
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'holding_partners',
             title: 'Shareholder & Partner Equity Split Ledger · Bdeir Holding',
             answer: `Across <b>${fmtInt(pRows.length)}</b> active shareholder current accounts, opening equity capital, partner draws, and pro-rata shared overhead allocations are reconciled in real time.`,
-            bullets: pRows.slice(0, 5).map(p => `<b>${esc(p.partner || p.name || '-')}</b> (${fmtInt(p.sharePct || 0, 1)}% share): Opening Capital <b>${fmtMoney(p.opening || 0, 0)}</b> · Draws <b>${fmtMoney(p.draws || p.distributions || 0, 0)}</b> · Closing Balance <b>${fmtMoney(p.closingBalance || p.balance || 0, 0)}</b>`),
+            bullets: pRows.slice(0, 4).map(p => `<b>${esc(p.partner || p.name || '-')}</b> (${fmtInt(p.sharePct || 0, 1)}% share): Opening Capital <b>${fmtMoney(p.opening || 0, 0)}</b> · Draws <b>${fmtMoney(p.draws || p.distributions || 0, 0)}</b> · Closing Balance <b>${fmtMoney(p.closingBalance || p.balance || 0, 0)}</b>`),
+            headers: pRows.length ? ['Partner', 'Share', 'Draws', 'Closing Equity'] : undefined,
+            rows: pRows.length ? pRows.slice(0, 6).map(p => [
+              cleanOut(p.partner || p.name || '-'),
+              `${fmtInt(p.sharePct || 0, 1)}%`,
+              fmtMoney(p.draws || p.distributions || 0, 0),
+              fmtMoney(p.closingBalance != null ? p.closingBalance : (p.balance || 0), 0)
+            ]) : undefined,
+            total: pRows.length ? [`Total Equity (${pRows.length} Partners)`, fmtMoney(totClosing, 0)] : undefined,
             promptText: 'Inspect Partner Splits & Capital Calls or Statement 23:',
             actions: [
               { type: 'view', view: 'hld_partners', label: 'Partner Split & Equity' },
@@ -1075,7 +1127,7 @@
         return {
           q: cleanQ,
           lang,
-          instantLocal: true,
+          instantLocal: fastBriefing,
           topic: 'holding',
           title: `Holding & Treasury Briefing · Bdeir Holding`,
           answer: `Across <b>Bdeir Holding</b>, shared corporate overhead stands at <b>${fmtMoney(hk.totalExpenses || 0, 0)}</b> across <b>${fmtInt(hk.voucherCount || 0)}</b> vouchers, treasury net cashflow is <b>${fmtMoney(hk.netCashflow || 0, 0)}</b>, and bilateral intercompany clearing nets to <b>${fmtMoney(hk.netIntercompany || 0, 0)}</b>.`,
@@ -1083,6 +1135,18 @@
             `Intercompany Due-From vs Due-To: <b>${fmtMoney(hk.dueFromTotal || 0, 0)}</b> receivable vs <b>${fmtMoney(hk.dueToTotal || 0, 0)}</b> payable across <b>${fmtInt(icRows.length)}</b> subsidiary pairs`,
             `Shareholder & Partner Current Accounts: <b>${fmtInt(pRows.length)}</b> equity ledgers · Total Capital & Draws tracked in real time`
           ],
+          headers: icRows.length ? ['Subsidiary Pair', 'Due-From', 'Due-To', 'Net Clearing'] : ['Holding Ledger', 'Records', 'Balance'],
+          rows: icRows.length ? icRows.slice(0, 6).map(r => [
+            cleanOut(`${r.from || 'Bdeir Holding'} / ${r.to || r.counterparty || 'Subsidiary'}`),
+            fmtMoney(r.dueFrom || 0, 0),
+            fmtMoney(r.dueTo || 0, 0),
+            fmtMoney(r.net != null ? r.net : ((r.dueFrom || 0) - (r.dueTo || 0)), 0)
+          ]) : [
+            ['Corporate Overhead', fmtInt(hk.voucherCount || 0), fmtMoney(hk.totalExpenses || 0, 0)],
+            ['Intercompany Due-From', fmtInt(icRows.length), fmtMoney(hk.dueFromTotal || 0, 0)],
+            ['Intercompany Due-To', fmtInt(icRows.length), fmtMoney(hk.dueToTotal || 0, 0)]
+          ],
+          total: [`Consolidated Clearing (${icRows.length} Pairs)`, fmtMoney(hk.netIntercompany || 0, 0)],
           promptText: 'Which Holding & Treasury register or statement would you like to open?',
           actions: [
             { type: 'view', view: 'expenses', label: 'Holding Expenses' },
@@ -1102,15 +1166,25 @@
         const hk = d.kpis || {};
         const sRows = d.salesRows || [];
         const mRows = d.memberRows || [];
+        const fastTopic = !isReasoningQuery(cleanQ);
+        const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(cabana|membership|gym|pool|seasonal|member)\b/i.test(low)) {
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'hospitality_memberships',
             title: `Seasonal Cabana, Pool & Gym Memberships · ${scope.scopeCoLabel}`,
             answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, there are <b>${fmtInt(hk.activeMembers || mRows.length)}</b> active seasonal cabana, beach club, and Platinum wellness memberships totaling <b>${fmtMoney(hk.membershipPkgValue || 0, 0)}</b> in contracted package value with <b>${fmtMoney(hk.membershipBalance || 0, 0)}</b> in open installments.`,
-            bullets: mRows.slice(0, 5).map(m => `<b>${esc(m.code || m.id)} · ${esc(m.member)}</b> (${esc(m.company)} · ${esc(m.tier)}): Package <b>${fmtMoney(m.packageUsd || 0, 0)}</b> · Paid <b>${fmtMoney(m.paidUsd || 0, 0)}</b> · Balance <b>${fmtMoney(m.balanceUsd || 0, 0)}</b>`),
+            bullets: mRows.slice(0, 4).map(m => `<b>${esc(m.code || m.id)} · ${esc(m.member)}</b> (${esc(m.company)} · ${esc(m.tier)}): Package <b>${fmtMoney(m.packageUsd || 0, 0)}</b> · Paid <b>${fmtMoney(m.paidUsd || 0, 0)}</b> · Balance <b>${fmtMoney(m.balanceUsd || 0, 0)}</b>`),
+            headers: mRows.length ? ['Member', 'Property & Tier', 'Paid', 'Package Value'] : undefined,
+            rows: mRows.length ? mRows.slice(0, 6).map(m => [
+              cleanOut(m.member || m.code || '-'),
+              cleanOut(`${m.company || ''} · ${m.tier || ''}`),
+              fmtMoney(m.paidUsd || 0, 0),
+              fmtMoney(m.packageUsd || 0, 0)
+            ]) : undefined,
+            total: mRows.length ? [`Active Packages (${fmtInt(hk.activeMembers || mRows.length)})`, fmtMoney(hk.membershipPkgValue || 0, 0)] : undefined,
             promptText: 'Open the Memberships & Pool hub or Statement 24:',
             actions: [
               { type: 'view', view: 'hsp_memberships', label: 'Memberships & Pool' },
@@ -1137,11 +1211,19 @@
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'hospitality_venues',
             title: '5-Resort Venue Revenue & Guest Cover Comparison',
             answer: `Across all <b>${fmtInt(vEntries.length)}</b> resort venues, total F&B, event, and cabana revenue stands at <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.coversTotal || 0)}</b> guest covers (average check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>).`,
             bullets: vEntries.map(([vName, st]) => `<b>${esc(vName)}</b>: Revenue <b>${fmtMoney(st.rev, 0)}</b> across <b>${fmtInt(st.count)}</b> closings · <b>${fmtInt(st.covers)}</b> covers (avg <b>${fmtMoney(st.covers ? st.rev / st.covers : 0, 2)}</b>/cover)`),
+            headers: vEntries.length ? ['Resort Venue', 'Covers', 'Avg Check', 'Venue Revenue'] : undefined,
+            rows: vEntries.length ? vEntries.map(([vName, st]) => [
+              cleanOut(vName),
+              fmtInt(st.covers),
+              fmtMoney(st.covers ? st.rev / st.covers : 0, 2),
+              fmtMoney(st.rev, 0)
+            ]) : undefined,
+            total: vEntries.length ? [`Combined (${vEntries.length} Resorts)`, fmtMoney(hk.salesTotal || 0, 0)] : undefined,
             promptText: 'Drill into Venue Revenue & POS or Statement 24:',
             actions: [
               { type: 'view', view: 'hsp_revenue', label: 'Venue Revenue & POS' },
@@ -1158,7 +1240,7 @@
         return {
           q: cleanQ,
           lang,
-          instantLocal: true,
+          instantLocal: fastBriefing,
           topic: 'hospitality',
           title: `Hospitality & Resorts Copilot · ${scope.scopeCoLabel}`,
           answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, venue revenue is <b>${fmtMoney(hk.salesTotal || 0, 0)}</b> across <b>${fmtInt(hk.receiptCount || 0)}</b> POS & cabana receipts (<b>${fmtInt(hk.coversTotal || 0)}</b> guest covers, avg check <b>${fmtMoney(hk.avgCover || 0, 2)}</b>), with operating profit at <b>${fmtMoney(hk.operatingProfit || 0, 0)}</b>.`,
@@ -1185,15 +1267,26 @@
         const tk = d.kpis || {};
         const vRows = d.vehicleRows || [];
         const stRows = d.stockRows || [];
+        const fastTopic = !isReasoningQuery(cleanQ);
+        const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(vin\b|chassis|shacman|heavy\s+truck|unit\s+margin|registry)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
+          const totMargin = vRows.reduce((s, v) => s + Number(v.marginUsd || 0), 0);
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'trading_vins',
             title: `Serialized Heavy Truck VIN Registry & Unit Margins · ${scope.scopeCoLabel}`,
             answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, the commercial vehicle yard tracks <b>${fmtInt(tk.deliveredUnits || 0)}</b> delivered and <b>${fmtInt(tk.inStockUnits || 0)}</b> showroom Shacman & Korri Auto VIN units with full customs declaration and landed-cost margin tie-out.`,
-            bullets: vRows.slice(0, 5).map(v => `<b>${esc(v.vin)}</b> (${esc(v.model)} · Customs <code>${esc(v.customsNo)}</code>): Landed <b>${fmtMoney(v.landedCostUsd || 0, 0)}</b> · Sale <b>${fmtMoney(v.salePriceUsd || 0, 0)}</b> · Margin <b>${fmtMoney(v.marginUsd || 0, 0)}</b> (${esc(v.status)})`),
+            bullets: vRows.slice(0, 4).map(v => `<b>${esc(v.vin)}</b> (${esc(v.model)} · Customs <code>${esc(v.customsNo)}</code>): Landed <b>${fmtMoney(v.landedCostUsd || 0, 0)}</b> · Sale <b>${fmtMoney(v.salePriceUsd || 0, 0)}</b> · Margin <b>${fmtMoney(v.marginUsd || 0, 0)}</b> (${esc(v.status)})`),
+            headers: vRows.length ? ['VIN & Model', 'Status', 'Landed Cost', 'Unit Margin'] : undefined,
+            rows: vRows.length ? vRows.slice(0, 6).map(v => [
+              cleanOut(`${v.vin || '-'} · ${v.model || ''}`),
+              cleanOut(v.status || '-'),
+              fmtMoney(v.landedCostUsd || 0, 0),
+              fmtMoney(v.marginUsd || 0, 0)
+            ]) : undefined,
+            total: vRows.length ? [`Fleet Margin (${vRows.length} VINs)`, fmtMoney(totMargin, 0)] : undefined,
             promptText: 'Open the Shacman VIN Registry or Statement 25:',
             actions: [
               { type: 'view', view: 'trd_trucks', label: 'Shacman VIN Registry' },
@@ -1211,11 +1304,19 @@
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'trading_fifo',
             title: `FIFO Spare Parts Valuation & Reorder Watch · ${scope.scopeCoLabel}`,
             answer: `FIFO spare parts and assembly stock valuation stands at <b>${fmtMoney(tk.stockValuation || 0, 0)}</b> across <b>${fmtInt(stRows.length)}</b> active SKU lines, with <b>${fmtInt(tk.lowStockCount || 0)}</b> SKUs currently at or below reorder threshold.`,
-            bullets: stRows.slice(0, 5).map(s => `<b>${esc(s.sku || s.id)} · ${esc(s.part_name || s.name || 'Spare Part')}</b>: On-Hand <b>${fmtInt(s.qty_on_hand || s.qty || 0)}</b> · FIFO Unit Cost <b>${fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2)}</b> · Value <b>${fmtMoney(s.total_value_usd || 0, 0)}</b>`),
+            bullets: stRows.slice(0, 4).map(s => `<b>${esc(s.sku || s.id)} · ${esc(s.part_name || s.name || 'Spare Part')}</b>: On-Hand <b>${fmtInt(s.qty_on_hand || s.qty || 0)}</b> · FIFO Unit Cost <b>${fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2)}</b> · Value <b>${fmtMoney(s.total_value_usd || 0, 0)}</b>`),
+            headers: stRows.length ? ['SKU & Part', 'On-Hand', 'FIFO Unit Cost', 'Stock Value'] : undefined,
+            rows: stRows.length ? stRows.slice(0, 6).map(s => [
+              cleanOut(`${s.sku || s.id || '-'} · ${s.part_name || s.name || 'Spare Part'}`),
+              fmtInt(s.qty_on_hand || s.qty || 0),
+              fmtMoney(s.fifo_unit_usd || s.unit_cost_usd || 0, 2),
+              fmtMoney(s.total_value_usd || 0, 0)
+            ]) : undefined,
+            total: stRows.length ? [`FIFO Stock (${stRows.length} SKUs)`, fmtMoney(tk.stockValuation || 0, 0)] : undefined,
             promptText: 'Open FIFO Stock & Parts or Statement 25:',
             actions: [
               { type: 'view', view: 'trd_stock', label: 'FIFO Stock & Parts' },
@@ -1232,7 +1333,7 @@
         return {
           q: cleanQ,
           lang,
-          instantLocal: true,
+          instantLocal: fastBriefing,
           topic: 'trading',
           title: `Automotive & Heavy Trading Copilot · ${scope.scopeCoLabel}`,
           answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, multi-book commercial sales (N/S/IS/IN) stand at <b>${fmtMoney(tk.salesTotal || 0, 0)}</b> with gross margin of <b>${fmtMoney(tk.grossMargin || 0, 0)}</b> (<b>${fmtPctVal(tk.grossMargin, tk.salesTotal)}</b>) and operating profit of <b>${fmtMoney(tk.operatingProfit || 0, 0)}</b>.`,
@@ -1259,15 +1360,25 @@
         const rk = d.kpis || {};
         const lRows = d.leases || [];
         const rRows = d.rentInvoices || [];
+        const fastTopic = !isReasoningQuery(cleanQ);
+        const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(expir|within\s+90|90\s*d|vacant|which\s+leases)\b/i.test(low)) {
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'realestate_expiry',
             title: `90-Day Lease Expiry & Occupancy Watch · ${scope.scopeCoLabel}`,
             answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, portfolio occupancy stands at <b>${fmtInt(rk.occupancyPct || 0, 1)}%</b> (<b>${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)}</b> units) with <b>${fmtInt(rk.expiring90d || 0)}</b> commercial/residential leases scheduled for renewal within 90 days.`,
-            bullets: lRows.slice(0, 5).map(l => `<b>${esc(l.code)} · ${esc(l.tenant)}</b> (${esc(l.property)} · ${esc(l.unitCode)}): Term <code>${esc(l.startDate)}</code> to <code>${esc(l.endDate)}</code> · Annual Rent <b>${fmtMoney(l.annualTtcUsd || 0, 0)}</b>`),
+            bullets: lRows.slice(0, 4).map(l => `<b>${esc(l.code)} · ${esc(l.tenant)}</b> (${esc(l.property)} · ${esc(l.unitCode)}): Term <code>${esc(l.startDate)}</code> to <code>${esc(l.endDate)}</code> · Annual Rent <b>${fmtMoney(l.annualTtcUsd || 0, 0)}</b>`),
+            headers: lRows.length ? ['Tenant & Lease', 'Unit', 'Expiry Date', 'Annual Rent'] : undefined,
+            rows: lRows.length ? lRows.slice(0, 6).map(l => [
+              cleanOut(`${l.tenant || '-'} (${l.code || ''})`),
+              cleanOut(`${l.property || ''} · ${l.unitCode || ''}`),
+              cleanOut(l.endDate || '-'),
+              fmtMoney(l.annualTtcUsd || 0, 0)
+            ]) : undefined,
+            total: lRows.length ? [`Contracted Rent (${lRows.length} Leases)`, fmtMoney(rk.annualRentTtc || 0, 0)] : undefined,
             promptText: 'Open Leases & 4235 Rent Roll or Properties & Units:',
             actions: [
               { type: 'view', view: 're_leases', label: 'Leases & 4235 Rent Roll' },
@@ -1285,11 +1396,19 @@
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'realestate_invoices',
             title: `4235 Company S.A.L 11% VAT Rent Invoices & Tenant Arrears`,
             answer: `Total billed rent stands at <b>${fmtMoney(rk.billedRentTtc || 0, 0)}</b> (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>), with <b>${fmtMoney(rk.collectedUsd || 0, 0)}</b> collected and <b>${fmtMoney(rk.openArUsd || 0, 0)}</b> in open tenant receivables.`,
-            bullets: rRows.slice(0, 5).map(r => `<b>${esc(r.invNo)} · ${esc(r.tenant)}</b> (Unit <code>${esc(r.unitCode)}</code> · ${esc(r.date)}): Base <b>${fmtMoney(r.baseUsd || 0, 0)}</b> + VAT <b>${fmtMoney(r.vatUsd || 0, 0)}</b> = <b>${fmtMoney(r.totalTtc || 0, 0)}</b> · Open Balance <b>${fmtMoney(r.balanceUsd || 0, 0)}</b>`),
+            bullets: rRows.slice(0, 4).map(r => `<b>${esc(r.invNo)} · ${esc(r.tenant)}</b> (Unit <code>${esc(r.unitCode)}</code> · ${esc(r.date)}): Base <b>${fmtMoney(r.baseUsd || 0, 0)}</b> + VAT <b>${fmtMoney(r.vatUsd || 0, 0)}</b> = <b>${fmtMoney(r.totalTtc || 0, 0)}</b> · Open Balance <b>${fmtMoney(r.balanceUsd || 0, 0)}</b>`),
+            headers: rRows.length ? ['Invoice & Tenant', 'Unit', 'Billed Rent', 'Open Arrears'] : undefined,
+            rows: rRows.length ? rRows.slice(0, 6).map(r => [
+              cleanOut(`${r.invNo || '-'} · ${r.tenant || ''}`),
+              cleanOut(r.unitCode || '-'),
+              fmtMoney(r.totalTtc || 0, 0),
+              fmtMoney(r.balanceUsd || 0, 0)
+            ]) : undefined,
+            total: rRows.length ? [`Open Tenant Receivables`, fmtMoney(rk.openArUsd || 0, 0)] : undefined,
             promptText: 'Inspect Tenant Collections & Arrears or Statement 26:',
             actions: [
               { type: 'view', view: 're_collections', label: 'Tenant Collections & AR' },
@@ -1306,7 +1425,7 @@
         return {
           q: cleanQ,
           lang,
-          instantLocal: true,
+          instantLocal: fastBriefing,
           topic: 'realestate',
           title: `Real Estate & 4235 S.A.L Copilot · ${scope.scopeCoLabel}`,
           answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, contracted annual rent is <b>${fmtMoney(rk.annualRentTtc || 0, 0)}</b> (Base <b>${fmtMoney(rk.annualBaseRent || 0, 0)}</b> + 11% MoF VAT <b>${fmtMoney(rk.annualVat || 0, 0)}</b>), portfolio occupancy is <b>${fmtInt(rk.occupancyPct || 0, 1)}%</b> (<b>${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)}</b> units), and Net Operating Income (NOI) is <b>${fmtMoney(rk.noiUsd || 0, 0)}</b>.`,
@@ -1334,16 +1453,26 @@
         const pRows = d.policies || [];
         const cRows = d.carrierMatrix || [];
         const clmRows = d.claims || [];
+        const fastTopic = !isReasoningQuery(cleanQ);
+        const fastBriefing = fastTopic && /\b(briefing|brief|overview|summary|status)\b/i.test(low);
         if (/\b(renewal|30\/60\/90|pipeline|expir)\b/i.test(low) && !/\bbriefing\b/i.test(low)) {
           const sortedPols = pRows.slice().sort((a, b) => Number(a.daysToExpiry || 999) - Number(b.daysToExpiry || 999));
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'insurance_renewals',
             title: `30/60/90-Day Policy Renewal Pipeline · ${scope.scopeCoLabel}`,
             answer: `Across <b>${fmtInt(pRows.length)}</b> active policies, <b>${fmtInt(ik.renewing60d || 0)}</b> policies representing <b>${fmtMoney(ik.renewalGwp60d || 0, 0)}</b> in Gross Written Premium are scheduled for renewal within the 60-day retention window.`,
-            bullets: sortedPols.slice(0, 5).map(p => `<b>${esc(p.policyNo)} · ${esc(p.insured)}</b> (${esc(p.carrier)} · ${esc(p.line)}): Expires <code>${esc(p.endDate)}</code> (${fmtInt(p.daysToExpiry || 0)}d) · GWP <b>${fmtMoney(p.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(p.commUsd || 0, 0)}</b>`),
+            bullets: sortedPols.slice(0, 4).map(p => `<b>${esc(p.policyNo)} · ${esc(p.insured)}</b> (${esc(p.carrier)} · ${esc(p.line)}): Expires <code>${esc(p.endDate)}</code> (${fmtInt(p.daysToExpiry || 0)}d) · GWP <b>${fmtMoney(p.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(p.commUsd || 0, 0)}</b>`),
+            headers: sortedPols.length ? ['Policy & Insured', 'Carrier & Line', 'Expiry', 'Gross Premium'] : undefined,
+            rows: sortedPols.length ? sortedPols.slice(0, 6).map(p => [
+              cleanOut(`${p.policyNo || '-'} · ${p.insured || ''}`),
+              cleanOut(`${p.carrier || ''} · ${p.line || ''}`),
+              cleanOut(`${p.endDate || '-'} (${fmtInt(p.daysToExpiry || 0)}d)`),
+              fmtMoney(p.gwpUsd || 0, 0)
+            ]) : undefined,
+            total: sortedPols.length ? [`60-Day Renewal Window (${fmtInt(ik.renewing60d || 0)} Policies)`, fmtMoney(ik.renewalGwp60d || 0, 0)] : undefined,
             promptText: 'Open Policies & Renewals or Premium Billing:',
             actions: [
               { type: 'view', view: 'ins_policies', label: 'Policies & Renewals' },
@@ -1361,11 +1490,19 @@
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'insurance_carriers',
             title: `Underwriter Carrier Bordereau Payable Reconciliation`,
             answer: `Across <b>${fmtInt(cRows.length)}</b> underwriting carriers, Gross Written Premium is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b>, brokerage commission retained is <b>${fmtMoney(ik.commTotal || 0, 0)}</b>, and net carrier bordereau payable stands at <b>${fmtMoney(ik.carrierPayableUsd || 0, 0)}</b>.`,
-            bullets: cRows.slice(0, 5).map(c => `<b>${esc(c.carrier)}</b> (${fmtInt(c.policies || 0)} policies): GWP <b>${fmtMoney(c.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(c.commUsd || 0, 0)}</b> · Net Payable <b>${fmtMoney(c.netPayableUsd || 0, 0)}</b> · Balance Due <b>${fmtMoney(c.balanceDueUsd || 0, 0)}</b>`),
+            bullets: cRows.slice(0, 4).map(c => `<b>${esc(c.carrier)}</b> (${fmtInt(c.policies || 0)} policies): GWP <b>${fmtMoney(c.gwpUsd || 0, 0)}</b> · Comm <b>${fmtMoney(c.commUsd || 0, 0)}</b> · Net Payable <b>${fmtMoney(c.netPayableUsd || 0, 0)}</b> · Balance Due <b>${fmtMoney(c.balanceDueUsd || 0, 0)}</b>`),
+            headers: cRows.length ? ['Underwriting Carrier', 'Policies', 'Commission', 'Balance Due'] : undefined,
+            rows: cRows.length ? cRows.slice(0, 6).map(c => [
+              cleanOut(c.carrier || '-'),
+              fmtInt(c.policies || 0),
+              fmtMoney(c.commUsd || 0, 0),
+              fmtMoney(c.balanceDueUsd || 0, 0)
+            ]) : undefined,
+            total: cRows.length ? [`Net Carrier Payable (${cRows.length} Carriers)`, fmtMoney(ik.carrierPayableUsd || 0, 0)] : undefined,
             promptText: 'Open Carrier Settlements or Statement 27:',
             actions: [
               { type: 'view', view: 'ins_carriers', label: 'Carrier Settlements' },
@@ -1383,11 +1520,19 @@
           return {
             q: cleanQ,
             lang,
-            instantLocal: true,
+            instantLocal: fastTopic,
             topic: 'insurance_claims',
             title: `Insurance Claims Register & Loss Ratio Watch`,
             answer: `Total incurred claims across <b>${fmtInt(clmRows.length)}</b> claim files stand at <b>${fmtMoney(ik.incurredClaimsUsd || 0, 0)}</b>, corresponding to a portfolio loss ratio of <b>${fmtInt(ik.lossRatioPct || 0, 1)}%</b> against Gross Written Premium.`,
-            bullets: clmRows.slice(0, 5).map(c => `<b>${esc(c.claimNo || c.id)} · ${esc(c.insured || c.client || '-')}</b> (${esc(c.line || 'Motor')} · Policy <code>${esc(c.policyNo || pRows[0]?.policyNo || '-')}</code>): Reserve <b>${fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)}</b> · Paid <b>${fmtMoney(c.paidUsd || c.paid_usd || 0, 0)}</b> (${esc(c.status || 'Open')})`),
+            bullets: clmRows.slice(0, 4).map(c => `<b>${esc(c.claimNo || c.id)} · ${esc(c.insured || c.client || '-')}</b> (${esc(c.line || 'Motor')} · Policy <code>${esc(c.policyNo || pRows[0]?.policyNo || '-')}</code>): Reserve <b>${fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)}</b> · Paid <b>${fmtMoney(c.paidUsd || c.paid_usd || 0, 0)}</b> (${esc(c.status || 'Open')})`),
+            headers: clmRows.length ? ['Claim & Insured', 'Line', 'Paid', 'Reserve'] : undefined,
+            rows: clmRows.length ? clmRows.slice(0, 6).map(c => [
+              cleanOut(`${c.claimNo || c.id || '-'} · ${c.insured || c.client || ''}`),
+              cleanOut(c.line || 'Motor'),
+              fmtMoney(c.paidUsd || c.paid_usd || 0, 0),
+              fmtMoney(c.reserveUsd || c.reserve_usd || 0, 0)
+            ]) : undefined,
+            total: clmRows.length ? [`Incurred Claims (${fmtInt(ik.lossRatioPct || 0, 1)}% Loss Ratio)`, fmtMoney(ik.incurredClaimsUsd || 0, 0)] : undefined,
             promptText: 'Open Claims & Subrogation or Statement 27:',
             actions: [
               { type: 'view', view: 'ins_claims', label: 'Claims & Subrogation' },
@@ -1404,7 +1549,7 @@
         return {
           q: cleanQ,
           lang,
-          instantLocal: true,
+          instantLocal: fastBriefing,
           topic: 'insurance',
           title: `Insurance & Brokerage Copilot · ${scope.scopeCoLabel}`,
           answer: `Across <b>${esc(scope.scopeCoLabel)}</b>, Gross Written Premium (GWP) is <b>${fmtMoney(ik.gwpTotal || 0, 0)}</b> across <b>${fmtInt(ik.policyCount || 0)}</b> active policies, brokerage commission earned is <b>${fmtMoney(ik.commTotal || 0, 0)}</b> (<b>${fmtInt(ik.avgCommYield || 0, 1)}%</b> yield), and net brokerage operating profit is <b>${fmtMoney(ik.netBrokerageIncome || 0, 0)}</b>.`,
@@ -1654,8 +1799,9 @@
         answer: leadC
           ? `For <b>${esc(scope.fullScopeLabel)}</b>, the leading customer is <b>${esc(leadC.name)}</b> with <b>${fmtMoney(leadC.sales, 0)}</b> across <b>${fmtInt(leadC.loads)}</b> loads (open AR: <b>${fmtMoney(leadC.ar, 0)}</b>). Below are the top ${rankedCusts.length} accounts by ${salesLabel(user).toLowerCase()}.`
           : `No billed customer sales were recorded in <b>${esc(scope.fullScopeLabel)}</b>.`,
-        headers: rankedCusts.length ? ['Customer', 'Loads', salesLabel(user), 'Open AR'] : undefined,
-        rows: rankedCusts.map(c => [c.name, fmtInt(c.loads), fmtMoney(c.sales, 0), fmtMoney(c.ar, 0)]),
+        headers: rankedCusts.length ? ['Customer', 'Loads', 'Open AR', salesLabel(user)] : undefined,
+        rows: rankedCusts.map(c => [c.name, fmtInt(c.loads), fmtMoney(c.ar, 0), fmtMoney(c.sales, 0)]),
+        total: rankedCusts.length ? [`Top ${rankedCusts.length} Customers`, fmtMoney(rankedCusts.reduce((s, c) => s + Number(c.sales || 0), 0), 0)] : undefined,
         promptText: 'Would you like to open Customer Receivables or inspect top selling aggregate grades?',
         actions: [
           { type: 'view', view: 'customers', label: 'Customer Accounts' },
@@ -2307,13 +2453,18 @@
   const AI_SVGS = {
     paperclip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 10.5a7 7 0 0 0 14 0"/><line x1="12" y1="17.5" x2="12" y2="21.5"/><line x1="8.5" y1="21.5" x2="15.5" y2="21.5"/></svg>',
+    wave: '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="10" x2="4" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="16" y1="7" x2="16" y2="17"/><line x1="20" y1="10" x2="20" y2="14"/></svg>',
     sheet: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="3.5" y1="15" x2="20.5" y2="15"/><line x1="9.5" y1="9.5" x2="9.5" y2="20.5"/></svg>',
     doc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8Z"/><polyline points="14 2.5 14 8 19.5 8"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="17" x2="13.5" y2="17"/></svg>',
     image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="8.8" cy="8.8" r="1.6"/><path d="m20.5 15.5-4.6-4.6L6.5 20.5"/></svg>',
     audio: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 5.8a9 9 0 0 1 0 12.4"/></svg>',
     audioOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2.5 9 2.5 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>',
     stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>',
-    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 5 19 12 7 19 7 5"/></svg>'
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5.5" width="4" height="13" rx="1"/><rect x="13.5" y="5.5" width="4" height="13" rx="1"/></svg>',
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 5 19 12 7 19 7 5"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
   };
 
   function formatBytes(bytes) {
@@ -3195,7 +3346,8 @@
       mime,
       size,
       sizeLabel: formatBytes(size),
-      thumbUrl: rawDesc.thumbUrl || rawDesc.dataUrl || '',
+      dataUrl: rawDesc.dataUrl || (kind === 'image' ? (rawDesc.thumbUrl || '') : ''),
+      thumbUrl: rawDesc.thumbUrl || (kind === 'image' ? (rawDesc.dataUrl || '') : ''),
       audioUrl: rawDesc.audioUrl || '',
       durationSec: Number(rawDesc.durationSec || 0),
       voiceLang: rawDesc.voiceLang || '',
@@ -3284,6 +3436,30 @@
         try {
           if (typeof URL !== 'undefined' && URL.createObjectURL) audioUrl = URL.createObjectURL(file);
         } catch (_) {}
+        if (typeof FileReader !== 'undefined' && size > 0 && size <= 8 * 1024 * 1024) {
+          const fr = new FileReader();
+          fr.onload = () => resolve(buildAttachmentMetaObject({
+            name,
+            type: mime,
+            size,
+            kind: 'audio',
+            audioUrl,
+            dataUrl: String(fr.result || ''),
+            durationSec: file.durationSec || 0,
+            voiceLang: file.voiceLang || ''
+          }));
+          fr.onerror = () => resolve(buildAttachmentMetaObject({
+            name,
+            type: mime,
+            size,
+            kind: 'audio',
+            audioUrl,
+            durationSec: file.durationSec || 0,
+            voiceLang: file.voiceLang || ''
+          }));
+          fr.readAsDataURL(file);
+          return;
+        }
         resolve(buildAttachmentMetaObject({
           name,
           type: mime,
@@ -3293,6 +3469,20 @@
           durationSec: file.durationSec || 0,
           voiceLang: file.voiceLang || ''
         }));
+        return;
+      }
+      if (kind === 'pdf' && typeof FileReader !== 'undefined' && size > 0 && size <= 8 * 1024 * 1024) {
+        const frPdf = new FileReader();
+        frPdf.onload = () => {
+          const dUrl = String(frPdf.result || '');
+          const frTxt = new FileReader();
+          const slicePdf = typeof file.slice === 'function' ? file.slice(0, 512 * 1024) : file;
+          frTxt.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime || 'application/pdf', size, kind: 'pdf', dataUrl: dUrl, text: String(frTxt.result || '') }));
+          frTxt.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime || 'application/pdf', size, kind: 'pdf', dataUrl: dUrl }));
+          frTxt.readAsText(slicePdf);
+        };
+        frPdf.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime || 'application/pdf', size, kind: 'pdf' }));
+        frPdf.readAsDataURL(file);
         return;
       }
       // Office ZIP containers (.xlsx / .docx): unpack XML sheets/paragraphs cleanly without dumping binary PK bytes
@@ -3323,7 +3513,12 @@
           ? file.slice(0, 1024 * 1024)
           : file;
         const fr = new FileReader();
-        fr.onload = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind, text: String(fr.result || '') }));
+        fr.onload = () => {
+          const textStr = String(fr.result || '');
+          blobToDataUrlAsync(sliceToRead).then(dUrl => {
+            resolve(buildAttachmentMetaObject({ name, type: mime || 'text/plain', size, kind, dataUrl: dUrl || '', text: textStr }));
+          });
+        };
         fr.onerror = () => resolve(buildAttachmentMetaObject({ name, type: mime, size, kind }));
         fr.readAsText(sliceToRead);
         return;
@@ -3694,7 +3889,136 @@
     };
   }
 
-  // Voice Recording & Multilingual Speech-to-Text (EN / AR / FR)
+  // Voice Recording, Live Voice Mode Studio, Spoken Insight Summarizer & Neural TTS (EN / AR / FR)
+  function syncVoiceModeDeckUi() {
+    const deck = document.getElementById('aiVoiceModeDeck');
+    const hdrBtn = document.getElementById('aiLiveVoiceBtn');
+    const isModeOn = Boolean(_chatState.liveVoiceMode);
+    if (hdrBtn) {
+      hdrBtn.classList.toggle('is-active', isModeOn);
+      hdrBtn.setAttribute('aria-pressed', isModeOn ? 'true' : 'false');
+    }
+    if (!deck) return;
+    deck.hidden = !isModeOn;
+    if (!isModeOn) return;
+
+    let phase = 'ready';
+    if (_chatState.voiceActive) phase = 'listening';
+    else if (_chatState.pending) phase = 'thinking';
+    else if (_chatState.activeAudioEl || _chatState.activeSpeakCtrl || (_chatState.activeSpeakBtn && !_chatState.activeBriefingScope)) {
+      phase = _chatState.activeAudioPaused ? 'paused' : 'speaking';
+    }
+    _chatState.voiceModePhase = phase;
+    deck.setAttribute('data-voice-phase', phase);
+
+    const lang = _chatState.voiceLang || 'en';
+    const lInfo = VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en;
+    const statusEl = document.getElementById('aiVmStatusLabel');
+    const subEl = document.getElementById('aiVmCaptionText');
+    const timerEl = document.getElementById('aiVmTimer');
+    const pauseBtn = document.getElementById('aiVmPauseBtn');
+    const rateBtn = document.getElementById('aiVmRateBtn');
+    const hfBtn = document.getElementById('aiVmHandsFreeBtn');
+    const priBtn = document.getElementById('aiVmPrimaryBtn');
+    const progFill = document.getElementById('aiVmProgressFill');
+
+    if (statusEl) {
+      const spokenLangLbl = lang === 'ar' ? 'Listening (Arabic)' : (lang === 'fr' ? 'Listening (French)' : 'Listening (English)');
+      const mapEn = {
+        ready: 'Voice Mode Ready',
+        listening: spokenLangLbl,
+        thinking: 'Analyzing Live Records',
+        speaking: 'ISABI Speaking',
+        paused: 'Voice Paused'
+      };
+      statusEl.textContent = _chatState.voiceStatusOverride || mapEn[phase] || mapEn.ready;
+    }
+
+    if (subEl) {
+      let isDynamicTranscript = false;
+      if (phase === 'listening') {
+        const liveTxt = cleanOut([_chatState.voiceBaseText, _chatState.voiceInterimText].filter(Boolean).join(' '));
+        if (liveTxt) {
+          subEl.textContent = liveTxt;
+          isDynamicTranscript = true;
+        } else {
+          subEl.textContent = _chatState.handsFreeVoice
+            ? 'Speak naturally. Auto-sends when you pause, or tap Send Now.'
+            : 'Speak your question, then tap Send Now when finished.';
+        }
+      } else if (phase === 'thinking') {
+        if (_chatState.pending && _chatState.pending.q) {
+          subEl.textContent = cleanOut(_chatState.pending.q);
+          isDynamicTranscript = true;
+        } else {
+          subEl.textContent = 'Computing live indicators and insights...';
+        }
+      } else if (phase === 'speaking' || phase === 'paused') {
+        subEl.textContent = cleanOut(_chatState.activeSpeakCaption || _chatState.lastSpokenText || '').slice(0, 220);
+        isDynamicTranscript = true;
+      } else {
+        subEl.textContent = 'Tap Start Talking for a live two-way voice briefing.';
+      }
+      if (isDynamicTranscript) subEl.setAttribute('data-no-i18n', '1');
+      else subEl.removeAttribute('data-no-i18n');
+      const uiLang = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') ? window.MFG_I18N.getLang() : 'en';
+      subEl.dir = /[\u0600-\u06FF]/.test(subEl.textContent || '') || uiLang === 'ar' ? 'rtl' : 'ltr';
+    }
+
+    if (timerEl) {
+      const elapsedSec = _chatState.voiceActive && _chatState.voiceStartMs
+        ? Math.floor((Date.now() - _chatState.voiceStartMs) / 1000)
+        : 0;
+      timerEl.textContent = _chatState.voiceActive ? formatDuration(elapsedSec) : `${_chatState.playbackRate}x`;
+    }
+
+    if (pauseBtn) {
+      const showPause = (phase === 'speaking' || phase === 'paused');
+      pauseBtn.hidden = !showPause;
+      if (showPause) {
+        const pLbl = _chatState.activeAudioPaused ? 'Resume' : 'Pause';
+        pauseBtn.innerHTML = `<span class="ai-act-ico">${_chatState.activeAudioPaused ? AI_SVGS.play : AI_SVGS.pause}</span><span>${esc(pLbl)}</span>`;
+      }
+    }
+
+    if (rateBtn) {
+      rateBtn.textContent = `${_chatState.playbackRate}x`;
+    }
+
+    if (hfBtn) {
+      hfBtn.classList.toggle('active', Boolean(_chatState.handsFreeVoice));
+      hfBtn.setAttribute('aria-pressed', _chatState.handsFreeVoice ? 'true' : 'false');
+    }
+
+    if (priBtn) {
+      if (phase === 'listening') {
+        priBtn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.mic}</span><span>Send Now</span>`;
+        priBtn.className = 'ai-vm-primary-btn is-listening';
+      } else if (phase === 'speaking' || phase === 'paused') {
+        priBtn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.mic}</span><span>Interrupt &amp; Ask</span>`;
+        priBtn.className = 'ai-vm-primary-btn is-barge';
+      } else {
+        priBtn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.mic}</span><span>Start Talking</span>`;
+        priBtn.className = 'ai-vm-primary-btn';
+      }
+    }
+
+    if (progFill) {
+      const pct = (phase === 'speaking' || phase === 'paused')
+        ? Math.max(4, Math.min(100, Math.round((_chatState.activeAudioProgress || 0) * 100)))
+        : (phase === 'thinking' ? 45 : 0);
+      progFill.style.width = `${pct}%`;
+    }
+
+    deck.querySelectorAll('[data-ai-voice-lang]').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-ai-voice-lang') === lang);
+    });
+
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(deck); } catch (_) {}
+    }
+  }
+
   function syncVoiceBarUi() {
     const voiceBar = document.getElementById('aiVoiceBar');
     const voiceBtn = document.getElementById('aiVoiceBtn');
@@ -3706,16 +4030,19 @@
       voiceBtn.classList.toggle('is-recording', active);
       voiceBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
     }
+    syncVoiceModeDeckUi();
     if (!voiceBar) return;
-    voiceBar.hidden = !active;
-    if (!active) return;
+    // When full Voice Mode deck is open at the top, hide the duplicate bottom strip to keep composer clean
+    voiceBar.hidden = !active || Boolean(_chatState.liveVoiceMode);
+    if (voiceBar.hidden) return;
 
     const elapsedSec = _chatState.voiceStartMs ? Math.floor((Date.now() - _chatState.voiceStartMs) / 1000) : 0;
     if (timerEl) timerEl.textContent = formatDuration(elapsedSec);
     const lInfo = VOICE_LANG_MAP[_chatState.voiceLang] || VOICE_LANG_MAP.en;
     if (statusLbl) {
-      statusLbl.textContent = _chatState.voiceInterimText
-        ? cleanOut(_chatState.voiceInterimText).slice(-48)
+      const liveText = cleanOut([_chatState.voiceBaseText, _chatState.voiceInterimText].filter(Boolean).join(' '));
+      statusLbl.textContent = liveText
+        ? liveText.slice(-56)
         : (_chatState.voiceStatusOverride || `Listening (${lInfo.name})...`);
     }
     voiceBar.querySelectorAll('[data-ai-voice-lang]').forEach(b => {
@@ -3769,7 +4096,7 @@
   }
 
   function speakIdleLabel(lang) {
-    if (lang === 'ar') return 'استماع';
+    if (lang === 'ar') return 'استماع للملخص';
     if (lang === 'fr') return 'Écouter';
     return 'Read Aloud';
   }
@@ -3791,7 +4118,30 @@
     btn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(speakIdleLabel(lang))}</span>`;
   }
 
-  function stopActivePlayback() {
+  function syncInlineAudioPlayerBar() {
+    const bar = document.getElementById('aiInlinePlaybackBar');
+    if (bar) {
+      const isPlayingInChat = Boolean(
+        !_chatState.liveVoiceMode &&
+        !_chatState.activeBriefingScope &&
+        (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
+      );
+      bar.hidden = !isPlayingInChat;
+      if (isPlayingInChat) {
+        const cap = bar.querySelector('.ai-ipb-caption');
+        const fill = bar.querySelector('.ai-ipb-fill');
+        const pBtn = bar.querySelector('[data-ai-audio-pause]');
+        const rBtn = bar.querySelector('[data-ai-audio-rate]');
+        if (cap) cap.textContent = cleanOut(_chatState.activeSpeakCaption || _chatState.lastSpokenText || '').slice(0, 120);
+        if (fill) fill.style.width = `${Math.max(5, Math.round((_chatState.activeAudioProgress || 0) * 100))}%`;
+        if (pBtn) pBtn.innerHTML = _chatState.activeAudioPaused ? AI_SVGS.play : AI_SVGS.pause;
+        if (rBtn) rBtn.textContent = `${_chatState.playbackRate}x`;
+      }
+    }
+    syncVoiceModeDeckUi();
+  }
+
+  function stopActivePlayback(opts = {}) {
     if (_chatState.activeSpeakCtrl) {
       try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
       _chatState.activeSpeakCtrl = null;
@@ -3800,12 +4150,18 @@
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
     }
+    _chatState.activeSpeakTurnIdx = -1;
     _chatState.activeBriefingScope = '';
     _chatState.lastSpokenText = '';
+    _chatState.activeSpeakCaption = '';
+    _chatState.activeAudioPaused = false;
+    _chatState.activeAudioProgress = 0;
+    _chatState.activeAudioQueue = [];
     if (_chatState.activeAudioEl) {
       try {
         _chatState.activeAudioEl.onended = null;
         _chatState.activeAudioEl.onerror = null;
+        _chatState.activeAudioEl.ontimeupdate = null;
         _chatState.activeAudioEl.pause();
         _chatState.activeAudioEl.currentTime = 0;
       } catch (_) {}
@@ -3814,9 +4170,94 @@
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch (_) {}
     }
+    if (!opts.skipUiSync) syncInlineAudioPlayerBar();
+  }
+
+  function togglePausePlayback() {
+    if (_chatState.activeAudioEl) {
+      try {
+        if (_chatState.activeAudioEl.paused) {
+          _chatState.activeAudioPaused = false;
+          _chatState.activeAudioEl.play().catch(() => {});
+        } else {
+          _chatState.activeAudioPaused = true;
+          _chatState.activeAudioEl.pause();
+        }
+        syncInlineAudioPlayerBar();
+        return !_chatState.activeAudioPaused;
+      } catch (_) {}
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.paused)) {
+      try {
+        if (window.speechSynthesis.paused) {
+          _chatState.activeAudioPaused = false;
+          window.speechSynthesis.resume();
+        } else {
+          _chatState.activeAudioPaused = true;
+          window.speechSynthesis.pause();
+        }
+        syncInlineAudioPlayerBar();
+        return !_chatState.activeAudioPaused;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function cyclePlaybackRate() {
+    const order = [1, 1.2, 1.5];
+    const idx = order.indexOf(_chatState.playbackRate);
+    const next = order[(idx + 1) % order.length];
+    _chatState.playbackRate = next;
+    try { localStorage.setItem('isabi_ask_voice_rate', String(next)); } catch (_) {}
+    if (_chatState.activeAudioEl) {
+      try { _chatState.activeAudioEl.playbackRate = next; } catch (_) {}
+    }
+    syncInlineAudioPlayerBar();
+    return next;
+  }
+
+  function maybeResumeHandsFreeListening() {
+    if (!_chatState.liveVoiceMode || !_chatState.handsFreeVoice) return;
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
+    const askDrawer = document.getElementById('aiDrawer');
+    if (!askDrawer || !askDrawer.classList.contains('open')) return;
+    setTimeout(() => {
+      if (!_chatState.liveVoiceMode || !_chatState.handsFreeVoice || _chatState.voiceActive || _chatState.pending || _chatState.activeAudioEl) return;
+      startVoiceRecording({ autoSendOnSilence: true });
+    }, 380);
+  }
+
+  function updateVoiceWaveVisualizers(bins) {
+    const vmWave = document.getElementById('aiVmWaveform');
+    if (vmWave) {
+      const bars = vmWave.children;
+      for (let i = 0; i < bars.length; i++) {
+        const v = bins && bins.length ? (bins[i % bins.length] / 255) : 0.12;
+        const h = Math.max(5, Math.min(34, Math.round(5 + v * 29)));
+        bars[i].style.height = `${h}px`;
+      }
+    }
+    const barWave = document.querySelector('#aiVoiceBar .ai-voice-wave');
+    if (barWave) {
+      const bars2 = barWave.children;
+      for (let j = 0; j < bars2.length; j++) {
+        const v2 = bins && bins.length ? (bins[(j * 2) % bins.length] / 255) : 0.15;
+        const h2 = Math.max(4, Math.min(18, Math.round(4 + v2 * 14)));
+        bars2[j].style.height = `${h2}px`;
+      }
+    }
   }
 
   function stopVoiceHardwareStreams() {
+    if (_chatState.vadRafId) {
+      cancelAnimationFrame(_chatState.vadRafId);
+      _chatState.vadRafId = null;
+    }
+    if (_chatState.audioCtx) {
+      try { _chatState.audioCtx.close(); } catch (_) {}
+      _chatState.audioCtx = null;
+      _chatState.analyserNode = null;
+    }
     if (_chatState.voiceTimerId) {
       clearInterval(_chatState.voiceTimerId);
       _chatState.voiceTimerId = null;
@@ -3838,6 +4279,60 @@
       try { _chatState.mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
       _chatState.mediaStream = null;
     }
+    _chatState.micLevel = 0;
+  }
+
+  function startAudioAnalyserAndVad(stream) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx || !stream) return;
+    try {
+      const ctx = new AudioCtx();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.72;
+      src.connect(analyser);
+      _chatState.audioCtx = ctx;
+      _chatState.analyserNode = analyser;
+      const freqBins = new Uint8Array(analyser.frequencyBinCount);
+      let lastFrameMs = Date.now();
+
+      const tick = () => {
+        if (!_chatState.voiceActive || _chatState.analyserNode !== analyser) return;
+        const now = Date.now();
+        const dt = Math.min(120, Math.max(10, now - lastFrameMs));
+        lastFrameMs = now;
+
+        analyser.getByteFrequencyData(freqBins);
+        let sum = 0;
+        const count = Math.min(16, freqBins.length);
+        for (let i = 1; i < count; i++) sum += freqBins[i];
+        const avg = count > 1 ? (sum / (count - 1)) : 0;
+        _chatState.micLevel = avg / 255;
+        updateVoiceWaveVisualizers(freqBins);
+
+        // Voice Activity Detection for hands-free auto-send when user finishes speaking
+        if (avg > 26) {
+          _chatState.speechEnergyAccumMs = (_chatState.speechEnergyAccumMs || 0) + dt;
+          _chatState.lastLoudMs = now;
+          if (_chatState.speechEnergyAccumMs >= 320) {
+            _chatState.speechDetectedInTurn = true;
+          }
+        } else if (
+          _chatState.voiceAutoSendOnSilence &&
+          _chatState.handsFreeVoice &&
+          _chatState.speechDetectedInTurn &&
+          _chatState.lastLoudMs > 0 &&
+          (now - _chatState.voiceStartMs) >= 1350 &&
+          (now - _chatState.lastLoudMs) >= 1700
+        ) {
+          stopVoiceRecording({ attachVoiceNote: true, autoSend: true });
+          return;
+        }
+        _chatState.vadRafId = requestAnimationFrame(tick);
+      };
+      _chatState.vadRafId = requestAnimationFrame(tick);
+    } catch (_) {}
   }
 
   function startSpeechRecognitionInstance() {
@@ -3866,6 +4361,10 @@
         }
         _chatState.voiceInterimText = interimChunk.trim();
         const combined = [_chatState.voiceBaseText, _chatState.voiceInterimText].filter(Boolean).join(' ').trim();
+        if (combined) {
+          _chatState.speechDetectedInTurn = true;
+          _chatState.lastLoudMs = Date.now();
+        }
         const inp = document.getElementById('aiInput');
         if (inp && combined) {
           inp.value = combined;
@@ -3907,6 +4406,23 @@
     return '';
   }
 
+  function blobToDataUrlAsync(blob) {
+    return new Promise(resolve => {
+      if (!blob || typeof FileReader === 'undefined' || blob.size > 8 * 1024 * 1024) {
+        resolve('');
+        return;
+      }
+      try {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ''));
+        fr.onerror = () => resolve('');
+        fr.readAsDataURL(blob);
+      } catch (_) {
+        resolve('');
+      }
+    });
+  }
+
   function startVoiceRecording(opts = {}) {
     if (_chatState.voiceActive) {
       return stopVoiceRecording(opts);
@@ -3917,8 +4433,15 @@
       _chatState.voiceLang = opts.lang;
     } else if (inp && inp.value && /[\u0600-\u06FF]/.test(inp.value)) {
       _chatState.voiceLang = 'ar';
+    } else if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') {
+      const appLang = window.MFG_I18N.getLang();
+      if (VOICE_LANG_MAP[appLang] && !_chatState.preferredLang) _chatState.voiceLang = appLang;
     }
     _chatState.voiceActive = true;
+    _chatState.voiceAutoSendOnSilence = Boolean((opts && opts.autoSendOnSilence) || (_chatState.liveVoiceMode && _chatState.handsFreeVoice));
+    _chatState.speechDetectedInTurn = false;
+    _chatState.speechEnergyAccumMs = 0;
+    _chatState.lastLoudMs = 0;
     _chatState.voiceStartMs = Date.now();
     _chatState.voiceBaseText = inp ? inp.value.trim() : '';
     _chatState.voiceInterimText = '';
@@ -3930,7 +4453,7 @@
     _chatState.voiceTimerId = setInterval(() => {
       if (!_chatState.voiceActive) return;
       syncVoiceBarUi();
-    }, 500);
+    }, 450);
 
     startSpeechRecognitionInstance();
 
@@ -3942,6 +4465,7 @@
           return;
         }
         _chatState.mediaStream = stream;
+        startAudioAnalyserAndVad(stream);
         const mimeOpt = negotiateAudioMime();
         const mr = mimeOpt ? new MediaRecorder(stream, { mimeType: mimeOpt }) : new MediaRecorder(stream);
         _chatState.mediaRecorderMime = mr.mimeType || mimeOpt || 'audio/webm';
@@ -3949,7 +4473,6 @@
           if (e.data && e.data.size > 0) _chatState.audioChunks.push(e.data);
         };
         _chatState.mediaRecorder = mr;
-        // Request 200ms timeslices so audioChunks are populated continuously before stop()
         mr.start(200);
       }).catch(() => {
         if (!_chatState.speechRec) {
@@ -3966,14 +4489,15 @@
     const elapsedSec = Math.max(1, Math.round((Date.now() - (_chatState.voiceStartMs || Date.now())) / 1000));
     const recordedDuration = Number(opts.durationSec || elapsedSec);
     const activeLang = (opts && opts.lang && VOICE_LANG_MAP[opts.lang]) ? opts.lang : _chatState.voiceLang;
-    const recMime = _chatState.mediaRecorderMime || 'audio/webm';
+    const recMime = (_chatState.mediaRecorderMime || 'audio/webm').split(';')[0] || 'audio/webm';
     const activeMr = _chatState.mediaRecorder;
 
+    let initialBlob = null;
     let audioUrl = '';
     if (_chatState.audioChunks && _chatState.audioChunks.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
       try {
-        const blob = new Blob(_chatState.audioChunks, { type: recMime });
-        audioUrl = URL.createObjectURL(blob);
+        initialBlob = new Blob(_chatState.audioChunks, { type: recMime });
+        audioUrl = URL.createObjectURL(initialBlob);
       } catch (_) {}
     }
 
@@ -3990,41 +4514,56 @@
     _chatState.voiceInterimText = '';
     _chatState.voiceStatusOverride = '';
 
-    // Attach voice note metadata pill when audio was recorded or explicitly stopped
     let voiceAtt = null;
     if (audioUrl || opts.attachVoiceNote !== false) {
       voiceAtt = buildAttachmentMetaObject({
         name: `Voice Note (${(VOICE_LANG_MAP[activeLang] || VOICE_LANG_MAP.en).label})`,
         kind: 'audio',
         type: recMime,
-        size: recordedDuration * 6400,
+        size: initialBlob ? initialBlob.size : recordedDuration * 6400,
         audioUrl,
+        dataUrl: (opts && opts.audioDataUrl) ? String(opts.audioDataUrl) : '',
         durationSec: recordedDuration,
         voiceLang: activeLang
       });
-      // Replace any previous unsubmitted voice note pill (revoking its blob URL) so rapid re-records stay clean
       _chatState.attachments.filter(a => a && a.kind === 'audio').forEach(revokeAttachmentUrls);
       _chatState.attachments = _chatState.attachments.filter(a => a.kind !== 'audio');
       _chatState.attachments.push(voiceAtt);
       renderAttachmentBar();
     }
 
-    // If MediaRecorder was active, wire onstop to flush the final trailing chunk into voiceAtt.audioUrl
-    if (activeMr && activeMr.state !== 'inactive' && voiceAtt) {
-      const chunksRef = _chatState.audioChunks;
-      activeMr.onstop = () => {
-        if (chunksRef && chunksRef.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
-          try {
-            if (voiceAtt.audioUrl) URL.revokeObjectURL(voiceAtt.audioUrl);
-            const fullBlob = new Blob(chunksRef, { type: recMime });
-            voiceAtt.audioUrl = URL.createObjectURL(fullBlob);
-            voiceAtt.size = fullBlob.size || voiceAtt.size;
-            voiceAtt.sizeLabel = formatBytes(voiceAtt.size);
-            renderAttachmentBar();
-            if (_chatState.history.length) renderThread(false);
-          } catch (_) {}
-        }
-      };
+    if (voiceAtt && !voiceAtt.dataUrl) {
+      if (activeMr && activeMr.state !== 'inactive') {
+        const chunksRef = _chatState.audioChunks;
+        voiceAtt._audioPromise = new Promise(resolve => {
+          const safety = setTimeout(() => resolve(voiceAtt), 900);
+          activeMr.onstop = () => {
+            clearTimeout(safety);
+            if (chunksRef && chunksRef.length && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+              try {
+                if (voiceAtt.audioUrl) URL.revokeObjectURL(voiceAtt.audioUrl);
+                const fullBlob = new Blob(chunksRef, { type: recMime });
+                voiceAtt.audioUrl = URL.createObjectURL(fullBlob);
+                voiceAtt.size = fullBlob.size || voiceAtt.size;
+                voiceAtt.sizeLabel = formatBytes(voiceAtt.size);
+                blobToDataUrlAsync(fullBlob).then(dUrl => {
+                  if (dUrl) voiceAtt.dataUrl = dUrl;
+                  renderAttachmentBar();
+                  if (_chatState.history.length) renderThread(false);
+                  resolve(voiceAtt);
+                });
+                return;
+              } catch (_) {}
+            }
+            resolve(voiceAtt);
+          };
+        });
+      } else if (initialBlob) {
+        voiceAtt._audioPromise = blobToDataUrlAsync(initialBlob).then(dUrl => {
+          if (dUrl) voiceAtt.dataUrl = dUrl;
+          return voiceAtt;
+        });
+      }
     }
 
     stopVoiceHardwareStreams();
@@ -4055,6 +4594,26 @@
     syncVoiceBarUi();
   }
 
+  function toggleLiveVoiceMode(forceState) {
+    const next = typeof forceState === 'boolean' ? forceState : !_chatState.liveVoiceMode;
+    _chatState.liveVoiceMode = next;
+    if (!next) {
+      if (_chatState.voiceActive) cancelVoiceRecording();
+      stopActivePlayback();
+      syncVoiceModeDeckUi();
+      return false;
+    }
+    const askDrawer = document.getElementById('aiDrawer');
+    if (askDrawer && !askDrawer.classList.contains('open')) {
+      openDrawer();
+    }
+    syncVoiceModeDeckUi();
+    if (!_chatState.voiceActive && !_chatState.pending && !_chatState.activeAudioEl) {
+      startVoiceRecording({ autoSendOnSilence: _chatState.handsFreeVoice });
+    }
+    return true;
+  }
+
   function setVoiceLang(lang) {
     if (!VOICE_LANG_MAP[lang]) return;
     _chatState.voiceLang = lang;
@@ -4072,12 +4631,182 @@
     syncVoiceBarUi();
   }
 
+  function wrapPcm16InWavBytes(pcmBytes, sampleRate) {
+    const sr = Number(sampleRate) || 24000;
+    const dataLen = pcmBytes.length;
+    const wav = new Uint8Array(44 + dataLen);
+    const view = new DataView(wav.buffer);
+    const writeAscii = (off, str) => {
+      for (let i = 0; i < str.length; i++) wav[off + i] = str.charCodeAt(i);
+    };
+    writeAscii(0, 'RIFF');
+    view.setUint32(4, 36 + dataLen, true);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sr, true);
+    view.setUint32(28, sr * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, 'data');
+    view.setUint32(40, dataLen, true);
+    wav.set(pcmBytes, 44);
+    return wav;
+  }
+
   function base64ToBlobUrl(b64, mimeType) {
     const bin = atob(String(b64 || '').trim());
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mimeType || 'audio/wav' });
+    const mimeLow = String(mimeType || '').toLowerCase();
+    const isRiffWav = bytes.length > 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+    if (!isRiffWav && (mimeLow.includes('l16') || mimeLow.includes('pcm'))) {
+      const rateMatch = mimeLow.match(/rate=(\d+)/);
+      const wavBytes = wrapPcm16InWavBytes(bytes, rateMatch ? Number(rateMatch[1]) : 24000);
+      return URL.createObjectURL(new Blob([wavBytes], { type: 'audio/wav' }));
+    }
+    const blob = new Blob([bytes], { type: isRiffWav ? 'audio/wav' : (mimeType || 'audio/wav') });
     return URL.createObjectURL(blob);
+  }
+
+  function normalizeTextForSpeech(rawText, lang) {
+    const safeLang = lang || 'en';
+    let s = String(rawText || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/`+/g, '')
+      .replace(/\*\*+/g, '');
+    // Remove any leaked stage-direction prefixes if ever passed in
+    s = s
+      .replace(/^Speak in a [a-z,\s]+tone:\s*/i, '')
+      .replace(/^تحدث بنبرة[^:：]*[:：]\s*/u, '')
+      .replace(/^Parlez sur un ton[^:]*:\s*/i, '');
+    const m3Word = safeLang === 'ar' ? ' متر مكعب' : (safeLang === 'fr' ? ' mètres cubes' : ' cubic meters');
+    const pnlWord = safeLang === 'ar' ? 'الأرباح والخسائر' : (safeLang === 'fr' ? 'compte de résultat' : 'profit and loss');
+    const arWord = safeLang === 'ar' ? 'الذمم المدينة' : (safeLang === 'fr' ? 'créances clients' : 'accounts receivable');
+    const apWord = safeLang === 'ar' ? 'الذمم الدائنة' : (safeLang === 'fr' ? 'dettes fournisseurs' : 'accounts payable');
+    s = s
+      .replace(/\/\s*(?:m³|(?:m3|m\^3)\b)/gi, safeLang === 'ar' ? ' لكل متر مكعب' : (safeLang === 'fr' ? ' par mètre cube' : ' per cubic meter'))
+      .replace(/(\d)\s*(?:m³|(?:m3|m\^3)\b)/gi, `$1${m3Word}`)
+      .replace(/m³|\b(?:m3|m\^3)\b/gi, m3Word.trim())
+      .replace(/\bP\s*&\s*L\b/gi, pnlWord)
+      .replace(/\bOpen\s+AR\b/gi, safeLang === 'en' ? 'Open accounts receivable' : arWord)
+      .replace(/\bOpen\s+AP\b/gi, safeLang === 'en' ? 'Open accounts payable' : apWord)
+      .replace(/\bAR\b/g, arWord)
+      .replace(/\bAP\b/g, apWord)
+      .replace(/\bYoY\b/gi, safeLang === 'fr' ? "sur un an" : 'year over year')
+      .replace(/\bMoM\b/gi, safeLang === 'fr' ? "sur un mois" : 'month over month')
+      .replace(/\bS\.A\.L\.?/g, 'S A L')
+      .replace(/#(\d{3,})/g, safeLang === 'ar' ? 'سند رقم $1' : (safeLang === 'fr' ? 'pièce $1' : 'ticket $1'))
+      .replace(/\b(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})\b/gi, (_, d1, d2) => `${formatSpokenDate(d1, safeLang)} ${safeLang === 'ar' ? 'إلى' : (safeLang === 'fr' ? 'au' : 'to')} ${formatSpokenDate(d2, safeLang)}`);
+    s = sanitizeSpokenText(s, safeLang)
+      .replace(/\s+\.\s*/g, '. ')
+      .replace(/\.{2,}/g, '.')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return s;
+  }
+
+  function summarizeTableForSpeech(headers, rows, total, lang) {
+    const safeLang = lang || 'en';
+    const parts = [];
+    if (Array.isArray(rows) && rows.length > 0) {
+      const topRows = rows.filter(r => Array.isArray(r) && !isSummaryTableRow(r)).slice(0, 3);
+      if (topRows.length > 0) {
+        const formattedItems = topRows.map(r => {
+          const name = cleanOut(String(r[0] || '').replace(/<[^>]+>/g, ''));
+          const val = cleanOut(String(r[r.length - 1] || '').replace(/<[^>]+>/g, ''));
+          const mid = r.length > 2 ? cleanOut(String(r[1] || '').replace(/<[^>]+>/g, '')) : '';
+          if (!name) return '';
+          if (safeLang === 'ar') return `${name} بقيمة ${val}`;
+          if (safeLang === 'fr') return `${name} à ${val}`;
+          return mid && !/^\d{4}-/.test(mid) && mid.length <= 16 ? `${name} at ${val} (${mid})` : `${name} at ${val}`;
+        }).filter(Boolean);
+        if (formattedItems.length > 0) {
+          if (safeLang === 'ar') {
+            parts.push(`أبرز البنود في الجدول: ${formattedItems.join('، يليه ')}.`);
+          } else if (safeLang === 'fr') {
+            parts.push(`Principaux éléments : ${formattedItems.join(', suivi de ')}.`);
+          } else {
+            parts.push(`Top highlights: ${formattedItems.join(', followed by ')}.`);
+          }
+        }
+      }
+    }
+    if (Array.isArray(total) && total.length >= 2) {
+      const totLbl = cleanOut(String(total[0] || '').replace(/<[^>]+>/g, ''));
+      const totVal = cleanOut(String(total[total.length - 1] || '').replace(/<[^>]+>/g, ''));
+      if (totVal) {
+        if (safeLang === 'ar') parts.push(`الإجمالي الكلي (${totLbl}): ${totVal}.`);
+        else if (safeLang === 'fr') parts.push(`Total global (${totLbl}) : ${totVal}.`);
+        else parts.push(`${totLbl || 'Overall total'} stands at ${totVal}.`);
+      }
+    }
+    return parts.join(' ');
+  }
+
+  function buildSpokenInsightScript(turnOrObj, langOverride) {
+    if (!turnOrObj) return '';
+    if (typeof turnOrObj === 'string') {
+      const sLang = langOverride || detectLang(turnOrObj) || 'en';
+      return normalizeTextForSpeech(turnOrObj, sLang);
+    }
+    const safeLang = langOverride || turnOrObj.lang || detectLang(turnOrObj.answer || '') || 'en';
+    const segments = [];
+
+    if (turnOrObj.voiceSummary && String(turnOrObj.voiceSummary).trim().length > 15) {
+      segments.push(String(turnOrObj.voiceSummary).trim());
+      if (Array.isArray(turnOrObj.total) && turnOrObj.total.length >= 2) {
+        const totVal = cleanOut(String(turnOrObj.total[turnOrObj.total.length - 1] || ''));
+        if (totVal && !String(turnOrObj.voiceSummary).includes(totVal)) {
+          segments.push(summarizeTableForSpeech([], [], turnOrObj.total, safeLang));
+        }
+      }
+    } else {
+      if (turnOrObj.answer) segments.push(String(turnOrObj.answer));
+      if (Array.isArray(turnOrObj.bullets) && turnOrObj.bullets.length) {
+        segments.push(turnOrObj.bullets.slice(0, 4).join('. '));
+      }
+      const tblSpeech = summarizeTableForSpeech(turnOrObj.headers, turnOrObj.rows, turnOrObj.total, safeLang);
+      if (tblSpeech) segments.push(tblSpeech);
+      if (turnOrObj.promptText) segments.push(String(turnOrObj.promptText));
+    }
+
+    return normalizeTextForSpeech(segments.filter(Boolean).join('. '), safeLang);
+  }
+
+  function buildTtsPromptPayload(plain, lang) {
+    const safeLang = lang || detectLang(plain) || 'en';
+    // Pure spoken text only — zero stage-direction prefix so neural TTS never speaks instructions out loud
+    return normalizeTextForSpeech(plain, safeLang).slice(0, 2200);
+  }
+
+  function splitSentencesForSpeech(text, maxLen = 210) {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    const parts = raw.match(/[^.!?؟]+[.!?؟]*\s*/g) || [raw];
+    const chunks = [];
+    let cur = '';
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i].trim();
+      if (!p) continue;
+      if ((cur + ' ' + p).trim().length <= maxLen) {
+        cur = (cur ? cur + ' ' : '') + p;
+      } else {
+        if (cur) chunks.push(cur);
+        if (p.length <= maxLen) {
+          cur = p;
+        } else {
+          for (let k = 0; k < p.length; k += maxLen) {
+            chunks.push(p.slice(k, k + maxLen));
+          }
+          cur = '';
+        }
+      }
+    }
+    if (cur) chunks.push(cur);
+    return chunks;
   }
 
   function fallbackBrowserSpeech(plain, lang, btnEl) {
@@ -4086,10 +4815,17 @@
       return false;
     }
     try {
-      const utt = new window.SpeechSynthesisUtterance(plain);
-      utt.lang = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
-      utt.rate = 1.02;
-      _chatState.lastSpokenText = plain;
+      const normalized = buildTtsPromptPayload(plain, lang);
+      const chunks = splitSentencesForSpeech(normalized, 200);
+      if (!chunks.length) {
+        if (btnEl) resetSpeakButtonUi(btnEl);
+        return false;
+      }
+      const bcp = (VOICE_LANG_MAP[lang] || VOICE_LANG_MAP.en).bcp47;
+      _chatState.lastSpokenText = normalized;
+      _chatState.activeSpeakCaption = normalized;
+      _chatState.activeAudioPaused = false;
+      _chatState.activeAudioProgress = 0.08;
       if (btnEl) {
         _chatState.activeSpeakBtn = btnEl;
         if (btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing')) {
@@ -4100,37 +4836,58 @@
           btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(lang))}</span>`;
         }
       }
-      const clearFallbackUi = () => {
+      syncInlineAudioPlayerBar();
+
+      let idx = 0;
+      const wasDops = Boolean(btnEl && btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing'));
+      const clearFallbackUi = (completedNaturally) => {
         const curBtn = _chatState.activeSpeakBtn || btnEl;
         _chatState.activeSpeakBtn = null;
         _chatState.activeBriefingScope = '';
         _chatState.lastSpokenText = '';
+        _chatState.activeSpeakCaption = '';
+        _chatState.activeAudioPaused = false;
+        _chatState.activeAudioProgress = 0;
         if (curBtn) resetSpeakButtonUi(curBtn);
+        syncInlineAudioPlayerBar();
+        if (completedNaturally && !wasDops) maybeResumeHandsFreeListening();
       };
-      utt.onend = clearFallbackUi;
-      utt.onerror = clearFallbackUi;
-      window.speechSynthesis.speak(utt);
+
+      const speakNextChunk = () => {
+        if (idx >= chunks.length) {
+          clearFallbackUi(true);
+          return;
+        }
+        const utt = new window.SpeechSynthesisUtterance(chunks[idx]);
+        utt.lang = bcp;
+        utt.rate = Number(_chatState.playbackRate || 1) * 1.01;
+        _chatState.activeSpeakCaption = chunks[idx];
+        _chatState.activeAudioProgress = (idx + 0.5) / chunks.length;
+        syncInlineAudioPlayerBar();
+        idx++;
+        utt.onend = () => speakNextChunk();
+        utt.onerror = () => clearFallbackUi(false);
+        window.speechSynthesis.speak(utt);
+      };
+      speakNextChunk();
       return true;
     } catch (_) {
       if (btnEl) resetSpeakButtonUi(btnEl);
+      syncInlineAudioPlayerBar();
       return false;
     }
   }
 
   async function requestCloudOrLocalTtsUrl(plain, lang, signal) {
-    const cacheKey = `${lang}|${plain}`;
+    const promptText = buildTtsPromptPayload(plain, lang);
+    if (!promptText) return '';
+    const cacheKey = `${lang}|${promptText}`;
     if (_chatState.ttsAudioCache.has(cacheKey)) {
       return _chatState.ttsAudioCache.get(cacheKey);
     }
     const voiceName = lang === 'ar' ? 'Charon' : (lang === 'fr' ? 'Aoede' : 'Kore');
-    const dirPrefix = lang === 'ar'
-      ? 'تحدث بنبرة تنفيذية هادئة وواضحة وطبيعية: '
-      : (lang === 'fr'
-        ? 'Parlez sur un ton exécutif calme, clair et naturel : '
-        : 'Speak in a calm, crisp, natural executive tone: ');
-    const promptText = dirPrefix + plain.slice(0, 1900);
 
-    // 1. Local SQLite API Server (/api/tts) when hosted locally
+    // 1. Local API Server (/api/tts) when hosted locally
     const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
     if (isLocalHost || window.ISABI_LOCAL_API) {
       try {
@@ -4196,12 +4953,16 @@
     return '';
   }
 
-  function speakBotReply(rawHtml, lang, btnEl) {
-    const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+  function speakBotReply(rawHtmlOrTurn, lang, btnEl) {
+    const safeInputLang = lang || (typeof rawHtmlOrTurn === 'object' && rawHtmlOrTurn ? rawHtmlOrTurn.lang : '') || '';
+    const plain = typeof rawHtmlOrTurn === 'object' && rawHtmlOrTurn !== null
+      ? buildSpokenInsightScript(rawHtmlOrTurn, safeInputLang)
+      : buildSpokenInsightScript(String(rawHtmlOrTurn || ''), safeInputLang);
     if (!plain) return false;
     const isBriefBtn = Boolean(btnEl && btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing'));
     const isAutoTest = Boolean((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_TTS);
     if (isAutoTest) {
+      _chatState.lastSpokenText = plain;
       if (!isBriefBtn) return true;
       if (_chatState.activeSpeakBtn === btnEl) {
         stopActivePlayback();
@@ -4214,7 +4975,7 @@
       return true;
     }
 
-    const safeLang = lang || detectLang(plain) || 'en';
+    const safeLang = safeInputLang || detectLang(plain) || 'en';
     const isSameActive = Boolean(
       (btnEl && _chatState.activeSpeakBtn === btnEl) ||
       (!btnEl && _chatState.lastSpokenText === plain && (_chatState.activeAudioEl || (window.speechSynthesis && window.speechSynthesis.speaking)))
@@ -4224,8 +4985,11 @@
       return true;
     }
 
+    if (_chatState.voiceActive) cancelVoiceRecording();
     stopActivePlayback();
     _chatState.lastSpokenText = plain;
+    _chatState.activeSpeakCaption = plain;
+    _chatState.activeAudioProgress = 0.04;
 
     // Create Audio element synchronously inside gesture handler for iOS Safari unlock
     const audioEl = (typeof Audio !== 'undefined') ? new Audio() : null;
@@ -4242,9 +5006,10 @@
         applyBriefingButtonDomState(btnEl, 'loading');
       } else {
         btnEl.classList.add('is-loading');
-        btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...'))}</span>`;
+        btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Preparing...'))}</span>`;
       }
     }
+    syncInlineAudioPlayerBar();
 
     requestCloudOrLocalTtsUrl(plain, safeLang, ctrl.signal).then(blobUrl => {
       clearTimeout(timer);
@@ -4253,7 +5018,9 @@
       const curBtn = _chatState.activeSpeakBtn || btnEl;
       if (blobUrl) {
         audioEl.src = blobUrl;
+        try { audioEl.playbackRate = Number(_chatState.playbackRate || 1); } catch (_) {}
         _chatState.activeAudioEl = audioEl;
+        _chatState.activeAudioPaused = false;
         if (curBtn) {
           if (curBtn.hasAttribute && curBtn.hasAttribute('data-dops-briefing')) {
             applyBriefingButtonDomState(curBtn, 'speaking');
@@ -4263,13 +5030,28 @@
             curBtn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(safeLang))}</span>`;
           }
         }
+        syncInlineAudioPlayerBar();
+        audioEl.ontimeupdate = () => {
+          if (_chatState.activeAudioEl !== audioEl) return;
+          const dur = Number(audioEl.duration || 0);
+          if (dur > 0) {
+            _chatState.activeAudioProgress = Math.min(1, audioEl.currentTime / dur);
+            syncInlineAudioPlayerBar();
+          }
+        };
         audioEl.onended = () => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           const endBtn = _chatState.activeSpeakBtn || curBtn;
+          const wasBrief = Boolean(endBtn && endBtn.hasAttribute && endBtn.hasAttribute('data-dops-briefing'));
           _chatState.activeSpeakBtn = null;
           _chatState.activeBriefingScope = '';
           _chatState.lastSpokenText = '';
+          _chatState.activeSpeakCaption = '';
+          _chatState.activeAudioPaused = false;
+          _chatState.activeAudioProgress = 0;
           if (endBtn) resetSpeakButtonUi(endBtn);
+          syncInlineAudioPlayerBar();
+          if (!wasBrief) maybeResumeHandsFreeListening();
         };
         audioEl.onerror = () => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
@@ -4595,7 +5377,12 @@
   }
 
   function maybeAutoSpeakTurn(turnObj) {
-    if (!turnObj || !_chatState.autoVoiceReadback) return;
+    if (!turnObj) return;
+    const shouldSpeak = Boolean(_chatState.autoVoiceReadback || _chatState.liveVoiceMode || turnObj.fromVoice);
+    if (!shouldSpeak) {
+      syncVoiceModeDeckUi();
+      return;
+    }
     if (navigator.webdriver || window.__MFG_HEADLESS_TEST) return;
     setTimeout(() => {
       const askDrawer = document.getElementById('aiDrawer');
@@ -4603,32 +5390,123 @@
       const bots = askDrawer.querySelectorAll('.ai-msg-bot:not(.ai-welcome-card)');
       const lastBot = bots.length ? bots[bots.length - 1] : null;
       const btn = lastBot ? lastBot.querySelector('[data-ai-speak]') : null;
-      const bulletTxt = Array.isArray(turnObj.bullets) ? turnObj.bullets.join('. ') : '';
-      const combined = [turnObj.answer || '', bulletTxt].filter(Boolean).join('. ');
-      speakBotReply(combined, turnObj.lang || 'en', btn || null);
-    }, 120);
+      speakBotReply(turnObj, turnObj.lang || 'en', btn || null);
+    }, 110);
   }
 
   // ============================================================================
   // HYBRID CLOUD + CLIENT LLM LAYER FOR OPEN-ENDED ANALYTICAL QUESTIONS
   // ============================================================================
-  function buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts = []) {
+  function buildIndustryLiveContextLines(activeInd, scope) {
     const user = scope.user;
+    if (activeInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
+      const h = window.MFG_HOLDING.compute();
+      const hk = h.kpis || {};
+      const icRows = h.intercompany || [];
+      const pRows = h.partners || [];
+      return [
+        `Industry: Holding & Treasury (Bdeir Holding)`,
+        `Corporate Overhead: ${fmtMoney(hk.totalExpenses || 0, 0)} across ${fmtInt(hk.voucherCount || 0)} vouchers | Net Treasury Cashflow: ${fmtMoney(hk.netCashflow || 0, 0)}`,
+        `Intercompany Clearing: Due-From ${fmtMoney(hk.dueFromTotal || 0, 0)} vs Due-To ${fmtMoney(hk.dueToTotal || 0, 0)} | Net Position: ${fmtMoney(hk.netIntercompany || 0, 0)} across ${fmtInt(icRows.length)} pairs`,
+        icRows.length ? `Top Intercompany Pairs: ${icRows.slice(0, 4).map(r => `${cleanOut(r.from || 'Holding')}/${cleanOut(r.to || r.counterparty || '')} Net ${fmtMoney(r.net || ((r.dueFrom || 0) - (r.dueTo || 0)), 0)}`).join(', ')}` : '',
+        pRows.length ? `Shareholder Partner Accounts: ${pRows.slice(0, 4).map(p => `${cleanOut(p.partner || p.name)} (${fmtInt(p.sharePct || 0, 1)}%, Closing ${fmtMoney(p.closingBalance || p.balance || 0, 0)})`).join(', ')}` : ''
+      ].filter(Boolean);
+    }
+    if (activeInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
+      const d = window.MFG_HOSPITALITY.compute();
+      const hk = d.kpis || {};
+      const sRows = d.salesRows || [];
+      const byV = {};
+      sRows.forEach(r => { const c = r.company || 'Blanca'; byV[c] = (byV[c] || 0) + Number(r.totalTtc || 0); });
+      const topVenues = Object.entries(byV).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      return [
+        `Industry: Hospitality & Resorts (${scope.scopeCoLabel})`,
+        `Venue Revenue: ${fmtMoney(hk.salesTotal || 0, 0)} across ${fmtInt(hk.receiptCount || 0)} closings (${fmtInt(hk.coversTotal || 0)} guest covers, Avg Check ${fmtMoney(hk.avgCover || 0, 2)})`,
+        `Operating Profit: ${fmtMoney(hk.operatingProfit || 0, 0)} | Cash USD: ${fmtMoney(hk.cashCollected || 0, 0)} | Card/POS: ${fmtMoney(hk.cardCollected || 0, 0)} | Supplier AP: ${fmtMoney(hk.apBalance || 0, 0)}`,
+        `Memberships & Cabanas: ${fmtInt(hk.activeMembers || 0)} active packages worth ${fmtMoney(hk.membershipPkgValue || 0, 0)} (${fmtMoney(hk.membershipBalance || 0, 0)} open installments)`,
+        topVenues.length ? `Resort Breakdown: ${topVenues.map(([v, amt]) => `${cleanOut(v)} (${fmtMoney(amt, 0)})`).join(', ')}` : ''
+      ].filter(Boolean);
+    }
+    if (activeInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
+      const d = window.MFG_TRADING.compute();
+      const tk = d.kpis || {};
+      const vRows = d.vehicleRows || [];
+      return [
+        `Industry: Automotive & Heavy Trading (${scope.scopeCoLabel})`,
+        `Commercial Sales (N/S/IS/IN Books): ${fmtMoney(tk.salesTotal || 0, 0)} | Gross Margin: ${fmtMoney(tk.grossMargin || 0, 0)} (${fmtPctVal(tk.grossMargin, tk.salesTotal)}) | Operating Profit: ${fmtMoney(tk.operatingProfit || 0, 0)}`,
+        `Heavy Truck VIN Yard: ${fmtInt(tk.deliveredUnits || 0)} delivered, ${fmtInt(tk.inStockUnits || 0)} showroom units | FIFO Spare Parts Valuation: ${fmtMoney(tk.stockValuation || 0, 0)} (${fmtInt(tk.lowStockCount || 0)} low-stock SKUs)`,
+        `Working Capital: Customer AR ${fmtMoney(tk.arBalance || 0, 0)} | Foreign Supplier & Customs AP ${fmtMoney(tk.apBalance || 0, 0)}`,
+        vRows.length ? `Sample VIN Units: ${vRows.slice(0, 4).map(v => `${cleanOut(v.vin)} ${cleanOut(v.model)} (Margin ${fmtMoney(v.marginUsd || 0, 0)}, ${cleanOut(v.status)})`).join('; ')}` : ''
+      ].filter(Boolean);
+    }
+    if (activeInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
+      const d = window.MFG_REALESTATE.compute();
+      const rk = d.kpis || {};
+      const lRows = d.leases || [];
+      return [
+        `Industry: Real Estate & Property (${scope.scopeCoLabel})`,
+        `Contracted Annual Rent: ${fmtMoney(rk.annualRentTtc || 0, 0)} (Base ${fmtMoney(rk.annualBaseRent || 0, 0)} + 11% VAT ${fmtMoney(rk.annualVat || 0, 0)}) | Net Operating Income: ${fmtMoney(rk.noiUsd || 0, 0)}`,
+        `Occupancy: ${fmtInt(rk.occupancyPct || 0, 1)}% (${fmtInt(rk.occupiedUnits || 0)}/${fmtInt(rk.totalUnits || 0)} units) | Expiring <=90d: ${fmtInt(rk.expiring90d || 0)} leases`,
+        `Billing & Arrears: Billed ${fmtMoney(rk.billedRentTtc || 0, 0)} | Collected ${fmtMoney(rk.collectedUsd || 0, 0)} | Open Tenant Receivables ${fmtMoney(rk.openArUsd || 0, 0)} | Upkeep ${fmtMoney(rk.maintTotalUsd || 0, 0)}`,
+        lRows.length ? `Key Leases: ${lRows.slice(0, 4).map(l => `${cleanOut(l.tenant)} (${cleanOut(l.unitCode)}, Ends ${cleanOut(l.endDate)}, ${fmtMoney(l.annualTtcUsd || 0, 0)})`).join('; ')}` : ''
+      ].filter(Boolean);
+    }
+    if (activeInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
+      const d = window.MFG_INSURANCE.compute();
+      const ik = d.kpis || {};
+      const cRows = d.carrierMatrix || [];
+      return [
+        `Industry: Insurance & Brokerage (${scope.scopeCoLabel})`,
+        `Gross Written Premium (GWP): ${fmtMoney(ik.gwpTotal || 0, 0)} across ${fmtInt(ik.policyCount || 0)} policies | Brokerage Commission: ${fmtMoney(ik.commTotal || 0, 0)} (${fmtInt(ik.avgCommYield || 0, 1)}% yield) | Net Brokerage Profit: ${fmtMoney(ik.netBrokerageIncome || 0, 0)}`,
+        `Receivables & Carrier Clearing: Client Unpaid Premium ${fmtMoney(ik.unpaidPremUsd || 0, 0)} | Net Carrier Bordereau Payable ${fmtMoney(ik.carrierPayableUsd || 0, 0)}`,
+        `Renewals & Claims: ${fmtInt(ik.renewing60d || 0)} policies renewing <=60d (${fmtMoney(ik.renewalGwp60d || 0, 0)} GWP) | Incurred Claims ${fmtMoney(ik.incurredClaimsUsd || 0, 0)} (${fmtInt(ik.lossRatioPct || 0, 1)}% loss ratio)`,
+        cRows.length ? `Top Carriers: ${cRows.slice(0, 4).map(c => `${cleanOut(c.carrier)} (GWP ${fmtMoney(c.gwpUsd || 0, 0)}, Balance Due ${fmtMoney(c.balanceDueUsd || 0, 0)})`).join('; ')}` : ''
+      ].filter(Boolean);
+    }
+
+    // Default: Manufacturing & Quarries
     const win = computeWindowSummary(scope);
     const k = win.k;
     const model = (_ctx && _ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
-    const topProds = (model.products || []).slice().sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)).slice(0, 3);
-    const topCusts = (model.customers || []).slice().sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)).slice(0, 3);
+    const topProds = (model.products || []).slice().sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)).slice(0, 4);
+    const topCusts = (model.customers || []).slice().sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)).slice(0, 4);
+    return [
+      `Industry: Manufacturing & Quarries (${scope.fullScopeLabel})`,
+      `${salesLabel(user)}: ${fmtMoney(k.sales_ttc, 0)} across ${fmtInt(k.loads)} loads (${fmtInt(k.tons_sold, 0)} tons)`,
+      `Raw Material & Haulage Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Operating Expenses: ${fmtMoney(k.expenses_total, 0)}`,
+      `Gross Margin: ${fmtMoney(k.gross_margin, 0)} | Operating Profit: ${fmtMoney(k.operating_profit, 0)}`,
+      `Open Receivables: ${fmtMoney(k.ar_balance, 0)} (Past 60d: ${fmtMoney(k.ar_60_plus, 0)}) | Net Open Payables: ${fmtMoney(k.ap_balance, 0)}`,
+      topProds.length ? `Top Products: ${topProds.map(p => `${cleanOut(p.Product || p.name)} (${fmtMoney(p.sales_ttc, 0)})`).join(', ')}` : '',
+      topCusts.length ? `Top Customers: ${topCusts.map(c => `${cleanOut(c.Customer || c.name)} (${fmtMoney(c.sales_ttc, 0)}, Open AR ${fmtMoney(c.ar_balance, 0)})`).join(', ')}` : '',
+      canHub('cashflow', user) ? `Cash Till: ${fmtMoney(k.cash_till, 2)}` : '',
+      canHub('fleet', user) ? `Diesel Dispensed: ${fmtInt(k.diesel_litres, 0)} L` : ''
+    ].filter(Boolean);
+  }
+
+  function buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts = [], opts = {}) {
+    const scopeCo = scope && scope.coKey ? scope.coKey : undefined;
+    const activeInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(scopeCo)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.getActiveIndustry === 'function')
+        ? window.MFG_ENTERPRISE.getActiveIndustry(scopeCo)
+        : 'Manufacturing');
+    const indLines = buildIndustryLiveContextLines(activeInd, scope);
     const items = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
     const openAlerts = items.filter(it => it && it.severity && it.severity !== 'ok');
+    const liveScreen = captureLiveScreenSnapshot();
+
+    const kpiTxt = (liveScreen && Array.isArray(liveScreen.topKpis) && liveScreen.topKpis.length)
+      ? ' | Visible Screen KPIs: ' + liveScreen.topKpis.slice(0, 5).map(x => `${x.label}=${x.val}`).join(', ')
+      : '';
+    const screenLine = `Current Screen Visible to User: ${(liveScreen && liveScreen.pageTitle) || 'Executive Overview'} (#${(liveScreen && liveScreen.viewId) || 'overview'})${kpiTxt}`;
 
     let domainDetail = '';
     if (fallback && fallback.answer) {
       const plainAns = cleanOut(String(fallback.answer).replace(/<[^>]+>/g, ''));
       const plainRows = Array.isArray(fallback.rows) && fallback.rows.length
-        ? '\nTop Scoped Rows: ' + fallback.rows.slice(0, 5).map(r => r.join(' | ')).join(' ; ')
+        ? '\nTop Scoped Rows: ' + fallback.rows.slice(0, 6).map(r => r.join(' | ')).join(' ; ')
         : '';
-      domainDetail = `\nDomain Register Detail (${cleanOut(fallback.title || 'Scoped View')}): ${plainAns}${plainRows}`;
+      domainDetail = `\nMatched Register Snapshot (${cleanOut(fallback.title || 'Scoped View')}): ${plainAns}${plainRows}`;
     }
 
     let attDetail = '';
@@ -4647,26 +5525,24 @@
 
     const kpiLine = [
       `Scope: ${scope.fullScopeLabel} (Basis: ${scope.basis === 'tx' ? 'Transaction Date' : 'Reporting Date'})`,
-      `${salesLabel(user)}: ${fmtMoney(k.sales_ttc, 0)} across ${fmtInt(k.loads)} loads (${fmtInt(k.tons_sold, 0)} tons)`,
-      `Quarry/Raw Cost: ${fmtMoney(k.raw_cost, 0)} (${fmtInt(k.raw_loads)} loads) | Expenses: ${fmtMoney(k.expenses_total, 0)}`,
-      `Gross Margin: ${fmtMoney(k.gross_margin, 0)} | Operating Profit: ${fmtMoney(k.operating_profit, 0)}`,
-      `Open AR: ${fmtMoney(k.ar_balance, 0)} (Past 60d: ${fmtMoney(k.ar_60_plus, 0)}) | Net Open AP: ${fmtMoney(k.ap_balance, 0)}`,
-      topProds.length ? `Top Products: ${topProds.map(p => `${cleanOut(p.Product || p.name)} (${fmtMoney(p.sales_ttc, 0)})`).join(', ')}` : '',
-      topCusts.length ? `Top Customers: ${topCusts.map(c => `${cleanOut(c.Customer || c.name)} (${fmtMoney(c.sales_ttc, 0)}, AR ${fmtMoney(c.ar_balance, 0)})`).join(', ')}` : '',
-      canHub('cashflow', user) ? `Cash Till: ${fmtMoney(k.cash_till, 2)}` : '',
-      canHub('fleet', user) ? `Diesel Dispensed: ${fmtInt(k.diesel_litres, 0)} L` : '',
-      `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 3).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
+      'Industry Domain Metrics:\n' + indLines.join('\n'),
+      screenLine,
+      `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 4).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
       domainDetail,
       attDetail
     ].filter(Boolean).join('\n');
 
+    const audioInstruction = opts && opts.hasAudioBinary
+      ? 'The user attached a spoken voice recording. Listen carefully to the audio, transcribe their exact spoken question into "userTranscript" in the language they spoke, and answer that exact question in the same language.'
+      : `Reply in the exact same language as the user (Detected language: ${lang}; you support English, Arabic, French, and any world language).`;
+
     const sysPrompt = [
-      'You are Ask ISABI, the intelligent operational and financial copilot built inside the ISABI Command Center.',
+      'You are Ask ISABI, the interactive executive and operational copilot built inside the ISABI Command Center.',
       'Ground every figure strictly in the Live Scoped ERP Snapshot below. NEVER invent numbers, customers, or offices.',
       'Never use em-dashes, en-dashes, unicode arrows, or internal software/database jargon.',
-      'Reply in the exact same language as the user (Detected language: ' + lang + '; you support English, Arabic, French, and any world language the user writes in). Keep answers concise, sharp, and human (2 to 3 sentences max).',
+      audioInstruction + ' Keep "answer" sharp, insightful, and conversational (2 to 3 sentences), and make "voiceSummary" a smooth, natural 3 to 5 sentence spoken executive briefing that includes the key insight, top figures/leaders, bottom-line total, and next step with zero markdown or symbols.',
       'Live Scoped ERP Snapshot:\n' + kpiLine,
-      'Return ONLY valid JSON: {"title": "Short heading", "answer": "Direct 2 to 3 sentence answer grounded in the live snapshot", "promptText": "1 short natural follow-up question", "followUps": ["Short option 1", "Short option 2", "Short option 3"]}'
+      'Return ONLY valid JSON: {"userTranscript": "Exact spoken words if audio attached else empty string", "title": "Short heading", "answer": "Direct 2 to 3 sentence executive answer grounded in the live snapshot", "voiceSummary": "Natural spoken briefing summarizing the answer, key highlights, and total", "bullets": ["Key insight 1", "Key insight 2"], "promptText": "1 short natural follow-up question", "followUps": ["Short option 1", "Short option 2", "Short option 3"]}'
     ].join('\n\n');
 
     const msgs = [{ role: 'system', content: sysPrompt }];
@@ -4685,11 +5561,14 @@
         })
       });
     }
-    msgs.push({ role: 'user', content: cleanQ });
+    const userPromptText = (opts && opts.isAudioUntranscribed)
+      ? 'Listen to the attached voice recording, transcribe the spoken question into userTranscript, and answer it using the Live Scoped ERP Snapshot.'
+      : cleanQ;
+    msgs.push({ role: 'user', content: userPromptText });
     return msgs;
   }
 
-  function parseLlmJson(rawText, cleanQ, lang, fallback) {
+  function parseLlmJson(rawText, cleanQ, lang, fallback, scope, opts = {}) {
     try {
       let cleaned = String(rawText || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
       const sIdx = cleaned.indexOf('{');
@@ -4697,34 +5576,117 @@
       if (sIdx >= 0 && eIdx > sIdx) cleaned = cleaned.slice(sIdx, eIdx + 1);
       const obj = JSON.parse(cleaned);
       if (!obj || !obj.answer) return null;
+
+      const userTranscript = cleanOut(obj.userTranscript || '');
+      const resolvedQ = (opts && opts.isAudioUntranscribed && userTranscript) ? userTranscript : cleanQ;
+      const resolvedLang = userTranscript ? detectLang(userTranscript) : (detectLang(obj.answer) || lang);
+
+      // If voice audio was transcribed by Gemini, enrich with any matching live SQL table & action buttons!
+      let enrichedBase = fallback || {};
+      if (opts && opts.isAudioUntranscribed && userTranscript && scope) {
+        const dynScope = resolveQueryScope(userTranscript, scope.user);
+        const dynHit = buildLiveDataAnswer(userTranscript, dynScope);
+        if (dynHit) enrichedBase = dynHit;
+      }
+
+      const llmBullets = Array.isArray(obj.bullets)
+        ? obj.bullets.slice(0, 4).map(b => esc(cleanOut(String(b || '').replace(/<[^>]+>/g, '')))).filter(Boolean)
+        : [];
+      const mergedBullets = (enrichedBase.bullets && enrichedBase.bullets.length)
+        ? enrichedBase.bullets
+        : (llmBullets.length ? llmBullets : undefined);
+
       return {
-        q: cleanQ,
-        lang,
-        conversational: true,
-        title: cleanOut(obj.title || fallback.title || 'Ask ISABI'),
+        q: resolvedQ,
+        userTranscript: userTranscript || undefined,
+        lang: resolvedLang,
+        conversational: !(enrichedBase.rows && enrichedBase.rows.length),
+        title: cleanOut(obj.title || enrichedBase.title || 'Ask ISABI'),
         answer: esc(cleanOut(obj.answer)),
-        headers: fallback.headers,
-        rows: fallback.rows,
-        total: fallback.total,
-        bullets: fallback.bullets,
-        promptText: obj.promptText ? cleanOut(obj.promptText) : fallback.promptText,
-        actions: fallback.actions,
-        attachments: fallback.attachments,
-        fromVoice: fallback.fromVoice,
+        voiceSummary: obj.voiceSummary ? cleanOut(obj.voiceSummary) : undefined,
+        headers: enrichedBase.headers,
+        rows: enrichedBase.rows,
+        total: enrichedBase.total,
+        kpis: enrichedBase.kpis,
+        bullets: mergedBullets,
+        promptText: obj.promptText ? cleanOut(obj.promptText) : enrichedBase.promptText,
+        actions: enrichedBase.actions,
+        attachments: fallback ? fallback.attachments : undefined,
+        fromVoice: fallback ? fallback.fromVoice : undefined,
         followUps: Array.isArray(obj.followUps) && obj.followUps.length
           ? obj.followUps.slice(0, 3).map(cleanOut).filter(Boolean)
-          : fallback.followUps
+          : enrichedBase.followUps
       };
     } catch (_) {
       return null;
     }
   }
 
-  async function callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts = []) {
+  async function callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts = [], opts = {}) {
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (isAutoTest) return fallback;
 
-    const messages = buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts);
+    const multimodalAtts = (Array.isArray(turnAtts) ? turnAtts : []).filter(a => {
+      if (!a || !a.dataUrl || !String(a.dataUrl).includes(';base64,')) return false;
+      return /^data:(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf|audio\/[a-z0-9.+-]+);base64,/i.test(String(a.dataUrl));
+    });
+    const hasAudioBinary = multimodalAtts.some(a => /^data:audio\//i.test(String(a.dataUrl || '')));
+    const hasMultimodal = multimodalAtts.length > 0;
+    const llmOpts = Object.assign({}, opts, { hasAudioBinary });
+    const messages = buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts, llmOpts);
+
+    const deepReason = isReasoningQuery(cleanQ) || cleanQ.length > 160 || hasMultimodal;
+    const useProFlash = Boolean(hasMultimodal || deepReason);
+    const targetModel = useProFlash ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
+
+    const geminiContents = [];
+    const nonSysMsgs = messages.slice(1);
+    for (let i = 0; i < nonSysMsgs.length; i++) {
+      const m = nonSysMsgs[i];
+      const isLastUser = (i === nonSysMsgs.length - 1 && m.role === 'user');
+      const parts = [{ text: String(m.content || '') }];
+      if (isLastUser && hasMultimodal) {
+        multimodalAtts.slice(0, 3).forEach(va => {
+          const mMatch = String(va.dataUrl).match(/^data:([^;]+);base64,(.+)$/i);
+          if (mMatch && mMatch[2] && mMatch[2].length < 5500000) {
+            let normMime = mMatch[1].split(';')[0].trim().toLowerCase();
+            if (normMime === 'image/jpg') normMime = 'image/jpeg';
+            parts.push({ inlineData: { mimeType: normMime, data: mMatch[2] } });
+          }
+        });
+      }
+      geminiContents.push({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts
+      });
+    }
+
+    // Lane 0: Local Server (/api/ask) if running locally with GEMINI_API_KEY
+    const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+    if (isLocalHost || window.ISABI_LOCAL_API) {
+      try {
+        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+        const rLoc = await fetch(`${base}/api/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: targetModel,
+            thinkingBudget: useProFlash ? (hasMultimodal ? 0 : 768) : 0,
+            systemPrompt: messages[0].content,
+            userPrompt: cleanQ,
+            geminiContents
+          })
+        });
+        if (rLoc.ok) {
+          const jLoc = await rLoc.json();
+          if (jLoc && jLoc.ok && jLoc.rawReply) {
+            const parsedLoc = parseLlmJson(jLoc.rawReply, cleanQ, lang, fallback, scope, llmOpts);
+            if (parsedLoc) return parsedLoc;
+          }
+        }
+      } catch (_) {}
+    }
+
     const askCfg = window.MFG_ASK_CFG || {};
     let flowUrl = '';
     let flowKey = '';
@@ -4735,62 +5697,31 @@
       }
     } catch (_) {}
 
-    // Lane 1: Cloud AI Relay (tiered: gemini-3.8-flash for multimodal/deep reasoning, gemini-3.5-flash-lite for fast chat)
+    // Lane 1: Cloud AI Relay (gemini-3.8-flash for multimodal/deep reasoning, gemini-3.5-flash-lite for fast chat)
     const isDemo = Boolean(_ctx && _ctx.STATE && (_ctx.STATE.demoVisitor || _ctx.STATE.isPublicDemoSandbox));
-    if (flowUrl && flowUrl.startsWith('http') && !isDemo) {
-      const visionAtts = (Array.isArray(turnAtts) ? turnAtts : []).filter(a => {
-        if (!a || !a.dataUrl || !String(a.dataUrl).includes(';base64,')) return false;
-        return /^data:(image\/(jpeg|jpg|png|webp|heic|heif)|application\/pdf);base64,/i.test(String(a.dataUrl));
-      });
-      const hasVisionAtt = visionAtts.length > 0;
-      const deepReason = isReasoningQuery(cleanQ) || cleanQ.length > 180;
-      const useProFlash = Boolean(hasVisionAtt || deepReason);
-      const targetModel = useProFlash ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
-
-      // Build multi-turn Gemini contents (with inlineData for any attached image/PDF on the final user turn)
-      const geminiContents = [];
-      const nonSysMsgs = messages.slice(1);
-      for (let i = 0; i < nonSysMsgs.length; i++) {
-        const m = nonSysMsgs[i];
-        const isLastUser = (i === nonSysMsgs.length - 1 && m.role === 'user');
-        const parts = [{ text: String(m.content || '') }];
-        if (isLastUser && hasVisionAtt) {
-          visionAtts.slice(0, 2).forEach(va => {
-            const mMatch = String(va.dataUrl).match(/^data:([^;]+);base64,(.+)$/i);
-            if (mMatch && mMatch[2] && mMatch[2].length < 4000000) {
-              const normMime = mMatch[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : mMatch[1].toLowerCase();
-              parts.push({ inlineData: { mimeType: normMime, data: mMatch[2] } });
-            }
-          });
-        }
-        geminiContents.push({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts
-        });
-      }
-
+    if (flowUrl && flowUrl.startsWith('http') && (!isDemo || hasAudioBinary)) {
       const reqPayload = {
         key: flowKey,
         op: 'ask',
         surface: 'command_center',
-        q: cleanQ,
+        q: cleanQ || 'Voice query',
         lang,
         industry: scope.scopeCoLabel,
         currency: 'USD',
         period: scope.periodLabel,
-        replyTitle: fallback.title || '',
+        replyTitle: (fallback && fallback.title) || '',
         model: targetModel,
         systemPrompt: messages[0].content,
-        userPrompt: cleanQ,
+        userPrompt: cleanQ || 'Voice query',
         geminiContents,
         messages
       };
       if (useProFlash) {
-        reqPayload.thinkingBudget = hasVisionAtt ? 0 : 1024;
+        reqPayload.thinkingBudget = hasMultimodal ? 0 : 768;
       }
 
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), useProFlash ? 13500 : 9500);
+      const timer = setTimeout(() => ctrl.abort(), useProFlash ? 15000 : 10000);
       try {
         const res = await fetch(flowUrl, {
           method: 'POST',
@@ -4802,7 +5733,7 @@
         if (res.ok) {
           const data = await res.json();
           if (data && data.mode === 'gemini_cloud' && data.rawReply) {
-            const parsed = parseLlmJson(data.rawReply, cleanQ, lang, fallback);
+            const parsed = parseLlmJson(data.rawReply, cleanQ, lang, fallback, scope, llmOpts);
             if (parsed) return parsed;
           }
         }
@@ -4811,39 +5742,41 @@
       }
     }
 
-    // Lane 2: Direct Client-IP LLM completion (separate 45s bucket)
-    const ctrl2 = new AbortController();
-    const timer2 = setTimeout(() => ctrl2.abort(), 9000);
-    try {
-      const res2 = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai-fast',
-          reasoning_effort: 'low',
-          response_format: { type: 'json_object' },
-          messages
-        }),
-        signal: ctrl2.signal
-      });
-      clearTimeout(timer2);
-      if (res2.ok) {
-        const data2 = await res2.json();
-        const raw2 = data2 && data2.choices && data2.choices[0] && data2.choices[0].message && data2.choices[0].message.content;
-        if (raw2) {
-          const parsed2 = parseLlmJson(raw2, cleanQ, lang, fallback);
-          if (parsed2) return parsed2;
+    // Lane 2: Direct Client-IP LLM completion (text-only fallback)
+    if (!hasAudioBinary) {
+      const ctrl2 = new AbortController();
+      const timer2 = setTimeout(() => ctrl2.abort(), 9000);
+      try {
+        const res2 = await fetch('https://text.pollinations.ai/openai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'openai-fast',
+            reasoning_effort: 'low',
+            response_format: { type: 'json_object' },
+            messages
+          }),
+          signal: ctrl2.signal
+        });
+        clearTimeout(timer2);
+        if (res2.ok) {
+          const data2 = await res2.json();
+          const raw2 = data2 && data2.choices && data2.choices[0] && data2.choices[0].message && data2.choices[0].message.content;
+          if (raw2) {
+            const parsed2 = parseLlmJson(raw2, cleanQ, lang, fallback, scope, llmOpts);
+            if (parsed2) return parsed2;
+          }
         }
+      } catch (_) {
+        clearTimeout(timer2);
       }
-    } catch (_) {
-      clearTimeout(timer2);
     }
 
     return fallback;
   }
 
   // ============================================================================
-  // UI RENDERING & INTERACTIVE DRAWER WIRING
+  // UI RENDERING, KPI STRIPS, INTERACTIVE MINI-TABLES & VOICE STUDIO WIRING
   // ============================================================================
   function renderWelcomeHtml() {
     const user = getActiveUser();
@@ -4856,7 +5789,7 @@
 
     return `
       <div class="ai-msg-bot ai-welcome-card">
-        <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. ${tbOk ? 'Books are tied at <b>$0.00</b>' : 'Trial balance requires review ($0.00 target)'} with <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}. Ask anything in English, العربية, or Français, record a voice note, or attach a file.</p>
+        <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. ${tbOk ? 'Books are tied at <b>$0.00</b>' : 'Trial balance requires review ($0.00 target)'} with <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}. Ask anything in English, العربية, or Français, open <b>Voice Mode</b> for a live spoken briefing, or attach any file.</p>
       </div>
     `;
   }
@@ -4877,23 +5810,124 @@
     }).join('')}</div>`;
   }
 
-  function renderTurnHtml(item, isNewest) {
+  function deriveTurnKpis(item) {
+    if (!item || item.conversational || item.topic === 'screen_walkthrough') return [];
+    if (Array.isArray(item.kpis) && item.kpis.length) return item.kpis.slice(0, 3);
+    if (!Array.isArray(item.rows) || item.rows.length < 2 || !Array.isArray(item.headers) || item.headers.length < 2) return [];
+    const lastColHdr = cleanOut(item.headers[item.headers.length - 1] || 'Value');
+    const firstRow = item.rows[0] || [];
+    const leadName = cleanOut(String(firstRow[0] || '')).slice(0, 26);
+    const leadVal = cleanOut(String(firstRow[firstRow.length - 1] || ''));
+    const cards = [];
+    if (Array.isArray(item.total) && item.total.length >= 2 && item.total[item.total.length - 1]) {
+      cards.push({
+        label: cleanOut(String(item.total[0] || 'Total')).replace(/\s*\([^)]*\)\s*$/, ''),
+        value: cleanOut(String(item.total[item.total.length - 1])),
+        sub: `${item.rows.length} listed`
+      });
+    }
+    if (leadName && leadVal && Number.isFinite(parseNumericCell(leadVal))) {
+      cards.push({
+        label: `Top · ${lastColHdr}`,
+        value: leadVal,
+        sub: leadName
+      });
+    }
+    return cards.slice(0, 3);
+  }
+
+  function resolveRowInteractiveAttrs(row, item) {
+    if (!Array.isArray(row) || !row.length || !item || item.topic === 'screen_walkthrough') return '';
+    const cell0 = cleanOut(String(row[0] || '').replace(/<[^>]+>/g, ''));
+    if (!cell0 || cell0 === '-' || isSummaryTableRow(row)) return '';
+
+    const seedRecs = (_ctx && _ctx.SEED && _ctx.SEED.records) || {};
+    const n0 = norm(cell0);
+
+    // 1. Domain Policy / Lease / Membership / VIN IDs (e.g. "POL-2026-901 · Insured")
+    const codePrefix = (cell0.split('·')[0] || '').trim();
+    if (/^POL-/i.test(codePrefix)) {
+      return ` class="ai-row-interactive" data-ai-inspect-key="ins_policies" data-ai-inspect-id="${esc(codePrefix)}" data-ui-tip="Inspect ${esc(codePrefix)}"`;
+    }
+    if (/^MEM-/i.test(codePrefix)) {
+      return ` class="ai-row-interactive" data-ai-inspect-key="hsp_memberships" data-ai-inspect-id="${esc(codePrefix)}" data-ui-tip="Inspect ${esc(codePrefix)}"`;
+    }
+
+    // 2. Customer / Supplier / Equipment / Staff exact name lookup
+    const custHit = (seedRecs.customers || []).find(c => c && !c.voided && norm(c.name) === n0);
+    if (custHit && custHit.id != null) {
+      return ` class="ai-row-interactive" data-ai-inspect-key="customers" data-ai-inspect-id="${esc(String(custHit.id))}" data-ui-tip="Open 360° ${esc(custHit.name)}"`;
+    }
+    const supHit = (seedRecs.suppliers || []).find(s => s && !s.voided && norm(s.name) === n0);
+    if (supHit && supHit.id != null) {
+      return ` class="ai-row-interactive" data-ai-inspect-key="suppliers" data-ai-inspect-id="${esc(String(supHit.id))}" data-ui-tip="Open 360° ${esc(supHit.name)}"`;
+    }
+    const eqHit = (seedRecs.equipment || []).find(eq => eq && !eq.voided && (norm(eq.name) === n0 || norm(eq.code) === n0));
+    if (eqHit && eqHit.id != null) {
+      return ` class="ai-row-interactive" data-ai-inspect-key="equipment" data-ai-inspect-id="${esc(String(eqHit.id))}" data-ui-tip="Open 360° ${esc(eqHit.name || eqHit.code)}"`;
+    }
+
+    // 3. Conversational drill-down on entity, month, category, resort, or item
+    const drillPrompt = `Show details for ${cell0}`;
+    return ` class="ai-row-interactive" data-ask-chip="${esc(drillPrompt)}" data-ui-tip="Ask ISABI about ${esc(cell0)}"`;
+  }
+
+  function renderTurnHtml(item, isNewest, turnIdx = -1) {
     const isRtl = /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
     const uDirAttr = /[\u0600-\u06FF]/.test(item.q || '') ? ' dir="rtl"' : '';
 
+    const kpiCards = deriveTurnKpis(item);
+    const kpiHtml = kpiCards.length
+      ? `<div class="ai-kpi-strip">${kpiCards.map(kc => `
+          <div class="ai-kpi-chip">
+            <span class="ai-kpi-lbl">${esc(kc.label)}</span>
+            <strong class="ai-kpi-val">${esc(kc.value)}</strong>
+            ${kc.sub ? `<span class="ai-kpi-sub">${esc(kc.sub)}</span>` : ''}
+          </div>`).join('')}</div>`
+      : '';
+
     let tableHtml = '';
     if (Array.isArray(item.headers) && item.headers.length && Array.isArray(item.rows) && item.rows.length) {
       const colCnt = item.headers.length;
+      const lastColNums = item.rows.map(r => Math.abs(parseNumericCell(r[colCnt - 1]))).filter(n => Number.isFinite(n) && n > 0);
+      const maxLastVal = lastColNums.length >= 2 ? Math.max(...lastColNums) : 0;
+
       const ths = item.headers.map((h, i) => `<th${i === colCnt - 1 ? ' class="num"' : ''}>${esc(h)}</th>`).join('');
       const trs = item.rows.map(r => {
-        const tds = r.slice(0, colCnt).map((c, i) => `<td${i === colCnt - 1 ? ' class="num"' : ''}>${i === 0 ? '<b>' + esc(c) + '</b>' : esc(c)}</td>`).join('');
-        return `<tr>${tds}</tr>`;
+        const rowAttrs = resolveRowInteractiveAttrs(r, item);
+        const rawLast = Math.abs(parseNumericCell(r[colCnt - 1]));
+        const barPct = (maxLastVal > 0 && Number.isFinite(rawLast) && item.topic !== 'screen_walkthrough')
+          ? Math.max(4, Math.min(100, Math.round((rawLast / maxLastVal) * 100)))
+          : 0;
+        const tds = r.slice(0, colCnt).map((c, i) => {
+          if (i === 0) return `<td><b>${esc(c)}</b></td>`;
+          if (i === colCnt - 1) {
+            const barSpan = barPct > 0 ? `<span class="ai-cell-bar" style="width:${barPct}%"></span>` : '';
+            return `<td class="num${barPct > 0 ? ' has-bar' : ''}">${barSpan}<span class="ai-cell-val">${esc(c)}</span></td>`;
+          }
+          return `<td>${esc(c)}</td>`;
+        }).join('');
+        return `<tr${rowAttrs}>${tds}</tr>`;
       }).join('');
       const totRow = Array.isArray(item.total) && item.total.length
         ? `<tr class="ai-mini-tot"><td colspan="${Math.max(1, colCnt - 1)}">${esc(item.total[0])}</td><td class="num">${esc(item.total[item.total.length - 1])}</td></tr>`
         : '';
-      tableHtml = `<div class="ai-mini-table-wrap"><table class="ai-mini-table"><thead><tr>${ths}</tr></thead><tbody>${trs}${totRow}</tbody></table></div>`;
+      const rowCntLbl = item.lang === 'ar'
+        ? `${item.rows.length} بنود · اضغط على أي صف للتفاصيل`
+        : (item.lang === 'fr'
+          ? `${item.rows.length} lignes · cliquez pour explorer`
+          : `${item.rows.length} ${item.rows.length === 1 ? 'row' : 'rows'} · click any row to inspect`);
+      const toolbarHtml = turnIdx >= 0 && item.topic !== 'screen_walkthrough'
+        ? `<div class="ai-mini-table-bar">
+            <span class="ai-mini-table-meta">${esc(rowCntLbl)}</span>
+            <div class="ai-mini-table-tools">
+              <button type="button" class="ai-tbl-tool-btn" data-ai-copy-table="${turnIdx}" data-ui-tip="Copy table">${AI_SVGS.copy}<span>Copy</span></button>
+              <button type="button" class="ai-tbl-tool-btn" data-ai-csv-table="${turnIdx}" data-ui-tip="Export CSV">${AI_SVGS.download}<span>CSV</span></button>
+            </div>
+          </div>`
+        : '';
+      tableHtml = `<div class="ai-mini-table-wrap">${toolbarHtml}<table class="ai-mini-table"><thead><tr>${ths}</tr></thead><tbody>${trs}${totRow}</tbody></table></div>`;
     }
 
     const bulletsHtml = Array.isArray(item.bullets) && item.bullets.length
@@ -4914,7 +5948,7 @@
             return `<button type="button" class="ai-act-btn" data-ai-open-form="${esc(a.form)}">${esc(a.label)}</button>`;
           }
           if (a.type === 'speak') {
-            return `<button type="button" class="ai-act-btn ai-speak-btn" data-ai-speak="${esc(a.lang || 'en')}"><span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(a.label || speakIdleLabel(a.lang || 'en'))}</span></button>`;
+            return `<button type="button" class="ai-act-btn ai-speak-btn" data-ai-speak="${esc(a.lang || 'en')}" data-turn-idx="${turnIdx}"><span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(a.label || speakIdleLabel(a.lang || 'en'))}</span></button>`;
           }
           return `<button type="button" class="ai-act-btn${idx === 0 ? ' is-primary' : ''}" data-ai-goto-view="${esc(a.view)}">${esc(a.label)}</button>`;
         }).join('')}</div>`
@@ -4943,9 +5977,10 @@
 
     return `
       <div class="ai-msg-user"${uDirAttr}>${userAttHtml}<div>${esc(item.q)}</div></div>
-      <div class="ai-msg-bot"${dirAttr}>
+      <div class="ai-msg-bot" data-turn-idx="${turnIdx}"${dirAttr}>
         ${item.title ? `<div class="ai-bot-eyebrow">${esc(item.title)}</div>` : ''}
         <p class="ai-bot-p">${item.answer}</p>
+        ${kpiHtml}
         ${bulletsHtml}
         ${tableHtml}
         ${actionsHtml}
@@ -4966,6 +6001,18 @@
         <span class="ai-typing-indicator" aria-hidden="true"><span></span><span></span><span></span></span>
       </div>
     `;
+  }
+
+  function syncContextLensBar() {
+    const lensBar = document.getElementById('aiContextLensBar');
+    if (!lensBar) return;
+    const snap = captureLiveScreenSnapshot();
+    const screenName = (snap && snap.pageTitle) || 'Executive Overview';
+    const lblEl = document.getElementById('aiLensScreenName');
+    if (lblEl) lblEl.textContent = screenName;
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(lensBar);
+    }
   }
 
   function syncHeaderAndChips(force = false) {
@@ -5058,6 +6105,8 @@
         window.MFG_I18N.translateDom(chipsBox);
       }
     }
+    syncContextLensBar();
+    syncVoiceModeDeckUi();
     if (!_chatState.history.length && !_chatState.pending) {
       renderThread(false);
     }
@@ -5078,11 +6127,14 @@
     if (!log) return;
     if (!_chatState.history.length && !_chatState.pending) {
       log.innerHTML = renderWelcomeHtml();
+      if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(log); } catch (_) {}
+      }
       log.scrollTop = 0;
       return;
     }
     const lastIdx = _chatState.history.length - 1;
-    const html = _chatState.history.map((it, idx) => renderTurnHtml(it, idx === lastIdx && !_chatState.pending)).join('')
+    const html = _chatState.history.map((it, idx) => renderTurnHtml(it, idx === lastIdx && !_chatState.pending, idx)).join('')
       + (_chatState.pending ? renderThinkingHtml(_chatState.pending.q, _chatState.pending.lang, _chatState.pending.attachments) : '');
     log.innerHTML = html;
     if (scrollToBottom) log.scrollTop = log.scrollHeight;
@@ -5109,15 +6161,24 @@
     const turnAtts = _chatState.attachments.slice();
     const hasNonAudioAtt = turnAtts.some(a => a && a.kind !== 'audio');
     const hasAudioAtt = turnAtts.some(a => a && a.kind === 'audio');
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
 
     let cleanQ = String(qRaw || '').trim();
+    let isAudioUntranscribed = false;
     if (!cleanQ && turnAtts.length) {
       const f0 = turnAtts.find(a => a && a.kind !== 'audio') || turnAtts[0];
       if (f0.kind === 'audio') {
         const vLang = f0.voiceLang || _chatState.voiceLang || 'en';
-        cleanQ = vLang === 'ar'
-          ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة'
-          : (vLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts');
+        if (isAutoTest) {
+          cleanQ = vLang === 'ar'
+            ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة'
+            : (vLang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts');
+        } else {
+          isAudioUntranscribed = true;
+          cleanQ = vLang === 'ar'
+            ? 'رسالة صوتية...'
+            : (vLang === 'fr' ? 'Message vocal...' : 'Voice question...');
+        }
       } else if (f0.kind === 'image') {
         cleanQ = `Explain attached image ${f0.name}`;
       } else {
@@ -5129,14 +6190,17 @@
     clearAttachments();
 
     const user = getActiveUser();
-    const lang = detectLang(cleanQ);
-    const scope = resolveQueryScope(cleanQ, user);
-    const fromVoice = Boolean((opts && opts.fromVoice) || hasAudioAtt);
+    const audioLangHint = (turnAtts.find(a => a && a.kind === 'audio') || {}).voiceLang || _chatState.voiceLang || 'en';
+    const lang = isAudioUntranscribed ? audioLangHint : detectLang(cleanQ);
+    const scope = resolveQueryScope(isAudioUntranscribed ? '' : cleanQ, user);
+    const fromVoice = Boolean((opts && opts.fromVoice) || hasAudioAtt || _chatState.liveVoiceMode);
 
-    const computeDirectHit = () => {
-      const attHit = hasNonAudioAtt ? buildAttachmentAnalysisAnswer(cleanQ, scope, turnAtts) : null;
-      const sqlHit = buildLiveDataAnswer(cleanQ, scope);
-      if (attHit && (attHit.topic === 'screen_walkthrough' || /^(?:Analyze|Explain) attached (?:file|image)\b|\b(file|sheet|csv|attachment|attached|receipt|image|photo|pdf|document|reconcile|screenshot|screen|understand|undersand|explain|what is this)\b/i.test(cleanQ) || !sqlHit)) {
+    const computeDirectHit = (queryOverride) => {
+      const qUse = queryOverride != null ? queryOverride : cleanQ;
+      const scopeUse = queryOverride != null ? resolveQueryScope(qUse, user) : scope;
+      const attHit = hasNonAudioAtt ? buildAttachmentAnalysisAnswer(qUse, scopeUse, turnAtts) : null;
+      const sqlHit = buildLiveDataAnswer(qUse, scopeUse);
+      if (attHit && (attHit.topic === 'screen_walkthrough' || /^(?:Analyze|Explain) attached (?:file|image)\b|\b(file|sheet|csv|attachment|attached|receipt|image|photo|pdf|document|reconcile|screenshot|screen|understand|undersand|explain|what is this)\b/i.test(qUse) || !sqlHit)) {
         if (sqlHit && sqlHit.answer && sqlHit.topic !== 'screen_walkthrough' && sqlHit.topic !== 'briefing' && sqlHit.topic !== 'greeting' && sqlHit.answer !== attHit.answer && Array.isArray(attHit.bullets)) {
           attHit.bullets = [`<b>Direct Answer (${esc(sqlHit.title || 'Live Match')})</b>: ${sqlHit.answer}`, ...attHit.bullets];
         }
@@ -5148,13 +6212,11 @@
     const decorateReply = rep => {
       if (!rep) return rep;
       return Object.assign({}, rep, {
-        q: cleanQ,
+        q: rep.userTranscript || rep.q || cleanQ,
         attachments: turnAtts.length ? turnAtts : undefined,
         fromVoice
       });
     };
-
-    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
 
     // Synchronous path for automated headless suites
     if (isAutoTest) {
@@ -5172,20 +6234,22 @@
     _chatState.pending = { q: cleanQ, lang, attachments: turnAtts };
     _chatState.typingFollowup = false;
     renderThread(true);
+    syncVoiceModeDeckUi();
 
-    const pendingOcrPromises = turnAtts
-      .filter(a => a && a.kind === 'image' && a._ocrPromise && !a.ocrText)
-      .map(a => a._ocrPromise);
-    const ocrWait = pendingOcrPromises.length
-      ? Promise.race([Promise.all(pendingOcrPromises), new Promise(r => setTimeout(r, 3200))])
+    const pendingMediaPromises = [
+      ...turnAtts.filter(a => a && a.kind === 'image' && a._ocrPromise && !a.ocrText).map(a => a._ocrPromise),
+      ...turnAtts.filter(a => a && a.kind === 'audio' && a._audioPromise && !a.dataUrl).map(a => a._audioPromise)
+    ];
+    const prepWait = pendingMediaPromises.length
+      ? Promise.race([Promise.all(pendingMediaPromises), new Promise(r => setTimeout(r, 3200))])
       : Promise.resolve();
 
-    ocrWait.then(() => {
+    prepWait.then(() => {
       if (!_chatState.pending || _chatState.pending.q !== cleanQ) return;
-      const directHit = computeDirectHit();
+      const directHit = isAudioUntranscribed ? null : computeDirectHit();
 
       // Fast path (<180ms): exact live-SQL intent, screenshot walkthrough, file reconciliation, counterparty/ticket lookup, or greeting
-      if (directHit && directHit.instantLocal) {
+      if (!isAudioUntranscribed && directHit && directHit.instantLocal) {
         const decoratedFast = decorateReply(directHit);
         setTimeout(() => {
           if (!_chatState.pending || _chatState.pending.q !== cleanQ) return;
@@ -5195,6 +6259,7 @@
           _chatState.history.push(decoratedFast);
           if (_chatState.history.length > 12) _chatState.history.shift();
           renderThread(true);
+          syncVoiceModeDeckUi();
           maybeAutoSpeakTurn(decoratedFast);
           setTimeout(() => {
             _chatState.typingFollowup = false;
@@ -5204,25 +6269,68 @@
         return;
       }
 
-      // Hybrid path: Live-SQL grounded snapshot + Dual-IP Cloud/Browser LLM reasoning
-      const fallback = decorateReply(directHit || buildExecutiveBriefing(cleanQ, lang, scope, false));
-      const minBeat = new Promise(r => setTimeout(r, 240));
-      Promise.all([callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts), minBeat]).then(([resolved]) => {
+      // Hybrid path: Live-SQL grounded snapshot + Multimodal Audio/Vision/Reasoning via Gemini 3.8 Flash
+      const fallbackPrompt = isAudioUntranscribed
+        ? (lang === 'ar' ? 'أعطني ملخص تنفيذي والتنبيهات المفتوحة' : (lang === 'fr' ? 'Donnez-moi un résumé exécutif' : 'Give me an executive briefing & open alerts'))
+        : cleanQ;
+      const fallback = decorateReply(directHit || computeDirectHit(fallbackPrompt) || buildExecutiveBriefing(fallbackPrompt, lang, scope, false));
+      const minBeat = new Promise(r => setTimeout(r, 220));
+      Promise.all([
+        callHybridCommandLlm(cleanQ, lang, scope, fallback, turnAtts, { isAudioUntranscribed }),
+        minBeat
+      ]).then(([resolved]) => {
         if (!_chatState.pending || _chatState.pending.q !== cleanQ) return;
         const finalAns = decorateReply(resolved || fallback);
-        rememberTurnScope(scope, finalAns);
+        const effScope = finalAns.userTranscript ? resolveQueryScope(finalAns.userTranscript, user) : scope;
+        rememberTurnScope(effScope, finalAns);
         _chatState.pending = null;
         _chatState.typingFollowup = true;
         _chatState.history.push(finalAns);
         if (_chatState.history.length > 12) _chatState.history.shift();
         renderThread(true);
+        syncVoiceModeDeckUi();
         maybeAutoSpeakTurn(finalAns);
         setTimeout(() => {
           _chatState.typingFollowup = false;
           renderThread(true);
-        }, 360);
+        }, 340);
       });
     });
+  }
+
+  function copyTurnTableToClipboard(turnIdx, asCsv = false, btnEl = null) {
+    const turn = _chatState.history[Number(turnIdx)];
+    if (!turn || !Array.isArray(turn.headers) || !Array.isArray(turn.rows)) return false;
+    const allRows = [turn.headers, ...turn.rows];
+    if (Array.isArray(turn.total) && turn.total.length) {
+      const pad = new Array(Math.max(0, turn.headers.length - 2)).fill('');
+      allRows.push([turn.total[0], ...pad, turn.total[turn.total.length - 1]]);
+    }
+    if (asCsv) {
+      const csv = allRows.map(r => r.map(c => `"${String(c == null ? '' : c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      try {
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(turn.title || 'ask_isabi_table').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 36)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1200);
+      } catch (_) {}
+      return true;
+    }
+    const tsv = allRows.map(r => r.join('\t')).join('\n');
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(tsv).catch(() => {});
+    }
+    if (btnEl) {
+      const orig = btnEl.innerHTML;
+      btnEl.innerHTML = `<span>Copied</span>`;
+      setTimeout(() => { btnEl.innerHTML = orig; }, 1200);
+    }
+    return true;
   }
 
   function answerQuestion(qRaw) {
@@ -5253,13 +6361,14 @@
       renderThread(Boolean(_chatState.history.length));
     }
     const askInput = document.getElementById('aiInput');
-    if (askInput && window.matchMedia('(min-width: 861px)').matches) {
+    if (askInput && window.matchMedia('(min-width: 861px)').matches && !_chatState.liveVoiceMode) {
       setTimeout(() => askInput.focus({ preventScroll: true }), 180);
     }
   }
 
   function closeDrawer() {
     if (_chatState.voiceActive) cancelVoiceRecording();
+    if (_chatState.liveVoiceMode) _chatState.liveVoiceMode = false;
     stopActivePlayback();
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
@@ -5303,11 +6412,93 @@
   }
 
   function ensureComposerControlsMounted() {
+    const askDrawer = document.getElementById('aiDrawer');
     const askForm = document.getElementById('aiForm');
     const askInput = document.getElementById('aiInput');
     if (!askForm || !askInput || document.getElementById('aiComposerRow')) return;
 
+    // 1. Mount Live Screen Context Lens bar right beneath #aiChips
+    const chipsBox = document.getElementById('aiChips');
+    if (chipsBox && chipsBox.parentNode && !document.getElementById('aiContextLensBar')) {
+      const lensBar = document.createElement('div');
+      lensBar.className = 'ai-lens-bar';
+      lensBar.id = 'aiContextLensBar';
+      lensBar.innerHTML = `
+        <div class="ai-lens-current">
+          <span class="ai-lens-ico">${AI_SVGS.eye}</span>
+          <span class="ai-lens-lbl">On Screen:</span>
+          <strong id="aiLensScreenName">Executive Overview</strong>
+        </div>
+        <div class="ai-lens-actions">
+          <button type="button" class="ai-lens-btn" data-ask-chip="Explain this screen">Explain Screen</button>
+          <button type="button" class="ai-lens-btn" data-ask-chip="What stands out and needs attention right now?">Key Insights</button>
+        </div>
+      `;
+      chipsBox.parentNode.insertBefore(lensBar, chipsBox.nextSibling);
+    }
+
+    // 2. Mount Interactive Voice Mode Conversational Deck right above #aiMessages
+    const msgBox = document.getElementById('aiMessages');
+    if (msgBox && msgBox.parentNode && !document.getElementById('aiVoiceModeDeck')) {
+      const vmDeck = document.createElement('div');
+      vmDeck.className = 'ai-voice-deck';
+      vmDeck.id = 'aiVoiceModeDeck';
+      vmDeck.hidden = true;
+      vmDeck.setAttribute('data-voice-phase', 'ready');
+      vmDeck.innerHTML = `
+        <div class="ai-vm-top">
+          <div class="ai-vm-badge-wrap">
+            <span class="ai-vm-orb" aria-hidden="true"></span>
+            <div>
+              <strong class="ai-vm-status" id="aiVmStatusLabel">Voice Mode Ready</strong>
+              <span class="ai-vm-timer" id="aiVmTimer">0:00</span>
+            </div>
+          </div>
+          <div class="ai-vm-top-tools">
+            <div class="ai-voice-langs" role="group" aria-label="Voice Recognition Language">
+              <button type="button" class="ai-voice-lang-btn active" data-ai-voice-lang="en">EN</button>
+              <button type="button" class="ai-voice-lang-btn" data-ai-voice-lang="ar">AR</button>
+              <button type="button" class="ai-voice-lang-btn" data-ai-voice-lang="fr">FR</button>
+            </div>
+            <button type="button" class="ai-vm-chip-btn active" id="aiVmHandsFreeBtn" aria-pressed="true" data-ui-tip="Automatically send after a pause and listen again after ISABI finishes speaking">Hands-Free</button>
+            <button type="button" class="ai-vm-chip-btn" id="aiVmRateBtn" data-ui-tip="Voice playback speed">${_chatState.playbackRate}x</button>
+            <button type="button" class="ai-vm-close-btn" id="aiVmCloseBtn" data-ui-tip="Exit Voice Mode">Exit</button>
+          </div>
+        </div>
+        <div class="ai-vm-wave-stage">
+          <div class="ai-vm-waveform" id="aiVmWaveform" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <p class="ai-vm-caption" id="aiVmCaptionText">Speak naturally. Auto-sends when you pause, or tap Send Now.</p>
+        </div>
+        <div class="ai-vm-progress" aria-hidden="true"><span class="ai-vm-progress-fill" id="aiVmProgressFill"></span></div>
+        <div class="ai-vm-actions">
+          <button type="button" class="ai-vm-primary-btn" id="aiVmPrimaryBtn"><span class="ai-act-ico">${AI_SVGS.mic}</span><span>Start Talking</span></button>
+          <button type="button" class="ai-vm-sec-btn" id="aiVmPauseBtn" hidden><span class="ai-act-ico">${AI_SVGS.pause}</span><span>Pause</span></button>
+          <button type="button" class="ai-vm-sec-btn" id="aiVmStopSpeakBtn"><span class="ai-act-ico">${AI_SVGS.stop}</span><span>Quiet</span></button>
+        </div>
+      `;
+      msgBox.parentNode.insertBefore(vmDeck, msgBox);
+    }
+
     const submitBtn = askForm.querySelector('button[type="submit"]');
+
+    const inlinePlayBar = document.createElement('div');
+    inlinePlayBar.className = 'ai-inline-play-bar';
+    inlinePlayBar.id = 'aiInlinePlaybackBar';
+    inlinePlayBar.hidden = true;
+    inlinePlayBar.innerHTML = `
+      <div class="ai-ipb-main">
+        <span class="ai-ipb-pulse" aria-hidden="true"></span>
+        <span class="ai-ipb-caption">Speaking executive summary...</span>
+        <div class="ai-ipb-btns">
+          <button type="button" class="ai-ipb-btn" data-ai-audio-pause="1" aria-label="Pause or resume voice">${AI_SVGS.pause}</button>
+          <button type="button" class="ai-ipb-btn ai-ipb-rate" data-ai-audio-rate="1" aria-label="Playback speed">${_chatState.playbackRate}x</button>
+          <button type="button" class="ai-ipb-btn" data-ai-audio-stop="1" aria-label="Stop voice">${AI_SVGS.stop}</button>
+        </div>
+      </div>
+      <div class="ai-ipb-track"><span class="ai-ipb-fill"></span></div>
+    `;
 
     const attachBar = document.createElement('div');
     attachBar.className = 'ai-attach-bar';
@@ -5371,6 +6562,7 @@
     row.appendChild(askInput);
     if (submitBtn) row.appendChild(submitBtn);
 
+    askForm.appendChild(inlinePlayBar);
     askForm.appendChild(attachBar);
     askForm.appendChild(voiceBar);
     askForm.appendChild(row);
@@ -5384,13 +6576,22 @@
     });
 
     voiceBtn.addEventListener('click', () => {
-      if (_chatState.voiceActive) stopVoiceRecording({ attachVoiceNote: true });
-      else startVoiceRecording();
+      if (_chatState.voiceActive) stopVoiceRecording({ attachVoiceNote: true, autoSend: true });
+      else startVoiceRecording({ autoSendOnSilence: true });
     });
 
-    // Mount Auto-Voice Readback toggle in #aiDrawer header actions
+    // Mount Interactive Voice Mode + Auto-Voice Readback toggles in #aiDrawer header actions
     const hdrActions = document.querySelector('#aiDrawer .ai-hdr-actions');
     if (hdrActions && !document.getElementById('aiAutoVoiceBtn')) {
+      const liveVoiceBtn = document.createElement('button');
+      liveVoiceBtn.type = 'button';
+      liveVoiceBtn.className = 'ai-reset-btn ai-voice-mode-btn' + (_chatState.liveVoiceMode ? ' is-active' : '');
+      liveVoiceBtn.id = 'aiLiveVoiceBtn';
+      liveVoiceBtn.setAttribute('aria-pressed', _chatState.liveVoiceMode ? 'true' : 'false');
+      liveVoiceBtn.setAttribute('data-ui-tip', 'Interactive two-way Voice Mode');
+      liveVoiceBtn.innerHTML = `<span class="ai-hdr-ico">${AI_SVGS.wave}</span><span>Voice Mode</span>`;
+      liveVoiceBtn.addEventListener('click', () => toggleLiveVoiceMode());
+
       const autoVoiceBtn = document.createElement('button');
       autoVoiceBtn.type = 'button';
       autoVoiceBtn.className = 'ai-reset-btn ai-voice-toggle-btn' + (_chatState.autoVoiceReadback ? ' is-active' : '');
@@ -5402,6 +6603,9 @@
         autoVoiceBtn.classList.toggle('is-active', on);
         autoVoiceBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
         autoVoiceBtn.innerHTML = `<span class="ai-hdr-ico">${on ? AI_SVGS.audio : AI_SVGS.audioOff}</span><span>Read Aloud</span>`;
+        if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+          try { window.MFG_I18N.translateDom(autoVoiceBtn); } catch (_) {}
+        }
       };
       syncAutoVoiceBtnUi();
       autoVoiceBtn.addEventListener('click', () => {
@@ -5410,7 +6614,13 @@
         if (!_chatState.autoVoiceReadback) stopActivePlayback();
         syncAutoVoiceBtnUi();
       });
+
       hdrActions.insertBefore(autoVoiceBtn, hdrActions.firstChild);
+      hdrActions.insertBefore(liveVoiceBtn, hdrActions.firstChild);
+    }
+
+    if (askDrawer && window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(askDrawer); } catch (_) {}
     }
   }
 
@@ -5459,6 +6669,9 @@
           if (_chatState.voiceActive) {
             e.stopPropagation();
             cancelVoiceRecording();
+          } else if (_chatState.liveVoiceMode) {
+            e.stopPropagation();
+            toggleLiveVoiceMode(false);
           } else if (askDrawer.classList.contains('open')) {
             closeDrawer();
           }
@@ -5494,6 +6707,38 @@
           setVoiceLang(vLangBtn.getAttribute('data-ai-voice-lang'));
           return;
         }
+        if (e.target.closest('#aiVmCloseBtn')) {
+          toggleLiveVoiceMode(false);
+          return;
+        }
+        if (e.target.closest('#aiVmHandsFreeBtn')) {
+          _chatState.handsFreeVoice = !_chatState.handsFreeVoice;
+          _chatState.voiceAutoSendOnSilence = Boolean(_chatState.liveVoiceMode && _chatState.handsFreeVoice);
+          syncVoiceModeDeckUi();
+          return;
+        }
+        if (e.target.closest('#aiVmRateBtn') || e.target.closest('[data-ai-audio-rate]')) {
+          cyclePlaybackRate();
+          return;
+        }
+        if (e.target.closest('#aiVmPauseBtn') || e.target.closest('[data-ai-audio-pause]')) {
+          togglePausePlayback();
+          return;
+        }
+        if (e.target.closest('#aiVmStopSpeakBtn') || e.target.closest('[data-ai-audio-stop]')) {
+          if (_chatState.voiceActive) cancelVoiceRecording();
+          stopActivePlayback();
+          return;
+        }
+        if (e.target.closest('#aiVmPrimaryBtn')) {
+          if (_chatState.voiceActive) {
+            stopVoiceRecording({ attachVoiceNote: true, autoSend: true });
+          } else {
+            stopActivePlayback();
+            startVoiceRecording({ autoSendOnSilence: _chatState.handsFreeVoice });
+          }
+          return;
+        }
         if (e.target.closest('#aiVoiceCancelBtn')) {
           cancelVoiceRecording();
           return;
@@ -5504,6 +6749,16 @@
         }
         if (e.target.closest('#aiVoiceSendBtn')) {
           stopVoiceRecording({ attachVoiceNote: true, autoSend: true });
+          return;
+        }
+        const copyTblBtn = e.target.closest('[data-ai-copy-table]');
+        if (copyTblBtn) {
+          copyTurnTableToClipboard(copyTblBtn.getAttribute('data-ai-copy-table'), false, copyTblBtn);
+          return;
+        }
+        const csvTblBtn = e.target.closest('[data-ai-csv-table]');
+        if (csvTblBtn) {
+          copyTurnTableToClipboard(csvTblBtn.getAttribute('data-ai-csv-table'), true, csvTblBtn);
           return;
         }
         const playBtn = e.target.closest('[data-ai-play-audio]');
@@ -5518,7 +6773,7 @@
               stopActivePlayback();
               const audioEl = new Audio(url);
               _chatState.activeAudioEl = audioEl;
-              audioEl.onended = () => { if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null; };
+              audioEl.onended = () => { if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null; syncInlineAudioPlayerBar(); };
               audioEl.play().catch(() => {});
             } catch (_) {}
           }
@@ -5527,11 +6782,26 @@
         const speakBtn = e.target.closest('[data-ai-speak]');
         if (speakBtn) {
           const botBubble = speakBtn.closest('.ai-msg-bot');
+          const tIdxAttr = speakBtn.getAttribute('data-turn-idx') || (botBubble ? botBubble.getAttribute('data-turn-idx') : null);
+          const turnObj = (tIdxAttr != null && Number(tIdxAttr) >= 0) ? _chatState.history[Number(tIdxAttr)] : null;
+          if (turnObj) {
+            speakBotReply(turnObj, speakBtn.getAttribute('data-ai-speak') || turnObj.lang || 'en', speakBtn);
+            return;
+          }
           const pEl = botBubble ? botBubble.querySelector('.ai-bot-p') : null;
           const listEl = botBubble ? botBubble.querySelector('.ai-bot-list') : null;
           const bulletTexts = listEl ? Array.from(listEl.querySelectorAll('li')).map(li => li.textContent.trim()).filter(Boolean) : [];
-          const combinedHtml = [pEl ? pEl.textContent.trim() : '', ...bulletTexts].filter(Boolean).join('. ');
+          const totEl = botBubble ? botBubble.querySelector('.ai-mini-tot') : null;
+          const combinedHtml = [pEl ? pEl.textContent.trim() : '', ...bulletTexts, totEl ? totEl.textContent.trim() : ''].filter(Boolean).join('. ');
           speakBotReply(combinedHtml, speakBtn.getAttribute('data-ai-speak') || 'en', speakBtn);
+          return;
+        }
+        const inspBtn = e.target.closest('[data-ai-inspect-key]');
+        if (inspBtn && _ctx && typeof _ctx.showRecordInspector === 'function') {
+          const crKey = inspBtn.getAttribute('data-ai-inspect-key');
+          const id = inspBtn.getAttribute('data-ai-inspect-id');
+          if (window.innerWidth <= 860) closeDrawer();
+          _ctx.showRecordInspector(crKey, id);
           return;
         }
         const chip = e.target.closest('#aiChips .ai-pill-btn');
@@ -5556,14 +6826,6 @@
           const fid = formBtn.getAttribute('data-ai-open-form');
           closeDrawer();
           _ctx.openEntryModal(fid);
-          return;
-        }
-        const inspBtn = e.target.closest('[data-ai-inspect-key]');
-        if (inspBtn && _ctx && typeof _ctx.showRecordInspector === 'function') {
-          const crKey = inspBtn.getAttribute('data-ai-inspect-key');
-          const id = inspBtn.getAttribute('data-ai-inspect-id');
-          if (window.innerWidth <= 860) closeDrawer();
-          _ctx.showRecordInspector(crKey, id);
         }
       });
     }
@@ -5594,10 +6856,25 @@
     startVoice: startVoiceRecording,
     stopVoice: stopVoiceRecording,
     cancelVoice: cancelVoiceRecording,
+    toggleVoiceMode: toggleLiveVoiceMode,
     setVoiceLang,
     setPreferredLang,
     getPreferredLang: () => _chatState.voiceLang,
     speak: speakBotReply,
+    pauseSpeaking: togglePausePlayback,
+    cyclePlaybackRate,
+    buildSpokenScript: buildSpokenInsightScript,
+    buildTtsPayload: (plain, lang) => {
+      const safeLang = lang || detectLang(plain) || 'en';
+      return {
+        text: buildTtsPromptPayload(plain, safeLang),
+        lang: safeLang,
+        voiceName: safeLang === 'ar' ? 'Charon' : (safeLang === 'fr' ? 'Aoede' : 'Kore'),
+        model: 'gemini-3.8-flash-lite-tts'
+      };
+    },
+    normalizeForSpeech: normalizeTextForSpeech,
+    buildLlmMessages: buildLlmContextMessages,
     buildDailyBriefing,
     speakDailyBriefing,
     stopSpeaking: stopActivePlayback,
@@ -5605,8 +6882,13 @@
     rebindBriefingButton,
     requestTtsUrl: requestCloudOrLocalTtsUrl,
     getPlaybackState: () => ({
-      speaking: Boolean(_chatState.activeSpeakBtn),
+      speaking: Boolean(_chatState.activeSpeakBtn || _chatState.activeAudioEl),
+      paused: Boolean(_chatState.activeAudioPaused),
       loading: Boolean(_chatState.activeSpeakCtrl),
+      playbackRate: _chatState.playbackRate,
+      liveVoiceMode: Boolean(_chatState.liveVoiceMode),
+      voiceModePhase: _chatState.voiceModePhase,
+      handsFreeVoice: Boolean(_chatState.handsFreeVoice),
       briefingScope: _chatState.activeBriefingScope || '',
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
@@ -5619,12 +6901,14 @@
       turns: _chatState.history.length,
       pending: Boolean(_chatState.pending),
       voiceActive: Boolean(_chatState.voiceActive),
+      liveVoiceMode: Boolean(_chatState.liveVoiceMode),
       voiceLang: _chatState.voiceLang,
       attachments: _chatState.attachments.map(a => ({
         id: a.id,
         name: a.name,
         kind: a.kind,
         size: a.size,
+        hasDataUrl: Boolean(a.dataUrl),
         rowCount: a.rowCount,
         numericSum: a.numericSum,
         detectedView: a.detectedView || '',

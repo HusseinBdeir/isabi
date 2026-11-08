@@ -1515,6 +1515,7 @@
           ${fld('Equipment Category *', sel('f_category', [['Truck', 'Dump Truck / Tipper'], ['Mixer', 'Transit Mixer'], ['Loader', 'Wheel Loader'], ['Excavator', 'Excavator'], ['Bulldozer', 'Bulldozer'], ['Generator', 'Generator / Crusher'], ['Service Vehicle', 'Pickup / Service Vehicle']], 'Truck'))}
           ${fld('Capacity (m³) *', inp('f_capacity', 'number', '18', 'step="0.5" min="0"'), { id: 'wrap_eq_capacity' })}
           ${fld('Model', inp('f_model', 'text', '', 'placeholder="Mercedes, Volvo, Shacman, CAT"'))}
+          ${fld('Chassis / 17-Char VIN', inp('f_vin', 'text', '', 'maxlength="17" class="mono" placeholder="ISO 3779 17-char VIN (no I, O, Q)"'), { id: 'wrap_eq_vin', hintId: 'hint_eq_vin', hint: '' })}
           ${secHdr('2. Owner & Active Driver Assignment')}
           ${fld('Ownership *', sel('f_ownership', isCo ? [['Owned', 'Company Owned Fleet'], ['Rented', 'Long-Term Rented']] : [['Subcontractor', 'Third-Party Hauler / Subcontractor'], ['Owned', 'Company Owned Fleet'], ['Customer', 'Customer Truck']], isCo ? 'Owned' : 'Subcontractor'))}
           ${fld('Truck Owner *', inp('f_supplier', 'text', isCo ? company : '', 'list="dl_suppliers" placeholder="Select or type truck owner..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_eq_supplier', hidden: isCo, hintId: 'hint_eq_supplier', hint: '' })}

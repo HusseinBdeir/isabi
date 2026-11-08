@@ -54913,7 +54913,7 @@
         openDocumentCameraCapture(async (files, method) => {
           const batch = Array.from(files || []);
           if (batch[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
-            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch[0], { captureMethod: 'Camera Scan' });
+            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch[0], { captureMethod: method || 'Camera Scan' });
           }
           if (batch.length > 1) {
             batch.slice(1).forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
@@ -76694,7 +76694,7 @@
     body.querySelectorAll('input, select, textarea').forEach(el => {
       if (!el.id && !el.name) return;
       if (el.type === 'file') return;
-      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.id === 'openLoansSearchInput') return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput') return;
       const key = el.id || el.name;
       const v = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
       parts.push(key + '=' + v);
@@ -104734,6 +104734,9 @@
       if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.syncWorkspaceButtons === 'function') {
         window.MFG_SMART_SCAN.syncWorkspaceButtons();
       }
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+        window.MFG_AI_EDGE.syncAllSurfacesNow();
+      }
       if (wsScrollSnap) {
         restoreScrollSnapshot(container, wsScrollSnap);
         if (!($('entryModal') && !$('entryModal').hidden) && !($('recordInspector') && !$('recordInspector').hidden)) {
@@ -108948,6 +108951,35 @@
         toast
       });
     }
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.init === 'function') {
+      window.MFG_AI_EDGE.init({
+        STATE,
+        SEED,
+        COMPANY_KEY_BY_NAME,
+        COMPANY_LABELS,
+        getFreqIndex,
+        todayISO,
+        defaultEntryCompany,
+        getActiveIndustry,
+        canEnterForm,
+        openEntryModal,
+        recalcForm,
+        filterRecords,
+        computeIntercompanyInteractions,
+        computeInsuranceOperations,
+        lookupActiveInsuranceAgreementRate,
+        getKPI,
+        buildSentinelItems,
+        showRecordInspector,
+        resolveCanonicalEquipmentName,
+        applyCustomRecordsToSeed,
+        saveLocalAuthAndRecords,
+        renderApp,
+        toast,
+        fmtUSD,
+        fmtNum
+      });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {
@@ -108994,6 +109026,15 @@
         if (ssmModal && !ssmModal.hidden) { closeStaffScheduleModal(); return; }
         const sfeModal = $('staffFaceEnrolModal');
         if (sfeModal && !sfeModal.hidden) { closeStaffFaceEnrolModal(); return; }
+        const aieBatchModal = $('aiBatchIntakeModal');
+        if (aieBatchModal && !aieBatchModal.hidden) {
+          if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.closeBatchIntakeModal === 'function') {
+            window.MFG_AI_EDGE.closeBatchIntakeModal();
+          } else {
+            aieBatchModal.hidden = true;
+          }
+          return;
+        }
         const camDocModal = $('docCameraModal');
         if (camDocModal && !camDocModal.hidden) { closeDocumentCameraModal(); return; }
         const prevDocModal = $('docPreviewModal');
