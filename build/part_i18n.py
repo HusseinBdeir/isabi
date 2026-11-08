@@ -41,6 +41,62 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
             "ar": "إيقاف",
             "fr": "Arrêter"
       },
+      "Voice Mode": {
+            "ar": "الوضع الصوتي",
+            "fr": "Mode Vocal"
+      },
+      "Interactive Voice Mode": {
+            "ar": "الوضع الصوتي التفاعلي",
+            "fr": "Mode vocal interactif"
+      },
+      "Voice Mode Ready": {
+            "ar": "الوضع الصوتي جاهز",
+            "fr": "Mode Vocal Prêt"
+      },
+      "Listening...": {
+            "ar": "قيد الاستماع...",
+            "fr": "Écoute en cours..."
+      },
+      "ISABI Speaking": {
+            "ar": "ISABI يتحدث الآن",
+            "fr": "ISABI vous répond"
+      },
+      "Hands-Free": {
+            "ar": "بدون لمس",
+            "fr": "Mains libres"
+      },
+      "Exit": {
+            "ar": "خروج",
+            "fr": "Quitter"
+      },
+      "Tap Start Talking for a two-way voice conversation.": {
+            "ar": "اضغط ابدأ التحدث لإجراء حوار صوتي تفاعلي.",
+            "fr": "Appuyez sur Parler pour une conversation vocale."
+      },
+      "Speak naturally. Auto-sends when you pause.": {
+            "ar": "تحدث بطبيعية. يتم الإرسال تلقائياً عند التوقف.",
+            "fr": "Parlez naturellement. Envoi automatique après une pause."
+      },
+      "Reading executive summary...": {
+            "ar": "جاري قراءة الملخص التنفيذي...",
+            "fr": "Lecture du résumé exécutif..."
+      },
+      "Start Talking": {
+            "ar": "ابدأ التحدث",
+            "fr": "Parler"
+      },
+      "Send Now": {
+            "ar": "إرسال الآن",
+            "fr": "Envoyer"
+      },
+      "Interrupt & Ask": {
+            "ar": "مقاطعة وسؤال جديد",
+            "fr": "Interrompre et parler"
+      },
+      "Send": {
+            "ar": "إرسال",
+            "fr": "Envoyer"
+      },
       "Dark": {
             "ar": "داكن",
             "fr": "Sombre"

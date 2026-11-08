@@ -3134,7 +3134,7 @@ JS = r"""
     `;
   }
 
-  function formatAiMessageHTML(item, isNewest = false) {
+  function formatAiMessageHTML(item, isNewest = false, turnIdx = -1) {
     let tableBlockHtml = '';
     if (item.headers && item.headers.length && item.rows && item.rows.length) {
       const colCount = item.headers.length;
@@ -3143,12 +3143,16 @@ JS = r"""
       ).join('');
 
       const rowsHtml = item.rows.map(r => {
+        const cell0Plain = String(r[0] || '').replace(/<[^>]+>/g, '').trim();
+        const rowAskAttr = cell0Plain && cell0Plain !== '-'
+          ? ` class="ai-sbox-row-click" data-ai-ask="${escapeHtml('Tell me more about ' + cell0Plain)}"`
+          : '';
         const cells = r.slice(0, colCount).map((c, idx) => {
           if (idx === 0) return `<td><b>${c}</b></td>`;
           if (idx === colCount - 1) return `<td style="text-align:right">${c}</td>`;
           return `<td>${c}</td>`;
         }).join('');
-        return `<tr>${cells}</tr>`;
+        return `<tr${rowAskAttr}>${cells}</tr>`;
       }).join('');
 
       const totLabel = (item.total && item.total[0]) || 'Total';
@@ -3180,6 +3184,7 @@ JS = r"""
       ? `<div class="ai-followups">${item.followUps.map(fq => `<button type="button" class="ai-followup-btn" data-ai-ask="${escapeHtml(fq)}">${escapeHtml(fq)}</button>`).join('')}</div>`
       : '';
 
+    const turnDataAttr = turnIdx >= 0 ? ` data-ai-turn-idx="${turnIdx}"` : '';
     let extraActions = '';
     if (item.actionInd && SBOX_LABELS[item.actionInd]) {
       extraActions += `<button type="button" class="ai-act-link" data-load-sandbox="${escapeHtml(item.actionInd)}">Load ${escapeHtml(SBOX_LABELS[item.actionInd])} in Sandbox</button>`;
@@ -3188,7 +3193,7 @@ JS = r"""
       extraActions += `<button type="button" class="ai-act-link" data-configure-ind="${escapeHtml(item.actionCfg)}">Configure Scope</button>`;
     }
     const speakLbl = item.lang === 'ar' ? 'استماع' : (item.lang === 'fr' ? 'Écouter' : 'Read Aloud');
-    extraActions += `<button type="button" class="ai-act-link ai-showcase-speak-btn" data-ai-speak-reply="${escapeHtml(item.lang || 'en')}">${escapeHtml(speakLbl)}</button>`;
+    extraActions += `<button type="button" class="ai-act-link ai-showcase-speak-btn" data-ai-speak-reply="${escapeHtml(item.lang || 'en')}"${turnDataAttr}>${escapeHtml(speakLbl)}</button>`;
 
     const isRtl = /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
@@ -3205,7 +3210,7 @@ JS = r"""
 
     const bubble1Html = isConv
       ? `
-      <div class="ai-msg-bot">
+      <div class="ai-msg-bot"${turnDataAttr}>
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble is-conversational"${dirAttr}>
           <p>${item.answer}</p>
@@ -3213,7 +3218,7 @@ JS = r"""
         </div>
       </div>`
       : `
-      <div class="ai-msg-bot">
+      <div class="ai-msg-bot"${turnDataAttr}>
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble"${dirAttr}>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--ai-accent);font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
@@ -3301,7 +3306,7 @@ JS = r"""
       if (threadEl) {
         threadEl.innerHTML = state.aiReset
           ? welcomeHtml
-          : formatAiMessageHTML(resolveAskIsabi(AI_PROMPTS[0].q), false);
+          : formatAiMessageHTML(resolveAskIsabi(AI_PROMPTS[0].q), false, -1);
         threadEl.scrollTop = 0;
       }
       updateAiScopeBar();
@@ -3309,7 +3314,7 @@ JS = r"""
     }
 
     const lastIdx = state.aiHistory.length - 1;
-    const threadHtml = state.aiHistory.map((item, idx) => formatAiMessageHTML(item, idx === lastIdx)).join('') + pendingHtml;
+    const threadHtml = state.aiHistory.map((item, idx) => formatAiMessageHTML(item, idx === lastIdx, idx)).join('') + pendingHtml;
     if (threadEl) {
       threadEl.innerHTML = threadHtml;
       if (scrollToBottom) threadEl.scrollTop = threadEl.scrollHeight;
@@ -3319,9 +3324,10 @@ JS = r"""
       if (scrollToBottom) drawerThread.scrollTop = drawerThread.scrollHeight;
     }
     updateAiScopeBar();
+    if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
   }
 
-  function buildGeminiSystemPrompt(lang) {
+  function buildGeminiSystemPrompt(lang, hasAudioInput = false) {
     return [
       'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://isabisystems.com/, Command Center app at https://isabisystems.com/app/).',
       'Company & Direct Principal Leadership: ISABI Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com. Never invent regional branch offices or fictional staff counts.',
@@ -3331,9 +3337,10 @@ JS = r"""
       'Pricing & Ownership: Single-Entity Foundation from $3,000 one-time custom setup + $50/seat/month (1 week); Multi-Entity & AI Suite from $5,600 custom setup + $80/seat/month (1 to 2 weeks); Enterprise Holding Group from $11,000+ custom setup + $100/seat/month (2 weeks); $0 extra per field kiosk. Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Focus on business features & outcomes: Focus strictly on what business owners, CFOs, and operators experience. Do NOT overspecify internal technical plumbing (never mention database engines, math internals, printer protocols, or software acronyms).',
       'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. Answer the visitor\'s exact question directly instead of giving generic sales copy. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
-      'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
-      'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural human reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
-    ].join('\n');
+      hasAudioInput ? 'Audio input is attached: listen carefully to the visitor\'s spoken question, include an exact "userTranscript" of what they asked, and reply in the language they spoke.' : '',
+      'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 3 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation. Also include "voiceSummary": a smooth, natural 2 to 4 sentence spoken briefing summarizing the key insight and numbers for voice playback (with zero stage directions or tone prefixes).',
+      'Return ONLY valid JSON: {"conversational": true, "userTranscript": "", "title": "Short heading", "answer": "Natural human reply", "voiceSummary": "Natural spoken summary of key insights", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user asks for numbers, comparisons, or sandbox figures.'
+    ].filter(Boolean).join('\n');
   }
 
   function buildGeminiUserPrompt(qText) {
@@ -3348,8 +3355,8 @@ JS = r"""
     ].filter(Boolean).join('\n');
   }
 
-  function buildConversationMessages(cleanQ, lang) {
-    const msgs = [{ role: 'system', content: buildGeminiSystemPrompt(lang) }];
+  function buildConversationMessages(cleanQ, lang, hasAudioInput = false) {
+    const msgs = [{ role: 'system', content: buildGeminiSystemPrompt(lang, hasAudioInput) }];
     const recent = state.aiHistory.slice(-4);
     for (let i = 0; i < recent.length; i++) {
       const h = recent[i];
@@ -3388,9 +3395,13 @@ JS = r"""
       const obj = JSON.parse(cleaned);
       if (!obj || !obj.answer) return null;
       const hasTable = Array.isArray(obj.headers) && obj.headers.length && Array.isArray(obj.rows) && obj.rows.length;
+      const transcriptClean = obj.userTranscript ? sanitizeCleanText(obj.userTranscript) : '';
+      const resolvedLang = transcriptClean ? detectQueryLanguage(transcriptClean) : lang;
       return {
-        q: cleanQ,
-        lang: lang,
+        q: transcriptClean || cleanQ,
+        userTranscript: transcriptClean || undefined,
+        voiceSummary: obj.voiceSummary ? sanitizeCleanText(obj.voiceSummary) : undefined,
+        lang: resolvedLang,
         conversational: obj.conversational !== undefined ? Boolean(obj.conversational) : !hasTable,
         title: sanitizeCleanText(obj.title || fallbackResp.title || 'System Intelligence'),
         answer: sanitizeCleanText(obj.answer),
@@ -3474,11 +3485,95 @@ JS = r"""
     cache: new Map(),
     audioEl: null,
     btnEl: null,
-    ctrl: null
+    ctrl: null,
+    paused: false,
+    rate: 1,
+    liveVoiceMode: false,
+    handsFree: true,
+    activeCaption: ''
   };
 
   function showcaseSpeakIdleLabel(lang) {
     return lang === 'ar' ? 'استماع' : (lang === 'fr' ? 'Écouter' : 'Read Aloud');
+  }
+
+  function normalizeShowcaseSpeech(rawStr, lang = 'en') {
+    let s = sanitizeCleanText(String(rawStr || '').replace(/<[^>]+>/g, ' '))
+      .replace(/^(?:Speak in a [^:]{3,65}:\s*|تحدث بنبرة[^:：]{3,65}[:：]\s*|Parlez sur un ton[^:]{3,65}:\s*)/i, '')
+      .replace(/\s*·\s*/g, ', ')
+      .replace(/\s*\|\s*/g, ', ')
+      .replace(/\/\s*(?:m³|(?:m3|m\^3)\b)/gi, lang === 'ar' ? ' لكل متر مكعب' : (lang === 'fr' ? ' par mètre cube' : ' per cubic meter'))
+      .replace(/(\d)\s*(?:m³|(?:m3|m\^3)\b)/gi, (_, d) => d + (lang === 'ar' ? ' متر مكعب' : (lang === 'fr' ? ' mètres cubes' : ' cubic meters')))
+      .replace(/m³|\b(?:m3|m\^3)\b/gi, lang === 'ar' ? 'متر مكعب' : (lang === 'fr' ? 'mètres cubes' : 'cubic meters'))
+      .replace(/\bP&L\b/g, lang === 'ar' ? 'الأرباح والخسائر' : (lang === 'fr' ? 'compte de résultat' : 'profit and loss'))
+      .replace(/\bSOA\b/g, lang === 'ar' ? 'كشف حساب' : (lang === 'fr' ? 'relevé de compte' : 'statement of account'))
+      .replace(/\bMTD\b/g, lang === 'ar' ? 'منذ بداية الشهر' : (lang === 'fr' ? 'depuis le début du mois' : 'month to date'))
+      .replace(/\bQTD\b/g, lang === 'ar' ? 'منذ بداية الربع' : (lang === 'fr' ? 'depuis le début du trimestre' : 'quarter to date'))
+      .replace(/\bYTD\b/g, lang === 'ar' ? 'منذ بداية السنة' : (lang === 'fr' ? 'depuis le début de l\'année' : 'year to date'))
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (s && !/[.!?؟]$/.test(s)) s += '.';
+    return s;
+  }
+
+  function buildShowcaseSpokenScript(turnOrDom, lang = 'en') {
+    if (!turnOrDom) return '';
+    if (typeof turnOrDom === 'string') return normalizeShowcaseSpeech(turnOrDom, lang);
+    const effLang = turnOrDom.lang || lang || 'en';
+    const parts = [];
+    if (turnOrDom.voiceSummary && String(turnOrDom.voiceSummary).trim().length >= 25) {
+      parts.push(normalizeShowcaseSpeech(turnOrDom.voiceSummary, effLang));
+    } else {
+      if (turnOrDom.answer) parts.push(normalizeShowcaseSpeech(turnOrDom.answer, effLang));
+      if (Array.isArray(turnOrDom.bullets) && turnOrDom.bullets.length) {
+        turnOrDom.bullets.slice(0, 4).forEach(b => parts.push(normalizeShowcaseSpeech(b, effLang)));
+      }
+      if (Array.isArray(turnOrDom.rows) && turnOrDom.rows.length) {
+        const hdrs = Array.isArray(turnOrDom.headers) ? turnOrDom.headers : [];
+        const leadIntro = effLang === 'ar' ? 'أبرز الأرقام:' : (effLang === 'fr' ? 'Principaux éléments :' : 'Key highlights:');
+        const rowBits = turnOrDom.rows.slice(0, 3).map(r => {
+          if (!Array.isArray(r) || !r.length) return '';
+          const c0 = String(r[0] || '').replace(/<[^>]+>/g, '').trim();
+          const cLast = String(r[r.length - 1] || '').replace(/<[^>]+>/g, '').trim();
+          const hLast = String(hdrs[hdrs.length - 1] || '').replace(/<[^>]+>/g, '').trim();
+          if (r.length >= 3) {
+            const cMid = String(r[1] || '').replace(/<[^>]+>/g, '').trim();
+            return `${c0}, ${cMid}, ${hLast ? hLast + ' ' : ''}${cLast}`;
+          }
+          return `${c0}: ${cLast}`;
+        }).filter(Boolean);
+        if (rowBits.length) parts.push(normalizeShowcaseSpeech(`${leadIntro} ${rowBits.join('; ')}`, effLang));
+      }
+      if (Array.isArray(turnOrDom.total) && turnOrDom.total.length >= 2) {
+        parts.push(normalizeShowcaseSpeech(`${turnOrDom.total[0]}: ${turnOrDom.total[turnOrDom.total.length - 1]}`, effLang));
+      }
+    }
+    if (turnOrDom.promptText) {
+      parts.push(normalizeShowcaseSpeech(turnOrDom.promptText, effLang));
+    }
+    return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 1900);
+  }
+
+  function wrapShowcasePcmWav(pcmBytes, sampleRate = 24000) {
+    const dataLen = pcmBytes.byteLength;
+    const buf = new ArrayBuffer(44 + dataLen);
+    const view = new DataView(buf);
+    const wStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    wStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataLen, true);
+    wStr(8, 'WAVE');
+    wStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    wStr(36, 'data');
+    view.setUint32(40, dataLen, true);
+    new Uint8Array(buf, 44).set(pcmBytes);
+    return new Uint8Array(buf);
   }
 
   function stopShowcaseSpeech() {
@@ -3501,13 +3596,17 @@ JS = r"""
       } catch (_) {}
       _showcaseTts.audioEl = null;
     }
+    _showcaseTts.paused = false;
+    _showcaseTts.activeCaption = '';
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch (_) {}
     }
+    if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
   }
 
-  function speakShowcaseReply(rawText, lang, btnEl) {
-    const plain = sanitizeCleanText(String(rawText || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
+  function speakShowcaseReply(turnOrText, lang, btnEl, onFinishedCb) {
+    const safeLang = lang || (turnOrText && turnOrText.lang) || 'en';
+    const plain = buildShowcaseSpokenScript(turnOrText, safeLang);
     if (!plain) return;
     if (navigator.webdriver || window.__ISABI_SYNC_TEST) return;
     if (btnEl && _showcaseTts.btnEl === btnEl) {
@@ -3515,24 +3614,45 @@ JS = r"""
       return;
     }
     stopShowcaseSpeech();
-    const safeLang = lang || 'en';
+    _showcaseTts.activeCaption = plain;
     const stopLbl = safeLang === 'ar' ? 'إيقاف' : (safeLang === 'fr' ? 'Arrêter' : 'Stop');
 
+    const handleEnded = () => {
+      stopShowcaseSpeech();
+      if (typeof onFinishedCb === 'function') onFinishedCb();
+    };
+
     const runFallback = () => {
-      if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+      if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        handleEnded();
+        return;
+      }
       try {
-        const utt = new window.SpeechSynthesisUtterance(plain);
-        utt.lang = safeLang === 'ar' ? 'ar-LB' : (safeLang === 'fr' ? 'fr-FR' : 'en-US');
-        utt.rate = 1.02;
+        window.speechSynthesis.cancel();
+        const chunks = plain.match(/[^.!?؟]+[.!?؟]*/g) || [plain];
+        let cIdx = 0;
         if (btnEl) {
           _showcaseTts.btnEl = btnEl;
           btnEl.textContent = stopLbl;
           btnEl.classList.add('is-speaking');
         }
-        utt.onend = () => stopShowcaseSpeech();
-        utt.onerror = () => stopShowcaseSpeech();
-        window.speechSynthesis.speak(utt);
-      } catch (_) {}
+        if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
+        const speakNextChunk = () => {
+          if (cIdx >= chunks.length) {
+            handleEnded();
+            return;
+          }
+          const utt = new window.SpeechSynthesisUtterance(chunks[cIdx++].trim());
+          utt.lang = safeLang === 'ar' ? 'ar-LB' : (safeLang === 'fr' ? 'fr-FR' : 'en-US');
+          utt.rate = _showcaseTts.rate || 1.0;
+          utt.onend = () => speakNextChunk();
+          utt.onerror = () => handleEnded();
+          window.speechSynthesis.speak(utt);
+        };
+        speakNextChunk();
+      } catch (_) {
+        handleEnded();
+      }
     };
 
     const audioEl = typeof Audio !== 'undefined' ? new Audio() : null;
@@ -3550,29 +3670,30 @@ JS = r"""
     const cacheKey = `${safeLang}|${plain}`;
     if (_showcaseTts.cache.has(cacheKey)) {
       audioEl.src = _showcaseTts.cache.get(cacheKey);
+      audioEl.playbackRate = _showcaseTts.rate || 1.0;
       _showcaseTts.audioEl = audioEl;
       if (btnEl) {
         _showcaseTts.btnEl = btnEl;
         btnEl.textContent = stopLbl;
         btnEl.classList.add('is-speaking');
       }
-      audioEl.onended = () => stopShowcaseSpeech();
+      if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
+      audioEl.onended = () => handleEnded();
       audioEl.play().catch(() => runFallback());
       return;
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 11000);
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     _showcaseTts.ctrl = ctrl;
     if (btnEl) {
       _showcaseTts.btnEl = btnEl;
       btnEl.textContent = safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...');
     }
+    if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
     const voiceName = safeLang === 'ar' ? 'Charon' : (safeLang === 'fr' ? 'Aoede' : 'Kore');
-    const dirPrefix = safeLang === 'ar'
-      ? 'تحدث بنبرة تنفيذية دافئة وواضحة: '
-      : (safeLang === 'fr' ? 'Parlez sur un ton exécutif chaleureux et clair : ' : 'Speak in a warm, natural executive tone: ');
 
+    // Pure spoken script only: zero tone stage-direction prefix so TTS never reads prompt instructions out loud
     fetch(flowUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
@@ -3582,7 +3703,7 @@ JS = r"""
         model: 'gemini-3.8-flash-lite-tts',
         voiceName,
         lang: safeLang,
-        text: dirPrefix + plain.slice(0, 1800)
+        text: plain.slice(0, 1850)
       }),
       signal: ctrl.signal
     }).then(r => r.ok ? r.json() : null).then(j => {
@@ -3591,20 +3712,29 @@ JS = r"""
       _showcaseTts.ctrl = null;
       if (j && j.ok && j.mode === 'gemini_tts' && j.audioBase64) {
         const bin = atob(String(j.audioBase64).trim());
-        const bytes = new Uint8Array(bin.length);
+        let bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const objUrl = URL.createObjectURL(new Blob([bytes], { type: j.mimeType || 'audio/wav' }));
+        let mime = j.mimeType || 'audio/wav';
+        const isRiff = bytes.length > 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
+        if ((/L16|pcm/i.test(mime)) && !isRiff) {
+          const srM = mime.match(/rate=(\d+)/i);
+          bytes = wrapShowcasePcmWav(bytes, srM ? Number(srM[1]) : 24000);
+          mime = 'audio/wav';
+        }
+        const objUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
         if (_showcaseTts.cache.size >= 20) {
           _showcaseTts.cache.delete(_showcaseTts.cache.keys().next().value);
         }
         _showcaseTts.cache.set(cacheKey, objUrl);
         audioEl.src = objUrl;
+        audioEl.playbackRate = _showcaseTts.rate || 1.0;
         _showcaseTts.audioEl = audioEl;
         if (btnEl) {
           btnEl.textContent = stopLbl;
           btnEl.classList.add('is-speaking');
         }
-        audioEl.onended = () => stopShowcaseSpeech();
+        if (typeof syncShowcaseVoiceDeck === 'function') syncShowcaseVoiceDeck();
+        audioEl.onended = () => handleEnded();
         audioEl.onerror = () => runFallback();
         audioEl.play().catch(() => runFallback());
       } else {
@@ -3616,9 +3746,11 @@ JS = r"""
     });
   }
 
-  async function callAskIsabiCloud(cleanQ, lang, fallbackResp) {
+  async function callAskIsabiCloud(cleanQ, lang, fallbackResp, mediaParts = []) {
     if (navigator.webdriver || window.__ISABI_SYNC_TEST) return fallbackResp;
-    const messages = buildConversationMessages(cleanQ, lang);
+    const hasMedia = Array.isArray(mediaParts) && mediaParts.length > 0;
+    const hasAudio = hasMedia && mediaParts.some(p => p && /^audio\//i.test(p.mimeType || ''));
+    const messages = buildConversationMessages(cleanQ, lang, hasAudio);
     let flowUrl = '';
     let flowKey = '';
     try {
@@ -3630,12 +3762,22 @@ JS = r"""
 
     if (flowUrl && flowUrl.startsWith('http')) {
       const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-      const deepQuery = cleanQ.length > 140 || /\b(why|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat)/i.test(cleanQ);
+      const deepQuery = hasMedia || cleanQ.length > 100 || /\b(why|how|compare|difference|migrate|migration|vs\b|odoo|sap|recommend|architecture|multi-entity|consolidat|explain|analyze|custom)/i.test(cleanQ);
       const targetModel = deepQuery ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
-      const geminiContents = messages.slice(1).map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: String(m.content || '') }]
-      }));
+      const geminiContents = messages.slice(1).map((m, idx, arr) => {
+        const parts = [{ text: String(m.content || '') }];
+        if (hasMedia && idx === arr.length - 1 && m.role === 'user') {
+          mediaParts.slice(0, 3).forEach(mp => {
+            if (mp && mp.data && mp.mimeType) {
+              parts.push({ inlineData: { mimeType: mp.mimeType, data: mp.data } });
+            }
+          });
+        }
+        return {
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts
+        };
+      });
       const reqBody = {
         key: flowKey,
         op: 'ask',
@@ -3649,7 +3791,7 @@ JS = r"""
         range: cfg.range || '',
         replyTitle: fallbackResp.title || '',
         model: targetModel,
-        systemPrompt: buildGeminiSystemPrompt(lang),
+        systemPrompt: buildGeminiSystemPrompt(lang, hasAudio),
         userPrompt: buildGeminiUserPrompt(cleanQ),
         geminiContents: geminiContents,
         messages: messages
@@ -3657,7 +3799,7 @@ JS = r"""
       if (deepQuery) reqBody.thinkingBudget = 512;
 
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), deepQuery ? 12500 : 10000);
+      const timer = setTimeout(() => ctrl.abort(), deepQuery ? 13500 : 10000);
       try {
         const res = await fetch(flowUrl, {
           method: 'POST',
@@ -3708,13 +3850,38 @@ JS = r"""
     renderAiThreads(true);
   }
 
-  function askIsabiQuestion(qText, openDrawer = false, fromInputSubmit = false) {
+  function maybeAutoSpeakShowcaseTurn(turnObj, fromVoice) {
+    if (!turnObj || navigator.webdriver || window.__ISABI_SYNC_TEST) return;
+    if (!fromVoice && !_showcaseTts.liveVoiceMode) return;
+    setTimeout(() => {
+      const container = !document.getElementById('ai-drawer-backdrop')?.hidden
+        ? document.getElementById('ai-drawer-thread')
+        : document.getElementById('ai-inline-thread');
+      const btns = container ? container.querySelectorAll('[data-ai-speak-reply]') : [];
+      const lastBtn = btns.length ? btns[btns.length - 1] : null;
+      speakShowcaseReply(turnObj, turnObj.lang || 'en', lastBtn, () => {
+        if (_showcaseTts.liveVoiceMode && _showcaseTts.handsFree && !document.getElementById('ai-drawer-backdrop')?.hidden) {
+          const drForm = document.getElementById('ai-drawer-form');
+          if (drForm && typeof drForm._startVoice === 'function' && !drForm._isRec()) {
+            setTimeout(() => {
+              if (_showcaseTts.liveVoiceMode && !drForm._isRec()) drForm._startVoice(true);
+            }, 320);
+          }
+        }
+      });
+    }, 150);
+  }
+
+  function askIsabiQuestion(qText, openDrawer = false, fromInputSubmit = false, extraOpts = {}) {
     const clean = String(qText || '').trim();
     if (!clean) return;
     state.aiReset = false;
     const matchIdx = AI_PROMPTS.findIndex(p => p.q.toLowerCase() === clean.toLowerCase());
     state.activeAiPillIdx = matchIdx >= 0 ? matchIdx : -1;
-    const lang = detectQueryLanguage(clean);
+    const lang = (extraOpts && extraOpts.langHint) || detectQueryLanguage(clean);
+    const mediaParts = (extraOpts && Array.isArray(extraOpts.mediaParts)) ? extraOpts.mediaParts : [];
+    const fromVoice = Boolean((extraOpts && extraOpts.fromVoice) || _showcaseTts.liveVoiceMode);
+    const forceCloud = Boolean((extraOpts && extraOpts.forceCloud) || mediaParts.length > 0);
     const localResp = resolveAskIsabi(clean);
 
     if (openDrawer) {
@@ -3740,7 +3907,7 @@ JS = r"""
     renderAiThreads(true);
 
     // Greetings, preset prompts & explicit sandbox/blueprint commands resolve in 240ms without consuming Cloud LLM quota
-    if (localResp.instantLocal) {
+    if (localResp.instantLocal && !forceCloud) {
       logAskQuestionAsync(clean, lang, localResp.title);
       setTimeout(() => {
         if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
@@ -3749,6 +3916,7 @@ JS = r"""
         state.aiHistory.push(localResp);
         if (state.aiHistory.length > 8) state.aiHistory.shift();
         renderAiThreads(true);
+        maybeAutoSpeakShowcaseTurn(localResp, fromVoice);
         setTimeout(() => {
           state.aiTypingFollowup = false;
           renderAiThreads(true);
@@ -3758,13 +3926,15 @@ JS = r"""
     }
 
     const minDelay = new Promise(r => setTimeout(r, 300));
-    Promise.all([callAskIsabiCloud(clean, lang, localResp), minDelay]).then(([finalResp]) => {
+    Promise.all([callAskIsabiCloud(clean, lang, localResp, mediaParts), minDelay]).then(([finalResp]) => {
       if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
+      const resolvedTurn = finalResp || localResp;
       state.aiPendingQ = null;
       state.aiTypingFollowup = true;
-      state.aiHistory.push(finalResp || localResp);
+      state.aiHistory.push(resolvedTurn);
       if (state.aiHistory.length > 8) state.aiHistory.shift();
       renderAiThreads(true);
+      maybeAutoSpeakShowcaseTurn(resolvedTurn, fromVoice);
       setTimeout(() => {
         state.aiTypingFollowup = false;
         renderAiThreads(true);
@@ -4268,13 +4438,37 @@ JS = r"""
 
       const speakReplyBtn = e.target.closest('[data-ai-speak-reply]');
       if (speakReplyBtn) {
+        const turnIdxAttr = speakReplyBtn.getAttribute('data-ai-turn-idx');
         const followupWrap = speakReplyBtn.closest('.ai-msg-followup');
         const botWrap = followupWrap ? followupWrap.previousElementSibling : speakReplyBtn.closest('.ai-msg-bot');
+        const resolvedIdx = turnIdxAttr != null ? Number(turnIdxAttr) : (botWrap && botWrap.hasAttribute('data-ai-turn-idx') ? Number(botWrap.getAttribute('data-ai-turn-idx')) : -1);
+        const histTurn = (resolvedIdx >= 0 && state.aiHistory[resolvedIdx]) ? state.aiHistory[resolvedIdx] : null;
+        if (histTurn) {
+          speakShowcaseReply(histTurn, speakReplyBtn.getAttribute('data-ai-speak-reply') || histTurn.lang || 'en', speakReplyBtn);
+          return;
+        }
         const bubbleEl = botWrap ? botWrap.querySelector('.ai-bot-bubble') : null;
         const pEl = bubbleEl ? bubbleEl.querySelector('p') : null;
-        const liEls = bubbleEl ? Array.from(bubbleEl.querySelectorAll('li')).map(li => li.textContent.trim()) : [];
-        const combinedTxt = [pEl ? pEl.textContent.trim() : '', ...liEls].filter(Boolean).join('. ');
-        speakShowcaseReply(combinedTxt, speakReplyBtn.getAttribute('data-ai-speak-reply') || 'en', speakReplyBtn);
+        const liEls = bubbleEl ? Array.from(bubbleEl.querySelectorAll('li')).map(li => li.textContent.trim()).filter(Boolean) : [];
+        const tblEl = bubbleEl ? bubbleEl.querySelector('.ai-bot-table') : null;
+        const hdrs = tblEl ? Array.from(tblEl.querySelectorAll('thead th')).map(th => th.textContent.trim()) : [];
+        const bodyRows = tblEl
+          ? Array.from(tblEl.querySelectorAll('tbody tr:not(.tot)')).map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim()))
+          : [];
+        const totTr = tblEl ? tblEl.querySelector('tbody tr.tot') : null;
+        const totCells = totTr ? Array.from(totTr.querySelectorAll('td')).map(td => td.textContent.trim()) : [];
+        const nextFollow = botWrap && botWrap.nextElementSibling && botWrap.nextElementSibling.classList.contains('ai-msg-followup')
+          ? botWrap.nextElementSibling.querySelector('.ai-followup-lead')
+          : (followupWrap ? followupWrap.querySelector('.ai-followup-lead') : null);
+        speakShowcaseReply({
+          lang: speakReplyBtn.getAttribute('data-ai-speak-reply') || 'en',
+          answer: pEl ? pEl.textContent.trim() : '',
+          bullets: liEls,
+          headers: hdrs,
+          rows: bodyRows,
+          total: totCells,
+          promptText: nextFollow ? nextFollow.textContent.trim() : ''
+        }, speakReplyBtn.getAttribute('data-ai-speak-reply') || 'en', speakReplyBtn);
         return;
       }
 
@@ -4352,11 +4546,13 @@ JS = r"""
       resetAiThread();
     });
     document.getElementById('close-ai-drawer')?.addEventListener('click', () => {
+      _showcaseTts.liveVoiceMode = false;
       stopAllShowcaseAskTools(false);
       document.getElementById('ai-drawer-backdrop').hidden = true;
     });
     document.getElementById('ai-drawer-backdrop')?.addEventListener('click', e => {
       if (e.target.id === 'ai-drawer-backdrop') {
+        _showcaseTts.liveVoiceMode = false;
         stopAllShowcaseAskTools(false);
         e.target.hidden = true;
       }
@@ -4372,6 +4568,12 @@ JS = r"""
           }
         });
         if (canceledRec) return;
+        if (_showcaseTts.liveVoiceMode) {
+          _showcaseTts.liveVoiceMode = false;
+          stopAllShowcaseAskTools(false);
+          syncShowcaseVoiceDeck();
+          return;
+        }
         stopAllShowcaseAskTools(false);
         const bd = document.getElementById('ai-drawer-backdrop');
         if (bd && !bd.hidden) bd.hidden = true;
@@ -4394,6 +4596,172 @@ JS = r"""
       return out;
     }
 
+    function readBlobBase64(blob) {
+      return new Promise(resolve => {
+        if (!blob || typeof FileReader === 'undefined') {
+          resolve(null);
+          return;
+        }
+        const fr = new FileReader();
+        fr.onload = () => {
+          const res = String(fr.result || '');
+          const m = res.match(/^data:([^;,]+)(?:;[^,]*)?,(.+)$/);
+          resolve(m ? { mimeType: m[1], data: m[2] } : null);
+        };
+        fr.onerror = () => resolve(null);
+        try { fr.readAsDataURL(blob); } catch (_) { resolve(null); }
+      });
+    }
+
+    function syncShowcaseVoiceDeck() {
+      const btn = document.getElementById('ai-drawer-voice-mode-btn');
+      const deck = document.getElementById('ai-drawer-voice-deck');
+      const drForm = document.getElementById('ai-drawer-form');
+      const isRec = Boolean(drForm && typeof drForm._isRec === 'function' && drForm._isRec());
+      const isOn = Boolean(_showcaseTts.liveVoiceMode);
+      if (btn) {
+        btn.classList.toggle('is-active', isOn);
+        btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+      }
+      if (!deck) return;
+      deck.hidden = !isOn;
+      if (!isOn) return;
+
+      let phase = 'ready';
+      if (isRec) phase = 'listening';
+      else if (state.aiPendingQ) phase = 'thinking';
+      else if (_showcaseTts.audioEl || _showcaseTts.ctrl || _showcaseTts.btnEl) phase = 'speaking';
+      deck.setAttribute('data-voice-phase', phase);
+
+      const stLbl = document.getElementById('ai-sbox-vm-status');
+      const capEl = document.getElementById('ai-sbox-vm-caption');
+      const priBtn = document.getElementById('ai-sbox-vm-primary');
+      const rateBtn = document.getElementById('ai-sbox-vm-rate');
+      const hfBtn = document.getElementById('ai-sbox-vm-hf');
+      if (stLbl) {
+        stLbl.textContent = phase === 'listening'
+          ? 'Listening...'
+          : (phase === 'thinking' ? 'ISABI is analyzing...' : (phase === 'speaking' ? 'ISABI Speaking' : 'Voice Mode Ready'));
+      }
+      if (capEl) {
+        const inpVal = (document.getElementById('ai-drawer-input')?.value || '').trim();
+        capEl.textContent = phase === 'listening'
+          ? (inpVal || 'Speak naturally. Auto-sends when you pause.')
+          : (phase === 'speaking'
+            ? (_showcaseTts.activeCaption || 'Reading executive summary...').slice(0, 180)
+            : 'Tap Start Talking for a two-way voice conversation.');
+      }
+      if (priBtn) {
+        priBtn.textContent = phase === 'listening'
+          ? 'Send Now'
+          : (phase === 'speaking' ? 'Interrupt & Ask' : 'Start Talking');
+      }
+      if (rateBtn) rateBtn.textContent = `${_showcaseTts.rate}x`;
+      if (hfBtn) hfBtn.classList.toggle('active', Boolean(_showcaseTts.handsFree));
+      if (window.ISABI_I18N && window.ISABI_I18N.getLang && window.ISABI_I18N.getLang() !== 'en') {
+        try { window.ISABI_I18N.translateDom(deck); } catch (_) {}
+      }
+    }
+
+    function mountShowcaseVoiceModeDeck() {
+      const resetBtn = document.getElementById('ai-drawer-reset');
+      const drawerThread = document.getElementById('ai-drawer-thread');
+      if (!resetBtn || !drawerThread || document.getElementById('ai-drawer-voice-mode-btn')) return;
+
+      const actWrap = document.createElement('div');
+      actWrap.className = 'ai-scope-actions';
+      const vmBtn = document.createElement('button');
+      vmBtn.type = 'button';
+      vmBtn.className = 'ai-reset-btn ai-voice-mode-toggle';
+      vmBtn.id = 'ai-drawer-voice-mode-btn';
+      vmBtn.setAttribute('aria-pressed', 'false');
+      vmBtn.title = 'Interactive Voice Mode';
+      vmBtn.textContent = 'Voice Mode';
+      resetBtn.parentNode.insertBefore(actWrap, resetBtn);
+      actWrap.appendChild(vmBtn);
+      actWrap.appendChild(resetBtn);
+
+      const deck = document.createElement('div');
+      deck.className = 'ai-sbox-voice-deck';
+      deck.id = 'ai-drawer-voice-deck';
+      deck.hidden = true;
+      deck.setAttribute('data-voice-phase', 'ready');
+      deck.innerHTML = `
+        <div class="ai-svm-top">
+          <div class="ai-svm-status-wrap">
+            <span class="ai-svm-orb" aria-hidden="true"></span>
+            <strong id="ai-sbox-vm-status">Voice Mode Ready</strong>
+          </div>
+          <div class="ai-svm-tools">
+            <button type="button" class="ai-voice-lang-btn active" id="ai-sbox-vm-hf">Hands-Free</button>
+            <button type="button" class="ai-voice-lang-btn" id="ai-sbox-vm-rate">1x</button>
+            <button type="button" class="ai-voice-lang-btn" id="ai-sbox-vm-exit">Exit</button>
+          </div>
+        </div>
+        <div class="ai-svm-wave-row">
+          <div class="ai-svm-bars" id="ai-sbox-vm-bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <p class="ai-svm-caption" id="ai-sbox-vm-caption">Tap Start Talking for a two-way voice conversation.</p>
+        </div>
+        <div class="ai-svm-actions">
+          <button type="button" class="btn btn-brass ai-svm-pri" id="ai-sbox-vm-primary">Start Talking</button>
+          <button type="button" class="ai-reset-btn" id="ai-sbox-vm-stop">Stop</button>
+        </div>
+      `;
+      drawerThread.parentNode.insertBefore(deck, drawerThread);
+
+      vmBtn.addEventListener('click', () => {
+        _showcaseTts.liveVoiceMode = !_showcaseTts.liveVoiceMode;
+        const drForm = document.getElementById('ai-drawer-form');
+        if (_showcaseTts.liveVoiceMode) {
+          syncShowcaseVoiceDeck();
+          if (drForm && typeof drForm._startVoice === 'function' && !navigator.webdriver && !window.__ISABI_SYNC_TEST) {
+            drForm._startVoice(true);
+          }
+        } else {
+          stopAllShowcaseAskTools(false);
+          syncShowcaseVoiceDeck();
+        }
+      });
+
+      deck.addEventListener('click', ev => {
+        if (ev.target.closest('#ai-sbox-vm-exit')) {
+          _showcaseTts.liveVoiceMode = false;
+          stopAllShowcaseAskTools(false);
+          syncShowcaseVoiceDeck();
+          return;
+        }
+        if (ev.target.closest('#ai-sbox-vm-hf')) {
+          _showcaseTts.handsFree = !_showcaseTts.handsFree;
+          syncShowcaseVoiceDeck();
+          return;
+        }
+        if (ev.target.closest('#ai-sbox-vm-rate')) {
+          const rates = [1, 1.2, 1.5];
+          _showcaseTts.rate = rates[(rates.indexOf(_showcaseTts.rate) + 1) % rates.length];
+          if (_showcaseTts.audioEl) {
+            try { _showcaseTts.audioEl.playbackRate = _showcaseTts.rate; } catch (_) {}
+          }
+          syncShowcaseVoiceDeck();
+          return;
+        }
+        if (ev.target.closest('#ai-sbox-vm-stop')) {
+          stopAllShowcaseAskTools(false);
+          syncShowcaseVoiceDeck();
+          return;
+        }
+        if (ev.target.closest('#ai-sbox-vm-primary')) {
+          const drForm = document.getElementById('ai-drawer-form');
+          if (!drForm) return;
+          if (drForm._isRec && drForm._isRec()) {
+            drForm._submitVoiceNow();
+          } else {
+            stopShowcaseSpeech();
+            if (drForm._startVoice) drForm._startVoice(_showcaseTts.handsFree);
+          }
+        }
+      });
+    }
+
     // Mount File Attachment & Voice Recording controls on both Ask ISABI forms
     function mountShowcaseAskTools(formId, inpId) {
       const formEl = document.getElementById(formId);
@@ -4406,7 +4774,7 @@ JS = r"""
       const voiceBar = document.createElement('div');
       voiceBar.className = 'ai-voice-bar';
       voiceBar.hidden = true;
-      voiceBar.innerHTML = '<span class="ai-voice-status-lbl">● Recording voice...</span><div class="ai-voice-langs"><button type="button" class="ai-voice-lang-btn active" data-vlang="en">EN</button><button type="button" class="ai-voice-lang-btn" data-vlang="ar">AR</button><button type="button" class="ai-voice-lang-btn" data-vlang="fr">FR</button><button type="button" class="ai-voice-lang-btn" data-vcancel="1">Cancel</button><button type="button" class="ai-voice-lang-btn" data-vstop="1">Done</button></div>';
+      voiceBar.innerHTML = '<span class="ai-voice-status-lbl">● Recording voice...</span><div class="ai-voice-langs"><button type="button" class="ai-voice-lang-btn active" data-vlang="en">EN</button><button type="button" class="ai-voice-lang-btn" data-vlang="ar">AR</button><button type="button" class="ai-voice-lang-btn" data-vlang="fr">FR</button><button type="button" class="ai-voice-lang-btn" data-vcancel="1">Cancel</button><button type="button" class="ai-voice-lang-btn" data-vstop="1">Send</button></div>';
       const row = document.createElement('div');
       row.className = 'ai-composer-row';
       const fileInp = document.createElement('input');
@@ -4439,12 +4807,21 @@ JS = r"""
       let vLang = 'en';
       let baseText = '';
       let speechRec = null;
+      let mediaRecorder = null;
+      let mediaStream = null;
+      let audioChunks = [];
+      let recordedAudioPromise = null;
+      let audioCtx = null;
+      let meterRaf = 0;
 
       function addFiles(list) {
         if (!list) return;
         Array.from(list).forEach(f => {
           if (!f || stagedFiles.length >= 6) return;
           if (stagedFiles.some(x => x.name === f.name && x.size === f.size)) return;
+          if (/^image\//i.test(f.type || '') && f.size <= 4 * 1024 * 1024) {
+            f._b64Promise = readBlobBase64(f);
+          }
           stagedFiles.push(f);
         });
         syncStaged();
@@ -4486,7 +4863,23 @@ JS = r"""
         }
       });
 
+      function cleanupMicStream() {
+        if (meterRaf) {
+          cancelAnimationFrame(meterRaf);
+          meterRaf = 0;
+        }
+        if (audioCtx) {
+          try { audioCtx.close(); } catch (_) {}
+          audioCtx = null;
+        }
+        if (mediaStream) {
+          try { mediaStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+          mediaStream = null;
+        }
+      }
+
       function stopRec(restoreBase = false) {
+        const wasActive = recActive;
         recActive = false;
         micBtn.classList.remove('is-recording');
         micBtn.setAttribute('aria-pressed', 'false');
@@ -4500,22 +4893,53 @@ JS = r"""
           } catch (_) {}
           speechRec = null;
         }
+        if (mediaRecorder) {
+          const mr = mediaRecorder;
+          mediaRecorder = null;
+          if (!restoreBase && wasActive && mr.state !== 'inactive') {
+            recordedAudioPromise = new Promise(resolve => {
+              mr.onstop = () => {
+                cleanupMicStream();
+                if (!audioChunks.length) {
+                  resolve(null);
+                  return;
+                }
+                const mime = (mr.mimeType || 'audio/webm').split(';')[0];
+                const blob = new Blob(audioChunks, { type: mime });
+                audioChunks = [];
+                readBlobBase64(blob).then(resolve);
+              };
+              try { mr.stop(); } catch (_) { cleanupMicStream(); resolve(null); }
+            });
+          } else {
+            try { if (mr.state !== 'inactive') mr.stop(); } catch (_) {}
+            audioChunks = [];
+            recordedAudioPromise = null;
+            cleanupMicStream();
+          }
+        } else {
+          cleanupMicStream();
+        }
         if (restoreBase) {
+          recordedAudioPromise = null;
           inpEl.value = baseText || '';
           inpEl.dir = /[\u0600-\u06FF]/.test(inpEl.value) ? 'rtl' : 'ltr';
         }
+        syncShowcaseVoiceDeck();
       }
 
-      micBtn.addEventListener('click', () => {
-        if (recActive) {
-          stopRec(false);
-          return;
-        }
+      function startRec(autoSendSilence = true) {
+        if (recActive) return;
+        stopShowcaseSpeech();
         recActive = true;
+        recordedAudioPromise = null;
+        audioChunks = [];
         baseText = (inpEl.value || '').trim();
         micBtn.classList.add('is-recording');
         micBtn.setAttribute('aria-pressed', 'true');
-        voiceBar.hidden = false;
+        voiceBar.hidden = Boolean(_showcaseTts.liveVoiceMode && formId === 'ai-drawer-form');
+        syncShowcaseVoiceDeck();
+
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SR && !navigator.webdriver) {
           try {
@@ -4532,11 +4956,79 @@ JS = r"""
               if (combined) {
                 inpEl.value = combined;
                 inpEl.dir = /[\u0600-\u06FF]/.test(combined) || vLang === 'ar' ? 'rtl' : 'ltr';
+                syncShowcaseVoiceDeck();
               }
             };
             speechRec.start();
           } catch (_) {}
         }
+
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function' && !navigator.webdriver) {
+          navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            if (!recActive) {
+              stream.getTracks().forEach(t => t.stop());
+              return;
+            }
+            mediaStream = stream;
+            if (typeof MediaRecorder !== 'undefined') {
+              try {
+                const prefMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+                mediaRecorder = prefMime ? new MediaRecorder(stream, { mimeType: prefMime }) : new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+                mediaRecorder.start(250);
+              } catch (_) {}
+            }
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) {
+              try {
+                audioCtx = new AC();
+                const src = audioCtx.createMediaStreamSource(stream);
+                const analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 64;
+                src.connect(analyser);
+                const freq = new Uint8Array(analyser.frequencyBinCount);
+                let heardSpeech = false;
+                let lastVoiceMs = Date.now();
+                const startMs = Date.now();
+                const tick = () => {
+                  if (!recActive) return;
+                  analyser.getByteFrequencyData(freq);
+                  let sum = 0;
+                  for (let i = 1; i < Math.min(16, freq.length); i++) sum += freq[i];
+                  const avg = sum / 15;
+                  const barsBox = document.getElementById('ai-sbox-vm-bars');
+                  if (barsBox) {
+                    const spans = barsBox.querySelectorAll('span');
+                    for (let bi = 0; bi < spans.length; bi++) {
+                      const pct = Math.max(18, Math.min(100, Math.round(((freq[bi + 1] || 0) / 255) * 100)));
+                      spans[bi].style.height = pct + '%';
+                    }
+                  }
+                  const now = Date.now();
+                  if (avg > 20 || (inpEl.value || '').trim().length > baseText.length) {
+                    if (now - startMs > 280) heardSpeech = true;
+                    if (avg > 20) lastVoiceMs = now;
+                  } else if (autoSendSilence && heardSpeech && (now - lastVoiceMs > 1650) && (now - startMs > 1500)) {
+                    submitVoiceTurnNow();
+                    return;
+                  }
+                  meterRaf = requestAnimationFrame(tick);
+                };
+                meterRaf = requestAnimationFrame(tick);
+              } catch (_) {}
+            }
+          }).catch(() => {});
+        }
+      }
+
+      function submitVoiceTurnNow() {
+        stopRec(false);
+        handleShowcaseAskSubmit(formId, inpId, true);
+      }
+
+      micBtn.addEventListener('click', () => {
+        if (recActive) submitVoiceTurnNow();
+        else startRec(true);
       });
 
       voiceBar.addEventListener('click', ev => {
@@ -4546,7 +5038,7 @@ JS = r"""
           voiceBar.querySelectorAll('[data-vlang]').forEach(b => b.classList.toggle('active', b === lb));
           if (recActive) {
             stopRec(false);
-            micBtn.click();
+            startRec(true);
           }
           return;
         }
@@ -4554,10 +5046,12 @@ JS = r"""
           stopRec(true);
           return;
         }
-        if (ev.target.closest('[data-vstop]')) stopRec(false);
+        if (ev.target.closest('[data-vstop]')) submitVoiceTurnNow();
       });
 
       formEl._isRec = () => recActive;
+      formEl._startVoice = (autoSend = true) => startRec(autoSend);
+      formEl._submitVoiceNow = () => submitVoiceTurnNow();
       formEl._cancelRec = () => stopRec(true);
       formEl._stopRec = () => stopRec(false);
       formEl._clearAttachments = () => {
@@ -4567,40 +5061,77 @@ JS = r"""
       formEl._consumeAttachments = () => {
         const wasRec = recActive;
         if (recActive) stopRec(false);
-        const names = stagedFiles.map(f => f.name);
+        const filesCopy = stagedFiles.slice();
+        const names = filesCopy.map(f => f.name);
+        const audPromise = recordedAudioPromise;
+        recordedAudioPromise = null;
         stagedFiles = [];
         syncStaged();
-        return { names, wasRec, vLang };
+        return { names, files: filesCopy, audioPromise: audPromise, wasRec, vLang };
       };
     }
 
+    mountShowcaseVoiceModeDeck();
     mountShowcaseAskTools('ai-inline-form', 'ai-inline-input');
     mountShowcaseAskTools('ai-drawer-form', 'ai-drawer-input');
 
-    function handleShowcaseAskSubmit(formId, inpId) {
+    function handleShowcaseAskSubmit(formId, inpId, forcedVoice = false) {
       const formEl = document.getElementById(formId);
       const inp = document.getElementById(inpId);
-      const consumed = formEl && formEl._consumeAttachments ? formEl._consumeAttachments() : { names: [], wasRec: false, vLang: 'en' };
+      const consumed = formEl && formEl._consumeAttachments ? formEl._consumeAttachments() : { names: [], files: [], audioPromise: null, wasRec: false, vLang: 'en' };
       const atts = consumed.names || [];
+      const fromVoice = Boolean(forcedVoice || consumed.wasRec || consumed.audioPromise || _showcaseTts.liveVoiceMode);
       let q = (inp?.value || '').trim();
-      if (!q && atts.length) {
-        const hasImageAtt = atts.some(n => /\.(?:png|jpe?g|webp|gif|bmp|svg)$/i.test(n));
-        q = hasImageAtt
-          ? `[Attached: ${atts.join(', ')}] Explain this screenshot and dashboard numbers`
-          : `[Attached: ${atts.join(', ')}] How does ISABI import and reconcile spreadsheets and documents?`;
-      } else if (q && atts.length) {
-        q = `[Attached: ${atts.join(', ')}] ${q}`;
-      } else if (!q && consumed.wasRec) {
-        q = consumed.vLang === 'ar'
-          ? 'ما هي أهم مميزات نظام إيسابي وكيف يربط العمليات بالمحاسبة؟'
-          : (consumed.vLang === 'fr' ? 'Comment fonctionne la plateforme ERP ISABI ?' : 'Give me an executive overview of ISABI Systems');
-      }
-      if (!q) return;
-      askIsabiQuestion(q, false, true);
       if (inp) {
         inp.value = '';
         inp.dir = 'ltr';
       }
+
+      // Synchronous headless path preserves exact test behavior
+      if (navigator.webdriver || window.__ISABI_SYNC_TEST || (!consumed.audioPromise && !(consumed.files || []).some(f => f._b64Promise))) {
+        if (!q && atts.length) {
+          const hasImageAtt = atts.some(n => /\.(?:png|jpe?g|webp|gif|bmp|svg)$/i.test(n));
+          q = hasImageAtt
+            ? `[Attached: ${atts.join(', ')}] Explain this screenshot and dashboard numbers`
+            : `[Attached: ${atts.join(', ')}] How does ISABI import and reconcile spreadsheets and documents?`;
+        } else if (q && atts.length) {
+          q = `[Attached: ${atts.join(', ')}] ${q}`;
+        } else if (!q && (consumed.wasRec || forcedVoice)) {
+          q = consumed.vLang === 'ar'
+            ? 'ما هي أهم مميزات نظام إيسابي وكيف يربط العمليات بالمحاسبة؟'
+            : (consumed.vLang === 'fr' ? 'Comment fonctionne la plateforme ERP ISABI ?' : 'Give me an executive overview of ISABI Systems');
+        }
+        if (!q) return;
+        askIsabiQuestion(q, false, true, { fromVoice, langHint: consumed.vLang });
+        return;
+      }
+
+      // Multimodal async path: wait up to 2.5s for recorded audio / attached image base64 and send to Gemini 3.8 Flash
+      const promises = [
+        consumed.audioPromise || Promise.resolve(null),
+        ...((consumed.files || []).map(f => f._b64Promise || Promise.resolve(null)))
+      ];
+      Promise.race([Promise.all(promises), new Promise(r => setTimeout(() => r([]), 2500))]).then(resolvedMedia => {
+        const mediaParts = (resolvedMedia || []).filter(Boolean);
+        let finalQ = q;
+        let forceCloud = mediaParts.length > 0;
+        if (!finalQ && atts.length) {
+          const hasImageAtt = atts.some(n => /\.(?:png|jpe?g|webp|gif|bmp|svg)$/i.test(n));
+          finalQ = hasImageAtt
+            ? `[Attached: ${atts.join(', ')}] Explain this screenshot and dashboard numbers`
+            : `[Attached: ${atts.join(', ')}] How does ISABI import and reconcile spreadsheets and documents?`;
+        } else if (finalQ && atts.length) {
+          finalQ = `[Attached: ${atts.join(', ')}] ${finalQ}`;
+        } else if (!finalQ && mediaParts.length > 0) {
+          finalQ = consumed.vLang === 'ar' ? 'سؤال صوتي...' : (consumed.vLang === 'fr' ? 'Question vocale...' : 'Voice question...');
+        } else if (!finalQ && (consumed.wasRec || forcedVoice)) {
+          finalQ = consumed.vLang === 'ar'
+            ? 'ما هي أهم مميزات نظام إيسابي وكيف يربط العمليات بالمحاسبة؟'
+            : (consumed.vLang === 'fr' ? 'Comment fonctionne la plateforme ERP ISABI ?' : 'Give me an executive overview of ISABI Systems');
+        }
+        if (!finalQ) return;
+        askIsabiQuestion(finalQ, false, true, { fromVoice, mediaParts, forceCloud, langHint: consumed.vLang });
+      });
     }
 
     document.getElementById('ai-inline-form')?.addEventListener('submit', e => {

@@ -2995,6 +2995,135 @@ table.m-grid tr.total td {
   border-color: var(--brass);
 }
 
+.ai-scope-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-voice-mode-toggle.is-active {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #0B1730;
+  font-weight: 700;
+}
+
+.ai-sbox-voice-deck {
+  margin: 10px 14px 4px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: var(--ai-input-bg);
+  border: 1px solid var(--brass);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ai-sbox-voice-deck[hidden] {
+  display: none !important;
+}
+
+.ai-svm-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-svm-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ai-ink);
+}
+
+.ai-svm-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--brass);
+  display: inline-block;
+}
+
+.ai-sbox-voice-deck[data-voice-phase="listening"] .ai-svm-orb {
+  background: #DC2626;
+}
+
+.ai-sbox-voice-deck[data-voice-phase="speaking"] .ai-svm-orb {
+  background: #0D9488;
+}
+
+.ai-svm-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-svm-wave-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--ai-hdr);
+  border: 1px solid var(--ai-line);
+}
+
+.ai-svm-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.ai-svm-bars span {
+  width: 3px;
+  height: 28%;
+  min-height: 4px;
+  border-radius: 999px;
+  background: var(--brass);
+  transition: height 0.08s ease;
+}
+
+.ai-svm-caption {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ai-ink);
+  line-height: 1.38;
+  flex: 1 1 auto;
+}
+
+.ai-svm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-svm-pri {
+  flex: 1 1 auto;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+}
+
+.ai-bot-table tbody tr.ai-sbox-row-click {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ai-bot-table tbody tr.ai-sbox-row-click:hover td {
+  background: var(--brass-tint);
+}
+
+.ai-showcase-speak-btn.is-speaking {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: #0B1730 !important;
+  font-weight: 700;
+}
+
 .ai-console-ftr input {
   flex: 1;
   background: var(--ai-input-bg);
