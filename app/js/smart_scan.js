@@ -1796,7 +1796,8 @@
     const timer = setTimeout(() => ctrl.abort(), hasBin ? 12000 : 4800);
     try {
       const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
-      const res = await fetch(`${base}/api/smart-scan`, {
+      const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+      const res = await edgeFetch(`${base}/api/smart-scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({
@@ -1857,7 +1858,7 @@
       const timerEdge = setTimeout(() => ctrlEdge.abort(), inlinePart ? 13000 : 8500);
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
-        const resEdge = await fetch(`${base}/api/smart-scan`, {
+        const resEdge = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/smart-scan`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

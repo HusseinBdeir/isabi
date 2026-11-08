@@ -27,7 +27,16 @@ import {
   handleEdgeSmartScan,
   handleEdgeTts
 } from '../../_lib/gemini.js';
-import { extractRequestSession, jsonResponse } from '../../_lib/security.js';
+import { applyEdgeCors, extractRequestSession, jsonResponse } from '../../_lib/security.js';
+
+const DEMO_EMPTY_GET_ROUTES = new Set([
+  '/sentinel_reviews',
+  '/alert_rules',
+  '/staff_biometrics',
+  '/work_schedules',
+  '/geo_config',
+  '/industry_domain_store'
+]);
 
 async function parseBody(request) {
   if (request.method === 'GET' || request.method === 'HEAD') return {};
@@ -39,7 +48,7 @@ async function parseBody(request) {
   }
 }
 
-export async function onRequest(context) {
+async function routeAppApi(context) {
   const { request, env, params } = context;
   if (request.method === 'OPTIONS') {
     return jsonResponse({ ok: true }, 204);
@@ -67,10 +76,34 @@ export async function onRequest(context) {
   if (subPath === '/auth/me' && request.method === 'GET') {
     return jsonResponse({ ok: true, edge: true, authenticated: Boolean(session), session });
   }
+  if (subPath === '/phone-scan') {
+    return handlePhoneScan(request, env, url, body);
+  }
+  if (subPath === '/users' && request.method === 'GET') {
+    return handleUsersGet(request, env, session);
+  }
 
-  if (subPath === '/users') {
-    if (request.method === 'GET') return handleUsersGet(request, env, session);
-    if (request.method === 'POST') return handleUsersPost(request, env, session, body);
+  const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';
+  if (!session) {
+    if (isDemoReq && request.method === 'GET' && DEMO_EMPTY_GET_ROUTES.has(subPath)) {
+      if (subPath === '/sentinel_reviews') return jsonResponse({ ok: true, demo: true, reviews: {} });
+      if (subPath === '/alert_rules') return jsonResponse({ ok: true, demo: true, overrides: {}, custom: [] });
+      if (subPath === '/staff_biometrics') return jsonResponse({ ok: true, demo: true, staff_biometrics: {} });
+      if (subPath === '/work_schedules') return jsonResponse({ ok: true, demo: true, work_schedules: null });
+      if (subPath === '/geo_config') return jsonResponse({ ok: true, demo: true, config: null });
+      if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
+    }
+    if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
+      if (subPath === '/ask') return handleEdgeAsk(request, env, body, context);
+      if (subPath === '/tts') return handleEdgeTts(request, env, body);
+      if (subPath === '/smart-scan') return handleEdgeSmartScan(request, env, body);
+      return handleEdgeAiEdge(request, env, body);
+    }
+    return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  }
+
+  if (subPath === '/users' && request.method === 'POST') {
+    return handleUsersPost(request, env, session, body);
   }
 
   if (subPath === '/records') {
@@ -83,31 +116,27 @@ export async function onRequest(context) {
   }
 
   if (subPath === '/sentinel_reviews') {
-    return handleSentinelReviews(request, env, body);
+    return handleSentinelReviews(request, env, session, body);
   }
 
   if (subPath === '/alert_rules') {
-    return handleAlertRules(request, env, body);
+    return handleAlertRules(request, env, session, body);
   }
 
   if (subPath === '/staff_biometrics') {
-    return handleStaffBiometrics(request, env, body);
+    return handleStaffBiometrics(request, env, session, body);
   }
 
   if (subPath === '/work_schedules') {
-    return handleKvDoc(request, env, 'work_schedules', 'work_schedules', body);
+    return handleKvDoc(request, env, session, 'work_schedules', 'work_schedules', body);
   }
 
   if (subPath === '/geo_config') {
-    return handleKvDoc(request, env, 'geo_config', 'config', body);
+    return handleKvDoc(request, env, session, 'geo_config', 'config', body);
   }
 
   if (subPath === '/industry_domain_store') {
     return handleIndustryDomainStore(request, env, session, body);
-  }
-
-  if (subPath === '/phone-scan') {
-    return handlePhoneScan(request, env, url, body);
   }
 
   if (subPath === '/blobs') {
@@ -129,4 +158,9 @@ export async function onRequest(context) {
   }
 
   return jsonResponse({ ok: false, error: 'Not found', path: subPath }, 404);
+}
+
+export async function onRequest(context) {
+  const resp = await routeAppApi(context);
+  return applyEdgeCors(resp, context.request);
 }

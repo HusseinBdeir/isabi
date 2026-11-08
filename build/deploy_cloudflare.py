@@ -1,14 +1,15 @@
 """deploy_cloudflare.py — One-Command Turnkey Option A Provisioner & Deployer for ISABI Systems.
 Provisions Cloudflare Pages project (`isabi-systems`), D1 SQLite (`isabi-ledger`),
 R2 bucket (`isabi-vault`), encrypted Edge Secrets (`GEMINI_API_KEY`, `ISABI_JWT_SECRET`),
-uploads schema + 88,885-statement ledger batches, deploys Pages + Functions, attaches custom
-domains (`isabisystems.com`, `www.isabisystems.com`), configures Cloudflare DNS CNAMEs, and
-prints the exact 2 Cloudflare nameservers for Namecheap.
+uploads schema + SHA-256 delta ledger batches (`0` D1 row writes on routine UI deploys),
+deploys Pages + Functions, attaches custom domains (`isabisystems.com`, `www.isabisystems.com`),
+configures Cloudflare DNS CNAMEs, and prints the exact 2 Cloudflare nameservers for Namecheap.
 
 Usage:
-  python build/deploy_cloudflare.py [--skip-seed] [--login]
+  python build/deploy_cloudflare.py [--skip-seed] [--seed] [--full-seed] [--force-schema] [--rotate-secrets] [--login]
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import json
 import os
 import pathlib
@@ -20,11 +21,33 @@ import sys
 import urllib.error
 import urllib.request
 
-ISABI_ROOT = pathlib.Path(__file__).resolve().parent.parent
+BUILD_DIR = pathlib.Path(__file__).resolve().parent
+if str(BUILD_DIR) not in sys.path:
+    sys.path.insert(0, str(BUILD_DIR))
+
+from export_d1_seed import COMMITTED_MANIFEST_JSON, DB_PATH, file_sha256, promote_pending_manifest
+
+ISABI_ROOT = BUILD_DIR.parent
 WRANGLER_TOML = ISABI_ROOT / "wrangler.toml"
 SCHEMA_SQL = ISABI_ROOT / "migrations" / "0001_schema.sql"
 BATCH_DIR = ISABI_ROOT / "exports" / "d1_batches"
 SECRET_STATE_FILE = ISABI_ROOT / "exports" / "cloudflare_edge_meta.json"
+
+
+def load_edge_meta() -> dict:
+    if SECRET_STATE_FILE.exists():
+        try:
+            data = json.loads(SECRET_STATE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def save_edge_meta(meta: dict) -> None:
+    SECRET_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SECRET_STATE_FILE.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
 def build_env() -> dict:
@@ -53,17 +76,11 @@ def read_gemini_key() -> str:
 
 
 def load_or_create_jwt_secret() -> str:
-    SECRET_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    meta = {}
-    if SECRET_STATE_FILE.exists():
-        try:
-            meta = json.loads(SECRET_STATE_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            meta = {}
+    meta = load_edge_meta()
     if not meta.get("jwt_secret"):
         meta["jwt_secret"] = secrets.token_urlsafe(48)
-        SECRET_STATE_FILE.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    return meta["jwt_secret"]
+        save_edge_meta(meta)
+    return str(meta["jwt_secret"])
 
 
 def run_wrangler(args: list[str], env: dict, input_text: str | None = None, check: bool = True):
@@ -228,13 +245,26 @@ def ensure_pages_project(env: dict):
 
 def upload_secrets(env: dict):
     jwt_sec = load_or_create_jwt_secret()
-    print("Uploading encrypted ISABI_JWT_SECRET to Cloudflare Pages...")
-    run_wrangler(["pages", "secret", "put", "ISABI_JWT_SECRET", "--project-name=isabi-systems"], env, input_text=jwt_sec, check=False)
-
     gem_key = read_gemini_key()
+    sec_sha = hashlib.sha256(f"{jwt_sec}|{gem_key}".encode("utf-8")).hexdigest()
+    meta = load_edge_meta()
+    if "--rotate-secrets" not in sys.argv and meta.get("last_secrets_sha256") == sec_sha:
+        print("Edge secrets unchanged; skipping redundant secret upload.")
+        return
+
+    print("Uploading encrypted ISABI_JWT_SECRET to Cloudflare Pages...")
+    r_jwt = run_wrangler(["pages", "secret", "put", "ISABI_JWT_SECRET", "--project-name=isabi-systems"], env, input_text=jwt_sec, check=True)
+    ok_sec = r_jwt.returncode == 0
+
     if gem_key:
         print("Uploading encrypted GEMINI_API_KEY to Cloudflare Pages...")
-        run_wrangler(["pages", "secret", "put", "GEMINI_API_KEY", "--project-name=isabi-systems"], env, input_text=gem_key, check=False)
+        r_gem = run_wrangler(["pages", "secret", "put", "GEMINI_API_KEY", "--project-name=isabi-systems"], env, input_text=gem_key, check=False)
+        ok_sec = ok_sec and (r_gem.returncode == 0)
+
+    if ok_sec:
+        meta = load_edge_meta()
+        meta["last_secrets_sha256"] = sec_sha
+        save_edge_meta(meta)
 
 
 def _upload_one_batch(bf: pathlib.Path, env: dict) -> str:
@@ -245,25 +275,51 @@ def _upload_one_batch(bf: pathlib.Path, env: dict) -> str:
 
 
 def seed_remote_d1(env: dict):
-    print("Applying 0001_schema.sql to remote D1 `isabi-ledger`...")
-    run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={SCHEMA_SQL}", "-y"], env, check=True)
+    schema_sha = file_sha256(SCHEMA_SQL)
+    db_sha = file_sha256(DB_PATH)
+    meta = load_edge_meta()
+
+    if "--force-schema" in sys.argv or meta.get("last_schema_sha256") != schema_sha:
+        print("Applying 0001_schema.sql to remote D1 `isabi-ledger`...")
+        run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={SCHEMA_SQL}", "-y"], env, check=True)
+        meta = load_edge_meta()
+        meta["last_schema_sha256"] = schema_sha
+        save_edge_meta(meta)
+    else:
+        print(f"Schema 0001_schema.sql unchanged ({schema_sha[:12]}); skipping remote DDL.")
 
     if "--skip-seed" in sys.argv:
+        print("Skipping D1 data seed (--skip-seed passed; 0 D1 row writes).")
         return
 
-    if not BATCH_DIR.exists() or not list(BATCH_DIR.glob("batch_*.sql")):
-        subprocess.run([sys.executable, str(ISABI_ROOT / "build" / "export_d1_seed.py")], cwd=str(ISABI_ROOT), env=env, check=True)
+    use_delta = ("--full-seed" not in sys.argv) and COMMITTED_MANIFEST_JSON.exists()
+    exp_cmd = [sys.executable, str(ISABI_ROOT / "build" / "export_d1_seed.py")]
+    if use_delta:
+        exp_cmd.append("--delta")
+    subprocess.run(exp_cmd, cwd=str(ISABI_ROOT), env=env, check=True)
+
     batches = sorted(BATCH_DIR.glob("batch_*.sql"))
     total = len(batches)
-    print(f"Uploading {total} SQL batches (88,885 statements) to remote D1 `isabi-ledger`...")
-    done = 0
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        futs = {pool.submit(_upload_one_batch, bf, env): bf for bf in batches}
-        for fut in as_completed(futs):
-            name = fut.result()
-            done += 1
-            if done == 1 or done % 15 == 0 or done == total:
-                print(f"  [{done}/{total}] {name} applied")
+    if total == 0:
+        print("Delta seed found 0 changed D1 statements across SQLite + Snapshot + Spine + Cloud (0 remote writes).")
+    else:
+        mode_lbl = "DELTA" if use_delta else "FULL"
+        print(f"Uploading {total} {mode_lbl} SQL batch(es) to remote D1 `isabi-ledger`...")
+        done = 0
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futs = {pool.submit(_upload_one_batch, bf, env): bf for bf in batches}
+            for fut in as_completed(futs):
+                name = fut.result()
+                done += 1
+                if done == 1 or done % 15 == 0 or done == total:
+                    print(f"  [{done}/{total}] {name} applied")
+
+    # Promote manifest ONLY after 100% of remote D1 batches succeed
+    if promote_pending_manifest():
+        print(f"Promoted D1 row-hash manifest -> {COMMITTED_MANIFEST_JSON.name}")
+    meta = load_edge_meta()
+    meta["last_seeded_db_sha256"] = db_sha
+    save_edge_meta(meta)
 
 
 def deploy_pages(env: dict):
@@ -297,28 +353,83 @@ def configure_domain_and_dns(acct_id: str):
     for dom in ("isabisystems.com", "www.isabisystems.com"):
         cf_api("POST", f"/accounts/{acct_id}/pages/projects/isabi-systems/domains", token, {"name": dom})
 
-    # 3. Ensure proxied CNAME records `@ -> isabi-systems.pages.dev` and `www -> isabi-systems.pages.dev`
+    # 3. Ensure proxied CNAME records `@ -> isabi-systems.pages.dev` and `www -> isabi-systems.pages.dev` (auto-healing any typo)
     if zone and zone.get("id"):
         zid = zone["id"]
         recs = cf_api("GET", f"/zones/{zid}/dns_records?per_page=100", token).get("result") or []
-        existing_names = {str(r.get("name") or "").lower() for r in recs}
+        by_name = {str(r.get("name") or "").lower(): r for r in recs}
         for rec_name in ("isabisystems.com", "www.isabisystems.com"):
-            if rec_name not in existing_names:
+            ex = by_name.get(rec_name)
+            if not ex:
                 cf_api(
                     "POST",
                     f"/zones/{zid}/dns_records",
                     token,
                     {"type": "CNAME", "name": rec_name, "content": "isabi-systems.pages.dev", "proxied": True, "ttl": 1},
                 )
-        ns_list = zone.get("name_servers") or []
-        if ns_list:
-            print("\n======================================================================")
-            print("FINAL STEP — UPDATE NAMECHEAP NAMESERVERS FOR `isabisystems.com`:")
-            print("  In Namecheap -> Domain List -> isabisystems.com -> Manage -> Nameservers")
-            print("  Change 'Namecheap BasicDNS' to 'Custom DNS' and enter:")
-            for idx, ns in enumerate(ns_list, 1):
-                print(f"    Nameserver {idx}: {ns}")
-            print("======================================================================")
+            elif ex.get("type") == "CNAME" and (
+                str(ex.get("content") or "").strip().lower() != "isabi-systems.pages.dev" or not ex.get("proxied")
+            ):
+                cf_api(
+                    "PATCH",
+                    f"/zones/{zid}/dns_records/{ex['id']}",
+                    token,
+                    {"type": "CNAME", "name": rec_name, "content": "isabi-systems.pages.dev", "proxied": True, "ttl": 1},
+                )
+                print(f"Healed DNS CNAME `{rec_name}` -> isabi-systems.pages.dev (Proxied)")
+
+        # 4. Ensure Cloudflare Edge 301 Redirect: `www.isabisystems.com/*` -> `https://isabisystems.com/*` (preserving path & query)
+        rs_get = cf_api("GET", f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint", token)
+        existing_rules = (rs_get.get("result") or {}).get("rules") or [] if rs_get.get("success") else []
+        has_www_rule = any("www.isabisystems.com" in str(rl.get("expression") or "") for rl in existing_rules)
+        if not has_www_rule:
+            clean_rules = [
+                {
+                    "expression": rl["expression"],
+                    "description": rl.get("description", ""),
+                    "action": rl["action"],
+                    "action_parameters": rl.get("action_parameters", {}),
+                    "enabled": rl.get("enabled", True),
+                }
+                for rl in existing_rules
+                if rl.get("expression") and rl.get("action")
+            ]
+            clean_rules.append({
+                "expression": 'http.host eq "www.isabisystems.com"',
+                "description": "Canonical apex redirect www.isabisystems.com to isabisystems.com",
+                "action": "redirect",
+                "action_parameters": {
+                    "from_value": {
+                        "status_code": 301,
+                        "target_url": {
+                            "expression": 'concat("https://isabisystems.com", http.request.uri.path)'
+                        },
+                        "preserve_query_string": True,
+                    }
+                },
+                "enabled": True,
+            })
+            rs_put = cf_api(
+                "PUT",
+                f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint",
+                token,
+                {"rules": clean_rules},
+            )
+            if rs_put.get("success"):
+                print("Configured Cloudflare Edge 301 redirect: www.isabisystems.com -> https://isabisystems.com")
+
+        if str(zone.get("status") or "").lower() == "active":
+            print(f"Cloudflare Zone `isabisystems.com` verified ACTIVE (id={zid}).")
+        else:
+            ns_list = zone.get("name_servers") or []
+            if ns_list:
+                print("\n======================================================================")
+                print("FINAL STEP — UPDATE NAMECHEAP NAMESERVERS FOR `isabisystems.com`:")
+                print("  In Namecheap -> Domain List -> isabisystems.com -> Manage -> Nameservers")
+                print("  Change 'Namecheap BasicDNS' to 'Custom DNS' and enter:")
+                for idx, ns in enumerate(ns_list, 1):
+                    print(f"    Nameserver {idx}: {ns}")
+                print("======================================================================")
 
 
 def main():
@@ -330,8 +441,8 @@ def main():
     r2_ok = ensure_r2_bucket(env)
     stamp_wrangler_toml(d1_uuid, r2_ok)
     ensure_pages_project(env)
-    seed_remote_d1(env)
     upload_secrets(env)
+    seed_remote_d1(env)
     deploy_pages(env)
     configure_domain_and_dns(acct_id)
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")

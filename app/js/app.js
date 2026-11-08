@@ -69,34 +69,36 @@
   const IS_HEADLESS_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
   const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints on local / LAN host
   let _edgeSessionToken = '';
+  let _edgeCookieAuthed = false;
   try { _edgeSessionToken = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || ''; } catch (_) {}
   function setEdgeSessionToken(tok) {
     _edgeSessionToken = String(tok || '');
+    if (!_edgeSessionToken) _edgeCookieAuthed = false;
     try {
       if (_edgeSessionToken) localStorage.setItem('isabi_mfg_edge_sess_tok_v1', _edgeSessionToken);
       else localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
     } catch (_) {}
   }
   function isDemoSandboxSession() {
-    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && (
-      PARAMS.get('demo') === '1' ||
-      PARAMS.get('autologin') === '1' ||
-      Boolean(typeof STATE !== 'undefined' && STATE && STATE.demoVisitor)
-    );
+    if (Boolean(typeof STATE !== 'undefined' && STATE && STATE.demoVisitor) || PARAMS.get('autologin') === '1') {
+      return true;
+    }
+    return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
   }
   function hasServerApi() {
     return Boolean(HAS_LOCAL_API || window.__ISABI_TEST_EDGE || (window.ISABI_HAS_EDGE_API && !IS_HEADLESS_HARNESS));
   }
   function edgeApiFetch(url, opts = {}) {
     const headers = Object.assign({}, opts.headers || {});
-    if (_edgeSessionToken && !headers['X-ISABI-Session']) {
-      headers['X-ISABI-Session'] = _edgeSessionToken;
-    }
     if (isDemoSandboxSession()) {
       headers['X-ISABI-Demo'] = '1';
+    } else if (_edgeSessionToken && !headers['X-ISABI-Session']) {
+      headers['X-ISABI-Session'] = _edgeSessionToken;
     }
     return fetch(url, Object.assign({ credentials: 'same-origin' }, opts, { headers }));
   }
+  window.__ISABI_IS_DEMO = isDemoSandboxSession;
+  window.ISABI_EDGE_FETCH = edgeApiFetch;
   const MIN_DATE = '2024-01-01';   // bhf_mindate on every manufacturing BU
   const MAX_DATE = '2030-12-31';   // Power BI Dates calendar ceiling (2024-01-01 .. 2030-12-31)
   const DEFAULT_VAT_RATE = 0.11;
@@ -7057,7 +7059,8 @@
     FACE_STATE.enrolStatusCls = '';
   }
   function userHasFaceId(u) {
-    return userFaceSamples(u).length > 0;
+    if (!u || u.face_cleared) return false;
+    return Boolean(userFaceSamples(u).length > 0 || (u.face_redacted && u.face_enrolled));
   }
 
   const AUTH_MODE_OPTIONS = [
@@ -7112,7 +7115,7 @@
 
   function seatAuthBadgeLabel(u) {
     const hasFace = userHasFaceId(u);
-    const n = userFaceSamples(u).length;
+    const n = userFaceSamples(u).length || (u && u.face_redacted && u.face_enrolled ? 3 : 0);
     const mode = effectiveSeatAuthMode(u);
     if (!hasFace || mode === 'pin_only') return 'PIN Only';
     if (mode === 'face_only') return `✓ ${n}/3 Poses · Face Only`;
@@ -30439,7 +30442,7 @@
 
   const _docBlobEdgePending = new Set();
 
-  function putDocBlob(blobId, dataUrl) {
+  function putDocBlob(blobId, dataUrl, companyHint) {
     if (!blobId || !dataUrl || typeof dataUrl !== 'string') return;
     const bid = String(blobId);
     _docBlobMem.set(bid, dataUrl);
@@ -30451,7 +30454,20 @@
       } catch (_) {}
     });
     if (hasServerApi() && !isDemoSandboxSession() && dataUrl.includes(';base64,') && !/^data:image\/svg\+xml/i.test(dataUrl) && !/^(mi-doc-|dom-doc-)/.test(bid)) {
-      const co = (typeof STATE !== 'undefined' && STATE && STATE.company && STATE.company !== 'manufacturing-group' && STATE.company !== 'all') ? STATE.company : '';
+      let co = String(companyHint || '').trim();
+      if (!co && typeof document !== 'undefined') {
+        const formCoEl = document.querySelector('#entryModal:not([hidden]) [name="company"], #entryModal:not([hidden]) #f_company');
+        if (formCoEl && formCoEl.value) co = String(formCoEl.value).trim();
+      }
+      if (!co && typeof STATE !== 'undefined' && STATE && STATE.company && STATE.company !== 'manufacturing-group' && STATE.company !== 'all' && !String(STATE.company).startsWith('industry:')) {
+        co = String(STATE.company).trim();
+      }
+      if (!co && typeof activeUser === 'function' && typeof allowedCompanyNames === 'function') {
+        try {
+          const allowed = allowedCompanyNames(activeUser());
+          if (Array.isArray(allowed) && allowed.length) co = String(allowed[0] || '').trim();
+        } catch (_) {}
+      }
       edgeApiFetch('./api/blobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -30484,9 +30500,11 @@
             });
             _attCacheRev++;
             if (typeof STATE !== 'undefined' && STATE && STATE.view === 'documents') safeRender();
+          } else {
+            _docBlobEdgePending.delete(primaryKey);
           }
         })
-        .catch(() => {});
+        .catch(() => { _docBlobEdgePending.delete(primaryKey); });
     }
     return '';
   }
@@ -89017,7 +89035,21 @@
   }
 
   function mergeUserRow(existing, incoming) {
-    if (!existing) return ensureCanonicalMultiIndustrySeat(Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming));
+    if (!existing) {
+      const baseNew = Object.assign({ face_samples: [], face_thumbs: [], face_required: false, auth_mode: '', face_updated_at: '', seat_updated_at: '' }, incoming);
+      if (incoming && incoming.pin_redacted && !incoming.pin_code) {
+        baseNew.pin_code = '';
+        baseNew.pin_redacted = true;
+      }
+      if (incoming && incoming.face_redacted) {
+        baseNew.face_samples = [];
+        baseNew.face_thumbs = [];
+        baseNew.face_redacted = true;
+        baseNew.face_enrolled = Boolean(incoming.face_enrolled);
+        delete baseNew.face_cleared;
+      }
+      return ensureCanonicalMultiIndustrySeat(baseNew);
+    }
     if (!incoming) return ensureCanonicalMultiIndustrySeat(existing);
     const exSeatTs = String(existing.seat_updated_at || '');
     const inSeatTs = String(incoming.seat_updated_at || '');
@@ -89025,8 +89057,25 @@
     const out = preferExistingSeat
       ? Object.assign({}, incoming, existing)
       : Object.assign({}, existing, incoming);
-    if (!incoming.pin_code && existing.pin_code) {
+    if (incoming.pin_code) {
+      out.pin_code = incoming.pin_code;
+      out._verifiedPin = true;
+      delete out.pin_redacted;
+    } else if (incoming.pin_redacted) {
+      if (!isDemoSandboxSession() && !existing._verifiedPin && (!exSeatTs || (inSeatTs && inSeatTs > exSeatTs))) {
+        out.pin_code = '';
+        out.pin_redacted = true;
+        delete out._verifiedPin;
+      } else if (existing.pin_code) {
+        out.pin_code = existing.pin_code;
+        delete out.pin_redacted;
+      } else {
+        out.pin_code = '';
+        out.pin_redacted = true;
+      }
+    } else if (existing.pin_code) {
       out.pin_code = existing.pin_code;
+      delete out.pin_redacted;
     }
     if (existing.id && /^u\d+$/i.test(String(existing.id)) && /^u-(hussein|zeinab|sabah)$/i.test(String(out.id || ''))) {
       out.id = existing.id;
@@ -89043,24 +89092,37 @@
     const inThumbs = userFaceThumbs(incoming);
     const exTs = String(existing.face_updated_at || '');
     const inTs = String(incoming.face_updated_at || '');
-    if (inSamples.length && ((!exSamples.length && !(existing.face_cleared && exTs > inTs)) || inTs >= exTs)) {
-      out.face_samples = inSamples;
-      out.face_thumbs = inThumbs.length ? inThumbs : exThumbs;
-      out.face_required = incoming.face_required != null ? !!incoming.face_required : true;
-      out.face_updated_at = inTs || exTs;
-      delete out.face_cleared;
-    } else if (exSamples.length && (!inSamples.length && !(incoming.face_cleared && inTs > exTs))) {
+    if (incoming.face_redacted) {
       out.face_samples = exSamples;
       out.face_thumbs = exThumbs;
-      out.face_required = existing.face_required != null ? !!existing.face_required : true;
-      out.face_updated_at = exTs;
-      delete out.face_cleared;
+      out.face_enrolled = Boolean(exSamples.length > 0 || (incoming.face_enrolled && !existing.face_cleared));
+      out.face_redacted = exSamples.length === 0 && Boolean(incoming.face_enrolled);
+      out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
+      out.face_updated_at = exTs || inTs;
+      if (!exSamples.length && existing.face_cleared) out.face_cleared = true;
+      else delete out.face_cleared;
     } else {
-      out.face_samples = inSamples;
-      out.face_thumbs = inSamples.length ? (inThumbs.length ? inThumbs : exThumbs) : [];
-      out.face_required = !!(incoming.face_required && inSamples.length);
-      out.face_updated_at = inTs || exTs;
-      if (!out.face_samples.length && (existing.face_cleared || incoming.face_cleared)) out.face_cleared = true;
+      delete out.face_redacted;
+      if (inSamples.length && ((!exSamples.length && !(existing.face_cleared && exTs > inTs)) || inTs >= exTs)) {
+        out.face_samples = inSamples;
+        out.face_thumbs = inThumbs.length ? inThumbs : exThumbs;
+        out.face_required = incoming.face_required != null ? !!incoming.face_required : true;
+        out.face_updated_at = inTs || exTs;
+        delete out.face_cleared;
+      } else if (exSamples.length && (!inSamples.length && !(incoming.face_cleared && inTs > exTs))) {
+        out.face_samples = exSamples;
+        out.face_thumbs = exThumbs;
+        out.face_required = existing.face_required != null ? !!existing.face_required : true;
+        out.face_updated_at = exTs;
+        delete out.face_cleared;
+      } else {
+        out.face_samples = inSamples;
+        out.face_thumbs = inSamples.length ? (inThumbs.length ? inThumbs : exThumbs) : [];
+        out.face_required = !!(incoming.face_required && inSamples.length);
+        out.face_updated_at = inTs || exTs;
+        if (!out.face_samples.length && (existing.face_cleared || incoming.face_cleared)) out.face_cleared = true;
+      }
+      out.face_enrolled = out.face_samples.length > 0;
     }
     if (preferExistingSeat && existing.auth_mode != null) out.auth_mode = existing.auth_mode;
     else if (incoming.auth_mode != null) out.auth_mode = incoming.auth_mode;
@@ -90509,24 +90571,25 @@
     if (Array.isArray(remote.users) && remote.users.length) {
       const rawRemoteCos = JSON.stringify(remote.users.map(u => u && u.companies));
       const merged = remote.users.filter(u => u && u.email).map(u => Object.assign({}, u));
+      const canSyncSeatsMeta = !remote._scopedForSession || /Owner|Supervisor|Manager|Admin/i.test(String(activeUser().role || ''));
       if (isPushing) {
         STATE.users.forEach(u => {
           if (!u || !u.email) return;
           const idx = merged.findIndex(x => (u.id && String(x.id) === String(u.id)) || norm(x.email) === norm(u.email));
           if (idx >= 0) merged[idx] = mergeUserRow(merged[idx], u);
-          else merged.push(mergeUserRow(null, u));
+          else if (canSyncSeatsMeta) merged.push(mergeUserRow(null, u));
         });
       } else {
         STATE.users.forEach(u => {
           if (!u || !u.email) return;
           const idx = merged.findIndex(x => (u.id && String(x.id) === String(u.id)) || norm(x.email) === norm(u.email));
-          if (idx < 0) { merged.push(u); needPush = true; }
+          if (idx < 0) { merged.push(u); if (canSyncSeatsMeta) needPush = true; }
           else merged[idx] = mergeUserRow(u, merged[idx]);
         });
       }
       const next = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
       if (JSON.stringify(next) !== JSON.stringify(STATE.users)) { changed = true; }
-      if (JSON.stringify(next.map(u => u && u.companies)) !== rawRemoteCos) { needPush = true; }
+      if (canSyncSeatsMeta && JSON.stringify(next.map(u => u && u.companies)) !== rawRemoteCos) { needPush = true; }
       const myEmail = norm(activeUser().email);
       STATE.users = next;
       const idx = STATE.users.findIndex(u => norm(u.email) === myEmail);
@@ -90557,13 +90620,13 @@
         STATE.faceSettings = Object.assign({}, STATE.faceSettings || {}, remote.faceSettings);
         changed = true;
         if (!STATE.authed) updateAuthFaceUi();
-      } else if (!isPushing && lFsTs && lFsTs > rFsTs) {
+      } else if (!isPushing && !remote._scopedForSession && lFsTs && lFsTs > rFsTs) {
         needPush = true;
       }
     }
     if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
       if (setLbpFxRate(remote.lbpFxRate, { updatedAt: remote.lbpFxUpdatedAt, sync: false, render: false })) changed = true;
-    } else if (!isPushing && STATE.lbpFxUpdatedAt && String(STATE.lbpFxUpdatedAt) > String(remote.lbpFxUpdatedAt || '')) {
+    } else if (!isPushing && !remote._scopedForSession && STATE.lbpFxUpdatedAt && String(STATE.lbpFxUpdatedAt) > String(remote.lbpFxUpdatedAt || '')) {
       needPush = true;
     }
     return { changed, needPush };
@@ -90596,18 +90659,26 @@
   async function doSync(pushChanges) {
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Auto-mint Edge HMAC session token for already-authenticated browsers after cutover
-    if (isEdgeActive && STATE.authed && !_edgeSessionToken && !isDemoSandboxSession()) {
+    if (isEdgeActive && STATE.authed && !_edgeSessionToken && !_edgeCookieAuthed && !isDemoSandboxSession()) {
       try {
+        const rMe = await edgeApiFetch('./api/auth/me');
+        if (rMe && rMe.ok) {
+          const jMe = await rMe.json().catch(() => null);
+          if (jMe && jMe.authenticated) _edgeCookieAuthed = true;
+        }
         const au = activeUser();
-        if (au && au.email) {
-          const rBoot = await edgeApiFetch('./api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: au.email, pin: au.pin_code || '', method: au.pin_code ? 'PIN' : 'Face ID', device: 'Session Resume' })
-          });
-          if (rBoot.ok) {
-            const jBoot = await rBoot.json();
-            if (jBoot && jBoot.token) setEdgeSessionToken(jBoot.token);
+        if (!_edgeCookieAuthed && au && au.email) {
+          const resumeFaceVec = FACE_STATE.lastVerifiedDescriptor || (Array.isArray(au.face_samples) && Array.isArray(au.face_samples[0]) && au.face_samples[0].length === 128 ? au.face_samples[0] : undefined);
+          if (au.pin_code || resumeFaceVec) {
+            const rBoot = await edgeApiFetch('./api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: au.email, pin: au.pin_code || '', method: au.pin_code ? 'PIN' : 'Face ID', face_descriptor: resumeFaceVec, device: 'Session Resume' })
+            });
+            if (rBoot.ok) {
+              const jBoot = await rBoot.json();
+              if (jBoot && jBoot.token) setEdgeSessionToken(jBoot.token);
+            }
           }
         }
       } catch (_) {}
@@ -90636,62 +90707,82 @@
             if (STATE.authed && (STATE.view !== prevV || STATE.company !== prevC)) safeRender();
           }
         }
-        const ctrlSr = new AbortController();
-        const tSr = setTimeout(() => ctrlSr.abort(), 5000);
-        const rSr = await edgeApiFetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
-        clearTimeout(tSr);
-        if (rSr.ok) {
-          const dSr = await rSr.json();
-          if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) {
-            saveLocalAuthAndRecords();
+        if (!isEdgeActive || STATE.authed || isDemoSandboxSession()) {
+          const ctrlSr = new AbortController();
+          const tSr = setTimeout(() => ctrlSr.abort(), 5000);
+          const rSr = await edgeApiFetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
+          clearTimeout(tSr);
+          if (rSr.ok) {
+            const dSr = await rSr.json();
+            if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) {
+              saveLocalAuthAndRecords();
+            }
           }
-        }
-        const ctrlAr = new AbortController();
-        const tAr = setTimeout(() => ctrlAr.abort(), 5000);
-        const rAr = await edgeApiFetch('./api/alert_rules', { signal: ctrlAr.signal });
-        clearTimeout(tAr);
-        if (rAr.ok) {
-          const dAr = await rAr.json();
-          if (dAr && mergeAlertRules(dAr)) {
-            saveLocalAuthAndRecords();
+          const ctrlAr = new AbortController();
+          const tAr = setTimeout(() => ctrlAr.abort(), 5000);
+          const rAr = await edgeApiFetch('./api/alert_rules', { signal: ctrlAr.signal });
+          clearTimeout(tAr);
+          if (rAr.ok) {
+            const dAr = await rAr.json();
+            if (dAr && mergeAlertRules(dAr)) {
+              saveLocalAuthAndRecords();
+            }
           }
-        }
-        const ctrlSb = new AbortController();
-        const tSb = setTimeout(() => ctrlSb.abort(), 5000);
-        const rSb = await edgeApiFetch('./api/staff_biometrics', { signal: ctrlSb.signal });
-        clearTimeout(tSb);
-        if (rSb.ok) {
-          const dSb = await rSb.json();
-          if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) {
-            saveLocalAuthAndRecords();
+          const ctrlSb = new AbortController();
+          const tSb = setTimeout(() => ctrlSb.abort(), 5000);
+          const rSb = await edgeApiFetch('./api/staff_biometrics', { signal: ctrlSb.signal });
+          clearTimeout(tSb);
+          if (rSb.ok) {
+            const dSb = await rSb.json();
+            if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) {
+              saveLocalAuthAndRecords();
+            }
           }
-        }
-        const ctrlWs = new AbortController();
-        const tWs = setTimeout(() => ctrlWs.abort(), 5000);
-        const rWs = await edgeApiFetch('./api/work_schedules', { signal: ctrlWs.signal });
-        clearTimeout(tWs);
-        if (rWs.ok) {
-          const dWs = await rWs.json();
-          if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) {
-            saveLocalAuthAndRecords();
+          const ctrlWs = new AbortController();
+          const tWs = setTimeout(() => ctrlWs.abort(), 5000);
+          const rWs = await edgeApiFetch('./api/work_schedules', { signal: ctrlWs.signal });
+          clearTimeout(tWs);
+          if (rWs.ok) {
+            const dWs = await rWs.json();
+            if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) {
+              saveLocalAuthAndRecords();
+            }
           }
-        }
-        const ctrlId = new AbortController();
-        const tId = setTimeout(() => ctrlId.abort(), 5000);
-        const rId = await edgeApiFetch('./api/industry_domain_store', { signal: ctrlId.signal });
-        clearTimeout(tId);
-        if (rId.ok) {
-          const dId = await rId.json();
-          let idChanged = false;
-          if (dId && dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) idChanged = true;
-          if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
-          if (idChanged) saveLocalAuthAndRecords();
+          const ctrlGeo = new AbortController();
+          const tGeo = setTimeout(() => ctrlGeo.abort(), 5000);
+          const rGeo = await edgeApiFetch('./api/geo_config', { signal: ctrlGeo.signal });
+          clearTimeout(tGeo);
+          if (rGeo.ok) {
+            const dGeo = await rGeo.json();
+            if (dGeo && dGeo.config && window.MFG_GEO && typeof window.MFG_GEO.importGeoConfig === 'function') {
+              if (window.MFG_GEO.importGeoConfig(dGeo.config)) {
+                if (typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED, true);
+                safeRender();
+              }
+            }
+          }
+          const ctrlId = new AbortController();
+          const tId = setTimeout(() => ctrlId.abort(), 5000);
+          const rId = await edgeApiFetch('./api/industry_domain_store', { signal: ctrlId.signal });
+          clearTimeout(tId);
+          if (rId.ok) {
+            const dId = await rId.json();
+            let idChanged = false;
+            if (dId && dId.industryCustomRows && mergeIndustryCustomRows(dId.industryCustomRows)) idChanged = true;
+            if (dId && dId.industryRowEdits && mergeIndustryRowEdits(dId.industryRowEdits)) idChanged = true;
+            if (idChanged) saveLocalAuthAndRecords();
+          }
         }
       } catch (_) { /* API not reachable */ }
     }
 
     // 2. Multi-Device Cloud Sync (Option A: Same-Origin Cloudflare D1 `/api/sync` -> Option C Relay Fallback)
     const isPublicDemoSandbox = isDemoSandboxSession();
+    if (isEdgeActive && !STATE.authed && !isPublicDemoSandbox) {
+      STATE.cloudStatus = '● Ready (Sign In)';
+      updateCloudBadges();
+      return;
+    }
     const allowHarnessEdge = Boolean(window.__ISABI_TEST_EDGE);
     const useEdgeSyncPrimary = Boolean(isEdgeActive && (allowHarnessEdge || !IS_HEADLESS_HARNESS));
     if ((!useEdgeSyncPrimary && (!CLOUD_URL || !CLOUD_KEY)) || (!allowHarnessEdge && (navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095))) || isPublicDemoSandbox) {
@@ -90716,6 +90807,10 @@
           clearTimeout(timerE);
           if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
             getRes = rE;
+          } else if (rE.status === 401 || rE.status === 403) {
+            STATE.cloudStatus = '● Sign-in required';
+            updateCloudBadges();
+            return;
           } else {
             syncTargetIsEdge = false;
           }
@@ -90741,25 +90836,41 @@
       const store = await getRes.json();
       const docs = (store && store.docs) || store || {};
       const remote = docs[CLOUD_DOC_KEY] || (store && store.customRecords ? store : {});
+      const isScopedRemote = Boolean(remote && remote._scopedForSession);
+      const auSync = activeUser();
+      const canManageSyncSeats = /Owner|Supervisor|Manager|Admin/i.test(String((auSync && auSync.role) || ''));
+      const allowedCoSet = isScopedRemote
+        ? new Set([
+            ...parseUserCompanies(auSync).map(c => norm(c)),
+            ...getAllowedCompanyKeys(auSync).map(c => norm(c))
+          ])
+        : null;
+      const canPushCo = (coRaw) => {
+        if (!isScopedRemote) return true;
+        const c = norm(coRaw || '');
+        return Boolean(c && allowedCoSet.has(c));
+      };
       const mRes = mergeRemoteMfgDoc(remote, Boolean(pushChanges));
       let changed = mRes.changed;
       if (mRes.needPush) pushChanges = true;
-      // anything only we hold -> push
+      // anything only we hold -> push (scoped to allowed BUs when remote._scopedForSession is active)
       if (!pushChanges && Array.isArray(STATE.kioskPunches) && STATE.kioskPunches.length) {
         const remMap = new Map(sanitizeKioskPunchesList(remote.kioskPunches).map(p => [String(p.id), p]));
         sanitizeKioskPunchesList(STATE.kioskPunches).forEach(p => {
+          if (!canPushCo(p && p.company)) return;
           const rp = remMap.get(String(p.id));
           if (!rp || Number(p.rev || 0) > Number(rp.rev || 0) || Boolean(p.voided) !== Boolean(rp.voided)) pushChanges = true;
         });
       }
-      if (!pushChanges && STATE.staffBiometrics && Object.keys(STATE.staffBiometrics).length) {
+      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.staffBiometrics && Object.keys(STATE.staffBiometrics).length) {
         const remBio = remote.staffBiometrics || {};
         Object.entries(STATE.staffBiometrics).forEach(([bk, bv]) => {
+          if (!canPushCo(bv && bv.company)) return;
           const rb = remBio[bk];
           if (!rb || String((bv && bv.updated_at) || '') > String(rb.updated_at || '')) pushChanges = true;
         });
       }
-      if (!pushChanges && STATE.workSchedules) {
+      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.workSchedules) {
         const remWs = remote.workSchedules || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} };
         const remStMap = new Map((remWs.shiftTypes || []).filter(s => s && s.id).map(s => [`${norm(s.company || 'All BUs')}|${String(s.id)}`, s]));
         (STATE.workSchedules.shiftTypes || []).forEach(st => {
@@ -90790,10 +90901,12 @@
         const remCr = remote.customRecords || {};
         const allCrCheckKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
         allCrCheckKeys.forEach(k => {
+          const isUniv = /^(customers|suppliers|products|chart_of_accounts|gl_accounts|employees|trucks|drivers|cost_centers|projects|sites)$/.test(k);
           const remList = Array.isArray(remCr[k]) ? remCr[k] : [];
           const remById = new Map(remList.filter(x => x && x.id).map(x => [String(x.id), x]));
           (STATE.customRecords[k] || []).forEach(r => {
             if (!r || !r.id) return;
+            if (isScopedRemote && !(r.company ? canPushCo(r.company) : isUniv)) return;
             const remR = remById.get(String(r.id));
             if (!remR) { pushChanges = true; return; }
             if (Boolean(r.voided) !== Boolean(remR.voided)) { pushChanges = true; return; }
@@ -90810,6 +90923,7 @@
         const myIndEdits = getIndustryRowEditStore();
         Object.entries(myIndEdits).forEach(([ek, ev]) => {
           if (!ev || typeof ev !== 'object') return;
+          if (!canPushCo(ev.company || ev.resort || ev.entity)) return;
           const rv = remIndEdits[ek];
           if (!rv || Boolean(ev.voided) !== Boolean(rv.voided) || Number(ev.rev || 1) > Number(rv.rev || 1) || String(ev.updated_at || ev.updatedAt || '') > String(rv.updated_at || rv.updatedAt || '')) {
             pushChanges = true;
@@ -90823,6 +90937,7 @@
           bList.forEach(r => {
             const pid = r && String(r.id || r.code || '').trim();
             if (!pid) return;
+            if (!canPushCo(r.company || r.resort || r.entity)) return;
             const rr = remB.get(pid);
             if (!rr || Boolean(r.voided) !== Boolean(rr.voided) || Number(r.rev || 1) > Number(rr.rev || 1) || String(r.updated_at || r.updatedAt || r._updatedAt || r._createdAt || '') > String(rr.updated_at || rr.updatedAt || rr._updatedAt || rr._createdAt || '')) {
               pushChanges = true;
@@ -90833,11 +90948,12 @@
       if (!pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
         const remSr = remote.sentinelReviews || {};
         Object.entries(STATE.sentinelReviews).forEach(([rk, rv]) => {
+          if (isScopedRemote && rv && rv.company && !canPushCo(rv.company)) return;
           const remRow = remSr[rk];
           if (!remRow || String(rv.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
         });
       }
-      if (!pushChanges && STATE.alertRules) {
+      if (!pushChanges && (!isScopedRemote || canManageSyncSeats) && STATE.alertRules) {
         const remAr = remote.alertRules || { overrides: {}, custom: [] };
         const remOv = remAr.overrides || {};
         Object.entries(STATE.alertRules.overrides || {}).forEach(([rk, rv]) => {
@@ -91259,16 +91375,20 @@
   async function completeFaceLogin(user, dist, snapshotUrl, methodLabel, opts = {}) {
     if (!user) return false;
     if (STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) return true;
+    const verifiedDesc = (opts && Array.isArray(opts.faceDescriptor) && opts.faceDescriptor.length === 128)
+      ? opts.faceDescriptor
+      : (Array.isArray(FACE_STATE.lastVerifiedDescriptor) && FACE_STATE.lastVerifiedDescriptor.length === 128 ? FACE_STATE.lastVerifiedDescriptor : null);
     const seatMode = effectiveSeatAuthMode(user);
     // If seat requires BOTH PIN + Face ID and the user scanned Face ID first (before entering PIN):
     if (seatMode === 'both' && !FACE_STATE.pending2faUser) {
       const typedPin = val('authPinInput');
-      const expectedPin = String(user.pin_code || '1111').trim();
+      const expectedPin = String(user.pin_code || '').trim();
       // If the user has ALREADY entered their valid PIN in #authPinInput (e.g. typed before/during scan), both factors are satisfied -> sign in immediately!
-      if (!opts.ignoreTypedPin && typedPin && typedPin === expectedPin) {
+      if (!opts.ignoreTypedPin && typedPin && expectedPin && typedPin === expectedPin) {
         methodLabel = methodLabel ? `${methodLabel} + PIN 2FA` : 'Face ID + PIN 2FA';
       } else {
         FACE_STATE.pendingPinUser = user;
+        FACE_STATE.pendingPinDescriptor = verifiedDesc;
         FACE_STATE.selectedAuthEmail = user.email;
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
@@ -91290,6 +91410,7 @@
     FACE_STATE.cooldownUntil = Date.now() + 2500;
     FACE_STATE.pending2faUser = null;
     FACE_STATE.pendingPinUser = null;
+    FACE_STATE.pendingPinDescriptor = null;
     resetLivenessState();
     const confPct = Math.max(55, Math.min(99.8, Math.round((1 - Number(dist || 0.2) * 0.85) * 1000) / 10));
 
@@ -91312,10 +91433,15 @@
       card.hidden = true;
     }
 
-    return performLogin(user.email, user.pin_code || '1111', {
+    const faceLoginPin = /2FA/i.test(String(methodLabel || ''))
+      ? (val('authPinInput') || user.pin_code || '')
+      : '';
+    return performLogin(user.email, faceLoginPin, {
       bypass2FA: true,
       method: methodLabel || 'Face ID',
-      confidence: confPct
+      confidence: confPct,
+      faceDescriptor: verifiedDesc,
+      serverToken: opts.serverToken || ''
     });
   }
 
@@ -91325,7 +91451,12 @@
     if (opts && opts.liveCamera && STATE.authed) return { status: 'already-authed' };
     const defaultNeeded = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
     const enrolled = usableFaces();
-    if (!enrolled.length) {
+    const hasRedactedEdgeBioSeats = Boolean(
+      hasServerApi() &&
+      !isDemoSandboxSession() &&
+      STATE.users.some(u => u && u.status !== 'Suspended' && u.face_enrolled && (!Array.isArray(u.face_samples) || !u.face_samples.length))
+    );
+    if (!enrolled.length && !hasRedactedEdgeBioSeats) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, defaultNeeded);
@@ -91334,6 +91465,7 @@
     }
     if (!det || !det.descriptor) {
       FACE_STATE.missedFrames = (FACE_STATE.missedFrames || 0) + 1;
+      FACE_STATE.edgeProbeStreak = 0;
       if (!FACE_STATE.streakCount || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
@@ -91346,13 +91478,18 @@
     if (det.multiple) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.edgeProbeStreak = 0;
       setAuthStreak(0, defaultNeeded);
       setAuthHint('One person in frame at a time', 'warn');
       return { status: 'multiple' };
     }
 
+    const descArr = (det.descriptor && det.descriptor.length === 128)
+      ? Array.from(det.descriptor, v => Number(Number(v).toFixed(5)))
+      : null;
+
     const baseThr = Number(STATE.faceSettings.threshold || 0.50);
-    const m = window.Face.match(det.descriptor, enrolled);
+    const m = enrolled.length ? window.Face.match(det.descriptor, enrolled) : { best: null, bestDist: Infinity, secondDist: Infinity };
     // On a real hardware camera feed (opts.videoEl), 2 consecutive strong matches + live landmarks unlock immediately (Kiosk 4 parity)
     const needed = (opts && opts.videoEl && !FACE_STATE.pending2faUser && m && m.bestDist <= (baseThr - 0.03))
       ? 2
@@ -91365,9 +91502,54 @@
       weakAbove: Number(STATE.faceSettings.weakAbove || 0.45),
       minFaceFrac: isSameStreakUserOnLiveVideo ? 0.10 : Number(STATE.faceSettings.minFaceFrac || 0.14)
     });
-    const dec = window.Face.decide(m, cfg, { faceSizeFrac: det.faceSizeFrac != null ? det.faceSizeFrac : 0.25 });
+    const dec = enrolled.length ? window.Face.decide(m, cfg, { faceSizeFrac: det.faceSizeFrac != null ? det.faceSizeFrac : 0.25 }) : { ok: false, status: 'unknown' };
 
     if (!dec.ok) {
+      if (hasRedactedEdgeBioSeats && descArr && (det.faceSizeFrac == null || det.faceSizeFrac >= 0.14)) {
+        const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
+        const liveProbe = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+        FACE_STATE.edgeProbeStreak = (FACE_STATE.edgeProbeStreak || 0) + 1;
+        if (FACE_STATE.edgeProbeStreak >= defaultNeeded && liveProbe.ok && !FACE_STATE.edgeProbeBusy && Date.now() >= (FACE_STATE.edgeProbeCooldownUntil || 0)) {
+          FACE_STATE.edgeProbeBusy = true;
+          FACE_STATE.edgeProbeCooldownUntil = Date.now() + 2500;
+          FACE_STATE.edgeProbeStreak = 0;
+          try {
+            const reqBody = {
+              email: probeTargetEmail || undefined,
+              pin: (FACE_STATE.pending2faUser && FACE_STATE.pending2faUser.pin_code) ? FACE_STATE.pending2faUser.pin_code : undefined,
+              method: FACE_STATE.pending2faUser ? 'PIN + Face ID 2FA' : 'Face ID',
+              face_descriptor: descArr,
+              device: 'Edge Face ID'
+            };
+            const rEdge = await edgeApiFetch('./api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(reqBody)
+            });
+            const jEdge = rEdge ? await rEdge.json().catch(() => null) : null;
+            if (jEdge && jEdge.two_factor_pin_required && jEdge.user && jEdge.user.email) {
+              const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
+              const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
+              if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
+              FACE_STATE.lastVerifiedDescriptor = descArr;
+              await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: descArr, ignoreTypedPin: false });
+              return { status: '2fa-pin-pending', user: seatObj, dist: 0.22 };
+            }
+            if (rEdge && rEdge.ok && jEdge && jEdge.ok && jEdge.user && jEdge.user.email) {
+              if (jEdge.token) setEdgeSessionToken(jEdge.token);
+              const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
+              const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
+              if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
+              FACE_STATE.lastVerifiedDescriptor = descArr;
+              await completeFaceLogin(seatObj, 0.20, snapshotUrl, reqBody.method, { faceDescriptor: descArr, serverToken: jEdge.token || '1' });
+              return { status: 'verified', user: seatObj, dist: 0.20, method: reqBody.method, liveness: liveProbe.method };
+            }
+          } catch (_) {
+          } finally {
+            FACE_STATE.edgeProbeBusy = false;
+          }
+        }
+      }
       if (opts && opts.videoEl && FACE_STATE.streakCount > 0) {
         FACE_STATE.weakFrames = (FACE_STATE.weakFrames || 0) + 1;
         if (FACE_STATE.weakFrames < 3) {
@@ -91399,8 +91581,8 @@
     if (FACE_STATE.pendingPinUser && norm(FACE_STATE.pendingPinUser.email) === norm(dec.best.email)) {
       setAuthStreak(needed, needed);
       const typedPin = val('authPinInput');
-      if (typedPin && matchedUser && typedPin === String(matchedUser.pin_code || '1111').trim()) {
-        await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, 'Face ID + PIN 2FA');
+      if (typedPin && matchedUser && matchedUser.pin_code && typedPin === String(matchedUser.pin_code).trim()) {
+        await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, 'Face ID + PIN 2FA', { faceDescriptor: FACE_STATE.pendingPinDescriptor || descArr });
         return { status: 'verified', user: matchedUser, dist: m.bestDist, method: 'Face ID + PIN 2FA' };
       }
       return { status: '2fa-pin-pending', user: matchedUser, dist: m.bestDist };
@@ -91451,6 +91633,8 @@
     // Confirmed across consecutive frames + live anti-screenshot liveness!
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
+    FACE_STATE.edgeProbeStreak = 0;
+    if (descArr) FACE_STATE.lastVerifiedDescriptor = descArr;
     setAuthStreak(needed, needed);
     const livenessTag = liveRes.method && liveRes.method !== 'synthetic-descriptor' && liveRes.method !== 'multi-frame'
       ? ` · Live ${liveRes.method === 'turn3d' ? '3D Turn' : 'Blink'}`
@@ -91460,7 +91644,7 @@
     if (!snapshotUrl && opts && opts.videoEl && window.Face && window.Face.snapshot) {
       try { snapshotUrl = window.Face.snapshot(opts.videoEl); } catch (_) {}
     }
-    const loginRes = await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, methodLabel);
+    const loginRes = await completeFaceLogin(matchedUser, m.bestDist, snapshotUrl, methodLabel, { faceDescriptor: descArr });
     if (loginRes === '2fa_pin_pending') {
       return { status: '2fa-pin-pending', user: matchedUser, dist: m.bestDist, method: methodLabel, liveness: liveRes.method };
     }
@@ -91772,6 +91956,7 @@
       full_name: name,
       email,
       pin_code: pin,
+      _verifiedPin: true,
       role: finalRole,
       companies,
       pbi_access: acc[0] || 'partial',
@@ -91787,8 +91972,10 @@
       face_updated_at: prev.face_updated_at || '',
       seat_updated_at: nowIso
     };
-    if (existingIdx >= 0) STATE.users[existingIdx] = Object.assign(STATE.users[existingIdx], newUser);
-    else STATE.users.push(newUser);
+    if (existingIdx >= 0) {
+      STATE.users[existingIdx] = Object.assign(STATE.users[existingIdx], newUser);
+      delete STATE.users[existingIdx].pin_redacted;
+    } else STATE.users.push(newUser);
     STATE.editingUserId = String(newUser.id);
     STATE.showAddUserForm = true;
     STATE.userFormDirty = false;
@@ -92719,7 +92906,7 @@
       e.stopPropagation();
       if (!isOwner()) return;
       const u = STATE.users[Number(btn.getAttribute('data-sim-user'))];
-      if (u) performLogin(u.email, u.pin_code || '1111', { bypass2FA: true, method: 'Owner Impersonation' });
+      if (u) performLogin(u.email, '', { bypass2FA: true, method: 'Owner Impersonation' });
     }));
     root.querySelectorAll('[data-invite-user]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -94761,7 +94948,7 @@
     let email = norm(emailRaw);
     const pin = String(pinRaw || '').trim();
     if (Date.now() < loginLockUntil) { authError(`Too many attempts. Wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)}s.`); return false; }
-    let serverVerifiedLogin = false;
+    let serverVerifiedLogin = Boolean(opts && opts.serverToken);
     if (!email && pin) {
       const matches = STATE.users.filter(u => u.status !== 'Suspended' && u.pin_code && String(u.pin_code).trim() === pin);
       if (matches.length === 1) {
@@ -94773,7 +94960,7 @@
         setAuthSeatDrawerOpen(true, { silentFocus: true });
         authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
         return false;
-      } else if (hasServerApi()) {
+      } else if (hasServerApi() && !isDemoSandboxSession()) {
         try {
           const rPin = await edgeApiFetch('./api/auth/login', {
             method: 'POST',
@@ -94787,12 +94974,16 @@
             authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
             return false;
           }
-          if (rPin && rPin.ok && jPin && jPin.user && jPin.user.email) {
+          if (jPin && jPin.two_factor_face_required && jPin.email) {
+            email = norm(jPin.email);
+            const uIdx = STATE.users.findIndex(u => norm(u.email) === email);
+            if (uIdx >= 0) { STATE.users[uIdx].pin_code = pin; STATE.users[uIdx]._verifiedPin = true; delete STATE.users[uIdx].pin_redacted; }
+          } else if (rPin && rPin.ok && jPin && jPin.user && jPin.user.email) {
             email = norm(jPin.user.email);
             if (jPin.token) setEdgeSessionToken(jPin.token);
             const uIdx = STATE.users.findIndex(u => norm(u.email) === email);
-            if (uIdx >= 0) STATE.users[uIdx] = mergeUserRow(STATE.users[uIdx], Object.assign({}, jPin.user, { pin_code: pin }));
-            else STATE.users.push(ensureCanonicalMultiIndustrySeat(Object.assign({}, jPin.user, { pin_code: pin })));
+            if (uIdx >= 0) STATE.users[uIdx] = mergeUserRow(STATE.users[uIdx], Object.assign({}, jPin.user, { pin_code: pin, _verifiedPin: true }));
+            else STATE.users.push(ensureCanonicalMultiIndustrySeat(Object.assign({}, jPin.user, { pin_code: pin, _verifiedPin: true })));
             serverVerifiedLogin = true;
           } else {
             loginAttempts += 1;
@@ -94813,8 +95004,14 @@
         return false;
       }
     }
+    const reqMethod = String((opts && opts.method) || '');
+    const isPinlessBypass = Boolean(opts && opts.bypass2FA) && (
+      (/^face\s*id/i.test(reqMethod) && !/face\s*id\s*\+\s*pin/i.test(reqMethod)) ||
+      reqMethod === 'Owner Impersonation' ||
+      reqMethod === 'Interactive Sandbox'
+    );
     if (!email) { authError('Enter your Access PIN.'); return false; }
-    if (!pin) { authError('Enter your Access PIN.'); return false; }
+    if (!pin && !isPinlessBypass && !serverVerifiedLogin) { authError('Enter your Access PIN.'); return false; }
 
     let idx = STATE.users.findIndex(u => norm(u.email) === email);
     if (idx < 0 && !email.includes('@')) {
@@ -94825,25 +95022,44 @@
     const user = STATE.users[idx];
     if (user.status === 'Suspended') { authError('This seat is suspended. Contact an administrator.'); return false; }
     const localPinStr = String(user.pin_code || '').trim();
-    if (!serverVerifiedLogin && (!localPinStr || pin !== localPinStr)) {
+    const completedFaceFirst2FA = !!(FACE_STATE.pendingPinUser && norm(FACE_STATE.pendingPinUser.email) === norm(user.email));
+    const pendingFaceVecForPin = completedFaceFirst2FA
+      ? (opts.faceDescriptor || FACE_STATE.pendingPinDescriptor || FACE_STATE.lastVerifiedDescriptor || null)
+      : null;
+    if (!serverVerifiedLogin && !isPinlessBypass && (!localPinStr || pin !== localPinStr)) {
       let verifiedViaApi = false;
-      if (hasServerApi()) {
+      if (hasServerApi() && !isDemoSandboxSession()) {
         try {
+          const checkFaceVec = pendingFaceVecForPin || opts.faceDescriptor;
           const rCheck = await edgeApiFetch('./api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: user.email, pin, method: opts.method || 'PIN', device: 'PIN Verify' })
+            body: JSON.stringify({
+              email: user.email,
+              pin,
+              method: completedFaceFirst2FA ? (opts.method || 'Face ID + PIN 2FA') : (opts.method || 'PIN'),
+              face_descriptor: Array.isArray(checkFaceVec) && checkFaceVec.length === 128 ? checkFaceVec : undefined,
+              device: 'PIN Verify'
+            })
           });
-          if (rCheck && rCheck.ok) {
-            const jCheck = await rCheck.json().catch(() => null);
-            if (jCheck && jCheck.token) setEdgeSessionToken(jCheck.token);
+          const jCheck = rCheck ? await rCheck.json().catch(() => null) : null;
+          if (rCheck && rCheck.ok && jCheck && jCheck.ok) {
+            if (jCheck.token) setEdgeSessionToken(jCheck.token);
+            if (jCheck.user) STATE.users[idx] = mergeUserRow(user, Object.assign({}, jCheck.user, { pin_code: pin, _verifiedPin: true }));
             user.pin_code = pin;
+            user._verifiedPin = true;
+            delete user.pin_redacted;
             verifiedViaApi = true;
             serverVerifiedLogin = true;
+          } else if (jCheck && jCheck.two_factor_face_required) {
+            user.pin_code = pin;
+            user._verifiedPin = true;
+            delete user.pin_redacted;
+            verifiedViaApi = true;
           }
         } catch (_) {}
       }
-      if (!verifiedViaApi && (!localPinStr ? pin !== '1111' : true)) {
+      if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : pin !== '1111') : true)) {
         loginAttempts += 1;
         if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
         else authError('Incorrect PIN for ' + user.full_name + '.');
@@ -94862,10 +95078,10 @@
     }
 
     // If user already completed Live Face ID Step 1 under 'both' mode, completing PIN Step 2 signs them in!
-    const completedFaceFirst2FA = !!(FACE_STATE.pendingPinUser && norm(FACE_STATE.pendingPinUser.email) === norm(user.email));
     if (completedFaceFirst2FA) {
       FACE_STATE.pendingPinUser = null;
-      opts = Object.assign({}, opts, { bypass2FA: true, method: opts.method || 'Face ID + PIN 2FA' });
+      FACE_STATE.pendingPinDescriptor = null;
+      opts = Object.assign({}, opts, { bypass2FA: true, method: opts.method || 'Face ID + PIN 2FA', faceDescriptor: pendingFaceVecForPin || opts.faceDescriptor });
     }
 
     // Step-Up 2FA Biometric Gate: if this seat has enrolled Face ID and 2FA ('both') is enforced, require Live Face ID confirmation!
@@ -94883,15 +95099,66 @@
       return '2fa_pending';
     }
 
-    FACE_STATE.pending2faUser = null;
-    FACE_STATE.pendingPinUser = null;
     const nowStr = nowStamp();
     const ua = navigator.userAgent || '';
     const devLabel = /iPhone|iPad/i.test(ua) ? 'iOS Safari' : (/Android/i.test(ua) ? 'Android Chrome' : (/Edg\//.test(ua) ? 'Desktop Edge' : 'Desktop Browser'));
     const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
     const authMethod = opts.method || 'PIN';
     const authConf = opts.confidence != null ? Number(opts.confidence) : null;
+    const isEdgeAuthActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
 
+    if (hasServerApi() && !serverVerifiedLogin && !isDemoSandboxSession()) {
+      const loginFaceVec = (Array.isArray(opts.faceDescriptor) && opts.faceDescriptor.length === 128)
+        ? opts.faceDescriptor
+        : ((opts.bypass2FA && Array.isArray(user.face_samples) && Array.isArray(user.face_samples[0]) && user.face_samples[0].length === 128)
+          ? user.face_samples[0]
+          : (Array.isArray(FACE_STATE.lastVerifiedDescriptor) && FACE_STATE.lastVerifiedDescriptor.length === 128 ? FACE_STATE.lastVerifiedDescriptor : undefined));
+      try {
+        const rLogin = await edgeApiFetch('./api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email, pin, device: devLabel, method: authMethod, confidence: authConf, face_descriptor: loginFaceVec })
+        });
+        if (rLogin && rLogin.ok) {
+          const jLogin = await rLogin.json().catch(() => null);
+          if (jLogin && jLogin.token) setEdgeSessionToken(jLogin.token);
+          const verifiedPinPatch = (pin && !isPinlessBypass) ? { pin_code: pin, _verifiedPin: true } : {};
+          if (jLogin && jLogin.user) STATE.users[idx] = mergeUserRow(STATE.users[idx], Object.assign({}, jLogin.user, verifiedPinPatch));
+          else if (pin && !isPinlessBypass) { STATE.users[idx].pin_code = pin; STATE.users[idx]._verifiedPin = true; delete STATE.users[idx].pin_redacted; }
+        } else if (isEdgeAuthActive) {
+          const jErr = rLogin ? await rLogin.json().catch(() => null) : null;
+          if (jErr && jErr.two_factor_face_required) {
+            FACE_STATE.pending2faUser = user;
+            FACE_STATE.pendingPinUser = null;
+            resetLivenessState();
+            updateAuthFaceUi();
+            setAuthHint(`PIN verified. Look at the camera to verify ${user.full_name}.`, 'ok');
+            if (!FACE_STATE.camActive && !navigator.webdriver) startAuthFaceScanner(true);
+            return '2fa_pending';
+          }
+          if (jErr && jErr.two_factor_pin_required) {
+            FACE_STATE.pendingPinUser = user;
+            FACE_STATE.pendingPinDescriptor = loginFaceVec || null;
+            updateAuthFaceUi();
+            setAuthHint(`Face verified for ${user.full_name}. Enter PIN to finish sign-in.`, 'ok');
+            return '2fa_pin_pending';
+          }
+          authError((jErr && jErr.error) || ('Verification failed for ' + user.full_name + '.'));
+          return false;
+        }
+      } catch (_) {
+        if (isEdgeAuthActive) {
+          const canOfflineVerify = (localPinStr && pin === localPinStr) || (Array.isArray(loginFaceVec) && loginFaceVec.length === 128 && userFaceSamples(user).length > 0);
+          if (!canOfflineVerify) {
+            authError('Offline: cannot verify uncached seat credentials.');
+            return false;
+          }
+        }
+      }
+    }
+
+    FACE_STATE.pending2faUser = null;
+    FACE_STATE.pendingPinUser = null;
     user.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
     try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
@@ -94914,20 +95181,6 @@
     });
     STATE.sessions = STATE.sessions.slice(0, 50);
     saveLocalAuthAndRecords();
-
-    if (hasServerApi() && !serverVerifiedLogin) {
-      try {
-        const rLogin = await edgeApiFetch('./api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: user.email, pin, device: devLabel, method: authMethod, confidence: authConf })
-        });
-        if (rLogin && rLogin.ok) {
-          const jLogin = await rLogin.json().catch(() => null);
-          if (jLogin && jLogin.token) setEdgeSessionToken(jLogin.token);
-        }
-      } catch (_) { /* offline / static fallback */ }
-    }
 
     if (!getAllowedCompanyKeys(user).includes(STATE.company)) STATE.company = getAllowedCompanyKeys(user)[0];
     if (!canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
@@ -112468,8 +112721,8 @@
         if (!cleaned || authUiLoginBusy || STATE.authed) return;
 
         if (FACE_STATE.pendingPinUser) {
-          const expected = String(FACE_STATE.pendingPinUser.pin_code || '1111').trim();
-          if (cleaned === expected) {
+          const knownPin = String(FACE_STATE.pendingPinUser.pin_code || '').trim();
+          if (knownPin ? (cleaned === knownPin) : (hasServerApi() && cleaned.length === 4)) {
             authUiLoginBusy = true;
             try { await performLogin(FACE_STATE.pendingPinUser.email, cleaned); } finally { authUiLoginBusy = false; }
           }
@@ -112493,7 +112746,8 @@
           const targetEmail = norm(resolveUiSubmitEmail());
           if (targetEmail) {
             const targetSeat = activeSeats.find(u => norm(u.email) === targetEmail);
-            if (targetSeat && String(targetSeat.pin_code || '1111').trim() === cleaned) {
+            const targetKnownPin = targetSeat ? String(targetSeat.pin_code || '').trim() : '';
+            if (targetSeat && (targetKnownPin ? (targetKnownPin === cleaned) : (hasServerApi() && cleaned.length === 4))) {
               authUiLoginBusy = true;
               try { await performLogin(targetSeat.email, cleaned); } finally { authUiLoginBusy = false; }
             }
@@ -113418,7 +113672,7 @@
     // SQLite / Cloudflare D1 Edge API status & zero-404 first-visit Edge auto-detection
     const probeEdgeStatus = () => {
       edgeApiFetch('./api/status').then(r => {
-        if (r.status === 404 && !/\.pages\.dev$/i.test(location.hostname || '')) {
+        if (r.status === 404 && !/(?:^|\.)isabisystems\.com$|\.pages\.dev$/i.test(location.hostname || '')) {
           window.ISABI_HAS_EDGE_API = false;
           try { localStorage.removeItem('isabi_edge_active_v1'); } catch (_) {}
           return null;

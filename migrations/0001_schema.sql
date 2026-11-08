@@ -279,6 +279,35 @@ CREATE TABLE IF NOT EXISTS jv_distributions (id TEXT PRIMARY KEY, name TEXT DEFA
 CREATE TABLE IF NOT EXISTS daily_totals (id TEXT PRIMARY KEY, name TEXT DEFAULT '', company TEXT DEFAULT '', date TEXT DEFAULT '', rep_date TEXT DEFAULT '', total REAL DEFAULT 0, source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '', rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');
 CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, name TEXT DEFAULT '', company TEXT DEFAULT '', date TEXT DEFAULT '', rep_date TEXT DEFAULT '', category TEXT DEFAULT '', parent_table TEXT DEFAULT '', parent_id TEXT DEFAULT '', amount REAL DEFAULT 0, status TEXT DEFAULT '', source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '', rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');
 
+-- Composite (company, date/start_date DESC) indexes across remaining operational tables for O(limit) B-tree seeks
+CREATE INDEX IF NOT EXISTS idx_recurring_expenses_co_date ON recurring_expenses (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_equipment_defects_co_date ON equipment_defects (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_equipment_repairs_co_date ON equipment_repairs (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_repair_items_co_date ON repair_items (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_equipment_oil_logs_co_date ON equipment_oil_logs (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_part_movements_co_date ON part_movements (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_warehouse_movements_co_date ON warehouse_movements (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_salaries_co_date ON salaries (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_vat_invoices_co_date ON vat_invoices (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_terms_co_start ON credit_terms (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_company_equipment_co_start ON company_equipment (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_company_drivers_co_start ON company_drivers (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_employments_co_start ON employments (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_attendance_co_date ON attendance (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_work_shifts_co_start ON work_shifts (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_staff_assignments_co_start ON staff_assignments (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_freelance_entries_co_date ON freelance_entries (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_logistics_allowances_co_date ON logistics_allowances (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_overtime_rates_co_start ON overtime_rates (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_external_movements_co_date ON external_movements (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_loans_co_date ON loans (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_loan_settlements_co_date ON loan_settlements (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_conversions_co_date ON conversions (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_jv_partnerships_co_start ON jv_partnerships (company, start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_jv_distributions_co_date ON jv_distributions (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_daily_totals_co_date ON daily_totals (company, date DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_co_date ON documents (company, date DESC);
+
 -- Universal Registries (All BUs)
 CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, name TEXT DEFAULT '', official_name TEXT DEFAULT '', company TEXT DEFAULT '', phone TEXT DEFAULT '', contact TEXT DEFAULT '', email TEXT DEFAULT '', address TEXT DEFAULT '', region TEXT DEFAULT '', mof_no TEXT DEFAULT '', vat_registered INTEGER DEFAULT 0, credit_days INTEGER DEFAULT 30, credit_limit REAL DEFAULT 0, source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '', rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');
 CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT DEFAULT '', official_name TEXT DEFAULT '', company TEXT DEFAULT '', category TEXT DEFAULT '', phone TEXT DEFAULT '', contact TEXT DEFAULT '', email TEXT DEFAULT '', address TEXT DEFAULT '', region TEXT DEFAULT '', mof_no TEXT DEFAULT '', vat_registered INTEGER DEFAULT 0, source TEXT DEFAULT '', entered_by TEXT DEFAULT '', entered_at TEXT DEFAULT '', voided INTEGER DEFAULT 0, voided_by TEXT DEFAULT '', voided_at TEXT DEFAULT '', modified_by TEXT DEFAULT '', modified_at TEXT DEFAULT '', notes TEXT DEFAULT '', rev INTEGER DEFAULT 1, payload_json TEXT DEFAULT '{}');

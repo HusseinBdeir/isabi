@@ -5126,7 +5126,8 @@
     if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
-        const rLocal = await fetch(`${base}/api/tts`, {
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        const rLocal = await edgeFetch(`${base}/api/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: promptText, lang, voiceName, model: 'gemini-3.8-flash-lite-tts' }),
@@ -6097,7 +6098,7 @@
           const locCtrl = new AbortController();
           const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
-            const rLoc = await fetch(`${base}/api/ask`, {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -6980,7 +6981,7 @@
           const locCtrl = new AbortController();
           const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
-            const rLoc = await fetch(`${base}/api/ask`, {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -7830,7 +7831,7 @@
           const locCtrl = new AbortController();
           const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
-            const rLoc = await fetch(`${base}/api/ask`, {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -8563,7 +8564,7 @@
           const locCtrl = new AbortController();
           const locTimer = setTimeout(() => locCtrl.abort(), 8000);
           try {
-            const rLoc = await fetch(`${base}/api/ask`, {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -9478,7 +9479,7 @@
     if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
-        const rLoc = await fetch(`${base}/api/ask`, {
+        const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

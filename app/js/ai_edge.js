@@ -394,7 +394,8 @@
       const timer = setTimeout(() => ctrl.abort(), inlinePart ? 12000 : 6500);
       try {
         const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
-        const res = await fetch(`${base}/api/ai-edge`, {
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        const res = await edgeFetch(`${base}/api/ai-edge`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

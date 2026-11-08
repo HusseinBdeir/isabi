@@ -5349,7 +5349,7 @@ __SHOWCASE_I18N_JS__
     if (location.protocol.startsWith('http') && !navigator.webdriver && !window.__ISABI_SYNC_TEST) {
       if (window.ISABI_HAS_EDGE_API) {
         fetch('./api/health').then(r => {
-          if (r.status === 404 && !/\.pages\.dev$/i.test(location.hostname || '')) {
+          if (r.status === 404 && !/(?:^|\.)isabisystems\.com$|\.pages\.dev$/i.test(location.hostname || '')) {
             window.ISABI_HAS_EDGE_API = false;
             try { localStorage.removeItem('isabi_edge_active_v1'); } catch (_) {}
           }

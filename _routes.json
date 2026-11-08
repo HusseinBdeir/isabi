@@ -2,7 +2,11 @@
   "version": 1,
   "include": [
     "/api/*",
-    "/app/api/*"
+    "/app/api/*",
+    "/reset",
+    "/reset.html",
+    "/app/reset",
+    "/app/reset.html"
   ],
   "exclude": []
 }

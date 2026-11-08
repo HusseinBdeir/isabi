@@ -9019,7 +9019,12 @@
       "● OK": "● سليم",
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
       "✓ SAVED": "✓ محفوظ",
-      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة"
+      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
+      "● Ready (Sign In)": "● جاهز (سجّل الدخول)",
+      "Ready (Sign In)": "جاهز (سجّل الدخول)",
+      "● Sign-in required": "● تسجيل الدخول مطلوب",
+      "Sign-in required": "تسجيل الدخول مطلوب",
+      "Offline: cannot verify uncached seat credentials.": "دون اتصال: يتعذّر التحقق من بيانات مقعد غير مخزّنة محلياً."
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -18020,7 +18025,12 @@
       "● OK": "● OK",
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
       "✓ SAVED": "✓ ENREGISTRÉ",
-      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues"
+      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues",
+      "● Ready (Sign In)": "● Prêt (Connexion)",
+      "Ready (Sign In)": "Prêt (Connexion)",
+      "● Sign-in required": "● Connexion requise",
+      "Sign-in required": "Connexion requise",
+      "Offline: cannot verify uncached seat credentials.": "Hors ligne : impossible de vérifier un siège non mis en cache."
     }
   };
 

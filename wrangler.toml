@@ -8,7 +8,6 @@ database_name = "isabi-ledger"
 database_id = "1feff285-d364-4f42-9c9d-a5baad4a0471"
 migrations_dir = "migrations"
 
-# Uncomment when R2 is enabled on the Cloudflare account:
-# [[r2_buckets]]
-# binding = "BUCKET"
-# bucket_name = "isabi-vault"
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "isabi-vault"

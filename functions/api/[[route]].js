@@ -5,7 +5,7 @@
 
 import { handleEdgeAsk, handleEdgeTts } from '../_lib/gemini.js';
 import { handleShowcaseLead, handleShowcaseLog, handleStatus } from '../_lib/d1_store.js';
-import { jsonResponse } from '../_lib/security.js';
+import { applyEdgeCors, jsonResponse } from '../_lib/security.js';
 
 async function parseRequestBody(request) {
   if (request.method === 'GET' || request.method === 'HEAD') return {};
@@ -17,7 +17,7 @@ async function parseRequestBody(request) {
   }
 }
 
-export async function onRequest(context) {
+async function routeShowcaseApi(context) {
   const { request, env, params } = context;
   if (request.method === 'OPTIONS') {
     return jsonResponse({ ok: true }, 204);
@@ -56,4 +56,9 @@ export async function onRequest(context) {
   }
 
   return jsonResponse({ ok: false, error: 'Not found' }, 404);
+}
+
+export async function onRequest(context) {
+  const resp = await routeShowcaseApi(context);
+  return applyEdgeCors(resp, context.request);
 }

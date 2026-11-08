@@ -24,8 +24,20 @@ function b64UrlDecode(str) {
   return out;
 }
 
+function resolveEdgeJwtSecret(env) {
+  const configured = env && typeof env.ISABI_JWT_SECRET === 'string' ? env.ISABI_JWT_SECRET.trim() : '';
+  if (configured.length >= 16) return configured;
+  if (env && String(env.ISABI_ALLOW_DEV_SECRET || '') === '1') {
+    return 'isabi-edge-dev-fallback-secret-change-in-prod';
+  }
+  return '';
+}
+
 async function getHmacKey(secretStr) {
-  const raw = ENC.encode(String(secretStr || 'isabi-edge-dev-fallback-secret-change-in-prod'));
+  if (!secretStr || typeof secretStr !== 'string') {
+    throw new Error('HMAC secret is not configured');
+  }
+  const raw = ENC.encode(secretStr);
   return crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
@@ -46,6 +58,10 @@ export async function constantTimeEqual(a, b) {
 }
 
 export async function signEdgeSession(claims, env, ttlSeconds = 60 * 60 * 24 * 14) {
+  const secret = resolveEdgeJwtSecret(env);
+  if (!secret) {
+    throw new Error('ISABI_JWT_SECRET is not configured on Edge Worker');
+  }
   const nowSec = Math.floor(Date.now() / 1000);
   const payload = Object.assign({}, claims, {
     iat: nowSec,
@@ -55,19 +71,21 @@ export async function signEdgeSession(claims, env, ttlSeconds = 60 * 60 * 24 * 1
   const headerB64 = b64UrlEncode(ENC.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })));
   const payloadB64 = b64UrlEncode(ENC.encode(JSON.stringify(payload)));
   const signingInput = `${headerB64}.${payloadB64}`;
-  const key = await getHmacKey(env && env.ISABI_JWT_SECRET);
+  const key = await getHmacKey(secret);
   const sig = await crypto.subtle.sign('HMAC', key, ENC.encode(signingInput));
   return `${signingInput}.${b64UrlEncode(sig)}`;
 }
 
 export async function verifyEdgeSession(token, env) {
   if (!token || typeof token !== 'string') return null;
+  const secret = resolveEdgeJwtSecret(env);
+  if (!secret) return null;
   const parts = token.trim().split('.');
   if (parts.length !== 3) return null;
   try {
     const signingInput = `${parts[0]}.${parts[1]}`;
     const sigBytes = b64UrlDecode(parts[2]);
-    const key = await getHmacKey(env && env.ISABI_JWT_SECRET);
+    const key = await getHmacKey(secret);
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, ENC.encode(signingInput));
     if (!valid) return null;
     const payload = JSON.parse(DEC.decode(b64UrlDecode(parts[1])));
@@ -93,6 +111,21 @@ export function parseCookieHeader(cookieHdr) {
   return out;
 }
 
+export function isAllowedCorsOrigin(origin) {
+  const o = String(origin || '').trim();
+  if (!o) return false;
+  if (
+    o === 'https://isabisystems.com' ||
+    o === 'https://www.isabisystems.com' ||
+    o === 'https://isabi-systems.pages.dev'
+  ) {
+    return true;
+  }
+  if (/^https:\/\/[a-z0-9-]+\.isabi-systems\.pages\.dev$/i.test(o)) return true;
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(o)) return true;
+  return false;
+}
+
 export async function extractRequestSession(request, env) {
   const authHdr = request.headers.get('Authorization') || '';
   if (authHdr.startsWith('Bearer ')) {
@@ -106,6 +139,21 @@ export async function extractRequestSession(request, env) {
   }
   const cookies = parseCookieHeader(request.headers.get('Cookie') || '');
   if (cookies.isabi_edge_sess) {
+    const m = String(request.method || 'GET').toUpperCase();
+    if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS') {
+      let selfOrigin = '';
+      try { selfOrigin = new URL(request.url).origin; } catch (_) {}
+      const reqOrigin = String(request.headers.get('Origin') || '').trim();
+      const reqRef = String(request.headers.get('Referer') || '').trim();
+      let refOrigin = '';
+      if (reqRef) {
+        try { refOrigin = new URL(reqRef).origin; } catch (_) {}
+      }
+      const checkOrigin = reqOrigin || refOrigin;
+      if (!checkOrigin || (checkOrigin !== selfOrigin && !isAllowedCorsOrigin(checkOrigin))) {
+        return null;
+      }
+    }
     const s = await verifyEdgeSession(cookies.isabi_edge_sess, env);
     if (s) return s;
   }
@@ -137,15 +185,51 @@ export function isOwnerOrFullGroupSession(session) {
   return allowed.includes('*') || allowed.length >= 12;
 }
 
+const ENTITY_ALIAS_MAP = {
+  wtc: 'wtc',
+  'wtc (world trading & construction)': 'wtc',
+  bbconstruction: 'bbconstruction',
+  'bb construction': 'bbconstruction',
+  bbc: 'bbconstruction',
+  lionstransport: 'lions transport',
+  'lions transport': 'lions transport',
+  lions: 'lions transport',
+  bdeirholding: 'bdeir holding',
+  'bdeir holding': 'bdeir holding',
+  blanca: 'blanca',
+  launa: 'la una',
+  'la una': 'la una',
+  palms: 'palms',
+  voile: 'voile',
+  platinum: 'platinum',
+  korriauto: 'korri auto',
+  'korri auto': 'korri auto',
+  shacman: 'shacman',
+  properties: 'properties',
+  '4235company': '4235 company s.a.l',
+  '4235 company': '4235 company s.a.l',
+  '4235 company s.a.l': '4235 company s.a.l',
+  '4235': '4235 company s.a.l',
+  insurance: 'insurance company',
+  'insurance company': 'insurance company',
+  'bdeir insurance brokerage': 'insurance company'
+};
+
+function canonEntityKey(raw) {
+  const k = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return ENTITY_ALIAS_MAP[k] || k;
+}
+
 export function canAccessCompany(session, companyName) {
-  if (!companyName) return true;
-  const normCo = String(companyName).trim().toLowerCase();
-  if (!normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'shared') return true;
-  if (!session) return true; // Unauthenticated read fallback handled at endpoint level
+  if (!session) return false;
   if (isOwnerOrFullGroupSession(session)) return true;
+  if (!companyName) return false;
+  const normCo = String(companyName).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normCo || normCo === 'all' || normCo === 'all bus' || normCo === 'shared') return false;
   const allowed = parseAllowedCompanies(session.companies);
   if (allowed.includes('*')) return true;
-  return allowed.some(c => c === normCo || normCo.includes(c) || c.includes(normCo));
+  const targetCanon = canonEntityKey(normCo);
+  return allowed.some(c => canonEntityKey(c) === targetCanon);
 }
 
 export function canManageUsersSeat(session) {
@@ -180,12 +264,25 @@ export function checkSlidingRateLimit(key, maxReqs = 45, windowMs = 60000) {
   };
 }
 
+export function applyEdgeCors(response, request) {
+  if (!response || !request) return response;
+  const origin = String(request.headers.get('Origin') || '').trim();
+  if (!origin || !isAllowedCorsOrigin(origin)) return response;
+  const headers = new Headers(response.headers);
+  headers.set('Access-Control-Allow-Origin', origin);
+  headers.set('Vary', 'Origin');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 export function jsonResponse(payload, status = 200, extraHeaders = {}) {
   const headers = Object.assign({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-ISABI-Edge': '1',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-ISABI-Session, X-ISABI-Demo'
   }, extraHeaders);

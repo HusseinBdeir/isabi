@@ -1040,16 +1040,19 @@
   if (!GEO_STORE.sites) GEO_STORE.sites = {};
   if (!GEO_STORE.pairKmOverrides) GEO_STORE.pairKmOverrides = {};
   if (!GEO_STORE.routeKmCache) GEO_STORE.routeKmCache = {};
+  if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
 
   function saveStoredConfig(pushServer = true) {
     GEO_STORE.updatedAt = new Date().toISOString();
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
     } catch (_) {}
-    const canPostGeoApi = (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
+    const isDemoGeo = typeof location !== 'undefined' && (/[?&]autologin=1\b/.test(location.search || '') || Boolean(window.__ISABI_IS_DEMO && window.__ISABI_IS_DEMO()) || (!/^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '') && !window.__ISABI_TEST_EDGE && /[?&]demo=1\b/.test(location.search || '')));
+    const canPostGeoApi = !isDemoGeo && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
-        fetch('./api/geo_config', {
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        edgeFetch('./api/geo_config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ config: exportGeoConfig() })
@@ -1067,6 +1070,8 @@
       regions: GEO_STORE.regions || {},
       sites: GEO_STORE.sites || {},
       pairKmOverrides: GEO_STORE.pairKmOverrides || {},
+      _pairKmTs: GEO_STORE._pairKmTs || {},
+      _deletedKeys: GEO_STORE._deletedKeys || {},
       updatedAt: GEO_STORE.updatedAt || ''
     };
   }
@@ -1074,21 +1079,52 @@
   function importGeoConfig(incoming) {
     if (!incoming || typeof incoming !== 'object') return false;
     let changed = false;
+    if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
+    if (!GEO_STORE._pairKmTs || typeof GEO_STORE._pairKmTs !== 'object') GEO_STORE._pairKmTs = {};
+    const inDel = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
+    const inPairTs = (incoming._pairKmTs && typeof incoming._pairKmTs === 'object') ? incoming._pairKmTs : {};
     ['companyHubs', 'regions', 'sites', 'pairKmOverrides'].forEach(bucket => {
-      const src = incoming[bucket];
-      if (!src || typeof src !== 'object') return;
       if (!GEO_STORE[bucket]) GEO_STORE[bucket] = {};
+      const src = (incoming[bucket] && typeof incoming[bucket] === 'object') ? incoming[bucket] : {};
       Object.keys(src).forEach(k => {
-        const cur = GEO_STORE[bucket][k];
         const nxt = src[k];
-        if (!nxt) return;
-        const curTs = (cur && cur.updated_at) || '';
-        const nxtTs = (nxt && nxt.updated_at) || incoming.updatedAt || '';
-        if (!cur || !curTs || nxtTs >= curTs) {
-          GEO_STORE[bucket][k] = nxt;
-          changed = true;
+        if (nxt === undefined || nxt === null) return;
+        const dk = `${bucket}:${k}`;
+        const cur = GEO_STORE[bucket][k];
+        const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && GEO_STORE._pairKmTs[k]) || GEO_STORE.updatedAt || '';
+        const nxtTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || incoming.updatedAt || '';
+        const localDelTs = String(GEO_STORE._deletedKeys[dk] || '');
+        if (localDelTs && nxtTs && localDelTs > nxtTs) return;
+        if (cur === undefined || !curTs || !nxtTs || nxtTs >= curTs) {
+          if (JSON.stringify(cur) !== JSON.stringify(nxt)) {
+            GEO_STORE[bucket][k] = nxt;
+            changed = true;
+          }
+          if (bucket === 'pairKmOverrides' && nxtTs) GEO_STORE._pairKmTs[k] = nxtTs;
+          if (GEO_STORE._deletedKeys[dk]) delete GEO_STORE._deletedKeys[dk];
         }
       });
+    });
+    Object.keys(inDel).forEach(dk => {
+      const delTs = String(inDel[dk] || '');
+      if (!delTs) return;
+      const colonIdx = dk.indexOf(':');
+      if (colonIdx <= 0) return;
+      const bucket = dk.slice(0, colonIdx);
+      const k = dk.slice(colonIdx + 1);
+      if (!['companyHubs', 'regions', 'sites', 'pairKmOverrides'].includes(bucket)) return;
+      const cur = GEO_STORE[bucket] ? GEO_STORE[bucket][k] : undefined;
+      const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && GEO_STORE._pairKmTs[k]) || '';
+      if (!curTs || delTs >= curTs) {
+        if (GEO_STORE[bucket] && Object.prototype.hasOwnProperty.call(GEO_STORE[bucket], k)) {
+          delete GEO_STORE[bucket][k];
+          if (bucket === 'pairKmOverrides') delete GEO_STORE._pairKmTs[k];
+          changed = true;
+        }
+        if (!GEO_STORE._deletedKeys[dk] || delTs > String(GEO_STORE._deletedKeys[dk])) {
+          GEO_STORE._deletedKeys[dk] = delTs;
+        }
+      }
     });
     if (changed) saveStoredConfig(false);
     return changed;
@@ -1895,10 +1931,17 @@
 
   function setPairKmOverride(fromSpec, toSpec, kmVal) {
     const pairKey = makePairKey(fromSpec.type || 'site', fromSpec.name, toSpec.type || 'site', toSpec.name);
+    if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
+    if (!GEO_STORE._pairKmTs || typeof GEO_STORE._pairKmTs !== 'object') GEO_STORE._pairKmTs = {};
+    const nowIso = new Date().toISOString();
     if (kmVal == null || kmVal === '' || !Number.isFinite(Number(kmVal)) || Number(kmVal) < 0) {
       delete GEO_STORE.pairKmOverrides[pairKey];
+      delete GEO_STORE._pairKmTs[pairKey];
+      GEO_STORE._deletedKeys[`pairKmOverrides:${pairKey}`] = nowIso;
     } else {
       GEO_STORE.pairKmOverrides[pairKey] = round1(Number(kmVal));
+      GEO_STORE._pairKmTs[pairKey] = nowIso;
+      delete GEO_STORE._deletedKeys[`pairKmOverrides:${pairKey}`];
     }
     saveStoredConfig(true);
     return pairKey;
@@ -3098,8 +3141,11 @@
     const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
 
     const pinEntry = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     GEO_STORE.sites[nk] = pinEntry;
     GEO_STORE.sites[`${effCat}:${nk}`] = pinEntry;
+    delete GEO_STORE._deletedKeys[`sites:${nk}`];
+    delete GEO_STORE._deletedKeys[`sites:${effCat}:${nk}`];
     saveStoredConfig(true);
 
     if (row) {
@@ -3143,12 +3189,22 @@
     const nk = norm(nm);
     if (!nk) return;
     const cat = o.siteCategory === 'customer' ? 'customer' : (o.siteCategory === 'supplier' ? 'supplier' : '');
+    const delIso = new Date().toISOString();
+    if (!GEO_STORE._deletedKeys || typeof GEO_STORE._deletedKeys !== 'object') GEO_STORE._deletedKeys = {};
     let changed = false;
     if (cat) {
-      if (GEO_STORE.sites[`${cat}:${nk}`]) { delete GEO_STORE.sites[`${cat}:${nk}`]; changed = true; }
+      if (GEO_STORE.sites[`${cat}:${nk}`]) {
+        delete GEO_STORE.sites[`${cat}:${nk}`];
+        GEO_STORE._deletedKeys[`sites:${cat}:${nk}`] = delIso;
+        changed = true;
+      }
     } else {
       ['supplier', 'customer'].forEach(c => {
-        if (GEO_STORE.sites[`${c}:${nk}`]) { delete GEO_STORE.sites[`${c}:${nk}`]; changed = true; }
+        if (GEO_STORE.sites[`${c}:${nk}`]) {
+          delete GEO_STORE.sites[`${c}:${nk}`];
+          GEO_STORE._deletedKeys[`sites:${c}:${nk}`] = delIso;
+          changed = true;
+        }
       });
     }
     const sites = (SEED && SEED.records && SEED.records.sites) || [];
@@ -3158,9 +3214,11 @@
         const oppCat = resolveGeoSiteCat(oppRow);
         if (!GEO_STORE.sites[`${oppCat}:${nk}`]) {
           GEO_STORE.sites[`${oppCat}:${nk}`] = Object.assign({}, GEO_STORE.sites[nk], { site_category: oppCat });
+          delete GEO_STORE._deletedKeys[`sites:${oppCat}:${nk}`];
         }
       }
       delete GEO_STORE.sites[nk];
+      GEO_STORE._deletedKeys[`sites:${nk}`] = delIso;
       changed = true;
     }
     if (changed) saveStoredConfig(true);

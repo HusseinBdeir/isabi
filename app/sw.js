@@ -1,46 +1,48 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.217';
+const SHELL_CACHE = 'isabi-mfg-v19.6.218';
+const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v1';
+const SHELL_DIR = new URL('./', self.location.href).pathname;
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
 // live in persistent DATA_CACHE so UI deploys (?v=...) never bust or duplicate-download them.
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.217',
-  './css/geo_dispatch.css?v=19.6.217',
-  './css/daily_ops.css?v=19.6.217',
-  './css/ask_isabi.css?v=19.6.217',
-  './css/fleet_pnl.css?v=19.6.217',
-  './css/smart_scan.css?v=19.6.217',
-  './css/doc_scanner.css?v=19.6.217',
-  './css/ai_edge.css?v=19.6.217',
-  './js/face.js?v=19.6.217',
-  './js/endpoints.js?v=19.6.217',
-  './js/seed_manifest.js?v=19.6.217',
-  './js/icons.js?v=19.6.217',
-  './js/geo_dispatch.js?v=19.6.217',
-  './js/forms_engine.js?v=19.6.217',
-  './js/pbi_pages.js?v=19.6.217',
-  './js/rdl_reports.js?v=19.6.217',
-  './js/kiosk_print.js?v=19.6.217',
-  './js/table_columns.js?v=19.6.217',
-  './js/daily_ops.js?v=19.6.217',
-  './js/i18n.js?v=19.6.217',
-  './js/ask_isabi.js?v=19.6.217',
-  './js/fleet_pnl.js?v=19.6.217',
-  './js/doc_scanner.js?v=19.6.217',
-  './js/smart_scan.js?v=19.6.217',
-  './js/ai_edge.js?v=19.6.217',
-  './js/app.js?v=19.6.217',
-  './manifest.json?v=19.6.217',
-  './favicon.ico?v=19.6.217',
-  './favicon-dark.ico?v=19.6.217',
-  './icon.svg?v=19.6.217',
-  './icon-dark.svg?v=19.6.217',
-  './icon-180.png?v=19.6.217',
-  './icon-192.png?v=19.6.217',
-  './icon-512.png?v=19.6.217',
-  './icon-512-maskable.png?v=19.6.217'
+  './css/app.css?v=19.6.218',
+  './css/geo_dispatch.css?v=19.6.218',
+  './css/daily_ops.css?v=19.6.218',
+  './css/ask_isabi.css?v=19.6.218',
+  './css/fleet_pnl.css?v=19.6.218',
+  './css/smart_scan.css?v=19.6.218',
+  './css/doc_scanner.css?v=19.6.218',
+  './css/ai_edge.css?v=19.6.218',
+  './js/face.js?v=19.6.218',
+  './js/endpoints.js?v=19.6.218',
+  './js/seed_manifest.js?v=19.6.218',
+  './js/icons.js?v=19.6.218',
+  './js/geo_dispatch.js?v=19.6.218',
+  './js/forms_engine.js?v=19.6.218',
+  './js/pbi_pages.js?v=19.6.218',
+  './js/rdl_reports.js?v=19.6.218',
+  './js/kiosk_print.js?v=19.6.218',
+  './js/table_columns.js?v=19.6.218',
+  './js/daily_ops.js?v=19.6.218',
+  './js/i18n.js?v=19.6.218',
+  './js/ask_isabi.js?v=19.6.218',
+  './js/fleet_pnl.js?v=19.6.218',
+  './js/doc_scanner.js?v=19.6.218',
+  './js/smart_scan.js?v=19.6.218',
+  './js/ai_edge.js?v=19.6.218',
+  './js/app.js?v=19.6.218',
+  './manifest.json?v=19.6.218',
+  './favicon.ico?v=19.6.218',
+  './favicon-dark.ico?v=19.6.218',
+  './icon.svg?v=19.6.218',
+  './icon-dark.svg?v=19.6.218',
+  './icon-180.png?v=19.6.218',
+  './icon-192.png?v=19.6.218',
+  './icon-512.png?v=19.6.218',
+  './icon-512-maskable.png?v=19.6.218'
 ];
 
 const VENDOR_ASSETS = [
@@ -72,6 +74,40 @@ function fetchDedup(reqOrUrl, init) {
   return p.then(res => res.clone());
 }
 
+function isSameOriginUrl(rawUrl) {
+  if (!rawUrl) return true;
+  try {
+    return new URL(rawUrl, self.location.href).origin === self.location.origin;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isSameOriginHtmlShell(res) {
+  if (!res || res.status !== 200) return false;
+  if (!isSameOriginUrl(res.url)) return false;
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return ct.includes('text/html');
+}
+
+// Strip same-origin URL redirect history (`res.redirected === true` from Cloudflare Pages `308 /index.html -> /`)
+// while rejecting cross-origin captive-portal redirects and guarding status `0`/`204`/`205`/`304`.
+async function cleanNavigationResponse(res) {
+  if (!res) return Response.error();
+  if (!isSameOriginUrl(res.url)) {
+    throw new Error('Cross-origin navigation redirect rejected');
+  }
+  if (!res.redirected) return res;
+  if (res.status < 200 || res.status > 599) return res;
+  const nullBody = res.status === 204 || res.status === 205 || res.status === 304;
+  const body = nullBody ? null : await res.arrayBuffer();
+  return new Response(body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: new Headers(res.headers)
+  });
+}
+
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(
@@ -80,15 +116,15 @@ self.addEventListener('install', event => {
         SHELL_ASSETS.map(url => {
           if (url.includes('?v=')) {
             return caches.match(url).then(cached => {
-              if (cached) return cache.put(url, cached.clone());
+              if (cached) return cache.put(url, cached.clone()).catch(() => null);
               return fetchDedup(url, { cache: 'no-cache' })
-                .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
+                .then(res => (res && res.status === 200 && isSameOriginUrl(res.url) ? cache.put(url, res) : null))
                 .catch(() => null);
             });
           }
-          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.217' : url;
+          const fetchUrl = (url === './' || url === './index.html') ? `./?v=${SHELL_VER}` : url;
           return fetchDedup(fetchUrl, { cache: 'reload' })
-            .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
+            .then(async res => (isSameOriginHtmlShell(res) ? cache.put(url, await cleanNavigationResponse(res)) : null))
             .catch(() => null);
         })
       )
@@ -137,6 +173,7 @@ function isPersistentDataUrl(url) {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  if (event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin') return;
   const url = new URL(event.request.url);
 
   // Cache Google Fonts stylesheets & WOFF2 files in persistent DATA_CACHE (instant warm font load + offline support)
@@ -145,23 +182,24 @@ self.addEventListener('fetch', event => {
       caches.open(DATA_CACHE).then(async cache => {
         const cached = await cache.match(event.request);
         const netPromise = fetch(event.request).then(res => {
-          if (res && res.status === 200) cache.put(event.request, res.clone());
+          if (res && res.status === 200) cache.put(event.request, res.clone()).catch(() => {});
           return res;
-        }).catch(() => cached);
+        }).catch(() => cached || Response.error());
         return cached || netPromise;
       })
     );
     return;
   }
 
-  // Never cache cross-origin APIs (Dataverse relay), reset.html, or local SQLite REST endpoints
+  // Never cache cross-origin APIs (Dataverse relay), reset.html / Cloudflare `/reset`, or local SQLite REST endpoints
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.endsWith('/reset.html') || url.pathname.includes('/api/')) return;
+  if (/\/reset(?:\.html)?$/i.test(url.pathname) || url.pathname.includes('/api/')) return;
 
-  const isNav = event.request.mode === 'navigate';
+  const isAnyNav = event.request.mode === 'navigate';
+  const isShellNav = isAnyNav && (url.pathname === SHELL_DIR || url.pathname === SHELL_DIR + 'index.html');
 
   // Persistent DATA_CACHE: content-addressed seed_*.json?d=<hash> + immutable /vendor/ Face ID weights
-  if (!isNav && isPersistentDataUrl(url)) {
+  if (!isAnyNav && isPersistentDataUrl(url)) {
     event.respondWith(
       caches.open(DATA_CACHE).then(async cache => {
         const exact = await cache.match(event.request);
@@ -170,84 +208,115 @@ self.addEventListener('fetch', event => {
           const ignoreQ = await cache.match(event.request, { ignoreSearch: true });
           if (ignoreQ) return ignoreQ;
         }
-        const res = await fetchDedup(event.request);
-        if (res && res.status === 200) {
-          cache.put(event.request, res.clone());
+        try {
+          const res = await fetchDedup(event.request);
+          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
+            cache.put(event.request, res.clone()).catch(() => {});
+          }
+          return res;
+        } catch (_) {
+          return (await cache.match(event.request, { ignoreSearch: true })) || Response.error();
         }
-        return res;
       })
     );
     return;
   }
 
-  // Explicit cache-busting hot-reload (?cb=...): network-first bypassing Fastly CDN edge cache
-  if (!isNav && url.searchParams.has('cb')) {
+  // Explicit cache-busting hot-reload (?cb=...): network-first bypassing edge cache
+  if (!isAnyNav && url.searchParams.has('cb')) {
     event.respondWith(
       caches.open(SHELL_CACHE).then(async cache => {
         try {
-          const res = await fetch(new Request(event.request, { cache: 'no-store' }));
-          if (res && res.status === 200) {
+          const res = await fetch(new Request(event.request.url, { cache: 'no-store' }));
+          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
             if (url.pathname.endsWith('/js/i18n.js')) {
-              cache.put('./js/i18n.js?v=19.6.217', res.clone());
+              cache.put(`./js/i18n.js?v=${SHELL_VER}`, res.clone()).catch(() => {});
             }
             return res;
           }
         } catch (_) {}
-        return (await cache.match(event.request, { ignoreSearch: true })) || fetch(event.request);
+        return (await cache.match(event.request, { ignoreSearch: true })) || fetch(event.request).catch(() => Response.error());
       })
     );
     return;
   }
 
-  // Versioned UI shell assets (?v=...): cache-first in SHELL_CACHE with ignoreSearch fallback
-  if (!isNav && url.searchParams.has('v')) {
+  // Versioned UI shell assets (?v=...): exact cache match first, network on version bump, ignoreSearch ONLY offline
+  if (!isAnyNav && url.searchParams.has('v')) {
     event.respondWith(
       caches.open(SHELL_CACHE).then(async cache => {
-        const cached = (await cache.match(event.request)) || (await cache.match(event.request, { ignoreSearch: true }));
-        if (cached) return cached;
-        const res = await fetchDedup(event.request);
-        if (res && res.status === 200) {
-          cache.put(event.request, res.clone());
-        }
-        return res;
-      })
-    );
-    return;
-  }
-
-  // HTML navigation & unversioned icons/manifest: network-first with 3s timeout fallback to cached shell
-  if (isNav) {
-    event.respondWith(
-      (async () => {
-        const cache = await caches.open(SHELL_CACHE);
+        const exact = await cache.match(event.request);
+        if (exact) return exact;
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 3000);
-          const navUrl = new URL('./index.html?v=19.6.217', self.location.href).href;
-          const res = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
-          clearTimeout(timer);
-          if (res && res.status === 200) {
-            cache.put('./index.html', res.clone());
+          const res = await fetchDedup(event.request);
+          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
+            cache.put(event.request, res.clone()).catch(() => {});
           }
           return res;
         } catch (_) {
-          return (await cache.match(event.request)) || (await cache.match('./index.html')) || (await caches.match('./index.html'));
+          return (await cache.match(event.request, { ignoreSearch: true })) || Response.error();
+        }
+      })
+    );
+    return;
+  }
+
+  // Shell HTML navigation (`/app/` or `/app/index.html`): network-first against canonical `./?v=...`
+  // with strict same-origin `text/html` validation, `cleanNavigationResponse`, and 3s offline/captive-portal fallback
+  if (isShellNav) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(SHELL_CACHE);
+        const matchCachedShell = async () =>
+          (await cache.match('./index.html')) ||
+          (await cache.match('./')) ||
+          (await caches.match('./index.html')) ||
+          (await caches.match('./'));
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 3000);
+          let rawRes;
+          try {
+            const navUrl = new URL(`./?v=${SHELL_VER}`, self.location.href).href;
+            rawRes = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
+          } finally {
+            clearTimeout(timer);
+          }
+          if (isSameOriginHtmlShell(rawRes)) {
+            const cleanRes = await cleanNavigationResponse(rawRes);
+            cache.put('./', cleanRes.clone()).catch(() => {});
+            cache.put('./index.html', cleanRes.clone()).catch(() => {});
+            return cleanRes;
+          }
+          const cachedFallback = await matchCachedShell();
+          if (cachedFallback) return cleanNavigationResponse(cachedFallback);
+          if (rawRes && isSameOriginUrl(rawRes.url)) return cleanNavigationResponse(rawRes);
+          return Response.error();
+        } catch (_) {
+          const fallback = await matchCachedShell();
+          if (fallback) return cleanNavigationResponse(fallback);
+          return Response.error();
         }
       })()
     );
     return;
   }
 
+  // Unversioned assets & direct non-shell navigations (e.g. viewing `/app/icon-512.png` or `/app/manifest.json` directly)
   event.respondWith(
-    fetchDedup(event.request, { cache: 'no-cache' })
-      .then(res => {
-        if (res && res.status === 200) {
+    fetchDedup(event.request.url, { cache: 'no-cache' })
+      .then(async res => {
+        if (!isAnyNav && res && res.status === 200 && isSameOriginUrl(res.url)) {
           const clone = res.clone();
-          caches.open(SHELL_CACHE).then(c => c.put(event.request, clone));
+          caches.open(SHELL_CACHE).then(c => c.put(event.request, clone).catch(() => {})).catch(() => {});
         }
-        return res;
+        return isAnyNav ? cleanNavigationResponse(res) : res;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const hit = await caches.match(event.request);
+        if (hit) return isAnyNav ? cleanNavigationResponse(hit) : hit;
+        return Response.error();
+      })
   );
 });
 
@@ -290,7 +359,7 @@ self.addEventListener('message', event => {
           if (!hit) {
             try {
               const res = await fetchDedup(absUrl);
-              if (res && res.status === 200) await cache.put(absUrl, res);
+              if (res && res.status === 200 && isSameOriginUrl(res.url)) await cache.put(absUrl, res);
             } catch (_) {}
           }
         }
