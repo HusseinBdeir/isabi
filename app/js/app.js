@@ -31101,13 +31101,16 @@
   const DOMAIN_PARENT_VIEW_MAP = {
     hld_interactions: { view: 'hld_consolidation', ind: 'Holding & Treasury', label: 'Intercompany Treasury Voucher' },
     hld_partners: { view: 'hld_partners', ind: 'Holding & Treasury', label: 'Partner Equity & Distribution' },
+    hld_distributions: { view: 'hld_distributions', ind: 'Holding & Treasury', label: 'Partner Profit-Share Payout' },
     hld_loans: { view: 'hld_loans', ind: 'Holding & Treasury', label: 'Group Credit Facility' },
     hsp_revenue: { view: 'hsp_revenue', ind: 'Hospitality & Resorts', label: 'Venue Revenue Closing' },
-    hsp_pos: { view: 'hsp_pos', ind: 'Hospitality & Resorts', label: 'POS Terminal Z-Read' },
+    hsp_pos: { view: 'hsp_pos', ind: 'Hospitality & Resorts', label: 'POS Terminal Shift Close' },
     hsp_memberships: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Membership Contract' },
+    hsp_tariffs: { view: 'hsp_memberships', ind: 'Hospitality & Resorts', label: 'Seasonal Resort Tariff Schedule' },
     hsp_stock: { view: 'hsp_stock', ind: 'Hospitality & Resorts', label: 'Commissary & Cellar Stock' },
     hsp_energy: { view: 'hsp_energy', ind: 'Hospitality & Resorts', label: 'Generator & Utility Log' },
     trd_sales: { view: 'trd_sales', ind: 'Automotive & Heavy Trading', label: 'Commercial Sales Invoice' },
+    trd_targets: { view: 'trd_targets', ind: 'Automotive & Heavy Trading', label: 'Showroom Price List & Import Tariff' },
     trd_parts: { view: 'trd_parts', ind: 'Automotive & Heavy Trading', label: 'Spare Parts Catalog SKU' },
     trd_imports: { view: 'trd_purchases', ind: 'Automotive & Heavy Trading', label: 'Import File & Ocean B/L' },
     trd_landed: { view: 'trd_landed', ind: 'Automotive & Heavy Trading', label: 'Landed Cost Voucher' },
@@ -31130,11 +31133,13 @@
     const pid = String(primaryId || '').trim();
     if (/^(POL|END|ALZ|MGF|BNK|AXA|LBS|ARP)-/i.test(pid)) return 'ins_policies';
     if (/^AGR-/i.test(pid)) return 'ins_agreements';
+    if (/^TRF-/i.test(pid)) return 'hsp_tariffs';
     if (/^MEM-/i.test(pid)) return 'hsp_memberships';
     if (/^STK-/i.test(pid)) return 'hsp_stock';
     if (/^(POS|Z)-/i.test(pid)) return 'hsp_pos';
     if (/^(REV|HSP-REV)-/i.test(pid)) return 'hsp_revenue';
     if (/^(ENG|GEN)-/i.test(pid)) return 'hsp_energy';
+    if (/^(TGT|PL)-/i.test(pid)) return 'trd_targets';
     if (/^IMP-/i.test(pid)) return 'trd_imports';
     if (/^LC-/i.test(pid)) return 'trd_landed';
     if (/^GRN-/i.test(pid)) return 'trd_grn';
@@ -31151,8 +31156,8 @@
     if (/^STM-/i.test(pid)) return 'ins_statements';
     if (/^CLM-/i.test(pid)) return 'ins_claims';
     if (/^(IC|HLD-IC)-/i.test(pid)) return 'hld_interactions';
-    if (/^(JV|DIV)-/i.test(pid)) return 'hld_partners';
-    if (/^(LN|FAC)-/i.test(pid)) return 'hld_loans';
+    if (/^(JV|DIV|HLD-PRT|DIST-HLD)-/i.test(pid)) return 'hld_partners';
+    if (/^(LN|FAC|ACC-HLD)-/i.test(pid)) return 'hld_loans';
     if (viewKey === 'trd_purchases') return 'trd_imports';
     if (viewKey === 'hld_consolidation') return 'hld_interactions';
     if (viewKey && DOMAIN_PARENT_VIEW_MAP[viewKey]) return viewKey;
@@ -41787,6 +41792,116 @@
     `;
   }
 
+  function applyChronoWindowOverlays(baseArr, customArr, wfBucket) {
+    const list = (Array.isArray(baseArr) ? baseArr : []).map(r => Object.assign({}, r));
+    const cust = Array.isArray(customArr) ? customArr : [];
+    cust.slice().reverse().forEach(ca => {
+      if (!ca || ca.voided) return;
+      const closeIds = Array.isArray(ca.autoClosePriorIds)
+        ? ca.autoClosePriorIds
+        : (ca.autoClosePriorId ? [ca.autoClosePriorId] : []);
+      closeIds.forEach(cid => {
+        const hit = list.find(x => x && String(x.id || '').trim().toUpperCase() === String(cid || '').trim().toUpperCase());
+        if (hit) {
+          hit.end_date = ca.autoCloseDate || '2026-06-30';
+          hit.status = 'Closed Window';
+          hit.backfill_status = `Auto-Closed at ${hit.end_date}`;
+        }
+      });
+      const cidUp = String(ca.id || ca.code || '').trim().toUpperCase();
+      const idx = cidUp ? list.findIndex(x => x && String(x.id || x.code || '').trim().toUpperCase() === cidUp) : -1;
+      if (idx >= 0) list[idx] = Object.assign({}, list[idx], ca);
+      else list.unshift(Object.assign({}, ca));
+    });
+    if (wfBucket) {
+      list.forEach((r, i) => {
+        const p = getIndustryWorkflowPatch(wfBucket, r.id);
+        if (p) list[i] = Object.assign({}, r, p);
+      });
+    }
+    return list;
+  }
+
+  function computeHoldingSchedules() {
+    const basePartners = [
+      { id: 'HLD-PRT-01', entity: 'Bdeir Holding', partner: 'Principal Shareholder Pool (Slot 1)', pct: 55.0, baseline_pct: 45.0, pool_usd: 420000, entitled_usd: 231000, drawn_usd: 185000, open_usd: 46000, start_date: '2026-01-01', end_date: 'Open', backfill_status: 'Chrono Active · 1 Payout Synced', status: 'Active (Open)' },
+      { id: 'HLD-PRT-02', entity: 'Blanca & La Una', partner: 'Hospitality Managing Partners (Slots 2-4)', pct: 35.0, baseline_pct: 30.0, pool_usd: 360500, entitled_usd: 126175, drawn_usd: 102000, open_usd: 24175, start_date: '2026-01-01', end_date: 'Open', backfill_status: 'Chrono Active · 1 Payout Synced', status: 'Active (Open)' },
+      { id: 'HLD-PRT-03', entity: 'Palms & Voile', partner: 'Resort Co-Investment Pool (Slots 5-7)', pct: 40.0, baseline_pct: 35.0, pool_usd: 383000, entitled_usd: 153200, drawn_usd: 138000, open_usd: 15200, start_date: '2026-01-01', end_date: 'Open', backfill_status: 'Chrono Active', status: 'Active (Open)' },
+      { id: 'HLD-PRT-04', entity: 'Korri Auto & Shacman', partner: 'Trading Commercial Equity Pool (Slot 8)', pct: 25.0, baseline_pct: 20.0, pool_usd: 248000, entitled_usd: 62000, drawn_usd: 62000, open_usd: 0, start_date: '2026-01-01', end_date: 'Open', backfill_status: 'Settled', status: 'Settled' },
+      { id: 'HLD-PRT-05', entity: 'Properties & 4235 S.A.L', partner: 'Mulk Deed Co-Owners (/2400 Slots 9-10)', pct: 30.0, baseline_pct: 25.0, pool_usd: 493100, entitled_usd: 147930, drawn_usd: 120000, open_usd: 27930, start_date: '2026-01-01', end_date: 'Open', backfill_status: 'Chrono Active', status: 'Active (Open)' },
+      { id: 'HLD-PRT-2025', entity: 'Bdeir Holding', partner: 'Principal Shareholder Pool (Slot 1)', pct: 50.0, baseline_pct: 45.0, pool_usd: 380000, entitled_usd: 190000, drawn_usd: 190000, open_usd: 0, start_date: '2025-01-01', end_date: '2025-11-30', backfill_status: 'Closed Window', status: 'Closed Window' }
+    ];
+    const partnerAgreements = applyChronoWindowOverlays(basePartners, getIndustryCustomRows('hld_partners'), 'hld_partners').map(p => {
+      const pool = Number(p.pool_usd || 0);
+      const pct = Number(p.pct || 0);
+      const ent = p.entitled_usd != null ? Number(p.entitled_usd) : round2(pool * (pct / 100));
+      const drw = Math.min(ent, Number(p.drawn_usd || 0));
+      return Object.assign({}, p, {
+        end_date: p.end_date || 'Open',
+        entitled_usd: ent,
+        drawn_usd: drw,
+        open_usd: Math.max(0, round2(ent - drw))
+      });
+    });
+
+    const baseDistributions = [
+      { id: 'DIST-HLD-2026-01', date: '2026-08-15', entity: 'Bdeir Holding', partner: 'Principal Shareholder Pool (Slot 1)', pool_usd: 100000, pct: 55.0, entitled_usd: 55000, paid_usd: 45000, open_usd: 10000, status: 'Partial Payout' },
+      { id: 'DIST-HLD-2026-02', date: '2026-09-15', entity: 'Blanca & La Una', partner: 'Hospitality Managing Partners (Slots 2-4)', pool_usd: 80000, pct: 35.0, entitled_usd: 28000, paid_usd: 20000, open_usd: 8000, status: 'Partial Payout' },
+      { id: 'DIST-HLD-2026-03', date: '2026-10-15', entity: 'Palms & Voile', partner: 'Resort Co-Investment Pool (Slots 5-7)', pool_usd: 90000, pct: 40.0, entitled_usd: 36000, paid_usd: 36000, open_usd: 0, status: 'Settled' }
+    ];
+    const partnerDistributions = mergeCustomOverSeededRows(baseDistributions, getIndustryCustomRows('hld_distributions')).map(d => {
+      const wp = getIndustryWorkflowPatch('hld_distributions', d.id);
+      return wp ? Object.assign({}, d, wp) : d;
+    });
+
+    const baseFacilities = [
+      { id: 'FAC-HLD-2026-01', date: '2026-01-01', start_date: '2026-01-01', end_date: 'Open', company: 'Bdeir Holding', lender: 'Central Shareholder Treasury Line', type: 'Term Facility', interest_rate_pct: 6.5, baseline_rate_pct: 5.0, principal_usd: 120000, repaid_usd: 30000, balance_usd: 90000, accrued_interest_usd: 5850, total_due_usd: 95850, backfill_status: 'Chrono Active · 2 Accruals Synced', status: 'Active (Open)' },
+      { id: 'FAC-HLD-2026-02', date: '2026-01-01', start_date: '2026-01-01', end_date: 'Open', company: 'WTC', lender: 'Group Equipment Revolving Line', type: 'Revolving Sister Line', interest_rate_pct: 5.8, baseline_rate_pct: 5.0, principal_usd: 85000, repaid_usd: 25000, balance_usd: 60000, accrued_interest_usd: 3480, total_due_usd: 63480, backfill_status: 'Chrono Active', status: 'Active (Open)' },
+      { id: 'FAC-HLD-2025-01', date: '2025-01-01', start_date: '2025-01-01', end_date: '2025-11-30', company: 'Bdeir Holding', lender: 'Central Shareholder Treasury Line', type: 'Term Facility', interest_rate_pct: 5.5, baseline_rate_pct: 5.0, principal_usd: 120000, repaid_usd: 120000, balance_usd: 0, accrued_interest_usd: 0, total_due_usd: 0, backfill_status: 'Closed Window', status: 'Closed Window' }
+    ];
+    const facilitySchedules = applyChronoWindowOverlays(baseFacilities, getIndustryCustomRows('hld_loans'), 'hld_loans').map(f => {
+      const prin = Number(f.principal_usd || 0);
+      const rep = Math.min(prin, Number(f.repaid_usd || 0));
+      const bal = Math.max(0, round2(prin - rep));
+      const rate = Number(f.apr_pct != null ? f.apr_pct : (f.interest_rate_pct != null ? f.interest_rate_pct : (f.rate_apr_pct != null ? f.rate_apr_pct : 6.5)));
+      const acc = f.accrued_interest_usd != null ? Number(f.accrued_interest_usd) : (f.interest_usd != null ? Number(f.interest_usd) : round2(bal * (rate / 100)));
+      return Object.assign({}, f, {
+        start_date: f.start_date || f.date || '2026-01-01',
+        date: f.start_date || f.date || '2026-01-01',
+        end_date: f.end_date || 'Open',
+        apr_pct: rate,
+        interest_rate_pct: rate,
+        rate_apr_pct: rate,
+        principal_usd: prin,
+        repaid_usd: rep,
+        balance_usd: bal,
+        accrued_interest_usd: acc,
+        interest_usd: acc,
+        total_due_usd: round2(bal + acc)
+      });
+    });
+
+    const baseAccruals = [
+      { id: 'ACC-HLD-2026-Q3', date: '2026-09-30', company: 'Bdeir Holding', lender: 'Central Shareholder Treasury Line', type: 'Term Facility', balance_usd: 90000, interest_rate_pct: 6.5, accrued_usd: 1462.50, status: 'Accrued' },
+      { id: 'ACC-HLD-2026-Q2', date: '2026-06-30', company: 'Bdeir Holding', lender: 'Central Shareholder Treasury Line', type: 'Term Facility', balance_usd: 100000, interest_rate_pct: 6.5, accrued_usd: 1625.00, status: 'Accrued' }
+    ];
+    const loanAccruals = mergeCustomOverSeededRows(baseAccruals, getIndustryCustomRows('hld_loan_accruals')).map(a => {
+      const wp = getIndustryWorkflowPatch('hld_loan_accruals', a.id);
+      const merged = wp ? Object.assign({}, a, wp) : Object.assign({}, a);
+      const rate = Number(merged.apr_pct != null ? merged.apr_pct : (merged.interest_rate_pct != null ? merged.interest_rate_pct : (merged.rate_apr_pct != null ? merged.rate_apr_pct : 6.5)));
+      const acc = Number(merged.accrued_usd != null ? merged.accrued_usd : (merged.interest_usd != null ? merged.interest_usd : 0));
+      return Object.assign(merged, {
+        apr_pct: rate,
+        interest_rate_pct: rate,
+        rate_apr_pct: rate,
+        accrued_usd: acc,
+        interest_usd: acc
+      });
+    });
+
+    return { partnerAgreements, partnerDistributions, facilitySchedules, loanAccruals };
+  }
+
   function renderHoldingPartners(submode = 'main') {
     const u = activeUser();
     const extList = filterRecords(SEED.records.external_movements || [], { ignoreCompany: true, includeGroupMfg: true });
@@ -41894,6 +42009,64 @@
       </div>
     `;
 
+    const hldSched = computeHoldingSchedules();
+    const chronoPrts = hldSched.partnerAgreements || [];
+    const sumPrtEnt = round2(chronoPrts.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
+    const sumPrtDrw = round2(chronoPrts.reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
+    const sumPrtOpn = round2(chronoPrts.reduce((a, r) => a + Number(r.open_usd || 0), 0));
+    const chronoPartnerPanelHtml = `
+      <div class="panel-card" id="hldPartnerChronoPanel" style="margin-top:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('hld_distributions')} EFFECTIVE PARTNER PROFIT-SHARE SCHEDULES (${fmtNum(chronoPrts.length)})</span></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('hldPartnerChronoPanel', 'Holding_Partner_Profit_Schedules')}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hld_partners">+ Profit-Share Schedule</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Schedule ID</th>
+                <th>Operating Pool</th>
+                <th>Partner / Slot</th>
+                <th>Effective Window</th>
+                <th class="r">Share %</th>
+                <th class="r">Entitled ($)</th>
+                <th class="r">Drawn ($)</th>
+                <th class="r">Open Balance ($)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${chronoPrts.length ? chronoPrts.map(p => `
+                <tr class="rrow" data-ind-row-tbl="hld_partners" data-ind-row-id="${esc(p.id)}" data-ind-row-co="${esc(p.entity)}">
+                  <td class="mono"><strong>${esc(p.id)}</strong>${renderDomainRowAttBadgeHtml('hld_partners', p.id)}</td>
+                  <td>${esc(p.entity)}</td>
+                  <td><strong>${esc(p.partner)}</strong></td>
+                  <td class="mono">${esc(p.start_date)} to ${esc(p.end_date || 'Open')}</td>
+                  <td class="r mono"><strong>${Number(p.pct || 0).toFixed(1)}%</strong></td>
+                  <td class="r mono">${fmtUSD(p.entitled_usd, 2)}</td>
+                  <td class="r mono good">${fmtUSD(p.drawn_usd, 2)}</td>
+                  <td class="r mono ${p.open_usd > 0 ? 'warn' : 'good'}"><strong>${fmtUSD(p.open_usd, 2)}</strong></td>
+                  <td><span class="badge ${p.status === 'Closed Window' ? 'badge-neutral' : (p.open_usd > 0 ? 'badge-warn' : 'badge-good')}">${esc(p.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(9, 'No partner profit-share schedules registered')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL PROFIT-SHARE SCHEDULES (${fmtNum(chronoPrts.length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPrtEnt, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPrtDrw, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumPrtOpn, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+
     if (submode === 'distributions') {
       return `
         ${kpiHtml}
@@ -41943,6 +42116,7 @@
             </table>
           </div>
         </div>
+        ${chronoPartnerPanelHtml}
       `;
     }
 
@@ -41998,6 +42172,7 @@
           </table>
         </div>
       </div>
+      ${chronoPartnerPanelHtml}
     `;
   }
 
@@ -42463,6 +42638,13 @@
     }
 
     const shownLoans = loansList.slice(0, shownCount('hld_loans'));
+    const hldFacs = (computeHoldingSchedules().facilitySchedules || []).filter(f => selParty === 'ALL' || f.lender === selParty || f.company === selParty);
+    const hideFacCo = STATE.company === 'bdeirholding';
+    const facCoStyle = hideFacCo ? ' style="display:none"' : '';
+    const sumFacPrin = round2(hldFacs.reduce((a, r) => a + Number(r.principal_usd || 0), 0));
+    const sumFacBal = round2(hldFacs.reduce((a, r) => a + Number(r.balance_usd || 0), 0));
+    const sumFacAcc = round2(hldFacs.reduce((a, r) => a + Number(r.accrued_interest_usd || 0), 0));
+    const sumFacDue = round2(hldFacs.reduce((a, r) => a + Number(r.total_due_usd || 0), 0));
     return `
       ${kpiHtml}
       <div class="panel-card" id="hldLoansPanel">
@@ -42511,6 +42693,61 @@
               <tr class="totals-row">
                 <td colspan="5"><strong>TOTAL LOAN FACILITIES (${fmtNum(loansList.length)})</strong></td>
                 <td class="r mono"><strong>${fmtUSD(givenUsd + takenUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="panel-card" id="hldFacilitySchedulesPanel" style="margin-top:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('hld_loans')} EFFECTIVE FACILITY INTEREST-RATE SCHEDULES (${fmtNum(hldFacs.length)})</span></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('hldFacilitySchedulesPanel', 'Holding_Facility_Interest_Schedules')}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hld_loans">+ Facility Rate Schedule</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Facility ID</th>
+                <th${facCoStyle}>Entity</th>
+                <th>Lender / Counterparty</th>
+                <th>Facility Type</th>
+                <th>Effective Window</th>
+                <th class="r">APR %</th>
+                <th class="r">Principal ($)</th>
+                <th class="r">Balance ($)</th>
+                <th class="r">Accrued Int ($)</th>
+                <th class="r">Total Due ($)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${hldFacs.length ? hldFacs.map(f => `
+                <tr class="rrow" data-ind-row-tbl="hld_loans" data-ind-row-id="${esc(f.id)}" data-ind-row-co="${esc(f.company)}">
+                  <td class="mono"><strong>${esc(f.id)}</strong>${renderDomainRowAttBadgeHtml('hld_loans', f.id)}</td>
+                  <td${facCoStyle}>${coBadge(f.company)}</td>
+                  <td><strong>${esc(f.lender)}</strong></td>
+                  <td>${esc(f.type)}</td>
+                  <td class="mono">${esc(f.start_date)} to ${esc(f.end_date || 'Open')}</td>
+                  <td class="r mono"><strong>${Number(f.interest_rate_pct || 0).toFixed(2)}%</strong></td>
+                  <td class="r mono">${fmtUSD(f.principal_usd, 2)}</td>
+                  <td class="r mono">${fmtUSD(f.balance_usd, 2)}</td>
+                  <td class="r mono warn">${fmtUSD(f.accrued_interest_usd, 2)}</td>
+                  <td class="r mono"><strong>${fmtUSD(f.total_due_usd, 2)}</strong></td>
+                  <td><span class="badge ${f.status === 'Closed Window' ? 'badge-neutral' : 'badge-good'}">${esc(f.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(hideFacCo ? 10 : 11, 'No facility schedules registered')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="${hideFacCo ? 5 : 6}"><strong>TOTAL FACILITY SCHEDULES (${fmtNum(hldFacs.length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFacPrin, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFacBal, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFacAcc, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumFacDue, 2)}</strong></td>
                 <td></td>
               </tr>
             </tfoot>
@@ -42601,9 +42838,10 @@
     const mergedVenueRows = mergeCustomOverSeededRows(baseVenueRows, getIndustryCustomRows('hsp_revenue'));
     baseVenueRows.length = 0; baseVenueRows.push(...mergedVenueRows);
     const venueRows = baseVenueRows.filter(r => activeNames.has(r.company));
+    venueRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_revenue', r.id); if (p) venueRows[i] = Object.assign({}, r, p); });
 
     const posRows = pickHsp('posRows', [
-      { id: 'POS-CL-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una RawBT Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'RawBT thermal shift close verified 100% against physical drawer' },
+      { id: 'POS-CL-901', date: '2026-09-28', company: 'La Una', terminal: 'La Una Main POS Till #1', shift: 'Night Close', cashier: 'Nabil K.', bills_count: 148, pos_billed_ttc: 15762, cash_usd: 8420, card_whish_usd: 7102, comp_usd: 240, variance_usd: 0, status: 'Balanced', notes: 'Thermal POS shift close verified 100% against physical drawer' },
       { id: 'POS-CL-902', date: '2026-09-28', company: 'Blanca', terminal: 'Blanca Terrace POS #1', shift: 'Full Day', cashier: 'Maya S.', bills_count: 192, pos_billed_ttc: 10489.5, cash_usd: 5120, card_whish_usd: 5219.5, comp_usd: 150, variance_usd: 0, status: 'Balanced', notes: 'All credit slips & Whish QR receipts reconciled' },
       { id: 'POS-CL-903', date: '2026-09-27', company: 'Blanca', terminal: 'Blanca Pool Bar POS #2', shift: 'Sunset Shift', cashier: 'Rami H.', bills_count: 164, pos_billed_ttc: 9102, cash_usd: 6810, card_whish_usd: 2110, comp_usd: 0, variance_usd: -182, status: 'Close Variance', notes: 'Till Close Alert: Unclosed cabana tab #B-14 ($182) pending guest checkout' },
       { id: 'POS-CL-904', date: '2026-09-27', company: 'La Una', terminal: 'La Una Lounge POS #2', shift: 'Evening Shift', cashier: 'Karim T.', bills_count: 112, pos_billed_ttc: 6216, cash_usd: 3890, card_whish_usd: 2326, comp_usd: 0, variance_usd: 0, status: 'Balanced', notes: 'Shisha & cocktail counter closed with zero discrepancy' },
@@ -42640,14 +42878,36 @@
     membershipRows.length = 0; membershipRows.push(...scopedMemRows);
     membershipRows.forEach((r, i) => { const p = getIndustryWorkflowPatch('hsp_memberships', r.id); if (p) membershipRows[i] = Object.assign({}, r, p); });
 
-    const partnerSplitRows = pickHsp('partnerSplitRows', [
+    const baseTariffRows = [
+      { id: 'TRF-BL-2026-S1', company: 'Blanca', tier: 'VIP Beach Cabana', season: 'Summer 2026', start_date: '2026-05-01', end_date: 'Open', season_contract_usd: 28000, daily_chalet_ttc_usd: 420, baseline_contract_usd: 22000, baseline_daily_usd: 320, backfill_status: 'Chrono Active · 2 Contracts Synced', status: 'Active (Open)' },
+      { id: 'TRF-BL-2025-W1', company: 'Blanca', tier: 'VIP Beach Cabana', season: 'Winter 2025', start_date: '2025-11-01', end_date: '2026-03-31', season_contract_usd: 18500, daily_chalet_ttc_usd: 260, baseline_contract_usd: 22000, baseline_daily_usd: 320, backfill_status: 'Closed Window', status: 'Closed Window' },
+      { id: 'TRF-PL-2026-S1', company: 'Palms', tier: 'Villa & Pool Cabana', season: 'Annual 2026', start_date: '2026-01-01', end_date: 'Open', season_contract_usd: 36000, daily_chalet_ttc_usd: 480, baseline_contract_usd: 26000, baseline_daily_usd: 350, backfill_status: 'Chrono Active · 2 Contracts Synced', status: 'Active (Open)' },
+      { id: 'TRF-VL-2026-S1', company: 'Voile', tier: 'Sunset Cabana & Jetty', season: 'Summer 2026', start_date: '2026-05-01', end_date: 'Open', season_contract_usd: 19500, daily_chalet_ttc_usd: 360, baseline_contract_usd: 15500, baseline_daily_usd: 280, backfill_status: 'Chrono Active · 1 Contract Synced', status: 'Active (Open)' },
+      { id: 'TRF-LU-2026-S1', company: 'La Una', tier: 'Private Cellar & Lounge VIP', season: 'Annual 2026', start_date: '2026-01-01', end_date: 'Open', season_contract_usd: 18000, daily_chalet_ttc_usd: 290, baseline_contract_usd: 15000, baseline_daily_usd: 240, backfill_status: 'Chrono Active · 1 Contract Synced', status: 'Active (Open)' },
+      { id: 'TRF-PT-2026-S1', company: 'Platinum', tier: 'Penthouse Suite & Ballroom', season: 'Annual 2026', start_date: '2026-01-01', end_date: 'Open', season_contract_usd: 42000, daily_chalet_ttc_usd: 550, baseline_contract_usd: 34000, baseline_daily_usd: 440, backfill_status: 'Chrono Active · 1 Contract Synced', status: 'Active (Open)' }
+    ];
+    const tariffRows = applyChronoWindowOverlays(baseTariffRows, getIndustryCustomRows('hsp_tariffs'), 'hsp_tariffs')
+      .filter(r => activeNames.has(r.company))
+      .map(r => {
+        const ses = Number(r.seasonal_rate_usd != null ? r.seasonal_rate_usd : (r.season_contract_usd != null ? r.season_contract_usd : 22000));
+        const ngt = Number(r.nightly_rate_usd != null ? r.nightly_rate_usd : (r.daily_chalet_ttc_usd != null ? r.daily_chalet_ttc_usd : 420));
+        return Object.assign({}, r, {
+          end_date: r.end_date || 'Open',
+          seasonal_rate_usd: ses,
+          season_contract_usd: ses,
+          nightly_rate_usd: ngt,
+          daily_chalet_ttc_usd: ngt
+        });
+      });
+
+    const partnerSplitRows = applyChronoWindowOverlays(pickHsp('partnerSplitRows', [
       { id: 'HSP-JV-01', company: 'Blanca', category: 'Restaurant & Terrace F&B', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Chef Operator (30%) · Co-Investor (20%)', gross_pool_usd: 148500, operator_share_usd: 44550, holding_share_usd: 74250, coinvest_share_usd: 29700, paid_drawings_usd: 125000, open_payable_usd: 23500, status: 'Active Split' },
       { id: 'HSP-JV-02', company: 'Blanca', category: 'Shisha & Sunset Lounge', start_date: '2026-05-01', end_date: 'Open', slot_count: 2, partners_summary: 'Blanca Resort (60%) · Shisha Concessionaire (40%)', gross_pool_usd: 54000, operator_share_usd: 21600, holding_share_usd: 32400, coinvest_share_usd: 0, paid_drawings_usd: 54000, open_payable_usd: 0, status: 'Settled' },
-      { id: 'HSP-JV-03', company: 'La Una', category: 'Fine Dining & RawBT Till Pool', start_date: '2026-01-01', end_date: 'Open', slot_count: 4, partners_summary: 'Bdeir Holding (55%) · Managing Partner (25%) · Culinary Dir (10%) · Backer (10%)', gross_pool_usd: 212000, operator_share_usd: 74200, holding_share_usd: 116600, coinvest_share_usd: 21200, paid_drawings_usd: 190000, open_payable_usd: 22000, status: 'Active Split' },
+      { id: 'HSP-JV-03', company: 'La Una', category: 'Fine Dining & Terrace POS Pool', start_date: '2026-01-01', end_date: 'Open', slot_count: 4, partners_summary: 'Bdeir Holding (55%) · Managing Partner (25%) · Culinary Dir (10%) · Backer (10%)', gross_pool_usd: 212000, operator_share_usd: 74200, holding_share_usd: 116600, coinvest_share_usd: 21200, paid_drawings_usd: 190000, open_payable_usd: 22000, status: 'Active Split' },
       { id: 'HSP-JV-04', company: 'Palms', category: 'Weddings, Banquets & Chalets', start_date: '2026-01-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (60%) · Event Partner (25%) · Resort GM Pool (15%)', gross_pool_usd: 265000, operator_share_usd: 106000, holding_share_usd: 159000, coinvest_share_usd: 0, paid_drawings_usd: 240000, open_payable_usd: 25000, status: 'Active Split' },
       { id: 'HSP-JV-05', company: 'Voile', category: 'Beach Deck, DJ & Valet Pool', start_date: '2026-05-01', end_date: 'Open', slot_count: 3, partners_summary: 'Bdeir Holding (50%) · Beach Club Promoter (35%) · Valet Operator (15%)', gross_pool_usd: 118000, operator_share_usd: 59000, holding_share_usd: 59000, coinvest_share_usd: 0, paid_drawings_usd: 104000, open_payable_usd: 14000, status: 'Active Split' },
       { id: 'HSP-JV-06', company: 'Platinum', category: 'Suites & Corporate Ballroom', start_date: '2026-01-01', end_date: 'Open', slot_count: 2, partners_summary: 'Bdeir Holding (70%) · Hospitality Equity Partner (30%)', gross_pool_usd: 184000, operator_share_usd: 55200, holding_share_usd: 128800, coinvest_share_usd: 0, paid_drawings_usd: 184000, open_payable_usd: 0, status: 'Settled' }
-    ]).filter(r => activeNames.has(r.company));
+    ]), getIndustryCustomRows('hsp_partners'), 'hsp_partners').filter(r => activeNames.has(r.company));
 
     const stockRows = pickHsp('stockRows', [
       { id: 'STK-HSP-01', date: '2026-09-28', company: 'La Una', store: 'Main Kitchen & Cold Room', item_group: 'Prime Cuts & Imported Seafood', opening_usd: 6400, purchases_in_usd: 14800, transfers_net_usd: -1200, recipe_usage_usd: 12900, closing_usd: 7100, r3_ratio: 1.05, status: 'Optimal', notes: 'Transferred $1,200 vacuum-sealed cuts to Blanca terrace kitchen' },
@@ -42662,7 +42922,7 @@
     stockRows.length = 0; stockRows.push(...scopedStkRows);
 
     const menuRows = pickHsp('menuRows', [
-      { id: 'MNU-001', company: 'La Una', item: 'Dry-Aged Ribeye 450g (Josper Grill)', category: 'Main Course · Kitchen', price_ttc: 68.00, price_ht: 61.26, recipe_cost: 19.60, margin_usd: 41.66, food_cost_pct: 32.0, units_sold: 184, menu_class: 'Star (High Margin · High Vol)', notes: 'Top gross margin contributor on RawBT Till #1' },
+      { id: 'MNU-001', company: 'La Una', item: 'Dry-Aged Ribeye 450g (Josper Grill)', category: 'Main Course · Kitchen', price_ttc: 68.00, price_ht: 61.26, recipe_cost: 19.60, margin_usd: 41.66, food_cost_pct: 32.0, units_sold: 184, menu_class: 'Star (High Margin · High Vol)', notes: 'Top gross margin contributor on Main POS Till #1' },
       { id: 'MNU-002', company: 'La Una', item: 'Truffle Burrata & Heirloom Carpaccio', category: 'Starter · Kitchen', price_ttc: 26.00, price_ht: 23.42, recipe_cost: 5.85, margin_usd: 17.57, food_cost_pct: 25.0, units_sold: 260, menu_class: 'Star (High Margin · High Vol)', notes: '25.0% food cost · highest table attachment rate' },
       { id: 'MNU-003', company: 'Blanca', item: 'Mediterranean Catch of the Day (1kg)', category: 'Seafood · Kitchen', price_ttc: 75.00, price_ht: 67.57, recipe_cost: 27.70, margin_usd: 39.87, food_cost_pct: 41.0, units_sold: 142, menu_class: 'Plowhorse (High Vol · Watch Cost)', notes: 'Fresh wild catch cost rose 4% this week · review market price' },
       { id: 'MNU-004', company: 'Blanca', item: 'Signature Passionfruit Mezcal Pitcher', category: 'Cocktails · Bar', price_ttc: 48.00, price_ht: 43.24, recipe_cost: 8.65, margin_usd: 34.59, food_cost_pct: 20.0, units_sold: 215, menu_class: 'Star (High Margin · High Vol)', notes: '80% gross pour margin across beach cabanas' },
@@ -42735,6 +42995,7 @@
       posRows: posRows.filter(matchSearch),
       vatRows: vatRows.filter(matchSearch),
       membershipRows: membershipRows.filter(matchSearch),
+      tariffRows: tariffRows.filter(matchSearch),
       partnerSplitRows: partnerSplitRows.filter(matchSearch),
       stockRows: stockRows.filter(matchSearch),
       menuRows: menuRows.filter(matchSearch),
@@ -43348,6 +43609,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search member, chalet unit, resort...')}
             ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
+            <button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
           </div>
         </div>
@@ -43393,6 +43655,55 @@
                 <td class="r mono"><strong>${fmtUSD(sumPaid, 2)}</strong></td>
                 <td class="r mono"><strong>${fmtUSD(sumBal, 2)}</strong></td>
                 <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="panel-card" id="hspTariffsPanel" style="margin-top:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('hsp_memberships')} EFFECTIVE RESORT SEASONAL TARIFF SCHEDULES (${fmtNum((hsp.tariffRows || []).length)})</span></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('hspTariffsPanel', 'Hospitality_Seasonal_Tariff_Schedules')}
+            <button type="button" class="btn btn-primary" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Tariff ID</th>
+                <th${coStyle}>Resort</th>
+                <th>Chalet / Cabana Tier</th>
+                <th>Season</th>
+                <th>Effective Window</th>
+                <th class="r">Season Rate ($)</th>
+                <th class="r">Daily Rate ($)</th>
+                <th>Backfill Audit</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(hsp.tariffRows || []).length ? (hsp.tariffRows || []).map(t => `
+                <tr class="rrow" data-ind-row-tbl="hsp_tariffs" data-ind-row-id="${esc(t.id)}" data-ind-row-co="${esc(t.company)}">
+                  <td class="mono"><strong>${esc(t.id)}</strong>${renderDomainRowAttBadgeHtml('hsp_tariffs', t.id)}</td>
+                  <td${coStyle}>${coBadge(t.company)}</td>
+                  <td><strong>${esc(t.tier)}</strong></td>
+                  <td>${esc(t.season)}</td>
+                  <td class="mono">${esc(t.start_date)} to ${esc(t.end_date || 'Open')}</td>
+                  <td class="r mono"><strong>${fmtUSD(t.season_contract_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(t.daily_chalet_ttc_usd, 2)}</td>
+                  <td style="font-size:11.5px;color:var(--muted)">${esc(t.backfill_status || 'Chrono Active')}</td>
+                  <td><span class="badge ${t.status === 'Closed Window' ? 'badge-neutral' : 'badge-good'}">${esc(t.status)}</span></td>
+                </tr>
+              `).join('') : emptyRow(hideCo ? 8 : 9, 'No seasonal tariff schedules match current filter')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="${hideCo ? 4 : 5}"><strong>TOTAL SEASONAL TARIFF SCHEDULES (${fmtNum((hsp.tariffRows || []).length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD((hsp.tariffRows || []).reduce((a, r) => a + Number(r.season_contract_usd || 0), 0), 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD((hsp.tariffRows || []).reduce((a, r) => a + Number(r.daily_chalet_ttc_usd || 0), 0), 2)}</strong></td>
+                <td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
@@ -43988,7 +44299,9 @@
       { id: 'INV-KA-2026-034', book: 'BK-KA-2026-02', seq: 34, date: '2026-10-30', company: 'Korri Auto', customer: 'Al-Ghazieh Commercial Garage', category: 'Spare Parts & Filters', item: 'Fleetguard Oil/Fuel Filter & Brake Drum Pack', chassis: 'WH-AL-GHAZIEH', qty: 40, net_usd: 6200, vat_usd: 682, ttc_usd: 6882, cost_usd: 4320, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' },
       { id: 'PH-KA-2026-D02', book: 'BK-KA-2026-02', seq: 32, date: '2026-10-27', company: 'Korri Auto', customer: 'Sequence Gap Placeholder', category: 'Missing Book Serial', item: 'Missing Physical Pad Serial #32 Between #31 and #33', chassis: 'GAP-AUDIT-32', qty: 0, net_usd: 0, vat_usd: 0, ttc_usd: 0, cost_usd: 0, vat_flag: 'Sequence Gap Alert', book_status: 'Missing Serial (Gap #32)' },
       { id: 'INV-KA-2026-031', book: 'BK-KA-2026-02', seq: 31, date: '2026-10-25', company: 'Korri Auto', customer: 'Bekaa Transport Cooperative', category: 'Lubricants & Hydraulics', item: '15W-40 CI-4 Heavy Diesel Drum 208L + Gearbox Oil', chassis: 'WH-SHOWROOM', qty: 12, net_usd: 7440, vat_usd: 818.40, ttc_usd: 8258.40, cost_usd: 5280, vat_flag: '11% Official VAT', book_status: '34 Entered · 1 Gap (PH-KA-2026-D02)' }
-    ]), getIndustryCustomRows('trd_sales')).map(r => {
+    ]), getIndustryCustomRows('trd_sales')).map(rawR => {
+      const wp = getIndustryWorkflowPatch('trd_sales', rawR.id);
+      const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const margin_usd = round2(r.ttc_usd - r.cost_usd);
       const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
       const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02');
@@ -44009,16 +44322,68 @@
       net_ar_usd: round2(r.gross_ar_usd - r.advance_usd)
     }));
 
-    // 3. Monthly Sales Targets & Chronological Price Lists
-    const rawTargetRows = pickTrd('targetRows', [
-      { id: 'TGT-SH-2026-10', month: '2026-10', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 / M3000 Heavy Trucks', target_ttc: 480000, actual_ttc: 513375, price_list: 'PL-SH-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 78500, status: 'Target Exceeded' },
-      { id: 'TGT-SH-2026-09', month: '2026-09', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'Heavy Chassis & Mixer Units', target_ttc: 450000, actual_ttc: 441200, price_list: 'PL-SH-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 77900, status: '98.0% Attained' },
-      { id: 'TGT-KA-2026-10', month: '2026-10', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts, Tyres & Lubricants', target_ttc: 24000, actual_ttc: 24730.80, price_list: 'PL-KA-2026-Q4 (Effective 2026-10-01 · Open)', list_floor_usd: 360, status: 'Target Exceeded' },
-      { id: 'TGT-KA-2026-09', month: '2026-09', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts & Filters', target_ttc: 22000, actual_ttc: 20480, price_list: 'PL-KA-2026-Q3 (2026-07-01 to 2026-09-30)', list_floor_usd: 350, status: '93.1% Attained' }
-    ]).map(r => ({
-      ...r,
-      attainment_pct: r.target_ttc > 0 ? round2((r.actual_ttc / r.target_ttc) * 100) : 0
-    }));
+    // 3. Monthly Sales Targets & Chronological Effective-Dated Price Lists / Import Tariffs
+    const lastDayOfYm = ymStr => {
+      const m = /^(\d{4})-(\d{2})$/.exec(String(ymStr || '').trim());
+      if (!m) return '2026-08-31';
+      const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0));
+      return dt.toISOString().slice(0, 10);
+    };
+    const baseTrdTargetsRaw = pickTrd('targetRows', [
+      { id: 'TGT-SH-2026-08', month: '2026-08', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 / M3000 Heavy Trucks', target_ttc: 590400, actual_ttc: 615000, price_list: 'PL-SH-2026-08 (Effective 2026-08-01 · Open)', list_floor_usd: 79000, status: 'Target Exceeded' },
+      { id: 'TGT-SH-2026-07', month: '2026-07', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'Heavy Chassis & Mixer Units', target_ttc: 450000, actual_ttc: 441200, price_list: 'PL-SH-2026-07 (2026-07-01 to 2026-07-31)', list_floor_usd: 77900, status: '98.0% Attained' },
+      { id: 'TGT-SH-2026-05', month: '2026-05', company: 'Shacman', rep: 'Heavy Trucks Showroom Desk', segment: 'X3000 / F3000 Heavy Trucks', target_ttc: 143414.39, actual_ttc: 149389.99, price_list: 'PL-SH-2026-05 (2026-05-01 to 2026-05-31)', list_floor_usd: 76500, status: 'Target Exceeded' },
+      { id: 'TGT-KO-2026-08', month: '2026-08', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts, Tyres & Lubricants', target_ttc: 24000, actual_ttc: 24730.80, price_list: 'PL-KO-2026-08 (Effective 2026-08-01 · Open)', list_floor_usd: 360, status: 'Target Exceeded' },
+      { id: 'TGT-KO-2026-07', month: '2026-07', company: 'Korri Auto', rep: 'Al-Ghazieh Parts & Tyres Counter', segment: 'OEM Spare Parts & Filters', target_ttc: 22000, actual_ttc: 20480, price_list: 'PL-KO-2026-07 (2026-07-01 to 2026-07-31)', list_floor_usd: 350, status: '93.1% Attained' }
+    ]);
+    const latestMonthByCo = {};
+    baseTrdTargetsRaw.forEach(r => {
+      const co = String(r.company || 'Shacman');
+      const ym = String(r.month || '2026-08').slice(0, 7);
+      if (!latestMonthByCo[co] || ym > latestMonthByCo[co]) latestMonthByCo[co] = ym;
+    });
+    const normalizedBaseTargets = baseTrdTargetsRaw.map(r => {
+      const co = String(r.company || 'Shacman');
+      const isShac = /shacman/i.test(co);
+      const ym = String(r.month || (r.start_date ? String(r.start_date).slice(0, 7) : '2026-08')).slice(0, 7);
+      const isLatestOpen = r.end_date ? r.end_date === 'Open' : (ym === latestMonthByCo[co]);
+      const sd = r.start_date || `${ym}-01`;
+      const ed = r.end_date || (isLatestOpen ? 'Open' : lastDayOfYm(ym));
+      const unit_net_usd = Number(r.unit_net_usd != null ? r.unit_net_usd : (isShac ? 79000 : 360));
+      const unit_cost_usd = Number(r.unit_cost_usd != null ? r.unit_cost_usd : (isShac ? 65600 : 270));
+      const fob_unit_usd = Number(r.fob_unit_usd != null ? r.fob_unit_usd : (isShac ? 62500 : 190));
+      const landed_pct = Number(r.landed_pct != null ? r.landed_pct : (isShac ? 9.06 : 13.44));
+      return {
+        ...r,
+        month: ym,
+        category: r.category || (isShac ? 'Heavy Truck Sale' : 'Spare Parts & Tyres'),
+        supplier: r.supplier || (isShac ? 'Movelex Industry Company Limited' : 'Shandong Heavy Tyre & Radial Works'),
+        start_date: sd,
+        end_date: ed,
+        unit_net_usd,
+        unit_cost_usd,
+        fob_unit_usd,
+        landed_pct,
+        list_floor_usd: Number(r.list_floor_usd != null ? r.list_floor_usd : unit_net_usd),
+        price_list: ed === 'Open' ? `PL-${isShac ? 'SH' : 'KO'}-${ym} (${sd} · Open)` : `PL-${isShac ? 'SH' : 'KO'}-${ym} (${sd} to ${ed})`
+      };
+    });
+    const rawTargetRows = applyChronoWindowOverlays(normalizedBaseTargets, getIndustryCustomRows('trd_targets'), 'trd_targets').map(r => {
+      const target_ttc = Number(r.target_ttc || 0);
+      const actual_ttc = Number(r.actual_ttc || 0);
+      const isShac = /shacman/i.test(String(r.company || ''));
+      const ed = r.end_date || 'Open';
+      const ym = String(r.month || String(r.start_date || '2026-08').slice(0, 7));
+      return {
+        ...r,
+        month: ym,
+        end_date: ed,
+        price_list: r.price_list && !/Open/.test(r.price_list) && ed !== 'Open'
+          ? r.price_list
+          : `PL-${isShac ? 'SH' : 'KO'}-${ym} (${r.start_date} ${ed === 'Open' ? '· Open' : 'to ' + ed})`,
+        attainment_pct: target_ttc > 0 ? round2((actual_ttc / target_ttc) * 100) : 100
+      };
+    });
 
     // 4. Import Files, Purchase Orders & Backorders
     const rawImportRows = mergeCustomOverSeededRows(pickTrd('importRows', [
@@ -44444,7 +44809,7 @@
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search month, segment, price list...')}
               ${exportBtn('trdTargetsPanel', 'Trading_Sales_Targets_PriceLists')}
-              ${canEnterForm('pricerule', u) ? '<button type="button" class="btn btn-primary" data-open-modal="pricerule">+ Price List Rule</button>' : ''}
+              <button type="button" class="btn btn-primary" data-ind-open-new="trd_targets">+ Price List Schedule</button>
             </div>
           </div>
           <div class="table-wrap">
@@ -44466,7 +44831,7 @@
               </thead>
               <tbody>
                 ${shownTgt.length ? shownTgt.map(r => `
-                  <tr class="rrow">
+                  <tr class="rrow" data-ind-row-tbl="trd_targets" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                     <td class="mono"><strong>${esc(r.id)}</strong></td>
                     <td class="mono">${esc(r.month)}</td>
                     <td${coStyle}>${coBadge(r.company)}</td>
@@ -44565,7 +44930,7 @@
             </thead>
             <tbody>
               ${shownSales.length ? shownSales.map(r => `
-                <tr class="rrow">
+                <tr class="rrow" data-ind-row-tbl="trd_sales" data-ind-row-id="${esc(r.id)}" data-ind-row-co="${esc(r.company)}">
                   <td class="mono"><strong>${esc(r.id)}</strong></td>
                   <td class="mono">${esc(r.book)} #${r.seq}</td>
                   <td class="mono">${esc(fmtDateDMY(r.date))}</td>
@@ -45728,7 +46093,7 @@
       { id: 'RCH-PROP-05', date: '2026-09-18', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', tenant: 'Hamra Medical & Diagnostics', expense_ref: 'EXP-HAM-GEN-09', category: 'Medical Backup Generator Fuel Share', cost_usd: 3400, markup_usd: 340, total_recharge_usd: 3740, linked_invoice: 'Unbilled Recharge Alert', status: 'Unrecharged' }
     ]);
 
-    const mLeases = mergeCustomOverSeededRows(leases, getIndustryCustomRows('re_leases'));
+    const mLeases = applyChronoWindowOverlays(leases, getIndustryCustomRows('re_leases'), 're_leases');
     leases.length = 0; leases.push(...mLeases);
     const mInvoices = mergeCustomOverSeededRows(invoices, getIndustryCustomRows('re_invoicing'));
     invoices.length = 0; invoices.push(...mInvoices);
@@ -45736,7 +46101,7 @@
     sales.length = 0; sales.push(...mSales);
     const mWorkorders = mergeCustomOverSeededRows(workorders, getIndustryCustomRows('re_workorders'));
     workorders.length = 0; workorders.push(...mWorkorders);
-    leases.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_leases', r.id); if (p) leases[i] = Object.assign({}, r, p); });
+    invoices.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_invoicing', r.id); if (p) invoices[i] = Object.assign({}, r, p); });
     workorders.forEach((r, i) => { const p = getIndustryWorkflowPatch('re_workorders', r.id); if (p) workorders[i] = Object.assign({}, r, p); });
 
     const reUser = activeUser();
@@ -45766,7 +46131,8 @@
     const occupiedUnits = fProperties.reduce((s, r) => s + r.units_occupied, 0);
     const occupancyPct = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
 
-    const contractedAnnualRentUsd = fLeases.reduce((s, r) => s + r.annual_ttc_usd, 0);
+    const activeOpenLeases = fLeases.filter(r => r.status !== 'Closed Window');
+    const contractedAnnualRentUsd = activeOpenLeases.reduce((s, r) => s + r.annual_ttc_usd, 0);
     const totalInvoicedTtcUsd = fInvoices.reduce((s, r) => s + r.amount_ttc_usd, 0);
     const totalCollectedRentUsd = fInvoices.reduce((s, r) => s + r.collected_usd, 0);
     const openRentArUsd = fInvoices.reduce((s, r) => s + r.open_ar_usd, 0);
@@ -45781,7 +46147,7 @@
     const woActualUsd = fWorkorders.reduce((s, r) => s + r.actual_usd, 0);
     const unrechargedUsd = fRecharges.filter(r => r.status === 'Unrecharged').reduce((s, r) => s + r.total_recharge_usd, 0);
 
-    const expiringLeaseCount = fLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
+    const expiringLeaseCount = activeOpenLeases.filter(r => r.days_to_expiry <= 90 || r.unbilled_periods > 0).length;
     const overdueInstalmentCount = fInstalments.filter(r => r.status === 'Overdue' || r.status === 'Due Soon').length;
     const vacantUnitCount = Math.max(0, totalUnits - occupiedUnits);
     const openWorkOrderCount = fWorkorders.filter(r => r.status !== 'Completed').length + fRecharges.filter(r => r.status === 'Unrecharged').length;
@@ -49584,13 +49950,8 @@
         };
       }
       if (pIdx === 2) {
-        const basePartners = [
-          { id: 'HLD-PRT-01', entity: 'Bdeir Holding', partner: 'Principal Shareholder Pool (Slot 1)', pct: 55.0, pool_usd: 420000, entitled_usd: 231000, drawn_usd: 185000, open_usd: 46000, start_date: '2026-01-01', status: 'Active Agreement' },
-          { id: 'HLD-PRT-02', entity: 'Blanca & La Una', partner: 'Hospitality Managing Partners (Slots 2-4)', pct: 35.0, pool_usd: 360500, entitled_usd: 126175, drawn_usd: 102000, open_usd: 24175, start_date: '2026-01-01', status: 'Active Agreement' },
-          { id: 'HLD-PRT-03', entity: 'Palms & Voile', partner: 'Resort Co-Investment Pool (Slots 5-7)', pct: 40.0, pool_usd: 383000, entitled_usd: 153200, drawn_usd: 138000, open_usd: 15200, start_date: '2026-01-01', status: 'Active Agreement' },
-          { id: 'HLD-PRT-04', entity: 'Korri Auto & Shacman', partner: 'Trading Commercial Equity Pool (Slot 8)', pct: 25.0, pool_usd: 248000, entitled_usd: 62000, drawn_usd: 62000, open_usd: 0, start_date: '2026-01-01', status: 'Settled' },
-          { id: 'HLD-PRT-05', entity: 'Properties & 4235 S.A.L', partner: 'Mulk Deed Co-Owners (/2400 Slots 9-10)', pct: 30.0, pool_usd: 493100, entitled_usd: 147930, drawn_usd: 120000, open_usd: 27930, start_date: '2026-01-01', status: 'Active Agreement' }
-        ].concat(customPartners);
+        const hldSched = computeHoldingSchedules();
+        const basePartners = hldSched.partnerAgreements || [];
         const totEnt = round2(basePartners.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
         const totDrw = round2(basePartners.reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
         const totOpn = round2(basePartners.reduce((a, r) => a + Number(r.open_usd || 0), 0));
@@ -49608,21 +49969,26 @@
           secondTitle: 'Remaining Payable Partner Balances ($)',
           secondBars: basePartners.map(p => ({ label: p.id, val: Math.max(100, Number(p.open_usd || 0)), sub: `${p.entity} · ${p.status}` })),
           tableTitle: '10-Slot Shareholder & Partner Profit-Share Allocations Register',
-          headers: ['Agreement ID', 'Operating Scope', 'Partner / Slot Pool', 'Effective From', 'Share %', 'Entitled ($)', 'Drawn ($)', 'Open Balance ($)'],
-          rows: basePartners.map(p => [p.id, p.entity, p.partner, p.start_date, `${Number(p.pct || 0).toFixed(1)}%`, fmtUSD(p.entitled_usd, 0), fmtUSD(p.drawn_usd, 0), fmtUSD(p.open_usd, 0)]),
-          totals: ['Total Partner Splits', '5 Vertical Pools', `${basePartners.length} Agreements`, 'Chronological', '100% Tied', fmtUSD(totEnt, 0), fmtUSD(totDrw, 0), fmtUSD(totOpn, 0)]
+          headers: ['Agreement ID', 'Operating Scope', 'Partner / Slot Pool', 'Effective From', 'Effective To', 'Share %', 'Entitled ($)', 'Open Balance ($)'],
+          rows: basePartners.map(p => [p.id, p.entity, p.partner, p.start_date, p.end_date || 'Open', `${Number(p.pct || 0).toFixed(1)}%`, fmtUSD(p.entitled_usd, 0), fmtUSD(p.open_usd, 0)]),
+          totals: ['Total Partner Splits', '5 Vertical Pools', `${basePartners.length} Agreements`, 'Chronological', '0 Overlaps', '100% Tied', fmtUSD(totEnt, 0), fmtUSD(totOpn, 0)]
         };
       }
       if (pIdx === 3) {
-        const loanRows = customLoans.concat((loans || []).slice(0, 12).map((l, idx) => {
+        const hldSched = computeHoldingSchedules();
+        const schedRows = hldSched.facilitySchedules || [];
+        const loanRows = schedRows.concat((loans || []).slice(0, 8).map((l, idx) => {
           const prin = Number(l.principal || l.amount || l.usd_amount || 45000);
           const rep = Number(l.repaid || l.paid || Math.round(prin * 0.35));
           return {
             id: l.id || `LN-HLD-0${idx + 1}`,
             date: String(l.date || '2026-06-15').slice(0, 10),
+            start_date: String(l.date || '2026-06-15').slice(0, 10),
+            end_date: 'Open',
             company: l.company || 'Bdeir Holding',
             lender: l.lender || l.party || l.counterparty || 'Central Group Credit Facility',
             type: l.type || 'Term Facility',
+            rate_apr_pct: 7.2,
             principal_usd: prin,
             repaid_usd: rep,
             balance_usd: Math.max(0, round2(prin - rep)),
@@ -49645,10 +50011,10 @@
           bars: loanRows.slice(0, 8).map(r => ({ label: `${r.id} · ${r.lender}`, val: Math.max(500, Number(r.balance_usd || 0)), sub: `${r.company} · Principal ${fmtUSD(r.principal_usd, 0)}` })),
           secondTitle: 'Principal Repaid vs Contracted by Facility ($)',
           secondBars: loanRows.slice(0, 8).map(r => ({ label: `${r.company} · ${r.type}`, val: Math.max(500, Number(r.principal_usd || 0)), sub: `Repaid ${fmtUSD(r.repaid_usd, 0)} · ${r.status}` })),
-          tableTitle: 'Central Borrowing Facilities, Partner Capital & Maturity Schedule',
-          headers: ['Facility ID', 'Date', 'Entity', 'Lender / Counterparty', 'Facility Type', 'Principal ($)', 'Repaid ($)', 'Balance ($)'],
-          rows: loanRows.map(r => [r.id, r.date, r.company, r.lender, r.type, fmtUSD(r.principal_usd, 0), fmtUSD(r.repaid_usd, 0), fmtUSD(r.balance_usd, 0)]),
-          totals: ['Total Central Facilities', 'Active Schedule', 'Bdeir Holding Group', `${loanRows.length} Facilities`, 'All Terms', fmtUSD(totPrin, 0), fmtUSD(totRep, 0), fmtUSD(totBal, 0)]
+          tableTitle: 'Central Borrowing Facilities, Chronological Interest Schedules & Maturity Register',
+          headers: ['Facility ID', 'Start Date', 'End Date', 'Entity', 'Lender / Counterparty', 'APR %', 'Principal ($)', 'Balance ($)'],
+          rows: loanRows.map(r => [r.id, r.start_date || r.date, r.end_date || 'Open', r.company, r.lender, `${Number(r.rate_apr_pct != null ? r.rate_apr_pct : 7.2).toFixed(2)}%`, fmtUSD(r.principal_usd, 0), fmtUSD(r.balance_usd, 0)]),
+          totals: ['Total Central Facilities', 'Chronological', 'Active Schedule', 'Bdeir Holding Group', `${loanRows.length} Facilities`, 'Weighted APR', fmtUSD(totPrin, 0), fmtUSD(totBal, 0)]
         };
       }
       if (pIdx === 4) {
@@ -51140,11 +51506,14 @@
       'hld_open_ic_tbl': 1,
       'hld_pairs_tbl': 'hld_pairs_custom',
       'hld_partners_tbl': 2,
+      'hld_loans_tbl': 3,
       'hsp_rev_tbl': 0,
       'hsp_memb_tbl': 2,
+      'hsp_tariffs_tbl': 'hsp_tariffs_custom',
       'hsp_stock_tbl': 3,
       'hsp_gen_tbl': 4,
       'trd_inv_tbl': 0,
+      'trd_tgt_tbl': 'trd_tgt_custom',
       'trd_imp_tbl': 2,
       'trd_vin_tbl': 3,
       'trd_wh_tbl': 4,
@@ -51158,6 +51527,30 @@
       'ins_clm_tbl': 4
     };
     const mapped = pageMap[tabKey];
+    if (mapped === 'hsp_tariffs_custom') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+      const trfs = hsp.tariffRows || [];
+      const sumSes = round2(trfs.reduce((a, r) => a + Number(r.seasonal_rate_usd || 0), 0));
+      const sumNgt = round2(trfs.reduce((a, r) => a + Number(r.nightly_rate_usd || 0), 0));
+      return {
+        tableTitle: 'Chronological Seasonal Chalet & Cabana Tariff Schedules Register',
+        headers: ['Tariff ID', 'Resort', 'Tier / Unit Scope', 'Effective From', 'Effective To', 'Seasonal Rate ($)', 'Nightly Rate ($)', 'Status'],
+        rows: trfs.map(r => [r.id, r.company, r.tier, r.start_date, r.end_date || 'Open', fmtUSD(r.seasonal_rate_usd, 0), fmtUSD(r.nightly_rate_usd, 0), r.status]),
+        totals: [`${trfs.length} Tariffs`, `${hsp.activeResorts.length} Resorts`, 'All Tiers', 'Chronological', '0 Overlaps', fmtUSD(sumSes, 0), fmtUSD(sumNgt, 0), 'Active']
+      };
+    }
+    if (mapped === 'trd_tgt_custom') {
+      const trd = computeTradingOperations({ ignoreSearch: true });
+      const tgts = trd.targetRows || [];
+      const sumTgt = round2(tgts.reduce((a, r) => a + Number(r.target_ttc || 0), 0));
+      const sumAct = round2(tgts.reduce((a, r) => a + Number(r.actual_ttc || 0), 0));
+      return {
+        tableTitle: 'Chronological Showroom Price Lists, Import Tariffs & Monthly Sales Targets Register',
+        headers: ['Schedule ID', 'Entity', 'Category / Segment', 'Effective From', 'Effective To', 'Unit Net ($)', 'Target ($)', 'Actual Sales ($)'],
+        rows: tgts.map(r => [r.id, r.company, r.category || r.segment, r.start_date || `${r.month}-01`, r.end_date || 'Open', fmtUSD(r.unit_net_usd || r.list_floor_usd || 0, 0), fmtUSD(r.target_ttc, 0), fmtUSD(r.actual_ttc, 0)]),
+        totals: [`${tgts.length} Schedules`, 'Shacman + Korri Auto', 'All Categories', 'Chronological', '0 Overlaps', 'Active List', fmtUSD(sumTgt, 0), fmtUSD(sumAct, 0)]
+      };
+    }
     if (mapped === 'hld_pairs_custom') {
       const ic = computeIntercompanyInteractions({ ignoreSearch: true });
       const bil = ic.byBilateral || [];
@@ -51191,16 +51584,19 @@
         { key: 'hld_entities_tbl', label: '14-Entity Group Scorecard', view: 'hld_entities', newView: 'hld_interactions' },
         { key: 'hld_open_ic_tbl', label: 'Intercompany Repayment Ledger', view: 'hld_open_recon', newView: 'hld_interactions' },
         { key: 'hld_pairs_tbl', label: 'Sister Pair Matrix', view: 'hld_due_matrix', newView: 'hld_interactions' },
-        { key: 'hld_partners_tbl', label: 'Partner Splits & Agreements', view: 'hld_partners', newView: 'hld_partners' }
+        { key: 'hld_partners_tbl', label: 'Partner Splits & Agreements', view: 'hld_partners', newView: 'hld_partners' },
+        { key: 'hld_loans_tbl', label: 'Facility Rate Schedules', view: 'hld_loans', newView: 'hld_loans' }
       ],
       'Hospitality & Resorts': [
         { key: 'hsp_rev_tbl', label: 'Venue Revenue & Chalet Closes', view: 'hsp_revenue', newView: 'hsp_revenue' },
         { key: 'hsp_memb_tbl', label: 'Seasonal Memberships & Arrears', view: 'hsp_memberships', newView: 'hsp_memberships' },
+        { key: 'hsp_tariffs_tbl', label: 'Seasonal Tariff Schedules', view: 'hsp_memberships', newView: 'hsp_tariffs' },
         { key: 'hsp_stock_tbl', label: 'Cellar, Kitchen & Recipe BOM', view: 'hsp_stock', newView: 'hsp_stock' },
         { key: 'hsp_gen_tbl', label: 'Generators, Diesel & Solar Logs', view: 'hsp_energy', newView: 'hsp_energy' }
       ],
       'Automotive & Heavy Trading': [
         { key: 'trd_inv_tbl', label: 'Sales Invoices & Books', view: 'trd_sales', newView: 'trd_sales' },
+        { key: 'trd_tgt_tbl', label: 'Price Lists & Tariffs', view: 'trd_targets', newView: 'trd_targets' },
         { key: 'trd_imp_tbl', label: 'Imports & Landed Cost', view: 'trd_purchases', newView: 'trd_purchases' },
         { key: 'trd_vin_tbl', label: 'Showroom Serial Units (VINs)', view: 'trd_trucks', newView: 'trd_trucks' },
         { key: 'trd_wh_tbl', label: '5-Warehouse Spare Parts', view: 'trd_stock', newView: 'trd_stock' }
@@ -53578,6 +53974,489 @@
     return syncedCount;
   }
 
+  function computeChronoSweepBounds(newObj, oldWindow) {
+    const starts = [String((newObj && newObj.start_date) || '2026-01-01').slice(0, 10)];
+    if (oldWindow && oldWindow.start_date) starts.push(String(oldWindow.start_date).slice(0, 10));
+    starts.sort();
+    const sweepStart = starts[0] || '2026-01-01';
+    const nEnd = (!newObj || !newObj.end_date || newObj.end_date === 'Open') ? '9999-12-31' : String(newObj.end_date).slice(0, 10);
+    const oEnd = oldWindow ? ((!oldWindow.end_date || oldWindow.end_date === 'Open') ? '9999-12-31' : String(oldWindow.end_date).slice(0, 10)) : nEnd;
+    return { sweepStart, sweepEnd: nEnd >= oEnd ? nEnd : oEnd };
+  }
+
+  function lookupActiveHospitalityTariff(company, tierOrUnit, effDate) {
+    const coStr = String(company || 'Blanca').trim();
+    const tierStr = String(tierOrUnit || '').trim();
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { tariffRows: [] };
+    const coTariffs = (hsp.tariffRows || []).filter(t => t && norm(t.company) === norm(coStr));
+    const dateHits = coTariffs.filter(t => {
+      const sd = String(t.start_date || '1900-01-01').slice(0, 10);
+      const ed = (!t.end_date || t.end_date === 'Open') ? '9999-12-31' : String(t.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    });
+    const exactDateHits = tierStr ? dateHits.filter(t => norm(t.tier) === norm(tierStr)) : [];
+    const activeHits = (exactDateHits.length ? exactDateHits : dateHits).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      return {
+        seasonal_rate_usd: Number(best.seasonal_rate_usd || 18500),
+        nightly_rate_usd: Number(best.nightly_rate_usd || 560),
+        tariffId: best.id || 'TRF-ACTIVE',
+        tier: best.tier || tierStr,
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const resortBaseMap = {
+      'blanca': { seasonal: 18500, nightly: 560 },
+      'palms': { seasonal: 15000, nightly: 490 },
+      'voile': { seasonal: 22000, nightly: 680 },
+      'la una': { seasonal: 9500, nightly: 350 },
+      'platinum': { seasonal: 19500, nightly: 620 }
+    };
+    const fb = resortBaseMap[norm(coStr)] || { seasonal: 16500, nightly: 520 };
+    return {
+      seasonal_rate_usd: fb.seasonal,
+      nightly_rate_usd: fb.nightly,
+      tariffId: 'RESORT-CATALOG-BASELINE',
+      tier: tierStr || 'Standard Resort Catalog',
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillHospitalityTariff(trfObj, oldWindow = null) {
+    if (!trfObj || !trfObj.company) return 0;
+    const { sweepStart, sweepEnd } = computeChronoSweepBounds(trfObj, oldWindow);
+    const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { membershipRows: [], tariffRows: [] };
+    const coTariffs = (hsp.tariffRows || []).filter(t => t && norm(t.company) === norm(trfObj.company));
+    const customMems = getIndustryCustomRows('hsp_memberships');
+    const customMemIds = new Set(customMems.map(m => String(m.id || '').trim().toUpperCase()));
+    let syncedCount = 0;
+    (hsp.membershipRows || []).forEach(m => {
+      if (!m || norm(m.company) !== norm(trfObj.company)) return;
+      const mDate = String(m.start_date || m.due_date || '').slice(0, 10);
+      if (!mDate || mDate < sweepStart || mDate > sweepEnd) return;
+      const qTier = m.tier || m.unit || '';
+      const exactMatchExists = qTier ? coTariffs.some(t => norm(t.tier) === norm(qTier)) : false;
+      if (exactMatchExists && norm(qTier) !== norm(trfObj.tier)) return;
+      const hit = lookupActiveHospitalityTariff(m.company, qTier, mDate);
+      const nextContract = round2(Number(hit.seasonal_rate_usd || m.contract_usd || 0));
+      const paid = Math.min(nextContract, Number(m.paid_usd || 0));
+      const bal = Math.max(0, round2(nextContract - paid));
+      const patch = {
+        contract_usd: nextContract,
+        paid_usd: paid,
+        balance_usd: bal,
+        status: bal <= 0 ? 'Paid in Full' : 'Partial / Active'
+      };
+      if (customMemIds.has(String(m.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('hsp_memberships', Object.assign({ id: m.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('hsp_memberships', m.id, patch);
+      }
+      syncedCount += 1;
+    });
+    const customRevs = getIndustryCustomRows('hsp_revenue');
+    customRevs.forEach(rev => {
+      if (!rev || rev.voided || norm(rev.company) !== norm(trfObj.company)) return;
+      if (!/chalet/i.test(String(rev.category || ''))) return;
+      const rDate = String(rev.date || '').slice(0, 10);
+      if (!rDate || rDate < sweepStart || rDate > sweepEnd) return;
+      const hit = lookupActiveHospitalityTariff(rev.company, trfObj.tier || rev.outlet, rDate);
+      const rooms = Math.max(1, Number(rev.rooms || 1));
+      const tot = round2(rooms * Number(hit.nightly_rate_usd || 560));
+      const ht = round2(tot / 1.11);
+      const vat = round2(tot - ht);
+      addIndustryCustomRow('hsp_revenue', Object.assign({}, rev, { ttc_usd: tot, ht_usd: ht, vat_usd: vat }), { skipCloudSync: true });
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
+  function lookupActiveRealEstateLeaseRate(company, property, tenantOrUnit, effDate) {
+    const coStr = String(company || '').trim();
+    const propStr = String(property || '').trim();
+    const tuStr = String(tenantOrUnit || '').trim();
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { leases: [], units: [] };
+    const leases = Array.isArray(re.leases) ? re.leases : [];
+    const matchTenantOrUnit = l => {
+      if (!tuStr) return !propStr || norm(l.property) === norm(propStr);
+      const nTu = norm(tuStr);
+      const nTen = norm(l.tenant || '');
+      const nUnt = norm(l.unit || '');
+      return nTen === nTu || nUnt === nTu || (nTen && (nTu.includes(nTen) || nTen.includes(nTu)));
+    };
+    const activeHits = leases.filter(l => {
+      if (!l) return false;
+      if (coStr && norm(l.company) !== norm(coStr)) return false;
+      if (!matchTenantOrUnit(l)) return false;
+      const sd = String(l.start_date || '1900-01-01').slice(0, 10);
+      const ed = (!l.end_date || l.end_date === 'Open') ? '9999-12-31' : String(l.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    }).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      const is4235 = /4235/i.test(best.company || coStr);
+      return {
+        net_period_usd: Number(best.net_period_usd || 12500),
+        vat_rate: is4235 ? 11 : 0,
+        frequency: best.frequency || 'Quarterly',
+        leaseId: best.id || 'LSE-ACTIVE',
+        property: best.property || propStr,
+        tenant: best.tenant || tuStr,
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const units = Array.isArray(re.units) ? re.units : [];
+    const unitHit = units.find(u => u && ((tuStr && (norm(u.unit_name || u.name) === norm(tuStr) || norm(u.tenant) === norm(tuStr))) || (propStr && norm(u.property) === norm(propStr))))
+      || units.find(u => u && (!coStr || norm(u.company) === norm(coStr)));
+    const annRent = Number(unitHit && unitHit.annual_rent_usd > 0 ? unitHit.annual_rent_usd : (/4235/i.test(coStr) ? 44000 : 60000));
+    const fbNet = round2(annRent / 4);
+    const is4235 = /4235/i.test(coStr || (unitHit && unitHit.company) || '');
+    return {
+      net_period_usd: fbNet,
+      vat_rate: is4235 ? 11 : 0,
+      frequency: 'Quarterly',
+      leaseId: (unitHit && unitHit.id) ? `${unitHit.id}-MARKET` : 'UNIT-MARKET-BASELINE',
+      property: (unitHit && unitHit.property) || propStr,
+      tenant: tuStr,
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillRealEstateLease(leaseObj, oldWindow = null) {
+    if (!leaseObj || !leaseObj.company) return 0;
+    const { sweepStart, sweepEnd } = computeChronoSweepBounds(leaseObj, oldWindow);
+    const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { invoices: [] };
+    const customInvs = getIndustryCustomRows('re_invoicing');
+    const customInvIds = new Set(customInvs.map(iv => String(iv.id || '').trim().toUpperCase()));
+    const nLeaseTen = norm(leaseObj.tenant || '');
+    let syncedCount = 0;
+    (re.invoices || []).forEach(inv => {
+      if (!inv || norm(inv.company) !== norm(leaseObj.company)) return;
+      const nInvTen = norm(inv.tenant || '');
+      const sameTen = nLeaseTen && nInvTen && (nInvTen === nLeaseTen || nInvTen.includes(nLeaseTen) || nLeaseTen.includes(nInvTen));
+      const linkedAutoInv = String(inv.id || '').toUpperCase() === `INV-${String(leaseObj.id || '').toUpperCase()}`;
+      if (!sameTen && !linkedAutoInv) return;
+      const iDate = String(inv.date || '').slice(0, 10);
+      if (!iDate || iDate < sweepStart || iDate > sweepEnd) return;
+      const hit = lookupActiveRealEstateLeaseRate(inv.company, inv.property || leaseObj.property, inv.tenant || leaseObj.tenant, iDate);
+      const net = round2(Number(hit.net_period_usd || 0));
+      const is4235 = /4235/i.test(inv.company);
+      const vat = is4235 ? round2(net * 0.11) : 0;
+      const tot = round2(net + vat);
+      const col = Math.min(tot, Number(inv.collected_usd || 0));
+      const openAr = Math.max(0, round2(tot - col));
+      const patch = {
+        net_usd: net,
+        base_usd: net,
+        vat_usd: vat,
+        amount_ttc_usd: tot,
+        ttc_usd: tot,
+        collected_usd: col,
+        open_ar_usd: openAr,
+        status: openAr <= 0 ? 'Paid' : (col > 0 ? 'Partial' : 'Open')
+      };
+      if (customInvIds.has(String(inv.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('re_invoicing', Object.assign({ id: inv.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('re_invoicing', inv.id, patch);
+      }
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
+  function normTradingTariffCat(rawCat, coHint) {
+    const s = String(rawCat || '').trim();
+    if (/heavy truck|chassis|tractor|tipper|mixer|x3000|f3000|m3000/i.test(s)) return 'Heavy Truck Sale';
+    if (/spare|part|tyre|component|filter|lubricant|hydraulic/i.test(s)) return 'Spare Parts & Tyres';
+    return /shacman/i.test(String(coHint || '')) ? 'Heavy Truck Sale' : 'Spare Parts & Tyres';
+  }
+
+  function lookupActiveTradingTariff(company, categoryOrSupplier, effDate, mode = 'sale') {
+    const coStr = String(company || 'Shacman').trim();
+    const isShac = /shacman/i.test(coStr);
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : { targetRows: [], serialUnits: [], stockRows: [] };
+    const wantedCat = normTradingTariffCat(categoryOrSupplier, coStr);
+    const activeHits = (trd.targetRows || []).filter(t => {
+      if (!t || norm(t.company) !== norm(coStr)) return false;
+      if (mode !== 'import' && normTradingTariffCat(t.category || t.segment, t.company) !== wantedCat) return false;
+      const sd = String(t.start_date || `${t.month || '2026-08'}-01`).slice(0, 10);
+      const ed = (!t.end_date || t.end_date === 'Open') ? '9999-12-31' : String(t.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    }).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      return {
+        unit_net_usd: Number(best.unit_net_usd != null ? best.unit_net_usd : (best.list_floor_usd || (isShac ? 79000 : 360))),
+        unit_cost_usd: Number(best.unit_cost_usd != null ? best.unit_cost_usd : (isShac ? 65600 : 270)),
+        fob_unit_usd: Number(best.fob_unit_usd != null ? best.fob_unit_usd : (isShac ? 62500 : 190)),
+        landed_pct: Number(best.landed_pct != null ? best.landed_pct : (isShac ? 9.06 : 13.44)),
+        scheduleId: best.id || 'TGT-ACTIVE',
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const unitRef = isShac ? (trd.serialUnits || []).find(u => u && norm(u.company) === norm(coStr)) : null;
+    const stkRef = !isShac ? (trd.stockRows || []).find(k => k && norm(k.company) === norm(coStr)) : null;
+    return {
+      unit_net_usd: isShac ? round2(Number(unitRef && unitRef.list_price_usd ? unitRef.list_price_usd / 1.11 : 78000)) : Number(stkRef && stkRef.retail_usd ? stkRef.retail_usd : 345),
+      unit_cost_usd: isShac ? Number(unitRef && unitRef.landed_cost_usd ? unitRef.landed_cost_usd : 65600) : Number(stkRef && stkRef.wac_usd ? stkRef.wac_usd : 265),
+      fob_unit_usd: isShac ? Number(unitRef && unitRef.fob_usd ? unitRef.fob_usd : 60200) : 185,
+      landed_pct: isShac ? 8.97 : 12.50,
+      scheduleId: isShac ? 'SHOWROOM-CATALOG-BASELINE' : 'PARTS-CATALOG-BASELINE',
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillTradingTariff(tgtObj, oldWindow = null) {
+    if (!tgtObj || !tgtObj.company) return 0;
+    const { sweepStart, sweepEnd } = computeChronoSweepBounds(tgtObj, oldWindow);
+    const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : { salesRows: [], importRows: [] };
+    const customSalesIds = new Set(getIndustryCustomRows('trd_sales').map(s => String(s.id || '').trim().toUpperCase()));
+    const customImpIds = new Set(getIndustryCustomRows('trd_purchases').map(i => String(i.id || '').trim().toUpperCase()));
+    const tgtCat = normTradingTariffCat(tgtObj.category || tgtObj.segment, tgtObj.company);
+    let syncedCount = 0;
+    (trd.salesRows || []).forEach(sl => {
+      if (!sl || sl.is_gap || norm(sl.company) !== norm(tgtObj.company)) return;
+      if (normTradingTariffCat(sl.category, sl.company) !== tgtCat) return;
+      const sDate = String(sl.date || '').slice(0, 10);
+      if (!sDate || sDate < sweepStart || sDate > sweepEnd) return;
+      const hit = lookupActiveTradingTariff(sl.company, sl.category, sDate, 'sale');
+      const qty = Math.max(1, Number(sl.qty || 1));
+      const net = round2(qty * Number(hit.unit_net_usd || 0));
+      const vat = round2(net * 0.11);
+      const ttc = round2(net + vat);
+      const cost = round2(qty * Number(hit.unit_cost_usd || 0));
+      const patch = { net_usd: net, vat_usd: vat, ttc_usd: ttc, cost_usd: cost };
+      if (customSalesIds.has(String(sl.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('trd_sales', Object.assign({ id: sl.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('trd_sales', sl.id, patch);
+      }
+      syncedCount += 1;
+    });
+    (trd.importRows || []).forEach(im => {
+      if (!im || norm(im.company) !== norm(tgtObj.company)) return;
+      const iDate = String(im.date || '').slice(0, 10);
+      if (!iDate || iDate < sweepStart || iDate > sweepEnd) return;
+      const hit = lookupActiveTradingTariff(im.company, im.supplier, iDate, 'import');
+      const ord = Math.max(1, Number(im.ordered_qty || 1));
+      const fob = round2(ord * Number(hit.fob_unit_usd || 0));
+      const add = round2(fob * (Number(hit.landed_pct || 0) / 100));
+      const tot = round2(fob + add);
+      const patch = { fob_usd: fob, landed_add_usd: add, total_landed_usd: tot };
+      if (customImpIds.has(String(im.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('trd_purchases', Object.assign({ id: im.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('trd_purchases', im.id, patch);
+      }
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
+  function lookupActiveHoldingPartnerSplit(entity, partner, effDate) {
+    const entStr = String(entity || 'Bdeir Holding').trim();
+    const prtStr = String(partner || '').trim();
+    const normEnt = s => norm(String(s || '').split('·')[0]);
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerAgreements: [] };
+    const entPeers = (sched.partnerAgreements || []).filter(a => a && normEnt(a.entity) === normEnt(entStr));
+    const dateHits = entPeers.filter(a => {
+      const sd = String(a.start_date || '1900-01-01').slice(0, 10);
+      const ed = (!a.end_date || a.end_date === 'Open') ? '9999-12-31' : String(a.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    });
+    const exactDateHits = prtStr ? dateHits.filter(a => norm(a.partner) === norm(prtStr)) : [];
+    const activeHits = (exactDateHits.length ? exactDateHits : dateHits).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      const sid = best.id || 'HLD-PRT-ACTIVE';
+      return {
+        pct: Number(best.pct || 50),
+        agreementId: sid,
+        scheduleId: sid,
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const peerBase = entPeers[0] || null;
+    const fbPct = Number(peerBase && peerBase.baseline_pct != null ? peerBase.baseline_pct : (/bdeir holding/i.test(entStr) ? 45.0 : 30.0));
+    return {
+      pct: fbPct,
+      agreementId: 'CHARTER-DEFAULT-SPLIT',
+      scheduleId: 'CHARTER-DEFAULT-SPLIT',
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillHoldingPartner(prtObj, oldWindow = null) {
+    if (!prtObj || !prtObj.entity) return 0;
+    const normEnt = s => norm(String(s || '').split('·')[0]);
+    const { sweepStart, sweepEnd } = computeChronoSweepBounds(prtObj, oldWindow);
+    const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerDistributions: [] };
+    const customDistIds = new Set(getIndustryCustomRows('hld_distributions').map(d => String(d.id || '').trim().toUpperCase()));
+    const entDists = (sched.partnerDistributions || []).filter(dist => dist && normEnt(dist.entity) === normEnt(prtObj.entity));
+    const hasExactPrtDist = prtObj.partner ? entDists.some(d => norm(d.partner) === norm(prtObj.partner)) : false;
+    let syncedCount = 0;
+    entDists.forEach(dist => {
+      if (hasExactPrtDist && norm(dist.partner) !== norm(prtObj.partner)) return;
+      const dDate = String(dist.date || '').slice(0, 10);
+      if (!dDate || dDate < sweepStart || dDate > sweepEnd) return;
+      const hit = lookupActiveHoldingPartnerSplit(dist.entity, dist.partner, dDate);
+      const pool = Number(dist.pool_usd || 0);
+      const ent = round2(pool * (Number(hit.pct || 0) / 100));
+      const paid = Math.min(ent, Number(dist.paid_usd || 0));
+      const opn = Math.max(0, round2(ent - paid));
+      const patch = {
+        pct: hit.pct,
+        entitled_usd: ent,
+        paid_usd: paid,
+        open_usd: opn,
+        agreement_id: hit.agreementId,
+        status: opn <= 0 ? 'Settled' : 'Active Tranche'
+      };
+      if (customDistIds.has(String(dist.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('hld_distributions', Object.assign({ id: dist.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('hld_distributions', dist.id, patch);
+      }
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
+  function lookupActiveHoldingLoanRate(company, lender, facType, effDate) {
+    if (effDate === undefined && /^\d{4}-\d{2}-\d{2}$/.test(String(facType || '').trim())) {
+      effDate = facType;
+      facType = '';
+    }
+    const coStr = String(company || 'Bdeir Holding').trim();
+    const lndStr = String(lender || '').trim();
+    const dtStr = /^\d{4}-\d{2}-\d{2}$/.test(String(effDate || '').trim())
+      ? String(effDate).trim()
+      : ((typeof todayISO === 'function' ? todayISO() : SEED_DATE) || '2026-11-06');
+    const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { facilitySchedules: [] };
+    const facs = sched.facilitySchedules || [];
+    const hasLenderPeers = lndStr ? facs.some(f => f && norm(f.lender) === norm(lndStr)) : false;
+    const activeHits = facs.filter(f => {
+      if (!f) return false;
+      if (hasLenderPeers ? norm(f.lender) !== norm(lndStr) : norm(f.company) !== norm(coStr)) return false;
+      const sd = String(f.start_date || '1900-01-01').slice(0, 10);
+      const ed = (!f.end_date || f.end_date === 'Open') ? '9999-12-31' : String(f.end_date).slice(0, 10);
+      return dtStr >= sd && dtStr <= ed;
+    }).sort((a, b) => {
+      const sa = String(a.start_date || '');
+      const sb = String(b.start_date || '');
+      return sb > sa ? 1 : (sb < sa ? -1 : 0);
+    });
+    if (activeHits.length > 0) {
+      const best = activeHits[0];
+      const apr = Number(best.apr_pct != null ? best.apr_pct : (best.interest_rate_pct != null ? best.interest_rate_pct : (best.rate_apr_pct != null ? best.rate_apr_pct : 6.5)));
+      const fid = best.id || 'FAC-ACTIVE';
+      return {
+        apr_pct: apr,
+        rate_apr_pct: apr,
+        interest_rate_pct: apr,
+        facilityId: fid,
+        scheduleId: fid,
+        startDate: best.start_date || '',
+        endDate: best.end_date || 'Open',
+        isFallback: false
+      };
+    }
+    const peerBase = facs.find(f => f && (hasLenderPeers ? norm(f.lender) === norm(lndStr) : norm(f.company) === norm(coStr)));
+    const fbApr = Number(peerBase && peerBase.baseline_rate_pct != null ? peerBase.baseline_rate_pct : 5.0);
+    return {
+      apr_pct: fbApr,
+      rate_apr_pct: fbApr,
+      interest_rate_pct: fbApr,
+      facilityId: 'TREASURY-BENCHMARK-APR',
+      scheduleId: 'TREASURY-BENCHMARK-APR',
+      startDate: '',
+      endDate: '',
+      isFallback: true
+    };
+  }
+
+  function retroactiveBackfillHoldingLoan(loanObj, oldWindow = null) {
+    if (!loanObj) return 0;
+    const { sweepStart, sweepEnd } = computeChronoSweepBounds(loanObj, oldWindow);
+    const sched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { loanAccruals: [] };
+    const customAccIds = new Set(getIndustryCustomRows('hld_loan_accruals').map(a => String(a.id || '').trim().toUpperCase()));
+    let syncedCount = 0;
+    (sched.loanAccruals || []).forEach(ac => {
+      if (!ac) return;
+      const sameLender = loanObj.lender && norm(ac.lender) === norm(loanObj.lender);
+      const sameFac = String(ac.facility_id || '').toUpperCase() === String(loanObj.id || '').toUpperCase();
+      if (!sameLender && !sameFac) return;
+      const aDate = String(ac.date || '').slice(0, 10);
+      if (!aDate || aDate < sweepStart || aDate > sweepEnd) return;
+      const hit = lookupActiveHoldingLoanRate(ac.company || loanObj.company, ac.lender || loanObj.lender, loanObj.type || '', aDate);
+      const prin = Number(ac.principal_usd != null ? ac.principal_usd : (ac.balance_usd != null ? ac.balance_usd : (loanObj.balance_usd || loanObj.principal_usd || 0)));
+      const yearFrac = ac.days != null ? (Math.max(1, Number(ac.days)) / 365) : 0.25;
+      const aprVal = Number(hit.apr_pct != null ? hit.apr_pct : (hit.rate_apr_pct || 0));
+      const interest = round2(prin * (aprVal / 100) * yearFrac);
+      const patch = {
+        apr_pct: aprVal,
+        interest_rate_pct: aprVal,
+        rate_apr_pct: aprVal,
+        accrued_usd: interest,
+        interest_usd: interest,
+        facility_id: hit.facilityId || hit.scheduleId
+      };
+      if (customAccIds.has(String(ac.id || '').trim().toUpperCase())) {
+        addIndustryCustomRow('hld_loan_accruals', Object.assign({ id: ac.id }, patch), { skipCloudSync: true });
+      } else {
+        saveIndustryWorkflowPatch('hld_loan_accruals', ac.id, patch);
+      }
+      syncedCount += 1;
+    });
+    return syncedCount;
+  }
+
   function freqRankCandidates(colHint, candidates) {
     const uniq = [];
     const seen = new Set();
@@ -53600,18 +54479,20 @@
   const INDUSTRY_DOMAIN_FORMS_BY_IND = {
     'Holding & Treasury': [
       { key: 'hld_interactions', label: 'Sister Transfer', title: 'New Intercompany Sister Transfer', matchViews: ['hld_consolidation', 'hld_entities', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix'] },
-      { key: 'hld_partners', label: 'Partner Split', title: 'New Partner Profit-Share Agreement', matchViews: ['hld_partners', 'hld_distributions'] },
-      { key: 'hld_loans', label: 'Central Facility', title: 'New Central Treasury Loan Facility', matchViews: ['hld_loans', 'hld_assets'] }
+      { key: 'hld_partners', label: 'Partner Split', title: 'New Chronological Partner Profit-Share Schedule', matchViews: ['hld_partners', 'hld_distributions'] },
+      { key: 'hld_loans', label: 'Central Facility', title: 'New Chronological Central Treasury Facility Schedule', matchViews: ['hld_loans', 'hld_assets'] }
     ],
     'Hospitality & Resorts': [
       { key: 'hsp_revenue', label: 'Venue & Chalet Close', title: 'New Daily Venue & Chalet Revenue Sheet', matchViews: ['hsp_revenue', 'hsp_vat'] },
       { key: 'hsp_pos', label: 'POS Till Close', title: 'New Resort POS Shift & Drawer Close', matchViews: ['hsp_pos'] },
       { key: 'hsp_memberships', label: 'Seasonal Membership', title: 'New Seasonal Cabana / Chalet Membership', matchViews: ['hsp_memberships', 'hsp_partners'] },
+      { key: 'hsp_tariffs', label: 'Seasonal Tariff', title: 'New Chronological Resort Chalet & Cabana Tariff Schedule', matchViews: ['hsp_tariffs'] },
       { key: 'hsp_stock', label: 'Kitchen & Cellar Stock', title: 'New Commissary & Cellar Stock Intake', matchViews: ['hsp_stock', 'hsp_menu'] },
       { key: 'hsp_energy', label: 'Generator & Solar Log', title: 'New Generator Diesel & Solar Runtime Log', matchViews: ['hsp_energy', 'hsp_maint'] }
     ],
     'Automotive & Heavy Trading': [
-      { key: 'trd_sales', label: 'Sales Invoice', title: 'New Commercial Vehicle / Parts Tax Invoice', matchViews: ['trd_sales', 'trd_receivables', 'trd_targets'] },
+      { key: 'trd_sales', label: 'Sales Invoice', title: 'New Commercial Vehicle / Parts Tax Invoice', matchViews: ['trd_sales', 'trd_receivables'] },
+      { key: 'trd_targets', label: 'Price List & Tariff', title: 'New Chronological Showroom Price List & Import Tariff', matchViews: ['trd_targets'] },
       { key: 'trd_purchases', label: 'Import & Landed File', title: 'New Import Container & Landed Cost File', matchViews: ['trd_purchases', 'trd_landed', 'trd_grn'] },
       { key: 'trd_trucks', label: 'Showroom VIN Unit', title: 'New Serialized Heavy Truck / Showroom VIN Unit', matchViews: ['trd_trucks', 'trd_warranty'] },
       { key: 'trd_stock', label: 'Spare Part SKU', title: 'New Multi-Warehouse Spare Part SKU', matchViews: ['trd_stock', 'trd_movements', 'trd_recon'] }
@@ -53792,16 +54673,21 @@
       `;
     } else if (spec.key === 're_leases') {
       const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics', 'Mazraa Commercial Logistics']);
+      const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
       const defFreq = prefill.frequency || 'Quarterly';
-      datalistsHtml = `<datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
+      const endVal = prefill.end_date === 'Open' ? '' : (prefill.end_date || '2029-10-31');
+      datalistsHtml = `
+        <datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="dl_ide_re_props">${props.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      `;
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
         ${fldWrap('Lease Contract ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'LSE-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Property / Building *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
+        ${fldWrap('Property / Building *', `<input type="text" id="ide_property" list="dl_ide_re_props" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
         ${fldWrap('Leased Unit / Floor *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'Floor 2 Medical Suite (210 m2)')}">`)}
         ${fldWrap('Tenant Name *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(prefill.tenant || '')}" placeholder="Select or type tenant...">`)}
-        ${fldWrap('Lease Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-11-01')}">`)}
-        ${fldWrap('Lease End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="${esc(prefill.end_date || '2029-10-31')}">`)}
+        ${fldWrap('Lease Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2020-01-01' : '2025-01-02'}" value="${esc(prefill.start_date || '2026-11-01')}">`, 'Forward chronology: auto-closes prior Open lease on unit at prev day')}
+        ${fldWrap('Lease End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set evergreen Open lease" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open evergreen lease (preserves vacancy/gap windows)')}
         ${fldWrap('Billing Frequency', `<select id="ide_freq" data-plain-options="1" style="${inpStyle}"><option value="Quarterly" ${defFreq === 'Quarterly' ? 'selected' : ''}>Quarterly (4x/yr)</option><option value="Monthly" ${defFreq === 'Monthly' ? 'selected' : ''}>Monthly (12x/yr)</option><option value="Annual" ${defFreq === 'Annual' ? 'selected' : ''}>Annual (1x/yr)</option></select>`)}
         ${fldWrap('Net Period Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_period_usd != null ? prefill.net_period_usd : '10000')}">`)}
         ${fldWrap('Applicable VAT Rate (%)', `<input type="text" id="ide_vat_rate" class="mono" readonly style="${roStyle}" value="${/4235/.test(defCo) ? '11%' : '0%'}">`)}
@@ -53811,15 +54697,26 @@
         ${fldWrap('Escalation Schedule', `<input type="text" id="ide_escalation" style="${inpStyle}" value="${esc(prefill.escalation || '3-Yr Commercial (+8% Yr 4)')}">`)}
       `;
     } else if (spec.key === 're_invoicing') {
+      const tenants = freqRankCandidates('customer', ['Mazen (Unesco Pharmacy)', 'Infinitas S.A.L', 'Mohamad Ali Fawz', 'Levant Luxury Retail SAL', 'Hamra Medical & Diagnostics']);
+      const props = freqRankCandidates('site', ['4235 Msaytbeh Commercial Center', '1354/50 Mina el Hosn (Marina Tower)', '4235 Msaytbeh', '1354/50 Mina el Hosn']);
+      const defProp = prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)');
+      const defTenant = prefill.tenant || tenants[0] || 'Mazen (Unesco Pharmacy)';
+      const defDate = prefill.date || today;
+      const initLeaseHit = lookupActiveRealEstateLeaseRate(defCo, defProp, defTenant, defDate);
+      const defNet = prefill.net_usd != null ? prefill.net_usd : initLeaseHit.net_period_usd;
+      datalistsHtml = `
+        <datalist id="dl_ide_re_tenants">${tenants.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+        <datalist id="dl_ide_re_props">${props.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      `;
       fieldsHtml = `
         ${fldWrap('Legal Entity *', coSelectHtml, '4235 Company S.A.L = 11% VAT | Properties = 0% VAT')}
         ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'INV-RE-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
         ${fldWrap('Official Tax Sequence', `<input type="text" id="ide_tax_seq" class="mono" style="${inpStyle}" value="${esc(prefill.tax_seq || 'VAT-4235-#016')}">`)}
-        ${fldWrap('Property *', `<input type="text" id="ide_property" style="${inpStyle}" value="${esc(prefill.property || (/4235/.test(defCo) ? '4235 Msaytbeh Commercial Center' : '1354/50 Mina el Hosn (Marina Tower)'))}">`)}
-        ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" style="${inpStyle}" value="${esc(prefill.tenant || 'Mazen (Unesco Pharmacy)')}">`)}
+        ${fldWrap('Property *', `<input type="text" id="ide_property" list="dl_ide_re_props" style="${inpStyle}" value="${esc(defProp)}">`)}
+        ${fldWrap('Tenant *', `<input type="text" id="ide_tenant" list="dl_ide_re_tenants" style="${inpStyle}" value="${esc(defTenant)}">`)}
         ${fldWrap('Billing Period', `<input type="text" id="ide_period" style="${inpStyle}" value="${esc(prefill.period || '2026-Q4 (Nov-Jan)')}">`)}
-        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '12500')}">`)}
+        ${fldWrap('Net Rent ($) *', `<input type="number" id="ide_net" class="mono" step="50" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initLeaseHit.isFallback ? 'Baseline rate (' + initLeaseHit.leaseId + ' · ' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')' : 'Chrono Lease ' + initLeaseHit.leaseId + ' (' + fmtUSD(initLeaseHit.net_period_usd, 0) + ')')}</span>`)}
         ${fldWrap('VAT Amount ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$1,375.00">`)}
         ${fldWrap('Total Billed Rent ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$13,875.00">`)}
         ${fldWrap('Collected Now ($)', `<input type="number" id="ide_collected" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.collected_usd != null ? prefill.collected_usd : '0')}">`)}
@@ -53851,40 +54748,70 @@
         ${fldWrap('Actual Spend ($)', `<input type="number" id="ide_actual" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.actual_usd != null ? prefill.actual_usd : '11500')}">`)}
         ${fldWrap('Tenant Rechargeable?', `<select id="ide_rechargeable" data-plain-options="1" style="${inpStyle}"><option value="no" ${!isRech ? 'selected' : ''}>Landlord Expense / CAPEX</option><option value="yes" ${isRech ? 'selected' : ''}>Yes (Rechargeable to Tenant)</option></select>`)}
       `;
+    } else if (spec.key === 'trd_targets') {
+      const sups = freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'Shandong Heavy Tyre & Radial Works', 'EuroDiesel Filters & Brake Components GmbH']);
+      const defCat = normTradingTariffCat(prefill.category || (/Korri/i.test(defCo) ? 'Spare Parts & Tyres' : 'Heavy Truck Sale'));
+      const endVal = (prefill.end_date && prefill.end_date !== 'Open') ? prefill.end_date : '';
+      datalistsHtml = `<datalist id="dl_ide_trd_sups">${sups.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
+      fieldsHtml = `
+        ${fldWrap('Trading Entity *', coSelectHtml)}
+        ${fldWrap('Price List / Tariff ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'TGT-2026-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Product Category *', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale" ${defCat === 'Heavy Truck Sale' ? 'selected' : ''}>Heavy Truck Sale</option><option value="Spare Parts & Tyres" ${defCat === 'Spare Parts & Tyres' ? 'selected' : ''}>Spare Parts & Tyres</option><option value="Lubricants & Hydraulics" ${defCat === 'Lubricants & Hydraulics' ? 'selected' : ''}>Lubricants & Hydraulics</option></select>`)}
+        ${fldWrap('OEM Supplier Scope', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(prefill.supplier || sups[0] || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
+        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-08-02'}" value="${esc(prefill.start_date || '2026-09-01')}">`, 'Forward chronology: auto-closes prior Open price list at prev day')}
+        ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open price list" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing schedule (preserves explicit closed gaps)')}
+        ${fldWrap('Unit Net Selling Price ($) *', `<input type="number" id="ide_unit_net" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.unit_net_usd != null ? prefill.unit_net_usd : (/Korri/i.test(defCo) ? '420' : '86500'))}">`)}
+        ${fldWrap('Unit Landed Cost ($) *', `<input type="number" id="ide_unit_cost" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.unit_cost_usd != null ? prefill.unit_cost_usd : (/Korri/i.test(defCo) ? '295' : '69200'))}">`)}
+        ${fldWrap('Supplier FOB Unit ($) *', `<input type="number" id="ide_fob_unit" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.fob_unit_usd != null ? prefill.fob_unit_usd : (/Korri/i.test(defCo) ? '265' : '61500'))}">`)}
+        ${fldWrap('Freight & Duty Add-On (%)', `<input type="number" id="ide_landed_pct" class="mono" step="0.5" min="0" max="100" style="${inpStyle}" value="${esc(prefill.landed_pct != null ? prefill.landed_pct : '12.5')}">`)}
+        ${fldWrap('Period Sales Target ($)', `<input type="number" id="ide_target_ttc" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.target_ttc != null ? prefill.target_ttc : '250000')}">`)}
+        ${fldWrap('Realized Period Sales ($)', `<input type="number" id="ide_actual_ttc" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.actual_ttc != null ? prefill.actual_ttc : '0')}">`)}
+      `;
     } else if (spec.key === 'trd_sales') {
       const custs = freqRankCandidates('customer', ['Bdeir Contracting & Earthworks', 'Levant Quarry & Transit SAL', 'Mediterranean Haulage Group', 'South Coast Auto Fleet', 'Al-Ghazieh Commercial Garage']);
-      const defCat = prefill.category || 'Heavy Truck Sale';
+      const defCat = normTradingTariffCat(prefill.category || (/Korri/i.test(defCo) ? 'Spare Parts & Tyres' : 'Heavy Truck Sale'));
+      const defDate = prefill.date || today;
+      const defQty = prefill.qty != null ? Number(prefill.qty) || 1 : 1;
+      const initTrdHit = lookupActiveTradingTariff(defCo, defCat, defDate);
+      const defNet = prefill.net_usd != null ? prefill.net_usd : round2(defQty * initTrdHit.unit_net_usd);
+      const defCost = prefill.cost_usd != null ? prefill.cost_usd : round2(defQty * initTrdHit.unit_cost_usd);
       datalistsHtml = `<datalist id="dl_ide_trd_custs">${custs.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
         ${fldWrap('Invoice # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'INV-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Physical Invoice Book', `<input type="text" id="ide_book" class="mono" style="${inpStyle}" value="${esc(prefill.book || 'BK-SH-2026-01')}">`)}
-        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Invoice Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
         ${fldWrap('Customer *', `<input type="text" id="ide_customer" list="dl_ide_trd_custs" style="${inpStyle}" value="${esc(prefill.customer || custs[0] || '')}">`)}
         ${fldWrap('Sale Category', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Heavy Truck Sale" ${defCat === 'Heavy Truck Sale' ? 'selected' : ''}>Heavy Truck Sale</option><option value="Spare Parts & Tyres" ${defCat === 'Spare Parts & Tyres' ? 'selected' : ''}>Spare Parts & Tyres</option><option value="Lubricants & Hydraulics" ${defCat === 'Lubricants & Hydraulics' ? 'selected' : ''}>Lubricants & Hydraulics</option></select>`)}
-        ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || 'Shacman F3000 6x4 Dump Truck 340HP')}">`)}
-        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || 'LZGJLDR41PX019301')}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
-        ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.qty != null ? prefill.qty : '1')}">`)}
-        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.net_usd != null ? prefill.net_usd : '84500')}">`)}
+        ${fldWrap('Vehicle Model / Part Description *', `<input type="text" id="ide_item" style="${inpStyle}" value="${esc(prefill.item || (/Korri/i.test(defCo) ? 'Weichai OEMInjector & Clutch Kit' : 'Shacman F3000 6x4 Dump Truck 340HP'))}">`)}
+        ${fldWrap('Serial Chassis VIN / Warehouse Ref', `<input type="text" id="ide_chassis" class="mono" style="${inpStyle}" value="${esc(prefill.chassis || (/Korri/i.test(defCo) ? 'WH-AL-GHAZIEH' : 'LZGJLDR41PX019301'))}">`, 'ISO 3779 17-char VIN (no I/O/Q) locks Qty = 1')}
+        ${fldWrap('Quantity *', `<input type="number" id="ide_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defQty)}">`)}
+        ${fldWrap('Net Sale Amount ($) *', `<input type="number" id="ide_net" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defNet)}">`, `<span id="ideRateSourceHint">${esc(initTrdHit.isFallback ? 'Baseline rate (' + initTrdHit.scheduleId + ' · ' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)' : 'Chrono Price List ' + initTrdHit.scheduleId + ' (' + fmtUSD(initTrdHit.unit_net_usd, 0) + '/u)')}</span>`)}
         ${fldWrap('Official 11% VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$9,295.00">`)}
         ${fldWrap('Total Invoice Amount ($)', `<input type="text" id="ide_tot" class="mono" readonly style="${roStyle}" value="$93,795.00">`)}
-        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.cost_usd != null ? prefill.cost_usd : '69200')}">`)}
+        ${fldWrap('Capitalized Landed Cost ($) *', `<input type="number" id="ide_cost" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(defCost)}">`)}
         ${fldWrap('Realized Gross Margin', `<input type="text" id="ide_margin" class="mono" readonly style="${roStyle}" value="$24,595.00 (26.2%)">`)}
       `;
     } else if (spec.key === 'trd_purchases') {
       const sups = freqRankCandidates('supplier', ['Shaanxi Heavy Duty Automobile Imp & Exp Co.', 'Weichai Power & Fast Gear OEM Export', 'Shandong Heavy Tyre & Radial Works', 'EuroDiesel Filters & Brake Components GmbH']);
+      const defDate = prefill.date || today;
+      const defSup = prefill.supplier || sups[0] || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.';
+      const defOrd = prefill.ordered_qty != null ? Number(prefill.ordered_qty) || 1 : (/Korri/i.test(defCo) ? 50 : 1);
+      const initImpHit = lookupActiveTradingTariff(defCo, /Korri/i.test(defCo) ? 'Spare Parts & Tyres' : 'Heavy Truck Sale', defDate, defSup);
+      const defFob = prefill.fob_usd != null ? prefill.fob_usd : round2(defOrd * initImpHit.fob_unit_usd);
+      const defAdd = prefill.landed_add_usd != null ? prefill.landed_add_usd : round2(Number(defFob) * (initImpHit.landed_pct / 100));
       datalistsHtml = `<datalist id="dl_ide_trd_sups">${sups.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>`;
       fieldsHtml = `
         ${fldWrap('Trading Entity *', coSelectHtml)}
         ${fldWrap('Import File # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'IMP-TRD-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(prefill.supplier || sups[0] || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.')}">`)}
+        ${fldWrap('Arrival Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
+        ${fldWrap('Foreign OEM Supplier *', `<input type="text" id="ide_supplier" list="dl_ide_trd_sups" style="${inpStyle}" value="${esc(defSup)}">`)}
         ${fldWrap('Port of Origin', `<input type="text" id="ide_origin" style="${inpStyle}" value="${esc(prefill.origin || 'Qingdao Port')}">`)}
         ${fldWrap('Container / Bill of Lading *', `<input type="text" id="ide_bl" class="mono" style="${inpStyle}" value="${esc(prefill.bl || prefill.container_bl || 'COSU6891992014 · 2x40HC')}">`)}
-        ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.ordered_qty != null ? prefill.ordered_qty : '50')}">`)}
-        ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : '50')}">`)}
-        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="100" min="1" style="${inpStyle}" value="${esc(prefill.fob_usd != null ? prefill.fob_usd : '48000')}">`)}
-        ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="50" min="0" style="${inpStyle}" value="${esc(prefill.landed_add_usd != null ? prefill.landed_add_usd : '5400')}">`)}
+        ${fldWrap('Ordered Qty *', `<input type="number" id="ide_ord_qty" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(defOrd)}">`)}
+        ${fldWrap('Received Qty *', `<input type="number" id="ide_rec_qty" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.received_qty != null ? prefill.received_qty : defOrd)}">`)}
+        ${fldWrap('Supplier FOB Cost ($) *', `<input type="number" id="ide_fob" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defFob)}">`, `<span id="ideRateSourceHint">${esc(initImpHit.isFallback ? 'Baseline rate (' + initImpHit.scheduleId + ' · ' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)' : 'Chrono Tariff ' + initImpHit.scheduleId + ' (' + fmtUSD(initImpHit.fob_unit_usd, 0) + '/u)')}</span>`)}
+        ${fldWrap('Freight, Customs & Clearance ($)', `<input type="number" id="ide_landed_add" class="mono" step="10" min="0" style="${inpStyle}" value="${esc(defAdd)}">`)}
         ${fldWrap('Total Capitalized Landed ($)', `<input type="text" id="ide_tot_landed" class="mono" readonly style="${roStyle}" value="$53,400.00">`)}
       `;
     } else if (spec.key === 'trd_trucks') {
@@ -53917,18 +54844,40 @@
         ${fldWrap('Counter Retail Price ($) *', `<input type="number" id="ide_retail" class="mono" step="1" min="0.01" style="${inpStyle}" value="${esc(prefill.retail_usd != null ? prefill.retail_usd : '465')}">`)}
         ${fldWrap('Total Stock Value ($)', `<input type="text" id="ide_val" class="mono" readonly style="${roStyle}" value="$6,800.00">`)}
       `;
+    } else if (spec.key === 'hsp_tariffs') {
+      const tiers = ['VIP Beach Cabana', 'Beach Chalet & Cabana', 'Villa & Pool Cabana', 'Sunset Cabana & Jetty', 'Private Cellar & Lounge VIP', 'Penthouse Suite & Ballroom', 'Deluxe Family Chalet', 'Executive Duplex Chalet', 'Beach Cabana & Day Pass', 'Executive Penthouse & Suite'];
+      const defTier = prefill.tier || tiers[0];
+      if (defTier && !tiers.includes(defTier)) tiers.unshift(defTier);
+      const endVal = (prefill.end_date && prefill.end_date !== 'Open') ? prefill.end_date : '';
+      const defSesRate = prefill.seasonal_rate_usd != null ? prefill.seasonal_rate_usd : (prefill.season_contract_usd != null ? prefill.season_contract_usd : '22500');
+      const defNgtRate = prefill.nightly_rate_usd != null ? prefill.nightly_rate_usd : (prefill.daily_chalet_ttc_usd != null ? prefill.daily_chalet_ttc_usd : '450');
+      fieldsHtml = `
+        ${fldWrap('Resort Property *', coSelectHtml)}
+        ${fldWrap('Tariff Schedule ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'TRF-2026-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
+        ${fldWrap('Chalet / Cabana Tier *', `<select id="ide_tier" data-plain-options="1" style="${inpStyle}">${tiers.map(t => `<option value="${esc(t)}" ${defTier === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
+        ${fldWrap('Season Label *', `<input type="text" id="ide_season" style="${inpStyle}" value="${esc(prefill.season || 'Summer Peak 2026')}">`)}
+        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-05-02'}" value="${esc(prefill.start_date || '2026-11-01')}">`, 'Forward chronology: auto-closes prior Open resort tariff at prev day')}
+        ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open tariff" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing tariff (preserves shoulder-season closed gaps)')}
+        ${fldWrap('Seasonal Package Rate ($) *', `<input type="number" id="ide_seasonal_rate" class="mono" step="100" min="100" style="${inpStyle}" value="${esc(defSesRate)}">`)}
+        ${fldWrap('Nightly Chalet Rate ($) *', `<input type="number" id="ide_nightly_rate" class="mono" step="10" min="10" style="${inpStyle}" value="${esc(defNgtRate)}">`)}
+        ${fldWrap('Tariff Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Seasonal chalet & cabana rate schedule')}">`)}
+      `;
     } else if (spec.key === 'hsp_revenue') {
       const defCat = prefill.category || 'Chalet Rental';
       const defMth = prefill.method || 'Cash & Card';
+      const defDate = prefill.date || today;
+      const defRooms = prefill.rooms != null ? Number(prefill.rooms) || 0 : 12;
+      const initHspHit = lookupActiveHospitalityTariff(defCo, prefill.outlet || 'Chalets & Beach Terrace', defDate);
+      const defTot = prefill.ttc_usd != null ? prefill.ttc_usd : (/Chalet/i.test(defCat) && defRooms > 0 ? round2(defRooms * initHspHit.nightly_rate_usd) : '8880');
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
         ${fldWrap('Revenue Sheet # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'HSP-REV-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
-        ${fldWrap('Operating Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
+        ${fldWrap('Operating Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(defDate)}">`)}
         ${fldWrap('Venue / Outlet *', `<input type="text" id="ide_outlet" style="${inpStyle}" value="${esc(prefill.outlet || 'Chalets & Beach Terrace')}">`)}
         ${fldWrap('Revenue Stream *', `<select id="ide_category" data-plain-options="1" style="${inpStyle}"><option value="Chalet Rental" ${/Chalet/i.test(defCat) ? 'selected' : ''}>Chalet Rental (11% VAT)</option><option value="Restaurant F&B" ${/Restaurant|F&B/i.test(defCat) ? 'selected' : ''}>Restaurant F&B (11% VAT)</option><option value="Beach Entrance" ${/Beach/i.test(defCat) ? 'selected' : ''}>Beach Entrance (11% VAT)</option><option value="Events & Weddings" ${/Event|Wedding/i.test(defCat) ? 'selected' : ''}>Events & Weddings (11% VAT)</option><option value="Staff Tips & Gratuities" ${/Tip|Gratuit/i.test(defCat) ? 'selected' : ''}>Staff Tips & Gratuities (Zero-VAT)</option><option value="Generator Diesel Recharge" ${/Diesel/i.test(defCat) ? 'selected' : ''}>Generator Diesel Recharge (Zero-VAT)</option></select>`)}
-        ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(prefill.rooms != null ? prefill.rooms : '12')}">`)}
+        ${fldWrap('Occupied Chalets / Suites', `<input type="number" id="ide_rooms" class="mono" step="1" min="0" style="${inpStyle}" value="${esc(defRooms)}">`)}
         ${fldWrap('Guest Covers', `<input type="number" id="ide_covers" class="mono" step="1" min="1" style="${inpStyle}" value="${esc(prefill.covers != null ? prefill.covers : '95')}">`)}
-        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(prefill.ttc_usd != null ? prefill.ttc_usd : '8880')}">`)}
+        ${fldWrap('Total Billed Revenue ($) *', `<input type="number" id="ide_tot" class="mono" step="10" min="1" style="${inpStyle}" value="${esc(defTot)}">`, `<span id="ideRateSourceHint">${esc(initHspHit.isFallback ? 'Baseline rate (' + initHspHit.tariffId + ' · ' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)' : 'Chrono Tariff ' + initHspHit.tariffId + ' (' + fmtUSD(initHspHit.nightly_rate_usd, 0) + '/night)')}</span>`)}
         ${fldWrap('Net Excl. Tax ($)', `<input type="text" id="ide_ht" class="mono" readonly style="${roStyle}" value="$8,000.00">`)}
         ${fldWrap('Output VAT ($)', `<input type="text" id="ide_vat" class="mono" readonly style="${roStyle}" value="$880.00">`, 'Zero-VAT enforced on Tips & Diesel')}
         ${fldWrap('Settlement Channel', `<select id="ide_method" data-plain-options="1" style="${inpStyle}"><option value="Cash & Card" ${defMth === 'Cash & Card' ? 'selected' : ''}>Cash & Card</option><option value="POS Till #1" ${defMth === 'POS Till #1' ? 'selected' : ''}>POS Till #1</option><option value="Card / Whish" ${defMth === 'Card / Whish' ? 'selected' : ''}>Card / Whish</option><option value="Bank Transfer" ${defMth === 'Bank Transfer' ? 'selected' : ''}>Bank Transfer</option></select>`)}
@@ -53950,16 +54899,20 @@
         ${fldWrap('Drawer Variance ($)', `<input type="text" id="ide_var" class="mono" readonly style="${roStyle}" value="$0.00 (Balanced)">`)}
       `;
     } else if (spec.key === 'hsp_memberships') {
+      const defUnit = prefill.unit || 'VIP Cabana #A-09';
+      const defSd = prefill.start_date || '2026-05-01';
+      const initMemHit = lookupActiveHospitalityTariff(defCo, defUnit, defSd);
+      const defContract = prefill.contract_usd != null ? prefill.contract_usd : initMemHit.seasonal_rate_usd;
       fieldsHtml = `
         ${fldWrap('Resort Property *', coSelectHtml)}
         ${fldWrap('Membership Contract # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'MEM-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Member / Family Name *', `<input type="text" id="ide_member" style="${inpStyle}" value="${esc(prefill.member || 'Frem Family Beach Trust')}">`)}
-        ${fldWrap('Assigned Chalet / Cabana *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(prefill.unit || 'VIP Cabana #A-09')}">`)}
-        ${fldWrap('Season Package', `<input type="text" id="ide_season" style="${inpStyle}" value="${esc(prefill.season || 'Summer 2026')}">`)}
-        ${fldWrap('Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-05-01')}">`)}
+        ${fldWrap('Assigned Chalet / Cabana *', `<input type="text" id="ide_unit" style="${inpStyle}" value="${esc(defUnit)}">`)}
+        ${fldWrap('Season Package', `<input type="text" id="ide_season" style="${inpStyle}" value="${esc(prefill.season || initMemHit.season || 'Summer 2026')}">`)}
+        ${fldWrap('Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(defSd)}">`)}
         ${fldWrap('End Date *', `<input type="date" id="ide_end_date" style="${inpStyle}" value="${esc(prefill.end_date || '2026-10-31')}">`)}
-        ${fldWrap('Seasonal Contract Value ($) *', `<input type="number" id="ide_contract" class="mono" step="100" min="100" style="${inpStyle}" value="${esc(prefill.contract_usd != null ? prefill.contract_usd : '22000')}">`)}
-        ${fldWrap('Amount Collected ($)', `<input type="number" id="ide_paid" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.paid_usd != null ? prefill.paid_usd : '22000')}">`)}
+        ${fldWrap('Seasonal Contract Value ($) *', `<input type="number" id="ide_contract" class="mono" step="100" min="100" style="${inpStyle}" value="${esc(defContract)}">`, `<span id="ideRateSourceHint">${esc(initMemHit.isFallback ? 'Baseline rate (' + initMemHit.tariffId + ' · ' + fmtUSD(initMemHit.seasonal_rate_usd, 0) + ')' : 'Chrono Tariff ' + initMemHit.tariffId + ' (' + fmtUSD(initMemHit.seasonal_rate_usd, 0) + ')')}</span>`)}
+        ${fldWrap('Amount Collected ($)', `<input type="number" id="ide_paid" class="mono" step="100" min="0" style="${inpStyle}" value="${esc(prefill.paid_usd != null ? prefill.paid_usd : defContract)}">`)}
         ${fldWrap('Remaining Balance ($)', `<input type="text" id="ide_balance" class="mono" readonly style="${roStyle}" value="$0.00">`)}
       `;
     } else if (spec.key === 'hsp_stock') {
@@ -53988,27 +54941,40 @@
         ${fldWrap('Computed Burn (L/hr)', `<input type="text" id="ide_burn" class="mono" readonly style="${roStyle}" value="30.0 L/hr (Normal Burn)">`)}
       `;
     } else if (spec.key === 'hld_partners') {
+      const defEntity = prefill.entity || 'Bdeir Holding';
+      const defPartner = prefill.partner || 'Principal Shareholder Pool (Slot 1)';
+      const defSd = prefill.start_date || '2026-07-01';
+      const endVal = (prefill.end_date && prefill.end_date !== 'Open') ? prefill.end_date : '';
+      const initPrtHit = lookupActiveHoldingPartnerSplit(defEntity, defPartner, defSd);
       fieldsHtml = `
         ${fldWrap('Agreement ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'HLD-PRT-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
-        ${fldWrap('Operating Subsidiary Pool *', `<input type="text" id="ide_entity" style="${inpStyle}" value="${esc(prefill.entity || 'Bdeir Holding · Consolidated JV')}">`)}
-        ${fldWrap('Partner / Shareholder Slot *', `<input type="text" id="ide_partner" style="${inpStyle}" value="${esc(prefill.partner || 'Strategic Co-Investor (Slot 6)')}">`)}
-        ${fldWrap('Effective From Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" value="${esc(prefill.start_date || '2026-07-01')}">`)}
-        ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="${esc(prefill.pct != null ? prefill.pct : '20')}">`)}
+        ${fldWrap('Operating Subsidiary Pool *', `<input type="text" id="ide_entity" style="${inpStyle}" value="${esc(defEntity)}">`)}
+        ${fldWrap('Partner / Shareholder Slot *', `<input type="text" id="ide_partner" style="${inpStyle}" value="${esc(defPartner)}">`)}
+        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-01-02'}" value="${esc(defSd)}">`, 'Forward chronology: auto-closes prior Open split schedule at prev day')}
+        ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open split schedule" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing split (preserves explicit closed gaps)')}
+        ${fldWrap('Profit-Share (%) *', `<input type="number" id="ide_pct" class="mono" step="0.5" min="0.5" max="100" style="${inpStyle}" value="${esc(prefill.pct != null ? prefill.pct : initPrtHit.pct)}">`, `<span id="ideRateSourceHint">${esc(initPrtHit.isFallback ? 'Baseline rate (' + initPrtHit.scheduleId + ' · ' + initPrtHit.pct + '%)' : 'Chrono Schedule ' + initPrtHit.scheduleId + ' (' + initPrtHit.pct + '%)')}</span>`)}
         ${fldWrap('Distributable Pool ($) *', `<input type="number" id="ide_pool" class="mono" step="1000" min="100" style="${inpStyle}" value="${esc(prefill.pool_usd != null ? prefill.pool_usd : '150000')}">`)}
         ${fldWrap('Drawings Paid ($)', `<input type="number" id="ide_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.drawn_usd != null ? prefill.drawn_usd : '20000')}">`)}
         ${fldWrap('Entitled & Open Balance', `<input type="text" id="ide_entitled" class="mono" readonly style="${roStyle}" value="$30,000 Entitled · $10,000 Open">`)}
       `;
     } else if (spec.key === 'hld_loans') {
       const defType = prefill.type || 'Term Facility';
+      const defLender = prefill.lender || 'Central Shareholder Treasury Line';
+      const defSd = prefill.start_date || prefill.date || '2026-07-01';
+      const endVal = (prefill.end_date && prefill.end_date !== 'Open') ? prefill.end_date : '';
+      const initLnHit = lookupActiveHoldingLoanRate(defCo, defLender, defSd);
+      const defApr = prefill.apr_pct != null ? prefill.apr_pct : (prefill.interest_rate_pct != null ? prefill.interest_rate_pct : initLnHit.apr_pct);
       fieldsHtml = `
         ${fldWrap('Holding / Subsidiary Entity *', coSelectHtml)}
         ${fldWrap('Facility ID *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'LN-HLD-' + String(Math.floor(10 + Math.random() * 89)))}">`)}
-        ${fldWrap('Agreement Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="${esc(prefill.lender || 'Central Shareholder Treasury Line')}">`)}
+        ${fldWrap('Effective Start Date *', `<input type="date" id="ide_start_date" style="${inpStyle}" min="${isEditMode ? '2024-01-01' : '2026-01-02'}" value="${esc(defSd)}">`, 'Forward chronology: auto-closes prior Open facility rate at prev day')}
+        ${fldWrap('Effective End Date', `<div style="display:flex;gap:6px;align-items:center"><input type="date" id="ide_end_date" style="${inpStyle};flex:1" value="${esc(endVal)}"><button type="button" class="btn btn-ghost-bar btn-sm" id="ideClearEndDateBtn" title="Set ongoing Open facility rate" style="padding:5px 8px;font-size:11px;white-space:nowrap">✕ Open</button></div>`, 'Leave blank for Open ongoing facility rate (preserves closed gaps)')}
+        ${fldWrap('Lender / Capital Counterparty *', `<input type="text" id="ide_lender" style="${inpStyle}" value="${esc(defLender)}">`)}
         ${fldWrap('Facility Type', `<select id="ide_type" data-plain-options="1" style="${inpStyle}"><option value="Term Facility" ${defType === 'Term Facility' ? 'selected' : ''}>Term Facility</option><option value="Revolving Sister Line" ${defType === 'Revolving Sister Line' ? 'selected' : ''}>Revolving Sister Line</option><option value="Equipment Finance" ${defType === 'Equipment Finance' ? 'selected' : ''}>Equipment Finance</option></select>`)}
+        ${fldWrap('Interest Rate (% APR) *', `<input type="number" id="ide_apr" class="mono" step="0.1" min="0" max="40" style="${inpStyle}" value="${esc(defApr)}">`, `<span id="ideRateSourceHint">${esc(initLnHit.isFallback ? 'Baseline rate (' + initLnHit.facilityId + ' · ' + initLnHit.apr_pct + '% APR)' : 'Chrono Facility ' + initLnHit.facilityId + ' (' + initLnHit.apr_pct + '% APR)')}</span>`)}
         ${fldWrap('Original Principal ($) *', `<input type="number" id="ide_prin" class="mono" step="1000" min="500" style="${inpStyle}" value="${esc(prefill.principal_usd != null ? prefill.principal_usd : '120000')}">`)}
         ${fldWrap('Principal Repaid ($)', `<input type="number" id="ide_rep" class="mono" step="500" min="0" style="${inpStyle}" value="${esc(prefill.repaid_usd != null ? prefill.repaid_usd : '30000')}">`)}
-        ${fldWrap('Outstanding Balance ($)', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
+        ${fldWrap('Quarterly Interest & Balance', `<input type="text" id="ide_bal" class="mono" readonly style="${roStyle}" value="$90,000.00">`)}
       `;
     } else {
       // hld_interactions (Sister Transfer)
@@ -54175,7 +55141,7 @@
         const sd = strVal('ide_start_date');
         const ed = strVal('ide_end_date');
         if (sd && ed && sd >= ed) {
-          showMsg('Chronological Lease Guard: Lease End Date must be strictly after Lease Start Date.', true);
+          showMsg('Chronological Lease Guard: Lease End Date must be strictly after Lease Start Date (or left Open).', true);
           return false;
         }
       } else if (spec.key === 're_invoicing') {
@@ -54187,6 +55153,13 @@
       } else if (spec.key === 're_sales') {
         const bal = Math.max(0, round2(numVal('ide_contract') - numVal('ide_paid')));
         if ($('ide_balance')) $('ide_balance').value = fmtUSD(bal, 2);
+      } else if (spec.key === 'trd_targets') {
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date');
+        if (sd && ed && sd >= ed) {
+          showMsg('Chronological Price List Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return false;
+        }
       } else if (spec.key === 'trd_sales') {
         let vin = strVal('ide_chassis');
         const vinValidator = window.MFG_SMART_SCAN && window.MFG_SMART_SCAN.validateAndDisambiguateVin17;
@@ -54232,6 +55205,13 @@
         if ($('ide_tot_landed')) $('ide_tot_landed').value = fmtUSD(round2(numVal('ide_fob') + numVal('ide_landed_add')), 2);
       } else if (spec.key === 'trd_stock') {
         if ($('ide_val')) $('ide_val').value = fmtUSD(round2(numVal('ide_on_hand') * numVal('ide_wac')), 2);
+      } else if (spec.key === 'hsp_tariffs') {
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date');
+        if (sd && ed && sd >= ed) {
+          showMsg('Chronological Tariff Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return false;
+        }
       } else if (spec.key === 'hsp_revenue') {
         const catStr = strVal('ide_category');
         const tot = numVal('ide_tot');
@@ -54269,8 +55249,22 @@
         const ent = round2(numVal('ide_pool') * (numVal('ide_pct') / 100));
         const opn = Math.max(0, round2(ent - numVal('ide_drawn')));
         if ($('ide_entitled')) $('ide_entitled').value = `${fmtUSD(ent, 0)} Entitled · ${fmtUSD(opn, 0)} Open`;
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date');
+        if (sd && ed && sd >= ed) {
+          showMsg('Chronological Schedule Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return false;
+        }
       } else if (spec.key === 'hld_loans') {
-        if ($('ide_bal')) $('ide_bal').value = fmtUSD(Math.max(0, round2(numVal('ide_prin') - numVal('ide_rep'))), 2);
+        const bal = Math.max(0, round2(numVal('ide_prin') - numVal('ide_rep')));
+        const qInt = round2(bal * (numVal('ide_apr') / 100) * 0.25);
+        if ($('ide_bal')) $('ide_bal').value = `${fmtUSD(qInt, 2)} Int · ${fmtUSD(bal, 2)} Bal`;
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date');
+        if (sd && ed && sd >= ed) {
+          showMsg('Chronological Facility Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return false;
+        }
       } else if (spec.key === 'hld_interactions') {
         if (strVal('ide_from') && strVal('ide_from') === strVal('ide_to')) {
           showMsg('Intercompany Guard: Sender and Receiver sister entities must be distinct.', true);
@@ -54281,6 +55275,16 @@
     };
 
     const formEl = $('indDomainEntryForm');
+    const clrEndBtn = $('ideClearEndDateBtn');
+    if (clrEndBtn) {
+      clrEndBtn.addEventListener('click', () => {
+        const edEl = $('ide_end_date');
+        if (edEl) {
+          edEl.value = '';
+          recalcLive();
+        }
+      });
+    }
     if (spec.key === 'ins_policies') {
       const syncPolicyAgreementRate = () => {
         const car = strVal('ide_carrier');
@@ -54303,16 +55307,6 @@
         if (el) el.addEventListener('change', syncPolicyAgreementRate);
       });
     } else if (spec.key === 'ins_agreements') {
-      const clrBtn = $('ideClearEndDateBtn');
-      if (clrBtn) {
-        clrBtn.addEventListener('click', () => {
-          const edEl = $('ide_end_date');
-          if (edEl) {
-            edEl.value = '';
-            recalcLive();
-          }
-        });
-      }
       const syncAgrChronoBounds = () => {
         if (isEditMode) return;
         const car = strVal('ide_carrier');
@@ -54337,6 +55331,251 @@
         if (el) el.addEventListener('change', syncAgrChronoBounds);
       });
       syncAgrChronoBounds();
+    } else if (spec.key === 're_leases') {
+      const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
+      const syncReLeaseChronoBounds = () => {
+        if (isEditMode) return;
+        const sdInp = $('ide_start_date');
+        if (!sdInp) return;
+        const propPfx = normReProp(strVal('ide_property'));
+        const unitUp = String(strVal('ide_unit') || '').trim().toUpperCase();
+        const re = typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations({ ignoreSearch: true }) : { leases: [] };
+        const peers = (re.leases || []).filter(l => l && normReProp(l.property) === propPfx && String(l.unit || '').trim().toUpperCase() === unitUp && String(l.id || '') !== strVal('ide_id'));
+        let minBound = '2025-01-02';
+        peers.forEach(p => {
+          const nextAfterStart = nextCalendarDayISO(p.start_date);
+          if (nextAfterStart > minBound) minBound = nextAfterStart;
+          if (p.end_date && p.end_date !== 'Open') {
+            const nextAfterEnd = nextCalendarDayISO(p.end_date);
+            if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+          }
+        });
+        sdInp.min = minBound;
+      };
+      ['ide_property', 'ide_unit'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncReLeaseChronoBounds);
+      });
+      syncReLeaseChronoBounds();
+    } else if (spec.key === 're_invoicing') {
+      const syncReInvoiceLeaseRate = () => {
+        const hit = lookupActiveRealEstateLeaseRate(strVal('ide_company'), strVal('ide_property'), strVal('ide_tenant'), strVal('ide_date') || today);
+        const netInp = $('ide_net');
+        const hintEl = $('ideRateSourceHint');
+        if (netInp) netInp.value = String(hit.net_period_usd);
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.leaseId} · ${fmtUSD(hit.net_period_usd, 0)})`
+            : `Chrono Lease ${hit.leaseId} (${fmtUSD(hit.net_period_usd, 0)})`;
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_property', 'ide_tenant', 'ide_date'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncReInvoiceLeaseRate);
+      });
+    } else if (spec.key === 'trd_targets') {
+      const syncTrdChronoBounds = () => {
+        if (isEditMode) return;
+        const sdInp = $('ide_start_date');
+        if (!sdInp) return;
+        const coStr = strVal('ide_company');
+        const catKey = normTradingTariffCat(strVal('ide_category'));
+        const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : { targetRows: [] };
+        const peers = (trd.targetRows || []).filter(t => t && t.company === coStr && normTradingTariffCat(t.category) === catKey && String(t.id || '') !== strVal('ide_id'));
+        let minBound = '2025-01-02';
+        peers.forEach(p => {
+          const nextAfterStart = nextCalendarDayISO(p.start_date);
+          if (nextAfterStart > minBound) minBound = nextAfterStart;
+          if (p.end_date && p.end_date !== 'Open') {
+            const nextAfterEnd = nextCalendarDayISO(p.end_date);
+            if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+          }
+        });
+        sdInp.min = minBound;
+      };
+      ['ide_company', 'ide_category'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncTrdChronoBounds);
+      });
+      syncTrdChronoBounds();
+    } else if (spec.key === 'trd_sales') {
+      const syncTrdSaleTariff = () => {
+        const hit = lookupActiveTradingTariff(strVal('ide_company'), strVal('ide_category'), strVal('ide_date') || today);
+        const qty = Math.max(1, Math.round(numVal('ide_qty') || 1));
+        if ($('ide_net')) $('ide_net').value = String(round2(qty * hit.unit_net_usd));
+        if ($('ide_cost')) $('ide_cost').value = String(round2(qty * hit.unit_cost_usd));
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.scheduleId} · ${fmtUSD(hit.unit_net_usd, 0)}/u)`
+            : `Chrono Price List ${hit.scheduleId} (${fmtUSD(hit.unit_net_usd, 0)}/u)`;
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_category', 'ide_date', 'ide_qty'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncTrdSaleTariff);
+      });
+    } else if (spec.key === 'trd_purchases') {
+      const syncTrdImportTariff = () => {
+        const coStr = strVal('ide_company');
+        const hit = lookupActiveTradingTariff(coStr, /Korri/i.test(coStr) ? 'Spare Parts & Tyres' : 'Heavy Truck Sale', strVal('ide_date') || today, strVal('ide_supplier'));
+        const ordQty = Math.max(1, Math.round(numVal('ide_ord_qty') || 1));
+        const fob = round2(ordQty * hit.fob_unit_usd);
+        if ($('ide_fob')) $('ide_fob').value = String(fob);
+        if ($('ide_landed_add')) $('ide_landed_add').value = String(round2(fob * (hit.landed_pct / 100)));
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.scheduleId} · ${fmtUSD(hit.fob_unit_usd, 0)}/u)`
+            : `Chrono Tariff ${hit.scheduleId} (${fmtUSD(hit.fob_unit_usd, 0)}/u)`;
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_supplier', 'ide_date', 'ide_ord_qty'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncTrdImportTariff);
+      });
+    } else if (spec.key === 'hsp_tariffs') {
+      const syncHspChronoBounds = () => {
+        if (isEditMode) return;
+        const sdInp = $('ide_start_date');
+        if (!sdInp) return;
+        const coStr = strVal('ide_company');
+        const tierStr = strVal('ide_tier');
+        const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : { tariffRows: [] };
+        const peers = (hsp.tariffRows || []).filter(t => t && t.company === coStr && t.tier === tierStr && String(t.id || '') !== strVal('ide_id'));
+        let minBound = '2025-01-02';
+        peers.forEach(p => {
+          const nextAfterStart = nextCalendarDayISO(p.start_date);
+          if (nextAfterStart > minBound) minBound = nextAfterStart;
+          if (p.end_date && p.end_date !== 'Open') {
+            const nextAfterEnd = nextCalendarDayISO(p.end_date);
+            if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+          }
+        });
+        sdInp.min = minBound;
+      };
+      ['ide_company', 'ide_tier'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncHspChronoBounds);
+      });
+      syncHspChronoBounds();
+    } else if (spec.key === 'hsp_memberships') {
+      const syncHspMembershipTariff = () => {
+        const hit = lookupActiveHospitalityTariff(strVal('ide_company'), strVal('ide_unit'), strVal('ide_start_date') || today);
+        if ($('ide_contract')) $('ide_contract').value = String(hit.seasonal_rate_usd);
+        if (!isEditMode && $('ide_season') && hit.season) $('ide_season').value = hit.season;
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.tariffId} · ${fmtUSD(hit.seasonal_rate_usd, 0)})`
+            : `Chrono Tariff ${hit.tariffId} (${fmtUSD(hit.seasonal_rate_usd, 0)})`;
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_unit', 'ide_start_date'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncHspMembershipTariff);
+      });
+    } else if (spec.key === 'hsp_revenue') {
+      const syncHspRevenueTariff = () => {
+        const catStr = strVal('ide_category');
+        const hit = lookupActiveHospitalityTariff(strVal('ide_company'), strVal('ide_outlet'), strVal('ide_date') || today);
+        const rooms = Math.max(0, Math.round(numVal('ide_rooms')));
+        if (/chalet/i.test(catStr) && rooms > 0 && $('ide_tot')) {
+          $('ide_tot').value = String(round2(rooms * hit.nightly_rate_usd));
+        }
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.tariffId} · ${fmtUSD(hit.nightly_rate_usd, 0)}/night)`
+            : `Chrono Tariff ${hit.tariffId} (${fmtUSD(hit.nightly_rate_usd, 0)}/night)`;
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_category', 'ide_date', 'ide_rooms', 'ide_outlet'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncHspRevenueTariff);
+      });
+    } else if (spec.key === 'hld_partners') {
+      const syncHldPartnerChrono = () => {
+        const entStr = strVal('ide_entity');
+        const prtStr = strVal('ide_partner');
+        const sdStr = strVal('ide_start_date') || today;
+        const hit = lookupActiveHoldingPartnerSplit(entStr, prtStr, sdStr);
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.scheduleId} · ${hit.pct}%)`
+            : `Chrono Schedule ${hit.scheduleId} (${hit.pct}%)`;
+        }
+        if (!isEditMode) {
+          const sdInp = $('ide_start_date');
+          if (sdInp) {
+            const hld = computeHoldingSchedules();
+            const pKey = norm(String(prtStr || '').split('(')[0]);
+            const eKey = norm(String(entStr || '').split('·')[0]);
+            const entPeers = (hld.partnerAgreements || []).filter(p => p && norm(String(p.entity || '').split('·')[0]) === eKey && String(p.id || '') !== strVal('ide_id'));
+            const exactPrtPeers = pKey ? entPeers.filter(p => norm(String(p.partner || '').split('(')[0]) === pKey || norm(p.partner).includes(pKey)) : [];
+            const peers = exactPrtPeers.length ? exactPrtPeers : entPeers;
+            let minBound = '2025-01-02';
+            peers.forEach(p => {
+              const nextAfterStart = nextCalendarDayISO(p.start_date);
+              if (nextAfterStart > minBound) minBound = nextAfterStart;
+              if (p.end_date && p.end_date !== 'Open') {
+                const nextAfterEnd = nextCalendarDayISO(p.end_date);
+                if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+              }
+            });
+            sdInp.min = minBound;
+          }
+        }
+        recalcLive();
+      };
+      ['ide_entity', 'ide_partner', 'ide_start_date'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncHldPartnerChrono);
+      });
+      syncHldPartnerChrono();
+    } else if (spec.key === 'hld_loans') {
+      const syncHldLoanChrono = () => {
+        const coStr = strVal('ide_company');
+        const lndStr = strVal('ide_lender');
+        const sdStr = strVal('ide_start_date') || today;
+        const hit = lookupActiveHoldingLoanRate(coStr, lndStr, sdStr);
+        const hintEl = $('ideRateSourceHint');
+        if (hintEl) {
+          hintEl.textContent = hit.isFallback
+            ? `Baseline rate (${hit.facilityId} · ${hit.apr_pct}% APR)`
+            : `Chrono Facility ${hit.facilityId} (${hit.apr_pct}% APR)`;
+        }
+        if (!isEditMode) {
+          const sdInp = $('ide_start_date');
+          if (sdInp) {
+            const hld = computeHoldingSchedules();
+            const lKey = lndStr.trim().toUpperCase();
+            const peers = (hld.facilitySchedules || []).filter(f => f && f.company === coStr && (!lKey || String(f.lender || '').trim().toUpperCase().includes(lKey) || lKey.includes(String(f.lender || '').trim().toUpperCase())) && String(f.id || '') !== strVal('ide_id'));
+            let minBound = '2025-01-02';
+            peers.forEach(p => {
+              const nextAfterStart = nextCalendarDayISO(p.start_date);
+              if (nextAfterStart > minBound) minBound = nextAfterStart;
+              if (p.end_date && p.end_date !== 'Open') {
+                const nextAfterEnd = nextCalendarDayISO(p.end_date);
+                if (nextAfterEnd > minBound) minBound = nextAfterEnd;
+              }
+            });
+            sdInp.min = minBound;
+          }
+        }
+        recalcLive();
+      };
+      ['ide_company', 'ide_lender', 'ide_start_date'].forEach(fid => {
+        const el = $(fid);
+        if (el) el.addEventListener('change', syncHldLoanChrono);
+      });
+      syncHldLoanChrono();
     }
     formEl.querySelectorAll('input, select').forEach(el => {
       el.addEventListener('input', recalcLive);
@@ -54426,7 +55665,7 @@
           showMsg(`Chronological Rate Guard: Start Date (${sd}) must be strictly after active agreement start (${latestOpenStart}).`, true);
           return;
         }
-        const closedConflict = !isEditMode ? peers.find(a => a.end_date && a.end_date !== 'Open' && sd <= a.end_date && ed >= a.start_date) : null;
+        const closedConflict = !isEditMode ? peers.find(a => a.end_date && a.end_date !== 'Open' && sd <= a.end_date && (ed === 'Open' || ed >= a.start_date)) : null;
         if (closedConflict) {
           showMsg(`Chronological Rate Guard: Start Date (${sd}) overlaps closed window ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
           return;
@@ -54475,9 +55714,27 @@
       } else if (spec.key === 're_leases') {
         const tenant = strVal('ide_tenant');
         if (!tenant) { showMsg('Tenant Name is required.', true); return; }
+        const propVal = strVal('ide_property') || '4235 Msaytbeh Commercial Center';
+        const unitVal = strVal('ide_unit') || 'Commercial Unit';
         const sd = strVal('ide_start_date');
-        const ed = strVal('ide_end_date');
-        if (sd >= ed) { showMsg('Lease End Date must be strictly after Start Date.', true); return; }
+        const ed = strVal('ide_end_date') || 'Open';
+        if (ed !== 'Open' && sd >= ed) { showMsg('Chronological Lease Guard: Lease End Date must be strictly after Start Date (or left Open).', true); return; }
+        const curRe = computeRealEstateOperations({ ignoreSearch: true });
+        const normReProp = p => String(p || '').trim().toUpperCase().slice(0, 14);
+        const peers = (curRe.leases || []).filter(l => l && normReProp(l.property) === normReProp(propVal) && String(l.unit || '').trim().toUpperCase() === unitVal.trim().toUpperCase() && String(l.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const existingSelf = (curRe.leases || []).find(l => l && String(l.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(l => l.end_date === 'Open' || !l.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(l => sd <= l.start_date)) {
+          const latestOpenStart = priorOpens.map(l => l.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Lease Guard: Start Date (${sd}) must be strictly after active Open lease start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(l => l.end_date && l.end_date !== 'Open' && sd <= l.end_date && (ed === 'Open' || ed >= l.start_date)) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Lease Guard: Start Date (${sd}) overlaps fixed-term lease ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
         const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
         const freq = strVal('ide_freq') || 'Quarterly';
@@ -54486,12 +55743,12 @@
         const vatUsd = is4235 ? round2(net * 0.11) : 0;
         const ttcPeriod = round2(net + vatUsd);
         const annualTtc = round2(ttcPeriod * mult);
-        const daysExp = Math.max(30, Math.round((Date.parse(ed + 'T00:00:00Z') - Date.parse('2026-11-06T00:00:00Z')) / 86400000));
-        addIndustryCustomRow('re_leases', {
+        const daysExp = ed === 'Open' ? 365 : Math.max(30, Math.round((Date.parse(ed + 'T00:00:00Z') - Date.parse('2026-11-06T00:00:00Z')) / 86400000));
+        const leaseRec = {
           id: recId,
           company: co,
-          property: strVal('ide_property') || '4235 Msaytbeh Commercial Center',
-          unit: strVal('ide_unit') || 'Commercial Unit',
+          property: propVal,
+          unit: unitVal,
           tenant,
           start_date: sd,
           end_date: ed,
@@ -54504,24 +55761,33 @@
           escalation: strVal('ide_escalation') || '3-Yr Stepped',
           days_to_expiry: daysExp,
           unbilled_periods: 0,
-          status: daysExp <= 90 ? 'Expiring < 90d' : 'Active'
-        });
-        addIndustryCustomRow('re_invoicing', {
-          id: `INV-${recId}`,
-          date: sd,
-          company: co,
-          tax_seq: is4235 ? `VAT-4235-${recId.slice(-3)}` : `INV-PROP-${recId.slice(-3)}`,
-          property: strVal('ide_property') || '4235 Msaytbeh Commercial Center',
-          tenant,
-          period: `${sd.slice(0, 7)} Initial Period`,
-          net_usd: net,
-          vat_usd: vatUsd,
-          amount_ttc_usd: ttcPeriod,
-          collected_usd: 0,
-          open_ar_usd: ttcPeriod,
-          status: 'Open',
-          audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
-        });
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(l => l.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
+          status: ed === 'Open' ? 'Active (Open)' : (daysExp <= 90 ? 'Expiring < 90d' : 'Active')
+        };
+        addIndustryCustomRow('re_leases', leaseRec, { skipCloudSync: true });
+        if (!isEditMode) {
+          addIndustryCustomRow('re_invoicing', {
+            id: `INV-${recId}`,
+            date: sd,
+            company: co,
+            tax_seq: is4235 ? `VAT-4235-${recId.slice(-3)}` : `INV-PROP-${recId.slice(-3)}`,
+            property: propVal,
+            tenant,
+            period: `${sd.slice(0, 7)} Initial Period`,
+            net_usd: net,
+            base_usd: net,
+            vat_usd: vatUsd,
+            amount_ttc_usd: ttcPeriod,
+            ttc_usd: ttcPeriod,
+            collected_usd: 0,
+            open_ar_usd: ttcPeriod,
+            status: 'Open',
+            audit_note: is4235 ? 'Auto-billed 11% Official VAT lease period' : 'Auto-billed 0% VAT lease period'
+          }, { skipCloudSync: true });
+        }
+        retroactiveBackfillRealEstateLease(leaseRec, existingSelf);
       } else if (spec.key === 're_invoicing') {
         const is4235 = /4235/i.test(co);
         const net = numVal('ide_net');
@@ -54537,8 +55803,10 @@
           tenant: strVal('ide_tenant') || 'Tenant',
           period: strVal('ide_period') || '2026-Q4',
           net_usd: net,
+          base_usd: net,
           vat_usd: vatUsd,
           amount_ttc_usd: tot,
+          ttc_usd: tot,
           collected_usd: col,
           open_ar_usd: round2(tot - col),
           status: col >= tot ? 'Paid' : (col > 0 ? 'Partial' : 'Open'),
@@ -54578,6 +55846,59 @@
           rechargeable: rech,
           status: 'In Progress'
         });
+      } else if (spec.key === 'trd_targets') {
+        const cat = normTradingTariffCat(strVal('ide_category') || 'Heavy Truck Sale');
+        const sup = strVal('ide_supplier') || 'Shaanxi Heavy Duty Automobile Imp & Exp Co.';
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date') || 'Open';
+        if (ed !== 'Open' && sd >= ed) {
+          showMsg('Chronological Price List Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return;
+        }
+        const curTrd = computeTradingOperations({ ignoreSearch: true });
+        const peers = (curTrd.targetRows || []).filter(t => t && t.company === co && normTradingTariffCat(t.category) === cat && String(t.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const existingSelf = (curTrd.targetRows || []).find(t => t && String(t.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(t => t.end_date === 'Open' || !t.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(t => sd <= t.start_date)) {
+          const latestOpenStart = priorOpens.map(t => t.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Price List Guard: Start Date (${sd}) must be strictly after active Open price list start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(t => t.end_date && t.end_date !== 'Open' && sd <= t.end_date && (ed === 'Open' || ed >= t.start_date)) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Price List Guard: Start Date (${sd}) overlaps closed schedule ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
+        const tTtc = numVal('ide_target_ttc') || 250000;
+        const aTtc = numVal('ide_actual_ttc');
+        const tgtRec = {
+          id: recId,
+          company: co,
+          category: cat,
+          supplier: sup,
+          period: sd.slice(0, 7),
+          start_date: sd,
+          end_date: ed,
+          unit_net_usd: numVal('ide_unit_net'),
+          unit_cost_usd: numVal('ide_unit_cost'),
+          fob_unit_usd: numVal('ide_fob_unit'),
+          landed_pct: numVal('ide_landed_pct'),
+          target_ttc: tTtc,
+          actual_ttc: aTtc,
+          pct: tTtc > 0 ? round2((aTtc / tTtc) * 100) : 100,
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(t => t.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
+          backfill_status: priorOpen ? `Chrono Active · Closed ${priorOpen.id} at ${prevCalendarDayISO(sd)}` : 'Chrono Active',
+          status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
+        };
+        addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
+        const syncedTrd = retroactiveBackfillTradingTariff(tgtRec, existingSelf);
+        if (syncedTrd > 0) {
+          tgtRec.backfill_status = `${priorOpen ? 'Closed ' + priorOpen.id + ' · ' : ''}Chrono Active · ${syncedTrd} Synced`;
+          addIndustryCustomRow('trd_targets', tgtRec, { skipCloudSync: true });
+        }
       } else if (spec.key === 'trd_sales') {
         const net = numVal('ide_net');
         const vat = round2(net * 0.11);
@@ -54656,6 +55977,56 @@
           wac_usd: numVal('ide_wac'),
           retail_usd: numVal('ide_retail')
         });
+      } else if (spec.key === 'hsp_tariffs') {
+        const tier = strVal('ide_tier') || 'VIP Beach Cabana';
+        const season = strVal('ide_season') || 'Summer Peak 2026';
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date') || 'Open';
+        if (ed !== 'Open' && sd >= ed) {
+          showMsg('Chronological Tariff Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return;
+        }
+        const curHsp = computeHospitalityOperations({ ignoreSearch: true });
+        const peers = (curHsp.tariffRows || []).filter(t => t && t.company === co && t.tier === tier && String(t.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const existingSelf = (curHsp.tariffRows || []).find(t => t && String(t.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(t => t.end_date === 'Open' || !t.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(t => sd <= t.start_date)) {
+          const latestOpenStart = priorOpens.map(t => t.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Tariff Guard: Start Date (${sd}) must be strictly after active Open resort tariff start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(t => t.end_date && t.end_date !== 'Open' && sd <= t.end_date && (ed === 'Open' || ed >= t.start_date)) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Tariff Guard: Start Date (${sd}) overlaps closed tariff ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
+        const sesVal = numVal('ide_seasonal_rate');
+        const ngtVal = numVal('ide_nightly_rate');
+        const trfRec = {
+          id: recId,
+          company: co,
+          tier,
+          season,
+          start_date: sd,
+          end_date: ed,
+          seasonal_rate_usd: sesVal,
+          season_contract_usd: sesVal,
+          nightly_rate_usd: ngtVal,
+          daily_chalet_ttc_usd: ngtVal,
+          notes: strVal('ide_notes') || 'Seasonal chalet & cabana rate schedule',
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(t => t.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
+          backfill_status: priorOpen ? `Chrono Active · Closed ${priorOpen.id} at ${prevCalendarDayISO(sd)}` : 'Chrono Active',
+          status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
+        };
+        addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
+        const syncedHsp = retroactiveBackfillHospitalityTariff(trfRec, existingSelf);
+        if (syncedHsp > 0) {
+          trfRec.backfill_status = `${priorOpen ? 'Closed ' + priorOpen.id + ' · ' : ''}Chrono Active · ${syncedHsp} Synced`;
+          addIndustryCustomRow('hsp_tariffs', trfRec, { skipCloudSync: true });
+        }
       } else if (spec.key === 'hsp_revenue') {
         const catStr = strVal('ide_category') || 'Chalet Rental';
         const tot = numVal('ide_tot');
@@ -54763,36 +56134,117 @@
           notes: spike ? `Burn rate ${lph.toFixed(1)} L/hr above rated ${rated.toFixed(1)} L/hr` : 'Within rated generator curve'
         });
       } else if (spec.key === 'hld_partners') {
+        const entStr = strVal('ide_entity') || 'Bdeir Holding · Consolidated JV';
+        const prtStr = strVal('ide_partner') || 'Partner Slot';
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date') || 'Open';
+        if (ed !== 'Open' && sd >= ed) {
+          showMsg('Chronological Schedule Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return;
+        }
+        const curHld = computeHoldingSchedules();
+        const pKey = norm(String(prtStr || '').split('(')[0]);
+        const eKey = norm(String(entStr || '').split('·')[0]);
+        const entPeers = (curHld.partnerAgreements || []).filter(p => p && norm(String(p.entity || '').split('·')[0]) === eKey && String(p.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const exactPrtPeers = pKey ? entPeers.filter(p => norm(String(p.partner || '').split('(')[0]) === pKey || norm(p.partner).includes(pKey)) : [];
+        const peers = exactPrtPeers.length ? exactPrtPeers : entPeers;
+        const existingSelf = (curHld.partnerAgreements || []).find(p => p && String(p.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(p => p.end_date === 'Open' || !p.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(p => sd <= p.start_date)) {
+          const latestOpenStart = priorOpens.map(p => p.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Schedule Guard: Start Date (${sd}) must be strictly after active Open split schedule start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(p => p.end_date && p.end_date !== 'Open' && sd <= p.end_date && (ed === 'Open' || ed >= p.start_date)) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Schedule Guard: Start Date (${sd}) overlaps closed schedule ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
         const pool = numVal('ide_pool');
         const pct = numVal('ide_pct');
         const ent = round2(pool * (pct / 100));
         const drw = Math.min(ent, numVal('ide_drawn'));
-        addIndustryCustomRow('hld_partners', {
+        const prtRec = {
           id: recId,
-          entity: strVal('ide_entity') || 'Bdeir Holding',
-          partner: strVal('ide_partner') || 'Partner Slot',
+          entity: entStr,
+          partner: prtStr,
           pct,
           pool_usd: pool,
           entitled_usd: ent,
           drawn_usd: drw,
           open_usd: round2(ent - drw),
-          start_date: strVal('ide_start_date') || '2026-07-01',
-          status: ent - drw <= 0 ? 'Settled' : 'Active Agreement'
-        });
+          start_date: sd,
+          end_date: ed,
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(p => p.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
+          backfill_status: priorOpen ? `Chrono Active · Closed ${priorOpen.id} at ${prevCalendarDayISO(sd)}` : 'Chrono Active',
+          status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
+        };
+        addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
+        const syncedDist = retroactiveBackfillHoldingPartner(prtRec, existingSelf);
+        if (syncedDist > 0) {
+          prtRec.backfill_status = `${priorOpen ? 'Closed ' + priorOpen.id + ' · ' : ''}Chrono Active · ${syncedDist} Synced`;
+          addIndustryCustomRow('hld_partners', prtRec, { skipCloudSync: true });
+        }
       } else if (spec.key === 'hld_loans') {
+        const lender = strVal('ide_lender') || 'Central Shareholder Treasury Line';
+        const sd = strVal('ide_start_date');
+        const ed = strVal('ide_end_date') || 'Open';
+        if (ed !== 'Open' && sd >= ed) {
+          showMsg('Chronological Facility Guard: Effective End Date must be strictly after Start Date (or left Open).', true);
+          return;
+        }
+        const curHld = computeHoldingSchedules();
+        const lKey = lender.trim().toUpperCase();
+        const peers = (curHld.facilitySchedules || []).filter(f => f && f.company === co && (!lKey || String(f.lender || '').trim().toUpperCase().includes(lKey) || lKey.includes(String(f.lender || '').trim().toUpperCase())) && String(f.id || '').toUpperCase() !== String(recId || '').toUpperCase());
+        const existingSelf = (curHld.facilitySchedules || []).find(f => f && String(f.id || '').toUpperCase() === String(recId || '').toUpperCase()) || null;
+        const priorOpens = !isEditMode ? peers.filter(f => f.end_date === 'Open' || !f.end_date) : [];
+        const priorOpen = priorOpens[0] || null;
+        if (!isEditMode && priorOpens.some(f => sd <= f.start_date)) {
+          const latestOpenStart = priorOpens.map(f => f.start_date).sort().slice(-1)[0];
+          showMsg(`Chronological Facility Guard: Start Date (${sd}) must be strictly after active Open facility rate start (${latestOpenStart}).`, true);
+          return;
+        }
+        const closedConflict = !isEditMode ? peers.find(f => f.end_date && f.end_date !== 'Open' && sd <= f.end_date && (ed === 'Open' || ed >= f.start_date)) : null;
+        if (closedConflict) {
+          showMsg(`Chronological Facility Guard: Start Date (${sd}) overlaps closed facility window ${closedConflict.id} (${closedConflict.start_date} to ${closedConflict.end_date}).`, true);
+          return;
+        }
         const prin = numVal('ide_prin');
         const rep = Math.min(prin, numVal('ide_rep'));
-        addIndustryCustomRow('hld_loans', {
+        const bal = round2(prin - rep);
+        const apr = numVal('ide_apr');
+        const qInt = round2(bal * (apr / 100) * 0.25);
+        const lnRec = {
           id: recId,
-          date: strVal('ide_date') || today,
+          date: sd,
+          start_date: sd,
+          end_date: ed,
           company: co,
-          lender: strVal('ide_lender') || 'Central Facility',
+          lender,
           type: strVal('ide_type') || 'Term Facility',
+          apr_pct: apr,
+          interest_rate_pct: apr,
+          rate_apr_pct: apr,
           principal_usd: prin,
           repaid_usd: rep,
-          balance_usd: round2(prin - rep),
-          status: prin - rep <= 0 ? 'Settled' : 'Active Facility'
-        });
+          balance_usd: bal,
+          accrued_interest_usd: qInt,
+          interest_usd: qInt,
+          autoClosePriorId: priorOpen ? priorOpen.id : (existingSelf && existingSelf.autoClosePriorId ? existingSelf.autoClosePriorId : ''),
+          autoClosePriorIds: priorOpens.length ? priorOpens.map(f => f.id) : (existingSelf && Array.isArray(existingSelf.autoClosePriorIds) ? existingSelf.autoClosePriorIds : []),
+          autoCloseDate: priorOpen ? prevCalendarDayISO(sd) : (existingSelf && existingSelf.autoCloseDate ? existingSelf.autoCloseDate : ''),
+          backfill_status: priorOpen ? `Chrono Active · Closed ${priorOpen.id} at ${prevCalendarDayISO(sd)}` : 'Chrono Active',
+          status: ed === 'Open' ? 'Active (Open)' : 'Scheduled Window'
+        };
+        addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
+        const syncedAcc = retroactiveBackfillHoldingLoan(lnRec, existingSelf);
+        if (syncedAcc > 0) {
+          lnRec.backfill_status = `${priorOpen ? 'Closed ' + priorOpen.id + ' · ' : ''}Chrono Active · ${syncedAcc} Synced`;
+          addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
+        }
       } else {
         const fromCo = strVal('ide_from') || 'Bdeir Holding';
         const toCo = strVal('ide_to') || 'WTC';
@@ -54952,7 +56404,7 @@
     const q = String(queryStr || '').trim();
     if (!q) return null;
     const qUpper = q.toUpperCase();
-    const tokenMatch = qUpper.match(/\b((?:POL|END|ALZ|MGF|BNK|AXA|LBS|ARP|CLM|REM|STM|AGR|LSE|UNT|INV-4235|INV-PROP|INV-RE|RCT-4235|RCT-PROP|RCT-RE|WO|IMP|LC|GRN|SU|PDI|WAR|SVC|MEM|STK|POS|REV|ENG|IC|JV|LN)-[A-Z0-9-]+|LZG[A-Z0-9]{8,17}|WDB[A-Z0-9]{8,17})\b/);
+    const tokenMatch = qUpper.match(/\b((?:POL|END|ALZ|MGF|BNK|AXA|LBS|ARP|CLM|REM|STM|AGR|LSE|LEASE|RENT|UNT|INV-4235|INV-PROP|INV-RE|RCT-4235|RCT-PROP|RCT-RE|WO|IMP|LC|GRN|SU|TGT|PL|PDI|WAR|SVC|TRF|MEM|STK|POS|REV|ENG|IC|JV|LN|FAC|HLD|DIST|ACC)-[A-Z0-9-]+|LZG[A-Z0-9]{8,17}|WDB[A-Z0-9]{8,17})\b/);
     const needle = tokenMatch ? tokenMatch[1] : qUpper;
     if (typeof ensureMultiIndustrySpineSeeded === 'function') ensureMultiIndustrySpineSeeded();
 
@@ -54970,8 +56422,8 @@
         const domKey = inferDomainTblKey('', bucket, pid);
         const mapEntry = DOMAIN_PARENT_VIEW_MAP[domKey] || DOMAIN_PARENT_VIEW_MAP[bucket] || { view: bucket, ind: getActiveIndustry(STATE.company), label: 'Domain Record' };
         const co = hit.company || hit.entity || hit.fromCo || 'Bdeir Holding';
-        const party = hit.insured || hit.client || hit.tenant || hit.customer || hit.supplier || hit.member || hit.partner || hit.carrier || hit.toCo || co;
-        const amt = Number(hit.gwp_usd || hit.annual_ttc_usd || hit.ttc_usd || hit.pos_billed_ttc || hit.contract_usd || hit.fob_usd || hit.price_usd || hit.claimed_usd || hit.usd || hit.principal_usd || 0);
+        const party = hit.insured || hit.client || hit.tenant || hit.customer || hit.supplier || hit.member || hit.partner || hit.lender || hit.carrier || hit.toCo || co;
+        const amt = Number(hit.gwp_usd || hit.annual_ttc_usd || hit.ttc_usd || hit.pos_billed_ttc || hit.seasonal_rate_usd || hit.unit_net_usd || hit.contract_usd || hit.fob_usd || hit.price_usd || hit.claimed_usd || hit.usd || hit.principal_usd || hit.entitled_usd || 0);
         const headers = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 8).map(k => k.replace(/_/g, ' ').toUpperCase());
         const cells = Object.keys(hit).filter(k => !k.startsWith('_') && k !== 'voided' && k !== 'rev').slice(0, 8).map(k => String(hit[k] ?? ''));
         return {
@@ -54986,7 +56438,7 @@
           company: co,
           counterparty: party,
           party,
-          summary: hit.line || hit.product || hit.property || hit.model || hit.item || hit.outlet || hit.unit || mapEntry.label,
+          summary: hit.line || hit.product || hit.property || hit.model || hit.item || hit.outlet || hit.tier || hit.unit || mapEntry.label,
           amount: amt,
           status: hit.status || 'Active',
           date: hit.date || hit.start_date || hit.loss_date || todayISO(),
@@ -55058,23 +56510,33 @@
 
     const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
     if (trd) {
-      const unit = (trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === needle || String(u.chassis_vin || u.vin || '').toUpperCase() === needle);
+      const tgt = (trd.targetRows || []).find(t => String(t.id || '').toUpperCase() === needle);
+      if (tgt) {
+        return {
+          id: tgt.id, bucket: 'trd_targets', view: 'trd_sales', parentView: 'trd_sales', ind: 'Automotive & Heavy Trading', industry: 'Automotive & Heavy Trading', label: 'Price List & Tariff Schedule', title: 'Price List & Tariff Schedule',
+          company: tgt.company, counterparty: tgt.supplier || tgt.category, party: tgt.supplier || tgt.category, summary: `${tgt.category} · ${tgt.start_date}`, amount: tgt.unit_net_usd, status: tgt.status, date: tgt.start_date,
+          headers: ['Schedule ID', 'Entity', 'Category', 'Start Date', 'End Date', 'Unit Net ($)', 'FOB Unit ($)', 'Status'],
+          cells: [tgt.id, tgt.company, tgt.category, tgt.start_date, tgt.end_date, fmtUSD(tgt.unit_net_usd, 2), fmtUSD(tgt.fob_unit_usd, 2), tgt.status],
+          raw: tgt
+        };
+      }
+      const unit = (trd.serialUnits || trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === needle || String(u.chassis_vin || u.vin || '').toUpperCase() === needle);
       if (unit) {
         return {
           id: unit.id, bucket: 'trd_trucks', view: 'trd_trucks', parentView: 'trd_trucks', ind: 'Automotive & Heavy Trading', industry: 'Automotive & Heavy Trading', label: 'Serial Chassis Unit', title: 'Serial Chassis Unit',
-          company: unit.company, counterparty: unit.buyer || 'Showroom Stock', party: unit.buyer || 'Showroom Stock', summary: `${unit.model} · ${unit.chassis_vin || unit.vin}`, amount: unit.price_usd || unit.landed_usd, status: unit.status, date: '2026-09-16',
-          headers: ['Unit ID', 'Entity', 'Model', 'Chassis / VIN', 'Customs Bayane', 'Landed Cost ($)', 'Selling Price ($)', 'Status'],
-          cells: [unit.id, unit.company, unit.model, unit.chassis_vin || unit.vin, unit.customs_no, fmtUSD(unit.landed_usd, 2), fmtUSD(unit.price_usd, 2), unit.status],
+          company: unit.company, counterparty: unit.buyer || 'Showroom Stock', party: unit.buyer || 'Showroom Stock', summary: `${unit.model} · ${unit.chassis_vin || unit.vin}`, amount: unit.list_price_usd || unit.price_usd || unit.landed_cost_usd || unit.landed_usd, status: unit.status, date: '2026-09-16',
+          headers: ['Unit ID', 'Entity', 'Model', 'Chassis / VIN', 'Warehouse', 'Landed Cost ($)', 'Selling Price ($)', 'Status'],
+          cells: [unit.id, unit.company, unit.model, unit.chassis_vin || unit.vin, unit.warehouse || unit.customs_no || '', fmtUSD(unit.landed_cost_usd || unit.landed_usd || 0, 2), fmtUSD(unit.list_price_usd || unit.price_usd || 0, 2), unit.status],
           raw: unit
         };
       }
-      const imp = (trd.importRows || []).find(im => String(im.id || '').toUpperCase() === needle || String(im.bl_no || '').toUpperCase() === needle);
+      const imp = (trd.importRows || []).find(im => String(im.id || '').toUpperCase() === needle || String(im.bl_no || im.container_bl || '').toUpperCase() === needle);
       if (imp) {
         return {
           id: imp.id, bucket: 'trd_imports', view: 'trd_purchases', parentView: 'trd_purchases', ind: 'Automotive & Heavy Trading', industry: 'Automotive & Heavy Trading', label: 'Import File & Ocean B/L', title: 'Import File & Ocean B/L',
-          company: imp.company, counterparty: imp.supplier, party: imp.supplier, summary: `B/L ${imp.bl_no}`, amount: imp.cif_usd || imp.fob_usd, status: imp.status, date: imp.date,
+          company: imp.company, counterparty: imp.supplier, party: imp.supplier, summary: `B/L ${imp.container_bl || imp.bl_no}`, amount: imp.total_landed_usd || imp.cif_usd || imp.fob_usd, status: imp.status, date: imp.date,
           headers: ['Import File', 'Date', 'Entity', 'Supplier', 'Ocean B/L', 'FOB ($)', 'Landed Add-On ($)', 'Status'],
-          cells: [imp.id, imp.date, imp.company, imp.supplier, imp.bl_no, fmtUSD(imp.fob_usd, 2), fmtUSD(imp.duty_freight_usd, 2), imp.status],
+          cells: [imp.id, imp.date, imp.company, imp.supplier, imp.container_bl || imp.bl_no, fmtUSD(imp.fob_usd, 2), fmtUSD(imp.landed_add_usd || imp.duty_freight_usd || 0, 2), imp.status],
           raw: imp
         };
       }
@@ -55082,6 +56544,16 @@
 
     const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : null;
     if (hsp) {
+      const trf = (hsp.tariffRows || []).find(t => String(t.id || '').toUpperCase() === needle);
+      if (trf) {
+        return {
+          id: trf.id, bucket: 'hsp_tariffs', view: 'hsp_memberships', parentView: 'hsp_memberships', ind: 'Hospitality & Resorts', industry: 'Hospitality & Resorts', label: 'Seasonal Tariff Schedule', title: 'Seasonal Tariff Schedule',
+          company: trf.company, counterparty: trf.tier, party: trf.tier, summary: `${trf.tier} · ${trf.season}`, amount: trf.seasonal_rate_usd, status: trf.status, date: trf.start_date,
+          headers: ['Tariff ID', 'Resort', 'Tier', 'Season', 'Start Date', 'End Date', 'Seasonal Rate ($)', 'Nightly Rate ($)'],
+          cells: [trf.id, trf.company, trf.tier, trf.season, trf.start_date, trf.end_date, fmtUSD(trf.seasonal_rate_usd, 2), fmtUSD(trf.nightly_rate_usd, 2)],
+          raw: trf
+        };
+      }
       const mem = (hsp.membershipRows || []).find(m => String(m.id || '').toUpperCase() === needle);
       if (mem) {
         return {
@@ -55090,6 +56562,30 @@
           headers: ['Contract #', 'Resort', 'Member', 'Cabana / Unit', 'Season', 'Contract ($)', 'Paid ($)', 'Balance ($)'],
           cells: [mem.id, mem.company, mem.member, mem.unit, mem.season, fmtUSD(mem.contract_usd, 2), fmtUSD(mem.paid_usd, 2), fmtUSD(mem.balance_usd, 2)],
           raw: mem
+        };
+      }
+    }
+
+    const hld = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : null;
+    if (hld) {
+      const prt = (hld.partnerAgreements || []).find(p => String(p.id || '').toUpperCase() === needle);
+      if (prt) {
+        return {
+          id: prt.id, bucket: 'hld_partners', view: 'hld_partners', parentView: 'hld_partners', ind: 'Holding & Treasury', industry: 'Holding & Treasury', label: 'Partner Profit-Share Schedule', title: 'Partner Profit-Share Schedule',
+          company: 'Bdeir Holding', counterparty: prt.partner, party: prt.partner, summary: `${prt.entity} · ${prt.pct}%`, amount: prt.entitled_usd, status: prt.status, date: prt.start_date,
+          headers: ['Schedule ID', 'Entity Pool', 'Partner', 'Start Date', 'End Date', 'Split (%)', 'Entitled ($)', 'Status'],
+          cells: [prt.id, prt.entity, prt.partner, prt.start_date, prt.end_date, `${prt.pct}%`, fmtUSD(prt.entitled_usd, 2), prt.status],
+          raw: prt
+        };
+      }
+      const fac = (hld.facilitySchedules || []).find(f => String(f.id || '').toUpperCase() === needle);
+      if (fac) {
+        return {
+          id: fac.id, bucket: 'hld_loans', view: 'hld_loans', parentView: 'hld_loans', ind: 'Holding & Treasury', industry: 'Holding & Treasury', label: 'Facility Rate Schedule', title: 'Facility Rate Schedule',
+          company: fac.company || 'Bdeir Holding', counterparty: fac.lender, party: fac.lender, summary: `${fac.type} · ${fac.apr_pct}% APR`, amount: fac.balance_usd, status: fac.status, date: fac.start_date,
+          headers: ['Facility ID', 'Entity', 'Lender', 'Start Date', 'End Date', 'APR (%)', 'Balance ($)', 'Status'],
+          cells: [fac.id, fac.company, fac.lender, fac.start_date, fac.end_date, `${fac.apr_pct}%`, fmtUSD(fac.balance_usd, 2), fac.status],
+          raw: fac
         };
       }
     }
@@ -55187,30 +56683,41 @@
     } else if (ind === 'Automotive & Heavy Trading') {
       const trd = typeof computeTradingOperations === 'function' ? computeTradingOperations({ ignoreSearch: true }) : null;
       if (trd) {
+        const tg = (trd.targetRows || []).find(t => String(t.id || '').toUpperCase() === pidUp);
+        if (tg) return { formKey: 'trd_targets', prefill: Object.assign({}, tg, basePrefill, { id: tg.id, company: tg.company }) };
         const sl = (trd.salesRows || []).find(s => String(s.id || '').toUpperCase() === pidUp);
-        if (sl) return { formKey: 'trd_sales', prefill: Object.assign({}, sl, basePrefill, { id: sl.id }) };
+        if (sl) return { formKey: 'trd_sales', prefill: Object.assign({}, sl, basePrefill, { id: sl.id, company: sl.company }) };
         const im = (trd.importRows || []).find(i => String(i.id || '').toUpperCase() === pidUp);
-        if (im) return { formKey: 'trd_purchases', prefill: Object.assign({}, im, basePrefill, { id: im.id, bl: im.container_bl || im.bl_no }) };
-        const un = (trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === pidUp);
-        if (un) return { formKey: 'trd_trucks', prefill: Object.assign({}, un, basePrefill, { id: un.id }) };
+        if (im) return { formKey: 'trd_purchases', prefill: Object.assign({}, im, basePrefill, { id: im.id, company: im.company, bl: im.container_bl || im.bl_no }) };
+        const un = (trd.serialUnits || trd.unitRows || trd.truckRows || []).find(u => String(u.id || '').toUpperCase() === pidUp);
+        if (un) return { formKey: 'trd_trucks', prefill: Object.assign({}, un, basePrefill, { id: un.id, company: un.company }) };
         const st = (trd.stockRows || []).find(k => String(k.id || '').toUpperCase() === pidUp || String(k.code || '').toUpperCase() === pidUp);
-        if (st) return { formKey: 'trd_stock', prefill: Object.assign({}, st, basePrefill, { id: st.id, code: st.code }) };
+        if (st) return { formKey: 'trd_stock', prefill: Object.assign({}, st, basePrefill, { id: st.id, code: st.code, company: st.company }) };
       }
     } else if (ind === 'Hospitality & Resorts') {
       const hsp = typeof computeHospitalityOperations === 'function' ? computeHospitalityOperations({ ignoreSearch: true }) : null;
       if (hsp) {
+        const tf = (hsp.tariffRows || []).find(t => String(t.id || '').toUpperCase() === pidUp);
+        if (tf) return { formKey: 'hsp_tariffs', prefill: Object.assign({}, tf, basePrefill, { id: tf.id, company: tf.company }) };
         const vn = (hsp.venueRows || []).find(v => String(v.id || '').toUpperCase() === pidUp);
-        if (vn) return { formKey: 'hsp_revenue', prefill: Object.assign({}, vn, basePrefill, { id: vn.id }) };
+        if (vn) return { formKey: 'hsp_revenue', prefill: Object.assign({}, vn, basePrefill, { id: vn.id, company: vn.company }) };
         const ps = (hsp.posRows || []).find(p => String(p.id || '').toUpperCase() === pidUp);
-        if (ps) return { formKey: 'hsp_pos', prefill: Object.assign({}, ps, basePrefill, { id: ps.id, billed_usd: ps.pos_billed_ttc, card_usd: ps.card_whish_usd }) };
+        if (ps) return { formKey: 'hsp_pos', prefill: Object.assign({}, ps, basePrefill, { id: ps.id, company: ps.company, billed_usd: ps.pos_billed_ttc, card_usd: ps.card_whish_usd }) };
         const mm = (hsp.membershipRows || []).find(m => String(m.id || '').toUpperCase() === pidUp);
-        if (mm) return { formKey: 'hsp_memberships', prefill: Object.assign({}, mm, basePrefill, { id: mm.id }) };
+        if (mm) return { formKey: 'hsp_memberships', prefill: Object.assign({}, mm, basePrefill, { id: mm.id, company: mm.company }) };
         const sk = (hsp.stockRows || []).find(s => String(s.id || '').toUpperCase() === pidUp);
-        if (sk) return { formKey: 'hsp_stock', prefill: Object.assign({}, sk, basePrefill, { id: sk.id }) };
+        if (sk) return { formKey: 'hsp_stock', prefill: Object.assign({}, sk, basePrefill, { id: sk.id, company: sk.company }) };
         const ng = (hsp.energyRows || []).find(e => String(e.id || '').toUpperCase() === pidUp);
-        if (ng) return { formKey: 'hsp_energy', prefill: Object.assign({}, ng, basePrefill, { id: ng.id }) };
+        if (ng) return { formKey: 'hsp_energy', prefill: Object.assign({}, ng, basePrefill, { id: ng.id, company: ng.company }) };
       }
     } else if (ind === 'Holding & Treasury') {
+      const hld = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : null;
+      if (hld) {
+        const prt = (hld.partnerAgreements || []).find(p => String(p.id || '').toUpperCase() === pidUp);
+        if (prt) return { formKey: 'hld_partners', prefill: Object.assign({}, prt, basePrefill, { id: prt.id }) };
+        const fac = (hld.facilitySchedules || []).find(f => String(f.id || '').toUpperCase() === pidUp);
+        if (fac) return { formKey: 'hld_loans', prefill: Object.assign({}, fac, basePrefill, { id: fac.id, company: fac.company }) };
+      }
       const icMod = typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions() : null;
       const leg = icMod && Array.isArray(icMod.legs) ? icMod.legs.find(l => String(l.id || '').toUpperCase() === pidUp) : null;
       if (leg) {
@@ -110500,11 +112007,23 @@
     saveIndustryWorkflowPatch: typeof saveIndustryWorkflowPatch === 'function' ? saveIndustryWorkflowPatch : null,
     lookupActiveInsuranceAgreementRate: typeof lookupActiveInsuranceAgreementRate === 'function' ? lookupActiveInsuranceAgreementRate : null,
     retroactiveBackfillInsuranceAgreement: typeof retroactiveBackfillInsuranceAgreement === 'function' ? retroactiveBackfillInsuranceAgreement : null,
+    computeHoldingSchedules: typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules : null,
+    lookupActiveHospitalityTariff: typeof lookupActiveHospitalityTariff === 'function' ? lookupActiveHospitalityTariff : null,
+    retroactiveBackfillHospitalityTariff: typeof retroactiveBackfillHospitalityTariff === 'function' ? retroactiveBackfillHospitalityTariff : null,
+    lookupActiveRealEstateLeaseRate: typeof lookupActiveRealEstateLeaseRate === 'function' ? lookupActiveRealEstateLeaseRate : null,
+    retroactiveBackfillRealEstateLease: typeof retroactiveBackfillRealEstateLease === 'function' ? retroactiveBackfillRealEstateLease : null,
+    lookupActiveTradingTariff: typeof lookupActiveTradingTariff === 'function' ? lookupActiveTradingTariff : null,
+    retroactiveBackfillTradingTariff: typeof retroactiveBackfillTradingTariff === 'function' ? retroactiveBackfillTradingTariff : null,
+    lookupActiveHoldingPartnerSplit: typeof lookupActiveHoldingPartnerSplit === 'function' ? lookupActiveHoldingPartnerSplit : null,
+    retroactiveBackfillHoldingPartner: typeof retroactiveBackfillHoldingPartner === 'function' ? retroactiveBackfillHoldingPartner : null,
+    lookupActiveHoldingLoanRate: typeof lookupActiveHoldingLoanRate === 'function' ? lookupActiveHoldingLoanRate : null,
+    retroactiveBackfillHoldingLoan: typeof retroactiveBackfillHoldingLoan === 'function' ? retroactiveBackfillHoldingLoan : null,
     fmtIndChartMetric: typeof fmtIndChartMetric === 'function' ? fmtIndChartMetric : null,
     computeDynamicDomainTotals: typeof computeDynamicDomainTotals === 'function' ? computeDynamicDomainTotals : null,
     buildIndustrySentinelExceptionTables: typeof buildIndustrySentinelExceptionTables === 'function' ? buildIndustrySentinelExceptionTables : null,
     findDomainRecordPrefillForModal: typeof findDomainRecordPrefillForModal === 'function' ? findDomainRecordPrefillForModal : null
   };
+  window.MFG_TEST_EXPORTS = Object.assign(window.MFG_TEST_EXPORTS || {}, window.MFG_ENTERPRISE);
 
   let _seedHydrationPromise = null;
   function hydrateSeedData() {
