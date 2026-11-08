@@ -80,7 +80,17 @@ if (fs.existsSync(srcWranglerState)) {
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-edge-'));
 const jwtSecret = crypto.randomBytes(32).toString('hex');
 
-const wranglerProc = spawn(process.execPath, [
+const NODE_BIN = [
+  path.join(os.homedir(), '.local', 'node', 'node.exe'),
+  process.execPath
+].find(p => fs.existsSync(p));
+const wranglerEnv = {};
+for (const [ek, ev] of Object.entries(process.env)) {
+  if (!/^electron_run_as_node$/i.test(ek)) wranglerEnv[ek] = ev;
+}
+wranglerEnv.CI = '1';
+wranglerEnv.WRANGLER_SEND_METRICS = 'false';
+const wranglerProc = spawn(NODE_BIN, [
   WRANGLER_JS,
   'pages', 'dev', '.',
   '--ip', '127.0.0.1',
@@ -91,7 +101,7 @@ const wranglerProc = spawn(process.execPath, [
   '--live-reload=false'
 ], {
   cwd: ROOT,
-  env: Object.assign({}, process.env, { CI: '1', WRANGLER_SEND_METRICS: 'false' }),
+  env: wranglerEnv,
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true
 });

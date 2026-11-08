@@ -5741,10 +5741,10 @@
             { label: 'Customer', key: 'Customer', bold: true },
             { label: 'IVA', key: 'VAT Registered' },
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
-            { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Sales ($)', key: 'sales_ttc', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Output VAT ($)', key: 'sales_vat', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'VAT Due ($)', key: 'vat_receivable', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
-          ], ivaUninvoiced, { subtitle: 'VAT-registered customers carrying unpaid 11% output VAT in their open balance (m254)', unitLabel: 'IVA customers' })}
+          ], ivaUninvoiced, { subtitle: 'VAT-registered customers carrying unpaid 11% output VAT in their open balance', unitLabel: 'IVA customers' })}
         </div>
 
         ${pbiHeading('3 · Pricing & agreement governance', 'Customer sales on ended agreements (amber) or priced below the agreed / list price (red)')}
@@ -5764,7 +5764,7 @@
             { label: 'Qty Traded', key: 'qty', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Agreed (Lapsed)', key: 'agreed_price', r: true, fmt: v => fmtUSD(v, 2) },
             { label: 'Actual Price', key: 'actual_price', r: true, fmt: v => fmtUSD(v, 2) }
-          ], lapsedPairs, { subtitle: 'Amber row = agreement End date has passed while customer continues lifting material (m202)', rowAmber: () => true, unitLabel: 'lapsed pairs' })}
+          ], lapsedPairs, { subtitle: 'Amber row = agreement End date has passed while customer continues lifting material', rowAmber: () => true, unitLabel: 'lapsed pairs' })}
         </div>
 
         ${pbiHeading('4 · Fleet telemetry, unattributed costs & payroll contract audit', 'Out-of-line meter readings, fuel consumption outliers, and salary payments without an employment contract')}
@@ -5777,7 +5777,7 @@
           { label: 'Unlinked VAT invoices', value: fmtNum(paritySn.unlinked_vat_invoices_count || 0), sub: 'Headers without tickets', navPage: 'p13_vat' }
         ])}
         <div class="pbi-grid-2">
-          ${pbiTable('Fuel consumption & meter reading outliers (m142)', [
+          ${pbiTable('Fuel consumption & meter reading outliers', [
             { label: 'Equipment', key: 'equipment', mono: true, bold: true },
             { label: 'Type', key: 'type' },
             { label: 'Metric', key: 'metric' },
@@ -8965,7 +8965,7 @@
             { key: 'raw_loads', label: 'Raw Pad Tickets', color: C.steel }
           ], { isMoney: false }), { legend: [{ label: 'Sales Pad', color: C.navy }, { label: 'Raw Pad', color: C.steel }] })}
 
-          ${pbiTable('Skipped & Duplicate Ticket Serials (m116 — Find Each Skipped Number Between Its Neighbours)', [
+          ${pbiTable('Skipped & Duplicate Ticket Serials (Find Each Skipped Number Between Its Neighbours)', [
             { label: 'Serial / Gap #', key: 'serialLabel', mono: true, bold: true },
             { label: 'Audit Type', key: 'kindLabel' },
             { label: 'Co.', key: 'company' },
@@ -9527,11 +9527,11 @@
     },
     sentinels: {
       title: 'Executive Action Items, Ticket Serial Hygiene, Change Log & Date-Basis Parity Bridge',
-      subtitle: 'Action Items & Exception Queue, Skipped/Duplicate Weighbridge Serials (m116), Daily Totals Ledger & Tx vs Reporting Date Parity',
+      subtitle: 'Action Items & Exception Queue, Skipped/Duplicate Weighbridge Serials, Daily Totals Ledger & Tx vs Reporting Date Parity',
       defaultSec: 'all',
       sections: [
         { id: 'exceptions', label: 'Action Items & Exception Queue', pageId: 'p03_exceptions', badge: 'Moved Page' },
-        { id: 'tickets', label: 'Weighbridge Ticket Serial Hygiene (m116)', pageId: 'p18_tickets', badge: 'Moved Page' },
+        { id: 'tickets', label: 'Weighbridge Ticket Serial Hygiene', pageId: 'p18_tickets', badge: 'Moved Page' },
         { id: 'changelog', label: 'Change Log, Daily Totals & Date Parity Bridge', pageId: 'p19_changelog', badge: 'Moved Page' }
       ]
     },

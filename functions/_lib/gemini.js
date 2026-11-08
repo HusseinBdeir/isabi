@@ -162,41 +162,58 @@ export async function handleEdgeTts(request, env, body) {
     if (!ttsText) return jsonResponse({ ok: false, error: 'Empty text' }, 400);
     const ttsModel = String((body && body.model) || (env && env.ISABI_GEMINI_TTS_MODEL) || 'gemini-3.8-flash-lite-tts').trim();
     const voiceName = String((body && body.voiceName) || 'Kore').trim();
+    const ttsCandidates = Array.from(new Set([
+      ttsModel,
+      'gemini-3.8-flash-tts',
+      'gemini-3.1-flash-tts-preview',
+      'gemini-2.5-flash-preview-tts'
+    ].filter(Boolean)));
+    const payloadStr = JSON.stringify({
+      contents: [{ parts: [{ text: ttsText }] }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+      }
+    });
 
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 16500);
-    const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ttsModel)}:generateContent?key=${encodeURIComponent(gemKey)}`;
-    const resp = await fetch(gUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: ttsText }] }],
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+    let lastNote = 'tts_empty';
+    for (const candModel of ttsCandidates) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 22000);
+      try {
+        const gUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(candModel)}:generateContent?key=${encodeURIComponent(gemKey)}`;
+        const resp = await fetch(gUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payloadStr,
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+        if (!resp.ok) {
+          lastNote = `${candModel}:gemini_${resp.status}`;
+          if (![429, 500, 502, 503, 504].includes(resp.status)) break;
+          continue;
         }
-      }),
-      signal: ctrl.signal
-    });
-    clearTimeout(timer);
-
-    if (!resp.ok) {
-      return jsonResponse({ ok: false, mode: 'tts_fallback', note: `gemini_${resp.status}` });
+        const gRes = await resp.json();
+        const inline = (((((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [])[0] || {}).inlineData || {};
+        const audioB64 = String(inline.data || '');
+        if (audioB64) {
+          return jsonResponse({
+            ok: true,
+            mode: 'gemini_tts',
+            edge: true,
+            model: candModel,
+            mimeType: inline.mimeType || 'audio/wav',
+            audioBase64: audioB64
+          });
+        }
+        lastNote = `${candModel}:tts_empty`;
+      } catch (subEx) {
+        clearTimeout(timer);
+        lastNote = `${candModel}:${String((subEx && subEx.message) || subEx || '').slice(0, 80)}`;
+      }
     }
-    const gRes = await resp.json();
-    const inline = (((((gRes && gRes.candidates && gRes.candidates[0]) || {}).content || {}).parts || [])[0] || {}).inlineData || {};
-    const audioB64 = String(inline.data || '');
-    if (!audioB64) {
-      return jsonResponse({ ok: false, mode: 'tts_empty' });
-    }
-    return jsonResponse({
-      ok: true,
-      mode: 'gemini_tts',
-      edge: true,
-      model: ttsModel,
-      mimeType: inline.mimeType || 'audio/wav',
-      audioBase64: audioB64
-    });
+    return jsonResponse({ ok: false, mode: 'tts_fallback', note: lastNote.slice(0, 120) });
   } catch (ex) {
     return jsonResponse({
       ok: false,

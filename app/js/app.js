@@ -19290,7 +19290,9 @@
           navView: 'ledger',
           navLabel: 'Open Ledger'
         });
-        buildIndustrySentinelItems(activeIndForSn).forEach(x => rawItems.push(x));
+        buildIndustrySentinelItems(activeIndForSn).forEach(x => {
+          if (x && !x.isCustom) rawItems.push(x);
+        });
       } else {
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
@@ -19485,6 +19487,7 @@
         customIdx += 1;
         const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
         const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
+        const topHit = hits[0];
         const seqNum = String(ALERT_RULE_CATALOG.length + customIdx).padStart(2, '0');
         const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
         const safeName = String(cr.name || 'Custom Alert').replace(/[—→_]/g, '-');
@@ -19501,7 +19504,7 @@
           badge: cr.enabled === false ? 'PAUSED' : (hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : 'CLEAR'),
           company: (!cr.company || cr.company === 'all') ? scope : cr.company,
           rawMetric: hits.length,
-          rawSecondary: 0,
+          rawSecondary: topHit ? Math.round(Math.abs(Number(topHit.value || 0))) : 0,
           scrollPanel: hits.length > 0 ? 'snCustomAlerts' : '',
           navView: spec.jumpView || '',
           navLabel: spec.jumpView ? 'Open Module' : ''
@@ -19513,7 +19516,7 @@
 
     const revStore = STATE.sentinelReviews || {};
     return rawItems.map(item => {
-      const ruleActive = item.isCustom ? item.customEnabled !== false : isAlertRuleEnabled(item.id);
+      const ruleActive = item.isCustom ? item.customEnabled !== false : isAlertRuleEnabled(item.ruleId || item.id);
       if (!ruleActive) {
         return Object.assign({}, item, {
           rawSeverity: 'ok',
@@ -49193,21 +49196,22 @@
         .filter(it => !it.ruleId || isAlertRuleEnabled(it.ruleId))
         .map(it => Object.assign({}, it, { scrollPanel: `snInd_${it.id}` }));
       const scopedMetrics = getCustomAlertMetricsForIndustry(ind);
-      const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric]);
+      const snAllowedCos = allowedCompanyNames();
+      const customRules = getActiveCustomAlertRules().filter(cr => cr && cr.enabled !== false && scopedMetrics[cr.metric] && (!cr.company || cr.company === 'all' || matchesCashScopeCompany({ company: cr.company }, STATE.company, snAllowedCos)));
       if (!customRules.length) return base;
       const customItems = customRules.map(cr => {
         const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
         const hits = evaluateSingleCustomAlert(cr);
         const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
         const top = hits[0];
-        const topSummary = top ? ` · Top: ${top.party} (${formatCustomAlertMetricVal(spec, top.value)})` : '';
+        const topSummary = top ? ` · Top: ${String(top.party || '').replace(/[—→]/g, '-')} (${formatCustomAlertMetricVal(spec, top.value)})` : '';
         return {
           id: cr.id,
           ruleId: cr.id,
           isCustom: true,
-          code: cr.code || 'CUSTOM',
-          title: cr.name || 'Custom Alert',
-          detail: `${fmtNum(hits.length)} record${hits.length === 1 ? '' : 's'} ${cr.op === '<' ? 'below' : 'above'} ${fmtT}${topSummary}. Reason: ${cr.why || 'Custom threshold watch'}.`,
+          code: String(cr.code || 'CUSTOM').replace(/[—→_]/g, '-'),
+          title: String(cr.name || 'Custom Alert').replace(/[—→_]/g, '-'),
+          detail: `${fmtNum(hits.length)} record${hits.length === 1 ? '' : 's'} ${cr.op === '<' ? 'below' : 'above'} ${fmtT}${topSummary}. Reason: ${String(cr.why || 'Custom threshold watch').replace(/[—→]/g, '-')}.`,
           severity: hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok',
           badge: hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : '0 CLEAR',
           company: (!cr.company || cr.company === 'all') ? scopeLabel : cr.company,

@@ -53,6 +53,7 @@ def save_edge_meta(meta: dict) -> None:
 
 def build_env() -> dict:
     env = os.environ.copy()
+    env.pop("ELECTRON_RUN_AS_NODE", None)
     node_dir = r"C:\Users\hbdei\.local\node"
     py_dir = r"C:\Users\hbdei\.local\python312"
     git_dir = r"C:\Users\hbdei\MinGit\cmd"
