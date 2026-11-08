@@ -5,10 +5,10 @@ compatibility_date = "2026-10-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "isabi-ledger"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "1feff285-d364-4f42-9c9d-a5baad4a0471"
 migrations_dir = "migrations"
 
-# Uncommented automatically by build/deploy_cloudflare.py when R2 bucket is active:
+# Uncomment when R2 is enabled on the Cloudflare account:
 # [[r2_buckets]]
 # binding = "BUCKET"
 # bucket_name = "isabi-vault"

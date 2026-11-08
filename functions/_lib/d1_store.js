@@ -680,13 +680,64 @@ async function mirrorStoreDeltaToD1Tables(db, storePayload) {
   } catch (_) {}
 }
 
+const KV_CHUNK_CHARS = 60000;
+
+async function readEdgeKvDoc(db, key) {
+  const rows = await db.prepare(
+    'SELECT doc_key, payload_json, updated_at, rev FROM edge_kv_store WHERE doc_key = ?1 OR doc_key LIKE ?2 ORDER BY doc_key ASC'
+  ).bind(key, `${key}__part_%`).all();
+  const list = rows.results || [];
+  if (!list.length) return null;
+  let head = null;
+  const parts = [];
+  for (const r of list) {
+    if (r.doc_key === key) {
+      head = r;
+    } else {
+      parts.push(String(r.payload_json || ''));
+    }
+  }
+  if (!head) return null;
+  const fullJson = String(head.payload_json || '') + parts.join('');
+  return {
+    payload_json: fullJson,
+    updated_at: String(head.updated_at || ''),
+    rev: Number(head.rev || 1)
+  };
+}
+
+async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy) {
+  const headSlice = jsonStr.slice(0, KV_CHUNK_CHARS);
+  await db.prepare(
+    `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
+     VALUES (?1, ?2, ?3, ?4, 1)
+     ON CONFLICT(doc_key) DO UPDATE SET
+       payload_json = excluded.payload_json,
+       updated_at = excluded.updated_at,
+       updated_by = excluded.updated_by,
+       rev = edge_kv_store.rev + 1`
+  ).bind(key, headSlice, updatedAt, updatedBy).run();
+
+  await db.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1').bind(`${key}__part_%`).run();
+
+  let partIdx = 1;
+  for (let offset = KV_CHUNK_CHARS; offset < jsonStr.length; offset += KV_CHUNK_CHARS) {
+    const chunk = jsonStr.slice(offset, offset + KV_CHUNK_CHARS);
+    const partKey = `${key}__part_${String(partIdx).padStart(4, '0')}`;
+    await db.prepare(
+      'INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES (?1, ?2, ?3, ?4, 1)'
+    ).bind(partKey, chunk, updatedAt, updatedBy).run();
+    partIdx++;
+  }
+}
+
 export async function handleSync(request, env, session, body, ctx) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
   const docKey = String((body && body.doc) || 'mfg_web_store');
 
   if (request.method === 'GET' || (body && (body.op === 'get_mfg' || body.op === 'get_control'))) {
     const targetKey = body && body.op === 'get_control' ? 'control_store' : docKey;
-    const row = await env.DB.prepare('SELECT payload_json, updated_at FROM edge_kv_store WHERE doc_key = ?1').bind(targetKey).first();
+    const row = await readEdgeKvDoc(env.DB, targetKey);
     const docObj = row ? safeJsonParse(row.payload_json, {}) : {};
     if (row && row.updated_at && !docObj.updatedAt) docObj.updatedAt = row.updated_at;
     return jsonResponse({ ok: true, edge: true, docs: { [targetKey]: docObj } });
@@ -702,7 +753,7 @@ export async function handleSync(request, env, session, body, ctx) {
     const incomingDoc = body.patch[pKey] || {};
     const expectedTs = String(body.ifMatchUpdatedAt || '');
 
-    const currentRow = await env.DB.prepare('SELECT payload_json, updated_at, rev FROM edge_kv_store WHERE doc_key = ?1').bind(pKey).first();
+    const currentRow = await readEdgeKvDoc(env.DB, pKey);
     const currentTs = currentRow ? String(currentRow.updated_at || '') : '';
 
     if (expectedTs && currentTs && expectedTs !== currentTs) {
@@ -717,20 +768,13 @@ export async function handleSync(request, env, session, body, ctx) {
 
     const newTs = String(incomingDoc.updatedAt || new Date().toISOString());
     incomingDoc.updatedAt = newTs;
-    await env.DB.prepare(
-      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
-       VALUES (?1, ?2, ?3, ?4, 1)
-       ON CONFLICT(doc_key) DO UPDATE SET
-         payload_json = excluded.payload_json,
-         updated_at = excluded.updated_at,
-         updated_by = excluded.updated_by,
-         rev = edge_kv_store.rev + 1`
-    ).bind(
+    await writeEdgeKvDoc(
+      env.DB,
       pKey,
       JSON.stringify(incomingDoc),
       newTs,
       String(incomingDoc.updatedBy || (session && session.email) || '')
-    ).run();
+    );
 
     if (pKey === 'mfg_web_store' && ctx && typeof ctx.waitUntil === 'function') {
       ctx.waitUntil(mirrorStoreDeltaToD1Tables(env.DB, incomingDoc));

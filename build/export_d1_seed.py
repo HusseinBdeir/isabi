@@ -228,11 +228,27 @@ def export_all() -> list[pathlib.Path]:
                 f"VALUES ('work_schedules', {sql_lit(remote['workSchedules'])}, {sql_lit(ws_ts)}, 'seed', 1)"
             )
 
-        # Store complete mfg_web_store snapshot for instant multi-device CAS sync continuity
+        # Store complete mfg_web_store snapshot in 60,000-char chunks (< 100 KB D1 remote SQL statement cap)
+        KV_CHUNK_CHARS = 60000
+        raw_store_json = json.dumps(remote, ensure_ascii=False)
+        upd_ts = remote.get("updatedAt") or ""
+        upd_by = remote.get("updatedBy") or "seed"
+        writer.add(
+            f"DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%'"
+        )
         writer.add(
             f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
-            f"VALUES ('mfg_web_store', {sql_lit(remote)}, {sql_lit(remote.get('updatedAt') or '')}, {sql_lit(remote.get('updatedBy') or 'seed')}, 1)"
+            f"VALUES ('mfg_web_store', {sql_lit(raw_store_json[:KV_CHUNK_CHARS])}, {sql_lit(upd_ts)}, {sql_lit(upd_by)}, 1)"
         )
+        part_idx = 1
+        for off in range(KV_CHUNK_CHARS, len(raw_store_json), KV_CHUNK_CHARS):
+            part_key = f"mfg_web_store__part_{part_idx:04d}"
+            chunk_str = raw_store_json[off : off + KV_CHUNK_CHARS]
+            writer.add(
+                f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) "
+                f"VALUES ({sql_lit(part_key)}, {sql_lit(chunk_str)}, {sql_lit(upd_ts)}, {sql_lit(upd_by)}, 1)"
+            )
+            part_idx += 1
 
     writer.flush()
     print(f"OK: Exported {writer.total_stmts:,} SQL statements across {len(writer.files)} D1 batch files -> {OUT_DIR}")
