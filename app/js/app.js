@@ -14927,7 +14927,11 @@
       <div class="ceo-pnl-bridge">
         <div class="ceo-bridge-hdr">
           <span class="ceo-bridge-title">${esc(cleanCeoText(bridge.title || 'Consolidated P&L Value Bridge'))}</span>
-          ${bridge.meta ? `<span class="ceo-bridge-meta">${esc(cleanCeoText(bridge.meta))}</span>` : ''}
+          <div class="ceo-bridge-hdr-actions">
+            ${bridge.meta ? `<span class="ceo-bridge-meta">${esc(cleanCeoText(bridge.meta))}</span>` : ''}
+            <button type="button" class="ceo-variance-brief-btn" id="ceoVarianceBriefBtn" data-ceo-variance-brief="1" aria-expanded="false" title="Open grounded Period Variance Commentary">${ic('sparkles')}<span class="ceo-vb-lbl">Variance</span></button>
+            <button type="button" class="ceo-period-summary-btn" id="ceoPeriodSummaryBtn" data-ceo-period-summary="1" aria-pressed="false" title="Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags">${ic('audio')}<span class="ceo-ps-lbl">Listen to Period Summary</span></button>
+          </div>
         </div>
         <div class="ceo-bridge-grid">
           ${bridge.steps.map(st => {
@@ -14945,6 +14949,472 @@
           }).join('')}
         </div>
       </div>`;
+  }
+
+  function resolveCeoPriorPeriodWindow(curRange, pRaw) {
+    if (!curRange || !curRange.from || !curRange.to) return null;
+    const fp = formatDateSegParts(curRange.from, MIN_DATE);
+    const tp = formatDateSegParts(curRange.to, MAX_DATE);
+    const pStr = String(pRaw || '');
+    if (pStr.startsWith('year:') || (fp.mm === '01' && fp.dd === '01' && tp.mm === '12' && tp.dd === '31' && fp.yrNum === tp.yrNum)) {
+      const prevYr = Math.max(2023, fp.yrNum - 1);
+      return {
+        periodSpec: `year:${prevYr}`,
+        from: `${prevYr}-01-01`,
+        to: `${prevYr}-12-31`,
+        label: `FY ${prevYr}`,
+        grain: 'year'
+      };
+    }
+    const lastDayCur = lastDayOfMonth(tp.yrNum, tp.moNum);
+    if (pStr.startsWith('month:') || pStr === 'mtd' || pStr === 'prev_m1' || pStr === 'prev_m2'
+      || (fp.yrNum === tp.yrNum && fp.moNum === tp.moNum && fp.dd === '01' && tp.dayNum === lastDayCur)) {
+      const totMo = fp.yrNum * 12 + (fp.moNum - 1) - 1;
+      const py = Math.floor(totMo / 12);
+      const pm = (totMo % 12) + 1;
+      const pmStr = String(pm).padStart(2, '0');
+      const pld = String(lastDayOfMonth(py, pm)).padStart(2, '0');
+      return {
+        periodSpec: `month:${py}-${pmStr}`,
+        from: `${py}-${pmStr}-01`,
+        to: `${py}-${pmStr}-${pld}`,
+        label: `${MONTH_LONG[pm - 1] || 'Month'} ${py}`,
+        grain: 'month'
+      };
+    }
+    if (pStr.startsWith('day:') || curRange.from === curRange.to) {
+      const prevMs = Date.UTC(fp.yrNum, fp.moNum - 1, fp.dayNum) - 86400000;
+      const pIso = new Date(prevMs).toISOString().slice(0, 10);
+      return {
+        periodSpec: `day:${pIso}`,
+        from: pIso,
+        to: pIso,
+        label: fmtDayLabel(pIso),
+        grain: 'day'
+      };
+    }
+    const startMs = Date.UTC(fp.yrNum, fp.moNum - 1, fp.dayNum);
+    const endMs = Date.UTC(tp.yrNum, tp.moNum - 1, tp.dayNum);
+    const spanMs = Math.max(86400000, (endMs - startMs) + 86400000);
+    const prevEndMs = startMs - 86400000;
+    const prevStartMs = prevEndMs - (spanMs - 86400000);
+    const pfIso = new Date(prevStartMs).toISOString().slice(0, 10);
+    const ptIso = new Date(prevEndMs).toISOString().slice(0, 10);
+    const isWeek = pStr.startsWith('week:') || pStr === 'wtd' || pStr === 'last_week' || Math.round(spanMs / 86400000) === 7;
+    return {
+      periodSpec: isWeek ? `week:${pfIso}..${ptIso}` : 'custom',
+      from: pfIso,
+      to: ptIso,
+      label: isWeek ? `Week ${cleanCeoText(fmtWeekLabel(pfIso, ptIso))}` : `${pfIso} to ${ptIso}`,
+      grain: isWeek ? 'week' : 'custom'
+    };
+  }
+
+  function evalMfgKpiWindow(coKey, periodSpec, fromIso, toIso) {
+    const savedP = STATE.period;
+    const savedF = STATE.dateFrom;
+    const savedT = STATE.dateTo;
+    let k = {};
+    try {
+      STATE.period = periodSpec || 'all';
+      if (periodSpec === 'custom') {
+        STATE.dateFrom = fromIso || '';
+        STATE.dateTo = toIso || '';
+      } else if (!periodSpec || periodSpec === 'all') {
+        STATE.dateFrom = '';
+        STATE.dateTo = '';
+      }
+      k = getKPI(coKey) || {};
+    } finally {
+      STATE.period = savedP;
+      STATE.dateFrom = savedF;
+      STATE.dateTo = savedT;
+    }
+    const revUsd = round2(Number(STATE.basis === 'rep' ? (k.sales_rep_date != null ? k.sales_rep_date : k.sales_ttc) : k.sales_ttc) || 0);
+    const netSalesUsd = round2(Number(k.net_sales != null ? k.net_sales : revUsd) || 0);
+    const directCostUsd = round2(Number(STATE.basis === 'rep' ? (k.raw_rep_date != null ? k.raw_rep_date : k.raw_cost) : k.raw_cost) || 0);
+    const grossMarginUsd = round2(Number(k.gross_margin != null ? k.gross_margin : (netSalesUsd - directCostUsd)) || 0);
+    const opProfitUsd = round2(Number(STATE.basis === 'rep' ? (k.op_profit_rep_date != null ? k.op_profit_rep_date : k.operating_profit) : k.operating_profit) || 0);
+    const expRaw = round2(Number(STATE.basis === 'rep' ? (k.exp_rep_date != null ? k.exp_rep_date : k.expenses) : k.expenses) || 0);
+    const opExUsd = round2(Math.max(0, round2(grossMarginUsd - opProfitUsd)) || expRaw);
+    const clampPct = v => Math.max(-100, Math.min(100, round2(Number(v) || 0)));
+    const den = Math.max(1, Math.abs(netSalesUsd || revUsd));
+    const gmPct = (netSalesUsd || revUsd) > 0 ? clampPct((grossMarginUsd / den) * 100) : 0;
+    const opMarginPct = (netSalesUsd || revUsd) > 0 ? clampPct((opProfitUsd / den) * 100) : 0;
+    return {
+      revUsd,
+      netSalesUsd,
+      directCostUsd,
+      grossMarginUsd,
+      gmPct,
+      opExUsd,
+      opProfitUsd,
+      opMarginPct,
+      txCount: Math.round(Number(k.loads || 0)),
+      cashTillUsd: round2(Number(k.cash_till_usd != null ? k.cash_till_usd : k.cash_till) || 0),
+      arBalanceUsd: round2(Number(k.ar_balance || 0)),
+      arOverdueUsd: round2(Math.max(0, Number(k.ar_overdue || 0))),
+      hasActivity: Math.abs(revUsd) > 0.01 || Math.abs(directCostUsd) > 0.01 || Math.abs(opExUsd) > 0.01
+    };
+  }
+
+  function computeCeoPeriodBridgeSnapshot(coOverride, periodOverride) {
+    ensureMultiIndustrySpineSeeded();
+    const coKey = coOverride || STATE.company || 'manufacturing-group';
+    const ind = getActiveIndustry(coKey) || 'Manufacturing';
+    const rawPeriod = periodOverride !== undefined ? periodOverride : STATE.period;
+    const curRange = periodRange(rawPeriod);
+    const prevWin = curRange ? resolveCeoPriorPeriodWindow(curRange, rawPeriod) : null;
+    const periodLabel = curRange ? cleanCeoText(curRange.label || `${curRange.from} to ${curRange.to}`) : 'All-Time';
+    const grain = !curRange ? 'all' : (prevWin ? prevWin.grain : (STATE.dateGrain || 'month'));
+
+    const clampPct = v => Math.max(-100, Math.min(100, round2(Number(v) || 0)));
+    const todayYm = String(todayISO() || '').slice(0, 7);
+    const allSn = buildSentinelItems() || [];
+    const openSn = allSn.filter(s => s && s.severity && s.severity !== 'ok');
+    const critSn = openSn.filter(s => s.severity === 'crit');
+
+    if (ind === 'Manufacturing') {
+      const effCo = (!modelHasLedger(coKey) && coKey === 'lionstransport') ? 'manufacturing-group' : coKey;
+      const cur = evalMfgKpiWindow(effCo, curRange ? (rawPeriod === 'all' ? 'custom' : rawPeriod) : 'all', curRange ? curRange.from : '', curRange ? curRange.to : '');
+      let prev = null;
+      let compareLabel = '';
+      if (prevWin) {
+        prev = evalMfgKpiWindow(effCo, prevWin.periodSpec, prevWin.from, prevWin.to);
+        compareLabel = prevWin.label;
+      } else {
+        const m = SEED.models[resolveEffectiveModelKey(effCo)] || SEED.models['manufacturing-group'] || {};
+        const ymStr = r => {
+          const rawYm = String((r && (r.YearMonthNo || r['Year Month'])) || '');
+          const mHit = rawYm.match(/(20\d{2})[-/]?(\d{2})/);
+          return mHit ? `${mHit[1]}-${mHit[2]}` : '';
+        };
+        const mosRaw = getScopedMonthly(m.monthly || [], 24).filter(r => Number(STATE.basis === 'rep' ? (r.sales_rep || r.sales_ttc || 0) : (r.sales_ttc || 0)) > 0 && ymStr(r));
+        const mosDone = todayYm ? mosRaw.filter(r => ymStr(r) < todayYm) : mosRaw;
+        const mos = mosDone.length >= 2 ? mosDone : mosRaw;
+        if (mos.length >= 2) {
+          const lastM = mos[mos.length - 1];
+          const prevM = mos[mos.length - 2];
+          const ymCur = ymStr(lastM);
+          const ymPrev = ymStr(prevM);
+          if (ymCur && ymPrev) {
+            const mCurSnap = evalMfgKpiWindow(effCo, `month:${ymCur}`, '', '');
+            const mPrevSnap = evalMfgKpiWindow(effCo, `month:${ymPrev}`, '', '');
+            prev = Object.assign({}, mPrevSnap, { isMomentumPair: true, latestWindow: mCurSnap, latestLabel: cleanCeoText((periodRange(`month:${ymCur}`) || {}).label || ymCur) });
+            compareLabel = cleanCeoText((periodRange(`month:${ymPrev}`) || {}).label || ymPrev);
+          }
+        }
+      }
+      const mModel = SEED.models[resolveEffectiveModelKey(effCo)] || SEED.models['manufacturing-group'] || {};
+      const topCust = getScopedModelCustomers(mModel).filter(c => Number(c.sales_ttc || 0) > 0).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0))[0];
+      const topProd = getScopedModelProducts(mModel).filter(p => Number(p.sales_ttc || 0) > 0).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0))[0];
+      return {
+        industry: ind,
+        company: coKey,
+        companyLabel: cleanCeoText(COMPANY_LABELS[coKey] || ind),
+        grain,
+        basis: STATE.basis || 'tx',
+        periodKey: String(rawPeriod || 'all'),
+        periodLabel,
+        compareLabel,
+        isAllTime: !curRange,
+        cur,
+        prev,
+        books: { cashTillUsd: cur.cashTillUsd, arBalanceUsd: cur.arBalanceUsd, arOverdueUsd: cur.arOverdueUsd },
+        topDriver: topCust ? { kind: 'client', name: cleanCeoText(topCust.Customer), usd: round2(Number(topCust.sales_ttc || 0)), secondary: topProd ? cleanCeoText(topProd.Product) : '' } : null,
+        sentinels: { openCount: openSn.length, critCount: critSn.length, topTitle: openSn[0] ? cleanCeoText(openSn[0].title || '') : '' }
+      };
+    }
+
+    // Sibling Industries 2..6: All-Time exact bridge + Dated Window Slicer
+    const kSnap = getIndustryKpiSnapshot(ind, coKey, {});
+    const buMatch = COMPANY_BU_MATCH[coKey] || '';
+    const matchBu = rowCo => {
+      if (!buMatch || String(coKey).startsWith('industry:') || coKey === 'holding') return true;
+      return String(rowCo || '').trim().toLowerCase() === String(buMatch).trim().toLowerCase();
+    };
+    const expRowsAll = filterRecords(SEED.records.expenses || [], { ignorePeriod: true, ignoreSearch: true, tableKey: 'expenses' }).filter(r => matchBu(r.company));
+
+    const datedEvents = []; // { date, rev, net, direct, opex, tx }
+    const addEv = (dt, rev, net, direct, opex, tx = 0) => {
+      const iso = String(dt || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+      datedEvents.push({
+        date: iso,
+        ym: iso.slice(0, 7),
+        rev: Number(rev || 0),
+        net: Number(net != null ? net : rev || 0),
+        direct: Number(direct || 0),
+        opex: Number(opex || 0),
+        tx: Number(tx || 0)
+      });
+    };
+
+    let allTimeBridge = null;
+    let topDriver = null;
+    let annualContractedRent = 0;
+    let annualDirectRatio = 0.25;
+    let annualOpexRatio = 0.08;
+
+    if (ind === 'Holding & Treasury') {
+      const rollup = computeEnterpriseRollup();
+      const { totals, icRes, byIndustry } = rollup;
+      const revUsd = round2(Number(totals.sales_ttc || 0));
+      const netSalesUsd = round2(Number(totals.net_sales || revUsd));
+      const directCostUsd = round2(Math.max(0, Number(totals.raw_cost || 0)));
+      const grossMarginUsd = round2(Number(totals.gross_margin || (netSalesUsd - directCostUsd)));
+      const opExUsd = round2(Math.max(0, Number(totals.expenses || 0) + Number(totals.salaries || 0)));
+      const opProfitUsd = round2(Number(totals.operating_profit || (grossMarginUsd - opExUsd)));
+      const den = Math.max(1, netSalesUsd || revUsd);
+      allTimeBridge = {
+        revUsd, netSalesUsd, directCostUsd, grossMarginUsd,
+        gmPct: round2((grossMarginUsd / den) * 100),
+        opExUsd, opProfitUsd,
+        opMarginPct: round2((opProfitUsd / den) * 100),
+        txCount: Math.round(Number(icRes.matchedCount || totals.loads || 0)),
+        cashTillUsd: round2(Number(totals.cash_till || kSnap.cash_till || 0)),
+        arBalanceUsd: round2(Number(totals.ar_balance || 0)),
+        arOverdueUsd: round2(Number(icRes.totalNetUnpaidUsd || 0)),
+        hasActivity: true
+      };
+      const ic = computeIntercompanyInteractions({ ignoreSearch: true });
+      (ic.events || []).forEach(ev => {
+        if (ev && ev.date) {
+          if (ev.side === 'In') addEv(ev.date, ev.usd, ev.usd, 0, 0, 1);
+          else addEv(ev.date, 0, 0, ev.usd, 0, 0);
+        }
+      });
+      topDriver = { kind: 'sector', name: 'Manufacturing', usd: round2(Number(byIndustry.mfg && byIndustry.mfg.sales_ttc || 0)), secondary: 'Hospitality & Resorts' };
+    } else if (ind === 'Hospitality & Resorts') {
+      const hsp = computeHospitalityOperations({ company: coKey, ignoreSearch: true });
+      const s = hsp.summary;
+      const totRev = round2(s.totalRevenueTtc + s.totalMemContract);
+      const totHt = round2(s.totalRevenueHt + s.totalMemContract);
+      const directCostUsd = round2(s.totalStockUsage);
+      const grossMarginUsd = round2(totHt - directCostUsd);
+      const opExUsd = round2(s.totalMaintUsd);
+      const opProfitUsd = round2(grossMarginUsd - opExUsd);
+      const den = Math.max(1, totHt || totRev);
+      annualDirectRatio = den > 0 ? Math.min(0.65, Math.max(0.18, directCostUsd / den)) : 0.30;
+      allTimeBridge = {
+        revUsd: totRev, netSalesUsd: totHt, directCostUsd, grossMarginUsd,
+        gmPct: round2((grossMarginUsd / den) * 100),
+        opExUsd, opProfitUsd,
+        opMarginPct: round2((opProfitUsd / den) * 100),
+        txCount: Math.round((hsp.venueRows || []).length + (hsp.membershipRows || []).length),
+        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        arBalanceUsd: round2(Number(s.totalMemArrears || 0)),
+        arOverdueUsd: round2(Number(s.totalMemArrears || 0)),
+        hasActivity: true
+      };
+      (hsp.venueRows || []).forEach(r => addEv(r.date, r.ttc_usd, r.ht_usd != null ? r.ht_usd : r.ttc_usd, 0, 0, 1));
+      (hsp.stockRows || []).forEach(r => addEv(r.date, 0, 0, r.recipe_usage_usd, 0, 0));
+      (hsp.maintRows || []).forEach(r => addEv(r.date, 0, 0, 0, r.cost_usd, 0));
+      const topMem = (hsp.membershipRows || []).slice().sort((a, b) => Number(b.contract_usd || 0) - Number(a.contract_usd || 0))[0];
+      topDriver = topMem ? { kind: 'member', name: cleanCeoText(topMem.member), usd: round2(Number(topMem.contract_usd || 0)), secondary: cleanCeoText(topMem.company || '') } : null;
+    } else if (ind === 'Automotive & Heavy Trading') {
+      const trd = computeTradingOperations({ company: coKey, ignoreSearch: true });
+      const s = trd.summary;
+      const revUsd = round2(s.totalSalesTtc);
+      const netSalesUsd = round2(s.totalSalesNet || revUsd);
+      const directCostUsd = round2(s.totalSalesCost);
+      const grossMarginUsd = round2(s.totalSalesMargin);
+      const opExUsd = round2(s.totalLandedAddUsd * 0.35);
+      const opProfitUsd = round2(grossMarginUsd - opExUsd);
+      const den = Math.max(1, revUsd || netSalesUsd);
+      allTimeBridge = {
+        revUsd, netSalesUsd, directCostUsd, grossMarginUsd,
+        gmPct: round2(Number(s.avgMarginPct || ((grossMarginUsd / den) * 100))),
+        opExUsd, opProfitUsd,
+        opMarginPct: round2((opProfitUsd / den) * 100),
+        txCount: (trd.salesRows || []).filter(r => !r.is_gap).length,
+        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        arBalanceUsd: round2(Number(s.grossArUsd || 0)),
+        arOverdueUsd: round2(Math.max(0, Number(s.grossArUsd || 0) - Number(s.activePromisesUsd || 0))),
+        hasActivity: true
+      };
+      (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => addEv(r.date, r.ttc_usd, r.net_usd || r.ttc_usd, r.cost_usd, 0, 1));
+      (trd.importRows || []).forEach(r => addEv(r.date, 0, 0, 0, Number(r.landed_add_usd || 0) * 0.35, 0));
+      const topBuyer = (trd.receivableRows || []).slice().sort((a, b) => Number(b.gross_ar_usd || 0) - Number(a.gross_ar_usd || 0))[0];
+      topDriver = topBuyer ? { kind: 'buyer', name: cleanCeoText(topBuyer.customer), usd: round2(Number(topBuyer.gross_ar_usd || 0)), secondary: cleanCeoText(topBuyer.company || '') } : null;
+    } else if (ind === 'Real Estate & Property') {
+      const re = computeRealEstateOperations({ company: coKey, ignoreSearch: true });
+      const s = re.summary;
+      const revUsd = round2(s.contractedAnnualRentUsd);
+      const directCostUsd = round2(s.woActualUsd);
+      const grossMarginUsd = round2(revUsd - directCostUsd);
+      const opExUsd = round2(s.woActualUsd * 0.25);
+      const opProfitUsd = round2(grossMarginUsd - opExUsd);
+      const den = Math.max(1, revUsd);
+      annualContractedRent = revUsd;
+      annualDirectRatio = den > 0 ? Math.min(0.45, directCostUsd / den) : 0.12;
+      annualOpexRatio = den > 0 ? Math.min(0.20, opExUsd / den) : 0.04;
+      allTimeBridge = {
+        revUsd, netSalesUsd: revUsd, directCostUsd, grossMarginUsd,
+        gmPct: round2((grossMarginUsd / den) * 100),
+        opExUsd, opProfitUsd,
+        opMarginPct: round2((opProfitUsd / den) * 100),
+        txCount: (re.leases || []).length,
+        cashTillUsd: round2(Number(kSnap.cash_till || 0)),
+        arBalanceUsd: round2(Number(s.openRentArUsd || 0) + Number(s.salesOpenUsd || 0)),
+        arOverdueUsd: round2(Number(s.openRentArUsd || 0)),
+        hasActivity: true
+      };
+      (re.invoices || []).forEach(r => addEv(r.date, r.amount_ttc_usd, r.amount_ht_usd || r.amount_ttc_usd, 0, 0, 1));
+      (re.sales || []).forEach(r => addEv(r.date, r.paid_usd || r.contract_usd, r.paid_usd || r.contract_usd, 0, 0, 1));
+      (re.workorders || []).forEach(r => addEv(r.date, 0, 0, r.actual_usd, Number(r.actual_usd || 0) * 0.25, 0));
+      const topLease = (re.leases || []).slice().sort((a, b) => Number(b.annual_ttc_usd || 0) - Number(a.annual_ttc_usd || 0))[0];
+      topDriver = topLease ? { kind: 'tenant', name: cleanCeoText(topLease.tenant), usd: round2(Number(topLease.annual_ttc_usd || 0)), secondary: cleanCeoText(topLease.property || '') } : null;
+    } else {
+      // Insurance & Brokerage
+      const ins = computeInsuranceOperations();
+      const s = ins.summary;
+      const grossComm = round2(s.grossComm7063Usd + s.policyFees7064Usd);
+      const rebates = round2(s.discount7065Usd);
+      const netRev = round2(s.netCommUsd + s.policyFees7064Usd);
+      const opExUsd = 11400;
+      const opProfitUsd = round2(netRev - opExUsd);
+      const den = Math.max(1, grossComm || netRev);
+      allTimeBridge = {
+        revUsd: round2(s.gwpUsd),
+        netSalesUsd: netRev,
+        directCostUsd: rebates,
+        grossMarginUsd: netRev,
+        gmPct: round2((netRev / den) * 100),
+        opExUsd,
+        opProfitUsd,
+        opMarginPct: round2((opProfitUsd / Math.max(1, netRev)) * 100),
+        txCount: Math.round(Number(s.totalPolicyCount || (ins.policies || []).length)),
+        cashTillUsd: round2(Number(s.cashHeldUsd || 0)),
+        arBalanceUsd: round2(Number(s.openClientAr4112Usd || 0)),
+        arOverdueUsd: 0,
+        hasActivity: true
+      };
+      (ins.policies || []).forEach(p => {
+        const netC = Number(p.net_comm_usd || 0) + Number(p.policy_fee_usd || 0);
+        addEv(p.date, p.gross_prem_usd, netC, p.discount_usd || 0, 0, 1);
+      });
+      const topPol = (ins.policies || []).slice().sort((a, b) => Number(b.gross_prem_usd || 0) - Number(a.gross_prem_usd || 0))[0];
+      topDriver = topPol ? { kind: 'insured', name: cleanCeoText(topPol.client), usd: round2(Number(topPol.gross_prem_usd || 0)), secondary: cleanCeoText(topPol.carrier || '') } : null;
+    }
+
+    expRowsAll.forEach(r => addEv(r.date || r.rep_date, 0, 0, 0, r.total_ttc || r.amount || 0, 0));
+
+    const sliceSiblingWindow = (winSpec) => {
+      if (!winSpec || !winSpec.from || !winSpec.to) return allTimeBridge;
+      const fIso = winSpec.from;
+      const tIso = winSpec.to;
+      if (ind === 'Holding & Treasury') {
+        const mfgSub = evalMfgKpiWindow('manufacturing-group', winSpec.periodSpec || 'custom', fIso, tIso);
+        const subEvs = datedEvents.filter(e => e.date >= fIso && e.date <= tIso);
+        const icIn = round2(subEvs.reduce((a, e) => a + e.rev, 0));
+        const icOut = round2(subEvs.reduce((a, e) => a + e.direct, 0));
+        const extraOp = round2(subEvs.reduce((a, e) => a + e.opex, 0));
+        const revUsd = round2(mfgSub.revUsd + icIn);
+        const netSalesUsd = round2(mfgSub.netSalesUsd + icIn);
+        const directCostUsd = round2(mfgSub.directCostUsd + icOut * 0.4);
+        const grossMarginUsd = round2(netSalesUsd - directCostUsd);
+        const opExUsd = round2(mfgSub.opExUsd + extraOp);
+        const opProfitUsd = round2(grossMarginUsd - opExUsd);
+        const den = Math.max(1, Math.abs(netSalesUsd || revUsd));
+        return {
+          revUsd, netSalesUsd, directCostUsd, grossMarginUsd,
+          gmPct: (netSalesUsd || revUsd) > 0 ? clampPct((grossMarginUsd / den) * 100) : 0,
+          opExUsd, opProfitUsd,
+          opMarginPct: (netSalesUsd || revUsd) > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
+          txCount: mfgSub.txCount + subEvs.reduce((a, e) => a + e.tx, 0),
+          cashTillUsd: allTimeBridge.cashTillUsd,
+          arBalanceUsd: allTimeBridge.arBalanceUsd,
+          arOverdueUsd: allTimeBridge.arOverdueUsd,
+          hasActivity: mfgSub.hasActivity || subEvs.length > 0
+        };
+      }
+      const hits = datedEvents.filter(e => e.date >= fIso && e.date <= tIso);
+      const fp = formatDateSegParts(fIso, MIN_DATE);
+      const tp = formatDateSegParts(tIso, MAX_DATE);
+      const spanDays = Math.max(1, Math.round((Date.UTC(tp.yrNum, tp.moNum - 1, tp.dayNum) - Date.UTC(fp.yrNum, fp.moNum - 1, fp.dayNum)) / 86400000) + 1);
+      let revUsd = round2(hits.reduce((a, e) => a + e.rev, 0));
+      let netSalesUsd = round2(hits.reduce((a, e) => a + e.net, 0));
+      let directCostUsd = round2(hits.reduce((a, e) => a + e.direct, 0));
+      let opExUsd = round2(hits.reduce((a, e) => a + e.opex, 0));
+      let txCount = hits.reduce((a, e) => a + e.tx, 0);
+
+      if (ind === 'Real Estate & Property' && revUsd <= 0 && annualContractedRent > 0 && spanDays >= 7 && fIso >= '2025-01-01' && fIso <= '2027-12-31') {
+        revUsd = round2(annualContractedRent * (spanDays / 365));
+        netSalesUsd = revUsd;
+        if (directCostUsd <= 0) directCostUsd = round2(revUsd * annualDirectRatio);
+        if (opExUsd <= 0) opExUsd = round2(revUsd * annualOpexRatio);
+        txCount = allTimeBridge.txCount;
+      } else if (ind === 'Hospitality & Resorts' && revUsd > 0 && directCostUsd <= 0) {
+        directCostUsd = round2(netSalesUsd * annualDirectRatio);
+      } else if (ind === 'Insurance & Brokerage' && (revUsd > 0 || netSalesUsd > 0) && opExUsd <= 0) {
+        opExUsd = round2(11400 * Math.min(1, spanDays / 365));
+      }
+
+      const grossMarginUsd = ind === 'Insurance & Brokerage'
+        ? netSalesUsd
+        : round2((netSalesUsd || revUsd) - directCostUsd);
+      const opProfitUsd = round2(grossMarginUsd - opExUsd);
+      const den = Math.max(1, Math.abs(netSalesUsd || revUsd));
+      return {
+        revUsd,
+        netSalesUsd: netSalesUsd || revUsd,
+        directCostUsd,
+        grossMarginUsd,
+        gmPct: (netSalesUsd || revUsd) > 0 ? clampPct((grossMarginUsd / den) * 100) : 0,
+        opExUsd,
+        opProfitUsd,
+        opMarginPct: (netSalesUsd || revUsd) > 0 ? clampPct((opProfitUsd / den) * 100) : 0,
+        txCount,
+        cashTillUsd: allTimeBridge.cashTillUsd,
+        arBalanceUsd: allTimeBridge.arBalanceUsd,
+        arOverdueUsd: allTimeBridge.arOverdueUsd,
+        hasActivity: hits.length > 0 || revUsd > 0
+      };
+    };
+
+    const cur = curRange
+      ? sliceSiblingWindow({ periodSpec: rawPeriod, from: curRange.from, to: curRange.to })
+      : allTimeBridge;
+    let prev = null;
+    let compareLabel = '';
+    if (prevWin) {
+      prev = sliceSiblingWindow(prevWin);
+      compareLabel = prevWin.label;
+    } else {
+      const rawYms = Array.from(new Set(datedEvents.filter(e => e.rev > 0).map(e => e.ym))).sort();
+      const doneYms = todayYm ? rawYms.filter(ym => ym < todayYm) : rawYms;
+      const activeYms = doneYms.length >= 2 ? doneYms : rawYms;
+      if (activeYms.length >= 2) {
+        const ymCur = activeYms[activeYms.length - 1];
+        const ymPrev = activeYms[activeYms.length - 2];
+        const rCur = periodRange(`month:${ymCur}`);
+        const rPrev = periodRange(`month:${ymPrev}`);
+        if (rCur && rPrev) {
+          const mCurSnap = sliceSiblingWindow({ periodSpec: `month:${ymCur}`, from: rCur.from, to: rCur.to });
+          const mPrevSnap = sliceSiblingWindow({ periodSpec: `month:${ymPrev}`, from: rPrev.from, to: rPrev.to });
+          prev = Object.assign({}, mPrevSnap, { isMomentumPair: true, latestWindow: mCurSnap, latestLabel: cleanCeoText(rCur.label || ymCur) });
+          compareLabel = cleanCeoText(rPrev.label || ymPrev);
+        }
+      }
+    }
+
+    return {
+      industry: ind,
+      company: coKey,
+      companyLabel: cleanCeoText(COMPANY_LABELS[coKey] || ind),
+      grain,
+      basis: STATE.basis || 'tx',
+      periodKey: String(rawPeriod || 'all'),
+      periodLabel,
+      compareLabel,
+      isAllTime: !curRange,
+      cur,
+      prev,
+      books: { cashTillUsd: cur.cashTillUsd, arBalanceUsd: cur.arBalanceUsd, arOverdueUsd: cur.arOverdueUsd },
+      topDriver,
+      sentinels: { openCount: openSn.length, critCount: critSn.length, topTitle: openSn[0] ? cleanCeoText(openSn[0].title || '') : '' }
+    };
   }
 
   function renderCeoPulseDeck(pulse) {
@@ -109144,6 +109614,29 @@
     } else if (STATE.view !== 'daily_ops' && window.MFG_ASK && typeof window.MFG_ASK.stopBriefingIfActive === 'function') {
       window.MFG_ASK.stopBriefingIfActive();
     }
+    if (STATE.view === 'overview' && window.MFG_ASK) {
+      const psBtn = container.querySelector('[data-ceo-period-summary]');
+      const vbBtn = container.querySelector('[data-ceo-variance-brief]');
+      if (typeof window.MFG_ASK.rebindPeriodSummaryButton === 'function') {
+        window.MFG_ASK.rebindPeriodSummaryButton(psBtn, vbBtn);
+      }
+      if (psBtn && typeof window.MFG_ASK.speakPeriodSummary === 'function') {
+        psBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.MFG_ASK.speakPeriodSummary(psBtn);
+        });
+      }
+      if (vbBtn && typeof window.MFG_ASK.togglePeriodVariance === 'function') {
+        vbBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          window.MFG_ASK.togglePeriodVariance(vbBtn);
+        });
+      }
+    } else if (STATE.view !== 'overview' && window.MFG_ASK && typeof window.MFG_ASK.stopPeriodSummaryIfActive === 'function') {
+      window.MFG_ASK.stopPeriodSummaryIfActive();
+    }
     if (STATE.view === 'statements' && window.MFG_RDL && typeof window.MFG_RDL.wireStatementsEvents === 'function') {
       window.MFG_RDL.wireStatementsEvents(container, SEED, STATE, renderApp);
     } else {
@@ -110431,6 +110924,7 @@
         getCompanyCatalog,
         getActiveIndustry,
         renderIndustryDailyOps,
+        computeCeoPeriodBridgeSnapshot,
         getKPI,
         getModel,
         filterRecords,
@@ -111940,6 +112434,7 @@
       };
     },
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
+    computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     getActiveIndustry: typeof getActiveIndustry === 'function' ? getActiveIndustry : null,
     syncIndustrySidebarDom: typeof syncIndustrySidebarDom === 'function' ? syncIndustrySidebarDom : null,
     selectCompanyScope: typeof selectCompanyScope === 'function' ? selectCompanyScope : null,
@@ -111970,6 +112465,7 @@
     computeTradingOperations: typeof computeTradingOperations === 'function' ? computeTradingOperations : null,
     computeRealEstateOperations: typeof computeRealEstateOperations === 'function' ? computeRealEstateOperations : null,
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
+    computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,

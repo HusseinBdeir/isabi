@@ -69,6 +69,11 @@
     activeSpeakCtrl: null,
     activeSpeakCaption: '',
     activeBriefingScope: '',
+    activePeriodSummaryScope: '',
+    periodPopoverOpen: false,
+    periodPopoverAnchor: null,
+    periodVarianceCache: new Map(),
+    periodVarianceInflight: new Map(),
     lastSpokenText: '',
     playbackRate: (function () {
       try {
@@ -4055,43 +4060,98 @@
       'Listen to Daily Briefing': 'الاستماع إلى الموجز اليومي',
       'Preparing Briefing...': 'جارٍ تحضير الموجز...',
       'Stop Briefing': 'إيقاف الموجز',
-      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": 'تشغيل موجز صوتي تنفيذي لمدة 20 ثانية لإيرادات اليوم المحدد ورصيد الصندوق والتنبيهات الرقابية النشطة'
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": 'تشغيل موجز صوتي تنفيذي لمدة 20 ثانية لإيرادات اليوم المحدد ورصيد الصندوق والتنبيهات الرقابية النشطة',
+      'Listen to Period Summary': 'الاستماع إلى ملخص الفترة',
+      'Preparing Summary...': 'جارٍ تحضير الملخص...',
+      'Stop Summary': 'إيقاف الملخص',
+      'Replay Summary': 'إعادة تشغيل الملخص',
+      'Variance': 'التباين',
+      'Open grounded Period Variance Commentary': 'فتح تعليق تباين الفترة المستند إلى الدفتر',
+      "Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags": 'تشغيل ملخص صوتي تنفيذي لجسر الأرباح والخسائر وتباين الفترة السابقة والسيولة والتنبيهات الرقابية النشطة',
+      'Period Variance Commentary': 'تعليق تباين الفترة',
+      'Deterministic Ledger': 'دفتر محاسبي حتمي',
+      'AI Variance Brief': 'تحليل التباين الذكي',
+      'Ask Follow-Up': 'سؤال متابعة',
+      'Period Revenue': 'إيرادات الفترة',
+      'Cash & AR': 'السيولة والذمم',
+      'Control Flags': 'ضوابط الرقابة'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
       'Preparing Briefing...': 'Préparation du briefing...',
       'Stop Briefing': 'Arrêter le briefing',
-      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": "Écouter un résumé vocal exécutif de 20 secondes sur le chiffre d'affaires du jour, la caisse et les alertes Sentinel actives"
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": "Écouter un résumé vocal exécutif de 20 secondes sur le chiffre d'affaires du jour, la caisse et les alertes Sentinel actives",
+      'Listen to Period Summary': 'Écouter le bilan de période',
+      'Preparing Summary...': 'Préparation du bilan...',
+      'Stop Summary': 'Arrêter le bilan',
+      'Replay Summary': 'Réécouter le bilan',
+      'Variance': 'Écart',
+      'Open grounded Period Variance Commentary': "Ouvrir l'analyse d'écart de la période",
+      "Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags": "Écouter un bilan vocal exécutif du pont P&L, de l'écart de période, de la trésorerie et des alertes Sentinel actives",
+      'Period Variance Commentary': "Analyse d'écart de la période",
+      'Deterministic Ledger': 'Grand livre déterministe',
+      'AI Variance Brief': "Synthèse d'écart IA",
+      'Ask Follow-Up': 'Question de suivi',
+      'Period Revenue': 'Revenu de période',
+      'Cash & AR': 'Trésorerie & Créances',
+      'Control Flags': 'Contrôles Sentinel'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
+  }
+
+  function isExecBriefBtn(btn) {
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
     if (!btn) return;
     ensureDailyBriefingI18nRegistered();
+    const isPeriodBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-ceo-period-summary'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = mode === 'speaking'
-      ? 'Stop Briefing'
-      : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing');
+    const enLabel = isPeriodBtn
+      ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
+      : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing'));
+    const lblCls = isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl';
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
-    btn.innerHTML = `${icoHtml}<span class="dops-brief-lbl">${esc(enLabel)}</span>`;
+    btn.innerHTML = `${icoHtml}<span class="${lblCls}">${esc(enLabel)}</span>`;
     if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
       try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+    }
+    syncCeoPopoverAudioButton();
+  }
+
+  function syncCeoPopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('ceoPeriodSummaryPopover');
+    if (!pop) return;
+    const spkBtn = pop.querySelector('[data-ceo-pv-speak]');
+    if (!spkBtn) return;
+    const isPeriodActive = Boolean(
+      _chatState.activePeriodSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ceo-period-summary'))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const enLbl = isPeriodActive ? 'Stop Summary' : 'Replay Summary';
+    const ico = isPeriodActive ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    spkBtn.classList.toggle('is-speaking', isPeriodActive);
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
     }
   }
 
@@ -4109,7 +4169,7 @@
 
   function resetSpeakButtonUi(btn) {
     if (!btn) return;
-    if (btn.hasAttribute && btn.hasAttribute('data-dops-briefing')) {
+    if (isExecBriefBtn(btn)) {
       applyBriefingButtonDomState(btn, 'idle');
       return;
     }
@@ -4124,6 +4184,7 @@
       const isPlayingInChat = Boolean(
         !_chatState.liveVoiceMode &&
         !_chatState.activeBriefingScope &&
+        !_chatState.activePeriodSummaryScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4139,6 +4200,7 @@
       }
     }
     syncVoiceModeDeckUi();
+    syncCeoPopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4146,12 +4208,13 @@
       try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
       _chatState.activeSpeakCtrl = null;
     }
+    _chatState.activeBriefingScope = '';
+    _chatState.activePeriodSummaryScope = '';
     if (_chatState.activeSpeakBtn) {
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
     }
     _chatState.activeSpeakTurnIdx = -1;
-    _chatState.activeBriefingScope = '';
     _chatState.lastSpokenText = '';
     _chatState.activeSpeakCaption = '';
     _chatState.activeAudioPaused = false;
@@ -4828,7 +4891,7 @@
       _chatState.activeAudioProgress = 0.08;
       if (btnEl) {
         _chatState.activeSpeakBtn = btnEl;
-        if (btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing')) {
+        if (isExecBriefBtn(btnEl)) {
           applyBriefingButtonDomState(btnEl, 'speaking');
         } else {
           btnEl.classList.remove('is-loading');
@@ -4839,11 +4902,12 @@
       syncInlineAudioPlayerBar();
 
       let idx = 0;
-      const wasDops = Boolean(btnEl && btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing'));
+      const wasDops = isExecBriefBtn(btnEl);
       const clearFallbackUi = (completedNaturally) => {
         const curBtn = _chatState.activeSpeakBtn || btnEl;
         _chatState.activeSpeakBtn = null;
         _chatState.activeBriefingScope = '';
+        _chatState.activePeriodSummaryScope = '';
         _chatState.lastSpokenText = '';
         _chatState.activeSpeakCaption = '';
         _chatState.activeAudioPaused = false;
@@ -4959,7 +5023,7 @@
       ? buildSpokenInsightScript(rawHtmlOrTurn, safeInputLang)
       : buildSpokenInsightScript(String(rawHtmlOrTurn || ''), safeInputLang);
     if (!plain) return false;
-    const isBriefBtn = Boolean(btnEl && btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing'));
+    const isBriefBtn = isExecBriefBtn(btnEl);
     const isAutoTest = Boolean((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_TTS);
     if (isAutoTest) {
       _chatState.lastSpokenText = plain;
@@ -5022,7 +5086,7 @@
         _chatState.activeAudioEl = audioEl;
         _chatState.activeAudioPaused = false;
         if (curBtn) {
-          if (curBtn.hasAttribute && curBtn.hasAttribute('data-dops-briefing')) {
+          if (isExecBriefBtn(curBtn)) {
             applyBriefingButtonDomState(curBtn, 'speaking');
           } else {
             curBtn.classList.remove('is-loading');
@@ -5042,9 +5106,10 @@
         audioEl.onended = () => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
           const endBtn = _chatState.activeSpeakBtn || curBtn;
-          const wasBrief = Boolean(endBtn && endBtn.hasAttribute && endBtn.hasAttribute('data-dops-briefing'));
+          const wasBrief = isExecBriefBtn(endBtn);
           _chatState.activeSpeakBtn = null;
           _chatState.activeBriefingScope = '';
+          _chatState.activePeriodSummaryScope = '';
           _chatState.lastSpokenText = '';
           _chatState.activeSpeakCaption = '';
           _chatState.activeAudioPaused = false;
@@ -5373,6 +5438,940 @@
   function stopBriefingIfActive() {
     if (_chatState.activeBriefingScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-dops-briefing'))) {
       stopActivePlayback();
+    }
+  }
+
+  // ============================================================================
+  // 1-TAP CEO PERIOD SUMMARY & GROUNDED GEMINI-3.5-FLASH-LITE VARIANCE COMMENTARY
+  // ============================================================================
+  const PERIOD_SUMMARY_DOMAIN_SPEC = {
+    'Manufacturing': {
+      en: { rev: 'sales revenue', direct: 'raw material and haulage cost', opex: 'operating expenses', profit: 'operating profit', sing: 'dispatch', plur: 'dispatches' },
+      ar: { rev: 'إيرادات المبيعات', direct: 'تكلفة المواد الأولية والنقل', opex: 'المصاريف التشغيلية', profit: 'الربح التشغيلي', sing: 'نقلة', plur: 'نقلات' },
+      fr: { rev: "le chiffre d'affaires", verb: "s'élève à", direct: 'le coût matières et transport', opex: "les charges d'exploitation", profit: "le résultat d'exploitation", sing: 'expédition', plur: 'expéditions' }
+    },
+    'Holding & Treasury': {
+      en: { rev: 'consolidated group revenue', direct: 'direct cost of sales', opex: 'group overhead and payroll', profit: 'consolidated operating profit', sing: 'paired flow', plur: 'paired flows' },
+      ar: { rev: 'إيرادات المجموعة الموحدة', direct: 'التكلفة المباشرة للمبيعات', opex: 'المصاريف الإدارية والرواتب', profit: 'الربح التشغيلي الموحد', sing: 'مطابقة بينية', plur: 'مطابقات بينية' },
+      fr: { rev: 'le revenu consolidé du groupe', verb: "s'élève à", direct: 'le coût direct des ventes', opex: 'les frais généraux et salaires', profit: "le résultat d'exploitation consolidé", sing: 'flux lettré', plur: 'flux lettrés' }
+    },
+    'Hospitality & Resorts': {
+      en: { rev: 'resort and membership revenue', direct: 'kitchen and cellar usage', opex: 'energy and maintenance cost', profit: 'resort operating profit', sing: 'service entry', plur: 'service entries' },
+      ar: { rev: 'إيرادات المنتجعات والاشتراكات', direct: 'استهلاك المطبخ والمخزون', opex: 'تكلفة الطاقة والصيانة', profit: 'الربح التشغيلي للمنتجعات', sing: 'عملية تشغيلية', plur: 'عمليات تشغيلية' },
+      fr: { rev: 'les revenus des resorts et abonnements', verb: "s'élèvent à", direct: 'la consommation cuisine et cave', opex: "les coûts d'énergie et maintenance", profit: "le résultat d'exploitation hôtelier", sing: 'opération', plur: 'opérations' }
+    },
+    'Automotive & Heavy Trading': {
+      en: { rev: 'invoiced vehicle and parts revenue', direct: 'landed cost of goods', opex: 'showroom and customs overhead', profit: 'trading operating profit', sing: 'invoice', plur: 'invoices' },
+      ar: { rev: 'إيرادات مبيعات الشاحنات وقطع الغيار', direct: 'التكلفة الواصلة للبضاعة', opex: 'مصاريف المعرض والتخليص', profit: 'الربح التشغيلي للتجارة', sing: 'فاتورة', plur: 'فواتير' },
+      fr: { rev: 'le chiffre facturé véhicules et pièces', verb: "s'élève à", direct: 'le coût de revient dédouané', opex: 'les charges showroom et douane', profit: "le résultat d'exploitation négoce", sing: 'facture', plur: 'factures' }
+    },
+    'Real Estate & Property': {
+      en: { rev: 'contracted rent roll and property revenue', direct: 'fit-out and work order cost', opex: 'property tax and registry charges', profit: 'net operating income', sing: 'active lease', plur: 'active leases' },
+      ar: { rev: 'عوائد الإيجارات والمبيعات العقارية', direct: 'تكاليف التجهيز والصيانة', opex: 'الرسوم العقارية والإدارية', profit: 'صافي الدخل التشغيلي', sing: 'عقد إيجار', plur: 'عقود إيجار' },
+      fr: { rev: 'les loyers contractuels et ventes', verb: "s'élèvent à", direct: "les travaux d'aménagement", opex: 'les taxes foncières et frais', profit: "le revenu net d'exploitation", sing: 'bail actif', plur: 'baux actifs' }
+    },
+    'Insurance & Brokerage': {
+      en: { rev: 'gross written premium', direct: 'client commission rebates', opex: 'brokerage desk expenses', profit: 'brokerage operating profit', sing: 'policy', plur: 'policies' },
+      ar: { rev: 'إجمالي الأقساط المكتتبة', direct: 'حسومات العملاء على العمولات', opex: 'مصاريف مكتب الوساطة', profit: 'الربح التشغيلي للوساطة', sing: 'بوليصة', plur: 'بوالص' },
+      fr: { rev: 'les primes émises brutes', verb: "s'élèvent à", direct: 'les remises commerciales clients', opex: 'les charges du cabinet de courtage', profit: "le résultat d'exploitation courtage", sing: 'police', plur: 'polices' }
+    }
+  };
+
+  const EN_MONTH_INDEX = {
+    january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3,
+    may: 4, june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7,
+    september: 8, sep: 8, sept: 8, october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11
+  };
+
+  function localizePeriodLabel(rawLabel, lang, forSpeech) {
+    const raw = String(rawLabel || 'All-Time').replace(/[—–→↔]/g, '-').trim();
+    if (!raw || /^all(-time)?$/i.test(raw)) {
+      if (lang === 'ar') return 'كامل الفترة';
+      if (lang === 'fr') return 'Cumul global';
+      return forSpeech ? 'all-time operations' : 'All-Time';
+    }
+    const fyM = raw.match(/^FY\s*(\d{4})$/i);
+    if (fyM) {
+      if (lang === 'ar') return `السنة المالية ${fyM[1]}`;
+      if (lang === 'fr') return `Exercice ${fyM[1]}`;
+      return forSpeech ? `fiscal year ${fyM[1]}` : `FY ${fyM[1]}`;
+    }
+    const moYrM = raw.match(/^([A-Za-z]+)\s+(\d{4})$/);
+    if (moYrM && EN_MONTH_INDEX[moYrM[1].toLowerCase()] !== undefined) {
+      const mIdx = EN_MONTH_INDEX[moYrM[1].toLowerCase()];
+      const yr = Number(moYrM[2]);
+      const dt = new Date(Date.UTC(yr, mIdx, 15));
+      const loc = lang === 'ar' ? 'ar-LB' : (lang === 'fr' ? 'fr-FR' : 'en-US');
+      try {
+        return new Intl.DateTimeFormat(loc, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(dt);
+      } catch (_) {}
+    }
+    const isoM = raw.match(/^(\d{4}-\d{2}-\d{2})$/);
+    if (isoM) return formatSpokenDate(isoM[1], lang);
+    const dmyM = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+    if (dmyM && EN_MONTH_INDEX[dmyM[2].toLowerCase()] !== undefined) {
+      const mIdx = EN_MONTH_INDEX[dmyM[2].toLowerCase()];
+      const iso = `${dmyM[3]}-${String(mIdx + 1).padStart(2, '0')}-${String(Number(dmyM[1])).padStart(2, '0')}`;
+      return formatSpokenDate(iso, lang);
+    }
+    if (/^Week\s+/i.test(raw)) {
+      const rest = raw.replace(/^Week\s+/i, '');
+      const isoPair = rest.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
+      if (isoPair) {
+        const d1 = formatSpokenDate(isoPair[1], lang);
+        const d2 = formatSpokenDate(isoPair[2], lang);
+        if (lang === 'ar') return `الأسبوع من ${d1} إلى ${d2}`;
+        if (lang === 'fr') return `Semaine du ${d1} au ${d2}`;
+        return `Week of ${d1} to ${d2}`;
+      }
+      const dmyPair = rest.match(/^(\d{1,2})\s*([A-Za-z]{3})?\s*-\s*(\d{1,2})\s+([A-Za-z]{3,9})(?:\s+(\d{4}))?/i);
+      if (dmyPair && EN_MONTH_INDEX[(dmyPair[4] || '').toLowerCase()] !== undefined) {
+        const m2 = EN_MONTH_INDEX[dmyPair[4].toLowerCase()];
+        const m1 = dmyPair[2] && EN_MONTH_INDEX[dmyPair[2].toLowerCase()] !== undefined ? EN_MONTH_INDEX[dmyPair[2].toLowerCase()] : m2;
+        const yr = Number(dmyPair[5] || 2026);
+        const loc = lang === 'ar' ? 'ar-LB' : (lang === 'fr' ? 'fr-FR' : 'en-US');
+        try {
+          const fmtShort = new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', timeZone: 'UTC' });
+          const s1 = fmtShort.format(new Date(Date.UTC(yr, m1, Number(dmyPair[1]))));
+          const s2 = fmtShort.format(new Date(Date.UTC(yr, m2, Number(dmyPair[3]))));
+          if (lang === 'ar') return `الأسبوع ${s1} - ${s2} ${yr}`;
+          if (lang === 'fr') return `Semaine ${s1} - ${s2} ${yr}`;
+          return `Week ${s1} - ${s2} ${yr}`;
+        } catch (_) {}
+      }
+      if (lang === 'ar') return `الأسبوع ${rest}`;
+      if (lang === 'fr') return `Semaine ${rest}`;
+    }
+    const spanIso = raw.match(/^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i);
+    if (spanIso) {
+      if (lang === 'ar') return `${spanIso[1]} إلى ${spanIso[2]}`;
+      if (lang === 'fr') return `${spanIso[1]} au ${spanIso[2]}`;
+      return `${spanIso[1]} to ${spanIso[2]}`;
+    }
+    if (lang !== 'en' && typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+      const tr = window.MFG_I18N.t(raw, lang);
+      if (tr) return tr;
+    }
+    return raw;
+  }
+
+  function fmtCompactUsd(val) {
+    const n = Number(val || 0);
+    const abs = Math.abs(n);
+    const sign = n < -0.005 ? '-' : '';
+    if (abs >= 1000000) return `${sign}$${(abs / 1000000).toFixed(2)}M`;
+    if (abs >= 10000) return `${sign}$${(abs / 1000).toFixed(1)}k`;
+    return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+  }
+
+  function computeActivePeriodScopeKey() {
+    const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
+    const coKey = st.company || 'manufacturing-group';
+    const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(coKey) : 'Manufacturing';
+    const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const uid = (user && (user.id || user.username)) || 'anon';
+    return `${ind}|${coKey}|${st.period || 'all'}|${st.dateFrom || ''}|${st.dateTo || ''}|${st.basis || 'tx'}|${uid}`;
+  }
+
+  function buildCeoPeriodSummary(langOverride) {
+    ensureDailyBriefingI18nRegistered();
+    const safeLang = resolveActiveBriefingLang(langOverride);
+    const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
+    const coKey = st.company || 'manufacturing-group';
+    const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(coKey) : 'Manufacturing';
+    const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const scopeKey = computeActivePeriodScopeKey();
+
+    let snap = null;
+    if (_ctx && typeof _ctx.computeCeoPeriodBridgeSnapshot === 'function') {
+      try { snap = _ctx.computeCeoPeriodBridgeSnapshot(coKey, st.period); } catch (_) {}
+    }
+    if (!snap) {
+      const k = (_ctx && typeof _ctx.getKPI === 'function') ? (_ctx.getKPI(coKey) || {}) : {};
+      const rev = Number(k.sales_ttc || 0);
+      const net = Number(k.net_sales || rev);
+      const raw = Number(k.raw_cost || 0);
+      const gm = Number(k.gross_margin != null ? k.gross_margin : (net - raw));
+      const op = Number(k.operating_profit || 0);
+      const opex = Math.max(0, gm - op);
+      const den = Math.max(1, net || rev);
+      snap = {
+        industry: ind,
+        company: coKey,
+        companyLabel: String((_ctx && _ctx.COMPANY_LABELS && _ctx.COMPANY_LABELS[coKey]) || ind),
+        grain: st.dateGrain || 'all',
+        basis: st.basis || 'tx',
+        periodKey: String(st.period || 'all'),
+        periodLabel: 'All-Time',
+        compareLabel: '',
+        isAllTime: true,
+        cur: { revUsd: rev, netSalesUsd: net, directCostUsd: raw, grossMarginUsd: gm, gmPct: (gm / den) * 100, opExUsd: opex, opProfitUsd: op, opMarginPct: (op / den) * 100, txCount: Number(k.loads || 0), hasActivity: rev > 0 },
+        prev: null,
+        books: { cashTillUsd: Number(k.cash_till || 0), arBalanceUsd: Number(k.ar_balance || 0), arOverdueUsd: Number(k.ar_overdue || 0) },
+        topDriver: null,
+        sentinels: { openCount: 0, critCount: 0, topTitle: '' }
+      };
+    }
+
+    const rawCoBase = String(snap.companyLabel || ind)
+      .replace(/\s*\([^)]*\)\s*/g, '')
+      .trim();
+    const rawCoStripped = rawCoBase.replace(/^All\s+/i, '').trim() || ind;
+    const i18nFn = (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function')
+      ? window.MFG_I18N.t.bind(window.MFG_I18N)
+      : null;
+    const trCo = (safeLang !== 'en' && i18nFn)
+      ? (i18nFn(rawCoStripped, safeLang) || i18nFn(rawCoBase, safeLang) || i18nFn(ind, safeLang) || rawCoStripped)
+      : rawCoStripped;
+    const scopeName = cleanOut(String(trCo || ind).replace(/[—–→↔]/g, ' ').replace(/\s{2,}/g, ' ').trim()) || ind;
+    const domSpec = (PERIOD_SUMMARY_DOMAIN_SPEC[ind] || PERIOD_SUMMARY_DOMAIN_SPEC['Manufacturing'])[safeLang]
+      || PERIOD_SUMMARY_DOMAIN_SPEC['Manufacturing'].en;
+
+    const cur = snap.cur || {};
+    const prevObj = snap.prev || null;
+    const isMomentum = Boolean(snap.isAllTime && prevObj && prevObj.isMomentumPair && prevObj.latestWindow);
+    const deltaCur = isMomentum ? prevObj.latestWindow : cur;
+    const deltaPrev = prevObj;
+    const hasPrior = Boolean(deltaPrev && (deltaPrev.hasActivity || Math.abs(Number(deltaPrev.revUsd || 0)) > 0.01 || Math.abs(Number(deltaPrev.opProfitUsd || 0)) > 0.01));
+    const meaningfulBothRev = Boolean(hasPrior && Number(deltaPrev.revUsd || 0) >= 500 && Number(deltaCur.revUsd || 0) >= 500);
+
+    const revDeltaUsd = hasPrior ? Math.round(Number(deltaCur.revUsd || 0) - Number(deltaPrev.revUsd || 0)) : null;
+    const revDeltaPct = (hasPrior && Number(deltaPrev.revUsd || 0) >= 500)
+      ? Math.max(-99.9, Math.min(999.9, Number((((Number(deltaCur.revUsd || 0) - Number(deltaPrev.revUsd || 0)) / Number(deltaPrev.revUsd)) * 100).toFixed(1))))
+      : null;
+    const gmDeltaPts = meaningfulBothRev
+      ? Math.max(-99.9, Math.min(99.9, Number((Number(deltaCur.gmPct || 0) - Number(deltaPrev.gmPct || 0)).toFixed(1))))
+      : null;
+    const opProfitDeltaUsd = hasPrior ? Math.round(Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) : null;
+    const opProfitDeltaPct = (hasPrior && Math.abs(Number(deltaPrev.opProfitUsd || 0)) >= 500)
+      ? Math.max(-999.9, Math.min(999.9, Number((((Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) / Math.abs(Number(deltaPrev.opProfitUsd))) * 100).toFixed(1))))
+      : null;
+
+    const locPeriodSpeech = localizePeriodLabel(snap.periodLabel, safeLang, true);
+    const locPeriodUi = localizePeriodLabel(snap.periodLabel, safeLang, false);
+    const locCompareUi = snap.compareLabel ? localizePeriodLabel(snap.compareLabel, safeLang, false) : '';
+    const locLatestMoUi = (isMomentum && prevObj.latestLabel) ? localizePeriodLabel(prevObj.latestLabel, safeLang, false) : '';
+
+    const revUsdRound = Math.round(Number(cur.revUsd || 0));
+    const directUsdRound = Math.round(Number(cur.directCostUsd || 0));
+    const gmUsdRound = Math.round(Number(cur.grossMarginUsd || 0));
+    const opExUsdRound = Math.round(Number(cur.opExUsd || 0));
+    const opProfUsdRound = Math.round(Number(cur.opProfitUsd || 0));
+    const gmPctRound = Number(Number(cur.gmPct || 0).toFixed(1));
+    const opPctRound = Number(Number(cur.opMarginPct || 0).toFixed(1));
+    const txCount = Math.round(Number(cur.txCount || 0));
+
+    const cashTillRound = canViewBooks ? Math.round(Number(snap.books && snap.books.cashTillUsd || 0)) : null;
+    const arBalRound = canViewBooks ? Math.round(Number(snap.books && snap.books.arBalanceUsd || 0)) : null;
+    const openCount = Number(snap.sentinels && snap.sentinels.openCount || 0);
+    const critCount = Number(snap.sentinels && snap.sentinels.critCount || 0);
+    const topSentinelTitle = snap.sentinels && snap.sentinels.topTitle ? sanitizeSpokenText(snap.sentinels.topTitle, safeLang) : '';
+    const topDriverName = snap.topDriver && snap.topDriver.name ? sanitizeSpokenText(snap.topDriver.name, safeLang) : '';
+
+    const revMoney = formatSpokenMoney(revUsdRound, safeLang);
+    const gmMoney = formatSpokenMoney(gmUsdRound, safeLang);
+    const opExMoney = formatSpokenMoney(opExUsdRound, safeLang);
+    const opProfMoney = formatSpokenMoney(opProfUsdRound, safeLang);
+    const directMoney = formatSpokenMoney(directUsdRound, safeLang);
+
+    const bullets = [];
+    const speechParts = [];
+
+    if (safeLang === 'ar') {
+      const txClause = txCount > 0 ? ` عبر ${txCount.toLocaleString('en-US')} ${txCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+      let varClauseSpeech = '';
+      let varClauseBullet = '';
+      if (revDeltaPct !== null) {
+        const dirWord = revDeltaPct > 0 ? 'بارتفاع' : (revDeltaPct < 0 ? 'بانخفاض' : 'باستقرار');
+        const pctAbs = Math.abs(revDeltaPct).toFixed(1);
+        const cmpRef = isMomentum ? `في ${locLatestMoUi} مقارنة بـ ${locCompareUi}` : `مقارنة بـ ${locCompareUi}`;
+        varClauseSpeech = revDeltaPct === 0 ? `، دون تغيير ${cmpRef}` : `، ${dirWord} ${pctAbs} بالمئة ${cmpRef}`;
+        varClauseBullet = revDeltaPct === 0 ? ` (مستقر ${cmpRef})` : ` (${revDeltaPct > 0 ? '+' : ''}${revDeltaPct.toFixed(1)}% ${cmpRef})`;
+      }
+      speechParts.push(`ملخص الفترة لـ ${scopeName} (${locPeriodUi}): بلغت ${domSpec.rev} ${revMoney}${txClause}${varClauseSpeech}.`);
+      bullets.push(`بلغت ${domSpec.rev} ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `، بقيادة ${topDriverName}` : ''}.`);
+
+      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} نقطة في الهامش)`
+        : '';
+      speechParts.push(`سجل مجمل الربح ${gmMoney} بنسبة ${gmPctRound} بالمئة بعد ${domSpec.direct} بقيمة ${directMoney}، ليبلغ ${domSpec.profit} ${opProfMoney} بنسبة ${opPctRound} بالمئة بعد خصم ${domSpec.opex} بقيمة ${opExMoney}.`);
+      bullets.push(`مجمل الربح ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}، وبلغ ${domSpec.profit} ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) بعد ${domSpec.opex} ${fmtCompactUsd(opExUsdRound)}.`);
+
+      if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'ar');
+        const arSp = formatSpokenMoney(arBalRound, 'ar');
+        if (openCount === 0) {
+          speechParts.push(`رصيد السيولة النقدية ${tillSp} مع ذمم مدينة مفتوحة بقيمة ${arSp}، وجميع الضوابط الرقابية سليمة.`);
+          bullets.push(`السيولة النقدية ${fmtCompactUsd(cashTillRound)} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ جميع الضوابط الرقابية سليمة (0 تنبيهات).`);
+        } else {
+          speechParts.push(`رصيد السيولة النقدية ${tillSp} مع ذمم مدينة بقيمة ${arSp}، وتوجد ${openCount} تنبيهات رقابية نشطة أبرزها ${topSentinelTitle}.`);
+          bullets.push(`السيولة النقدية ${fmtCompactUsd(cashTillRound)} والذمم المدينة ${fmtCompactUsd(arBalRound)}؛ ${openCount} تنبيهات رقابية نشطة (${topSentinelTitle}).`);
+        }
+      } else if (openCount === 0) {
+        speechParts.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
+        bullets.push('جميع الضوابط الرقابية التشغيلية سليمة مع صفر تنبيهات نشطة.');
+      } else {
+        speechParts.push(`توجد ${openCount} تنبيهات رقابية نشطة تتطلب المراجعة، أبرزها ${topSentinelTitle}.`);
+        bullets.push(`${openCount} تنبيهات رقابية نشطة تتطلب المراجعة (${topSentinelTitle}).`);
+      }
+    } else if (safeLang === 'fr') {
+      const txClause = txCount > 0 ? ` sur ${txCount.toLocaleString('en-US')} ${txCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+      let varClauseSpeech = '';
+      let varClauseBullet = '';
+      if (revDeltaPct !== null) {
+        const dirWord = revDeltaPct > 0 ? 'en hausse de' : (revDeltaPct < 0 ? 'en repli de' : 'stable');
+        const pctAbs = Math.abs(revDeltaPct).toFixed(1);
+        const cmpRef = isMomentum ? `en ${locLatestMoUi} face à ${locCompareUi}` : `par rapport à ${locCompareUi}`;
+        varClauseSpeech = revDeltaPct === 0 ? `, stable ${cmpRef}` : `, ${dirWord} ${pctAbs} pour cent ${cmpRef}`;
+        varClauseBullet = revDeltaPct === 0 ? ` (stable ${cmpRef})` : ` (${revDeltaPct > 0 ? '+' : ''}${revDeltaPct.toFixed(1)}% ${cmpRef})`;
+      }
+      speechParts.push(`Bilan de période pour ${scopeName} (${locPeriodUi}) : ${domSpec.rev} ${domSpec.verb || "s'élève à"} ${revMoney}${txClause}${varClauseSpeech}.`);
+      bullets.push(`Volume : ${domSpec.rev} à ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `, porté par ${topDriverName}` : ''}.`);
+
+      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
+        : '';
+      speechParts.push(`La marge brute atteint ${gmMoney} à ${gmPctRound} pour cent après ${directMoney} pour ${domSpec.direct}, générant ${opProfMoney} pour ${domSpec.profit} à ${opPctRound} pour cent après ${opExMoney} pour ${domSpec.opex}.`);
+      bullets.push(`Pont P&L : marge brute de ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt} et résultat de ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) après ${fmtCompactUsd(opExUsdRound)} de charges.`);
+
+      if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'fr');
+        const arSp = formatSpokenMoney(arBalRound, 'fr');
+        if (openCount === 0) {
+          speechParts.push(`La trésorerie s'établit à ${tillSp} avec ${arSp} de créances clients, et tous les contrôles Sentinel sont au vert.`);
+          bullets.push(`Trésorerie à ${fmtCompactUsd(cashTillRound)} et créances à ${fmtCompactUsd(arBalRound)} ; 0 alerte Sentinel active.`);
+        } else {
+          speechParts.push(`La trésorerie s'établit à ${tillSp} avec ${arSp} de créances, et ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, dont ${topSentinelTitle}.`);
+          bullets.push(`Trésorerie à ${fmtCompactUsd(cashTillRound)} et créances à ${fmtCompactUsd(arBalRound)} ; ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel (${topSentinelTitle}).`);
+        }
+      } else if (openCount === 0) {
+        speechParts.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
+        bullets.push('Contrôles opérationnels Sentinel validés avec 0 alerte active.');
+      } else {
+        speechParts.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} à vérifier, à commencer par ${topSentinelTitle}.`);
+        bullets.push(`${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''} (${topSentinelTitle}).`);
+      }
+    } else {
+      const txClause = txCount > 0 ? ` across ${txCount.toLocaleString('en-US')} ${txCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+      let varClauseSpeech = '';
+      let varClauseBullet = '';
+      if (revDeltaPct !== null) {
+        const dirWord = revDeltaPct > 0 ? 'up' : (revDeltaPct < 0 ? 'down' : 'flat');
+        const pctAbs = Math.abs(revDeltaPct).toFixed(1);
+        const cmpRef = isMomentum ? `in ${locLatestMoUi} versus ${locCompareUi}` : `versus ${locCompareUi}`;
+        varClauseSpeech = revDeltaPct === 0 ? `, flat ${cmpRef}` : `, ${dirWord} ${pctAbs} percent ${cmpRef}`;
+        varClauseBullet = revDeltaPct === 0 ? ` (flat ${cmpRef})` : ` (${revDeltaPct > 0 ? '+' : ''}${revDeltaPct.toFixed(1)}% ${cmpRef})`;
+      }
+      speechParts.push(`Period summary for ${scopeName}, ${locPeriodSpeech}: ${domSpec.rev} reached ${revMoney}${txClause}${varClauseSpeech}.`);
+      bullets.push(`Top-line: ${domSpec.rev} at ${fmtCompactUsd(revUsdRound)}${txClause}${varClauseBullet}${topDriverName ? `, led by ${topDriverName}` : ''}.`);
+
+      const gmShiftTxt = (gmDeltaPts !== null && Math.abs(gmDeltaPts) >= 0.1)
+        ? ` (${gmDeltaPts > 0 ? '+' : ''}${gmDeltaPts.toFixed(1)} pts)`
+        : '';
+      speechParts.push(`Gross margin stood at ${gmMoney} at ${gmPctRound} percent after ${directMoney} in ${domSpec.direct}, delivering ${opProfMoney} in ${domSpec.profit} at ${opPctRound} percent after ${opExMoney} in ${domSpec.opex}.`);
+      bullets.push(`P&L bridge: gross margin ${fmtCompactUsd(gmUsdRound)} (${gmPctRound}%)${gmShiftTxt}, yielding ${fmtCompactUsd(opProfUsdRound)} (${opPctRound}%) ${domSpec.profit} after ${fmtCompactUsd(opExUsdRound)} ${domSpec.opex}.`);
+
+      if (canViewBooks) {
+        const tillSp = formatSpokenMoney(cashTillRound, 'en');
+        const arSp = formatSpokenMoney(arBalRound, 'en');
+        if (openCount === 0) {
+          speechParts.push(`Cash till stands at ${tillSp} alongside ${arSp} in open receivables, with all Sentinel controls clear.`);
+          bullets.push(`Liquidity & controls: cash till ${fmtCompactUsd(cashTillRound)}, open receivables ${fmtCompactUsd(arBalRound)}, and 0 active Sentinel flags.`);
+        } else {
+          speechParts.push(`Cash till stands at ${tillSp} alongside ${arSp} in open receivables, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
+          bullets.push(`Liquidity & controls: cash till ${fmtCompactUsd(cashTillRound)}, open receivables ${fmtCompactUsd(arBalRound)}, and ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} (${topSentinelTitle}).`);
+        }
+      } else if (openCount === 0) {
+        speechParts.push('All Sentinel operational controls are clear with zero active flags.');
+        bullets.push('Operational controls: all Sentinel watchdogs passing with 0 active flags.');
+      } else {
+        speechParts.push(`${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review, led by ${topSentinelTitle}.`);
+        bullets.push(`Operational controls: ${openCount} active Sentinel flag${openCount === 1 ? '' : 's'} require review (${topSentinelTitle}).`);
+      }
+    }
+
+    const text = cleanOut(speechParts.join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+    const windowSubtitle = locCompareUi
+      ? (isMomentum
+          ? `${scopeName} · ${locPeriodUi} (${locLatestMoUi} / ${locCompareUi})`
+          : `${scopeName} · ${locPeriodUi} / ${locCompareUi}`)
+      : `${scopeName} · ${locPeriodUi}`;
+
+    return {
+      scopeKey,
+      lang: safeLang,
+      industry: ind,
+      company: coKey,
+      companyLabel: scopeName,
+      grain: snap.grain || 'all',
+      basis: snap.basis || 'tx',
+      periodKey: snap.periodKey || 'all',
+      periodLabel: locPeriodUi,
+      compareLabel: locCompareUi,
+      isAllTime: Boolean(snap.isAllTime),
+      isMomentumPair: isMomentum,
+      windowSubtitle,
+      canViewBooks,
+      cur: {
+        revUsd: revUsdRound,
+        directCostUsd: directUsdRound,
+        grossMarginUsd: gmUsdRound,
+        gmPct: gmPctRound,
+        opExUsd: opExUsdRound,
+        opProfitUsd: opProfUsdRound,
+        opMarginPct: opPctRound,
+        txCount
+      },
+      deltas: {
+        hasPrior,
+        revDeltaUsd,
+        revDeltaPct,
+        gmDeltaPts,
+        opProfitDeltaUsd,
+        opProfitDeltaPct
+      },
+      books: canViewBooks ? { cashTillUsd: cashTillRound, arBalanceUsd: arBalRound } : null,
+      topDriver: topDriverName || '',
+      openSentinelCount: openCount,
+      critSentinelCount: critCount,
+      topSentinelTitle,
+      bullets,
+      text
+    };
+  }
+
+  function sanitizeVarianceBulletText(rawStr, canViewBooks) {
+    let s = cleanOut(String(rawStr || ''))
+      .replace(/^[•\-*\d.)\s]+/, '')
+      .replace(/[—–→↔]/g, ', ')
+      .replace(/\b(?:THEO|TTC|RDL|Z-Read)\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!canViewBooks && /\b(cash\s*till|receivables|ar_balance|caisse|السيولة\s*النقدية|رصيد\s*الصندوق)\b/i.test(s)) {
+      return '';
+    }
+    return s;
+  }
+
+  async function requestPeriodVarianceCommentary(detSummary, opts = {}) {
+    const sum = detSummary || buildCeoPeriodSummary();
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    if (_chatState.periodVarianceCache.has(cacheKey) && !opts.forceRefresh) {
+      return _chatState.periodVarianceCache.get(cacheKey);
+    }
+    const isAutoTest = Boolean((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_LLM);
+    if (isAutoTest) {
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    }
+    if (_chatState.periodVarianceInflight.has(cacheKey)) {
+      return _chatState.periodVarianceInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar' ? 'Arabic (Modern Standard Business Arabic)' : (sum.lang === 'fr' ? 'French (Executive Financial French)' : 'English');
+    const groundedPayload = {
+      entity: sum.companyLabel,
+      industry: sum.industry,
+      period: sum.periodLabel,
+      comparedAgainst: sum.compareLabel || null,
+      revenueUsd: sum.cur.revUsd,
+      transactions: sum.cur.txCount,
+      directCostUsd: sum.cur.directCostUsd,
+      grossMarginUsd: sum.cur.grossMarginUsd,
+      grossMarginPct: sum.cur.gmPct,
+      opExUsd: sum.cur.opExUsd,
+      operatingProfitUsd: sum.cur.opProfitUsd,
+      operatingMarginPct: sum.cur.opMarginPct,
+      revenueDeltaPct: sum.deltas.revDeltaPct,
+      grossMarginDeltaPts: sum.deltas.gmDeltaPts,
+      operatingProfitDeltaUsd: sum.deltas.opProfitDeltaUsd,
+      leadDriver: sum.topDriver || null,
+      activeSentinelFlags: sum.openSentinelCount,
+      leadSentinel: sum.topSentinelTitle || null
+    };
+    if (sum.canViewBooks && sum.books) {
+      groundedPayload.cashTillUsd = sum.books.cashTillUsd;
+      groundedPayload.openReceivablesUsd = sum.books.arBalanceUsd;
+    }
+
+    const sysPrompt = [
+      'You are an executive CFO variance analyst inside ISABI Command Center.',
+      `Write all bullet text strictly in ${langName}.`,
+      'Return ONLY valid JSON with the exact English property name "bullets" containing EXACTLY 3 separate string items: {"bullets":["sentence 1","sentence 2","sentence 3"]}. Never combine them into a single string, and do NOT rename the JSON key "bullets".',
+      'Rules:',
+      '1. Every dollar figure, percentage, and count MUST come verbatim from the supplied JSON ledger facts. Never invent or recompute numbers.',
+      '2. Bullet 1 covers revenue volume, lead driver, and period-over-period trajectory.',
+      '3. Bullet 2 explains the P&L bridge spread (gross margin vs direct cost and operating profit after OpEx).',
+      sum.canViewBooks
+        ? '4. Bullet 3 covers cash liquidity, open receivables, and active Sentinel control posture.'
+        : '4. Bullet 3 covers operational execution and Sentinel control posture (never mention cash till or receivables).',
+      '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, or internal system codes.'
+    ].join('\n');
+    const usrPrompt = `Grounded deterministic period ledger JSON:\n${JSON.stringify(groundedPayload)}`;
+
+    const runPromise = (async () => {
+      let rawReply = '';
+      let debugNote = '';
+      let usedModel = 'gemini-3.5-flash-lite';
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+      if (isLocalHost || window.ISABI_LOCAL_API) {
+        const base = String(window.ISABI_LOCAL_API || '').replace(/\/$/, '');
+        for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          try {
+            const rLoc = await fetch(`${base}/api/ask`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents
+              })
+            });
+            if (rLoc.ok) {
+              const jLoc = await rLoc.json();
+              if (jLoc && jLoc.ok && jLoc.rawReply) {
+                rawReply = String(jLoc.rawReply);
+                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+              } else if (jLoc) {
+                debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
+              }
+            } else {
+              debugNote = `loc_http_${rLoc.status}`;
+            }
+          } catch (eLoc) {
+            debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          }
+        }
+      }
+
+      if (!rawReply) {
+        const askCfg = window.MFG_ASK_CFG || {};
+        let flowUrl = '';
+        let flowKey = '';
+        try {
+          if (askCfg.u && askCfg.k) {
+            flowUrl = atob(askCfg.u);
+            flowKey = atob(askCfg.k);
+          }
+        } catch (_) {}
+        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 10000);
+          try {
+            const rCloud = await fetch(flowUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+              body: JSON.stringify({
+                key: flowKey,
+                op: 'ask',
+                surface: 'command_center',
+                q: 'Period Variance Commentary',
+                lang: sum.lang,
+                industry: sum.companyLabel,
+                currency: 'USD',
+                period: sum.periodLabel,
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents,
+                messages: [
+                  { role: 'system', content: sysPrompt },
+                  { role: 'user', content: usrPrompt }
+                ]
+              }),
+              signal: ctrl.signal
+            });
+            clearTimeout(timer);
+            if (rCloud.ok) {
+              const jCloud = await rCloud.json();
+              if (jCloud && jCloud.rawReply) {
+                rawReply = String(jCloud.rawReply);
+                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
+              }
+            }
+          } catch (_) {
+            clearTimeout(timer);
+          }
+        }
+      }
+
+      if (rawReply) {
+        try {
+          const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (_) {
+            const fb = cleaned.indexOf('{');
+            const lb = cleaned.lastIndexOf('}');
+            if (fb >= 0 && lb > fb) parsed = JSON.parse(cleaned.slice(fb, lb + 1));
+          }
+          const rawBulletArr = Array.isArray(parsed && parsed.bullets)
+            ? parsed.bullets
+            : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
+          const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          let candBullets = Array.isArray(rawBulletArr)
+            ? rawBulletArr.map(b => sanitizeVarianceBulletText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            : [];
+          if (candBullets.length === 1 && candBullets[0].length >= 80) {
+            const splitParts = candBullets[0]
+              .split(/(?<=[.!?؟])\s+/)
+              .map(s => sanitizeVarianceBulletText(s, sum.canViewBooks))
+              .filter(s => s.length >= 12);
+            if (splitParts.length >= 2) candBullets = splitParts;
+          }
+          candBullets = candBullets.slice(0, 3);
+          if (candBullets.length >= 2) {
+            const resObj = {
+              ok: true,
+              source: 'gemini',
+              model: usedModel,
+              lang: sum.lang,
+              scopeKey: sum.scopeKey,
+              bullets: candBullets
+            };
+            if (_chatState.periodVarianceCache.size >= 24) {
+              const oldest = _chatState.periodVarianceCache.keys().next().value;
+              _chatState.periodVarianceCache.delete(oldest);
+            }
+            _chatState.periodVarianceCache.set(cacheKey, resObj);
+            updateOpenCeoPopoverWithAi(resObj);
+            return resObj;
+          }
+          debugNote = `short_bullets:${candBullets.length}:${rawReply.slice(0, 140)}`;
+        } catch (eParse) {
+          debugNote = `parse_err:${eParse && eParse.message ? eParse.message : ''}:${rawReply.slice(0, 140)}`;
+        }
+      }
+
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        note: debugNote,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    })().finally(() => {
+      _chatState.periodVarianceInflight.delete(cacheKey);
+    });
+
+    _chatState.periodVarianceInflight.set(cacheKey, runPromise);
+    return runPromise;
+  }
+
+  function updateOpenCeoPopoverWithAi(aiRes) {
+    if (!aiRes || aiRes.source !== 'gemini' || typeof document === 'undefined') return;
+    const pop = document.getElementById('ceoPeriodSummaryPopover');
+    if (!pop || pop.getAttribute('data-scope-key') !== aiRes.scopeKey || pop.getAttribute('data-lang') !== aiRes.lang) return;
+    const listEl = pop.querySelector('.ceo-pv-bullets');
+    if (listEl && Array.isArray(aiRes.bullets) && aiRes.bullets.length >= 2) {
+      listEl.innerHTML = aiRes.bullets.map(b => `<li>${esc(b)}</li>`).join('');
+    }
+    const badgeEl = pop.querySelector('.ceo-pv-badge');
+    if (badgeEl) {
+      badgeEl.classList.add('is-ai');
+      badgeEl.textContent = 'AI Variance Brief';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
+    }
+  }
+
+  let _ceoPopOutsideHandlerBound = false;
+  function ensureCeoPopoverGlobalDismiss() {
+    if (_ceoPopOutsideHandlerBound || typeof document === 'undefined') return;
+    _ceoPopOutsideHandlerBound = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.periodPopoverOpen) return;
+      const pop = document.getElementById('ceoPeriodSummaryPopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (e.target.closest('[data-ceo-period-summary]') || e.target.closest('[data-ceo-variance-brief]'))) return;
+      closeCeoVariancePopover();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.periodPopoverOpen) {
+        closeCeoVariancePopover();
+      }
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.periodPopoverOpen) positionCeoVariancePopover();
+      });
+    }
+  }
+
+  function positionCeoVariancePopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('ceoPeriodSummaryPopover');
+    if (!pop) return;
+    const anchor = _chatState.periodPopoverAnchor
+      || document.getElementById('ceoPeriodSummaryBtn')
+      || document.getElementById('ceoVarianceBriefBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = '12px';
+      pop.style.top = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(440, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 248, vh - 24);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.top - popH - 8;
+    if (top < 54) {
+      top = Math.min(vh - popH - 12, rect.bottom + 8);
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, top))}px`;
+  }
+
+  function openCeoVariancePopover(anchorEl, prebuiltSummary) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureCeoPopoverGlobalDismiss();
+    const sum = prebuiltSummary || buildCeoPeriodSummary();
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    const cachedAi = _chatState.periodVarianceCache.get(cacheKey);
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets
+      : sum.bullets;
+    const isAiSource = Boolean(cachedAi && cachedAi.source === 'gemini');
+
+    let pop = document.getElementById('ceoPeriodSummaryPopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'ceoPeriodSummaryPopover';
+      pop.className = 'ceo-period-popover';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Period Variance Commentary');
+      document.body.appendChild(pop);
+    }
+    _chatState.periodPopoverOpen = true;
+    _chatState.periodPopoverAnchor = anchorEl || document.getElementById('ceoPeriodSummaryBtn') || document.getElementById('ceoVarianceBriefBtn');
+    const vbBtn = document.getElementById('ceoVarianceBriefBtn');
+    if (vbBtn) {
+      vbBtn.classList.add('is-open');
+      vbBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    pop.setAttribute('data-scope-key', sum.scopeKey);
+    pop.setAttribute('data-lang', sum.lang);
+    pop.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+
+    const revDeltaChip = sum.deltas.revDeltaPct !== null
+      ? `${sum.deltas.revDeltaPct > 0 ? '+' : ''}${sum.deltas.revDeltaPct.toFixed(1)}%`
+      : `${sum.cur.txCount}`;
+    const gmDeltaChip = sum.deltas.gmDeltaPts !== null
+      ? `${sum.deltas.gmDeltaPts > 0 ? '+' : ''}${sum.deltas.gmDeltaPts.toFixed(1)}pt`
+      : `${sum.cur.gmPct.toFixed(1)}%`;
+    const opDeltaChip = sum.deltas.opProfitDeltaPct !== null
+      ? `${sum.deltas.opProfitDeltaPct > 0 ? '+' : ''}${sum.deltas.opProfitDeltaPct.toFixed(1)}%`
+      : `${sum.cur.opMarginPct.toFixed(1)}%`;
+
+    const kpi4Html = sum.canViewBooks && sum.books
+      ? `<div class="ceo-pv-kpi">
+          <span class="ceo-pv-k">Cash &amp; AR</span>
+          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.cashTillUsd))}</strong>
+          <small class="ceo-pv-d num" data-no-i18n="1">${esc(fmtCompactUsd(sum.books.arBalanceUsd))}</small>
+        </div>`
+      : `<div class="ceo-pv-kpi">
+          <span class="ceo-pv-k">Control Flags</span>
+          <strong class="ceo-pv-v num" data-no-i18n="1">${sum.openSentinelCount}</strong>
+          <small class="ceo-pv-d ${sum.openSentinelCount > 0 ? 'warn' : 'good'}" data-no-i18n="1">${sum.critSentinelCount > 0 ? `${sum.critSentinelCount}!` : '0'}</small>
+        </div>`;
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(
+      _chatState.activePeriodSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ceo-period-summary'))
+    );
+    const speakBtnLbl = isSpeakingNow ? 'Stop Summary' : 'Replay Summary';
+    const speakBtnIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const sparkIco = icons ? icons.svg('sparkles') : AI_SVGS.audio;
+
+    pop.innerHTML = `
+      <div class="ceo-pv-hdr">
+        <div class="ceo-pv-title-wrap">
+          <div class="ceo-pv-title-row">
+            <span class="ceo-pv-ico">${sparkIco}</span>
+            <strong class="ceo-pv-title">Period Variance Commentary</strong>
+            <span class="ceo-pv-badge${isAiSource ? ' is-ai' : ''}">${isAiSource ? 'AI Variance Brief' : 'Deterministic Ledger'}</span>
+          </div>
+          <div class="ceo-pv-sub" data-no-i18n="1">${esc(sum.windowSubtitle)}</div>
+        </div>
+        <button type="button" class="ceo-pv-close" data-ceo-pv-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ceo-pv-kpis">
+        <div class="ceo-pv-kpi">
+          <span class="ceo-pv-k">Period Revenue</span>
+          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.revUsd))}</strong>
+          <small class="ceo-pv-d ${(sum.deltas.revDeltaPct || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(revDeltaChip)}</small>
+        </div>
+        <div class="ceo-pv-kpi">
+          <span class="ceo-pv-k">Gross Margin</span>
+          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.grossMarginUsd))}</strong>
+          <small class="ceo-pv-d ${(sum.deltas.gmDeltaPts || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(gmDeltaChip)}</small>
+        </div>
+        <div class="ceo-pv-kpi">
+          <span class="ceo-pv-k">Operating Profit</span>
+          <strong class="ceo-pv-v num" data-no-i18n="1">${esc(fmtCompactUsd(sum.cur.opProfitUsd))}</strong>
+          <small class="ceo-pv-d ${(sum.deltas.opProfitDeltaPct || 0) < 0 ? 'warn' : 'good'} num" data-no-i18n="1">${esc(opDeltaChip)}</small>
+        </div>
+        ${kpi4Html}
+      </div>
+      <ul class="ceo-pv-bullets" data-no-i18n="1">
+        ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+      </ul>
+      <div class="ceo-pv-foot">
+        <button type="button" class="ceo-pv-btn${isSpeakingNow ? ' is-speaking' : ''}" data-ceo-pv-speak="1">${speakBtnIco}<span>${esc(speakBtnLbl)}</span></button>
+        <button type="button" class="ceo-pv-btn is-secondary" data-ceo-pv-ask="1"><span>Ask Follow-Up</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-ceo-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeCeoVariancePopover();
+      });
+    }
+    const pvSpkBtn = pop.querySelector('[data-ceo-pv-speak]');
+    if (pvSpkBtn) {
+      pvSpkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const mainBtn = document.getElementById('ceoPeriodSummaryBtn');
+        speakCeoPeriodSummary(mainBtn || null, sum.lang, { skipPopoverOpen: true });
+        syncCeoPopoverAudioButton();
+      });
+    }
+    const pvAskBtn = pop.querySelector('[data-ceo-pv-ask]');
+    if (pvAskBtn) {
+      pvAskBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeCeoVariancePopover();
+        openDrawer();
+        const qPrompt = sum.lang === 'ar'
+          ? `حلل تباين الأرباح والهامش لـ ${sum.companyLabel} خلال ${sum.periodLabel}`
+          : (sum.lang === 'fr'
+              ? `Analysez l'écart de marge et de résultat pour ${sum.companyLabel} sur ${sum.periodLabel}`
+              : `Explain the P&L margin and profit drivers for ${sum.companyLabel} in ${sum.periodLabel}`);
+        submitQuestion(qPrompt);
+      });
+    }
+
+    positionCeoVariancePopover();
+    if (!isAiSource) {
+      requestPeriodVarianceCommentary(sum).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closeCeoVariancePopover() {
+    _chatState.periodPopoverOpen = false;
+    _chatState.periodPopoverAnchor = null;
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('ceoPeriodSummaryPopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    const vbBtn = document.getElementById('ceoVarianceBriefBtn');
+    if (vbBtn) {
+      vbBtn.classList.remove('is-open');
+      vbBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleCeoVariancePopover(anchorEl) {
+    if (_chatState.periodPopoverOpen) {
+      closeCeoVariancePopover();
+      return { open: false };
+    }
+    const sum = buildCeoPeriodSummary();
+    openCeoVariancePopover(anchorEl, sum);
+    return { open: true, summary: sum };
+  }
+
+  function speakCeoPeriodSummary(btnEl, langOverride, opts = {}) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('ceoPeriodSummaryBtn') : null);
+    if (targetBtn && _chatState.activeSpeakBtn === targetBtn) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    if (!targetBtn && _chatState.activePeriodSummaryScope) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const sum = buildCeoPeriodSummary(langOverride);
+    const ok = speakBotReply(sum.text, sum.lang, targetBtn || null);
+    if (ok) {
+      _chatState.activePeriodSummaryScope = sum.scopeKey;
+      syncCeoPopoverAudioButton();
+    }
+    if (!opts.skipPopoverOpen) {
+      openCeoVariancePopover(targetBtn, sum);
+    }
+    return Object.assign({ ok }, sum);
+  }
+
+  function rebindPeriodSummaryButton(btnEl, varBtnEl) {
+    ensureDailyBriefingI18nRegistered();
+    const curScope = computeActivePeriodScopeKey();
+    if (_chatState.activePeriodSummaryScope) {
+      if (_chatState.activePeriodSummaryScope !== curScope) {
+        stopActivePlayback();
+      } else if (btnEl) {
+        _chatState.activeSpeakBtn = btnEl;
+        applyBriefingButtonDomState(btnEl, _chatState.activeSpeakCtrl ? 'loading' : 'speaking');
+      }
+    }
+    if (_chatState.periodPopoverOpen) {
+      const pop = typeof document !== 'undefined' ? document.getElementById('ceoPeriodSummaryPopover') : null;
+      if (!pop || pop.getAttribute('data-scope-key') !== curScope) {
+        closeCeoVariancePopover();
+      } else {
+        _chatState.periodPopoverAnchor = btnEl || varBtnEl || null;
+        if (varBtnEl) {
+          varBtnEl.classList.add('is-open');
+          varBtnEl.setAttribute('aria-expanded', 'true');
+        }
+        positionCeoVariancePopover();
+      }
+    }
+  }
+
+  function stopPeriodSummaryIfActive() {
+    if (_chatState.activePeriodSummaryScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ceo-period-summary'))) {
+      stopActivePlayback();
+    }
+    if (_chatState.periodPopoverOpen) {
+      closeCeoVariancePopover();
     }
   }
 
@@ -6835,10 +7834,18 @@
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('mfg:lang-changed', () => {
       ensureDailyBriefingI18nRegistered();
-      if (typeof document !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-        const b = document.getElementById('dopsBriefingBtn');
-        if (b) {
-          try { window.MFG_I18N.translateDom(b); } catch (_) {}
+      if (typeof document !== 'undefined') {
+        const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
+          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) {
+              try { window.MFG_I18N.translateDom(b); } catch (_) {}
+            }
+          });
+        }
+        if (_chatState.periodPopoverOpen) {
+          openCeoVariancePopover(_chatState.periodPopoverAnchor, buildCeoPeriodSummary(curLang));
         }
       }
     });
@@ -6877,6 +7884,13 @@
     buildLlmMessages: buildLlmContextMessages,
     buildDailyBriefing,
     speakDailyBriefing,
+    buildPeriodSummary: buildCeoPeriodSummary,
+    speakPeriodSummary: speakCeoPeriodSummary,
+    requestPeriodVariance: requestPeriodVarianceCommentary,
+    togglePeriodVariance: toggleCeoVariancePopover,
+    closePeriodVariance: closeCeoVariancePopover,
+    rebindPeriodSummaryButton,
+    stopPeriodSummaryIfActive,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
     rebindBriefingButton,
@@ -6890,6 +7904,8 @@
       voiceModePhase: _chatState.voiceModePhase,
       handsFreeVoice: Boolean(_chatState.handsFreeVoice),
       briefingScope: _chatState.activeBriefingScope || '',
+      periodSummaryScope: _chatState.activePeriodSummaryScope || '',
+      periodPopoverOpen: Boolean(_chatState.periodPopoverOpen),
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
