@@ -61,11 +61,14 @@
   const CLOUD_DOC_KEY = CLOUD_CFG.docKey || 'mfg_web_store';
 
   const PARAMS = new URLSearchParams(location.search);
-  const IS_LOCAL = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname);
+  const IS_LOCAL = !window.__ISABI_SIMULATE_REMOTE_HOST && /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname);
   // Demo mode = the 1-click seat simulator shows PINs. Only on the local server.py host or with ?demo=1.
   const IS_DEMO = PARAMS.get('demo') !== '0' && (IS_LOCAL || PARAMS.get('demo') === '1');
-  const IS_HEADLESS_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
+  const IS_HEADLESS_HARNESS = Boolean((navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095)) && !window.__ISABI_SIMULATE_REMOTE_HOST);
   const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints on local / LAN host
+  let _stateRef = null;
+  let _usersApiHydratedOnce = false;
+  let _usersHydrateInFlight = null;
   let _edgeSessionToken = '';
   let _edgeCookieAuthed = false;
   try { _edgeSessionToken = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || ''; } catch (_) {}
@@ -78,7 +81,7 @@
     } catch (_) {}
   }
   function isDemoSandboxSession() {
-    if (Boolean(typeof STATE !== 'undefined' && STATE && STATE.demoVisitor) || PARAMS.get('autologin') === '1') {
+    if (Boolean((_stateRef && _stateRef.demoVisitor) || PARAMS.get('autologin') === '1')) {
       return true;
     }
     return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
@@ -427,6 +430,7 @@
       }, saved, { sound: false });
     })()
   };
+  _stateRef = STATE;
   if (typeof window !== 'undefined') window.STATE = STATE;
 
   const FACE_POSES = [
@@ -3030,6 +3034,12 @@
       const mat = Number(s.price != null ? s.price : (Number(s.total || 0) - Number(s.trans_price || 0))) * eff;
       if (upToEnd(s.date) && isCreditSaleTicket(s)) {
         addK('ar_balance', ttc);
+        const refIso = String((range && range.to) || SEED_DATE || '').slice(0, 10);
+        const txIso = String(s.date || '').slice(0, 10);
+        if (refIso && txIso && (Date.parse(refIso) - Date.parse(txIso)) / 86400000 > 60) {
+          addK('ar_60_plus', ttc);
+          addK('ar_overdue', ttc);
+        }
       }
       if (onlyBal || !inWin(s.date)) return;
       addK('sales_ttc', ttc);
@@ -3105,12 +3115,43 @@
       }
     });
 
+    const custSeed60ByNorm = new Map();
+    ((SEED.models && SEED.models[coKey] && SEED.models[coKey].customers) || []).forEach(c => {
+      if (c && c.Customer) {
+        custSeed60ByNorm.set(norm(c.Customer), {
+          ar_balance: Number(c.ar_balance || 0),
+          ar_overdue: Math.max(0, Number(c.ar_overdue || 0)),
+          ar_60_plus: Math.max(0, Number(c.ar_60_plus || 0))
+        });
+      }
+    });
     forEachCashCustomDelta('receipts', matchCo, (r, dir) => {
       const amt = (Number(r.amount || 0) + Number(r.discount || 0)) * dir;
       if (!amt) return;
       const cleanR = r.voided ? Object.assign({}, r, { voided: false }) : r;
       if (upToEnd(r.date) && isArSettlingReceipt(cleanR)) {
         addK('ar_balance', -amt);
+        const ck = norm(r.customer || '');
+        const cEntry = ck ? custSeed60ByNorm.get(ck) : null;
+        if (amt > 0 && cEntry && cEntry.ar_60_plus > 0 && Number(k.ar_60_plus || 0) > 0) {
+          const cut60 = Math.min(cEntry.ar_60_plus, Number(k.ar_60_plus || 0), amt);
+          cEntry.ar_60_plus = round2(cEntry.ar_60_plus - cut60);
+          addK('ar_60_plus', -cut60);
+          const cutOv = Math.min(cEntry.ar_overdue, Math.max(0, Number(k.ar_overdue || 0)), amt);
+          cEntry.ar_overdue = round2(cEntry.ar_overdue - cutOv);
+          addK('ar_overdue', -cutOv);
+        } else if (amt < 0 && cEntry) {
+          const revAmt = Math.abs(amt);
+          const newCustBal = round2(cEntry.ar_balance + revAmt);
+          cEntry.ar_balance = newCustBal;
+          if (newCustBal > 0) {
+            const addBack = Math.min(revAmt, newCustBal);
+            cEntry.ar_60_plus = round2(cEntry.ar_60_plus + addBack);
+            cEntry.ar_overdue = round2(cEntry.ar_overdue + addBack);
+            addK('ar_60_plus', addBack);
+            addK('ar_overdue', addBack);
+          }
+        }
       }
       if (onlyBal || !inWin(r.date)) return;
       if (receiptKind(cleanR) === 'Settlement') addK('receipts', amt);
@@ -7071,14 +7112,33 @@
     if (!Array.isArray(raw)) return [];
     return raw.map(t => isLegacyStretchedThumb(t, u.face_updated_at) ? '' : String(t || '')).slice(0, 3);
   }
+  function userFacePoseCount(u) {
+    if (!u || u.face_cleared) return 0;
+    const n = userFaceSamples(u).length;
+    if (n > 0) return Math.min(3, n);
+    if (u.face_redacted && u.face_enrolled) return Math.min(3, Math.max(1, Number(u.face_sample_count || 3)));
+    return 0;
+  }
+  function effectiveEnrolPoseCount(u) {
+    const capLen = FACE_STATE.enrolCaptures.length;
+    if (capLen > 0 || FACE_STATE.enrolReenrolling) return capLen;
+    if (u && u.face_redacted && u.face_enrolled && !u.face_cleared) {
+      return userFacePoseCount(u);
+    }
+    return capLen;
+  }
   function syncEnrolBufferFromUser(u, force = false) {
     if (!u) return;
     if (!force && FACE_STATE.enrolLoadedForUserId === String(u.id)) return;
     FACE_STATE.enrolLoadedForUserId = String(u.id);
     const savedSamples = userFaceSamples(u).slice(0, 3);
     const savedThumbs = userFaceThumbs(u).slice(0, 3);
+    const poseCnt = savedSamples.length || userFacePoseCount(u);
     FACE_STATE.enrolCaptures = savedSamples.map(s => s.slice());
-    FACE_STATE.enrolThumbs = savedSamples.map((_, i) => savedThumbs[i] || '');
+    FACE_STATE.enrolThumbs = savedSamples.length
+      ? savedSamples.map((_, i) => savedThumbs[i] || '')
+      : Array.from({ length: poseCnt }, (_, i) => savedThumbs[i] || '');
+    FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolRetakeSlot = null;
     FACE_STATE.enrolLiveMatch = null;
     FACE_STATE.enrolStatusText = '';
@@ -7087,6 +7147,12 @@
   function userHasFaceId(u) {
     if (!u || u.face_cleared) return false;
     return Boolean(userFaceSamples(u).length > 0 || (u.face_redacted && u.face_enrolled));
+  }
+  function hasAnyEnrolledFaceId() {
+    if (usableFaces().length > 0) return true;
+    if (STATE.users.some(u => u && u.status !== 'Suspended' && userHasFaceId(u))) return true;
+    if (hasServerApi() && !isDemoSandboxSession() && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !_usersApiHydratedOnce) return true;
+    return false;
   }
 
   const AUTH_MODE_OPTIONS = [
@@ -7133,7 +7199,7 @@
     let mode = (seatRaw && seatRaw !== 'inherit')
       ? normalizeAuthMode(seatRaw, getWorkspaceAuthMode())
       : getWorkspaceAuthMode();
-    if (!seatRaw && u.face_required === false && mode === 'both') mode = 'either';
+    if (!seatRaw && u.face_required === false && mode === 'both' && !(STATE.faceSettings && STATE.faceSettings.authModeV8Explicit)) mode = 'either';
     // Graceful fallback if seat has not enrolled 3 Face ID poses yet so they are never locked out
     if (!hasFace && (mode === 'both' || mode === 'face_only')) return 'either';
     return mode;
@@ -16021,11 +16087,19 @@
   // ==========================================================================
   let _liveSentinelCache = null;
 
-  function canReviewSentinels(u) {
+  function canReviewSentinels(u, coKeyOverride) {
     const user = u || activeUser();
     if (!user) return false;
+    if (typeof canViewView === 'function' && !canViewView('sentinels', user)) return false;
     const roleStr = String(user.role || '');
-    return /owner|admin|super|director|cfo|audit/i.test(roleStr) || user.pbi_access === 'full';
+    const hasReviewerRole = /owner|admin|super|director|cfo|audit/i.test(roleStr) || user.pbi_access === 'full';
+    if (!hasReviewerRole) return false;
+    if (!isOwner(user)) {
+      const targetCo = String(coKeyOverride || STATE.company || 'manufacturing-group');
+      const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(user) : [];
+      if (allowedKeys.length && !allowedKeys.includes(targetCo)) return false;
+    }
+    return true;
   }
 
   function sentinelReviewKey(ruleId, coKey) {
@@ -16044,7 +16118,7 @@
     syncWithCloud(true);
   }
 
-  function markSentinelReviewed(ruleId) {
+  function markSentinelReviewed(ruleId, opts) {
     if (!canReviewSentinels()) {
       toast('Only Owner or Supervisor seats may sign off audit rules', 'err');
       return false;
@@ -16056,6 +16130,13 @@
     const user = activeUser() || {};
     const nowIso = new Date().toISOString();
     const key = sentinelReviewKey(ruleId, STATE.company);
+    const cleanNote = String((opts && opts.note) || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .trim()
+      .slice(0, 500);
     const row = {
       id: key,
       rule_id: ruleId,
@@ -16068,7 +16149,7 @@
       checked_by_email: String(user.email || ''),
       checked_at: nowIso,
       updated_at: nowIso,
-      note: ''
+      note: cleanNote
     };
     STATE.sentinelReviews[key] = row;
     persistSentinelReviewRows({ [key]: row });
@@ -16088,7 +16169,7 @@
     return true;
   }
 
-  function markAllFlaggedSentinelsReviewed() {
+  function markAllFlaggedSentinelsReviewed(opts) {
     if (!canReviewSentinels()) {
       toast('Only Owner or Supervisor seats may sign off audit rules', 'err');
       return 0;
@@ -16098,6 +16179,13 @@
     if (!STATE.sentinelReviews || typeof STATE.sentinelReviews !== 'object') STATE.sentinelReviews = {};
     const user = activeUser() || {};
     const nowIso = new Date().toISOString();
+    const cleanNote = String((opts && opts.note) || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .trim()
+      .slice(0, 500);
     const batch = {};
     items.forEach(target => {
       const key = sentinelReviewKey(target.id, STATE.company);
@@ -16113,7 +16201,7 @@
         checked_by_email: String(user.email || ''),
         checked_at: nowIso,
         updated_at: nowIso,
-        note: ''
+        note: cleanNote
       };
       STATE.sentinelReviews[key] = row;
       batch[key] = row;
@@ -16129,7 +16217,7 @@
     const batch = {};
     let cnt = 0;
     Object.entries(STATE.sentinelReviews).forEach(([k, v]) => {
-      if (k.startsWith(prefix) && v && v.active) {
+      if (k.startsWith(prefix) && v && (v.active === true || v.active === 1)) {
         const row = Object.assign({}, v, { active: false, updated_at: nowIso });
         STATE.sentinelReviews[k] = row;
         batch[k] = row;
@@ -19039,14 +19127,73 @@
     (SEED.records.customers || []).forEach(x => {
       if (x && x.name && x.id) custIdByNorm.set(norm(x.name), x.id);
     });
-    const overdueArRows = (mdl.customers || [])
+    const overdueByCust = new Map();
+    (mdl.customers || []).forEach(c => {
+      const ck = norm(c.Customer);
+      if (!ck) return;
+      overdueByCust.set(ck, {
+        customer: c.Customer,
+        ar_balance: Number(c.ar_balance || 0),
+        ar_overdue: Number(c.ar_overdue || 0),
+        ar_60_plus: Number(c.ar_60_plus || 0),
+        last_sale: String(c.last_sale || '').slice(0, 10)
+      });
+    });
+    const s4Range = periodRange(STATE.period);
+    const s4RefIso = String((s4Range && s4Range.to) || SEED_DATE || '').slice(0, 10);
+    const s4MatchCo = r => matchesCashScopeCompany(r, STATE.company, allowedCompanyNames());
+    forEachCashCustomDelta('sales_tickets', s4MatchCo, (s, dir) => {
+      if (!isCreditSaleTicket(s)) return;
+      const txIso = String(s.date || '').slice(0, 10);
+      if (s4Range && s4Range.to && txIso > s4Range.to) return;
+      const sgn = ticketSign(s);
+      if (sgn === 0) return;
+      const eff = sgn * dir;
+      const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * eff;
+      if (!ttc) return;
+      const cName = String(s.customer || 'Customer').trim() || 'Customer';
+      const ck = norm(cName);
+      const cur = overdueByCust.get(ck) || { customer: cName, ar_balance: 0, ar_overdue: 0, ar_60_plus: 0, last_sale: txIso };
+      cur.ar_balance += ttc;
+      if (s4RefIso && txIso && (Date.parse(s4RefIso) - Date.parse(txIso)) / 86400000 > 60) {
+        cur.ar_60_plus += ttc;
+        cur.ar_overdue += ttc;
+      }
+      if (txIso > cur.last_sale) cur.last_sale = txIso;
+      overdueByCust.set(ck, cur);
+    });
+    forEachCashCustomDelta('receipts', s4MatchCo, (r, dir) => {
+      const amt = (Number(r.amount || 0) + Number(r.discount || 0)) * dir;
+      if (!amt) return;
+      const txIso = String(r.date || '').slice(0, 10);
+      if (s4Range && s4Range.to && txIso > s4Range.to) return;
+      const cleanR = r.voided ? Object.assign({}, r, { voided: false }) : r;
+      if (!isArSettlingReceipt(cleanR)) return;
+      const ck = norm(r.customer || '');
+      if (!ck || !overdueByCust.has(ck)) return;
+      const cur = overdueByCust.get(ck);
+      cur.ar_balance -= amt;
+      if (amt > 0 && cur.ar_60_plus > 0) {
+        cur.ar_60_plus = Math.max(0, cur.ar_60_plus - amt);
+        cur.ar_overdue = Math.max(0, cur.ar_overdue - amt);
+      } else if (amt < 0) {
+        cur.ar_60_plus = Math.max(0, Math.min(cur.ar_balance, cur.ar_60_plus - amt));
+        cur.ar_overdue = Math.max(0, Math.min(cur.ar_balance, cur.ar_overdue - amt));
+      }
+      overdueByCust.set(ck, cur);
+    });
+    const overdueArRows = Array.from(overdueByCust.values())
+      .map(c => {
+        const clamped60 = Math.max(0, Math.min(Math.max(0, Number(c.ar_balance || 0)), Number(c.ar_60_plus || 0)));
+        return Object.assign({}, c, { ar_60_plus: clamped60 });
+      })
       .filter(c => Number(c.ar_60_plus || 0) > s4MinAr60)
       .sort((a, b) => Number(b.ar_60_plus || 0) - Number(a.ar_60_plus || 0))
       .map(c => {
-        const cid = custIdByNorm.get(norm(c.Customer)) || c.Customer;
+        const cid = custIdByNorm.get(norm(c.customer)) || c.customer;
         return {
           id: cid, rid: cid, rkey: 'customers',
-          customer: c.Customer,
+          customer: c.customer,
           ar_balance: round2(Number(c.ar_balance || 0)),
           ar_overdue: round2(Number(c.ar_overdue || 0)),
           ar_60_plus: round2(Number(c.ar_60_plus || 0)),
@@ -19094,7 +19241,31 @@
       : (STATE.company === 'manufacturing-group' ? 'WTC & BBConstruction' : COMPANY_BU_MATCH[STATE.company]);
     const customList = getActiveCustomAlertRules();
     const customSig = customList.map(c => `${c.id}:${c.updated_at || ''}:${c.enabled !== false ? 1 : 0}:${c.threshold}:${c.op}:${c.metric}:${c.company || ''}:${c.target || ''}:${c.mode || ''}:${c.name || ''}:${c.why || ''}`).join(';');
-    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}`;
+    let indMutSig = '';
+    if (isNonMfgSn) {
+      const iCust = typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore() : {};
+      const iEdit = typeof getIndustryRowEditStore === 'function' ? getIndustryRowEditStore() : {};
+      const iWf = (STATE && STATE.industryWorkflowPatches) || {};
+      const cPart = Object.keys(iCust).sort().map(ck => {
+        const arr = iCust[ck];
+        if (!Array.isArray(arr) || !arr.length) return '';
+        let vc = 0, sm = 0;
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r) continue;
+          if (r.voided) vc++;
+          sm += Number(r.ttc_usd || r.amount_ttc_usd || r.gross_prem_usd || r.contract_usd || r.principal_usd || r.amount_usd || 0) || 0;
+        }
+        return `${ck}:${arr.length}:${vc}:${Math.round(sm * 100)}`;
+      }).filter(Boolean).join(',');
+      const ePart = Object.keys(iEdit).sort().map(ek => {
+        const e = iEdit[ek];
+        return e ? `${ek}:${e.rev || 0}:${e.voided ? 1 : 0}:${(e.cells || []).join('~')}` : '';
+      }).filter(Boolean).join(',');
+      const wPart = Object.keys(iWf).sort().map(wk => `${wk}:${Object.keys(iWf[wk] || {}).length}`).join(',');
+      indMutSig = `${STATE.period || ''}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis || 'rep'}|${cPart}|${ePart}|${wPart}`;
+    }
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${SEED._customRev || 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}|${indMutSig}`;
     if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
     let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
     if (!rawItems) {
@@ -19170,12 +19341,14 @@
       scrollPanel: 'snFuel', navView: 'fleet', navLabel: 'Open Diesel'
     });
 
-    const ar60 = Number(k.ar_60_plus || 0);
+    const ar60 = Array.isArray(snSlice.overdueArRows)
+      ? round2(snSlice.overdueArRows.reduce((s, r) => s + Math.max(0, Number(r.ar_60_plus || 0)), 0))
+      : Number(k.ar_60_plus || 0);
     const s4MinAr = getAlertParam('S4', 'min_sentinel_ar60_usd', 0.01);
     rawItems.push({
       id: 'S4',
-      code: 'Rule #17 · Receivables', title: 'Customer Receivables Overdue > 60 Days (FIFO Allocated)',
-      detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive) · ${fmtUSD(ar60, 2)} aged past 60 days after FIFO receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
+      code: 'Rule #17 · Receivables', title: 'Customer Receivables Overdue > 60 Days (Oldest-First Allocated)',
+      detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive) · ${fmtUSD(ar60, 2)} aged past 60 days after oldest-first receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
       severity: ar60 > s4MinAr ? 'warn' : 'ok',
       badge: ar60 > s4MinAr ? `${fmtUSD(ar60, 0)} > 60D` : 'CURRENT',
       company: scope,
@@ -19301,33 +19474,39 @@
       navView: 'fleet',
       navLabel: 'Open Tank Recon'
     });
-
-    customList.forEach((cr, idx) => {
-      const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
-      const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
-      const seqNum = String(ALERT_RULE_CATALOG.length + idx + 1).padStart(2, '0');
-      const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
-      const safeName = String(cr.name || 'Custom Alert').replace(/[—→_]/g, '-');
-      const safeWhy = String(cr.why || 'Custom threshold rule').replace(/[—→]/g, '-');
-      const targetStr = String(cr.target || '').trim();
-      rawItems.push({
-        id: cr.id,
-        isCustom: true,
-        customEnabled: cr.enabled !== false,
-        code: `Custom Rule #${seqNum} · ${spec.domain || 'Custom Rules'}`,
-        title: safeName,
-        detail: `${fmtNum(hits.length)} matching record${hits.length === 1 ? '' : 's'} where ${spec.label}${targetStr ? ' (' + targetStr + ')' : ''} ${cr.op === '<' ? '<' : '>'} ${fmtT}. Why: ${safeWhy}`,
-        severity: cr.enabled === false ? 'ok' : (hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok'),
-        badge: cr.enabled === false ? 'PAUSED' : (hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : 'CLEAR'),
-        company: (!cr.company || cr.company === 'all') ? scope : cr.company,
-        rawMetric: hits.length,
-        rawSecondary: 0,
-        scrollPanel: hits.length > 0 ? 'snCustomAlerts' : '',
-        navView: spec.jumpView || '',
-        navLabel: spec.jumpView ? 'Open Module' : ''
-      });
-    });
       }
+
+      const snScopedMetrics = getCustomAlertMetricsForIndustry(activeIndForSn);
+      const snAllowedCos = allowedCompanyNames();
+      let customIdx = 0;
+      customList.forEach(cr => {
+        if (!cr || (snScopedMetrics && !snScopedMetrics[cr.metric])) return;
+        if (cr.company && cr.company !== 'all' && !matchesCashScopeCompany({ company: cr.company }, STATE.company, snAllowedCos)) return;
+        customIdx += 1;
+        const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+        const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
+        const seqNum = String(ALERT_RULE_CATALOG.length + customIdx).padStart(2, '0');
+        const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
+        const safeName = String(cr.name || 'Custom Alert').replace(/[—→_]/g, '-');
+        const safeWhy = String(cr.why || 'Custom threshold rule').replace(/[—→]/g, '-');
+        const targetStr = String(cr.target || '').trim();
+        rawItems.push({
+          id: cr.id,
+          isCustom: true,
+          customEnabled: cr.enabled !== false,
+          code: `Custom Rule #${seqNum} · ${spec.domain || 'Custom Rules'}`,
+          title: safeName,
+          detail: `${fmtNum(hits.length)} matching record${hits.length === 1 ? '' : 's'} where ${spec.label}${targetStr ? ' (' + targetStr + ')' : ''} ${cr.op === '<' ? '<' : '>'} ${fmtT}. Why: ${safeWhy}`,
+          severity: cr.enabled === false ? 'ok' : (hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok'),
+          badge: cr.enabled === false ? 'PAUSED' : (hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : 'CLEAR'),
+          company: (!cr.company || cr.company === 'all') ? scope : cr.company,
+          rawMetric: hits.length,
+          rawSecondary: 0,
+          scrollPanel: hits.length > 0 ? 'snCustomAlerts' : '',
+          navView: spec.jumpView || '',
+          navLabel: spec.jumpView ? 'Open Module' : ''
+        });
+      });
       if (_sentinelRawItemsCache.size > 16) _sentinelRawItemsCache.clear();
       _sentinelRawItemsCache.set(rawItemsKey, rawItems);
     }
@@ -19359,9 +19538,18 @@
           reviewInfo: null
         });
       }
-      if (rev && rev.active) {
-        const driftedPrimary = Number(item.rawMetric || 0) > Number(rev.baseline_metric || 0) + 0.05;
-        const driftedSecondary = Number(item.rawSecondary || 0) > Number(rev.baseline_secondary || 0) + 0.05;
+      if (rev && (rev.active === true || rev.active === 1)) {
+        const basePri = Number.isFinite(Number(rev.baseline_metric)) ? Number(rev.baseline_metric) : 0;
+        const baseSec = Number.isFinite(Number(rev.baseline_secondary)) ? Number(rev.baseline_secondary) : 0;
+        const driftedPrimary = Number(item.rawMetric || 0) > basePri + 0.05;
+        const driftedSecondary = Number(item.rawSecondary || 0) > baseSec + 0.05;
+        const safeRev = Object.assign({}, rev, {
+          active: true,
+          baseline_metric: basePri,
+          baseline_secondary: baseSec,
+          checked_by: String(rev.checked_by || 'Supervisor'),
+          note: String(rev.note || '')
+        });
         if (!driftedPrimary && !driftedSecondary) {
           return Object.assign({}, item, {
             rawSeverity: rawSev,
@@ -19370,7 +19558,7 @@
             badge: 'CHECKED · ' + rawBadge,
             reviewState: 'reviewed',
             isReviewed: true,
-            reviewInfo: rev
+            reviewInfo: safeRev
           });
         }
         return Object.assign({}, item, {
@@ -19378,7 +19566,7 @@
           rawBadge,
           reviewState: 'drifted',
           isReviewed: false,
-          reviewInfo: rev
+          reviewInfo: safeRev
         });
       }
       return Object.assign({}, item, {
@@ -20242,10 +20430,12 @@
     }
     const tbTied = Math.abs(tbDiffUi) < s1TolUi;
     const customHitRows = [];
-    const scopedMetricMap = isNonMfgSn ? getCustomAlertMetricsForIndustry(activeInd) : null;
+    const scopedMetricMap = getCustomAlertMetricsForIndustry(activeInd);
+    const snRenderAllowedCos = allowedCompanyNames();
     getActiveCustomAlertRules().forEach(cr => {
-      if (cr.enabled === false) return;
+      if (!cr || cr.enabled === false) return;
       if (scopedMetricMap && !scopedMetricMap[cr.metric]) return;
+      if (cr.company && cr.company !== 'all' && !matchesCashScopeCompany({ company: cr.company }, STATE.company, snRenderAllowedCos)) return;
       evaluateSingleCustomAlert(cr).slice(0, 25).forEach(h => customHitRows.push(h));
     });
     const belowUsd = Number(pricing.sales_below_agreed_usd || 0);
@@ -20335,6 +20525,8 @@
           <div class="panel-title"><span>LIVE AUDIT CHECKS &amp; RECOMMENDED ACTIONS</span></div>
           <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span>Click any rule to inspect flagged rows</span>
+            <button type="button" class="btn-sn-act sn-ai-act-btn sn-explain-btn" id="snExplainTriageBtn" data-sn-explain="__all__" aria-haspopup="dialog" aria-expanded="false">${ic('sparkles')}<span class="sn-exp-lbl">Explain</span></button>
+            <button type="button" class="btn-sn-act sn-ai-act-btn sn-listen-btn" id="snListenTriageBtn" data-sn-summary="__all__" aria-pressed="false">${ic('audio')}<span class="sn-lsn-lbl">Listen</span></button>
             ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-nav-jump="alert_rules">${ic('sliders')} Alerts &amp; Thresholds</button>` : ''}
             ${canSignOff && open > 0 ? `<button type="button" class="btn-sn-act is-check" id="snCheckAllBtn">${ic('check_circle')} Mark All Flagged Checked (${fmtNum(open)})</button>` : ''}
             ${canSignOff && reviewedCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="snResetChecksBtn">${ic('rotate')} Reset Checks</button>` : ''}
@@ -20371,6 +20563,8 @@
                 </div>
                 <div class="sentinel-right">
                   <span class="badge ${badgeCls}">${esc(s.badge)}</span>
+                  <button type="button" class="btn-sn-act sn-ai-act-btn sn-explain-btn" data-sn-explain="${esc(s.id)}" aria-haspopup="dialog" aria-expanded="false">${ic('sparkles')}<span class="sn-exp-lbl">Explain</span></button>
+                  <button type="button" class="btn-sn-act sn-ai-act-btn sn-listen-btn" data-sn-summary="${esc(s.id)}" aria-pressed="false">${ic('audio')}<span class="sn-lsn-lbl">Listen</span></button>
                   ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
                   ${s.scrollPanel ? `<button type="button" class="btn-sn-act" data-sn-inspect="${esc(s.id)}">Inspect Rows</button>` : ''}
                   ${s.navView && canViewView(s.navView) ? `<button type="button" class="btn-sn-act" data-sn-open-mod="${esc(s.navView)}">${esc(s.navLabel || 'Open Module')}</button>` : ''}
@@ -20396,7 +20590,7 @@
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
-        ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS (FIFO)', overdueArRows || [], [
+        ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS', overdueArRows || [], [
           { label: 'Customer', key: 'customer' }, { label: 'Open AR ($)', key: 'ar_balance', r: true, fmt: usd2 },
           { label: 'Total Overdue ($)', key: 'ar_overdue', r: true, fmt: usd2 }, { label: 'Overdue > 60d ($)', key: 'ar_60_plus', r: true, fmt: usd2 },
           { label: 'Last Sale', key: 'last_sale', mono: true }
@@ -57873,6 +58067,1522 @@
     return { formKey: fallbackSpec.spec.key, prefill: basePrefill };
   }
 
+  function computeSentinelTriageSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('books', u));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    let canSignOff = false;
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : [];
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const isCoAllowed = coName => {
+      if (ownerFlag || !coName) return true;
+      const nCo = norm(coName);
+      if (!nCo || nCo === 'all' || nCo === 'all bus' || nCo === 'universal catalog') return true;
+      return allowedCos.some(ac => norm(ac) === nCo);
+    };
+    const safeNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const sanitizePlain = s => String(s == null ? '' : s)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Power\s*BI|Dataverse|Power\s*Apps)\b/gi, 'ISABI')
+      .replace(/\bFIFO\b/gi, 'oldest-first')
+      .replace(/\bTTC\b/gi, 'tax-inclusive')
+      .replace(/\bRDL\b/gi, 'statement')
+      .replace(/\bZ-Read\b/gi, 'daily close')
+      .replace(/\b(?:h29|t74|t79|r33|r45|i32|i41|step\d+|7z-[a-z0-9-]+)\b/gi, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    const IND_COMPANIES = {
+      'Manufacturing': ['WTC', 'BBConstruction', 'Lions Transport'],
+      'Holding & Treasury': ['Bdeir Holding'],
+      'Hospitality & Resorts': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+      'Automotive & Heavy Trading': ['Korri Auto', 'Shacman'],
+      'Real Estate & Property': ['Properties', '4235 Company S.A.L'],
+      'Insurance & Brokerage': ['Insurance Company']
+    };
+    const IND_LOC = {
+      'Manufacturing': { ar: 'مجموعة التصنيع والكسارات', fr: 'Groupe Industrie & Carrières' },
+      'Holding & Treasury': { ar: 'الشركة القابضة والخزينة', fr: 'Holding & Trésorerie' },
+      'Hospitality & Resorts': { ar: 'الضيافة والمنتجعات', fr: 'Hôtellerie & Complexes' },
+      'Automotive & Heavy Trading': { ar: 'تجارة المركبات والمعدات الثقيلة', fr: 'Négoce Auto & Poids Lourds' },
+      'Real Estate & Property': { ar: 'العقارات وإدارة الأملاك', fr: 'Immobilier & Patrimoine' },
+      'Insurance & Brokerage': { ar: 'التأمين والوساطة', fr: 'Assurance & Courtage' }
+    };
+    const CO_LOC = {
+      'WTC': { ar: 'شركة WTC', fr: 'WTC' },
+      'BBConstruction': { ar: 'شركة BBConstruction', fr: 'BBConstruction' },
+      'Lions Transport': { ar: 'شركة Lions Transport', fr: 'Lions Transport' },
+      'Bdeir Holding': { ar: 'بدير القابضة', fr: 'Bdeir Holding' },
+      'Blanca': { ar: 'منتجع بلانكا', fr: 'Complexe Blanca' },
+      'La Una': { ar: 'لا أونا', fr: 'La Una' },
+      'Palms': { ar: 'بالمز', fr: 'Palms' },
+      'Voile': { ar: 'فوال', fr: 'Voile' },
+      'Platinum': { ar: 'بلاتينوم', fr: 'Platinum' },
+      'Korri Auto': { ar: 'كوري أوتو', fr: 'Korri Auto' },
+      'Shacman': { ar: 'شاكمان للمعدات الثقيلة', fr: 'Shacman Poids Lourds' },
+      'Properties': { ar: 'شركة العقارات (Properties)', fr: 'Properties' },
+      '4235 Company S.A.L': { ar: 'شركة 4235 ش.م.ل', fr: 'Société 4235 S.A.L' },
+      'Insurance Company': { ar: 'شركة التأمين والوساطة', fr: 'Courtage Assurance' }
+    };
+    const locCo = (coStr, lang) => {
+      const clean = sanitizePlain(coStr || '');
+      if (!clean) return lang === 'ar' ? 'النطاق النشط' : (lang === 'fr' ? 'Périmètre actif' : 'Active Scope');
+      const hit = CO_LOC[clean];
+      if (hit) return lang === 'ar' ? hit.ar : (lang === 'fr' ? hit.fr : clean);
+      if (/^all\s*bus?$/i.test(clean) || /^manufacturing[\s-]*group$/i.test(clean) || /WTC.*BBConstruction/i.test(clean)) {
+        return lang === 'ar' ? 'مجموعة التصنيع' : (lang === 'fr' ? 'Groupe Industrie' : 'Manufacturing Group');
+      }
+      if (/bdeir holding/i.test(clean)) return lang === 'ar' ? 'بدير القابضة' : (lang === 'fr' ? 'Bdeir Holding' : 'Bdeir Holding');
+      if (/hospitality/i.test(clean)) return lang === 'ar' ? 'الضيافة والمنتجعات' : (lang === 'fr' ? 'Hôtellerie & Complexes' : 'Hospitality & Resorts');
+      if (/trading/i.test(clean)) return lang === 'ar' ? 'تجارة المركبات والمعدات' : (lang === 'fr' ? 'Négoce Auto & Poids Lourds' : 'Automotive & Heavy Trading');
+      if (/real estate|properties/i.test(clean)) return lang === 'ar' ? 'العقارات وإدارة الأملاك' : (lang === 'fr' ? 'Immobilier & Patrimoine' : 'Real Estate & Property');
+      if (/insurance/i.test(clean)) return lang === 'ar' ? 'شركة التأمين والوساطة' : (lang === 'fr' ? 'Assurance & Courtage' : 'Insurance & Brokerage');
+      return clean;
+    };
+    const locOffender = (nameStr, lang) => {
+      const clean = sanitizePlain(nameStr || '');
+      if (!clean || /^(none|all clear|no exceptions|no repeat offenders|clean)$/i.test(clean)) {
+        return lang === 'ar' ? 'سجل نظيف' : (lang === 'fr' ? 'Aucune anomalie' : 'No Repeat Offenders');
+      }
+      if (CO_LOC[clean]) return lang === 'ar' ? CO_LOC[clean].ar : (lang === 'fr' ? CO_LOC[clean].fr : clean);
+      if (lang === 'ar') {
+        return clean
+          .replace(/\bBdeir Holding\b/gi, 'بدير القابضة')
+          .replace(/\bMain Till\b/gi, 'الصندوق الرئيسي')
+          .replace(/\bBeach Bar\b/gi, 'نقطة الشاطئ')
+          .replace(/\bCentral Facility\b/gi, 'التسهيل المركزي')
+          .replace(/\bShared Services\b/gi, 'خدمات مشتركة')
+          .replace(/\bSequence Check\b/gi, 'فحص التسلسل')
+          .replace(/\bAll Units\b/gi, 'كافة الوحدات');
+      }
+      if (lang === 'fr') {
+        return clean
+          .replace(/\bMain Till\b/gi, 'Caisse principale')
+          .replace(/\bCentral Facility\b/gi, 'Ligne centrale')
+          .replace(/\bShared Services\b/gi, 'Services partagés')
+          .replace(/\bSequence Check\b/gi, 'Contrôle séquence')
+          .replace(/\bAll Units\b/gi, 'Toutes unités');
+      }
+      return clean;
+    };
+
+    // Mutation-reactive signature across Mfg + 5 sibling verticals + custom rules + sign-offs
+    const customRecSig = Object.keys(STATE.customRecords || {}).sort().map(k => {
+      const arr = STATE.customRecords[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      let sum = 0, vc = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) vc++;
+        sum += safeNum(r.total_ttc || r.total || r.amount || r.unit_price || r.cost || r.net_period_usd || 0);
+      }
+      return `${k}:${arr.length}:${vc}:${Math.round(sum * 100)}`;
+    }).filter(Boolean).join(';');
+    const indCustomStore = typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore() : {};
+    const indCustomSig = Object.keys(indCustomStore).sort().map(k => {
+      const arr = indCustomStore[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      let vc = 0, sm = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) vc++;
+        sm += safeNum(r.ttc_usd || r.amount_ttc_usd || r.gross_prem_usd || r.contract_usd || r.principal_usd || r.amount_usd || 0);
+      }
+      return `${k}:${arr.length}:${vc}:${Math.round(sm * 100)}`;
+    }).filter(Boolean).join(';');
+    const indEditStore = typeof getIndustryRowEditStore === 'function' ? getIndustryRowEditStore() : {};
+    const indEditSig = Object.keys(indEditStore).sort().map(k => {
+      const e = indEditStore[k];
+      return e ? `${k}:${e.rev || 0}:${e.voided ? 1 : 0}:${(e.cells || []).join(',')}` : '';
+    }).filter(Boolean).join(';');
+    const wfPatches = (STATE && STATE.industryWorkflowPatches) || {};
+    const wfSig = Object.keys(wfPatches).sort().map(k => `${k}:${Object.keys(wfPatches[k] || {}).length}`).join(';');
+    const customAlertSig = getActiveCustomAlertRules().map(c => `${c.id}:${c.enabled !== false ? 1 : 0}:${c.threshold}:${c.op}:${c.metric}:${c.updated_at || ''}`).join(';');
+
+    const reqRuleIdRaw = String(options.ruleId || '__all__').trim() || '__all__';
+    const reqRuleId = sanitizePlain(reqRuleIdRaw) || '__all__';
+
+    const buildRlsClampedSentinelSnapshot = (indName, refRuleId) => {
+      const safeInd = IND_LOC[indName] ? indName : 'Manufacturing';
+      const indLoc = IND_LOC[safeInd];
+      const fbView = typeof defaultViewFor === 'function' ? defaultViewFor(u) : 'sales';
+      const safeCo = COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC';
+      return {
+        ruleId: refRuleId || '__all__',
+        isPortfolio: !refRuleId || refRuleId === '__all__',
+        rlsClamped: true,
+        canViewBooks: false,
+        canSignOff: false,
+        reviewState: 'restricted',
+        isReviewed: false,
+        severity: 'ok',
+        exposureUsd: 0,
+        flaggedCount: 0,
+        openFlags: 0,
+        reviewedCount: 0,
+        passingCount: 0,
+        totalRules: 0,
+        industry: safeInd,
+        industryAr: indLoc.ar,
+        industryFr: indLoc.fr,
+        companyKey: STATE.company || 'wtc',
+        company: safeCo,
+        companyEn: locCo(safeCo, 'en'),
+        companyAr: locCo(safeCo, 'ar'),
+        companyFr: locCo(safeCo, 'fr'),
+        titleEn: 'Role-Scoped Audit Access',
+        titleAr: 'صلاحية تدقيق مقيدة حسب الدور',
+        titleFr: 'Accès audit restreint par rôle',
+        roleLabelEn: 'Role Guardrail Active',
+        roleLabelAr: 'حماية الصلاحيات مفعلة',
+        roleLabelFr: 'Contrôle des accès actif',
+        statusBadgeEn: 'Protected',
+        statusBadgeAr: 'محمي',
+        statusBadgeFr: 'Protégé',
+        topOffenderEn: 'Authorized Scope Only',
+        topOffenderAr: 'ضمن النطاق المصرح فقط',
+        topOffenderFr: 'Périmètre autorisé uniquement',
+        targetView: fbView,
+        scrollPanel: '',
+        scopeKey: `sntriage|rls_clamped|${u ? u.id : 'anon'}|${safeInd}|${refRuleId}|${SEED._customRev || 0}`,
+        tieCheck: null,
+        kpis: [
+          { labelEn: 'Access Tier', labelAr: 'مستوى الصلاحية', labelFr: 'Niveau de droit', valStr: sanitizePlain((u && u.role) || 'Scoped'), valAr: 'مقيد حسب الدور', valFr: 'Limité au rôle', subEn: 'Audit watchdogs restricted', subAr: 'حجب قواعد التدقيق غير المصرحة', subFr: 'Contrôles restreints masqués', tone: 'neutral' },
+          { labelEn: 'Authorized Entities', labelAr: 'الشركات المصرحة', labelFr: 'Entités autorisées', valStr: `${allowedCos.length}`, valAr: `${allowedCos.length} شركات`, valFr: `${allowedCos.length} entités`, subEn: 'Row-level security enforced', subAr: 'عزل السجلات مفعل', subFr: 'Sécurité ligne active', tone: 'ok' },
+          { labelEn: 'Sign-Off Authority', labelAr: 'صلاحية الاعتماد', labelFr: 'Droit de validation', valStr: 'Locked', valAr: 'مقفل', valFr: 'Verrouillé', subEn: 'Supervisor or owner required', subAr: 'يتطلب مقعد مشرف أو إدارة', subFr: 'Superviseur ou direction requis', tone: 'neutral' },
+          { labelEn: 'Audit Posture', labelAr: 'حالة الحماية', labelFr: 'Statut de sécurité', valStr: 'Protected', valAr: 'محمي بالكامل', valFr: 'Protégé', subEn: 'Zero cross-entity leakage', subAr: 'صفر تسريب بين الشركات', subFr: 'Aucune fuite inter-sociétés', tone: 'ok' }
+        ],
+        bulletsEn: [
+          'This sentinel rule or sister-company register lies outside the active seat permissions.',
+          `Operational access remains strictly scoped to ${allowedCos.join(', ') || 'authorized units'} under row-level security.`,
+          'Switch to an authorized supervisor or owner seat to inspect audit exceptions or sign off watchdogs.'
+        ],
+        bulletsAr: [
+          'تقع قاعدة التدقيق هذه أو الشركة الشقيقة خارج صلاحيات المقعد الحالي.',
+          'يبقى الوصول التشغيلي محصوراً بالشركات المصرح بها وفق قواعد أمان السجلات.',
+          'يرجى التبديل إلى مقعد مشرف أو مالك مخول لمراجعة الاستثناءات أو اعتماد قواعد الرقابة.'
+        ],
+        bulletsFr: [
+          'Cette règle de contrôle ou cette entité sœur relève d un périmètre hors des droits du siège actif.',
+          'L accès opérationnel demeure strictement limité aux sociétés autorisées par la sécurité par ligne.',
+          'Passez sur un siège superviseur ou direction habilité pour examiner et valider ces alertes.'
+        ],
+        drafts: null,
+        facts: { rlsClamped: true }
+      };
+    };
+
+    if (!u || (typeof canViewView === 'function' && !canViewView('sentinels', u))) {
+      return buildRlsClampedSentinelSnapshot(options.industry || getActiveIndustry(STATE.company) || 'Manufacturing', reqRuleId);
+    }
+
+    let impliedInd = '';
+    if (/^H[1-5]$/i.test(reqRuleId)) impliedInd = 'Holding & Treasury';
+    else if (/^R[1-5]$/i.test(reqRuleId)) impliedInd = 'Hospitality & Resorts';
+    else if (/^T[1-5]$/i.test(reqRuleId)) impliedInd = 'Automotive & Heavy Trading';
+    else if (/^P[1-5]$/i.test(reqRuleId)) impliedInd = 'Real Estate & Property';
+    else if (/^I[1-5]$/i.test(reqRuleId)) impliedInd = 'Insurance & Brokerage';
+    else if (/^S(?:[2-9]|1[01])$/i.test(reqRuleId)) impliedInd = 'Manufacturing';
+
+    let reqCoKey = '';
+    if (options.company) {
+      const rawCo = String(options.company).trim();
+      if (COMPANY_LABELS[rawCo] || rawCo.startsWith('industry:')) reqCoKey = rawCo;
+      else if (COMPANY_KEY_BY_NAME[rawCo]) reqCoKey = COMPANY_KEY_BY_NAME[rawCo];
+      else {
+        const slug = slugCompanyKey(rawCo);
+        if (COMPANY_LABELS[slug]) reqCoKey = slug;
+        else if (/^manufacturing/i.test(rawCo)) reqCoKey = 'manufacturing-group';
+        else reqCoKey = rawCo;
+      }
+    }
+
+    const targetInd = options.industry
+      || impliedInd
+      || (reqCoKey ? getActiveIndustry(reqCoKey) : '')
+      || getActiveIndustry(STATE.company)
+      || 'Manufacturing';
+
+    if (!IND_COMPANIES[targetInd]) {
+      return buildRlsClampedSentinelSnapshot('Manufacturing', reqRuleId);
+    }
+
+    // Strict cross-company & cross-industry RLS verification
+    if (!ownerFlag) {
+      const indCos = IND_COMPANIES[targetInd] || [];
+      if (!indCos.some(c => isCoAllowed(c))) {
+        return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+      }
+      if (reqCoKey) {
+        if (reqCoKey === 'manufacturing-group') {
+          if (allowedKeys.length && !allowedKeys.includes('manufacturing-group')) {
+            return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+          }
+        } else if (reqCoKey.startsWith('industry:')) {
+          const iName = reqCoKey.slice(9);
+          if (!IND_COMPANIES[iName] || !IND_COMPANIES[iName].some(c => isCoAllowed(c))) {
+            return buildRlsClampedSentinelSnapshot(iName || targetInd, reqRuleId);
+          }
+        } else {
+          const concrete = COMPANY_BU_MATCH[reqCoKey] || options.company || '';
+          if (!concrete || !isCoAllowed(concrete)) {
+            return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+          }
+        }
+      }
+    }
+    if (!canViewBooks && targetInd === 'Holding & Treasury' && ['H1', 'H2', 'H4', 'H5'].includes(reqRuleId.toUpperCase())) {
+      return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+    }
+    if (!canViewBooks && reqRuleId.toUpperCase() === 'S7' && typeof canViewView === 'function' && !canViewView('payroll_contracts', u)) {
+      return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+    }
+
+    // Resolve evaluation company key without mutating caller STATE permanently
+    const prevCo = STATE.company;
+    let evalCoKey = reqCoKey || STATE.company || 'manufacturing-group';
+    if (!reqCoKey && getActiveIndustry(evalCoKey) !== targetInd) {
+      if (targetInd === 'Manufacturing') {
+        evalCoKey = ownerFlag || allowedKeys.includes('manufacturing-group')
+          ? 'manufacturing-group'
+          : (COMPANY_KEY_BY_NAME[allowedCos[0]] || allowedKeys[0] || 'wtc');
+      } else {
+        const defIndKey = {
+          'Holding & Treasury': 'bdeirholding',
+          'Hospitality & Resorts': 'industry:Hospitality & Resorts',
+          'Automotive & Heavy Trading': 'industry:Automotive & Heavy Trading',
+          'Real Estate & Property': 'industry:Real Estate & Property',
+          'Insurance & Brokerage': 'insurance'
+        }[targetInd];
+        evalCoKey = defIndKey || ('industry:' + targetInd);
+      }
+    }
+    if (!ownerFlag && evalCoKey === 'manufacturing-group' && allowedKeys.length && !allowedKeys.includes('manufacturing-group')) {
+      evalCoKey = allowedKeys[0] || evalCoKey;
+    }
+    const actualCanSignOff = Boolean(typeof canReviewSentinels === 'function' && canReviewSentinels(u, evalCoKey));
+    canSignOff = Boolean(actualCanSignOff && (options.canSignOff === undefined || options.canSignOff));
+
+    let items = [];
+    let snSliceData = null;
+    let kpiData = null;
+    let indExcTables = [];
+    let indGlModel = null;
+    let reOps = null;
+    let insOps = null;
+    let hspOps = null;
+    let trdOps = null;
+    let icOps = null;
+    let customHitsMap = {};
+
+    try {
+      STATE.company = evalCoKey;
+      items = buildSentinelItems();
+      snSliceData = sentinelSlice();
+      kpiData = getKPI();
+      if (targetInd !== 'Manufacturing') {
+        indExcTables = buildIndustrySentinelExceptionTables(targetInd) || [];
+        if (canViewBooks && typeof getIndustryGlModel === 'function') {
+          indGlModel = getIndustryGlModel(targetInd, evalCoKey);
+        }
+        if (targetInd === 'Real Estate & Property') reOps = computeRealEstateOperations({ ignoreSearch: true });
+        else if (targetInd === 'Insurance & Brokerage') insOps = computeInsuranceOperations();
+        else if (targetInd === 'Hospitality & Resorts') hspOps = computeHospitalityOperations({ ignoreSearch: true });
+        else if (targetInd === 'Automotive & Heavy Trading') trdOps = computeTradingOperations({ ignoreSearch: true });
+        else if (targetInd === 'Holding & Treasury') icOps = computeIntercompanyInteractions({ ignoreSearch: true });
+      }
+      getActiveCustomAlertRules().forEach(cr => {
+        if (cr && cr.enabled !== false) {
+          customHitsMap[cr.id] = evaluateSingleCustomAlert(cr) || [];
+        }
+      });
+    } finally {
+      STATE.company = prevCo;
+    }
+
+    const revPrefix = (evalCoKey || 'manufacturing-group') + '|';
+    const revSig = Object.keys(STATE.sentinelReviews || {}).filter(rk => rk.startsWith(revPrefix)).sort().map(rk => {
+      const rv = STATE.sentinelReviews[rk];
+      const act = rv && (rv.active === true || rv.active === 1) ? 1 : 0;
+      return `${rk.slice(revPrefix.length)}:${act}:${safeNum(rv && rv.baseline_metric)}:${safeNum(rv && rv.baseline_secondary)}:${(rv && rv.note) ? rv.note.length : 0}`;
+    }).join(',');
+
+    const isNonMfg = targetInd !== 'Manufacturing';
+    const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
+    let tbDiff = safeNum(kpiData && kpiData.tb_check);
+    if (isNonMfg && indGlModel && Array.isArray(indGlModel.gl_trial_balance)) {
+      tbDiff = round2(indGlModel.gl_trial_balance.reduce((a, r) => a + safeNum(r.debit) - safeNum(r.credit), 0));
+    }
+    const tbBalanced = Math.abs(tbDiff) < s1Tol;
+    const tieCheck = canViewBooks ? {
+      balanced: tbBalanced,
+      varianceUsd: tbBalanced ? 0 : round2(Math.abs(tbDiff))
+    } : null;
+
+    const openItems = items.filter(i => i.severity !== 'ok');
+    const reviewedItems = items.filter(i => i.reviewState === 'reviewed');
+    const driftedItems = items.filter(i => i.reviewState === 'drifted');
+    const passingItems = items.filter(i => i.reviewState === 'pass');
+
+    const coHuman = COMPANY_BU_MATCH[evalCoKey]
+      || (evalCoKey === 'manufacturing-group' ? 'Manufacturing Group' : '')
+      || (evalCoKey.startsWith('industry:') ? evalCoKey.slice(9) : '')
+      || COMPANY_LABELS[evalCoKey]
+      || targetInd;
+    const indLoc = IND_LOC[targetInd] || IND_LOC['Manufacturing'];
+    const companyEn = locCo(coHuman, 'en');
+    const companyAr = locCo(coHuman, 'ar');
+    const companyFr = locCo(coHuman, 'fr');
+
+    const fleet = (snSliceData && snSliceData.fleet) || {};
+    const pricing = (snSliceData && snSliceData.pricing) || {};
+    const parity = (snSliceData && snSliceData.parity) || {};
+    const overdueArRows = (snSliceData && snSliceData.overdueArRows) || [];
+    const wfAnomalies = (snSliceData && snSliceData.wfAnomalies) || [];
+
+    // Helper: compute rule-level deterministic metric, exposure ($), row count, and #1 offender
+    const analyzeSingleRule = ruleItem => {
+      const rid = ruleItem.id;
+      let expUsd = 0;
+      let rowCnt = 0;
+      let topParty = '';
+      let topSubEn = '', topSubAr = '', topSubFr = '';
+      let physValEn = '', physValAr = '', physValFr = '';
+      let bEn = [], bAr = [], bFr = [];
+
+      if (ruleItem.isCustom) {
+        const hits = customHitsMap[rid] || [];
+        rowCnt = hits.length;
+        const partyCounts = new Map();
+        hits.forEach(h => {
+          const v = Math.abs(safeNum(h.value));
+          if (h.unit === '$') expUsd = round2(expUsd + v);
+          const p = sanitizePlain(h.party || h.company || 'Flagged Entry');
+          const cur = partyCounts.get(p) || { cnt: 0, sum: 0, unit: h.unit || '' };
+          cur.cnt += 1;
+          cur.sum = round2(cur.sum + v);
+          partyCounts.set(p, cur);
+        });
+        const ranked = Array.from(partyCounts.entries()).sort((a, b) => (b[1].sum - a[1].sum) || (b[1].cnt - a[1].cnt));
+        if (ranked.length) {
+          topParty = ranked[0][0];
+          const topInfo = ranked[0][1];
+          const amtTxt = topInfo.unit === '$' ? fmtUSD(topInfo.sum, 0) : `${fmtNum(topInfo.sum, 1)} ${sanitizePlain(topInfo.unit)}`;
+          topSubEn = `${topInfo.cnt} hit(s) · ${amtTxt}`;
+          topSubAr = `${topInfo.cnt} حالة · ${topInfo.unit === '$' ? fmtUSD(topInfo.sum, 0) : fmtNum(topInfo.sum, 1)}`;
+          topSubFr = `${topInfo.cnt} alerte(s) · ${amtTxt}`;
+          if (topInfo.unit !== '$' && expUsd === 0) {
+            physValEn = `${fmtNum(topInfo.sum, 1)} ${sanitizePlain(topInfo.unit)}`;
+            physValAr = `${fmtNum(topInfo.sum, 1)}`;
+            physValFr = `${fmtNum(topInfo.sum, 1)} ${sanitizePlain(topInfo.unit)}`;
+          }
+        }
+        const safeTitle = sanitizePlain(ruleItem.title || 'Custom Alert');
+        bEn = [
+          rowCnt > 0
+            ? `Custom watchdog "${safeTitle}" flagged ${fmtNum(rowCnt)} matching record(s)${expUsd > 0 ? ` totaling ${fmtUSD(expUsd, 2)}` : ''}.`
+            : `Custom watchdog "${safeTitle}" passed cleanly with 0 threshold breaches in ${companyEn}.`,
+          topParty
+            ? `Primary concentration sits on ${topParty} (${topSubEn}); inspect the itemized rows below before approving.`
+            : 'No recurring counterparty or asset breach was detected in the active filter horizon.',
+          'Verify supporting vouchers or adjust the custom rule threshold in Alerts & Thresholds before signing off.'
+        ];
+        bAr = [
+          rowCnt > 0
+            ? `رصدت قاعدة التنبيه المخصصة "${safeTitle}" عدد ${fmtNum(rowCnt)} سجل متجاوز للحد${expUsd > 0 ? ` بقيمة إجمالية ${fmtUSD(expUsd, 2)}` : ''}.`
+            : `اجتازت قاعدة التنبيه المخصصة "${safeTitle}" الفحص بنجاح دون أي تجاوز في ${companyAr}.`,
+          topParty
+            ? `يتركز التكرار الأعلى لدى ${locOffender(topParty, 'ar')} (${topSubAr})؛ يرجى فحص السجلات التفصيلية قبل الاعتماد.`
+            : 'لم يُسجل أي تكرار استثنائي لطرف مقابل أو معدة ضمن الفترة المحددة.',
+          'تحقق من المستندات المؤيدة أو راجع سقف القاعدة في إعدادات التنبيهات قبل توقيع المراجعة.'
+        ];
+        bFr = [
+          rowCnt > 0
+            ? `La règle personnalisée "${safeTitle}" signale ${fmtNum(rowCnt)} enregistrement(s)${expUsd > 0 ? ` pour ${fmtUSD(expUsd, 2)}` : ''}.`
+            : `La règle personnalisée "${safeTitle}" est conforme avec 0 dépassement sur ${companyFr}.`,
+          topParty
+            ? `La concentration principale concerne ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez les lignes détaillées avant validation.`
+            : 'Aucune récurrence anormale de contrepartie ou d actif sur la période active.',
+          'Contrôlez les pièces justificatives ou ajustez le seuil dans Alertes & Seuils avant signature.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
+      if (rid === 'S1') {
+        expUsd = canViewBooks ? round2(Math.abs(tbDiff)) : 0;
+        rowCnt = tbBalanced ? 0 : 1;
+        topParty = tbBalanced ? 'No Repeat Offenders' : companyEn;
+        topSubEn = tbBalanced ? 'Debits equal Credits' : `Variance ${fmtUSD(expUsd, 2)}`;
+        topSubAr = tbBalanced ? 'المدين يساوي الدائن' : `فرق ${fmtUSD(expUsd, 2)}`;
+        topSubFr = tbBalanced ? 'Débits égaux aux crédits' : `Écart ${fmtUSD(expUsd, 2)}`;
+        bEn = [
+          tbBalanced
+            ? `Lebanese Chart of Accounts Classes 1-7 double-entry trial balance is 100% balanced ($0.00 variance) across ${companyEn}.`
+            : `Trial balance carries a ${fmtUSD(expUsd, 2)} debit-versus-credit variance in ${companyEn} requiring journal leg inspection.`,
+          'Every sales, purchase, expense, receipt, settlement, and tax leg reconciles deterministically against general ledger control accounts.',
+          tbBalanced
+            ? 'No corrective journal entry is required; rule passes native ledger integrity.'
+            : 'Open the General Ledger hub to isolate the unbalanced voucher date before signing off.'
+        ];
+        bAr = [
+          tbBalanced
+            ? `ميزان المراجعة للقيد المزدوج (الأقسام 1 إلى 7) متوازن بنسبة 100% وبفارق $0.00 عبر ${companyAr}.`
+            : `يُظهر ميزان المراجعة فرقاً قدره ${fmtUSD(expUsd, 2)} بين المدين والدائن في ${companyAr} يستوجب فحص قيود اليومية.`,
+          'تتطابق كافة قيود المبيعات والمشتريات والمصاريف والمقبوضات والتسويات والضرائب حسابياً مع حسابات الأستاذ العام.',
+          tbBalanced
+            ? 'لا يلزم إجراء أي قيد تصحيحي؛ القاعدة تجتاز فحص سلامة الدفاتر تلقائياً.'
+            : 'افتح دفتر الأستاذ العام لعزل تاريخ السند غير المتوازن قبل اعتماد القاعدة.'
+        ];
+        bFr = [
+          tbBalanced
+            ? `La balance générale en partie double (classes 1 à 7) est équilibrée à 100% ($0.00 d écart) sur ${companyFr}.`
+            : `La balance générale présente un écart débit/crédit de ${fmtUSD(expUsd, 2)} sur ${companyFr} nécessitant un pointage.`,
+          'Chaque écriture de vente, achat, charge, encaissement, règlement et taxe est réconciliée avec les comptes collectifs.',
+          tbBalanced
+            ? 'Aucune écriture de régularisation requise ; le contrôle comptable est conforme.'
+            : 'Ouvrez le Grand Livre pour isoler la pièce déséquilibrée avant validation.'
+        ];
+        return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+      }
+
+      if (!isNonMfg) {
+        // Manufacturing S2 - S11
+        if (rid === 'S2') {
+          const tankL = fleet.diesel_stock_balance_l != null ? safeNum(fleet.diesel_stock_balance_l) : safeNum(kpiData && kpiData.diesel_in_tank);
+          const pendRows = fleet.pending_price_rows || [];
+          const pendCnt = safeNum(fleet.pending_diesel_deliveries_count || pendRows.length);
+          const pendL = safeNum(fleet.pending_diesel_deliveries_l);
+          rowCnt = (tankL < 0 ? 1 : 0) + pendCnt;
+          physValEn = `${fmtNum(tankL, 0)} L`;
+          physValAr = `${fmtNum(tankL, 0)} لتر`;
+          physValFr = `${fmtNum(tankL, 0)} L`;
+          const topPend = pendRows[0];
+          topParty = topPend ? sanitizePlain(topPend.supplier || topPend.company || 'Fuel Supplier') : (tankL < 0 ? companyEn : 'No Repeat Offenders');
+          topSubEn = pendCnt > 0 ? `${fmtNum(pendCnt)} pending (${fmtNum(pendL, 0)} L)` : `Tank ${fmtNum(tankL, 0)} L`;
+          topSubAr = pendCnt > 0 ? `${fmtNum(pendCnt)} توريد بانتظار السعر (${fmtNum(pendL, 0)} لتر)` : `الرصيد ${fmtNum(tankL, 0)} لتر`;
+          topSubFr = pendCnt > 0 ? `${fmtNum(pendCnt)} livraisons en attente (${fmtNum(pendL, 0)} L)` : `Cuve ${fmtNum(tankL, 0)} L`;
+          bEn = [
+            `Diesel tank ledger balance stands at ${fmtNum(tankL, 0)} L (${fmtNum(fleet.diesel_purchased_l || 0, 0)} L purchased minus ${fmtNum(fleet.diesel_issued_l || 0, 0)} L issued and ${fmtNum(fleet.diesel_discrepancy_l || 0, 0)} L discrepancy).`,
+            pendCnt > 0
+              ? `${fmtNum(pendCnt)} bulk fuel delivery voucher(s) (${fmtNum(pendL, 0)} L, led by ${topParty}) are physically in tank at $0.00 pending final supplier invoice price.`
+              : (tankL < 0 ? 'Negative ledger litres indicate fuel bills were booked under General Expenses instead of Fuel Purchases.' : 'All bulk diesel deliveries carry finalized supplier invoice pricing.'),
+            pendCnt > 0
+              ? 'Open Pending Invoices in Expenses to enter final supplier unit prices before closing monthly fuel costs.'
+              : 'Reconcile physical dipstick readings against the Diesel Tank register prior to sign-off.'
+          ];
+          bAr = [
+            `يبلغ رصيد خزان المازوت الدفتري ${fmtNum(tankL, 0)} لتر (${fmtNum(fleet.diesel_purchased_l || 0, 0)} لتر مشتراة ناقص ${fmtNum(fleet.diesel_issued_l || 0, 0)} لتر مصروفة و${fmtNum(fleet.diesel_discrepancy_l || 0, 0)} لتر فروقات).`,
+            pendCnt > 0
+              ? `يوجد ${fmtNum(pendCnt)} إيصال توريد مازوت (${fmtNum(pendL, 0)} لتر، أبرزها ${locOffender(topParty, 'ar')}) مضافة للخزان بسعر مؤقت $0.00 بانتظار فاتورة المورد.`
+              : (tankL < 0 ? 'يشير الرصيد السالب إلى تسجيل فواتير مازوت ضمن المصاريف العامة بدلاً من مشتريات المحروقات.' : 'كافة توريدات المازوت مسعرة ومطابقة لفواتير الموردين.'),
+            pendCnt > 0
+              ? 'افتح الفواتير المعلقة في قسم المصاريف لإدخال السعر النهائي للمورد قبل إقفال كلفة المحروقات.'
+              : 'طابق القياس الفعلي للخزان مع سجل حركة المازوت قبل اعتماد المراجعة.'
+          ];
+          bFr = [
+            `Le solde théorique de la cuve gasoil s établit à ${fmtNum(tankL, 0)} L (${fmtNum(fleet.diesel_purchased_l || 0, 0)} L achetés moins ${fmtNum(fleet.diesel_issued_l || 0, 0)} L distribués et ${fmtNum(fleet.diesel_discrepancy_l || 0, 0)} L d écart).`,
+            pendCnt > 0
+              ? `${fmtNum(pendCnt)} bon(s) de livraison (${fmtNum(pendL, 0)} L, dont ${locOffender(topParty, 'fr')}) sont entrés en stock à $0.00 dans l attente du prix fournisseur.`
+              : (tankL < 0 ? 'Un stock négatif indique des factures gasoil saisies en charges générales au lieu d achats carburant.' : 'Toutes les livraisons de gasoil disposent d un tarif fournisseur définitif.'),
+            pendCnt > 0
+              ? 'Ouvrez les factures en attente dans Dépenses pour compléter le tarif fournisseur avant clôture.'
+              : 'Rapprochez le jaugeage physique avec le registre gasoil avant validation.'
+          ];
+        } else if (rid === 'S3') {
+          const outs = fleet.consumption_outliers || [];
+          const meters = safeNum(fleet.meter_readings_to_check);
+          rowCnt = meters + outs.length;
+          physValEn = `${fmtNum(rowCnt, 0)} Alerts`;
+          physValAr = `${fmtNum(rowCnt, 0)} تنبيهات`;
+          physValFr = `${fmtNum(rowCnt, 0)} alertes`;
+          const topO = outs[0];
+          topParty = topO ? sanitizePlain(topO.equipment || 'Fleet Unit') : 'No Repeat Offenders';
+          topSubEn = topO ? `${fmtNum(topO.value, 1)} ${sanitizePlain(topO.metric || 'L/hr')} (${fmtNum(topO.diesel_l, 0)} L)` : `${fmtNum(meters)} meter checks`;
+          topSubAr = topO ? `${fmtNum(topO.value, 1)} (${fmtNum(topO.diesel_l, 0)} لتر)` : `${fmtNum(meters)} قراءات عداد`;
+          topSubFr = topO ? `${fmtNum(topO.value, 1)} ${sanitizePlain(topO.metric || 'L/h')} (${fmtNum(topO.diesel_l, 0)} L)` : `${fmtNum(meters)} compteurs`;
+          bEn = [
+            `Fleet meter watchdog flagged ${fmtNum(outs.length)} fuel burn outlier(s) and ${fmtNum(meters)} odometer or hour-meter sequence check(s).`,
+            topO
+              ? `Highest burn anomaly is unit ${topParty} at ${fmtNum(topO.value, 1)} ${sanitizePlain(topO.metric || '')} across ${fmtNum(topO.diesel_l, 0)} L issued.`
+              : 'No individual machine exceeded L/100km or L/hr consumption tolerances in this scope.',
+            'Inspect cab meter photos on the flagged refueling vouchers and correct any transposed odometer digits before sign-off.'
+          ];
+          bAr = [
+            `رصد مراقب عدادات الأسطول ${fmtNum(outs.length)} انحرافات في استهلاك الوقود و${fmtNum(meters)} قراءات عداد أو ساعات عمل تتطلب التدقيق.`,
+            topO
+              ? `أعلى انحراف استهلاك مسجل على الآلية ${topParty} بمعدل ${fmtNum(topO.value, 1)} عبر ${fmtNum(topO.diesel_l, 0)} لتر مصروفة.`
+              : 'لم تتجاوز أي آلية حدود استهلاك الوقود المعيارية ضمن النطاق الحالي.',
+            'راجع صور عدادات الآليات في إيصالات التزود بالوقود وصحح أي أرقام مقلوبة قبل الاعتماد.'
+          ];
+          bFr = [
+            `Le contrôle compteurs signale ${fmtNum(outs.length)} anomalie(s) de consommation et ${fmtNum(meters)} relevé(s) kilométriques ou horaires à vérifier.`,
+            topO
+              ? `La dérive principale concerne l unité ${topParty} à ${fmtNum(topO.value, 1)} ${sanitizePlain(topO.metric || '')} sur ${fmtNum(topO.diesel_l, 0)} L servis.`
+              : 'Aucun engin n a dépassé les seuils de consommation horaire ou kilométrique sur la période.',
+            'Vérifiez les relevés compteurs sur les bons de gasoil signalés avant de signer la revue.'
+          ];
+        } else if (rid === 'S4') {
+          expUsd = Array.isArray(overdueArRows)
+            ? round2(overdueArRows.reduce((s, r) => s + Math.max(0, safeNum(r.ar_60_plus)), 0))
+            : round2(Math.max(0, safeNum(kpiData && kpiData.ar_60_plus)));
+          rowCnt = overdueArRows.length;
+          const sortedAr = overdueArRows.slice().sort((a, b) => safeNum(b.ar_60_plus) - safeNum(a.ar_60_plus));
+          const topC = sortedAr[0];
+          topParty = topC ? sanitizePlain(topC.customer) : 'No Repeat Offenders';
+          topSubEn = topC ? `${fmtUSD(topC.ar_60_plus, 0)} > 60d (Open ${fmtUSD(topC.ar_balance, 0)})` : 'All current';
+          topSubAr = topC ? `${fmtUSD(topC.ar_60_plus, 0)} فوق 60 يوم` : 'كافة الذمم جارية';
+          topSubFr = topC ? `${fmtUSD(topC.ar_60_plus, 0)} > 60j` : 'Encours à jour';
+          bEn = [
+            `${fmtUSD(expUsd, 2)} in customer receivables is aged past 60 days after oldest-first receipt allocation across ${fmtNum(rowCnt)} account(s) (DSO ${fmtNum(kpiData && kpiData.dso_days, 0)} days).`,
+            topC
+              ? `Top overdue concentration is ${topParty} with ${fmtUSD(topC.ar_60_plus, 2)} past 60 days out of ${fmtUSD(topC.ar_balance, 2)} total open balance.`
+              : 'Zero customer balances exceed the 60-day credit aging threshold.',
+            'Confirm payment promises with the top overdue accounts or place dispatch credit holds in Receivables before sign-off.'
+          ];
+          bAr = [
+            `يبلغ إجمالي ذمم العملاء المتأخرة لأكثر من 60 يوماً ${fmtUSD(expUsd, 2)} بعد تخصيص المقبوضات للأقدم أولاً عبر ${fmtNum(rowCnt)} حسابات (متوسط التحصيل ${fmtNum(kpiData && kpiData.dso_days, 0)} يوماً).`,
+            topC
+              ? `أعلى تركز متأخرات لدى ${locOffender(topParty, 'ar')} بمبلغ ${fmtUSD(topC.ar_60_plus, 2)} متأخر لأكثر من 60 يوماً من أصل ${fmtUSD(topC.ar_balance, 2)}.`
+              : 'لا توجد أي ذمم عملاء تتجاوز سقف التأخير البالغ 60 يوماً.',
+            'تأكد من جدولة التحصيل مع الحسابات المتأخرة أو فعّل إيقاف التسليم الائتماني قبل اعتماد القاعدة.'
+          ];
+          bFr = [
+            `${fmtUSD(expUsd, 2)} de créances clients dépassent 60 jours après imputation des règlements sur les factures les plus anciennes (${fmtNum(rowCnt)} comptes, DSO ${fmtNum(kpiData && kpiData.dso_days, 0)} j).`,
+            topC
+              ? `La plus forte exposition concerne ${locOffender(topParty, 'fr')} avec ${fmtUSD(topC.ar_60_plus, 2)} à plus de 60 jours sur ${fmtUSD(topC.ar_balance, 2)} ouverts.`
+              : 'Aucun compte client ne dépasse le seuil d ancienneté de 60 jours.',
+            'Validez l échéancier d encaissement ou bloquez les livraisons à crédit avant signature.'
+          ];
+        } else if (rid === 'S5') {
+          const belowRows = pricing.top_below_agreed_exceptions || [];
+          const lapsedRows = pricing.lapsed_agreement_pairs || [];
+          expUsd = round2(Math.max(0, safeNum(pricing.sales_below_agreed_usd)));
+          rowCnt = safeNum(pricing.below_agreed_pairs_count) + lapsedRows.length;
+          const topB = belowRows[0] || lapsedRows[0];
+          topParty = topB ? sanitizePlain(`${topB.customer || ''}${topB.product ? ' · ' + topB.product : ''}`) : 'No Repeat Offenders';
+          const topShort = topB ? safeNum(topB.shortfall_usd != null ? topB.shortfall_usd : ((safeNum(topB.agreed_price) - safeNum(topB.last_price || topB.actual_price)) * safeNum(topB.qty))) : 0;
+          topSubEn = topB ? (topShort > 0 ? `${fmtUSD(topShort, 0)} shortfall` : 'Lapsed agreement') : '100% compliant';
+          topSubAr = topB ? (topShort > 0 ? `فارق ${fmtUSD(topShort, 0)}` : 'اتفاقية منتهية') : 'ملتزم بالكامل';
+          topSubFr = topB ? (topShort > 0 ? `Écart ${fmtUSD(topShort, 0)}` : 'Accord expiré') : '100% conforme';
+          bEn = [
+            `${fmtUSD(expUsd, 2)} in sales tickets were billed below date-effective agreed rates across ${fmtNum(pricing.below_agreed_pairs_count || 0)} pair(s), alongside ${fmtNum(lapsedRows.length)} lapsed agreement pair(s).`,
+            topB
+              ? `Largest pricing variance sits on ${topParty} (${topSubEn}); verify whether a chronological price renewal or credit note applies.`
+              : 'Every dispatched sales ticket matched its chronological customer price rule or standard list rate.',
+            'Update effective-dated rules in Price Agreements to backfill approved contract rates or issue debit adjustments before signing off.'
+          ];
+          bAr = [
+            `تمت فوترة مبيعات بأقل من السعر التعاقدي الساري بقيمة فرق ${fmtUSD(expUsd, 2)} عبر ${fmtNum(pricing.below_agreed_pairs_count || 0)} ثنائيات، مع ${fmtNum(lapsedRows.length)} اتفاقيات منتهية الصلاحية.`,
+            topB
+              ? `أكبر فارق تسعير مسجل على ${locOffender(topParty, 'ar')} (${topSubAr})؛ تحقق من وجود تجديد زمني للسعر أو خصم معتمد.`
+              : 'طابقت جميع قسائم المبيعات اتفاقيات الأسعار الزمنية السارية أو سعر اللائحة الأساسي.',
+            'حدّث تواريخ السريان في اتفاقيات الأسعار لتطبيق السعر التعاقدي بأثر رجعي أو اعتمد التسوية قبل التوقيع.'
+          ];
+          bFr = [
+            `${fmtUSD(expUsd, 2)} de ventes ont été facturés sous le tarif convenu sur ${fmtNum(pricing.below_agreed_pairs_count || 0)} couple(s) client-produit, avec ${fmtNum(lapsedRows.length)} accord(s) expiré(s).`,
+            topB
+              ? `L écart principal porte sur ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez si un avenant tarifaire chronologique s applique.`
+              : 'Tous les bons de vente respectent les accords tarifaires chronologiques ou le tarif liste.',
+            'Mettez à jour la grille chronologique dans Accords Tarifaires avant validation.'
+          ];
+        } else if (rid === 'S6') {
+          const dups = safeNum(pricing.duplicate_ticket_numbers);
+          const unnum = safeNum(pricing.unnumbered_tickets);
+          const miss = safeNum(pricing.missing_tickets_in_books);
+          rowCnt = dups + unnum;
+          physValEn = `${fmtNum(rowCnt, 0)} Serials`;
+          physValAr = `${fmtNum(rowCnt, 0)} أرقام`;
+          physValFr = `${fmtNum(rowCnt, 0)} numéros`;
+          topParty = rowCnt > 0 ? `${companyEn} (${fmtNum(dups)} dup / ${fmtNum(unnum)} unnum)` : 'No Repeat Offenders';
+          topSubEn = `${fmtNum(miss)} skipped in ${fmtNum(pricing.incomplete_ticket_books || 0)} pads`;
+          topSubAr = `${fmtNum(miss)} أرقام مفقودة في الدفاتر`;
+          topSubFr = `${fmtNum(miss)} numéros sautés`;
+          bEn = [
+            `Physical ticket pad audit detected ${fmtNum(dups)} duplicate serial(s), ${fmtNum(unnum)} unnumbered ticket(s), and ${fmtNum(miss)} skipped serial(s) across ${fmtNum(pricing.incomplete_ticket_books || 0)} pad(s).`,
+            dups > 0 || unnum > 0
+              ? 'Duplicate or blank serials indicate either double-entered carbon slips or weighbridge tickets saved without pad numbers.'
+              : 'Zero duplicate or unnumbered weighbridge tickets remain open in the active period.',
+            'Inspect the Ticket Serial Audit panel to void duplicate entries or log cancelled physical slips before sign-off.'
+          ];
+          bAr = [
+            `أظهر تدقيق دفاتر القسائم الورقية ${fmtNum(dups)} أرقام مكررة، و${fmtNum(unnum)} قسائم بدون رقم، و${fmtNum(miss)} أرقام متخطاة عبر ${fmtNum(pricing.incomplete_ticket_books || 0)} دفاتر.`,
+            dups > 0 || unnum > 0
+              ? 'تشير الأرقام المكررة أو الفارغة إلى إدخال مزدوج للنسخ الورقية أو حفظ قسائم قبان دون رقم دفتر.'
+              : 'لا توجد أي قسائم مكررة أو غير مرقمة ضمن الفترة النشطة.',
+            'راجع جدول تدقيق تسلسل القسائم لإلغاء التكرار أو توثيق القسائم الملغاة ورقياً قبل الاعتماد.'
+          ];
+          bFr = [
+            `L audit des carnets physiques relève ${fmtNum(dups)} doublon(s), ${fmtNum(unnum)} bon(s) sans numéro et ${fmtNum(miss)} saut(s) de séquence sur ${fmtNum(pricing.incomplete_ticket_books || 0)} carnet(s).`,
+            dups > 0 || unnum > 0
+              ? 'Les doublons ou numéros vides proviennent d une double saisie ou de pesées enregistrées sans numéro de souche.'
+              : 'Aucun doublon ni bon non numéroté sur la période active.',
+            'Consultez le panneau de contrôle séquentiel pour annuler les doublons avant signature.'
+          ];
+        } else if (rid === 'S7') {
+          const unmRows = pricing.unmatched_salary_by_staff || [];
+          expUsd = round2(Math.max(0, safeNum(pricing.unmatched_salary_payments_usd)));
+          const pendSal = safeNum(pricing.pending_salary_contracts);
+          rowCnt = unmRows.length + pendSal;
+          const topSt = unmRows.slice().sort((a, b) => safeNum(b.unmatched_usd) - safeNum(a.unmatched_usd))[0];
+          topParty = topSt ? sanitizePlain(topSt.staff) : 'No Repeat Offenders';
+          topSubEn = topSt ? `${fmtUSD(topSt.unmatched_usd, 0)} (${fmtNum(topSt.months_count || 1)} mo)` : 'Contracts matched';
+          topSubAr = topSt ? `${fmtUSD(topSt.unmatched_usd, 0)} (${fmtNum(topSt.months_count || 1)} أشهر)` : 'العقود مطابقة';
+          topSubFr = topSt ? `${fmtUSD(topSt.unmatched_usd, 0)} (${fmtNum(topSt.months_count || 1)} mois)` : 'Contrats alignés';
+          bEn = [
+            `${fmtUSD(expUsd, 2)} in salary disbursements span ${fmtNum(unmRows.length)} staff member(s) without an active employment contract window${pendSal > 0 ? `, plus ${fmtNum(pendSal)} contract(s) at $0.00 pending salary` : ''}.`,
+            topSt
+              ? `Highest unmatched payroll sits on ${topParty} (${fmtUSD(topSt.unmatched_usd, 2)} across ${fmtNum(topSt.months_count || 1)} month(s)).`
+              : 'Every monthly salary voucher reconciles to an active chronological employment contract.',
+            'Backfill missing effective start dates or finalize $0.00 pending salaries in Employment Contracts before sign-off.'
+          ];
+          bAr = [
+            `بلغت دفعات الرواتب غير المغطاة بعقد عمل سارٍ ${fmtUSD(expUsd, 2)} موزعة على ${fmtNum(unmRows.length)} موظفين${pendSal > 0 ? `، إضافة إلى ${fmtNum(pendSal)} عقود براتب معلق $0.00` : ''}.`,
+            topSt
+              ? `أعلى مبلغ غير مطابق مسجل للموظف ${locOffender(topParty, 'ar')} بقيمة ${fmtUSD(topSt.unmatched_usd, 2)} خلال ${fmtNum(topSt.months_count || 1)} أشهر.`
+              : 'ترتبط كافة دفعات الرواتب الشهرية بعقود عمل زمنية فعالة.',
+            'استكمل تواريخ المباشرة أو حدد الرواتب النهائية للعقود المعلقة في سجل عقود العمل قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtUSD(expUsd, 2)} de salaires versés concernent ${fmtNum(unmRows.length)} collaborateur(s) sans contrat actif sur la période${pendSal > 0 ? `, plus ${fmtNum(pendSal)} contrat(s) à $0.00 en attente` : ''}.`,
+            topSt
+              ? `L écart principal concerne ${locOffender(topParty, 'fr')} (${fmtUSD(topSt.unmatched_usd, 2)} sur ${fmtNum(topSt.months_count || 1)} mois).`
+              : 'Chaque bulletin de paie est rattaché à un contrat de travail chronologique actif.',
+            'Renseignez les dates d effet ou finalisez les salaires en attente dans Contrats avant validation.'
+          ];
+        } else if (rid === 'S8') {
+          const gapRows = (parity.date_basis_anomalies_gt_31d || []).filter(r => evalCoKey === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[evalCoKey]);
+          const unlVat = (parity.unlinked_vat_invoices_sample || []).filter(r => evalCoKey === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[evalCoKey]);
+          expUsd = round2(gapRows.reduce((a, r) => a + Math.abs(safeNum(r.amount_usd)), 0) + unlVat.reduce((a, r) => a + Math.abs(safeNum(r.header_net)) + Math.abs(safeNum(r.header_vat)), 0));
+          rowCnt = safeNum(parity.date_basis_anomalies_gt_31d_count) + safeNum(parity.unlinked_vat_invoices_count);
+          const topG = gapRows[0] || unlVat[0];
+          topParty = topG ? sanitizePlain(topG.name || topG.invoice || topG.bu || 'Backdated Voucher') : 'No Repeat Offenders';
+          topSubEn = gapRows[0] ? `${fmtNum(gapRows[0].gap_days)}d gap · ${fmtUSD(gapRows[0].amount_usd, 0)}` : (unlVat[0] ? `Unlinked VAT ${fmtUSD(unlVat[0].header_vat, 0)}` : 'Dates aligned');
+          topSubAr = gapRows[0] ? `فجوة ${fmtNum(gapRows[0].gap_days)} يوم` : (unlVat[0] ? `فاتورة ضريبية غير مربوطة` : 'التواريخ متطابقة');
+          topSubFr = gapRows[0] ? `Écart ${fmtNum(gapRows[0].gap_days)} j` : (unlVat[0] ? 'Facture TVA non liée' : 'Dates alignées');
+          bEn = [
+            `${fmtNum(parity.date_basis_anomalies_gt_31d_count || 0)} voucher(s) carry reporting-versus-transaction date gaps above threshold, plus ${fmtNum(parity.unlinked_vat_invoices_count || 0)} unlinked tax invoice(s).`,
+            topG
+              ? `Lead timing exception is ${topParty} (${topSubEn}); verify quarterly tax cut-off placement.`
+              : 'Transaction dates and accounting reporting dates are fully synchronized across active periods.',
+            'Link standalone tax headers to underlying dispatch tickets or confirm deferred reporting dates before signing off.'
+          ];
+          bAr = [
+            `يوجد ${fmtNum(parity.date_basis_anomalies_gt_31d_count || 0)} سندات بفجوة تتجاوز الحد بين تاريخ العملية وتاريخ التقرير، إضافة إلى ${fmtNum(parity.unlinked_vat_invoices_count || 0)} فواتير ضريبية غير مربوطة بقسائم.`,
+            topG
+              ? `أبرز استثناء زمني يخص ${locOffender(topParty, 'ar')} (${topSubAr})؛ تحقق من فترة الإقرار الضريبي الفصلية.`
+              : 'تتطابق تواريخ العمليات وتواريخ التقارير المحاسبية بالكامل عبر الفترات النشطة.',
+            'اربط الفواتير الضريبية بالقسائم الفعلية أو صادق على تواريخ الترحيل المؤجلة قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtNum(parity.date_basis_anomalies_gt_31d_count || 0)} pièce(s) présentent un décalage date opération / date comptable hors seuil, avec ${fmtNum(parity.unlinked_vat_invoices_count || 0)} facture(s) TVA non liée(s).`,
+            topG
+              ? `L écart principal porte sur ${locOffender(topParty, 'fr')} (${topSubFr}) ; vérifiez le rattachement trimestriel TVA.`
+              : 'Les dates d opération et de reporting comptable sont parfaitement synchronisées.',
+            'Rattachez les factures fiscales aux bons de livraison ou validez le cut-off avant signature.'
+          ];
+        } else if (rid === 'S9') {
+          rowCnt = safeNum(ruleItem.rawMetric) + safeNum(ruleItem.rawSecondary);
+          physValEn = `${fmtNum(rowCnt, 0)} Events`;
+          physValAr = `${fmtNum(rowCnt, 0)} حالات`;
+          physValFr = `${fmtNum(rowCnt, 0)} événements`;
+          const topW = wfAnomalies[0];
+          topParty = topW ? sanitizePlain(topW.equipment || topW.driver || 'Plant Machine') : 'No Repeat Offenders';
+          topSubEn = topW ? sanitizePlain(topW.issue || topW.type || 'Absent operator') : 'Operators verified';
+          topSubAr = topW ? 'تشغيل آلية بغياب السائق الأساسي' : 'السائقون مطابقون للحضور';
+          topSubFr = topW ? 'Engin utilisé sans chauffeur pointé' : 'Présences conformes';
+          bEn = [
+            `Workforce-to-fleet cross-check detected ${fmtNum(ruleItem.rawMetric)} absent-driver machine refueling/service event(s) and ${fmtNum(ruleItem.rawSecondary)} unattributed lubricant ticket(s).`,
+            topW
+              ? `Primary flagged machine is ${topParty}; fuel or grease was issued while the assigned operator had no attendance check-in or logged relief driver.`
+              : 'Every machine fuel and lubricant issue matched an attended operator or relief assignment.',
+            'Assign the relief operator on the Plant & Workforce Map or investigate unauthorized yard fuel draws before signing off.'
+          ];
+          bAr = [
+            `كشف التقاطع بين الحضور والأسطول عن ${fmtNum(ruleItem.rawMetric)} حركة تزويد وقود أو صيانة لآلية في يوم غياب سائقها، و${fmtNum(ruleItem.rawSecondary)} حركة زيوت وشحوم بدون اسم مشغل.`,
+            topW
+              ? `الآلية الأبرز في التنبيه هي ${topParty}؛ حيث صُرف وقود أو زيوت دون تسجيل حضور المشغل الأساسي أو سائق بديل.`
+              : 'تطابقت جميع حركات صرف الوقود والزيوت مع حضور المشغلين المسجلين.',
+            'ثبّت اسم السائق البديل على خريطة المصنع والأسطول أو تحقق من الصرف غير المصرح قبل الاعتماد.'
+          ];
+          bFr = [
+            `Le croisement pointage / flotte relève ${fmtNum(ruleItem.rawMetric)} ravitaillement(s) d engin avec chauffeur absent et ${fmtNum(ruleItem.rawSecondary)} sortie(s) lubrifiant sans opérateur.`,
+            topW
+              ? `L unité principalement signalée est ${topParty}, ravitaillée sans pointage du conducteur titulaire ni remplaçant déclaré.`
+              : 'Chaque sortie de carburant et lubrifiant correspond à un opérateur présent.',
+            'Affectez le conducteur remplaçant sur la Carte Usine ou contrôlez la sortie carburant avant validation.'
+          ];
+        } else if (rid === 'S10') {
+          const maintIdx = getMaintIndex();
+          const downCnt = safeNum(maintIdx && maintIdx.openCritCount);
+          const unnotCnt = safeNum(maintIdx && maintIdx.unnotifiedParts && maintIdx.unnotifiedParts.length);
+          const noVendCnt = safeNum(ruleItem.rawSecondary);
+          rowCnt = downCnt + unnotCnt + noVendCnt;
+          physValEn = downCnt > 0 ? `${fmtNum(downCnt, 0)} Down` : `${fmtNum(rowCnt, 0)} Custody`;
+          physValAr = downCnt > 0 ? `${fmtNum(downCnt, 0)} متوقفة` : `${fmtNum(rowCnt, 0)} عهدة قطع`;
+          physValFr = downCnt > 0 ? `${fmtNum(downCnt, 0)} à l arrêt` : `${fmtNum(rowCnt, 0)} pièces`;
+          const topP = (maintIdx && ((maintIdx.openCritDefects && maintIdx.openCritDefects[0]) || (maintIdx.unnotifiedParts && maintIdx.unnotifiedParts[0]))) || null;
+          topParty = topP ? sanitizePlain(topP.equipment || topP.part_name || 'Workshop Unit') : 'No Repeat Offenders';
+          topSubEn = downCnt > 0 ? `${fmtNum(downCnt)} critical down · ${fmtNum(unnotCnt)} unnotified` : `${fmtNum(unnotCnt)} unnotified parts`;
+          topSubAr = downCnt > 0 ? `${fmtNum(downCnt)} آلية متوقفة · ${fmtNum(unnotCnt)} بدون بلاغ عطل` : `${fmtNum(unnotCnt)} قطع بدون بلاغ مسبق`;
+          topSubFr = downCnt > 0 ? `${fmtNum(downCnt)} à l arrêt · ${fmtNum(unnotCnt)} sans avis` : `${fmtNum(unnotCnt)} remplacements sans avis`;
+          bEn = [
+            `Parts custody guard tracks ${fmtNum(downCnt)} critical Down / Do-Not-Dispatch unit(s), ${fmtNum(unnotCnt)} replacement(s) without prior defect notice, and ${fmtNum(noVendCnt)} workshop item(s) missing a vendor.`,
+            topP
+              ? `Priority workshop unit is ${topParty}; verify removed-part warehouse custody tag or scrap sale receipt.`
+              : 'All replaced spare parts carry prior defect notices and verified warehouse/scrap custody.',
+            'Log missing pre-replacement defect notices or assign external workshop vendors in Fleet Defects before signing off.'
+          ];
+          bAr = [
+            `يتابع حارس عهدة القطع ${fmtNum(downCnt)} آليات متوقفة عن العمل، و${fmtNum(unnotCnt)} عمليات استبدال قطع بدون بلاغ عطل مسبق، و${fmtNum(noVendCnt)} قطع بالصيانة دون تحديد ورشة.`,
+            topP
+              ? `الوحدة ذات الأولوية في الورشة هي ${topParty}؛ تحقق من استلام القطعة المستبدلة في المستودع أو إيصال بيع الخردة.`
+              : 'جميع قطع الغيار المستبدلة موثقة ببلاغات أعطال مسبقة وعهدة مستودعية سليمة.',
+            'وثّق بلاغات الأعطال المسبقة أو حدد ورشة الصيانة الخارجية في سجل أعطال الأسطول قبل الاعتماد.'
+          ];
+          bFr = [
+            `Le suivi des pièces relève ${fmtNum(downCnt)} unité(s) immobilisée(s), ${fmtNum(unnotCnt)} remplacement(s) sans avis de panne préalable et ${fmtNum(noVendCnt)} pièce(s) sans atelier désigné.`,
+            topP
+              ? `L engin prioritaire est ${topParty} ; contrôlez la traçabilité en magasin ou le produit de cession de la pièce déposée.`
+              : 'Tous les remplacements de pièces disposent d un avis de panne préalable et d une garde magasin vérifiée.',
+            'Complétez les avis de panne ou renseignez l atelier dans Défauts & Pièces avant signature.'
+          ];
+        } else if (rid === 'S11') {
+          const malfPct = safeNum(fleet.diesel_malfunction_pct);
+          const malfAbsL = safeNum(fleet.diesel_malfunction_abs_l);
+          const malfRows = fleet.malfunction_rows || [];
+          rowCnt = malfRows.length || safeNum(fleet.diesel_malfunction_count);
+          physValEn = `${malfPct.toFixed(1)}% (${fmtNum(malfAbsL, 0)} L)`;
+          physValAr = `${malfPct.toFixed(1)}% (${fmtNum(malfAbsL, 0)} لتر)`;
+          physValFr = `${malfPct.toFixed(1)}% (${fmtNum(malfAbsL, 0)} L)`;
+          const byEq = new Map();
+          malfRows.forEach(r => {
+            const eq = sanitizePlain(r.equipment || r.item || 'Tank Adjustment');
+            byEq.set(eq, round2((byEq.get(eq) || 0) + Math.abs(safeNum(r.litres || r.tank_delta_l))));
+          });
+          const topEq = Array.from(byEq.entries()).sort((a, b) => b[1] - a[1])[0];
+          topParty = topEq ? topEq[0] : 'No Repeat Offenders';
+          topSubEn = topEq ? `${fmtNum(topEq[1], 1)} L across ${fmtNum(rowCnt)} entries` : `${malfPct.toFixed(1)}% of consumption`;
+          topSubAr = topEq ? `${fmtNum(topEq[1], 1)} لتر عبر ${fmtNum(rowCnt)} قيود` : `${malfPct.toFixed(1)}% من الاستهلاك`;
+          topSubFr = topEq ? `${fmtNum(topEq[1], 1)} L sur ${fmtNum(rowCnt)} lignes` : `${malfPct.toFixed(1)}% de la conso.`;
+          bEn = [
+            `Gross diesel malfunction and stock discrepancy volume stands at ${fmtNum(malfAbsL, 1)} L (${malfPct.toFixed(1)}% of ${fmtNum(fleet.diesel_company_used_l || 0, 0)} L company consumption across ${fmtNum(rowCnt)} entries).`,
+            topEq
+              ? `Largest volume variance sits on ${topParty} (${fmtNum(topEq[1], 1)} L); check pump meter calibration and broken hour-meter logs.`
+              : 'Diesel malfunction adjustments remain strictly below the 5.0% company consumption ceiling.',
+            'Inspect itemized malfunction vouchers and verify supervisor pump calibration notes before signing off.'
+          ];
+          bAr = [
+            `بلغ إجمالي فروقات وأعطال عدادات المازوت ${fmtNum(malfAbsL, 1)} لتر (${malfPct.toFixed(1)}% من إجمالي استهلاك الشركة البالغ ${fmtNum(fleet.diesel_company_used_l || 0, 0)} لتر عبر ${fmtNum(rowCnt)} قيود).`,
+            topEq
+              ? `أكبر حجم فروقات متركز على ${locOffender(topParty, 'ar')} (${fmtNum(topEq[1], 1)} لتر)؛ افحص معايرة مضخة الوقود وسجل أعطال الساعات.`
+              : 'تبقى تسويات وفروقات المازوت دون السقف التحذيري البالغ 5.0% من استهلاك الشركة.',
+            'افحص قيود الفروقات التفصيلية وتأكد من محضر معايرة المضخة قبل اعتماد المراجعة.'
+          ];
+          bFr = [
+            `Le volume brut d écarts et pannes compteurs gasoil atteint ${fmtNum(malfAbsL, 1)} L (${malfPct.toFixed(1)}% des ${fmtNum(fleet.diesel_company_used_l || 0, 0)} L consommés sur ${fmtNum(rowCnt)} entrées).`,
+            topEq
+              ? `Le plus fort écart concerne ${locOffender(topParty, 'fr')} (${fmtNum(topEq[1], 1)} L) ; contrôlez l étalonnage de la pompe.`
+              : 'Les ajustements gasoil demeurent sous le seuil d alerte de 5,0% de la consommation.',
+            'Vérifiez les bons d écart détaillés et le relevé d étalonnage avant validation.'
+          ];
+        }
+      } else {
+        // 5 Sibling Verticals: H1-H5, R1-R5, T1-T5, P1-P5, I1-I5
+        const sec = indExcTables.find(t => t.id === rid) || null;
+        const secRows = (sec && sec.rows) || [];
+        rowCnt = ruleItem.severity === 'ok' ? 0 : Math.max(1, safeNum(ruleItem.rawMetric) || secRows.length);
+        const parseLastUsd = cells => {
+          if (!Array.isArray(cells)) return 0;
+          for (let i = cells.length - 1; i >= 0; i--) {
+            const s = String(cells[i] || '');
+            if (s.includes('$')) return Math.abs(safeNum(s.replace(/[^0-9.-]/g, '')));
+          }
+          return 0;
+        };
+        if (rid === 'H1' && icOps) {
+          expUsd = round2(safeNum(icOps.totalOpenUsd));
+          rowCnt = safeNum(icOps.openCount);
+          const leg0 = (icOps.openLegs && icOps.openLegs[0]) || null;
+          topParty = leg0 ? sanitizePlain(`${leg0.fromCo || 'Bdeir Holding'} / ${leg0.toCo || 'WTC'}`) : 'No Repeat Offenders';
+          topSubEn = leg0 ? `${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 0)} unmatched leg` : '100% paired';
+          topSubAr = leg0 ? `${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 0)} حركة غير مقابلة` : 'مطابق بالكامل';
+          topSubFr = leg0 ? `${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 0)} écriture ouverte` : '100% apparié';
+          bEn = [
+            `${fmtNum(rowCnt)} one-sided intercompany transfer leg(s) totaling ${fmtUSD(expUsd, 2)} await mirror counter-entry across sister companies.`,
+            leg0 ? `Priority open corridor is ${topParty} (${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 2)} via ${sanitizePlain(leg0.method || 'Bank Transfer')}).` : 'Every sister-company transfer carries a matched mirror voucher within the 3-day window.',
+            'Post the reciprocal receipt/payment voucher in the receiving sister entity before signing off.'
+          ];
+          bAr = [
+            `يوجد ${fmtNum(rowCnt)} تحويلات بين الشركات الشقيقة من طرف واحد بقيمة ${fmtUSD(expUsd, 2)} بانتظار القيد المقابل.`,
+            leg0 ? `المسار المفتوح الأبرز هو ${locOffender(topParty, 'ar')} بقيمة ${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 2)}.` : 'كافة التحويلات بين الشركات الشقيقة مقترنة بقيود مقابلة ضمن مهلة 3 أيام.',
+            'سجّل سند القبض أو الصرف المقابل في دفاتر الشركة الشقيقة المستلمة قبل الاعتماد.'
+          ];
+          bFr = [
+            `${fmtNum(rowCnt)} transfert(s) inter-sociétés unilatéraux totalisant ${fmtUSD(expUsd, 2)} attendent leur écriture miroir.`,
+            leg0 ? `Le corridor ouvert prioritaire est ${locOffender(topParty, 'fr')} (${fmtUSD(leg0.amountUsd || leg0.givenUsd || 0, 2)}).` : 'Tous les transferts inter-sociétés disposent d une contrepartie appariée sous 3 jours.',
+            'Comptabilisez la pièce miroir dans la société sœur réceptrice avant validation.'
+          ];
+        } else if (rid === 'H2' && icOps) {
+          expUsd = round2(Math.abs(safeNum(icOps.netImbalanceUsd)));
+          const topBi = (icOps.byBilateral || [])[0];
+          topParty = topBi ? sanitizePlain(String(topBi.corridorLabel || '').replace(/[↔→]/g, ' / ')) : 'Bdeir Holding';
+          topSubEn = topBi ? `Net unpaid ${fmtUSD(topBi.netUnpaidUsd || 0, 0)} (${safeNum(topBi.repayPct).toFixed(1)}% repaid)` : 'In tolerance';
+          topSubAr = topBi ? `صافي مفتوح ${fmtUSD(topBi.netUnpaidUsd || 0, 0)}` : 'ضمن الهامش';
+          topSubFr = topBi ? `Solde net ${fmtUSD(topBi.netUnpaidUsd || 0, 0)}` : 'Dans la tolérance';
+          bEn = [
+            `Bilateral sister-company reconciliation covers ${fmtUSD(icOps.totalMatchedUsd || 0, 2)} across ${fmtNum(icOps.matchedCount || 0)} paired transfers with ${fmtUSD(expUsd, 2)} net drift.`,
+            `Primary active treasury corridor is ${topParty} (${topSubEn}).`,
+            'Verify FX rounding or bank transfer fee deductions on bilateral sister clearings before sign-off.'
+          ];
+          bAr = [
+            `تغطي مطابقة الشركات الشقيقة ${fmtUSD(icOps.totalMatchedUsd || 0, 2)} عبر ${fmtNum(icOps.matchedCount || 0)} تحويلات متقابلة بفارق صافي ${fmtUSD(expUsd, 2)}.`,
+            `المسار التمويلي الأنشط هو ${locOffender(topParty, 'ar')} (${topSubAr}).`,
+            'تحقق من فروقات التقريب أو عمولات التحويل المصرفي بين الحسابات الشقيقة قبل الاعتماد.'
+          ];
+          bFr = [
+            `Le rapprochement bilatéral couvre ${fmtUSD(icOps.totalMatchedUsd || 0, 2)} sur ${fmtNum(icOps.matchedCount || 0)} flux appariés avec ${fmtUSD(expUsd, 2)} d écart net.`,
+            `Le corridor principal est ${locOffender(topParty, 'fr')} (${topSubFr}).`,
+            'Contrôlez les frais bancaires ou écarts d arrondi sur les compensations sœurs avant validation.'
+          ];
+        } else if (rid.startsWith('P') && reOps) {
+          const reSum = reOps.summary || {};
+          const is4235Scope = evalCoKey === '4235company';
+          const vatRuleNoteEn = is4235Scope
+            ? '4235 Company S.A.L commercial leases apply 11% statutory VAT'
+            : (evalCoKey === 'properties' ? 'Properties entity leases run 0% VAT-exempt' : '4235 Company S.A.L bills 11% VAT while Properties runs 0% VAT-exempt');
+          const vatRuleNoteAr = is4235Scope
+            ? 'تخضع عقود شركة 4235 ش.م.ل لضريبة القيمة المضافة 11%'
+            : (evalCoKey === 'properties' ? 'تُفوتر عقود شركة العقارات بإعفاء ضريبي 0%' : 'تُطبق ضريبة 11% على شركة 4235 ش.م.ل مقابل إعفاء 0% لشركة العقارات');
+          const vatRuleNoteFr = is4235Scope
+            ? 'Société 4235 S.A.L facture 11% de TVA commerciale'
+            : (evalCoKey === 'properties' ? 'Properties opère en exonération 0% de TVA' : 'Société 4235 S.A.L applique 11% de TVA tandis que Properties est exonérée à 0%');
+          const firstRow = secRows[0];
+          topParty = firstRow ? sanitizePlain(firstRow.cells[3] || firstRow.cells[2] || firstRow.co || companyEn) : 'No Repeat Offenders';
+          expUsd = rid === 'P2' ? round2(safeNum(reSum.openRentArUsd))
+            : (rid === 'P3' ? round2(safeNum(reSum.salesOpenUsd))
+              : (rid === 'P4' ? round2(safeNum(reSum.unrechargedUsd))
+                : round2(secRows.reduce((a, r) => a + parseLastUsd(r.cells), 0))));
+          if (rid === 'P5') {
+            physValEn = `${fmtNum(reOps.vacantUnitCount || 0, 0)} Vacant`;
+            physValAr = `${fmtNum(reOps.vacantUnitCount || 0, 0)} شاغرة`;
+            physValFr = `${fmtNum(reOps.vacantUnitCount || 0, 0)} vacante(s)`;
+          }
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[firstRow.cells.length - 1]}`) : 'Schedule clean';
+          topSubAr = firstRow ? `العقد ${sanitizePlain(firstRow.cells[0])} · إشغال ${safeNum(reSum.occupancyPct).toFixed(1)}%` : 'الجدول منتظم';
+          topSubFr = firstRow ? `${sanitizePlain(firstRow.cells[0])} · Occ. ${safeNum(reSum.occupancyPct).toFixed(1)}%` : 'Échéancier à jour';
+          bEn = [
+            `${sanitizePlain(ruleItem.title)}: ${sanitizePlain(ruleItem.detail)} (${vatRuleNoteEn}).`,
+            firstRow
+              ? `Lead property exception sits on ${topParty} (${sanitizePlain(firstRow.cells[2] || '')}, ref ${sanitizePlain(firstRow.cells[0])}); /2400 Mulk deed shares remain 0-overlap verified.`
+              : 'All active leases, /2400 Mulk deed shares, and tenant recharge ledgers are current.',
+            rid === 'P2'
+              ? 'Generate pending period rent invoices (+ Rent Inv) verifying 11% vs 0% entity tax regime before signing off.'
+              : (rid === 'P4' ? 'Trigger Bill Tenant on completed tenant-fault work orders before signing off.' : 'Confirm renewal escalation notices or deed instalment collections before signing off.')
+          ];
+          bAr = [
+            `رصد عقاري في ${companyAr}: ${fmtNum(rowCnt)} بند يتطلب المتابعة بإجمالي معرض ${fmtUSD(expUsd, 0)} (${vatRuleNoteAr}).`,
+            firstRow
+              ? `يتركز البند الأبرز لدى ${locOffender(topParty, 'ar')} (مرجع ${sanitizePlain(firstRow.cells[0])}) مع سلامة حصص الملكية العقارية من أصل 2400 سهم دون أي تداخل.`
+              : 'جميع عقود الإيجار وحصص الأسهم العقارية (/2400) ونفقات المستأجرين محدثة بالكامل.',
+            rid === 'P2'
+              ? 'أصدر فواتير الإيجار الدورية المعلقة مع مراعاة النظام الضريبي (11% لشركة 4235 مقابل 0% لشركة العقارات) قبل الاعتماد.'
+              : 'استكمل فوترة المستأجر أو تحصيل الأقساط العقارية المستحقة قبل توقيع المراجعة.'
+          ];
+          bFr = [
+            `Contrôle immobilier sur ${companyFr} : ${fmtNum(rowCnt)} élément(s) signalé(s) pour une exposition de ${fmtUSD(expUsd, 0)} (${vatRuleNoteFr}).`,
+            firstRow
+              ? `Le dossier prioritaire concerne ${locOffender(topParty, 'fr')} (réf. ${sanitizePlain(firstRow.cells[0])}), quotes-parts foncières /2400 vérifiées sans chevauchement.`
+              : 'Tous les baux actifs, quotes-parts /2400 et refacturations locataires sont à jour.',
+            rid === 'P2'
+              ? 'Émettez les quittances périodiques en respectant le régime TVA 11% vs 0% avant validation.'
+              : 'Finalisez la refacturation locataire ou l encaissement des échéances avant signature.'
+          ];
+        } else if (rid.startsWith('I') && insOps) {
+          const insSum = insOps.summary || {};
+          const firstRow = secRows[0];
+          topParty = firstRow ? sanitizePlain(firstRow.cells[2] || firstRow.cells[1] || 'Carrier / Policy') : 'No Repeat Offenders';
+          expUsd = rid === 'I3' ? round2(safeNum(insSum.payableToCarriers4017Usd))
+            : (rid === 'I4' ? round2(safeNum(insSum.discount7065Usd))
+              : round2(secRows.reduce((a, r) => a + parseLastUsd(r.cells), 0)));
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[firstRow.cells.length - 1]}`) : 'Portfolio aligned';
+          topSubAr = firstRow ? `مرجع ${sanitizePlain(firstRow.cells[0])} · احتفاظ ${safeNum(insSum.retentionPct).toFixed(1)}%` : 'المحفظة مطابقة';
+          topSubFr = firstRow ? `Réf. ${sanitizePlain(firstRow.cells[0])} · Rétention ${safeNum(insSum.retentionPct).toFixed(1)}%` : 'Portefeuille aligné';
+          bEn = [
+            `Brokerage watchdog ${rid}: GWP ${fmtUSD(insSum.gwpUsd || 0, 0)}, net commission ${fmtUSD(insSum.netCommUsd || 0, 0)}, and net carrier payable ${fmtUSD(insSum.payableToCarriers4017Usd || 0, 0)}.`,
+            firstRow
+              ? `Primary flagged file is ${topParty} (ref ${sanitizePlain(firstRow.cells[0])}); verify chronological carrier commission agreement rate and client rebate cap.`
+              : 'All policy renewals, carrier bordereaux, commission rates, and client discount ceilings are compliant.',
+            rid === 'I1'
+              ? 'Bind expiring renewal quotes with the producer before signing off.'
+              : (rid === 'I2' || rid === 'I3' ? 'Reconcile carrier bordereau statement variances before releasing fiduciary remittance.' : 'Verify claims survey reserves and client discount approval before sign-off.')
+          ];
+          bAr = [
+            `رقابة الوساطة التأمينية (${rid}): إجمالي الأقساط المكتتبة ${fmtUSD(insSum.gwpUsd || 0, 0)}، صافي العمولة ${fmtUSD(insSum.netCommUsd || 0, 0)}، وصافي المستحق لشركات التأمين ${fmtUSD(insSum.payableToCarriers4017Usd || 0, 0)}.`,
+            firstRow
+              ? `الملف الأبرز في التنبيه يخص ${locOffender(topParty, 'ar')} (مرجع ${sanitizePlain(firstRow.cells[0])})؛ تحقق من نسبة العمولة التعاقدية وسقف الخصم الممنوح للعميل.`
+              : 'كافة التجديدات وكشوفات شركات التأمين ونسب العمولات وسقوف الخصومات مطابقة.',
+            'طابق فروقات كشوفات شركات التأمين أو ثبّت عروض التجديد ومخصصات المطالبات قبل الاعتماد.'
+          ];
+          bFr = [
+            `Contrôle courtage (${rid}) : primes brutes ${fmtUSD(insSum.gwpUsd || 0, 0)}, commission nette ${fmtUSD(insSum.netCommUsd || 0, 0)} et net à reverser compagnies ${fmtUSD(insSum.payableToCarriers4017Usd || 0, 0)}.`,
+            firstRow
+              ? `Le dossier prioritaire concerne ${locOffender(topParty, 'fr')} (réf. ${sanitizePlain(firstRow.cells[0])}) ; contrôlez la grille chronologique de commission et le plafond de remise.`
+              : 'Les renouvellements, bordereaux compagnies et plafonds de remise client sont conformes.',
+            'Pointez les écarts de bordereau compagnie ou validez les renouvellements avant signature.'
+          ];
+        } else if (rid.startsWith('R') && hspOps) {
+          const hspSum = hspOps.summary || {};
+          const firstRow = secRows[0];
+          topParty = firstRow ? sanitizePlain(`${firstRow.co || ''} · ${firstRow.cells[3] || firstRow.cells[2] || firstRow.rid}`) : 'No Repeat Offenders';
+          expUsd = rid === 'R2'
+            ? round2((hspOps.posRows || []).reduce((a, r) => a + Math.abs(safeNum(r.variance_usd)), 0))
+            : (rid === 'R5' ? round2(safeNum(hspSum.totalMemArrears)) : round2(secRows.reduce((a, r) => a + parseLastUsd(r.cells), 0)));
+          if (rid === 'R4') {
+            physValEn = `${fmtNum(hspSum.totalDieselUsedL || 0, 0)} L`;
+            physValAr = `${fmtNum(hspSum.totalDieselUsedL || 0, 0)} لتر`;
+            physValFr = `${fmtNum(hspSum.totalDieselUsedL || 0, 0)} L`;
+          }
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[firstRow.cells.length - 1]}`) : 'Outlets balanced';
+          topSubAr = firstRow ? `مرجع ${sanitizePlain(firstRow.cells[0])} · تكلفة الأغذية ${safeNum(hspSum.avgFoodCostPct).toFixed(1)}%` : 'الصناديق مطابقة';
+          topSubFr = firstRow ? `Réf. ${sanitizePlain(firstRow.cells[0])} · Coût F&B ${safeNum(hspSum.avgFoodCostPct).toFixed(1)}%` : 'Points de vente alignés';
+          bEn = [
+            `Resort hospitality watchdog ${rid} across ${companyEn}: ${fmtUSD(hspSum.totalRevenueTtc || 0, 0)} venue revenue, ${safeNum(hspSum.avgFoodCostPct).toFixed(1)}% F&B cost ratio, and ${safeNum(hspSum.avgSolarOffsetPct).toFixed(1)}% solar offset.`,
+            firstRow
+              ? `Primary resort exception sits on ${topParty} (ref ${sanitizePlain(firstRow.cells[0])}).`
+              : 'All resort POS tills, cellar stock ratios, generator burn logs, and seasonal memberships are within threshold.',
+            rid === 'R2'
+              ? 'Resolve POS cashier drawer variance (Log Close) against daily venue sheets before sign-off.'
+              : (rid === 'R5' ? 'Follow up on open cabana/chalet membership arrears before signing off.' : 'Inspect kitchen recipe ratios or generator load logs before signing off.')
+          ];
+          bAr = [
+            `رقابة الضيافة والمنتجعات (${rid}) في ${companyAr}: إيرادات المرافق ${fmtUSD(hspSum.totalRevenueTtc || 0, 0)}، نسبة كلفة الأغذية والمشروبات ${safeNum(hspSum.avgFoodCostPct).toFixed(1)}%، ومساهمة الطاقة الشمسية ${safeNum(hspSum.avgSolarOffsetPct).toFixed(1)}%.`,
+            firstRow
+              ? `يتركز الاستثناء الأبرز في ${locOffender(topParty, 'ar')} (مرجع ${sanitizePlain(firstRow.cells[0])}).`
+              : 'كافة صناديق نقاط البيع ومعدلات استهلاك المطبخ والمولدات واشتراكات الشاليهات ضمن الحدود المعتمدة.',
+            rid === 'R2'
+              ? 'عالج فروقات إقفال صندوق الكاشير مقابل كشف إيرادات المنفذ اليومي قبل الاعتماد.'
+              : 'تابع تحصيل ذمم العضويات الموسمية أو راجع نسب الهدر واستهلاك المولدات قبل التوقيع.'
+          ];
+          bFr = [
+            `Contrôle hôtellerie (${rid}) sur ${companyFr} : chiffre d affaires points de vente ${fmtUSD(hspSum.totalRevenueTtc || 0, 0)}, ratio F&B ${safeNum(hspSum.avgFoodCostPct).toFixed(1)}% et couverture solaire ${safeNum(hspSum.avgSolarOffsetPct).toFixed(1)}%.`,
+            firstRow
+              ? `L écart principal concerne ${locOffender(topParty, 'fr')} (réf. ${sanitizePlain(firstRow.cells[0])}).`
+              : 'Toutes les clôtures de caisse POS, ratios cuisine/cave, groupes électrogènes et adhésions saisonnières sont conformes.',
+            rid === 'R2'
+              ? 'Justifiez l écart de caisse POS par rapport à la feuille de recette journalière avant validation.'
+              : 'Relancez les arriérés d adhésion ou vérifiez les ratios stock/groupe électrogène avant signature.'
+          ];
+        } else if (rid.startsWith('T') && trdOps) {
+          const trdSum = trdOps.summary || {};
+          const firstRow = secRows[0];
+          topParty = firstRow ? sanitizePlain(firstRow.cells[3] || firstRow.cells[2] || firstRow.rid) : 'No Repeat Offenders';
+          expUsd = rid === 'T3' ? round2(safeNum(trdSum.grossArUsd))
+            : (rid === 'T5' ? round2(safeNum(trdSum.unallocatedLandedUsd))
+              : round2(secRows.reduce((a, r) => a + parseLastUsd(r.cells), 0)));
+          if (rid === 'T1') {
+            physValEn = `${fmtNum(trdSum.invoiceGapCount || 0, 0)} Gaps`;
+            physValAr = `${fmtNum(trdSum.invoiceGapCount || 0, 0)} فجوات`;
+            physValFr = `${fmtNum(trdSum.invoiceGapCount || 0, 0)} sauts`;
+          } else if (rid === 'T4') {
+            physValEn = `${fmtNum(ruleItem.rawMetric || 0, 0)} SKUs`;
+            physValAr = `${fmtNum(ruleItem.rawMetric || 0, 0)} أصناف`;
+            physValFr = `${fmtNum(ruleItem.rawMetric || 0, 0)} réf.`;
+          }
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[firstRow.cells.length - 1]}`) : 'Showroom & warehouses clean';
+          topSubAr = firstRow ? `مرجع ${sanitizePlain(firstRow.cells[0])} · هامش ${safeNum(trdSum.avgMarginPct).toFixed(1)}%` : 'المعارض والمستودعات مطابقة';
+          topSubFr = firstRow ? `Réf. ${sanitizePlain(firstRow.cells[0])} · Marge ${safeNum(trdSum.avgMarginPct).toFixed(1)}%` : 'Showroom & dépôts conformes';
+          bEn = [
+            `Trading & commercial fleet watchdog ${rid} across ${companyEn}: realized margin ${safeNum(trdSum.avgMarginPct).toFixed(1)}%, gross AR ${fmtUSD(trdSum.grossArUsd || 0, 0)} (advances ${fmtUSD(trdSum.customerAdvancesUsd || 0, 0)} separated), and warehouse stock ${fmtUSD(trdSum.totalStockValUsd || 0, 0)}.`,
+            firstRow
+              ? `Lead trading exception sits on ${topParty} (ref ${sanitizePlain(firstRow.cells[0])}).`
+              : 'Invoice serial pads, landed truck margins, collection promises, and 5-warehouse spare parts buffers are clean.',
+            rid === 'T5'
+              ? 'Capitalize unallocated freight, customs, and clearance (+ Landed) onto received import containers before sign-off.'
+              : 'Verify physical invoice book serials, floor margin approval, or spare-parts reorder quantities before signing off.'
+          ];
+          bAr = [
+            `رقابة تجارة الشاحنات وقطع الغيار (${rid}) في ${companyAr}: متوسط الهامش المحقق ${safeNum(trdSum.avgMarginPct).toFixed(1)}%، إجمالي الذمم ${fmtUSD(trdSum.grossArUsd || 0, 0)} (مع فصل الدفعات المقدمة ${fmtUSD(trdSum.customerAdvancesUsd || 0, 0)})، ومخزون المستودعات ${fmtUSD(trdSum.totalStockValUsd || 0, 0)}.`,
+            firstRow
+              ? `يتركز الاستثناء التجاري الأبرز لدى ${locOffender(topParty, 'ar')} (مرجع ${sanitizePlain(firstRow.cells[0])}).`
+              : 'تسلسل دفاتر الفواتير وهوامش التكلفة الواصلة ووعود التحصيل ومخزون المستودعات الخمسة سليمة بالكامل.',
+            rid === 'T5'
+              ? 'وزّع نفقات الشحن والجمارك والتخليص غير المحملة على ملفات الاستيراد المستلمة قبل الاعتماد.'
+              : 'تحقق من تسلسل الفواتير الورقية أو اعتماد السعر الأدنى أو طلبات إعادة التموين قبل التوقيع.'
+          ];
+          bFr = [
+            `Contrôle négoce poids lourds & pièces (${rid}) sur ${companyFr} : marge réalisée ${safeNum(trdSum.avgMarginPct).toFixed(1)}%, créances brutes ${fmtUSD(trdSum.grossArUsd || 0, 0)} (avances ${fmtUSD(trdSum.customerAdvancesUsd || 0, 0)} séparées) et stock ${fmtUSD(trdSum.totalStockValUsd || 0, 0)}.`,
+            firstRow
+              ? `Le dossier prioritaire concerne ${locOffender(topParty, 'fr')} (réf. ${sanitizePlain(firstRow.cells[0])}).`
+              : 'Les souches de factures, marges sur coût rendu, promesses clients et stocks des 5 dépôts sont conformes.',
+            rid === 'T5'
+              ? 'Imputez les frais de fret, douane et transit (+ Landed) sur les dossiers d import reçus avant validation.'
+              : 'Contrôlez les séquences factures, la marge plancher ou le réapprovisionnement pièces avant signature.'
+          ];
+        } else {
+          // Remaining Holding rules (H3, H4, H5) or generic fallback
+          const firstRow = secRows[0];
+          topParty = firstRow ? sanitizePlain(firstRow.cells[4] || firstRow.cells[2] || firstRow.cells[0] || companyEn) : 'No Repeat Offenders';
+          expUsd = round2(secRows.reduce((a, r) => a + parseLastUsd(r.cells), 0));
+          topSubEn = firstRow ? sanitizePlain(`${firstRow.cells[0]} · ${firstRow.cells[firstRow.cells.length - 1]}`) : '100% reconciled';
+          topSubAr = firstRow ? `مرجع ${sanitizePlain(firstRow.cells[0])}` : 'مطابق 100%';
+          topSubFr = firstRow ? `Réf. ${sanitizePlain(firstRow.cells[0])}` : '100% réconcilié';
+          bEn = [
+            `${sanitizePlain(ruleItem.title)} across ${companyEn}: ${sanitizePlain(ruleItem.detail)}`,
+            firstRow ? `Top monitored item is ${topParty} (${topSubEn}).` : 'All monitored treasury vouchers and sister control accounts are reconciled.',
+            'Review supporting facility schedules or shared-service vouchers in the linked register before signing off.'
+          ];
+          bAr = [
+            `متابعة رقابية في ${companyAr}: ${fmtNum(rowCnt)} بند مفتوح بقيمة مرصودة ${fmtUSD(expUsd, 0)}.`,
+            firstRow ? `البند الأبرز في القائمة هو ${locOffender(topParty, 'ar')} (${topSubAr}).` : 'جميع السندات وحسابات الرقابة مطابقة بالكامل.',
+            'راجع جداول التسهيلات أو سندات الخدمات المشتركة في السجل المرتبط قبل اعتماد القاعدة.'
+          ];
+          bFr = [
+            `Suivi de contrôle sur ${companyFr} : ${fmtNum(rowCnt)} point(s) ouvert(s) pour un volume suivi de ${fmtUSD(expUsd, 0)}.`,
+            firstRow ? `L élément principal suivi est ${locOffender(topParty, 'fr')} (${topSubFr}).` : 'Toutes les pièces de trésorerie et comptes collectifs sont rapprochés.',
+            'Vérifiez les échéanciers ou pièces justificatives dans le module lié avant validation.'
+          ];
+        }
+      }
+      return { expUsd, rowCnt, topParty, topSubEn, topSubAr, topSubFr, physValEn, physValAr, physValFr, bEn, bAr, bFr };
+    };
+
+    const isPortfolio = reqRuleId === '__all__' || !items.some(i => i.id === reqRuleId);
+    const targetItem = !isPortfolio ? items.find(i => i.id === reqRuleId) : null;
+
+    if (!isPortfolio && targetItem) {
+      const det = analyzeSingleRule(targetItem);
+      const revSt = targetItem.reviewState || (targetItem.severity === 'ok' ? 'pass' : 'open');
+      const statusMap = {
+        open: { en: 'Open Flag', ar: 'تنبيه مفتوح', fr: 'Alerte ouverte', tone: targetItem.severity === 'crit' ? 'neg' : 'warn' },
+        drifted: { en: 'Re-Flagged (Drift)', ar: 'إعادة تنبيه (انحراف جديد)', fr: 'Réactivée (dérive)', tone: 'neg' },
+        reviewed: { en: 'Signed Off', ar: 'تم الاعتماد', fr: 'Validée', tone: 'ok' },
+        pass: { en: 'Native Pass', ar: 'مطابق تلقائياً', fr: 'Conforme', tone: 'ok' }
+      };
+      const stMeta = statusMap[revSt] || statusMap.open;
+      const expHasUsd = det.expUsd > 0 || !det.physValEn;
+      const expValEn = expHasUsd ? fmtUSD(det.expUsd, det.expUsd < 100 && det.expUsd > 0 ? 2 : 0) : det.physValEn;
+      const expValAr = expHasUsd ? fmtUSD(det.expUsd, det.expUsd < 100 && det.expUsd > 0 ? 2 : 0) : det.physValAr;
+      const expValFr = expHasUsd ? fmtUSD(det.expUsd, det.expUsd < 100 && det.expUsd > 0 ? 2 : 0) : det.physValFr;
+
+      const RULE_TITLES_LOC = {
+        S1: { ar: 'سلامة ميزان المراجعة للقيد المزدوج', fr: 'Intégrité de la balance générale en partie double' },
+        S2: { ar: 'مطابقة خزان المازوت الفعلي والدفتري', fr: 'Rapprochement stock physique vs comptable gasoil' },
+        S3: { ar: 'مراقب عدادات المسافات وساعات عمل الآليات', fr: 'Contrôle compteurs kilométriques & horaires flotte' },
+        S4: { ar: 'ذمم العملاء المتأخرة لأكثر من 60 يوماً', fr: 'Créances clients échues à plus de 60 jours' },
+        S5: { ar: 'مطابقة اتفاقيات الأسعار السارية مع القسائم', fr: 'Conformité des accords tarifaires actifs' },
+        S6: { ar: 'تدقيق القسائم المكررة وغير المرقمة في الدفاتر', fr: 'Contrôle des doublons et bons non numérotés' },
+        S7: { ar: 'دفعات الرواتب بدون عقد عمل سارٍ', fr: 'Paiements de salaires sans contrat actif' },
+        S8: { ar: 'فجوات تواريخ العمليات والتقارير والفواتير الضريبية', fr: 'Écarts dates opération / comptable & factures TVA' },
+        S9: { ar: 'مراقب تشغيل وتزويد الآليات بغياب السائق', fr: 'Contrôle ravitaillement engins avec chauffeur absent' },
+        S10: { ar: 'بلاغات الأعطال المسبقة وعهدة القطع المستبدلة', fr: 'Avis de panne préalable & garde des pièces déposées' },
+        S11: { ar: 'مراقب فروقات وأعطال المازوت (سقف 5%)', fr: 'Surveillance écarts & pannes gasoil (seuil 5%)' },
+        H1: { ar: 'تحويلات الشركات الشقيقة غير المقابلة', fr: 'Transferts inter-sociétés sans contrepartie miroir' },
+        H2: { ar: 'مراقب فروقات المسارات الثنائية للشركات الشقيقة', fr: 'Contrôle d écart bilatéral entre sociétés sœurs' },
+        H3: { ar: 'رقابة سقف مصاريف الخدمات المشتركة للقابضة', fr: 'Plafond des charges partagées Holding' },
+        H4: { ar: 'تسهيلات القروض المركزية وجداول السداد', fr: 'Conventions de prêts centraux & échéanciers' },
+        H5: { ar: 'مطابقة حسابات الرقابة الموحدة للشركات الشقيقة', fr: 'Pointage consolidé des sous-comptes sociétés sœurs' },
+        R1: { ar: 'التحقق من إقفال إيرادات المرافق والشاليهات اليومية', fr: 'Vérification clôture recettes journalières & chalets' },
+        R2: { ar: 'فروقات إقفال صناديق نقاط البيع مقابل الإيرادات', fr: 'Écarts de clôture caisses POS vs recettes' },
+        R3: { ar: 'مراقب نسبة تكلفة المطبخ والبار والقبو', fr: 'Contrôle ratio coût cuisine, bar & cave' },
+        R4: { ar: 'مراقب استهلاك مازوت المولدات والطاقة الشمسية', fr: 'Surveillance consommation groupes électrogènes & solaire' },
+        R5: { ar: 'متأخرات العضويات الموسمية للشاليهات والكابانا', fr: 'Arriérés d adhésions saisonnières chalets & cabanas' },
+        T1: { ar: 'حارس تسلسل دفاتر الفواتير الورقية', fr: 'Contrôle séquentiel des carnets de factures' },
+        T2: { ar: 'مراقب الحد الأدنى لهامش ربح الشاحنات والقطع', fr: 'Garde-fou marge plancher camions & pièces' },
+        T3: { ar: 'الذمم المدينة المتأخرة مقابل الدفعات المقدمة المفصولة', fr: 'Créances échues vs avances clients séparées' },
+        T4: { ar: 'حد إعادة الطلب لقطع الغيار عبر 5 مستودعات', fr: 'Seuil de réapprovisionnement pièces sur 5 dépôts' },
+        T5: { ar: 'مصاريف الشحن والجمارك غير المحملة على الاستيراد', fr: 'Fret, douane & transit non imputés sur imports' },
+        P1: { ar: 'عقود الإيجار المنتهية خلال 90 يوماً والزيادة التدرجية', fr: 'Baux expirant sous 90 jours & indexation' },
+        P2: { ar: 'فترات الإيجار النشطة غير المفوترة وذمم الإيجارات', fr: 'Périodes locatives non facturées & arriérés loyers' },
+        P3: { ar: 'أقساط بيع العقارات المستحقة ونقل سندات الملكية', fr: 'Échéances acheteurs dues & transfert de titres' },
+        P4: { ar: 'أوامر الصيانة على حساب المستأجر بانتظار الفوترة', fr: 'Travaux imputables aux locataires à refacturer' },
+        P5: { ar: 'الوحدات الشاغرة ومنع تداخل العقود (/2400 سهم)', fr: 'Unités vacantes & garde anti-chevauchement (/2400 parts)' },
+        I1: { ar: 'بوالص التأمين المستحقة للتجديد والمنتهية غير المجددة', fr: 'Polices à renouveler sous 90 jours & contrats expirés' },
+        I2: { ar: 'فروقات كشوفات عمولات شركات التأمين مقابل الاتفاقيات', fr: 'Écarts relevés commissions compagnies vs accords' },
+        I3: { ar: 'الأقساط المحصلة قيد الأمانة والمستحق لشركات التأمين', fr: 'Primes encaissées détenues & net à reverser compagnies' },
+        I4: { ar: 'مراقب خصومات العملاء مقابل إجمالي عمولة الوساطة', fr: 'Garde-fou remises clients vs commission brute' },
+        I5: { ar: 'ملفات المطالبات النشطة قيد الخبرة والاسترداد', fr: 'Sinistres actifs sous expertise & recours' }
+      };
+      const tLoc = RULE_TITLES_LOC[targetItem.id] || null;
+      const cleanRuleTitleEn = sanitizePlain(`${targetItem.id} · ${targetItem.title}`);
+      const cleanRuleTitleAr = tLoc ? `${targetItem.id} · ${tLoc.ar}` : `${targetItem.id} · قاعدة تدقيق مخصصة (${sanitizePlain(targetItem.code || 'تنبيه')})`;
+      const cleanRuleTitleFr = tLoc ? `${targetItem.id} · ${tLoc.fr}` : `${targetItem.id} · Règle personnalisée (${sanitizePlain(targetItem.title)})`;
+
+      const checkedByTxt = targetItem.reviewInfo && targetItem.reviewInfo.checked_by ? sanitizePlain(targetItem.reviewInfo.checked_by) : '';
+      const kpis = [
+        {
+          labelEn: expHasUsd ? 'Flagged Exposure' : 'Flagged Volume',
+          labelAr: expHasUsd ? 'القيمة المعرضة للمراجعة' : 'الحجم المرصود',
+          labelFr: expHasUsd ? 'Exposition signalée' : 'Volume signalé',
+          valStr: expValEn,
+          valAr: expValAr,
+          valFr: expValFr,
+          subEn: `${fmtNum(det.rowCnt, 0)} exception item(s)`,
+          subAr: `${fmtNum(det.rowCnt, 0)} بند استثنائي`,
+          subFr: `${fmtNum(det.rowCnt, 0)} ligne(s) d exception`,
+          tone: targetItem.severity === 'ok' ? 'ok' : (targetItem.severity === 'crit' ? 'neg' : 'warn')
+        },
+        {
+          labelEn: 'Audit Status',
+          labelAr: 'حالة القاعدة',
+          labelFr: 'Statut de contrôle',
+          valStr: stMeta.en,
+          valAr: stMeta.ar,
+          valFr: stMeta.fr,
+          subEn: checkedByTxt ? `By ${checkedByTxt}` : sanitizePlain(targetItem.rawBadge || targetItem.badge || ''),
+          subAr: checkedByTxt ? `بواسطة ${checkedByTxt}` : (revSt === 'pass' ? 'مطابق للضوابط' : 'بانتظار مراجعة المشرف'),
+          subFr: checkedByTxt ? `Par ${checkedByTxt}` : (revSt === 'pass' ? 'Contrôle conforme' : 'En attente superviseur'),
+          tone: stMeta.tone
+        },
+        {
+          labelEn: 'Lead Repeat Offender',
+          labelAr: 'الطرف الأعلى تكراراً',
+          labelFr: 'Contrepartie principale',
+          valStr: locOffender(det.topParty, 'en'),
+          valAr: locOffender(det.topParty, 'ar'),
+          valFr: locOffender(det.topParty, 'fr'),
+          subEn: det.topSubEn || 'Deterministic rank #1',
+          subAr: det.topSubAr || 'المرتبة الأولى حسابياً',
+          subFr: det.topSubFr || 'Rang déterministe #1',
+          tone: det.topParty && !/no repeat/i.test(det.topParty) && targetItem.severity !== 'ok' ? 'warn' : 'ok'
+        },
+        canViewBooks ? {
+          labelEn: 'Ledger Impact',
+          labelAr: 'أثر الأستاذ العام',
+          labelFr: 'Impact Grand Livre',
+          valStr: tbBalanced ? '$0.00 Balanced' : fmtUSD(Math.abs(tbDiff), 2),
+          valAr: tbBalanced ? 'متوازن $0.00' : fmtUSD(Math.abs(tbDiff), 2),
+          valFr: tbBalanced ? 'Équilibré $0.00' : fmtUSD(Math.abs(tbDiff), 2),
+          subEn: tbBalanced ? 'Classes 1-7 double-entry tied' : 'Ledger variance detected',
+          subAr: tbBalanced ? 'تطابق القيد المزدوج 1-7' : 'يوجد فرق في ميزان المراجعة',
+          subFr: tbBalanced ? 'Classes 1-7 équilibrées' : 'Écart de balance détecté',
+          tone: tbBalanced ? 'ok' : 'neg'
+        } : {
+          labelEn: 'Operational Guard',
+          labelAr: 'الرقابة التشغيلية',
+          labelFr: 'Garde opérationnelle',
+          valStr: 'Enforced',
+          valAr: 'مفعّلة',
+          valFr: 'Active',
+          subEn: 'Role-scoped audit view',
+          subAr: 'عرض تدقيق حسب الصلاحية',
+          subFr: 'Périmètre supervisé',
+          tone: 'ok'
+        }
+      ];
+
+      const offEn = locOffender(det.topParty, 'en');
+      const offAr = locOffender(det.topParty, 'ar');
+      const offFr = locOffender(det.topParty, 'fr');
+      const drafts = {
+        en: targetItem.severity !== 'ok'
+          ? `Audit escalation (${targetItem.id} - ${companyEn}): ${expValEn} flagged across ${fmtNum(det.rowCnt, 0)} item(s); lead exception is ${offEn} (${det.topSubEn || 'action required'}). Please verify supporting vouchers and confirm corrective action before supervisor sign-off.`
+          : `Audit confirmation (${targetItem.id} - ${companyEn}): rule is ${stMeta.en.toLowerCase()} (${expValEn} exposure${checkedByTxt ? ', verified by ' + checkedByTxt : ''}). Ledger controls remain balanced at $0.00 variance.`,
+        ar: targetItem.severity !== 'ok'
+          ? `متابعة تدقيق (${targetItem.id} - ${companyAr}): تم رصد ${expValAr} عبر ${fmtNum(det.rowCnt, 0)} بند؛ التركز الأعلى لدى ${offAr} (${det.topSubAr || 'يتطلب المعالجة'}). يرجى مراجعة المستندات المؤيدة وتأكيد الإجراء التصحيحي قبل اعتماد المشرف.`
+          : `تأكيد تدقيق (${targetItem.id} - ${companyAr}): حالة القاعدة "${stMeta.ar}" (${expValAr}${checkedByTxt ? '، مراجعة ' + checkedByTxt : ''}). ضوابط الأستاذ العام متوازنة بفارق $0.00.`,
+        fr: targetItem.severity !== 'ok'
+          ? `Escalade d audit (${targetItem.id} - ${companyFr}) : ${expValFr} signalés sur ${fmtNum(det.rowCnt, 0)} ligne(s) ; point principal sur ${offFr} (${det.topSubFr || 'action requise'}). Merci de vérifier les justificatifs et confirmer la régularisation avant signature superviseur.`
+          : `Confirmation d audit (${targetItem.id} - ${companyFr}) : la règle est ${stMeta.fr.toLowerCase()} (exposition ${expValFr}${checkedByTxt ? ', vérifiée par ' + checkedByTxt : ''}). La balance générale demeure équilibrée à $0.00.`
+      };
+
+      const targetView = (targetItem.navView && (typeof canViewView !== 'function' || canViewView(targetItem.navView, u))) ? targetItem.navView : '';
+      const scopeKey = `sntriage|${u ? u.id : 'anon'}|${evalCoKey}|${targetInd}|${targetItem.id}|${revSt}|${safeNum(targetItem.rawMetric)}|${safeNum(targetItem.rawSecondary)}|${SEED._customRev || 0}:${STATE._customRev || 0}|${STATE.period || ''}:${STATE.dateFrom || ''}:${STATE.dateTo || ''}|${STATE.basis || 'rep'}|${_ALERT_RULES_REV}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}|${customAlertSig}|${revSig}`;
+
+      return {
+        ruleId: targetItem.id,
+        isPortfolio: false,
+        rlsClamped: false,
+        canViewBooks,
+        canSignOff,
+        reviewState: revSt,
+        isReviewed: Boolean(targetItem.isReviewed),
+        severity: targetItem.severity,
+        rawSeverity: targetItem.rawSeverity || targetItem.severity,
+        exposureUsd: det.expUsd,
+        flaggedCount: det.rowCnt,
+        openFlags: targetItem.severity !== 'ok' ? 1 : 0,
+        reviewedCount: targetItem.isReviewed ? 1 : 0,
+        passingCount: revSt === 'pass' ? 1 : 0,
+        totalRules: items.length,
+        industry: targetInd,
+        industryAr: indLoc.ar,
+        industryFr: indLoc.fr,
+        companyKey: evalCoKey,
+        company: coHuman,
+        companyEn,
+        companyAr,
+        companyFr,
+        titleEn: cleanRuleTitleEn,
+        titleAr: cleanRuleTitleAr,
+        titleFr: cleanRuleTitleFr,
+        roleLabelEn: sanitizePlain(targetItem.code || 'Sentinel Watchdog'),
+        roleLabelAr: 'ضابط رقابة وتدقيق آلي',
+        roleLabelFr: 'Contrôle continu automatisé',
+        statusBadgeEn: stMeta.en,
+        statusBadgeAr: stMeta.ar,
+        statusBadgeFr: stMeta.fr,
+        topOffenderEn: offEn,
+        topOffenderAr: offAr,
+        topOffenderFr: offFr,
+        targetView,
+        scrollPanel: targetItem.scrollPanel || '',
+        scopeKey,
+        tieCheck,
+        kpis,
+        bulletsEn: det.bEn,
+        bulletsAr: det.bAr,
+        bulletsFr: det.bFr,
+        drafts,
+        facts: {
+          ruleId: targetItem.id,
+          industry: targetInd,
+          company: companyEn,
+          reviewState: revSt,
+          severity: targetItem.severity,
+          exposureUsd: det.expUsd,
+          flaggedCount: det.rowCnt,
+          topOffender: offEn,
+          tbBalanced
+        }
+      };
+    }
+
+    // Portfolio-wide (__all__) Sentinel Exception Triage across all active rules in the vertical
+    let totalExposureUsd = 0;
+    let totalFlaggedRows = 0;
+    const offenderTallies = new Map();
+    const openRuleCodes = [];
+    items.forEach(it => {
+      const det = analyzeSingleRule(it);
+      if (it.severity !== 'ok') {
+        openRuleCodes.push(it.id);
+        totalExposureUsd = round2(totalExposureUsd + det.expUsd);
+        totalFlaggedRows += det.rowCnt;
+        if (det.topParty && !/no repeat/i.test(det.topParty)) {
+          const prev = offenderTallies.get(det.topParty) || { rules: 0, usd: 0, ruleIds: [] };
+          prev.rules += 1;
+          prev.usd = round2(prev.usd + det.expUsd);
+          prev.ruleIds.push(it.id);
+          offenderTallies.set(det.topParty, prev);
+        }
+      }
+    });
+    const rankedOffenders = Array.from(offenderTallies.entries()).sort((a, b) => (b[1].rules - a[1].rules) || (b[1].usd - a[1].usd));
+    const leadOff = rankedOffenders[0] || null;
+    const leadNameRaw = leadOff ? leadOff[0] : 'No Repeat Offenders';
+    const leadEn = locOffender(leadNameRaw, 'en');
+    const leadAr = locOffender(leadNameRaw, 'ar');
+    const leadFr = locOffender(leadNameRaw, 'fr');
+    const leadSubEn = leadOff
+      ? `${leadOff[1].rules} rule(s) (${leadOff[1].ruleIds.slice(0, 3).join(', ')})${leadOff[1].usd > 0 ? ' · ' + fmtUSD(leadOff[1].usd, 0) : ''}`
+      : '0 open exceptions';
+    const leadSubAr = leadOff
+      ? `${leadOff[1].rules} قواعد (${leadOff[1].ruleIds.slice(0, 3).join('، ')})${leadOff[1].usd > 0 ? ' · ' + fmtUSD(leadOff[1].usd, 0) : ''}`
+      : '0 استثناءات مفتوحة';
+    const leadSubFr = leadOff
+      ? `${leadOff[1].rules} règle(s) (${leadOff[1].ruleIds.slice(0, 3).join(', ')})${leadOff[1].usd > 0 ? ' · ' + fmtUSD(leadOff[1].usd, 0) : ''}`
+      : '0 exception ouverte';
+
+    const cleanPct = items.length > 0 ? Math.round(((items.length - openItems.length) / items.length) * 100) : 100;
+    const portRevState = openItems.length > 0 ? (driftedItems.length > 0 ? 'drifted' : 'open') : (reviewedItems.length > 0 ? 'reviewed' : 'pass');
+    const portBadgeEn = openItems.length > 0 ? `${openItems.length} Open / ${items.length} Rules` : `${cleanPct}% Clean`;
+    const portBadgeAr = openItems.length > 0 ? `${openItems.length} مفتوحة من ${items.length}` : `نظيف ${cleanPct}%`;
+    const portBadgeFr = openItems.length > 0 ? `${openItems.length} ouvertes / ${items.length}` : `${cleanPct}% conforme`;
+
+    const firstOpenNav = openItems.find(x => x.navView && (typeof canViewView !== 'function' || canViewView(x.navView, u)));
+    const portTargetView = firstOpenNav ? firstOpenNav.navView : (typeof canViewView !== 'function' || canViewView('alert_rules', u) ? 'alert_rules' : '');
+
+    const portKpis = [
+      {
+        labelEn: 'Open Dollar Exposure',
+        labelAr: 'إجمالي التعرض المفتوح',
+        labelFr: 'Exposition ouverte ($)',
+        valStr: fmtUSD(totalExposureUsd, 0),
+        valAr: fmtUSD(totalExposureUsd, 0),
+        valFr: fmtUSD(totalExposureUsd, 0),
+        subEn: `${fmtNum(totalFlaggedRows, 0)} flagged row(s) in queue`,
+        subAr: `${fmtNum(totalFlaggedRows, 0)} سجل قيد المراجعة`,
+        subFr: `${fmtNum(totalFlaggedRows, 0)} ligne(s) à pointer`,
+        tone: openItems.length > 0 ? 'warn' : 'ok'
+      },
+      {
+        labelEn: 'Watchdog Queue',
+        labelAr: 'قائمة قواعد التدقيق',
+        labelFr: 'File des contrôles',
+        valStr: `${openItems.length} Open / ${items.length}`,
+        valAr: `${openItems.length} مفتوحة / ${items.length}`,
+        valFr: `${openItems.length} ouvertes / ${items.length}`,
+        subEn: `${reviewedItems.length} signed off · ${passingItems.length} native pass`,
+        subAr: `${reviewedItems.length} معتمدة · ${passingItems.length} مطابقة تلقائياً`,
+        subFr: `${reviewedItems.length} signées · ${passingItems.length} conformes`,
+        tone: openItems.length > 0 ? 'warn' : 'ok'
+      },
+      {
+        labelEn: '#1 Repeat Offender',
+        labelAr: 'الأعلى تكراراً بالتنبيهات',
+        labelFr: '#1 Contrepartie récurrente',
+        valStr: leadEn,
+        valAr: leadAr,
+        valFr: leadFr,
+        subEn: leadSubEn,
+        subAr: leadSubAr,
+        subFr: leadSubFr,
+        tone: leadOff ? 'warn' : 'ok'
+      },
+      canViewBooks ? {
+        labelEn: 'Ledger Trial Balance',
+        labelAr: 'ميزان المراجعة العام',
+        labelFr: 'Balance Générale',
+        valStr: tbBalanced ? '$0.00 Balanced' : fmtUSD(Math.abs(tbDiff), 2),
+        valAr: tbBalanced ? 'متوازن $0.00' : fmtUSD(Math.abs(tbDiff), 2),
+        valFr: tbBalanced ? 'Équilibré $0.00' : fmtUSD(Math.abs(tbDiff), 2),
+        subEn: tbBalanced ? 'Classes 1-7 double-entry tied' : 'Variance requires review',
+        subAr: tbBalanced ? 'تطابق القيد المزدوج 1-7' : 'يوجد فرق يتطلب الفحص',
+        subFr: tbBalanced ? 'Classes 1-7 équilibrées' : 'Écart à vérifier',
+        tone: tbBalanced ? 'ok' : 'neg'
+      } : {
+        labelEn: 'Health Score',
+        labelAr: 'مؤشر الامتثال',
+        labelFr: 'Indice de conformité',
+        valStr: `${cleanPct}%`,
+        valAr: `${cleanPct}%`,
+        valFr: `${cleanPct}%`,
+        subEn: 'Operational watchdogs',
+        subAr: 'ضوابط الرقابة التشغيلية',
+        subFr: 'Contrôles opérationnels',
+        tone: cleanPct >= 80 ? 'ok' : 'warn'
+      }
+    ];
+
+    const openListTxt = openRuleCodes.slice(0, 6).join(', ');
+    const bulletsEn = [
+      openItems.length > 0
+        ? `${companyEn} carries ${openItems.length} open audit watchdog(s) (${openListTxt}) representing ${fmtUSD(totalExposureUsd, 0)} in flagged exposure across ${fmtNum(totalFlaggedRows, 0)} exception row(s) (${cleanPct}% clean; ${reviewedItems.length} signed off).`
+        : `All ${items.length} audit watchdogs in ${companyEn} are clean or signed off (${reviewedItems.length} checked, ${passingItems.length} native pass) with $0 open exposure.`,
+      leadOff
+        ? `Repeat-offender ranking places ${leadEn} first across ${leadSubEn}; prioritize its itemized rows before batch sign-off.`
+        : 'Zero repeat-offender counterparties, vehicles, or outlets remain open in the current audit queue.',
+      canViewBooks
+        ? (tbBalanced
+          ? 'Lebanese Chart of Accounts Classes 1-7 trial balance holds at $0.00 variance; resolve operational exceptions below before clicking Mark All Checked.'
+          : `General ledger trial balance shows a ${fmtUSD(Math.abs(tbDiff), 2)} variance; reconcile S1 journal legs prior to sign-off.`)
+        : 'Inspect itemized exception tables on each flagged rule to complete operational remediation.'
+    ];
+    const bulletsAr = [
+      openItems.length > 0
+        ? `تُسجل ${companyAr} عدد ${openItems.length} قواعد رقابية مفتوحة (${openListTxt}) بإجمالي معرض للمراجعة قدره ${fmtUSD(totalExposureUsd, 0)} عبر ${fmtNum(totalFlaggedRows, 0)} سجلات استثنائية (نسبة النظافة ${cleanPct}%، والمعتمد ${reviewedItems.length}).`
+        : `جميع قواعد التدقيق البالغة ${items.length} في ${companyAr} مطابقة أو معتمدة بالكامل (${reviewedItems.length} معتمدة، ${passingItems.length} مطابقة تلقائياً) بتعرض مفتوح $0.`,
+      leadOff
+        ? `يتصدر ${leadAr} ترتيب التكرار عبر ${leadSubAr}؛ يُوصى بمعالجة سجلاته التفصيلية أولاً قبل الاعتماد الجماعي.`
+        : 'لا يوجد أي طرف مقابل أو آلية أو منفذ متكرر في قائمة الاستثناءات المفتوحة حالياً.',
+      canViewBooks
+        ? (tbBalanced
+          ? 'ميزان المراجعة العام (الأقسام 1 إلى 7) متوازن تماماً بفارق $0.00؛ عالج الاستثناءات التشغيلية أدناه قبل اعتماد كافة القواعد.'
+          : `يُظهر ميزان المراجعة فرقاً قدره ${fmtUSD(Math.abs(tbDiff), 2)}؛ يرجى مطابقة قيود الأستاذ العام (S1) قبل التوقيع.`)
+        : 'راجع الجداول التفصيلية لكل قاعدة مفتوحة لاستكمال الإجراءات التصحيحية.'
+    ];
+    const bulletsFr = [
+      openItems.length > 0
+        ? `${companyFr} compte ${openItems.length} alerte(s) d audit ouverte(s) (${openListTxt}) représentant ${fmtUSD(totalExposureUsd, 0)} d exposition sur ${fmtNum(totalFlaggedRows, 0)} ligne(s) (${cleanPct}% conforme ; ${reviewedItems.length} validées).`
+        : `Les ${items.length} contrôles d audit sur ${companyFr} sont conformes ou validés (${reviewedItems.length} signés, ${passingItems.length} natifs) avec $0 d exposition ouverte.`,
+      leadOff
+        ? `Le classement des récurrences place ${leadFr} en tête sur ${leadSubFr} ; traitez ses lignes détaillées avant validation groupée.`
+        : 'Aucune contrepartie, machine ou caisse récurrente ne subsiste dans la file d exceptions.',
+      canViewBooks
+        ? (tbBalanced
+          ? 'La balance générale (classes 1 à 7) est équilibrée à $0.00 d écart ; régularisez les exceptions opérationnelles avant validation globale.'
+          : `La balance générale affiche un écart de ${fmtUSD(Math.abs(tbDiff), 2)} ; pointez la règle S1 avant signature.`)
+        : 'Examinez les tableaux détaillés de chaque règle ouverte pour clôturer les actions correctives.'
+    ];
+
+    const portDrafts = {
+      en: openItems.length > 0
+        ? `Sentinel audit summary (${companyEn}): ${openItems.length}/${items.length} watchdog rules open (${openListTxt}) with ${fmtUSD(totalExposureUsd, 0)} flagged exposure across ${fmtNum(totalFlaggedRows, 0)} rows. Top repeat exception: ${leadEn} (${leadSubEn}). Kindly complete voucher checks before sign-off.`
+        : `Sentinel audit sign-off (${companyEn}): 100% of ${items.length} watchdog rules are clear or verified (${reviewedItems.length} signed off, ${passingItems.length} native pass) with $0.00 trial balance variance.`,
+      ar: openItems.length > 0
+        ? `ملخص تدقيق الرقابة (${companyAr}): ${openItems.length} من أصل ${items.length} قواعد مفتوحة (${openListTxt}) بإجمالي معرض ${fmtUSD(totalExposureUsd, 0)} عبر ${fmtNum(totalFlaggedRows, 0)} سجلات. الأعلى تكراراً: ${leadAr} (${leadSubAr}). يرجى استكمال فحص السندات قبل الاعتماد.`
+        : `اعتماد تدقيق الرقابة (${companyAr}): 100% من القواعد البالغة ${items.length} نظيفة أو معتمدة (${reviewedItems.length} موقعة، ${passingItems.length} مطابقة تلقائياً) مع توازن ميزان المراجعة بفارق $0.00.`,
+      fr: openItems.length > 0
+        ? `Synthèse audit Sentinelles (${companyFr}) : ${openItems.length}/${items.length} règles ouvertes (${openListTxt}) pour ${fmtUSD(totalExposureUsd, 0)} d exposition sur ${fmtNum(totalFlaggedRows, 0)} lignes. Récurrence #1 : ${leadFr} (${leadSubFr}). Merci de finaliser les contrôles avant signature.`
+        : `Validation audit Sentinelles (${companyFr}) : 100% des ${items.length} contrôles sont conformes ou signés (${reviewedItems.length} validés, ${passingItems.length} natifs) avec $0.00 d écart de balance.`
+    };
+
+    const portScopeKey = `sntriage|${u ? u.id : 'anon'}|${evalCoKey}|${targetInd}|__all__|${openItems.length}:${reviewedItems.length}:${driftedItems.length}|${Math.round(totalExposureUsd)}|${SEED._customRev || 0}:${STATE._customRev || 0}|${STATE.period || ''}:${STATE.dateFrom || ''}:${STATE.dateTo || ''}|${STATE.basis || 'rep'}|${_ALERT_RULES_REV}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}|${customAlertSig}|${revSig}`;
+
+    return {
+      ruleId: '__all__',
+      isPortfolio: true,
+      rlsClamped: false,
+      canViewBooks,
+      canSignOff,
+      reviewState: portRevState,
+      isReviewed: openItems.length === 0 && reviewedItems.length > 0,
+      severity: openItems.some(i => i.severity === 'crit') ? 'crit' : (openItems.length > 0 ? 'warn' : 'ok'),
+      rawSeverity: openItems.some(i => i.severity === 'crit') ? 'crit' : (openItems.length > 0 ? 'warn' : 'ok'),
+      exposureUsd: totalExposureUsd,
+      flaggedCount: totalFlaggedRows,
+      openFlags: openItems.length,
+      reviewedCount: reviewedItems.length,
+      passingCount: passingItems.length,
+      totalRules: items.length,
+      industry: targetInd,
+      industryAr: indLoc.ar,
+      industryFr: indLoc.fr,
+      companyKey: evalCoKey,
+      company: coHuman,
+      companyEn,
+      companyAr,
+      companyFr,
+      titleEn: `Sentinel Triage Queue · ${companyEn}`,
+      titleAr: `فرز استثناءات الرقابة · ${companyAr}`,
+      titleFr: `Triage des alertes d audit · ${companyFr}`,
+      roleLabelEn: `${items.length} Active Watchdogs`,
+      roleLabelAr: `${items.length} قاعدة تدقيق نشطة`,
+      roleLabelFr: `${items.length} contrôles actifs`,
+      statusBadgeEn: portBadgeEn,
+      statusBadgeAr: portBadgeAr,
+      statusBadgeFr: portBadgeFr,
+      topOffenderEn: leadEn,
+      topOffenderAr: leadAr,
+      topOffenderFr: leadFr,
+      targetView: portTargetView,
+      scrollPanel: '',
+      scopeKey: portScopeKey,
+      tieCheck,
+      kpis: portKpis,
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts: portDrafts,
+      facts: {
+        ruleId: '__all__',
+        industry: targetInd,
+        company: companyEn,
+        openFlags: openItems.length,
+        reviewedCount: reviewedItems.length,
+        passingCount: passingItems.length,
+        totalRules: items.length,
+        openRuleCodes,
+        exposureUsd: totalExposureUsd,
+        flaggedCount: totalFlaggedRows,
+        topOffender: leadEn,
+        tbBalanced
+      }
+    };
+  }
+
   function computeInspector360Snapshot(opts = {}) {
     ensureMultiIndustrySpineSeeded();
     const options = opts && typeof opts === 'object' ? opts : {};
@@ -61082,7 +62792,7 @@
     const shortTitles = ['Straight', 'Slight Left', 'Slight Right'];
     const target = enrolTargetUser();
     const savedThumbs = userFaceThumbs(target);
-    const capLen = FACE_STATE.enrolCaptures.length;
+    const capLen = effectiveEnrolPoseCount(target);
     const retakeSlot = FACE_STATE.enrolRetakeSlot;
     return [0, 1, 2].map(i => {
       const th = FACE_STATE.enrolThumbs[i] || savedThumbs[i] || '';
@@ -61117,7 +62827,7 @@
 
   function getEnrolPoseGuideModel() {
     const enrolUser = enrolTargetUser();
-    const capCount = FACE_STATE.enrolCaptures.length;
+    const capCount = effectiveEnrolPoseCount(enrolUser);
     const retakeSlot = FACE_STATE.enrolRetakeSlot;
     const poseComplete = capCount >= 3 && retakeSlot == null;
     const poseIdx = retakeSlot != null ? retakeSlot : Math.min(capCount, 2);
@@ -61282,7 +62992,7 @@
 
   function renderCompanyMultiSelectChipsHtml(selected) {
     if (!selected || !selected.length) {
-      return '<span class="hint" style="color:var(--crit)">No company selected — pick at least 1 company</span>';
+      return '<span class="hint" style="color:var(--crit)">No company selected: pick at least 1 company</span>';
     }
     const maxChips = 8;
     const shown = selected.slice(0, maxChips);
@@ -62290,7 +64000,8 @@
     const curAccess = STATE.draftAccessOverride || (editUser ? seatAccessValue(editUser) : 'partial|partial');
     const curBookScope = STATE.draftBookScopeOverride || (editUser ? getUserBookScope(editUser) : 'all');
     const curStatus = editUser ? (editUser.status || 'Active') : 'Active';
-    const curPin = editUser ? (editUser.pin_code || '1111') : (STATE.newDraftPin || '3564');
+    const isRedactedPinEdit = Boolean(editUser && editUser.pin_redacted && !editUser.pin_code);
+    const curPin = editUser ? (isRedactedPinEdit ? '' : (editUser.pin_code || '1111')) : (STATE.newDraftPin || '3564');
     const isSelfOwner = editUser && editIdx === STATE.activeUserIdx;
     const fSamples = editUser ? userFaceSamples(editUser) : [];
     const previewUser = getDraftSeatPreviewUser(editUser, curRole, curCompanies, curAccess);
@@ -62319,7 +64030,7 @@
             <select id="nu_seat_select" class="seat-select-dropdown">
               ${STATE.users.map((u, idx) => {
                 const cBadge = formatCompactCompaniesBadge(u.companies, 3);
-                const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
+                const dispPin = (STATE.demoVisitor || (u.pin_redacted && !u.pin_code)) ? '••••' : (u.pin_code || '1111');
                 const uPerms = getEffectivePermissions(u);
                 return `
                 <option value="${esc(u.id)}" ${!isNewMode && String(u.id) === String(editUser.id) ? 'selected' : ''}>
@@ -62332,7 +64043,7 @@
           <div class="seat-pill-strip" role="tablist" aria-label="Team login seats">
             ${STATE.users.map((u, idx) => {
               const active = !isNewMode && String(u.id) === String(editUser.id);
-              const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
+              const dispPin = (STATE.demoVisitor || (u.pin_redacted && !u.pin_code)) ? '••••' : (u.pin_code || '1111');
               return `<button type="button" class="seat-pick-pill ${active ? 'active' : ''} ${u.status === 'Suspended' ? 'suspended' : ''}" data-pick-seat="${esc(u.id)}">
                 <span class="seat-pick-num">${idx + 1}</span>
                 <span class="seat-pick-name">${esc(u.full_name)}</span>
@@ -62358,7 +64069,7 @@
             </div>
             <div class="form-field">
               <label for="nu_pin">Access PIN (4 to 8 Digits) *</label>
-              <input type="text" inputmode="numeric" pattern="[0-9]{4,8}" id="nu_pin" value="${esc(curPin)}" class="mono" autocomplete="off">
+              <input type="text" inputmode="numeric" pattern="[0-9]{4,8}" id="nu_pin" value="${esc(curPin)}" placeholder="${isRedactedPinEdit ? 'Leave blank to keep current PIN' : ''}" class="mono" autocomplete="off">
             </div>
             <div class="form-field" id="nuRolePermsField">
               <div class="field-lbl-with-btn">
@@ -62414,7 +64125,7 @@
                 </select>
               </label>
               ${editUser ? `
-                <span class="badge ${fSamples.length && effectiveSeatAuthMode(editUser) !== 'pin_only' ? 'badge-ok' : 'badge-warn'}">${esc(seatAuthBadgeLabel(editUser))}</span>
+                <span class="badge ${userHasFaceId(editUser) && effectiveSeatAuthMode(editUser) !== 'pin_only' ? 'badge-ok' : 'badge-warn'}">${esc(seatAuthBadgeLabel(editUser))}</span>
                 <button type="button" class="btn" style="padding:3px 9px;font-size:11px" data-enrol-user="${esc(editUser.id)}">Configure Face ID ↓</button>
               ` : ''}
             </div>
@@ -62440,8 +64151,7 @@
       const idx = STATE.users.findIndex(x => x && String(x.id) === String(u.id));
       const isSelf = idx === STATE.activeUserIdx || String(u.id) === String(me.id);
       const canManageFace = owner || tier === 'supervisor' || isSelf;
-      const fSamples = userFaceSamples(u);
-      const faceCnt = Math.min(3, fSamples.length);
+      const faceCnt = userFacePoseCount(u);
       const faceActive = faceCnt > 0 && effectiveSeatAuthMode(u) !== 'pin_only';
       const isTarget = String(u.id) === String(enrolTargetUser().id);
       const isEditing = String(u.id) === editId;
@@ -62507,7 +64217,7 @@
           </div>
         </td>
         <td class="user-dir-email-cell"><span class="user-email-pill mono">${esc(u.email)}</span></td>
-        ${owner && !STATE.demoVisitor ? `<td class="user-dir-pin-cell"><span class="badge badge-info user-pin-keycap mono">${esc(u.pin_code || '1111')}</span></td>` : ''}
+        ${owner && !STATE.demoVisitor ? `<td class="user-dir-pin-cell"><span class="badge badge-info user-pin-keycap mono">${esc(u.pin_code || (u.pin_redacted ? '••••' : '1111'))}</span></td>` : ''}
         <td class="user-dir-face-cell">
           ${canManageFace
             ? `<button type="button" class="user-face-capsule ${faceActive ? 'is-enrolled' : 'is-pin-only'} ${isTarget ? 'is-target' : ''}" data-enrol-user="${esc(u.id)}">${poseDotsHtml}<span>${esc(faceCompactLbl)}</span></button>`
@@ -62562,8 +64272,8 @@
     const enrolUser = enrolTargetUser();
     syncEnrolBufferFromUser(enrolUser, false);
     const faceCount = visUsers.filter(userHasFaceId).length;
-    const enrolSavedSamples = userFaceSamples(enrolUser);
-    const capCount = FACE_STATE.enrolCaptures.length;
+    const enrolSavedCount = userFacePoseCount(enrolUser);
+    const capCount = effectiveEnrolPoseCount(enrolUser);
     const poseComplete = capCount >= 3;
     const showcaseHref = (IS_LOCAL && !location.pathname.includes('/app/')) ? '/showcase/' : '../';
     const supScopeLbl = tier === 'supervisor' ? (getSupervisorScopedBus(me).join(' · ') || 'Your Business Unit') : '';
@@ -62625,8 +64335,8 @@
           </div>
           <div class="enrol-console-actions">
             ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-nav-jump="alert_rules">${ic('sliders')} Alerts &amp; Thresholds</button>` : ''}
-            <span class="enrol-seat-pill ${enrolSavedSamples.length ? 'enrolled' : 'pending'}" id="enrolHeaderBadge">
-              ${enrolSavedSamples.length ? `✓ ${esc(enrolUser.full_name)} · ${enrolSavedSamples.length}/3 Poses Saved` : `${esc(enrolUser.full_name)} · Not Enrolled`}
+            <span class="enrol-seat-pill ${enrolSavedCount ? 'enrolled' : 'pending'}" id="enrolHeaderBadge">
+              ${enrolSavedCount ? `✓ ${esc(enrolUser.full_name)} · ${enrolSavedCount}/3 Poses Saved` : `${esc(enrolUser.full_name)} · Not Enrolled`}
             </span>
           </div>
         </div>
@@ -62679,13 +64389,13 @@
                 <select id="enrolUserSelect" class="enrol-select" ${canSwitchEnrolTarget ? '' : 'disabled'}>
                   ${hideRoleAndRlsCols ? `
                     <option value="${esc(me.id)}" selected>
-                      ${esc(me.full_name)} (${userFaceSamples(me).length ? userFaceSamples(me).length + '/3 poses' : 'no Face ID'})
+                      ${esc(me.full_name)} (${userFacePoseCount(me) ? userFacePoseCount(me) + '/3 poses' : 'no Face ID'})
                     </option>
                   ` : `
                     <optgroup label="Team Login Seats">
                       ${visUsers.filter(u => u.status !== 'Suspended').map(u => `
                         <option value="${esc(u.id)}" ${String(u.id) === String(enrolUser.id) ? 'selected' : ''}>
-                          ${esc(u.full_name)} (${userFaceSamples(u).length ? userFaceSamples(u).length + '/3 poses' : 'no Face ID'})
+                          ${esc(u.full_name)} (${userFacePoseCount(u) ? userFacePoseCount(u) + '/3 poses' : 'no Face ID'})
                         </option>
                       `).join('')}
                     </optgroup>
@@ -62746,7 +64456,7 @@
                   </div>
                   <div class="mfg-pose-actions">
                     <button type="button" class="btn btn-brass enrol-action-btn enrol-capture-cta" id="enrolCaptureBtn">${pgm.capBtnHtml}</button>
-                    <button type="button" class="btn enrol-action-btn enrol-clear-btn" id="enrolClearBtn" ${(enrolSavedSamples.length || capCount) ? '' : 'hidden'} aria-label="Clear Face ID">${ENROL_SVGS.trash}<span>Clear</span></button>
+                    <button type="button" class="btn enrol-action-btn enrol-clear-btn" id="enrolClearBtn" ${(enrolSavedCount || capCount) ? '' : 'hidden'} aria-label="Clear Face ID">${ENROL_SVGS.trash}<span>Clear</span></button>
                   </div>
                 </div>
               `;
@@ -89088,13 +90798,17 @@
         baseNew.pin_code = '';
         baseNew.pin_redacted = true;
       }
-      if (incoming && incoming.face_redacted) {
+      const inSamplesNew = userFaceSamples(incoming);
+      const inThumbsNew = userFaceThumbs(incoming);
+      if (incoming && (incoming.face_redacted || (!inSamplesNew.length && (incoming.face_cleared || incoming.face_enrolled === false)))) {
+        const enrolledNew = Boolean(incoming.face_enrolled && !incoming.face_cleared);
         baseNew.face_samples = [];
-        baseNew.face_thumbs = [];
-        baseNew.face_redacted = true;
-        baseNew.face_enrolled = Boolean(incoming.face_enrolled);
-        baseNew.face_sample_count = Number(incoming.face_sample_count || (baseNew.face_enrolled ? 3 : 0));
-        delete baseNew.face_cleared;
+        baseNew.face_thumbs = enrolledNew ? inThumbsNew : [];
+        baseNew.face_enrolled = enrolledNew;
+        baseNew.face_sample_count = enrolledNew ? Math.max(1, Number(incoming.face_sample_count || inThumbsNew.length || 3)) : 0;
+        baseNew.face_redacted = enrolledNew;
+        if (!enrolledNew && (incoming.face_cleared || incoming.face_updated_at)) baseNew.face_cleared = true;
+        else delete baseNew.face_cleared;
       }
       return ensureCanonicalMultiIndustrySeat(baseNew);
     }
@@ -89140,28 +90854,100 @@
     const inThumbs = userFaceThumbs(incoming);
     const exTs = String(existing.face_updated_at || '');
     const inTs = String(incoming.face_updated_at || '');
-    if (incoming.face_redacted) {
-      out.face_samples = exSamples;
-      out.face_thumbs = exThumbs;
-      out.face_enrolled = Boolean(exSamples.length > 0 || (incoming.face_enrolled && !existing.face_cleared));
-      out.face_sample_count = exSamples.length || Number(incoming.face_sample_count || existing.face_sample_count || (out.face_enrolled ? 3 : 0));
-      out.face_redacted = exSamples.length === 0 && Boolean(incoming.face_enrolled && !existing.face_cleared);
-      out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
-      out.face_updated_at = exTs || inTs;
-      if (!exSamples.length && existing.face_cleared) out.face_cleared = true;
-      else delete out.face_cleared;
+    const isServerRedactedEnrolled = Boolean(!inSamples.length && incoming.face_redacted && incoming.face_enrolled && !incoming.face_cleared);
+    const isExplicitRemoteClear = Boolean(!inSamples.length && (incoming.face_cleared || (!incoming.face_enrolled && inTs)));
+    if (isExplicitRemoteClear) {
+      if (!exTs || !inTs || inTs >= exTs) {
+        out.face_samples = [];
+        out.face_thumbs = [];
+        out.face_enrolled = false;
+        out.face_sample_count = 0;
+        out.face_redacted = false;
+        out.face_required = false;
+        out.face_updated_at = inTs || exTs;
+        out.face_cleared = true;
+      } else if (exSamples.length > 0 && !existing.face_cleared) {
+        out.face_samples = exSamples;
+        out.face_thumbs = exThumbs;
+        out.face_enrolled = true;
+        out.face_sample_count = exSamples.length;
+        delete out.face_redacted;
+        out.face_required = Boolean(existing.face_required);
+        out.face_updated_at = exTs;
+        delete out.face_cleared;
+      } else if (existing.face_redacted && existing.face_enrolled && !existing.face_cleared) {
+        out.face_samples = [];
+        out.face_thumbs = exThumbs;
+        out.face_enrolled = true;
+        out.face_sample_count = Math.max(1, Number(existing.face_sample_count || exThumbs.length || 3));
+        out.face_redacted = true;
+        out.face_required = Boolean(existing.face_required);
+        out.face_updated_at = exTs;
+        delete out.face_cleared;
+      } else {
+        out.face_samples = [];
+        out.face_thumbs = [];
+        out.face_enrolled = false;
+        out.face_sample_count = 0;
+        out.face_redacted = false;
+        out.face_required = false;
+        out.face_updated_at = exTs || inTs;
+        out.face_cleared = true;
+      }
+    } else if (isServerRedactedEnrolled) {
+      if (existing.face_cleared && exTs && (!inTs || exTs > inTs)) {
+        out.face_samples = [];
+        out.face_thumbs = [];
+        out.face_enrolled = false;
+        out.face_sample_count = 0;
+        out.face_redacted = false;
+        out.face_required = false;
+        out.face_updated_at = exTs;
+        out.face_cleared = true;
+      } else if (inTs && (!exTs || inTs > exTs)) {
+        out.face_samples = [];
+        out.face_thumbs = inThumbs.length ? inThumbs : [];
+        out.face_enrolled = true;
+        out.face_sample_count = Math.max(1, Number(incoming.face_sample_count || inThumbs.length || 3));
+        out.face_redacted = true;
+        out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
+        out.face_updated_at = inTs;
+        delete out.face_cleared;
+      } else {
+        out.face_samples = exSamples;
+        out.face_thumbs = exThumbs.length ? exThumbs : inThumbs;
+        out.face_enrolled = true;
+        out.face_sample_count = exSamples.length || Math.max(1, Number(incoming.face_sample_count || existing.face_sample_count || out.face_thumbs.length || 3));
+        out.face_redacted = exSamples.length === 0;
+        out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
+        out.face_updated_at = exTs || inTs;
+        delete out.face_cleared;
+      }
     } else {
       delete out.face_redacted;
       if (inSamples.length && ((!exSamples.length && !(existing.face_cleared && exTs > inTs)) || inTs >= exTs)) {
         out.face_samples = inSamples;
         out.face_thumbs = inThumbs.length ? inThumbs : exThumbs;
-        out.face_required = incoming.face_required != null ? !!incoming.face_required : true;
+        out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
         out.face_updated_at = inTs || exTs;
+        out.face_sample_count = inSamples.length;
+        out.face_enrolled = true;
         delete out.face_cleared;
-      } else if (exSamples.length && (!inSamples.length && !(incoming.face_cleared && inTs > exTs))) {
+      } else if (exSamples.length && !existing.face_cleared && (!inSamples.length && !(incoming.face_cleared && inTs > exTs))) {
         out.face_samples = exSamples;
         out.face_thumbs = exThumbs;
-        out.face_required = existing.face_required != null ? !!existing.face_required : true;
+        out.face_required = Boolean(existing.face_required);
+        out.face_updated_at = exTs;
+        out.face_sample_count = exSamples.length;
+        out.face_enrolled = true;
+        delete out.face_cleared;
+      } else if (!inSamples.length && existing.face_redacted && existing.face_enrolled && !existing.face_cleared && (!inTs || exTs >= inTs)) {
+        out.face_samples = [];
+        out.face_thumbs = exThumbs;
+        out.face_enrolled = true;
+        out.face_sample_count = Math.max(1, Number(existing.face_sample_count || exThumbs.length || 3));
+        out.face_redacted = true;
+        out.face_required = Boolean(existing.face_required);
         out.face_updated_at = exTs;
         delete out.face_cleared;
       } else {
@@ -89169,9 +90955,10 @@
         out.face_thumbs = inSamples.length ? (inThumbs.length ? inThumbs : exThumbs) : [];
         out.face_required = !!(incoming.face_required && inSamples.length);
         out.face_updated_at = inTs || exTs;
+        out.face_sample_count = out.face_samples.length;
+        out.face_enrolled = out.face_samples.length > 0;
         if (!out.face_samples.length && (existing.face_cleared || incoming.face_cleared)) out.face_cleared = true;
       }
-      out.face_enrolled = out.face_samples.length > 0;
     }
     if (preferExistingSeat && existing.auth_mode != null) out.auth_mode = existing.auth_mode;
     else if (incoming.auth_mode != null) out.auth_mode = incoming.auth_mode;
@@ -90705,6 +92492,66 @@
     return syncInFlight;
   }
 
+  function applyServerUsersPayload(usersArr, payloadObj) {
+    _usersApiHydratedOnce = true;
+    if (payloadObj && payloadObj.faceSettings && typeof payloadObj.faceSettings === 'object') {
+      const rFs = payloadObj.faceSettings;
+      const rFsTs = String(rFs.updated_at || '');
+      const lFsTs = String((STATE.faceSettings && STATE.faceSettings.updated_at) || '');
+      if (!lFsTs || !rFsTs || rFsTs >= lFsTs) {
+        STATE.faceSettings = Object.assign({}, STATE.faceSettings || {}, rFs, { sound: false });
+        try { appStoreSetRaw('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings)); } catch (_) {}
+      }
+    }
+    if (!Array.isArray(usersArr) || !usersArr.length) {
+      if (!STATE.authed) {
+        updateAuthFaceUi();
+      }
+      return false;
+    }
+    const merged = STATE.users.map(u => Object.assign({}, u));
+    usersArr.forEach(u => {
+      if (!u || !u.email) return;
+      const idx = merged.findIndex(x => (u.id && String(x.id) === String(u.id)) || norm(x.email) === norm(u.email));
+      if (idx >= 0) merged[idx] = mergeUserRow(merged[idx], u);
+      else merged.push(mergeUserRow(null, u));
+    });
+    STATE.users = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
+    try { appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(STATE.users)); } catch (_) {}
+    const prevV = STATE.view, prevC = STATE.company;
+    applyUserRlsAndPermissions();
+    if (!STATE.authed) {
+      renderQuickSeatsInAuthGate();
+      updateAuthFaceUi();
+      if (typeof syncAuthSelectedSeatUi === 'function') syncAuthSelectedSeatUi();
+    } else if (STATE.view !== prevV || STATE.company !== prevC || STATE.view === 'users') {
+      safeRender();
+    }
+    return true;
+  }
+
+  function hydrateServerUsersOnce() {
+    if (!hasServerApi() || isDemoSandboxSession()) return Promise.resolve(false);
+    if (_usersHydrateInFlight) return _usersHydrateInFlight;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    _usersHydrateInFlight = edgeApiFetch('./api/users', { signal: ctrl.signal })
+      .then(r => {
+        clearTimeout(t);
+        return r && r.ok ? r.json() : null;
+      })
+      .then(d => {
+        if (d && Array.isArray(d.users)) return applyServerUsersPayload(d.users, d);
+        return false;
+      })
+      .catch(() => false)
+      .finally(() => {
+        clearTimeout(t);
+        _usersHydrateInFlight = null;
+      });
+    return _usersHydrateInFlight;
+  }
+
   async function doSync(pushChanges) {
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Auto-mint Edge HMAC session token for already-authenticated browsers after cutover
@@ -90742,18 +92589,8 @@
         clearTimeout(t);
         if (rLocal.ok) {
           const dLocal = await rLocal.json();
-          if (Array.isArray(dLocal.users) && dLocal.users.length) {
-            const merged = STATE.users.map(u => Object.assign({}, u));
-            dLocal.users.forEach(u => {
-              if (!u || !u.email) return;
-              const idx = merged.findIndex(x => (u.id && String(x.id) === String(u.id)) || norm(x.email) === norm(u.email));
-              if (idx >= 0) merged[idx] = mergeUserRow(merged[idx], u);
-              else merged.push(mergeUserRow(null, u));
-            });
-            STATE.users = merged.map(u => ensureCanonicalMultiIndustrySeat(u));
-            const prevV = STATE.view, prevC = STATE.company;
-            applyUserRlsAndPermissions();
-            if (STATE.authed && (STATE.view !== prevV || STATE.company !== prevC)) safeRender();
+          if (Array.isArray(dLocal.users)) {
+            applyServerUsersPayload(dLocal.users, dLocal);
           }
         }
         if (!isEdgeActive || STATE.authed || isDemoSandboxSession()) {
@@ -91211,7 +93048,7 @@
   }
 
   function updateAuthFaceUi() {
-    const enrolled = STATE.users.filter(userHasFaceId);
+    const hasEnrolled = hasAnyEnrolledFaceId();
     const camBtn = $('authCamToggleBtn');
     const camLbl = $('authCamToggleLabel');
     const offEl = $('authCamOffOverlay');
@@ -91259,11 +93096,14 @@
     if (typeof syncAuthSelectedSeatUi === 'function') syncAuthSelectedSeatUi();
 
     const hintEl = $('authFaceHint');
+    const isPreparingText = Boolean(hintEl && /Preparing Face ID|Loading Face ID|Starting/i.test(hintEl.textContent || ''));
     if (wsMode === 'pin_only' && hintEl && !FACE_STATE.pending2faUser) {
       setAuthHint('', '');
     } else if (!videoReady && camBusyOrLive && hintEl && !FACE_STATE.pending2faUser) {
       setAuthHint('', '');
-    } else if (enrolled.length && hintEl && !hintEl.textContent && FACE_STATE.camActive && videoReady && !FACE_STATE.pending2faUser) {
+    } else if (!hasEnrolled && hintEl && isPreparingText && !FACE_STATE.pending2faUser) {
+      setAuthHint('', '');
+    } else if (hasEnrolled && hintEl && (!hintEl.textContent || (window.Face && window.Face.ready && isPreparingText)) && FACE_STATE.camActive && videoReady && !FACE_STATE.pending2faUser) {
       setAuthHint(window.Face && window.Face.ready ? 'Look at camera for automatic Face ID' : 'Preparing Face ID…', (window.Face && window.Face.ready) ? 'ok' : '');
     }
   }
@@ -91480,23 +93320,32 @@
     const hasRedactedEdgeBioSeats = Boolean(
       hasServerApi() &&
       !isDemoSandboxSession() &&
-      STATE.users.some(u => u && u.status !== 'Suspended' && u.face_enrolled && (!Array.isArray(u.face_samples) || !u.face_samples.length))
+      (
+        STATE.users.some(u => u && u.status !== 'Suspended' && u.face_enrolled && (!Array.isArray(u.face_samples) || !u.face_samples.length)) ||
+        (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !_usersApiHydratedOnce)
+      )
     );
     if (!enrolled.length && !hasRedactedEdgeBioSeats) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.edgeProbeStreak = 0;
       setAuthStreak(0, defaultNeeded);
       setAuthHint('', '');
       return { status: 'no-enrolled' };
     }
     if (!det || !det.descriptor) {
       FACE_STATE.missedFrames = (FACE_STATE.missedFrames || 0) + 1;
-      FACE_STATE.edgeProbeStreak = 0;
-      if (!FACE_STATE.streakCount || FACE_STATE.missedFrames >= 4) {
+      if (!FACE_STATE.edgeProbeStreak || FACE_STATE.missedFrames >= 4) {
+        FACE_STATE.edgeProbeStreak = 0;
+      }
+      if ((!FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak) || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
-        setAuthStreak(0, defaultNeeded);
-        setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at camera for automatic Face ID' : ''), '');
+        FACE_STATE.edgeProbeStreak = 0;
+        if (!FACE_STATE.pendingPinUser) {
+          setAuthStreak(0, defaultNeeded);
+          setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at camera for automatic Face ID' : ''), '');
+        }
       }
       return { status: 'no-face' };
     }
@@ -91531,49 +93380,123 @@
     const dec = enrolled.length ? window.Face.decide(m, cfg, { faceSizeFrac: det.faceSizeFrac != null ? det.faceSizeFrac : 0.25 }) : { ok: false, status: 'unknown' };
 
     if (!dec.ok) {
-      if (hasRedactedEdgeBioSeats && descArr && (det.faceSizeFrac == null || det.faceSizeFrac >= 0.14)) {
+      if (hasRedactedEdgeBioSeats && descArr) {
+        const minFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
+        if (det.faceSizeFrac != null && det.faceSizeFrac < minFrac) {
+          FACE_STATE.edgeProbeStreak = 0;
+          setAuthStreak(0, defaultNeeded);
+          setAuthHint('Move slightly closer', 'warn');
+          return { status: 'too-small' };
+        }
+        // Hold steady if Step 1 Face ID already verified and user is typing Step 2 PIN
+        if (FACE_STATE.pendingPinUser && !FACE_STATE.pending2faUser) {
+          setAuthStreak(defaultNeeded, defaultNeeded);
+          const typedPin = val('authPinInput');
+          if (typedPin && FACE_STATE.pendingPinUser.pin_code && typedPin === String(FACE_STATE.pendingPinUser.pin_code).trim()) {
+            await completeFaceLogin(FACE_STATE.pendingPinUser, 0.22, snapshotUrl, 'Face ID + PIN 2FA', { faceDescriptor: FACE_STATE.pendingPinDescriptor || descArr });
+            return { status: 'verified', user: FACE_STATE.pendingPinUser, dist: 0.22, method: 'Face ID + PIN 2FA' };
+          }
+          return { status: '2fa-pin-pending', user: FACE_STATE.pendingPinUser, dist: 0.22 };
+        }
+        if (Date.now() < (FACE_STATE.edgeProbeCooldownUntil || 0)) {
+          return { status: 'cooldown' };
+        }
+        const edgeNeeded = (opts && opts.videoEl && !FACE_STATE.pending2faUser) ? 2 : defaultNeeded;
         const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
         const liveProbe = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
         FACE_STATE.edgeProbeStreak = (FACE_STATE.edgeProbeStreak || 0) + 1;
-        if (FACE_STATE.edgeProbeStreak >= defaultNeeded && liveProbe.ok && !FACE_STATE.edgeProbeBusy && Date.now() >= (FACE_STATE.edgeProbeCooldownUntil || 0)) {
-          FACE_STATE.edgeProbeBusy = true;
-          FACE_STATE.edgeProbeCooldownUntil = Date.now() + 2500;
-          FACE_STATE.edgeProbeStreak = 0;
-          try {
-            const reqBody = {
-              email: probeTargetEmail || undefined,
-              pin: (FACE_STATE.pending2faUser && FACE_STATE.pending2faUser.pin_code) ? FACE_STATE.pending2faUser.pin_code : undefined,
-              method: FACE_STATE.pending2faUser ? 'PIN + Face ID 2FA' : 'Face ID',
-              face_descriptor: descArr,
-              device: 'Edge Face ID'
-            };
-            const rEdge = await edgeApiFetch('./api/auth/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(reqBody)
-            });
-            const jEdge = rEdge ? await rEdge.json().catch(() => null) : null;
-            if (jEdge && jEdge.two_factor_pin_required && jEdge.user && jEdge.user.email) {
-              const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
-              const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
-              if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
-              FACE_STATE.lastVerifiedDescriptor = descArr;
-              await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: descArr, ignoreTypedPin: false });
-              return { status: '2fa-pin-pending', user: seatObj, dist: 0.22 };
-            }
-            if (rEdge && rEdge.ok && jEdge && jEdge.ok && jEdge.user && jEdge.user.email) {
-              if (jEdge.token) setEdgeSessionToken(jEdge.token);
-              const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
-              const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
-              if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
-              FACE_STATE.lastVerifiedDescriptor = descArr;
-              await completeFaceLogin(seatObj, 0.20, snapshotUrl, reqBody.method, { faceDescriptor: descArr, serverToken: jEdge.token || '1' });
-              return { status: 'verified', user: seatObj, dist: 0.20, method: reqBody.method, liveness: liveProbe.method };
-            }
-          } catch (_) {
-          } finally {
-            FACE_STATE.edgeProbeBusy = false;
+
+        if (FACE_STATE.edgeProbeStreak < edgeNeeded) {
+          setAuthStreak(FACE_STATE.edgeProbeStreak, edgeNeeded);
+          setAuthHint(
+            FACE_STATE.pending2faUser
+              ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
+              : 'Look at camera for automatic Face ID',
+            'ok'
+          );
+          return { status: 'edge-streak', count: FACE_STATE.edgeProbeStreak, needed: edgeNeeded, livenessOk: liveProbe.ok };
+        }
+
+        if (!liveProbe.ok) {
+          FACE_STATE.edgeProbeStreak = edgeNeeded - 1;
+          setAuthStreak(FACE_STATE.edgeProbeStreak, edgeNeeded);
+          const liveMode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
+          const promptMsg = (FACE_STATE.pending2faUser && liveMode === 'blink')
+            ? `Blink once to confirm ${FACE_STATE.pending2faUser.full_name}`
+            : ((FACE_STATE.pending2faUser && liveMode === 'turn3d')
+              ? `Turn slightly to confirm ${FACE_STATE.pending2faUser.full_name}`
+              : 'Blink or turn slightly to confirm');
+          setAuthHint(promptMsg, 'warn');
+          return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveProbe, count: FACE_STATE.edgeProbeStreak, needed: edgeNeeded };
+        }
+
+        if (FACE_STATE.edgeProbeBusy) {
+          setAuthStreak(edgeNeeded, edgeNeeded);
+          return { status: 'edge-verifying' };
+        }
+
+        FACE_STATE.edgeProbeBusy = true;
+        setAuthStreak(edgeNeeded, edgeNeeded);
+        if (!snapshotUrl && opts && opts.videoEl && window.Face && window.Face.snapshot) {
+          try { snapshotUrl = window.Face.snapshot(opts.videoEl); } catch (_) {}
+        }
+        try {
+          const livenessTag = liveProbe.method && liveProbe.method !== 'synthetic-descriptor' && liveProbe.method !== 'multi-frame'
+            ? ` · Live ${liveProbe.method === 'turn3d' ? '3D Turn' : 'Blink'}`
+            : '';
+          const methodLabel = FACE_STATE.pending2faUser ? `PIN + Face ID 2FA${livenessTag}` : `Face ID${livenessTag}`;
+          const reqBody = {
+            email: probeTargetEmail || undefined,
+            pin: (FACE_STATE.pending2faUser && FACE_STATE.pending2faUser.pin_code) ? FACE_STATE.pending2faUser.pin_code : undefined,
+            method: methodLabel,
+            confidence: 92,
+            face_descriptor: descArr,
+            device: 'Edge Face ID'
+          };
+          const rEdge = await edgeApiFetch('./api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody)
+          });
+          const jEdge = rEdge ? await rEdge.json().catch(() => null) : null;
+          if (jEdge && jEdge.two_factor_pin_required && jEdge.user && jEdge.user.email) {
+            FACE_STATE.edgeProbeStreak = 0;
+            const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
+            const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
+            if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
+            FACE_STATE.lastVerifiedDescriptor = descArr;
+            await completeFaceLogin(seatObj, 0.22, snapshotUrl, 'Face ID', { faceDescriptor: descArr, ignoreTypedPin: false });
+            return { status: '2fa-pin-pending', user: seatObj, dist: 0.22 };
           }
+          if (rEdge && rEdge.ok && jEdge && jEdge.ok && jEdge.user && jEdge.user.email) {
+            FACE_STATE.edgeProbeStreak = 0;
+            if (jEdge.token) setEdgeSessionToken(jEdge.token);
+            const uIdx = STATE.users.findIndex(u => norm(u.email) === norm(jEdge.user.email));
+            const seatObj = uIdx >= 0 ? mergeUserRow(STATE.users[uIdx], jEdge.user) : ensureCanonicalMultiIndustrySeat(jEdge.user);
+            if (uIdx >= 0) STATE.users[uIdx] = seatObj; else STATE.users.push(seatObj);
+            const verifiedDist = (typeof jEdge.face_dist === 'number' && Number.isFinite(jEdge.face_dist)) ? jEdge.face_dist : 0.20;
+            FACE_STATE.lastVerifiedDescriptor = descArr;
+            setAuthHint(`✓ Face ID verified · ${seatObj.full_name}`, 'ok');
+            await completeFaceLogin(seatObj, verifiedDist, snapshotUrl, methodLabel, { faceDescriptor: descArr, serverToken: jEdge.token || '1' });
+            return { status: 'verified', user: seatObj, dist: verifiedDist, method: methodLabel, liveness: liveProbe.method };
+          }
+          FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeCooldownUntil = Date.now() + 750;
+          setAuthStreak(0, edgeNeeded);
+          if (jEdge && /requires PIN sign-in/i.test(String(jEdge.error || ''))) {
+            setAuthHint('PIN sign-in active', 'warn');
+            return { status: 'face-disabled' };
+          }
+          setAuthHint('Face not recognized', 'crit');
+          return { status: 'unknown', match: m };
+        } catch (_) {
+          FACE_STATE.edgeProbeStreak = 0;
+          FACE_STATE.edgeProbeCooldownUntil = Date.now() + 750;
+          setAuthStreak(0, edgeNeeded);
+          setAuthHint('Face not recognized', 'crit');
+          return { status: 'unknown', match: m };
+        } finally {
+          FACE_STATE.edgeProbeBusy = false;
         }
       }
       if (opts && opts.videoEl && FACE_STATE.streakCount > 0) {
@@ -91710,7 +93633,7 @@
           return;
         }
         if (overlayEl && window.Face.drawOverlay) {
-          const color = det && !det.multiple ? (FACE_STATE.streakCount > 0 ? '#16A34A' : '#B8883B') : '#DC2626';
+          const color = det && !det.multiple ? ((FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0) ? '#16A34A' : '#B8883B') : '#DC2626';
           window.Face.drawOverlay(overlayEl, videoEl, det, color, FACE_STATE.streakUser ? FACE_STATE.streakUser.name : '');
         }
         await handleAuthDescriptor(det, '', { liveCamera: true, videoEl });
@@ -91749,8 +93672,8 @@
       if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
       return ensureFaceModelsLoaded().then(() => {
         if (!STATE.authed && FACE_STATE.camActive) {
-          const enrNow = usableFaces();
-          if (!FACE_STATE.pending2faUser && enrNow.length && FACE_STATE.streakCount === 0) {
+          const hasEnrNow = hasAnyEnrolledFaceId();
+          if (!FACE_STATE.pending2faUser && hasEnrNow && FACE_STATE.streakCount === 0 && !FACE_STATE.edgeProbeStreak) {
             setAuthHint('Look at camera for automatic Face ID', 'ok');
           }
           updateAuthFaceUi();
@@ -91778,18 +93701,18 @@
       setAuthHint('Camera unavailable', 'warn');
       return false;
     }
-    const enrolled = usableFaces();
+    const hasEnrolled = hasAnyEnrolledFaceId();
     const faceAlreadyReady = Boolean(window.Face && window.Face.ready);
     const videoReadyNow = Boolean($('authCamViewport')?.classList.contains('is-video-ready'));
     setAuthHint(
       FACE_STATE.pending2faUser
         ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-        : (videoReadyNow && enrolled.length
+        : (videoReadyNow && hasEnrolled
           ? (faceAlreadyReady
             ? 'Look at camera for automatic Face ID'
             : 'Preparing Face ID…')
           : ''),
-      (videoReadyNow && enrolled.length && faceAlreadyReady) ? 'ok' : ''
+      (videoReadyNow && hasEnrolled && faceAlreadyReady) ? 'ok' : ''
     );
     if (!faceAlreadyReady) modelsPromise.catch(() => {});
     if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
@@ -91823,6 +93746,22 @@
         if (!Number.isFinite(slot) || slot < 0 || slot >= 3) return;
         FACE_STATE.enrolStatusText = '';
         FACE_STATE.enrolStatusCls = '';
+        const target = enrolTargetUser();
+        const effCapLen = effectiveEnrolPoseCount(target);
+        if (target && target.face_redacted && !FACE_STATE.enrolCaptures.length && effCapLen > 0) {
+          FACE_STATE.enrolReenrolling = true;
+          FACE_STATE.enrolCaptures = [];
+          FACE_STATE.enrolThumbs = [];
+          FACE_STATE.enrolRetakeSlot = null;
+          FACE_STATE.enrolLiveMatch = null;
+          FACE_STATE.autoEnrolStreak = 0;
+          FACE_STATE.nextAutoEnrolAt = Date.now() + 650;
+          updateEnrolStudioDom();
+          if (!FACE_STATE.enrolCamActive || !streamAlive()) {
+            await startEnrolCamera();
+          }
+          return;
+        }
         const capLen = FACE_STATE.enrolCaptures.length;
         const targetSlot = slot < capLen ? slot : capLen;
         if (!FACE_STATE.enrolCamActive || !streamAlive()) {
@@ -91933,10 +93872,11 @@
     const editUser = (STATE.editingUserId && STATE.editingUserId !== '__new__')
       ? STATE.users.find(x => String(x.id) === String(STATE.editingUserId))
       : null;
+    const keepRedactedPin = Boolean(editUser && editUser.pin_redacted && !editUser.pin_code && !pin);
     const errs = [];
     if (!name) errs.push('Full name is required.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.push('Enter a valid email address.');
-    if (!/^\d{4,8}$/.test(pin)) errs.push('PIN must be 4 to 8 digits.');
+    if (!keepRedactedPin && !/^\d{4,8}$/.test(pin)) errs.push('PIN must be 4 to 8 digits.');
     if (!companies) errs.push('Select at least one company for Row-Level Security (RLS).');
     const dupUser = STATE.users.find(x => norm(x.email) === email && (!editUser || String(x.id) !== String(editUser.id)));
     if (dupUser && STATE.editingUserId && STATE.editingUserId !== '__new__') {
@@ -91981,8 +93921,8 @@
       id: existingIdx >= 0 ? prev.id : uid('u'),
       full_name: name,
       email,
-      pin_code: pin,
-      _verifiedPin: true,
+      pin_code: keepRedactedPin ? '' : pin,
+      _verifiedPin: !keepRedactedPin,
       role: finalRole,
       companies,
       pbi_access: acc[0] || 'partial',
@@ -92001,9 +93941,13 @@
       face_updated_at: prev.face_updated_at || '',
       seat_updated_at: nowIso
     };
+    if (keepRedactedPin) {
+      newUser.pin_redacted = true;
+      delete newUser._verifiedPin;
+    }
     if (existingIdx >= 0) {
       STATE.users[existingIdx] = Object.assign(STATE.users[existingIdx], newUser);
-      delete STATE.users[existingIdx].pin_redacted;
+      if (!keepRedactedPin) delete STATE.users[existingIdx].pin_redacted;
     } else STATE.users.push(newUser);
     STATE.editingUserId = String(newUser.id);
     STATE.showAddUserForm = true;
@@ -92942,11 +94886,14 @@
       if (!isOwner()) return;
       const u = STATE.users[Number(btn.getAttribute('data-invite-user'))];
       if (!u) return;
-      const inviteUrl = `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}&pin=${encodeURIComponent(u.pin_code || '1111')}`;
+      const hasKnownPin = !(u.pin_redacted && !u.pin_code);
+      const inviteUrl = hasKnownPin
+        ? `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}&pin=${encodeURIComponent(u.pin_code || '1111')}`
+        : `${location.origin}${location.pathname}?email=${encodeURIComponent(u.email)}`;
       const done = () => {
         btn.innerHTML = `${ic('check_circle')}<span>Copied!</span>`;
         setTimeout(() => { btn.innerHTML = `${ic('link')}<span>Invite Link</span>`; }, 2000);
-        toast('Invite link copied — it carries the PIN, share it privately');
+        toast(hasKnownPin ? 'Invite link copied: it carries the PIN, share it privately' : 'Invite link copied for this seat');
       };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inviteUrl).then(done).catch(() => { window.prompt('Copy this invite link:', inviteUrl); });
       else window.prompt('Copy this invite link:', inviteUrl);
@@ -92977,8 +94924,8 @@
       return;
     }
     const enrolUser = enrolTargetUser();
-    const enrolSavedSamples = userFaceSamples(enrolUser);
-    const capCount = FACE_STATE.enrolCaptures.length;
+    const enrolSavedCount = userFacePoseCount(enrolUser);
+    const capCount = effectiveEnrolPoseCount(enrolUser);
     const poseComplete = capCount >= 3;
     const visUsers = getVisibleDirectoryUsers(activeUser());
     const faceCount = visUsers.filter(userHasFaceId).length;
@@ -92992,9 +94939,9 @@
 
     const hdrBadge = $('enrolHeaderBadge');
     if (hdrBadge) {
-      hdrBadge.className = `enrol-seat-pill ${enrolSavedSamples.length ? 'enrolled' : 'pending'}`;
-      hdrBadge.textContent = enrolSavedSamples.length
-        ? `✓ ${enrolUser.full_name} · ${enrolSavedSamples.length}/3 Poses Saved`
+      hdrBadge.className = `enrol-seat-pill ${enrolSavedCount ? 'enrolled' : 'pending'}`;
+      hdrBadge.textContent = enrolSavedCount
+        ? `✓ ${enrolUser.full_name} · ${enrolSavedCount}/3 Poses Saved`
         : `${enrolUser.full_name} · Not Enrolled`;
     }
 
@@ -93048,7 +94995,7 @@
     }
     const clrBtn = $('enrolClearBtn');
     if (clrBtn) {
-      const hasAny = !!(enrolSavedSamples.length || capCount);
+      const hasAny = !!(enrolSavedCount || capCount);
       clrBtn.hidden = !hasAny;
       clrBtn.disabled = !hasAny;
     }
@@ -93064,7 +95011,7 @@
           }
           const stObj = buildKioskStaffTargetObject(valStr.slice(7), staffDirMap);
           if (stObj) {
-            const n = userFaceSamples(stObj).length;
+            const n = userFacePoseCount(stObj);
             opt.textContent = `${stObj.full_name} · ${stObj.companies} (${n ? n + '/3 poses' : 'no Face ID'})`;
             opt.selected = String(enrolUser.id) === valStr;
           }
@@ -93072,7 +95019,7 @@
         }
         const u = STATE.users.find(x => String(x.id) === valStr);
         if (u) {
-          const n = userFaceSamples(u).length;
+          const n = userFacePoseCount(u);
           opt.textContent = `${u.full_name} (${n ? n + '/3 poses' : 'no Face ID'})`;
           opt.selected = String(u.id) === String(enrolUser.id);
         }
@@ -93142,7 +95089,8 @@
           FACE_STATE.lastLiveEnrolAt = Date.now();
           if (window.Face.snapshot) FACE_STATE.lastLiveEnrolSnap = window.Face.snapshot(videoEl);
         }
-        const capLen = FACE_STATE.enrolCaptures.length;
+        const enrolUser = enrolTargetUser();
+        const capLen = effectiveEnrolPoseCount(enrolUser);
         const retakeSlot = FACE_STATE.enrolRetakeSlot;
         const isCaptureMode = capLen < 3 || retakeSlot != null;
         const activeSlot = retakeSlot != null ? retakeSlot : capLen;
@@ -93166,7 +95114,6 @@
           FACE_STATE.autoEnrolStreak = 0;
         } else {
           // Automatic Live Recognition & Liveness Verification when 3/3 poses are saved
-          const enrolUser = enrolTargetUser();
           const prevSig = FACE_STATE.enrolLiveMatch
             ? `${FACE_STATE.enrolLiveMatch.status}:${FACE_STATE.enrolLiveMatch.name}:${FACE_STATE.enrolLiveMatch.livenessOk}`
             : 'none';
@@ -93175,6 +95122,7 @@
             const m = window.Face.match(det.descriptor, pool);
             const thr = Number(STATE.faceSettings.threshold || 0.50);
             const confPct = m.best ? Math.max(50, Math.min(99, Math.round((1 - (m.bestDist / 1.25)) * 100))) : 0;
+            const canEdgeVerify = hasServerApi() && !isDemoSandboxSession() && STATE.users.some(u => u && u.status !== 'Suspended' && u.face_redacted && u.face_enrolled);
             if (m.best && m.bestDist <= thr) {
               const isTarget = (enrolUser.email && m.best.email && norm(m.best.email) === norm(enrolUser.email)) || norm(m.best.name) === norm(enrolUser.full_name);
               const lv = livenessStep(det, m.best.email || m.best.name, { liveCamera: true });
@@ -93195,6 +95143,72 @@
                   : `● MATCH: ${m.best.name.toUpperCase()} · ${confPct}%`;
               }
               if (hudDot) hudDot.className = isTarget ? 'enrol-hud-dot live locked' : 'enrol-hud-dot live';
+            } else if (canEdgeVerify) {
+              const lvKey = (FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.name) || enrolUser.email || enrolUser.full_name;
+              const lv = livenessStep(det, lvKey, { liveCamera: true });
+              const lvOk = !!(lv && lv.ok && lv.method && lv.method !== 'multi-frame');
+              if (FACE_STATE.enrolLiveMatch && (FACE_STATE.enrolLiveMatch.status === 'matched-target' || FACE_STATE.enrolLiveMatch.status === 'matched-other') && lvOk) {
+                FACE_STATE.enrolLiveMatch.livenessOk = true;
+              }
+              if (!FACE_STATE.enrolEdgeVerifyBusy && (Date.now() - (FACE_STATE.enrolEdgeVerifyAt || 0)) >= 700) {
+                const vecArr = Array.from(det.descriptor);
+                if (vecArr.length === 128) {
+                  FACE_STATE.enrolEdgeVerifyBusy = true;
+                  FACE_STATE.enrolEdgeVerifyAt = Date.now();
+                  edgeApiFetch('./api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method: 'Face ID', verify_only: true, allow_pin_only_verify: true, face_descriptor: vecArr })
+                  })
+                    .then(r => (r.ok ? r.json() : null))
+                    .then(j => {
+                      if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive || FACE_STATE.enrolRetakeSlot != null) return;
+                      const curTarget = enrolTargetUser();
+                      if (effectiveEnrolPoseCount(curTarget) < 3) return;
+                      if (j && j.ok && j.user) {
+                        const edgeDist = Number.isFinite(Number(j.face_dist)) ? Number(j.face_dist) : 0.24;
+                        const edgeConf = Math.max(50, Math.min(99, Math.round((1 - (edgeDist / 1.25)) * 100)));
+                        const isTarget = (curTarget.email && j.user.email && norm(j.user.email) === norm(curTarget.email)) || norm(j.user.full_name) === norm(curTarget.full_name);
+                        FACE_STATE.enrolLiveMatch = {
+                          status: isTarget ? 'matched-target' : 'matched-other',
+                          name: j.user.full_name || curTarget.full_name,
+                          confidence: edgeConf,
+                          dist: edgeDist,
+                          livenessOk: Boolean(FACE_STATE.enrolLiveMatch && FACE_STATE.enrolLiveMatch.livenessOk) || lvOk
+                        };
+                      } else {
+                        FACE_STATE.enrolLiveMatch = {
+                          status: 'unrecognized',
+                          name: '',
+                          confidence: 0,
+                          dist: 0.99,
+                          livenessOk: false
+                        };
+                      }
+                      syncEnrolPoseGuideOnlyDom();
+                    })
+                    .catch(() => {})
+                    .finally(() => { FACE_STATE.enrolEdgeVerifyBusy = false; });
+                }
+              }
+              const curLm = FACE_STATE.enrolLiveMatch;
+              if (curLm && curLm.status === 'matched-target') {
+                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#22c55e');
+                if (hudTel) hudTel.textContent = `✓ VERIFIED: ${enrolUser.full_name.toUpperCase()} · ${curLm.confidence}%`;
+                if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
+              } else if (curLm && curLm.status === 'matched-other') {
+                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
+                if (hudTel) hudTel.textContent = `● MATCH: ${String(curLm.name || '').toUpperCase()} · ${curLm.confidence}%`;
+                if (hudDot) hudDot.className = 'enrol-hud-dot live';
+              } else if (curLm && curLm.status === 'unrecognized') {
+                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#ef4444');
+                if (hudTel) hudTel.textContent = '⚠ UNRECOGNIZED FACE';
+                if (hudDot) hudDot.className = 'enrol-hud-dot live';
+              } else {
+                if (overlayEl && window.Face.drawOverlay) window.Face.drawOverlay(overlayEl, videoEl, det, '#D9A54A');
+                if (hudTel) hudTel.textContent = 'LIVE VERIFY · CHECKING FACE ID';
+                if (hudDot) hudDot.className = 'enrol-hud-dot live';
+              }
             } else {
               FACE_STATE.enrolLiveMatch = {
                 status: 'unrecognized',
@@ -93287,9 +95301,14 @@
     target.face_enrolled = samples.length > 0;
     target.face_sample_count = samples.length;
     delete target.face_redacted;
-    target.face_required = samples.length > 0;
+    target.face_required = samples.length > 0 && (
+      target.auth_mode
+        ? (target.auth_mode === 'both' || target.auth_mode === 'face_only')
+        : (getWorkspaceAuthMode() === 'both')
+    );
     target.face_cleared = samples.length === 0;
     target.face_updated_at = nowIso;
+    FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolLoadedForUserId = String(target.id);
 
     let bioKey = '';
@@ -93341,7 +95360,7 @@
     }
 
     const isSlotRetake = typeof slotOverride === 'number' && slotOverride >= 0 && slotOverride < 3;
-    if (!isSlotRetake && FACE_STATE.enrolCaptures.length >= 3) {
+    if (!isSlotRetake && effectiveEnrolPoseCount(target) >= 3) {
       if (syntheticDet) {
         FACE_STATE.enrolStatusText = 'All 3 poses are already captured and stored.';
         FACE_STATE.enrolStatusCls = 'ok';
@@ -93349,6 +95368,7 @@
         return { ok: false, reason: 'already-3' };
       }
       // Interactive UI click on "Retake All 3 Poses": start a fresh 3-pose capture sequence
+      FACE_STATE.enrolReenrolling = true;
       FACE_STATE.enrolCaptures = [];
       FACE_STATE.enrolThumbs = [];
       FACE_STATE.nextAutoEnrolAt = Date.now() + 850;
@@ -93477,6 +95497,7 @@
     const target = enrolTargetUser();
     if (!target) return false;
     const nowIso = new Date().toISOString();
+    FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolCaptures = [];
     FACE_STATE.enrolThumbs = [];
     FACE_STATE.enrolRetakeSlot = null;
@@ -94855,8 +96876,14 @@
     FACE_STATE.pendingPinUser = null;
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
+    FACE_STATE.edgeProbeStreak = 0;
+    FACE_STATE.edgeProbeCooldownUntil = 0;
+    FACE_STATE.edgeProbeBusy = false;
     FACE_STATE.disambiguatePin = '';
     setAuthStreak(0, 3);
+    if (hasServerApi() && !isDemoSandboxSession() && !_usersApiHydratedOnce) {
+      hydrateServerUsersOnce();
+    }
     let candidateEmail = prefillEmail || '';
     if (!candidateEmail && !IS_DEMO && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
       try { candidateEmail = localStorage.getItem('isabi_mfg_last_seat') || ''; } catch (_) {}
@@ -94900,6 +96927,9 @@
     FACE_STATE.pendingPinUser = null;
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
+    FACE_STATE.edgeProbeStreak = 0;
+    FACE_STATE.edgeProbeCooldownUntil = 0;
+    FACE_STATE.edgeProbeBusy = false;
     FACE_STATE.seatDrawerOpen = false;
     FACE_STATE.disambiguatePin = '';
     FACE_STATE.enrolCamActive = false;
@@ -94989,10 +97019,16 @@
   let loginAttempts = 0;
   let loginLockUntil = 0;
   let authUiLoginBusy = false;
+  let authPinProbeTimer = null;
+  let authPinProbeInFlight = false;
   async function performLogin(emailRaw, pinRaw, opts = {}) {
     let email = norm(emailRaw);
     const pin = String(pinRaw || '').trim();
-    if (Date.now() < loginLockUntil) { authError(`Too many attempts. Wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)}s.`); return false; }
+    const silentProbe = Boolean(opts && opts.silentAutoProbe);
+    if (Date.now() < loginLockUntil) {
+      if (!silentProbe) authError(`Too many attempts. Wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)}s.`);
+      return false;
+    }
     let serverVerifiedLogin = Boolean(opts && opts.serverToken);
     if (!email && pin) {
       const matches = STATE.users.filter(u => u.status !== 'Suspended' && u.pin_code && String(u.pin_code).trim() === pin);
@@ -95031,18 +97067,26 @@
             else STATE.users.push(ensureCanonicalMultiIndustrySeat(Object.assign({}, jPin.user, { pin_code: pin, _verifiedPin: true })));
             serverVerifiedLogin = true;
           } else {
+            if (silentProbe) return false;
+            if (rPin && rPin.status === 429) {
+              loginLockUntil = Date.now() + 30000;
+              authError((jPin && jPin.error) || 'Too many failed sign-in attempts. Wait 30 seconds.');
+              return false;
+            }
             loginAttempts += 1;
             if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
             else authError('Incorrect Access PIN.');
             return false;
           }
         } catch (_) {
+          if (silentProbe) return false;
           loginAttempts += 1;
           if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
           else authError('Incorrect Access PIN.');
           return false;
         }
       } else {
+        if (silentProbe) return false;
         loginAttempts += 1;
         if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
         else authError('Incorrect Access PIN.');
@@ -95055,17 +97099,17 @@
       reqMethod === 'Owner Impersonation' ||
       reqMethod === 'Interactive Sandbox'
     );
-    if (!email) { authError('Enter your Access PIN.'); return false; }
-    if (!pin && !isPinlessBypass && !serverVerifiedLogin) { authError('Enter your Access PIN.'); return false; }
+    if (!email) { if (!silentProbe) authError('Enter your Access PIN.'); return false; }
+    if (!pin && !isPinlessBypass && !serverVerifiedLogin) { if (!silentProbe) authError('Enter your Access PIN.'); return false; }
 
     let idx = STATE.users.findIndex(u => norm(u.email) === email);
     if (idx < 0 && !email.includes('@')) {
       const subMatches = STATE.users.filter(u => u.status !== 'Suspended' && (norm(u.full_name).includes(email) || norm(u.email).includes(email)));
       if (subMatches.length === 1) idx = STATE.users.indexOf(subMatches[0]);
     }
-    if (idx < 0) { authError('Account not found in this workspace.'); return false; }
+    if (idx < 0) { if (!silentProbe) authError('Account not found in this workspace.'); return false; }
     const user = STATE.users[idx];
-    if (user.status === 'Suspended') { authError('This seat is suspended. Contact an administrator.'); return false; }
+    if (user.status === 'Suspended') { if (!silentProbe) authError('This seat is suspended. Contact an administrator.'); return false; }
     const localPinStr = String(user.pin_code || '').trim();
     const completedFaceFirst2FA = !!(FACE_STATE.pendingPinUser && norm(FACE_STATE.pendingPinUser.email) === norm(user.email));
     const pendingFaceVecForPin = completedFaceFirst2FA
@@ -95073,6 +97117,7 @@
       : null;
     if (!serverVerifiedLogin && !isPinlessBypass && (!localPinStr || pin !== localPinStr)) {
       let verifiedViaApi = false;
+      let rateLimitedErr = '';
       if (hasServerApi() && !isDemoSandboxSession()) {
         try {
           const checkFaceVec = pendingFaceVecForPin || opts.faceDescriptor;
@@ -95101,10 +97146,18 @@
             user._verifiedPin = true;
             delete user.pin_redacted;
             verifiedViaApi = true;
+          } else if (rCheck && rCheck.status === 429) {
+            rateLimitedErr = (jCheck && jCheck.error) || 'Too many failed sign-in attempts. Wait 60 seconds.';
           }
         } catch (_) {}
       }
       if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : pin !== '1111') : true)) {
+        if (silentProbe) return false;
+        if (rateLimitedErr) {
+          loginLockUntil = Date.now() + 30000;
+          authError(rateLimitedErr);
+          return false;
+        }
         loginAttempts += 1;
         if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
         else authError('Incorrect PIN for ' + user.full_name + '.');
@@ -95135,6 +97188,9 @@
       FACE_STATE.pendingPinUser = null;
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
+      FACE_STATE.edgeProbeStreak = 0;
+      FACE_STATE.edgeProbeCooldownUntil = 0;
+      FACE_STATE.edgeProbeBusy = false;
       resetLivenessState();
       const errEl = $('authErrorBox');
       if (errEl) errEl.hidden = true;
@@ -95167,6 +97223,7 @@
         if (rLogin && rLogin.ok) {
           const jLogin = await rLogin.json().catch(() => null);
           if (jLogin && jLogin.token) setEdgeSessionToken(jLogin.token);
+          else setEdgeSessionToken('');
           const verifiedPinPatch = (pin && !isPinlessBypass) ? { pin_code: pin, _verifiedPin: true } : {};
           if (jLogin && jLogin.user) STATE.users[idx] = mergeUserRow(STATE.users[idx], Object.assign({}, jLogin.user, verifiedPinPatch));
           else if (pin && !isPinlessBypass) { STATE.users[idx].pin_code = pin; STATE.users[idx]._verifiedPin = true; delete STATE.users[idx].pin_redacted; }
@@ -95190,6 +97247,8 @@
           }
           authError((jErr && jErr.error) || ('Verification failed for ' + user.full_name + '.'));
           return false;
+        } else {
+          setEdgeSessionToken('');
         }
       } catch (_) {
         if (isEdgeAuthActive) {
@@ -96087,12 +98146,24 @@
       KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
       KIOSK_ADMIN_MODAL_STATE.err = reason === 'no-pool'
         ? 'No Face ID profiles enrolled yet.'
-        : 'Face not recognized. Look straight at the camera with an enrolled Admin Face ID.';
+        : (reason === 'multiple'
+          ? 'Multiple faces in frame. Step into the oval guide one person at a time.'
+          : (reason === 'too-small'
+            ? 'Move slightly closer to the camera.'
+            : 'Face not recognized. Look straight at the camera with an enrolled Admin Face ID.'));
       KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
       syncKioskAdminFaceDomInPlace();
       return { ok: false, reason };
     };
+
+    if (det.multiple) {
+      return failUnrecognized('multiple');
+    }
+    const ksaMinFrac = Number(STATE.faceSettings.minFaceFrac || 0.14);
+    if (det.faceSizeFrac != null && det.faceSizeFrac < ksaMinFrac) {
+      return failUnrecognized('too-small');
+    }
 
     const pool = getKioskFacePoolWithAdminSeed();
     if (pool.length && window.Face) {
@@ -96109,6 +98180,9 @@
 
     const canRemoteVerify = hasServerApi() && !isDemoSandboxSession() && STATE.users.some(u => u && u.status !== 'Suspended' && u.face_redacted && u.face_enrolled);
     if (canRemoteVerify) {
+      if (Date.now() < (KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil || 0)) {
+        return { ok: false, reason: 'cooldown' };
+      }
       const vecArr = Array.from(det.descriptor);
       if (vecArr.length === 128) {
         return edgeApiFetch('./api/auth/login', {
@@ -96118,14 +98192,32 @@
         })
           .then(r => (r.ok ? r.json() : null))
           .then(j => {
-            if (!j || !j.ok || !j.user) return failUnrecognized('unrecognized');
-            const matchedSeat = STATE.users.find(u => u && norm(u.email) === norm(j.user.email)) || j.user;
-            const entry = { email: matchedSeat.email || '', name: matchedSeat.full_name || j.user.full_name || 'Admin' };
+            if (!j || !j.ok || !j.user) {
+              KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil = Date.now() + 650;
+              return failUnrecognized('unrecognized');
+            }
+            let existingIdx = STATE.users.findIndex(u => u && ((j.user.id && String(u.id) === String(j.user.id)) || norm(u.email) === norm(j.user.email)));
+            if (existingIdx < 0 && j.user.email) {
+              STATE.users.push(mergeUserRow(null, j.user));
+              existingIdx = STATE.users.length - 1;
+            } else if (existingIdx >= 0) {
+              STATE.users[existingIdx] = mergeUserRow(STATE.users[existingIdx], j.user);
+            }
+            const matchedSeat = existingIdx >= 0 ? STATE.users[existingIdx] : j.user;
+            const entry = {
+              id: matchedSeat.id || j.user.id || '',
+              email: matchedSeat.email || j.user.email || '',
+              name: matchedSeat.full_name || j.user.full_name || 'Admin',
+              role: matchedSeat.role || j.user.role || ''
+            };
             const isFullAdmin = isAuthorizedKioskAdminFace(entry);
             const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(entry);
             return completeKioskAdminUnlock(matchedSeat, entry.name, isFullAdmin, isEnrolAllowed);
           })
-          .catch(() => failUnrecognized('unrecognized'));
+          .catch(() => {
+            KIOSK_ADMIN_MODAL_STATE.edgeCooldownUntil = Date.now() + 650;
+            return failUnrecognized('unrecognized');
+          });
       }
     }
 
@@ -111230,6 +113322,21 @@
         if (n) toast('Reset ' + n + ' checked rule' + (n === 1 ? '' : 's'));
       });
     }
+    container.querySelectorAll('[data-sn-explain]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (window.MFG_ASK && typeof window.MFG_ASK.toggleSentinelTriage === 'function') {
+        window.MFG_ASK.toggleSentinelTriage(btn, btn.getAttribute('data-sn-explain') || '__all__');
+      }
+    }));
+    container.querySelectorAll('[data-sn-summary]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const rid = btn.getAttribute('data-sn-summary') || '__all__';
+      if (window.MFG_ASK && typeof window.MFG_ASK.speakSentinelTriageSummary === 'function') {
+        window.MFG_ASK.speakSentinelTriageSummary(btn, null, { ruleId: rid });
+      }
+    }));
     container.querySelectorAll('[data-sn-inspect]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();
       jumpFromSentinelRule(btn.getAttribute('data-sn-inspect') || '');
@@ -112160,6 +114267,11 @@
       });
       wireAttendancePolicyCard(container);
     }
+    if (STATE.view === 'sentinels' && window.MFG_ASK && typeof window.MFG_ASK.rebindSentinelSummaryButtons === 'function') {
+      window.MFG_ASK.rebindSentinelSummaryButtons(container);
+    } else if (STATE.view !== 'sentinels' && window.MFG_ASK && typeof window.MFG_ASK.stopSentinelSummaryIfActive === 'function') {
+      window.MFG_ASK.stopSentinelSummaryIfActive();
+    }
     if (STATE.view === 'daily_ops' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.wire === 'function') {
       window.MFG_DAILY_OPS.wire(container, { STATE, MIN_DATE, MAX_DATE, renderApp, showRecordInspector, openRecordFromTableRow, stripNativeTitles });
     } else if (STATE.view !== 'daily_ops' && window.MFG_ASK && typeof window.MFG_ASK.stopBriefingIfActive === 'function') {
@@ -112296,7 +114408,7 @@
       if (camPh) camPh.addEventListener('click', () => { startEnrolCamera(); });
       const enrolVid = $('enrolFaceVideo');
       if (enrolVid) enrolVid.addEventListener('click', () => {
-        if (FACE_STATE.enrolCamActive && (FACE_STATE.enrolCaptures.length < 3 || FACE_STATE.enrolRetakeSlot != null)) {
+        if (FACE_STATE.enrolCamActive && (effectiveEnrolPoseCount(enrolTargetUser()) < 3 || FACE_STATE.enrolRetakeSlot != null)) {
           captureEnrolDescriptor(null, '', FACE_STATE.enrolRetakeSlot);
         }
       });
@@ -112353,6 +114465,9 @@
         renderQuickSeatsInAuthGate();
         updateAuthFaceUi();
         toast(`Seat sign-in requirement for ${u.full_name}: ${seatAuthBadgeLabel(u)}`);
+        if (!u.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+          try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) {}
+        }
         syncWithCloud(true);
       });
       const wsAuthSel = $('enrolAuthModeSelect');
@@ -112429,8 +114544,9 @@
       });
       const capBtn = $('enrolCaptureBtn');
       if (capBtn) capBtn.addEventListener('click', async () => {
-        const capLen = FACE_STATE.enrolCaptures.length;
+        const capLen = effectiveEnrolPoseCount(enrolTargetUser());
         if (capLen >= 3 && FACE_STATE.enrolRetakeSlot == null) {
+          FACE_STATE.enrolReenrolling = true;
           FACE_STATE.enrolCaptures = [];
           FACE_STATE.enrolThumbs = [];
           FACE_STATE.enrolRetakeSlot = null;
@@ -112771,6 +114887,7 @@
     if (authForm) {
       authForm.addEventListener('submit', async e => {
         e.preventDefault();
+        if (authPinProbeTimer) { clearTimeout(authPinProbeTimer); authPinProbeTimer = null; }
         if (authUiLoginBusy || STATE.authed) return;
         if (!resolveUiSubmitEmail()) {
           const firstSeatBtn = document.querySelector('#quickSeatList [data-quick-seat]');
@@ -112787,14 +114904,39 @@
     }
     const authPinInp = $('authPinInput');
     if (authPinInp) {
+      const scheduleSilentRedactedPinProbe = (emailForProbe, expectedPinSnapshot) => {
+        if (authPinProbeTimer) clearTimeout(authPinProbeTimer);
+        authPinProbeTimer = setTimeout(async () => {
+          authPinProbeTimer = null;
+          if (STATE.authed || authUiLoginBusy || Date.now() < loginLockUntil) return;
+          const curNow = String(authPinInp.value || '').replace(/\D+/g, '').slice(0, 8);
+          if (!curNow || curNow !== expectedPinSnapshot || curNow.length < 4) return;
+          if (authPinProbeInFlight) {
+            scheduleSilentRedactedPinProbe(emailForProbe, curNow);
+            return;
+          }
+          authPinProbeInFlight = true;
+          try {
+            await performLogin(emailForProbe, curNow, { silentAutoProbe: true });
+          } finally {
+            authPinProbeInFlight = false;
+            const afterVal = String(authPinInp.value || '').replace(/\D+/g, '').slice(0, 8);
+            if (!STATE.authed && afterVal && afterVal !== curNow && afterVal.length >= 4) {
+              scheduleSilentRedactedPinProbe(emailForProbe, afterVal);
+            }
+          }
+        }, 180);
+      };
       authPinInp.addEventListener('keydown', e => {
         if (e.key === 'Escape' && !FACE_STATE.pendingPinUser && resolveSelectedAuthUser()) {
+          if (authPinProbeTimer) { clearTimeout(authPinProbeTimer); authPinProbeTimer = null; }
           e.preventDefault();
           e.stopPropagation();
           clearSelectedAuthSeat();
         }
       });
       authPinInp.addEventListener('input', async () => {
+        if (authPinProbeTimer) { clearTimeout(authPinProbeTimer); authPinProbeTimer = null; }
         const cleaned = String(authPinInp.value || '').replace(/\D+/g, '').slice(0, 8);
         if (authPinInp.value !== cleaned) authPinInp.value = cleaned;
         const errEl = $('authErrorBox');
@@ -112803,34 +114945,45 @@
 
         if (FACE_STATE.pendingPinUser) {
           const knownPin = String(FACE_STATE.pendingPinUser.pin_code || '').trim();
-          if (knownPin ? (cleaned === knownPin) : (hasServerApi() && cleaned.length === 4)) {
-            authUiLoginBusy = true;
-            try { await performLogin(FACE_STATE.pendingPinUser.email, cleaned); } finally { authUiLoginBusy = false; }
+          if (knownPin) {
+            if (cleaned === knownPin) {
+              authUiLoginBusy = true;
+              try { await performLogin(FACE_STATE.pendingPinUser.email, cleaned); } finally { authUiLoginBusy = false; }
+            }
+          } else if (hasServerApi() && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
+            scheduleSilentRedactedPinProbe(FACE_STATE.pendingPinUser.email, cleaned);
           }
           return;
         }
 
-        if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
+        const allowAutoPinSubmit = (!navigator.webdriver && !window.__MFG_HEADLESS_TEST) || Boolean(window.__ISABI_SIMULATE_REMOTE_HOST);
+        if (allowAutoPinSubmit && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
           const sessFreq = new Map();
-    (STATE.sessions || []).forEach(s => {
-      if (!s) return;
-      const ek = norm(s.email || s.user_email || '');
-      const nk = norm(s.user_name || s.full_name || '');
-      if (ek) sessFreq.set(ek, (sessFreq.get(ek) || 0) + 1);
-      if (nk) sessFreq.set(nk, (sessFreq.get(nk) || 0) + 1);
-    });
-    const activeSeats = STATE.users.filter(u => u.status !== 'Suspended').slice().sort((a, b) => {
-      const fa = (sessFreq.get(norm(a.email)) || 0) + (sessFreq.get(norm(a.full_name)) || 0);
-      const fb = (sessFreq.get(norm(b.email)) || 0) + (sessFreq.get(norm(b.full_name)) || 0);
-      return fb - fa;
-    });
+          (STATE.sessions || []).forEach(s => {
+            if (!s) return;
+            const ek = norm(s.email || s.user_email || '');
+            const nk = norm(s.user_name || s.full_name || '');
+            if (ek) sessFreq.set(ek, (sessFreq.get(ek) || 0) + 1);
+            if (nk) sessFreq.set(nk, (sessFreq.get(nk) || 0) + 1);
+          });
+          const activeSeats = STATE.users.filter(u => u.status !== 'Suspended').slice().sort((a, b) => {
+            const fa = (sessFreq.get(norm(a.email)) || 0) + (sessFreq.get(norm(a.full_name)) || 0);
+            const fb = (sessFreq.get(norm(b.email)) || 0) + (sessFreq.get(norm(b.full_name)) || 0);
+            return fb - fa;
+          });
           const targetEmail = norm(resolveUiSubmitEmail());
           if (targetEmail) {
             const targetSeat = activeSeats.find(u => norm(u.email) === targetEmail);
-            const targetKnownPin = targetSeat ? String(targetSeat.pin_code || '').trim() : '';
-            if (targetSeat && (targetKnownPin ? (targetKnownPin === cleaned) : (hasServerApi() && cleaned.length === 4))) {
-              authUiLoginBusy = true;
-              try { await performLogin(targetSeat.email, cleaned); } finally { authUiLoginBusy = false; }
+            if (targetSeat) {
+              const targetKnownPin = String(targetSeat.pin_code || '').trim();
+              if (targetKnownPin) {
+                if (targetKnownPin === cleaned) {
+                  authUiLoginBusy = true;
+                  try { await performLogin(targetSeat.email, cleaned); } finally { authUiLoginBusy = false; }
+                }
+              } else if (hasServerApi()) {
+                scheduleSilentRedactedPinProbe(targetSeat.email, cleaned);
+              }
             }
           }
         }
@@ -113513,6 +115666,13 @@
         computeCeoPeriodBridgeSnapshot,
         computeIndustryDashboardSnapshot,
         computeInspector360Snapshot,
+        computeSentinelTriageSnapshot,
+        canReviewSentinels,
+        markSentinelReviewed,
+        unmarkSentinelReviewed,
+        markAllFlaggedSentinelsReviewed,
+        renderApp,
+        toast,
         closeRecordInspector,
         getKPI,
         getModel,
@@ -113691,6 +115851,10 @@
         if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
+        if ($('sentinelTriagePopover') && window.MFG_ASK && typeof window.MFG_ASK.closeSentinelTriage === 'function') {
+          window.MFG_ASK.closeSentinelTriage();
+          return;
+        }
         const ins = $('recordInspector');
         if (ins && !ins.hidden) {
           if ($('inspAccountBriefPopover') && window.MFG_ASK && typeof window.MFG_ASK.closeInspectorBrief === 'function') {
@@ -113807,6 +115971,9 @@
       }
     }
 
+    window.addEventListener('mfg:face-models-ready', () => {
+      if (!STATE.authed) updateAuthFaceUi();
+    });
     // Cloud relay: on start, when the tab comes back, when the network returns
     if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST && window.Face && !window.Face.ready) {
       let syncedInit = false;
@@ -113872,6 +116039,7 @@
         pending2fa: FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : null,
         pendingPin: FACE_STATE.pendingPinUser ? FACE_STATE.pendingPinUser.email : null,
         streakCount: FACE_STATE.streakCount,
+        edgeProbeStreak: FACE_STATE.edgeProbeStreak || 0,
         enrolCaptures: FACE_STATE.enrolCaptures.length,
         enrolledSeats: STATE.users.filter(userHasFaceId).map(u => u.email)
       }),
@@ -113888,6 +116056,7 @@
         FACE_STATE.enrolUserId = u.id;
         FACE_STATE.enrolLoadedForUserId = String(u.id);
         FACE_STATE.enrolConsent = true;
+        FACE_STATE.enrolReenrolling = true;
         FACE_STATE.enrolCaptures = [];
         FACE_STATE.enrolThumbs = [];
         updateEnrolStudioDom();
@@ -113988,6 +116157,9 @@
       resetLiveness: () => {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
+        FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.edgeProbeCooldownUntil = 0;
+        FACE_STATE.edgeProbeBusy = false;
         FACE_STATE.pending2faUser = null;
         FACE_STATE.pendingPinUser = null;
         resetLivenessState();
@@ -115122,10 +117294,17 @@
     computeInsuranceOperations: typeof computeInsuranceOperations === 'function' ? computeInsuranceOperations : null,
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
+    computeSentinelTriageSnapshot: typeof computeSentinelTriageSnapshot === 'function' ? computeSentinelTriageSnapshot : null,
+    buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
+    canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
+    markSentinelReviewed: typeof markSentinelReviewed === 'function' ? markSentinelReviewed : null,
+    unmarkSentinelReviewed: typeof unmarkSentinelReviewed === 'function' ? unmarkSentinelReviewed : null,
+    markAllFlaggedSentinelsReviewed: typeof markAllFlaggedSentinelsReviewed === 'function' ? markAllFlaggedSentinelsReviewed : null,
+    resetCompanySentinelReviews: typeof resetCompanySentinelReviews === 'function' ? resetCompanySentinelReviews : null,
     buildWorkforceMapData: typeof buildWorkforceMapData === 'function' ? buildWorkforceMapData : null,
     renderApp: typeof renderApp === 'function' ? renderApp : null,
     customRecords: () => STATE.customRecords,
-    refreshCustomRecords: () => { invalidateAllSeedCaches(); applyCustomRecordsToSeed(); },
+    refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
     applyUserRlsAndPermissions: typeof applyUserRlsAndPermissions === 'function' ? applyUserRlsAndPermissions : null,

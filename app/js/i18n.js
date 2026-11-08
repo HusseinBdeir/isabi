@@ -482,6 +482,7 @@
       "AI Multi-VIN Landed-Cost & OEM Warranty Reconciler": "منصة تسوية الكلفة الواصلة للشاصيهات ومطابقة كفالات المصنع",
       "AI Outlier Brief": "تحليل التركز الذكي",
       "AI Relationship Brief": "تحليل العلاقة الذكي",
+      "AI Root-Cause Plan": "خطة المعالجة الذكية",
       "AI Sentinels & Analytics Bridge": "مراقبو الذكاء الاصطناعي وجسر التحليلات",
       "AI Sentinels & Audit": "الرقابة الذكية والتدقيق",
       "AI Sentinels & Diesel Hub": "مراقبو الذكاء الاصطناعي ووحدة المازوت",
@@ -587,6 +588,7 @@
       "Action Plan & Notes": "خطة الإجراء والملاحظات",
       "Action Type": "نوع الحركة",
       "Actions": "الإجراءات",
+      "Activate": "تفعيل",
       "Active": "نشط",
       "Active (Open)": "نشط (مفتوح)",
       "Active / Substitute Driver": "السائق الفعلي / البديل",
@@ -1281,6 +1283,7 @@
       "Blank Serials": "بدون رقم تسلسلي",
       "Blended Contractual Yield": "متوسط العائد التعاقدي المرجح",
       "Blink or 3D Head Turn (Default)": "رمشة عين أو التفات ثلاثي الأبعاد (افتراضي)",
+      "Blink or turn slightly to confirm": "ارمش أو أدر رأسك قليلاً للتأكيد",
       "Block Above (% of Est.)": "حظر أعلى من (% من التقدير)",
       "Block Below (% of Est.)": "حظر أقل من (% من التقدير)",
       "Blocks Save": "يمنع الحفظ",
@@ -1389,6 +1392,8 @@
       "By Line Value (Weighted Avg)": "حسب قيمة البند (المتوسط المرجح)",
       "By Stream": "حسب المسار",
       "CAM proration & FIFO wire settlements posted": "تم ترحيل توزيع المصاريف المشتركة وإيصالات التحويل حسب الأقدمية",
+      "CAMERA LIVE": "الكاميرا نشطة",
+      "CAMERA STANDBY": "الكاميرا بالانتظار",
       "CAPEX vs Repairs Split": "توزيع النفقات الرأسمالية مقابل الإصلاحات",
       "CAPITAL & ASSET OUTLAYS": "الإنفاق الرأسمالي والأصول",
       "CARRIER BORDEREAU REMITTANCE VOUCHER": "سند تسديد كشف شركة التأمين",
@@ -1416,6 +1421,7 @@
       "CUSTOM WATCHDOG": "مراقب مخصص",
       "CUSTOMER AR AGING & CREDIT TERMS SUB-LEDGER": "دفتر أعمار ذمم العملاء وشروط الائتمان",
       "CUSTOMER DELIVERY TRANSPORTATION COMPARISON: AGREED VS. LAST DELIVERED BY SITE": "مقارنة أجور نقل المبيعات للعملاء: التعاقدي مقابل آخر توصيل حسب الموقع",
+      "CUSTOMER RECEIVABLES OVERDUE > 60 DAYS": "ذمم العملاء المتأخرة لأكثر من 60 يوماً",
       "CUSTOMER RECEIVABLES OVERDUE > 60 DAYS (FIFO)": "ذمم العملاء المتأخرة لأكثر من 60 يوماً (FIFO)",
       "Cabanas": "كابانا",
       "Cabanas & Memberships": "الشاليهات والاشتراكات",
@@ -1429,6 +1435,7 @@
       "Camera Permission Blocked": "تم حظر إذن الكاميرا",
       "Camera Requires Secure HTTPS or Phone QR": "تتطلب الكاميرا اتصال HTTPS آمناً أو رمز QR للهاتف",
       "Camera Smart Scan": "مسح ذكي بالكاميرا",
+      "Camera Standby": "الكاميرا بالانتظار",
       "Camera Unavailable": "الكاميرا غير متاحة",
       "Camera unavailable": "الكاميرا غير متاحة",
       "Camera zoom": "تقريب الكاميرا",
@@ -1451,6 +1458,7 @@
       "Capital, Partners & Workforce": "رأس المال والشركاء والموظفون",
       "Capitalized Chassis Landed Cost": "التكلفة الواصلة المرسملة للشاسيهات",
       "Capitalized into Serial Chassis & Parts WAC": "مرسملة ضمن تكلفة الشاسيهات ومتوسط تكلفة القطع",
+      "Capture": "التقاط",
       "Capture Document": "التقاط المستند",
       "Card & Whish Slips": "إيصالات البطاقات وWhish",
       "Card / Whish": "بطاقة / Whish",
@@ -1702,6 +1710,8 @@
       "Click map or paste lat, lng": "اضغط على الخريطة أو الصق الإحداثيات",
       "Click map or select Region to estimate KM": "اضغط على الخريطة أو اختر المنطقة لتقدير المسافة بالكم",
       "Click on the map, drag the pin, or select a Region above to set or modify where this site is": "اضغط على الخريطة أو اسحب الدبوس أو اختر المنطقة أعلاه لتحديد أو تعديل موقع الورشة",
+      "Click to Capture": "اضغط للالتقاط",
+      "Click to Enable Camera": "اضغط لتشغيل الكاميرا",
       "Click to browse all 6 industries": "اضغط لاستعراض القطاعات الستة",
       "Click to edit this log entry": "اضغط لتعديل قيد السجل هذا",
       "Click to inspect row details": "اضغط لمعاينة تفاصيل السطر",
@@ -1961,6 +1971,7 @@
       "Container Pack CIF True-Up, Tariff Drift Guard & Factory Credit Netting": "تسوية الكلفة الواصلة للحاويات ومراقبة التعرفة الجمركية ومقاصة كفالات المصنع",
       "Container Receiving": "استلام الحاويات",
       "Context / Detail": "السياق / التفصيل",
+      "Continue Capture": "متابعة الالتقاط",
       "Contract": "العقد",
       "Contract #": "رقم العقد",
       "Contract & Agreement": "عقد واتفاقية",
@@ -2169,6 +2180,7 @@
       "Customer Receivables & Advances": "ذمم العملاء والدفعات المقدمة",
       "Customer Receivables Overdue > 60 Days": "ذمم العملاء المتأخرة لأكثر من 60 يوماً",
       "Customer Receivables Overdue > 60 Days (FIFO Allocated)": "ذمم العملاء المتأخرة لأكثر من 60 يوماً (مخصّصة FIFO)",
+      "Customer Receivables Overdue > 60 Days (Oldest-First Allocated)": "ذمم العملاء المتأخرة لأكثر من 60 يوماً (مخصّصة للأقدم أولاً)",
       "Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.": "اتفاقيات بيع العملاء (تسليم مصنع / توصيل) والأسعار المعلنة وقواعد عمولات البيع موجودة في المبيعات والذمم ▸ التسعير والعمولات.",
       "Customer Sales Deliveries": "تسليمات مبيعات العملاء",
       "Customer Sales Delivery Transport Revenue": "إيراد نقل توصيل مبيعات العملاء",
@@ -2426,6 +2438,7 @@
       "Details": "التفاصيل",
       "Detects missing or torn paper vouchers inside 25-leaf weighbridge books, duplicate serials, and unnumbered tickets so no load goes unbilled.": "يكشف الإيصالات الورقية المفقودة أو الممزقة داخل دفاتر القبان (25 ورقة) والأرقام المكررة وغير المرقمة لضمان فوترة كل نقلة.",
       "Deterministic Action": "الإجراء المحاسبي الحتمي",
+      "Deterministic Audit": "تدقيق حسابي حتمي",
       "Deterministic Ledger": "دفتر محاسبي حتمي",
       "Device": "الجهاز",
       "Device Lock Vault": "خزنة قفل الجهاز",
@@ -3078,9 +3091,11 @@
       "Face ID": "بصمة الوجه",
       "Face ID (2FA)": "بصمة الوجه (2FA)",
       "Face ID Biometric 2FA": "التحقق الحيوي ببصمة الوجه (2FA)",
+      "Face ID Camera": "كاميرا بصمة الوجه",
       "Face ID Clock-In": "تسجيل الحضور ببصمة الوجه",
       "Face ID Enrolment": "تسجيل بصمة الوجه",
       "Face ID Only (Live Biometric)": "بصمة الوجه فقط (بيومتري حي)",
+      "Face not recognized": "لم يتم التعرف على الوجه",
       "Facilities": "التسهيلات",
       "Facility & Funding Cost": "تكلفة التسهيلات والتمويل",
       "Facility Asset / Equipment": "أصل المنشأة / الآلية",
@@ -3470,6 +3485,7 @@
       "Guest / Walk-in": "الضيف / الزائر",
       "Guest Relations & Cabana Host": "مسؤول علاقات الضيوف والشاليهات",
       "Guests / Covers": "الضيوف / الرواد",
+      "Guided 3-pose capture (straight, slight left, slight right)": "التقاط موجه لـ 3 وضعيات (مباشر، يسار قليلاً، يمين قليلاً)",
       "HH:MM": "ساعة:دقيقة",
       "HIDDEN DOUBLE-ENTRY POSTING ENGINE · LEBANESE PCG CLASSES 1 TO 7": "محرك الترحيل المزدوج المؤتمت · التصميم المحاسبي اللبناني (الفئات 1 إلى 7)",
       "HOLDING & TREASURY EXECUTIVE ANALYTICS & DASHBOARDS": "التحليلات ولوحات المعلومات التنفيذية للقابضة والخزينة",
@@ -3859,6 +3875,8 @@
       "Investments & Group Assets": "الاستثمارات وأصول المجموعة",
       "Investments in Group Subsidiaries": "الاستثمارات في الشركات التابعة للمجموعة",
       "Invite Link": "رابط دعوة",
+      "Invite link copied for this seat": "تم نسخ رابط الدعوة لهذا المقعد",
+      "Invite link copied: it carries the PIN, share it privately": "تم نسخ رابط الدعوة: يتضمن الرمز السري، شاركه بشكل خاص",
       "Invoice": "فاتورة",
       "Invoice #": "رقم الفاتورة",
       "Invoice # (Book)": "رقم الفاتورة (الدفتر)",
@@ -4069,6 +4087,8 @@
       "LIVE MULTI-DEVICE SESSION AUDIT LOG": "سجل جلسات الدخول الحية عبر الأجهزة",
       "LIVE SPATIAL WORKFORCE & MACHINE DEPLOYMENT MAP": "الخريطة المكانية الحية لتوزع القوى العاملة والآليات",
       "LIVE TRUCK & EQUIPMENT HEALTH STATUS BOARD": "لوحة الحالة الفنية الحية للشاحنات والآليات",
+      "LIVE VERIFY · CHECKING FACE ID": "تحقق مباشر · جارٍ فحص بصمة الوجه",
+      "LIVE VERIFY · LOOK AT CAMERA": "تحقق حي · انظر إلى الكاميرا",
       "LL 0": "0 ل.ل.",
       "LL/$": "ل.ل./$",
       "LOADS & REVENUE BY DESTINATION SITE": "النقلات والإيرادات حسب موقع التسليم",
@@ -4190,6 +4210,7 @@
       "Leave / Absence / Half Day": "إجازة / غياب / نصف يوم",
       "Leave / Absent": "إجازة / غياب",
       "Leave Days": "أيام الإجازة",
+      "Leave blank to keep current PIN": "اتركه فارغاً للإبقاء على الرمز الحالي",
       "Lebanese CoA Class": "صنف شجرة الحسابات اللبنانية",
       "Lebanese CoA Classes 1-7 double-entry parity across": "تطابق القيد المزدوج للأصناف 1–7 في شجرة الحسابات اللبنانية عبر",
       "Lebanese CoA Tied ($0.00)": "مطابق لشجرة الحسابات اللبنانية ($0.00)",
@@ -4293,8 +4314,10 @@
       "Litres (L)": "لتر (L)",
       "Litres Issued (L)": "اللترات المصروفة (L)",
       "Live": "مباشر",
+      "Live 3D Turn": "التفات ثلاثي الأبعاد حي",
       "Live Active Slicer": "محدد التصفية الحي",
       "Live Active Slicer (Dynamic)": "نطاق التصفية الحي (ديناميكي)",
+      "Live Blink": "رمشة عين حية",
       "Live Camera & Recognition": "الكاميرا الحية والتعرف الفوري",
       "Live Camera Smart Scan": "مسح ذكي مباشر بالكاميرا",
       "Live Dynamic Fleet P&L (": "ربحية وتكاليف الأسطول الحية (",
@@ -4397,7 +4420,10 @@
       "Logs role and machine changes over time; prior Open assignment closes automatically on Start Date minus 1 day": "يسجّل تغييرات الوظيفة والآلية زمنياً؛ ويُغلق التعيين المفتوح السابق تلقائياً في اليوم السابق لتاريخ البدء الجديد",
       "Long-Term Rented": "مستأجر طويل الأجل",
       "Longitude (GPS)": "خط الطول (GPS)",
+      "Look at Camera": "انظر إلى الكاميرا",
+      "Look at camera for automatic Face ID": "انظر إلى الكاميرا للدخول التلقائي ببصمة الوجه",
       "Look inside the oval guide to clock in or out.": "انظر داخل الإطار البيضاوي لتسجيل الدخول أو الخروج.",
+      "Look straight at the camera": "انظر مباشرةً إلى الكاميرا",
       "Loss Date": "تاريخ الحادث",
       "Low < 1,500 L · Crit < -1,000 L": "منخفض < 1,500 ل · حرج < -1,000 ل",
       "Low Plant Tank Warning": "تنبيه انخفاض مخزون خزان المجبل",
@@ -4498,6 +4524,7 @@
       "Margin Audit": "تدقيق الهوامش",
       "Margin Rate:": "نسبة الهامش:",
       "Marina Tower · Hamra Pavillon · Mazraa · Baghdad": "مارينا تاور · بافيون الحمرا · المزرعة · بغداد",
+      "Mark All Checked": "اعتماد الكل",
       "Mark All Flagged Checked": "تحديد جميع التنبيهات كمدققة",
       "Mark Checked": "اعتماد المراجعة",
       "Mark Pattern Checked": "تحديد النمط كمراجع",
@@ -4755,6 +4782,8 @@
       "Motor Oil, Hydraulic Oil & Lubricants": "زيت المحرك والزيت الهيدروليكي والشحوم",
       "Motor, Medical & Property Claims, Surveyors & Settlements": "مطالبات المركبات والاستشفاء والممتلكات والخبراء والتسويات",
       "Mount Lebanon": "جبل لبنان",
+      "Move slightly closer": "اقترب قليلاً من الكاميرا",
+      "Move slightly closer to the camera.": "اقترب قليلاً من الكاميرا.",
       "Moved Page": "صفحة منقولة",
       "Movement": "الحركة",
       "Movement Classification *": "تصنيف الحركة *",
@@ -4774,6 +4803,7 @@
       "Multi-carrier": "متعدد الشركات",
       "Multi-row source lines": "أسطر المصدر المتعددة",
       "Multi-year stepped rent schedules, grace periods, VAT treatment, and renewal countdowns": "جداول الإيجارات المتدرجة متعددة السنوات وفترات السماح والمعالجة الضريبية والعد التنازلي للتجديد",
+      "Multiple faces in frame. Step into the oval guide one person at a time.": "أكثر من وجه في الإطار. قف داخل الإطار البيضاوي شخصاً واحداً في كل مرة.",
       "Multipliers · Leave · Perks": "المضاعفات · الإجازات · المزايا",
       "Music": "موسيقى وصوتيات",
       "Must be located inside the selected Region.": "يجب أن يقع داخل حدود المنطقة الجغرافية المختارة.",
@@ -5050,6 +5080,7 @@
       "No Rule": "بدون اتفاقية",
       "No Sub": "بدون بديل",
       "No cap": "بلا سقف",
+      "No company selected: pick at least 1 company": "لم يتم اختيار شركة: اختر شركة واحدة على الأقل",
       "No documents attached yet. Uploaded files sync automatically to the Document Vault upon posting.": "لا توجد مستندات مرفقة بعد. تتم مزامنة الملفات المرفوعة تلقائياً مع خزنة المستندات عند الترحيل.",
       "No extended entries match the active filter": "لا توجد قيود موسّعة تطابق التصفية النشطة",
       "No extended stakeholders match the current filter": "لا يوجد أطراف موسّعة تطابق التصفية الحالية",
@@ -5145,6 +5176,7 @@
       "Official Tax Seq": "التسلسل الضريبي الرسمي",
       "Official stamped VAT invoice copy for quarterly MoF declaration": "نسخة فاتورة ضريبية رسمية مختومة للتصريح الفصلي لوزارة المالية",
       "Offline Cache": "العمل دون اتصال",
+      "Offline: cannot verify uncached seat credentials.": "دون اتصال: يتعذّر التحقق من بيانات مقعد غير مخزّنة محلياً.",
       "Oil": "زيت",
       "Oil & Fuel Filter Service": "تبديل فلاتر الزيت والوقود",
       "Oil & Lube Expense": "مصروف زيوت وشحوم",
@@ -5157,6 +5189,7 @@
       "Oils & Hydraulics": "الزيوت والهيدروليك",
       "Oils & Lubricants": "الزيوت والشحوم",
       "Oils & Tools": "الزيوت والعدد",
+      "Oldest-First Allocated": "مخصّصة للأقدم أولاً",
       "Oldest-First FIFO Relief": "إطفاء الأقدم أولاً (FIFO)",
       "On Account": "على الحساب",
       "On Account (<$0)": "دفعة على الحساب (<$0)",
@@ -5540,6 +5573,7 @@
       "PERIOD TOTAL": "إجمالي الفترة",
       "PIN Only": "رمز سري فقط",
       "PIN Only (Disable Face Login)": "رمز سري فقط (إيقاف دخول الوجه)",
+      "PIN sign-in active": "تسجيل الدخول بالرمز السري نشط",
       "PIN verified": "تم التحقق من الرمز السري",
       "PLAIN-ENGLISH RULEBOOK & LIVE THRESHOLD TUNING": "دليل القواعد المبسط والضبط الفوري للعتبات",
       "POS & Chalets": "نقاط البيع والشاليهات",
@@ -5560,6 +5594,7 @@
       "POS Till Parity": "مطابقة صندوق الكاشير",
       "POS Tills": "صناديق نقاط البيع",
       "POS Tills & Shift Closes": "صناديق نقاط البيع وإقفالات الورديات",
+      "POSE 1 OF 3 · READY TO CAPTURE": "الوضعية 1 من 3 · جاهز للالتقاط",
       "PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE & OEM WARRANTY RECOVERY": "الفحص قبل التسليم (PDI) وخدمة المشغل واسترداد الكفالات",
       "PRICED SALES INVOICE · 80MM": "فاتورة مبيعات مسعّرة · 80مم",
       "PROP": "ممتلكات",
@@ -5764,6 +5799,7 @@
       "Pending Invoice Price ($0)": "بانتظار تسعير الفاتورة ($0)",
       "Pending Invoices": "فواتير قيد الانتظار",
       "Pending Landed Alloc": "بانتظار توزيع تكلفة الشحن",
+      "Pending Pose": "وضعية بالانتظار",
       "Pending Price": "بانتظار التسعير",
       "Pending Review": "قيد المراجعة",
       "Pending Salary": "راتب قيد التحديد",
@@ -5983,6 +6019,7 @@
       "Premium Invoices & Receipts": "فواتير ومقبوضات الأقساط",
       "Premiums & Insurer Recon": "الأقساط ومطابقة شركات التأمين",
       "Preparing Briefing...": "جارٍ تحضير الموجز...",
+      "Preparing Face ID…": "جارٍ تجهيز بصمة الوجه…",
       "Preparing Summary...": "جارٍ تحضير الملخص...",
       "Preparing...": "جارٍ التحضير...",
       "Preset & All-Time Periods": "الفترات الجاهزة وكامل الفترة",
@@ -6358,6 +6395,7 @@
       "Reading must be above zero": "يجب أن تكون القراءة أكبر من صفر",
       "Reading structured Office document...": "جارٍ قراءة مستند Office المهيكل...",
       "Ready": "جاهز",
+      "Ready (Sign In)": "جاهز (سجّل الدخول)",
       "Ready to Accrue & Reverse": "جاهز للقيد والعكس الآلي",
       "Ready to seal prior-month Tx Date & Rep Date edits": "جاهز لقفل تعديلات تواريخ العمليات والتقارير للشهر السابق",
       "Real Est": "العقارات",
@@ -6632,6 +6670,7 @@
       "Repeats": "تكرارات",
       "Replay Review": "إعادة الاستماع",
       "Replay Summary": "إعادة تشغيل الملخص",
+      "Replay Walkthrough": "تشغيل الشرح الصوتي",
       "Report Date *": "تاريخ التقرير *",
       "Report Equipment Defect": "الإبلاغ عن عطل آلية",
       "Report Sections": "أقسام التقرير",
@@ -7124,8 +7163,10 @@
       "Senior Field Loss Adjuster & Surveyor": "خبير معاينة وتقدير أضرار أول",
       "Sent to your computer! Snap another page or close this tab.": "تم الإرسال إلى الكمبيوتر! التقط صفحة أخرى أو أغلق هذه علامة التبويب.",
       "Sent!": "تم الإرسال!",
+      "Sentinel Exception Triage": "فرز استثناءات الرقابة والتدقيق",
       "Sentinel Health Score": "مؤشر السلامة الرقابية",
       "Sentinel S11": "القاعدة الرقابية S11",
+      "Sentinel Triage engine is initializing.": "جاري تهيئة محرك فرز التنبيهات.",
       "Sentinels & Alerts": "الرقابة الذكية والتنبيهات",
       "Sentinels & Alerts Sub-Views": "العروض الفرعية للرقابة والتنبيهات",
       "Sep": "سبتمبر",
@@ -7281,6 +7322,7 @@
       "Sign In": "تسجيل الدخول",
       "Sign Out Seat": "تسجيل خروج المقعد",
       "Sign-In Requirement (PIN / Face ID)": "متطلب الدخول (الرمز السري / بصمة الوجه)",
+      "Sign-in required": "تسجيل الدخول مطلوب",
       "Signed physical pad slip & scale weight verification": "قسيمة القبان الورقية الموقّعة وتأكيد الوزن",
       "Signed supplier settlement receipt & bank transfer advice": "إيصال تسديد مورّد موقّع وإشعار تحويل مصرفي",
       "Silent Unit-Price Creep": "زحف صامت في أسعار الوحدات",
@@ -7365,6 +7407,7 @@
       "Smart Scan Document to New Entry": "مسح المستند وتحويله إلى قيد جديد",
       "Smart Scan any invoice, receipt, PDF, photo, or slip to auto-select the right entry tab and fill fields": "امسح ذكياً أي فاتورة أو إيصال أو ملف PDF أو صورة لاختيار تبويب الإدخال المناسب وتعبئة الحقول تلقائياً",
       "Snack": "سناك",
+      "Snap Now": "التقط الآن",
       "Snap Photo": "التقاط صورة",
       "Snap Receipt Photo": "تصوير إيصال / فاتورة",
       "Snapshot Kind": "نوع اللقطة",
@@ -7517,6 +7560,7 @@
       "Stars (High Margin)": "نجوم القائمة (هامش مرتفع)",
       "Start": "البداية",
       "Start (24h)": "البداية (24س)",
+      "Start 3-Pose Capture": "بدء التقاط 3 وضعيات",
       "Start Date": "تاريخ البدء",
       "Start Face Camera": "تشغيل كاميرا الوجه",
       "Start Talking": "ابدأ التحدث",
@@ -7526,6 +7570,7 @@
       "Starting Point": "نقطة الانطلاق",
       "Starting Scanner...": "جارٍ تشغيل الماسح...",
       "Starting Site": "موقع الانطلاق",
+      "Starting…": "جارٍ التشغيل…",
       "Statement #": "رقم الكشف",
       "Statement 23": "كشف 23",
       "Statement 24": "كشف 24",
@@ -7595,6 +7640,7 @@
       "Stop Briefing": "إيقاف الموجز",
       "Stop Review": "إيقاف المراجعة",
       "Stop Summary": "إيقاف الملخص",
+      "Stop Walkthrough": "إيقاف الشرح",
       "Stop voice": "إيقاف الصوت",
       "Stops accidental double-taps or looking at the tablet camera within 5 minutes of clocking IN or OUT from re-triggering a snapshot or flipping the worker punch.": "يمنع اللمس المزدوج غير المقصود أو النظر مجدداً لكاميرا الكشك خلال 5 دقائق من تسجيل الدخول أو الخروج من قلب حركة الموظف.",
       "Stops clerks from double-entering the same paper weighbridge voucher twice on the same shift while allowing legitimate pad resets from older months with a yellow warning.": "يمنع تكرار إدخال نفس إيصال القبان الورقي مرتين في نفس الوردية مع السماح بإعادة تسلسل الدفاتر القديمة مع تنبيه أصفر.",
@@ -7642,6 +7688,7 @@
       "Supervisor": "مشرف",
       "Supervisor + Entry": "مشرف + إدخال",
       "Supervisor / Admin PIN (2401)...": "رمز المشرف / الإدارة (2401)...",
+      "Supervisor Escalation Note": "مذكرة تصعيد للمشرف عبر واتساب",
       "Supervisor Lock (10%-50%)": "قفل مشرف (10%-50%)",
       "Supervisor Override": "تجاوز المشرف",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "إلغاء المشرف: إيصال حُرّر بالخطأ (0 كم · يحتفظ بالرقم التسلسلي في دفتر الـ 25 إيصالاً)",
@@ -7703,6 +7750,7 @@
       "Surplus ($)": "الفائض ($)",
       "Surpluses / Over-Reads (+Stock)": "فوائض / زيادات جرد (+مخزون)",
       "Suspend": "تعليق",
+      "Suspended": "موقوف",
       "Swap": "تبديل",
       "Sweeps & FX Out": "تحويلات الخزينة والصرافة الصادرة",
       "Sweeps / FX Out": "تحويلات خزينة / صرافة صادرة",
@@ -7912,6 +7960,9 @@
       "Tons": "أطنان",
       "Tons Sold": "الأطنان المباعة",
       "Tons Sold (Converted)": "الأطنان المباعة (محوّلة)",
+      "Too many failed sign-in attempts. Please wait 60 seconds.": "محاولات دخول فاشلة كثيرة. يرجى الانتظار 60 ثانية.",
+      "Too many failed sign-in attempts. Wait 30 seconds.": "محاولات دخول فاشلة كثيرة. انتظر 30 ثانية.",
+      "Too many failed sign-in attempts. Wait 60 seconds.": "محاولات دخول فاشلة كثيرة. انتظر 60 ثانية.",
       "Tool recovery or vendor credit notes": "استرداد عدد أو إشعارات دائنة للموردين",
       "Tools & Consumables": "العدد والمستهلكات",
       "Tools & Garage": "العدد والكاراج",
@@ -8174,6 +8225,8 @@
       "Tue": "الثلاثاء",
       "Tuesday": "الثلاثاء",
       "Tune": "ضبط",
+      "Turn your head slightly LEFT — just a little, keep both eyes on the camera": "أدر رأسك قليلاً نحو اليسار مع إبقاء العينين نحو الكاميرا",
+      "Turn your head slightly RIGHT — just a little, keep both eyes on the camera": "أدر رأسك قليلاً نحو اليمين مع إبقاء العينين نحو الكاميرا",
       "Tx Date": "تاريخ العملية",
       "Tx Date Locked": "مقفول على تاريخ العملية",
       "Tx vs Reporting date drift": "انحراف تاريخ العملية عن تاريخ التقرير",
@@ -8247,7 +8300,7 @@
       "Underwriting & Claims Desk": "مكتب الاكتتاب والمطالبات",
       "Underwritten Carrier Products": "منتجات شركات التأمين المكتتبة",
       "Undo": "تراجع",
-      "Undo Check": "تراجع عن المراجعة",
+      "Undo Check": "إلغاء الاعتماد",
       "Undo Corner": "تراجع عن الزاوية",
       "Undo ↩": "تراجع ↩",
       "Unfinished Entry": "قيد غير محفوظ",
@@ -8884,6 +8937,7 @@
       "machine/site +": "آلية/موقع +",
       "margin": "هامش",
       "matched supplier settlements posted": "تم ترحيل دفعات الموردين المطابقة",
+      "no Face ID": "بدون بصمة وجه",
       "note so you never forget": "لتوثيق سبب القاعدة دائماً",
       "odometer": "عداد الكيلومترات",
       "of": "من",
@@ -9017,14 +9071,12 @@
       "■ Stop": "■ إيقاف",
       "▼ Backwards": "▼ رجوع بالعداد",
       "● OK": "● سليم",
+      "● Ready (Sign In)": "● جاهز (سجّل الدخول)",
+      "● Sign-in required": "● تسجيل الدخول مطلوب",
+      "⚠ UNRECOGNIZED FACE": "⚠ وجه غير معروف",
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
       "✓ SAVED": "✓ محفوظ",
-      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
-      "● Ready (Sign In)": "● جاهز (سجّل الدخول)",
-      "Ready (Sign In)": "جاهز (سجّل الدخول)",
-      "● Sign-in required": "● تسجيل الدخول مطلوب",
-      "Sign-in required": "تسجيل الدخول مطلوب",
-      "Offline: cannot verify uncached seat credentials.": "دون اتصال: يتعذّر التحقق من بيانات مقعد غير مخزّنة محلياً."
+      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -9488,6 +9540,7 @@
       "AI Multi-VIN Landed-Cost & OEM Warranty Reconciler": "Rapprochement IA cout rendu multi-VIN et avoirs garantie constructeur",
       "AI Outlier Brief": "Synthèse IA des écarts",
       "AI Relationship Brief": "Analyse relationnelle IA",
+      "AI Root-Cause Plan": "Plan d action IA",
       "AI Sentinels & Analytics Bridge": "Sentinelles IA & Pont Analytique",
       "AI Sentinels & Audit": "Sentinelles IA & Audit",
       "AI Sentinels & Diesel Hub": "Sentinelles IA & Module Gasoil",
@@ -9593,6 +9646,7 @@
       "Action Plan & Notes": "Plan d'Action & Notes",
       "Action Type": "Type de Mouvement",
       "Actions": "Actions",
+      "Activate": "Activer",
       "Active": "Actif",
       "Active (Open)": "Actif (ouvert)",
       "Active / Substitute Driver": "Chauffeur Actif / Remplaçant",
@@ -10287,6 +10341,7 @@
       "Blank Serials": "Sans N° de Série",
       "Blended Contractual Yield": "Rendement Contractuel Moyen",
       "Blink or 3D Head Turn (Default)": "Clignement ou rotation 3D de la tête (Par défaut)",
+      "Blink or turn slightly to confirm": "Clignez des yeux ou tournez légèrement la tête pour confirmer",
       "Block Above (% of Est.)": "Bloquer au-dessus de (% de l'estim.)",
       "Block Below (% of Est.)": "Bloquer en dessous de (% de l'estim.)",
       "Blocks Save": "Bloque l'enregistrement",
@@ -10395,6 +10450,8 @@
       "By Line Value (Weighted Avg)": "À la Valeur (Moyenne Pondérée)",
       "By Stream": "Par Flux",
       "CAM proration & FIFO wire settlements posted": "repartitions CAM et encaissements FIFO enregistres",
+      "CAMERA LIVE": "CAMÉRA EN DIRECT",
+      "CAMERA STANDBY": "CAMÉRA EN VEILLE",
       "CAPEX vs Repairs Split": "Répartition CAPEX vs réparations",
       "CAPITAL & ASSET OUTLAYS": "INVESTISSEMENTS CAPEX & ACTIFS",
       "CARRIER BORDEREAU REMITTANCE VOUCHER": "BORDEREAU DE RÈGLEMENT COMPAGNIE D'ASSURANCE",
@@ -10422,6 +10479,7 @@
       "CUSTOM WATCHDOG": "Sentinelle personnalisée",
       "CUSTOMER AR AGING & CREDIT TERMS SUB-LEDGER": "BALANCE ÂGÉE CLIENTS & CONDITIONS DE CRÉDIT",
       "CUSTOMER DELIVERY TRANSPORTATION COMPARISON: AGREED VS. LAST DELIVERED BY SITE": "COMPARAISON TRANSPORT LIVRAISON CLIENTS : CONVENU VS DERNIER PAR SITE",
+      "CUSTOMER RECEIVABLES OVERDUE > 60 DAYS": "CRÉANCES CLIENTS EN RETARD > 60 JOURS",
       "CUSTOMER RECEIVABLES OVERDUE > 60 DAYS (FIFO)": "CRÉANCES CLIENTS EN RETARD > 60 JOURS (FIFO)",
       "Cabanas": "Cabanas",
       "Cabanas & Memberships": "Cabanas & Abonnements",
@@ -10435,6 +10493,7 @@
       "Camera Permission Blocked": "Accès caméra bloqué",
       "Camera Requires Secure HTTPS or Phone QR": "La caméra requiert HTTPS ou le QR téléphone",
       "Camera Smart Scan": "Scan Intelligent Caméra",
+      "Camera Standby": "Caméra en veille",
       "Camera Unavailable": "Caméra indisponible",
       "Camera unavailable": "Caméra indisponible",
       "Camera zoom": "Zoom caméra",
@@ -10457,6 +10516,7 @@
       "Capital, Partners & Workforce": "Capital, Associés & RH",
       "Capitalized Chassis Landed Cost": "Coût Rendu Capitalisé des Châssis",
       "Capitalized into Serial Chassis & Parts WAC": "Capitalisé dans les châssis & le CUMP pièces",
+      "Capture": "Capturer",
       "Capture Document": "Capturer le document",
       "Card & Whish Slips": "Reçus carte bancaire et Whish",
       "Card / Whish": "Carte / Whish",
@@ -10708,6 +10768,8 @@
       "Click map or paste lat, lng": "Cliquer sur la carte ou coller lat, lng",
       "Click map or select Region to estimate KM": "Cliquez sur la carte ou choisissez la région pour estimer les km",
       "Click on the map, drag the pin, or select a Region above to set or modify where this site is": "Cliquez sur la carte, déplacez l'épingle ou choisissez une région pour localiser ce site",
+      "Click to Capture": "Cliquer pour capturer",
+      "Click to Enable Camera": "Cliquer pour activer la caméra",
       "Click to browse all 6 industries": "Cliquer pour parcourir les 6 secteurs",
       "Click to edit this log entry": "Cliquer pour modifier cette entrée",
       "Click to inspect row details": "Cliquer pour inspecter les détails de la ligne",
@@ -10967,6 +11029,7 @@
       "Container Pack CIF True-Up, Tariff Drift Guard & Factory Credit Netting": "Ajustement CIF conteneur, controle douanier et compensation garantie usine",
       "Container Receiving": "Réception conteneurs",
       "Context / Detail": "Contexte / Détail",
+      "Continue Capture": "Continuer la capture",
       "Contract": "Contrat",
       "Contract #": "N° Contrat",
       "Contract & Agreement": "Contrat & Accord",
@@ -11175,6 +11238,7 @@
       "Customer Receivables & Advances": "Créances clients et avances",
       "Customer Receivables Overdue > 60 Days": "Créances Clients Échues > 60 Jours",
       "Customer Receivables Overdue > 60 Days (FIFO Allocated)": "Créances Clients Échues > 60 Jours (Allocation FIFO)",
+      "Customer Receivables Overdue > 60 Days (Oldest-First Allocated)": "Créances clients échues > 60 jours (imputées sur les plus anciennes)",
       "Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.": "Les tarifs clients, prix catalogue et règles de commission se trouvent dans Ventes & Créances ▸ Tarifs & Commissions.",
       "Customer Sales Deliveries": "Livraisons Ventes Clients",
       "Customer Sales Delivery Transport Revenue": "Revenu Transport Livraison Clients",
@@ -11432,6 +11496,7 @@
       "Details": "Détails",
       "Detects missing or torn paper vouchers inside 25-leaf weighbridge books, duplicate serials, and unnumbered tickets so no load goes unbilled.": "Détecte les bons manquants dans les carnets de 25 feuilles, les doublons et les bons sans numéro afin qu'aucun voyage ne reste non facturé.",
       "Deterministic Action": "Action déterministe",
+      "Deterministic Audit": "Contrôle déterministe",
       "Deterministic Ledger": "Grand livre déterministe",
       "Device": "Appareil",
       "Device Lock Vault": "Coffre de Verrouillage",
@@ -12084,9 +12149,11 @@
       "Face ID": "Face ID",
       "Face ID (2FA)": "Face ID (2FA)",
       "Face ID Biometric 2FA": "Biométrie Faciale 2FA",
+      "Face ID Camera": "Caméra reconnaissance faciale",
       "Face ID Clock-In": "Pointage par Reconnaissance Faciale",
       "Face ID Enrolment": "Enrôlement Reconnaissance Faciale",
       "Face ID Only (Live Biometric)": "Face ID Uniquement (Biométrie Live)",
+      "Face not recognized": "Visage non reconnu",
       "Facilities": "Lignes de crédit",
       "Facility & Funding Cost": "Coût de Financement",
       "Facility Asset / Equipment": "Actif / Équipement",
@@ -12476,6 +12543,7 @@
       "Guest / Walk-in": "Client / Passage",
       "Guest Relations & Cabana Host": "Chargé Relations Hôtes & Cabanas",
       "Guests / Covers": "Clients / Couverts",
+      "Guided 3-pose capture (straight, slight left, slight right)": "Capture guidée en 3 poses (face, léger gauche, léger droite)",
       "HH:MM": "HH:MM",
       "HIDDEN DOUBLE-ENTRY POSTING ENGINE · LEBANESE PCG CLASSES 1 TO 7": "MOTEUR D'ÉCRITURES EN PARTIE DOUBLE AUTOMATISÉ · PCG LIBANAIS CLASSES 1 À 7",
       "HOLDING & TREASURY EXECUTIVE ANALYTICS & DASHBOARDS": "TABLEAUX DE BORD EXÉCUTIFS HOLDING & TRÉSORERIE",
@@ -12865,6 +12933,8 @@
       "Investments & Group Assets": "Participations & Actifs Groupe",
       "Investments in Group Subsidiaries": "Participations dans les Filiales du Groupe",
       "Invite Link": "Lien d'Invitation",
+      "Invite link copied for this seat": "Lien d’invitation copié pour ce poste",
+      "Invite link copied: it carries the PIN, share it privately": "Lien d’invitation copié : il contient le code PIN, partagez-le en privé",
       "Invoice": "Facture",
       "Invoice #": "N° Facture",
       "Invoice # (Book)": "N° Facture (Livre)",
@@ -13075,6 +13145,8 @@
       "LIVE MULTI-DEVICE SESSION AUDIT LOG": "JOURNAL D'AUDIT DES SESSIONS MULTI-APPAREILS",
       "LIVE SPATIAL WORKFORCE & MACHINE DEPLOYMENT MAP": "CARTE SPATIALE EN DIRECT DES ÉQUIPES & ENGINS",
       "LIVE TRUCK & EQUIPMENT HEALTH STATUS BOARD": "TABLEAU D'ÉTAT DE SANTÉ EN DIRECT DES CAMIONS & ENGINS",
+      "LIVE VERIFY · CHECKING FACE ID": "VÉRIFICATION EN DIRECT · CONTRÔLE FACE ID",
+      "LIVE VERIFY · LOOK AT CAMERA": "VÉRIFICATION EN DIRECT · REGARDEZ LA CAMÉRA",
       "LL 0": "0 LL",
       "LL/$": "LBP/$",
       "LOADS & REVENUE BY DESTINATION SITE": "VOYAGES & REVENUS PAR CHANTIER DE LIVRAISON",
@@ -13196,6 +13268,7 @@
       "Leave / Absence / Half Day": "Congé / Absence / Demi-Journée",
       "Leave / Absent": "Congé / Absent",
       "Leave Days": "Jours de congé",
+      "Leave blank to keep current PIN": "Laisser vide pour conserver le code PIN actuel",
       "Lebanese CoA Class": "Classe du Plan Comptable",
       "Lebanese CoA Classes 1-7 double-entry parity across": "Parité en partie double des classes 1–7 du PCG libanais sur",
       "Lebanese CoA Tied ($0.00)": "Rapproché Plan Comptable Libanais (0,00 $)",
@@ -13299,8 +13372,10 @@
       "Litres (L)": "Litres (L)",
       "Litres Issued (L)": "Litres Distribués (L)",
       "Live": "En direct",
+      "Live 3D Turn": "Rotation 3D en direct",
       "Live Active Slicer": "Filtre Actif en Direct",
       "Live Active Slicer (Dynamic)": "Filtre Période Actif (Dynamique)",
+      "Live Blink": "Clignement en direct",
       "Live Camera & Recognition": "Caméra en Direct & Reconnaissance",
       "Live Camera Smart Scan": "Scan Intelligent Caméra en Direct",
       "Live Dynamic Fleet P&L (": "Compte de Résultat Flotte en Direct (",
@@ -13403,7 +13478,10 @@
       "Logs role and machine changes over time; prior Open assignment closes automatically on Start Date minus 1 day": "Historise les changements de poste/engin ; clôture auto. l'affectation précédente à J-1",
       "Long-Term Rented": "Location Longue Durée",
       "Longitude (GPS)": "Longitude (GPS)",
+      "Look at Camera": "Regardez la caméra",
+      "Look at camera for automatic Face ID": "Regardez la caméra pour Face ID automatique",
       "Look inside the oval guide to clock in or out.": "Regardez dans le cadre ovale pour pointer l'entrée ou la sortie.",
+      "Look straight at the camera": "Regardez droit vers la caméra",
       "Loss Date": "Date du Sinistre",
       "Low < 1,500 L · Crit < -1,000 L": "Bas < 1 500 L · Crit. < -1 000 L",
       "Low Plant Tank Warning": "Alerte niveau bas cuve centrale",
@@ -13504,6 +13582,7 @@
       "Margin Audit": "Audit des Marges",
       "Margin Rate:": "Taux de Marge :",
       "Marina Tower · Hamra Pavillon · Mazraa · Baghdad": "Marina Tower · Hamra Pavillon · Mazraa · Bagdad",
+      "Mark All Checked": "Tout valider",
       "Mark All Flagged Checked": "Marquer Tout comme Vérifié",
       "Mark Checked": "Marquer vérifié",
       "Mark Pattern Checked": "Marquer le motif vérifié",
@@ -13761,6 +13840,8 @@
       "Motor Oil, Hydraulic Oil & Lubricants": "Huile Moteur, Hydraulique & Lubrifiants",
       "Motor, Medical & Property Claims, Surveyors & Settlements": "Sinistres auto, santé et dommages, experts et règlements",
       "Mount Lebanon": "Mont-Liban",
+      "Move slightly closer": "Approchez-vous légèrement",
+      "Move slightly closer to the camera.": "Approchez-vous légèrement de la caméra.",
       "Moved Page": "Page déplacée",
       "Movement": "Mouvement",
       "Movement Classification *": "Classification du mouvement *",
@@ -13780,6 +13861,7 @@
       "Multi-carrier": "Multi-compagnies",
       "Multi-row source lines": "Lignes sources multiples",
       "Multi-year stepped rent schedules, grace periods, VAT treatment, and renewal countdowns": "Échéanciers de loyers par paliers, franchises, régime TVA et compte à rebours de renouvellement",
+      "Multiple faces in frame. Step into the oval guide one person at a time.": "Plusieurs visages détectés. Placez-vous un par un dans le guide ovale.",
       "Multipliers · Leave · Perks": "Multiplicateurs · Congés · Avantages",
       "Music": "Musique et son",
       "Must be located inside the selected Region.": "Doit se situer dans la région sélectionnée.",
@@ -14056,6 +14138,7 @@
       "No Rule": "Sans tarif",
       "No Sub": "Sans Remplaçant",
       "No cap": "Sans plafond",
+      "No company selected: pick at least 1 company": "Aucune société sélectionnée : choisissez au moins 1 société",
       "No documents attached yet. Uploaded files sync automatically to the Document Vault upon posting.": "Aucun document joint. Les fichiers téléversés sont synchronisés automatiquement avec le coffre-fort documentaire.",
       "No extended entries match the active filter": "Aucune écriture étendue ne correspond au filtre actif",
       "No extended stakeholders match the current filter": "Aucune partie prenante étendue ne correspond au filtre",
@@ -14151,6 +14234,7 @@
       "Official Tax Seq": "Séquence Fiscale Officielle",
       "Official stamped VAT invoice copy for quarterly MoF declaration": "Copie officielle de facture TVA tamponnée pour déclaration trimestrielle",
       "Offline Cache": "Mode Hors-Ligne",
+      "Offline: cannot verify uncached seat credentials.": "Hors ligne : impossible de vérifier un siège non mis en cache.",
       "Oil": "Huile",
       "Oil & Fuel Filter Service": "Remplacement Filtres Huile & Carburant",
       "Oil & Lube Expense": "Charge Huiles & Lubrifiants",
@@ -14163,6 +14247,7 @@
       "Oils & Hydraulics": "Huiles et hydraulique",
       "Oils & Lubricants": "Huiles & Lubrifiants",
       "Oils & Tools": "Huiles & Outillage",
+      "Oldest-First Allocated": "Imputées sur les plus anciennes",
       "Oldest-First FIFO Relief": "Imputation FIFO (plus ancien d'abord)",
       "On Account": "Acompte",
       "On Account (<$0)": "Acompte Créditeur (<0 $)",
@@ -14546,6 +14631,7 @@
       "PERIOD TOTAL": "TOTAL PÉRIODE",
       "PIN Only": "Code PIN seul",
       "PIN Only (Disable Face Login)": "Code PIN uniquement (Désactiver Visage)",
+      "PIN sign-in active": "Connexion par code PIN active",
       "PIN verified": "Code PIN vérifié",
       "PLAIN-ENGLISH RULEBOOK & LIVE THRESHOLD TUNING": "RÉFÉRENTIEL CLAIR DES RÈGLES ET RÉGLAGE EN DIRECT DES SEUILS",
       "POS & Chalets": "Caisses POS & Chalets",
@@ -14566,6 +14652,7 @@
       "POS Till Parity": "Parité Caisse POS",
       "POS Tills": "Caisses POS",
       "POS Tills & Shift Closes": "Caisses POS et clôtures de poste",
+      "POSE 1 OF 3 · READY TO CAPTURE": "POSE 1 SUR 3 · PRÊT À CAPTURER",
       "PRE-DELIVERY INSPECTION (PDI), WORKSHOP SERVICE & OEM WARRANTY RECOVERY": "INSPECTION PRÉ-LIVRAISON (PDI), ATELIER & GARANTIE OEM",
       "PRICED SALES INVOICE · 80MM": "FACTURE DE VENTE CHIFFRÉE · 80MM",
       "PROP": "DOMM.",
@@ -14770,6 +14857,7 @@
       "Pending Invoice Price ($0)": "Prix facture en attente (0 $)",
       "Pending Invoices": "Factures en Attente",
       "Pending Landed Alloc": "En Attente d'Affectation Coût Rendu",
+      "Pending Pose": "Pose en attente",
       "Pending Price": "Prix en Attente",
       "Pending Review": "En Attente de Revue",
       "Pending Salary": "Salaire en Attente",
@@ -14989,6 +15077,7 @@
       "Premium Invoices & Receipts": "Factures de Primes & Encaissements",
       "Premiums & Insurer Recon": "Primes & Bordereaux Compagnies",
       "Preparing Briefing...": "Préparation du briefing...",
+      "Preparing Face ID…": "Préparation de Face ID…",
       "Preparing Summary...": "Préparation du bilan...",
       "Preparing...": "Préparation...",
       "Preset & All-Time Periods": "Périodes prédéfinies & toutes périodes",
@@ -15364,6 +15453,7 @@
       "Reading must be above zero": "Le relevé doit être supérieur à zéro",
       "Reading structured Office document...": "Lecture du document bureautique structuré...",
       "Ready": "Prêt",
+      "Ready (Sign In)": "Prêt (Connexion)",
       "Ready to Accrue & Reverse": "Pret pour provision et extourne",
       "Ready to seal prior-month Tx Date & Rep Date edits": "Pret a verrouiller les dates comptables du mois precedent",
       "Real Est": "Immobilier",
@@ -15638,6 +15728,7 @@
       "Repeats": "Répétitions",
       "Replay Review": "Réécouter la revue",
       "Replay Summary": "Réécouter le bilan",
+      "Replay Walkthrough": "Écouter la revue",
       "Report Date *": "Date de reporting *",
       "Report Equipment Defect": "Signaler une Anomalie Engin",
       "Report Sections": "Sections du Rapport",
@@ -16130,8 +16221,10 @@
       "Senior Field Loss Adjuster & Surveyor": "Expert Sinistres & Inspecteur Principal",
       "Sent to your computer! Snap another page or close this tab.": "Envoyé à votre ordinateur ! Capturez une autre page ou fermez cet onglet.",
       "Sent!": "Envoyé !",
+      "Sentinel Exception Triage": "Triage des exceptions d audit",
       "Sentinel Health Score": "Score de Santé Sentinelles",
       "Sentinel S11": "Sentinelle S11",
+      "Sentinel Triage engine is initializing.": "Initialisation du moteur de triage.",
       "Sentinels & Alerts": "Sentinelles & Alertes",
       "Sentinels & Alerts Sub-Views": "Sous-vues Sentinelles & Alertes",
       "Sep": "Sept.",
@@ -16287,6 +16380,7 @@
       "Sign In": "Connexion",
       "Sign Out Seat": "Déconnecter le Poste",
       "Sign-In Requirement (PIN / Face ID)": "Exigence de Connexion (PIN / Visage)",
+      "Sign-in required": "Connexion requise",
       "Signed physical pad slip & scale weight verification": "Bon de bascule papier signé & vérification de pesée",
       "Signed supplier settlement receipt & bank transfer advice": "Reçu de règlement fournisseur signé & avis de virement",
       "Silent Unit-Price Creep": "Dérive silencieuse des prix unitaires",
@@ -16371,6 +16465,7 @@
       "Smart Scan Document to New Entry": "Scanner un Document vers Nouvelle Saisie",
       "Smart Scan any invoice, receipt, PDF, photo, or slip to auto-select the right entry tab and fill fields": "Scannez toute facture, reçu, PDF, photo ou bon pour sélectionner automatiquement le bon onglet et remplir les champs",
       "Snack": "Snack",
+      "Snap Now": "Capturer",
       "Snap Photo": "Prendre photo",
       "Snap Receipt Photo": "Photographier un Reçu",
       "Snapshot Kind": "Type d'instantané",
@@ -16523,6 +16618,7 @@
       "Stars (High Margin)": "Stars (Forte Marge)",
       "Start": "Début",
       "Start (24h)": "Début (24h)",
+      "Start 3-Pose Capture": "Démarrer la capture 3 poses",
       "Start Date": "Date de Début",
       "Start Face Camera": "Démarrer la Caméra Faciale",
       "Start Talking": "Parler",
@@ -16532,6 +16628,7 @@
       "Starting Point": "Point de Départ",
       "Starting Scanner...": "Démarrage du scanner...",
       "Starting Site": "Site de Départ",
+      "Starting…": "Démarrage…",
       "Statement #": "N° Bordereau",
       "Statement 23": "État 23",
       "Statement 24": "État 24",
@@ -16601,6 +16698,7 @@
       "Stop Briefing": "Arrêter le briefing",
       "Stop Review": "Arrêter la revue",
       "Stop Summary": "Arrêter le bilan",
+      "Stop Walkthrough": "Arrêter la revue",
       "Stop voice": "Arrêter la voix",
       "Stops accidental double-taps or looking at the tablet camera within 5 minutes of clocking IN or OUT from re-triggering a snapshot or flipping the worker punch.": "Empêche un double passage devant la caméra dans les 5 minutes suivant un pointage d'inverser accidentellement l'entrée/sortie.",
       "Stops clerks from double-entering the same paper weighbridge voucher twice on the same shift while allowing legitimate pad resets from older months with a yellow warning.": "Empêche la double saisie d'un même bon papier sur un poste tout en autorisant les nouvelles séries anciennes avec avertissement.",
@@ -16648,6 +16746,7 @@
       "Supervisor": "Superviseur",
       "Supervisor + Entry": "Superviseur + Saisie",
       "Supervisor / Admin PIN (2401)...": "Code PIN Superviseur / Admin (2401)...",
+      "Supervisor Escalation Note": "Note d escalade superviseur",
       "Supervisor Lock (10%-50%)": "Verrou Superviseur (10 %-50 %)",
       "Supervisor Override": "Dérogation Superviseur",
       "Supervisor Remove: ticket made by mistake (0 KM · keeps serial # in 25-ticket book)": "Retrait Superviseur : bon créé par erreur (0 KM · conserve le N° dans le carnet de 25)",
@@ -16709,6 +16808,7 @@
       "Surplus ($)": "Excedent ($)",
       "Surpluses / Over-Reads (+Stock)": "Excédents / Sur-relevés (+Stock)",
       "Suspend": "Suspendre",
+      "Suspended": "Suspendu",
       "Swap": "Inverser",
       "Sweeps & FX Out": "Transferts & Change Sortants",
       "Sweeps / FX Out": "Transferts Trésorerie / Change Sortants",
@@ -16918,6 +17018,9 @@
       "Tons": "Tonnes",
       "Tons Sold": "Tonnes Vendues",
       "Tons Sold (Converted)": "Tonnes Vendues (Converties)",
+      "Too many failed sign-in attempts. Please wait 60 seconds.": "Trop de tentatives de connexion échouées. Veuillez patienter 60 secondes.",
+      "Too many failed sign-in attempts. Wait 30 seconds.": "Trop de tentatives échouées. Patientez 30 secondes.",
+      "Too many failed sign-in attempts. Wait 60 seconds.": "Trop de tentatives échouées. Patientez 60 secondes.",
       "Tool recovery or vendor credit notes": "Récupération d'outillage ou avoirs fournisseurs",
       "Tools & Consumables": "Outils & Consommables",
       "Tools & Garage": "Outillage & Garage",
@@ -17180,6 +17283,8 @@
       "Tue": "Mar",
       "Tuesday": "Mardi",
       "Tune": "Ajuster",
+      "Turn your head slightly LEFT — just a little, keep both eyes on the camera": "Tournez légèrement la tête à GAUCHE en gardant les yeux vers la caméra",
+      "Turn your head slightly RIGHT — just a little, keep both eyes on the camera": "Tournez légèrement la tête à DROITE en gardant les yeux vers la caméra",
       "Tx Date": "Date Opér.",
       "Tx Date Locked": "Verrouillé sur date opération",
       "Tx vs Reporting date drift": "Décalage date opération vs reporting",
@@ -17253,7 +17358,7 @@
       "Underwriting & Claims Desk": "Bureau souscription et sinistres",
       "Underwritten Carrier Products": "Produits compagnies souscrits",
       "Undo": "Annuler",
-      "Undo Check": "Annuler la vérification",
+      "Undo Check": "Annuler la validation",
       "Undo Corner": "Annuler le Point",
       "Undo ↩": "Annuler ↩",
       "Unfinished Entry": "Saisie non enregistrée",
@@ -17890,6 +17995,7 @@
       "machine/site +": "engin/site +",
       "margin": "marge",
       "matched supplier settlements posted": "reglements fournisseurs rapproches valides",
+      "no Face ID": "sans Face ID",
       "note so you never forget": "pour toujours documenter la règle",
       "odometer": "compteur km",
       "of": "sur",
@@ -18023,14 +18129,12 @@
       "■ Stop": "■ Arrêter",
       "▼ Backwards": "▼ Recul compteur",
       "● OK": "● OK",
+      "● Ready (Sign In)": "● Prêt (Connexion)",
+      "● Sign-in required": "● Connexion requise",
+      "⚠ UNRECOGNIZED FACE": "⚠ VISAGE NON RECONNU",
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
       "✓ SAVED": "✓ ENREGISTRÉ",
-      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues",
-      "● Ready (Sign In)": "● Prêt (Connexion)",
-      "Ready (Sign In)": "Prêt (Connexion)",
-      "● Sign-in required": "● Connexion requise",
-      "Sign-in required": "Connexion requise",
-      "Offline: cannot verify uncached seat credentials.": "Hors ligne : impossible de vérifier un siège non mis en cache."
+      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues"
     }
   };
 
@@ -19667,8 +19771,52 @@
     if (m) return lang === 'ar' ? `${m[1]} مسارات مفتوحة` : `${m[1]} corridors ouverts`;
 
     // 5. Sentinel Detail Sentences (Manufacturing + Shared)
-    m = trimmed.match(/^Open AR\s+(\$[\d.,]+)\s*\(VAT-inclusive\)\s*·\s*(\$[\d.,]+)\s+aged past\s+(\d+)\s+days after FIFO receipt allocation\s*·\s*DSO\s+(\d+)\s+days\.?$/i);
-    if (m) return lang === 'ar' ? `الذمم المدينة المفتوحة ${m[1]} (شاملة الضريبة) · ${m[2]} متأخرة لأكثر من ${m[3]} يوماً بعد تخصيص المقبوضات FIFO · متوسط فترة التحصيل ${m[4]} يوماً.` : `Créances clients ouvertes ${m[1]} (TTC) · ${m[2]} échues à plus de ${m[3]} jours après allocation FIFO · DSO ${m[4]} jours.`;
+    m = trimmed.match(/^Open AR\s+(\$[\d.,]+)\s*\(VAT-inclusive\)\s*·\s*(\$[\d.,]+)\s+aged past\s+(\d+)\s+days after (?:FIFO|oldest-first) receipt allocation\s*·\s*DSO\s+(\d+)\s+days\.?$/i);
+    if (m) return lang === 'ar' ? `الذمم المدينة المفتوحة ${m[1]} (شاملة الضريبة) · ${m[2]} متأخرة لأكثر من ${m[3]} يوماً بعد تخصيص المقبوضات للأقدم أولاً · متوسط فترة التحصيل ${m[4]} يوماً.` : `Créances clients ouvertes ${m[1]} (toutes taxes comprises) · ${m[2]} échues à plus de ${m[3]} jours après imputation sur les plus anciennes · DSO ${m[4]} jours.`;
+
+    m = trimmed.match(/^(·\s*)?Inspect and update Full Name, Login Email, PIN, Roles & Permissions, and Assigned Companies \(RLS\) for any of the\s+(\d+)\s+current users\.?$/i);
+    if (m) {
+      const pfx = m[1] ? '· ' : '';
+      return lang === 'ar'
+        ? `${pfx}معاينة وتحديث الاسم الكامل وبريد الدخول والرمز السري والأدوار والصلاحيات والشركات المعيّنة لأي من المستخدمين الـ ${m[2]} الحاليين.`
+        : `${pfx}Consulter et modifier le nom complet, l'e-mail, le code PIN, les rôles et les sociétés attribuées (RLS) pour chacun des ${m[2]} utilisateurs actifs.`;
+    }
+
+    m = trimmed.match(/^(.+?)\s*\((no Face ID|(\d+\/\d+)\s+poses?)\)$/i);
+    if (m) {
+      const tag = m[3]
+        ? (lang === 'ar' ? `${m[3]} وضعيات` : `${m[3]} poses`)
+        : (lang === 'ar' ? 'بدون بصمة وجه' : 'sans Face ID');
+      return `${m[1].trim()} (${tag})`;
+    }
+
+    m = trimmed.match(/^Continue Capture\s*\((\d+\/\d+)\)$/i);
+    if (m) return lang === 'ar' ? `متابعة الالتقاط (${m[1]})` : `Continuer la capture (${m[1]})`;
+
+    m = trimmed.match(/^Capture Pose\s*\(?(\d+(?:\/\d+)?)\)?$/i);
+    if (m) return lang === 'ar' ? `التقاط الوضعية (${m[1]})` : `Capturer la pose (${m[1]})`;
+
+    m = trimmed.match(/^Retake Pose\s+(\d+)$/i);
+    if (m) return lang === 'ar' ? `إعادة التقاط الوضعية ${m[1]}` : `Reprendre la pose ${m[1]})`.replace(/\)$/, '');
+
+    m = trimmed.match(/^POSE\s+(\d+)\s+OF\s+(\d+)\s*·\s*(.+)$/i);
+    if (m) {
+      const rhsRaw = m[3].trim();
+      const svMatch = rhsRaw.match(/^(\d+\/\d+)\s+SAVED$/i);
+      const rhs = svMatch
+        ? (lang === 'ar' ? `${svMatch[1]} محفوظة` : `${svMatch[1]} ENREGISTRÉES`)
+        : translateCore(rhsRaw, lang, depth + 1);
+      return lang === 'ar' ? `الوضعية ${m[1]} من ${m[2]} · ${rhs}` : `POSE ${m[1]} SUR ${m[2]} · ${rhs}`;
+    }
+
+    m = trimmed.match(/^(\d+\/\d+)\s+(?:POSES?\s+)?SAVED$/i);
+    if (m) return lang === 'ar' ? `${m[1]} وضعيات محفوظة` : `${m[1]} POSES ENREGISTRÉES`;
+
+    m = trimmed.match(/^(✓\s*)?(.+?)\s*·\s*(\d+\/\d+)\s+Poses Saved$/i);
+    if (m) {
+      const chk = m[1] ? '✓ ' : '';
+      return lang === 'ar' ? `${chk}${m[2].trim()} · ${m[3]} وضعيات محفوظة` : `${chk}${m[2].trim()} · ${m[3]} poses enregistrées`;
+    }
 
     m = trimmed.match(/^(\$[\d.,]+)\s+sold below the date-effective agreed price across\s+(\d+)\s+customer\s*×\s*product pairs\s*·\s*(\d+)\s+pairs trading on lapsed agreements\s*·\s*(\d+)\s+per-truck delivery rules\.?$/i);
     if (m) return lang === 'ar' ? `${m[1]} مبيعات بأقل من السعر التعاقدي الساري عبر ${m[2]} أزواج (عميل × صنف) · ${m[3]} أزواج تتعامل باتفاقيات منتهية · ${m[4]} قواعد تسليم حسب الشاحنة.` : `${m[1]} vendus sous le tarif convenu sur ${m[2]} paires client × produit · ${m[3]} accords expirés actifs · ${m[4]} règles par camion.`;
@@ -20018,6 +20166,28 @@
 
     m = trimmed.match(/^(\d+\s*\/\s*\d+)\s+Enrolled$/i);
     if (m) return lang === 'ar' ? `${m[1]} مسجّل` : `${m[1]} Enrôlés`;
+
+    m = trimmed.match(/^(.+?)\s*·\s*Not Enrolled$/i);
+    if (m) return lang === 'ar' ? `${m[1]} · غير مسجّل` : `${m[1]} · Non enrôlé`;
+
+    m = trimmed.match(/^(?:✓\s*)?(.+?)\s*·\s*(\d+\/\d+)\s+Poses Saved$/i);
+    if (m) return lang === 'ar' ? `✓ ${m[1]} · ${m[2]} وضعيات محفوظة` : `✓ ${m[1]} · ${m[2]} poses enregistrées`;
+
+    m = trimmed.match(/^POSE\s+(\d+)\s+OF\s+(\d+)\s*·\s*READY TO CAPTURE$/i);
+    if (m) return lang === 'ar' ? `الوضعية ${m[1]} من ${m[2]} · جاهز للالتقاط` : `POSE ${m[1]} SUR ${m[2]} · PRÊT À CAPTURER`;
+
+    m = trimmed.match(/^POSE\s+(\d+)\s+OF\s+(\d+)\s*·\s*(\d+\/\d+)\s+SAVED$/i);
+    if (m) return lang === 'ar' ? `الوضعية ${m[1]} من ${m[2]} · ${m[3]} محفوظة` : `POSE ${m[1]} SUR ${m[2]} · ${m[3]} ENREGISTRÉES`;
+
+    m = trimmed.match(/^(Capture|Retake)\s+Pose\s+(\d+)\s*\((Straight|Slight Left|Slight Right)\)$/i);
+    if (m) {
+      const act = /^retake$/i.test(m[1]) ? (lang === 'ar' ? 'إعادة التقاط الوضعية' : 'Reprendre la pose') : (lang === 'ar' ? 'التقاط الوضعية' : 'Capturer la pose');
+      const dirKey = m[3].toLowerCase();
+      const dirLbl = dirKey === 'straight'
+        ? (lang === 'ar' ? 'مباشر' : 'Face')
+        : (dirKey === 'slight left' ? (lang === 'ar' ? 'يسار قليلاً' : 'Léger gauche') : (lang === 'ar' ? 'يمين قليلاً' : 'Léger droite'));
+      return `${act} ${m[2]} (${dirLbl})`;
+    }
 
     m = trimmed.match(/^All\s+(\d+)\s+poses saved for\s+(.+?)\.\s*Click the camera for live recognition, or click any pose card to retake\.?$/i);
     if (m) return lang === 'ar' ? `تم حفظ جميع الوضعيات الـ ${m[1]} لـ ${m[2]}. اضغط على الكاميرا للتعرف الحي، أو اضغط أي بطاقة لإعادة الالتقاط.` : `Les ${m[1]} poses sont enregistrées pour ${m[2]}. Cliquez sur la caméra pour tester ou sur une carte pour reprendre.`;

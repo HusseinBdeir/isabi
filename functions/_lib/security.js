@@ -220,6 +220,23 @@ function canonEntityKey(raw) {
   return ENTITY_ALIAS_MAP[k] || k;
 }
 
+const ENTITY_INDUSTRY_MAP = {
+  wtc: 'Manufacturing',
+  bbconstruction: 'Manufacturing',
+  'lions transport': 'Manufacturing',
+  'bdeir holding': 'Holding & Treasury',
+  blanca: 'Hospitality & Resorts',
+  'la una': 'Hospitality & Resorts',
+  palms: 'Hospitality & Resorts',
+  voile: 'Hospitality & Resorts',
+  platinum: 'Hospitality & Resorts',
+  'korri auto': 'Automotive & Heavy Trading',
+  shacman: 'Automotive & Heavy Trading',
+  properties: 'Real Estate & Property',
+  '4235 company s.a.l': 'Real Estate & Property',
+  'insurance company': 'Insurance & Brokerage'
+};
+
 export function canAccessCompany(session, companyName) {
   if (!session) return false;
   if (isOwnerOrFullGroupSession(session)) return true;
@@ -230,6 +247,38 @@ export function canAccessCompany(session, companyName) {
   if (allowed.includes('*')) return true;
   const targetCanon = canonEntityKey(normCo);
   return allowed.some(c => canonEntityKey(c) === targetCanon);
+}
+
+export function canReviewSentinelsSession(session) {
+  if (!session) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const role = String(session.role || '').trim();
+  const pbiFull = String(session.pbi || session.pbi_access || '').trim().toLowerCase() === 'full';
+  if (/^custom$/i.test(role)) return pbiFull;
+  return /owner|admin|super|director|cfo|audit/i.test(role) || pbiFull;
+}
+
+export function canAccessSentinelScope(session, scopeCo) {
+  if (!session || !scopeCo) return false;
+  if (isOwnerOrFullGroupSession(session)) return true;
+  const normScope = String(scopeCo).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normScope) return false;
+  const rawAllowed = parseAllowedCompanies(session.companies);
+  if (rawAllowed.includes('*')) return true;
+  const allowedCanon = Array.from(new Set(rawAllowed.map(c => canonEntityKey(c)).filter(Boolean)));
+  const industriesSeen = new Set(allowedCanon.map(c => ENTITY_INDUSTRY_MAP[c]).filter(Boolean));
+  if (normScope === 'manufacturing-group') {
+    const mfgCnt = allowedCanon.filter(c => ENTITY_INDUSTRY_MAP[c] === 'Manufacturing').length;
+    return mfgCnt >= 2 || (industriesSeen.size >= 2 && allowedCanon.length >= 2 && mfgCnt >= 1);
+  }
+  if (normScope.startsWith('industry:')) {
+    const targetInd = normScope.slice(9).trim();
+    const indCnt = allowedCanon.filter(c => (ENTITY_INDUSTRY_MAP[c] || '').toLowerCase() === targetInd).length;
+    if (!indCnt) return false;
+    const singleBuInd = targetInd === 'holding & treasury' || targetInd === 'insurance & brokerage';
+    return indCnt >= 2 || (industriesSeen.size >= 2 && indCnt >= 1) || singleBuInd;
+  }
+  return canAccessCompany(session, scopeCo);
 }
 
 export function canManageUsersSeat(session) {

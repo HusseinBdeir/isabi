@@ -91,6 +91,16 @@
     inspBriefInflight: new Map(),
     inspDraftLang: '',
     inspCustomDraftByScope: new Map(),
+    activeSentinelSummaryScope: '',
+    activeSentinelRuleId: '',
+    sentinelPopoverOpen: false,
+    sentinelPopoverRuleId: '',
+    sentinelPopoverIndustry: '',
+    sentinelPopoverAnchor: null,
+    sentinelBriefCache: new Map(),
+    sentinelBriefInflight: new Map(),
+    sentinelDraftLang: '',
+    sentinelCustomDraftByScope: new Map(),
     lastSpokenText: '',
     playbackRate: (function () {
       try {
@@ -4121,7 +4131,16 @@
       'WhatsApp Follow-Up Draft': 'مسودة متابعة واتساب',
       'Copy Draft': 'نسخ المسودة',
       'Replay Review': 'إعادة الاستماع',
-      'Stop Review': 'إيقاف المراجعة'
+      'Stop Review': 'إيقاف المراجعة',
+      'Sentinel Exception Triage': 'فرز استثناءات الرقابة والتدقيق',
+      'AI Root-Cause Plan': 'خطة المعالجة الذكية',
+      'Deterministic Audit': 'تدقيق حسابي حتمي',
+      'Supervisor Escalation Note': 'مذكرة تصعيد للمشرف عبر واتساب',
+      'Replay Walkthrough': 'تشغيل الشرح الصوتي',
+      'Stop Walkthrough': 'إيقاف الشرح',
+      'Mark Checked': 'اعتماد المراجعة',
+      'Mark All Checked': 'اعتماد الكل',
+      'Undo Check': 'إلغاء الاعتماد'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4171,23 +4190,32 @@
       'WhatsApp Follow-Up Draft': 'Brouillon de suivi WhatsApp',
       'Copy Draft': 'Copier le brouillon',
       'Replay Review': 'Réécouter la revue',
-      'Stop Review': 'Arrêter la revue'
+      'Stop Review': 'Arrêter la revue',
+      'Sentinel Exception Triage': 'Triage des exceptions d audit',
+      'AI Root-Cause Plan': 'Plan d action IA',
+      'Deterministic Audit': 'Contrôle déterministe',
+      'Supervisor Escalation Note': 'Note d escalade superviseur',
+      'Replay Walkthrough': 'Écouter la revue',
+      'Stop Walkthrough': 'Arrêter la revue',
+      'Mark Checked': 'Valider le contrôle',
+      'Mark All Checked': 'Tout valider',
+      'Undo Check': 'Annuler la validation'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
@@ -4197,16 +4225,17 @@
     const isStmtBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-stmt-summary'));
     const isPbiBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-pbi-summary'));
     const isInspBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-insp-summary'));
+    const isSnBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-sn-summary'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn)
+    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn)
       ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
       : (isPeriodBtn
         ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
         : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
-    const lblCls = isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl')));
+    const lblCls = isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl'))));
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4218,6 +4247,28 @@
     syncStmtPopoverAudioButton();
     syncPbiPopoverAudioButton();
     syncInspPopoverAudioButton();
+    syncSentinelPopoverAudioButton();
+  }
+
+  function syncSentinelPopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('sentinelTriagePopover');
+    if (!pop) return;
+    const spkBtn = pop.querySelector('[data-sn-pv-speak]');
+    if (!spkBtn) return;
+    const popRule = pop.getAttribute('data-rule-id') || '__all__';
+    const isSnActive = Boolean(
+      (_chatState.activeSentinelSummaryScope && _chatState.activeSentinelRuleId === popRule) ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-sn-summary') && (_chatState.activeSpeakBtn.getAttribute('data-sn-summary') || '__all__') === popRule)
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const enLbl = isSnActive ? 'Stop Walkthrough' : 'Replay Walkthrough';
+    const ico = isSnActive ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    spkBtn.classList.toggle('is-speaking', isSnActive);
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+    }
   }
 
   function syncInspPopoverAudioButton() {
@@ -4333,6 +4384,7 @@
         !_chatState.activeStmtSummaryScope &&
         !_chatState.activePbiSummaryScope &&
         !_chatState.activeInspSummaryScope &&
+        !_chatState.activeSentinelSummaryScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4352,6 +4404,7 @@
     syncStmtPopoverAudioButton();
     syncPbiPopoverAudioButton();
     syncInspPopoverAudioButton();
+    syncSentinelPopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4364,6 +4417,8 @@
     _chatState.activeStmtSummaryScope = '';
     _chatState.activePbiSummaryScope = '';
     _chatState.activeInspSummaryScope = '';
+    _chatState.activeSentinelSummaryScope = '';
+    _chatState.activeSentinelRuleId = '';
     if (_chatState.activeSpeakBtn) {
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
@@ -5065,6 +5120,8 @@
         _chatState.activeStmtSummaryScope = '';
         _chatState.activePbiSummaryScope = '';
         _chatState.activeInspSummaryScope = '';
+        _chatState.activeSentinelSummaryScope = '';
+        _chatState.activeSentinelRuleId = '';
         _chatState.lastSpokenText = '';
         _chatState.activeSpeakCaption = '';
         _chatState.activeAudioPaused = false;
@@ -5244,6 +5301,8 @@
           _chatState.activeStmtSummaryScope = '';
           _chatState.activePbiSummaryScope = '';
           _chatState.activeInspSummaryScope = '';
+          _chatState.activeSentinelSummaryScope = '';
+          _chatState.activeSentinelRuleId = '';
           _chatState.lastSpokenText = '';
           _chatState.activeSpeakCaption = '';
           _chatState.activeAudioPaused = false;
@@ -8942,6 +9001,886 @@
     }
   }
 
+  // =========================================================================
+  // SENTINEL EXCEPTION TRIAGE BRIEF, ROOT-CAUSE PLAN & SPOKEN AUDIT WALKTHROUGH
+  // =========================================================================
+  function sanitizeSentinelBriefText(rawStr, snap) {
+    let s = String(rawStr == null ? '' : rawStr)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\*\*/g, '')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Power\s*BI|Dataverse|Power\s*Apps)\b/gi, 'ISABI')
+      .replace(/\bFIFO\b/gi, 'oldest-first')
+      .replace(/\bTTC\b/gi, 'tax-inclusive')
+      .replace(/\bRDL\b/gi, 'statement')
+      .replace(/\bZ-Read\b/gi, 'daily close')
+      .replace(/\b(?:h29|t74|t79|r33|r45|i32|i41|step\d+|7z-[a-z0-9-]+)\b/gi, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to');
+    const ruleId = snap && snap.ruleId ? String(snap.ruleId) : '';
+    if (ruleId !== 'S1') {
+      s = s.replace(/(?:(?:\b(?:GL|PCG|Account|Acct|Compte)|حساب)\s*[-#:]?\s*)?\b(?:4017|4112|4117|7063|7064|7065)\b/gi, '');
+    }
+    return s.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  function _snKpiValLoc(k, lang) {
+    if (!k) return '$0';
+    if (lang === 'ar' && k.valAr) return k.valAr;
+    if (lang === 'fr' && k.valFr) return k.valFr;
+    return k.valStr || '$0';
+  }
+
+  function buildSentinelTriageSummary(langOverride, opts = {}) {
+    const safeLang = (langOverride && ['en', 'ar', 'fr'].includes(langOverride))
+      ? langOverride
+      : resolveActiveBriefingLang();
+    const options = opts && typeof opts === 'object' ? Object.assign({}, opts) : {};
+    if (!options.ruleId) {
+      options.ruleId = _chatState.sentinelPopoverRuleId || _chatState.activeSentinelRuleId || '__all__';
+    }
+    const snapFn = (_ctx && typeof _ctx.computeSentinelTriageSnapshot === 'function')
+      ? _ctx.computeSentinelTriageSnapshot
+      : (typeof window !== 'undefined' && window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.computeSentinelTriageSnapshot === 'function'
+          ? window.MFG_ENTERPRISE.computeSentinelTriageSnapshot
+          : null);
+    const snap = snapFn ? snapFn(options) : null;
+    if (!snap) {
+      return {
+        lang: safeLang,
+        ruleId: '__all__',
+        isPortfolio: true,
+        rlsClamped: true,
+        canViewBooks: false,
+        canSignOff: false,
+        scopeKey: 'sntriage|uninitialized',
+        industry: 'Manufacturing',
+        company: 'WTC',
+        companyLabel: 'WTC',
+        title: 'Sentinel Exception Triage',
+        roleLabel: 'Audit Watchdogs',
+        statusBadge: 'Protected',
+        windowSubtitle: 'Sentinel Exception Triage',
+        targetView: '',
+        tieCheck: null,
+        kpis: [],
+        facts: { rlsClamped: true },
+        bullets: ['Sentinel triage engine is initializing.'],
+        activeBullets: ['Sentinel triage engine is initializing.'],
+        drafts: null,
+        isAiSource: false,
+        text: 'Sentinel triage engine is initializing.'
+      };
+    }
+
+    const titleLoc = safeLang === 'ar' ? snap.titleAr : (safeLang === 'fr' ? snap.titleFr : snap.titleEn);
+    const roleLoc = safeLang === 'ar' ? snap.roleLabelAr : (safeLang === 'fr' ? snap.roleLabelFr : snap.roleLabelEn);
+    const coLoc = safeLang === 'ar' ? snap.companyAr : (safeLang === 'fr' ? snap.companyFr : snap.companyEn);
+    const badgeLoc = safeLang === 'ar' ? snap.statusBadgeAr : (safeLang === 'fr' ? snap.statusBadgeFr : snap.statusBadgeEn);
+    const windowSubtitle = sanitizeSentinelBriefText(`${titleLoc} · ${badgeLoc}`, snap);
+
+    const rawDetBullets = safeLang === 'ar'
+      ? (snap.bulletsAr || snap.bulletsEn || [])
+      : (safeLang === 'fr' ? (snap.bulletsFr || snap.bulletsEn || []) : (snap.bulletsEn || []));
+    const detBullets = rawDetBullets.map(b => sanitizeSentinelBriefText(b, snap)).filter(Boolean);
+
+    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cachedAi = (!snap.rlsClamped && _chatState.sentinelBriefCache.has(cacheKey))
+      ? _chatState.sentinelBriefCache.get(cacheKey)
+      : null;
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets.map(b => sanitizeSentinelBriefText(b, snap))
+      : detBullets;
+
+    const sanitizedDrafts = (!snap.rlsClamped && snap.drafts) ? {
+      en: sanitizeSentinelBriefText(snap.drafts.en || '', snap),
+      ar: sanitizeSentinelBriefText(snap.drafts.ar || '', snap),
+      fr: sanitizeSentinelBriefText(snap.drafts.fr || '', snap)
+    } : null;
+
+    const spokenLead = safeLang === 'ar'
+      ? `جولة تدقيق صوتية على ${titleLoc} لدى ${coLoc}.`
+      : (safeLang === 'fr'
+          ? `Revue d audit vocale pour ${titleLoc} sur ${coLoc}.`
+          : `Audit exception walkthrough for ${titleLoc} at ${coLoc}.`);
+    const text = cleanOut([spokenLead, ...activeBullets].join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+
+    return {
+      lang: safeLang,
+      ruleId: snap.ruleId,
+      isPortfolio: Boolean(snap.isPortfolio),
+      rlsClamped: Boolean(snap.rlsClamped),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canSignOff: Boolean(snap.canSignOff),
+      reviewState: snap.reviewState,
+      isReviewed: Boolean(snap.isReviewed),
+      severity: snap.severity,
+      exposureUsd: snap.exposureUsd || 0,
+      flaggedCount: snap.flaggedCount || 0,
+      openFlags: snap.openFlags || 0,
+      reviewedCount: snap.reviewedCount || 0,
+      passingCount: snap.passingCount || 0,
+      totalRules: snap.totalRules || 0,
+      scopeKey: snap.scopeKey,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      company: snap.company,
+      companyLabel: coLoc,
+      title: sanitizeSentinelBriefText(titleLoc, snap),
+      roleLabel: sanitizeSentinelBriefText(roleLoc, snap),
+      statusBadge: sanitizeSentinelBriefText(badgeLoc, snap),
+      topOffender: safeLang === 'ar' ? snap.topOffenderAr : (safeLang === 'fr' ? snap.topOffenderFr : snap.topOffenderEn),
+      windowSubtitle,
+      targetView: snap.targetView || '',
+      scrollPanel: snap.scrollPanel || '',
+      tieCheck: snap.canViewBooks ? snap.tieCheck : null,
+      kpis: Array.isArray(snap.kpis) ? snap.kpis : [],
+      facts: snap.facts || {},
+      bullets: detBullets,
+      activeBullets,
+      drafts: sanitizedDrafts,
+      isAiSource: Boolean(cachedAi && cachedAi.source === 'gemini'),
+      text
+    };
+  }
+
+  function formatSentinelTriagePlainText(sum, bulletsOverride) {
+    const s = sum || buildSentinelTriageSummary();
+    const bullets = Array.isArray(bulletsOverride) && bulletsOverride.length ? bulletsOverride : (s.activeBullets || s.bullets || []);
+    const hdr = s.lang === 'ar'
+      ? `فرز استثناءات الرقابة والتدقيق - ${s.title}`
+      : (s.lang === 'fr'
+          ? `Triage des exceptions d audit - ${s.title}`
+          : `Sentinel Exception Triage - ${s.title}`);
+    const scopeLine = `${s.companyLabel} | ${s.roleLabel} | ${s.statusBadge}`;
+    const kpiLine = (s.kpis || []).map(k => {
+      const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
+      return `${lbl}: ${_snKpiValLoc(k, s.lang)}`;
+    }).join(' | ');
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeSentinelBriefText(b, s)}`).join('\n');
+    return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
+  }
+
+  async function requestSentinelTriageCommentary(detSum, opts = {}) {
+    const sum = detSum || buildSentinelTriageSummary(opts.lang, opts);
+    if (sum.rlsClamped) {
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-rls',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    }
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    if (!opts.force && _chatState.sentinelBriefCache.has(cacheKey)) {
+      return _chatState.sentinelBriefCache.get(cacheKey);
+    }
+    if (!opts.force && _chatState.sentinelBriefInflight.has(cacheKey)) {
+      return _chatState.sentinelBriefInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese executive audit phrasing; zero English words except company or unit codes)'
+      : (sum.lang === 'fr' ? 'French' : 'English');
+
+    const groundedPayload = {
+      industry: sum.industry,
+      company: sum.companyLabel,
+      ruleId: sum.ruleId,
+      isPortfolioQueue: sum.isPortfolio,
+      ruleTitle: sum.title,
+      auditStatus: sum.statusBadge,
+      currency: 'USD',
+      tieStatus: (sum.canViewBooks && sum.tieCheck) ? sum.tieCheck : undefined,
+      kpis: (sum.kpis || []).map(k => ({ label: k.labelEn, value: k.valStr, detail: k.subEn })),
+      auditFacts: sum.facts
+    };
+
+    const sysPrompt = [
+      'You are a Chief Internal Auditor and Operational Controller inside ISABI Command Center.',
+      `Write all bullet text strictly in ${langName}.`,
+      'Return ONLY valid JSON with the exact English property name "bullets" containing EXACTLY 3 separate string items: {"bullets":["sentence 1","sentence 2","sentence 3"]}. Never combine them into a single string, and do NOT rename the JSON key "bullets".',
+      'Rules:',
+      '1. Every dollar figure, percentage, counterparty/unit name, and count MUST come verbatim from the supplied JSON payload. Never invent or recompute numbers.',
+      '2. Bullet 1 quantifies the flagged exception exposure, rule status, and count of affected records.',
+      '3. Bullet 2 diagnoses the operational root cause around the #1 repeat offender or primary concentration.',
+      sum.canViewBooks
+        ? '4. Bullet 3 prescribes concrete pre-sign-off remediation steps before clicking Mark Checked and confirms the $0.00 general ledger trial balance posture.'
+        : '4. Bullet 3 prescribes concrete operational remediation steps before supervisor sign-off (never mention cash till, bank balances, salaries, or general ledger accounts).',
+      '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, FIFO, Z-Read, Power BI, Dataverse, GL 4-digit codes, or internal assistant names.'
+    ].join('\n');
+    const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate audit root-cause & pre-sign-off remediation bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
+
+    const runPromise = (async () => {
+      let rawReply = '';
+      let debugNote = '';
+      let usedModel = 'gemini-3.5-flash-lite';
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+      if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          const locCtrl = new AbortController();
+          const locTimer = setTimeout(() => locCtrl.abort(), 8000);
+          try {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents
+              }),
+              signal: locCtrl.signal
+            });
+            if (rLoc.ok) {
+              const jLoc = await rLoc.json();
+              if (jLoc && jLoc.ok && jLoc.rawReply) {
+                rawReply = String(jLoc.rawReply);
+                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+              } else if (jLoc) {
+                debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
+              }
+            } else {
+              debugNote = `loc_http_${rLoc.status}`;
+            }
+          } catch (eLoc) {
+            debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          } finally {
+            clearTimeout(locTimer);
+          }
+        }
+      }
+
+      if (rawReply) {
+        try {
+          const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (_) {
+            const merged = [];
+            const objRe = /\{[^{}]*"bullets"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+            let m;
+            while ((m = objRe.exec(cleaned)) !== null) {
+              try {
+                const sub = JSON.parse(m[0]);
+                if (sub && Array.isArray(sub.bullets)) merged.push(...sub.bullets);
+              } catch (_2) {}
+            }
+            if (merged.length) {
+              parsed = { bullets: merged };
+            } else {
+              const fb = cleaned.indexOf('{');
+              let depth = 0, inStr = false, escCh = false, endIdx = -1;
+              for (let i = fb; fb >= 0 && i < cleaned.length; i++) {
+                const ch = cleaned[i];
+                if (escCh) { escCh = false; continue; }
+                if (ch === '\\') { escCh = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === '{') depth++;
+                  else if (ch === '}' && --depth === 0) { endIdx = i; break; }
+                }
+              }
+              if (fb >= 0 && endIdx > fb) parsed = JSON.parse(cleaned.slice(fb, endIdx + 1));
+            }
+          }
+          const rawBulletArr = Array.isArray(parsed && parsed.bullets)
+            ? parsed.bullets
+            : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
+          const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          let candBullets = Array.isArray(rawBulletArr)
+            ? rawBulletArr.map(b => sanitizeSentinelBriefText(extractStr(b), sum)).filter(b => b.length >= 12)
+            : [];
+          if (candBullets.length === 1 && candBullets[0].length >= 70) {
+            const splitParts = candBullets[0]
+              .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
+              .map(s => sanitizeSentinelBriefText(s, sum))
+              .filter(s => s.length >= 12);
+            if (splitParts.length >= 2) candBullets = splitParts;
+          }
+          candBullets = candBullets.slice(0, 3);
+          if (candBullets.length >= 1 && candBullets.length < 3 && Array.isArray(sum.bullets)) {
+            for (let bi = candBullets.length; bi < 3 && bi < sum.bullets.length; bi++) {
+              candBullets.push(sum.bullets[bi]);
+            }
+          }
+          if (candBullets.length >= 2) {
+            const resObj = {
+              ok: true,
+              source: 'gemini',
+              model: usedModel,
+              lang: sum.lang,
+              scopeKey: sum.scopeKey,
+              bullets: candBullets
+            };
+            if (_chatState.sentinelBriefCache.size >= 48) {
+              const oldest = _chatState.sentinelBriefCache.keys().next().value;
+              _chatState.sentinelBriefCache.delete(oldest);
+            }
+            _chatState.sentinelBriefCache.set(cacheKey, resObj);
+            updateOpenSentinelPopoverWithAi(resObj);
+            return resObj;
+          }
+          debugNote = `short_bullets:${candBullets.length}:${rawReply.slice(0, 140)}`;
+        } catch (eParse) {
+          debugNote = `parse_err:${eParse && eParse.message ? eParse.message : ''}:${rawReply.slice(0, 140)}`;
+        }
+      }
+
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        note: debugNote,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    })().finally(() => {
+      _chatState.sentinelBriefInflight.delete(cacheKey);
+    });
+
+    _chatState.sentinelBriefInflight.set(cacheKey, runPromise);
+    return runPromise;
+  }
+
+  function updateOpenSentinelPopoverWithAi(aiRes) {
+    if (!aiRes || aiRes.source !== 'gemini' || typeof document === 'undefined') return;
+    const pop = document.getElementById('sentinelTriagePopover');
+    if (!pop || pop.getAttribute('data-scope-key') !== aiRes.scopeKey || pop.getAttribute('data-lang') !== aiRes.lang) return;
+    const listEl = pop.querySelector('.ceo-pv-bullets');
+    if (listEl && Array.isArray(aiRes.bullets) && aiRes.bullets.length >= 2) {
+      listEl.innerHTML = aiRes.bullets.map(b => `<li>${esc(b)}</li>`).join('');
+    }
+    const badgeEl = pop.querySelector('.ceo-pv-badge');
+    if (badgeEl) {
+      badgeEl.classList.add('is-ai');
+      badgeEl.textContent = 'AI Root-Cause Plan';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
+    }
+  }
+
+  let _snPopOutsideHandlerBound = false;
+  function ensureSentinelPopoverGlobalDismiss() {
+    if (_snPopOutsideHandlerBound || typeof document === 'undefined') return;
+    _snPopOutsideHandlerBound = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.sentinelPopoverOpen) return;
+      const pop = document.getElementById('sentinelTriagePopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (
+        e.target.closest('[data-sn-explain]') ||
+        e.target.closest('[data-sn-summary]') ||
+        e.target.closest('#langSwitch')
+      )) return;
+      closeSentinelTriagePopover();
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.sentinelPopoverOpen) positionSentinelTriagePopover();
+      });
+    }
+  }
+
+  function _findSentinelDomBtn(attrName, ruleId) {
+    if (typeof document === 'undefined') return null;
+    const rid = String(ruleId || '__all__');
+    const all = document.querySelectorAll(`[${attrName}]`);
+    for (let i = 0; i < all.length; i++) {
+      if ((all[i].getAttribute(attrName) || '') === rid) return all[i];
+    }
+    return null;
+  }
+
+  function positionSentinelTriagePopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('sentinelTriagePopover');
+    if (!pop) return;
+    const rid = _chatState.sentinelPopoverRuleId || '__all__';
+    const anchor = (_chatState.sentinelPopoverAnchor && _chatState.sentinelPopoverAnchor.isConnected ? _chatState.sentinelPopoverAnchor : null)
+      || _findSentinelDomBtn('data-sn-explain', rid)
+      || _findSentinelDomBtn('data-sn-summary', rid)
+      || document.getElementById('snExplainTriageBtn')
+      || document.getElementById('snListenTriageBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 104px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = 'calc(100dvh - 28px)';
+    pop.style.overflowY = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(504, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 380, vh - 28);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? (rect.right - popW) : (rect.right - popW > 12 ? rect.right - popW : rect.left);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 20) {
+      top = rect.top - popH - 8;
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  function openSentinelTriagePopover(anchorEl, prebuiltSummary) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureSentinelPopoverGlobalDismiss();
+    const sum = prebuiltSummary || buildSentinelTriageSummary();
+    const activeBullets = sum.activeBullets || sum.bullets || [];
+    const isAiSource = Boolean(sum.isAiSource);
+
+    let pop = document.getElementById('sentinelTriagePopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'sentinelTriagePopover';
+      pop.className = 'ceo-period-popover insp-brief-popover sn-triage-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Sentinel Exception Triage');
+      document.body.appendChild(pop);
+    }
+    _chatState.sentinelPopoverOpen = true;
+    _chatState.sentinelPopoverRuleId = sum.ruleId || '__all__';
+    _chatState.sentinelPopoverIndustry = sum.industry || '';
+    _chatState.sentinelPopoverAnchor = (anchorEl && anchorEl.isConnected ? anchorEl : null)
+      || _findSentinelDomBtn('data-sn-explain', sum.ruleId)
+      || document.getElementById('snExplainTriageBtn');
+
+    document.querySelectorAll('[data-sn-explain]').forEach(b => {
+      const match = (b.getAttribute('data-sn-explain') || '') === sum.ruleId;
+      b.classList.toggle('is-open', match);
+      b.classList.toggle('active', match);
+      b.setAttribute('aria-expanded', match ? 'true' : 'false');
+    });
+
+    const prevPopLang = pop.getAttribute('data-lang') || '';
+    if (!prevPopLang || prevPopLang !== sum.lang) {
+      _chatState.sentinelDraftLang = sum.lang;
+    }
+    pop.setAttribute('data-scope-key', sum.scopeKey);
+    pop.setAttribute('data-rule-id', sum.ruleId);
+    pop.setAttribute('data-industry', sum.industry);
+    pop.setAttribute('data-lang', sum.lang);
+    pop.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(
+      (_chatState.activeSentinelSummaryScope && _chatState.activeSentinelRuleId === sum.ruleId) ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-sn-summary') && (_chatState.activeSpeakBtn.getAttribute('data-sn-summary') || '__all__') === sum.ruleId)
+    );
+    const speakBtnLbl = isSpeakingNow ? 'Stop Walkthrough' : 'Replay Walkthrough';
+    const speakBtnIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const sparkIco = icons ? icons.svg('sparkles') : AI_SVGS.audio;
+    const hubIco = icons ? icons.svg('overview') : '';
+    const copyIco = icons ? icons.svg('copy') : '';
+    const shareIco = icons ? icons.svg('send_msg') : '';
+    const checkIco = icons ? icons.svg('check_circle') : '';
+
+    const activeDraftLang = ['en', 'ar', 'fr'].includes(_chatState.sentinelDraftLang) ? _chatState.sentinelDraftLang : sum.lang;
+    _chatState.sentinelDraftLang = activeDraftLang;
+    const hasDrafts = Boolean(!sum.rlsClamped && sum.drafts && (sum.drafts.en || sum.drafts.ar || sum.drafts.fr));
+    const draftCacheKey = `${sum.scopeKey}|${activeDraftLang}`;
+    const activeDraftText = hasDrafts
+      ? (_chatState.sentinelCustomDraftByScope.has(draftCacheKey)
+          ? _chatState.sentinelCustomDraftByScope.get(draftCacheKey)
+          : (sum.drafts[activeDraftLang] || sum.drafts[sum.lang] || sum.drafts.en || ''))
+      : '';
+
+    const plainBriefText = formatSentinelTriagePlainText(sum, activeBullets);
+    const waPayload = hasDrafts && activeDraftText ? activeDraftText : plainBriefText;
+    const waHref = `https://wa.me/?text=${encodeURIComponent(waPayload)}`;
+    const canOpenHub = Boolean(!sum.rlsClamped && sum.targetView && (!_ctx || typeof _ctx.canViewView !== 'function' || _ctx.canViewView(sum.targetView)));
+    const showCheckSingle = Boolean(!sum.rlsClamped && sum.canSignOff && !sum.isPortfolio && sum.severity !== 'ok');
+    const showUncheckSingle = Boolean(!sum.rlsClamped && sum.canSignOff && !sum.isPortfolio && sum.isReviewed);
+    const showCheckAll = Boolean(!sum.rlsClamped && sum.canSignOff && sum.isPortfolio && sum.openFlags > 0);
+
+    pop.innerHTML = `
+      <div class="ceo-pv-hdr">
+        <div class="ceo-pv-title-wrap">
+          <div class="ceo-pv-title-row">
+            <span class="ceo-pv-ico">${sparkIco}</span>
+            <strong class="ceo-pv-title">Sentinel Exception Triage</strong>
+            <span class="ceo-pv-badge${isAiSource ? ' is-ai' : ''}">${isAiSource ? 'AI Root-Cause Plan' : 'Deterministic Audit'}</span>
+          </div>
+          <div class="ceo-pv-sub" data-no-i18n="1">${esc(sum.windowSubtitle)}</div>
+        </div>
+        <button type="button" class="ceo-pv-close" data-sn-pv-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ceo-pv-kpis">
+        ${(sum.kpis || []).map(k => {
+          const lbl = sum.lang === 'ar' ? k.labelAr : (sum.lang === 'fr' ? k.labelFr : k.labelEn);
+          const sub = sum.lang === 'ar' ? k.subAr : (sum.lang === 'fr' ? k.subFr : k.subEn);
+          const valDisp = _snKpiValLoc(k, sum.lang);
+          const toneCls = (k.tone === 'pos' || k.tone === 'ok') ? 'good' : ((k.tone === 'neg' || k.tone === 'warn') ? 'warn' : '');
+          return `<div class="ceo-pv-kpi" data-no-i18n="1">
+            <span class="ceo-pv-k">${esc(lbl)}</span>
+            <strong class="ceo-pv-v num">${esc(valDisp)}</strong>
+            <small class="ceo-pv-d ${toneCls}">${esc(sub)}</small>
+          </div>`;
+        }).join('')}
+      </div>
+      <ul class="ceo-pv-bullets" data-no-i18n="1">
+        ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+      </ul>
+      ${hasDrafts ? `
+        <div class="insp-pv-draft-wrap sn-pv-draft-wrap">
+          <div class="insp-pv-draft-hdr">
+            <span class="insp-pv-draft-lbl">Supervisor Escalation Note</span>
+            <div class="insp-pv-draft-langs" data-no-i18n="1">
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'en' ? ' active' : ''}" data-sn-draft-lang="en">EN</button>
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'ar' ? ' active' : ''}" data-sn-draft-lang="ar">عربي</button>
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'fr' ? ' active' : ''}" data-sn-draft-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea class="insp-pv-draft-ta sn-pv-draft-ta" id="snWhatsappDraftInput" data-no-i18n="1" rows="3" dir="${activeDraftLang === 'ar' ? 'rtl' : 'ltr'}">${esc(activeDraftText)}</textarea>
+        </div>
+      ` : ''}
+      <div class="ceo-pv-foot insp-pv-foot sn-pv-foot">
+        <button type="button" class="ceo-pv-btn${isSpeakingNow ? ' is-speaking' : ''}" data-sn-pv-speak="1">${speakBtnIco}<span>${esc(speakBtnLbl)}</span></button>
+        ${showCheckSingle ? `<button type="button" class="ceo-pv-btn sn-pv-signoff-btn" data-sn-pv-check="${esc(sum.ruleId)}">${checkIco}<span>Mark Checked</span></button>` : ''}
+        ${showCheckAll ? `<button type="button" class="ceo-pv-btn sn-pv-signoff-btn" data-sn-pv-check="__all__">${checkIco}<span>Mark All Checked</span></button>` : ''}
+        ${showUncheckSingle ? `<button type="button" class="ceo-pv-btn is-secondary sn-pv-undo-btn" data-sn-pv-uncheck="${esc(sum.ruleId)}"><span>Undo Check</span></button>` : ''}
+        ${hasDrafts ? `<button type="button" class="ceo-pv-btn is-secondary" data-sn-pv-copy-draft="1">${copyIco}<span>Copy Note</span></button>` : ''}
+        ${hasDrafts ? `<a class="ceo-pv-btn is-secondary insp-pv-wa-link" data-sn-pv-wa="1" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${shareIco}<span>WhatsApp</span></a>` : ''}
+        <button type="button" class="ceo-pv-btn is-secondary" data-sn-pv-copy="1">${copyIco}<span>Copy Brief</span></button>
+        ${canOpenHub ? `<button type="button" class="ceo-pv-btn is-secondary" data-sn-pv-hub="1">${hubIco}<span>Open Hub</span></button>` : ''}
+        <button type="button" class="ceo-pv-btn is-secondary" data-sn-pv-ask="1"><span>Ask Follow-Up</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-sn-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeSentinelTriagePopover();
+      });
+    }
+
+    const draftTa = pop.querySelector('#snWhatsappDraftInput');
+    const waLink = pop.querySelector('[data-sn-pv-wa]');
+    if (draftTa) {
+      draftTa.addEventListener('input', () => {
+        const val = sanitizeSentinelBriefText(draftTa.value, sum);
+        if (_chatState.sentinelCustomDraftByScope.size >= 24) {
+          const oldK = _chatState.sentinelCustomDraftByScope.keys().next().value;
+          _chatState.sentinelCustomDraftByScope.delete(oldK);
+        }
+        _chatState.sentinelCustomDraftByScope.set(`${sum.scopeKey}|${_chatState.sentinelDraftLang || sum.lang}`, val);
+        if (waLink) waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(val)}`);
+      });
+    }
+
+    pop.querySelectorAll('[data-sn-draft-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextDl = lBtn.getAttribute('data-sn-draft-lang') || 'en';
+        _chatState.sentinelDraftLang = nextDl;
+        pop.querySelectorAll('[data-sn-draft-lang]').forEach(x => x.classList.toggle('active', x === lBtn));
+        if (draftTa && sum.drafts) {
+          const ck = `${sum.scopeKey}|${nextDl}`;
+          const nextTxt = _chatState.sentinelCustomDraftByScope.has(ck)
+            ? _chatState.sentinelCustomDraftByScope.get(ck)
+            : (sum.drafts[nextDl] || sum.drafts.en || '');
+          draftTa.dir = nextDl === 'ar' ? 'rtl' : 'ltr';
+          draftTa.value = nextTxt;
+          if (waLink) waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(nextTxt)}`);
+        }
+      });
+    });
+
+    const pvSpkBtn = pop.querySelector('[data-sn-pv-speak]');
+    if (pvSpkBtn) {
+      pvSpkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const mainBtn = _findSentinelDomBtn('data-sn-summary', sum.ruleId) || document.getElementById('snListenTriageBtn');
+        speakSentinelTriageSummary(mainBtn || null, sum.lang, { ruleId: sum.ruleId, skipPopoverOpen: true });
+        syncSentinelPopoverAudioButton();
+      });
+    }
+
+    const pvCheckBtn = pop.querySelector('[data-sn-pv-check]');
+    if (pvCheckBtn) {
+      pvCheckBtn.addEventListener('click', e => {
+        e.preventDefault();
+        if (!_ctx || typeof _ctx.canReviewSentinels !== 'function' || !_ctx.canReviewSentinels()) return;
+        const rid = pvCheckBtn.getAttribute('data-sn-pv-check') || sum.ruleId;
+        const draftCk = `${sum.scopeKey}|${_chatState.sentinelDraftLang || sum.lang}`;
+        const hasCustomNote = Boolean(draftTa && _chatState.sentinelCustomDraftByScope && _chatState.sentinelCustomDraftByScope.has(draftCk));
+        const noteVal = hasCustomNote ? sanitizeSentinelBriefText(draftTa.value, sum) : '';
+        let okSign = false;
+        if (rid === '__all__' && typeof _ctx.markAllFlaggedSentinelsReviewed === 'function') {
+          okSign = _ctx.markAllFlaggedSentinelsReviewed({ note: noteVal }) > 0;
+        } else if (typeof _ctx.markSentinelReviewed === 'function') {
+          okSign = _ctx.markSentinelReviewed(rid, { note: noteVal });
+        }
+        if (okSign && typeof _ctx.renderApp === 'function') {
+          const ws = document.getElementById('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          _ctx.renderApp();
+          if (ws) ws.scrollTop = y;
+        }
+      });
+    }
+
+    const pvUncheckBtn = pop.querySelector('[data-sn-pv-uncheck]');
+    if (pvUncheckBtn) {
+      pvUncheckBtn.addEventListener('click', e => {
+        e.preventDefault();
+        if (!_ctx || typeof _ctx.canReviewSentinels !== 'function' || !_ctx.canReviewSentinels()) return;
+        const rid = pvUncheckBtn.getAttribute('data-sn-pv-uncheck') || sum.ruleId;
+        if (typeof _ctx.unmarkSentinelReviewed === 'function' && _ctx.unmarkSentinelReviewed(rid)) {
+          if (typeof _ctx.renderApp === 'function') {
+            const ws = document.getElementById('workspace');
+            const y = ws ? ws.scrollTop : 0;
+            _ctx.renderApp();
+            if (ws) ws.scrollTop = y;
+          }
+        }
+      });
+    }
+
+    const writeClipHelper = async txt => {
+      let copied = false;
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(txt);
+          copied = true;
+        } catch (_) {}
+      }
+      if (!copied && typeof document !== 'undefined') {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (_) {}
+      }
+    };
+
+    const pvCopyDraftBtn = pop.querySelector('[data-sn-pv-copy-draft]');
+    if (pvCopyDraftBtn) {
+      pvCopyDraftBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const txt = draftTa ? sanitizeSentinelBriefText(draftTa.value, sum) : activeDraftText;
+        if (typeof window !== 'undefined') window.__LAST_COPIED_SN_DRAFT = txt;
+        await writeClipHelper(txt);
+        pvCopyDraftBtn.classList.add('is-copied');
+        pvCopyDraftBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyDraftBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyDraftBtn.isConnected) return;
+          pvCopyDraftBtn.classList.remove('is-copied');
+          pvCopyDraftBtn.innerHTML = `${copyIco}<span>Copy Note</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyDraftBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+
+    const pvCopyBtn = pop.querySelector('[data-sn-pv-copy]');
+    if (pvCopyBtn) {
+      pvCopyBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const latestSum = buildSentinelTriageSummary(sum.lang, { ruleId: sum.ruleId });
+        const txt = formatSentinelTriagePlainText(latestSum, latestSum.activeBullets);
+        if (typeof window !== 'undefined') window.__LAST_COPIED_SN_BRIEF = txt;
+        await writeClipHelper(txt);
+        pvCopyBtn.classList.add('is-copied');
+        pvCopyBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyBtn.isConnected) return;
+          pvCopyBtn.classList.remove('is-copied');
+          pvCopyBtn.innerHTML = `${copyIco}<span>Copy Brief</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+
+    const pvHubBtn = pop.querySelector('[data-sn-pv-hub]');
+    if (pvHubBtn) {
+      pvHubBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const destView = sum.targetView || '';
+        closeSentinelTriagePopover();
+        if (destView && _ctx && typeof _ctx.setView === 'function' && (typeof _ctx.canViewView !== 'function' || _ctx.canViewView(destView))) {
+          if (sum.ruleId === 'S2' && destView === 'expenses') {
+            _ctx.setView(destView, { chipFilter: 'pending_price' });
+            return;
+          }
+          _ctx.setView(destView);
+        }
+      });
+    }
+
+    const pvAskBtn = pop.querySelector('[data-sn-pv-ask]');
+    if (pvAskBtn) {
+      pvAskBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeSentinelTriagePopover();
+        openDrawer();
+        const qPrompt = sum.lang === 'ar'
+          ? `اعطني خطة معالجة تفصيلية وأسباب استثناءات التدقيق في ${sum.title} لدى ${sum.companyLabel}`
+          : (sum.lang === 'fr'
+              ? `Donnez-moi le plan d action détaillé et les causes racines pour ${sum.title} sur ${sum.companyLabel}`
+              : `Give me a root-cause remediation plan and itemized exception breakdown for ${sum.title} at ${sum.companyLabel}`);
+        submitQuestion(qPrompt);
+      });
+    }
+
+    positionSentinelTriagePopover();
+    const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
+    if (!isAiSource && !sum.rlsClamped && !skipBgAi) {
+      requestSentinelTriageCommentary(sum).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closeSentinelTriagePopover() {
+    _chatState.sentinelPopoverOpen = false;
+    _chatState.sentinelPopoverRuleId = '';
+    _chatState.sentinelPopoverIndustry = '';
+    _chatState.sentinelPopoverAnchor = null;
+    _chatState.sentinelDraftLang = '';
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('sentinelTriagePopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    document.querySelectorAll('[data-sn-explain]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleSentinelTriagePopover(anchorEl, ruleId) {
+    const rid = String(ruleId || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-sn-explain')) || '__all__').trim() || '__all__';
+    if (_chatState.sentinelPopoverOpen && _chatState.sentinelPopoverRuleId === rid) {
+      closeSentinelTriagePopover();
+      return { open: false };
+    }
+    _chatState.sentinelDraftLang = resolveActiveBriefingLang();
+    const sum = buildSentinelTriageSummary(null, { ruleId: rid });
+    openSentinelTriagePopover(anchorEl, sum);
+    return { open: true, summary: sum };
+  }
+
+  function speakSentinelTriageSummary(btnEl, langOverride, opts = {}) {
+    const rid = String((opts && opts.ruleId) || (btnEl && btnEl.getAttribute && btnEl.getAttribute('data-sn-summary')) || _chatState.sentinelPopoverRuleId || '__all__').trim() || '__all__';
+    const targetBtn = btnEl || _findSentinelDomBtn('data-sn-summary', rid) || (typeof document !== 'undefined' ? document.getElementById('snListenTriageBtn') : null);
+    if (targetBtn && _chatState.activeSpeakBtn === targetBtn) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    if (!targetBtn && _chatState.activeSentinelSummaryScope && _chatState.activeSentinelRuleId === rid) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const sum = buildSentinelTriageSummary(langOverride, Object.assign({}, opts, { ruleId: rid }));
+    const ok = speakBotReply(sum.text, sum.lang, targetBtn || null);
+    if (ok) {
+      _chatState.activeSentinelSummaryScope = sum.scopeKey;
+      _chatState.activeSentinelRuleId = sum.ruleId;
+      syncSentinelPopoverAudioButton();
+    }
+    if (!opts.skipPopoverOpen) {
+      const expAnchor = _findSentinelDomBtn('data-sn-explain', sum.ruleId)
+        || (typeof document !== 'undefined' ? document.getElementById('snExplainTriageBtn') : null)
+        || targetBtn;
+      openSentinelTriagePopover(expAnchor, sum);
+    }
+    return Object.assign({ ok }, sum);
+  }
+
+  function rebindSentinelSummaryButtons(container) {
+    ensureDailyBriefingI18nRegistered();
+    if (_chatState.activeSentinelSummaryScope) {
+      const actRid = _chatState.activeSentinelRuleId || '__all__';
+      const curSum = buildSentinelTriageSummary(null, { ruleId: actRid });
+      if (_chatState.activeSentinelSummaryScope !== curSum.scopeKey) {
+        stopActivePlayback();
+      } else {
+        const listenBtnEl = _findSentinelDomBtn('data-sn-summary', actRid) || (container && container.querySelector && container.querySelector('#snListenTriageBtn'));
+        if (listenBtnEl) {
+          _chatState.activeSpeakBtn = listenBtnEl;
+          applyBriefingButtonDomState(listenBtnEl, _chatState.activeSpeakCtrl ? 'loading' : 'speaking');
+        }
+      }
+    }
+    if (_chatState.sentinelPopoverOpen) {
+      const popRid = _chatState.sentinelPopoverRuleId || '__all__';
+      const curSum = buildSentinelTriageSummary(null, { ruleId: popRid });
+      if (_chatState.sentinelPopoverIndustry && curSum.industry !== _chatState.sentinelPopoverIndustry) {
+        closeSentinelTriagePopover();
+        return;
+      }
+      if (popRid !== '__all__' && curSum.isPortfolio) {
+        closeSentinelTriagePopover();
+        return;
+      }
+      if (popRid !== '__all__') {
+        const ruleAnchor = _findSentinelDomBtn('data-sn-explain', curSum.ruleId);
+        if (!ruleAnchor) {
+          closeSentinelTriagePopover();
+          return;
+        }
+        _chatState.sentinelPopoverAnchor = ruleAnchor;
+      } else {
+        _chatState.sentinelPopoverAnchor = (typeof document !== 'undefined' ? document.getElementById('snExplainTriageBtn') : null);
+      }
+      if (!['en', 'ar', 'fr'].includes(_chatState.sentinelDraftLang)) {
+        _chatState.sentinelDraftLang = curSum.lang;
+      }
+      openSentinelTriagePopover(_chatState.sentinelPopoverAnchor, curSum);
+    }
+  }
+
+  function stopSentinelSummaryIfActive() {
+    if (_chatState.activeSentinelSummaryScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-sn-summary'))) {
+      stopActivePlayback();
+    }
+    if (_chatState.sentinelPopoverOpen) {
+      closeSentinelTriagePopover();
+    }
+  }
+
   function maybeAutoSpeakTurn(turnObj) {
     if (!turnObj) return;
     const shouldSpeak = Boolean(_chatState.autoVoiceReadback || _chatState.liveVoiceMode || turnObj.fromVoice);
@@ -10328,11 +11267,14 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn'].forEach(id => {
+          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
             }
+          });
+          document.querySelectorAll('.sn-ai-act-btn').forEach(b => {
+            try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
         }
         if (_chatState.periodPopoverOpen) {
@@ -10347,6 +11289,10 @@
         if (_chatState.inspPopoverOpen) {
           _chatState.inspDraftLang = curLang;
           openInspectorBriefPopover(_chatState.inspPopoverAnchor, buildInspectorSummary(curLang));
+        }
+        _chatState.sentinelDraftLang = curLang;
+        if (_chatState.sentinelPopoverOpen) {
+          openSentinelTriagePopover(_chatState.sentinelPopoverAnchor, buildSentinelTriageSummary(curLang, { ruleId: _chatState.sentinelPopoverRuleId || '__all__' }));
         }
         if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
           try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
@@ -10428,6 +11374,20 @@
     formatInspectorBrief: formatInspectorBriefPlainText,
     rebindInspectorSummaryButtons,
     stopInspectorSummaryIfActive,
+    buildSentinelTriageSummary,
+    sanitizeSentinelBriefText,
+    speakSentinelTriageSummary,
+    requestSentinelTriage: requestSentinelTriageCommentary,
+    requestSentinelTriageCommentary,
+    openSentinelTriage: openSentinelTriagePopover,
+    openSentinelTriagePopover,
+    toggleSentinelTriage: toggleSentinelTriagePopover,
+    toggleSentinelTriagePopover,
+    closeSentinelTriage: closeSentinelTriagePopover,
+    closeSentinelTriagePopover,
+    formatSentinelTriage: formatSentinelTriagePlainText,
+    rebindSentinelSummaryButtons,
+    stopSentinelSummaryIfActive,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
     rebindBriefingButton,
@@ -10449,6 +11409,10 @@
       pbiPopoverOpen: Boolean(_chatState.pbiPopoverOpen),
       inspSummaryScope: _chatState.activeInspSummaryScope || '',
       inspPopoverOpen: Boolean(_chatState.inspPopoverOpen),
+      sentinelSummaryScope: _chatState.activeSentinelSummaryScope || '',
+      sentinelRuleId: _chatState.activeSentinelRuleId || '',
+      sentinelPopoverOpen: Boolean(_chatState.sentinelPopoverOpen),
+      sentinelPopoverRuleId: _chatState.sentinelPopoverRuleId || '',
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0

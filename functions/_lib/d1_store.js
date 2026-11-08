@@ -7,7 +7,9 @@
 import {
   buildSessionCookie,
   canAccessCompany,
+  canAccessSentinelScope,
   canManageUsersSeat,
+  canReviewSentinelsSession,
   checkSlidingRateLimit,
   clearSessionCookie,
   constantTimeEqual,
@@ -92,6 +94,24 @@ export function canonicalizeCompanyName(raw) {
   if (!s) return '';
   const k = s.toLowerCase().replace(/\s+/g, ' ');
   return CANON_COMPANY_MAP[k] || s;
+}
+
+const CANON_INDUSTRY_SCOPE_MAP = {
+  'industry:manufacturing': 'industry:Manufacturing',
+  'industry:holding & treasury': 'industry:Holding & Treasury',
+  'industry:hospitality & resorts': 'industry:Hospitality & Resorts',
+  'industry:automotive & heavy trading': 'industry:Automotive & Heavy Trading',
+  'industry:real estate & property': 'industry:Real Estate & Property',
+  'industry:insurance & brokerage': 'industry:Insurance & Brokerage'
+};
+
+function normalizeSentinelScopeCompany(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const k = s.toLowerCase().replace(/\s+/g, ' ');
+  if (k === 'manufacturing-group') return 'manufacturing-group';
+  if (k.startsWith('industry:')) return CANON_INDUSTRY_SCOPE_MAP[k] || s;
+  return canonicalizeCompanyName(s);
 }
 
 function isKnownCanonicalCompany(raw) {
@@ -212,7 +232,7 @@ function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
     delete d.pin_redacted;
   }
   // Never expose raw 128-d biometric vectors over HTTP; keep verification strictly server-side
-  d.face_redacted = true;
+  d.face_redacted = Boolean(d.face_enrolled);
   delete d.face_samples;
   if (redactBiometrics) {
     delete d.face_thumbs;
@@ -221,6 +241,130 @@ function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
     d.face_thumbs = validThumbs;
   }
   return d;
+}
+
+function normalizeServerAuthMode(mode, fallback = 'either') {
+  const m = String(mode || '').trim().toLowerCase();
+  if (m === 'either' || m === 'pin_only' || m === 'face_only' || m === 'both') return m;
+  return fallback;
+}
+
+function sanitizePublicFaceSettings(fs) {
+  if (!fs || typeof fs !== 'object') return null;
+  const explicit = Boolean(fs.authModeV8Explicit === true);
+  const authMode = explicit
+    ? normalizeServerAuthMode(fs.authMode, fs.enforce2FA === true ? 'both' : 'either')
+    : 'either';
+  return {
+    authMode,
+    enforce2FA: authMode === 'both',
+    authModeV8Explicit: explicit,
+    liveness: fs.liveness !== false,
+    livenessMode: String(fs.livenessMode || 'blink_or_turn'),
+    confirmFrames: Math.max(3, Math.min(5, Number(fs.confirmFrames || 3))),
+    updated_at: String(fs.updated_at || '')
+  };
+}
+
+async function readWorkspaceFaceSettings(db) {
+  if (!db) return null;
+  try {
+    const fastRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'face_settings' LIMIT 1").first();
+    if (fastRow && fastRow.payload_json) {
+      const parsedFast = safeJsonParse(fastRow.payload_json, null);
+      if (parsedFast && typeof parsedFast === 'object') return sanitizePublicFaceSettings(parsedFast);
+    }
+    const mfgDoc = await readEdgeKvDoc(db, 'mfg_web_store');
+    if (mfgDoc && mfgDoc.payload_json) {
+      const parsedMfg = safeJsonParse(mfgDoc.payload_json, null);
+      if (parsedMfg && parsedMfg.faceSettings && typeof parsedMfg.faceSettings === 'object') {
+        return sanitizePublicFaceSettings(parsedMfg.faceSettings);
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+function resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio) {
+  const wsMode = wsFaceSettings && wsFaceSettings.authMode
+    ? normalizeServerAuthMode(wsFaceSettings.authMode, wsFaceSettings.enforce2FA === true ? 'both' : 'either')
+    : 'either';
+  const seatRaw = String((row && row.auth_mode) || '').trim().toLowerCase();
+  const mode = (seatRaw && seatRaw !== 'inherit')
+    ? normalizeServerAuthMode(seatRaw, wsMode)
+    : wsMode;
+  if (!hasEnrolledBio && (mode === 'both' || mode === 'face_only')) {
+    return 'either';
+  }
+  return mode;
+}
+
+const AUTH_FAIL_MAX_PER_EMAIL = 8;
+const AUTH_FAIL_MAX_PER_IP = 18;
+const AUTH_FAIL_WINDOW_SEC = 60;
+
+async function isAuthRateLimited(db, ipHash, emailRaw) {
+  if (!db || !ipHash) return false;
+  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
+  const ipKey = `rl:auth_ip:${ipHash}:${slot}`;
+  const emailClean = String(emailRaw || '').trim().toLowerCase();
+  const emKey = emailClean ? `rl:auth_em:${ipHash}:${emailClean}:${slot}` : '';
+  try {
+    const ipRow = await db.prepare('SELECT rev FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(ipKey).first();
+    if (ipRow && Number(ipRow.rev || 0) >= AUTH_FAIL_MAX_PER_IP) return true;
+    if (emKey) {
+      const emRow = await db.prepare('SELECT rev FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(emKey).first();
+      if (emRow && Number(emRow.rev || 0) >= AUTH_FAIL_MAX_PER_EMAIL) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+async function recordAuthFailure(db, ipHash, emailRaw) {
+  const emailClean = String(emailRaw || '').trim().toLowerCase();
+  const memIp = checkSlidingRateLimit(`auth_fail_ip:${ipHash}`, AUTH_FAIL_MAX_PER_IP, AUTH_FAIL_WINDOW_SEC * 1000);
+  const memEm = emailClean
+    ? checkSlidingRateLimit(`auth_fail_em:${ipHash}:${emailClean}`, AUTH_FAIL_MAX_PER_EMAIL, AUTH_FAIL_WINDOW_SEC * 1000)
+    : { allowed: true };
+  if (!db || !ipHash) return !memIp.allowed || !memEm.allowed;
+  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
+  const ipKey = `rl:auth_ip:${ipHash}:${slot}`;
+  const emKey = emailClean ? `rl:auth_em:${ipHash}:${emailClean}:${slot}` : '';
+  const nowIso = new Date().toISOString();
+  try {
+    if (Math.random() < 0.08) {
+      await db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'rl:auth_%' AND doc_key NOT LIKE ?1").bind(`%:${slot}`).run();
+    }
+    const ipRes = await db.prepare(
+      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+       VALUES (?1, '1', ?2, 1)
+       ON CONFLICT(doc_key) DO UPDATE SET updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1
+       RETURNING rev`
+    ).bind(ipKey, nowIso).first();
+    let emCount = 0;
+    if (emKey) {
+      const emRes = await db.prepare(
+        `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+         VALUES (?1, '1', ?2, 1)
+         ON CONFLICT(doc_key) DO UPDATE SET updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1
+         RETURNING rev`
+      ).bind(emKey, nowIso).first();
+      emCount = Number((emRes && emRes.rev) || 0);
+    }
+    const ipCount = Number((ipRes && ipRes.rev) || 0);
+    return ipCount > AUTH_FAIL_MAX_PER_IP || emCount > AUTH_FAIL_MAX_PER_EMAIL;
+  } catch (_) {
+    return !memIp.allowed || !memEm.allowed;
+  }
+}
+
+async function clearAuthFailure(db, ipHash, emailRaw) {
+  if (!db || !ipHash || !emailRaw) return;
+  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
+  const emKey = `rl:auth_em:${ipHash}:${String(emailRaw).trim().toLowerCase()}:${slot}`;
+  try {
+    await db.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(emKey).run();
+  } catch (_) {}
 }
 
 export async function handleStatus(env) {
@@ -264,8 +408,21 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const device = String((body && body.device) || 'Web Browser').slice(0, 80);
   const faceDesc = body && body.face_descriptor;
   const isFaceMethod = /^face\s*id/i.test(method);
+  const ipHash = await hashClientIp(request);
+
+  if (await isAuthRateLimited(env.DB, ipHash, email)) {
+    return jsonResponse({ ok: false, rate_limited: true, error: 'Too many failed sign-in attempts. Please wait 60 seconds.' }, 429);
+  }
 
   let row = null;
+  const failAuth = async (errMsg, status = 401) => {
+    const throttled = await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
+    if (throttled) {
+      return jsonResponse({ ok: false, rate_limited: true, error: 'Too many failed sign-in attempts. Please wait 60 seconds.' }, 429);
+    }
+    return jsonResponse({ ok: false, error: errMsg }, status);
+  };
+
   let allActiveCache = null;
   const loadAllActive = async () => {
     if (!allActiveCache) {
@@ -303,57 +460,62 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         secondDist = d;
       }
     }
-    if (bestCand && bestDist <= 0.48 && (secondDist - bestDist) >= 0.06) {
+    if (bestCand && bestDist <= 0.50 && (secondDist - bestDist) >= 0.06) {
       row = bestCand;
     } else {
-      return jsonResponse({ ok: false, error: 'Face ID not recognized.' }, 401);
+      return failAuth('Face ID not recognized.');
     }
   } else {
     return jsonResponse({ ok: false, error: 'Email or PIN is required.' }, 400);
   }
   if (!row) {
-    return jsonResponse({ ok: false, error: email ? 'User seat not found in roster.' : 'Invalid Access PIN.' }, 401);
+    return failAuth(email ? 'User seat not found in roster.' : 'Invalid Access PIN.');
   }
   if (String(row.status || '') === 'Suspended') {
     return jsonResponse({ ok: false, error: 'This user seat is currently suspended.' }, 403);
   }
 
+  const wsFaceSettings = await readWorkspaceFaceSettings(env.DB);
   const expectedPin = String(row.pin_code || '1111').trim();
-  const authMode = String(row.auth_mode || '').trim().toLowerCase();
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
+  const authMode = resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio);
   const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
   let callerSess = null;
-  if (method === 'Owner Impersonation') {
+  if (method === 'Owner Impersonation' || (body && body.verify_only === true && body.allow_pin_only_verify === true)) {
     callerSess = verifiedCallerSession !== undefined
       ? verifiedCallerSession
       : await verifyActiveEdgeSession(await extractRequestSession(request, env), env);
-    if (!callerSess || !isOwnerOrFullGroupSession(callerSess)) {
-      return jsonResponse({ ok: false, error: 'Active Owner session required for seat impersonation.' }, 401);
+    if (method === 'Owner Impersonation' && (!callerSess || !isOwnerOrFullGroupSession(callerSess))) {
+      return failAuth('Active Owner session required for seat impersonation.');
     }
   }
-  const allowOwnerImpersonation = Boolean(callerSess && isOwnerOrFullGroupSession(callerSess));
+  const allowOwnerImpersonation = Boolean(callerSess && method === 'Owner Impersonation' && isOwnerOrFullGroupSession(callerSess));
+
+  const isVerifyOnly = Boolean(body && body.verify_only === true);
+  let verifiedFaceDist = null;
 
   if (!allowOwnerImpersonation) {
     if (isFaceMethod) {
-      if (authMode === 'pin_only') {
-        return jsonResponse({ ok: false, error: 'This seat requires PIN sign-in.' }, 401);
+      if (authMode === 'pin_only' && !(isVerifyOnly && body && body.allow_pin_only_verify === true && callerSess)) {
+        return failAuth('This seat requires PIN sign-in.');
       }
       if (!isValidFaceVec(faceDesc)) {
-        return jsonResponse({ ok: false, error: 'Verified 128-d Face ID descriptor is required.' }, 401);
+        return failAuth('Verified 128-d Face ID descriptor is required.');
       }
       const targetDist = bestRowFaceDist(faceDesc, row.face_samples);
       if (!(targetDist <= 0.50)) {
-        return jsonResponse({ ok: false, error: 'Face ID biometric verification failed.' }, 401);
+        return failAuth('Face ID biometric verification failed.');
       }
       const allActive = await loadAllActive();
       for (const cand of allActive) {
         if (String(cand.id) === String(row.id)) continue;
         const otherDist = bestRowFaceDist(faceDesc, cand.face_samples);
         if (otherDist + 1e-6 < targetDist) {
-          return jsonResponse({ ok: false, error: 'Face ID matched a different enrolled seat.' }, 401);
+          return failAuth('Face ID matched a different enrolled seat.');
         }
       }
-      if (needsTwoFactor) {
+      verifiedFaceDist = Number(targetDist.toFixed(4));
+      if (needsTwoFactor && !isVerifyOnly) {
         if (!pin) {
           return jsonResponse({
             ok: false,
@@ -366,24 +528,24 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         }
         const okPin = await constantTimeEqual(pin, expectedPin);
         if (!okPin) {
-          return jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 401);
+          return failAuth('Two-factor Access PIN is required.');
         }
       }
     } else {
-      if (authMode === 'face_only') {
-        return jsonResponse({ ok: false, error: 'This seat requires Face ID sign-in.' }, 401);
+      if (authMode === 'face_only' && hasEnrolledBio) {
+        return failAuth('This seat requires Face ID sign-in.');
       }
       const okPin = pin && (await constantTimeEqual(pin, expectedPin));
       if (!okPin) {
-        return jsonResponse({ ok: false, error: 'Invalid Access PIN.' }, 401);
+        return failAuth('Invalid Access PIN.');
       }
       const mustVerifyFace = (needsTwoFactor && hasEnrolledBio) || /face\s*id/i.test(method) || (body && body.face_descriptor !== undefined);
       if (needsTwoFactor && !hasEnrolledBio && /face\s*id/i.test(method)) {
-        return jsonResponse({ ok: false, error: 'Face ID is not enrolled for this seat.' }, 401);
+        return failAuth('Face ID is not enrolled for this seat.');
       }
       if (mustVerifyFace) {
         if (!isValidFaceVec(faceDesc)) {
-          if (authMode === 'both' && hasEnrolledBio && !/face\s*id/i.test(method)) {
+          if (needsTwoFactor && hasEnrolledBio && !/face\s*id/i.test(method)) {
             return jsonResponse({
               ok: false,
               two_factor_face_required: true,
@@ -392,37 +554,39 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
               error: 'Two-factor Face ID biometric verification is required.'
             }, 401);
           }
-          return jsonResponse({ ok: false, error: 'Verified 128-d Face ID descriptor is required.' }, 401);
+          return failAuth('Verified 128-d Face ID descriptor is required.');
         }
         const targetDist = bestRowFaceDist(faceDesc, row.face_samples);
         if (!(targetDist <= 0.50)) {
-          return jsonResponse({ ok: false, error: 'Face ID biometric verification failed.' }, 401);
+          return failAuth('Face ID biometric verification failed.');
         }
         const allActive = await loadAllActive();
         for (const cand of allActive) {
           if (String(cand.id) === String(row.id)) continue;
           const otherDist = bestRowFaceDist(faceDesc, cand.face_samples);
           if (otherDist + 1e-6 < targetDist) {
-            return jsonResponse({ ok: false, error: 'Face ID matched a different enrolled seat.' }, 401);
+            return failAuth('Face ID matched a different enrolled seat.');
           }
         }
+        verifiedFaceDist = Number(targetDist.toFixed(4));
       }
     }
   }
 
-  if (body && body.verify_only === true) {
+  if (isVerifyOnly) {
+    await clearAuthFailure(env.DB, ipHash, row.email);
     return jsonResponse({
       ok: true,
       edge: true,
       verify_only: true,
       verified_only: true,
+      face_dist: verifiedFaceDist,
       user: hydrateUserRow(row, true, true)
     });
   }
 
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const sessId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const ipHash = await hashClientIp(request);
 
   let token = '';
   try {
@@ -440,19 +604,22 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
   }
 
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET last_login_at = ?1 WHERE id = ?2').bind(nowIso, row.id),
-    env.DB.prepare(
-      `INSERT OR REPLACE INTO auth_sessions (id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence, ip_hash)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
-    ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
+  await Promise.all([
+    env.DB.batch([
+      env.DB.prepare('UPDATE users SET last_login_at = ?1 WHERE id = ?2').bind(nowIso, row.id),
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO auth_sessions (id, user_id, email, full_name, role, companies, device, logged_in_at, method, confidence, ip_hash)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+      ).bind(sessId, row.id, row.email, row.full_name, row.role, row.companies, device, nowIso, method, confidence, ipHash)
+    ]),
+    clearAuthFailure(env.DB, ipHash, row.email)
   ]);
 
   const isHttps = new URL(request.url).protocol === 'https:';
   const userOut = hydrateUserRow(Object.assign({}, row, { last_login_at: nowIso }), true, false);
 
   return jsonResponse(
-    { ok: true, edge: true, user: userOut, session_id: sessId, token },
+    { ok: true, edge: true, user: userOut, session_id: sessId, token, face_dist: verifiedFaceDist },
     200,
     { 'Set-Cookie': buildSessionCookie(token, 60 * 60 * 24 * 14, isHttps) }
   );
@@ -474,9 +641,12 @@ export async function handleAuthLogout(request, env, session) {
 
 export async function handleUsersGet(request, env, session) {
   if (!env || !env.DB) return jsonResponse({ ok: true, users: [], sessions: [] });
-  const [uRes, sRes] = await env.DB.batch([
-    env.DB.prepare('SELECT * FROM users ORDER BY id'),
-    env.DB.prepare('SELECT * FROM auth_sessions ORDER BY logged_in_at DESC LIMIT 35')
+  const [[uRes, sRes], wsFaceSettings] = await Promise.all([
+    env.DB.batch([
+      env.DB.prepare('SELECT * FROM users ORDER BY id'),
+      env.DB.prepare('SELECT * FROM auth_sessions ORDER BY logged_in_at DESC LIMIT 35')
+    ]),
+    readWorkspaceFaceSettings(env.DB)
   ]);
   const isDemo = Boolean(isDemoHeader(request));
   const isOwner = Boolean(session && !isDemo && isOwnerOrFullGroupSession(session));
@@ -513,7 +683,7 @@ export async function handleUsersGet(request, env, session) {
       sessions = rawSess.filter(s => sessEmail && String((s && s.email) || '').trim().toLowerCase() === sessEmail);
     }
   }
-  return jsonResponse({ ok: true, edge: true, users, sessions });
+  return jsonResponse({ ok: true, edge: true, users, sessions, faceSettings: wsFaceSettings });
 }
 
 export async function handleUsersPost(request, env, session, body) {
@@ -873,12 +1043,15 @@ export async function handleSentinelReviews(request, env, session, body) {
     const reviews = {};
     for (const r of (res.results || [])) {
       if (!r || !r.id) continue;
-      if (restrictRls && (!r.company || !canAccessCompany(session, r.company))) continue;
+      if (restrictRls && (!r.company || !canAccessSentinelScope(session, r.company))) continue;
       reviews[r.id] = Object.assign({}, r, { active: Boolean(r.active) });
     }
     return jsonResponse({ ok: true, reviews });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
+  if (!canReviewSentinelsSession(session)) {
+    return jsonResponse({ ok: false, error: 'Only Owner or Supervisor seats may sign off sentinel rules.' }, 403);
+  }
   const incomingMap = {};
   if (body && body.review && body.review.id) {
     incomingMap[String(body.review.id)] = body.review;
@@ -889,11 +1062,12 @@ export async function handleSentinelReviews(request, env, session, body) {
   }
   let saved = 0;
   for (const [rid, rv] of Object.entries(incomingMap)) {
-    const rvCo = canonicalizeCompanyName(rv.company || '');
-    if (restrictRls && (!rvCo || !canAccessCompany(session, rvCo))) continue;
+    const rvCo = normalizeSentinelScopeCompany(rv.company || '');
+    const idScope = String(rid).includes('|') ? normalizeSentinelScopeCompany(String(rid).split('|')[0]) : '';
+    if (restrictRls && (!rvCo || !idScope || idScope !== rvCo || !canAccessSentinelScope(session, rvCo))) continue;
     const inTs = String(rv.updated_at || rv.checked_at || '');
     const ex = await env.DB.prepare('SELECT updated_at, company FROM sentinel_reviews WHERE id = ?1').bind(rid).first();
-    if (ex && restrictRls && ex.company && !canAccessCompany(session, ex.company)) continue;
+    if (ex && restrictRls && ex.company && !canAccessSentinelScope(session, ex.company)) continue;
     if (ex && String(ex.updated_at || '') > inTs) continue;
     await env.DB.prepare(
       `INSERT OR REPLACE INTO sentinel_reviews
@@ -1769,36 +1943,39 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
       );
     }
 
-    const prevSr = (hasPrev && prevStorePayload.sentinelReviews && typeof prevStorePayload.sentinelReviews === 'object') ? prevStorePayload.sentinelReviews : {};
-    const curSr = (storePayload.sentinelReviews && typeof storePayload.sentinelReviews === 'object') ? storePayload.sentinelReviews : {};
-    const seenSrIds = new Set();
-    for (const [rk, rv] of Object.entries(curSr)) {
-      if (!rk || !rv || typeof rv !== 'object') continue;
-      const rid = String(rv.id || rk).trim();
-      if (rid) seenSrIds.add(rid);
-      if (prevSr[rk] && stableRowSig(prevSr[rk]) === stableRowSig(rv)) continue;
-      const rvCo = canonicalizeCompanyName(rv.company || '');
-      if (restrictRls && (!rvCo || !canAccessCompany(session, rvCo))) continue;
-      const inTs = String(rv.updated_at || rv.checked_at || '');
-      subStmts.push(
-        db.prepare(
-          `INSERT OR REPLACE INTO sentinel_reviews
-           (id, rule_id, company, baseline_metric, baseline_secondary, baseline_badge, active, checked_by, checked_by_email, checked_at, updated_at, note)
-           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`
-        ).bind(
-          rid, String(rv.rule_id || ''), rvCo, Number(rv.baseline_metric || 0), Number(rv.baseline_secondary || 0),
-          String(rv.baseline_badge || ''), rv.active === false ? 0 : 1, String(rv.checked_by || ''),
-          String(rv.checked_by_email || ''), String(rv.checked_at || ''), inTs, String(rv.note || '')
-        )
-      );
-    }
-    if (hasPrev) {
-      for (const [rk, prv] of Object.entries(prevSr)) {
-        const prvId = String((prv && prv.id) || rk).trim();
-        if (!prvId || seenSrIds.has(prvId)) continue;
-        const prvCo = canonicalizeCompanyName((prv && prv.company) || '');
-        if (restrictRls && (!prvCo || !canAccessCompany(session, prvCo))) continue;
-        subStmts.push(db.prepare('DELETE FROM sentinel_reviews WHERE id = ?1').bind(prvId));
+    if (!session || canReviewSentinelsSession(session)) {
+      const prevSr = (hasPrev && prevStorePayload.sentinelReviews && typeof prevStorePayload.sentinelReviews === 'object') ? prevStorePayload.sentinelReviews : {};
+      const curSr = (storePayload.sentinelReviews && typeof storePayload.sentinelReviews === 'object') ? storePayload.sentinelReviews : {};
+      const seenSrIds = new Set();
+      for (const [rk, rv] of Object.entries(curSr)) {
+        if (!rk || !rv || typeof rv !== 'object') continue;
+        const rid = String(rv.id || rk).trim();
+        if (rid) seenSrIds.add(rid);
+        if (prevSr[rk] && stableRowSig(prevSr[rk]) === stableRowSig(rv)) continue;
+        const rvCo = normalizeSentinelScopeCompany(rv.company || '');
+        const idScope = String(rid).includes('|') ? normalizeSentinelScopeCompany(String(rid).split('|')[0]) : '';
+        if (restrictRls && (!rvCo || !idScope || idScope !== rvCo || !canAccessSentinelScope(session, rvCo))) continue;
+        const inTs = String(rv.updated_at || rv.checked_at || '');
+        subStmts.push(
+          db.prepare(
+            `INSERT OR REPLACE INTO sentinel_reviews
+             (id, rule_id, company, baseline_metric, baseline_secondary, baseline_badge, active, checked_by, checked_by_email, checked_at, updated_at, note)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)`
+          ).bind(
+            rid, String(rv.rule_id || ''), rvCo, Number(rv.baseline_metric || 0), Number(rv.baseline_secondary || 0),
+            String(rv.baseline_badge || ''), rv.active === false ? 0 : 1, String(rv.checked_by || ''),
+            String(rv.checked_by_email || ''), String(rv.checked_at || ''), inTs, String(rv.note || '')
+          )
+        );
+      }
+      if (hasPrev) {
+        for (const [rk, prv] of Object.entries(prevSr)) {
+          const prvId = String((prv && prv.id) || rk).trim();
+          if (!prvId || seenSrIds.has(prvId)) continue;
+          const prvCo = normalizeSentinelScopeCompany((prv && prv.company) || '');
+          if (restrictRls && (!prvCo || !canAccessSentinelScope(session, prvCo))) continue;
+          subStmts.push(db.prepare('DELETE FROM sentinel_reviews WHERE id = ?1').bind(prvId));
+        }
       }
     }
 
@@ -2250,18 +2427,22 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     incomingDoc.kioskPunches = outP;
   }
 
-  if (prev.sentinelReviews || incomingDoc.sentinelReviews) {
+  if (!canReviewSentinelsSession(session)) {
+    if (prev.sentinelReviews !== undefined) incomingDoc.sentinelReviews = prev.sentinelReviews;
+    else delete incomingDoc.sentinelReviews;
+  } else if (prev.sentinelReviews || incomingDoc.sentinelReviews) {
     const pSr = (prev.sentinelReviews && typeof prev.sentinelReviews === 'object') ? prev.sentinelReviews : {};
     const iSr = (incomingDoc.sentinelReviews && typeof incomingDoc.sentinelReviews === 'object') ? incomingDoc.sentinelReviews : {};
     const safeSr = {};
     for (const [rk, pv] of Object.entries(pSr)) {
       const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
-      if (!pCo || !canAccessCompany(session, pCo)) safeSr[rk] = pv;
+      if (!pCo || !canAccessSentinelScope(session, pCo)) safeSr[rk] = pv;
     }
     for (const [rk, iv] of Object.entries(iSr)) {
       if (rk in safeSr || !iv || typeof iv !== 'object') continue;
-      const iCo = String(iv.company || '').trim();
-      if (iCo && canAccessCompany(session, iCo)) safeSr[rk] = iv;
+      const iCo = normalizeSentinelScopeCompany(iv.company || '');
+      const rkScope = String(rk).includes('|') ? normalizeSentinelScopeCompany(String(rk).split('|')[0]) : '';
+      if (iCo && rkScope && rkScope === iCo && canAccessSentinelScope(session, iCo)) safeSr[rk] = iv;
     }
     incomingDoc.sentinelReviews = safeSr;
   }
@@ -2370,6 +2551,14 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       .slice(0, 50);
   }
 
+  if (!isOwnerOrFullGroupSession(session)) {
+    if (prev.faceSettings && typeof prev.faceSettings === 'object') {
+      incomingDoc.faceSettings = prev.faceSettings;
+    } else {
+      delete incomingDoc.faceSettings;
+    }
+  }
+
   delete incomingDoc._scopedForSession;
   return incomingDoc;
 }
@@ -2461,7 +2650,8 @@ function redactFaceSamplesFromUserObj(u) {
     : Number(copy.face_sample_count || (copy.face_enrolled ? 1 : 0));
   copy.face_enrolled = Boolean(!copy.face_cleared && (copy.face_enrolled || validCount > 0));
   copy.face_sample_count = copy.face_enrolled ? Math.max(1, validCount) : 0;
-  copy.face_redacted = true;
+  copy.face_redacted = Boolean(copy.face_enrolled);
+  if (!copy.face_enrolled && copy.face_updated_at) copy.face_cleared = true;
   delete copy.face_samples;
   return copy;
 }
@@ -2572,7 +2762,7 @@ function scopeStoreDocForSession(docObj, session) {
     for (const [rk, rv] of Object.entries(docObj.sentinelReviews)) {
       if (!rv || typeof rv !== 'object') continue;
       const co = String(rv.company || '').trim();
-      if (co && canAccessCompany(session, co)) scopedSr[rk] = rv;
+      if (co && canAccessSentinelScope(session, co)) scopedSr[rk] = rv;
     }
     copyDoc.sentinelReviews = scopedSr;
   }
@@ -2671,13 +2861,22 @@ export async function handleSync(request, env, session, body, _ctx) {
       }
     }
 
+    const updatedByStr = String(incomingDoc.updatedBy || (session && session.email) || '');
     await writeEdgeKvDoc(
       env.DB,
       pKey,
       JSON.stringify(incomingDoc),
       newTs,
-      String(incomingDoc.updatedBy || (session && session.email) || '')
+      updatedByStr
     );
+    if (pKey === 'mfg_web_store' && isOwnerOrFullGroupSession(session) && incomingDoc.faceSettings && typeof incomingDoc.faceSettings === 'object') {
+      const pubFs = sanitizePublicFaceSettings(incomingDoc.faceSettings);
+      if (pubFs) {
+        try {
+          await writeEdgeKvDoc(env.DB, 'face_settings', JSON.stringify(pubFs), newTs, updatedByStr);
+        } catch (_) {}
+      }
+    }
 
     return jsonResponse(
       body.awaitMirror === true && mirrorStats

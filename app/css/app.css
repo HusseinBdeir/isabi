@@ -34910,6 +34910,93 @@ video::-webkit-media-controls-start-playback-button {
   }
 }
 
+/* =========================================================================
+   SENTINEL EXCEPTION TRIAGE BRIEF & SPOKEN AUDIT WALKTHROUGH (#sentinels)
+   ========================================================================= */
+.sn-ai-act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid #DFDAD0;
+  background: #FAF8F4;
+  color: #332E28;
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  white-space: nowrap;
+}
+.sn-ai-act-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: #9A6B21;
+}
+.sn-ai-act-btn:hover,
+.sn-ai-act-btn.is-open,
+.sn-ai-act-btn.active,
+.sn-ai-act-btn.is-speaking,
+.sn-ai-act-btn.is-loading {
+  background: #FAF3E3;
+  border-color: rgba(184, 136, 59, 0.55);
+  color: #7A5012;
+}
+:root[data-theme="dark"] .sn-ai-act-btn {
+  background: #13223E;
+  border-color: #29416E;
+  color: #E2E8F0;
+}
+:root[data-theme="dark"] .sn-ai-act-btn svg {
+  color: #F3C36F;
+}
+:root[data-theme="dark"] .sn-ai-act-btn:hover,
+:root[data-theme="dark"] .sn-ai-act-btn.is-open,
+:root[data-theme="dark"] .sn-ai-act-btn.active,
+:root[data-theme="dark"] .sn-ai-act-btn.is-speaking,
+:root[data-theme="dark"] .sn-ai-act-btn.is-loading {
+  background: rgba(217, 165, 74, 0.2);
+  border-color: rgba(243, 195, 111, 0.55);
+  color: #FDE68A;
+}
+
+.sn-triage-popover {
+  z-index: 9850;
+}
+.sn-pv-foot .sn-pv-signoff-btn {
+  background: #ECFDF3;
+  border: 1px solid rgba(22, 163, 74, 0.42);
+  color: #166534;
+  font-weight: 700;
+}
+.sn-pv-foot .sn-pv-signoff-btn:hover {
+  background: #DCFCE7;
+  border-color: rgba(22, 163, 74, 0.65);
+}
+:root[data-theme="dark"] .sn-pv-foot .sn-pv-signoff-btn {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(74, 222, 128, 0.5);
+  color: #86EFAC;
+}
+.sn-pv-foot .sn-pv-undo-btn {
+  background: #FAF8F4;
+  border-color: #DFDAD0;
+  color: #6B5B45;
+}
+:root[data-theme="dark"] .sn-pv-foot .sn-pv-undo-btn {
+  background: #13223E;
+  border-color: #29416E;
+  color: #CBD5E1;
+}
+@media (max-width: 768px) {
+  .sn-pv-draft-ta {
+    font-size: 16px !important;
+  }
+}
+
+
 
 
 

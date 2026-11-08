@@ -1699,6 +1699,544 @@ finally:
         bbcDef: Boolean(ows.companyPolicyDefaults?.BBConstruction)
       }));
     }
+
+    // 28. Non-Local TDZ Boot Guard, v(N-1)->v(N) Upgrade Continuity, & Redacted Edge 128-d Face ID Browser E2E (>= 3 Adversarial Negative Assertions)
+    const vec28 = Array.from({ length: 128 }, (_, i) => Number((Math.sin((i + 1) * 0.41) * 0.22).toFixed(5)));
+    // Boundary vector at Euclidean L2 distance d = 0.490 (strictly inside 0.48 < d <= 0.50)
+    const vec28Boundary = vec28.map((v, i) => (i === 0 ? Number((v + 0.49).toFixed(5)) : v));
+    const vec28Both = vec28.map(v => Number((-v).toFixed(5)));
+    const vec28PinOnly = Array.from({ length: 128 }, (_, i) => Number((Math.sin((i + 7) * 0.29) * 0.21).toFixed(5)));
+    const vec28Inherit = Array.from({ length: 128 }, (_, i) => Number((Math.cos((i + 11) * 0.37) * 0.23).toFixed(5)));
+    const vec28Imposter = Array.from({ length: 128 }, (_, i) => Number((Math.cos((i + 1) * 0.53) * 0.25).toFixed(5)));
+
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge28-face',
+        email: 'edge28face@bhfirms.com',
+        full_name: 'Edge Face Owner',
+        role: 'Full Access (Owner)',
+        companies: 'All',
+        auth_mode: 'either',
+        pin_code: '2828',
+        status: 'Active',
+        face_samples: [vec28],
+        face_thumbs: [tinyPngDataUrl],
+        face_updated_at: '2026-11-08T18:00:00.000Z'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge28-both',
+        email: 'edge28both@bhfirms.com',
+        full_name: 'Edge TwoFactor Admin',
+        role: 'Full Access (Owner)',
+        companies: 'All',
+        auth_mode: 'both',
+        pin_code: '8282',
+        status: 'Active',
+        face_samples: [vec28Both],
+        face_thumbs: [tinyPngDataUrl],
+        face_updated_at: '2026-11-08T18:01:00.000Z'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge28-pinonly',
+        email: 'edge28pinonly@bhfirms.com',
+        full_name: 'Edge PinOnly Seat',
+        role: 'Entry',
+        companies: 'WTC',
+        auth_mode: 'pin_only',
+        pin_code: '2929',
+        status: 'Active',
+        face_samples: [vec28PinOnly],
+        face_updated_at: '2026-11-08T18:02:00.000Z'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge28-inherit',
+        email: 'edge28inherit@bhfirms.com',
+        full_name: 'Edge SixDigit Inherit',
+        role: 'Entry',
+        companies: 'WTC',
+        auth_mode: '',
+        pin_code: '482915',
+        status: 'Active',
+        face_samples: [vec28Inherit],
+        face_thumbs: [tinyPngDataUrl],
+        face_updated_at: '2026-11-08T18:03:00.000Z'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    // API-level adversarial & parity checks on verify_only, 2FA, pin_only, workspace-default 'both', 429 rate-limit, and 401 zero-oracle
+    const curSync28 = await httpReq('GET', '/app/api/sync?doc=mfg_web_store', null, { 'X-ISABI-Session': ownerToken });
+    const baseMfgDoc28 = (curSync28.json && curSync28.json.docs && curSync28.json.docs.mfg_web_store) || {};
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: Object.assign({}, baseMfgDoc28, {
+          updatedAt: '2026-11-08T18:04:00.000Z',
+          faceSettings: { authMode: 'both', enforce2FA: true, authModeV8Explicit: true, updated_at: '2026-11-08T18:04:00.000Z' }
+        })
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const wsDefaultBothPinOnlyRes = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge28inherit@bhfirms.com',
+      pin: '482915',
+      method: 'PIN'
+    });
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: Object.assign({}, baseMfgDoc28, {
+          updatedAt: '2026-11-08T18:04:05.000Z',
+          faceSettings: { authMode: 'either', enforce2FA: false, authModeV8Explicit: true, updated_at: '2026-11-08T18:04:05.000Z' }
+        })
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    let rateLimitFirstStatus = 0;
+    let rateLimitNinthStatus = 0;
+    let rateLimitNinthFlag = false;
+    for (let attempt = 1; attempt <= 9; attempt++) {
+      const rlRes = await httpReq('POST', '/app/api/auth/login', {
+        email: 'edge28face@bhfirms.com',
+        pin: '0000',
+        method: 'PIN'
+      }, { 'CF-Connecting-IP': '198.51.100.88' });
+      if (attempt === 1) rateLimitFirstStatus = rlRes.status;
+      if (attempt === 9) {
+        rateLimitNinthStatus = rlRes.status;
+        rateLimitNinthFlag = Boolean(rlRes.json && rlRes.json.rate_limited);
+      }
+    }
+
+    const verifyOnly2faRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      face_descriptor: vec28Both
+    });
+    const fullLogin2faNoPinRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      face_descriptor: vec28Both
+    });
+    const unauthAllowPinOnlyRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      allow_pin_only_verify: true,
+      face_descriptor: vec28PinOnly
+    });
+    const authAllowPinOnlyRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      allow_pin_only_verify: true,
+      face_descriptor: vec28PinOnly
+    }, { 'X-ISABI-Session': ownerToken });
+    const imposterHttpRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      face_descriptor: vec28Imposter
+    });
+
+    consoleErrors.length = 0;
+    await sendCdp('Network.clearBrowserCookies');
+    const remoteScript28 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        window.__ISABI_SIMULATE_REMOTE_HOST = true;
+        window.__ISABI_TEST_EDGE = true;
+        window.ISABI_HAS_EDGE_API = true;
+        try {
+          if (!sessionStorage.getItem('edge28_seeded_v1')) {
+            sessionStorage.setItem('edge28_seeded_v1', '1');
+            localStorage.setItem('isabi_edge_active_v1', '1');
+            localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+            localStorage.removeItem('isabi_mfg_active_email');
+            localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify({
+              threshold: 0.50,
+              margin: 0.08,
+              confirmFrames: 3,
+              liveness: true,
+              livenessMode: 'blink_or_turn'
+            }));
+          }
+        } catch (_) {}
+      `
+    });
+
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/` });
+    for (let i = 0; i < 40; i++) {
+      const bootReady = await evalJs(`Boolean(
+        window.MFG_FACE_TEST &&
+        typeof window.MFG_FACE_TEST.state === 'function' &&
+        window.MFG_FACE_TEST.state().enrolledSeats.includes('edge28face@bhfirms.com')
+      )`);
+      if (bootReady) break;
+      await sleep(250);
+    }
+
+    const bootConsoleErrors28 = consoleErrors.slice();
+
+    const e28Flow = await evalJs(`(async () => {
+      if (!window.MFG_FACE_TEST || !window.Face) return { bootOk: false };
+      await window.Face.load('./vendor/models');
+      const vp = document.getElementById('authCamViewport');
+      if (vp) vp.classList.add('is-video-ready');
+      window.dispatchEvent(new CustomEvent('mfg:face-models-ready'));
+
+      const stBoot = window.MFG_FACE_TEST.state();
+      const vecBoundary = ${JSON.stringify(vec28Boundary)};
+      const vecImp = ${JSON.stringify(vec28Imposter)};
+
+      // Negative Assertion 1: Single frame builds streak without false "Face not recognized" or premature unlock
+      window.MFG_FACE_TEST.resetLiveness();
+      const f1 = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.025, parallax3d: -0.012 });
+      const hintAfterF1 = (document.getElementById('authFaceHint')?.textContent || '').trim();
+      const stAfterF1 = window.MFG_FACE_TEST.state();
+
+      // Negative Assertion 2: Static 2D photo/screenshot (0 blink, 0 3D parallax) blocked at awaiting-blink
+      window.MFG_FACE_TEST.resetLiveness();
+      let fStatic = null;
+      for (let k = 0; k < 4; k++) {
+        fStatic = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.28, yaw: 0, parallax3d: 0 });
+      }
+      const stAfterStatic = window.MFG_FACE_TEST.state();
+      const tokAfterStatic = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || '';
+
+      // Negative Assertion 3: Unrecognized imposter with valid blink+3D turn rejected (401) + cooldown active
+      window.MFG_FACE_TEST.resetLiveness();
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecImp, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecImp, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
+      const fImp = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecImp, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
+      const hintAfterImp = (document.getElementById('authFaceHint')?.textContent || '').trim();
+      const fCooldown = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecImp, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
+      const stAfterImp = window.MFG_FACE_TEST.state();
+
+      await new Promise(r => setTimeout(r, 820));
+
+      // Positive Boundary Assertion 4: Enrolled vector at d=0.490 (0.48 < d <= 0.50) + live blink/turn unlocks & mints JWT
+      window.MFG_FACE_TEST.resetLiveness();
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
+      const fOk = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
+      const stAfterOk = window.MFG_FACE_TEST.state();
+      const gateHidden = Boolean(document.getElementById('authGate')?.hidden);
+      const tokMinted = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || '';
+      const meCheck = await window.ISABI_EDGE_FETCH('./api/auth/me').then(r => r.json());
+
+      // Navigate to #users and verify Edge-redacted pose parity, thumb preservation, AR/FR i18n, clear tombstone, re-enrol, and 6-digit redacted PIN
+      location.hash = '#users';
+      await new Promise(r => setTimeout(r, 250));
+      const sel = document.getElementById('enrolUserSelect');
+      let badgeTxt = '';
+      let dirHasEnrolled = false;
+      let thumbImgCount = 0;
+      let arAuditCount = -1;
+      let frAuditCount = -1;
+      let arAuditSample = [];
+      let frAuditSample = [];
+      let clearedStaysFalse = false;
+      let reenrolledStaysTrue = false;
+      if (sel) {
+        sel.value = 'u-edge28-face';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 80));
+        badgeTxt = (document.getElementById('enrolHeaderBadge')?.textContent || '').trim();
+        dirHasEnrolled = (document.getElementById('usersDirectoryTbody')?.innerText || '').includes('1/3 · PIN/Face');
+        thumbImgCount = document.querySelectorAll('#enrolThumbStrip img').length;
+
+        if (window.MFG_I18N && typeof window.MFG_I18N.setLang === 'function' && typeof window.MFG_I18N.auditDom === 'function') {
+          const isSyntheticTestName = txt => /^(EF|ET|EP|ES|FV|WQ)$|Verify Suite|WTC Quarry Dispatch|Empty Scope Seat|Edge Test|Edge Face|Edge TwoFactor|Edge PinOnly|Edge SixDigit|Face Verify|Both 2FA|Scope Escape/i.test(String(txt || '').trim());
+          const arItems = window.MFG_I18N.auditDom(document.getElementById('workspace'), 'ar').items.filter(it => !isSyntheticTestName(it.text));
+          const frItems = window.MFG_I18N.auditDom(document.getElementById('workspace'), 'fr').items.filter(it => !isSyntheticTestName(it.text));
+          arAuditCount = arItems.length;
+          frAuditCount = frItems.length;
+          arAuditSample = arItems.slice(0, 6).map(x => x.text);
+          frAuditSample = frItems.slice(0, 6).map(x => x.text);
+          window.MFG_I18N.setLang('ar');
+          await new Promise(r => setTimeout(r, 40));
+          window.MFG_I18N.setLang('fr');
+          await new Promise(r => setTimeout(r, 40));
+          window.MFG_I18N.setLang('en');
+          await new Promise(r => setTimeout(r, 40));
+        }
+
+        const clearBtn = document.getElementById('enrolClearBtn');
+        if (clearBtn) {
+          clearBtn.click();
+          await new Promise(r => setTimeout(r, 320));
+          const uResAfterClear = await window.ISABI_EDGE_FETCH('./api/users').then(r => r.json());
+          const srvClearedSeat = (uResAfterClear.users || []).find(u => u.id === 'u-edge28-face');
+          // Simulate cross-device merge where Device B still held older local samples before receiving the remote clear
+          const localFaceSeat = window.STATE.users.find(u => u.id === 'u-edge28-face');
+          if (localFaceSeat && srvClearedSeat) {
+            clearedStaysFalse = Boolean(srvClearedSeat.face_enrolled === false && srvClearedSeat.face_redacted === false && localFaceSeat.face_enrolled === false && localFaceSeat.face_cleared === true);
+          }
+          // Re-enrol on server at newer timestamp and re-hydrate via /api/users to prove no post-clear lockout
+          await window.ISABI_EDGE_FETCH('./api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user: Object.assign({}, localFaceSeat, {
+                face_samples: [${JSON.stringify(vec28)}],
+                face_thumbs: [${JSON.stringify(tinyPngDataUrl)}],
+                face_cleared: false,
+                face_enrolled: true,
+                face_updated_at: '2026-11-08T22:00:00.000Z'
+              })
+            })
+          });
+          // Force unauthenticated redacted hydration check by signing out and checking redacted seat state + 6-digit PIN entry
+          const signOutBtn = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
+          if (signOutBtn) signOutBtn.click();
+          await window.ISABI_EDGE_FETCH('./api/auth/logout', { method: 'POST' });
+          localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+          // Clear cached pin_code on u-edge28-inherit so it is strictly pin_redacted on #authGate
+          const inhSeat = window.STATE.users.find(u => u.email === 'edge28inherit@bhfirms.com');
+          if (inhSeat) {
+            inhSeat.pin_code = '';
+            inhSeat.pin_redacted = true;
+            delete inhSeat._verifiedPin;
+          }
+          // Hydrate unauthenticated /api/users into STATE.users via page reload or openAuthGate
+          const unauthUsers = await fetch('./api/users').then(r => r.json());
+          const srvReenrolled = (unauthUsers.users || []).find(u => u.id === 'u-edge28-face');
+          reenrolledStaysTrue = Boolean(srvReenrolled && srvReenrolled.face_enrolled === true && srvReenrolled.face_redacted === true);
+        }
+      }
+
+      // Ensure we are on #authGate to test 6-digit redacted PIN ('482915') without digit-4 wipe
+      if (window.STATE && window.STATE.authed) {
+        window.STATE.authed = false;
+        const ag = document.getElementById('authGate');
+        if (ag) ag.hidden = false;
+      }
+      const inhIdx = window.STATE.users.findIndex(u => u.email === 'edge28inherit@bhfirms.com');
+      if (inhIdx >= 0) {
+        window.STATE.users[inhIdx].pin_code = '';
+        window.STATE.users[inhIdx].pin_redacted = true;
+        delete window.STATE.users[inhIdx]._verifiedPin;
+      }
+      const emInp = document.getElementById('authEmailInput');
+      if (emInp) {
+        emInp.value = 'edge28inherit@bhfirms.com';
+        emInp.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const quickSeatBtn = Array.from(document.querySelectorAll('#quickSeatList [data-quick-seat]'))
+        .find(b => (b.textContent || '').includes('Edge SixDigit Inherit') || b.getAttribute('data-quick-seat') === 'edge28inherit@bhfirms.com');
+      if (quickSeatBtn) quickSeatBtn.click();
+      const pinInp = document.getElementById('authPinInput');
+      let pinAtDigit4 = '';
+      let sixDigitAuthed = false;
+      let sixDigitActiveEmail = '';
+      if (pinInp) {
+        pinInp.value = '';
+        for (const ch of ['4', '48', '482', '4829']) {
+          pinInp.value = ch;
+          pinInp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        // Wait past 180ms silent probe window to prove 4th digit 401 does NOT wipe pinInp.value!
+        await new Promise(r => setTimeout(r, 260));
+        pinAtDigit4 = pinInp.value;
+        for (const ch of ['48291', '482915']) {
+          pinInp.value = ch;
+          pinInp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        await new Promise(r => setTimeout(r, 340));
+        const st6 = window.MFG_FACE_TEST.state();
+        sixDigitAuthed = Boolean(st6 && st6.authed);
+        sixDigitActiveEmail = (st6 && st6.activeEmail) || '';
+      }
+
+      return {
+        bootOk: true,
+        stBoot,
+        f1Status: f1?.status,
+        stAfterF1,
+        hintAfterF1,
+        fStaticStatus: fStatic?.status,
+        stAfterStatic,
+        tokAfterStaticLen: tokAfterStatic.length,
+        fImpStatus: fImp?.status,
+        hintAfterImp,
+        fCooldownStatus: fCooldown?.status,
+        stAfterImp,
+        fOkStatus: fOk?.status,
+        fOkDist: fOk?.dist,
+        stAfterOk,
+        gateHidden,
+        tokMintedLen: tokMinted.length,
+        meAuth: Boolean(meCheck && meCheck.authenticated),
+        badgeTxt,
+        dirHasEnrolled,
+        thumbImgCount,
+        arAuditCount,
+        frAuditCount,
+        arAuditSample,
+        frAuditSample,
+        clearedStaysFalse,
+        reenrolledStaysTrue,
+        pinAtDigit4,
+        sixDigitAuthed,
+        sixDigitActiveEmail
+      };
+    })()`);
+
+    if (remoteScript28 && remoteScript28.identifier) {
+      try { await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript28.identifier }); } catch (_) {}
+    }
+
+    const unexpectedErrors28 = consoleErrors.filter(
+      e => !/status of 401.*\/app\/api\/(auth\/login|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync)/i.test(String(e || ''))
+    );
+
+    if (
+      bootConsoleErrors28.length === 0 &&
+      unexpectedErrors28.length === 0 &&
+      wsDefaultBothPinOnlyRes.status === 401 &&
+      wsDefaultBothPinOnlyRes.json?.two_factor_face_required === true &&
+      rateLimitFirstStatus === 401 &&
+      rateLimitNinthStatus === 429 &&
+      rateLimitNinthFlag === true &&
+      verifyOnly2faRes.status === 200 &&
+      verifyOnly2faRes.json?.verify_only === true &&
+      !verifyOnly2faRes.json?.token &&
+      fullLogin2faNoPinRes.status === 401 &&
+      fullLogin2faNoPinRes.json?.two_factor_pin_required === true &&
+      unauthAllowPinOnlyRes.status === 401 &&
+      authAllowPinOnlyRes.status === 200 &&
+      authAllowPinOnlyRes.json?.verify_only === true &&
+      imposterHttpRes.status === 401 &&
+      imposterHttpRes.json?.face_dist === undefined &&
+      e28Flow?.bootOk === true &&
+      e28Flow.stBoot?.authed === false &&
+      e28Flow.stBoot?.confirmFrames === 3 &&
+      e28Flow.f1Status === 'edge-streak' &&
+      e28Flow.stAfterF1?.authed === false &&
+      !/not recognized/i.test(e28Flow.hintAfterF1 || '') &&
+      e28Flow.fStaticStatus === 'awaiting-blink' &&
+      e28Flow.stAfterStatic?.authed === false &&
+      e28Flow.tokAfterStaticLen === 0 &&
+      e28Flow.fImpStatus === 'unknown' &&
+      /not recognized/i.test(e28Flow.hintAfterImp || '') &&
+      e28Flow.fCooldownStatus === 'cooldown' &&
+      e28Flow.stAfterImp?.authed === false &&
+      e28Flow.fOkStatus === 'verified' &&
+      Number(e28Flow.fOkDist) > 0.48 &&
+      Number(e28Flow.fOkDist) <= 0.50 &&
+      e28Flow.stAfterOk?.authed === true &&
+      e28Flow.stAfterOk?.activeEmail === 'edge28face@bhfirms.com' &&
+      e28Flow.gateHidden === true &&
+      e28Flow.tokMintedLen > 20 &&
+      e28Flow.meAuth === true &&
+      e28Flow.badgeTxt.includes('1/3 Poses Saved') &&
+      e28Flow.dirHasEnrolled === true &&
+      e28Flow.thumbImgCount >= 1 &&
+      e28Flow.arAuditCount === 0 &&
+      e28Flow.frAuditCount === 0 &&
+      e28Flow.clearedStaysFalse === true &&
+      e28Flow.reenrolledStaysTrue === true &&
+      e28Flow.pinAtDigit4 === '4829' &&
+      e28Flow.sixDigitAuthed === true &&
+      e28Flow.sixDigitActiveEmail === 'edge28inherit@bhfirms.com'
+    ) {
+      pass(
+        'edge-28-remote-tdz-boot-and-redacted-faceid-e2e',
+        `0 TDZ errors, ws-default 2FA + 429 rate-limit + 6-digit redacted PIN + thumb/clear/reenrol + AR/FR 0 untranslated + d=${e28Flow.fOkDist} live Face ID OK`
+      );
+    } else {
+      fail('edge-28-remote-tdz-boot-and-redacted-faceid-e2e', JSON.stringify({
+        consoleErrors,
+        wsBoth: [wsDefaultBothPinOnlyRes.status, wsDefaultBothPinOnlyRes.json?.two_factor_face_required],
+        rateLim: [rateLimitFirstStatus, rateLimitNinthStatus, rateLimitNinthFlag],
+        verify2fa: [verifyOnly2faRes.status, Boolean(verifyOnly2faRes.json?.token)],
+        full2fa: [fullLogin2faNoPinRes.status, fullLogin2faNoPinRes.json?.two_factor_pin_required],
+        pinOnly: [unauthAllowPinOnlyRes.status, authAllowPinOnlyRes.status],
+        impOracle: [imposterHttpRes.status, imposterHttpRes.json?.face_dist],
+        e28Flow
+      }));
+    }
+
+    // 29. Sentinel Reviews Edge D1 Reviewer-Role Guard, Multi-BU Supervisor Group/Industry Scope & Cross-BU Key Forgery Block
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge29-entry',
+        email: 'edge29entry@wtc-lb.com',
+        full_name: 'Edge29 Entry Clerk',
+        role: 'Entry',
+        companies: 'WTC',
+        auth_mode: 'pin',
+        pin_code: '2911',
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge29-sup',
+        email: 'edge29sup@wtc-lb.com',
+        full_name: 'Edge29 MultiBU Supervisor',
+        role: 'Supervisor',
+        companies: 'WTC, Lions Transport, Blanca, La Una',
+        auth_mode: 'pin',
+        pin_code: '2922',
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const e29EntryLogin = await httpReq('POST', '/app/api/auth/login', { email: 'edge29entry@wtc-lb.com', pin: '2911', method: 'PIN' });
+    const e29SupLogin = await httpReq('POST', '/app/api/auth/login', { email: 'edge29sup@wtc-lb.com', pin: '2922', method: 'PIN' });
+    const e29EntryTok = e29EntryLogin.json?.token || '';
+    const e29SupTok = e29SupLogin.json?.token || '';
+
+    const e29EntryPost = await httpReq('POST', '/app/api/sentinel_reviews', {
+      review: { id: 'wtc|S4', rule_id: 'S4', company: 'wtc', active: true, updated_at: '2026-11-08T19:10:00Z' }
+    }, { 'X-ISABI-Session': e29EntryTok });
+
+    const e29SupMfgGroup = await httpReq('POST', '/app/api/sentinel_reviews', {
+      review: { id: 'manufacturing-group|S4', rule_id: 'S4', company: 'manufacturing-group', active: true, note: 'Checked WTC+Lions', updated_at: '2026-11-08T19:11:00Z' }
+    }, { 'X-ISABI-Session': e29SupTok });
+
+    const e29SupHspInd = await httpReq('POST', '/app/api/sentinel_reviews', {
+      review: { id: 'industry:Hospitality & Resorts|R2', rule_id: 'R2', company: 'industry:Hospitality & Resorts', active: true, updated_at: '2026-11-08T19:12:00Z' }
+    }, { 'X-ISABI-Session': e29SupTok });
+
+    const e29SupCrossForgery = await httpReq('POST', '/app/api/sentinel_reviews', {
+      reviews: {
+        'bbconstruction|S4': { id: 'bbconstruction|S4', rule_id: 'S4', company: 'wtc', active: true, updated_at: '2026-11-08T19:13:00Z' },
+        'insurance|I3': { id: 'insurance|I3', rule_id: 'I3', company: 'insurance', active: true, updated_at: '2026-11-08T19:13:00Z' }
+      }
+    }, { 'X-ISABI-Session': e29SupTok });
+
+    const e29SupGet = await httpReq('GET', '/app/api/sentinel_reviews', null, { 'X-ISABI-Session': e29SupTok });
+    const e29Reviews = e29SupGet.json?.reviews || {};
+
+    if (
+      e29EntryPost.status === 403 &&
+      e29SupMfgGroup.status === 200 &&
+      e29SupMfgGroup.json?.saved === 1 &&
+      e29SupHspInd.status === 200 &&
+      e29SupHspInd.json?.saved === 1 &&
+      e29SupCrossForgery.status === 200 &&
+      e29SupCrossForgery.json?.saved === 0 &&
+      Boolean(e29Reviews['manufacturing-group|S4']) &&
+      Boolean(e29Reviews['industry:Hospitality & Resorts|R2']) &&
+      !e29Reviews['bbconstruction|S4'] &&
+      !e29Reviews['insurance|I3']
+    ) {
+      pass('edge-29-sentinel-reviews-rls-and-multibu-supervisor', 'Entry 403 + Multi-BU Supervisor manufacturing-group & industry:* saved=1 + cross-BU key forgery saved=0');
+    } else {
+      fail('edge-29-sentinel-reviews-rls-and-multibu-supervisor', JSON.stringify({
+        entry: e29EntryPost.status,
+        mfgGroup: [e29SupMfgGroup.status, e29SupMfgGroup.json],
+        hspInd: [e29SupHspInd.status, e29SupHspInd.json],
+        forgery: [e29SupCrossForgery.status, e29SupCrossForgery.json],
+        keys: Object.keys(e29Reviews)
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

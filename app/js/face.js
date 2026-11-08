@@ -304,7 +304,7 @@ const Face = (() => {
       if (typeof document !== "undefined") {
         const vp = document.getElementById("authCamViewport");
         const hint = document.getElementById("authFaceHint");
-        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "") && window.MFG_FACE_TEST) {
+        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
           hint.textContent = "Look at camera for automatic Face ID";
           hint.className = "auth-face-hint ok";
         }
