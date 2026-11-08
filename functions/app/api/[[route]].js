@@ -28,11 +28,13 @@ import {
   handleEdgeTts
 } from '../../_lib/gemini.js';
 import { handleTelematics } from '../../_lib/telematics.js';
+import { handleKioskOptions, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import {
   applyEdgeCors,
   checkD1RateLimit,
   extractRequestSession,
   hashClientIp,
+  isOwnerOrFullGroupSession,
   isSameOriginBrowserRequest,
   jsonResponse,
   verifyActiveEdgeSession
@@ -62,15 +64,17 @@ async function parseBodyWithSize(request) {
 
 async function routeAppApi(context) {
   const { request, env, params } = context;
-  if (request.method === 'OPTIONS') {
-    return jsonResponse({ ok: true }, 204);
-  }
-
-  const url = new URL(request.url);
   const parts = Array.isArray(params.route)
     ? params.route
     : (params.route ? [String(params.route)] : []);
   const subPath = '/' + parts.join('/');
+
+  if (request.method === 'OPTIONS') {
+    if (subPath === '/kiosk/verify') return handleKioskOptions();
+    return jsonResponse({ ok: true }, 204);
+  }
+
+  const url = new URL(request.url);
 
   if (subPath === '/status' || subPath === '/health') {
     return handleStatus(env);
@@ -94,6 +98,9 @@ async function routeAppApi(context) {
   }
   if (subPath === '/users' && request.method === 'GET') {
     return handleUsersGet(request, env, session);
+  }
+  if (subPath === '/kiosk/verify' && request.method === 'POST') {
+    return handleKioskVerify(request, env, session, body, { isOwnerOrFullGroupSession });
   }
 
   const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';

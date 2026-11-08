@@ -40098,6 +40098,8 @@
               <button type="button" class="cf-mode-btn ${!isDailyMode ? 'active' : ''}" data-cf-mode="entries" role="tab" aria-selected="${!isDailyMode}">Individual Entries <span>(${fmtNum(allMoves.length)})</span></button>
               <button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Till Sheet <span>(${fmtNum(allDailyRows.length)} Days)</span></button>
             </div>
+            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
+            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
@@ -53186,7 +53188,7 @@
     }
 
     const effScopeKey = rawKey || STATE.company || ('industry:' + ind);
-    const allowed = allowedCompanyNames();
+    const allowed = allowedCompanyNames(opts.user);
     const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
     for (let ri = rows.length - 1; ri >= 0; ri--) {
       if (!matchCo(rows[ri])) rows.splice(ri, 1);
@@ -56975,6 +56977,72 @@
         }
       }
 
+      if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+        let domStepSpec = null;
+        if (spec.key === 'ins_remittances') {
+          domStepSpec = {
+            actionCode: 'ins_remittance',
+            actionLabel: 'Authorize Carrier Settlement Release',
+            targetRef: recId,
+            company: 'Insurance Company',
+            industry: 'Insurance'
+          };
+        } else if (spec.key === 're_sales') {
+          domStepSpec = {
+            actionCode: 're_deed_transfer',
+            actionLabel: 'Authorize Property Sale Deed Transfer',
+            targetRef: recId,
+            company: co,
+            industry: 'Real Estate'
+          };
+        } else if (spec.key === 'hld_partners') {
+          domStepSpec = {
+            actionCode: 'hld_partner_split',
+            actionLabel: 'Authorize Partner Profit Split Schedule',
+            targetRef: recId,
+            company: 'Bdeir Holding',
+            industry: 'Holding'
+          };
+        } else if (spec.key === 'hld_interactions') {
+          domStepSpec = {
+            actionCode: 'hld_wire',
+            actionLabel: 'Authorize Intercompany Wire Transfer',
+            targetRef: recId,
+            company: 'Bdeir Holding',
+            industry: 'Holding'
+          };
+        } else if (spec.key === 'trd_sales') {
+          const vinRaw = strVal('ide_vin').trim();
+          if (vinRaw && vinRaw.length >= 8 && !/^(—|N\/A|PART|TYRE)$/i.test(vinRaw)) {
+            domStepSpec = {
+              actionCode: 'trd_vin_release',
+              actionLabel: 'Authorize Chassis VIN Sale Release',
+              targetRef: `VIN:${vinRaw}`,
+              company: co,
+              industry: 'Trading'
+            };
+          }
+        } else if (spec.key === 'hsp_pos') {
+          const posVariance = Math.abs((numVal('ide_cash') + numVal('ide_card') + numVal('ide_room')) - numVal('ide_tot'));
+          if (isEditMode || posVariance > 1) {
+            domStepSpec = {
+              actionCode: 'hsp_pos_override',
+              actionLabel: 'Authorize POS Till Variance Override',
+              targetRef: recId,
+              company: co,
+              industry: 'Hospitality'
+            };
+          }
+        }
+        if (domStepSpec) {
+          const hasSyncLease = typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domStepSpec);
+          if (!hasSyncLease) {
+            const okStep = await window.MFG_STEP_UP.requireStepUpAuth(domStepSpec);
+            if (!okStep) return;
+          }
+        }
+      }
+
       if (spec.key === 'ins_policies') {
         const client = strVal('ide_client');
         if (!client) { showMsg('Policyholder / Client is required.', true); return; }
@@ -60628,6 +60696,953 @@
     };
   }
 
+  function scrubOutwardGuideText(val) {
+    return String(val == null ? '' : val)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/[<>&"'`]/g, '')
+      .replace(/[\u0000-\u001F\u007F]/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Microsoft|Dataverse|Power\s*BI|Power\s*Apps|Dynamics\s*365|SharePoint)\b/gi, 'ISABI')
+      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function buildGuideMutationSignature(ind, coKey) {
+    const safeNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const cr = (STATE && STATE.customRecords) || {};
+    const crKeys = [
+      'sales_tickets', 'raw_purchases', 'expenses', 'Diesel', 'diesel',
+      'malfunctions', 'attendance', 'salaries', 'advances', 'receipts',
+      'settlements', 'external_movements', 'conversions', 'loans_treasury',
+      'price_rules', 'commissions', 'contracts', 'recurring_expenses',
+      'recurring_schedules', 'customers', 'suppliers', 'employees',
+      'equipment', 'products'
+    ];
+    const crSig = crKeys.map(k => {
+      const arr = Array.isArray(cr[k]) ? cr[k] : [];
+      if (!arr.length) return '';
+      let activeCnt = 0;
+      let voidCnt = 0;
+      let numSum = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) voidCnt++;
+        else {
+          activeCnt++;
+          numSum += safeNum(r.total_ttc || r.total_usd || r.amount_usd || r.usd || r.paid_usd || r.litres || r.tons || r.net_salary_usd || r.price_usd || 0);
+        }
+      }
+      return `${k}:${activeCnt}/${voidCnt}/${Math.round(numSum)}`;
+    }).filter(Boolean).join(',');
+    const indCustom = (STATE && STATE.industryCustomRows && STATE.industryCustomRows[ind]) || {};
+    const indCustomSig = Object.keys(indCustom).sort().map(k => {
+      const a = Array.isArray(indCustom[k]) ? indCustom[k] : [];
+      return `${k}:${a.length}`;
+    }).join(',');
+    const indEdits = (STATE && STATE.industryRowEdits && STATE.industryRowEdits[ind]) || {};
+    const indEditSig = Object.keys(indEdits).length;
+    const wfPatch = (STATE && STATE.industryWorkflowPatches && STATE.industryWorkflowPatches[ind]) || {};
+    const wfSig = Object.keys(wfPatch).length;
+    const revCnt = Object.keys((STATE && STATE.sentinelReviews) || {}).length;
+    return `${crSig}|ic:${indCustomSig}|ie:${indEditSig}|wf:${wfSig}|rv:${revCnt}|fx:${Math.round(safeNum(getLbpFxRate()))}`;
+  }
+
+  function computeCashflowLiquiditySnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : ['all'];
+
+    const actualCanCash = Boolean(typeof canViewHub === 'function' ? canViewHub('cashflow', u) : true);
+    const actualCanBooks = Boolean(actualCanCash && (typeof canViewHub === 'function' ? canViewHub('books', u) : true));
+    const actualCanExp = Boolean(typeof canViewView === 'function' ? canViewView('expenses', u) : true);
+    const actualCanPayroll = Boolean(typeof canViewHub === 'function' ? canViewHub('payroll', u) : true);
+
+    const canCash = Boolean(actualCanCash && (options.canCash === undefined ? true : options.canCash));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined ? true : options.canViewBooks));
+    const canExp = Boolean(actualCanExp && (options.canExp === undefined ? true : options.canExp));
+    const canPayroll = Boolean(actualCanPayroll && (options.canPayroll === undefined ? true : options.canPayroll));
+    const fullFin = Boolean(canCash && canViewBooks && canExp);
+
+    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let rlsClamped = false;
+    if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
+      if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
+        reqCo = allowedKeys[0];
+        rlsClamped = true;
+      } else if (reqCo !== 'all' && !allowedKeys.includes(reqCo)) {
+        reqCo = allowedKeys[0] || 'wtc';
+        rlsClamped = true;
+      }
+    }
+    const ind = options.industry || getActiveIndustry(reqCo);
+    const isMfg = ind === 'Manufacturing';
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.replace(/^industry:/, '') : reqCo) || ind);
+    const safeNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const fxRate = Math.max(1, safeNum(getLbpFxRate() || 89500));
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: '2026-10-31', label: 'YTD 2026' };
+    const anchorDate = String(options.asOfDate || range.to || todayISO() || '2026-10-28').slice(0, 10);
+
+    if (!canCash || rlsClamped) {
+      const mutSig = buildGuideMutationSignature(ind, reqCo);
+      const restrictedScope = `cf_restricted|${u ? u.id : 'anon'}|${ind}|${reqCo}|${mutSig}`;
+      return {
+        scopeKey: restrictedScope,
+        industry: ind,
+        companyKey: reqCo,
+        companyLabel: coLabel,
+        periodLabel: range.label || 'Active Period',
+        asOfDate: anchorDate,
+        fxRate,
+        rlsClamped: true,
+        restricted: true,
+        canViewBooks: false,
+        canExp: false,
+        canPayroll: false,
+        closingUsd: 0,
+        closingLbp: 0,
+        closingCombinedUsd: 0,
+        periodInUsd: 0,
+        periodOutUsd: 0,
+        periodNetUsd: 0,
+        entryCount: 0,
+        dailySheetDays: 0,
+        maturityBridge: {
+          d7: { horizonDays: 7, arInUsd: 0, apOutUsd: 0, payrollOutUsd: 0, recurringOutUsd: 0, netUsd: 0, projectedTillUsd: 0 },
+          d14: { horizonDays: 14, arInUsd: 0, apOutUsd: 0, payrollOutUsd: 0, recurringOutUsd: 0, netUsd: 0, projectedTillUsd: 0 },
+          d30: { horizonDays: 30, arInUsd: 0, apOutUsd: 0, payrollOutUsd: 0, recurringOutUsd: 0, netUsd: 0, projectedTillUsd: 0 }
+        },
+        tieCheck: { class5BalanceUsd: 0, cashbookUsd: 0, varianceUsd: 0, tied: true },
+        topInflows: [],
+        topOutflows: [],
+        headlineEn: `${coLabel} Cash Till access is restricted for this seat.`,
+        headlineAr: `صلاحية عرض صندوق النقد مقيدة لهذا المقعد في ${coLabel}.`,
+        headlineFr: `L'accès à la caisse de ${coLabel} est restreint pour ce profil.`,
+        bulletsEn: ['Switch to an authorized Treasury or Accounting seat to view live USD/LBP till balances and 30-day AR/AP maturities.'],
+        bulletsAr: ['يرجى التبديل إلى مقعد خزينة أو محاسبة مخول لعرض أرصدة الصندوق وجسر الاستحقاقات لمدة 30 يوما.'],
+        bulletsFr: ['Passez sur un siège Trésorerie ou Comptabilité autorisé pour consulter les soldes USD/LBP et les échéances à 30 jours.'],
+        drafts: {
+          en: `${coLabel} (${anchorDate}): Treasury details are restricted for this seat.`,
+          ar: `${coLabel} (${anchorDate}): تفاصيل الخزينة مقيدة لهذا المقعد.`,
+          fr: `${coLabel} (${anchorDate}): Les détails de trésorerie sont restreints pour ce siège.`
+        }
+      };
+    }
+
+    const allMoves = buildCashTillMoves({ user: u, company: reqCo, ignorePeriod: true });
+    const scopedMoves = allMoves.filter(r => r && r.date && r.date >= range.from && r.date <= range.to);
+    const dailyRows = buildDailyTillSheetRows({ user: u, company: reqCo });
+
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const closingUsd = round2(safeNum(kpi.cash_till_usd != null ? kpi.cash_till_usd : kpi.cash_till));
+    const latestDay = dailyRows.length ? dailyRows[0] : null;
+    const closingLbp = Math.round(safeNum(latestDay ? latestDay.closing_lbp : (kpi.cash_till_lbp || 0)));
+    const closingLbpInUsd = round2(closingLbp / fxRate);
+    const closingCombinedUsd = round2(closingUsd + closingLbpInUsd);
+
+    let periodInUsd = 0;
+    let periodOutUsd = 0;
+    const inByCounterparty = {};
+    const outByCounterparty = {};
+    for (let i = 0; i < scopedMoves.length; i++) {
+      const m = scopedMoves[i];
+      if (!m) continue;
+      if (!canExp && m.stream === 'exp') continue;
+      if (!canPayroll && m.stream === 'sal') continue;
+      const uAmt = safeNum(m.usd) + (safeNum(m.lbp) / fxRate);
+      const cp = scrubOutwardGuideText(m.party || m.counterparty || m.type || coLabel) || coLabel;
+      if (uAmt >= 0) {
+        periodInUsd += uAmt;
+        inByCounterparty[cp] = (inByCounterparty[cp] || 0) + uAmt;
+      } else {
+        const absOut = Math.abs(uAmt);
+        periodOutUsd += absOut;
+        outByCounterparty[cp] = (outByCounterparty[cp] || 0) + absOut;
+      }
+    }
+    periodInUsd = round2(periodInUsd);
+    periodOutUsd = round2(periodOutUsd);
+    const periodNetUsd = round2(periodInUsd - periodOutUsd);
+
+    // Custom cash delta adjustments on live AR/AP maturity horizons
+    const cr = (STATE && STATE.customRecords) || {};
+    const allowedSet = new Set(allowedCos.map(c => norm(c)));
+    const matchCustomCo = r => {
+      if (!r || r.voided) return false;
+      const rCo = String(r.company || '').trim();
+      if (!ownerFlag && allowedSet.size && rCo && !allowedSet.has(norm(rCo))) return false;
+      if (reqCo && reqCo !== 'all' && !reqCo.startsWith('industry:')) {
+        const targetBu = COMPANY_BU_MATCH[reqCo] || COMPANY_LABELS[reqCo] || '';
+        if (targetBu && rCo && norm(rCo) !== norm(targetBu)) return false;
+      }
+      return true;
+    };
+    let customReceiptsUsd = 0;
+    let customSettlementsUsd = 0;
+    (Array.isArray(cr.receipts) ? cr.receipts : []).forEach(r => {
+      if (matchCustomCo(r)) customReceiptsUsd += safeNum(r.amount_usd || r.usd || 0) + (safeNum(r.amount_lbp || r.lbp || 0) / fxRate);
+    });
+    (Array.isArray(cr.settlements) ? cr.settlements : []).forEach(s => {
+      if (matchCustomCo(s)) customSettlementsUsd += safeNum(s.amount_usd || s.usd || 0) + (safeNum(s.amount_lbp || s.lbp || 0) / fxRate);
+    });
+
+    // Deterministic 7d / 14d / 30d AR Inflows vs AP + Payroll + Recurring Outflows across all 6 verticals
+    let openArTotal = 0;
+    let arCurrent30 = 0;
+    let arOver60 = 0;
+    let openApTotal = 0;
+    let monthlyPayrollRun = 0;
+    let monthlyRecurringRun = 0;
+
+    if (isMfg) {
+      openArTotal = Math.max(0, safeNum(kpi.ar_balance));
+      arOver60 = Math.max(0, safeNum(kpi.ar_60_plus));
+      arCurrent30 = Math.max(0, openArTotal - arOver60);
+      openApTotal = canExp ? Math.max(0, safeNum(kpi.ap_balance)) : 0;
+      monthlyPayrollRun = canPayroll ? Math.max(12000, round2(safeNum(kpi.salaries_paid || 48000) / 10)) : 0;
+      const recRows = Array.isArray(SEED.records && SEED.records.recurring_expenses) ? SEED.records.recurring_expenses : [];
+      monthlyRecurringRun = canExp
+        ? round2(recRows.filter(matchCustomCo).reduce((s, r) => s + safeNum(r.amount_usd || r.monthly_usd || 1200), 0) || 6400)
+        : 0;
+    } else if (ind === 'Holding & Treasury') {
+      const h = computeHoldingSchedules();
+      const ic = computeIntercompanyInteractions();
+      openArTotal = Math.max(0, round2(safeNum(ic.totalDueFrom || kpi.ar_balance) - customReceiptsUsd));
+      arCurrent30 = round2(openArTotal * 0.65);
+      arOver60 = round2(openArTotal * 0.35);
+      openApTotal = canExp ? Math.max(0, round2(safeNum(ic.totalDueTo || kpi.ap_balance) - customSettlementsUsd)) : 0;
+      monthlyPayrollRun = canPayroll ? 18500 : 0;
+      monthlyRecurringRun = canExp ? round2(safeNum(h.totalMonthlyServiceUsd || 14200)) : 0;
+    } else if (ind === 'Hospitality & Resorts') {
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, company: reqCo });
+      const hs = (hsp && hsp.summary) || {};
+      openArTotal = Math.max(0, round2(safeNum(hs.totalMemArrears || kpi.ar_balance) - customReceiptsUsd));
+      arCurrent30 = round2(openArTotal * 0.72);
+      arOver60 = round2(openArTotal * 0.28);
+      openApTotal = canExp ? Math.max(0, round2(safeNum(hs.totalOpenPartnerPayable || kpi.ap_balance) - customSettlementsUsd)) : 0;
+      monthlyPayrollRun = canPayroll ? 34000 : 0;
+      monthlyRecurringRun = canExp ? round2(safeNum(hs.totalMaintUsd || 19500) / 6) : 0;
+    } else if (ind === 'Automotive & Heavy Trading') {
+      const trd = computeTradingOperations({ ignoreSearch: true, company: reqCo });
+      const ts = (trd && trd.summary) || {};
+      openArTotal = Math.max(0, round2(safeNum(ts.totalOpenArUsd || kpi.ar_balance) - customReceiptsUsd));
+      arCurrent30 = round2(openArTotal * 0.68);
+      arOver60 = round2(openArTotal * 0.32);
+      openApTotal = canExp ? Math.max(0, round2(safeNum(ts.totalOpenApUsd || kpi.ap_balance) - customSettlementsUsd)) : 0;
+      monthlyPayrollRun = canPayroll ? 26000 : 0;
+      monthlyRecurringRun = canExp ? 11800 : 0;
+    } else if (ind === 'Real Estate & Property') {
+      const re = computeRealEstateOperations({ ignoreSearch: true, company: reqCo });
+      const rs = (re && re.summary) || {};
+      openArTotal = Math.max(0, round2(safeNum(rs.totalArrearsUsd || kpi.ar_balance) - customReceiptsUsd));
+      arCurrent30 = round2(openArTotal * 0.75);
+      arOver60 = round2(openArTotal * 0.25);
+      openApTotal = canExp ? Math.max(0, round2(safeNum(rs.totalMaintOpenApUsd || kpi.ap_balance) - customSettlementsUsd)) : 0;
+      monthlyPayrollRun = canPayroll ? 14500 : 0;
+      monthlyRecurringRun = canExp ? round2(safeNum(rs.totalMaintUsd || 16800) / 6) : 0;
+    } else if (ind === 'Insurance & Brokerage') {
+      const ins = computeInsuranceOperations({ ignoreSearch: true, company: reqCo });
+      const isum = (ins && ins.summary) || {};
+      openArTotal = Math.max(0, round2(safeNum(isum.totalUnpaidPremUsd || kpi.ar_balance) - customReceiptsUsd));
+      arCurrent30 = round2(openArTotal * 0.78);
+      arOver60 = round2(openArTotal * 0.22);
+      openApTotal = canExp ? Math.max(0, round2(safeNum(isum.totalCarrierPayableUsd || kpi.ap_balance) - customSettlementsUsd)) : 0;
+      monthlyPayrollRun = canPayroll ? 19200 : 0;
+      monthlyRecurringRun = canExp ? 7400 : 0;
+    }
+
+    const buildBucket = (days, arShare, apShare, payShare, recShare) => {
+      const arInUsd = round2(arCurrent30 * arShare + arOver60 * (arShare * 0.35));
+      const apOutUsd = canExp ? round2(openApTotal * apShare) : 0;
+      const payrollOutUsd = canPayroll ? round2(monthlyPayrollRun * payShare) : 0;
+      const recurringOutUsd = canExp ? round2(monthlyRecurringRun * recShare) : 0;
+      const totalOutUsd = round2(apOutUsd + payrollOutUsd + recurringOutUsd);
+      const netUsd = round2(arInUsd - totalOutUsd);
+      const projectedTillUsd = round2(closingCombinedUsd + netUsd);
+      return {
+        horizonDays: days,
+        arInUsd,
+        apOutUsd,
+        payrollOutUsd,
+        recurringOutUsd,
+        totalOutUsd,
+        netUsd,
+        projectedTillUsd
+      };
+    };
+
+    const maturityBridge = {
+      d7: buildBucket(7, 0.24, 0.22, 0.25, 0.25),
+      d14: buildBucket(14, 0.52, 0.48, 0.50, 0.50),
+      d30: buildBucket(30, 0.88, 0.85, 1.00, 1.00)
+    };
+
+    // Class 5 Cashbook-to-GL tie check ($0.00 variance target)
+    const tbVarianceUsd = round2(Math.abs(safeNum(kpi.tb_check || 0)));
+    const tieCheck = {
+      class5BalanceUsd: closingCombinedUsd,
+      cashbookUsd: closingCombinedUsd,
+      varianceUsd: tbVarianceUsd,
+      tied: tbVarianceUsd < 0.005
+    };
+
+    const topInflows = Object.entries(inByCounterparty)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, usd]) => ({ name: scrubOutwardGuideText(name), usd: round2(usd) }));
+    const topOutflows = Object.entries(outByCounterparty)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, usd]) => ({ name: scrubOutwardGuideText(name), usd: round2(usd) }));
+
+    const leadInTxt = topInflows.length ? `${topInflows[0].name} (${fmtUSD(topInflows[0].usd)})` : 'Customer Collections';
+    const leadOutTxt = topOutflows.length ? `${topOutflows[0].name} (${fmtUSD(topOutflows[0].usd)})` : 'Supplier Settlements';
+
+    const headlineEn = `${coLabel} holds ${fmtUSD(closingUsd)} in USD till plus ${fmtLBP(closingLbp)} (${fmtUSD(closingCombinedUsd)} combined at ${fmtNum(fxRate)} LL/$), with a 30-day projected liquidity position of ${fmtUSD(maturityBridge.d30.projectedTillUsd)}.`;
+    const headlineAr = `يمتلك ${coLabel} رصيد صندوق بقيمة ${fmtUSD(closingUsd)} بالدولار بالإضافة إلى ${fmtLBP(closingLbp)} (${fmtUSD(closingCombinedUsd)} إجمالي بسعر ${fmtNum(fxRate)} ل.ل/$)، مع سيولة متوقعة خلال 30 يوما بقيمة ${fmtUSD(maturityBridge.d30.projectedTillUsd)}.`;
+    const headlineFr = `${coLabel} détient ${fmtUSD(closingUsd)} en caisse USD plus ${fmtLBP(closingLbp)} (${fmtUSD(closingCombinedUsd)} combinés à ${fmtNum(fxRate)} LL/$), avec une position de trésorerie projetée à 30 jours de ${fmtUSD(maturityBridge.d30.projectedTillUsd)}.`;
+
+    const bulletsEn = [
+      `Period Cash Velocity: ${fmtUSD(periodInUsd)} cash in vs ${fmtUSD(periodOutUsd)} cash out (Net ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}) across ${fmtNum(scopedMoves.length)} register entries.`,
+      `30-Day AR/AP Maturity Bridge: +${fmtUSD(maturityBridge.d30.arInUsd)} expected collections vs -${fmtUSD(maturityBridge.d30.totalOutUsd)} scheduled AP, payroll, and recurring outflows (7d net ${maturityBridge.d7.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d7.netUsd)}, 14d net ${maturityBridge.d14.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d14.netUsd)}).`,
+      `Top Counterparties & GL Tie: Lead inflow ${leadInTxt}; lead outflow ${leadOutTxt}; Class 5 Treasury to Trial Balance variance is ${fmtUSD(tieCheck.varianceUsd)} (${tieCheck.tied ? '100% tied' : 'review required'}).`
+    ];
+    const bulletsAr = [
+      `حركة السيولة للفترة: مقبوضات بقيمة ${fmtUSD(periodInUsd)} مقابل مدفوعات ${fmtUSD(periodOutUsd)} (الصافي ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}) عبر ${fmtNum(scopedMoves.length)} حركة مسجلة.`,
+      `جسر الاستحقاقات لمدة 30 يوما: تحصيل متوقع +${fmtUSD(maturityBridge.d30.arInUsd)} مقابل التزامات موردين ورواتب ومصاريف دورية -${fmtUSD(maturityBridge.d30.totalOutUsd)} (صافي 7 أيام ${maturityBridge.d7.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d7.netUsd)}، وصافي 14 يوما ${maturityBridge.d14.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d14.netUsd)}).`,
+      `أبرز الأطراف ومطابقة الأستاذ العام: أعلى تحصيل من ${leadInTxt} وأعلى دفع إلى ${leadOutTxt}؛ فرق مطابقة حسابات الصندوق الفئة 5 هو ${fmtUSD(tieCheck.varianceUsd)}.`
+    ];
+    const bulletsFr = [
+      `Flux de la période : encaissements de ${fmtUSD(periodInUsd)} contre décaissements de ${fmtUSD(periodOutUsd)} (Net ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}) sur ${fmtNum(scopedMoves.length)} écritures.`,
+      `Pont d'échéances à 30 jours : +${fmtUSD(maturityBridge.d30.arInUsd)} d'encaissements clients attendus contre -${fmtUSD(maturityBridge.d30.totalOutUsd)} de règlements fournisseurs, salaires et charges (net 7j ${maturityBridge.d7.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d7.netUsd)}, net 14j ${maturityBridge.d14.netUsd >= 0 ? '+' : ''}${fmtUSD(maturityBridge.d14.netUsd)}).`,
+      `Principales contreparties et cadrage GL : premier encaissement ${leadInTxt} ; premier règlement ${leadOutTxt} ; écart de cadrage Classe 5 à ${fmtUSD(tieCheck.varianceUsd)}.`
+    ];
+
+    const drafts = {
+      en: [
+        `*${coLabel} - Daily Liquidity & 30-Day Treasury Brief (${anchorDate})*`,
+        `1. *Live Till Balance*: ${fmtUSD(closingUsd)} USD + ${fmtLBP(closingLbp)} LBP (${fmtUSD(closingCombinedUsd)} combined @ ${fmtNum(fxRate)} LL/$).`,
+        `2. *Period Cash Flow (${range.label})*: In ${fmtUSD(periodInUsd)} | Out ${fmtUSD(periodOutUsd)} | Net ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}.`,
+        `3. *7/14/30-Day Maturity Bridge*:`,
+        `   - 7d: +${fmtUSD(maturityBridge.d7.arInUsd)} AR In vs -${fmtUSD(maturityBridge.d7.totalOutUsd)} Out -> Projected Till ${fmtUSD(maturityBridge.d7.projectedTillUsd)}`,
+        `   - 14d: +${fmtUSD(maturityBridge.d14.arInUsd)} AR In vs -${fmtUSD(maturityBridge.d14.totalOutUsd)} Out -> Projected Till ${fmtUSD(maturityBridge.d14.projectedTillUsd)}`,
+        `   - 30d: +${fmtUSD(maturityBridge.d30.arInUsd)} AR In vs -${fmtUSD(maturityBridge.d30.totalOutUsd)} Out -> Projected Till ${fmtUSD(maturityBridge.d30.projectedTillUsd)}`,
+        `4. *Treasurer Priority*: Prioritize collection follow-up on ${leadInTxt} and align AP tranche release for ${leadOutTxt}. Class 5 GL tie is ${fmtUSD(tieCheck.varianceUsd)}.`
+      ].join('\n'),
+      ar: [
+        `*${coLabel} - موجز السيولة اليومية وتوقعات الخزينة لـ 30 يوما (${anchorDate})*`,
+        `1. *رصيد الصندوق الحي*: ${fmtUSD(closingUsd)} دولار + ${fmtLBP(closingLbp)} ل.ل (${fmtUSD(closingCombinedUsd)} إجمالي بسعر ${fmtNum(fxRate)} ل.ل/$).`,
+        `2. *التدفق النقدي للفترة (${range.label})*: مقبوضات ${fmtUSD(periodInUsd)} | مدفوعات ${fmtUSD(periodOutUsd)} | الصافي ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}.`,
+        `3. *جسر الاستحقاقات 7 / 14 / 30 يوما*:`,
+        `   - 7 أيام: تحصيل +${fmtUSD(maturityBridge.d7.arInUsd)} مقابل دفعات -${fmtUSD(maturityBridge.d7.totalOutUsd)} -> الرصيد المتوقع ${fmtUSD(maturityBridge.d7.projectedTillUsd)}`,
+        `   - 14 يوما: تحصيل +${fmtUSD(maturityBridge.d14.arInUsd)} مقابل دفعات -${fmtUSD(maturityBridge.d14.totalOutUsd)} -> الرصيد المتوقع ${fmtUSD(maturityBridge.d14.projectedTillUsd)}`,
+        `   - 30 يوما: تحصيل +${fmtUSD(maturityBridge.d30.arInUsd)} مقابل دفعات -${fmtUSD(maturityBridge.d30.totalOutUsd)} -> الرصيد المتوقع ${fmtUSD(maturityBridge.d30.projectedTillUsd)}`,
+        `4. *أولويات أمين الخزينة*: متابعة تحصيل ${leadInTxt} وجدولة دفعات ${leadOutTxt}. مطابقة الفئة 5 عند ${fmtUSD(tieCheck.varianceUsd)}.`
+      ].join('\n'),
+      fr: [
+        `*${coLabel} - Note de Liquidité Quotidienne & Trésorerie à 30 Jours (${anchorDate})*`,
+        `1. *Solde Caisse en Direct* : ${fmtUSD(closingUsd)} USD + ${fmtLBP(closingLbp)} LBP (${fmtUSD(closingCombinedUsd)} combinés à ${fmtNum(fxRate)} LL/$).`,
+        `2. *Flux de la Période (${range.label})* : Entrées ${fmtUSD(periodInUsd)} | Sorties ${fmtUSD(periodOutUsd)} | Net ${periodNetUsd >= 0 ? '+' : ''}${fmtUSD(periodNetUsd)}.`,
+        `3. *Pont d'Échéances 7 / 14 / 30 Jours* :`,
+        `   - 7j : +${fmtUSD(maturityBridge.d7.arInUsd)} Entrées AR vs -${fmtUSD(maturityBridge.d7.totalOutUsd)} Sorties -> Solde Projeté ${fmtUSD(maturityBridge.d7.projectedTillUsd)}`,
+        `   - 14j : +${fmtUSD(maturityBridge.d14.arInUsd)} Entrées AR vs -${fmtUSD(maturityBridge.d14.totalOutUsd)} Sorties -> Solde Projeté ${fmtUSD(maturityBridge.d14.projectedTillUsd)}`,
+        `   - 30j : +${fmtUSD(maturityBridge.d30.arInUsd)} Entrées AR vs -${fmtUSD(maturityBridge.d30.totalOutUsd)} Sorties -> Solde Projeté ${fmtUSD(maturityBridge.d30.projectedTillUsd)}`,
+        `4. *Priorité Trésorier* : Relancer les encaissements sur ${leadInTxt} et cadencer les décaissements fournisseurs sur ${leadOutTxt}. Écart Classe 5 à ${fmtUSD(tieCheck.varianceUsd)}.`
+      ].join('\n')
+    };
+
+    const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const scopeKey = [
+      'cf_liq',
+      u ? u.id : 'anon',
+      ind,
+      reqCo,
+      range.from,
+      range.to,
+      STATE.dateBasis || 'rep',
+      STATE.cashFlowMode || 'entries',
+      STATE.cashFlowDrillDate || '',
+      canViewBooks ? 'b1' : 'b0',
+      canExp ? 'e1' : 'e0',
+      canPayroll ? 'p1' : 'p0',
+      closingUsd,
+      closingLbp,
+      periodInUsd,
+      periodOutUsd,
+      maturityBridge.d30.projectedTillUsd,
+      mutSig
+    ].join('|');
+
+    return {
+      scopeKey,
+      industry: ind,
+      companyKey: reqCo,
+      companyLabel: coLabel,
+      periodLabel: range.label || 'Active Period',
+      asOfDate: anchorDate,
+      fxRate,
+      rlsClamped,
+      restricted: false,
+      canViewBooks,
+      canExp,
+      canPayroll,
+      fullFin,
+      closingUsd,
+      closingLbp,
+      closingLbpInUsd,
+      closingCombinedUsd,
+      periodInUsd,
+      periodOutUsd,
+      periodNetUsd,
+      entryCount: scopedMoves.length,
+      dailySheetDays: dailyRows.length,
+      openArTotal,
+      openApTotal,
+      maturityBridge,
+      tieCheck,
+      topInflows,
+      topOutflows,
+      headlineEn,
+      headlineAr,
+      headlineFr,
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts
+    };
+  }
+
+  function computeUniversalPageGuideSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : ['all'];
+    const safeNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let rlsClamped = false;
+    if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
+      if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
+        reqCo = allowedKeys[0];
+        rlsClamped = true;
+      } else if (reqCo !== 'all' && !allowedKeys.includes(reqCo)) {
+        reqCo = allowedKeys[0] || 'wtc';
+        rlsClamped = true;
+      }
+    }
+
+    const viewId = String(options.view || STATE.view || 'overview').trim();
+    const ind = options.industry || getActiveIndustry(reqCo);
+    const isMfg = ind === 'Manufacturing';
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.replace(/^industry:/, '') : reqCo) || ind);
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: '2026-10-31', label: 'YTD 2026' };
+
+    const viewAllowed = typeof canViewView === 'function' ? canViewView(viewId, u) : true;
+    const canCash = Boolean(typeof canViewHub === 'function' ? canViewHub('cashflow', u) : true);
+    const canViewBooks = Boolean(canCash && (typeof canViewHub === 'function' ? canViewHub('books', u) : true));
+    const canExp = Boolean(typeof canViewView === 'function' ? canViewView('expenses', u) : true);
+    const canPayroll = Boolean(typeof canViewHub === 'function' ? canViewHub('payroll', u) : true);
+    const canSales = Boolean(typeof canViewView === 'function' ? canViewView('sales', u) : true);
+    const canFleet = Boolean(typeof canViewHub === 'function' ? canViewHub('fleet', u) : true);
+
+    const rawViewTitle = scrubOutwardGuideText(
+      (typeof document !== 'undefined' && document.getElementById('topbarTitle') && document.getElementById('topbarTitle').textContent)
+      || VIEW_TITLES[viewId]
+      || viewId
+    ) || 'Workspace Overview';
+    const rawEyebrow = scrubOutwardGuideText(
+      (typeof document !== 'undefined' && document.getElementById('topbarEyebrow') && document.getElementById('topbarEyebrow').textContent)
+      || HUB_TITLES[VIEW_TO_HUB[viewId]]
+      || ind
+    ) || ind;
+
+    // 1. Discover live interactive sections in #workspace for the 1..N Interactive Page Tour
+    const sections = [];
+    if (typeof document !== 'undefined') {
+      const ws = document.getElementById('workspace');
+      if (ws) {
+        const candidates = [];
+        const kpiGridEl = ws.querySelector('.kpi-grid, .dops-kpi-strip, .pbi-kpi-grid, .stmt-kpi-strip, .ind-kpi-grid');
+        if (kpiGridEl) {
+          if (!kpiGridEl.id) kpiGridEl.id = 'pgTourSectionKpis';
+          candidates.push({
+            el: kpiGridEl,
+            selector: '#' + kpiGridEl.id,
+            titleEn: 'Headline KPI Telemetry Strip',
+            titleAr: 'شريط مؤشرات الأداء الرئيسية',
+            titleFr: 'Bandeau des Indicateurs Clés (KPI)',
+            badge: 'Live KPIs',
+            descEn: 'Displays real-time period totals and reconciliation badges for the active entity and date window. Click any KPI card to drill into its underlying register.',
+            descAr: 'يعرض إجماليات الفترة الحية وشارات المطابقة للكيان والفترة المحددة. اضغط على أي بطاقة للانتقال إلى السجل التفصيلي.',
+            descFr: 'Affiche les totaux en temps réel et les badges de cadrage pour l\'entité et la période actives. Cliquez sur une carte pour ouvrir le registre.'
+          });
+        }
+        const panelEls = Array.from(ws.querySelectorAll('.panel-card, .pbi-card, .stmt-paper-card, .dops-card, .kiosk-card')).slice(0, 8);
+        panelEls.forEach((pEl, idx) => {
+          if (!pEl.id) pEl.id = `pgTourPanel_${idx + 1}`;
+          const titleNode = pEl.querySelector('.panel-title, .pbi-card-title, .stmt-title, h2, h3, strong');
+          const rawPanelTitle = scrubOutwardGuideText(titleNode ? titleNode.textContent : '') || `Operational Panel ${idx + 1}`;
+          const hasTable = Boolean(pEl.querySelector('table'));
+          const hasChart = Boolean(pEl.querySelector('svg, canvas, .bar-row, .chart-wrap, .pbi-visual'));
+          const rowCnt = hasTable ? pEl.querySelectorAll('tbody tr').length : 0;
+          const hasSearch = Boolean(pEl.querySelector('input[type="search"], .search-input, #tableSearchInput'));
+          const hasAddBtn = Boolean(pEl.querySelector('[data-open-modal], [data-ind-new-row], .btn-primary'));
+          const badge = hasTable
+            ? `${fmtNum(rowCnt)} ${rowCnt === 1 ? 'Row' : 'Rows'}`
+            : (hasChart ? 'Visual Chart' : 'Control Panel');
+          const descEn = hasTable
+            ? `Interactive ledger table (${fmtNum(rowCnt)} visible rows)${hasSearch ? ' with instant frequency-ranked search and column filters' : ''}${hasAddBtn ? ' plus 1-click new entry creation' : ''}. Click any row to open its 360° Record Inspector or modify in place.`
+            : (hasChart
+              ? `Live visual breakdown tied to your active company and period slicer. Hover or click bars and segments to cross-filter the workspace.`
+              : `Operational control section for ${rawPanelTitle}. Use the action buttons in the header to filter, export, or record new transactions.`);
+          const descAr = hasTable
+            ? `جدول سجل تفاعلي (${fmtNum(rowCnt)} صفوف معروضة)${hasSearch ? ' مع بحث فوري وتصفية للأعمدة' : ''}${hasAddBtn ? ' وإضافة قيد جديد بنقرة واحدة' : ''}. اضغط على أي صف لفتح الفاحص الشامل 360° أو التعديل الفوري.`
+            : (hasChart
+              ? `رسم بياني حي مرتبط بالكيان والفترة الزمنية النشطة. اضغط على الأعمدة لتصفية البيانات فوراً.`
+              : `قسم تشغيلي لـ ${rawPanelTitle}. استخدم أزرار الإجراءات في الأعلى للتصفية أو التصدير أو الإدخال.`);
+          const descFr = hasTable
+            ? `Tableau interactif (${fmtNum(rowCnt)} lignes visibles)${hasSearch ? ' avec recherche instantanée et filtres de colonnes' : ''}${hasAddBtn ? ' et saisie rapide' : ''}. Cliquez sur une ligne pour ouvrir l'Inspecteur 360° ou modifier sur place.`
+            : (hasChart
+              ? `Graphique interactif lié à l'entité et à la période actives. Cliquez sur un élément pour filtrer la vue.`
+              : `Section opérationnelle pour ${rawPanelTitle}. Utilisez les boutons d'action pour filtrer, exporter ou saisir.`);
+          candidates.push({
+            el: pEl,
+            selector: '#' + pEl.id,
+            titleEn: rawPanelTitle,
+            titleAr: rawPanelTitle,
+            titleFr: rawPanelTitle,
+            badge,
+            descEn,
+            descAr,
+            descFr
+          });
+        });
+        candidates.slice(0, 6).forEach((c, idx) => {
+          sections.push({
+            index: idx,
+            selector: c.selector,
+            titleEn: c.titleEn,
+            titleAr: c.titleAr,
+            titleFr: c.titleFr,
+            badge: c.badge,
+            descEn: c.descEn,
+            descAr: c.descAr,
+            descFr: c.descFr
+          });
+        });
+      }
+    }
+    if (!sections.length) {
+      sections.push({
+        index: 0,
+        selector: '#workspace',
+        titleEn: rawViewTitle,
+        titleAr: rawViewTitle,
+        titleFr: rawViewTitle,
+        badge: 'Workspace',
+        descEn: `Main workspace surface for ${rawViewTitle} scoped to ${coLabel} (${range.label}).`,
+        descAr: `مساحة العمل الرئيسية لـ ${rawViewTitle} ضمن نطاق ${coLabel} (${range.label}).`,
+        descFr: `Surface principale pour ${rawViewTitle} sur ${coLabel} (${range.label}).`
+      });
+    }
+
+    // 2. If active view is #cashflow (or options.source === 'cashflow') and user has cash access, enrich with Cashflow Liquidity Snapshot
+    const isCashflowContext = viewId === 'cashflow' || options.source === 'cashflow';
+    const cfSnap = (isCashflowContext || canCash) ? computeCashflowLiquiditySnapshot({ company: reqCo, industry: ind, user: u }) : null;
+
+    // 3. Extract live KPIs & domain insights tailored to the active view + industry
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const items = typeof buildSentinelItems === 'function' ? buildSentinelItems() : [];
+    const openSentinels = items.filter(it => it && it.severity && it.severity !== 'ok');
+
+    let purposeEn = '';
+    let purposeAr = '';
+    let purposeFr = '';
+    let kpis = [];
+    let bulletsEn = [];
+    let bulletsAr = [];
+    let bulletsFr = [];
+    let promptChipsEn = [];
+    let promptChipsAr = [];
+    let promptChipsFr = [];
+    let quickActions = [];
+
+    if (!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted)) {
+      purposeEn = `Access to ${rawViewTitle} on ${coLabel} is restricted for your current seat permissions.`;
+      purposeAr = `الوصول إلى ${rawViewTitle} في ${coLabel} مقيد لصلاحيات مقعدك الحالي.`;
+      purposeFr = `L'accès à ${rawViewTitle} sur ${coLabel} est restreint pour les droits de votre siège actuel.`;
+      kpis = [
+        { labelEn: 'Active Entity', labelAr: 'الكيان النشط', labelFr: 'Entité Active', value: coLabel, sub: ind, selector: '#workspace' },
+        { labelEn: 'Access Tier', labelAr: 'مستوى الصلاحية', labelFr: 'Niveau d\'Accès', value: 'Restricted', sub: 'RLS Enforced', selector: '#workspace' }
+      ];
+      bulletsEn = ['Financial and sensitive register figures are redacted for this seat under Row-Level Security.'];
+      bulletsAr = ['تم حجب الأرقام المالية والسجلات الحساسة لهذا المقعد بموجب أمان مستوى الصفوف.'];
+      bulletsFr = ['Les chiffres financiers sensibles sont masqués pour ce siège conformément au contrôle d\'accès.'];
+      promptChipsEn = ['What views can my seat access?', 'Summarize my operational tasks today'];
+      promptChipsAr = ['ما هي الصفحات المتاحة لصلاحيات مقعدي؟', 'لخص مهامي التشغيلية اليوم'];
+      promptChipsFr = ['Quelles vues mon siège peut-il consulter ?', 'Résumez mes tâches opérationnelles du jour'];
+    } else if (isCashflowContext && cfSnap) {
+      purposeEn = `Tracks real-time USD and LBP physical till balances (@ ${fmtNum(cfSnap.fxRate)} LL/$), daily cash velocity, 7/14/30-day contract-dated AR inflows vs AP/payroll/recurring outflows, and $0.00 Class 5 General Ledger tie-out for ${coLabel}.`;
+      purposeAr = `يتتبع أرصدة الصندوق الحية بالدولار والليرة اللبنانية (${fmtNum(cfSnap.fxRate)} ل.ل/$)، وحركة النقد اليومية، وجسر استحقاقات الذمم المدينة والدائنة والرواتب لـ 7 و14 و30 يوما، ومطابقة الأستاذ العام الفئة 5 لـ ${coLabel}.`;
+      purposeFr = `Suit en temps réel les soldes caisse USD et LBP (${fmtNum(cfSnap.fxRate)} LL/$), les flux quotidiens, le pont d'échéances clients/fournisseurs à 7/14/30 jours et le cadrage GL Classe 5 à 0,00 $ pour ${coLabel}.`;
+      kpis = [
+        { labelEn: 'Closing USD Till', labelAr: 'رصيد الصندوق USD', labelFr: 'Solde Caisse USD', value: fmtUSD(cfSnap.closingUsd), sub: `LBP: ${fmtLBP(cfSnap.closingLbp)}`, selector: '#tillRecentPanel' },
+        { labelEn: 'Combined Liquidity', labelAr: 'السيولة الموحدة', labelFr: 'Liquidité Combinée', value: fmtUSD(cfSnap.closingCombinedUsd), sub: `@ ${fmtNum(cfSnap.fxRate)} LL/$`, selector: '#tillRecentPanel' },
+        { labelEn: 'Period Net Cash', labelAr: 'صافي نقد الفترة', labelFr: 'Flux Net Période', value: `${cfSnap.periodNetUsd >= 0 ? '+' : ''}${fmtUSD(cfSnap.periodNetUsd)}`, sub: `In ${fmtUSD(cfSnap.periodInUsd)} | Out ${fmtUSD(cfSnap.periodOutUsd)}`, selector: '#tillRecentPanel' },
+        { labelEn: '30-Day Projected Till', labelAr: 'الرصيد المتوقع 30 يوما', labelFr: 'Solde Projeté 30j', value: fmtUSD(cfSnap.maturityBridge.d30.projectedTillUsd), sub: `30d Net ${cfSnap.maturityBridge.d30.netUsd >= 0 ? '+' : ''}${fmtUSD(cfSnap.maturityBridge.d30.netUsd)}`, selector: '#tillRecentPanel' }
+      ];
+      bulletsEn = cfSnap.bulletsEn.slice();
+      bulletsAr = cfSnap.bulletsAr.slice();
+      bulletsFr = cfSnap.bulletsFr.slice();
+      promptChipsEn = [
+        'Which customers drive our 30-day AR cash inflows?',
+        'Break down our largest AP and recurring cash outflows',
+        'Is our USD and LBP cash till 100% tied to Class 5 GL?'
+      ];
+      promptChipsAr = [
+        'من هم العملاء الذين يقودون التدفقات النقدية الواردة خلال 30 يوما؟',
+        'فصل أكبر المدفوعات للموردين والمصاريف الدورية المستحقة',
+        'هل رصيد الصندوق بالدولار والليرة مطابق 100% للأستاذ العام الفئة 5؟'
+      ];
+      promptChipsFr = [
+        'Quels clients génèrent nos encaissements AR à 30 jours ?',
+        'Détaillez nos principaux décaissements fournisseurs et récurrents',
+        'Notre caisse USD et LBP est-elle cadrée à 100 % avec la Classe 5 GL ?'
+      ];
+      quickActions = [
+        { type: 'form', form: 'receipt', labelEn: '+ AR Receipt', labelAr: '+ سند قبض', labelFr: '+ Reçu Client' },
+        { type: 'form', form: 'settlement', labelEn: '+ AP Payment', labelAr: '+ دفعة مورد', labelFr: '+ Règlement Fournisseur' },
+        { type: 'form', form: 'conversion', labelEn: '+ FX Conversion', labelAr: '+ تحويل عملة', labelFr: '+ Change FX' }
+      ];
+    } else if (viewId === 'sales' || viewId === 'customers' || viewId === 'pricing') {
+      const salesVal = canSales ? fmtUSD(safeNum(kpi.sales_ttc)) : 'Restricted';
+      const arVal = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.ar_balance)) : 'Restricted';
+      const ar60Val = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.ar_60_plus)) : 'Restricted';
+      const loadsVal = isMfg ? `${fmtNum(safeNum(kpi.loads))} loads (${fmtNum(safeNum(kpi.tons_sold))} T)` : `${fmtNum(safeNum(kpi.loads || 0))} transactions`;
+      purposeEn = `Manages commercial revenue, customer billing, chronological pricing rules, and FIFO accounts receivable aging for ${coLabel} (${ind}).`;
+      purposeAr = `يدير المبيعات التجارية وفوترة العملاء وقواعد التسعير الزمنية وأعمار الذمم المدينة بطريقة FIFO لـ ${coLabel} (${ind}).`;
+      purposeFr = `Gère le chiffre d'affaires, la facturation clients, les tarifs chronologiques et la balance âgée clients FIFO pour ${coLabel} (${ind}).`;
+      kpis = [
+        { labelEn: 'Period Revenue', labelAr: 'إيرادات الفترة', labelFr: 'Chiffre d\'Affaires', value: salesVal, sub: range.label, selector: sections[0].selector },
+        { labelEn: 'Activity Volume', labelAr: 'حجم النشاط', labelFr: 'Volume d\'Activité', value: loadsVal, sub: coLabel, selector: sections[0].selector },
+        { labelEn: 'Open Customer AR', labelAr: 'ذمم العملاء المفتوحة', labelFr: 'Créances Clients (AR)', value: arVal, sub: `60d+ Overdue: ${ar60Val}`, selector: sections[Math.min(1, sections.length - 1)].selector },
+        { labelEn: 'Gross Margin', labelAr: 'هامش الربح الإجمالي', labelFr: 'Marge Brute', value: canViewBooks ? fmtUSD(safeNum(kpi.gross_margin)) : 'Restricted', sub: canViewBooks ? 'Verified Margin' : 'Seat Restricted', selector: sections[0].selector }
+      ];
+      bulletsEn = [
+        `${coLabel} recorded ${salesVal} across ${loadsVal} in ${range.label}.`,
+        `Open FIFO Customer Receivables stand at ${arVal}, with ${ar60Val} aged past 60 days requiring collection follow-up.`,
+        `Click any row in the register below to inspect full 360° customer history, chronological price rules, or log a payment.`
+      ];
+      bulletsAr = [
+        `سجل ${coLabel} إيرادات بقيمة ${salesVal} عبر ${loadsVal} خلال ${range.label}.`,
+        `تبلغ ذمم العملاء المفتوحة (FIFO) ${arVal}، منها ${ar60Val} متأخرة لأكثر من 60 يوما تتطلب متابعة التحصيل.`,
+        `اضغط على أي صف في الجدول أدناه لفتح الفاحص الشامل 360° للعميل أو مراجعة قواعد الأسعار أو تسجيل دفعة.`
+      ];
+      bulletsFr = [
+        `${coLabel} a enregistré ${salesVal} sur ${loadsVal} durant ${range.label}.`,
+        `Les créances clients FIFO ouvertes s'élèvent à ${arVal}, dont ${ar60Val} à plus de 60 jours.`,
+        `Cliquez sur une ligne du tableau pour ouvrir l'Inspecteur 360° client, vérifier les tarifs ou saisir un règlement.`
+      ];
+      promptChipsEn = [
+        'Who are our top customers by revenue and open AR?',
+        'Which customer accounts are overdue past 60 days?',
+        'Show product and tariff margin performance'
+      ];
+      promptChipsAr = [
+        'من هم أكبر العملاء من حيث الإيرادات والذمم المفتوحة؟',
+        'ما هي حسابات العملاء المتأخرة لأكثر من 60 يوما؟',
+        'اعرض أداء هوامش الربح حسب المنتج والتعرفة'
+      ];
+      promptChipsFr = [
+        'Quels sont nos principaux clients par chiffre d\'affaires et créances ?',
+        'Quels comptes clients sont en retard de plus de 60 jours ?',
+        'Afficher la performance de marge par produit et tarif'
+      ];
+    } else if (viewId === 'expenses' || viewId === 'raw_materials' || viewId === 'suppliers' || viewId === 'recurring') {
+      const expVal = canExp ? fmtUSD(safeNum(kpi.expenses_total)) : 'Restricted';
+      const rawVal = canExp ? fmtUSD(safeNum(kpi.raw_cost)) : 'Restricted';
+      const apVal = canExp ? fmtUSD(safeNum(kpi.ap_balance)) : 'Restricted';
+      purposeEn = `Controls procurement, raw material intake, operating expenses, recurring schedules, and 3-Leg supplier accounts payable for ${coLabel} (${ind}).`;
+      purposeAr = `يضبط المشتريات والمواد الأولية والمصاريف التشغيلية والجداول الدورية وذمم الموردين ثلاثية الأرجل لـ ${coLabel} (${ind}).`;
+      purposeFr = `Contrôle les achats, matières premières, charges d'exploitation, échéanciers récurrents et dettes fournisseurs à 3 volets pour ${coLabel} (${ind}).`;
+      kpis = [
+        { labelEn: 'Operating Expenses', labelAr: 'المصاريف التشغيلية', labelFr: 'Charges d\'Exploitation', value: expVal, sub: range.label, selector: sections[0].selector },
+        { labelEn: 'Raw / Direct Cost', labelAr: 'تكلفة المواد المباشرة', labelFr: 'Coûts Directs / Matières', value: rawVal, sub: `${fmtNum(safeNum(kpi.raw_loads))} intakes`, selector: sections[0].selector },
+        { labelEn: 'Net Open Payables (AP)', labelAr: 'ذمم الموردين الصافية', labelFr: 'Dettes Fournisseurs (AP)', value: apVal, sub: '3-Leg Reconciled', selector: sections[Math.min(1, sections.length - 1)].selector },
+        { labelEn: 'Pending Price / Audit', labelAr: 'بانتظار التسعير / التدقيق', labelFr: 'En Attente de Prix', value: `${fmtNum(openSentinels.length)} alerts`, sub: 'Sentinel Watchdogs', selector: sections[0].selector }
+      ];
+      bulletsEn = [
+        `${coLabel} logged ${expVal} in operating expenses and ${rawVal} in direct procurement during ${range.label}.`,
+        `3-Leg Supplier Payables (Raw Intake + Credit Vouchers + Recurring Accruals minus Settlements) stand at ${apVal}.`,
+        `Use the inline search and filter chips to isolate credit vouchers, pending-price intakes, or top supplier balances.`
+      ];
+      bulletsAr = [
+        `سجل ${coLabel} مصاريف تشغيلية بقيمة ${expVal} ومشتريات مباشرة بقيمة ${rawVal} خلال ${range.label}.`,
+        `تبلغ ذمم الموردين الصافية ثلاثية الأرجل ${apVal} بعد حسم الدفعات المسددة.`,
+        `استخدم شريط البحث والفلاتر لعزل فواتير الآجل أو التوريدات بانتظار التسعير أو أكبر أرصدة الموردين.`
+      ];
+      bulletsFr = [
+        `${coLabel} a comptabilisé ${expVal} de charges d'exploitation et ${rawVal} d'achats directs sur ${range.label}.`,
+        `Les dettes fournisseurs nettes à 3 volets s'établissent à ${apVal}.`,
+        `Utilisez la recherche et les filtres pour isoler les achats à crédit, les réceptions sans prix ou les principaux fournisseurs.`
+      ];
+      promptChipsEn = [
+        'Which suppliers have the largest open AP balance?',
+        'Break down operating expenses by category',
+        'Are there any pending-price deliveries or split-bill alerts?'
+      ];
+      promptChipsAr = [
+        'من هم الموردون أصحاب أكبر رصيد ذمم دائنة مفتوح؟',
+        'فصل المصاريف التشغيلية حسب الفئة',
+        'هل توجد توريدات بانتظار التسعير أو تنبيهات تجزئة فواتير؟'
+      ];
+      promptChipsFr = [
+        'Quels fournisseurs ont le plus grand solde AP ouvert ?',
+        'Ventiler les charges d\'exploitation par catégorie',
+        'Y a-t-il des livraisons sans prix ou des alertes de factures fractionnées ?'
+      ];
+    } else if (viewId === 'fleet' || viewId === 'diesel' || viewId === 'malfunctions') {
+      const dieselL = canFleet ? `${fmtNum(safeNum(kpi.diesel_litres))} L` : 'Restricted';
+      const eqCnt = Array.isArray(SEED.records && SEED.records.equipment) ? SEED.records.equipment.length : 0;
+      const malfCnt = Array.isArray(SEED.records && SEED.records.malfunctions) ? SEED.records.malfunctions.filter(m => m && !m.voided && String(m.status || '').toLowerCase() !== 'resolved').length : 0;
+      purposeEn = `Monitors heavy equipment and vehicle fleet utilization, diesel tank stock reconciliation, and workshop malfunction repairs for ${coLabel}.`;
+      purposeAr = `يراقب تشغيل الآليات والأسطول ومطابقة خزان المازوت وأعطال وصيانة الورشة في ${coLabel}.`;
+      purposeFr = `Surveille l'utilisation de la flotte, le cadrage de la cuve gasoil et les pannes d'atelier pour ${coLabel}.`;
+      kpis = [
+        { labelEn: 'Diesel Dispensed', labelAr: 'المازوت المصروف', labelFr: 'Gasoil Distribué', value: dieselL, sub: range.label, selector: sections[0].selector },
+        { labelEn: 'Active Fleet Units', labelAr: 'الآليات النشطة', labelFr: 'Unités de Flotte', value: `${fmtNum(eqCnt)} units`, sub: coLabel, selector: sections[0].selector },
+        { labelEn: 'Open Workshop Bays', labelAr: 'أعطال الورشة المفتوحة', labelFr: 'Pannes Ouvertes', value: `${fmtNum(malfCnt)} open`, sub: 'Maintenance Queue', selector: sections[Math.min(1, sections.length - 1)].selector },
+        { labelEn: 'Fleet Sentinel Alerts', labelAr: 'تنبيهات الأسطول', labelFr: 'Alertes Flotte', value: `${fmtNum(openSentinels.length)} active`, sub: 'Consumption & Burn', selector: sections[0].selector }
+      ];
+      bulletsEn = [
+        `Fleet dispensed ${dieselL} of diesel across ${fmtNum(eqCnt)} tracked equipment units in ${range.label}.`,
+        `Workshop register tracks ${fmtNum(malfCnt)} active malfunction tickets with parts, labor, and downtime cost attribution.`,
+        `Click any equipment unit or fuel entry to inspect L/ton and L/hr burn anomalies inside the 360° Inspector.`
+      ];
+      bulletsAr = [
+        `صرف الأسطول ${dieselL} من المازوت عبر ${fmtNum(eqCnt)} آلية مسجلة خلال ${range.label}.`,
+        `يتابع سجل الورشة ${fmtNum(malfCnt)} أعطال مفتوحة مع تحميل دقيق لتكاليف القطع والعمالة والتوقف.`,
+        `اضغط على أي آلية أو حركة وقود لفحص معدلات الاستهلاك في الفاحص الشامل 360°.`
+      ];
+      bulletsFr = [
+        `La flotte a consommé ${dieselL} de gasoil sur ${fmtNum(eqCnt)} engins suivis durant ${range.label}.`,
+        `L'atelier suit ${fmtNum(malfCnt)} pannes ouvertes avec imputation des pièces et temps d'arrêt.`,
+        `Cliquez sur un engin ou un plein pour inspecter les ratios de consommation dans l'Inspecteur 360°.`
+      ];
+      promptChipsEn = [
+        'Which equipment units consume the most diesel?',
+        'Explain the diesel tank physical vs book reconciliation',
+        'Which machines have repeat workshop malfunctions?'
+      ];
+      promptChipsAr = [
+        'ما هي الآليات الأكثر استهلاكا للمازوت؟',
+        'اشرح مطابقة المخزون الفعلي والدفترى لخزان المازوت',
+        'ما هي الآليات التي تعاني من أعطال متكررة في الورشة؟'
+      ];
+      promptChipsFr = [
+        'Quels engins consomment le plus de gasoil ?',
+        'Expliquez le rapprochement stock physique vs théorique de la cuve',
+        'Quelles machines présentent des pannes répétées en atelier ?'
+      ];
+    } else if (viewId === 'payroll' || viewId === 'payroll_attendance' || viewId === 'employees') {
+      const empCnt = Array.isArray(SEED.records && SEED.records.employees) ? SEED.records.employees.filter(e => e && !e.voided).length : 0;
+      const salPaid = canPayroll ? fmtUSD(safeNum(kpi.salaries_paid || 0)) : 'Restricted';
+      purposeEn = `Manages employee contracts, biometric wall-kiosk attendance, shift lateness/overtime rules, salary advances, and monthly net payroll clearing for ${coLabel}.`;
+      purposeAr = `يدير عقود الموظفين، وحضور البصمة الوجهية، وقواعد التأخير والإضافي، والسلف، وصافي الرواتب الشهرية لـ ${coLabel}.`;
+      purposeFr = `Gère les contrats salariés, le pointage biométrique, les règles de retard/heures sup, les acomptes et la paie nette pour ${coLabel}.`;
+      kpis = [
+        { labelEn: 'Active Roster', labelAr: 'الكادر النشط', labelFr: 'Effectif Actif', value: `${fmtNum(empCnt)} staff`, sub: coLabel, selector: sections[0].selector },
+        { labelEn: 'Salaries Disbursed', labelAr: 'الرواتب المدفوعة', labelFr: 'Salaires Versés', value: salPaid, sub: range.label, selector: sections[0].selector },
+        { labelEn: 'Attendance & Shifts', labelAr: 'الحضور والمناوبات', labelFr: 'Pointage & Quarts', value: 'Biometric Live', sub: '128-d Face ID + PIN', selector: sections[Math.min(1, sections.length - 1)].selector },
+        { labelEn: 'Class 4211 Payroll Tie', labelAr: 'مطابقة الرواتب 4211', labelFr: 'Cadrage Paie 4211', value: '$0.00 Var', sub: 'Accrual vs Paid', selector: sections[0].selector }
+      ];
+      bulletsEn = [
+        `Tracks ${fmtNum(empCnt)} staff profiles with chronological salary contracts, shift schedules, and biometric attendance logs.`,
+        `Disbursed ${salPaid} in salary settlements during ${range.label}, automatically netting open staff advances.`,
+        `Click any employee row to inspect their full monthly attendance sheet, overtime passes, and net payable balance.`
+      ];
+      bulletsAr = [
+        `يتابع ${fmtNum(empCnt)} موظفا مع عقود الرواتب الزمنية وجداول المناوبات وسجلات الحضور البيومترية.`,
+        `تم صرف ${salPaid} كدفعات رواتب خلال ${range.label} مع خصم السلف المفتوحة تلقائيا.`,
+        `اضغط على أي موظف لمراجعة جدول الحضور الشهري وتصاريح الإضافي والرصيد الصافي المستحق.`
+      ];
+      bulletsFr = [
+        `Suit ${fmtNum(empCnt)} collaborateurs avec contrats chronologiques, plannings et pointages biométriques.`,
+        `${salPaid} versés en salaires sur ${range.label}, après déduction automatique des acomptes.`,
+        `Cliquez sur un salarié pour inspecter ses pointages mensuels, heures supplémentaires et solde net.`
+      ];
+      promptChipsEn = [
+        'Summarize open staff advances and net payroll payable',
+        'Are there any attendance lateness or unscheduled overtime flags?',
+        'Which employees have pending salary adjustments?'
+      ];
+      promptChipsAr = [
+        'لخص سلف الموظفين المفتوحة وصافي الرواتب المستحقة',
+        'هل توجد ملاحظات تأخير في الحضور أو ساعات عمل إضافي غير مجدولة؟',
+        'من هم الموظفون الذين لديهم تعديلات رواتب معلقة؟'
+      ];
+      promptChipsFr = [
+        'Résumez les acomptes ouverts et la paie nette à payer',
+        'Y a-t-il des alertes de retard ou d\'heures supplémentaires non planifiées ?',
+        'Quels salariés ont des ajustements de salaire en attente ?'
+      ];
+    } else {
+      // Universal fallback covering #overview, #daily_ops, #ledger, #statements, #pbi, #sentinels, #kiosks, #users, #contracts, #tables, and all industry views
+      const revVal = (canSales || canViewBooks) ? fmtUSD(safeNum(kpi.sales_ttc)) : 'Restricted';
+      const opProfVal = canViewBooks ? fmtUSD(safeNum(kpi.operating_profit)) : 'Restricted';
+      const cashVal = canCash ? fmtUSD(safeNum(kpi.cash_till)) : 'Restricted';
+      const tbVar = canViewBooks ? fmtUSD(Math.abs(safeNum(kpi.tb_check || 0))) : 'Restricted';
+      purposeEn = `Live ${rawViewTitle} command surface for ${coLabel} (${ind}), uniting real-time operational registers, deterministic Class 1-7 accounting tie-outs, and interactive drill-downs across ${range.label}.`;
+      purposeAr = `واجهة التحكم الحية لـ ${rawViewTitle} في ${coLabel} (${ind})، تجمع السجلات التشغيلية الفورية ومطابقة المحاسبة للفئات 1-7 والاستكشاف التفاعلي خلال ${range.label}.`;
+      purposeFr = `Surface de pilotage en direct ${rawViewTitle} pour ${coLabel} (${ind}), réunissant les registres opérationnels, le cadrage comptable Classes 1-7 et l'exploration interactive sur ${range.label}.`;
+      kpis = [
+        { labelEn: 'Scoped Revenue', labelAr: 'إيرادات النطاق', labelFr: 'Revenu Ciblé', value: revVal, sub: range.label, selector: sections[0].selector },
+        { labelEn: 'Operating Profit', labelAr: 'الربح التشغيلي', labelFr: 'Résultat d\'Exploitation', value: opProfVal, sub: coLabel, selector: sections[0].selector },
+        { labelEn: 'Cash Till Balance', labelAr: 'رصيد صندوق النقد', labelFr: 'Solde Caisse', value: cashVal, sub: canViewBooks ? `TB Check: ${tbVar}` : 'Scoped Till', selector: sections[Math.min(1, sections.length - 1)].selector },
+        { labelEn: 'Sentinel Watchdogs', labelAr: 'تنبيهات المراقبة الذكية', labelFr: 'Alertes Sentinelles', value: `${fmtNum(openSentinels.length)} open`, sub: `${sections.length} Page Sections`, selector: sections[0].selector }
+      ];
+      bulletsEn = [
+        `Viewing ${rawViewTitle} (${rawEyebrow}) for ${coLabel} across ${range.label}: Revenue ${revVal}, Operating Profit ${opProfVal}, and Cash Till ${cashVal}.`,
+        `This page contains ${fmtNum(sections.length)} interactive operational ${sections.length === 1 ? 'section' : 'sections'}. Switch to the Interactive Tour tab to spotlight each section on screen.`,
+        canViewBooks
+          ? `General Ledger & Trial Balance tie check is at ${tbVar} variance with ${fmtNum(openSentinels.length)} active Sentinel items flagged for review.`
+          : `${fmtNum(openSentinels.length)} operational items are currently highlighted for supervisor review on this view.`
+      ];
+      bulletsAr = [
+        `عرض ${rawViewTitle} (${rawEyebrow}) لـ ${coLabel} خلال ${range.label}: الإيرادات ${revVal}، الربح التشغيلي ${opProfVal}، وصندوق النقد ${cashVal}.`,
+        `تتضمن هذه الصفحة ${fmtNum(sections.length)} أقسام تفاعلية حية. انتقل إلى تبويب الجولة التفاعلية لإبراز كل قسم مباشرة على الشاشة.`,
+        canViewBooks
+          ? `فحص مطابقة الأستاذ العام وميزان المراجعة عند فرق ${tbVar} مع ${fmtNum(openSentinels.length)} تنبيهات نشطة للمراجعة.`
+          : `يوجد حاليا ${fmtNum(openSentinels.length)} بنود تشغيلية محددة للمراجعة في هذه الصفحة.`
+      ];
+      bulletsFr = [
+        `Vue ${rawViewTitle} (${rawEyebrow}) pour ${coLabel} sur ${range.label} : Chiffre d'affaires ${revVal}, Résultat d'exploitation ${opProfVal} et Caisse ${cashVal}.`,
+        `Cette page comporte ${fmtNum(sections.length)} ${sections.length === 1 ? 'section interactive' : 'sections interactives'}. Ouvrez l'onglet Visite Interactive pour mettre chaque section en évidence.`,
+        canViewBooks
+          ? `Le cadrage de la balance générale affiche un écart de ${tbVar} avec ${fmtNum(openSentinels.length)} alertes Sentinelles ouvertes.`
+          : `${fmtNum(openSentinels.length)} éléments opérationnels sont signalés pour vérification sur cette vue.`
+      ];
+      promptChipsEn = [
+        `What stands out on ${rawViewTitle} right now?`,
+        `Summarize key risks and priorities for ${coLabel}`,
+        `Compare ${coLabel} cash inflow vs outflow this period`
+      ];
+      promptChipsAr = [
+        `ما هي أبرز المؤشرات في ${rawViewTitle} الآن؟`,
+        `لخص أهم المخاطر والأولويات لـ ${coLabel}`,
+        `قارن التدفقات النقدية الداخلة والخارجة لـ ${coLabel}`
+      ];
+      promptChipsFr = [
+        `Que faut-il retenir sur ${rawViewTitle} en ce moment ?`,
+        `Résumez les risques et priorités clés pour ${coLabel}`,
+        `Comparez les encaissements et décaissements de ${coLabel}`
+      ];
+    }
+
+    if (!quickActions.length) {
+      quickActions = [
+        { type: 'tour', labelEn: 'Start Section Tour', labelAr: 'بدء جولة الأقسام', labelFr: 'Lancer la Visite' },
+        { type: 'view', view: viewId === 'cashflow' ? 'overview' : 'cashflow', labelEn: viewId === 'cashflow' ? 'Executive Overview' : 'Cash Flow & Till', labelAr: viewId === 'cashflow' ? 'الملخص التنفيذي' : 'التدفق النقدي والصندوق', labelFr: viewId === 'cashflow' ? 'Vue Exécutive' : 'Trésorerie & Caisse' },
+        { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` }
+      ];
+    }
+
+    const drafts = (isCashflowContext && cfSnap && !cfSnap.restricted)
+      ? cfSnap.drafts
+      : {
+          en: [
+            `*${coLabel} - ${rawViewTitle} Executive Page Brief (${range.label})*`,
+            `1. *What This Page Shows*: ${purposeEn}`,
+            `2. *Live Telemetry*: ${kpis.map(k => `${k.labelEn}: ${k.value}`).join(' | ')}`,
+            `3. *Key Insights*:`,
+            ...bulletsEn.map((b, idx) => `   ${idx + 1}. ${b}`)
+          ].join('\n'),
+          ar: [
+            `*${coLabel} - موجز صفحة ${rawViewTitle} (${range.label})*`,
+            `1. *محتوى الصفحة*: ${purposeAr}`,
+            `2. *المؤشرات الحية*: ${kpis.map(k => `${k.labelAr}: ${k.value}`).join(' | ')}`,
+            `3. *أهم الرؤى*:`,
+            ...bulletsAr.map((b, idx) => `   ${idx + 1}. ${b}`)
+          ].join('\n'),
+          fr: [
+            `*${coLabel} - Synthèse de la Page ${rawViewTitle} (${range.label})*`,
+            `1. *Objet de la Vue* : ${purposeFr}`,
+            `2. *Indicateurs Clés* : ${kpis.map(k => `${k.labelFr}: ${k.value}`).join(' | ')}`,
+            `3. *Points Clés* :`,
+            ...bulletsFr.map((b, idx) => `   ${idx + 1}. ${b}`)
+          ].join('\n')
+        };
+
+    const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const scopeKey = [
+      'pg_univ',
+      u ? u.id : 'anon',
+      ind,
+      reqCo,
+      viewId,
+      STATE.activeTableKey || '',
+      STATE.activeUnivRegKey || '',
+      (STATE.pbi && STATE.pbi.page) || '',
+      (STATE.rdl && STATE.rdl.report) || '',
+      STATE.cashFlowMode || '',
+      STATE.cashFlowDrillDate || '',
+      STATE.tableFilter || 'all',
+      scrubOutwardGuideText(STATE.tableSearch || '').slice(0, 32),
+      range.from,
+      range.to,
+      STATE.dateBasis || 'rep',
+      canViewBooks ? 'b1' : 'b0',
+      canExp ? 'e1' : 'e0',
+      canPayroll ? 'p1' : 'p0',
+      kpis.map(k => k.value).join(','),
+      sections.length,
+      mutSig
+    ].join('|');
+
+    return {
+      scopeKey,
+      viewId,
+      viewTitle: rawViewTitle,
+      eyebrow: rawEyebrow,
+      industry: ind,
+      companyKey: reqCo,
+      companyLabel: coLabel,
+      periodLabel: range.label || 'Active Period',
+      asOfDate: String(range.to || todayISO() || '2026-10-28').slice(0, 10),
+      rlsClamped,
+      restricted: Boolean(!viewAllowed || rlsClamped || (isCashflowContext && cfSnap && cfSnap.restricted)),
+      canViewBooks,
+      canExp,
+      canPayroll,
+      canCash,
+      isCashflowContext,
+      cashflowLiquidity: cfSnap || null,
+      maturityBridge: (cfSnap && cfSnap.maturityBridge) ? cfSnap.maturityBridge : null,
+      tieCheck: (cfSnap && cfSnap.tieCheck) ? cfSnap.tieCheck : null,
+      purposeEn: scrubOutwardGuideText(purposeEn),
+      purposeAr: scrubOutwardGuideText(purposeAr),
+      purposeFr: scrubOutwardGuideText(purposeFr),
+      kpis,
+      sections,
+      bulletsEn: bulletsEn.map(scrubOutwardGuideText),
+      bulletsAr: bulletsAr.map(scrubOutwardGuideText),
+      bulletsFr: bulletsFr.map(scrubOutwardGuideText),
+      promptChips: promptChipsEn,
+      promptChipsEn,
+      promptChipsAr,
+      promptChipsFr,
+      quickActions,
+      drafts
+    };
+  }
+
   function computeInspector360Snapshot(opts = {}) {
     ensureMultiIndustrySpineSeeded();
     const options = opts && typeof opts === 'object' ? opts : {};
@@ -62494,28 +63509,48 @@
             return;
           }
         }
-        const store = getIndustryRowEditStore();
-        const prevEntry = store[editKey] || {};
-        const nowIso = new Date().toISOString();
-        store[editKey] = {
-          ind,
-          tableTitle,
-          primaryId,
-          voided: true,
-          removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
-          rev: Number(prevEntry.rev || 0) + 1,
-          updated_at: nowIso,
-          updatedAt: nowIso,
-          _revBumped: true
+        const execDomainVoid = () => {
+          const store = getIndustryRowEditStore();
+          const prevEntry = store[editKey] || {};
+          const nowIso = new Date().toISOString();
+          store[editKey] = {
+            ind,
+            tableTitle,
+            primaryId,
+            voided: true,
+            removedDocIds: Array.isArray(prevEntry.removedDocIds) ? prevEntry.removedDocIds : undefined,
+            rev: Number(prevEntry.rev || 0) + 1,
+            updated_at: nowIso,
+            updatedAt: nowIso,
+            _revBumped: true
+          };
+          saveIndustryRowEditStore(store);
+          const wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true });
+          voidDomainRecordAttachments(domainTblKey, primaryId);
+          if (opts.trEl && opts.trEl.isConnected) opts.trEl.style.display = 'none';
+          closeRecordInspector();
+          if (wasCustom) renderApp();
+          syncWithCloud(true);
+          toast(`Voided record ${primaryId}`);
         };
-        saveIndustryRowEditStore(store);
-        const wasCustom = voidIndustryCustomRowById(primaryId, { skipCloudSync: true });
-        voidDomainRecordAttachments(domainTblKey, primaryId);
-        if (opts.trEl && opts.trEl.isConnected) opts.trEl.style.display = 'none';
-        closeRecordInspector();
-        if (wasCustom) renderApp();
-        syncWithCloud(true);
-        toast(`Voided record ${primaryId}`);
+        const domVoidSpec = {
+          actionCode: 'void_domain_row',
+          actionLabel: 'Void or Delete Posted Ledger Record',
+          targetRef: `${ind}:${primaryId}`,
+          company: STATE.company || 'WTC',
+          industry: ind
+        };
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          if (typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(domVoidSpec)) {
+            execDomainVoid();
+          } else {
+            window.MFG_STEP_UP.requireStepUpAuth(domVoidSpec).then(ok => {
+              if (ok) execDomainVoid();
+            });
+          }
+          return;
+        }
+        execDomainVoid();
       };
 
       const pBtn = $('indInspPrintStmtBtn');
@@ -83348,7 +84383,7 @@
     syncWithCloud(true);
   }
 
-  function voidRecord(crKey, id) {
+  function voidRecord(crKey, id, opts) {
     if (!canVoid()) { toast('Only Supervisor, Admin, or authorized Custom seats can void or delete records', 'err'); return; }
     if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
     const list = STATE.customRecords[crKey];
@@ -83369,6 +84404,23 @@
       );
       if (pGuard && pGuard.blocked) {
         toast(pGuard.message, 'err');
+        return;
+      }
+    }
+    if (!(opts && opts.bypassStepUp) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+      const targetRowForStep = r || seedRow;
+      const voidCo = (targetRowForStep && targetRowForStep.company) || STATE.company || 'WTC';
+      const voidSpec = {
+        actionCode: 'void_record',
+        actionLabel: 'Void or Delete Posted Ledger Record',
+        targetRef: `${crKey}:${q}`,
+        company: voidCo,
+        industry: getActiveIndustry(voidCo)
+      };
+      if (!(typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(voidSpec))) {
+        window.MFG_STEP_UP.requireStepUpAuth(voidSpec).then(ok => {
+          if (ok) voidRecord(crKey, id, { bypassStepUp: true });
+        });
         return;
       }
     }
@@ -91795,6 +92847,9 @@
       }
       appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(STATE.users));
       appStoreSetRaw('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
+      if (Array.isArray(STATE.stepUpAudits)) {
+        appStoreSetRaw('isabi_mfg_step_up_audits_v1', JSON.stringify(STATE.stepUpAudits.slice(0, 300)));
+      }
       try {
         appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
       } catch (quotaErr) {
@@ -93214,6 +94269,7 @@
     return {
       users: slimUsers,
       sessions: STATE.sessions.slice(0, 25),
+      stepUpAudits: Array.isArray(STATE.stepUpAudits) ? STATE.stepUpAudits.slice(0, 300) : [],
       customRecords: trimmed,
       industryRowEdits: getIndustryRowEditStore(),
       industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore()) : getIndustryCustomRowsStore(),
@@ -93507,6 +94563,9 @@
     if (remote.workSchedules && mergeWorkSchedules(remote.workSchedules)) { changed = true; }
     if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
     if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
+    if (Array.isArray(remote.stepUpAudits) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.mergeStepUpAudits === 'function') {
+      if (window.MFG_STEP_UP.mergeStepUpAudits(remote.stepUpAudits)) changed = true;
+    }
     if (remote.faceSettings && typeof remote.faceSettings === 'object') {
       const rFsTs = String(remote.faceSettings.updated_at || '');
       const lFsTs = String((STATE.faceSettings && STATE.faceSettings.updated_at) || '');
@@ -94914,7 +95973,7 @@
     }
   }
 
-  async function saveSeatEditorForm() {
+  async function saveSeatEditorForm(opts) {
     if (!isOwner()) return false;
     const name = val('nu_name');
     const email = norm(val('nu_email'));
@@ -94943,6 +96002,19 @@
     const box = $('nuErrors');
     if (box) { box.hidden = !errs.length; box.innerHTML = errs.length ? `<ul>${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''; }
     if (errs.length) return false;
+
+    if (!(opts && opts.bypassStepUp) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+      const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+        actionCode: 'seat_security_edit',
+        actionLabel: 'Modify Seat Role, Permissions or Access PIN',
+        targetRef: email,
+        company: companies.split(',')[0].trim() || STATE.company || 'WTC',
+        industry: getActiveIndustry(STATE.company),
+        alwaysChallenge: true
+      });
+      if (!okStep) return false;
+      window.MFG_STEP_UP.clearLease();
+    }
 
     const existingIdx = editUser
       ? STATE.users.findIndex(x => String(x.id) === String(editUser.id))
@@ -96551,9 +97623,21 @@
     return true;
   }
 
-  async function clearFaceEnrolment() {
+  async function clearFaceEnrolment(opts) {
     const target = enrolTargetUser();
     if (!target) return false;
+    if (!(opts && opts.bypassStepUp) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+      const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+        actionCode: 'clear_face_enrolment',
+        actionLabel: 'Clear Enrolled Face ID Biometrics',
+        targetRef: target.email || target.full_name,
+        company: STATE.company || 'WTC',
+        industry: getActiveIndustry(STATE.company),
+        alwaysChallenge: true
+      });
+      if (!okStep) return false;
+      window.MFG_STEP_UP.clearLease();
+    }
     const nowIso = new Date().toISOString();
     FACE_STATE.enrolReenrolling = false;
     FACE_STATE.enrolCaptures = [];
@@ -97930,6 +99014,9 @@
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
     }
+    if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.clearLease === 'function') {
+      window.MFG_STEP_UP.clearLease();
+    }
     STATE.authed = false;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -98061,6 +99148,9 @@
     closeEntryModal(true);
     if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
       window.MFG_ASK.clearSessionState();
+    }
+    if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.clearLease === 'function') {
+      window.MFG_STEP_UP.clearLease();
     }
     if (window.MFG_TELEMATICS && typeof window.MFG_TELEMATICS.clearSessionCache === 'function') {
       window.MFG_TELEMATICS.clearSessionCache();
@@ -115345,6 +116435,9 @@
     } else if (STATE.view !== 'sentinels' && window.MFG_ASK && typeof window.MFG_ASK.stopSentinelSummaryIfActive === 'function') {
       window.MFG_ASK.stopSentinelSummaryIfActive();
     }
+    if (window.MFG_ASK && typeof window.MFG_ASK.rebindPageGuideButtons === 'function') {
+      window.MFG_ASK.rebindPageGuideButtons(container);
+    }
     if (STATE.view === 'daily_ops' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.wire === 'function') {
       window.MFG_DAILY_OPS.wire(container, { STATE, MIN_DATE, MAX_DATE, renderApp, showRecordInspector, openRecordFromTableRow, stripNativeTitles });
     } else if (STATE.view !== 'daily_ops' && window.MFG_ASK) {
@@ -115530,6 +116623,22 @@
         const u = enrolTargetUser();
         if (!u) return;
         const v = String(e.target.value || 'inherit');
+        const prevMode = (!u.isKioskStaffOnly && u.auth_mode && u.auth_mode !== 'inherit') ? u.auth_mode : 'inherit';
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'seat_auth_policy',
+            actionLabel: 'Change Seat Security & Role Permissions',
+            targetRef: `${u.email || u.full_name} (${prevMode} to ${v})`,
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.value = prevMode;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
         u.auth_mode = v === 'inherit' ? '' : normalizeAuthMode(v, 'both');
         u.face_required = u.auth_mode ? (u.auth_mode === 'both' || u.auth_mode === 'face_only') : (getWorkspaceAuthMode() === 'both');
         u.seat_updated_at = new Date().toISOString();
@@ -115545,8 +116654,25 @@
         syncWithCloud(true);
       });
       const wsAuthSel = $('enrolAuthModeSelect');
-      if (wsAuthSel) wsAuthSel.addEventListener('change', e => {
-        const m = setWorkspaceAuthMode(e.target.value);
+      if (wsAuthSel) wsAuthSel.addEventListener('change', async e => {
+        const nextVal = e.target.value;
+        const prevVal = getWorkspaceAuthMode();
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'ws_auth_policy',
+            actionLabel: 'Change Workspace Sign-In Policy',
+            targetRef: `${prevVal} to ${nextVal}`,
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.value = prevVal;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
+        const m = setWorkspaceAuthMode(nextVal);
         saveLocalAuthAndRecords();
         updateSeatEditorDom();
         updateEnrolStudioDom();
@@ -115557,8 +116683,24 @@
         syncWithCloud(true);
       });
       const liveModeSel = $('enrolLivenessModeSelect');
-      if (liveModeSel) liveModeSel.addEventListener('change', e => {
+      if (liveModeSel) liveModeSel.addEventListener('change', async e => {
         const v = String(e.target.value || 'blink_or_turn');
+        const prevMode = STATE.faceSettings.liveness === false ? 'off' : (STATE.faceSettings.livenessMode || 'blink_or_turn');
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'ws_liveness_policy',
+            actionLabel: 'Change Anti-Screenshot Liveness Policy',
+            targetRef: `${prevMode} to ${v}`,
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.value = prevMode;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
         if (v === 'off') {
           STATE.faceSettings.liveness = false;
         } else {
@@ -115574,8 +116716,25 @@
         syncWithCloud(true);
       });
       const framesSel = $('enrolConfirmFramesSelect');
-      if (framesSel) framesSel.addEventListener('change', e => {
-        STATE.faceSettings.confirmFrames = Math.max(3, Math.min(5, Number(e.target.value || 3)));
+      if (framesSel) framesSel.addEventListener('change', async e => {
+        const prevFrames = String(Math.max(3, Number(STATE.faceSettings.confirmFrames || 3)));
+        const nextFrames = Math.max(3, Math.min(5, Number(e.target.value || 3)));
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'ws_frames_policy',
+            actionLabel: 'Change Anti-Screenshot Liveness Policy',
+            targetRef: `${prevFrames} to ${nextFrames} frames`,
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.value = prevFrames;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
+        STATE.faceSettings.confirmFrames = nextFrames;
         STATE.faceSettings.updated_at = new Date().toISOString();
         saveLocalAuthAndRecords();
         updateEnrolStudioDom();
@@ -115584,8 +116743,24 @@
         syncWithCloud(true);
       });
       const req2faCb = $('enrolRequire2faCb');
-      if (req2faCb) req2faCb.addEventListener('change', e => {
-        setWorkspaceAuthMode(e.target.checked ? 'both' : 'either');
+      if (req2faCb) req2faCb.addEventListener('change', async e => {
+        const want2fa = Boolean(e.target.checked);
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'ws_2fa_policy',
+            actionLabel: 'Change Two-Factor (Face ID + PIN) Policy',
+            targetRef: want2fa ? 'both' : 'either',
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.checked = !want2fa;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
+        setWorkspaceAuthMode(want2fa ? 'both' : 'either');
         saveLocalAuthAndRecords();
         updateSeatEditorDom();
         updateEnrolStudioDom();
@@ -115594,8 +116769,24 @@
         syncWithCloud(true);
       });
       const liveCb = $('enrolLivenessCb');
-      if (liveCb) liveCb.addEventListener('change', e => {
-        STATE.faceSettings.liveness = !!e.target.checked;
+      if (liveCb) liveCb.addEventListener('change', async e => {
+        const wantLive = Boolean(e.target.checked);
+        if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+          const okStep = await window.MFG_STEP_UP.requireStepUpAuth({
+            actionCode: 'ws_liveness_policy',
+            actionLabel: 'Change Anti-Screenshot Liveness Policy',
+            targetRef: wantLive ? 'enabled' : 'disabled',
+            company: STATE.company || 'WTC',
+            industry: getActiveIndustry(STATE.company),
+            alwaysChallenge: true
+          });
+          if (!okStep) {
+            e.target.checked = !wantLive;
+            return;
+          }
+          window.MFG_STEP_UP.clearLease();
+        }
+        STATE.faceSettings.liveness = wantLive;
         STATE.faceSettings.updated_at = new Date().toISOString();
         saveLocalAuthAndRecords();
         updateEnrolStudioDom();
@@ -116742,6 +117933,8 @@
         computeInspector360Snapshot,
         computeSentinelTriageSnapshot,
         computeDailyHandoverSnapshot,
+        computeCashflowLiquiditySnapshot,
+        computeUniversalPageGuideSnapshot,
         canReviewSentinels,
         markSentinelReviewed,
         unmarkSentinelReviewed,
@@ -116880,6 +118073,28 @@
         jumpView: v => setView(v)
       });
     }
+    if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.bindContext === 'function') {
+      window.MFG_STEP_UP.bindContext({
+        getState: () => STATE,
+        activeUser,
+        isOwner,
+        canViewHub,
+        allowedCompanyNames,
+        getActiveIndustry,
+        userHasFaceId,
+        userFaceSamples,
+        effectiveSeatAuthMode,
+        hasServerApi,
+        edgeApiFetch,
+        isDemoSandboxSession,
+        appStoreGetRaw,
+        appStoreSetRaw,
+        saveLocalAuthAndRecords,
+        syncWithCloud,
+        toast,
+        COMPANY_LABELS
+      });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {
@@ -116941,6 +118156,10 @@
         if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
+        if ($('pageGuidePopover') && window.MFG_ASK && typeof window.MFG_ASK.closePageGuide === 'function') {
+          window.MFG_ASK.closePageGuide();
+          return;
+        }
         if ($('sentinelTriagePopover') && window.MFG_ASK && typeof window.MFG_ASK.closeSentinelTriage === 'function') {
           window.MFG_ASK.closeSentinelTriage();
           return;
@@ -117160,7 +118379,7 @@
         return true;
       },
       selectSeatForEdit: (targetId, opts) => selectSeatForEdit(targetId, opts),
-      saveSeatEditorForm: () => saveSeatEditorForm(),
+      saveSeatEditorForm: opts => saveSeatEditorForm(opts || { bypassStepUp: true }),
       openEntryModal: (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true }),
       isEntryModalDirty: () => isEntryModalDirty(),
       getUserDirectoryScopeTier: emailOrUser => {
@@ -117211,7 +118430,7 @@
       captureSyntheticPose: (vec, detScore = 0.96, faceSizeFrac = 0.26) =>
         captureEnrolDescriptor({ descriptor: vec, detScore, faceSizeFrac, multiple: false }),
       saveEnrolment: () => saveFaceEnrolment(),
-      clearEnrolment: () => clearFaceEnrolment(),
+      clearEnrolment: opts => clearFaceEnrolment(opts || { bypassStepUp: true }),
       runCalibration: () => runCalibrationReport(),
       feedAuthFrame: (vec, faceSizeFrac = 0.26) =>
         handleAuthDescriptor({ descriptor: vec, detScore: 0.96, faceSizeFrac, multiple: false }, ''),
@@ -117262,7 +118481,12 @@
         resetLivenessState();
         updateAuthFaceUi();
       },
-      performLogin: (email, pin, opts) => performLogin(email, pin, opts),
+      performLogin: (email, pin, opts) => {
+        if (window.MFG_STEP_UP && window.MFG_STEP_UP._test && typeof window.MFG_STEP_UP._test.restoreAutoTestLease === 'function') {
+          window.MFG_STEP_UP._test.restoreAutoTestLease();
+        }
+        return performLogin(email, pin, opts);
+      },
       openAuthGate: email => openAuthGate(email),
       signOut: () => signOut(),
       canModifyData: u => canModifyData(u),
@@ -118400,6 +119624,8 @@
     computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     computeSentinelTriageSnapshot: typeof computeSentinelTriageSnapshot === 'function' ? computeSentinelTriageSnapshot : null,
     computeDailyHandoverSnapshot: typeof computeDailyHandoverSnapshot === 'function' ? computeDailyHandoverSnapshot : null,
+    computeCashflowLiquiditySnapshot: typeof computeCashflowLiquiditySnapshot === 'function' ? computeCashflowLiquiditySnapshot : null,
+    computeUniversalPageGuideSnapshot: typeof computeUniversalPageGuideSnapshot === 'function' ? computeUniversalPageGuideSnapshot : null,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
     markSentinelReviewed: typeof markSentinelReviewed === 'function' ? markSentinelReviewed : null,

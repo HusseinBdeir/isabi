@@ -130,6 +130,20 @@
     return '';
   }
 
+  function runWithStepUp(spec, fn) {
+    const su = window.MFG_STEP_UP;
+    if (!su || typeof su.requireStepUpAuth !== 'function') {
+      return fn();
+    }
+    if (typeof su.satisfiesLeaseSync === 'function' && su.satisfiesLeaseSync(spec)) {
+      return fn();
+    }
+    return su.requireStepUpAuth(spec).then(ok => {
+      if (ok) return fn();
+      return null;
+    });
+  }
+
   function tr(str) {
     if (window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
       const lang = typeof window.MFG_I18N.getLang === 'function' ? window.MFG_I18N.getLang() : 'en';
@@ -1906,7 +1920,13 @@
     if (postBtn) {
       postBtn.onclick = () => {
         if (ta) reconcileCarrierBordereau(ta.value);
-        postInsuranceBordereauBatch();
+        runWithStepUp({
+          actionCode: 'ins_bordereau_batch',
+          actionLabel: 'Authorize Carrier Bordereau Settlement Release',
+          targetRef: 'BDX-BATCH',
+          company: 'Insurance Company',
+          industry: 'Insurance'
+        }, () => postInsuranceBordereauBatch());
       };
     }
   }
@@ -3482,7 +3502,13 @@
     if (postBtn) {
       postBtn.onclick = () => {
         if (ta) computeHoldingMirrorAndBankRecon(ta.value);
-        postHoldingBankReconBatch();
+        runWithStepUp({
+          actionCode: 'hld_bank_sweep',
+          actionLabel: 'Authorize Holding Treasury Bank Sweep',
+          targetRef: 'HLD-SWEEP',
+          company: 'Bdeir Holding',
+          industry: 'Holding'
+        }, () => postHoldingBankReconBatch());
       };
     }
   }
@@ -3992,7 +4018,13 @@
     const sealBtn = panel.querySelector('#mfgSealPeriodBtn');
     if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'manufacturing-group', pack.cutoffDate, { industry: 'Manufacturing' }); rerender(); };
     const reopBtn = panel.querySelector('#mfgReopenPeriodBtn');
-    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'manufacturing-group', '', { industry: 'Manufacturing' }); rerender(); };
+    if (reopBtn) reopBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `MFG:${pack.cutoffDate || '2026-10-31'}`,
+      company: D.STATE.company || 'WTC',
+      industry: 'Manufacturing'
+    }, () => { setPeriodCloseLock(D.STATE.company || 'manufacturing-group', '', { industry: 'Manufacturing' }); rerender(); });
     const postBtn = panel.querySelector('#mfgPostAccrualCutoffBtn');
     if (postBtn) postBtn.onclick = () => { postMfgMonthEndAccruals(pack.cutoffDate); };
     const sweepBtn = panel.querySelector('#mfgAiCutoffSweepBtn');
@@ -4273,7 +4305,13 @@
     const sealBtn = panel.querySelector('#hspSealPeriodBtn');
     if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Hospitality & Resorts', pack.cutoffDate, { industry: 'Hospitality & Resorts' }); rerender(); };
     const reopBtn = panel.querySelector('#hspReopenPeriodBtn');
-    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Hospitality & Resorts', '', { industry: 'Hospitality & Resorts' }); rerender(); };
+    if (reopBtn) reopBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `HSP:${pack.cutoffDate || '2026-10-31'}`,
+      company: D.STATE.company || 'Blanca',
+      industry: 'Hospitality'
+    }, () => { setPeriodCloseLock(D.STATE.company || 'industry:Hospitality & Resorts', '', { industry: 'Hospitality & Resorts' }); rerender(); });
     const postBtn = panel.querySelector('#hspPostClosePackBtn');
     if (postBtn) postBtn.onclick = () => { postHospitalityClosePack(pack.cutoffDate); };
     const brfBtn = panel.querySelector('#hspAiShrinkageBriefBtn');
@@ -4529,7 +4567,13 @@
     const sealBtn = panel.querySelector('#reSealVatAndPeriodBtn');
     if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Real Estate & Property', pack.cutoffDate, { industry: 'Real Estate & Property' }); rerender(); };
     const reopBtn = panel.querySelector('#reReopenPeriodBtn');
-    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Real Estate & Property', '', { industry: 'Real Estate & Property' }); rerender(); };
+    if (reopBtn) reopBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `RE:${pack.cutoffDate || '2026-10-31'}`,
+      company: D.STATE.company || 'Properties',
+      industry: 'Real Estate'
+    }, () => { setPeriodCloseLock(D.STATE.company || 'industry:Real Estate & Property', '', { industry: 'Real Estate & Property' }); rerender(); });
     const postBtn = panel.querySelector('#rePostAmortAndRenewalsBtn');
     if (postBtn) postBtn.onclick = () => { postRealEstateClosePack(pack.cutoffDate); };
     const parseBtn = panel.querySelector('#reAiAddendumParserBtn');
@@ -4779,7 +4823,13 @@
     const sealBtn = panel.querySelector('#trdSealPeriodBtn');
     if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Automotive & Heavy Trading', pack.cutoffDate, { industry: 'Automotive & Heavy Trading' }); rerender(); };
     const reopBtn = panel.querySelector('#trdReopenPeriodBtn');
-    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Automotive & Heavy Trading', '', { industry: 'Automotive & Heavy Trading' }); rerender(); };
+    if (reopBtn) reopBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `TRD:${pack.cutoffDate || '2026-10-31'}`,
+      company: D.STATE.company || 'Korri Auto',
+      industry: 'Trading'
+    }, () => { setPeriodCloseLock(D.STATE.company || 'industry:Automotive & Heavy Trading', '', { industry: 'Automotive & Heavy Trading' }); rerender(); });
     const postBtn = panel.querySelector('#trdPostCloseAccrualsBtn');
     if (postBtn) postBtn.onclick = () => { postTradingClosePack(pack.cutoffDate); };
     const brfBtn = panel.querySelector('#trdAiBottleneckEtaBtn');
@@ -5022,7 +5072,13 @@
     const sealBtn = panel.querySelector('#insSealBordereauPeriodBtn');
     if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock('insurance', pack.cutoffDate, { industry: 'Insurance & Brokerage' }); rerender(); };
     const reopBtn = panel.querySelector('#insReopenPeriodBtn');
-    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock('insurance', '', { industry: 'Insurance & Brokerage' }); rerender(); };
+    if (reopBtn) reopBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `INS:${pack.cutoffDate || '2026-10-31'}`,
+      company: 'Insurance Company',
+      industry: 'Insurance'
+    }, () => { setPeriodCloseLock('insurance', '', { industry: 'Insurance & Brokerage' }); rerender(); });
     const postBtn = panel.querySelector('#insPostRenewalReserveBtn');
     if (postBtn) postBtn.onclick = () => { postInsuranceClosePack(pack.cutoffDate); };
     const brfBtn = panel.querySelector('#insAiRenewalBriefBtn');
@@ -5342,7 +5398,13 @@
     const sealAllBtn = panel.querySelector('#hldSealAll14EntitiesBtn');
     if (sealAllBtn) sealAllBtn.onclick = () => { sealAllGroupEntities(gate.cutoffDate); };
     const reopAllBtn = panel.querySelector('#hldReopenAllEntitiesBtn');
-    if (reopAllBtn) reopAllBtn.onclick = () => { reopenAllGroupEntities(); };
+    if (reopAllBtn) reopAllBtn.onclick = () => runWithStepUp({
+      actionCode: 'reopen_period',
+      actionLabel: 'Reopen Sealed Accounting Period',
+      targetRef: `GROUP-14:${gate.cutoffDate || '2026-10-31'}`,
+      company: 'Bdeir Holding',
+      industry: 'Holding'
+    }, () => { reopenAllGroupEntities(); });
     const brfBtn = panel.querySelector('#hldBoardPackBriefBtn');
     if (brfBtn) brfBtn.onclick = async () => {
       EDGE_STATE.hldBoardOpen = true;

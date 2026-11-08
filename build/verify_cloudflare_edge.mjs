@@ -2057,7 +2057,7 @@ finally:
           pinInp.value = ch;
           pinInp.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        await new Promise(r => setTimeout(r, 340));
+        await new Promise(r => setTimeout(r, 550));
         const st6 = window.MFG_FACE_TEST.state();
         sixDigitAuthed = Boolean(st6 && st6.authed);
         sixDigitActiveEmail = (st6 && st6.activeEmail) || '';
@@ -2358,6 +2358,198 @@ finally:
         noSecretLeak,
         slosh: telSloshCheck.json?.recon,
         siphon: telSiphonCheck.json?.recon
+      }));
+    }
+
+    // 31. Step-Up Bound-Seat Identity Gate (`step_up: true`), Server-Redacted Kiosk Verify (`/app/api/kiosk/verify`), & Append-Only `stepUpAudits` RLS
+    const suNoSess = await httpReq('POST', '/app/api/auth/login', {
+      email: 'husseinbdeir@bhfirms.com',
+      pin: '1111',
+      verify_only: true,
+      step_up: true
+    });
+    const suCrossSeat = await httpReq('POST', '/app/api/auth/login', {
+      email: 'bbc.tel@bhfirms.com',
+      pin: '5858',
+      verify_only: true,
+      step_up: true,
+      redact_dist: true
+    }, { 'X-ISABI-Session': ownerToken });
+    const suOwnSeat = await httpReq('POST', '/app/api/auth/login', {
+      email: 'husseinbdeir@bhfirms.com',
+      pin: '1111',
+      verify_only: true,
+      step_up: true,
+      redact_dist: true
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const kvAnon = await httpReq('POST', '/app/api/kiosk/verify', { op: 'verify_pin', pin: '1234' });
+    const kskKey31 = 'kiosk-edge31-station-secret-key';
+    const kvProv = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'provision_station_key',
+      site: '*',
+      rawKey: kskKey31
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const mkVec31 = (idx, v = 0.72) => {
+      const a = new Array(128).fill(0.01);
+      a[idx % 128] = v;
+      return a;
+    };
+    const vecK1 = mkVec31(11, 0.75);
+    const vecK2 = mkVec31(67, 0.75);
+    const kvEnrol1 = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'enrol_user',
+      site: 'LAUNA',
+      user: { id: 'pos-c1', name: 'Cashier One', role: 'supervisor' },
+      descriptors: [vecK1, vecK1, vecK1]
+    }, { 'X-Kiosk-Key': kskKey31 });
+    const kvDupEnrol = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'enrol_user',
+      site: 'LAUNA',
+      user: { id: 'pos-c2-dup', name: 'Impostor Cashier', role: 'cashier' },
+      descriptors: [vecK1, vecK1, vecK1]
+    }, { 'X-Kiosk-Key': kskKey31 });
+    const kvMatch1 = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'verify_face',
+      site: 'LAUNA',
+      descriptor: vecK1
+    }, { 'X-Kiosk-Key': kskKey31 });
+    const badVec31 = new Array(128).fill(0); badVec31[0] = 'NaN';
+    const kvNan = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'verify_face',
+      site: 'LAUNA',
+      descriptor: badVec31
+    }, { 'X-Kiosk-Key': kskKey31 });
+    // 6 unused PIN probes with checkOnly: true must return 200 (matched: false, checkOnly: true) without 429 lockout
+    const checkOnlyRes = [];
+    for (let ci = 0; ci < 6; ci++) {
+      const r = await httpReq('POST', '/app/api/kiosk/verify', {
+        op: 'verify_pin',
+        site: 'LAUNA',
+        pinhash: `unused-pin-hash-${ci}`,
+        checkOnly: true
+      }, { 'X-Kiosk-Key': kskKey31 });
+      checkOnlyRes.push(r);
+    }
+
+    const kvAttSync = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'sync',
+      resort: 'BLANCA',
+      faces: [
+        { id: 'stf-1:1', staffId: 'stf-1', staffName: 'Rami Guard', role: 'Security', sample: 1, descriptor: vecK2 },
+        { id: 'stf-1:2', staffId: 'stf-1', staffName: 'Rami Guard', role: 'Security', sample: 2, descriptor: vecK2 },
+        { id: 'stf-1:3', staffId: 'stf-1', staffName: 'Rami Guard', role: 'Security', sample: 3, descriptor: vecK2 }
+      ],
+      staff: [{ id: 'stf-1', name: 'Rami Guard', dept: 'Gate Ops', role: 'Security' }],
+      punches: [{ id: 'p-att-31', staffId: 'stf-1', staffName: 'Rami Guard', ts: new Date().toISOString(), day: '2026-11-08', dir: 'IN', method: 'face' }]
+    }, { 'X-Kiosk-Key': kskKey31 });
+    // Partial pose sync (sample 2 only) must preserve poses 1 and 3
+    await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'sync',
+      resort: 'BLANCA',
+      faces: [
+        { id: 'stf-1:2', staffId: 'stf-1', staffName: 'Rami Guard', role: 'Security', sample: 2, descriptor: vecK2 }
+      ]
+    }, { 'X-Kiosk-Key': kskKey31 });
+    const kvAttRoster = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'roster',
+      resort: 'BLANCA',
+      restore: true,
+      redact: true
+    }, { 'X-Kiosk-Key': kskKey31 });
+    const kvAttVerify = await httpReq('POST', '/app/api/kiosk/verify', {
+      op: 'verify',
+      resort: 'BLANCA',
+      method: 'face',
+      descriptor: vecK2
+    }, { 'X-Kiosk-Key': kskKey31 });
+
+    // Append-only stepUpAudits RLS via /app/api/sync
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          stepUpAudits: [{
+            id: 'sua-owner-31',
+            ts: '2026-11-08T23:15:00Z',
+            user_id: 'u1',
+            email: 'husseinbdeir@bhfirms.com',
+            user_name: 'Hussein Bdeir',
+            role: 'Owner',
+            company: 'WTC',
+            action_code: 'reopen_period',
+            action_label: 'Reopen Sealed Accounting Period',
+            off_hours: true,
+            burst_anomaly: false
+          }]
+        }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      patch: {
+        mfg_web_store: {
+          // BBC entry seat attempts to wipe owner audit & forge another seat's audit
+          stepUpAudits: [{
+            id: 'sua-forged-31',
+            ts: '2026-11-08T23:16:00Z',
+            user_id: 'u1',
+            email: 'husseinbdeir@bhfirms.com',
+            user_name: 'Forged Owner',
+            company: 'WTC',
+            action_code: 'void_record'
+          }]
+        }
+      }
+    }, { 'X-ISABI-Session': bbcTelTok });
+    const syncOwnerAfter31 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const syncBbcAfter31 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': bbcTelTok });
+    const ownerAudits31 = syncOwnerAfter31.json?.docs?.mfg_web_store?.stepUpAudits || [];
+    const bbcAudits31 = syncBbcAfter31.json?.docs?.mfg_web_store?.stepUpAudits || [];
+
+    if (
+      suNoSess.status === 401 &&
+      suCrossSeat.status === 403 &&
+      suOwnSeat.status === 200 &&
+      suOwnSeat.json?.step_up === true &&
+      !('face_dist' in (suOwnSeat.json || {})) &&
+      kvAnon.status === 401 &&
+      kvProv.status === 200 &&
+      kvEnrol1.status === 200 &&
+      kvDupEnrol.status === 409 &&
+      kvDupEnrol.json?.reason === 'duplicate-face' &&
+      kvMatch1.status === 200 &&
+      kvMatch1.json?.matched === true &&
+      kvMatch1.json?.userId === 'pos-c1' &&
+      !('distance' in (kvMatch1.json || {})) &&
+      kvNan.status === 400 &&
+      checkOnlyRes.length === 6 &&
+      checkOnlyRes.every(r => r.status === 200 && r.json?.matched === false && r.json?.checkOnly === true) &&
+      kvAttSync.status === 200 &&
+      (kvAttSync.json?.syncedPunches || kvAttSync.json?.punches || []).length === 1 &&
+      kvAttRoster.status === 200 &&
+      (kvAttRoster.json?.faces || []).length === 3 &&
+      (kvAttRoster.json?.staff || []).some(s => s.id === 'stf-1' && s.dept === 'Gate Ops') &&
+      (kvAttRoster.json?.faces || []).every(f => (!f.descriptor || f.descriptor.length === 0) && !f.pinhash) &&
+      kvAttVerify.status === 200 &&
+      kvAttVerify.json?.matched === true &&
+      (kvAttVerify.json?.staffId || kvAttVerify.json?.staff?.id) === 'stf-1' &&
+      ownerAudits31.some(a => a.id === 'sua-owner-31') &&
+      !ownerAudits31.some(a => a.id === 'sua-forged-31') &&
+      !bbcAudits31.some(a => a.id === 'sua-owner-31')
+    ) {
+      pass(
+        'edge-31-step-up-auth-and-kiosk-verify',
+        'Step-Up 401/403/200 + 0 face_dist leak + /kiosk/verify POS & Attendance 1:N + 409 dup + 400 NaN + redacted roster + append-only stepUpAudits RLS'
+      );
+    } else {
+      fail('edge-31-step-up-auth-and-kiosk-verify', JSON.stringify({
+        su: [suNoSess.status, suCrossSeat.status, suOwnSeat.status, suOwnSeat.json],
+        kv: [kvAnon.status, kvProv.status, kvEnrol1.status, kvDupEnrol.status, kvMatch1.json, kvNan.status, kvAttSync.json, kvAttRoster.json, kvAttVerify.json],
+        aud: [ownerAudits31.map(a => a.id), bbcAudits31.map(a => a.id)]
       }));
     }
   } finally {

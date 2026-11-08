@@ -423,6 +423,27 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
     return jsonResponse({ ok: false, error: errMsg }, status);
   };
 
+  const isStepUp = Boolean(body && body.step_up === true);
+  const isVerifyOnly = Boolean((body && body.verify_only === true) || isStepUp);
+  let callerSess = null;
+  if (isStepUp || method === 'Owner Impersonation' || (isVerifyOnly && body && body.allow_pin_only_verify === true)) {
+    callerSess = verifiedCallerSession !== undefined
+      ? verifiedCallerSession
+      : await verifyActiveEdgeSession(await extractRequestSession(request, env), env);
+    if (isStepUp) {
+      if (!callerSess) {
+        return jsonResponse({ ok: false, error: 'Active session required for step-up identity confirmation.' }, 401);
+      }
+      const cEm = String(callerSess.email || '').trim().toLowerCase();
+      if (email && cEm && email !== cEm) {
+        return jsonResponse({ ok: false, error: 'Step-up verification must match the currently signed-in account.' }, 403);
+      }
+    }
+    if (method === 'Owner Impersonation' && (!callerSess || !isOwnerOrFullGroupSession(callerSess))) {
+      return failAuth('Active Owner session required for seat impersonation.');
+    }
+  }
+
   let allActiveCache = null;
   const loadAllActive = async () => {
     if (!allActiveCache) {
@@ -460,7 +481,8 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         secondDist = d;
       }
     }
-    if (bestCand && bestDist <= 0.50 && (secondDist - bestDist) >= 0.06) {
+    const minMargin = isStepUp ? 0.08 : 0.06;
+    if (bestCand && bestDist <= 0.50 && (secondDist - bestDist) >= minMargin) {
       row = bestCand;
     } else {
       return failAuth('Face ID not recognized.');
@@ -480,23 +502,20 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
   const authMode = resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio);
   const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
-  let callerSess = null;
-  if (method === 'Owner Impersonation' || (body && body.verify_only === true && body.allow_pin_only_verify === true)) {
-    callerSess = verifiedCallerSession !== undefined
-      ? verifiedCallerSession
-      : await verifyActiveEdgeSession(await extractRequestSession(request, env), env);
-    if (method === 'Owner Impersonation' && (!callerSess || !isOwnerOrFullGroupSession(callerSess))) {
-      return failAuth('Active Owner session required for seat impersonation.');
+  if (isStepUp && callerSess) {
+    const rowIdMatch = String(row.id || '') === String(callerSess.sub || '');
+    const rowEmMatch = String(row.email || '').trim().toLowerCase() === String(callerSess.email || '').trim().toLowerCase();
+    if (!rowIdMatch && !rowEmMatch) {
+      return jsonResponse({ ok: false, error: 'Step-up verification must match the currently signed-in account.' }, 403);
     }
   }
-  const allowOwnerImpersonation = Boolean(callerSess && method === 'Owner Impersonation' && isOwnerOrFullGroupSession(callerSess));
+  const allowOwnerImpersonation = Boolean(!isStepUp && callerSess && method === 'Owner Impersonation' && isOwnerOrFullGroupSession(callerSess));
 
-  const isVerifyOnly = Boolean(body && body.verify_only === true);
   let verifiedFaceDist = null;
 
   if (!allowOwnerImpersonation) {
     if (isFaceMethod) {
-      if (authMode === 'pin_only' && !(isVerifyOnly && body && body.allow_pin_only_verify === true && callerSess)) {
+      if (authMode === 'pin_only' && !(isVerifyOnly && !isStepUp && body && body.allow_pin_only_verify === true && callerSess)) {
         return failAuth('This seat requires PIN sign-in.');
       }
       if (!isValidFaceVec(faceDesc)) {
@@ -510,12 +529,15 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       for (const cand of allActive) {
         if (String(cand.id) === String(row.id)) continue;
         const otherDist = bestRowFaceDist(faceDesc, cand.face_samples);
+        if (isStepUp && otherDist < targetDist + 0.08) {
+          return jsonResponse({ ok: false, error: 'Step-up verification must match the currently signed-in account.' }, 403);
+        }
         if (otherDist + 1e-6 < targetDist) {
           return failAuth('Face ID matched a different enrolled seat.');
         }
       }
       verifiedFaceDist = Number(targetDist.toFixed(4));
-      if (needsTwoFactor && !isVerifyOnly) {
+      if (needsTwoFactor && (!isVerifyOnly || isStepUp)) {
         if (!pin) {
           return jsonResponse({
             ok: false,
@@ -524,11 +546,13 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
             full_name: row.full_name,
             user: hydrateUserRow(row, true, true),
             error: 'Two-factor Access PIN is required.'
-          }, 401);
+          }, isStepUp ? 403 : 401);
         }
         const okPin = await constantTimeEqual(pin, expectedPin);
         if (!okPin) {
-          return failAuth('Two-factor Access PIN is required.');
+          return isStepUp
+            ? jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 403)
+            : failAuth('Two-factor Access PIN is required.');
         }
       }
     } else {
@@ -552,7 +576,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
               email: row.email,
               full_name: row.full_name,
               error: 'Two-factor Face ID biometric verification is required.'
-            }, 401);
+            }, isStepUp ? 403 : 401);
           }
           return failAuth('Verified 128-d Face ID descriptor is required.');
         }
@@ -564,6 +588,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
         for (const cand of allActive) {
           if (String(cand.id) === String(row.id)) continue;
           const otherDist = bestRowFaceDist(faceDesc, cand.face_samples);
+          if (isStepUp && otherDist < targetDist + 0.08) {
+            return jsonResponse({ ok: false, error: 'Step-up verification must match the currently signed-in account.' }, 403);
+          }
           if (otherDist + 1e-6 < targetDist) {
             return failAuth('Face ID matched a different enrolled seat.');
           }
@@ -575,14 +602,17 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   if (isVerifyOnly) {
     await clearAuthFailure(env.DB, ipHash, row.email);
-    return jsonResponse({
+    const redactDist = isStepUp || Boolean(body && body.redact_dist === true);
+    const verifyOut = {
       ok: true,
       edge: true,
       verify_only: true,
       verified_only: true,
-      face_dist: verifiedFaceDist,
+      step_up: isStepUp,
       user: hydrateUserRow(row, true, true)
-    });
+    };
+    if (!redactDist) verifyOut.face_dist = verifiedFaceDist;
+    return jsonResponse(verifyOut);
   }
 
   const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -2551,6 +2581,34 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       .slice(0, 50);
   }
 
+  if (Array.isArray(prev.stepUpAudits) || Array.isArray(incomingDoc.stepUpAudits)) {
+    const pAud = Array.isArray(prev.stepUpAudits) ? prev.stepUpAudits : [];
+    const iAud = Array.isArray(incomingDoc.stepUpAudits) ? incomingDoc.stepUpAudits : [];
+    const aMap = new Map();
+    for (const pa of pAud) {
+      if (pa && pa.id) aMap.set(String(pa.id), pa);
+    }
+    for (const ia of iAud) {
+      if (!ia || typeof ia !== 'object' || !ia.id || aMap.has(String(ia.id))) continue;
+      if (isOwnerOrFullGroupSession(session)) {
+        aMap.set(String(ia.id), ia);
+        continue;
+      }
+      const iaEm = String(ia.email || '').trim().toLowerCase();
+      const iaUid = String(ia.user_id || '').trim();
+      const iaCo = String(ia.company || '').trim();
+      const sessUid = String(session.sub || session.user_id || session.id || '').trim();
+      const selfMatch = (sessEmail && iaEm === sessEmail) || (sessUid && iaUid === sessUid);
+      const coOk = !iaCo || canAccessCompany(session, iaCo) || canAccessSentinelScope(session, iaCo);
+      if (selfMatch && coOk) {
+        aMap.set(String(ia.id), ia);
+      }
+    }
+    incomingDoc.stepUpAudits = Array.from(aMap.values())
+      .sort((a, b) => String((b && b.ts) || '').localeCompare(String((a && a.ts) || '')))
+      .slice(0, 300);
+  }
+
   if (!isOwnerOrFullGroupSession(session)) {
     if (prev.faceSettings && typeof prev.faceSettings === 'object') {
       incomingDoc.faceSettings = prev.faceSettings;
@@ -2705,6 +2763,21 @@ function scopeStoreDocForSession(docObj, session) {
       if (canManage) {
         const sCos = parseAllowedCompanies(s.companies);
         return sCos.length > 0 && !sCos.includes('*') && sCos.some(c => canAccessCompany(session, c));
+      }
+      return false;
+    });
+  }
+
+  if (Array.isArray(docObj.stepUpAudits)) {
+    const sessUid = session ? String(session.sub || session.user_id || session.id || '').trim() : '';
+    copyDoc.stepUpAudits = docObj.stepUpAudits.filter(a => {
+      if (!a || typeof a !== 'object') return false;
+      const aEm = String(a.email || '').trim().toLowerCase();
+      const aUid = String(a.user_id || '').trim();
+      if ((sessEmail && aEm === sessEmail) || (sessUid && aUid === sessUid)) return true;
+      if (canManage) {
+        const aCo = String(a.company || '').trim();
+        return Boolean(aCo && (canAccessCompany(session, aCo) || canAccessSentinelScope(session, aCo)));
       }
       return false;
     });
