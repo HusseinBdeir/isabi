@@ -109,6 +109,21 @@
     handoverBriefInflight: new Map(),
     handoverDraftLang: '',
     handoverCustomDraftByScope: new Map(),
+    pageGuideOpen: false,
+    pageGuideAnchor: null,
+    pageGuideScope: '',
+    pageGuideView: '',
+    pageGuideIndustry: '',
+    pageGuideSource: 'topbar',
+    pageGuideTab: 'insights',
+    pageGuideTourIdx: 0,
+    pageGuideSpotlightTimer: null,
+    pageGuideCache: new Map(),
+    pageGuideInflight: new Map(),
+    pageGuideDraftLang: '',
+    pageGuideCustomDraftByScope: new Map(),
+    pageGuideInlineQa: null,
+    activePageGuideSpeechScope: '',
     sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
@@ -4200,7 +4215,45 @@
       'Restricted': 'محجوب',
       'Books Restricted': 'الدفاتر مقيدة',
       'Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary': 'فتح موجز تسليم المناوبة: مقارنة الأمس باليوم والتحصيل النقدي والآجل وجسر أرباح اليوم وأولويات الوردية ومسودة واتساب',
-      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'تشغيل الموجز الصوتي الصباحي لإيرادات اليوم المحدد ورصيد الصندوق وأهم أولويات تسليم المناوبة'
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'تشغيل الموجز الصوتي الصباحي لإيرادات اليوم المحدد ورصيد الصندوق وأهم أولويات تسليم المناوبة',
+      'Explain Page': 'شرح الصفحة',
+      'Liquidity Brief': 'موجز السيولة',
+      'Interactive Page Guide & Key Insights': 'دليل الصفحة التفاعلي وأهم الرؤى',
+      'Daily Liquidity Forecast & 30-Day Maturity Bridge': 'توقعات السيولة اليومية وجسر استحقاقات 30 يوما',
+      'Key Insights': 'أهم الرؤى',
+      'Interactive Tour': 'جولة تفاعلية',
+      'Ask & Share': 'اسأل وشارك',
+      'What This Page Does': 'وظيفة هذه الصفحة',
+      'Live Page Telemetry': 'مؤشرات الصفحة الحية',
+      '30-Day AR/AP Liquidity Maturity Bridge': 'جسر استحقاقات السيولة (ذمم مدينة ودائنة لـ 30 يوما)',
+      'Horizon': 'الأفق الزمني',
+      'AR Inflows': 'تحصيلات الذمم',
+      'AP & Payroll Out': 'مدفوعات الموردين والرواتب',
+      'Net Cash Flow': 'صافي التدفق',
+      'Projected Till': 'الرصيد المتوقع',
+      '7 Days': '7 أيام',
+      '14 Days': '14 يوما',
+      '30 Days': '30 يوما',
+      'Class 5 GL Tie': 'مطابقة الفئة 5',
+      '100% Tied ($0.00)': 'مطابق 100% ($0.00)',
+      'Key Insights & Priorities': 'أهم الرؤى والأولويات',
+      'Interactive Section Walkthrough': 'جولة تفاعلية على أقسام الصفحة',
+      'Prev Section': 'القسم السابق',
+      'Next Section': 'القسم التالي',
+      'Spotlight on Screen': 'إبراز على الشاشة',
+      'Ask About This Page': 'اسأل عن هذه الصفحة',
+      'Ask anything about this screen or its numbers...': 'اسأل أي سؤال حول هذه الصفحة أو أرقامها...',
+      'Ask': 'اسأل',
+      'Open in Full Copilot': 'فتح في المساعد الكامل',
+      'Executive Brief & WhatsApp Note': 'الموجز التنفيذي ومسودة واتساب',
+      'Play Walkthrough': 'تشغيل الشرح الصوتي',
+      'Stop Walkthrough': 'إيقاف الشرح',
+      'AI Page Insights': 'تحليل الصفحة الذكي',
+      'Deterministic Guide': 'دليل رقمي حتمي',
+      'Explain what is happening on this page, highlight key insights, and take an interactive tour': 'شرح ما يجري في هذه الصفحة، وإبراز أهم الرؤى، وبدء جولة تفاعلية',
+      'Listen to a spoken walkthrough of this page and its key insights': 'الاستماع إلى شرح صوتي تفاعلي لهذه الصفحة وأهم المؤشرات',
+      'Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing': 'فتح توقعات السيولة اليومية وجسر استحقاقات 30 يوما وموجز أمين الخزينة',
+      'Listen to spoken Treasurer briefing and page walkthrough': 'الاستماع إلى موجز أمين الخزينة الصوتي وشرح الصفحة'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4272,23 +4325,60 @@
       'Restricted': 'Restreint',
       'Books Restricted': 'Comptes restreints',
       'Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary': 'Ouvrir la synthèse de passation : écart hier/aujourd hui, encaissements et crédit, pont résultat du jour, priorités et résumé WhatsApp',
-      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'Écouter le briefing vocal matinal sur le revenu du jour, la caisse et les priorités de passation'
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'Écouter le briefing vocal matinal sur le revenu du jour, la caisse et les priorités de passation',
+      'Explain Page': 'Expliquer la Page',
+      'Liquidity Brief': 'Note de Liquidité',
+      'Interactive Page Guide & Key Insights': 'Guide Interactif de la Page & Points Clés',
+      'Daily Liquidity Forecast & 30-Day Maturity Bridge': 'Prévision de Liquidité & Échéances à 30 Jours',
+      'Key Insights': 'Points Clés',
+      'Interactive Tour': 'Visite Interactive',
+      'Ask & Share': 'Question & Partage',
+      'What This Page Does': 'Objet de Cette Page',
+      'Live Page Telemetry': 'Indicateurs en Direct',
+      '30-Day AR/AP Liquidity Maturity Bridge': 'Pont d\'Échéances Clients / Fournisseurs à 30 Jours',
+      'Horizon': 'Horizon',
+      'AR Inflows': 'Encaissements AR',
+      'AP & Payroll Out': 'Sorties AP & Paie',
+      'Net Cash Flow': 'Flux Net',
+      'Projected Till': 'Caisse Projetée',
+      '7 Days': '7 Jours',
+      '14 Days': '14 Jours',
+      '30 Days': '30 Jours',
+      'Class 5 GL Tie': 'Cadrage GL Classe 5',
+      '100% Tied ($0.00)': '100% Cadré (0,00 $)',
+      'Key Insights & Priorities': 'Analyses & Priorités',
+      'Interactive Section Walkthrough': 'Visite Guidée des Sections',
+      'Prev Section': 'Section Préc.',
+      'Next Section': 'Section Suiv.',
+      'Spotlight on Screen': 'Mettre en Évidence',
+      'Ask About This Page': 'Poser une Question sur Cette Page',
+      'Ask anything about this screen or its numbers...': 'Posez une question sur cet écran ou ses chiffres...',
+      'Ask': 'Demander',
+      'Open in Full Copilot': 'Ouvrir dans Ask ISABI',
+      'Executive Brief & WhatsApp Note': 'Synthèse Exécutive & Note WhatsApp',
+      'Play Walkthrough': 'Écouter le Guide',
+      'AI Page Insights': 'Analyse IA de la Page',
+      'Deterministic Guide': 'Guide Déterministe',
+      'Explain what is happening on this page, highlight key insights, and take an interactive tour': 'Expliquer le contenu de cette page, afficher les points clés et lancer une visite interactive',
+      'Listen to a spoken walkthrough of this page and its key insights': 'Écouter une présentation vocale de cette page et de ses indicateurs clés',
+      'Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing': 'Ouvrir la prévision de liquidité quotidienne, le pont d\'échéances à 30 jours et la note trésorier',
+      'Listen to spoken Treasurer briefing and page walkthrough': 'Écouter le briefing vocal du trésorier et la présentation de la page'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover'] || !dict.ar['Explain Page']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover'] || !dict.ar['Explain Page']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary') || btn.hasAttribute('data-pbi-summary') || btn.hasAttribute('data-insp-summary') || btn.hasAttribute('data-sn-summary') || btn.hasAttribute('data-page-guide-listen')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
@@ -4299,16 +4389,17 @@
     const isPbiBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-pbi-summary'));
     const isInspBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-insp-summary'));
     const isSnBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-sn-summary'));
+    const isPgBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-page-guide-listen'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn)
+    const enLabel = (isStmtBtn || isPbiBtn || isInspBtn || isSnBtn || isPgBtn)
       ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
       : (isPeriodBtn
         ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
         : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
-    const lblCls = isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl'))));
+    const lblCls = isPgBtn ? 'pg-lsn-lbl' : (isSnBtn ? 'sn-lsn-lbl' : (isInspBtn ? 'insp-lsn-lbl' : (isPbiBtn ? 'pbi-lsn-lbl' : (isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl')))));
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4322,6 +4413,7 @@
     syncInspPopoverAudioButton();
     syncSentinelPopoverAudioButton();
     syncDailyHandoverPopoverAudioButton();
+    if (typeof syncPageGuidePopoverAudioButton === 'function') syncPageGuidePopoverAudioButton();
   }
 
   function syncDailyHandoverPopoverAudioButton() {
@@ -4480,6 +4572,7 @@
         !_chatState.activePbiSummaryScope &&
         !_chatState.activeInspSummaryScope &&
         !_chatState.activeSentinelSummaryScope &&
+        !_chatState.activePageGuideSpeechScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4501,12 +4594,18 @@
     syncInspPopoverAudioButton();
     syncSentinelPopoverAudioButton();
     syncDailyHandoverPopoverAudioButton();
+    if (typeof syncPageGuidePopoverAudioButton === 'function') syncPageGuidePopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
     if (_chatState.activeSpeakCtrl) {
       try { _chatState.activeSpeakCtrl.abort(); } catch (_) {}
       _chatState.activeSpeakCtrl = null;
+    }
+    const hadPageGuideAudio = Boolean(_chatState.pageGuideSpotlightTimer || _chatState.activePageGuideSpeechScope);
+    if (_chatState.pageGuideSpotlightTimer) {
+      clearInterval(_chatState.pageGuideSpotlightTimer);
+      _chatState.pageGuideSpotlightTimer = null;
     }
     _chatState.activeBriefingScope = '';
     _chatState.activePeriodSummaryScope = '';
@@ -4515,6 +4614,10 @@
     _chatState.activeInspSummaryScope = '';
     _chatState.activeSentinelSummaryScope = '';
     _chatState.activeSentinelRuleId = '';
+    _chatState.activePageGuideSpeechScope = '';
+    if (hadPageGuideAudio && typeof clearPageSectionSpotlight === 'function') {
+      clearPageSectionSpotlight();
+    }
     if (_chatState.activeSpeakBtn) {
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
@@ -6529,6 +6632,7 @@
 
   function openCeoVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensureCeoPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildCeoPeriodSummary();
@@ -7383,6 +7487,7 @@
 
   function openStatementVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensureStmtPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildStatementSummary();
@@ -8173,6 +8278,7 @@
 
   function openDashboardVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensurePbiPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildDashboardSummary();
@@ -8842,6 +8948,7 @@
 
   function openInspectorBriefPopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensureInspPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildInspectorSummary();
@@ -9646,6 +9753,7 @@
 
   function openSentinelTriagePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensureSentinelPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildSentinelTriageSummary();
@@ -10567,6 +10675,7 @@
 
   function openDailyHandoverPopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
     ensureDailyBriefingI18nRegistered();
     ensureDailyHandoverGlobalDismiss();
     const sum = prebuiltSummary || buildDailyHandoverSummary();
@@ -10933,15 +11042,1172 @@
     }
   }
 
+  // ============================================================================
+  // UNIVERSAL INTERACTIVE PAGE GUIDE, LIVE SECTION TOUR, INLINE PAGE Q&A,
+  // CASHFLOW 30-DAY MATURITY BRIDGE & SPOKEN SCREEN WALKTHROUGH
+  // ============================================================================
+  function _scrubPageGuideCore(val, preserveNewlines) {
+    let s = String(val == null ? '' : val)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/[<>&"'`]/g, '');
+    if (preserveNewlines) {
+      s = s
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ');
+    } else {
+      s = s.replace(/[\u0000-\u001F\u007F]/g, ' ');
+    }
+    s = s
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Microsoft|Dataverse|Power\s*BI|Power\s*Apps|Dynamics\s*365|SharePoint)\b/gi, 'ISABI')
+      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+)\b/gi, '');
+    if (preserveNewlines) {
+      return s
+        .split('\n')
+        .map(line => line.replace(/[ \t]+/g, ' ').trim())
+        .filter((line, idx, arr) => line || (idx > 0 && arr[idx - 1]))
+        .join('\n')
+        .trim();
+    }
+    return s.replace(/\s+/g, ' ').trim();
+  }
+
+  function sanitizePageGuideText(val, preserveNewlines = false) {
+    return _scrubPageGuideCore(val, preserveNewlines);
+  }
+
+  function sanitizePageGuideLiveInput(val) {
+    let s = String(val == null ? '' : val)
+      .replace(/<[^>]*>/g, '')
+      .replace(/[<>&`]/g, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Microsoft|Dataverse|Power\s*BI|Power\s*Apps|Dynamics\s*365|SharePoint)\b/gi, 'ISABI')
+      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+)\b/gi, '');
+    if (s.length > 2400) s = s.slice(0, 2400);
+    return s;
+  }
+
+  function clearPageSectionSpotlight() {
+    if (_chatState.pageGuideSpotlightTimer) {
+      clearInterval(_chatState.pageGuideSpotlightTimer);
+      _chatState.pageGuideSpotlightTimer = null;
+    }
+    if (typeof document === 'undefined') return;
+    document.querySelectorAll('.pg-dom-spotlight').forEach(el => {
+      el.classList.remove('pg-dom-spotlight');
+      el.removeAttribute('data-pg-spotlight-badge');
+    });
+  }
+
+  function spotlightPageSection(idxOrSelector, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    const sum = opts.summary || buildPageGuideSummary();
+    const sections = Array.isArray(sum.sections) ? sum.sections : [];
+    let targetSec = null;
+    let resolvedIdx = 0;
+    if (typeof idxOrSelector === 'number') {
+      resolvedIdx = Math.max(0, Math.min(sections.length - 1, idxOrSelector));
+      targetSec = sections[resolvedIdx] || null;
+    } else if (typeof idxOrSelector === 'string' && idxOrSelector) {
+      const hitIdx = sections.findIndex(s => s && s.selector === idxOrSelector);
+      if (hitIdx >= 0) {
+        resolvedIdx = hitIdx;
+        targetSec = sections[hitIdx];
+      } else {
+        targetSec = { selector: idxOrSelector, title: sum.viewTitle, badge: 'Spotlight' };
+      }
+    }
+    _chatState.pageGuideTourIdx = resolvedIdx;
+    document.querySelectorAll('.pg-dom-spotlight').forEach(el => {
+      el.classList.remove('pg-dom-spotlight');
+      el.removeAttribute('data-pg-spotlight-badge');
+    });
+    const sel = (targetSec && targetSec.selector) || '#workspace';
+    let domEl = null;
+    try { domEl = document.querySelector(sel); } catch (_) {}
+    if (!domEl) domEl = document.getElementById('workspace');
+    if (domEl) {
+      const badgeTxt = sanitizePageGuideText(
+        (targetSec && (sum.lang === 'ar' ? targetSec.titleAr : (sum.lang === 'fr' ? targetSec.titleFr : targetSec.titleEn)))
+        || (targetSec && targetSec.title)
+        || sum.viewTitle
+      );
+      domEl.classList.add('pg-dom-spotlight');
+      domEl.setAttribute('data-pg-spotlight-badge', `${resolvedIdx + 1}/${Math.max(1, sections.length)} · ${badgeTxt}`);
+      if (opts.scroll !== false && typeof domEl.scrollIntoView === 'function') {
+        try { domEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {
+          try { domEl.scrollIntoView(); } catch (__) {}
+        }
+      }
+    }
+    const pop = document.getElementById('pageGuidePopover');
+    if (pop) {
+      pop.querySelectorAll('[data-pg-tour-idx]').forEach(card => {
+        const cIdx = Number(card.getAttribute('data-pg-tour-idx') || 0);
+        card.classList.toggle('is-active', cIdx === resolvedIdx);
+      });
+      const stepBadge = pop.querySelector('#pgTourStepCounter');
+      if (stepBadge) {
+        stepBadge.textContent = `${resolvedIdx + 1} / ${Math.max(1, sections.length)}`;
+      }
+    }
+    return { index: resolvedIdx, section: targetSec, element: domEl };
+  }
+
+  function buildPageGuideSummary(langOverride, opts = {}) {
+    ensureDailyBriefingI18nRegistered();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const lang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : resolveActiveBriefingLang();
+    const snap = (_ctx && typeof _ctx.computeUniversalPageGuideSnapshot === 'function')
+      ? _ctx.computeUniversalPageGuideSnapshot(options)
+      : ((window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.computeUniversalPageGuideSnapshot === 'function')
+        ? window.MFG_ENTERPRISE.computeUniversalPageGuideSnapshot(options)
+        : null);
+
+    if (!snap) {
+      return {
+        scopeKey: 'pg_empty',
+        lang,
+        viewId: 'overview',
+        viewTitle: 'Executive Overview',
+        eyebrow: 'Workspace',
+        industry: 'Manufacturing',
+        companyKey: 'all',
+        companyLabel: 'All Entities',
+        periodLabel: 'Active Period',
+        asOfDate: '2026-10-28',
+        restricted: false,
+        rlsClamped: false,
+        isCashflowContext: false,
+        maturityBridge: null,
+        tieCheck: null,
+        purpose: 'Interactive executive command surface.',
+        kpis: [],
+        sections: [],
+        bullets: [],
+        activeBullets: [],
+        promptChips: [],
+        quickActions: [],
+        drafts: { en: '', ar: '', fr: '' },
+        activeDraft: '',
+        spokenScript: 'Welcome to the ISABI Command Center.',
+        isAiSource: false
+      };
+    }
+
+    const purposeRaw = lang === 'ar' ? snap.purposeAr : (lang === 'fr' ? snap.purposeFr : snap.purposeEn);
+    const bulletsRaw = lang === 'ar' ? snap.bulletsAr : (lang === 'fr' ? snap.bulletsFr : snap.bulletsEn);
+    const purpose = sanitizePageGuideText(purposeRaw || snap.purposeEn || '');
+    const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map(b => sanitizePageGuideText(b)).filter(Boolean);
+
+    const kpis = (Array.isArray(snap.kpis) ? snap.kpis : []).map(k => ({
+      label: sanitizePageGuideText(lang === 'ar' ? k.labelAr : (lang === 'fr' ? k.labelFr : k.labelEn)),
+      value: sanitizePageGuideText(k.value),
+      sub: sanitizePageGuideText(k.sub || ''),
+      selector: k.selector || '#workspace'
+    }));
+
+    const sections = (Array.isArray(snap.sections) ? snap.sections : []).map((s, idx) => ({
+      index: idx,
+      selector: s.selector || '#workspace',
+      title: sanitizePageGuideText(lang === 'ar' ? s.titleAr : (lang === 'fr' ? s.titleFr : s.titleEn)),
+      titleEn: sanitizePageGuideText(s.titleEn),
+      titleAr: sanitizePageGuideText(s.titleAr),
+      titleFr: sanitizePageGuideText(s.titleFr),
+      badge: sanitizePageGuideText(s.badge || ''),
+      desc: sanitizePageGuideText(lang === 'ar' ? s.descAr : (lang === 'fr' ? s.descFr : s.descEn))
+    }));
+
+    const drafts = {
+      en: sanitizePageGuideText((snap.drafts && snap.drafts.en) || '', true),
+      ar: sanitizePageGuideText((snap.drafts && snap.drafts.ar) || '', true),
+      fr: sanitizePageGuideText((snap.drafts && snap.drafts.fr) || '', true)
+    };
+
+    const cachedAi = _chatState.pageGuideCache.get(`${snap.scopeKey}|${lang}`);
+    const isAiSource = Boolean(cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length);
+    const activePurpose = (cachedAi && cachedAi.purpose) ? sanitizePageGuideText(cachedAi.purpose) : purpose;
+    const activeBullets = isAiSource
+      ? cachedAi.bullets.map(b => sanitizePageGuideText(b)).filter(Boolean)
+      : bullets;
+
+    const draftLang = ['en', 'ar', 'fr'].includes(_chatState.pageGuideDraftLang) ? _chatState.pageGuideDraftLang : lang;
+    const customDraftKey = `${snap.scopeKey}|${draftLang}`;
+    const activeDraft = _chatState.pageGuideCustomDraftByScope.has(customDraftKey)
+      ? _chatState.pageGuideCustomDraftByScope.get(customDraftKey)
+      : ((cachedAi && cachedAi.whatsappDraft && draftLang === lang)
+        ? sanitizePageGuideText(cachedAi.whatsappDraft, true)
+        : (drafts[draftLang] || drafts.en));
+
+    let spokenScript = '';
+    if (cachedAi && cachedAi.spokenScript) {
+      spokenScript = sanitizePageGuideText(cachedAi.spokenScript);
+    } else if (lang === 'ar') {
+      spokenScript = [
+        `دليل الصفحة التفاعلي لـ ${snap.viewTitle} في ${snap.companyLabel}.`,
+        activePurpose,
+        ...activeBullets.slice(0, 3)
+      ].join(' ');
+    } else if (lang === 'fr') {
+      spokenScript = [
+        `Guide interactif de la page ${snap.viewTitle} pour ${snap.companyLabel}.`,
+        activePurpose,
+        ...activeBullets.slice(0, 3)
+      ].join(' ');
+    } else {
+      spokenScript = [
+        `Interactive Page Guide for ${snap.viewTitle} on ${snap.companyLabel}.`,
+        activePurpose,
+        ...activeBullets.slice(0, 3)
+      ].join(' ');
+    }
+
+    return {
+      scopeKey: snap.scopeKey,
+      lang,
+      draftLang,
+      viewId: snap.viewId,
+      viewTitle: sanitizePageGuideText(snap.viewTitle),
+      eyebrow: sanitizePageGuideText(snap.eyebrow),
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      companyLabel: sanitizePageGuideText(snap.companyLabel),
+      periodLabel: sanitizePageGuideText(snap.periodLabel),
+      asOfDate: snap.asOfDate,
+      rlsClamped: Boolean(snap.rlsClamped),
+      restricted: Boolean(snap.restricted),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canExp: Boolean(snap.canExp),
+      canPayroll: Boolean(snap.canPayroll),
+      canCash: Boolean(snap.canCash),
+      isCashflowContext: Boolean(snap.isCashflowContext),
+      cashflowLiquidity: snap.cashflowLiquidity || null,
+      maturityBridge: snap.maturityBridge || null,
+      tieCheck: snap.tieCheck || null,
+      purpose: activePurpose,
+      kpis,
+      sections,
+      bullets,
+      activeBullets,
+      promptChips: Array.isArray(lang === 'ar' ? snap.promptChipsAr : (lang === 'fr' ? snap.promptChipsFr : snap.promptChipsEn))
+        ? (lang === 'ar' ? snap.promptChipsAr : (lang === 'fr' ? snap.promptChipsFr : snap.promptChipsEn)).map(c => sanitizePageGuideText(c))
+        : (Array.isArray(snap.promptChips) ? snap.promptChips.map(c => sanitizePageGuideText(c)) : []),
+      quickActions: Array.isArray(snap.quickActions) ? snap.quickActions : [],
+      drafts,
+      activeDraft,
+      spokenScript: sanitizePageGuideText(spokenScript),
+      isAiSource
+    };
+  }
+
+  function formatPageGuidePlainText(summaryObj, langOverride) {
+    const sum = summaryObj || buildPageGuideSummary(langOverride);
+    const dLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.draftLang || sum.lang || 'en');
+    const customKey = `${sum.scopeKey}|${dLang}`;
+    if (_chatState.pageGuideCustomDraftByScope.has(customKey)) {
+      return sanitizePageGuideText(_chatState.pageGuideCustomDraftByScope.get(customKey), true);
+    }
+    return sanitizePageGuideText((sum.drafts && sum.drafts[dLang]) || sum.activeDraft || '', true);
+  }
+
+  function requestPageGuideCommentary(prebuiltSummary, opts = {}) {
+    const sum = prebuiltSummary || buildPageGuideSummary(opts.lang, opts);
+    const lang = ['en', 'ar', 'fr'].includes(opts.lang) ? opts.lang : (sum.lang || 'en');
+    const cacheKey = `${sum.scopeKey}|${lang}`;
+    if (sum.restricted || sum.rlsClamped) {
+      return Promise.resolve(sum);
+    }
+    if (!opts.force && _chatState.pageGuideCache.has(cacheKey)) {
+      return Promise.resolve(buildPageGuideSummary(lang, opts));
+    }
+    if (_chatState.pageGuideInflight.has(cacheKey)) {
+      return _chatState.pageGuideInflight.get(cacheKey);
+    }
+
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const langName = lang === 'ar' ? 'Arabic (العربية)' : (lang === 'fr' ? 'French (Français)' : 'English');
+    const mb = sum.maturityBridge;
+    const mbLine = (sum.isCashflowContext && mb && mb.d30)
+      ? `7/14/30-Day Maturity Bridge: 7d In +$${mb.d7.arInUsd} vs Out -$${mb.d7.totalOutUsd} (Projected Till $${mb.d7.projectedTillUsd}) | 14d In +$${mb.d14.arInUsd} vs Out -$${mb.d14.totalOutUsd} (Projected Till $${mb.d14.projectedTillUsd}) | 30d In +$${mb.d30.arInUsd} vs Out -$${mb.d30.totalOutUsd} (Projected Till $${mb.d30.projectedTillUsd}).`
+      : '';
+
+    const sysPrompt = [
+      'You are the Executive Page Guide and Operational Coach inside the ISABI Command Center.',
+      `Write exclusively in ${langName}. Ground every figure strictly in the deterministic page snapshot below. Never invent numbers or counterparties.`,
+      'Never use em-dashes, en-dashes, unicode arrows, or internal script/table codes.',
+      `Active Screen: ${sum.viewTitle} (${sum.eyebrow}) | Entity: ${sum.companyLabel} (${sum.industry}) | Period: ${sum.periodLabel}`,
+      `Deterministic Page Purpose: ${sum.purpose}`,
+      `Live KPIs: ${(sum.kpis || []).map(k => `${k.label}=${k.value} (${k.sub})`).join(' | ')}`,
+      mbLine,
+      `Visible Page Sections (${(sum.sections || []).length}): ${(sum.sections || []).map((s, i) => `${i + 1}. ${s.title} (${s.badge})`).join('; ')}`,
+      `Deterministic Insights: ${(sum.bullets || []).join(' ; ')}`,
+      'Return ONLY valid JSON: {"purpose": "1 clear plain-language sentence explaining what this page does and how to use it", "bullets": ["Key insight 1 with exact figures", "Key insight 2 with exact figures", "Recommended next action priority"], "spokenScript": "3 to 4 natural spoken sentences walking the user through this page and its key insights with zero symbols", "whatsappDraft": "Formatted 4-line executive WhatsApp summary of this page"}'
+    ].filter(Boolean).join('\n');
+
+    const usrPrompt = `Explain ${sum.viewTitle} for ${sum.companyLabel} and highlight the key insights in ${langName}.`;
+    const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+    const base = String((typeof window !== 'undefined' && window.ISABI_LOCAL_API) || '.').replace(/\/$/, '');
+
+    const p = ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${base}/api/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.5-flash-lite',
+        systemPrompt: sysPrompt,
+        userPrompt: usrPrompt,
+        geminiContents
+      })
+    })
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(data => {
+        _chatState.pageGuideInflight.delete(cacheKey);
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch) return buildPageGuideSummary(lang, opts);
+        const rawText = data && (data.rawReply || data.reply || data.text || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content));
+        if (!rawText) return buildPageGuideSummary(lang, opts);
+        let cleaned = String(rawText).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        const sIdx = cleaned.indexOf('{');
+        const eIdx = cleaned.lastIndexOf('}');
+        if (sIdx >= 0 && eIdx > sIdx) cleaned = cleaned.slice(sIdx, eIdx + 1);
+        const parsed = JSON.parse(cleaned);
+        if (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length) {
+          const cleanBullets = parsed.bullets.slice(0, 4).map(b => sanitizePageGuideText(typeof b === 'string' ? b : (b && (b.text || b.bullet) || ''))).filter(Boolean);
+          if (cleanBullets.length) {
+            _chatState.pageGuideCache.set(cacheKey, {
+              purpose: parsed.purpose ? sanitizePageGuideText(parsed.purpose) : sum.purpose,
+              bullets: cleanBullets,
+              spokenScript: parsed.spokenScript ? sanitizePageGuideText(parsed.spokenScript) : sum.spokenScript,
+              whatsappDraft: parsed.whatsappDraft ? sanitizePageGuideText(parsed.whatsappDraft, true) : ''
+            });
+          }
+        }
+        const updated = buildPageGuideSummary(lang, opts);
+        if (_chatState.pageGuideOpen && _chatState.pageGuideScope === sum.scopeKey) {
+          openPageGuidePopover(_chatState.pageGuideAnchor, updated, { preserveTab: true });
+        }
+        return updated;
+      })
+      .catch(() => {
+        _chatState.pageGuideInflight.delete(cacheKey);
+        return buildPageGuideSummary(lang, opts);
+      });
+
+    _chatState.pageGuideInflight.set(cacheKey, p);
+    return p;
+  }
+
+  function syncPageGuidePopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const isPgSpeaking = Boolean(
+      _chatState.activePageGuideSpeechScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-page-guide-listen'))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const ico = isPgSpeaking ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+
+    const pop = document.getElementById('pageGuidePopover');
+    if (pop) {
+      const spkBtn = pop.querySelector('[data-pg-pv-speak]');
+      if (spkBtn) {
+        const enLbl = isPgSpeaking ? 'Stop Walkthrough' : 'Play Walkthrough';
+        spkBtn.classList.toggle('is-speaking', isPgSpeaking);
+        spkBtn.setAttribute('aria-pressed', isPgSpeaking ? 'true' : 'false');
+        spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+          try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+        }
+      }
+    }
+    document.querySelectorAll('[data-page-guide-listen]').forEach(btn => {
+      if (btn === _chatState.activeSpeakBtn) return;
+      btn.classList.toggle('is-speaking', isPgSpeaking);
+      btn.setAttribute('aria-pressed', isPgSpeaking ? 'true' : 'false');
+      const enLbl = isPgSpeaking ? 'Stop' : 'Listen';
+      btn.innerHTML = `${ico}<span class="pg-lsn-lbl">${esc(enLbl)}</span>`;
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+      }
+    });
+  }
+
+  function positionPageGuidePopover() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('pageGuidePopover');
+    if (!pop) return;
+    const anchor = _chatState.pageGuideAnchor
+      || document.getElementById('cfLiquidityBriefBtn')
+      || document.getElementById('topbarPageGuideBtn')
+      || document.getElementById('mobilePageGuideBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 104px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = 'calc(100dvh - 28px)';
+    pop.style.overflowY = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(548, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 460, vh - 28);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? (rect.right - popW) : rect.left;
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 16) {
+      top = rect.top - popH - 8;
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  let _pgGlobalDismissWired = false;
+  function ensurePageGuideGlobalDismiss() {
+    if (_pgGlobalDismissWired || typeof document === 'undefined') return;
+    _pgGlobalDismissWired = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.pageGuideOpen) return;
+      const pop = document.getElementById('pageGuidePopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (
+        e.target.closest('[data-page-guide-open]') ||
+        e.target.closest('[data-page-guide-listen]') ||
+        e.target.closest('#langSwitch') ||
+        e.target.closest('#mobileLangBtn') ||
+        e.target.closest('#inlineAudioPlayerBar')
+      )) return;
+      closePageGuidePopover();
+    }, true);
+    window.addEventListener('resize', () => {
+      if (_chatState.pageGuideOpen) positionPageGuidePopover();
+    });
+  }
+
+  function answerPageGuideInlineQuestion(qRaw, sumObj) {
+    const cleanQ = sanitizePageGuideText(qRaw || '');
+    if (!cleanQ) return null;
+    const sum = sumObj || buildPageGuideSummary();
+    const ansObj = answerQuestion(cleanQ);
+    const plainAns = sanitizePageGuideText(String((ansObj && ansObj.answer) || '').replace(/<[^>]+>/g, ''));
+    const bullets = Array.isArray(ansObj && ansObj.bullets)
+      ? ansObj.bullets.slice(0, 3).map(b => sanitizePageGuideText(String(b || '').replace(/<[^>]+>/g, ''))).filter(Boolean)
+      : [];
+    const qaResult = {
+      scopeKey: sum.scopeKey,
+      q: cleanQ,
+      title: sanitizePageGuideText((ansObj && ansObj.title) || sum.viewTitle),
+      answer: plainAns || sum.purpose,
+      bullets
+    };
+    _chatState.pageGuideInlineQa = qaResult;
+    const box = typeof document !== 'undefined' ? document.getElementById('pgInlineAnswerBox') : null;
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `
+        <div class="pg-inline-qa-head">
+          <strong>${esc(qaResult.title)}</strong>
+          <span class="pg-inline-qa-q">${esc(qaResult.q)}</span>
+        </div>
+        <p class="pg-inline-qa-p">${esc(qaResult.answer)}</p>
+        ${qaResult.bullets.length ? `<ul class="pg-inline-qa-list">${qaResult.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+      `;
+    }
+    return qaResult;
+  }
+
+  function openPageGuidePopover(anchorEl, prebuiltSummary, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensurePageGuideGlobalDismiss();
+
+    // Mutual exclusion with all other executive brief popovers
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-pg-source'))
+      || _chatState.pageGuideSource
+      || 'topbar';
+    _chatState.pageGuideSource = source;
+
+    const sum = prebuiltSummary || buildPageGuideSummary(undefined, { source });
+    const activeBullets = sum.activeBullets || sum.bullets || [];
+    const isAiSource = Boolean(sum.isAiSource);
+
+    if (!options.preserveTab) {
+      _chatState.pageGuideTab = options.tab || 'insights';
+      _chatState.pageGuideTourIdx = 0;
+    }
+    const activeTab = ['insights', 'tour', 'ask'].includes(_chatState.pageGuideTab) ? _chatState.pageGuideTab : 'insights';
+
+    let pop = document.getElementById('pageGuidePopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'pageGuidePopover';
+      pop.className = 'ceo-period-popover insp-brief-popover page-guide-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Interactive Page Guide & Key Insights');
+      document.body.appendChild(pop);
+    }
+
+    _chatState.pageGuideOpen = true;
+    _chatState.pageGuideScope = sum.scopeKey;
+    _chatState.pageGuideView = sum.viewId;
+    _chatState.pageGuideIndustry = sum.industry;
+    if (anchorEl) _chatState.pageGuideAnchor = anchorEl;
+
+    document.querySelectorAll('[data-page-guide-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    const isRtl = sum.lang === 'ar' || (typeof document !== 'undefined' && document.documentElement.getAttribute('dir') === 'rtl');
+    pop.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
+    pop.setAttribute('data-view-id', sum.viewId);
+    pop.setAttribute('data-industry', sum.industry);
+    pop.setAttribute('data-pg-tab', activeTab);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(_chatState.activePageGuideSpeechScope);
+    const spkIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const spkLbl = isSpeakingNow ? 'Stop Walkthrough' : 'Play Walkthrough';
+    const badgeLbl = isAiSource ? 'AI Page Insights' : 'Deterministic Guide';
+    const eyebrowLbl = sum.isCashflowContext
+      ? 'Daily Liquidity Forecast & 30-Day Maturity Bridge'
+      : 'Interactive Page Guide & Key Insights';
+
+    const kpiCardsHtml = (sum.kpis || []).map((k, idx) => `
+      <button type="button" class="ceo-pv-kpi pg-kpi-card" data-no-i18n="1" data-pg-spotlight-sel="${esc(k.selector || '#workspace')}" data-pg-kpi-idx="${idx}">
+        <span class="ceo-pv-kpi-lbl">${esc(k.label)}</span>
+        <strong class="ceo-pv-kpi-val">${esc(k.value)}</strong>
+        <small class="ceo-pv-kpi-sub">${esc(k.sub)}</small>
+      </button>
+    `).join('');
+
+    let maturityHtml = '';
+    if (sum.isCashflowContext && sum.maturityBridge && !sum.restricted) {
+      const mb = sum.maturityBridge;
+      const fmtUsd = (_ctx && typeof _ctx.fmtUSD === 'function') ? _ctx.fmtUSD : (v => '$' + Number(v || 0).toLocaleString());
+      const tc = sum.tieCheck || { tied: true, varianceUsd: 0 };
+      const rows = [
+        { lbl: '7 Days', b: mb.d7 },
+        { lbl: '14 Days', b: mb.d14 },
+        { lbl: '30 Days', b: mb.d30 }
+      ];
+      maturityHtml = `
+        <div class="pg-maturity-bridge" id="pgMaturityBridgeCard">
+          <div class="pg-mb-head">
+            <span class="pg-sec-title">30-Day AR/AP Liquidity Maturity Bridge</span>
+            <span class="pg-tie-pill ${tc.tied ? 'is-tied' : 'is-warn'}"><span>Class 5 GL Tie</span>: <strong data-no-i18n="1">${tc.tied ? (sum.lang === 'ar' ? 'مطابق 100% ($0.00)' : (sum.lang === 'fr' ? '100% Cadré ($0.00)' : '100% Tied ($0.00)')) : esc(fmtUsd(tc.varianceUsd))}</strong></span>
+          </div>
+          <div class="pg-mb-table-wrap">
+            <table class="pg-mb-table">
+              <thead>
+                <tr>
+                  <th>Horizon</th>
+                  <th class="num">AR Inflows</th>
+                  <th class="num">AP & Payroll Out</th>
+                  <th class="num">Net Cash Flow</th>
+                  <th class="num">Projected Till</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr data-horizon="${r.b.horizonDays}">
+                    <td><strong>${esc(r.lbl)}</strong></td>
+                    <td class="num pos" data-no-i18n="1">+${esc(fmtUsd(r.b.arInUsd))}</td>
+                    <td class="num neg" data-no-i18n="1">-${esc(fmtUsd(r.b.totalOutUsd))}</td>
+                    <td class="num ${r.b.netUsd >= 0 ? 'pos' : 'neg'}" data-no-i18n="1">${r.b.netUsd >= 0 ? '+' : ''}${esc(fmtUsd(r.b.netUsd))}</td>
+                    <td class="num" data-no-i18n="1"><strong>${esc(fmtUsd(r.b.projectedTillUsd))}</strong></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const sections = sum.sections || [];
+    const curTourIdx = Math.max(0, Math.min(sections.length - 1, Number(_chatState.pageGuideTourIdx || 0)));
+    const tourRowsHtml = sections.map((sec, idx) => `
+      <div class="pg-tour-card ${idx === curTourIdx ? 'is-active' : ''}" data-no-i18n="1" data-pg-tour-idx="${idx}" data-pg-tour-sel="${esc(sec.selector)}">
+        <div class="pg-tour-card-top">
+          <span class="pg-tour-step-num">${idx + 1}</span>
+          <strong class="pg-tour-card-title">${esc(sec.title)}</strong>
+          <span class="pg-tour-card-badge">${esc(sec.badge)}</span>
+        </div>
+        <p class="pg-tour-card-desc">${esc(sec.desc)}</p>
+      </div>
+    `).join('');
+
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.pageGuideDraftLang) ? _chatState.pageGuideDraftLang : sum.lang;
+    const draftText = formatPageGuidePlainText(sum, dLang);
+    const draftDir = dLang === 'ar' ? 'rtl' : 'ltr';
+
+    if (_chatState.pageGuideInlineQa && _chatState.pageGuideInlineQa.scopeKey !== sum.scopeKey) {
+      _chatState.pageGuideInlineQa = null;
+    }
+    const inlineQa = _chatState.pageGuideInlineQa;
+    const inlineQaHtml = inlineQa
+      ? `<div class="pg-inline-qa-box" id="pgInlineAnswerBox" data-no-i18n="1">
+          <div class="pg-inline-qa-head">
+            <strong>${esc(inlineQa.title)}</strong>
+            <span class="pg-inline-qa-q">${esc(inlineQa.q)}</span>
+          </div>
+          <p class="pg-inline-qa-p">${esc(inlineQa.answer)}</p>
+          ${Array.isArray(inlineQa.bullets) && inlineQa.bullets.length ? `<ul class="pg-inline-qa-list">${inlineQa.bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+        </div>`
+      : `<div class="pg-inline-qa-box" id="pgInlineAnswerBox" data-no-i18n="1" hidden></div>`;
+
+    pop.innerHTML = `
+      <div class="ceo-pv-head">
+        <div class="ceo-pv-titles">
+          <span class="ceo-pv-eyebrow">${esc(eyebrowLbl)}</span>
+          <strong class="ceo-pv-title" data-no-i18n="1">${esc(sum.viewTitle)} · ${esc(sum.companyLabel)} (${esc(sum.periodLabel)})</strong>
+        </div>
+        <div class="ceo-pv-head-actions">
+          <span class="ceo-pv-badge ${isAiSource ? 'is-ai' : 'is-det'}">${esc(badgeLbl)}</span>
+          <button type="button" class="ceo-pv-close" data-pg-pv-close="1" aria-label="Close" data-no-i18n="1">&times;</button>
+        </div>
+      </div>
+
+      <div class="pg-tabs" role="tablist" aria-label="Page Guide Tabs">
+        <button type="button" class="pg-tab-btn ${activeTab === 'insights' ? 'active' : ''}" data-pg-tab-btn="insights" role="tab" aria-selected="${activeTab === 'insights'}"><span>Key Insights</span></button>
+        <button type="button" class="pg-tab-btn ${activeTab === 'tour' ? 'active' : ''}" data-pg-tab-btn="tour" role="tab" aria-selected="${activeTab === 'tour'}"><span>Interactive Tour</span> <small data-no-i18n="1">(${sections.length})</small></button>
+        <button type="button" class="pg-tab-btn ${activeTab === 'ask' ? 'active' : ''}" data-pg-tab-btn="ask" role="tab" aria-selected="${activeTab === 'ask'}"><span>Ask & Share</span></button>
+      </div>
+
+      <div class="pg-tab-pane ${activeTab === 'insights' ? 'is-active' : ''}" data-pg-pane="insights" ${activeTab === 'insights' ? '' : 'hidden'}>
+        <div class="pg-purpose-card">
+          <span class="pg-sec-title">What This Page Does</span>
+          <p class="pg-purpose-p" id="pgPurposeText" data-no-i18n="1">${esc(sum.purpose)}</p>
+        </div>
+        <div class="ceo-pv-kpis pg-kpis-grid" data-no-i18n="1">
+          ${kpiCardsHtml}
+        </div>
+        ${maturityHtml}
+        <div class="pg-insights-wrap">
+          <span class="pg-sec-title">Key Insights & Priorities</span>
+          <ol class="ceo-pv-list pg-insights-list" data-no-i18n="1">
+            ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+          </ol>
+        </div>
+      </div>
+
+      <div class="pg-tab-pane ${activeTab === 'tour' ? 'is-active' : ''}" data-pg-pane="tour" ${activeTab === 'tour' ? '' : 'hidden'}>
+        <div class="pg-tour-toolbar">
+          <span class="pg-sec-title">Interactive Section Walkthrough</span>
+          <div class="pg-tour-nav">
+            <button type="button" class="ceo-pv-btn" id="pgTourPrevBtn" data-pg-tour-step="-1"><span>Prev Section</span></button>
+            <span class="pg-tour-counter" id="pgTourStepCounter" data-no-i18n="1">${curTourIdx + 1} / ${Math.max(1, sections.length)}</span>
+            <button type="button" class="ceo-pv-btn is-primary" id="pgTourNextBtn" data-pg-tour-step="1"><span>Next Section</span></button>
+          </div>
+        </div>
+        <div class="pg-tour-list" data-no-i18n="1">
+          ${tourRowsHtml}
+        </div>
+      </div>
+
+      <div class="pg-tab-pane ${activeTab === 'ask' ? 'is-active' : ''}" data-pg-pane="ask" ${activeTab === 'ask' ? '' : 'hidden'}>
+        <div class="pg-ask-section">
+          <span class="pg-sec-title">Ask About This Page</span>
+          <form class="pg-ask-form" id="pgAskForm">
+            <input type="text" class="pg-ask-input" id="pgAskInput" placeholder="Ask anything about this screen or its numbers..." autocomplete="off">
+            <button type="button" class="ceo-pv-btn is-primary" id="pgAskSubmitBtn"><span>Ask</span></button>
+          </form>
+          <div class="pg-ask-chips" data-no-i18n="1">
+            ${(sum.promptChips || []).map(c => `<button type="button" class="pg-chip-btn" data-pg-ask-chip="${esc(c)}">${esc(c)}</button>`).join('')}
+          </div>
+          ${inlineQaHtml}
+        </div>
+
+        <div class="insp-pv-draft-wrap pg-draft-wrap">
+          <div class="insp-pv-draft-head">
+            <span class="insp-pv-draft-lbl">Executive Brief & WhatsApp Note</span>
+            <div class="insp-pv-lang-pills" role="group" aria-label="Brief Language" data-no-i18n="1">
+              <button type="button" class="insp-pv-lang-btn ${dLang === 'en' ? 'active' : ''}" data-pg-draft-lang="en">EN</button>
+              <button type="button" class="insp-pv-lang-btn ${dLang === 'ar' ? 'active' : ''}" data-pg-draft-lang="ar">عربي</button>
+              <button type="button" class="insp-pv-lang-btn ${dLang === 'fr' ? 'active' : ''}" data-pg-draft-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea id="pgWhatsappDraftInput" class="insp-pv-draft-box" data-no-i18n="1" rows="4" dir="${draftDir}">${esc(draftText)}</textarea>
+          <div class="pg-draft-actions">
+            <button type="button" class="ceo-pv-btn" data-pg-copy-draft="1">${icons ? icons.svg('copy') : ''}<span>Copy Brief</span></button>
+            <button type="button" class="ceo-pv-btn insp-wa-btn" data-pg-wa-share="1"><span>WhatsApp</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ceo-pv-foot pg-pv-foot">
+        <button type="button" class="ceo-pv-btn ${isSpeakingNow ? 'is-speaking' : ''}" id="pgListenBtn" data-pg-pv-speak="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${spkIco}<span>${esc(spkLbl)}</span></button>
+        <button type="button" class="ceo-pv-btn" data-pg-next-tour="1"><span>Spotlight on Screen</span></button>
+        <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    // Wire events inside #pageGuidePopover
+    const closeBtn = pop.querySelector('[data-pg-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+      });
+    }
+
+    pop.querySelectorAll('[data-pg-tab-btn]').forEach(tBtn => {
+      tBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextTab = tBtn.getAttribute('data-pg-tab-btn') || 'insights';
+        _chatState.pageGuideTab = nextTab;
+        openPageGuidePopover(_chatState.pageGuideAnchor, buildPageGuideSummary(undefined, { source }), { preserveTab: true, source });
+        if (nextTab === 'tour') {
+          spotlightPageSection(_chatState.pageGuideTourIdx || 0, { summary: sum });
+        }
+      });
+    });
+
+    pop.querySelectorAll('[data-pg-spotlight-sel]').forEach(kBtn => {
+      kBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const sel = kBtn.getAttribute('data-pg-spotlight-sel') || '#workspace';
+        spotlightPageSection(sel, { summary: sum });
+      });
+    });
+
+    pop.querySelectorAll('[data-pg-tour-idx]').forEach(tCard => {
+      tCard.addEventListener('click', e => {
+        e.preventDefault();
+        const idx = Number(tCard.getAttribute('data-pg-tour-idx') || 0);
+        spotlightPageSection(idx, { summary: sum });
+      });
+    });
+
+    pop.querySelectorAll('[data-pg-tour-step]').forEach(stepBtn => {
+      stepBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const delta = Number(stepBtn.getAttribute('data-pg-tour-step') || 1);
+        const tot = Math.max(1, sections.length);
+        const nextIdx = ((_chatState.pageGuideTourIdx || 0) + delta + tot) % tot;
+        spotlightPageSection(nextIdx, { summary: sum });
+      });
+    });
+
+    const nextTourFootBtn = pop.querySelector('[data-pg-next-tour]');
+    if (nextTourFootBtn) {
+      nextTourFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        if (_chatState.pageGuideTab !== 'tour') {
+          _chatState.pageGuideTab = 'tour';
+          openPageGuidePopover(_chatState.pageGuideAnchor, buildPageGuideSummary(undefined, { source }), { preserveTab: true, source });
+        }
+        const tot = Math.max(1, sections.length);
+        const nextIdx = (_chatState.pageGuideTourIdx || 0) % tot;
+        spotlightPageSection(nextIdx, { summary: sum });
+        _chatState.pageGuideTourIdx = (nextIdx + 1) % tot;
+      });
+    }
+
+    const askForm = pop.querySelector('#pgAskForm');
+    const askInp = pop.querySelector('#pgAskInput');
+    const askSubBtn = pop.querySelector('#pgAskSubmitBtn');
+    const runInlineAsk = () => {
+      if (!askInp) return;
+      const q = askInp.value.trim();
+      if (!q) return;
+      answerPageGuideInlineQuestion(q, sum);
+      positionPageGuidePopover();
+    };
+    if (askForm) {
+      askForm.addEventListener('submit', e => {
+        e.preventDefault();
+        runInlineAsk();
+      });
+    }
+    if (askSubBtn) {
+      askSubBtn.addEventListener('click', e => {
+        e.preventDefault();
+        runInlineAsk();
+      });
+    }
+    pop.querySelectorAll('[data-pg-ask-chip]').forEach(chipBtn => {
+      chipBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const q = chipBtn.getAttribute('data-pg-ask-chip') || '';
+        if (askInp) askInp.value = q;
+        answerPageGuideInlineQuestion(q, sum);
+        positionPageGuidePopover();
+      });
+    });
+
+    const draftTextarea = pop.querySelector('#pgWhatsappDraftInput');
+    if (draftTextarea) {
+      draftTextarea.addEventListener('input', () => {
+        const cleanVal = sanitizePageGuideLiveInput(draftTextarea.value);
+        if (draftTextarea.value !== cleanVal) draftTextarea.value = cleanVal;
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.pageGuideDraftLang) ? _chatState.pageGuideDraftLang : sum.lang;
+        const customKey = `${sum.scopeKey}|${curDLang}`;
+        if (!_chatState.pageGuideCustomDraftByScope.has(customKey) && _chatState.pageGuideCustomDraftByScope.size >= 32) {
+          const oldestKey = _chatState.pageGuideCustomDraftByScope.keys().next().value;
+          if (oldestKey !== undefined) _chatState.pageGuideCustomDraftByScope.delete(oldestKey);
+        }
+        _chatState.pageGuideCustomDraftByScope.set(customKey, cleanVal);
+      });
+    }
+
+    pop.querySelectorAll('[data-pg-draft-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextDLang = lBtn.getAttribute('data-pg-draft-lang') || 'en';
+        _chatState.pageGuideDraftLang = nextDLang;
+        pop.querySelectorAll('[data-pg-draft-lang]').forEach(b => b.classList.toggle('active', b === lBtn));
+        if (draftTextarea) {
+          draftTextarea.dir = nextDLang === 'ar' ? 'rtl' : 'ltr';
+          draftTextarea.value = formatPageGuidePlainText(sum, nextDLang);
+        }
+      });
+    });
+
+    const copyBtn = pop.querySelector('[data-pg-copy-draft]');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const txt = draftTextarea ? sanitizePageGuideText(draftTextarea.value, true) : formatPageGuidePlainText(sum, dLang);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = sum.lang === 'ar' ? 'تم النسخ!' : (sum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { span.textContent = prev; }, 1400);
+        }
+      });
+    }
+
+    const waBtn = pop.querySelector('[data-pg-wa-share]');
+    if (waBtn) {
+      waBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const txt = draftTextarea ? sanitizePageGuideText(draftTextarea.value, true) : formatPageGuidePlainText(sum, dLang);
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+      });
+    }
+
+    const spkFootBtn = pop.querySelector('[data-pg-pv-speak]');
+    if (spkFootBtn) {
+      spkFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        speakPageGuideWalkthrough(_chatState.pageGuideAnchor || spkFootBtn, undefined, { source });
+      });
+    }
+
+    const openCopilotBtn = pop.querySelector('[data-pg-open-copilot]');
+    if (openCopilotBtn) {
+      openCopilotBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const pendingQ = (askInp && askInp.value.trim())
+          || (sum.promptChips && sum.promptChips[0])
+          || `Explain ${sum.viewTitle} for ${sum.companyLabel} and highlight the key insights`;
+        closePageGuidePopover();
+        openDrawer(pendingQ);
+      });
+    }
+
+    positionPageGuidePopover();
+    const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
+    if (!isAiSource && !sum.restricted && !sum.rlsClamped && !skipBgAi) {
+      requestPageGuideCommentary(sum, { source }).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closePageGuidePopover() {
+    _chatState.pageGuideOpen = false;
+    _chatState.pageGuideScope = '';
+    _chatState.pageGuideView = '';
+    _chatState.pageGuideIndustry = '';
+    _chatState.pageGuideAnchor = null;
+    _chatState.pageGuideInlineQa = null;
+    clearPageSectionSpotlight();
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('pageGuidePopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    document.querySelectorAll('[data-page-guide-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function togglePageGuidePopover(anchorEl, opts = {}) {
+    const source = (opts && opts.source)
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-pg-source'))
+      || 'topbar';
+    if (_chatState.pageGuideOpen && _chatState.pageGuideSource === source) {
+      closePageGuidePopover();
+      return { open: false };
+    }
+    _chatState.pageGuideDraftLang = resolveActiveBriefingLang();
+    const sum = buildPageGuideSummary(undefined, { source });
+    openPageGuidePopover(anchorEl, sum, { source });
+    return { open: true, summary: sum };
+  }
+
+  function speakPageGuideWalkthrough(btnEl, langOverride, opts = {}) {
+    ensureDailyBriefingI18nRegistered();
+    const source = (opts && opts.source)
+      || (btnEl && btnEl.getAttribute && btnEl.getAttribute('data-pg-source'))
+      || _chatState.pageGuideSource
+      || 'topbar';
+    const targetBtn = btnEl
+      || (source === 'cashflow' ? document.getElementById('cfListenBriefBtn') : null)
+      || document.getElementById('topbarPageListenBtn')
+      || document.getElementById('pgListenBtn');
+
+    const sum = buildPageGuideSummary(langOverride, { source });
+    if (
+      (_chatState.activePageGuideSpeechScope && _chatState.activePageGuideSpeechScope === sum.scopeKey) ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn === targetBtn && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl))
+    ) {
+      stopActivePlayback();
+      clearPageSectionSpotlight();
+      return Promise.resolve({ stopped: true, scopeKey: sum.scopeKey });
+    }
+
+    stopActivePlayback();
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.lang || 'en');
+    const plainScript = sanitizePageGuideText(sum.spokenScript || sum.purpose);
+
+    _chatState.activePageGuideSpeechScope = sum.scopeKey;
+    _chatState.activeSpeakBtn = targetBtn;
+    _chatState.lastSpokenText = plainScript;
+    if (targetBtn) applyBriefingButtonDomState(targetBtn, 'loading');
+    syncPageGuidePopoverAudioButton();
+
+    // Synchronized interactive section spotlighting while the walkthrough plays
+    const sections = Array.isArray(sum.sections) ? sum.sections : [];
+    if (sections.length) {
+      spotlightPageSection(0, { summary: sum, scroll: false });
+      let stepIdx = 0;
+      _chatState.pageGuideSpotlightTimer = setInterval(() => {
+        if (!_chatState.activePageGuideSpeechScope || (_chatState.sessionEpoch || 0) !== reqEpoch) {
+          clearInterval(_chatState.pageGuideSpotlightTimer);
+          _chatState.pageGuideSpotlightTimer = null;
+          return;
+        }
+        stepIdx = (stepIdx + 1) % sections.length;
+        spotlightPageSection(stepIdx, { summary: sum, scroll: false });
+      }, 4500);
+    }
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch || _chatState.activePageGuideSpeechScope !== sum.scopeKey) {
+          return { cancelled: true };
+        }
+        if (!audioUrl) {
+          _chatState.activePageGuideSpeechScope = '';
+          if (targetBtn) applyBriefingButtonDomState(targetBtn, 'idle');
+          clearPageSectionSpotlight();
+          syncPageGuidePopoverAudioButton();
+          return { ok: false, fallbackText: plainScript, summary: sum };
+        }
+        if (targetBtn) applyBriefingButtonDomState(targetBtn, 'speaking');
+        syncPageGuidePopoverAudioButton();
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activePageGuideSpeechScope = '';
+                if (targetBtn) applyBriefingButtonDomState(targetBtn, 'idle');
+                clearPageSectionSpotlight();
+                syncPageGuidePopoverAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activePageGuideSpeechScope = '';
+                if (targetBtn) applyBriefingButtonDomState(targetBtn, 'idle');
+                clearPageSectionSpotlight();
+                syncPageGuidePopoverAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activePageGuideSpeechScope = '';
+        if (targetBtn) applyBriefingButtonDomState(targetBtn, 'idle');
+        clearPageSectionSpotlight();
+        syncPageGuidePopoverAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  let _pgTopbarDelegationWired = false;
+  function mountTopbarPageGuideButtons() {
+    if (typeof document === 'undefined') return;
+    ensureDailyBriefingI18nRegistered();
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const sparkleIco = icons ? icons.svg('sparkle') : AI_SVGS.sparkle;
+    const audioIco = icons ? icons.svg('audio') : AI_SVGS.audio;
+
+    // 1. Mount universal Explain Page + Listen pill bar right beside #topbar .top-left .crumb
+    const topLeft = document.querySelector('#topbar .top-left');
+    if (topLeft && !document.getElementById('topbarPageGuideBar')) {
+      const bar = document.createElement('div');
+      bar.className = 'topbar-page-guide-bar no-print';
+      bar.id = 'topbarPageGuideBar';
+      bar.innerHTML = `
+        <button type="button" class="topbar-pg-btn topbar-pg-explain" id="topbarPageGuideBtn" data-page-guide-open="1" data-pg-source="topbar" aria-expanded="false" data-ui-tip="Explain what is happening on this page, highlight key insights, and take an interactive tour">
+          ${sparkleIco}<span class="pg-btn-lbl">Explain Page</span>
+        </button>
+        <button type="button" class="topbar-pg-btn topbar-pg-listen" id="topbarPageListenBtn" data-page-guide-listen="1" data-pg-source="topbar" aria-pressed="false" data-ui-tip="Listen to a spoken walkthrough of this page and its key insights">
+          ${audioIco}<span class="pg-lsn-lbl">Listen</span>
+        </button>
+      `;
+      topLeft.appendChild(bar);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(bar); } catch (_) {}
+      }
+    }
+
+    // 2. Mount compact mobile Explain Page trigger in #topbar .top-mobile-actions
+    const mobActions = document.querySelector('#topbar .top-mobile-actions');
+    if (mobActions && !document.getElementById('mobilePageGuideBtn')) {
+      const mobBtn = document.createElement('button');
+      mobBtn.type = 'button';
+      mobBtn.className = 'mobile-pg-trigger no-print';
+      mobBtn.id = 'mobilePageGuideBtn';
+      mobBtn.setAttribute('data-page-guide-open', '1');
+      mobBtn.setAttribute('data-pg-source', 'mobile');
+      mobBtn.setAttribute('aria-expanded', 'false');
+      mobBtn.setAttribute('aria-label', 'Explain Page');
+      mobBtn.setAttribute('data-ui-tip', 'Explain what is happening on this page, highlight key insights, and take an interactive tour');
+      mobBtn.innerHTML = `${sparkleIco}<span>Explain Page</span>`;
+      const mobAskBtn = document.getElementById('mobileAskIsabiBtn');
+      if (mobAskBtn && mobAskBtn.parentNode === mobActions) {
+        mobActions.insertBefore(mobBtn, mobAskBtn);
+      } else {
+        mobActions.appendChild(mobBtn);
+      }
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(mobBtn); } catch (_) {}
+      }
+    }
+
+    if (!_pgTopbarDelegationWired) {
+      _pgTopbarDelegationWired = true;
+      document.addEventListener('click', e => {
+        const openBtn = e.target.closest && e.target.closest('[data-page-guide-open]');
+        if (openBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = openBtn.getAttribute('data-pg-source') || 'topbar';
+          togglePageGuidePopover(openBtn, { source: src });
+          return;
+        }
+        const listenBtn = e.target.closest && e.target.closest('[data-page-guide-listen]');
+        if (listenBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = listenBtn.getAttribute('data-pg-source') || 'topbar';
+          speakPageGuideWalkthrough(listenBtn, undefined, { source: src });
+        }
+      });
+    }
+  }
+
+  function rebindPageGuideButtons(container) {
+    mountTopbarPageGuideButtons();
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      const cfBrief = container.querySelector && container.querySelector('#cfLiquidityBriefBtn');
+      const cfListen = container.querySelector && container.querySelector('#cfListenBriefBtn');
+      if (cfBrief) { try { window.MFG_I18N.translateDom(cfBrief); } catch (_) {} }
+      if (cfListen) { try { window.MFG_I18N.translateDom(cfListen); } catch (_) {} }
+    }
+    if (!_chatState.pageGuideOpen) return;
+    const curView = (_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview';
+    if (_chatState.pageGuideSource === 'cashflow' && curView !== 'cashflow') {
+      _chatState.pageGuideSource = 'topbar';
+      _chatState.pageGuideAnchor = document.getElementById('topbarPageGuideBtn');
+    }
+    const curSum = buildPageGuideSummary(undefined, { source: _chatState.pageGuideSource });
+    if (_chatState.pageGuideView && curSum.viewId !== _chatState.pageGuideView) {
+      clearPageSectionSpotlight();
+      _chatState.pageGuideTourIdx = 0;
+      _chatState.pageGuideInlineQa = null;
+    }
+    const nextAnchor = (_chatState.pageGuideSource === 'cashflow' && document.getElementById('cfLiquidityBriefBtn'))
+      || document.getElementById('topbarPageGuideBtn')
+      || document.getElementById('mobilePageGuideBtn');
+    _chatState.pageGuideAnchor = nextAnchor;
+    openPageGuidePopover(nextAnchor, curSum, { preserveTab: true, source: _chatState.pageGuideSource });
+  }
+
+  function stopPageGuideIfActive() {
+    if (_chatState.pageGuideOpen) {
+      closePageGuidePopover();
+    }
+    clearPageSectionSpotlight();
+  }
+
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
+    closePageGuidePopover();
     closeDailyHandoverPopover();
     closeSentinelTriagePopover();
     closeInspectorBriefPopover();
     closeDashboardVariancePopover();
     closeStatementVariancePopover();
     closeCeoVariancePopover();
+    _chatState.pageGuideCustomDraftByScope.clear();
+    _chatState.pageGuideCache.clear();
+    _chatState.pageGuideInflight.clear();
+    _chatState.pageGuideInlineQa = null;
+    _chatState.activePageGuideSpeechScope = '';
     _chatState.handoverCustomDraftByScope.clear();
     _chatState.handoverBriefCache.clear();
     _chatState.handoverBriefInflight.clear();
@@ -12139,6 +13405,7 @@
   function init(ctx) {
     _ctx = ctx;
     ensureComposerControlsMounted();
+    mountTopbarPageGuideButtons();
     syncHeaderAndChips(true);
     if (_chatState.wired) return;
     _chatState.wired = true;
@@ -12350,7 +13617,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -12359,6 +13626,10 @@
           document.querySelectorAll('.sn-ai-act-btn').forEach(b => {
             try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
+        }
+        _chatState.pageGuideDraftLang = curLang;
+        if (_chatState.pageGuideOpen) {
+          openPageGuidePopover(_chatState.pageGuideAnchor, buildPageGuideSummary(curLang, { source: _chatState.pageGuideSource }), { preserveTab: true, source: _chatState.pageGuideSource });
         }
         if (_chatState.periodPopoverOpen) {
           openCeoVariancePopover(_chatState.periodPopoverAnchor, buildCeoPeriodSummary(curLang));
@@ -12490,6 +13761,26 @@
     speakDailyHandoverStandup,
     rebindDailyHandoverButtons,
     stopDailyHandoverIfActive,
+    buildPageGuideSummary,
+    sanitizePageGuideText,
+    sanitizePageGuideLiveInput,
+    requestPageGuide: requestPageGuideCommentary,
+    requestPageGuideCommentary,
+    openPageGuide: openPageGuidePopover,
+    openPageGuidePopover,
+    togglePageGuide: togglePageGuidePopover,
+    togglePageGuidePopover,
+    closePageGuide: closePageGuidePopover,
+    closePageGuidePopover,
+    formatPageGuide: formatPageGuidePlainText,
+    speakPageGuide: speakPageGuideWalkthrough,
+    speakPageGuideWalkthrough,
+    spotlightPageSection,
+    clearPageSectionSpotlight,
+    answerPageGuideInlineQuestion,
+    mountTopbarPageGuideButtons,
+    rebindPageGuideButtons,
+    stopPageGuideIfActive,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -12520,6 +13811,14 @@
       handoverPopoverScope: _chatState.handoverPopoverScope || '',
       handoverCustomDraftSize: _chatState.handoverCustomDraftByScope ? _chatState.handoverCustomDraftByScope.size : 0,
       handoverBriefCacheSize: _chatState.handoverBriefCache ? _chatState.handoverBriefCache.size : 0,
+      pageGuideOpen: Boolean(_chatState.pageGuideOpen),
+      pageGuideScope: _chatState.pageGuideScope || '',
+      pageGuideView: _chatState.pageGuideView || '',
+      pageGuideTab: _chatState.pageGuideTab || 'insights',
+      pageGuideTourIdx: _chatState.pageGuideTourIdx || 0,
+      pageGuideSpeechScope: _chatState.activePageGuideSpeechScope || '',
+      pageGuideCustomDraftSize: _chatState.pageGuideCustomDraftByScope ? _chatState.pageGuideCustomDraftByScope.size : 0,
+      pageGuideCacheSize: _chatState.pageGuideCache ? _chatState.pageGuideCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0

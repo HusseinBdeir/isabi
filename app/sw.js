@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.227';
+const SHELL_CACHE = 'isabi-mfg-v19.6.228';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
