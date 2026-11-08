@@ -5769,7 +5769,7 @@
       "Premiums & Insurer Recon": "الأقساط ومطابقة شركات التأمين",
       "Preparing Briefing...": "جارٍ تحضير الموجز...",
       "Preparing Summary...": "جارٍ تحضير الملخص...",
-      "Preparing...": "جاري التحضير...",
+      "Preparing...": "جارٍ التحضير...",
       "Preset & All-Time Periods": "الفترات الجاهزة وكامل الفترة",
       "Prev": "السابق",
       "Prev Day": "اليوم السابق",
@@ -8988,7 +8988,20 @@
       "renewal binders staged & unearned commission clawback reserve booked": "تم تجهيز ملاحق التجديد وقيد مؤونة استرداد العمولات غير المكتسبة",
       "resort seasonal membership recognition & outlet close entries posted": "تم قيد إيرادات الاشتراكات الموسمية وإقفال جرد منافذ المنتجعات",
       "reversing month-end accrual journals posted at $0.00 TB drift": "تم قيد يوميات الاستحقاق العكسية لنهاية الشهر بفرق ميزان $0.00",
-      "settled carrier bordereaux verified; clawback reserve computed": "كشوف شركات تأمين مسددة ومُدققة؛ وتم احتساب مؤونة الاسترداد"
+      "settled carrier bordereaux verified; clawback reserve computed": "كشوف شركات تأمين مسددة ومُدققة؛ وتم احتساب مؤونة الاسترداد",
+      "Explain": "تفسير",
+      "Listen": "استماع",
+      "Explain statement variance": "تفسير تباين الكشف ومذكرة الإيضاح",
+      "Listen to statement summary": "الاستماع لملخص الكشف المحاسبي",
+      "Statement Variance & Cover Note": "تباين الكشف ومذكرة الإيضاح",
+      "Board & Auditor Cover Note": "مذكرة إيضاح للإدارة ومدقق الحسابات",
+      "AI Cover Note": "مذكرة إيضاح ذكية",
+      "Pin to Print": "تثبيت للطباعة",
+      "Pinned to Print": "مثبت للطباعة",
+      "Copy Note": "نسخ المذكرة",
+      "Copied!": "تم النسخ!",
+      "WhatsApp": "واتساب",
+      "Remove from print": "إزالة من الطباعة"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -17958,7 +17971,20 @@
       "renewal binders staged & unearned commission clawback reserve booked": "avenants de renouvellement prepares et provision de reprise comptabilisee",
       "resort seasonal membership recognition & outlet close entries posted": "revenus saisonniers et cloture d inventaire des complexes comptabilises",
       "reversing month-end accrual journals posted at $0.00 TB drift": "ecritures de provisions a extourne comptabilisees avec $0.00 d ecart",
-      "settled carrier bordereaux verified; clawback reserve computed": "bordereaux compagnies regles verifies ; provision de reprise calculee"
+      "settled carrier bordereaux verified; clawback reserve computed": "bordereaux compagnies regles verifies ; provision de reprise calculee",
+      "Explain": "Expliquer",
+      "Listen": "Écouter",
+      "Explain statement variance": "Expliquer l'écart de l'état et la note de couverture",
+      "Listen to statement summary": "Écouter la synthèse de l'état comptable",
+      "Statement Variance & Cover Note": "Écart de l'état et note de couverture",
+      "Board & Auditor Cover Note": "Note de synthèse Direction et Commissaire aux comptes",
+      "AI Cover Note": "Note de synthèse IA",
+      "Pin to Print": "Épingler à l'impression",
+      "Pinned to Print": "Épinglé à l'impression",
+      "Copy Note": "Copier la note",
+      "Copied!": "Copié !",
+      "WhatsApp": "WhatsApp",
+      "Remove from print": "Retirer de l'impression"
     }
   };
 
@@ -20986,6 +21012,12 @@
       if (rest.ok) return { out: `#${m[1]} ${rest.out}`, ok: true };
     }
 
+    m = trimmed.match(/^RDL-(\d+)\s+(.+)$/i);
+    if (m) {
+      const rest = evalCore(m[2].trim(), lang, depth + 1);
+      if (rest.ok) return { out: `RDL-${m[1]} ${rest.out}`, ok: true };
+    }
+
     m = trimmed.match(/^Arrears\s+(\$[\d.,kM]+)$/i);
     if (m) return { out: lang === 'ar' ? `متأخرات ${m[1]}` : `Arriérés ${m[1]}`, ok: true };
 
@@ -21259,6 +21291,12 @@
         }
       }
 
+      if (root.hasAttribute) {
+        if ((root.tagName === 'INPUT' || root.tagName === 'TEXTAREA') && root.hasAttribute('placeholder')) translateAttr(root, 'placeholder');
+        if (root.hasAttribute('data-ui-tip')) translateAttr(root, 'data-ui-tip');
+        if (root.hasAttribute('title')) translateAttr(root, 'title');
+        if (root.hasAttribute('aria-label')) translateAttr(root, 'aria-label');
+      }
       if (root.querySelectorAll) {
         root.querySelectorAll('input[placeholder], textarea[placeholder]').forEach(inp => translateAttr(inp, 'placeholder'));
         root.querySelectorAll('[data-ui-tip]').forEach(el => translateAttr(el, 'data-ui-tip'));

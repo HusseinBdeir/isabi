@@ -109913,7 +109913,16 @@
     }
     if (STATE.view === 'statements' && window.MFG_RDL && typeof window.MFG_RDL.wireStatementsEvents === 'function') {
       window.MFG_RDL.wireStatementsEvents(container, SEED, STATE, renderApp);
+      if (window.MFG_ASK && typeof window.MFG_ASK.rebindStatementSummaryButtons === 'function') {
+        window.MFG_ASK.rebindStatementSummaryButtons(
+          container.querySelector('[data-stmt-summary]'),
+          container.querySelector('[data-stmt-explain]')
+        );
+      }
     } else {
+      if (window.MFG_ASK && typeof window.MFG_ASK.stopStatementSummaryIfActive === 'function') {
+        window.MFG_ASK.stopStatementSummaryIfActive();
+      }
       container.querySelectorAll('[data-stmt]').forEach(card => {
         const go = () => {
           STATE.activeStatement = card.getAttribute('data-stmt');

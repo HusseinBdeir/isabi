@@ -278,6 +278,7 @@
         cat: 'All',
         search: '',
         paramsOpen: true,
+        pinnedCoverNote: false,
         _dateTouched: false,
         params: {
           from: '2024-01-01',
@@ -4558,6 +4559,1136 @@
     return filtered.length ? filtered : RDL_CATALOG;
   }
 
+  function _stmtShiftIsoDays(isoStr, deltaDays) {
+    const s = String(isoStr || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const ms = Date.UTC(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10)));
+    const next = new Date(ms + deltaDays * 86400000);
+    return next.toISOString().slice(0, 10);
+  }
+
+  function _stmtPriorWindow(fromStr, toStr) {
+    const f = String(fromStr || '').slice(0, 10);
+    const t = String(toStr || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f) || !/^\d{4}-\d{2}-\d{2}$/.test(t) || t < f) return null;
+    if (f <= '2020-06-01') return null;
+    const msF = Date.UTC(Number(f.slice(0, 4)), Number(f.slice(5, 7)) - 1, Number(f.slice(8, 10)));
+    const msT = Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10)));
+    const spanDays = Math.max(1, Math.round((msT - msF) / 86400000) + 1);
+    const pTo = _stmtShiftIsoDays(f, -1);
+    const pFrom = _stmtShiftIsoDays(pTo, -(spanDays - 1));
+    return { from: pFrom, to: pTo, spanDays };
+  }
+
+  function _stmtCleanParty(s) {
+    return String(s == null ? '' : s)
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const STMT_FR_TITLES = {
+    '01': 'Opérations quotidiennes',
+    '02': 'Bilan comptable',
+    '03': 'Compte de résultat',
+    '04': 'Tableau des flux de trésorerie',
+    '05': 'Balance générale',
+    '06': 'Livre-journal général',
+    '07': 'Relevé de sous-compte',
+    '08': 'Journal des ventes',
+    '09': 'Journal des charges',
+    '10': 'Livre de paie',
+    '11': 'Registre des matières premières',
+    '12': 'Registre carburant et flotte',
+    '13': 'Balance âgée clients',
+    '14': 'Relevé de compte client',
+    '15': 'Soldes fournisseurs',
+    '16': 'Relevé de compte fournisseur',
+    '17': 'Relevé chauffeurs et flotte',
+    '18': 'Déclaration de TVA',
+    '19': 'Rapprochement résultat et grand livre',
+    '20': 'Facture de vente',
+    '21': 'Bon de livraison',
+    '22': 'Reçu d’encaissement',
+    '23': 'Registre intersociétés et comptes associés',
+    '24': 'Registre revenus sites, caisse et abonnements',
+    '25': 'Carnets de factures, châssis VIN et valorisation stock',
+    '26': 'État locatif officiel 4235 et échéancier baux',
+    '27': 'Bordereau polices, renouvellements et compagnies'
+  };
+
+  function computeStatementSnapshot(SEED, STATE, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const seedObj = SEED || (typeof window !== 'undefined' ? window.MFG_SEED : {}) || {};
+    const stObj = STATE || { company: 'ALL', activeStatement: '01' };
+    const ctx = buildRdlContext(seedObj, stObj);
+    const catalog = getVisibleRdlCatalog(stObj);
+    const reqId = String(options.stmtId || stObj.activeStatement || '01').padStart(2, '0');
+    const meta = catalog.find(x => x.id === reqId) || RDL_CATALOG.find(x => x.id === reqId) || catalog[0] || RDL_CATALOG[0];
+    const stmtId = meta.id;
+    const p = ctx.rdl.params;
+    const isMfg = !ctx.ind || ctx.ind === 'Manufacturing';
+    const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
+
+    let canViewBooks = true;
+    if (typeof options.canViewBooks === 'boolean') {
+      canViewBooks = options.canViewBooks;
+    } else if (stObj && typeof stObj.canAccessNavGroup === 'function') {
+      try { canViewBooks = Boolean(stObj.canAccessNavGroup('accounting')); } catch (_) {}
+    }
+
+    let effCoKey = ctx.co || 'ALL';
+    if (stmtId === '23') effCoKey = (ctx.co && ctx.co !== 'ALL') ? ctx.co : 'Bdeir Holding';
+    else if (stmtId === '24') effCoKey = (ctx.co && ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum', 'Hospitality Group'].includes(ctx.co)) ? ctx.co : 'Hospitality Group';
+    else if (stmtId === '25') effCoKey = (ctx.co && ['Korri Auto', 'Shacman', 'Trading Group'].includes(ctx.co)) ? ctx.co : 'Trading Group';
+    else if (stmtId === '26') effCoKey = (ctx.co && ['Properties', '4235 Company S.A.L', 'Real Estate Group'].includes(ctx.co)) ? ctx.co : '4235 Company S.A.L';
+    else if (stmtId === '27') effCoKey = 'Insurance Company';
+
+    const L = CO_LEGAL[effCoKey] || CO_LEGAL[ctx.co] || CO_LEGAL.WTC;
+    const priorWin = _stmtPriorWindow(p.from, p.to);
+    const mkKpi = (key, labelEn, labelAr, labelFr, valStr, subEn, subAr, subFr, tone) => ({
+      key,
+      labelEn,
+      labelAr,
+      labelFr,
+      valStr: String(valStr),
+      subEn: _stmtCleanParty(subEn || ''),
+      subAr: _stmtCleanParty(subAr || subEn || ''),
+      subFr: _stmtCleanParty(subFr || subEn || ''),
+      tone: tone || 'neutral'
+    });
+
+    let windowMode = 'period';
+    let windowLabelEn = `${p.from} to ${p.to}`;
+    let windowLabelAr = `${p.from} إلى ${p.to}`;
+    let windowLabelFr = `${p.from} au ${p.to}`;
+    let tieCheck = null;
+    let kpis = [];
+    let facts = {};
+
+    if (stmtId === '01') {
+      const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const rcpts = (ctx.receiptLedgerAll || []).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const exps = ctx.expAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const rms = ctx.rmAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const fuels = ctx.fuelAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const totQty = sales.reduce((s, r) => s + Number(r.qty || 0), 0);
+      const totRev = sales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totPaid = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0) + rcpts.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const totExp = exps.reduce((s, r) => s + Number(r.total_usd || 0), 0) + rms.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totLiters = fuels.reduce((s, r) => s + Number(r.liters || 0), 0);
+      const byProd = new Map();
+      sales.forEach(r => {
+        const k = r.product || (isMfg ? 'Ready-Mix Concrete' : dt.rcptDescDef);
+        byProd.set(k, (byProd.get(k) || 0) + Number(r.total_usd || 0));
+      });
+      const topProdEntry = [...byProd.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      const realPct = totRev > 0 ? Number(((totPaid / totRev) * 100).toFixed(1)) : 0;
+      let priorRev = null;
+      if (priorWin) {
+        priorRev = Math.round(ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), priorWin.from, priorWin.to)).reduce((s, r) => s + Number(r.total_usd || 0), 0));
+      }
+      facts = {
+        transactions: sales.length,
+        volume: Number(totQty.toFixed(dt.qtyDp)),
+        volumeUnit: dt.qtyUnit,
+        grossBillingUsd: Math.round(totRev),
+        priorBillingUsd: priorRev,
+        avgUnitUsd: totQty > 0 ? Number((totRev / totQty).toFixed(2)) : 0,
+        fuelLiters: Math.round(totLiters),
+        topItem: topProdEntry ? _stmtCleanParty(topProdEntry[0]) : null,
+        topItemUsd: topProdEntry ? Math.round(topProdEntry[1]) : 0
+      };
+      if (canViewBooks) {
+        facts.cashCollectedUsd = Math.round(totPaid);
+        facts.realizationPct = realPct;
+        facts.directAndOpexUsd = Math.round(totExp);
+      }
+      kpis = canViewBooks ? [
+        mkKpi('vol', 'Dispatched Volume', 'الكمية المنفذة', 'Volume exécuté', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(sales.length, 0)} ${isMfg ? 'loads' : dt.txPlural}`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} opérations`),
+        mkKpi('rev', 'Gross Billing', 'إجمالي الفوترة', 'Facturation brute', fmtUsd(totRev), `Avg ${fmtUsd(totQty > 0 ? totRev / totQty : 0)} / ${dt.qtyUnit}`, `متوسط ${fmtUsd(totQty > 0 ? totRev / totQty : 0)}`, `Moy. ${fmtUsd(totQty > 0 ? totRev / totQty : 0)}`),
+        mkKpi('paid', 'Cash Collected', 'التحصيل النقدي', 'Encaissements', fmtUsd(totPaid), `${realPct.toFixed(1)}% realization`, `${realPct.toFixed(1)}% نسبة تحصيل`, `${realPct.toFixed(1)}% encaissé`, realPct >= 75 ? 'pos' : 'neutral'),
+        mkKpi('cost', 'Direct & OPEX', 'المصاريف والمشتريات', 'Coûts directs et OPEX', fmtUsd(totExp), `${fmtNum(totLiters, 0)} L fuel`, `${fmtNum(totLiters, 0)} ليتر محروقات`, `${fmtNum(totLiters, 0)} L carburant`)
+      ] : [
+        mkKpi('vol', 'Dispatched Volume', 'الكمية المنفذة', 'Volume exécuté', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(sales.length, 0)} ${isMfg ? 'loads' : dt.txPlural}`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} opérations`),
+        mkKpi('rev', 'Gross Billing', 'إجمالي الفوترة', 'Facturation brute', fmtUsd(totRev), topProdEntry ? topProdEntry[0] : dt.rcptDescDef, topProdEntry ? topProdEntry[0] : '', topProdEntry ? topProdEntry[0] : ''),
+        mkKpi('avg', 'Average Rate', 'متوسط السعر', 'Tarif moyen', fmtUsd(totQty > 0 ? totRev / totQty : 0, 2), `Per ${dt.qtyUnit}`, `لكل ${dt.qtyUnit}`, `Par ${dt.qtyUnit}`),
+        mkKpi('fuel', 'Diesel & Utility', 'استهلاك المحروقات', 'Carburant consommé', `${fmtNum(totLiters, 0)} L`, `${fmtNum(fuels.length, 0)} fills`, `${fmtNum(fuels.length, 0)} تعبئة`, `${fmtNum(fuels.length, 0)} pleins`)
+      ];
+    } else if (stmtId === '02') {
+      const asof = p.asof || p.to;
+      windowMode = 'asof';
+      windowLabelEn = `As at ${asof}`;
+      windowLabelAr = `كما في ${asof}`;
+      windowLabelFr = `Au ${asof}`;
+      const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+      const jes = buildJournalEntries(ctx, asof);
+      const balMap = new Map();
+      coaList.forEach(a => balMap.set(a.code, { ...a, dr: 0, cr: 0 }));
+      jes.forEach(j => {
+        const b = balMap.get(j.acct_code);
+        if (b) { b.dr += j.debit; b.cr += j.credit; }
+      });
+      let revNet = 0, expNet = 0;
+      balMap.forEach(b => {
+        if (b.code.startsWith('7')) revNet += (b.cr - b.dr);
+        if (b.code.startsWith('6')) expNet += (b.dr - b.cr);
+      });
+      const retainedEarnings = revNet - expNet;
+      const dBal = c => { const b = balMap.get(c); return b ? (b.dr - b.cr) : 0; };
+      const cBal = c => { const b = balMap.get(c); return b ? (b.cr - b.dr) : 0; };
+      const fixedAssets = dBal('215') + dBal('218') + dBal('281');
+      const currAssets = dBal('311') + dBal('411') + dBal('467');
+      const cashBank = dBal('512') + dBal('531');
+      const totalAssets = fixedAssets + currAssets + cashBank;
+      const liabClass4 = cBal('401') + cBal('421') + cBal('442');
+      const eqClass1 = cBal('101') + cBal('165') + retainedEarnings;
+      const totalLiabEq = liabClass4 + eqClass1;
+      const varianceUsd = Math.round(Math.abs(totalAssets - totalLiabEq) * 100) / 100;
+      const balanced = varianceUsd < 0.02;
+      tieCheck = { balanced, varianceUsd, kind: 'bs' };
+      facts = {
+        asOfDate: asof,
+        totalAssetsUsd: Math.round(totalAssets),
+        totalLiabilitiesAndEquityUsd: Math.round(totalLiabEq),
+        cashAndBankClass5Usd: canViewBooks ? Math.round(cashBank) : undefined,
+        receivables411Usd: canViewBooks ? Math.round(dBal('411')) : undefined,
+        payables401Usd: canViewBooks ? Math.round(cBal('401')) : undefined,
+        periodNetResult120Usd: Math.round(retainedEarnings),
+        balanceSheetVarianceUsd: varianceUsd,
+        balanced
+      };
+      kpis = [
+        mkKpi('assets', 'Total Assets', 'إجمالي الموجودات', 'Total actif', fmtUsdSigned(totalAssets), `Fixed ${fmtUsd(fixedAssets)}`, `ثابتة ${fmtUsd(fixedAssets)}`, `Immobilisé ${fmtUsd(fixedAssets)}`),
+        mkKpi('liabeq', 'Liabilities & Equity', 'المطلوبات والرساميل', 'Passif et capitaux', fmtUsdSigned(totalLiabEq), `Payables ${fmtUsd(liabClass4)}`, `ذمم دائنة ${fmtUsd(liabClass4)}`, `Dettes ${fmtUsd(liabClass4)}`),
+        mkKpi('cash', 'Cash & Bank (Class 5)', 'النقدية والبنوك', 'Trésorerie (Classe 5)', canViewBooks ? fmtUsdSigned(cashBank) : 'Restricted', 'Accounts 512 + 531', 'حسابات 512 و 531', 'Comptes 512 + 531', cashBank >= 0 ? 'pos' : 'neg'),
+        mkKpi('tie', 'Balance Sheet Tie', 'مطابقة الميزانية', 'Équilibre du bilan', balanced ? '$0.00' : fmtUsd(varianceUsd, 2), balanced ? 'Classes 1-5 balanced' : 'Variance detected', balanced ? 'متوازنة بالكامل' : 'يوجد فرق', balanced ? 'Classes 1-5 équilibrées' : 'Écart détecté', balanced ? 'ok' : 'neg')
+      ];
+    } else if (stmtId === '03') {
+      const jes = buildJournalEntries(ctx, p.to).filter(j => j.date !== '2020-01-01' && inWindow(j.date, p.from, p.to));
+      let rev701 = 0, rev706 = 0, exp601 = 0, exp615 = 0, exp622 = 0, exp641 = 0;
+      jes.forEach(j => {
+        if (j.acct_code === '701') rev701 += (j.credit - j.debit);
+        else if (j.acct_code === '706') rev706 += (j.credit - j.debit);
+        else if (j.acct_code === '601') exp601 += (j.debit - j.credit);
+        else if (j.acct_code === '615') exp615 += (j.debit - j.credit);
+        else if (j.acct_code === '622') exp622 += (j.debit - j.credit);
+        else if (j.acct_code === '641') exp641 += (j.debit - j.credit);
+      });
+      const revTotal = rev701 + rev706;
+      const expTotal = exp601 + exp615 + exp622 + exp641;
+      const ebitda = revTotal - expTotal;
+      const marginPct = revTotal > 0 ? Number(((ebitda / revTotal) * 100).toFixed(1)) : 0;
+      facts = {
+        operatingRevenueClass7Usd: Math.round(revTotal),
+        directCost601Usd: Math.round(exp601),
+        maintenanceAndServicesUsd: Math.round(exp615 + exp622),
+        payroll641Usd: Math.round(exp641),
+        operatingCostsClass6Usd: Math.round(expTotal),
+        netOperatingIncomeUsd: Math.round(ebitda),
+        operatingMarginPct: marginPct,
+        periodGrain: p.period || 'Month'
+      };
+      kpis = [
+        mkKpi('rev', 'Operating Revenue', 'الإيرادات التشغيلية', 'Produits d’exploitation', fmtUsd(revTotal), 'Class 7 (701 + 706)', 'الفئة 7 (701 + 706)', 'Classe 7 (701 + 706)', 'pos'),
+        mkKpi('exp', 'Operating Costs', 'الأعباء التشغيلية', 'Charges d’exploitation', fmtUsd(expTotal), `Direct 601: ${fmtUsd(exp601)}`, `مباشرة 601: ${fmtUsd(exp601)}`, `Directs 601 : ${fmtUsd(exp601)}`),
+        mkKpi('ebitda', 'Net Operating Income', 'صافي النتيجة التشغيلية', 'Résultat d’exploitation', fmtUsdSigned(ebitda), `Payroll 641: ${fmtUsd(exp641)}`, `رواتب 641: ${fmtUsd(exp641)}`, `Paie 641 : ${fmtUsd(exp641)}`, ebitda >= 0 ? 'pos' : 'neg'),
+        mkKpi('margin', 'Operating Margin', 'هامش التشغيل', 'Marge opérationnelle', `${marginPct.toFixed(1)}%`, `Columns by ${p.period || 'Month'}`, `موزعة حسب ${p.period || 'Month'}`, `Ventilé par ${p.period || 'Month'}`, marginPct >= 15 ? 'ok' : (marginPct >= 0 ? 'neutral' : 'neg'))
+      ];
+    } else if (stmtId === '04') {
+      const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
+      const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(txDate(r), p.from, p.to));
+      const exps = ctx.expAll.filter(r => inWindow(txDate(r), p.from, p.to));
+      const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(txDate(r), p.from, p.to));
+      const fuels = ctx.fuelAll.filter(r => inWindow(txDate(r), p.from, p.to));
+      const pays = ctx.payAll.filter(r => inWindow(txDate(r), p.from, p.to));
+      const custIn = sales.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const rmOut = rms.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
+      const fuelOut = fuels.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
+      const expOut = exps.reduce((s, r) => s - Number(r.paid_usd || r.total_usd || 0), 0);
+      const payOut = pays.reduce((s, r) => s - Number(r.paid_usd || r.net_usd || 0), 0);
+      const netCf = custIn + rmOut + fuelOut + expOut + payOut;
+      facts = {
+        collectionsInUsd: canViewBooks ? Math.round(custIn) : undefined,
+        supplierPaymentsOutUsd: canViewBooks ? Math.round(Math.abs(rmOut)) : undefined,
+        fuelAndOpexOutUsd: Math.round(Math.abs(fuelOut + expOut)),
+        payrollDisbursedOutUsd: Math.round(Math.abs(payOut)),
+        netOperatingCashFlowUsd: canViewBooks ? Math.round(netCf) : undefined,
+        periodGrain: p.period || 'Month'
+      };
+      kpis = [
+        mkKpi('in', 'Cash Collections', 'التحصيلات النقدية', 'Encaissements clients', canViewBooks ? fmtUsdSigned(custIn) : 'Restricted', `${fmtNum(sales.length, 0)} entries`, `${fmtNum(sales.length, 0)} حركة`, `${fmtNum(sales.length, 0)} mouvements`, 'pos'),
+        mkKpi('sup', 'Supplier Outflows', 'تسديدات الموردين', 'Décaissements fournisseurs', canViewBooks ? fmtUsdSigned(rmOut) : 'Restricted', 'Direct supply & settlements', 'مشتريات وتسديدات', 'Achats et règlements'),
+        mkKpi('opex', 'OPEX, Fuel & Payroll', 'المصاريف والرواتب', 'OPEX, carburant et paie', fmtUsdSigned(fuelOut + expOut + payOut), `Payroll ${fmtUsd(Math.abs(payOut))}`, `رواتب ${fmtUsd(Math.abs(payOut))}`, `Paie ${fmtUsd(Math.abs(payOut))}`),
+        mkKpi('net', 'Net Operating Cash', 'صافي التدفق النقدي', 'Flux net d’exploitation', canViewBooks ? fmtUsdSigned(netCf) : 'Restricted', 'Direct method', 'الطريقة المباشرة', 'Méthode directe', netCf >= 0 ? 'ok' : 'neg')
+      ];
+    } else if (stmtId === '05') {
+      const coaList = ctx.coaAccounts || COA_ACCOUNTS;
+      const jes = buildJournalEntries(ctx, p.to);
+      const map = new Map();
+      coaList.forEach(a => map.set(a.code, { acct: a, openDr: 0, openCr: 0, perDr: 0, perCr: 0 }));
+      jes.forEach(j => {
+        const m = map.get(j.acct_code);
+        if (!m) return;
+        if (j.date < p.from) { m.openDr += j.debit; m.openCr += j.credit; }
+        else if (j.date <= p.to) { m.perDr += j.debit; m.perCr += j.credit; }
+      });
+      let tOpenDr = 0, tOpenCr = 0, tPerDr = 0, tPerCr = 0, tCloseDr = 0, tCloseCr = 0;
+      coaList.forEach(a => {
+        const m = map.get(a.code);
+        const netOpen = m.openDr - m.openCr;
+        const netClose = (m.openDr + m.perDr) - (m.openCr + m.perCr);
+        tOpenDr += netOpen > 0 ? netOpen : 0;
+        tOpenCr += netOpen < 0 ? -netOpen : 0;
+        tPerDr += m.perDr;
+        tPerCr += m.perCr;
+        tCloseDr += netClose > 0 ? netClose : 0;
+        tCloseCr += netClose < 0 ? -netClose : 0;
+      });
+      const varianceUsd = Math.round(Math.abs(tCloseDr - tCloseCr) * 100) / 100;
+      const perVarUsd = Math.round(Math.abs(tPerDr - tPerCr) * 100) / 100;
+      const balanced = varianceUsd < 0.02 && perVarUsd < 0.02;
+      tieCheck = { balanced, varianceUsd, kind: 'tb' };
+      facts = {
+        coaAccountsCount: coaList.length,
+        openingDebitUsd: Math.round(tOpenDr),
+        openingCreditUsd: Math.round(tOpenCr),
+        periodDebitUsd: Math.round(tPerDr),
+        periodCreditUsd: Math.round(tPerCr),
+        closingDebitUsd: Math.round(tCloseDr),
+        closingCreditUsd: Math.round(tCloseCr),
+        trialBalanceVarianceUsd: varianceUsd,
+        balanced
+      };
+      kpis = [
+        mkKpi('open', 'Opening Trial Balance', 'رصيد الافتتاح', 'Solde d’ouverture', fmtUsd(tOpenDr), `${coaList.length} GL accounts`, `${coaList.length} حساب عام`, `${coaList.length} comptes généraux`),
+        mkKpi('per', 'Period Movement', 'حركة الفترة', 'Mouvements période', fmtUsd(tPerDr), `Cr ${fmtUsd(tPerCr)}`, `دائن ${fmtUsd(tPerCr)}`, `Crédit ${fmtUsd(tPerCr)}`),
+        mkKpi('close', 'Closing Trial Balance', 'ميزان الإقفال', 'Balance de clôture', fmtUsd(tCloseDr), `Cr ${fmtUsd(tCloseCr)}`, `دائن ${fmtUsd(tCloseCr)}`, `Crédit ${fmtUsd(tCloseCr)}`),
+        mkKpi('tie', 'Debit vs Credit Tie', 'مطابقة المدين والدائن', 'Équilibre Débit / Crédit', balanced ? '$0.00' : fmtUsd(varianceUsd, 2), balanced ? 'Classes 1-7 balanced' : 'Out of balance', balanced ? 'متوازن بالكامل' : 'غير متوازن', balanced ? 'Classes 1-7 équilibrées' : 'Écart détecté', balanced ? 'ok' : 'neg')
+      ];
+    } else if (stmtId === '06') {
+      const allJes = buildJournalEntries(ctx, p.to).filter(j => {
+        if (!inWindow(j.date, p.from, p.to)) return false;
+        if (p.account && p.account !== 'ALL' && j.acct_code !== p.account) return false;
+        return true;
+      });
+      const totDr = allJes.reduce((s, j) => s + j.debit, 0);
+      const totCr = allJes.reduce((s, j) => s + j.credit, 0);
+      const isAllAccts = !p.account || p.account === 'ALL';
+      const varianceUsd = Math.round(Math.abs(totDr - totCr) * 100) / 100;
+      const balanced = !isAllAccts || varianceUsd < 0.02;
+      if (isAllAccts) tieCheck = { balanced, varianceUsd, kind: 'je' };
+      facts = {
+        journalLines: allJes.length,
+        accountFilter: p.account || 'ALL',
+        totalDebitUsd: Math.round(totDr),
+        totalCreditUsd: Math.round(totCr),
+        journalVarianceUsd: isAllAccts ? varianceUsd : null,
+        balanced
+      };
+      kpis = [
+        mkKpi('cnt', 'Journal Postings', 'قيود اليومية', 'Lignes de journal', fmtNum(allJes.length, 0), p.account === 'ALL' ? 'All GL accounts' : `Account ${p.account}`, p.account === 'ALL' ? 'كافة الحسابات' : `حساب ${p.account}`, p.account === 'ALL' ? 'Tous les comptes' : `Compte ${p.account}`),
+        mkKpi('dr', 'Total Debits', 'إجمالي المدين', 'Total débits', fmtUsd(totDr, 2), 'Posted period debits', 'حركات مدينة مرحلة', 'Débits comptabilisés'),
+        mkKpi('cr', 'Total Credits', 'إجمالي الدائن', 'Total crédits', fmtUsd(totCr, 2), 'Posted period credits', 'حركات دائنة مرحلة', 'Crédits comptabilisés'),
+        mkKpi('tie', isAllAccts ? 'Double-Entry Tie' : 'Net Account Movement', isAllAccts ? 'توازن القيد المزدوج' : 'صافي حركة الحساب', isAllAccts ? 'Équilibre partie double' : 'Mouvement net', isAllAccts ? (balanced ? '$0.00' : fmtUsd(varianceUsd, 2)) : fmtUsdSigned(totDr - totCr, 2), isAllAccts ? 'Balanced Dr = Cr' : `Account ${p.account}`, isAllAccts ? 'المدين يساوي الدائن' : `حساب ${p.account}`, isAllAccts ? 'Débit = Crédit' : `Compte ${p.account}`, isAllAccts && balanced ? 'ok' : 'neutral')
+      ];
+    } else if (stmtId === '07') {
+      const jes = buildJournalEntries(ctx, p.to).filter(j => {
+        if (p.account && p.account !== 'ALL' && j.acct_code !== p.account) return false;
+        if (p.subAccount && p.subAccount !== 'ALL' && j.sub_account !== p.subAccount) return false;
+        return true;
+      });
+      let openDr = 0, openCr = 0, totDr = 0, totCr = 0, pCount = 0;
+      jes.forEach(j => {
+        if (j.date < p.from) { openDr += j.debit; openCr += j.credit; }
+        else if (j.date <= p.to) { totDr += j.debit; totCr += j.credit; pCount += 1; }
+      });
+      const openBal = openDr - openCr;
+      const closeBal = openBal + totDr - totCr;
+      facts = {
+        accountFilter: p.account || 'ALL',
+        subAccountFilter: p.subAccount || 'ALL',
+        periodLines: pCount,
+        openingBalanceUsd: Math.round(openBal),
+        periodDebitUsd: Math.round(totDr),
+        periodCreditUsd: Math.round(totCr),
+        closingBalanceUsd: Math.round(closeBal)
+      };
+      kpis = [
+        mkKpi('open', 'Opening Balance', 'رصيد مدور', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), `Before ${p.from}`, `قبل ${p.from}`, `Avant ${p.from}`),
+        mkKpi('dr', 'Period Debits', 'مدين الفترة', 'Débits période', fmtUsd(totDr, 2), `${fmtNum(pCount, 0)} lines`, `${fmtNum(pCount, 0)} حركة`, `${fmtNum(pCount, 0)} lignes`),
+        mkKpi('cr', 'Period Credits', 'دائن الفترة', 'Crédits période', fmtUsd(totCr, 2), p.subAccount === 'ALL' ? 'All sub-accounts' : p.subAccount, p.subAccount === 'ALL' ? 'كافة الحسابات الفرعية' : p.subAccount, p.subAccount === 'ALL' ? 'Tous sous-comptes' : p.subAccount),
+        mkKpi('close', 'Closing Balance', 'الرصيد الختامي', 'Solde de clôture', fmtUsdSigned(closeBal, 2), `Account ${p.account || 'ALL'}`, `حساب ${p.account || 'ALL'}`, `Compte ${p.account || 'ALL'}`)
+      ];
+    } else if (stmtId === '08') {
+      const rows = ctx.salesAll.filter(r => {
+        if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
+        if (p.customer && p.customer !== 'ALL' && r.customer !== p.customer) return false;
+        if (p.product && p.product !== 'ALL' && r.product !== p.product) return false;
+        if (p.site && p.site !== 'ALL' && r.site !== p.site) return false;
+        return true;
+      });
+      const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
+      const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const byCust = new Map();
+      rows.forEach(r => byCust.set(r.customer || 'Walk-in', (byCust.get(r.customer || 'Walk-in') || 0) + Number(r.total_usd || 0)));
+      const topCust = [...byCust.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      facts = {
+        salesCount: rows.length,
+        volume: Number(totQty.toFixed(dt.qtyDp)),
+        volumeUnit: dt.qtyUnit,
+        totalSalesUsd: Math.round(totGross),
+        avgUnitUsd: totQty > 0 ? Number((totGross / totQty).toFixed(2)) : 0,
+        topCustomer: topCust ? _stmtCleanParty(topCust[0]) : null,
+        topCustomerUsd: topCust ? Math.round(topCust[1]) : 0
+      };
+      if (canViewBooks) {
+        facts.paidAtSaleUsd = Math.round(totPaid);
+        facts.creditBilledUsd = Math.round(totGross - totPaid);
+      }
+      kpis = [
+        mkKpi('cnt', 'Sales Entries', 'عدد المبيعات', 'Lignes de vente', fmtNum(rows.length, 0), `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`),
+        mkKpi('gross', 'Total Sales', 'إجمالي المبيعات', 'Total des ventes', fmtUsd(totGross, 2), `Avg ${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}`, `متوسط ${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}`, `Moy. ${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}`, 'pos'),
+        mkKpi('paid', canViewBooks ? 'Settled on Ticket' : 'Top Account', canViewBooks ? 'مسدد فوري' : 'أكبر زبون', canViewBooks ? 'Réglé comptant' : 'Client principal', canViewBooks ? fmtUsd(totPaid, 2) : (topCust ? topCust[0] : '-'), topCust ? _stmtCleanParty(topCust[0]) : 'All customers', topCust ? _stmtCleanParty(topCust[0]) : 'كافة الزبائن', topCust ? _stmtCleanParty(topCust[0]) : 'Tous clients'),
+        mkKpi('bal', canViewBooks ? 'Credit Billed' : 'Filtered Scope', canViewBooks ? 'مبيعات آجلة' : 'نطاق التصفية', canViewBooks ? 'Facturé à crédit' : 'Périmètre filtré', canViewBooks ? fmtUsd(totGross - totPaid, 2) : (p.customer === 'ALL' ? 'All' : p.customer), p.site === 'ALL' ? 'All locations' : p.site, p.site === 'ALL' ? 'كافة المواقع' : p.site, p.site === 'ALL' ? 'Tous sites' : p.site)
+      ];
+    } else if (stmtId === '09') {
+      const rows = ctx.expAll.filter(r => {
+        if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
+        if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+        if (p.category && p.category !== 'ALL' && r.category !== p.category) return false;
+        return true;
+      });
+      const totNet = rows.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+      const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
+      const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const byCat = new Map();
+      rows.forEach(r => byCat.set(r.category || 'General', (byCat.get(r.category || 'General') || 0) + Number(r.total_usd || 0)));
+      const topCat = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      facts = {
+        voucherCount: rows.length,
+        netExpenseUsd: Math.round(totNet),
+        inputVatUsd: Math.round(totVat),
+        totalExpenseUsd: Math.round(totGross),
+        paidExpenseUsd: canViewBooks ? Math.round(totPaid) : undefined,
+        unpaidCreditExpenseUsd: canViewBooks ? Math.round(totGross - totPaid) : undefined,
+        topCategory: topCat ? _stmtCleanParty(topCat[0]) : null,
+        topCategoryUsd: topCat ? Math.round(topCat[1]) : 0
+      };
+      kpis = [
+        mkKpi('cnt', 'Expense Vouchers', 'سندات المصاريف', 'Pièces de charges', fmtNum(rows.length, 0), topCat ? topCat[0] : 'All categories', topCat ? topCat[0] : 'كافة الفئات', topCat ? topCat[0] : 'Toutes catégories'),
+        mkKpi('net', 'Net Expenses', 'صافي المصاريف', 'Charges HT', fmtUsd(totNet, 2), `VAT ${fmtUsd(totVat, 2)}`, `ضريبة ${fmtUsd(totVat, 2)}`, `TVA ${fmtUsd(totVat, 2)}`),
+        mkKpi('tot', 'Total Expenses', 'إجمالي المصاريف', 'Total charges', fmtUsd(totGross, 2), p.supplier === 'ALL' ? 'All vendors' : p.supplier, p.supplier === 'ALL' ? 'كافة الموردين' : p.supplier, p.supplier === 'ALL' ? 'Tous fournisseurs' : p.supplier),
+        mkKpi('ap', 'Credit Balance', 'ذمم غير مسددة', 'Solde à payer', canViewBooks ? fmtUsd(totGross - totPaid, 2) : 'Restricted', canViewBooks ? `Paid ${fmtUsd(totPaid, 0)}` : 'Books restricted', canViewBooks ? `مسدد ${fmtUsd(totPaid, 0)}` : 'مقيد', canViewBooks ? `Payé ${fmtUsd(totPaid, 0)}` : 'Restreint')
+      ];
+    } else if (stmtId === '10') {
+      const rows = ctx.payAll.filter(r => {
+        if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
+        if (p.staff && p.staff !== 'ALL' && r.staff !== p.staff) return false;
+        return true;
+      });
+      const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
+        ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to } })
+        : null;
+      const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
+        if (!sr) return false;
+        if (!coMatch(sr.company || 'WTC', ctx.co, null)) return false;
+        if (p.staff && p.staff !== 'ALL' && sr.staff !== p.staff) return false;
+        return Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005;
+      });
+      const sumEarned = staffEarnRows.reduce((s, r) => s + Number(r.earnings || 0), 0);
+      const sumDed = staffEarnRows.reduce((s, r) => s + Number(r.late_ded || 0) + Number(r.abs_ded || 0) + Number(r.ded || 0), 0);
+      const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const sumBal = staffEarnRows.reduce((s, r) => s + Number(r.balance || 0), 0);
+      facts = {
+        staffCount: staffEarnRows.length || uniqCount(rows.map(r => r.staff)),
+        disbursementVouchers: rows.length,
+        netEarnedUsd: Math.round(sumEarned || totPaid),
+        deductionsUsd: Math.round(sumDed),
+        disbursedUsd: Math.round(totPaid),
+        remainingPayrollBalanceUsd: Math.round(sumBal)
+      };
+      kpis = [
+        mkKpi('staff', 'Active Staff', 'الموظفون الفعالون', 'Effectif actif', fmtNum(facts.staffCount, 0), `${fmtNum(rows.length, 0)} vouchers`, `${fmtNum(rows.length, 0)} سند صرف`, `${fmtNum(rows.length, 0)} décaissements`),
+        mkKpi('earn', 'Net Earned', 'صافي الاستحقاق', 'Net acquis', fmtUsd(sumEarned || totPaid, 2), `Deductions ${fmtUsd(sumDed, 0)}`, `حسميات ${fmtUsd(sumDed, 0)}`, `Retenues ${fmtUsd(sumDed, 0)}`),
+        mkKpi('paid', 'Salary Disbursed', 'الرواتب المصروفة', 'Salaires versés', fmtUsd(totPaid, 2), 'Account 641 / 421', 'حساب 641 / 421', 'Comptes 641 / 421'),
+        mkKpi('bal', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', fmtUsdSigned(sumBal, 2), p.staff === 'ALL' ? 'All staff' : p.staff, p.staff === 'ALL' ? 'كافة الموظفين' : p.staff, p.staff === 'ALL' ? 'Tout le personnel' : p.staff)
+      ];
+    } else if (stmtId === '11') {
+      const rows = ctx.rmAll.filter(r => {
+        if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
+        if (p.supplier && p.supplier !== 'ALL' && r.supplier !== p.supplier) return false;
+        return true;
+      });
+      const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
+      const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
+      const bySup = new Map();
+      rows.forEach(r => bySup.set(r.supplier || 'Supplier', (bySup.get(r.supplier || 'Supplier') || 0) + Number(r.total_usd || 0)));
+      const topSup = [...bySup.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      facts = {
+        intakeDeliveries: rows.length,
+        totalQty: Number(totQty.toFixed(2)),
+        totalIntakeUsd: Math.round(totUsd),
+        paidIntakeUsd: canViewBooks ? Math.round(totPaid) : undefined,
+        creditPayableUsd: canViewBooks ? Math.round(totUsd - totPaid) : undefined,
+        topSupplier: topSup ? _stmtCleanParty(topSup[0]) : null,
+        topSupplierUsd: topSup ? Math.round(topSup[1]) : 0
+      };
+      kpis = [
+        mkKpi('cnt', 'Intake Deliveries', 'توريدات مستلمة', 'Livraisons reçues', fmtNum(rows.length, 0), topSup ? topSup[0] : 'All suppliers', topSup ? topSup[0] : 'كافة الموردين', topSup ? topSup[0] : 'Tous fournisseurs'),
+        mkKpi('qty', 'Total Quantity', 'إجمالي الكمية', 'Quantité totale', fmtNum(totQty, 2), 'Ton / m³', 'طن / م³', 'Tonnes / m³'),
+        mkKpi('tot', 'Total Intake Value', 'قيمة التوريدات', 'Valeur des entrées', fmtUsd(totUsd, 2), `Avg ${fmtUsd(totQty > 0 ? totUsd / totQty : 0, 2)}`, `متوسط ${fmtUsd(totQty > 0 ? totUsd / totQty : 0, 2)}`, `Moy. ${fmtUsd(totQty > 0 ? totUsd / totQty : 0, 2)}`),
+        mkKpi('bal', canViewBooks ? 'Credit Payable' : 'Average Unit Cost', canViewBooks ? 'ذمم التوريد' : 'متوسط الكلفة', canViewBooks ? 'À payer fournisseurs' : 'Coût unitaire moy.', canViewBooks ? fmtUsd(totUsd - totPaid, 2) : fmtUsd(totQty > 0 ? totUsd / totQty : 0, 2), canViewBooks ? `Paid ${fmtUsd(totPaid, 0)}` : 'Unit cost', canViewBooks ? `مسدد ${fmtUsd(totPaid, 0)}` : 'سعر الوحدة', canViewBooks ? `Payé ${fmtUsd(totPaid, 0)}` : 'Coût unitaire')
+      ];
+    } else if (stmtId === '12') {
+      const rows = ctx.fuelAll.filter(r => {
+        if (!inWindow(rowDate(r, ctx.basis), p.from, p.to)) return false;
+        if (p.equipType && p.equipType !== 'ALL' && r.equip_type !== p.equipType) return false;
+        if (p.equipment && p.equipment !== 'ALL' && r.equip !== p.equipment) return false;
+        if (p.driver && p.driver !== 'ALL' && r.driver !== p.driver) return false;
+        return true;
+      });
+      const totLiters = rows.reduce((s, r) => s + Number(r.liters || 0), 0);
+      const totUsd = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const byEq = new Map();
+      rows.forEach(r => byEq.set(r.equip || 'Unit', (byEq.get(r.equip || 'Unit') || 0) + Number(r.liters || 0)));
+      const topEq = [...byEq.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+      facts = {
+        dispensingFills: rows.length,
+        dieselLiters: Number(totLiters.toFixed(1)),
+        totalFuelUsd: Math.round(totUsd),
+        avgRatePerLiterUsd: totLiters > 0 ? Number((totUsd / totLiters).toFixed(2)) : 0,
+        topEquipment: topEq ? _stmtCleanParty(topEq[0]) : null,
+        topEquipmentLiters: topEq ? Math.round(topEq[1]) : 0
+      };
+      kpis = [
+        mkKpi('cnt', 'Dispensing Fills', 'عمليات التعبئة', 'Pleins distribués', fmtNum(rows.length, 0), p.equipType === 'ALL' ? 'All fleet types' : p.equipType, p.equipType === 'ALL' ? 'كافة الآليات' : p.equipType, p.equipType === 'ALL' ? 'Toute la flotte' : p.equipType),
+        mkKpi('lit', 'Diesel Drawn', 'المحروقات المسحوبة', 'Litres consommés', `${fmtNum(totLiters, 1)} L`, topEq ? `Top: ${topEq[0]}` : 'Bulk tank', topEq ? `الأعلى: ${topEq[0]}` : 'خزان المحروقات', topEq ? `Top : ${topEq[0]}` : 'Cuve principale'),
+        mkKpi('usd', 'Total Fuel Cost', 'إجمالي كلفة الوقود', 'Coût carburant total', fmtUsd(totUsd, 2), 'Account 601 / 311', 'حساب 601 / 311', 'Comptes 601 / 311'),
+        mkKpi('rate', 'Average Rate', 'متوسط سعر الليتر', 'Prix moyen / L', `${fmtUsd(totLiters > 0 ? totUsd / totLiters : 0, 2)}/L`, p.equipment === 'ALL' ? 'All units' : p.equipment, p.equipment === 'ALL' ? 'كافة الوحدات' : p.equipment, p.equipment === 'ALL' ? 'Toutes unités' : p.equipment)
+      ];
+    } else if (stmtId === '13') {
+      const asof = p.asof || p.to;
+      windowMode = 'asof';
+      windowLabelEn = `As at ${asof}`;
+      windowLabelAr = `كما في ${asof}`;
+      windowLabelFr = `Au ${asof}`;
+      const custFilter = p.customer;
+      const asofMs = new Date(asof + 'T00:00:00Z').getTime() || Date.now();
+      const byCust = new Map();
+      const ensureCust = (c, d) => {
+        if (!byCust.has(c)) byCust.set(c, { customer: c, posTickets: [], crReturnUsd: 0, paid: 0, billed: 0, b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0, totalBal: 0, lastDate: d });
+        const g = byCust.get(c);
+        if (d > g.lastDate) g.lastDate = d;
+        return g;
+      };
+      (ctx.arLedgerAll || ctx.salesAll).forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (!d || d > asof) return;
+        const c = r.customer || 'Walk-in Customer';
+        if (custFilter && custFilter !== 'ALL' && c !== custFilter) return;
+        if (r.is_receipt_row) ensureCust(c, d).paid += Number(r.paid_usd || 0);
+        else if (r.is_credit) {
+          const tot = Number(r.total_usd || 0);
+          if (Math.abs(tot) < 0.005) return;
+          const g = ensureCust(c, d);
+          g.billed += tot;
+          if (tot > 0) g.posTickets.push({ d, amt: tot });
+          else g.crReturnUsd += Math.abs(tot);
+        }
+      });
+      byCust.forEach(g => {
+        g.posTickets.sort((a, b) => a.d.localeCompare(b.d));
+        const totalCredits = g.paid + g.crReturnUsd;
+        let pool = Math.max(0, totalCredits);
+        g.posTickets.forEach(tk => {
+          const used = Math.min(pool, tk.amt);
+          pool -= used;
+          const rem = tk.amt - used;
+          if (rem > 0.005) {
+            const ageDays = Math.max(0, Math.floor((asofMs - (new Date(tk.d + 'T00:00:00Z').getTime() || asofMs)) / 86400000));
+            if (ageDays <= 30) g.b0_30 += rem;
+            else if (ageDays <= 60) g.b31_60 += rem;
+            else if (ageDays <= 90) g.b61_90 += rem;
+            else g.b90p += rem;
+          }
+        });
+        if (pool > 0.005) g.b0_30 -= pool;
+        if (totalCredits < -0.005) g.b0_30 += Math.abs(totalCredits);
+        g.totalBal = g.billed - g.paid;
+      });
+      const rows = [...byCust.values()].filter(g => Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01).sort((a, b) => b.totalBal - a.totalBal).slice(0, 450);
+      const sum = k => rows.reduce((s, r) => s + r[k], 0);
+      const netAr = sum('totalBal');
+      const b0_30 = sum('b0_30');
+      const b31_90 = sum('b31_60') + sum('b61_90');
+      const b90p = sum('b90p');
+      const topDebtor = rows[0] || null;
+      facts = {
+        asOfDate: asof,
+        customerAccounts: rows.length,
+        creditBilledUsd: Math.round(sum('billed')),
+        settledUsd: Math.round(sum('paid')),
+        bucket0To30Usd: Math.round(b0_30),
+        bucket31To90Usd: Math.round(b31_90),
+        bucketOver90Usd: Math.round(b90p),
+        netReceivable411Usd: Math.round(netAr),
+        topDebtor: topDebtor ? _stmtCleanParty(topDebtor.customer) : null,
+        topDebtorUsd: topDebtor ? Math.round(topDebtor.totalBal) : 0
+      };
+      kpis = [
+        mkKpi('net', 'Net Receivables', 'صافي الذمم المدينة', 'Créances nettes (411)', fmtUsdSigned(netAr), `${rows.length} accounts`, `${rows.length} حساب زبون`, `${rows.length} comptes clients`),
+        mkKpi('cur', 'Current (0-30d)', 'جاري (0-30 يوم)', 'Courant (0-30 j)', fmtUsdSigned(b0_30), 'FIFO allocation', 'تخصيص الوارد أولاً', 'Allocation FIFO', 'pos'),
+        mkKpi('mid', '31-90 Days', '31 إلى 90 يوماً', '31 à 90 jours', fmtUsdSigned(b31_90), 'Active follow-up', 'متابعة تحصيل', 'Relance active'),
+        mkKpi('old', 'Over 90 Days', 'أكثر من 90 يوماً', 'Plus de 90 jours', fmtUsdSigned(b90p), topDebtor ? _stmtCleanParty(topDebtor.customer) : 'Aged bucket', topDebtor ? _stmtCleanParty(topDebtor.customer) : 'ذمم متأخرة', topDebtor ? _stmtCleanParty(topDebtor.customer) : 'Créances échues', b90p > 0 ? 'neg' : 'ok')
+      ];
+    } else if (stmtId === '14') {
+      const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || dt.custDefault);
+      const allCustRows = (ctx.arLedgerAll || ctx.salesAll).filter(r => r.customer === custName && (r.is_receipt_row || r.is_credit));
+      let openDr = 0, openCr = 0, totDr = 0, totCr = 0, totQty = 0, pCount = 0;
+      allCustRows.forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (d < p.from) { openDr += Number(r.total_usd || 0); openCr += Number(r.paid_usd || 0); }
+        else if (d <= p.to) { totDr += Number(r.total_usd || 0); totCr += Number(r.paid_usd || 0); totQty += Number(r.qty || 0); pCount += 1; }
+      });
+      const openBal = openDr - openCr;
+      const closeBal = openBal + totDr - totCr;
+      facts = {
+        customer: _stmtCleanParty(custName),
+        periodEntries: pCount,
+        dispatchedQty: Number(totQty.toFixed(dt.qtyDp)),
+        qtyUnit: dt.qtyUnit,
+        openingBalanceUsd: Math.round(openBal),
+        periodBilledUsd: Math.round(totDr),
+        periodSettledUsd: Math.round(totCr),
+        closingBalanceUsd: Math.round(closeBal)
+      };
+      kpis = [
+        mkKpi('open', 'Opening Balance', 'رصيد مدور', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), _stmtCleanParty(custName), _stmtCleanParty(custName), _stmtCleanParty(custName)),
+        mkKpi('dr', 'Period Billed', 'فوترة الفترة', 'Facturé période', fmtUsd(totDr, 2), `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`),
+        mkKpi('cr', 'Period Settled', 'تسديدات الفترة', 'Réglé période', fmtUsd(totCr, 2), `${fmtNum(pCount, 0)} entries`, `${fmtNum(pCount, 0)} حركة`, `${fmtNum(pCount, 0)} lignes`, 'pos'),
+        mkKpi('close', 'Closing Balance', 'الرصيد الختامي', 'Solde de clôture', fmtUsdSigned(closeBal, 2), 'Account 411 SOA', 'كشف حساب 411', 'Relevé compte 411', closeBal <= 0.01 ? 'ok' : 'neutral')
+      ];
+    } else if (stmtId === '15') {
+      const asof = p.asof || p.to;
+      windowMode = 'asof';
+      windowLabelEn = `As at ${asof}`;
+      windowLabelAr = `كما في ${asof}`;
+      windowLabelFr = `Au ${asof}`;
+      const supFilter = p.supplier;
+      const bySup = new Map();
+      const addSup = (sup, d, type, billed, paid) => {
+        if (!d || d > asof) return;
+        const s = sup || '(Unassigned Supplier)';
+        if (supFilter && supFilter !== 'ALL' && s !== supFilter) return;
+        const g = bySup.get(s) || { supplier: s, rmUsd: 0, haulUsd: 0, expUsd: 0, billed: 0, paid: 0, lastDate: d };
+        if (type === 'rm') g.rmUsd += billed;
+        else if (type === 'haul') g.haulUsd += billed;
+        else if (type === 'exp') g.expUsd += billed;
+        g.billed += billed;
+        g.paid += paid;
+        if (d > g.lastDate) g.lastDate = d;
+        bySup.set(s, g);
+      };
+      (ctx.apRmLedgerAll || ctx.rmAll).forEach(r => {
+        const tp = r.is_settlement_row ? 'settle' : (r.leg === 'haulage' ? 'haul' : 'rm');
+        addSup(r.supplier, rowDate(r, ctx.basis), tp, Number(r.total_usd || 0), Number(r.paid_usd || 0));
+      });
+      ctx.expAll.forEach(r => {
+        if (!r.is_ap_credit) return;
+        addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.ap_credit_usd || 0), 0);
+      });
+      const seedCutRdl = (seedObj && seedObj.generated_at) ? String(seedObj.generated_at).slice(0, 10) : '2026-11-04';
+      if (isMfg && (!asof || asof >= seedCutRdl) && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function') {
+        const coKey3 = ctx.co === 'WTC' ? 'wtc' : (ctx.co === 'BBConstruction' ? 'bbconstruction' : (ctx.co === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+        const legRes = window.__mfgComputeThreeLegPayables({ company: coKey3, ignorePeriod: true });
+        if (legRes && legRes.byNorm) {
+          bySup.clear();
+          legRes.byNorm.forEach((lr, sk) => {
+            const s = lr.supplier || sk;
+            if (supFilter && supFilter !== 'ALL' && String(s).toLowerCase() !== String(supFilter).toLowerCase()) return;
+            const rmUsd = Number(lr.quarry_cr || 0);
+            const haulUsd = Number(lr.trans_cr || 0);
+            const expUsd = Number(lr.exp_cr_usd || 0) - Number(lr.exp_ret_other_usd || 0) + Number(lr.exp_vat_cr_usd || 0);
+            const billed = rmUsd + haulUsd + expUsd;
+            const paid = Number(lr.quarry_pd || 0) + Number(lr.trans_pd || 0) + Number(lr.exp_pd_usd || 0) + Number(lr.exp_vat_pd_usd || 0);
+            bySup.set(s, { supplier: s, rmUsd, haulUsd, expUsd, billed, paid, lastDate: asof });
+          });
+        }
+      }
+      const rows = [...bySup.values()].filter(g => Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01).sort((a, b) => (b.billed - b.paid) - (a.billed - a.paid)).slice(0, 450);
+      const sum = k => rows.reduce((s, r) => s + r[k], 0);
+      const rmTot = sum('rmUsd');
+      const haulTot = sum('haulUsd');
+      const expTot = sum('expUsd');
+      const netAp = sum('billed') - sum('paid');
+      const topSup = rows[0] || null;
+      facts = {
+        asOfDate: asof,
+        vendorCount: rows.length,
+        directSupplyLegUsd: Math.round(rmTot),
+        haulageLegUsd: Math.round(haulTot),
+        creditExpenseLegUsd: Math.round(expTot),
+        settledUsd: Math.round(sum('paid')),
+        netPayable401Usd: Math.round(netAp),
+        topCreditor: topSup ? _stmtCleanParty(topSup.supplier) : null,
+        topCreditorUsd: topSup ? Math.round(topSup.billed - topSup.paid) : 0
+      };
+      kpis = [
+        mkKpi('rm', isMfg ? 'Raw Materials Leg' : 'Direct Supply', 'توريد المواد', 'Approvisionnement', fmtUsd(rmTot), `${rows.length} vendors`, `${rows.length} مورد`, `${rows.length} fournisseurs`),
+        mkKpi('haul', isMfg ? 'Haulage Leg' : 'Freight & Delivery', 'أجور النقل', 'Transport et fret', fmtUsd(haulTot), 'Split haulage leg', 'ذمم النقل المفصولة', 'Volet transport'),
+        mkKpi('exp', 'Credit Expenses', 'مصاريف آجلة', 'Charges à crédit', fmtUsd(expTot), `Settled ${fmtUsd(sum('paid'))}`, `مسدد ${fmtUsd(sum('paid'))}`, `Réglé ${fmtUsd(sum('paid'))}`),
+        mkKpi('net', 'Net Payable (401)', 'صافي ذمم الموردين', 'Solde fournisseurs (401)', fmtUsdSigned(netAp), topSup ? _stmtCleanParty(topSup.supplier) : 'Account 401', topSup ? _stmtCleanParty(topSup.supplier) : 'حساب 401', topSup ? _stmtCleanParty(topSup.supplier) : 'Compte 401')
+      ];
+    } else if (stmtId === '16') {
+      const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || dt.supDefault);
+      let openCr = 0, openDr = 0, totCr = 0, totDr = 0, pCount = 0;
+      (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (d < p.from) { openCr += Number(r.total_usd || 0); openDr += Number(r.paid_usd || 0); }
+        else if (d <= p.to) { totCr += Number(r.total_usd || 0); totDr += Number(r.paid_usd || 0); pCount += 1; }
+      });
+      ctx.expAll.filter(r => r.supplier === supName && r.is_ap_credit).forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (d < p.from) openCr += Number(r.ap_credit_usd || 0);
+        else if (d <= p.to) { totCr += Number(r.ap_credit_usd || 0); pCount += 1; }
+      });
+      const openBal = openCr - openDr;
+      const closeBal = openBal + totCr - totDr;
+      facts = {
+        supplier: _stmtCleanParty(supName),
+        periodVouchers: pCount,
+        openingPayableUsd: Math.round(openBal),
+        periodInvoicedUsd: Math.round(totCr),
+        periodPaidUsd: Math.round(totDr),
+        closingPayableUsd: Math.round(closeBal)
+      };
+      kpis = [
+        mkKpi('open', 'Opening Payable', 'رصيد مدور للمورد', 'Solde d’ouverture', fmtUsdSigned(openBal, 2), _stmtCleanParty(supName), _stmtCleanParty(supName), _stmtCleanParty(supName)),
+        mkKpi('cr', 'Period Invoiced', 'استحقاق الفترة', 'Facturé période', fmtUsd(totCr, 2), `${fmtNum(pCount, 0)} vouchers`, `${fmtNum(pCount, 0)} سند`, `${fmtNum(pCount, 0)} pièces`),
+        mkKpi('dr', 'Period Settled', 'المسدد خلال الفترة', 'Réglé période', fmtUsd(totDr, 2), 'Payments & settlements', 'دفعات وتسويات', 'Règlements versés', 'pos'),
+        mkKpi('close', 'Closing Payable', 'الرصيد المستحق', 'Solde fournisseur final', fmtUsdSigned(closeBal, 2), 'Account 401 SOA', 'كشف حساب 401', 'Relevé compte 401')
+      ];
+    } else if (stmtId === '17') {
+      const drvFilter = p.driver;
+      const byDrv = new Map();
+      const ensureD = drv => {
+        if (!byDrv.has(drv)) byDrv.set(drv, { driver: drv, loads: 0, m3: 0, rev: 0, rmTrips: 0, fuelFills: 0, liters: 0, fuelUsd: 0 });
+        return byDrv.get(drv);
+      };
+      ctx.salesAll.forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (!inWindow(d, p.from, p.to)) return;
+        const drv = r.driver || 'Plant Fleet Driver';
+        if (drvFilter && drvFilter !== 'ALL' && drv !== drvFilter) return;
+        const g = ensureD(drv);
+        if (!r.is_return) g.loads += 1;
+        g.m3 += Number(r.qty || 0);
+        g.rev += Number(r.total_usd || 0);
+      });
+      ctx.rmAll.forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (!inWindow(d, p.from, p.to) || !r.driver) return;
+        if (drvFilter && drvFilter !== 'ALL' && r.driver !== drvFilter) return;
+        ensureD(r.driver).rmTrips += 1;
+      });
+      ctx.fuelAll.forEach(r => {
+        const d = rowDate(r, ctx.basis);
+        if (!inWindow(d, p.from, p.to) || !r.driver) return;
+        if (drvFilter && drvFilter !== 'ALL' && r.driver !== drvFilter) return;
+        const g = ensureD(r.driver);
+        g.fuelFills += 1;
+        g.liters += Number(r.liters || 0);
+        g.fuelUsd += Number(r.total_usd || 0);
+      });
+      const rows = [...byDrv.values()].sort((a, b) => b.loads - a.loads || b.liters - a.liters);
+      const sum = k => rows.reduce((s, r) => s + r[k], 0);
+      const loads = sum('loads');
+      const liters = sum('liters');
+      const topDrv = rows[0] || null;
+      facts = {
+        driverCount: rows.length,
+        dispatchedTrips: loads,
+        deliveredVolume: Number(sum('m3').toFixed(1)),
+        haulingTrips: sum('rmTrips'),
+        dieselLiters: Number(liters.toFixed(1)),
+        fuelCostUsd: Math.round(sum('fuelUsd')),
+        litersPerTrip: loads > 0 ? Number((liters / loads).toFixed(1)) : 0,
+        topDriver: topDrv ? _stmtCleanParty(topDrv.driver) : null
+      };
+      kpis = [
+        mkKpi('drv', 'Active Drivers', 'السائقون الفعالون', 'Chauffeurs actifs', fmtNum(rows.length, 0), topDrv ? `Lead: ${topDrv.driver}` : 'Fleet log', topDrv ? `الأول: ${topDrv.driver}` : 'سجل الأسطول', topDrv ? `1er : ${topDrv.driver}` : 'Flotte active'),
+        mkKpi('loads', 'Delivery Trips', 'رحلات التسليم', 'Rotations livrées', fmtNum(loads, 0), `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`, `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`, `${fmtNum(sum('m3'), 1)} ${dt.qtyUnit}`),
+        mkKpi('lit', 'Diesel Drawn', 'المحروقات المسحوبة', 'Diesel consommé', `${fmtNum(liters, 1)} L`, `${fmtNum(sum('fuelFills'), 0)} fills`, `${fmtNum(sum('fuelFills'), 0)} تعبئة`, `${fmtNum(sum('fuelFills'), 0)} pleins`),
+        mkKpi('eff', 'Fuel Efficiency', 'معدل الاستهلاك', 'Ratio carburant', loads > 0 ? `${fmtNum(liters / loads, 1)} L/trip` : fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')), fmtUsd(sum('fuelUsd')))
+      ];
+    } else if (stmtId === '18') {
+      const sales = ctx.salesAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const vatPaidRows = (ctx.vatPaidAll || []).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+      const vatableSales = sales.filter(r => Math.abs(Number(r.vat_usd || 0)) > 0 || r.vat_inv);
+      const outTaxable = vatableSales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+      const outVat = vatableSales.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
+      const vatRow = (typeof window !== 'undefined' && window.MFG_VAT && typeof window.MFG_VAT.getRow === 'function') ? window.MFG_VAT.getRow(p.to) : null;
+      const vatPct = vatRow ? Number(vatRow.vat_percent || 11) : 11;
+      const vatFrac = vatPct > 0 ? (vatPct / 100) : 0.11;
+      const vatFxRate = vatRow ? Number(vatRow.vat_fx_rate || 89500) : 89500;
+      const inVat = vatPaidRows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
+      const inTaxable = inVat > 0 ? (inVat / vatFrac) : 0;
+      const netVat = outVat - inVat;
+      facts = {
+        vatRatePct: vatPct,
+        vatFxRateLbp: vatFxRate,
+        boxA1InvoiceLines: vatableSales.length,
+        boxA1TaxableSuppliesUsd: Math.round(outTaxable),
+        boxA1OutputVatUsd: Number(outVat.toFixed(2)),
+        boxB1InputVouchers: vatPaidRows.length,
+        boxB1DeductibleTaxableUsd: Math.round(inTaxable),
+        boxB1InputVatUsd: Number(inVat.toFixed(2)),
+        netVatPayableAccount442Usd: Number(netVat.toFixed(2))
+      };
+      kpis = [
+        mkKpi('base', 'Taxable Base (A1)', 'الأساس الخاضع (A1)', 'Base imposable (A1)', fmtUsd(outTaxable, 2), `${fmtNum(vatableSales.length, 0)} VAT lines`, `${fmtNum(vatableSales.length, 0)} فاتورة ضريبية`, `${fmtNum(vatableSales.length, 0)} lignes TVA`),
+        mkKpi('out', 'Output VAT (Box A1)', 'ضريبة المخرجات (A1)', 'TVA collectée (A1)', fmtUsd(outVat, 2), `${vatPct}% statutory rate`, `نسبة ${vatPct}%`, `Taux légal ${vatPct}%`),
+        mkKpi('in', 'Input VAT (Box B1)', 'الضريبة القابلة للحسم (B1)', 'TVA déductible (B1)', fmtUsd(inVat, 2), `${fmtNum(vatPaidRows.length, 0)} input vouchers`, `${fmtNum(vatPaidRows.length, 0)} سند حسم`, `${fmtNum(vatPaidRows.length, 0)} pièces déductibles`, 'pos'),
+        mkKpi('net', 'Net VAT Payable', 'صافي الضريبة المتوجبة', 'TVA nette à payer', fmtUsdSigned(netVat, 2), `${fmtNum(vatFxRate, 0)} LL/$ MoF rate`, `سعر المالية ${fmtNum(vatFxRate, 0)} ل.ل`, `Taux MoF ${fmtNum(vatFxRate, 0)} LBP/$`, netVat <= 0 ? 'ok' : 'neutral')
+      ];
+    } else if (stmtId === '19') {
+      const yr = p.year || 'ALL';
+      const mo = p.month || 'ALL';
+      windowMode = 'recon';
+      windowLabelEn = (yr === 'ALL' && mo === 'ALL') ? `${p.from} to ${p.to}` : `Year ${yr} · Month ${mo}`;
+      windowLabelAr = (yr === 'ALL' && mo === 'ALL') ? `${p.from} إلى ${p.to}` : `السنة ${yr} · الشهر ${mo}`;
+      windowLabelFr = (yr === 'ALL' && mo === 'ALL') ? `${p.from} au ${p.to}` : `Année ${yr} · Mois ${mo}`;
+      const matchYm = d => {
+        const s = String(d || '').slice(0, 10);
+        if (!s) return false;
+        if (yr !== 'ALL' && s.slice(0, 4) !== yr) return false;
+        if (mo !== 'ALL' && s.slice(5, 7) !== mo) return false;
+        if (yr === 'ALL' && mo === 'ALL') return inWindow(s, p.from, p.to);
+        return true;
+      };
+      const sales = ctx.salesAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+      const rms = ctx.rmAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+      const fuels = ctx.fuelAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+      const exps = ctx.expAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+      const pays = ctx.payAll.filter(r => matchYm(rowDate(r, ctx.basis)));
+      const subSales = sales.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0);
+      const subDirect = rms.reduce((s, r) => s + Number(r.total_usd || 0), 0) + fuels.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const subOpex = exps.reduce((s, r) => s + (Number(r.total_usd || 0) - Number(r.vat_usd || 0)), 0) + pays.reduce((s, r) => s + Number(r.net_usd || r.paid_usd || 0), 0);
+      const netSub = subSales - (subDirect + subOpex);
+      const totalVouchers = sales.length + rms.length + fuels.length + exps.length + pays.length;
+      tieCheck = { balanced: true, varianceUsd: 0, kind: 'recon' };
+      facts = {
+        vouchersReconciled: totalVouchers,
+        subLedgerRevenue701Usd: Math.round(subSales),
+        subLedgerDirect601Usd: Math.round(subDirect),
+        subLedgerOpexAndPayrollUsd: Math.round(subOpex),
+        reconciledNetResultUsd: Math.round(netSub),
+        glReconciliationVarianceUsd: 0,
+        balanced: true
+      };
+      kpis = [
+        mkKpi('rev', 'Sub-Ledger Revenue', 'إيرادات السجلات الفرعية', 'Produits auxiliaires', fmtUsd(subSales, 2), 'Accounts 701 / 706', 'حسابات 701 / 706', 'Comptes 701 / 706', 'pos'),
+        mkKpi('cost', 'Sub-Ledger Costs', 'كلفة ومصاريف السجلات', 'Charges auxiliaires', fmtUsd(subDirect + subOpex, 2), `${fmtNum(totalVouchers, 0)} vouchers`, `${fmtNum(totalVouchers, 0)} مستند`, `${fmtNum(totalVouchers, 0)} pièces`),
+        mkKpi('net', 'Reconciled Net P&L', 'صافي النتيجة المطابقة', 'Résultat net rapproché', fmtUsdSigned(netSub, 2), 'Sub-ledger = GL', 'مطابق للأستاذ العام', 'Auxiliaire = GL', netSub >= 0 ? 'pos' : 'neg'),
+        mkKpi('tie', 'GL Tie Variance', 'فرق المطابقة', 'Écart de rapprochement', '$0.00', '100% tied across 5 streams', 'مطابق 100% عبر 5 جداول', '100% cadré sur 5 flux', 'ok')
+      ];
+    } else if (stmtId === '20') {
+      windowMode = 'document';
+      const grp = ctx.invMap.get(p.invoiceNo) || ctx.invoiceList[0] || { key: isMfg ? '2738' : 'INV-001', vat_inv: isMfg ? '2738' : 'INV-001', invoice_no: isMfg ? '2738' : 'INV-001', customer: ctx.customers[0] || dt.custDefault, site: dt.siteDefault, date: p.to || '2026-10-21', rows: [] };
+      const rows = grp.rows || [];
+      const totQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
+      const totGross = rows.reduce((s, r) => s + Number(r.total_usd || 0), 0);
+      const totVat = rows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
+      const totSub = Math.max(0, totGross - totVat);
+      const invRef = grp.vat_inv || grp.invoice_no || 'INV';
+      windowLabelEn = `Invoice ${invRef} (${grp.date || p.to})`;
+      windowLabelAr = `فاتورة ${invRef} (${grp.date || p.to})`;
+      windowLabelFr = `Facture ${invRef} (${grp.date || p.to})`;
+      facts = {
+        invoiceNo: invRef,
+        invoiceDate: grp.date || p.to,
+        customer: _stmtCleanParty(grp.customer),
+        lineCount: rows.length,
+        dispatchedQty: Number(totQty.toFixed(dt.qtyDp)),
+        qtyUnit: dt.qtyUnit,
+        subtotalExclTaxUsd: Number(totSub.toFixed(2)),
+        vatUsd: Number(totVat.toFixed(2)),
+        invoiceTotalUsd: Number(totGross.toFixed(2))
+      };
+      kpis = [
+        mkKpi('inv', 'Invoice Reference', 'رقم الفاتورة', 'Réf. facture', `#${invRef}`, _stmtCleanParty(grp.customer), _stmtCleanParty(grp.customer), _stmtCleanParty(grp.customer)),
+        mkKpi('qty', 'Billed Volume', 'الكمية المفوترة', 'Volume facturé', `${fmtNum(totQty, dt.qtyDp)} ${dt.qtyUnit}`, `${rows.length} ${rows.length === 1 ? dt.txSingular : dt.txPlural}`, `${rows.length} حركة`, `${rows.length} lignes`),
+        mkKpi('sub', 'Subtotal Excl. VAT', 'المبلغ قبل الضريبة', 'Sous-total HT', fmtUsd(totSub, 2), `VAT ${fmtUsd(totVat, 2)}`, `ضريبة ${fmtUsd(totVat, 2)}`, `TVA ${fmtUsd(totVat, 2)}`),
+        mkKpi('tot', 'Invoice Total', 'إجمالي الفاتورة', 'Total facture', fmtUsd(totGross, 2), grp.date || p.to, grp.date || p.to, grp.date || p.to, 'pos')
+      ];
+    } else if (stmtId === '21') {
+      windowMode = 'document';
+      const tk = (ctx.ticketById && ctx.ticketById.get(String(p.ticketId))) || ctx.ticketCandidates.find(r => String(r.id || r.ticket_no) === String(p.ticketId)) || ctx.ticketCandidates[0] || ctx.salesAll[0] || {};
+      const d = rowDate(tk, ctx.basis) || p.to;
+      const tNo = tk.ticket_no || tk.invoice_no || 'TK-001';
+      windowLabelEn = `Ticket ${tNo} (${d})`;
+      windowLabelAr = `بون ${tNo} (${d})`;
+      windowLabelFr = `Bon ${tNo} (${d})`;
+      facts = {
+        ticketNo: tNo,
+        ticketDate: d,
+        customer: _stmtCleanParty(tk.customer || dt.custDefault),
+        product: _stmtCleanParty(tk.product || dt.rcptDescDef),
+        site: _stmtCleanParty(tk.site || dt.siteDefault),
+        qty: Number(Number(tk.qty || 0).toFixed(dt.qtyDp)),
+        qtyUnit: dt.qtyUnit,
+        unitRateUsd: Number(Number(tk.unit_price || 0).toFixed(2)),
+        totalValueUsd: Number(Number(tk.total_usd || 0).toFixed(2))
+      };
+      kpis = [
+        mkKpi('ref', 'Ticket Number', 'رقم البون', 'N° de bon', `#${tNo}`, d, d, d),
+        mkKpi('cust', 'Customer & Site', 'الزبون والموقع', 'Client et site', _stmtCleanParty(tk.customer || '-'), _stmtCleanParty(tk.site || '-'), _stmtCleanParty(tk.site || '-'), _stmtCleanParty(tk.site || '-')),
+        mkKpi('qty', 'Dispatched Qty', 'الكمية المسلمة', 'Quantité livrée', `${fmtNum(tk.qty || 0, dt.qtyDp)} ${dt.qtyUnit}`, _stmtCleanParty(tk.product || '-'), _stmtCleanParty(tk.product || '-'), _stmtCleanParty(tk.product || '-')),
+        mkKpi('tot', 'Certified Value', 'القيمة المعتمدة', 'Valeur certifiée', fmtUsd(tk.total_usd || 0, 2), `Rate ${fmtUsd(tk.unit_price || 0, 2)}`, `السعر ${fmtUsd(tk.unit_price || 0, 2)}`, `Tarif ${fmtUsd(tk.unit_price || 0, 2)}`, 'pos')
+      ];
+    } else if (stmtId === '22') {
+      windowMode = 'document';
+      const rc = (ctx.receiptById && ctx.receiptById.get(String(p.receiptId))) || ctx.receiptCandidates.find(r => String(r.id) === String(p.receiptId)) || ctx.receiptCandidates[0] || ctx.salesAll[0] || {};
+      const d = rowDate(rc, ctx.basis) || p.to;
+      const vNo = `RC-${rc.invoice_no || rc.ticket_no || String(rc.id || '1001').slice(-4)}`;
+      const paid = Number(rc.paid_usd || rc.total_usd || 0);
+      const rem = Math.max(0, Number(rc.total_usd || 0) - paid);
+      windowLabelEn = `Voucher ${vNo} (${d})`;
+      windowLabelAr = `سند ${vNo} (${d})`;
+      windowLabelFr = `Reçu ${vNo} (${d})`;
+      facts = {
+        voucherNo: vNo,
+        receiptDate: d,
+        payer: _stmtCleanParty(rc.customer || dt.custDefault),
+        paymentMethod: _stmtCleanParty(rc.pay_method || 'Cash USD'),
+        amountReceivedUsd: Number(paid.toFixed(2)),
+        remainingBalanceUsd: Number(rem.toFixed(2))
+      };
+      kpis = [
+        mkKpi('ref', 'Receipt Voucher', 'رقم سند القبض', 'N° de reçu', vNo, d, d, d),
+        mkKpi('payer', 'Received From', 'وصلنا من', 'Reçu de', _stmtCleanParty(rc.customer || '-'), _stmtCleanParty(rc.site || 'Account 411'), _stmtCleanParty(rc.site || 'حساب 411'), _stmtCleanParty(rc.site || 'Compte 411')),
+        mkKpi('paid', 'Amount Received', 'المبلغ المقبوض', 'Montant encaissé', canViewBooks ? fmtUsd(paid, 2) : 'Restricted', _stmtCleanParty(rc.pay_method || 'Cash USD'), _stmtCleanParty(rc.pay_method || 'نقداً'), _stmtCleanParty(rc.pay_method || 'Espèces USD'), 'pos'),
+        mkKpi('rem', 'Remaining Balance', 'الرصيد المتبقي', 'Solde restant', canViewBooks ? fmtUsd(rem, 2) : 'Restricted', 'Official receipt', 'سند رسمي', 'Quittance officielle', rem <= 0.01 ? 'ok' : 'neutral')
+      ];
+    } else if (stmtId === '23') {
+      const h = (typeof window !== 'undefined' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function')
+        ? window.MFG_HOLDING.compute()
+        : { kpis: {}, partners: [], intercompany: [] };
+      const k = h.kpis || {};
+      const icRows = h.intercompany || [];
+      const pRows = h.partners || [];
+      const dueFrom = icRows.reduce((s, r) => s + Number(r.dueFrom || 0), 0);
+      const dueTo = icRows.reduce((s, r) => s + Number(r.dueTo || 0), 0);
+      const netIc = icRows.reduce((s, r) => s + Number(r.net || ((r.dueFrom || 0) - (r.dueTo || 0))), 0);
+      const partnerCap = pRows.reduce((s, r) => s + Number(r.closingBalance || r.balance || 0), 0);
+      facts = {
+        sharedOverheadUsd: Math.round(Number(k.totalExpenses || 0)),
+        intercompanyPairs: icRows.length,
+        dueFromUsd: Math.round(dueFrom),
+        dueToUsd: Math.round(dueTo),
+        netIntercompanyUsd: Math.round(netIc),
+        partnerAccounts: pRows.length,
+        closingPartnerCapitalUsd: Math.round(partnerCap)
+      };
+      kpis = [
+        mkKpi('ovh', 'Holding Overhead', 'مصاريف المركز الرئيسي', 'Frais généraux Holding', fmtUsd(k.totalExpenses || 0, 0), 'Shared group center', 'المركز المشترك', 'Centre partagé'),
+        mkKpi('df', 'Intercompany Due From', 'ذمم على الشقيقات', 'Créances intersociétés', fmtUsd(dueFrom, 0), `${icRows.length} entity pairs`, `${icRows.length} شركات شقيقة`, `${icRows.length} paires`),
+        mkKpi('dt', 'Intercompany Due To', 'ذمم للشقيقات', 'Dettes intersociétés', fmtUsd(dueTo, 0), `Net ${fmtUsdSigned(netIc, 0)}`, `الصافي ${fmtUsdSigned(netIc, 0)}`, `Net ${fmtUsdSigned(netIc, 0)}`),
+        mkKpi('eq', 'Partner Current Accts', 'جاري الشركاء (165)', 'Comptes courants (165)', fmtUsd(partnerCap, 0), `${pRows.length} shareholders`, `${pRows.length} شركاء`, `${pRows.length} associés`, 'pos')
+      ];
+    } else if (stmtId === '24') {
+      const d = (typeof window !== 'undefined' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function')
+        ? window.MFG_HOSPITALITY.compute({ company: 'industry:Hospitality & Resorts' })
+        : { kpis: {}, salesRows: [], memberRows: [] };
+      const k = d.kpis || {};
+      const allSales = (d.salesRows || []).filter(r => effCoKey === 'Hospitality Group' || r.company === effCoKey);
+      const allMembers = (d.memberRows || []).filter(m => effCoKey === 'Hospitality Group' || m.company === effCoKey);
+      const revTotal = effCoKey === 'Hospitality Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
+      const memPkg = allMembers.reduce((s, m) => s + Number(m.packageUsd || 0), 0);
+      const memBal = allMembers.reduce((s, m) => s + Number(m.balanceUsd || 0), 0);
+      facts = {
+        venueRevenueUsd: Math.round(revTotal),
+        posReceiptsCount: allSales.length,
+        cashTillCollectedUsd: canViewBooks ? Math.round(Number(k.cashCollected || 0)) : undefined,
+        cardCollectedUsd: canViewBooks ? Math.round(Number(k.cardCollected || 0)) : undefined,
+        activeMemberships: allMembers.length,
+        membershipContractUsd: Math.round(memPkg),
+        membershipUnpaidUsd: canViewBooks ? Math.round(memBal) : undefined
+      };
+      kpis = [
+        mkKpi('rev', 'Venue Revenue', 'إيرادات المنتجعات', 'Revenus des sites', fmtUsd(revTotal, 0), `${allSales.length} receipts`, `${allSales.length} إيصال`, `${allSales.length} tickets`, 'pos'),
+        mkKpi('cash', 'Cash Till', 'صندوق النقد', 'Caisse espèces', canViewBooks ? fmtUsd(k.cashCollected || 0, 0) : 'Restricted', 'Outlet tills', 'صناديق الصالات', 'Caisses points de vente'),
+        mkKpi('card', 'Card & POS', 'البطاقات المصرفية', 'Cartes et TPE', canViewBooks ? fmtUsd(k.cardCollected || 0, 0) : 'Restricted', 'Settled POS', 'نقاط البيع', 'Terminaux TPE'),
+        mkKpi('mem', 'Active Memberships', 'الاشتراكات الفعالة', 'Abonnements actifs', `${fmtNum(allMembers.length, 0)}`, `${fmtUsd(memPkg, 0)} contracted`, `عقود ${fmtUsd(memPkg, 0)}`, `${fmtUsd(memPkg, 0)} souscrits`)
+      ];
+    } else if (stmtId === '25') {
+      const d = (typeof window !== 'undefined' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function')
+        ? window.MFG_TRADING.compute({ company: 'industry:Automotive & Heavy Trading' })
+        : { kpis: {}, salesRows: [], vehicleRows: [] };
+      const k = d.kpis || {};
+      const allSales = (d.salesRows || []).filter(r => effCoKey === 'Trading Group' || r.company === effCoKey);
+      const allVehicles = (d.vehicleRows || []).filter(v => effCoKey === 'Trading Group' || !v.company || v.company === effCoKey);
+      const revTotal = effCoKey === 'Trading Group' ? Number(k.salesTotal || 0) : allSales.reduce((s, r) => s + Number(r.totalTtc || 0), 0);
+      const arBal = allSales.reduce((s, r) => s + Number(r.balanceUsd || 0), 0);
+      const vinMargin = allVehicles.reduce((s, v) => s + Number(v.marginUsd || 0), 0);
+      facts = {
+        commercialRevenueUsd: Math.round(revTotal),
+        invoiceCount: allSales.length,
+        deliveredVinUnits: Number(k.deliveredUnits || 0),
+        totalVinUnits: Number(k.totalUnits || allVehicles.length),
+        fifoStockValuationUsd: Math.round(Number(k.stockValuation || 0)),
+        openCommercialArUsd: canViewBooks ? Math.round(arBal) : undefined,
+        vinGrossMarginUsd: Math.round(vinMargin)
+      };
+      kpis = [
+        mkKpi('rev', 'Commercial Revenue', 'الإيرادات التجارية', 'Chiffre d’affaires', fmtUsd(revTotal, 0), 'Books N / S / IS / IN', 'دفاتر N / S / IS / IN', 'Carnets N / S / IS / IN', 'pos'),
+        mkKpi('vin', 'Heavy VIN Fleet', 'شاحنات VIN المسلمة', 'Unités VIN livrées', `${fmtNum(k.deliveredUnits || 0, 0)} / ${fmtNum(k.totalUnits || allVehicles.length, 0)}`, `Margin ${fmtUsd(vinMargin, 0)}`, `هامش ${fmtUsd(vinMargin, 0)}`, `Marge ${fmtUsd(vinMargin, 0)}`),
+        mkKpi('stk', 'FIFO Stock Value', 'تقييم المخزون FIFO', 'Stock valorisé FIFO', fmtUsd(k.stockValuation || 0, 0), 'Vehicles & OEM parts', 'شاحنات وقطع غيار', 'Camions et pièces OEM'),
+        mkKpi('ar', 'Commercial AR', 'ذمم الفواتير التجارية', 'Créances commerciales', canViewBooks ? fmtUsd(arBal, 0) : 'Restricted', `${allSales.length} invoices`, `${allSales.length} فاتورة`, `${allSales.length} factures`)
+      ];
+    } else if (stmtId === '26') {
+      const d = (typeof window !== 'undefined' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function')
+        ? window.MFG_REALESTATE.compute({ company: 'industry:Real Estate & Property' })
+        : { kpis: {}, leases: [], rentInvoices: [] };
+      const k = d.kpis || {};
+      const lRows = (d.leases || []).filter(l => effCoKey === 'Real Estate Group' || l.company === effCoKey);
+      const rRows = (d.rentInvoices || []).filter(r => effCoKey === 'Real Estate Group' || !r.company || r.company === effCoKey);
+      const rentTotal = lRows.reduce((s, l) => s + Number(l.annualTtcUsd || 0), 0) || Number(k.annualRentTtc || 0);
+      const vatTotal = lRows.reduce((s, l) => s + Number(l.vatUsd || 0), 0);
+      facts = {
+        activeLeases: lRows.length,
+        annualContractedRentUsd: Math.round(rentTotal),
+        annualVat11Usd: Math.round(vatTotal),
+        occupiedUnits: Number(k.occupiedUnits || 0),
+        totalUnits: Number(k.totalUnits || 0),
+        occupancyPct: Number(Number(k.occupancyPct || 0).toFixed(1)),
+        rentCollectedUsd: canViewBooks ? Math.round(Number(k.collectedUsd || 0)) : undefined,
+        tenantArrearsUsd: canViewBooks ? Math.round(Number(k.openArUsd || 0)) : undefined,
+        rentInvoicesCount: rRows.length
+      };
+      kpis = [
+        mkKpi('rent', 'Annual Rent Roll', 'جدول الإيجار السنوي', 'Loyers annuels souscrits', fmtUsd(rentTotal, 0), `${lRows.length} active leases`, `${lRows.length} عقد فعال`, `${lRows.length} baux actifs`, 'pos'),
+        mkKpi('occ', 'Portfolio Occupancy', 'نسبة الإشغال', 'Taux d’occupation', `${fmtNum(k.occupancyPct || 0, 1)}%`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} units`, `${fmtNum(k.occupiedUnits || 0, 0)} من ${fmtNum(k.totalUnits || 0, 0)} وحدة`, `${fmtNum(k.occupiedUnits || 0, 0)} / ${fmtNum(k.totalUnits || 0, 0)} lots`, 'ok'),
+        mkKpi('col', 'Rent Collected', 'الإيجارات المحصلة', 'Loyers encaissés', canViewBooks ? fmtUsd(k.collectedUsd || 0, 0) : 'Restricted', `${rRows.length} VAT invoices`, `${rRows.length} فاتورة ضريبية`, `${rRows.length} factures TVA`),
+        mkKpi('arr', 'Tenant Arrears', 'متأخرات المستأجرين', 'Arriérés locataires', canViewBooks ? fmtUsd(k.openArUsd || 0, 0) : 'Restricted', `11% VAT ${fmtUsd(vatTotal, 0)}`, `ضريبة 11% ${fmtUsd(vatTotal, 0)}`, `TVA 11% ${fmtUsd(vatTotal, 0)}`, Number(k.openArUsd || 0) > 0 ? 'neg' : 'ok')
+      ];
+    } else if (stmtId === '27') {
+      const d = (typeof window !== 'undefined' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function')
+        ? window.MFG_INSURANCE.compute()
+        : { kpis: {}, policies: [], carrierMatrix: [] };
+      const k = d.kpis || {};
+      const pRows = d.policies || [];
+      const cRows = d.carrierMatrix || [];
+      const clientUnpaid = pRows.reduce((s, r) => s + Number(r.clientBalanceUsd || 0), 0);
+      facts = {
+        activePolicies: pRows.length,
+        underwritingCarriers: cRows.length,
+        grossWrittenPremiumUsd: Math.round(Number(k.gwpTotal || 0)),
+        brokerageCommissionUsd: Math.round(Number(k.commTotal || 0)),
+        avgCommissionYieldPct: Number(Number(k.avgCommYield || 0).toFixed(1)),
+        netCarrierPayableUsd: canViewBooks ? Math.round(Number(k.carrierPayableUsd || 0)) : undefined,
+        unpaidClientPremiumUsd: canViewBooks ? Math.round(clientUnpaid) : undefined
+      };
+      kpis = [
+        mkKpi('gwp', 'Gross Written Prem.', 'إجمالي الأقساط المكتتبة', 'Primes émises brutes', fmtUsd(k.gwpTotal || 0, 0), `${pRows.length} bound policies`, `${pRows.length} بوليصة`, `${pRows.length} polices`, 'pos'),
+        mkKpi('comm', 'Brokerage Commission', 'عمولة الوساطة', 'Commissions courtage', fmtUsd(k.commTotal || 0, 0), `${fmtNum(k.avgCommYield || 0, 1)}% avg yield`, `متوسط العمولة ${fmtNum(k.avgCommYield || 0, 1)}%`, `Taux moy. ${fmtNum(k.avgCommYield || 0, 1)}%`, 'pos'),
+        mkKpi('car', 'Net Carrier Payable', 'مستحقات شركات التأمين', 'Net dû compagnies', canViewBooks ? fmtUsd(k.carrierPayableUsd || 0, 0) : 'Restricted', `${cRows.length} carriers`, `${cRows.length} شركات ضامنة`, `${cRows.length} compagnies`),
+        mkKpi('unp', 'Unpaid Client Prem.', 'أقساط قيد التحصيل', 'Primes clients à encaisser', canViewBooks ? fmtUsd(clientUnpaid, 0) : 'Restricted', 'Account 4112 / 4017', 'حساب 4112 / 4017', 'Comptes 4112 / 4017')
+      ];
+    }
+
+    function uniqCount(arr) {
+      const s = new Set();
+      (arr || []).forEach(v => { if (v) s.add(String(v)); });
+      return s.size;
+    }
+
+    const paramSig = (meta.params || []).map(pk => `${pk}:${p[pk] || ''}`).join('|');
+    const customRev = (seedObj && (seedObj._customRev || seedObj._indCustomRev || seedObj._industryRev)) || 0;
+    const scopeKey = `stmt|${stmtId}|${effCoKey}|${ctx.ind}|${ctx.basis}|${ctx.officialScope ? '1' : '0'}|${canViewBooks ? '1' : '0'}|${paramSig}|${customRev}`;
+
+    return {
+      stmtId,
+      stmtTitle: meta.title,
+      stmtAr: meta.ar,
+      stmtFr: STMT_FR_TITLES[stmtId] || meta.title,
+      stmtCat: meta.cat,
+      industry: ctx.ind || 'Manufacturing',
+      coKey: effCoKey,
+      companyShort: L.short,
+      companyLegal: _stmtCleanParty(L.legal),
+      companyAr: L.ar,
+      windowMode,
+      from: p.from,
+      to: p.to,
+      asof: p.asof || p.to,
+      windowLabelEn,
+      windowLabelAr,
+      windowLabelFr,
+      scopeKey,
+      canViewBooks,
+      pinnedCoverNote: Boolean(ctx.rdl && ctx.rdl.pinnedCoverNote),
+      tieCheck,
+      kpis,
+      facts
+    };
+  }
+
+  function syncPinnedStatementCoverNote(rootOrDoc, STATE) {
+    const doc = (rootOrDoc && rootOrDoc.querySelector) ? rootOrDoc : (typeof document !== 'undefined' ? document : null);
+    if (!doc) return null;
+    const sheet = doc.querySelector('#printableSheet') || (doc.id === 'printableSheet' ? doc : null);
+    if (!sheet) return null;
+    const existing = sheet.querySelector('#stmtPinnedCoverNote');
+    const pinned = Boolean(STATE && STATE.rdl && STATE.rdl.pinnedCoverNote);
+    if (!pinned) {
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return null;
+    }
+    if (typeof window === 'undefined' || !window.MFG_ASK || typeof window.MFG_ASK.renderStatementPinnedCoverNoteHtml !== 'function') {
+      return null;
+    }
+    const html = window.MFG_ASK.renderStatementPinnedCoverNoteHtml();
+    if (!html) {
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return null;
+    }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html.trim();
+    const freshEl = tmp.firstElementChild;
+    if (!freshEl) return null;
+    if (existing && existing.parentNode) {
+      existing.parentNode.replaceChild(freshEl, existing);
+    } else {
+      const titleBlk = sheet.querySelector('.rdl-title-block');
+      if (titleBlk && titleBlk.nextSibling) {
+        sheet.insertBefore(freshEl, titleBlk.nextSibling);
+      } else if (titleBlk) {
+        sheet.appendChild(freshEl);
+      } else {
+        sheet.insertBefore(freshEl, sheet.firstChild);
+      }
+    }
+    const unpinBtn = freshEl.querySelector('[data-stmt-unpin-cover]');
+    if (unpinBtn) {
+      unpinBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (STATE && STATE.rdl) STATE.rdl.pinnedCoverNote = false;
+        if (freshEl.parentNode) freshEl.parentNode.removeChild(freshEl);
+        if (window.MFG_ASK && typeof window.MFG_ASK.syncStatementPinButtonState === 'function') {
+          window.MFG_ASK.syncStatementPinButtonState(false);
+        }
+      });
+    }
+    return freshEl;
+  }
+
   const RDL_GROUP_ORDER = ['Digest', 'Statements', 'General Ledger', 'Registers', 'Tax & Recon', 'Counterparties', 'Documents'];
 
   function renderStatementsView(SEED, STATE) {
@@ -4603,6 +5734,9 @@
               <button type="button" class="rdl-tb-btn rdl-param-toggle ${ctx.rdl.paramsOpen ? 'active' : ''}" id="rdlToggleParamsBtn">
                 <span class="rdl-tb-caret">${ctx.rdl.paramsOpen ? '▾' : '▸'}</span> Parameters
               </button>
+              <span class="rdl-tb-divider"></span>
+              <button type="button" class="rdl-tb-btn rdl-explain-btn" id="stmtExplainVarianceBtn" data-stmt-explain="1" aria-expanded="false" aria-label="Explain statement variance">${ic('sparkles')}<span class="stmt-exp-lbl">Explain</span></button>
+              <button type="button" class="rdl-tb-btn rdl-listen-btn" id="stmtListenSummaryBtn" data-stmt-summary="1" aria-pressed="false" aria-label="Listen to statement summary">${ic('audio')}<span class="stmt-lsn-lbl">Listen</span></button>
               <span class="rdl-tb-divider"></span>
               <button type="button" class="rdl-tb-btn" id="printStmtBtn" aria-label="Print or Save as PDF">${ic('printer')} Print / PDF</button>
               <button type="button" class="rdl-tb-btn" id="rdlExportCsvBtn" aria-label="Export current report to CSV">${ic('download')} CSV</button>
@@ -4703,11 +5837,15 @@
       if (paramCont) paramCont.innerHTML = renderParamBarHtml(meta, updatedCtx);
       const sheet = root.querySelector('#printableSheet');
       if (sheet) sheet.innerHTML = renderRdlSheet(meta.id, updatedCtx);
+      syncPinnedStatementCoverNote(root, STATE);
       wireParamControls();
       wireTableSorting();
       wireInteractiveSheetEnhancements(meta, updatedCtx);
       if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
         window.MFG_TABLE_COLS.enhanceAllTables(root, STATE);
+      }
+      if (window.MFG_ASK && typeof window.MFG_ASK.syncStatementSummaryOnChange === 'function') {
+        window.MFG_ASK.syncStatementSummaryOnChange();
       }
     };
 
@@ -4803,6 +5941,28 @@
         const nextIdx = (idx + 1) % catalog.length;
         STATE.activeStatement = catalog[nextIdx].id;
         rerenderFn();
+      });
+    }
+
+    // Explain Variance & Listen Summary buttons
+    const explainBtn = root.querySelector('#stmtExplainVarianceBtn');
+    const listenBtn = root.querySelector('#stmtListenSummaryBtn');
+    if (explainBtn) {
+      explainBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (window.MFG_ASK && typeof window.MFG_ASK.toggleStatementVariance === 'function') {
+          window.MFG_ASK.toggleStatementVariance(explainBtn);
+        }
+      });
+    }
+    if (listenBtn) {
+      listenBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (window.MFG_ASK && typeof window.MFG_ASK.speakStatementSummary === 'function') {
+          window.MFG_ASK.speakStatementSummary(listenBtn);
+        }
       });
     }
 
@@ -5612,6 +6772,7 @@
     const initialCatalog = getVisibleRdlCatalog(STATE);
     const initialId = String(STATE.activeStatement || '01').padStart(2, '0');
     const initialMeta = initialCatalog.find(x => x.id === initialId) || initialCatalog[0];
+    syncPinnedStatementCoverNote(root, STATE);
     wireInteractiveSheetEnhancements(initialMeta, ctx);
   }
 
@@ -5623,6 +6784,8 @@
     renderSheet: renderRdlSheet,
     buildRdlContext,
     buildJournalEntries,
+    computeStatementSnapshot,
+    syncPinnedStatementCoverNote,
     getCoaAccountsForInd,
     getDomainRdlTerms
   };

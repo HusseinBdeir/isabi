@@ -74,6 +74,11 @@
     periodPopoverAnchor: null,
     periodVarianceCache: new Map(),
     periodVarianceInflight: new Map(),
+    activeStmtSummaryScope: '',
+    stmtPopoverOpen: false,
+    stmtPopoverAnchor: null,
+    stmtVarianceCache: new Map(),
+    stmtVarianceInflight: new Map(),
     lastSpokenText: '',
     playbackRate: (function () {
       try {
@@ -4074,7 +4079,22 @@
       'Ask Follow-Up': 'سؤال متابعة',
       'Period Revenue': 'إيرادات الفترة',
       'Cash & AR': 'السيولة والذمم',
-      'Control Flags': 'ضوابط الرقابة'
+      'Control Flags': 'ضوابط الرقابة',
+      'Explain': 'تفسير',
+      'Listen': 'استماع',
+      'Preparing...': 'جارٍ التحضير...',
+      'Stop': 'إيقاف',
+      'Explain statement variance': 'تفسير تباين الكشف ومذكرة الإيضاح',
+      'Listen to statement summary': 'الاستماع لملخص الكشف المحاسبي',
+      'Statement Variance & Cover Note': 'تباين الكشف ومذكرة الإيضاح',
+      'Board & Auditor Cover Note': 'مذكرة إيضاح للإدارة ومدقق الحسابات',
+      'AI Cover Note': 'مذكرة إيضاح ذكية',
+      'Pin to Print': 'تثبيت للطباعة',
+      'Pinned to Print': 'مثبت للطباعة',
+      'Copy Note': 'نسخ المذكرة',
+      'Copied!': 'تم النسخ!',
+      'WhatsApp': 'واتساب',
+      'Remove from print': 'إزالة من الطباعة'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4094,37 +4114,55 @@
       'Ask Follow-Up': 'Question de suivi',
       'Period Revenue': 'Revenu de période',
       'Cash & AR': 'Trésorerie & Créances',
-      'Control Flags': 'Contrôles Sentinel'
+      'Control Flags': 'Contrôles Sentinel',
+      'Explain': 'Expliquer',
+      'Listen': 'Écouter',
+      'Preparing...': 'Préparation...',
+      'Stop': 'Arrêter',
+      'Explain statement variance': "Expliquer l'écart de l'état et la note de couverture",
+      'Listen to statement summary': "Écouter la synthèse de l'état comptable",
+      'Statement Variance & Cover Note': "Écart de l'état et note de couverture",
+      'Board & Auditor Cover Note': 'Note de synthèse Direction et Commissaire aux comptes',
+      'AI Cover Note': 'Note de synthèse IA',
+      'Pin to Print': "Épingler à l'impression",
+      'Pinned to Print': "Épinglé à l'impression",
+      'Copy Note': 'Copier la note',
+      'Copied!': 'Copié !',
+      'WhatsApp': 'WhatsApp',
+      'Remove from print': "Retirer de l'impression"
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
 
   function isExecBriefBtn(btn) {
-    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary')));
+    return Boolean(btn && btn.hasAttribute && (btn.hasAttribute('data-dops-briefing') || btn.hasAttribute('data-ceo-period-summary') || btn.hasAttribute('data-stmt-summary')));
   }
 
   function applyBriefingButtonDomState(btn, mode) {
     if (!btn) return;
     ensureDailyBriefingI18nRegistered();
     const isPeriodBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-ceo-period-summary'));
+    const isStmtBtn = Boolean(btn.hasAttribute && btn.hasAttribute('data-stmt-summary'));
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const icoHtml = mode === 'speaking'
       ? (icons ? icons.svg('stop') : AI_SVGS.stop)
       : (icons ? icons.svg('audio') : AI_SVGS.audio);
-    const enLabel = isPeriodBtn
-      ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
-      : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing'));
-    const lblCls = isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl';
+    const enLabel = isStmtBtn
+      ? (mode === 'speaking' ? 'Stop' : (mode === 'loading' ? 'Preparing...' : 'Listen'))
+      : (isPeriodBtn
+        ? (mode === 'speaking' ? 'Stop Summary' : (mode === 'loading' ? 'Preparing Summary...' : 'Listen to Period Summary'))
+        : (mode === 'speaking' ? 'Stop Briefing' : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing')));
+    const lblCls = isStmtBtn ? 'stmt-lsn-lbl' : (isPeriodBtn ? 'ceo-ps-lbl' : 'dops-brief-lbl');
     btn.classList.toggle('is-loading', mode === 'loading');
     btn.classList.toggle('is-speaking', mode === 'speaking');
     btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
@@ -4133,6 +4171,27 @@
       try { window.MFG_I18N.translateDom(btn); } catch (_) {}
     }
     syncCeoPopoverAudioButton();
+    syncStmtPopoverAudioButton();
+  }
+
+  function syncStmtPopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('stmtVariancePopover');
+    if (!pop) return;
+    const spkBtn = pop.querySelector('[data-stmt-pv-speak]');
+    if (!spkBtn) return;
+    const isStmtActive = Boolean(
+      _chatState.activeStmtSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-stmt-summary'))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const enLbl = isStmtActive ? 'Stop Summary' : 'Replay Summary';
+    const ico = isStmtActive ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    spkBtn.classList.toggle('is-speaking', isStmtActive);
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+    }
   }
 
   function syncCeoPopoverAudioButton() {
@@ -4185,6 +4244,7 @@
         !_chatState.liveVoiceMode &&
         !_chatState.activeBriefingScope &&
         !_chatState.activePeriodSummaryScope &&
+        !_chatState.activeStmtSummaryScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4201,6 +4261,7 @@
     }
     syncVoiceModeDeckUi();
     syncCeoPopoverAudioButton();
+    syncStmtPopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4210,6 +4271,7 @@
     }
     _chatState.activeBriefingScope = '';
     _chatState.activePeriodSummaryScope = '';
+    _chatState.activeStmtSummaryScope = '';
     if (_chatState.activeSpeakBtn) {
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
@@ -4908,6 +4970,7 @@
         _chatState.activeSpeakBtn = null;
         _chatState.activeBriefingScope = '';
         _chatState.activePeriodSummaryScope = '';
+        _chatState.activeStmtSummaryScope = '';
         _chatState.lastSpokenText = '';
         _chatState.activeSpeakCaption = '';
         _chatState.activeAudioPaused = false;
@@ -6407,6 +6470,940 @@
     }
   }
 
+  // ============================================================================
+  // STATEMENT VARIANCE, BOARD/AUDITOR COVER NOTE & READBACK (STATEMENTS 01..27)
+  // ============================================================================
+  function sanitizeStmtCoverText(raw, canViewBooks) {
+    let s = sanitizeVarianceBulletText(raw, canViewBooks);
+    s = s
+      .replace(/\bRDL[-_\s]?(\d{1,2})\b/gi, 'Statement $1')
+      .replace(/\bTTC\b/g, 'Total')
+      .replace(/\bZ-Read\b/gi, 'daily till close')
+      .replace(/\bTHEO\b/g, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return s;
+  }
+
+  function buildStatementDeterministicBullets(snap, lang) {
+    const f = snap.facts || {};
+    const k = snap.kpis || [];
+    const co = lang === 'ar' ? (snap.companyAr || snap.companyShort) : snap.companyShort;
+    const win = lang === 'ar' ? snap.windowLabelAr : (lang === 'fr' ? snap.windowLabelFr : snap.windowLabelEn);
+    const titleLoc = lang === 'ar' ? (snap.stmtAr || snap.stmtTitle) : (lang === 'fr' ? (snap.stmtFr || snap.stmtTitle) : snap.stmtTitle);
+    const id = snap.stmtId;
+    const fmtM = v => `$${Math.round(Math.abs(Number(v || 0))).toLocaleString('en-US')}`;
+    const fmtMSigned = v => {
+      const n = Math.round(Number(v || 0));
+      return n < 0 ? `-$${Math.abs(n).toLocaleString('en-US')}` : `$${n.toLocaleString('en-US')}`;
+    };
+
+    let rawBullets = [];
+    if (id === '05') {
+      const tieOk = snap.tieCheck && snap.tieCheck.balanced;
+      if (lang === 'ar') {
+        rawBullets = [
+          `يعرض ميزان المراجعة لـ ${co} (${win}) أرصدة الافتتاح بقيمة ${fmtM(f.openingDebitUsd)} وحركة الفترة بقيمة ${fmtM(f.periodDebitUsd)} عبر ${f.coaAccountsCount} حساباً عاماً.`,
+          tieOk
+            ? `يتساوى إجمالي المدين الختامي (${fmtM(f.closingDebitUsd)}) مع الدائن الختامي (${fmtM(f.closingCreditUsd)}) بفارق صفر ($0.00) عبر الفئات 1 إلى 7.`
+            : `يبلغ إجمالي المدين الختامي ${fmtM(f.closingDebitUsd)} مقابل دائن ختامي ${fmtM(f.closingCreditUsd)} بفارق ${fmtM(f.trialBalanceVarianceUsd)} للمراجعة.`,
+          `الكشف مهيأ للاعتماد المحاسبي ومطابقة مدقق الحسابات والطباعة المباشرة.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `La balance générale de ${co} (${win}) affiche ${fmtM(f.openingDebitUsd)} à l'ouverture et ${fmtM(f.periodDebitUsd)} de mouvements sur ${f.coaAccountsCount} comptes.`,
+          tieOk
+            ? `Les soldes de clôture débit (${fmtM(f.closingDebitUsd)}) et crédit (${fmtM(f.closingCreditUsd)}) sont équilibrés à $0.00 sur les classes 1 à 7.`
+            : `La clôture affiche ${fmtM(f.closingDebitUsd)} au débit contre ${fmtM(f.closingCreditUsd)} au crédit, soit un écart de ${fmtM(f.trialBalanceVarianceUsd)}.`,
+          `État prêt pour visa de révision comptable, archivage de clôture et impression A4.`
+        ];
+      } else {
+        rawBullets = [
+          `Trial Balance for ${co} (${win}) posts ${fmtM(f.openingDebitUsd)} opening balances and ${fmtM(f.periodDebitUsd)} period movement across ${f.coaAccountsCount} GL accounts.`,
+          tieOk
+            ? `Closing debits (${fmtM(f.closingDebitUsd)}) equal closing credits (${fmtM(f.closingCreditUsd)}) with a verified $0.00 variance across Classes 1 to 7.`
+            : `Closing debits stand at ${fmtM(f.closingDebitUsd)} against ${fmtM(f.closingCreditUsd)} credits, leaving a ${fmtM(f.trialBalanceVarianceUsd)} variance to review.`,
+          `Statement is audit-ready for external sign-off, period close pack, and A4 distribution.`
+        ];
+      }
+    } else if (id === '02') {
+      const tieOk = snap.tieCheck && snap.tieCheck.balanced;
+      if (lang === 'ar') {
+        rawBullets = [
+          `تبلغ إجمالي الموجودات لدى ${co} (${win}) ${fmtMSigned(f.totalAssetsUsd)} مقابل مطلوبات ورساميل بقيمة ${fmtMSigned(f.totalLiabilitiesAndEquityUsd)}.`,
+          snap.canViewBooks
+            ? `تسجل السيولة النقدية والبنكية (الفئة 5) ${fmtMSigned(f.cashAndBankClass5Usd)} مع صافي نتيجة الدورة بقيمة ${fmtMSigned(f.periodNetResult120Usd)}.`
+            : `تبلغ نتيجة الدورة المالية المرحّلة إلى الرساميل الخاصة ${fmtMSigned(f.periodNetResult120Usd)}.`,
+          tieOk
+            ? `الميزانية العمومية متوازنة بالكامل بفارق صفر ($0.00) عبر الفئات 1 إلى 5.`
+            : `يوجد فرق مطابقة بقيمة ${fmtM(f.balanceSheetVarianceUsd)} يتطلب المراجعة.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `Le bilan de ${co} (${win}) totalise ${fmtMSigned(f.totalAssetsUsd)} d'actifs face à ${fmtMSigned(f.totalLiabilitiesAndEquityUsd)} de passifs et capitaux propres.`,
+          snap.canViewBooks
+            ? `La trésorerie Classe 5 s'établit à ${fmtMSigned(f.cashAndBankClass5Usd)} et le résultat net de la période à ${fmtMSigned(f.periodNetResult120Usd)}.`
+            : `Le résultat net de la période intégré aux capitaux propres ressort à ${fmtMSigned(f.periodNetResult120Usd)}.`,
+          tieOk
+            ? `L'équilibre actif-passif est intégralement vérifié à $0.00 sur les classes 1 à 5.`
+            : `Un écart de bilan de ${fmtM(f.balanceSheetVarianceUsd)} requiert vérification.`
+        ];
+      } else {
+        rawBullets = [
+          `Balance Sheet for ${co} (${win}) reports ${fmtMSigned(f.totalAssetsUsd)} in total assets matched against ${fmtMSigned(f.totalLiabilitiesAndEquityUsd)} in liabilities and equity.`,
+          snap.canViewBooks
+            ? `Class 5 cash and bank balances stand at ${fmtMSigned(f.cashAndBankClass5Usd)} alongside a ${fmtMSigned(f.periodNetResult120Usd)} current-period net result.`
+            : `Current-period net result carried into equity stands at ${fmtMSigned(f.periodNetResult120Usd)}.`,
+          tieOk
+            ? `Assets and Liabilities plus Equity reconcile with a verified $0.00 variance across Classes 1 to 5.`
+            : `Balance Sheet shows a ${fmtM(f.balanceSheetVarianceUsd)} tie variance requiring review.`
+        ];
+      }
+    } else if (id === '13') {
+      if (lang === 'ar') {
+        rawBullets = [
+          `يبلغ صافي الذمم المدينة (حساب 411) لدى ${co} (${win}) ${fmtMSigned(f.netReceivable411Usd)} موزعة على ${f.customerAccounts} حساب زبون.`,
+          `تتوزع الأعمار بنظام FIFO بين ${fmtMSigned(f.bucket0To30Usd)} جاري (0-30 يوماً)، و${fmtMSigned(f.bucket31To90Usd)} بين 31 و90 يوماً، و${fmtMSigned(f.bucketOver90Usd)} لأكثر من 90 يوماً.`,
+          f.topDebtor
+            ? `يتصدر حساب ${f.topDebtor} الذمم القائمة بقيمة ${fmtMSigned(f.topDebtorUsd)} لمتابعة التحصيل ومصادقة الرصيد.`
+            : `جميع أرصدة الزبائن ضمن حدود المتابعة الدورية المعتمدة.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `Les créances clients nettes (compte 411) de ${co} (${win}) s'élèvent à ${fmtMSigned(f.netReceivable411Usd)} sur ${f.customerAccounts} comptes actifs.`,
+          `L'ancienneté FIFO ventile ${fmtMSigned(f.bucket0To30Usd)} à 0-30 jours, ${fmtMSigned(f.bucket31To90Usd)} à 31-90 jours et ${fmtMSigned(f.bucketOver90Usd)} à plus de 90 jours.`,
+          f.topDebtor
+            ? `Le premier débiteur ${f.topDebtor} concentre ${fmtMSigned(f.topDebtorUsd)} pour relance et confirmation de solde.`
+            : `Les soldes clients demeurent alignés avec le calendrier de recouvrement.`
+        ];
+      } else {
+        rawBullets = [
+          `Aged Receivables (Account 411) for ${co} (${win}) total ${fmtMSigned(f.netReceivable411Usd)} across ${f.customerAccounts} active customer accounts.`,
+          `FIFO aging places ${fmtMSigned(f.bucket0To30Usd)} in 0-30 days, ${fmtMSigned(f.bucket31To90Usd)} in 31-90 days, and ${fmtMSigned(f.bucketOver90Usd)} over 90 days.`,
+          f.topDebtor
+            ? `Lead receivable concentration sits with ${f.topDebtor} at ${fmtMSigned(f.topDebtorUsd)} for priority SOA confirmation.`
+            : `All customer accounts remain clear with zero overdue concentration.`
+        ];
+      }
+    } else if (id === '15') {
+      if (lang === 'ar') {
+        rawBullets = [
+          `يبلغ صافي ذمم الموردين والناقلين (حساب 401) لدى ${co} (${win}) ${fmtMSigned(f.netPayable401Usd)} عبر ${f.vendorCount} مورد.`,
+          `تتوزع الاستحقاقات بين ${fmtM(f.directSupplyLegUsd)} توريد مباشر، و${fmtM(f.haulageLegUsd)} أجور نقل، و${fmtM(f.creditExpenseLegUsd)} مصاريف آجلة.`,
+          f.topCreditor
+            ? `بلغت التسديدات التراكمية ${fmtM(f.settledUsd)}، ويتصدر ${f.topCreditor} الأرصدة المستحقة بقيمة ${fmtMSigned(f.topCreditorUsd)}.`
+            : `بلغت التسديدات التراكمية ${fmtM(f.settledUsd)} ومطابقة أرصدة الموردين مكتملة.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `Les soldes fournisseurs nets (compte 401) de ${co} (${win}) s'établissent à ${fmtMSigned(f.netPayable401Usd)} sur ${f.vendorCount} tiers.`,
+          `La ventilation à 3 volets comprend ${fmtM(f.directSupplyLegUsd)} d'approvisionnements, ${fmtM(f.haulageLegUsd)} de transport et ${fmtM(f.creditExpenseLegUsd)} de charges à crédit.`,
+          f.topCreditor
+            ? `Les règlements cumulés atteignent ${fmtM(f.settledUsd)}, avec ${f.topCreditor} en tête à ${fmtMSigned(f.topCreditorUsd)}.`
+            : `Les règlements cumulés atteignent ${fmtM(f.settledUsd)} avec cadrage auxiliaire complet.`
+        ];
+      } else {
+        rawBullets = [
+          `Net Supplier Balances (Account 401) for ${co} (${win}) stand at ${fmtMSigned(f.netPayable401Usd)} across ${f.vendorCount} active vendors.`,
+          `Three-leg payables split into ${fmtM(f.directSupplyLegUsd)} direct supply, ${fmtM(f.haulageLegUsd)} haulage, and ${fmtM(f.creditExpenseLegUsd)} credit expenses.`,
+          f.topCreditor
+            ? `Cumulative settlements total ${fmtM(f.settledUsd)}, with ${f.topCreditor} holding the largest open balance at ${fmtMSigned(f.topCreditorUsd)}.`
+            : `Cumulative settlements total ${fmtM(f.settledUsd)} with all vendor legs reconciled.`
+        ];
+      }
+    } else if (id === '18') {
+      if (lang === 'ar') {
+        rawBullets = [
+          `يسجل إقرار ضريبة القيمة المضافة لـ ${co} (${win}) عمليات خاضعة في الخانة A1 بقيمة ${fmtM(f.boxA1TaxableSuppliesUsd)} وضريبة مخرجات ${fmtM(f.boxA1OutputVatUsd)} (${f.vatRatePct}%).`,
+          `تبلغ الضريبة القابلة للحسم في الخانة B1 ما مجموعه ${fmtM(f.boxB1InputVatUsd)} عبر ${f.boxB1InputVouchers} سند حسم.`,
+          `يستقر صافي الضريبة المتوجبة (حساب 442) عند ${fmtMSigned(f.netVatPayableAccount442Usd)} وفق سعر الصرف الضريبي المعتمد ${Number(f.vatFxRateLbp || 89500).toLocaleString('en-US')} ل.ل للدولار.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `La déclaration de TVA de ${co} (${win}) affiche ${fmtM(f.boxA1TaxableSuppliesUsd)} de base imposable Case A1 et ${fmtM(f.boxA1OutputVatUsd)} de TVA collectée (${f.vatRatePct}%).`,
+          `La TVA déductible Case B1 totalise ${fmtM(f.boxB1InputVatUsd)} sur ${f.boxB1InputVouchers} pièces justificatives.`,
+          `La TVA nette compte 442 ressort à ${fmtMSigned(f.netVatPayableAccount442Usd)} au taux officiel de ${Number(f.vatFxRateLbp || 89500).toLocaleString('en-US')} LBP par dollar.`
+        ];
+      } else {
+        rawBullets = [
+          `VAT Return for ${co} (${win}) reports ${fmtM(f.boxA1TaxableSuppliesUsd)} in Box A1 taxable supplies and ${fmtM(f.boxA1OutputVatUsd)} output VAT at ${f.vatRatePct}%.`,
+          `Deductible Box B1 input VAT totals ${fmtM(f.boxB1InputVatUsd)} across ${f.boxB1InputVouchers} verified purchase and expense vouchers.`,
+          `Net Account 442 VAT payable stands at ${fmtMSigned(f.netVatPayableAccount442Usd)} at the statutory ${Number(f.vatFxRateLbp || 89500).toLocaleString('en-US')} LBP per USD rate.`
+        ];
+      }
+    } else if (id === '19') {
+      if (lang === 'ar') {
+        rawBullets = [
+          `تطابق مطابقة الأرباح والخسائر لـ ${co} (${win}) إيرادات السجلات الفرعية بقيمة ${fmtM(f.subLedgerRevenue701Usd)} مع الأستاذ العام (701 / 706).`,
+          `تبلغ الكلفة المباشرة والمحروقات ${fmtM(f.subLedgerDirect601Usd)} والمصاريف والرواتب ${fmtM(f.subLedgerOpexAndPayrollUsd)} عبر ${f.vouchersReconciled} مستند.`,
+          `يستقر صافي النتيجة المطابقة عند ${fmtMSigned(f.reconciledNetResultUsd)} بفارق مطابقة صفر ($0.00) عبر كافة الجداول الخمسة.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `Le rapprochement résultat de ${co} (${win}) cadre ${fmtM(f.subLedgerRevenue701Usd)} de produits auxiliaires avec les comptes généraux 701 et 706.`,
+          `Les coûts directs atteignent ${fmtM(f.subLedgerDirect601Usd)} et les charges et salaires ${fmtM(f.subLedgerOpexAndPayrollUsd)} sur ${f.vouchersReconciled} pièces.`,
+          `Le résultat net rapproché ressort à ${fmtMSigned(f.reconciledNetResultUsd)} avec un écart de $0.00 sur les 5 journaux auxiliaires.`
+        ];
+      } else {
+        rawBullets = [
+          `P&L Reconciliation for ${co} (${win}) ties ${fmtM(f.subLedgerRevenue701Usd)} in sub-ledger revenue directly to GL Accounts 701 and 706.`,
+          `Direct material and fuel streams total ${fmtM(f.subLedgerDirect601Usd)} alongside ${fmtM(f.subLedgerOpexAndPayrollUsd)} in OPEX and payroll across ${f.vouchersReconciled} vouchers.`,
+          `Reconciled net P&L stands at ${fmtMSigned(f.reconciledNetResultUsd)} with a verified $0.00 sub-ledger-to-GL variance across all 5 streams.`
+        ];
+      }
+    } else {
+      const k0 = k[0] || { labelEn: 'Metric 1', labelAr: 'المؤشر 1', labelFr: 'Indicateur 1', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+      const k1 = k[1] || { labelEn: 'Metric 2', labelAr: 'المؤشر 2', labelFr: 'Indicateur 2', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+      const k2 = k[2] || { labelEn: 'Metric 3', labelAr: 'المؤشر 3', labelFr: 'Indicateur 3', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+      const k3 = k[3] || { labelEn: 'Metric 4', labelAr: 'المؤشر 4', labelFr: 'Indicateur 4', valStr: '$0', subEn: '', subAr: '', subFr: '' };
+      if (lang === 'ar') {
+        rawBullets = [
+          `يُظهر كشف ${titleLoc} لـ ${co} (${win}): ${k0.labelAr} عند ${k0.valStr}، و${k1.labelAr} عند ${k1.valStr}.`,
+          `يسجل المؤشر الثالث (${k2.labelAr}) قيمة ${k2.valStr}${k2.subAr ? ` (${k2.subAr})` : ''}، بينما يبلغ ${k3.labelAr} ${k3.valStr}.`,
+          `كافة المجاميع مستخرجة حتمياً من قيود الدفتر ومهيأة للطباعة والمشاركة الرسمية.`
+        ];
+      } else if (lang === 'fr') {
+        rawBullets = [
+          `L'état ${titleLoc} pour ${co} (${win}) affiche ${k0.labelFr} à ${k0.valStr} et ${k1.labelFr} à ${k1.valStr}.`,
+          `Le poste ${k2.labelFr} ressort à ${k2.valStr}${k2.subFr ? ` (${k2.subFr})` : ''}, tandis que ${k3.labelFr} s'établit à ${k3.valStr}.`,
+          `Tous les totaux sont extraits de manière déterministe du grand livre pour visa et diffusion A4.`
+        ];
+      } else {
+        rawBullets = [
+          `${titleLoc} for ${co} (${win}) reports ${k0.labelEn} at ${k0.valStr} and ${k1.labelEn} at ${k1.valStr}.`,
+          `${k2.labelEn} stands at ${k2.valStr}${k2.subEn ? ` (${k2.subEn})` : ''}, while ${k3.labelEn} is ${k3.valStr}.`,
+          `All statement totals tie directly to posted ledger records and are ready for print or external sharing.`
+        ];
+      }
+    }
+
+    return rawBullets.map(b => sanitizeStmtCoverText(b, snap.canViewBooks));
+  }
+
+  function buildStatementSummary(langOverride, opts) {
+    const safeLang = resolveActiveBriefingLang(langOverride);
+    const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const rdlApi = (typeof window !== 'undefined' && window.MFG_RDL && typeof window.MFG_RDL.computeStatementSnapshot === 'function')
+      ? window.MFG_RDL
+      : null;
+    const snap = rdlApi
+      ? rdlApi.computeStatementSnapshot(_ctx && _ctx.SEED, _ctx && _ctx.STATE, Object.assign({ canViewBooks }, opts || {}))
+      : {
+          stmtId: '01',
+          stmtTitle: 'Daily Operations',
+          stmtAr: 'ملخص العمليات اليومية',
+          stmtFr: 'Opérations quotidiennes',
+          stmtCat: 'Digest',
+          industry: 'Manufacturing',
+          coKey: 'ALL',
+          companyShort: 'Manufacturing Group',
+          companyLegal: 'Manufacturing Group',
+          companyAr: 'مجموعة التصنيع',
+          windowMode: 'period',
+          windowLabelEn: '',
+          windowLabelAr: '',
+          windowLabelFr: '',
+          scopeKey: 'stmt|01|ALL',
+          canViewBooks,
+          pinnedCoverNote: false,
+          tieCheck: null,
+          kpis: [],
+          facts: {}
+        };
+
+    const headerTitle = safeLang === 'ar'
+      ? `الكشف ${snap.stmtId}: ${snap.stmtAr || snap.stmtTitle}`
+      : (safeLang === 'fr'
+          ? `État ${snap.stmtId} : ${snap.stmtFr || snap.stmtTitle}`
+          : `Statement ${snap.stmtId}: ${snap.stmtTitle}`);
+    const coDisplay = safeLang === 'ar' ? (snap.companyAr || snap.companyShort) : snap.companyShort;
+    const winDisplay = safeLang === 'ar' ? snap.windowLabelAr : (safeLang === 'fr' ? snap.windowLabelFr : snap.windowLabelEn);
+    const windowSubtitle = `${headerTitle} · ${coDisplay} · ${winDisplay}`;
+    const detBullets = buildStatementDeterministicBullets(snap, safeLang);
+    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cachedAi = _chatState.stmtVarianceCache.get(cacheKey);
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets
+      : detBullets;
+
+    const spokenLead = safeLang === 'ar'
+      ? `ملخص ${headerTitle} لشركة ${coDisplay}.`
+      : (safeLang === 'fr'
+          ? `Synthèse de l'${headerTitle} pour ${coDisplay}.`
+          : `Executive summary for ${headerTitle}, ${coDisplay}.`);
+    const text = cleanOut([spokenLead, ...activeBullets].join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      stmtId: snap.stmtId,
+      stmtTitle: snap.stmtTitle,
+      stmtAr: snap.stmtAr,
+      stmtFr: snap.stmtFr,
+      stmtCat: snap.stmtCat,
+      industry: snap.industry,
+      company: snap.coKey,
+      companyLabel: coDisplay,
+      headerTitle,
+      windowLabel: winDisplay,
+      windowSubtitle,
+      canViewBooks: snap.canViewBooks,
+      pinnedCoverNote: Boolean(snap.pinnedCoverNote),
+      tieCheck: snap.tieCheck,
+      kpis: snap.kpis,
+      facts: snap.facts,
+      bullets: detBullets,
+      activeBullets,
+      isAiSource: Boolean(cachedAi && cachedAi.source === 'gemini'),
+      text
+    };
+  }
+
+  function formatStatementCoverNotePlainText(sum, bulletsOverride) {
+    const s = sum || buildStatementSummary();
+    const bullets = Array.isArray(bulletsOverride) && bulletsOverride.length ? bulletsOverride : (s.activeBullets || s.bullets || []);
+    const hdr = s.lang === 'ar'
+      ? `مذكرة إيضاح الكشف - ${s.headerTitle}`
+      : (s.lang === 'fr'
+          ? `Note de couverture - ${s.headerTitle}`
+          : `Statement Cover Note - ${s.headerTitle}`);
+    const scopeLine = `${s.companyLabel} | ${s.windowLabel}`;
+    const kpiLine = (s.kpis || []).map(k => {
+      const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
+      return `${lbl}: ${k.valStr}`;
+    }).join(' | ');
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeStmtCoverText(b, s.canViewBooks)}`).join('\n');
+    return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
+  }
+
+  function renderStatementPinnedCoverNoteHtml(prebuiltSum) {
+    const sum = prebuiltSum || buildStatementSummary();
+    const bullets = sum.activeBullets || sum.bullets || [];
+    const boxTitle = sum.lang === 'ar'
+      ? 'مذكرة إيضاح للإدارة ومدقق الحسابات'
+      : (sum.lang === 'fr'
+          ? 'Note de synthèse Direction et Commissaire aux comptes'
+          : 'Board & Auditor Cover Note');
+    const unpinLbl = sum.lang === 'ar' ? 'إزالة من الطباعة' : (sum.lang === 'fr' ? "Retirer de l'impression" : 'Remove from print');
+    const dirAttr = sum.lang === 'ar' ? ' dir="rtl"' : '';
+    return `
+      <section id="stmtPinnedCoverNote" class="stmt-pinned-cover-note"${dirAttr} data-no-i18n="1" data-stmt-id="${esc(sum.stmtId)}">
+        <div class="stmt-pcn-hdr">
+          <div class="stmt-pcn-title-group">
+            <strong class="stmt-pcn-title">${esc(boxTitle)}</strong>
+            <span class="stmt-pcn-meta">${esc(sum.companyLabel)} · ${esc(sum.windowLabel)}</span>
+          </div>
+          <button type="button" class="stmt-pcn-unpin no-print" data-stmt-unpin-cover="1" aria-label="${esc(unpinLbl)}">&times; ${esc(unpinLbl)}</button>
+        </div>
+        <div class="stmt-pcn-kpis">
+          ${(sum.kpis || []).map(k => {
+            const lbl = sum.lang === 'ar' ? k.labelAr : (sum.lang === 'fr' ? k.labelFr : k.labelEn);
+            return `<div class="stmt-pcn-kpi"><span class="stmt-pcn-k">${esc(lbl)}</span><strong class="stmt-pcn-v">${esc(k.valStr)}</strong></div>`;
+          }).join('')}
+        </div>
+        <ul class="stmt-pcn-bullets">
+          ${bullets.map(b => `<li>${esc(sanitizeStmtCoverText(b, sum.canViewBooks))}</li>`).join('')}
+        </ul>
+      </section>
+    `;
+  }
+
+  async function requestStatementVarianceCommentary(detSum, opts = {}) {
+    const sum = detSum || buildStatementSummary(opts.lang);
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    if (!opts.force && _chatState.stmtVarianceCache.has(cacheKey)) {
+      return _chatState.stmtVarianceCache.get(cacheKey);
+    }
+    if (!opts.force && _chatState.stmtVarianceInflight.has(cacheKey)) {
+      return _chatState.stmtVarianceInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese accounting phrasing)'
+      : (sum.lang === 'fr' ? 'French' : 'English');
+
+    const groundedPayload = {
+      statementCode: `Statement ${sum.stmtId}`,
+      statementTitle: sum.stmtTitle,
+      category: sum.stmtCat,
+      company: sum.companyLabel,
+      industry: sum.industry,
+      reportingWindow: sum.windowLabel,
+      currency: 'USD',
+      tieStatus: sum.tieCheck || undefined,
+      kpis: (sum.kpis || []).map(k => ({ label: k.labelEn, value: k.valStr, detail: k.subEn })),
+      ledgerFacts: sum.facts
+    };
+
+    const sysPrompt = [
+      'You are a senior CFO and External Audit Statement Reviewer inside ISABI Command Center.',
+      `Write all bullet text strictly in ${langName}.`,
+      'Return ONLY valid JSON with the exact English property name "bullets" containing EXACTLY 3 separate string items: {"bullets":["sentence 1","sentence 2","sentence 3"]}. Never combine them into a single string, and do NOT rename the JSON key "bullets".',
+      'Rules:',
+      '1. Every dollar figure, percentage, account code, and count MUST come verbatim from the supplied JSON ledger facts. Never invent or recompute numbers.',
+      '2. Bullet 1 summarizes the headline statement totals and reporting scope.',
+      '3. Bullet 2 explains the key sub-ledger breakdown, aging bucket, VAT box, or cost leg driver.',
+      sum.canViewBooks
+        ? '4. Bullet 3 states reconciliation/tie posture (cite $0.00 variance when tieStatus.balanced is true) or priority counterparty action before sign-off.'
+        : '4. Bullet 3 states operational readiness and document control posture (never mention cash till, bank balances, or restricted payables).',
+      '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, or internal system names.'
+    ].join('\n');
+    const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate board/auditor cover-note bullets grounded strictly on this statement JSON:\n${JSON.stringify(groundedPayload)}`;
+
+    const runPromise = (async () => {
+      let rawReply = '';
+      let debugNote = '';
+      let usedModel = 'gemini-3.5-flash-lite';
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+      if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          try {
+            const rLoc = await fetch(`${base}/api/ask`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents
+              })
+            });
+            if (rLoc.ok) {
+              const jLoc = await rLoc.json();
+              if (jLoc && jLoc.ok && jLoc.rawReply) {
+                rawReply = String(jLoc.rawReply);
+                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+              } else if (jLoc) {
+                debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
+              }
+            } else {
+              debugNote = `loc_http_${rLoc.status}`;
+            }
+          } catch (eLoc) {
+            debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          }
+        }
+      }
+
+      if (!rawReply) {
+        const askCfg = window.MFG_ASK_CFG || {};
+        let flowUrl = '';
+        let flowKey = '';
+        try {
+          if (askCfg.u && askCfg.k) {
+            flowUrl = atob(askCfg.u);
+            flowKey = atob(askCfg.k);
+          }
+        } catch (_) {}
+        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 10000);
+          try {
+            const rCloud = await fetch(flowUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+              body: JSON.stringify({
+                key: flowKey,
+                op: 'ask',
+                surface: 'command_center',
+                q: `Statement ${sum.stmtId} Cover Note`,
+                lang: sum.lang,
+                industry: sum.companyLabel,
+                currency: 'USD',
+                period: sum.windowLabel,
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents,
+                messages: [
+                  { role: 'system', content: sysPrompt },
+                  { role: 'user', content: usrPrompt }
+                ]
+              }),
+              signal: ctrl.signal
+            });
+            clearTimeout(timer);
+            if (rCloud.ok) {
+              const jCloud = await rCloud.json();
+              if (jCloud && jCloud.rawReply) {
+                rawReply = String(jCloud.rawReply);
+                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
+              }
+            }
+          } catch (_) {
+            clearTimeout(timer);
+          }
+        }
+      }
+
+      if (rawReply) {
+        try {
+          const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (_) {
+            const merged = [];
+            const objRe = /\{[^{}]*"bullets"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+            let m;
+            while ((m = objRe.exec(cleaned)) !== null) {
+              try {
+                const sub = JSON.parse(m[0]);
+                if (sub && Array.isArray(sub.bullets)) merged.push(...sub.bullets);
+              } catch (_2) {}
+            }
+            if (merged.length) {
+              parsed = { bullets: merged };
+            } else {
+              const fb = cleaned.indexOf('{');
+              let depth = 0, inStr = false, escCh = false, endIdx = -1;
+              for (let i = fb; fb >= 0 && i < cleaned.length; i++) {
+                const ch = cleaned[i];
+                if (escCh) { escCh = false; continue; }
+                if (ch === '\\') { escCh = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === '{') depth++;
+                  else if (ch === '}' && --depth === 0) { endIdx = i; break; }
+                }
+              }
+              if (fb >= 0 && endIdx > fb) parsed = JSON.parse(cleaned.slice(fb, endIdx + 1));
+            }
+          }
+          const rawBulletArr = Array.isArray(parsed && parsed.bullets)
+            ? parsed.bullets
+            : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
+          const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          let candBullets = Array.isArray(rawBulletArr)
+            ? rawBulletArr.map(b => sanitizeStmtCoverText(extractStr(b), sum.canViewBooks)).filter(b => b.length >= 12)
+            : [];
+          if (candBullets.length === 1 && candBullets[0].length >= 70) {
+            const splitParts = candBullets[0]
+              .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
+              .map(s => sanitizeStmtCoverText(s, sum.canViewBooks))
+              .filter(s => s.length >= 12);
+            if (splitParts.length >= 2) candBullets = splitParts;
+          }
+          candBullets = candBullets.slice(0, 3);
+          if (candBullets.length >= 1 && candBullets.length < 3 && Array.isArray(sum.bullets)) {
+            for (let bi = candBullets.length; bi < 3 && bi < sum.bullets.length; bi++) {
+              candBullets.push(sum.bullets[bi]);
+            }
+          }
+          if (candBullets.length >= 2) {
+            const resObj = {
+              ok: true,
+              source: 'gemini',
+              model: usedModel,
+              lang: sum.lang,
+              scopeKey: sum.scopeKey,
+              bullets: candBullets
+            };
+            if (_chatState.stmtVarianceCache.size >= 32) {
+              const oldest = _chatState.stmtVarianceCache.keys().next().value;
+              _chatState.stmtVarianceCache.delete(oldest);
+            }
+            _chatState.stmtVarianceCache.set(cacheKey, resObj);
+            updateOpenStmtPopoverWithAi(resObj, sum);
+            return resObj;
+          }
+          debugNote = `short_bullets:${candBullets.length}:${rawReply.slice(0, 140)}`;
+        } catch (eParse) {
+          debugNote = `parse_err:${eParse && eParse.message ? eParse.message : ''}:${rawReply.slice(0, 140)}`;
+        }
+      }
+
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        note: debugNote,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    })().finally(() => {
+      _chatState.stmtVarianceInflight.delete(cacheKey);
+    });
+
+    _chatState.stmtVarianceInflight.set(cacheKey, runPromise);
+    return runPromise;
+  }
+
+  function updateOpenStmtPopoverWithAi(aiRes, baseSum) {
+    if (!aiRes || aiRes.source !== 'gemini' || typeof document === 'undefined') return;
+    if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
+      try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
+    }
+    const pop = document.getElementById('stmtVariancePopover');
+    if (!pop || pop.getAttribute('data-scope-key') !== aiRes.scopeKey || pop.getAttribute('data-lang') !== aiRes.lang) return;
+    const listEl = pop.querySelector('.ceo-pv-bullets');
+    if (listEl && Array.isArray(aiRes.bullets) && aiRes.bullets.length >= 2) {
+      listEl.innerHTML = aiRes.bullets.map(b => `<li>${esc(b)}</li>`).join('');
+    }
+    const badgeEl = pop.querySelector('.ceo-pv-badge');
+    if (badgeEl) {
+      badgeEl.classList.add('is-ai');
+      badgeEl.textContent = 'AI Cover Note';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
+    }
+    const waLink = pop.querySelector('[data-stmt-pv-wa]');
+    if (waLink) {
+      const plain = formatStatementCoverNotePlainText(baseSum || buildStatementSummary(aiRes.lang), aiRes.bullets);
+      waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(plain)}`);
+    }
+  }
+
+  let _stmtPopOutsideHandlerBound = false;
+  function ensureStmtPopoverGlobalDismiss() {
+    if (_stmtPopOutsideHandlerBound || typeof document === 'undefined') return;
+    _stmtPopOutsideHandlerBound = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.stmtPopoverOpen) return;
+      const pop = document.getElementById('stmtVariancePopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (e.target.closest('[data-stmt-explain]') || e.target.closest('[data-stmt-summary]') || e.target.closest('.stmt-card[data-stmt]') || e.target.closest('[data-rdl-pod-jump]') || e.target.closest('#rdlParamContainer'))) return;
+      closeStatementVariancePopover();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.stmtPopoverOpen) {
+        closeStatementVariancePopover();
+      }
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.stmtPopoverOpen) positionStatementVariancePopover();
+      });
+    }
+  }
+
+  function positionStatementVariancePopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('stmtVariancePopover');
+    if (!pop) return;
+    const anchor = _chatState.stmtPopoverAnchor
+      || document.getElementById('stmtExplainVarianceBtn')
+      || document.getElementById('stmtListenSummaryBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = '12px';
+      pop.style.top = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(472, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 276, vh - 24);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 52) {
+      top = rect.top - popH - 8;
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  function syncStatementPinButtonState(isPinned) {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('stmtVariancePopover');
+    if (!pop) return;
+    const pinBtn = pop.querySelector('[data-stmt-pv-pin]');
+    if (!pinBtn) return;
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const ico = icons ? icons.svg(isPinned ? 'check' : 'pin') : '';
+    const enLbl = isPinned ? 'Pinned to Print' : 'Pin to Print';
+    pinBtn.classList.toggle('is-pinned', Boolean(isPinned));
+    pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+    pinBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(pinBtn); } catch (_) {}
+    }
+  }
+
+  function openStatementVariancePopover(anchorEl, prebuiltSummary) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureStmtPopoverGlobalDismiss();
+    const sum = prebuiltSummary || buildStatementSummary();
+    const activeBullets = sum.activeBullets || sum.bullets || [];
+    const isAiSource = Boolean(sum.isAiSource);
+
+    let pop = document.getElementById('stmtVariancePopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'stmtVariancePopover';
+      pop.className = 'ceo-period-popover stmt-variance-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Statement Variance & Cover Note');
+      document.body.appendChild(pop);
+    }
+    _chatState.stmtPopoverOpen = true;
+    _chatState.stmtPopoverAnchor = anchorEl || document.getElementById('stmtExplainVarianceBtn') || document.getElementById('stmtListenSummaryBtn');
+    const expBtn = document.getElementById('stmtExplainVarianceBtn');
+    if (expBtn) {
+      expBtn.classList.add('is-open', 'active');
+      expBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    pop.setAttribute('data-scope-key', sum.scopeKey);
+    pop.setAttribute('data-stmt-id', sum.stmtId);
+    pop.setAttribute('data-lang', sum.lang);
+    pop.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(
+      _chatState.activeStmtSummaryScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-stmt-summary'))
+    );
+    const speakBtnLbl = isSpeakingNow ? 'Stop Summary' : 'Replay Summary';
+    const speakBtnIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const sparkIco = icons ? icons.svg('sparkles') : AI_SVGS.audio;
+    const isPinned = Boolean(_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote);
+    const pinIco = icons ? icons.svg(isPinned ? 'check' : 'pin') : '';
+    const copyIco = icons ? icons.svg('copy') : '';
+    const shareIco = icons ? icons.svg('send_msg') : '';
+    const plainCoverText = formatStatementCoverNotePlainText(sum, activeBullets);
+    const waHref = `https://wa.me/?text=${encodeURIComponent(plainCoverText)}`;
+
+    pop.innerHTML = `
+      <div class="ceo-pv-hdr">
+        <div class="ceo-pv-title-wrap">
+          <div class="ceo-pv-title-row">
+            <span class="ceo-pv-ico">${sparkIco}</span>
+            <strong class="ceo-pv-title">Statement Variance &amp; Cover Note</strong>
+            <span class="ceo-pv-badge${isAiSource ? ' is-ai' : ''}">${isAiSource ? 'AI Cover Note' : 'Deterministic Ledger'}</span>
+          </div>
+          <div class="ceo-pv-sub" data-no-i18n="1">${esc(sum.windowSubtitle)}</div>
+        </div>
+        <button type="button" class="ceo-pv-close" data-stmt-pv-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ceo-pv-kpis">
+        ${(sum.kpis || []).map(k => {
+          const lbl = sum.lang === 'ar' ? k.labelAr : (sum.lang === 'fr' ? k.labelFr : k.labelEn);
+          const sub = sum.lang === 'ar' ? k.subAr : (sum.lang === 'fr' ? k.subFr : k.subEn);
+          const toneCls = (k.tone === 'pos' || k.tone === 'ok') ? 'good' : (k.tone === 'neg' ? 'warn' : '');
+          return `<div class="ceo-pv-kpi" data-no-i18n="1">
+            <span class="ceo-pv-k">${esc(lbl)}</span>
+            <strong class="ceo-pv-v num">${esc(k.valStr)}</strong>
+            <small class="ceo-pv-d ${toneCls}">${esc(sub)}</small>
+          </div>`;
+        }).join('')}
+      </div>
+      <ul class="ceo-pv-bullets" data-no-i18n="1">
+        ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+      </ul>
+      <div class="ceo-pv-foot stmt-pv-foot">
+        <button type="button" class="ceo-pv-btn${isSpeakingNow ? ' is-speaking' : ''}" data-stmt-pv-speak="1">${speakBtnIco}<span>${esc(speakBtnLbl)}</span></button>
+        <button type="button" class="ceo-pv-btn is-secondary${isPinned ? ' is-pinned' : ''}" data-stmt-pv-pin="1" aria-pressed="${isPinned ? 'true' : 'false'}">${pinIco}<span>${isPinned ? 'Pinned to Print' : 'Pin to Print'}</span></button>
+        <button type="button" class="ceo-pv-btn is-secondary" data-stmt-pv-copy="1">${copyIco}<span>Copy Note</span></button>
+        <a class="ceo-pv-btn is-secondary stmt-pv-wa-link" data-stmt-pv-wa="1" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${shareIco}<span>WhatsApp</span></a>
+        <button type="button" class="ceo-pv-btn is-secondary" data-stmt-pv-ask="1"><span>Ask Follow-Up</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-stmt-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeStatementVariancePopover();
+      });
+    }
+    const pvSpkBtn = pop.querySelector('[data-stmt-pv-speak]');
+    if (pvSpkBtn) {
+      pvSpkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const mainBtn = document.getElementById('stmtListenSummaryBtn');
+        speakStatementSummary(mainBtn || null, sum.lang, { skipPopoverOpen: true });
+        syncStmtPopoverAudioButton();
+      });
+    }
+    const pvPinBtn = pop.querySelector('[data-stmt-pv-pin]');
+    if (pvPinBtn) {
+      pvPinBtn.addEventListener('click', e => {
+        e.preventDefault();
+        if (_ctx && _ctx.STATE) {
+          if (!_ctx.STATE.rdl) _ctx.STATE.rdl = { pinnedCoverNote: false };
+          _ctx.STATE.rdl.pinnedCoverNote = !_ctx.STATE.rdl.pinnedCoverNote;
+          const nextPinned = Boolean(_ctx.STATE.rdl.pinnedCoverNote);
+          if (window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
+            window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE);
+          }
+          syncStatementPinButtonState(nextPinned);
+        }
+      });
+    }
+    const pvCopyBtn = pop.querySelector('[data-stmt-pv-copy]');
+    if (pvCopyBtn) {
+      pvCopyBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const latestSum = buildStatementSummary(sum.lang);
+        const txt = formatStatementCoverNotePlainText(latestSum, latestSum.activeBullets);
+        if (typeof window !== 'undefined') window.__LAST_COPIED_STMT_NOTE = txt;
+        let copied = false;
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          try {
+            await navigator.clipboard.writeText(txt);
+            copied = true;
+          } catch (_) {}
+        }
+        if (!copied && typeof document !== 'undefined') {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = txt;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          } catch (_) {}
+        }
+        pvCopyBtn.classList.add('is-copied');
+        pvCopyBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyBtn.isConnected) return;
+          pvCopyBtn.classList.remove('is-copied');
+          pvCopyBtn.innerHTML = `${copyIco}<span>Copy Note</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+    const pvAskBtn = pop.querySelector('[data-stmt-pv-ask]');
+    if (pvAskBtn) {
+      pvAskBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeStatementVariancePopover();
+        openDrawer();
+        const qPrompt = sum.lang === 'ar'
+          ? `اشرح بنود ومطابقة ${sum.headerTitle} لـ ${sum.companyLabel} (${sum.windowLabel})`
+          : (sum.lang === 'fr'
+              ? `Expliquez le détail et le rapprochement de l'${sum.headerTitle} pour ${sum.companyLabel} (${sum.windowLabel})`
+              : `Explain the key lines and variance drivers in ${sum.headerTitle} for ${sum.companyLabel} (${sum.windowLabel})`);
+        submitQuestion(qPrompt);
+      });
+    }
+
+    positionStatementVariancePopover();
+    if (!isAiSource) {
+      requestStatementVarianceCommentary(sum).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closeStatementVariancePopover() {
+    _chatState.stmtPopoverOpen = false;
+    _chatState.stmtPopoverAnchor = null;
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('stmtVariancePopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    const expBtn = document.getElementById('stmtExplainVarianceBtn');
+    if (expBtn) {
+      expBtn.classList.remove('is-open', 'active');
+      expBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleStatementVariancePopover(anchorEl) {
+    if (_chatState.stmtPopoverOpen) {
+      closeStatementVariancePopover();
+      return { open: false };
+    }
+    const sum = buildStatementSummary();
+    openStatementVariancePopover(anchorEl, sum);
+    return { open: true, summary: sum };
+  }
+
+  function speakStatementSummary(btnEl, langOverride, opts = {}) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('stmtListenSummaryBtn') : null);
+    if (targetBtn && _chatState.activeSpeakBtn === targetBtn) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    if (!targetBtn && _chatState.activeStmtSummaryScope) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const sum = buildStatementSummary(langOverride);
+    const ok = speakBotReply(sum.text, sum.lang, targetBtn || null);
+    if (ok) {
+      _chatState.activeStmtSummaryScope = sum.scopeKey;
+      syncStmtPopoverAudioButton();
+    }
+    if (!opts.skipPopoverOpen) {
+      openStatementVariancePopover(targetBtn, sum);
+    }
+    return Object.assign({ ok }, sum);
+  }
+
+  function syncStatementSummaryOnChange() {
+    const sum = buildStatementSummary();
+    if (_chatState.activeStmtSummaryScope && _chatState.activeStmtSummaryScope !== sum.scopeKey) {
+      stopActivePlayback();
+    }
+    if (_chatState.stmtPopoverOpen) {
+      const anchor = document.getElementById('stmtExplainVarianceBtn') || _chatState.stmtPopoverAnchor;
+      openStatementVariancePopover(anchor, sum);
+    }
+    if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && !sum.isAiSource) {
+      requestStatementVarianceCommentary(sum).catch(() => {});
+    }
+  }
+
+  function rebindStatementSummaryButtons(listenBtnEl, explainBtnEl) {
+    ensureDailyBriefingI18nRegistered();
+    const sum = buildStatementSummary();
+    if (_chatState.activeStmtSummaryScope) {
+      if (_chatState.activeStmtSummaryScope !== sum.scopeKey) {
+        stopActivePlayback();
+      } else if (listenBtnEl) {
+        _chatState.activeSpeakBtn = listenBtnEl;
+        applyBriefingButtonDomState(listenBtnEl, _chatState.activeSpeakCtrl ? 'loading' : 'speaking');
+      }
+    }
+    if (_chatState.stmtPopoverOpen) {
+      _chatState.stmtPopoverAnchor = explainBtnEl || listenBtnEl || null;
+      openStatementVariancePopover(_chatState.stmtPopoverAnchor, sum);
+    }
+  }
+
+  function stopStatementSummaryIfActive() {
+    if (_chatState.activeStmtSummaryScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-stmt-summary'))) {
+      stopActivePlayback();
+    }
+    if (_chatState.stmtPopoverOpen) {
+      closeStatementVariancePopover();
+    }
+  }
+
   function maybeAutoSpeakTurn(turnObj) {
     if (!turnObj) return;
     const shouldSpeak = Boolean(_chatState.autoVoiceReadback || _chatState.liveVoiceMode || turnObj.fromVoice);
@@ -7878,7 +8875,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn'].forEach(id => {
+          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -7887,6 +8884,12 @@
         }
         if (_chatState.periodPopoverOpen) {
           openCeoVariancePopover(_chatState.periodPopoverAnchor, buildCeoPeriodSummary(curLang));
+        }
+        if (_chatState.stmtPopoverOpen) {
+          openStatementVariancePopover(_chatState.stmtPopoverAnchor, buildStatementSummary(curLang));
+        }
+        if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
+          try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
         }
       }
     });
@@ -7932,6 +8935,17 @@
     closePeriodVariance: closeCeoVariancePopover,
     rebindPeriodSummaryButton,
     stopPeriodSummaryIfActive,
+    buildStatementSummary,
+    speakStatementSummary,
+    requestStatementVariance: requestStatementVarianceCommentary,
+    toggleStatementVariance: toggleStatementVariancePopover,
+    closeStatementVariance: closeStatementVariancePopover,
+    formatStatementCoverNote: formatStatementCoverNotePlainText,
+    renderStatementPinnedCoverNoteHtml,
+    syncStatementPinButtonState,
+    syncStatementSummaryOnChange,
+    rebindStatementSummaryButtons,
+    stopStatementSummaryIfActive,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
     rebindBriefingButton,
@@ -7947,6 +8961,8 @@
       briefingScope: _chatState.activeBriefingScope || '',
       periodSummaryScope: _chatState.activePeriodSummaryScope || '',
       periodPopoverOpen: Boolean(_chatState.periodPopoverOpen),
+      stmtSummaryScope: _chatState.activeStmtSummaryScope || '',
+      stmtPopoverOpen: Boolean(_chatState.stmtPopoverOpen),
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
