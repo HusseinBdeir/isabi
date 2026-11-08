@@ -8,6 +8,7 @@ import {
   buildSessionCookie,
   canAccessCompany,
   canManageUsersSeat,
+  checkSlidingRateLimit,
   clearSessionCookie,
   constantTimeEqual,
   extractRequestSession,
@@ -15,7 +16,8 @@ import {
   isOwnerOrFullGroupSession,
   jsonResponse,
   parseAllowedCompanies,
-  signEdgeSession
+  signEdgeSession,
+  verifyActiveEdgeSession
 } from './security.js';
 
 export const ALLOWED_TABLES = new Set([
@@ -23,7 +25,7 @@ export const ALLOWED_TABLES = new Set([
   'expenses', 'expense_items', 'recurring_expenses',
   'customer_receipts', 'supplier_payments', 'salary_payments', 'salaries',
   'price_rules', 'vat_invoices', 'credit_terms',
-  'customers', 'suppliers', 'users', 'products', 'items',
+  'customers', 'suppliers', 'products', 'items',
   'sites', 'regions', 'uoms', 'product_types',
   'equipment', 'company_equipment', 'equipment_defects', 'equipment_repairs',
   'repair_items', 'equipment_oil_logs', 'part_movements', 'warehouse_movements',
@@ -183,6 +185,7 @@ function stripBiometricsForPayload(uObj) {
   delete clean.pin_redacted;
   delete clean.face_redacted;
   delete clean.face_enrolled;
+  delete clean.face_sample_count;
   delete clean._verifiedPin;
   return clean;
 }
@@ -196,6 +199,7 @@ function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
   const parsedThumbs = safeJsonParse(d.face_thumbs, []);
   const validThumbs = Array.isArray(parsedThumbs) ? parsedThumbs : [];
   d.face_enrolled = validSamples.length > 0;
+  d.face_sample_count = validSamples.length;
   d.face_required = Boolean(d.face_required);
   if (!validSamples.length && d.face_updated_at) d.face_cleared = true;
   else delete d.face_cleared;
@@ -207,14 +211,13 @@ function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
   } else {
     delete d.pin_redacted;
   }
+  // Never expose raw 128-d biometric vectors over HTTP; keep verification strictly server-side
+  d.face_redacted = true;
+  delete d.face_samples;
   if (redactBiometrics) {
-    d.face_redacted = true;
-    delete d.face_samples;
     delete d.face_thumbs;
     d.custom_perms = null;
   } else {
-    delete d.face_redacted;
-    d.face_samples = validSamples;
     d.face_thumbs = validThumbs;
   }
   return d;
@@ -249,7 +252,7 @@ export async function handleStatus(env) {
   });
 }
 
-export async function handleAuthLogin(request, env, body) {
+export async function handleAuthLogin(request, env, body, verifiedCallerSession) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable' }, 503);
   if (isDemoHeader(request)) {
     return jsonResponse({ ok: true, demo: true, edge: true });
@@ -319,7 +322,15 @@ export async function handleAuthLogin(request, env, body) {
   const authMode = String(row.auth_mode || '').trim().toLowerCase();
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
   const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
-  const callerSess = method === 'Owner Impersonation' ? await extractRequestSession(request, env) : null;
+  let callerSess = null;
+  if (method === 'Owner Impersonation') {
+    callerSess = verifiedCallerSession !== undefined
+      ? verifiedCallerSession
+      : await verifyActiveEdgeSession(await extractRequestSession(request, env), env);
+    if (!callerSess || !isOwnerOrFullGroupSession(callerSess)) {
+      return jsonResponse({ ok: false, error: 'Active Owner session required for seat impersonation.' }, 401);
+    }
+  }
   const allowOwnerImpersonation = Boolean(callerSess && isOwnerOrFullGroupSession(callerSess));
 
   if (!allowOwnerImpersonation) {
@@ -399,9 +410,24 @@ export async function handleAuthLogin(request, env, body) {
     }
   }
 
+  if (body && body.verify_only === true) {
+    return jsonResponse({
+      ok: true,
+      edge: true,
+      verify_only: true,
+      verified_only: true,
+      user: hydrateUserRow(row, true, true)
+    });
+  }
+
+  const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const sessId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const ipHash = await hashClientIp(request);
+
   let token = '';
   try {
     token = await signEdgeSession({
+      sid: sessId,
       sub: row.id,
       email: row.email,
       name: row.full_name,
@@ -413,10 +439,6 @@ export async function handleAuthLogin(request, env, body) {
   } catch (_) {
     return jsonResponse({ ok: false, error: 'Edge authentication secret is not configured.' }, 503);
   }
-
-  const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const sessId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const ipHash = await hashClientIp(request);
 
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET last_login_at = ?1 WHERE id = ?2').bind(nowIso, row.id),
@@ -436,7 +458,12 @@ export async function handleAuthLogin(request, env, body) {
   );
 }
 
-export function handleAuthLogout(request) {
+export async function handleAuthLogout(request, env, session) {
+  if (env && env.DB && session && session.sid) {
+    try {
+      await env.DB.prepare('DELETE FROM auth_sessions WHERE id = ?1').bind(String(session.sid)).run();
+    } catch (_) {}
+  }
   const isHttps = new URL(request.url).protocol === 'https:';
   return jsonResponse(
     { ok: true, loggedOut: true },
@@ -514,9 +541,10 @@ export async function handleUsersPost(request, env, session, body) {
     if (!existing || sessEmail !== emailClean || sessEmail !== String(existing.email || '').trim().toLowerCase()) {
       return jsonResponse({ ok: false, error: 'Insufficient permissions to modify team seats.' }, 403);
     }
-    const fsJson = Array.isArray(u.face_samples) ? JSON.stringify(u.face_samples) : (existing.face_samples || '[]');
-    const ftJson = Array.isArray(u.face_thumbs) ? JSON.stringify(u.face_thumbs) : (existing.face_thumbs || '[]');
-    const fUpd = Array.isArray(u.face_samples)
+    const selfHasFreshBio = Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
+    const fsJson = selfHasFreshBio ? JSON.stringify(u.face_samples) : (existing.face_samples || '[]');
+    const ftJson = (selfHasFreshBio && Array.isArray(u.face_thumbs)) ? JSON.stringify(u.face_thumbs) : (existing.face_thumbs || '[]');
+    const fUpd = selfHasFreshBio
       ? String(u.face_updated_at || new Date().toISOString())
       : String(existing.face_updated_at || '');
     const lastLogin = String(u.last_login_at || existing.last_login_at || '');
@@ -564,16 +592,17 @@ export async function handleUsersPost(request, env, session, body) {
     }
   }
 
-  const fsJson = Array.isArray(u.face_samples)
+  const hasFreshBio = Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
+  const fsJson = hasFreshBio
     ? JSON.stringify(u.face_samples)
     : (existing ? (existing.face_samples || '[]') : '[]');
-  const ftJson = Array.isArray(u.face_thumbs)
+  const ftJson = (Array.isArray(u.face_thumbs) && ((u.face_thumbs.length > 0 && !u.face_redacted) || u.face_cleared === true))
     ? JSON.stringify(u.face_thumbs)
     : (existing ? (existing.face_thumbs || '[]') : '[]');
   const fReq = 'face_required' in u
     ? (u.face_required ? 1 : 0)
     : (existing ? Number(existing.face_required || 0) : 0);
-  const fUpd = Array.isArray(u.face_samples)
+  const fUpd = hasFreshBio
     ? String(u.face_updated_at || new Date().toISOString())
     : (existing ? String(existing.face_updated_at || '') : '');
   const cpJson = (u.custom_perms && typeof u.custom_perms === 'object')
@@ -594,7 +623,7 @@ export async function handleUsersPost(request, env, session, body) {
     ? String(existing.pin_code || '1111')
     : String(u.pin_code || (existing && existing.pin_code) || '1111');
   const effRole = String(u.role || (existing && existing.role) || 'Entry');
-  const effCos = String(u.companies || (existing && existing.companies) || 'WTC');
+  const effCos = u.companies !== undefined ? String(u.companies) : String((existing && existing.companies) || 'WTC');
   const effPbi = String(u.pbi_access || (existing && existing.pbi_access) || 'partial');
   const effStmts = String(u.statements_access || (existing && existing.statements_access) || 'partial');
   const effStatus = String(u.status || (existing && existing.status) || 'Active');
@@ -722,6 +751,9 @@ export async function handleRecordsGet(request, env, session, url) {
   const companyNorm = company.toLowerCase();
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '150', 10) || 150, 1), 2000);
 
+  if (table === 'users') {
+    return jsonResponse({ ok: false, error: 'Direct query of users via /records is forbidden.' }, 403);
+  }
   if (!ALLOWED_TABLES.has(table)) {
     return jsonResponse({ ok: false, error: 'Invalid table' }, 400);
   }
@@ -788,7 +820,7 @@ export async function handleRecordsGet(request, env, session, url) {
       `SELECT * FROM ${table} WHERE lower(company) = ?1 ${orderClause} LIMIT ?2`
     ).bind(companyNorm, limit).all();
   }
-  const outRows = (res.results || []).map(r => (table === 'users' ? hydrateUserRow(r, true) : hydrateRowJson(r)));
+  const outRows = (res.results || []).map(r => hydrateRowJson(r));
   return jsonResponse({ ok: true, edge: true, table, rows: outRows });
 }
 
@@ -886,6 +918,228 @@ export async function handleSentinelReviews(request, env, session, body) {
   return jsonResponse({ ok: true, saved });
 }
 
+function scopeAlertRulesForSession(arObj, session) {
+  const base = (arObj && typeof arObj === 'object') ? arObj : { overrides: {}, custom: [] };
+  const overrides = (base.overrides && typeof base.overrides === 'object') ? Object.assign({}, base.overrides) : {};
+  const customArr = Array.isArray(base.custom) ? base.custom : [];
+  if (session && isOwnerOrFullGroupSession(session)) {
+    return { overrides, custom: customArr.filter(c => c && !c.deleted) };
+  }
+  const scopedCustom = customArr.filter(c => {
+    if (!c || typeof c !== 'object' || c.deleted) return false;
+    const co = String(c.company || '').trim();
+    if (!co || /^all(\s+(bus|companies))?$/i.test(co)) return true;
+    return Boolean(session && canAccessCompany(session, co));
+  });
+  return { overrides, custom: scopedCustom };
+}
+
+function scopeWorkSchedulesForSession(wsObj, session) {
+  if (!wsObj || typeof wsObj !== 'object') return wsObj;
+  if (session && isOwnerOrFullGroupSession(session)) return wsObj;
+  const shifts = Array.isArray(wsObj.shiftTypes) ? wsObj.shiftTypes : [];
+  const pGroups = Array.isArray(wsObj.policyGroups) ? wsObj.policyGroups : [];
+  const coDefs = (wsObj.companyPolicyDefaults && typeof wsObj.companyPolicyDefaults === 'object') ? wsObj.companyPolicyDefaults : {};
+  const sRules = (wsObj.staffRules && typeof wsObj.staffRules === 'object') ? wsObj.staffRules : {};
+  const scopedDefs = {};
+  for (const [ck, cv] of Object.entries(coDefs)) {
+    if (session && canAccessCompany(session, ck)) scopedDefs[ck] = cv;
+  }
+  const scopedRules = {};
+  for (const [rk, rv] of Object.entries(sRules)) {
+    if (!rv || typeof rv !== 'object') continue;
+    const co = String(rv.company || '').trim();
+    if (co && session && canAccessCompany(session, co)) scopedRules[rk] = rv;
+  }
+  const scopedShifts = shifts.filter(s => {
+    if (!s || typeof s !== 'object') return false;
+    const co = String(s.company || '').trim();
+    if (!co || /^all(\s+(bus|companies))?$/i.test(co)) return true;
+    return Boolean(session && canAccessCompany(session, co));
+  });
+  return {
+    shiftTypes: scopedShifts,
+    policyGroups: pGroups,
+    companyPolicyDefaults: scopedDefs,
+    staffRules: scopedRules
+  };
+}
+
+function mergeWorkSchedulesDocs(prevWsRaw, nextWsRaw, session, restrictRls) {
+  const prevWs = (prevWsRaw && typeof prevWsRaw === 'object') ? prevWsRaw : {};
+  const nextWs = (nextWsRaw && typeof nextWsRaw === 'object') ? nextWsRaw : {};
+
+  // 1. policyGroups (Owner-only global policies)
+  const prevPg = Array.isArray(prevWs.policyGroups) ? prevWs.policyGroups : [];
+  const nextPg = Array.isArray(nextWs.policyGroups) ? nextWs.policyGroups : [];
+  let mergedPg = [];
+  if (restrictRls) {
+    mergedPg = prevPg.slice();
+  } else {
+    const pgMap = new Map();
+    for (const g of prevPg) {
+      if (g && g.id) pgMap.set(String(g.id), g);
+    }
+    for (const g of nextPg) {
+      if (!g || !g.id) continue;
+      const gid = String(g.id);
+      const cur = pgMap.get(gid);
+      const curTs = cur ? String(cur.updated_at || '') : '';
+      const nxtTs = String(g.updated_at || '');
+      if (!cur || !curTs || !nxtTs || nxtTs >= curTs) {
+        pgMap.set(gid, g);
+      }
+    }
+    mergedPg = Array.from(pgMap.values());
+  }
+
+  // 2. companyPolicyDefaults
+  const prevDefs = (prevWs.companyPolicyDefaults && typeof prevWs.companyPolicyDefaults === 'object') ? prevWs.companyPolicyDefaults : {};
+  const nextDefs = (nextWs.companyPolicyDefaults && typeof nextWs.companyPolicyDefaults === 'object') ? nextWs.companyPolicyDefaults : {};
+  const mergedDefs = Object.assign({}, prevDefs);
+  for (const [ck, nv] of Object.entries(nextDefs)) {
+    if (!nv || typeof nv !== 'object') continue;
+    if (restrictRls && (!session || !canAccessCompany(session, ck))) continue;
+    const cv = mergedDefs[ck];
+    const curTs = (cv && typeof cv === 'object') ? String(cv.updated_at || '') : '';
+    const nxtTs = String(nv.updated_at || '');
+    if (!cv || !curTs || !nxtTs || nxtTs >= curTs) {
+      mergedDefs[ck] = nv;
+    }
+  }
+
+  // 3. shiftTypes
+  const prevShifts = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
+  const nextShifts = Array.isArray(nextWs.shiftTypes) ? nextWs.shiftTypes : [];
+  const shiftKeyFn = s => `${String((s && s.company) || 'All BUs').trim().toLowerCase()}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
+  const shiftMap = new Map();
+  for (const ps of prevShifts) {
+    if (ps && (ps.id || ps.shift_code)) shiftMap.set(shiftKeyFn(ps), ps);
+  }
+  for (const ns of nextShifts) {
+    if (!ns || !(ns.id || ns.shift_code)) continue;
+    const nsCo = String(ns.company || '').trim();
+    if (restrictRls && (!nsCo || /^all(\s+(bus|companies))?$/i.test(nsCo) || !session || !canAccessCompany(session, nsCo))) {
+      continue;
+    }
+    const sk = shiftKeyFn(ns);
+    const cur = shiftMap.get(sk);
+    const curTs = cur ? String(cur.updated_at || '') : '';
+    const nxtTs = String(ns.updated_at || '');
+    if (!cur || !curTs || !nxtTs || nxtTs >= curTs) {
+      shiftMap.set(sk, ns);
+    }
+  }
+
+  // 4. staffRules
+  const prevRules = (prevWs.staffRules && typeof prevWs.staffRules === 'object') ? prevWs.staffRules : {};
+  const nextRules = (nextWs.staffRules && typeof nextWs.staffRules === 'object') ? nextWs.staffRules : {};
+  const mergedRules = Object.assign({}, prevRules);
+  for (const [rk, nr] of Object.entries(nextRules)) {
+    if (!nr || typeof nr !== 'object') continue;
+    const prevR = mergedRules[rk];
+    const prevCo = String((prevR && prevR.company) || '').trim();
+    const nextCo = String(nr.company || '').trim();
+    const co = nextCo || prevCo;
+    if (restrictRls) {
+      if (prevR && (!prevCo || !session || !canAccessCompany(session, prevCo))) continue;
+      if (!co || !session || !canAccessCompany(session, co)) continue;
+    }
+    const curTs = prevR ? String(prevR.updated_at || '') : '';
+    const nxtTs = String(nr.updated_at || '');
+    if (!prevR || !curTs || !nxtTs || nxtTs >= curTs) {
+      mergedRules[rk] = co && !nr.company ? Object.assign({}, nr, { company: co }) : nr;
+    }
+  }
+
+  return {
+    shiftTypes: Array.from(shiftMap.values()),
+    policyGroups: mergedPg,
+    companyPolicyDefaults: mergedDefs,
+    staffRules: mergedRules
+  };
+}
+
+async function loadCanonicalAlertRulesFromDb(db) {
+  const res = await db.prepare('SELECT * FROM alert_rules').all();
+  const overrides = {};
+  const custom = [];
+  const deletedCustomIds = new Set();
+  for (const r of (res.results || [])) {
+    const obj = safeJsonParse(r.payload_json, null);
+    if (!obj || typeof obj !== 'object') continue;
+    if (r.kind === 'custom') {
+      const cid = String(obj.id || r.id || '');
+      if (obj.deleted) {
+        if (cid) deletedCustomIds.add(cid);
+      } else {
+        custom.push(obj);
+      }
+    } else if (r.id) {
+      overrides[r.id] = obj;
+    }
+  }
+  return { overrides, custom, deletedCustomIds, rowCount: (res.results || []).length };
+}
+
+async function patchMfgStoreSubDoc(db, mutatorFn, updatedBy = '') {
+  try {
+    const curRow = await readEdgeKvDoc(db, 'mfg_web_store');
+    if (!curRow) return;
+    const doc = safeJsonParse(curRow.payload_json, null);
+    if (!doc || typeof doc !== 'object') return;
+    mutatorFn(doc);
+    const nowIso = new Date().toISOString();
+    doc.updatedAt = nowIso;
+    if (Array.isArray(doc.users)) {
+      doc.users = doc.users.map(redactFaceSamplesFromUserObj);
+    }
+    await writeEdgeKvDoc(db, 'mfg_web_store', JSON.stringify(doc), nowIso, updatedBy || String(doc.updatedBy || 'edge'));
+  } catch (_) {}
+}
+
+async function overlayCanonicalSubStoresOnMfgDoc(db, docObj) {
+  if (!db || !docObj || typeof docObj !== 'object') return docObj;
+  try {
+    const [sqlAr, wsRow] = await Promise.all([
+      loadCanonicalAlertRulesFromDb(db),
+      db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first()
+    ]);
+    if (sqlAr.rowCount > 0) {
+      const baseAr = (docObj.alertRules && typeof docObj.alertRules === 'object') ? docObj.alertRules : { overrides: {}, custom: [] };
+      const mergedOv = Object.assign({}, baseAr.overrides || {});
+      for (const [oid, ov] of Object.entries(sqlAr.overrides)) {
+        const cur = mergedOv[oid];
+        const curTs = cur ? String(cur.updated_at || '') : '';
+        const sqlTs = String(ov.updated_at || '');
+        if (!cur || !curTs || !sqlTs || sqlTs >= curTs) mergedOv[oid] = ov;
+      }
+      const custMap = new Map();
+      for (const bc of (Array.isArray(baseAr.custom) ? baseAr.custom : [])) {
+        if (bc && bc.id && !bc.deleted && !sqlAr.deletedCustomIds.has(String(bc.id))) {
+          custMap.set(String(bc.id), bc);
+        }
+      }
+      for (const sc of sqlAr.custom) {
+        if (!sc || !sc.id) continue;
+        const cid = String(sc.id);
+        const cur = custMap.get(cid);
+        const curTs = cur ? String(cur.updated_at || '') : '';
+        const sqlTs = String(sc.updated_at || '');
+        if (!cur || !curTs || !sqlTs || sqlTs >= curTs) custMap.set(cid, sc);
+      }
+      docObj.alertRules = { overrides: mergedOv, custom: Array.from(custMap.values()) };
+    }
+    if (wsRow && wsRow.payload_json) {
+      const kvWs = safeJsonParse(wsRow.payload_json, null);
+      if (kvWs && typeof kvWs === 'object') {
+        docObj.workSchedules = mergeWorkSchedulesDocs(docObj.workSchedules || {}, kvWs, null, false);
+      }
+    }
+  } catch (_) {}
+  return docObj;
+}
+
 export async function handleAlertRules(request, env, session, body) {
   if (!env || !env.DB) return jsonResponse({ ok: true, overrides: {}, custom: [] });
   if (!session) {
@@ -893,26 +1147,20 @@ export async function handleAlertRules(request, env, session, body) {
     return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   }
   if (request.method === 'GET') {
-    const res = await env.DB.prepare('SELECT * FROM alert_rules').all();
-    const overrides = {};
-    const custom = [];
-    for (const r of (res.results || [])) {
-      const obj = safeJsonParse(r.payload_json, null);
-      if (!obj || typeof obj !== 'object') continue;
-      if (r.kind === 'custom') {
-        if (!obj.deleted) custom.push(obj);
-      } else if (r.id) {
-        overrides[r.id] = obj;
-      }
-    }
-    return jsonResponse({ ok: true, overrides, custom });
+    const sqlAr = await loadCanonicalAlertRulesFromDb(env.DB);
+    const scoped = scopeAlertRulesForSession({ overrides: sqlAr.overrides, custom: sqlAr.custom }, session);
+    return jsonResponse({ ok: true, overrides: scoped.overrides, custom: scoped.custom });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
   if (!canManageUsersSeat(session)) return jsonResponse({ ok: false, error: 'Supervisor or Owner required to modify alert rules.' }, 403);
+  const restrictAlertRls = !isOwnerOrFullGroupSession(session);
   let saved = 0;
   const overridesIn = (body && body.overrides && typeof body.overrides === 'object') ? body.overrides : {};
-  for (const [rid, ov] of Object.entries(overridesIn)) {
-    if (!ov || typeof ov !== 'object') continue;
+  const overrideEntries = Object.entries(overridesIn).filter(([, ov]) => ov && typeof ov === 'object');
+  if (restrictAlertRls && overrideEntries.length > 0) {
+    return jsonResponse({ ok: false, error: 'Row-level security: Owner required to modify global alert thresholds.' }, 403);
+  }
+  for (const [rid, ov] of overrideEntries) {
     const inTs = String(ov.updated_at || '');
     const ex = await env.DB.prepare('SELECT updated_at FROM alert_rules WHERE id = ?1').bind(String(rid)).first();
     if (ex && String(ex.updated_at || '') > inTs) continue;
@@ -925,13 +1173,43 @@ export async function handleAlertRules(request, env, session, body) {
   for (const cr of customIn) {
     if (!cr || typeof cr !== 'object' || !cr.id) continue;
     const cid = String(cr.id);
+    const crCo = String(cr.company || '').trim();
+    const ex = await env.DB.prepare('SELECT updated_at, payload_json FROM alert_rules WHERE id = ?1').bind(cid).first();
+    const exObj = ex ? safeJsonParse(ex.payload_json, null) : null;
+    const effCo = crCo || String((exObj && exObj.company) || '').trim();
+    if (restrictAlertRls && (!effCo || !canAccessCompany(session, effCo))) {
+      return jsonResponse({ ok: false, error: 'Row-level security: custom alert rule must belong to an authorized entity.' }, 403);
+    }
+    if (exObj && restrictAlertRls) {
+      const exCo = String(exObj.company || '').trim();
+      if (!exCo || !canAccessCompany(session, exCo)) {
+        return jsonResponse({ ok: false, error: 'Row-level security: cannot modify another entity alert rule.' }, 403);
+      }
+    }
     const inTs = String(cr.updated_at || '');
-    const ex = await env.DB.prepare('SELECT updated_at FROM alert_rules WHERE id = ?1').bind(cid).first();
     if (ex && String(ex.updated_at || '') > inTs) continue;
+    const toSaveRule = effCo && !cr.company ? Object.assign({}, cr, { company: effCo }) : cr;
     await env.DB.prepare(
       'INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)'
-    ).bind(cid, 'custom', JSON.stringify(cr), inTs).run();
+    ).bind(cid, 'custom', JSON.stringify(toSaveRule), inTs).run();
     saved++;
+  }
+  if (saved > 0) {
+    const canonAr = await loadCanonicalAlertRulesFromDb(env.DB);
+    await patchMfgStoreSubDoc(env.DB, doc => {
+      const baseAr = (doc.alertRules && typeof doc.alertRules === 'object') ? doc.alertRules : { overrides: {}, custom: [] };
+      const custMap = new Map();
+      for (const bc of (Array.isArray(baseAr.custom) ? baseAr.custom : [])) {
+        if (bc && bc.id && !bc.deleted && !canonAr.deletedCustomIds.has(String(bc.id))) custMap.set(String(bc.id), bc);
+      }
+      for (const sc of canonAr.custom) {
+        if (sc && sc.id) custMap.set(String(sc.id), sc);
+      }
+      doc.alertRules = {
+        overrides: Object.assign({}, baseAr.overrides || {}, canonAr.overrides),
+        custom: Array.from(custMap.values())
+      };
+    }, String((session && session.email) || ''));
   }
   return jsonResponse({ ok: true, saved });
 }
@@ -988,16 +1266,39 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
   }
   if (request.method === 'GET') {
     const row = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
-    return jsonResponse({ ok: true, [responseProp]: row ? safeJsonParse(row.payload_json, null) : null });
+    const parsedVal = row ? safeJsonParse(row.payload_json, null) : null;
+    const outVal = (docKey === 'work_schedules' && parsedVal)
+      ? scopeWorkSchedulesForSession(parsedVal, session)
+      : parsedVal;
+    return jsonResponse({ ok: true, [responseProp]: outVal });
   }
   if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox is read-only' }, 403);
   if (!canManageUsersSeat(session)) return jsonResponse({ ok: false, error: 'Supervisor or Owner required.' }, 403);
+  const restrictKvRls = !isOwnerOrFullGroupSession(session);
   const incoming = (body && (body[responseProp] || body.config || body.payload)) || body || {};
   const nowIso = new Date().toISOString();
   let toStore = incoming;
   if (docKey === 'geo_config' && incoming && typeof incoming === 'object') {
     const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
     const prev = exRow ? safeJsonParse(exRow.payload_json, null) : null;
+    if (restrictKvRls) {
+      const prevHubs = (prev && prev.companyHubs && typeof prev.companyHubs === 'object') ? prev.companyHubs : {};
+      const inHubs = (incoming.companyHubs && typeof incoming.companyHubs === 'object') ? incoming.companyHubs : {};
+      for (const [hk, hv] of Object.entries(inHubs)) {
+        if (!canAccessCompany(session, hk) && stableRowSig(prevHubs[hk]) !== stableRowSig(hv)) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot modify another entity hub.' }, 403);
+        }
+      }
+      const inDelCheck = (incoming._deletedKeys && typeof incoming._deletedKeys === 'object') ? incoming._deletedKeys : {};
+      for (const dk of Object.keys(inDelCheck)) {
+        if (dk.startsWith('companyHubs:')) {
+          const hk = dk.slice('companyHubs:'.length);
+          if (!canAccessCompany(session, hk)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: cannot delete another entity hub.' }, 403);
+          }
+        }
+      }
+    }
     if (prev && typeof prev === 'object') {
       const merged = {
         companyHubs: Object.assign({}, prev.companyHubs || {}),
@@ -1022,13 +1323,14 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
           if (nxt === undefined || nxt === null) continue;
           const dk = `${bucket}:${k}`;
           const cur = merged[bucket][k];
-          const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && merged._pairKmTs[k]) || prev.updatedAt || '';
-          const nxtTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || incoming.updatedAt || nowIso;
+          const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && merged._pairKmTs[k]) || '';
+          const nxtItemTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || '';
+          const nxtTs = nxtItemTs || (cur === undefined ? (incoming.updatedAt || nowIso) : '');
           const delTs = String(merged._deletedKeys[dk] || '');
-          if (delTs && nxtTs && delTs > nxtTs) continue;
-          if (cur === undefined || !curTs || nxtTs >= curTs) {
+          if (delTs && (!nxtTs || delTs > nxtTs)) continue;
+          if (cur === undefined || !curTs || (nxtTs && nxtTs >= curTs)) {
             merged[bucket][k] = nxt;
-            if (bucket === 'pairKmOverrides') merged._pairKmTs[k] = nxtTs;
+            if (bucket === 'pairKmOverrides' && nxtTs) merged._pairKmTs[k] = nxtTs;
             delete merged._deletedKeys[dk];
           }
         }
@@ -1049,12 +1351,75 @@ export async function handleKvDoc(request, env, session, docKey, responseProp, b
       }
       toStore = merged;
     }
+  } else if (docKey === 'work_schedules') {
+    const wsIn = (body && body.work_schedules && typeof body.work_schedules === 'object')
+      ? body.work_schedules
+      : incoming;
+    if (!wsIn || typeof wsIn !== 'object' || (!Array.isArray(wsIn.shiftTypes) && !wsIn.staffRules && !Array.isArray(wsIn.policyGroups) && !wsIn.companyPolicyDefaults)) {
+      return jsonResponse({ ok: false, error: 'Invalid work_schedules payload.' }, 400);
+    }
+    const exRow = await env.DB.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1').bind(docKey).first();
+    const prevWs = (exRow && safeJsonParse(exRow.payload_json, null)) || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} };
+    if (restrictKvRls) {
+      const reqOp = String((body && body.op) || '').trim();
+      if (reqOp === 'upsert_policy_group' || reqOp === 'delete_policy_group') {
+        return jsonResponse({ ok: false, error: 'Row-level security: Owner required to modify global policy groups.' }, 403);
+      }
+      if (Array.isArray(wsIn.policyGroups)) {
+        const prevPgById = new Map((Array.isArray(prevWs.policyGroups) ? prevWs.policyGroups : []).filter(g => g && g.id).map(g => [String(g.id), g]));
+        for (const ng of wsIn.policyGroups) {
+          if (!ng || !ng.id) continue;
+          const pg = prevPgById.get(String(ng.id));
+          if (!pg || stableRowSig(pg) !== stableRowSig(ng)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: Owner required to modify global policy groups.' }, 403);
+          }
+        }
+      }
+      const prevDefs = prevWs.companyPolicyDefaults || {};
+      const nextDefs = wsIn.companyPolicyDefaults || {};
+      for (const [ck, nv] of Object.entries(nextDefs)) {
+        if (!canAccessCompany(session, ck) && stableRowSig(prevDefs[ck]) !== stableRowSig(nv)) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot modify another entity policy default.' }, 403);
+        }
+      }
+      const prevShifts = Array.isArray(prevWs.shiftTypes) ? prevWs.shiftTypes : [];
+      const nextShifts = Array.isArray(wsIn.shiftTypes) ? wsIn.shiftTypes : [];
+      const shiftKeyFn = s => `${String((s && s.company) || 'All BUs').trim().toLowerCase()}|${String((s && (s.id || s.shift_code)) || '').trim().toLowerCase()}`;
+      const prevShiftByKey = new Map(prevShifts.filter(s => s && (s.id || s.shift_code)).map(s => [shiftKeyFn(s), s]));
+      for (const ns of nextShifts) {
+        if (!ns || !(ns.id || ns.shift_code)) continue;
+        const nsCo = String(ns.company || '').trim();
+        if (!nsCo || /^all(\s+(bus|companies))?$/i.test(nsCo) || !canAccessCompany(session, nsCo)) {
+          const ps = prevShiftByKey.get(shiftKeyFn(ns));
+          if (!ps || stableRowSig(ps) !== stableRowSig(ns)) {
+            return jsonResponse({ ok: false, error: 'Row-level security: cannot modify cross-entity shift schedules.' }, 403);
+          }
+        }
+      }
+      const prevRules = prevWs.staffRules || {};
+      const nextRules = wsIn.staffRules || {};
+      for (const [rk, nr] of Object.entries(nextRules)) {
+        const pr = prevRules[rk];
+        const prevCo = String((pr && pr.company) || '').trim();
+        const nextCo = String((nr && nr.company) || '').trim();
+        const co = nextCo || prevCo;
+        if ((!co || !canAccessCompany(session, co) || (prevCo && !canAccessCompany(session, prevCo))) && stableRowSig(pr) !== stableRowSig(nr)) {
+          return jsonResponse({ ok: false, error: 'Row-level security: cannot modify cross-entity staff rules.' }, 403);
+        }
+      }
+    }
+    toStore = mergeWorkSchedulesDocs(prevWs, wsIn, session, restrictKvRls);
   }
   await env.DB.prepare(
     `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
      VALUES (?1, ?2, ?3, 1)
      ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
   ).bind(docKey, JSON.stringify(toStore), nowIso).run();
+  if (docKey === 'work_schedules') {
+    await patchMfgStoreSubDoc(env.DB, doc => {
+      doc.workSchedules = mergeWorkSchedulesDocs(doc.workSchedules || {}, toStore, null, false);
+    }, String((session && session.email) || ''));
+  }
   return jsonResponse({ ok: true, saved: true, updated_at: nowIso });
 }
 
@@ -1440,43 +1805,63 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     if (canManageSeats) {
       const prevAr = (hasPrev && prevStorePayload.alertRules && typeof prevStorePayload.alertRules === 'object') ? prevStorePayload.alertRules : {};
       const curAr = (storePayload.alertRules && typeof storePayload.alertRules === 'object') ? storePayload.alertRules : {};
-      const pOv = (prevAr.overrides && typeof prevAr.overrides === 'object') ? prevAr.overrides : {};
-      const cOv = (curAr.overrides && typeof curAr.overrides === 'object') ? curAr.overrides : {};
-      for (const [oid, ov] of Object.entries(cOv)) {
-        if (!oid || !ov || typeof ov !== 'object') continue;
-        if (pOv[oid] && stableRowSig(pOv[oid]) === stableRowSig(ov)) continue;
-        subStmts.push(
-          db.prepare('INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
-            .bind(String(oid), 'override', JSON.stringify(ov), String(ov.updated_at || ''))
-        );
-      }
-      if (hasPrev) {
-        for (const oid of Object.keys(pOv)) {
-          if (!(oid in cOv)) {
-            subStmts.push(db.prepare("DELETE FROM alert_rules WHERE id = ?1 AND kind = 'override'").bind(String(oid)));
+      if (!restrictRls) {
+        const pOv = (prevAr.overrides && typeof prevAr.overrides === 'object') ? prevAr.overrides : {};
+        const cOv = (curAr.overrides && typeof curAr.overrides === 'object') ? curAr.overrides : {};
+        for (const [oid, ov] of Object.entries(cOv)) {
+          if (!oid || !ov || typeof ov !== 'object') continue;
+          if (pOv[oid] && stableRowSig(pOv[oid]) === stableRowSig(ov)) continue;
+          subStmts.push(
+            db.prepare('INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
+              .bind(String(oid), 'override', JSON.stringify(ov), String(ov.updated_at || ''))
+          );
+        }
+        if (hasPrev) {
+          for (const oid of Object.keys(pOv)) {
+            if (!(oid in cOv)) {
+              subStmts.push(db.prepare("DELETE FROM alert_rules WHERE id = ?1 AND kind = 'override'").bind(String(oid)));
+            }
           }
         }
       }
-      const pCust = new Map((Array.isArray(prevAr.custom) ? prevAr.custom : []).filter(x => x && x.id).map(x => [String(x.id), stableRowSig(x)]));
+      const pCustArr = (Array.isArray(prevAr.custom) ? prevAr.custom : []).filter(x => x && x.id);
+      const pCust = new Map(pCustArr.map(x => [String(x.id), stableRowSig(x)]));
+      const pCustObj = new Map(pCustArr.map(x => [String(x.id), x]));
       const curCustList = Array.isArray(curAr.custom) ? curAr.custom : [];
       const seenCustIds = new Set();
       for (const crRule of curCustList) {
         if (!crRule || typeof crRule !== 'object' || !crRule.id) continue;
         const cid = String(crRule.id);
+        const prevObj = pCustObj.get(cid);
+        const prevCo = prevObj ? String(prevObj.company || '').trim() : '';
+        const curCo = String(crRule.company || prevCo || '').trim();
+        if (restrictRls) {
+          if (prevObj && (!prevCo || !canAccessCompany(session, prevCo))) {
+            seenCustIds.add(cid);
+            continue;
+          }
+          if (!curCo || !canAccessCompany(session, curCo)) continue;
+        }
         if (crRule.deleted) {
           subStmts.push(db.prepare("DELETE FROM alert_rules WHERE id = ?1 AND kind = 'custom'").bind(cid));
           continue;
         }
         seenCustIds.add(cid);
         if (pCust.get(cid) === stableRowSig(crRule)) continue;
+        const toPersistRule = curCo && !crRule.company ? Object.assign({}, crRule, { company: curCo }) : crRule;
         subStmts.push(
           db.prepare('INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?1, ?2, ?3, ?4)')
-            .bind(cid, 'custom', JSON.stringify(crRule), String(crRule.updated_at || ''))
+            .bind(cid, 'custom', JSON.stringify(toPersistRule), String(toPersistRule.updated_at || ''))
         );
       }
       if (hasPrev) {
         for (const pid of pCust.keys()) {
           if (!seenCustIds.has(pid)) {
+            if (restrictRls) {
+              const prevObj = pCustObj.get(pid);
+              const prevCo = prevObj ? String(prevObj.company || '').trim() : '';
+              if (!prevCo || !canAccessCompany(session, prevCo)) continue;
+            }
             subStmts.push(db.prepare("DELETE FROM alert_rules WHERE id = ?1 AND kind = 'custom'").bind(String(pid)));
           }
         }
@@ -1505,11 +1890,15 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
 
       if (storePayload.workSchedules && (!hasPrev || stableRowSig(prevStorePayload.workSchedules) !== stableRowSig(storePayload.workSchedules))) {
         const wsIso = String(storePayload.updatedAt || new Date().toISOString());
+        const kvWsRow = await db.prepare("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'work_schedules'").first();
+        const liveKvWs = (kvWsRow && safeJsonParse(kvWsRow.payload_json, null)) || {};
+        const mergedWs = mergeWorkSchedulesDocs(liveKvWs, storePayload.workSchedules, session, restrictRls);
+        storePayload.workSchedules = mergedWs;
         subStmts.push(
           db.prepare(
             `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev) VALUES ('work_schedules', ?1, ?2, 1)
              ON CONFLICT(doc_key) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1`
-          ).bind(JSON.stringify(storePayload.workSchedules), wsIso)
+          ).bind(JSON.stringify(mergedWs), wsIso)
         );
       }
 
@@ -1552,18 +1941,16 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               }
             }
             const uid = String((exU && exU.id) || u.id || `u-${Date.now()}`);
-            const hasFreshBio = !u.face_redacted && Array.isArray(u.face_samples) && (u.face_samples.length > 0 || u.face_cleared);
+            const hasFreshBio = Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
             const fsJson = hasFreshBio ? JSON.stringify(u.face_samples) : ((exU && exU.face_samples) || '[]');
-            const ftJson = (!u.face_redacted && Array.isArray(u.face_thumbs) && (u.face_thumbs.length > 0 || u.face_cleared))
+            const ftJson = (Array.isArray(u.face_thumbs) && ((u.face_thumbs.length > 0 && !u.face_redacted) || u.face_cleared === true))
               ? JSON.stringify(u.face_thumbs)
               : ((exU && exU.face_thumbs) || '[]');
             const fReq = 'face_required' in u ? (u.face_required ? 1 : 0) : (exU ? Number(exU.face_required || 0) : 0);
             const fUpd = hasFreshBio ? String(u.face_updated_at || new Date().toISOString()) : String((exU && exU.face_updated_at) || u.face_updated_at || '');
-            const cpJson = !u.face_redacted
-              ? ((u.custom_perms && typeof u.custom_perms === 'object')
-                  ? JSON.stringify(u.custom_perms)
-                  : (typeof u.custom_perms === 'string' && u.custom_perms.trim() ? u.custom_perms.trim() : ((exU && exU.custom_perms) || '{}')))
-              : ((exU && exU.custom_perms) || '{}');
+            const cpJson = (u.custom_perms && typeof u.custom_perms === 'object')
+              ? JSON.stringify(u.custom_perms)
+              : (typeof u.custom_perms === 'string' && u.custom_perms.trim() ? u.custom_perms.trim() : ((exU && exU.custom_perms) || '{}'));
             const authModeVal = String('auth_mode' in u ? (u.auth_mode || '') : ((exU && exU.auth_mode) || ''));
             const seatUpd = String(u.seat_updated_at || (exU && exU.seat_updated_at) || new Date().toISOString());
             const mirrorSessEmail = session ? String(session.email || '').trim().toLowerCase() : '';
@@ -1886,20 +2273,84 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
     else delete incomingDoc.workSchedules;
     if (prev.staffBiometrics !== undefined) incomingDoc.staffBiometrics = prev.staffBiometrics;
     else delete incomingDoc.staffBiometrics;
-  } else if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
-    const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
-    const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
-    const safeSb = {};
-    for (const [sk, pv] of Object.entries(pSb)) {
-      const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
-      if (!pCo || !canAccessCompany(session, pCo)) safeSb[sk] = pv;
+  } else {
+    if (prev.staffBiometrics || incomingDoc.staffBiometrics) {
+      const pSb = (prev.staffBiometrics && typeof prev.staffBiometrics === 'object') ? prev.staffBiometrics : {};
+      const iSb = (incomingDoc.staffBiometrics && typeof incomingDoc.staffBiometrics === 'object') ? incomingDoc.staffBiometrics : {};
+      const safeSb = {};
+      for (const [sk, pv] of Object.entries(pSb)) {
+        const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
+        if (!pCo || !canAccessCompany(session, pCo)) safeSb[sk] = pv;
+      }
+      for (const [sk, iv] of Object.entries(iSb)) {
+        if (sk in safeSb || !iv || typeof iv !== 'object') continue;
+        const iCo = String(iv.company || '').trim();
+        if (iCo && canAccessCompany(session, iCo)) safeSb[sk] = iv;
+      }
+      incomingDoc.staffBiometrics = safeSb;
     }
-    for (const [sk, iv] of Object.entries(iSb)) {
-      if (sk in safeSb || !iv || typeof iv !== 'object') continue;
-      const iCo = String(iv.company || '').trim();
-      if (iCo && canAccessCompany(session, iCo)) safeSb[sk] = iv;
+    if (prev.alertRules || incomingDoc.alertRules) {
+      const pAr = (prev.alertRules && typeof prev.alertRules === 'object') ? prev.alertRules : { overrides: {}, custom: [] };
+      const iAr = (incomingDoc.alertRules && typeof incomingDoc.alertRules === 'object') ? incomingDoc.alertRules : { overrides: {}, custom: [] };
+      const pCust = Array.isArray(pAr.custom) ? pAr.custom : [];
+      const iCust = Array.isArray(iAr.custom) ? iAr.custom : [];
+      const pMap = new Map(pCust.filter(x => x && x.id).map(x => [String(x.id), x]));
+      const safeCust = [];
+      const keptC = new Set();
+      for (const ic of iCust) {
+        if (!ic || !ic.id) continue;
+        const cid = String(ic.id);
+        const pc = pMap.get(cid);
+        const iCo = String(ic.company || '').trim();
+        const pCo = pc ? String(pc.company || '').trim() : '';
+        if (pc && (!pCo || !canAccessCompany(session, pCo) || !iCo || !canAccessCompany(session, iCo))) {
+          safeCust.push(pc);
+          keptC.add(cid);
+          continue;
+        }
+        if (!pc && (!iCo || !canAccessCompany(session, iCo))) continue;
+        safeCust.push(ic);
+        keptC.add(cid);
+      }
+      for (const pc of pCust) {
+        if (!pc || !pc.id || keptC.has(String(pc.id))) continue;
+        const pCo = String(pc.company || '').trim();
+        if (!pCo || !canAccessCompany(session, pCo)) safeCust.push(pc);
+      }
+      incomingDoc.alertRules = { overrides: Object.assign({}, pAr.overrides || {}), custom: safeCust };
     }
-    incomingDoc.staffBiometrics = safeSb;
+    if (prev.workSchedules || incomingDoc.workSchedules) {
+      const pWs = (prev.workSchedules && typeof prev.workSchedules === 'object') ? prev.workSchedules : {};
+      const iWs = (incomingDoc.workSchedules && typeof incomingDoc.workSchedules === 'object') ? incomingDoc.workSchedules : {};
+      const safeDefs = Object.assign({}, pWs.companyPolicyDefaults || {});
+      for (const [ck, cv] of Object.entries(iWs.companyPolicyDefaults || {})) {
+        if (canAccessCompany(session, ck)) safeDefs[ck] = cv;
+      }
+      const pShifts = Array.isArray(pWs.shiftTypes) ? pWs.shiftTypes : [];
+      const iShifts = Array.isArray(iWs.shiftTypes) ? iWs.shiftTypes : [];
+      const safeShifts = pShifts.filter(s => s && !canAccessCompany(session, s.company || ''));
+      for (const is of iShifts) {
+        if (is && is.company && canAccessCompany(session, is.company)) safeShifts.push(is);
+      }
+      const pRules = (pWs.staffRules && typeof pWs.staffRules === 'object') ? pWs.staffRules : {};
+      const iRules = (iWs.staffRules && typeof iWs.staffRules === 'object') ? iWs.staffRules : {};
+      const safeRules = {};
+      for (const [rk, pv] of Object.entries(pRules)) {
+        const pCo = pv && typeof pv === 'object' ? String(pv.company || '').trim() : '';
+        if (!pCo || !canAccessCompany(session, pCo)) safeRules[rk] = pv;
+      }
+      for (const [rk, iv] of Object.entries(iRules)) {
+        if (rk in safeRules || !iv || typeof iv !== 'object') continue;
+        const iCo = String(iv.company || '').trim();
+        if (iCo && canAccessCompany(session, iCo)) safeRules[rk] = iv;
+      }
+      incomingDoc.workSchedules = {
+        shiftTypes: safeShifts,
+        policyGroups: Array.isArray(pWs.policyGroups) ? pWs.policyGroups : [],
+        companyPolicyDefaults: safeDefs,
+        staffRules: safeRules
+      };
+    }
   }
 
   if (Array.isArray(prev.sessions) || Array.isArray(incomingDoc.sessions)) {
@@ -2002,9 +2453,27 @@ async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy) {
   }
 }
 
+function redactFaceSamplesFromUserObj(u) {
+  if (!u || typeof u !== 'object') return u;
+  const copy = Object.assign({}, u);
+  const validCount = Array.isArray(copy.face_samples)
+    ? copy.face_samples.filter(isValidFaceVec).length
+    : Number(copy.face_sample_count || (copy.face_enrolled ? 1 : 0));
+  copy.face_enrolled = Boolean(!copy.face_cleared && (copy.face_enrolled || validCount > 0));
+  copy.face_sample_count = copy.face_enrolled ? Math.max(1, validCount) : 0;
+  copy.face_redacted = true;
+  delete copy.face_samples;
+  return copy;
+}
+
 function scopeStoreDocForSession(docObj, session) {
   if (!docObj || typeof docObj !== 'object') return docObj;
-  if (session && isOwnerOrFullGroupSession(session)) return docObj;
+  if (session && isOwnerOrFullGroupSession(session)) {
+    if (!Array.isArray(docObj.users)) return docObj;
+    return Object.assign({}, docObj, {
+      users: docObj.users.map(redactFaceSamplesFromUserObj)
+    });
+  }
   const sessEmail = session ? String(session.email || '').trim().toLowerCase() : '';
   const canManage = Boolean(session && canManageUsersSeat(session));
   const copyDoc = Object.assign({}, docObj, { _scopedForSession: true });
@@ -2015,34 +2484,25 @@ function scopeStoreDocForSession(docObj, session) {
       const em = String(u.email || '').trim().toLowerCase();
       const isSelf = Boolean(sessEmail && em === sessEmail);
       if (isSelf) {
-        const uSelf = Object.assign({}, u);
+        const uSelf = redactFaceSamplesFromUserObj(u);
         delete uSelf.pin_redacted;
-        delete uSelf.face_redacted;
         return uSelf;
       }
       if (canManage) {
         const uCos = parseAllowedCompanies(u.companies);
         const uOwner = String(u.role || '').toLowerCase().includes('owner') || u.id === 'u1' || u.id === 'u2';
         if (!uOwner && uCos.length && !uCos.includes('*') && uCos.every(c => canAccessCompany(session, c))) {
-          const uSup = Object.assign({}, u);
+          const uSup = redactFaceSamplesFromUserObj(u);
           delete uSup.pin_code;
           uSup.pin_redacted = true;
-          delete uSup.face_redacted;
           return uSup;
         }
       }
-      const uCopy = Object.assign({}, u);
-      const hadFace = Boolean(
-        uCopy.face_enrolled ||
-        (Array.isArray(uCopy.face_samples) && uCopy.face_samples.some(isValidFaceVec))
-      );
+      const uCopy = redactFaceSamplesFromUserObj(u);
       delete uCopy.pin_code;
       uCopy.pin_redacted = true;
-      delete uCopy.face_samples;
       delete uCopy.face_thumbs;
       uCopy.custom_perms = null;
-      uCopy.face_enrolled = hadFace;
-      uCopy.face_redacted = true;
       return uCopy;
     });
   }
@@ -2127,6 +2587,14 @@ function scopeStoreDocForSession(docObj, session) {
     copyDoc.staffBiometrics = scopedSb;
   }
 
+  if (docObj.alertRules && typeof docObj.alertRules === 'object') {
+    copyDoc.alertRules = scopeAlertRulesForSession(docObj.alertRules, session);
+  }
+
+  if (docObj.workSchedules && typeof docObj.workSchedules === 'object') {
+    copyDoc.workSchedules = scopeWorkSchedulesForSession(docObj.workSchedules, session);
+  }
+
   return copyDoc;
 }
 
@@ -2143,6 +2611,9 @@ export async function handleSync(request, env, session, body, _ctx) {
     const row = await readEdgeKvDoc(env.DB, targetKey);
     const rawDocObj = row ? safeJsonParse(row.payload_json, {}) : {};
     if (row && row.updated_at && !rawDocObj.updatedAt) rawDocObj.updatedAt = row.updated_at;
+    if (targetKey === 'mfg_web_store') {
+      await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawDocObj);
+    }
     const docObj = targetKey === 'mfg_web_store' ? scopeStoreDocForSession(rawDocObj, session) : rawDocObj;
     return jsonResponse({ ok: true, edge: true, docs: { [targetKey]: docObj } });
   }
@@ -2166,6 +2637,9 @@ export async function handleSync(request, env, session, body, _ctx) {
 
     if (expectedTs && currentTs && expectedTs !== currentTs) {
       const rawFresh = safeJsonParse(currentRow.payload_json, {});
+      if (pKey === 'mfg_web_store') {
+        await overlayCanonicalSubStoresOnMfgDoc(env.DB, rawFresh);
+      }
       const freshDoc = pKey === 'mfg_web_store' ? scopeStoreDocForSession(rawFresh, session) : rawFresh;
       return jsonResponse({
         ok: true,
@@ -2175,7 +2649,10 @@ export async function handleSync(request, env, session, body, _ctx) {
       });
     }
 
-    const prevDoc = currentRow ? safeJsonParse(currentRow.payload_json, null) : null;
+    let prevDoc = currentRow ? safeJsonParse(currentRow.payload_json, null) : null;
+    if (pKey === 'mfg_web_store') {
+      prevDoc = await overlayCanonicalSubStoresOnMfgDoc(env.DB, prevDoc || {});
+    }
     if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
       await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
     }
@@ -2188,6 +2665,9 @@ export async function handleSync(request, env, session, body, _ctx) {
       mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session);
       if (mirrorStats && mirrorStats.error) {
         return jsonResponse({ ok: false, error: `Relational mirror failed: ${mirrorStats.error}` }, 500);
+      }
+      if (Array.isArray(incomingDoc.users)) {
+        incomingDoc.users = incomingDoc.users.map(redactFaceSamplesFromUserObj);
       }
     }
 
@@ -2220,16 +2700,31 @@ async function purgePhoneScanR2Pages(env, pagesJsonRaw) {
   }
 }
 
-export async function handlePhoneScan(request, env, url, body) {
+export async function handlePhoneScan(request, env, url, body, session) {
   if (!env || !env.DB) return jsonResponse({ ok: true, found: false });
+  const ipHash = await hashClientIp(request);
+  const rl = checkSlidingRateLimit(`phone-scan:${ipHash}`, 45, 60000);
+  if (!rl.allowed) {
+    return jsonResponse({ ok: false, error: 'Phone scan rate limit exceeded.' }, 429);
+  }
   const nowMs = Date.now();
-  // Prune sessions older than 10 minutes (and delete offloaded R2 page blobs)
+  // Prune sessions older than 10 minutes in bounded batches, purging R2 pages BEFORE deleting each exact sid
   try {
-    const stale = await env.DB.prepare('SELECT sid, pages_json FROM phone_scan_sessions WHERE updated_ms < ?1 LIMIT 25').bind(nowMs - 600000).all();
-    for (const sr of (stale.results || [])) {
-      await purgePhoneScanR2Pages(env, sr.pages_json);
+    for (let batchIdx = 0; batchIdx < 3; batchIdx++) {
+      const stale = await env.DB.prepare('SELECT sid, pages_json FROM phone_scan_sessions WHERE updated_ms < ?1 LIMIT 50').bind(nowMs - 600000).all();
+      const staleRows = stale.results || [];
+      if (!staleRows.length) break;
+      const staleSids = [];
+      for (const sr of staleRows) {
+        await purgePhoneScanR2Pages(env, sr.pages_json);
+        if (sr && sr.sid) staleSids.push(String(sr.sid));
+      }
+      if (staleSids.length) {
+        const ph = staleSids.map((_, i) => `?${i + 1}`).join(',');
+        await env.DB.prepare(`DELETE FROM phone_scan_sessions WHERE sid IN (${ph})`).bind(...staleSids).run();
+      }
+      if (staleRows.length < 50) break;
     }
-    await env.DB.prepare('DELETE FROM phone_scan_sessions WHERE updated_ms < ?1').bind(nowMs - 600000).run();
   } catch (_) {}
 
   if (request.method === 'GET') {
@@ -2268,11 +2763,14 @@ export async function handlePhoneScan(request, env, url, body) {
   }
 
   const sid = String((body && body.sid) || '').trim().slice(0, 64);
-  const tok = String((body && body.k) || '').trim().slice(0, 64);
+  const tok = String((body && (body.k || body.tok)) || '').trim().slice(0, 64);
   const opKind = String((body && body.op) || 'update').trim().toLowerCase();
   if (!sid || !tok) return jsonResponse({ ok: false, error: 'Missing session id' }, 400);
 
   const existing = await env.DB.prepare('SELECT * FROM phone_scan_sessions WHERE sid = ?1').bind(sid).first();
+  if (!existing && (!session || isDemoHeader(request))) {
+    return jsonResponse({ ok: false, error: 'Authenticated session required to initiate phone scan handoff.' }, 401);
+  }
   if (existing && existing.tok !== tok) {
     return jsonResponse({ ok: false, error: 'Token mismatch' }, 403);
   }
@@ -2294,17 +2792,22 @@ export async function handlePhoneScan(request, env, url, body) {
   if (Array.isArray(body && body.pages) && body.pages.length) {
     for (const pg of body.pages.slice(0, 8)) {
       if (!pg || !pg.dataUrl) continue;
+      const rawDataUrl = String(pg.dataUrl);
+      if (rawDataUrl.length > 5600000) {
+        return jsonResponse({ ok: false, error: 'Scanned page exceeds 4 MB limit.' }, 413);
+      }
+      if (mergedPages.length >= 8) break;
       const pid = String(pg.id || `pg-${Date.now()}`).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64);
       if (seenIds.has(pid)) continue;
       seenIds.add(pid);
       if (env.BUCKET) {
         const r2Key = `phone-scan/${safeSid}/${pid}.txt`;
-        await env.BUCKET.put(r2Key, String(pg.dataUrl), {
+        await env.BUCKET.put(r2Key, rawDataUrl, {
           httpMetadata: { contentType: 'text/plain; charset=utf-8' }
         });
         mergedPages.push({ id: pid, mimeType: pg.mimeType || 'image/jpeg', r2Key, ts: nowMs });
       } else {
-        mergedPages.push({ id: pid, mimeType: pg.mimeType || 'image/jpeg', dataUrl: pg.dataUrl, ts: nowMs });
+        mergedPages.push({ id: pid, mimeType: pg.mimeType || 'image/jpeg', dataUrl: rawDataUrl, ts: nowMs });
       }
     }
     status = 'pages_ready';
@@ -2438,7 +2941,12 @@ export async function handleBlobs(request, env, session, url, body) {
     const bin = atob(b64Data);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const r2Key = `vault/${safeBlobId}`;
+    let r2Key = `vault/${safeBlobId}`;
+    if (safeBlobId !== blobId) {
+      const idDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(blobId));
+      const hex12 = Array.from(new Uint8Array(idDigest)).slice(0, 6).map(b => b.toString(16).padStart(2, '0')).join('');
+      r2Key = `vault/${safeBlobId}__${hex12}`;
+    }
     await env.BUCKET.put(r2Key, bytes, {
       httpMetadata: { contentType: mimeType }
     });

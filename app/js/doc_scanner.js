@@ -1121,20 +1121,8 @@
   }
 
   // ==========================================================================
-  // 3. MULTI-TIER INSTANT PHONE CAMERA QR RELAY (BroadcastChannel + Local API + WebRTC + Cloud Relay)
+  // 3. MULTI-TIER INSTANT PHONE CAMERA QR RELAY (BroadcastChannel + Edge / Local API + WebRTC)
   // ==========================================================================
-  function getCloudRelayCreds() {
-    const cfg = window.MFG_CLOUD_CFG || {};
-    try {
-      return {
-        url: cfg.u ? atob(cfg.u) : '',
-        key: cfg.k ? atob(cfg.k) : ''
-      };
-    } catch (_) {
-      return { url: '', key: '' };
-    }
-  }
-
   const IS_LOCAL_HOST = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(location.hostname);
   const IS_TEST_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
 
@@ -1161,83 +1149,27 @@
     // 2. Same-origin Cloudflare Edge / Local server.py REST endpoint (/api/phone-scan)
     if (IS_LOCAL_HOST || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) {
       try {
-        const rEdge = await fetch('./api/phone-scan', {
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        await edgeFetch('./api/phone-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(Object.assign({ sid, k: tok }, patchData))
         });
-        if (rEdge && rEdge.ok && (window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)) return;
       } catch (_) {}
     }
-
-    // 3. Global HTTPS Cloud Relay (op: 'get_control' / 'patch' on ephemeral phone_scan_relay)
-    const creds = getCloudRelayCreds();
-    if (!creds.url || !creds.key || IS_TEST_HARNESS) return;
-    try {
-      const getRes = await fetch(creds.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ key: creds.key, op: 'get_control' })
-      });
-      const store = getRes.ok ? await getRes.json() : {};
-      const docs = (store && store.docs) || store || {};
-      const map = Object.assign({}, docs.phone_scan_relay || {});
-      const now = Date.now();
-      Object.keys(map).forEach(k => {
-        if (!map[k] || now - Number(map[k].ts || 0) > 300000) delete map[k];
-      });
-      if (patchData && patchData.op === 'clear') {
-        delete map[sid];
-      } else {
-        const prev = map[sid] || { sid, tok, pages: [], ts: now };
-        if (prev.tok && prev.tok !== tok) return;
-        const mergedPages = Array.isArray(prev.pages) ? prev.pages.slice() : [];
-        if (Array.isArray(patchData.pages)) {
-          const seen = new Set(mergedPages.map(p => p && p.id));
-          patchData.pages.forEach(pg => {
-            if (pg && pg.id && !seen.has(pg.id)) mergedPages.push(pg);
-          });
-        }
-        map[sid] = Object.assign({}, prev, patchData, { sid, tok, pages: mergedPages.slice(0, 8), ts: now });
-      }
-      await fetch(creds.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({
-          key: creds.key,
-          op: 'patch',
-          ackOnly: true,
-          patch: { phone_scan_relay: map }
-        })
-      });
-    } catch (_) {}
   }
 
   async function pollPhoneRelayState(sid, tok) {
     if (IS_LOCAL_HOST || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) {
       try {
-        const r = await fetch(`./api/phone-scan?sid=${encodeURIComponent(sid)}&k=${encodeURIComponent(tok)}`);
+        const edgeFetch = window.ISABI_EDGE_FETCH || fetch;
+        const r = await edgeFetch(`./api/phone-scan?sid=${encodeURIComponent(sid)}&k=${encodeURIComponent(tok)}`);
         if (r.ok) {
           const j = await r.json();
           if (j && j.found && j.session) return j.session;
-          if (j && j.ok && (window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE)) return null;
         }
       } catch (_) {}
     }
-    const creds = getCloudRelayCreds();
-    if (!creds.url || !creds.key || IS_TEST_HARNESS) return null;
-    try {
-      const r = await fetch(creds.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({ key: creds.key, op: 'get_control' })
-      });
-      if (!r.ok) return null;
-      const store = await r.json();
-      const docs = (store && store.docs) || store || {};
-      const entry = docs.phone_scan_relay && docs.phone_scan_relay[sid];
-      if (entry && entry.tok === tok) return entry;
-    } catch (_) {}
     return null;
   }
 

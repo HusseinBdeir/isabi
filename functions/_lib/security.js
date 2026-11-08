@@ -264,6 +264,88 @@ export function checkSlidingRateLimit(key, maxReqs = 45, windowMs = 60000) {
   };
 }
 
+export function isSameOriginBrowserRequest(request, urlObj) {
+  const targetOrigin = (urlObj && urlObj.origin) || (() => {
+    try { return new URL(request.url).origin; } catch (_) { return ''; }
+  })();
+  const reqOrigin = String(request.headers.get('Origin') || '').trim();
+  if (reqOrigin) {
+    return reqOrigin === targetOrigin || isAllowedCorsOrigin(reqOrigin);
+  }
+  const reqRef = String(request.headers.get('Referer') || '').trim();
+  if (reqRef) {
+    try {
+      const refOrigin = new URL(reqRef).origin;
+      if (refOrigin === targetOrigin || isAllowedCorsOrigin(refOrigin)) return true;
+    } catch (_) {}
+  }
+  const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
+  if (fetchSite === 'same-origin') return true;
+  return false;
+}
+
+export async function checkD1RateLimit(env, bucketKey, maxReqs = 15, windowSec = 60) {
+  const mem = checkSlidingRateLimit(bucketKey, maxReqs, windowSec * 1000);
+  if (!mem.allowed) return { allowed: false, remaining: 0 };
+  if (!env || !env.DB) return mem;
+  const slot = Math.floor(Date.now() / (windowSec * 1000));
+  const docKey = `rl:${bucketKey}:${slot}`;
+  const nowIso = new Date().toISOString();
+  try {
+    if (Math.random() < 0.05) {
+      await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1 AND doc_key != ?2')
+        .bind(`rl:${bucketKey}:%`, docKey).run();
+    }
+    const row = await env.DB.prepare(
+      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+       VALUES (?1, '1', ?2, 1)
+       ON CONFLICT(doc_key) DO UPDATE SET updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1
+       RETURNING rev`
+    ).bind(docKey, nowIso).first();
+    const count = Number((row && row.rev) || 1);
+    return { allowed: count <= maxReqs, remaining: Math.max(0, maxReqs - count) };
+  } catch (_) {
+    return mem;
+  }
+}
+
+export async function verifyActiveEdgeSession(session, env) {
+  if (!session || !env || !env.DB) return null;
+  try {
+    const sid = String(session.sid || '').trim();
+    if (!sid) return null;
+    const sessRow = await env.DB.prepare('SELECT id FROM auth_sessions WHERE id = ?1 LIMIT 1')
+      .bind(sid).first();
+    if (!sessRow) return null;
+
+    const email = String(session.email || '').trim().toLowerCase();
+    const sub = String(session.sub || '').trim();
+    if (!sub && !email) return null;
+
+    const uRow = await env.DB.prepare(
+      'SELECT id, status, role, companies, pbi_access, statements_access FROM users WHERE id = ?1 OR lower(email) = ?2 LIMIT 1'
+    ).bind(sub, email).first();
+
+    if (!uRow) {
+      const anyUser = await env.DB.prepare('SELECT 1 AS ok FROM users LIMIT 1').first();
+      if (anyUser) return null;
+      return session;
+    }
+
+    if (String(uRow.status || 'Active') === 'Suspended') return null;
+
+    return Object.assign({}, session, {
+      sub: uRow.id || session.sub,
+      role: uRow.role != null ? uRow.role : session.role,
+      companies: uRow.companies != null ? uRow.companies : session.companies,
+      pbi: uRow.pbi_access != null ? uRow.pbi_access : session.pbi,
+      stmts: uRow.statements_access != null ? uRow.statements_access : session.stmts
+    });
+  } catch (_) {
+    return null;
+  }
+}
+
 export function applyEdgeCors(response, request) {
   if (!response || !request) return response;
   const origin = String(request.headers.get('Origin') || '').trim();

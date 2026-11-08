@@ -5,15 +5,15 @@
 
 import { handleEdgeAsk, handleEdgeTts } from '../_lib/gemini.js';
 import { handleShowcaseLead, handleShowcaseLog, handleStatus } from '../_lib/d1_store.js';
-import { applyEdgeCors, jsonResponse } from '../_lib/security.js';
+import { applyEdgeCors, checkD1RateLimit, hashClientIp, jsonResponse } from '../_lib/security.js';
 
 async function parseRequestBody(request) {
-  if (request.method === 'GET' || request.method === 'HEAD') return {};
+  if (request.method === 'GET' || request.method === 'HEAD') return { body: {}, rawBytes: 0 };
   try {
     const txt = await request.text();
-    return txt ? JSON.parse(txt) : {};
+    return { body: txt ? JSON.parse(txt) : {}, rawBytes: txt ? txt.length : 0 };
   } catch (_) {
-    return {};
+    return { body: {}, rawBytes: 0 };
   }
 }
 
@@ -40,12 +40,18 @@ async function routeShowcaseApi(context) {
     });
   }
 
-  const body = await parseRequestBody(request);
-
-  if (subPath === '/ask' && request.method === 'POST') {
-    return handleEdgeAsk(request, env, body, context);
+  const { body, rawBytes } = await parseRequestBody(request);
+  if (rawBytes > 1572864) {
+    return jsonResponse({ ok: false, error: 'Payload exceeds 1.5 MB limit.' }, 413);
   }
-  if (subPath === '/tts' && request.method === 'POST') {
+
+  if ((subPath === '/ask' || subPath === '/tts') && request.method === 'POST') {
+    const ipHash = await hashClientIp(request);
+    const rl = await checkD1RateLimit(env, `showcase-ai:${ipHash}`, 20, 60);
+    if (!rl.allowed) {
+      return jsonResponse({ ok: false, error: 'Rate limit reached. Try again in a minute.' }, 429);
+    }
+    if (subPath === '/ask') return handleEdgeAsk(request, env, body, context);
     return handleEdgeTts(request, env, body);
   }
   if (subPath === '/leads' && request.method === 'POST') {

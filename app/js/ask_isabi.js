@@ -5145,40 +5145,6 @@
       } catch (_) {}
     }
 
-    // 2. Cloud AI Relay (op: 'tts' -> gemini-3.8-flash-lite-tts)
-    const askCfg = window.MFG_ASK_CFG || {};
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      if (askCfg.u && askCfg.k) {
-        flowUrl = atob(askCfg.u);
-        flowKey = atob(askCfg.k);
-      }
-    } catch (_) {}
-    if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-      const rCloud = await fetch(flowUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({
-          key: flowKey,
-          op: 'tts',
-          model: 'gemini-3.8-flash-lite-tts',
-          voiceName,
-          lang,
-          text: promptText
-        }),
-        signal
-      });
-      if (rCloud.ok) {
-        const jC = await rCloud.json();
-        if (jC && jC.ok && jC.mode === 'gemini_tts' && jC.audioBase64) {
-          const url = base64ToBlobUrl(jC.audioBase64, jC.mimeType || 'audio/wav');
-          evictOldestTtsBlobIfNeeded();
-          _chatState.ttsAudioCache.set(cacheKey, url);
-          return url;
-        }
-      }
-    }
     return '';
   }
 
@@ -6128,57 +6094,6 @@
         }
       }
 
-      if (!rawReply) {
-        const askCfg = window.MFG_ASK_CFG || {};
-        let flowUrl = '';
-        let flowKey = '';
-        try {
-          if (askCfg.u && askCfg.k) {
-            flowUrl = atob(askCfg.u);
-            flowKey = atob(askCfg.k);
-          }
-        } catch (_) {}
-        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 10000);
-          try {
-            const rCloud = await fetch(flowUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-              body: JSON.stringify({
-                key: flowKey,
-                op: 'ask',
-                surface: 'command_center',
-                q: 'Period Variance Commentary',
-                lang: sum.lang,
-                industry: sum.companyLabel,
-                currency: 'USD',
-                period: sum.periodLabel,
-                model: 'gemini-3.5-flash-lite',
-                systemPrompt: sysPrompt,
-                userPrompt: usrPrompt,
-                geminiContents,
-                messages: [
-                  { role: 'system', content: sysPrompt },
-                  { role: 'user', content: usrPrompt }
-                ]
-              }),
-              signal: ctrl.signal
-            });
-            clearTimeout(timer);
-            if (rCloud.ok) {
-              const jCloud = await rCloud.json();
-              if (jCloud && jCloud.rawReply) {
-                rawReply = String(jCloud.rawReply);
-                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
-              }
-            }
-          } catch (_) {
-            clearTimeout(timer);
-          }
-        }
-      }
-
       if (rawReply) {
         try {
           const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -7011,57 +6926,6 @@
         }
       }
 
-      if (!rawReply) {
-        const askCfg = window.MFG_ASK_CFG || {};
-        let flowUrl = '';
-        let flowKey = '';
-        try {
-          if (askCfg.u && askCfg.k) {
-            flowUrl = atob(askCfg.u);
-            flowKey = atob(askCfg.k);
-          }
-        } catch (_) {}
-        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 10000);
-          try {
-            const rCloud = await fetch(flowUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-              body: JSON.stringify({
-                key: flowKey,
-                op: 'ask',
-                surface: 'command_center',
-                q: `Statement ${sum.stmtId} Cover Note`,
-                lang: sum.lang,
-                industry: sum.companyLabel,
-                currency: 'USD',
-                period: sum.windowLabel,
-                model: 'gemini-3.5-flash-lite',
-                systemPrompt: sysPrompt,
-                userPrompt: usrPrompt,
-                geminiContents,
-                messages: [
-                  { role: 'system', content: sysPrompt },
-                  { role: 'user', content: usrPrompt }
-                ]
-              }),
-              signal: ctrl.signal
-            });
-            clearTimeout(timer);
-            if (rCloud.ok) {
-              const jCloud = await rCloud.json();
-              if (jCloud && jCloud.rawReply) {
-                rawReply = String(jCloud.rawReply);
-                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
-              }
-            }
-          } catch (_) {
-            clearTimeout(timer);
-          }
-        }
-      }
-
       if (rawReply) {
         try {
           const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -7861,57 +7725,6 @@
         }
       }
 
-      if (!rawReply) {
-        const askCfg = window.MFG_ASK_CFG || {};
-        let flowUrl = '';
-        let flowKey = '';
-        try {
-          if (askCfg.u && askCfg.k) {
-            flowUrl = atob(askCfg.u);
-            flowKey = atob(askCfg.k);
-          }
-        } catch (_) {}
-        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 10000);
-          try {
-            const rCloud = await fetch(flowUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-              body: JSON.stringify({
-                key: flowKey,
-                op: 'ask',
-                surface: 'command_center',
-                q: `Dashboard ${sum.pageNum} ${sum.pageLabel} Outlier Brief`,
-                lang: sum.lang,
-                industry: sum.companyLabel,
-                currency: 'USD',
-                period: sum.windowLabel,
-                model: 'gemini-3.5-flash-lite',
-                systemPrompt: sysPrompt,
-                userPrompt: usrPrompt,
-                geminiContents,
-                messages: [
-                  { role: 'system', content: sysPrompt },
-                  { role: 'user', content: usrPrompt }
-                ]
-              }),
-              signal: ctrl.signal
-            });
-            clearTimeout(timer);
-            if (rCloud.ok) {
-              const jCloud = await rCloud.json();
-              if (jCloud && jCloud.rawReply) {
-                rawReply = String(jCloud.rawReply);
-                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
-              }
-            }
-          } catch (_) {
-            clearTimeout(timer);
-          }
-        }
-      }
-
       if (rawReply) {
         try {
           const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -8590,57 +8403,6 @@
             debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
           } finally {
             clearTimeout(locTimer);
-          }
-        }
-      }
-
-      if (!rawReply) {
-        const askCfg = window.MFG_ASK_CFG || {};
-        let flowUrl = '';
-        let flowKey = '';
-        try {
-          if (askCfg.u && askCfg.k) {
-            flowUrl = atob(askCfg.u);
-            flowKey = atob(askCfg.k);
-          }
-        } catch (_) {}
-        if (flowUrl && flowUrl.startsWith('http') && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 10000);
-          try {
-            const rCloud = await fetch(flowUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-              body: JSON.stringify({
-                key: flowKey,
-                op: 'ask',
-                surface: 'command_center',
-                q: `Counterparty 360 Brief ${sum.entityLabel}`,
-                lang: sum.lang,
-                industry: sum.companyLabel,
-                currency: 'USD',
-                period: sum.activeRuleLabel,
-                model: 'gemini-3.5-flash-lite',
-                systemPrompt: sysPrompt,
-                userPrompt: usrPrompt,
-                geminiContents,
-                messages: [
-                  { role: 'system', content: sysPrompt },
-                  { role: 'user', content: usrPrompt }
-                ]
-              }),
-              signal: ctrl.signal
-            });
-            clearTimeout(timer);
-            if (rCloud.ok) {
-              const jCloud = await rCloud.json();
-              if (jCloud && jCloud.rawReply) {
-                rawReply = String(jCloud.rawReply);
-                usedModel = jCloud.model || 'gemini-3.5-flash-lite';
-              }
-            }
-          } catch (_) {
-            clearTimeout(timer);
           }
         }
       }
@@ -9498,91 +9260,6 @@
           }
         }
       } catch (_) {}
-    }
-
-    const askCfg = window.MFG_ASK_CFG || {};
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      if (askCfg.u && askCfg.k) {
-        flowUrl = atob(askCfg.u);
-        flowKey = atob(askCfg.k);
-      }
-    } catch (_) {}
-
-    // Lane 1: Cloud AI Relay (gemini-3.8-flash for multimodal/deep reasoning, gemini-3.5-flash-lite for fast chat)
-    const isDemo = Boolean(_ctx && _ctx.STATE && (_ctx.STATE.demoVisitor || _ctx.STATE.isPublicDemoSandbox));
-    if (flowUrl && flowUrl.startsWith('http') && (!isDemo || hasAudioBinary)) {
-      const reqPayload = {
-        key: flowKey,
-        op: 'ask',
-        surface: 'command_center',
-        q: cleanQ || 'Voice query',
-        lang,
-        industry: scope.scopeCoLabel,
-        currency: 'USD',
-        period: scope.periodLabel,
-        replyTitle: (fallback && fallback.title) || '',
-        model: targetModel,
-        systemPrompt: messages[0].content,
-        userPrompt: cleanQ || 'Voice query',
-        geminiContents,
-        messages
-      };
-      if (useProFlash) {
-        reqPayload.thinkingBudget = hasMultimodal ? 0 : 768;
-      }
-
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), useProFlash ? 15000 : 10000);
-      try {
-        const res = await fetch(flowUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(reqPayload),
-          signal: ctrl.signal
-        });
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.mode === 'gemini_cloud' && data.rawReply) {
-            const parsed = parseLlmJson(data.rawReply, cleanQ, lang, fallback, scope, llmOpts);
-            if (parsed) return parsed;
-          }
-        }
-      } catch (_) {
-        clearTimeout(timer);
-      }
-    }
-
-    // Lane 2: Direct Client-IP LLM completion (text-only fallback)
-    if (!hasAudioBinary) {
-      const ctrl2 = new AbortController();
-      const timer2 = setTimeout(() => ctrl2.abort(), 9000);
-      try {
-        const res2 = await fetch('https://text.pollinations.ai/openai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'openai-fast',
-            reasoning_effort: 'low',
-            response_format: { type: 'json_object' },
-            messages
-          }),
-          signal: ctrl2.signal
-        });
-        clearTimeout(timer2);
-        if (res2.ok) {
-          const data2 = await res2.json();
-          const raw2 = data2 && data2.choices && data2.choices[0] && data2.choices[0].message && data2.choices[0].message.content;
-          if (raw2) {
-            const parsed2 = parseLlmJson(raw2, cleanQ, lang, fallback, scope, llmOpts);
-            if (parsed2) return parsed2;
-          }
-        }
-      } catch (_) {
-        clearTimeout(timer2);
-      }
     }
 
     return fallback;

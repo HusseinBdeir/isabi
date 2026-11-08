@@ -341,15 +341,6 @@
   }
 
   function resolveAiEdgeRelayEndpoint() {
-    const askCfg = window.MFG_ASK_CFG || {};
-    if (askCfg.endpointUrl && askCfg.enabled) {
-      return { url: String(askCfg.endpointUrl), key: String(askCfg.key || '') };
-    }
-    try {
-      if (askCfg.u && askCfg.k) {
-        return { url: atob(askCfg.u), key: atob(askCfg.k) };
-      }
-    } catch (_) {}
     return { url: '', key: '' };
   }
 
@@ -365,13 +356,16 @@
   }
 
   function isLocalOrEdgeApiHost(hostnameOverride) {
-    if (window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) return true;
+    if (hostnameOverride == null && (window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API)) return true;
     const host = String(hostnameOverride != null ? hostnameOverride : ((typeof location !== 'undefined' && location.hostname) || '')).toLowerCase();
     if (!host) return false;
     return (
       host === 'localhost' ||
       host === '127.0.0.1' ||
       host === '[::1]' ||
+      host === 'isabisystems.com' ||
+      host.endsWith('.isabisystems.com') ||
+      host.endsWith('.pages.dev') ||
       host.endsWith('.local') ||
       /^10\.\d+\.\d+\.\d+$/.test(host) ||
       /^192\.168\.\d+\.\d+$/.test(host) ||
@@ -388,7 +382,7 @@
     const inlinePart = extractAiEdgeInlinePart(dataUrl, mimeType);
     const hostnameHint = opts && typeof opts.hostname === 'string' ? opts.hostname : undefined;
 
-    // 1. Local / Edge Server API (./api/ai-edge) when running on local/LAN server or explicit Edge API host
+    // Same-origin Cloudflare Edge / Local Server API (./api/ai-edge) — zero external relay
     if (isLocalOrEdgeApiHost(hostnameHint)) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), inlinePart ? 12000 : 6500);
@@ -416,52 +410,6 @@
       } catch (_) {
       } finally {
         clearTimeout(timer);
-      }
-    }
-
-    // 2. Cloud AI Relay (window.MFG_ASK_CFG -> op: 'ask') for static hosts (isabisystems.com/app/) & local keyless fallback
-    const relay = resolveAiEdgeRelayEndpoint();
-    if (relay.url && relay.url.startsWith('http')) {
-      const targetModel = inlinePart ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
-      const sysPrompt = [
-        'You are ISABI AI Edge, an enterprise ERP structured JSON extractor and executive copilot.',
-        'Return ONLY a valid JSON object matching the requested schema.',
-        'Never include markdown commentary, em-dashes, or Unicode arrows.'
-      ].join(' ');
-      const parts = [{ text: cleanPrompt }];
-      if (inlinePart) parts.push({ inlineData: inlinePart });
-      const activeScope = (D && typeof D.getActiveCompanyLabel === 'function' && D.getActiveCompanyLabel()) || 'ISABI ERP';
-      const reqBody = {
-        key: relay.key,
-        op: 'ask',
-        surface: 'ai_edge',
-        q: 'ai_edge:' + String(task || 'generic').slice(0, 48),
-        companyScope: String(activeScope).slice(0, 80),
-        lang: curLang(),
-        model: targetModel,
-        systemPrompt: sysPrompt,
-        userPrompt: cleanPrompt,
-        geminiContents: [{ role: 'user', parts }]
-      };
-      if (inlinePart) reqBody.thinkingBudget = 0;
-
-      const ctrl2 = new AbortController();
-      const timer2 = setTimeout(() => ctrl2.abort(), inlinePart ? 13000 : 9000);
-      try {
-        const res2 = await fetch(relay.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(reqBody),
-          signal: ctrl2.signal
-        });
-        if (res2 && res2.ok) {
-          const j2 = await res2.json();
-          const parsedRelay = extractAiEdgeJsonObject(j2 && (j2.result || j2.rawReply || j2.reply || j2.answer));
-          if (parsedRelay) return parsedRelay;
-        }
-      } catch (_) {
-      } finally {
-        clearTimeout(timer2);
       }
     }
 

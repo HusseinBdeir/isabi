@@ -1762,15 +1762,6 @@
   }
 
   function resolveAskRelayEndpoint() {
-    const askCfg = window.MFG_ASK_CFG || {};
-    if (askCfg.endpointUrl && askCfg.enabled) {
-      return { url: String(askCfg.endpointUrl), key: String(askCfg.key || '') };
-    }
-    try {
-      if (askCfg.u && askCfg.k) {
-        return { url: atob(askCfg.u), key: atob(askCfg.k) };
-      }
-    } catch (_) {}
     return { url: '', key: '' };
   }
 
@@ -1887,77 +1878,6 @@
       }
     }
 
-    // 1. Primary Cloud AI Relay (tiered: gemini-3.8-flash w/ thinkingBudget=0 for vision, gemini-3.5-flash-lite for clean text)
-    const relay = resolveAskRelayEndpoint();
-    if (relay.url && relay.url.startsWith('http')) {
-      const useVisionPro = Boolean(inlinePart || cleanTxt.length < 160);
-      const targetModel = useVisionPro ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
-      const parts = [{ text: userMsg }];
-      if (inlinePart) parts.push({ inlineData: inlinePart });
-      const reqBody = {
-        key: relay.key,
-        op: 'ask',
-        surface: 'smart_scan',
-        q: 'Smart Scan Document Parse',
-        companyScope: 'Smart Scan',
-        model: targetModel,
-        systemPrompt: sysPrompt,
-        userPrompt: userMsg,
-        geminiContents: [{ role: 'user', parts }]
-      };
-      if (useVisionPro) reqBody.thinkingBudget = 0;
-
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), inlinePart ? 13000 : 8500);
-      try {
-        const res = await fetch(relay.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(reqBody),
-          signal: ctrl.signal
-        });
-        if (res.ok) {
-          const j = await res.json();
-          const parsed = extractJsonBlock(j && (j.rawReply || j.reply || j.answer));
-          if (parsed && typeof parsed === 'object') {
-            return { parsed, engine: inlinePart ? 'ISABI Vision Engine + Ledger Grounding' : 'ISABI Cloud AI + Ledger Grounding' };
-          }
-        }
-      } catch (_) {
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-
-    // 2. Fallback Cloud JSON LLM
-    const ctrl2 = new AbortController();
-    const timer2 = setTimeout(() => ctrl2.abort(), 4500);
-    try {
-      const res2 = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai-fast',
-          temperature: 0.1,
-          messages: [
-            { role: 'system', content: sysPrompt },
-            { role: 'user', content: userMsg }
-          ]
-        }),
-        signal: ctrl2.signal
-      });
-      if (res2.ok) {
-        const j2 = await res2.json();
-        const content = j2 && j2.choices && j2.choices[0] && j2.choices[0].message && j2.choices[0].message.content;
-        const parsed2 = extractJsonBlock(content);
-        if (parsed2 && typeof parsed2 === 'object') {
-          return { parsed: parsed2, engine: 'ISABI Cloud AI + Ledger Grounding' };
-        }
-      }
-    } catch (_) {
-    } finally {
-      clearTimeout(timer2);
-    }
     return null;
   }
 

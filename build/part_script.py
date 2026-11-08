@@ -6,8 +6,6 @@ JS = r"""
 
   const WA_NUMBER = '96170444955';
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
-  const ASK_FLOW_U_B64 = '__ASK_FLOW_U_B64__';
-  const ASK_FLOW_K_B64 = '__ASK_FLOW_K_B64__';
   const SEC_IDS = ['architecture', 'industries', 'sandbox', 'ingenuity', 'pricing', 'portal'];
   const NOW = new Date();
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -3451,62 +3449,6 @@ JS = r"""
         }),
         keepalive: true
       }).catch(() => {});
-      return;
-    }
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      flowUrl = atob(ASK_FLOW_U_B64);
-      flowKey = atob(ASK_FLOW_K_B64);
-    } catch (e) {
-      return;
-    }
-    if (!flowUrl || !flowUrl.startsWith('http')) return;
-    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-    fetch(flowUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        key: flowKey,
-        op: 'log',
-        surface: 'showcase',
-        mode: 'instant_local',
-        q: cleanQ,
-        lang: lang,
-        industry: state.sboxInd || 'holding',
-        currency: state.sboxCurr || 'USD',
-        period: state.sboxPeriod || 'mtd',
-        scale: cfg.scale || '',
-        range: cfg.range || '',
-        replyTitle: replyTitle || ''
-      })
-    }).catch(() => {});
-  }
-
-  async function callDirectClientLlm(messages, cleanQ, lang, fallbackResp) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 9500);
-    try {
-      const res = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai-fast',
-          reasoning_effort: 'low',
-          response_format: { type: 'json_object' },
-          messages: messages
-        }),
-        signal: ctrl.signal
-      });
-      clearTimeout(timer);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const raw = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      if (raw) return parseCloudAiReply(raw, cleanQ, lang, fallbackResp);
-      return null;
-    } catch (e) {
-      clearTimeout(timer);
-      return null;
     }
   }
 
@@ -3685,13 +3627,7 @@ JS = r"""
     };
 
     const audioEl = typeof Audio !== 'undefined' ? new Audio() : null;
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      flowUrl = atob(ASK_FLOW_U_B64);
-      flowKey = atob(ASK_FLOW_K_B64);
-    } catch (_) {}
-    if (!audioEl || (!window.ISABI_HAS_EDGE_API && (!flowUrl || !flowUrl.startsWith('http')))) {
+    if (!audioEl || !window.ISABI_HAS_EDGE_API) {
       runFallback();
       return;
     }
@@ -3724,50 +3660,17 @@ JS = r"""
 
     // Pure spoken script only: zero tone stage-direction prefix so TTS never reads prompt instructions out loud
     const ttsTextSlice = plain.slice(0, 1850);
-    const requestTtsJson = () => {
-      if (window.ISABI_HAS_EDGE_API) {
-        return fetch('./api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'gemini-3.8-flash-lite-tts',
-            voiceName,
-            lang: safeLang,
-            text: ttsTextSlice
-          }),
-          signal: ctrl.signal
-        }).then(r => r.ok ? r.json() : null).then(jEdge => {
-          if (jEdge && jEdge.ok && jEdge.audioBase64) return jEdge;
-          if (!flowUrl || !flowUrl.startsWith('http')) return null;
-          return fetch(flowUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-            body: JSON.stringify({
-              key: flowKey,
-              op: 'tts',
-              model: 'gemini-3.8-flash-lite-tts',
-              voiceName,
-              lang: safeLang,
-              text: ttsTextSlice
-            }),
-            signal: ctrl.signal
-          }).then(r2 => r2.ok ? r2.json() : null);
-        });
-      }
-      return fetch(flowUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: JSON.stringify({
-          key: flowKey,
-          op: 'tts',
-          model: 'gemini-3.8-flash-lite-tts',
-          voiceName,
-          lang: safeLang,
-          text: ttsTextSlice
-        }),
-        signal: ctrl.signal
-      }).then(r => r.ok ? r.json() : null);
-    };
+    const requestTtsJson = () => fetch('./api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.8-flash-lite-tts',
+        voiceName,
+        lang: safeLang,
+        text: ttsTextSlice
+      }),
+      signal: ctrl.signal
+    }).then(r => r.ok ? r.json() : null).then(jEdge => (jEdge && jEdge.ok && jEdge.audioBase64 ? jEdge : null));
     requestTtsJson().then(j => {
       clearTimeout(timer);
       if (ctrl.signal.aborted) return;
@@ -3864,63 +3767,6 @@ JS = r"""
         clearTimeout(timerEdge);
       }
     }
-
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      flowUrl = atob(ASK_FLOW_U_B64);
-      flowKey = atob(ASK_FLOW_K_B64);
-    } catch (e) {
-      flowUrl = '';
-    }
-
-    if (flowUrl && flowUrl.startsWith('http')) {
-      const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-      const reqBody = {
-        key: flowKey,
-        op: 'ask',
-        surface: 'showcase',
-        q: cleanQ,
-        lang: lang,
-        industry: state.sboxInd || 'holding',
-        currency: state.sboxCurr || 'USD',
-        period: state.sboxPeriod || 'mtd',
-        scale: cfg.scale || '',
-        range: cfg.range || '',
-        replyTitle: fallbackResp.title || '',
-        model: targetModel,
-        systemPrompt: buildGeminiSystemPrompt(lang, hasAudio),
-        userPrompt: buildGeminiUserPrompt(cleanQ),
-        geminiContents: geminiContents,
-        messages: messages
-      };
-      if (deepQuery) reqBody.thinkingBudget = 512;
-
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), deepQuery ? 13500 : 10000);
-      try {
-        const res = await fetch(flowUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify(reqBody),
-          signal: ctrl.signal
-        });
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.mode === 'gemini_cloud' && data.rawReply) {
-            const parsed = parseCloudAiReply(data.rawReply, cleanQ, lang, fallbackResp);
-            if (parsed) return parsed;
-          }
-        }
-      } catch (e) {
-        clearTimeout(timer);
-      }
-    }
-
-    // Lane 2: Direct browser client-IP completion (separate IP window from server flow)
-    const directParsed = await callDirectClientLlm(messages, cleanQ, lang, fallbackResp);
-    if (directParsed) return directParsed;
     return fallbackResp;
   }
 
@@ -5389,12 +5235,9 @@ __SHOWCASE_I18N_JS__
 """
 
 import json  # noqa: E402
-from part_endpoints import ASK_FLOW_U_B64, ASK_FLOW_K_B64  # noqa: E402
 from part_icons import ICONS  # noqa: E402
 from part_i18n import SHOWCASE_I18N_JS  # noqa: E402
 JS = (
-    JS.replace('__ASK_FLOW_U_B64__', ASK_FLOW_U_B64)
-    .replace('__ASK_FLOW_K_B64__', ASK_FLOW_K_B64)
-    .replace('__ICONS_JSON__', json.dumps(ICONS))
+    JS.replace('__ICONS_JSON__', json.dumps(ICONS))
     .replace('__SHOWCASE_I18N_JS__', SHOWCASE_I18N_JS)
 )

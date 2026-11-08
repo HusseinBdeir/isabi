@@ -265,6 +265,11 @@ async function main() {
     // 9. Cross-Network Phone QR Scan via D1 + R2 (`/app/api/phone-scan`)
     const psSid = 'ps' + Date.now();
     const psTok = 'tok' + Math.random().toString(36).slice(2, 10);
+    await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid,
+      k: psTok,
+      status: 'waiting'
+    }, { 'X-ISABI-Session': ownerToken });
     const psPush = await httpReq('POST', '/app/api/phone-scan', {
       sid: psSid,
       k: psTok,
@@ -404,7 +409,23 @@ async function main() {
       const sig = b64u(crypto.createHmac('sha256', jwtSecret).update(`${hdr}.${pld}`).digest());
       return `${hdr}.${pld}.${sig}`;
     };
-    const emptyCoToken = mintTestJwt({ sub: 'u-empty-rls', email: 'empty@bhfirms.com', role: 'Entry', companies: '' });
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-empty-rls',
+        email: 'empty@bhfirms.com',
+        full_name: 'Empty Scope Seat',
+        role: 'Entry',
+        companies: '',
+        pin_code: '4919',
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const emptyCoLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'empty@bhfirms.com',
+      pin: '4919',
+      method: 'PIN'
+    });
+    const emptyCoToken = String(emptyCoLogin.json?.token || '');
     const wtcLower = await httpReq('GET', '/app/api/records?table=sales_tickets&company=wtc&limit=5', null, { 'X-ISABI-Session': entryToken });
     const wtcCanon = await httpReq('GET', '/app/api/records?table=sales_tickets&company=WTC&limit=5', null, { 'X-ISABI-Session': entryToken });
     const mfgGrpEntry = await httpReq('GET', '/app/api/records?table=sales_tickets&company=manufacturing-group&limit=10', null, { 'X-ISABI-Session': entryToken });
@@ -647,6 +668,38 @@ try:
     m_tie = eds.merge_mfg_web_stores(d_new, d_old)
     pr_map = {r["id"]: r for r in m_tie["customRecords"]["price_rules"]}
     assert "pr0" not in pr_map and pr_map["pr-tie"]["end_date"] == "2026-10-31", f"tie/purge failed: {pr_map}"
+
+    # Run 6 (Adversarial): Duplicate-email Edge+Relay seats preserve D1 authoritative ID/Suspended status/PIN/FaceID & multi-chunk tail DELETE executes last
+    d1_sim = sqlite3.connect(str(tmp / "d1_sim.db"))
+    d1_sim.executescript(eds.SCHEMA_SQL.read_text(encoding="utf-8"))
+    d1_sim.execute("INSERT INTO users (id, full_name, email, pin_code, role, companies, status, face_samples, face_updated_at, seat_updated_at) VALUES ('u1', 'Owner', 'husseinbdeir@bhfirms.com', '9876', 'Full Access (Owner)', 'All', 'Active', '[[0.9,0.8]]', '2026-11-08T12:00:00Z', '2026-11-08T12:00:00Z')")
+    d1_sim.execute("INSERT INTO users (id, full_name, email, pin_code, role, companies, status, face_samples, face_updated_at, seat_updated_at) VALUES ('u-edge-1', 'Ops Seat', 'ops@bhfirms.com', '4321', 'Entry', 'WTC', 'Suspended', '[[0.5,0.5]]', '2026-11-08T12:05:00Z', '2026-11-08T12:30:00Z')")
+    d1_sim.execute("INSERT INTO edge_kv_store (doc_key, payload_json, updated_at) VALUES ('mfg_web_store__part_0005', 'stale', '2026-10-01')")
+    d1_sim.commit()
+    m_users = eds.merge_mfg_web_stores(
+        {"updatedAt": "2026-11-08T12:15:00Z", "users": [
+            {"id": "u1", "_d1_authoritative_id": True, "full_name": "Owner", "email": "husseinbdeir@bhfirms.com", "pin_code": "9876", "role": "Full Access (Owner)", "companies": "All", "status": "Active", "face_redacted": True, "face_enrolled": True, "face_updated_at": "2026-11-08T12:00:00Z", "seat_updated_at": "2026-11-08T12:00:00Z"},
+            {"id": "u-edge-1", "_d1_authoritative_id": True, "full_name": "Ops Seat", "email": "ops@bhfirms.com", "pin_code": "4321", "role": "Entry", "companies": "WTC, BBConstruction", "status": "Active", "face_redacted": True, "face_thumbs": ["data:image/jpeg;base64,AAA"], "face_updated_at": "2026-11-08T12:05:00Z", "seat_updated_at": "2026-11-08T12:10:00Z"},
+        ], "customRecords": {"expenses": [{"id": f"exp-pad-{i}", "company": "WTC", "notes": "X" * 900} for i in range(45)]}},
+        {"updatedAt": "2026-11-08T12:12:00Z", "users": [
+            {"id": "u-hussein", "full_name": "Owner", "email": "husseinbdeir@bhfirms.com", "pin_redacted": True, "role": "Entry", "seat_updated_at": "", "last_login_at": "2026-11-08 14:00:00"},
+            {"id": "u-relay-9", "full_name": "Ops Seat", "email": "ops@bhfirms.com", "pin_redacted": True, "role": "Supervisor", "seat_updated_at": "", "last_login_at": "2026-11-08 14:05:00"},
+        ]}
+    )
+    assert len(m_users["users"]) == 2
+    eds.fetch_live_cloud_store = lambda offline=False: m_users
+    files6, _ = eds.export_all(delta=False, offline=True, manifest_path=tmp / "m6.json", db_path=dbp, out_dir=tmp / "b6", include_snapshot=False)
+    sql6 = "\\n".join(bf.read_text(encoding="utf-8") for bf in files6)
+    assert sql6.find("DELETE FROM edge_kv_store WHERE doc_key LIKE 'mfg_web_store__part_%'") > sql6.find("'mfg_web_store__part_0001'") > 0
+    for bf in files6:
+        d1_sim.executescript(bf.read_text(encoding="utf-8"))
+    d1_sim.commit()
+    r_u1 = d1_sim.execute("SELECT id, pin_code, role, face_samples, last_login_at FROM users WHERE email='husseinbdeir@bhfirms.com'").fetchone()
+    r_op = d1_sim.execute("SELECT id, pin_code, status, companies, face_samples FROM users WHERE email='ops@bhfirms.com'").fetchone()
+    stale_cnt = d1_sim.execute("SELECT COUNT(*) FROM edge_kv_store WHERE doc_key='mfg_web_store__part_0005'").fetchone()[0]
+    d1_sim.close()
+    assert r_u1 == ("u1", "9876", "Full Access (Owner)", "[[0.9,0.8]]", "2026-11-08 14:00:00"), f"u1: {r_u1}"
+    assert r_op == ("u-edge-1", "4321", "Suspended", "WTC", "[[0.5,0.5]]") and stale_cnt == 0, f"ops: {r_op}, stale={stale_cnt}"
     print("PY_DELTA_MERGE_OK")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
@@ -700,7 +753,12 @@ finally:
     }, { 'X-ISABI-Session': entryToken });
     const usersAfterSelf = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const sabahAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
-    const bbcSupToken = mintTestJwt({ sub: 'u7', email: 'site.bbc@bhfirms.com', role: 'Supervisor', companies: 'BBConstruction' });
+    const bbcSupLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'site.bbc@bhfirms.com',
+      pin: '6666',
+      method: 'PIN'
+    });
+    const bbcSupToken = String(bbcSupLogin.json?.token || '');
     const supEditOwner = await httpReq('POST', '/app/api/users', {
       user: { id: 'u1', email: 'husseinbdeir@bhfirms.com', full_name: 'Hussein Bdeir', role: 'Full Access (Owner)', companies: 'All' }
     }, { 'X-ISABI-Session': bbcSupToken });
@@ -850,7 +908,11 @@ finally:
       table: 'expenses',
       record: { id: 'demo-write-blocked', company: 'WTC', amount: 99 }
     }, { 'X-ISABI-Demo': '1' });
-    const demoAskAllowed = await httpReq('POST', '/app/api/ask', { prompt: 'ping' }, { 'X-ISABI-Demo': '1' });
+    const demoAskAllowed = await httpReq('POST', '/app/api/ask', { prompt: 'ping' }, {
+      'X-ISABI-Demo': '1',
+      'Origin': `http://127.0.0.1:${PORT}`
+    });
+    const demoAskNoOriginBlocked = await httpReq('POST', '/app/api/ask', { prompt: 'ping' }, { 'X-ISABI-Demo': '1' });
     const demoUnauthAskBlocked = await httpReq('POST', '/app/api/ask', { prompt: 'ping' });
     const browserDemoCheck = await evalJs(`(async () => {
       const r = await window.ISABI_EDGE_FETCH('./api/auth/login', {
@@ -953,6 +1015,7 @@ finally:
       (demoUnauthWrite.status === 401 || demoUnauthWrite.status === 403) &&
       demoAskAllowed.status !== 401 &&
       demoAskAllowed.status !== 403 &&
+      demoAskNoOriginBlocked.status === 403 &&
       demoUnauthAskBlocked.status === 401 &&
       browserDemoCheck?.isDemoFn === true &&
       browserDemoCheck?.demoQuarantined === true &&
@@ -1118,8 +1181,10 @@ finally:
       !(srAfterDel.json?.reviews && srAfterDel.json.reviews['sr-r3-wtc-del']) &&
       mirroredBothSeat?.pbi_access === 'ops_only' &&
       mirroredBothSeat?.pin_code === '8520' &&
-      Array.isArray(mirroredBothSeat?.face_samples) &&
-      mirroredBothSeat.face_samples.length === 1 &&
+      mirroredBothSeat?.face_enrolled === true &&
+      mirroredBothSeat?.face_sample_count === 1 &&
+      mirroredBothSeat?.face_redacted === true &&
+      mirroredBothSeat?.face_samples === undefined &&
       unauthFaceSeat?.face_enrolled === true &&
       unauthFaceSeat?.face_redacted === true &&
       unauthFaceSeat?.face_samples === undefined &&
@@ -1186,7 +1251,9 @@ finally:
       pinPlusRightFace.status === 200 &&
       wtcSupCoworker?.pin_code === undefined &&
       wtcSupCoworker?.pin_redacted === true &&
-      Array.isArray(wtcSupCoworker?.face_samples) &&
+      wtcSupCoworker?.face_enrolled === true &&
+      wtcSupCoworker?.face_redacted === true &&
+      wtcSupCoworker?.face_samples === undefined &&
       wtcSupSyncCoworker?.pin_code === undefined &&
       wtcSupSyncCoworker?.pin_redacted === true &&
       wtcSupPinTamper.status === 200 &&
@@ -1194,14 +1261,442 @@ finally:
     ) {
       pass(
         'edge-21-pin-plus-face2fa-enforcement-and-supervisor-pin-isolation',
-        'PIN+Face 2FA blocks wrong & coworker faces (401), Supervisor sees pin_redacted=true & cannot overwrite coworker PIN (7412 preserved)'
+        'PIN+Face 2FA blocks wrong & coworker faces (401), Supervisor sees pin_redacted=true & face_redacted=true & cannot overwrite coworker PIN (7412 preserved)'
       );
     } else {
       fail('edge-21-pin-plus-face2fa-enforcement-and-supervisor-pin-isolation', JSON.stringify({
         twoFa: [pinPlusWrongFace.status, pinPlusCoworkerFace.status, pinPlusRightFace.status],
-        supGet: [wtcSupCoworker?.pin_code, wtcSupCoworker?.pin_redacted, Array.isArray(wtcSupCoworker?.face_samples)],
+        supGet: [wtcSupCoworker?.pin_code, wtcSupCoworker?.pin_redacted, wtcSupCoworker?.face_redacted, wtcSupCoworker?.face_samples],
         supSync: [wtcSupSyncCoworker?.pin_code, wtcSupSyncCoworker?.pin_redacted],
         afterTamperPin: faceSeatAfterSup?.pin_code
+      }));
+    }
+
+    // 22. C1 + L1: Block `GET /app/api/records?table=users`, Zero Raw `face_samples` in All HTTP Responses, Cold `verify_only` Face Check, & Server-Side Logout Revocation
+    const entryUsersTableLeak = await httpReq('GET', '/app/api/records?table=users', null, { 'X-ISABI-Session': entryToken });
+    const ownerUsersTableLeak = await httpReq('GET', '/app/api/records?table=users', null, { 'X-ISABI-Session': ownerToken });
+    const ownerUsers22 = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
+    const ownerSync22 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const anyRawFaceUsers = (ownerUsers22.json?.users || []).some(u => Array.isArray(u && u.face_samples));
+    const anyRawFaceSync = (ownerSync22.json?.docs?.mfg_web_store?.users || []).some(u => Array.isArray(u && u.face_samples));
+    const verifyOnlyFace = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      face_descriptor: vecNear
+    });
+    const logoutLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'sabahkassab@bhfirms.com',
+      pin: '3333',
+      method: 'PIN'
+    });
+    const revocableTok = String(logoutLogin.json?.token || '');
+    const preLogoutGet = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=2', null, { 'X-ISABI-Session': revocableTok });
+    const doLogoutRes = await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': revocableTok });
+    const postLogoutReplay = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=2', null, { 'X-ISABI-Session': revocableTok });
+    if (
+      entryUsersTableLeak.status === 403 &&
+      ownerUsersTableLeak.status === 403 &&
+      !anyRawFaceUsers &&
+      !anyRawFaceSync &&
+      verifyOnlyFace.status === 200 &&
+      verifyOnlyFace.json?.verify_only === true &&
+      !verifyOnlyFace.json?.token &&
+      !verifyOnlyFace.headers['set-cookie'] &&
+      preLogoutGet.status === 200 &&
+      doLogoutRes.status === 200 &&
+      postLogoutReplay.status === 401
+    ) {
+      pass(
+        'edge-22-users-table-block-biometric-redaction-and-logout-revocation',
+        'records?table=users=403, 0 raw face_samples over HTTP, verify_only=200 (no cookie/JWT), replayed JWT after logout=401'
+      );
+    } else {
+      fail('edge-22-users-table-block-biometric-redaction-and-logout-revocation', JSON.stringify({
+        tbl: [entryUsersTableLeak.status, ownerUsersTableLeak.status],
+        rawFace: [anyRawFaceUsers, anyRawFaceSync],
+        verifyOnly: [verifyOnlyFace.status, verifyOnlyFace.json?.verify_only, Boolean(verifyOnlyFace.json?.token), Boolean(verifyOnlyFace.headers['set-cookie'])],
+        logout: [preLogoutGet.status, doLogoutRes.status, postLogoutReplay.status]
+      }));
+    }
+
+    // 23. H1 + M1: Single-BU Supervisor RLS on `geo_config.companyHubs`, `work_schedules` (`{ op, work_schedules }` envelope), & `alert_rules`
+    const bbcGeoCrossHub = await httpReq('POST', '/app/api/geo_config', {
+      config: {
+        companyHubs: {
+          wtc: { lat: 33.01, lng: 35.01, updated_at: '2026-11-08T16:00:00.000Z' }
+        }
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const bbcWsGlobalPolicy = await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_policy_group',
+      work_schedules: {
+        shiftTypes: [],
+        policyGroups: [{ id: 'pkg_tamper', name: 'Tampered Global Policy', updated_at: '2026-11-08T16:00:00.000Z' }],
+        companyPolicyDefaults: {},
+        staffRules: {}
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const bbcWsCrossShift = await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_shift',
+      work_schedules: {
+        shiftTypes: [{ id: 'shf_wtc_tamper', company: 'WTC', name: 'Cross-BU Shift', updated_at: '2026-11-08T16:00:00.000Z' }],
+        policyGroups: [],
+        companyPolicyDefaults: {},
+        staffRules: {}
+      }
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const ownerWsEnvelope = await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_shift',
+      id: 'shf_owner_ok',
+      work_schedules: {
+        shiftTypes: [{ id: 'shf_owner_ok', company: 'WTC', name: 'Owner Valid Shift', start_time: '07:00', end_time: '15:00', updated_at: '2026-11-08T16:01:00.000Z' }],
+        policyGroups: [{ id: 'pkg_owner_ok', name: 'Owner Policy', updated_at: '2026-11-08T16:01:00.000Z' }],
+        companyPolicyDefaults: { WTC: { policy_group_id: 'pkg_owner_ok', updated_at: '2026-11-08T16:01:00.000Z' } },
+        staffRules: {}
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const ownerWsRead = await httpReq('GET', '/app/api/work_schedules', null, { 'X-ISABI-Session': ownerToken });
+    const wsSaved = ownerWsRead.json?.work_schedules || {};
+    const bbcArGlobalOverride = await httpReq('POST', '/app/api/alert_rules', {
+      overrides: { 'mfg.margin_drop': { enabled: false, updated_at: '2026-11-08T16:02:00.000Z' } },
+      custom: []
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const bbcArCrossCustom = await httpReq('POST', '/app/api/alert_rules', {
+      overrides: {},
+      custom: [{ id: 'ar-wtc-tamper', company: 'WTC', title: 'Unauthorized WTC Rule', updated_at: '2026-11-08T16:02:00.000Z' }]
+    }, { 'X-ISABI-Session': bbcSupToken });
+    const bbcArOwnCustom = await httpReq('POST', '/app/api/alert_rules', {
+      overrides: {},
+      custom: [{ id: 'ar-bbc-ok', company: 'BBConstruction', title: 'Valid BBC Rule', updated_at: '2026-11-08T16:02:00.000Z' }]
+    }, { 'X-ISABI-Session': bbcSupToken });
+    if (
+      bbcGeoCrossHub.status === 403 &&
+      bbcWsGlobalPolicy.status === 403 &&
+      bbcWsCrossShift.status === 403 &&
+      ownerWsEnvelope.status === 200 &&
+      !wsSaved.op &&
+      Array.isArray(wsSaved.shiftTypes) &&
+      wsSaved.shiftTypes.some(s => s && s.id === 'shf_owner_ok') &&
+      Array.isArray(wsSaved.policyGroups) &&
+      wsSaved.policyGroups.some(g => g && g.id === 'pkg_owner_ok') &&
+      bbcArGlobalOverride.status === 403 &&
+      bbcArCrossCustom.status === 403 &&
+      bbcArOwnCustom.status === 200
+    ) {
+      pass(
+        'edge-23-supervisor-rls-on-geoconfig-workschedules-and-alertrules',
+        'Cross-BU companyHubs=403, global/cross-BU work_schedules=403, {op,work_schedules} envelope unwrapped cleanly, cross-BU/global alert_rules=403'
+      );
+    } else {
+      fail('edge-23-supervisor-rls-on-geoconfig-workschedules-and-alertrules', JSON.stringify({
+        geo: bbcGeoCrossHub.status,
+        ws: [bbcWsGlobalPolicy.status, bbcWsCrossShift.status, ownerWsEnvelope.status, Boolean(wsSaved.op), (wsSaved.shiftTypes || []).length, (wsSaved.policyGroups || []).length],
+        ar: [bbcArGlobalOverride.status, bbcArCrossCustom.status, bbcArOwnCustom.status]
+      }));
+    }
+
+    // 24. H2 + M3: Phone-Scan Unauthenticated `sid` Block + Companion Upload Cap (`413`) + Injective R2 Key (`att/1` vs `att_1`) & DELETE Symmetry
+    const psSid24 = 'pssec_' + Date.now();
+    const psTok24 = 'pstok_' + Date.now();
+    const unauthNewSid = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid24,
+      k: psTok24,
+      pages: [{ id: 'rogue1', mimeType: 'image/png', dataUrl: tinyPngDataUrl }]
+    });
+    const authedInitSid = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid24,
+      k: psTok24,
+      status: 'waiting'
+    }, { 'X-ISABI-Session': ownerToken });
+    const companionValidPush = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid24,
+      k: psTok24,
+      pages: [{ id: 'page1', mimeType: 'image/png', dataUrl: tinyPngDataUrl }]
+    });
+    const oversizedPageUrl = 'data:image/jpeg;base64,' + 'A'.repeat(5_700_000);
+    const companionOversized = await httpReq('POST', '/app/api/phone-scan', {
+      sid: psSid24,
+      k: psTok24,
+      pages: [{ id: 'huge1', mimeType: 'image/jpeg', dataUrl: oversizedPageUrl }]
+    });
+    const blobSlashId = `att/${Date.now()}`;
+    const blobUnderId = blobSlashId.replace('/', '_');
+    const dataUrlA = 'data:text/plain;base64,' + Buffer.from('payload-slash-A').toString('base64');
+    const dataUrlB = 'data:text/plain;base64,' + Buffer.from('payload-under-B').toString('base64');
+    await httpReq('POST', '/app/api/blobs', { id: blobSlashId, company: 'WTC', dataUrl: dataUrlA }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/blobs', { id: blobUnderId, company: 'WTC', dataUrl: dataUrlB }, { 'X-ISABI-Session': ownerToken });
+    const getSlashBefore = await httpReq('GET', `/app/api/blobs?id=${encodeURIComponent(blobSlashId)}`, null, { 'X-ISABI-Session': ownerToken });
+    const getUnderBefore = await httpReq('GET', `/app/api/blobs?id=${encodeURIComponent(blobUnderId)}`, null, { 'X-ISABI-Session': ownerToken });
+    const delSlashRes = await httpReq('DELETE', `/app/api/blobs?id=${encodeURIComponent(blobSlashId)}`, null, { 'X-ISABI-Session': ownerToken });
+    const getSlashAfter = await httpReq('GET', `/app/api/blobs?id=${encodeURIComponent(blobSlashId)}`, null, { 'X-ISABI-Session': ownerToken });
+    const getUnderAfter = await httpReq('GET', `/app/api/blobs?id=${encodeURIComponent(blobUnderId)}`, null, { 'X-ISABI-Session': ownerToken });
+    if (
+      unauthNewSid.status === 401 &&
+      authedInitSid.status === 200 &&
+      companionValidPush.status === 200 &&
+      companionOversized.status === 413 &&
+      getSlashBefore.json?.dataUrl === dataUrlA &&
+      getUnderBefore.json?.dataUrl === dataUrlB &&
+      delSlashRes.status === 200 &&
+      getSlashAfter.json?.found === false &&
+      getUnderAfter.json?.found === true &&
+      getUnderAfter.json?.dataUrl === dataUrlB
+    ) {
+      pass(
+        'edge-24-phonescan-auth-quota-and-injective-r2-blob-delete-symmetry',
+        'Unauth new sid=401, companion push=200, >4MB page=413, att/X vs att_X collision-free & DELETE purges only target R2 key'
+      );
+    } else {
+      fail('edge-24-phonescan-auth-quota-and-injective-r2-blob-delete-symmetry', JSON.stringify({
+        ps: [unauthNewSid.status, authedInitSid.status, companionValidPush.status, companionOversized.status],
+        blobs: [getSlashBefore.json?.dataUrl === dataUrlA, getUnderBefore.json?.dataUrl === dataUrlB, delSlashRes.status, getSlashAfter.json?.found, getUnderAfter.json?.found]
+      }));
+    }
+
+    // 25. H3 + C2: Browser Demo Sandbox `localStorage` & Session Token Isolation + Zero External Relay Config
+    await evalJs(`(() => {
+      localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify({ expenses: [{ id: 'prod-real-row', amount: 12345 }] }));
+      localStorage.setItem('isabi_mfg_edge_sess_tok_v1', 'prod-real-jwt-sentinel');
+      localStorage.setItem('isabi_mfg_last_seat', 'husseinbdeir@bhfirms.com');
+      return true;
+    })()`);
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/?demo=1&autologin=1` });
+    for (let i = 0; i < 30; i++) {
+      const rdy = await evalJs(`Boolean(window.MFG_SEED && window.MFG_SEED._recordsReady && document.querySelector('#workspace'))`);
+      if (rdy) break;
+      await sleep(300);
+    }
+    await sleep(600);
+    const demoIsolationProbe = await evalJs(`(() => {
+      const prodRecsBefore = localStorage.getItem('isabi_mfg_custom_recs_v2');
+      const prodTokBefore = localStorage.getItem('isabi_mfg_edge_sess_tok_v1');
+      // Trigger a Demo Sandbox state save + signOut click
+      if (window.GEO_DISPATCH && typeof window.GEO_DISPATCH.persistHubPin === 'function') {
+        window.GEO_DISPATCH.persistHubPin('wtc', 33.88, 35.51, 'Demo Hub Move');
+      }
+      const signOutBtn = document.getElementById('signOutBtn');
+      if (signOutBtn) signOutBtn.click();
+      return {
+        isDemo: Boolean(window.__ISABI_IS_DEMO && window.__ISABI_IS_DEMO()),
+        cloudCfgU: window.MFG_CLOUD_CFG && window.MFG_CLOUD_CFG.u,
+        askCfgU: window.MFG_ASK_CFG && window.MFG_ASK_CFG.u,
+        prodRecsBefore,
+        prodRecsAfter: localStorage.getItem('isabi_mfg_custom_recs_v2'),
+        prodTokAfter: localStorage.getItem('isabi_mfg_edge_sess_tok_v1'),
+        prodLastSeatAfter: localStorage.getItem('isabi_mfg_last_seat'),
+        prodGeoHubs: localStorage.getItem('isabi_mfg_geo_hubs_v1')
+      };
+    })()`);
+    if (
+      demoIsolationProbe?.isDemo === true &&
+      !demoIsolationProbe?.cloudCfgU &&
+      !demoIsolationProbe?.askCfgU &&
+      demoIsolationProbe?.prodRecsAfter === JSON.stringify({ expenses: [{ id: 'prod-real-row', amount: 12345 }] }) &&
+      demoIsolationProbe?.prodTokAfter === 'prod-real-jwt-sentinel' &&
+      demoIsolationProbe?.prodLastSeatAfter === 'husseinbdeir@bhfirms.com' &&
+      demoIsolationProbe?.prodGeoHubs === null
+    ) {
+      pass(
+        'edge-25-demo-sandbox-localstorage-isolation-and-zero-relay-config',
+        'Demo Sandbox writes strictly to sessionStorage, signOut preserves real JWT & localStorage, MFG_CLOUD_CFG/MFG_ASK_CFG zeroed'
+      );
+    } else {
+      fail('edge-25-demo-sandbox-localstorage-isolation-and-zero-relay-config', JSON.stringify(demoIsolationProbe));
+    }
+
+    // 26. H-NEW-1: Fail-Closed `verifyActiveEdgeSession` on Logged-Out Owner Impersonation, `sid`-Less JWTs, & Suspended Seats
+    const tempOwnerLogin26 = await httpReq('POST', '/app/api/auth/login', {
+      email: 'husseinbdeir@bhfirms.com',
+      pin: '1111',
+      method: 'PIN'
+    });
+    const tempOwnerTok26 = String(tempOwnerLogin26.json?.token || '');
+    const impersBeforeLogout = await httpReq('POST', '/app/api/auth/login', {
+      email: 'sabahkassab@bhfirms.com',
+      method: 'Owner Impersonation'
+    }, { 'X-ISABI-Session': tempOwnerTok26 });
+    await httpReq('POST', '/app/api/auth/logout', {}, { 'X-ISABI-Session': tempOwnerTok26 });
+    const impersAfterLogout = await httpReq('POST', '/app/api/auth/login', {
+      email: 'sabahkassab@bhfirms.com',
+      method: 'Owner Impersonation'
+    }, { 'X-ISABI-Session': tempOwnerTok26 });
+    const sidlessOwnerTok = mintTestJwt({
+      sub: 'u1',
+      email: 'husseinbdeir@bhfirms.com',
+      role: 'Full Access (Owner)',
+      companies: 'All'
+    });
+    const sidlessRecsRes = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=1', null, {
+      'X-ISABI-Session': sidlessOwnerTok
+    });
+    const sidlessImpersRes = await httpReq('POST', '/app/api/auth/login', {
+      email: 'sabahkassab@bhfirms.com',
+      method: 'Owner Impersonation'
+    }, { 'X-ISABI-Session': sidlessOwnerTok });
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-suspend-26',
+        email: 'suspend26@bhfirms.com',
+        full_name: 'Suspend Test Seat',
+        role: 'Supervisor',
+        companies: 'WTC',
+        pin_code: '5151',
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const suspLogin26 = await httpReq('POST', '/app/api/auth/login', {
+      email: 'suspend26@bhfirms.com',
+      pin: '5151',
+      method: 'PIN'
+    });
+    const suspTok26 = String(suspLogin26.json?.token || '');
+    const suspBefore = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=1', null, { 'X-ISABI-Session': suspTok26 });
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-suspend-26',
+        email: 'suspend26@bhfirms.com',
+        full_name: 'Suspend Test Seat',
+        role: 'Supervisor',
+        companies: 'WTC',
+        pin_code: '5151',
+        status: 'Suspended'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const suspAfter = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=1', null, { 'X-ISABI-Session': suspTok26 });
+    if (
+      impersBeforeLogout.status === 200 &&
+      Boolean(impersBeforeLogout.json?.token) &&
+      impersAfterLogout.status === 401 &&
+      !impersAfterLogout.json?.token &&
+      sidlessRecsRes.status === 401 &&
+      sidlessImpersRes.status === 401 &&
+      suspBefore.status === 200 &&
+      suspAfter.status === 401
+    ) {
+      pass(
+        'edge-26-failclosed-active-session-impersonation-sidless-and-suspended',
+        'Logged-out Owner Impersonation=401, sid-less Owner JWT=401, newly Suspended seat immediately revoked=401'
+      );
+    } else {
+      fail('edge-26-failclosed-active-session-impersonation-sidless-and-suspended', JSON.stringify({
+        impersBefore: impersBeforeLogout.status,
+        impersAfter: impersAfterLogout.status,
+        sidlessRecs: sidlessRecsRes.status,
+        sidlessImpers: sidlessImpersRes.status,
+        susp: [suspBefore.status, suspAfter.status]
+      }));
+    }
+
+    // 27. H-NEW-2 + M-NEW-1 + M-NEW-2: Sub-Store Split-Brain Prevention, Read-Side RLS, & Timestamp Merge (`alert_rules` + `work_schedules` <-> `sync`)
+    const ts27a = '2026-11-08T17:00:00.000Z';
+    const ts27b = '2026-11-08T17:05:00.000Z';
+    const ts27c = '2026-11-08T17:10:00.000Z';
+    await httpReq('POST', '/app/api/alert_rules', {
+      overrides: {},
+      custom: [{ id: 'ar-bbc-27', company: 'BBConstruction', title: 'BBC Direct Rule 27', updated_at: ts27a }]
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_shift',
+      work_schedules: {
+        shiftTypes: [{ id: 'shf-bbc-27', company: 'BBConstruction', name: 'BBC Shift 27', start_time: '06:00', end_time: '14:00', updated_at: ts27a }],
+        policyGroups: [],
+        companyPolicyDefaults: { BBConstruction: { policy_group_id: 'pkg_owner_ok', updated_at: ts27a } },
+        staffRules: { ali_bbc_27: { company: 'BBConstruction', shift_id: 'shf-bbc-27', updated_at: ts27a } }
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    // WTC Supervisor reads `/app/api/alert_rules`, `/app/api/work_schedules`, and `/app/api/sync` (`get_mfg`) -> 0 BBC leaks
+    const wtcArGet27 = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': wtcSupTok });
+    const wtcWsGet27 = await httpReq('GET', '/app/api/work_schedules', null, { 'X-ISABI-Session': wtcSupTok });
+    const wtcSyncGet27a = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': wtcSupTok });
+    const wtcSyncDoc27a = wtcSyncGet27a.json?.docs?.mfg_web_store || {};
+    const leakArDirect = (wtcArGet27.json?.custom || []).some(c => c && c.company === 'BBConstruction');
+    const leakWsShiftDirect = (wtcWsGet27.json?.work_schedules?.shiftTypes || []).some(s => s && s.company === 'BBConstruction');
+    const leakWsRuleDirect = Boolean(wtcWsGet27.json?.work_schedules?.staffRules?.ali_bbc_27);
+    const leakWsDefDirect = Boolean(wtcWsGet27.json?.work_schedules?.companyPolicyDefaults?.BBConstruction);
+    const leakSyncAr = (wtcSyncDoc27a.alertRules?.custom || []).some(c => c && c.company === 'BBConstruction');
+    const leakSyncWs = (wtcSyncDoc27a.workSchedules?.shiftTypes || []).some(s => s && s.company === 'BBConstruction') || Boolean(wtcSyncDoc27a.workSchedules?.staffRules?.ali_bbc_27);
+
+    // WTC Supervisor posts read-scoped `work_schedules` adding WTC shift + rule -> merges cleanly without clobbering BBC
+    const wtcWsPayload27 = JSON.parse(JSON.stringify(wtcWsGet27.json?.work_schedules || { shiftTypes: [], policyGroups: [], companyPolicyDefaults: {}, staffRules: {} }));
+    wtcWsPayload27.shiftTypes = [...(wtcWsPayload27.shiftTypes || []), { id: 'shf-wtc-direct-27', company: 'WTC', name: 'WTC Direct Shift', start_time: '08:00', end_time: '16:00', updated_at: ts27b }];
+    wtcWsPayload27.staffRules = Object.assign({}, wtcWsPayload27.staffRules || {}, {
+      rami_wtc_27: { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27b }
+    });
+    const wtcWsPost27 = await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_shift',
+      work_schedules: wtcWsPayload27
+    }, { 'X-ISABI-Session': wtcSupTok });
+    // Adversarial: WTC Supervisor tries to spoof `company: 'WTC'` onto existing `ali_bbc_27` (`BBConstruction`) -> 403
+    const wtcSpoofBbcRule27 = await httpReq('POST', '/app/api/work_schedules', {
+      op: 'upsert_staff_rule',
+      work_schedules: {
+        shiftTypes: [],
+        policyGroups: [],
+        companyPolicyDefaults: {},
+        staffRules: { ali_bbc_27: { company: 'WTC', shift_id: 'shf-wtc-direct-27', updated_at: ts27c } }
+      }
+    }, { 'X-ISABI-Session': wtcSupTok });
+
+    // WTC Supervisor now runs `POST /app/api/sync` (`op: 'patch'`) adding `ar-wtc-sync-27` + `shf-wtc-sync-27` -> BBC entries MUST survive in SQL + KV!
+    const wtcSyncGet27b = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': wtcSupTok });
+    const wtcPushDoc27 = JSON.parse(JSON.stringify(wtcSyncGet27b.json?.docs?.mfg_web_store || {}));
+    wtcPushDoc27.updatedAt = new Date(Date.now() + 25000).toISOString();
+    wtcPushDoc27.alertRules = {
+      overrides: Object.assign({}, wtcPushDoc27.alertRules?.overrides || {}),
+      custom: [...(wtcPushDoc27.alertRules?.custom || []), { id: 'ar-wtc-sync-27', company: 'WTC', title: 'WTC Sync Rule 27', updated_at: ts27c }]
+    };
+    wtcPushDoc27.workSchedules = Object.assign({}, wtcPushDoc27.workSchedules || {}, {
+      shiftTypes: [...(wtcPushDoc27.workSchedules?.shiftTypes || []), { id: 'shf-wtc-sync-27', company: 'WTC', name: 'WTC Sync Shift 27', start_time: '09:00', end_time: '17:00', updated_at: ts27c }]
+    });
+    const wtcSyncPatch27 = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(wtcSyncGet27b.json?.docs?.mfg_web_store?.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: wtcPushDoc27 }
+    }, { 'X-ISABI-Session': wtcSupTok });
+
+    const ownerArAfter27 = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
+    const ownerWsAfter27 = await httpReq('GET', '/app/api/work_schedules', null, { 'X-ISABI-Session': ownerToken });
+    const ownerSyncAfter27 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const oaCust = ownerArAfter27.json?.custom || [];
+    const ows = ownerWsAfter27.json?.work_schedules || {};
+    const osDoc = ownerSyncAfter27.json?.docs?.mfg_web_store || {};
+    if (
+      !leakArDirect &&
+      !leakWsShiftDirect &&
+      !leakWsRuleDirect &&
+      !leakWsDefDirect &&
+      !leakSyncAr &&
+      !leakSyncWs &&
+      wtcWsPost27.status === 200 &&
+      wtcSpoofBbcRule27.status === 403 &&
+      wtcSyncPatch27.status === 200 &&
+      oaCust.some(c => c && c.id === 'ar-bbc-27') &&
+      oaCust.some(c => c && c.id === 'ar-wtc-sync-27') &&
+      (ows.shiftTypes || []).some(s => s && s.id === 'shf-bbc-27') &&
+      (ows.shiftTypes || []).some(s => s && s.id === 'shf-wtc-direct-27') &&
+      (ows.shiftTypes || []).some(s => s && s.id === 'shf-wtc-sync-27') &&
+      ows.staffRules?.ali_bbc_27?.company === 'BBConstruction' &&
+      ows.staffRules?.rami_wtc_27?.company === 'WTC' &&
+      Boolean(ows.companyPolicyDefaults?.BBConstruction) &&
+      (osDoc.alertRules?.custom || []).some(c => c && c.id === 'ar-bbc-27') &&
+      (osDoc.workSchedules?.shiftTypes || []).some(s => s && s.id === 'shf-bbc-27')
+    ) {
+      pass(
+        'edge-27-substore-sync-splitbrain-prevention-read-rls-and-ws-merge',
+        '0 cross-BU leaks on alert_rules/work_schedules/sync, spoofed BBC staffRule=403, WTC Supervisor sync + direct writes preserve BBC rules & shifts 100%'
+      );
+    } else {
+      fail('edge-27-substore-sync-splitbrain-prevention-read-rls-and-ws-merge', JSON.stringify({
+        leaks: [leakArDirect, leakWsShiftDirect, leakWsRuleDirect, leakWsDefDirect, leakSyncAr, leakSyncWs],
+        statuses: [wtcWsPost27.status, wtcSpoofBbcRule27.status, wtcSyncPatch27.status],
+        arIds: oaCust.map(c => c.id),
+        wsShifts: (ows.shiftTypes || []).map(s => s.id),
+        aliCo: ows.staffRules?.ali_bbc_27?.company,
+        ramiCo: ows.staffRules?.rami_wtc_27?.company,
+        bbcDef: Boolean(ows.companyPolicyDefaults?.BBConstruction)
       }));
     }
   } finally {

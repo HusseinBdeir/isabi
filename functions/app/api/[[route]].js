@@ -27,7 +27,15 @@ import {
   handleEdgeSmartScan,
   handleEdgeTts
 } from '../../_lib/gemini.js';
-import { applyEdgeCors, extractRequestSession, jsonResponse } from '../../_lib/security.js';
+import {
+  applyEdgeCors,
+  checkD1RateLimit,
+  extractRequestSession,
+  hashClientIp,
+  isSameOriginBrowserRequest,
+  jsonResponse,
+  verifyActiveEdgeSession
+} from '../../_lib/security.js';
 
 const DEMO_EMPTY_GET_ROUTES = new Set([
   '/sentinel_reviews',
@@ -38,13 +46,16 @@ const DEMO_EMPTY_GET_ROUTES = new Set([
   '/industry_domain_store'
 ]);
 
-async function parseBody(request) {
-  if (request.method === 'GET' || request.method === 'HEAD') return {};
+const DEMO_AI_MAX_BYTES = 1572864; // 1.5 MB ceiling on unauthenticated Demo AI payloads
+
+async function parseBodyWithSize(request) {
+  if (request.method === 'GET' || request.method === 'HEAD') return { body: {}, rawBytes: 0 };
   try {
     const txt = await request.text();
-    return txt ? JSON.parse(txt) : {};
+    const rawBytes = txt ? txt.length : 0;
+    return { body: txt ? JSON.parse(txt) : {}, rawBytes };
   } catch (_) {
-    return {};
+    return { body: {}, rawBytes: 0 };
   }
 }
 
@@ -64,20 +75,21 @@ async function routeAppApi(context) {
     return handleStatus(env);
   }
 
-  const session = await extractRequestSession(request, env);
-  const body = await parseBody(request);
+  const rawSession = await extractRequestSession(request, env);
+  const session = rawSession ? await verifyActiveEdgeSession(rawSession, env) : null;
+  const { body, rawBytes } = await parseBodyWithSize(request);
 
   if (subPath === '/auth/login' && request.method === 'POST') {
-    return handleAuthLogin(request, env, body);
+    return handleAuthLogin(request, env, body, session);
   }
   if (subPath === '/auth/logout' && request.method === 'POST') {
-    return handleAuthLogout(request);
+    return handleAuthLogout(request, env, session || rawSession);
   }
   if (subPath === '/auth/me' && request.method === 'GET') {
     return jsonResponse({ ok: true, edge: true, authenticated: Boolean(session), session });
   }
   if (subPath === '/phone-scan') {
-    return handlePhoneScan(request, env, url, body);
+    return handlePhoneScan(request, env, url, body, session);
   }
   if (subPath === '/users' && request.method === 'GET') {
     return handleUsersGet(request, env, session);
@@ -94,6 +106,18 @@ async function routeAppApi(context) {
       if (subPath === '/industry_domain_store') return jsonResponse({ ok: true, demo: true, industryCustomRows: {}, industryRowEdits: {} });
     }
     if (isDemoReq && request.method === 'POST' && (subPath === '/ask' || subPath === '/tts' || subPath === '/smart-scan' || subPath === '/ai-edge')) {
+      if (!isSameOriginBrowserRequest(request, url)) {
+        return jsonResponse({ ok: false, error: 'Same-origin browser session required for Demo AI.' }, 403);
+      }
+      const clen = Number(request.headers.get('Content-Length') || 0);
+      if (clen > DEMO_AI_MAX_BYTES || rawBytes > DEMO_AI_MAX_BYTES) {
+        return jsonResponse({ ok: false, error: 'Demo AI payload exceeds 1.5 MB limit.' }, 413);
+      }
+      const ipHash = await hashClientIp(request);
+      const rl = await checkD1RateLimit(env, `demo-ai:${ipHash}`, 15, 60);
+      if (!rl.allowed) {
+        return jsonResponse({ ok: false, error: 'Demo AI rate limit reached. Try again in a minute.' }, 429);
+      }
       if (subPath === '/ask') return handleEdgeAsk(request, env, body, context);
       if (subPath === '/tts') return handleEdgeTts(request, env, body);
       if (subPath === '/smart-scan') return handleEdgeSmartScan(request, env, body);

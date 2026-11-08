@@ -1,12 +1,3 @@
-// Multi-Device Cloud Relay Configuration (base64 encoded per PWA.md §5.5)
-window.MFG_CLOUD_CFG = {
-  u: "aHR0cHM6Ly84MmU4OTUyMGMyNzRlNDBjYTY4ZjA4NTUxNmMxYmIuNDMuZW52aXJvbm1lbnQuYXBpLnBvd2VycGxhdGZvcm0uY29tOjQ0My9wb3dlcmF1dG9tYXRlL2F1dG9tYXRpb25zL2RpcmVjdC9jdS8yMy93b3JrZmxvd3MvNzVkNjJjMjA0NGRmNDNiZDk2YzhkODQ5MGU4NDU1NjUvdHJpZ2dlcnMvbWFudWFsL3BhdGhzL2ludm9rZT9hcGktdmVyc2lvbj0xJnNwPSUyRnRyaWdnZXJzJTJGbWFudWFsJTJGcnVuJnN2PTEuMCZzaWc9Ni1XeGQyWFI2RDJkRXNmdVI2THN0c1VxYmlZTFVHTG0xRUU5NERsNWJpUQ==",
-  k: "NTM5ZDI1OGI3ZDZhNDQyN2RiNDc2YzJiODMxNmViY2Y5Njc5ODE3M2FjMzAwNzBj",
-  docKey: "mfg_web_store"
-};
-
-// Ask ISABI Cloud AI Copilot Relay Configuration (base64 encoded)
-window.MFG_ASK_CFG = {
-  u: "aHR0cHM6Ly84MmU4OTUyMGMyNzRlNDBjYTY4ZjA4NTUxNmMxYmIuNDMuZW52aXJvbm1lbnQuYXBpLnBvd2VycGxhdGZvcm0uY29tOjQ0My9wb3dlcmF1dG9tYXRlL2F1dG9tYXRpb25zL2RpcmVjdC9jdS8yNC93b3JrZmxvd3MvNTMxMWQ1NTA0NDhkNDg1ZmFkNTk4YTgwMzc3NTIxN2QvdHJpZ2dlcnMvbWFudWFsL3BhdGhzL2ludm9rZT9hcGktdmVyc2lvbj0xJnNwPSUyRnRyaWdnZXJzJTJGbWFudWFsJTJGcnVuJnN2PTEuMCZzaWc9M19JRzFUVGhfTFhjMzNzdVJyS3FBSjV4cS1zTXNhek1mV2dURGtVOHZZWQ==",
-  k: "ZDgxMmFhYmU5MDMwMWMyOTM4NmRkMzY0MjRmZWY3ZjFiMTU0MjcwNWJhMDNhOWZm"
-};
+// Zero-MS Standalone Edge Configuration (all sync, AI & vault traffic routes via same-origin ./api/*)
+window.MFG_CLOUD_CFG = { docKey: 'mfg_web_store' };
+window.MFG_ASK_CFG = {};

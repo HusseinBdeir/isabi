@@ -58,8 +58,6 @@
   }
 
   const CLOUD_CFG = window.MFG_CLOUD_CFG || {};
-  const CLOUD_URL = CLOUD_CFG.u ? atob(CLOUD_CFG.u) : '';
-  const CLOUD_KEY = CLOUD_CFG.k ? atob(CLOUD_CFG.k) : '';
   const CLOUD_DOC_KEY = CLOUD_CFG.docKey || 'mfg_web_store';
 
   const PARAMS = new URLSearchParams(location.search);
@@ -85,6 +83,29 @@
     }
     return !IS_LOCAL && !window.__ISABI_TEST_EDGE && PARAMS.get('demo') === '1';
   }
+  function appStoreGetRaw(key) {
+    try {
+      return isDemoSandboxSession()
+        ? sessionStorage.getItem('demo_sbx_' + key)
+        : localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+  function appStoreSetRaw(key, val) {
+    try {
+      if (isDemoSandboxSession()) sessionStorage.setItem('demo_sbx_' + key, String(val));
+      else localStorage.setItem(key, String(val));
+    } catch (err) {
+      throw err;
+    }
+  }
+  function appStoreRemoveRaw(key) {
+    try {
+      if (isDemoSandboxSession()) sessionStorage.removeItem('demo_sbx_' + key);
+      else localStorage.removeItem(key);
+    } catch (_) {}
+  }
   function hasServerApi() {
     return Boolean(HAS_LOCAL_API || window.__ISABI_TEST_EDGE || (window.ISABI_HAS_EDGE_API && !IS_HEADLESS_HARNESS));
   }
@@ -107,7 +128,7 @@
   const PAGE = 65;
   const SEED_DATE = String(SEED.generated_at || '').slice(0, 10) || todayISO();
 
-  const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
+  const DEFAULT_FACE_SEEDS = {};
   const DEFAULT_USERS = [
     { id: 'u1', full_name: 'Hussein Bdeir', email: 'husseinbdeir@bhfirms.com', pin_code: '1111', role: 'Full Access (Owner)', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
     { id: 'u2', full_name: 'Zeinab Rkein', email: 'zeinabrkein@bhfirms.com', pin_code: '2222', role: 'Supervisor + Entry', companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding, Blanca, La Una, Palms, Voile, Platinum, Korri Auto, Shacman, Properties, 4235 Company S.A.L, Insurance Company', pbi_access: 'full', statements_access: 'full', status: 'Active', last_login_at: '' },
@@ -174,12 +195,13 @@
     const seenIds = new Set(arr.map(u => String((u && u.id) || '').toLowerCase()));
     const seenEmails = new Set(arr.map(u => String((u && u.email) || '').trim().toLowerCase()));
     const seenNames = new Set(arr.map(u => norm((u && u.full_name) || '')));
+    const redactSeedPins = !IS_LOCAL && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession();
     MULTI_INDUSTRY_ROLE_SEATS.forEach(seedSeat => {
       const sid = seedSeat.id.toLowerCase();
       const sem = seedSeat.email.toLowerCase();
       const snm = norm(seedSeat.full_name);
       if (!seenIds.has(sid) && !seenEmails.has(sem) && (!snm || !seenNames.has(snm))) {
-        arr.push(Object.assign({}, seedSeat));
+        arr.push(redactSeedPins ? Object.assign({}, seedSeat, { pin_code: '', pin_redacted: true }) : Object.assign({}, seedSeat));
         seenIds.add(sid);
         seenEmails.add(sem);
         if (snm) seenNames.add(snm);
@@ -189,7 +211,7 @@
   }
 
   function lsGet(key, fallback) {
-    try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fallback : v; } catch (_) { return fallback; }
+    try { const v = JSON.parse(appStoreGetRaw(key) || 'null'); return v == null ? fallback : v; } catch (_) { return fallback; }
   }
 
   const RAIL_MIN_W = 176;
@@ -239,8 +261,8 @@
     payrollCutoffMode: 'closed_month',
     allowancesCutoffMode: 'mtd',
     payrollStaffStatus: 'all',
-    lbpFxRate: (!IS_AUTOMATED_TEST ? Number(localStorage.getItem('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
-    lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (localStorage.getItem('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
+    lbpFxRate: (!IS_AUTOMATED_TEST ? Number(appStoreGetRaw('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
+    lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (appStoreGetRaw('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
     commLedgerMode: 'monthly',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
@@ -354,7 +376,11 @@
     editingUserId: 'u1',
     newDraftPin: String(Math.floor(1000 + Math.random() * 8999)),
     userFormDirty: false,
-    users: ensureMultiIndustryRoleSeats((lsGet('isabi_mfg_users_v2', null) || DEFAULT_USERS.map(u => ({ ...u }))).map(u => {
+    users: ensureMultiIndustryRoleSeats((lsGet('isabi_mfg_users_v2', null) || DEFAULT_USERS.map(u => (
+      (!IS_LOCAL && Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession())
+        ? Object.assign({}, u, { pin_code: '', pin_redacted: true })
+        : ({ ...u })
+    ))).map(u => {
       const k = String(u && u.email || '').trim().toLowerCase();
       const seed = DEFAULT_FACE_SEEDS[k];
       let out = u;
@@ -1414,8 +1440,8 @@
     STATE.lbpFxRate = parsed;
     STATE.lbpFxUpdatedAt = opts.updatedAt || new Date().toISOString();
     try {
-      localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(parsed));
-      localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
+      appStoreSetRaw('isabi_mfg_lbp_fx_rate_v1', String(parsed));
+      appStoreSetRaw('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
     } catch (_) {}
     enrichGlobalRateTables({ quiet: true });
     if (parsed !== prev || opts.force) invalidateGlobalRateCaches();
@@ -2613,7 +2639,7 @@
   function saveFilterState() {
     if (IS_AUTOMATED_TEST) return;
     try {
-      localStorage.setItem('isabi_mfg_filter_state_v1', JSON.stringify({
+      appStoreSetRaw('isabi_mfg_filter_state_v1', JSON.stringify({
         company: STATE.company,
         period: STATE.period,
         dateGrain: STATE.dateGrain,
@@ -7115,7 +7141,7 @@
 
   function seatAuthBadgeLabel(u) {
     const hasFace = userHasFaceId(u);
-    const n = userFaceSamples(u).length || (u && u.face_redacted && u.face_enrolled ? 3 : 0);
+    const n = userFaceSamples(u).length || Number(u && u.face_sample_count) || (u && u.face_redacted && u.face_enrolled ? 3 : 0);
     const mode = effectiveSeatAuthMode(u);
     if (!hasFace || mode === 'pin_only') return 'PIN Only';
     if (mode === 'face_only') return `✓ ${n}/3 Poses · Face Only`;
@@ -30476,6 +30502,23 @@
     }
   }
 
+  function deleteDocBlob(blobId) {
+    const bid = String(blobId || '').trim();
+    if (!bid) return;
+    _docBlobMem.delete(bid);
+    _docBlobEdgePending.delete(bid);
+    openDocBlobIdb().then(db => {
+      if (!db) return;
+      try {
+        const tx = db.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').delete(bid);
+      } catch (_) {}
+    });
+    if (hasServerApi() && !isDemoSandboxSession()) {
+      edgeApiFetch(`./api/blobs?id=${encodeURIComponent(bid)}`, { method: 'DELETE' }).catch(() => {});
+    }
+  }
+
   function resolveDocDataUrl(item) {
     if (!item) return '';
     if (item.data_url && typeof item.data_url === 'string') return item.data_url;
@@ -32231,6 +32274,10 @@
     if (attIdx < 0 || attIdx >= currentList.length) return false;
     const removed = currentList[attIdx];
     const remaining = currentList.filter((_, idx) => idx !== attIdx);
+    const removedBlobId = removed && String(removed._blob_id || removed.att_id || removed.id || removed.doc_id || '').trim();
+    if (removedBlobId && !remaining.some(a => a && String(a._blob_id || a.att_id || a.id || a.doc_id || '').trim() === removedBlobId)) {
+      deleteDocBlob(removedBlobId);
+    }
     targetRow.attachments = remaining;
     targetRow.attachment_count = remaining.length;
     targetRow.modified_at = new Date().toISOString();
@@ -54564,7 +54611,7 @@
   function getIndustryRowEditStore() {
     if (!STATE.industryRowEdits || typeof STATE.industryRowEdits !== 'object') {
       try {
-        const raw = !IS_AUTOMATED_TEST ? localStorage.getItem('isabi_mfg_ind_row_edits_v1') : null;
+        const raw = !IS_AUTOMATED_TEST ? appStoreGetRaw('isabi_mfg_ind_row_edits_v1') : null;
         STATE.industryRowEdits = raw ? JSON.parse(raw) : {};
       } catch (_) {
         STATE.industryRowEdits = {};
@@ -54602,7 +54649,7 @@
     STATE.industryRowEdits = nextStore;
     if (!IS_AUTOMATED_TEST) {
       try {
-        localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
+        appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(STATE.industryRowEdits));
       } catch (_) {}
     }
     postIndustryDomainStoreToLocalApi();
@@ -54715,7 +54762,7 @@
     const slim = offloadIndustryCustomRowBlobs(store);
     if (!IS_AUTOMATED_TEST) {
       try {
-        localStorage.setItem('isabi_mfg_ind_custom_rows_v1', JSON.stringify(slim));
+        appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(slim));
       } catch (_) {}
     }
     postIndustryDomainStoreToLocalApi();
@@ -62787,7 +62834,7 @@
             <div class="sentinel-item ${/Live/.test(STATE.cloudStatus) ? 'ok' : 'warn'}">
               <div>
                 <div class="sentinel-title">Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite</div>
-                <div class="sentinel-detail">Active across phones, tablets &amp; laptops at <code class="mono">husseinbdeir.github.io/isabi/app</code>; on the LAN host <code class="mono">server.py</code> also writes every entry into <code class="mono">data/mfg.db</code>. Syncs seats, PINs, sessions and app entries with 0 licenses.</div>
+                <div class="sentinel-detail">Active across phones, tablets &amp; laptops at <code class="mono">isabisystems.com/app</code>; on the LAN host <code class="mono">server.py</code> also writes every entry into <code class="mono">data/mfg.db</code>. Syncs seats, PINs, sessions and app entries with 0 licenses.</div>
               </div>
               <span class="badge ${/Live/.test(STATE.cloudStatus) ? 'badge-ok' : 'badge-warn'}">${/Live/.test(STATE.cloudStatus) ? 'CONNECTED' : esc(STATE.cloudStatus.replace('● ', '').toUpperCase())}</span>
             </div>
@@ -88978,10 +89025,10 @@
       if (STATE.kioskLastPunch && /^pn-seed-/.test(String(STATE.kioskLastPunch.id || ''))) {
         STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
       }
-      localStorage.setItem('isabi_mfg_users_v2', JSON.stringify(STATE.users));
-      localStorage.setItem('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
+      appStoreSetRaw('isabi_mfg_users_v2', JSON.stringify(STATE.users));
+      appStoreSetRaw('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
       try {
-        localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
+        appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
       } catch (quotaErr) {
         const slimRecs = {};
         Object.keys(STATE.customRecords || {}).forEach(tbl => {
@@ -89016,20 +89063,20 @@
             return copy;
           });
         });
-        localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(slimRecs));
+        appStoreSetRaw('isabi_mfg_custom_recs_v2', JSON.stringify(slimRecs));
       }
-      localStorage.setItem('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
-      localStorage.setItem('isabi_mfg_alert_rules_v1', JSON.stringify(STATE.alertRules || { overrides: {}, custom: [] }));
-      localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
-      localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
-      localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
-      localStorage.setItem('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
-      localStorage.setItem('isabi_mfg_work_sched_v1', JSON.stringify(STATE.workSchedules || { shiftTypes: [], staffRules: {} }));
-      localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
-      if (STATE.lbpFxUpdatedAt) localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
+      appStoreSetRaw('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
+      appStoreSetRaw('isabi_mfg_alert_rules_v1', JSON.stringify(STATE.alertRules || { overrides: {}, custom: [] }));
+      appStoreSetRaw('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
+      appStoreSetRaw('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
+      appStoreSetRaw('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
+      appStoreSetRaw('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
+      appStoreSetRaw('isabi_mfg_work_sched_v1', JSON.stringify(STATE.workSchedules || { shiftTypes: [], staffRules: {} }));
+      appStoreSetRaw('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
+      if (STATE.lbpFxUpdatedAt) appStoreSetRaw('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
       if (!IS_AUTOMATED_TEST) {
-        localStorage.setItem('isabi_mfg_ind_row_edits_v1', JSON.stringify(getIndustryRowEditStore()));
-        localStorage.setItem('isabi_mfg_ind_custom_rows_v1', JSON.stringify(offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore())));
+        appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(getIndustryRowEditStore()));
+        appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore())));
       }
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
   }
@@ -89046,6 +89093,7 @@
         baseNew.face_thumbs = [];
         baseNew.face_redacted = true;
         baseNew.face_enrolled = Boolean(incoming.face_enrolled);
+        baseNew.face_sample_count = Number(incoming.face_sample_count || (baseNew.face_enrolled ? 3 : 0));
         delete baseNew.face_cleared;
       }
       return ensureCanonicalMultiIndustrySeat(baseNew);
@@ -89096,7 +89144,8 @@
       out.face_samples = exSamples;
       out.face_thumbs = exThumbs;
       out.face_enrolled = Boolean(exSamples.length > 0 || (incoming.face_enrolled && !existing.face_cleared));
-      out.face_redacted = exSamples.length === 0 && Boolean(incoming.face_enrolled);
+      out.face_sample_count = exSamples.length || Number(incoming.face_sample_count || existing.face_sample_count || (out.face_enrolled ? 3 : 0));
+      out.face_redacted = exSamples.length === 0 && Boolean(incoming.face_enrolled && !existing.face_cleared);
       out.face_required = incoming.face_required != null ? !!incoming.face_required : Boolean(existing.face_required);
       out.face_updated_at = exTs || inTs;
       if (!exSamples.length && existing.face_cleared) out.face_cleared = true;
@@ -90532,7 +90581,7 @@
   let _lastCloudSyncStartedAt = 0;
   let _localPushSeq = 0;
   try {
-    if (!IS_AUTOMATED_TEST && localStorage.getItem(CLOUD_PENDING_PUSH_KEY) === '1') {
+    if (!IS_AUTOMATED_TEST && appStoreGetRaw(CLOUD_PENDING_PUSH_KEY) === '1') {
       STATE.pendingCloudPush = true;
     }
   } catch (_) {}
@@ -90542,8 +90591,8 @@
     STATE.pendingCloudPush = Boolean(flag);
     if (!IS_AUTOMATED_TEST) {
       try {
-        if (flag) localStorage.setItem(CLOUD_PENDING_PUSH_KEY, '1');
-        else localStorage.removeItem(CLOUD_PENDING_PUSH_KEY);
+        if (flag) appStoreSetRaw(CLOUD_PENDING_PUSH_KEY, '1');
+        else appStoreRemoveRaw(CLOUD_PENDING_PUSH_KEY);
       } catch (_) {}
     }
   }
@@ -90785,53 +90834,37 @@
     }
     const allowHarnessEdge = Boolean(window.__ISABI_TEST_EDGE);
     const useEdgeSyncPrimary = Boolean(isEdgeActive && (allowHarnessEdge || !IS_HEADLESS_HARNESS));
-    if ((!useEdgeSyncPrimary && (!CLOUD_URL || !CLOUD_KEY)) || (!allowHarnessEdge && (navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095))) || isPublicDemoSandbox) {
+    if (!useEdgeSyncPrimary || (!allowHarnessEdge && (navigator.webdriver || window.__MFG_HEADLESS_TEST || PARAMS.get('nosse') === '1' || (location.port && Number(location.port) >= 8095))) || isPublicDemoSandbox) {
       STATE.cloudStatus = isPublicDemoSandbox ? '● Demo Sandbox' : '● Ready (Local)';
       updateCloudBadges();
       return;
     }
     try {
       const seqAtSyncStart = _localPushSeq;
-      let syncTargetIsEdge = useEdgeSyncPrimary;
       let getRes = null;
-      if (syncTargetIsEdge) {
-        const ctrlE = new AbortController();
-        const timerE = setTimeout(() => ctrlE.abort(), 15000);
-        try {
-          const rE = await edgeApiFetch('./api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ op: 'get_mfg', doc: CLOUD_DOC_KEY }),
-            signal: ctrlE.signal
-          });
-          clearTimeout(timerE);
-          if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
-            getRes = rE;
-          } else if (rE.status === 401 || rE.status === 403) {
-            STATE.cloudStatus = '● Sign-in required';
-            updateCloudBadges();
-            return;
-          } else {
-            syncTargetIsEdge = false;
-          }
-        } catch (_) {
-          clearTimeout(timerE);
-          syncTargetIsEdge = false;
-        }
-      }
-      if (!getRes) {
-        if (!CLOUD_URL || !CLOUD_KEY) throw new Error('no sync endpoint');
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 25000);
-        getRes = await fetch(CLOUD_URL, {
+      const ctrlE = new AbortController();
+      const timerE = setTimeout(() => ctrlE.abort(), 15000);
+      try {
+        const rE = await edgeApiFetch('./api/sync', {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({ key: CLOUD_KEY, op: 'get_mfg', doc: CLOUD_DOC_KEY }),
-          signal: ctrl.signal
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'get_mfg', doc: CLOUD_DOC_KEY }),
+          signal: ctrlE.signal
         });
-        clearTimeout(timer);
+        clearTimeout(timerE);
+        if (rE.ok && (rE.headers.get('content-type') || '').includes('application/json')) {
+          getRes = rE;
+        } else if (rE.status === 401 || rE.status === 403) {
+          STATE.cloudStatus = '● Sign-in required';
+          updateCloudBadges();
+          return;
+        } else {
+          throw new Error('edge sync ' + rE.status);
+        }
+      } catch (errE) {
+        clearTimeout(timerE);
+        throw errE;
       }
-      if (!getRes.ok) throw new Error('relay ' + getRes.status);
 
       const store = await getRes.json();
       const docs = (store && store.docs) || store || {};
@@ -90981,21 +91014,14 @@
           const payload = cloudPayload();
           const ctrl2 = new AbortController();
           const timer2 = setTimeout(() => ctrl2.abort(), 25000);
-          const putBody = { key: syncTargetIsEdge ? '' : CLOUD_KEY, op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
+          const putBody = { key: '', op: 'patch', ackOnly: true, patch: { [CLOUD_DOC_KEY]: payload } };
           if (expectedUpdatedAt) putBody.ifMatchUpdatedAt = expectedUpdatedAt;
-          const putRes = syncTargetIsEdge
-            ? await edgeApiFetch('./api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(putBody),
-                signal: ctrl2.signal
-              })
-            : await fetch(CLOUD_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                body: JSON.stringify(putBody),
-                signal: ctrl2.signal
-              });
+          const putRes = await edgeApiFetch('./api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(putBody),
+            signal: ctrl2.signal
+          });
           clearTimeout(timer2);
           if (!putRes.ok) {
             STATE.cloudStatus = '● Cloud read-only (' + putRes.status + ')';
@@ -91968,6 +91994,9 @@
       last_login_at: prev.last_login_at || '',
       face_samples: prev.face_samples || [],
       face_thumbs: prev.face_thumbs || [],
+      face_enrolled: Boolean(userFaceSamples(prev).length > 0 || (prev.face_redacted && prev.face_enrolled)),
+      face_sample_count: userFaceSamples(prev).length || Number(prev.face_sample_count || (prev.face_redacted && prev.face_enrolled ? 3 : 0)),
+      face_redacted: Boolean(!userFaceSamples(prev).length && prev.face_redacted && prev.face_enrolled),
       face_required: authModeVal ? (authModeVal === 'both' || authModeVal === 'face_only') : !!prev.face_required,
       face_updated_at: prev.face_updated_at || '',
       seat_updated_at: nowIso
@@ -93255,6 +93284,9 @@
     const thumbs = FACE_STATE.enrolThumbs.slice(0, 3);
     target.face_samples = samples;
     target.face_thumbs = thumbs;
+    target.face_enrolled = samples.length > 0;
+    target.face_sample_count = samples.length;
+    delete target.face_redacted;
     target.face_required = samples.length > 0;
     target.face_cleared = samples.length === 0;
     target.face_updated_at = nowIso;
@@ -93451,6 +93483,9 @@
     FACE_STATE.enrolLiveMatch = null;
     target.face_samples = [];
     target.face_thumbs = [];
+    target.face_enrolled = false;
+    target.face_sample_count = 0;
+    delete target.face_redacted;
     target.face_required = false;
     target.face_cleared = true;
     target.face_updated_at = nowIso;
@@ -94910,14 +94945,24 @@
   }
 
   function signOut() {
-    setEdgeSessionToken('');
-    if (hasServerApi()) {
-      try { fetch('./api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); } catch (_) {}
+    if (isDemoSandboxSession()) {
+      try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const k = sessionStorage.key(i);
+          if (k && k.startsWith('demo_sbx_')) sessionStorage.removeItem(k);
+        }
+        sessionStorage.removeItem('isabi_mfg_sw_resume');
+      } catch (_) {}
+    } else {
+      if (hasServerApi()) {
+        try { edgeApiFetch('./api/auth/logout', { method: 'POST' }).catch(() => {}); } catch (_) {}
+      }
+      setEdgeSessionToken('');
+      try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
+      try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
+      try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
+      try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
     }
-    try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
-    try { localStorage.removeItem('isabi_mfg_last_seat'); } catch (_) {}
-    try { localStorage.removeItem('isabi_mfg_kiosk_station_seat'); } catch (_) {}
-    try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
     clearTimeout(toastTimer);
     clearTimeout(toastFadeTimer);
     const tEl = $('toast');
@@ -95161,8 +95206,10 @@
     FACE_STATE.pendingPinUser = null;
     user.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
-    try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
-    if (!IS_DEMO && !STATE.demoVisitor && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+    if (!isDemoSandboxSession()) {
+      try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
+    }
+    if (!IS_DEMO && !isDemoSandboxSession() && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
       try { localStorage.setItem('isabi_mfg_last_seat', user.email); } catch (_) {}
       if (STATE.kioskLocked || STATE.view === 'kiosks') {
         try { localStorage.setItem('isabi_mfg_kiosk_station_seat', JSON.stringify({ email: user.email, ts: Date.now() })); } catch (_) {}
@@ -95466,7 +95513,7 @@
   function loadKioskStationConfig() {
     if (IS_AUTOMATED_TEST) return null;
     try {
-      const s = localStorage.getItem('isabi_mfg_kiosk_station_cfg_v1');
+      const s = appStoreGetRaw('isabi_mfg_kiosk_station_cfg_v1');
       if (!s) return null;
       const raw = JSON.parse(s);
       return raw && typeof raw === 'object' ? raw : null;
@@ -95490,7 +95537,7 @@
       updatedAt: Date.now()
     }, extra || {});
     try {
-      localStorage.setItem('isabi_mfg_kiosk_station_cfg_v1', JSON.stringify(next));
+      appStoreSetRaw('isabi_mfg_kiosk_station_cfg_v1', JSON.stringify(next));
     } catch (_) {}
   }
 
@@ -95976,87 +96023,113 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
-    const pool = getKioskFacePoolWithAdminSeed();
-    if (!pool.length || !window.Face) {
-      KIOSK_ADMIN_MODAL_STATE.err = 'No Face ID profiles enrolled yet.';
-      KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
-      KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
-      syncKioskAdminFaceDomInPlace();
-      return { ok: false, reason: 'no-pool' };
-    }
-    const m = window.Face.match(det.descriptor, pool);
-    const thr = Number(STATE.faceSettings.threshold || 0.50);
-    const dec = window.Face.decide(m, Object.assign({}, window.Face.CONFIG, { threshold: thr }), { faceSizeFrac: det.faceSizeFrac || 0.26 });
-    if (!dec.ok || !dec.best) {
-      KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+    const completeKioskAdminUnlock = (matchedSeat, fallbackName, isFullAdmin, isEnrolAllowed) => {
+      if (!isEnrolAllowed) {
+        KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+        KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+        KIOSK_ADMIN_MODAL_STATE.err = matchedSeat
+          ? `Access denied: ${fallbackName} (${matchedSeat.role || 'Viewer'}) is not authorized for Station Admin or Staff Enrolment.`
+          : `Access denied: ${fallbackName} is a company employee, not an ISABI Entry or Admin user. Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.`;
+        KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+        KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
+        syncKioskAdminFaceDomInPlace();
+        const card = document.querySelector('#kioskStationAdminModal .ksa-modal-card');
+        if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
+        return { ok: false, reason: 'not-admin', isEmployeeOnly: !matchedSeat, staff: fallbackName };
+      }
+      const effSeat = matchedSeat || activeUser();
+      const adminName = (effSeat && effSeat.full_name) || fallbackName;
+      if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === adminName) {
+        KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
+      } else {
+        KIOSK_ADMIN_MODAL_STATE.streakAdmin = adminName;
+        KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
+      }
+      const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : 2);
+      if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames) {
+        KIOSK_ADMIN_MODAL_STATE.err = '';
+        KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
+        KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+        syncKioskAdminFaceDomInPlace();
+        return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
+      }
       KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
-      KIOSK_ADMIN_MODAL_STATE.err = 'Face not recognized. Look straight at the camera with an enrolled Admin Face ID.';
-      KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
-      KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
-      syncKioskAdminFaceDomInPlace();
-      return { ok: false, reason: dec.status || 'unrecognized' };
-    }
-    const isFullAdmin = isAuthorizedKioskAdminFace(dec.best);
-    const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(dec.best);
-    if (!isEnrolAllowed) {
-      const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best);
       KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
-      KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
-      KIOSK_ADMIN_MODAL_STATE.err = matchedSeat
-        ? `Access denied: ${dec.best.name} (${matchedSeat.role || 'Viewer'}) is not authorized for Station Admin or Staff Enrolment.`
-        : `Access denied: ${dec.best.name} is a company employee, not an ISABI Entry or Admin user. Only ISABI Entry Operators, Supervisors, or Admins can enrol staff.`;
-      KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
-      KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
-      syncKioskAdminFaceDomInPlace();
-      const card = document.querySelector('#kioskStationAdminModal .ksa-modal-card');
-      if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
-      return { ok: false, reason: 'not-admin', isEmployeeOnly: !matchedSeat, staff: dec.best.name };
-    }
-
-    const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best) || activeUser();
-    const adminName = (matchedSeat && matchedSeat.full_name) || dec.best.name;
-    if (KIOSK_ADMIN_MODAL_STATE.streakAdmin === adminName) {
-      KIOSK_ADMIN_MODAL_STATE.streakCount += 1;
-    } else {
-      KIOSK_ADMIN_MODAL_STATE.streakAdmin = adminName;
-      KIOSK_ADMIN_MODAL_STATE.streakCount = 1;
-    }
-    const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : 2);
-    if (KIOSK_ADMIN_MODAL_STATE.streakCount < needFrames) {
       KIOSK_ADMIN_MODAL_STATE.err = '';
-      KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin ? `Verifying Admin ${adminName}...` : `Verifying Entry Operator ${adminName}...`;
+      const opAllowedCos = allowedCompanyNames(effSeat);
+      const openEnrolDirectly = !isFullAdmin || KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol';
+      KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin
+        ? `✓ Admin verified: ${adminName}`
+        : `✓ Entry Operator verified: ${adminName} (${opAllowedCos.join(', ') || 'Scoped BU'})`;
       KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
+      stopKioskAdminFaceCamera(false);
+      startOrResetKioskAdminSession(adminName, effSeat, isFullAdmin ? 'admin' : 'entry');
+      if (openEnrolDirectly) {
+        closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
+        openStaffFaceEnrolModal('', { operatorUser: effSeat });
+        toast(
+          isFullAdmin
+            ? `Verified ${adminName} · Staff Face ID & Enrolment Studio opened`
+            : `Entry Operator verified: ${adminName} · Scoped to ${opAllowedCos.join(', ') || 'assigned BU'}`,
+          'ok'
+        );
+        return { ok: true, admin: adminName, role: isFullAdmin ? 'admin' : 'entry', openedEnrolModal: true, allowedCompanies: opAllowedCos };
+      }
+      if (KIOSK_ADMIN_MODAL_STATE.open && typeof KIOSK_ADMIN_MODAL_STATE.renderInnerFn === 'function') {
+        KIOSK_ADMIN_MODAL_STATE.renderInnerFn();
+      }
+      toast(`Admin verified via Face ID: ${adminName} (auto-locks after 5 min of inactivity)`, 'ok');
+      return { ok: true, admin: adminName, role: 'admin', openedEnrolModal: false, allowedCompanies: opAllowedCos };
+    };
+
+    const failUnrecognized = (reason) => {
+      KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
+      KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
+      KIOSK_ADMIN_MODAL_STATE.err = reason === 'no-pool'
+        ? 'No Face ID profiles enrolled yet.'
+        : 'Face not recognized. Look straight at the camera with an enrolled Admin Face ID.';
+      KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
+      KIOSK_ADMIN_MODAL_STATE.statusCls = 'warn';
       syncKioskAdminFaceDomInPlace();
-      return { ok: false, reason: 'building-streak', streak: KIOSK_ADMIN_MODAL_STATE.streakCount, needFrames, admin: adminName, role: isFullAdmin ? 'admin' : 'entry' };
+      return { ok: false, reason };
+    };
+
+    const pool = getKioskFacePoolWithAdminSeed();
+    if (pool.length && window.Face) {
+      const m = window.Face.match(det.descriptor, pool);
+      const thr = Number(STATE.faceSettings.threshold || 0.50);
+      const dec = window.Face.decide(m, Object.assign({}, window.Face.CONFIG, { threshold: thr }), { faceSizeFrac: det.faceSizeFrac || 0.26 });
+      if (dec.ok && dec.best) {
+        const isFullAdmin = isAuthorizedKioskAdminFace(dec.best);
+        const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(dec.best);
+        const matchedSeat = resolveIsabiSeatForFaceEntry(dec.best);
+        return completeKioskAdminUnlock(matchedSeat, dec.best.name, isFullAdmin, isEnrolAllowed);
+      }
     }
 
-    KIOSK_ADMIN_MODAL_STATE.streakCount = 0;
-    KIOSK_ADMIN_MODAL_STATE.streakAdmin = '';
-    KIOSK_ADMIN_MODAL_STATE.err = '';
-    const opAllowedCos = allowedCompanyNames(matchedSeat);
-    const openEnrolDirectly = !isFullAdmin || KIOSK_ADMIN_MODAL_STATE.targetAction === 'enrol';
-    KIOSK_ADMIN_MODAL_STATE.statusText = isFullAdmin
-      ? `✓ Admin verified: ${adminName}`
-      : `✓ Entry Operator verified: ${adminName} (${opAllowedCos.join(', ') || 'Scoped BU'})`;
-    KIOSK_ADMIN_MODAL_STATE.statusCls = 'ok';
-    stopKioskAdminFaceCamera(false);
-    startOrResetKioskAdminSession(adminName, matchedSeat, isFullAdmin ? 'admin' : 'entry');
-    if (openEnrolDirectly) {
-      closeKioskStationAdminModal({ keepAdminSession: true, skipCameraResume: true });
-      openStaffFaceEnrolModal('', { operatorUser: matchedSeat });
-      toast(
-        isFullAdmin
-          ? `Verified ${adminName} · Staff Face ID & Enrolment Studio opened`
-          : `Entry Operator verified: ${adminName} · Scoped to ${opAllowedCos.join(', ') || 'assigned BU'}`,
-        'ok'
-      );
-      return { ok: true, admin: adminName, role: isFullAdmin ? 'admin' : 'entry', openedEnrolModal: true, allowedCompanies: opAllowedCos };
+    const canRemoteVerify = hasServerApi() && !isDemoSandboxSession() && STATE.users.some(u => u && u.status !== 'Suspended' && u.face_redacted && u.face_enrolled);
+    if (canRemoteVerify) {
+      const vecArr = Array.from(det.descriptor);
+      if (vecArr.length === 128) {
+        return edgeApiFetch('./api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ method: 'Face ID', verify_only: true, face_descriptor: vecArr })
+        })
+          .then(r => (r.ok ? r.json() : null))
+          .then(j => {
+            if (!j || !j.ok || !j.user) return failUnrecognized('unrecognized');
+            const matchedSeat = STATE.users.find(u => u && norm(u.email) === norm(j.user.email)) || j.user;
+            const entry = { email: matchedSeat.email || '', name: matchedSeat.full_name || j.user.full_name || 'Admin' };
+            const isFullAdmin = isAuthorizedKioskAdminFace(entry);
+            const isEnrolAllowed = isFullAdmin || isAuthorizedKioskStaffEnrolFace(entry);
+            return completeKioskAdminUnlock(matchedSeat, entry.name, isFullAdmin, isEnrolAllowed);
+          })
+          .catch(() => failUnrecognized('unrecognized'));
+      }
     }
-    if (KIOSK_ADMIN_MODAL_STATE.open && typeof KIOSK_ADMIN_MODAL_STATE.renderInnerFn === 'function') {
-      KIOSK_ADMIN_MODAL_STATE.renderInnerFn();
-    }
-    toast(`Admin verified via Face ID: ${adminName} (auto-locks after 5 min of inactivity)`, 'ok');
-    return { ok: true, admin: adminName, role: 'admin', openedEnrolModal: false, allowedCompanies: opAllowedCos };
+
+    return failUnrecognized(!pool.length || !window.Face ? 'no-pool' : 'unrecognized');
   }
 
   async function kioskAdminFaceTick() {
@@ -99066,6 +99139,7 @@
       }
     });
     saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'delete_policy_group', id });
     syncWithCloud(true);
     return { ok: true };
   }
@@ -99223,10 +99297,11 @@
   async function postWorkScheduleMutation(bodyObj) {
     if (!hasServerApi() || isDemoSandboxSession()) return;
     try {
+      const payload = Object.assign({}, bodyObj || {}, { work_schedules: ensureWorkSchedulesState() });
       await edgeApiFetch('./api/work_schedules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyObj)
+        body: JSON.stringify(payload)
       });
     } catch (_) {}
   }
@@ -99660,7 +99735,10 @@
     if (!k) return { ok: false };
     const ws = ensureWorkSchedulesState();
     const nowIso = new Date().toISOString();
-    const tomb = { staff: staffName, reset_default: true, updated_at: nowIso };
+    const prevRule = ws.staffRules[k] && typeof ws.staffRules[k] === 'object' ? ws.staffRules[k] : null;
+    const staffEntry = getKioskStaffDirectory().find(s => norm(s.name) === k) || null;
+    const ruleCo = String((prevRule && prevRule.company) || (staffEntry && staffEntry.company) || defaultEntryCompany() || 'WTC');
+    const tomb = { staff: staffName, company: ruleCo, reset_default: true, updated_at: nowIso };
     ws.staffRules[k] = tomb;
     recalcStaffTodayPunchAndAttendance(staffName);
     saveLocalAuthAndRecords();
@@ -105160,6 +105238,7 @@
           }, { deferSave: true });
         });
         saveLocalAuthAndRecords();
+        postWorkScheduleMutation({ op: 'bulk_company_policy', company: entry.company });
         syncWithCloud(true);
         toast(`Applied policy, multipliers, perks & tolerances to all ${coStaff.length} active staff in ${entry.company}`, 'ok');
         closeStaffScheduleModal();
@@ -112524,7 +112603,9 @@
     const inviteEmail = PARAMS.get('email');
     const invitePin = PARAMS.get('pin');
     // Purge legacy auto-login key from localStorage so opening the app always presents #authGate first
-    try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
+    if (!isDemoSandboxSession()) {
+      try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
+    }
     let swResumeEmail = '';
     let swResumeView = '';
     try {

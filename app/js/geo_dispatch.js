@@ -1023,9 +1023,20 @@
   const esc = s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  function isDemoGeoMode() {
+    if (typeof location === 'undefined') return false;
+    return Boolean(
+      /[?&]autologin=1\b/.test(location.search || '') ||
+      (window.__ISABI_IS_DEMO && window.__ISABI_IS_DEMO()) ||
+      (!/^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '') && !window.__ISABI_TEST_EDGE && /[?&]demo=1\b/.test(location.search || ''))
+    );
+  }
+
   function loadStoredConfig() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = isDemoGeoMode()
+        ? (sessionStorage.getItem('demo_sbx_' + STORAGE_KEY) || localStorage.getItem(STORAGE_KEY))
+        : localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') return parsed;
@@ -1044,10 +1055,14 @@
 
   function saveStoredConfig(pushServer = true) {
     GEO_STORE.updatedAt = new Date().toISOString();
+    const isDemoGeo = isDemoGeoMode();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
+      if (isDemoGeo) {
+        sessionStorage.setItem('demo_sbx_' + STORAGE_KEY, JSON.stringify(GEO_STORE));
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(GEO_STORE));
+      }
     } catch (_) {}
-    const isDemoGeo = typeof location !== 'undefined' && (/[?&]autologin=1\b/.test(location.search || '') || Boolean(window.__ISABI_IS_DEMO && window.__ISABI_IS_DEMO()) || (!/^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '') && !window.__ISABI_TEST_EDGE && /[?&]demo=1\b/.test(location.search || '')));
     const canPostGeoApi = !isDemoGeo && (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname || '') || window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     if (pushServer && canPostGeoApi && typeof window.fetch === 'function' && (!navigator.webdriver || window.__ISABI_TEST_EDGE) && (!window.__MFG_HEADLESS_TEST || window.__ISABI_TEST_EDGE)) {
       try {
@@ -1091,11 +1106,11 @@
         if (nxt === undefined || nxt === null) return;
         const dk = `${bucket}:${k}`;
         const cur = GEO_STORE[bucket][k];
-        const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && GEO_STORE._pairKmTs[k]) || GEO_STORE.updatedAt || '';
-        const nxtTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || incoming.updatedAt || '';
+        const curTs = (cur && typeof cur === 'object' && cur.updated_at) || (bucket === 'pairKmOverrides' && GEO_STORE._pairKmTs[k]) || '';
+        const nxtTs = (nxt && typeof nxt === 'object' && nxt.updated_at) || (bucket === 'pairKmOverrides' && inPairTs[k]) || (cur === undefined ? (incoming.updatedAt || '') : '');
         const localDelTs = String(GEO_STORE._deletedKeys[dk] || '');
-        if (localDelTs && nxtTs && localDelTs > nxtTs) return;
-        if (cur === undefined || !curTs || !nxtTs || nxtTs >= curTs) {
+        if (localDelTs && (!nxtTs || localDelTs > nxtTs)) return;
+        if (cur === undefined || !curTs || (nxtTs && nxtTs >= curTs)) {
           if (JSON.stringify(cur) !== JSON.stringify(nxt)) {
             GEO_STORE[bucket][k] = nxt;
             changed = true;
@@ -3026,6 +3041,7 @@
       zone_geojson: spec.zone_geojson || null,
       updated_at: nowIso
     };
+    if (GEO_STORE._deletedKeys) delete GEO_STORE._deletedKeys['regions:' + nk];
     saveStoredConfig(true);
 
     const regions = (SEED.records && SEED.records.regions) || [];

@@ -14,8 +14,11 @@ ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(),
 
 def run_dom_and_screenshots():
     ud = tempfile.mkdtemp(prefix='isabi_edge_')
+    diag_html = ''
     try:
         # 0. Verify 0 forbidden vendor reliance & 0 overspecified technical plumbing jargon in index.html, manifest.json, robots.txt & sitemap.xml
+        import base64
+        import glob
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         for fname in ('index.html', 'manifest.json', 'robots.txt', 'sitemap.xml'):
             fpath = os.path.join(repo_root, fname)
@@ -30,6 +33,26 @@ def run_dom_and_screenshots():
             )
             assert not jargon, f"Overspecified technical jargon found in {fname}: {jargon[:10]}"
             print(f'[CLEAN] {fname}: 0 forbidden vendor terms & 0 technical plumbing jargon')
+
+        relay_pat = re.compile(r'powerplatform\.com|powerautomate|dynamics\.com|sharepoint\.com|pollinations\.ai', re.IGNORECASE)
+        b64_pat = re.compile(r'["\']([A-Za-z0-9+/=]{28,})["\']')
+        scan_targets = [os.path.join(repo_root, 'index.html')] + sorted(glob.glob(os.path.join(repo_root, 'app', 'js', '*.js')))
+        for sf in scan_targets:
+            stxt = open(sf, 'r', encoding='utf-8').read()
+            rel_sf = os.path.relpath(sf, repo_root)
+            raw_hits = relay_pat.findall(stxt)
+            assert not raw_hits, f"Forbidden external relay domain in {rel_sf}: {raw_hits[:5]}"
+            for bm in b64_pat.finditer(stxt):
+                cand = bm.group(1)
+                if len(cand) % 4 != 0:
+                    continue
+                try:
+                    dec = base64.b64decode(cand, validate=True).decode('utf-8', errors='ignore')
+                except Exception:
+                    continue
+                bhits = relay_pat.findall(dec)
+                assert not bhits, f"Base64-encoded forbidden relay domain in {rel_sf}: {bhits[:5]}"
+        print(f'[ZERO-RELAY] Scanned {len(scan_targets)} Showcase + Command Center bundles (raw + Base64): 0 external relay domains')
 
         import xml.etree.ElementTree as ET
         robots_txt = open(os.path.join(repo_root, 'robots.txt'), 'r', encoding='utf-8').read()
@@ -671,6 +694,11 @@ document.addEventListener('DOMContentLoaded', function() {
             os.remove(shot_html)
         print('ALL GEOMETRY, MULTI-VIEWPORT, STREAMLINE & INTERACTIVE ASSERTIONS PASSED.')
     finally:
+        if diag_html and os.path.exists(diag_html):
+            try:
+                os.remove(diag_html)
+            except OSError:
+                pass
         shutil.rmtree(ud, ignore_errors=True)
 
 

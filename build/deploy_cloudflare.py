@@ -398,43 +398,90 @@ def configure_domain_and_dns(acct_id: str):
 
         # 4. Ensure Cloudflare Edge 301 Redirect: `www.isabisystems.com/*` -> `https://isabisystems.com/*` (preserving path & query)
         rs_get = cf_api("GET", f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint", token)
-        existing_rules = (rs_get.get("result") or {}).get("rules") or [] if rs_get.get("success") else []
-        has_www_rule = any("www.isabisystems.com" in str(rl.get("expression") or "") for rl in existing_rules)
-        if not has_www_rule:
-            clean_rules = [
-                {
-                    "expression": rl["expression"],
-                    "description": rl.get("description", ""),
-                    "action": rl["action"],
-                    "action_parameters": rl.get("action_parameters", {}),
-                    "enabled": rl.get("enabled", True),
-                }
-                for rl in existing_rules
-                if rl.get("expression") and rl.get("action")
-            ]
-            clean_rules.append({
-                "expression": 'http.host eq "www.isabisystems.com"',
-                "description": "Canonical apex redirect www.isabisystems.com to isabisystems.com",
-                "action": "redirect",
-                "action_parameters": {
-                    "from_value": {
-                        "status_code": 301,
-                        "target_url": {
-                            "expression": 'concat("https://isabisystems.com", http.request.uri.path)'
-                        },
-                        "preserve_query_string": True,
+        redirect_configured = False
+        if rs_get.get("success"):
+            existing_rules = (rs_get.get("result") or {}).get("rules") or []
+            has_www_rule = any("www.isabisystems.com" in str(rl.get("expression") or "") for rl in existing_rules)
+            if has_www_rule:
+                redirect_configured = True
+            else:
+                clean_rules = [
+                    {
+                        "expression": rl["expression"],
+                        "description": rl.get("description", ""),
+                        "action": rl["action"],
+                        "action_parameters": rl.get("action_parameters", {}),
+                        "enabled": rl.get("enabled", True),
                     }
-                },
-                "enabled": True,
-            })
-            rs_put = cf_api(
-                "PUT",
-                f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint",
-                token,
-                {"rules": clean_rules},
+                    for rl in existing_rules
+                    if rl.get("expression") and rl.get("action")
+                ]
+                clean_rules.append({
+                    "expression": 'http.host eq "www.isabisystems.com"',
+                    "description": "Canonical apex redirect www.isabisystems.com to isabisystems.com",
+                    "action": "redirect",
+                    "action_parameters": {
+                        "from_value": {
+                            "status_code": 301,
+                            "target_url": {
+                                "expression": 'concat("https://isabisystems.com", http.request.uri.path)'
+                            },
+                            "preserve_query_string": True,
+                        }
+                    },
+                    "enabled": True,
+                })
+                rs_put = cf_api(
+                    "PUT",
+                    f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint",
+                    token,
+                    {"rules": clean_rules},
+                )
+                if rs_put.get("success"):
+                    redirect_configured = True
+                    print("Configured Cloudflare Edge 301 redirect rule: www.isabisystems.com -> https://isabisystems.com")
+
+        if not redirect_configured:
+            routes_res = cf_api("GET", f"/zones/{zid}/workers/routes", token)
+            existing_routes = (routes_res.get("result") or []) if routes_res.get("success") else []
+            has_worker_route = any(
+                str(rt.get("pattern") or "") == "www.isabisystems.com/*" and rt.get("script") == "isabi-www-redirect"
+                for rt in existing_routes
             )
-            if rs_put.get("success"):
-                print("Configured Cloudflare Edge 301 redirect: www.isabisystems.com -> https://isabisystems.com")
+            if not has_worker_route:
+                worker_js = (
+                    "addEventListener('fetch', event => {\n"
+                    "  const u = new URL(event.request.url);\n"
+                    "  u.hostname = 'isabisystems.com';\n"
+                    "  u.protocol = 'https:';\n"
+                    "  u.port = '';\n"
+                    "  const code = (event.request.method === 'GET' || event.request.method === 'HEAD') ? 301 : 308;\n"
+                    "  event.respondWith(Response.redirect(u.toString(), code));\n"
+                    "});\n"
+                ).encode("utf-8")
+                w_req = urllib.request.Request(
+                    f"https://api.cloudflare.com/client/v4/accounts/{acct_id}/workers/scripts/isabi-www-redirect",
+                    data=worker_js,
+                    method="PUT",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/javascript",
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(w_req, timeout=20) as w_resp:
+                        w_out = json.loads(w_resp.read().decode("utf-8"))
+                except Exception as w_ex:
+                    w_out = {"success": False, "error": str(w_ex)}
+                if w_out.get("success"):
+                    rt_post = cf_api(
+                        "POST",
+                        f"/zones/{zid}/workers/routes",
+                        token,
+                        {"pattern": "www.isabisystems.com/*", "script": "isabi-www-redirect"},
+                    )
+                    if rt_post.get("success"):
+                        print("Configured Cloudflare Edge Worker 301 redirect: www.isabisystems.com/* -> https://isabisystems.com/*")
 
         if str(zone.get("status") or "").lower() == "active":
             print(f"Cloudflare Zone `isabisystems.com` verified ACTIVE (id={zid}).")
