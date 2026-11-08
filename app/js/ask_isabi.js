@@ -6557,11 +6557,15 @@
     const p16Line = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase16ReconSnapshot === 'function')
       ? cleanOut(window.MFG_AI_EDGE.getPhase16ReconSnapshot(activeInd).summaryLine || '')
       : '';
+    const p17Line = (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.getPhase17CloseSnapshot === 'function')
+      ? cleanOut(window.MFG_AI_EDGE.getPhase17CloseSnapshot(activeInd).summaryLine || '')
+      : '';
 
     const kpiLine = [
       `Scope: ${scope.fullScopeLabel} (Basis: ${scope.basis === 'tx' ? 'Transaction Date' : 'Reporting Date'})`,
       'Industry Domain Metrics:\n' + indLines.join('\n'),
       p16Line,
+      p17Line,
       screenLine,
       `Unreviewed Sentinel Alerts: ${openAlerts.length}${openAlerts.length ? ' (' + openAlerts.slice(0, 4).map(a => cleanOut(a.title || a.code)).join('; ') + ')' : ''}`,
       domainDetail,

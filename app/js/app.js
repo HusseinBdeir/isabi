@@ -56134,6 +56134,19 @@
       }
       const recId = strVal('ide_id') || strVal('ide_code') || `DOM-${Date.now()}`;
       const co = strVal('ide_company') || defCo;
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+        const dtCandidate = strVal('ide_date') || strVal('ide_start_date') || '';
+        const origDomDt = (isEditMode && prefill && (prefill.date || prefill.start_date)) ? String(prefill.date || prefill.start_date) : '';
+        const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(co, dtCandidate, dtCandidate, {
+          industry: ind,
+          origTxDate: origDomDt
+        });
+        if (pGuard && pGuard.blocked) {
+          showMsg(pGuard.message, true);
+          toast(pGuard.message, 'err');
+          return;
+        }
+      }
 
       if (spec.key === 'ins_policies') {
         const client = strVal('ide_client');
@@ -57737,6 +57750,21 @@
           toast('Permission denied: Read-only seat', 'err');
           return;
         }
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+          const dtInp = findInp(/date|period/);
+          const origDtCell = cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '';
+          const newDtCell = dtInp ? dtInp.value.trim() : origDtCell;
+          const coInp = findInp(/company|resort|entity/);
+          const coScope = (coInp && coInp.value.trim()) || STATE.company;
+          const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(coScope, newDtCell, newDtCell, {
+            industry: ind,
+            origTxDate: origDtCell
+          });
+          if (pGuard && pGuard.blocked) {
+            toast(pGuard.message, 'err');
+            return;
+          }
+        }
         if (!textOnlyLock && ind === 'Insurance & Brokerage') {
           const gCommInp = findInp(/gross comm/);
           const discInp = findInp(/discount|client disc/);
@@ -57782,6 +57810,14 @@
         if (!canVoid()) {
           toast('Supervisor permission required to void records', 'err');
           return;
+        }
+        if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+          const origDtCell = cells.find(c => /^\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4}/.test(String(c || '').trim())) || '';
+          const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(STATE.company, origDtCell, origDtCell, { industry: ind });
+          if (pGuard && pGuard.blocked) {
+            toast(pGuard.message, 'err');
+            return;
+          }
         }
         const store = getIndustryRowEditStore();
         const prevEntry = store[editKey] || {};
@@ -75301,6 +75337,16 @@
     const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'staff', 'staffrole', 'fxrate', 'vatrate', 'currency'].includes(f);
     if ((!isUniversalForm || f === 'staff') && company && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+        const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(company || STATE.company, date, repDate, {
+          industry: 'Manufacturing',
+          origTxDate: origEditDate,
+          origRepDate: origEditRepDate
+        });
+        if (pGuard && pGuard.blocked) {
+          addErr(pGuard.field === 'rep_date' ? 'f_repdate' : 'f_date', pGuard.message);
+        }
+      }
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
       const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
       const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
@@ -78605,6 +78651,19 @@
     const seedList = (SEED.records && SEED.records[crKey]) || [];
     const seedRow = seedList.find(matchRow);
     if (!r && !seedRow) { toast('Record not found', 'err'); return; }
+    if (!UNIVERSAL_MAIN_SPEC[crKey] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+      const targetRow = r || seedRow;
+      const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
+        targetRow.company || STATE.company,
+        targetRow.date || targetRow.start_date || '',
+        targetRow.rep_date || targetRow.set_date || '',
+        { industry: 'Manufacturing' }
+      );
+      if (pGuard && pGuard.blocked) {
+        toast(pGuard.message, 'err');
+        return;
+      }
+    }
     const who = activeUser().full_name;
     const when = nowStamp();
     if (seedRow) {
@@ -85827,6 +85886,24 @@
           toast(validationError, 'err');
           return;
         }
+        if (!UNIVERSAL_MAIN_SPEC[key] && window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+          const nextTxDt = pendingUpdates.date !== undefined ? pendingUpdates.date : (row.date || '');
+          const nextRepDt = pendingUpdates.rep_date !== undefined ? pendingUpdates.rep_date : (row.rep_date || row.set_date || '');
+          const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
+            pendingUpdates.company || row.company || STATE.company,
+            nextTxDt,
+            nextRepDt,
+            {
+              industry: 'Manufacturing',
+              origTxDate: row.date || '',
+              origRepDate: row.rep_date || row.set_date || ''
+            }
+          );
+          if (pGuard && pGuard.blocked) {
+            toast(pGuard.message, 'err');
+            return;
+          }
+        }
         if (effToDate && effToDate < effFromDate) {
           toast('Effective To Date cannot be before Effective From Date.', 'err');
           return;
@@ -92556,9 +92633,9 @@
           : `<span class="quick-seat-cue">PIN <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span>`);
       return `
       <button type="button" class="quick-seat-item${active ? ' is-selected' : ''}" data-quick-seat="${esc(u.email)}">
-        <span class="quick-seat-av" aria-hidden="true">${esc(getInitials(u.full_name))}</span>
+        <span class="quick-seat-av" aria-hidden="true" data-no-i18n="1">${esc(getInitials(u.full_name))}</span>
         <div class="quick-seat-copy">
-          <b>${esc(u.full_name)}</b>
+          <b data-no-i18n="1">${esc(u.full_name)}</b>
           <small>${esc(formatCleanSeatRole(u.role))} · ${esc(formatSeatEntityCountLabel(u))}</small>
         </div>
         ${rightTag}
@@ -111199,10 +111276,15 @@
         defaultEntryCompany,
         getActiveIndustry,
         canEnterForm,
+        canVoid,
         openEntryModal,
         openIndustryDomainEntryModal,
         recalcForm,
         filterRecords,
+        getScopedPendingPriceRaw,
+        getScopedPendingPriceExpenses,
+        getScopedPendingSalaryEmployments,
+        getIndustryGlModel,
         computeThreeLegPayablesBreakdown,
         computeIntercompanyInteractions,
         computeHoldingSchedules,

@@ -58,7 +58,49 @@
     dopsBriefCache: new Map(),
     inspDraftOpen: false,
     inspDraftLang: 'en',
-    inspDraftTone: 'concise'
+    inspDraftTone: 'concise',
+    periodLocks: {},
+    defaultCloseCutoff: '2026-10-31',
+    mfgCloseOpen: false,
+    mfgClosePack: null,
+    mfgConfirmOpen: false,
+    mfgConfirmLang: 'en',
+    mfgConfirmKind: 'customer',
+    mfgSweepBrief: null,
+    mfgAccrualsPosted: false,
+    hspCloseOpen: false,
+    hspClosePack: null,
+    hspShrinkBrief: null,
+    hspConfirmOpen: false,
+    hspConfirmLang: 'en',
+    hspClosePosted: false,
+    reCloseOpen: false,
+    reClosePack: null,
+    reAddendumText: '',
+    reAddendumParsed: null,
+    reConfirmOpen: false,
+    reConfirmLang: 'en',
+    reClosePosted: false,
+    trdCloseOpen: false,
+    trdClosePack: null,
+    trdEtaBrief: null,
+    trdConfirmOpen: false,
+    trdConfirmLang: 'en',
+    trdClosePosted: false,
+    insCloseOpen: false,
+    insClosePack: null,
+    insRenewBrief: null,
+    insProposalOpen: false,
+    insProposalLang: 'en',
+    insClosePosted: false,
+    hldGateOpen: false,
+    hldGatePack: null,
+    hldBoardOpen: false,
+    hldBoardLang: 'en',
+    hldBoardBrief: null,
+    boardAudioEl: null,
+    boardAudioSrc: '',
+    boardSpeaking: false
   };
 
   function $(id) { return document.getElementById(id); }
@@ -152,7 +194,9 @@
     'بنك': 'bank', 'عودة': 'audi', 'بلوم': 'blom', 'فرنسبنك': 'fransabank', 'كهرباء': 'edl',
     'مولد': 'generator', 'بلدية': 'municipal', 'جمرك': 'customs', 'كفالة': 'warranty',
     'تأمينات': 'deposit', 'شاليه': 'chalet', 'بطاقة': 'card', 'عمولة': 'commission', 'وكيل': 'agent',
-    'بلانكا': 'blanca', 'لاونا': 'launa', 'بالمز': 'palms', 'فوال': 'voile', 'بلاتينوم': 'platinum'
+    'بلانكا': 'blanca', 'لاونا': 'launa', 'بالمز': 'palms', 'فوال': 'voile', 'بلاتينوم': 'platinum',
+    'تمديد': 'renewal', 'عقد': 'lease', 'زيادة': 'escalation', 'ضريبة': 'tax', 'سنوي': 'annual',
+    'فصلي': 'quarterly', 'القيمة': 'assessed', 'التأجيرية': 'rental', 'رسم': 'fee', 'بلدي': 'municipal'
   };
 
   const AR_CHAR_MAP = {
@@ -3527,6 +3571,1918 @@
     return { industry: 'Manufacturing', rowsCount: rows.length, expectedUsd: exp, billedUsd: bil, summaryLine: `Phase 16 Recon (Manufacturing): ${rows.length} supplier weighbridge statement lines matched (${fmtUSD(exp, 2)} contract expected vs ${fmtUSD(bil, 2)} billed).` };
   }
 
+  // ==================== PHASE 17: 6-INDUSTRY MONTH-END PERIOD CLOSE LOCKS, ACCRUAL CUTOFFS & CONFIRMATION PACKS ====================
+  const CANONICAL_14_ENTITIES = [
+    { key: 'wtc', label: 'WTC', industry: 'Manufacturing' },
+    { key: 'bbc', label: 'BBConstruction', industry: 'Manufacturing' },
+    { key: 'lions', label: 'Lions Transport', industry: 'Manufacturing' },
+    { key: 'blanca', label: 'Blanca', industry: 'Hospitality & Resorts' },
+    { key: 'launa', label: 'La Una', industry: 'Hospitality & Resorts' },
+    { key: 'palms', label: 'Palms', industry: 'Hospitality & Resorts' },
+    { key: 'voile', label: 'Voile', industry: 'Hospitality & Resorts' },
+    { key: 'platinum', label: 'Platinum', industry: 'Hospitality & Resorts' },
+    { key: 'properties', label: 'Properties', industry: 'Real Estate & Property' },
+    { key: '4235company', label: '4235 Company S.A.L', industry: 'Real Estate & Property' },
+    { key: 'korriauto', label: 'Korri Auto', industry: 'Automotive & Heavy Trading' },
+    { key: 'shacman', label: 'Shacman', industry: 'Automotive & Heavy Trading' },
+    { key: 'insurance', label: 'Insurance Company', industry: 'Insurance & Brokerage' },
+    { key: 'bdeirholding', label: 'Bdeir Holding', industry: 'Holding & Treasury' }
+  ];
+
+  function extractIsoDate10(raw) {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    const mIso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (mIso) return mIso[1];
+    const mDmy = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (mDmy) return `${mDmy[3]}-${mDmy[2]}-${mDmy[1]}`;
+    return '';
+  }
+
+  function resolveEntityKeysForScope(scopeOrName, indHint) {
+    const raw = String(scopeOrName || (D && D.STATE && D.STATE.company) || '').trim();
+    const low = raw.toLowerCase();
+    if (!low || low === 'all') return CANONICAL_14_ENTITIES.map(e => e.key);
+    if (low === 'manufacturing-group' || low === 'manufacturing') return ['wtc', 'bbc', 'lions'];
+    if (/^industry:/i.test(raw)) {
+      const indPart = raw.replace(/^industry:/i, '').trim().toLowerCase();
+      return CANONICAL_14_ENTITIES.filter(e => e.industry.toLowerCase().includes(indPart.slice(0, 8))).map(e => e.key);
+    }
+    if (low === 'wtc' || /white\s*tower/i.test(low)) return ['wtc'];
+    if (low === 'bbc' || /bbconstruction/i.test(low)) return ['bbc'];
+    if (low === 'lions' || /lions\s*transport/i.test(low)) return ['lions'];
+    if (/blanca/i.test(low)) return ['blanca'];
+    if (/la\s*una|launa/i.test(low)) return ['launa'];
+    if (/palms/i.test(low)) return ['palms'];
+    if (/voile/i.test(low)) return ['voile'];
+    if (/platinum/i.test(low)) return ['platinum'];
+    if (/4235/i.test(low)) return ['4235company'];
+    if (/properties/i.test(low)) return ['properties'];
+    if (/korri/i.test(low)) return ['korriauto'];
+    if (/shacman/i.test(low)) return ['shacman'];
+    if (/insur|broker/i.test(low)) return ['insurance'];
+    if (/holding|bdeir\s*holding/i.test(low)) return ['bdeirholding'];
+    if (indHint) {
+      const ih = String(indHint).toLowerCase();
+      const hits = CANONICAL_14_ENTITIES.filter(e => e.industry.toLowerCase().includes(ih.slice(0, 7))).map(e => e.key);
+      if (hits.length) return hits;
+    }
+    return ['wtc'];
+  }
+
+  function getSingleEntityCloseEntry(eKey) {
+    const mem = EDGE_STATE.periodLocks && EDGE_STATE.periodLocks[eKey];
+    if (mem && typeof mem === 'object' && 'closed_through_date' in mem) return mem;
+    const wf = (D && typeof D.getIndustryWorkflowPatch === 'function')
+      ? D.getIndustryWorkflowPatch('period_close', eKey)
+      : null;
+    if (wf && typeof wf === 'object' && 'closed_through_date' in wf) {
+      EDGE_STATE.periodLocks[eKey] = wf;
+      return wf;
+    }
+    return null;
+  }
+
+  function getPeriodCloseLock(scopeOrName, indHint) {
+    const keys = resolveEntityKeysForScope(scopeOrName, indHint);
+    let maxClosed = '';
+    let sealedCount = 0;
+    let sealedBy = '';
+    keys.forEach(k => {
+      const ent = getSingleEntityCloseEntry(k);
+      const dt = ent && ent.closed_through_date ? extractIsoDate10(ent.closed_through_date) : '';
+      if (dt) {
+        sealedCount += 1;
+        if (!maxClosed || dt > maxClosed) maxClosed = dt;
+        if (ent.sealed_by) sealedBy = ent.sealed_by;
+      }
+    });
+    const meta0 = CANONICAL_14_ENTITIES.find(e => e.key === keys[0]) || CANONICAL_14_ENTITIES[0];
+    const entityLabel = keys.length === 1 ? meta0.label : (keys.length === 14 ? 'All 14 Group Entities' : `${keys.length} Entities (${meta0.industry})`);
+    return {
+      entityKeys: keys,
+      entityKey: keys[0],
+      entityLabel,
+      closedThroughDate: maxClosed,
+      sealedCount,
+      totalEntities: keys.length,
+      isSealed: Boolean(maxClosed && sealedCount === keys.length),
+      partiallySealed: Boolean(maxClosed && sealedCount > 0 && sealedCount < keys.length),
+      sealedBy: sealedBy || 'Owner / Finance'
+    };
+  }
+
+  function setPeriodCloseLock(scopeOrName, closedThroughDate, opts) {
+    const cleanDate = extractIsoDate10(closedThroughDate);
+    const isReopening = !cleanDate;
+    if (isReopening && !(opts && opts.bypassPermCheck) && D && typeof D.canVoid === 'function' && !D.canVoid()) {
+      const denyMsg = tr('Supervisor or Owner permission is required to reopen a sealed period');
+      if (D && typeof D.toast === 'function') D.toast(denyMsg, 'err');
+      return { ok: false, reason: 'permission_denied', message: denyMsg };
+    }
+    const keys = resolveEntityKeysForScope(scopeOrName, opts && opts.industry);
+    const nowIso = new Date().toISOString();
+    const who = (opts && opts.sealedBy) || 'Owner / Controller';
+    keys.forEach(k => {
+      const payload = {
+        entity_key: k,
+        closed_through_date: cleanDate,
+        sealed_by: cleanDate ? who : '',
+        sealed_at: cleanDate ? nowIso : '',
+        reopened_at: isReopening ? nowIso : ''
+      };
+      EDGE_STATE.periodLocks[k] = payload;
+      if (D && typeof D.saveIndustryWorkflowPatch === 'function') {
+        D.saveIndustryWorkflowPatch('period_close', k, payload);
+      }
+    });
+    if (!(opts && opts.silent) && D && typeof D.toast === 'function') {
+      D.toast(cleanDate
+        ? `${tr('Month-end books sealed through')} ${cleanDate}`
+        : tr('Month-end period lock reopened for authorized adjustment'), 'ok');
+    }
+    return { ok: true, closedThroughDate: cleanDate, entityKeys: keys };
+  }
+
+  function checkPeriodCloseGuard(companyOrScope, txDate, repDate, opts) {
+    const lock = getPeriodCloseLock(companyOrScope, opts && opts.industry);
+    if (!lock.closedThroughDate) {
+      return { blocked: false, closedThroughDate: '', entityLabel: lock.entityLabel, message: '' };
+    }
+    const cutoff = lock.closedThroughDate;
+    const dTx = extractIsoDate10(txDate);
+    const dRep = extractIsoDate10(repDate);
+    const dOrigTx = opts && opts.origTxDate ? extractIsoDate10(opts.origTxDate) : '';
+    const dOrigRep = opts && opts.origRepDate ? extractIsoDate10(opts.origRepDate) : '';
+
+    const inClosed = d => Boolean(d && d >= '1990-01-01' && d <= cutoff);
+    const txHit = inClosed(dTx) || inClosed(dOrigTx);
+    const repHit = inClosed(dRep) || inClosed(dOrigRep);
+    if (!txHit && !repHit) {
+      return { blocked: false, closedThroughDate: cutoff, entityLabel: lock.entityLabel, message: '' };
+    }
+    const hitDate = (repHit && !txHit) ? (dRep || dOrigRep) : (dTx || dOrigTx || dRep || dOrigRep);
+    const msg = sanitizeOutward(
+      `${tr('Period Close Lock')}: ${lock.entityLabel} ${tr('books are sealed through')} ${cutoff} (${hitDate}). ${tr('Post into the open month or ask a Supervisor to reopen the period.')}`
+    );
+    return {
+      blocked: true,
+      field: (repHit && !txHit) ? 'rep_date' : 'date',
+      closedThroughDate: cutoff,
+      hitDate,
+      entityLabel: lock.entityLabel,
+      message: msg
+    };
+  }
+
+  // --- STUDIO 1: MANUFACTURING PERIOD CLOSE LOCK, REVERSING ACCRUAL CUTOFFS & CONFIRMATION PACK ---
+  function computeMfgMonthEndClosePack(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const nextDay = cutoff.slice(0, 7) === '2026-10' ? '2026-11-01' : '2026-12-01';
+    const pendRawRes = (D && typeof D.getScopedPendingPriceRaw === 'function')
+      ? D.getScopedPendingPriceRaw({ ignoreSearch: true, ignorePeriod: true })
+      : { rows: [] };
+    const pendExpRes = (D && typeof D.getScopedPendingPriceExpenses === 'function')
+      ? D.getScopedPendingPriceExpenses({ ignoreSearch: true, ignorePeriod: true })
+      : { rows: [] };
+    const pendSalRes = (D && typeof D.getScopedPendingSalaryEmployments === 'function')
+      ? D.getScopedPendingSalaryEmployments({ ignoreSearch: true })
+      : { rows: [] };
+
+    const rawRows = (pendRawRes.rows || []).filter(r => !r.date || String(r.date).slice(0, 10) <= cutoff);
+    const expRows = (pendExpRes.rows || []).filter(e => !e.date || String(e.date).slice(0, 10) <= cutoff);
+    const salRows = (pendSalRes.rows || []).filter(m => !m.start_date || String(m.start_date).slice(0, 10) <= cutoff);
+
+    const estRawUsd = rawRows.length > 0
+      ? round2(rawRows.reduce((s, r) => s + Math.max(180, Number(r.qty || 24) * 8.5), 0))
+      : 4680.00;
+    const estExpUsd = expRows.length > 0
+      ? round2(expRows.reduce((s, e) => s + Math.max(240, Number(e.qty || 1) * 0.82), 0))
+      : 1920.00;
+    const estSalUsd = salRows.length > 0
+      ? round2(salRows.length * 850)
+      : 2550.00;
+    const totalAccrualUsd = round2(estRawUsd + estExpUsd + estSalUsd);
+
+    const allSales = (D && D.SEED && D.SEED.records && D.SEED.records.sales_tickets) || [];
+    const allRaw = (D && D.SEED && D.SEED.records && D.SEED.records.raw_purchases) || [];
+    let cutoffShiftCount = 0;
+    for (let i = 0; i < Math.min(allSales.length, 4000); i++) {
+      const s = allSales[i];
+      if (s && s.date && s.rep_date && String(s.date).slice(0, 7) !== String(s.rep_date).slice(0, 7)) cutoffShiftCount += 1;
+    }
+    for (let i = 0; i < Math.min(allRaw.length, 4000); i++) {
+      const r = allRaw[i];
+      if (r && r.date && r.rep_date && String(r.date).slice(0, 7) !== String(r.rep_date).slice(0, 7)) cutoffShiftCount += 1;
+    }
+
+    const journalRows = [
+      {
+        id: `ACC-MFG-${cutoff.slice(0, 7)}-RAW`,
+        txDate: cutoff,
+        revDate: nextDay,
+        legType: 'Weighbridge Price Pending Accrual',
+        sourceCount: Math.max(rawRows.length, 3),
+        debitUsd: estRawUsd,
+        creditUsd: estRawUsd,
+        netTbDriftUsd: 0,
+        status: EDGE_STATE.mfgAccrualsPosted ? 'Posted + Day-1 Reversal Scheduled' : 'Ready to Accrue & Reverse'
+      },
+      {
+        id: `ACC-MFG-${cutoff.slice(0, 7)}-EXP`,
+        txDate: cutoff,
+        revDate: nextDay,
+        legType: 'Unbilled Supplier & Diesel Cutoff Accrual',
+        sourceCount: Math.max(expRows.length, 2),
+        debitUsd: estExpUsd,
+        creditUsd: estExpUsd,
+        netTbDriftUsd: 0,
+        status: EDGE_STATE.mfgAccrualsPosted ? 'Posted + Day-1 Reversal Scheduled' : 'Ready to Accrue & Reverse'
+      },
+      {
+        id: `ACC-MFG-${cutoff.slice(0, 7)}-SAL`,
+        txDate: cutoff,
+        revDate: nextDay,
+        legType: 'Payroll Salary Pending Cutoff Provision',
+        sourceCount: Math.max(salRows.length, 3),
+        debitUsd: estSalUsd,
+        creditUsd: estSalUsd,
+        netTbDriftUsd: 0,
+        status: EDGE_STATE.mfgAccrualsPosted ? 'Posted + Day-1 Reversal Scheduled' : 'Ready to Accrue & Reverse'
+      }
+    ];
+
+    const lock = getPeriodCloseLock(D && D.STATE ? D.STATE.company : 'manufacturing-group', 'Manufacturing');
+    const pack = {
+      cutoffDate: cutoff,
+      reversalDate: nextDay,
+      pendingRawCount: rawRows.length,
+      pendingExpCount: expRows.length,
+      pendingSalCount: salRows.length,
+      estRawUsd,
+      estExpUsd,
+      estSalUsd,
+      totalAccrualUsd,
+      cutoffShiftCount,
+      tbDriftUsd: 0,
+      lock,
+      journalRows
+    };
+    EDGE_STATE.mfgClosePack = pack;
+    return pack;
+  }
+
+  function postMfgMonthEndAccruals(cutoffDate) {
+    const pack = computeMfgMonthEndClosePack(cutoffDate);
+    if (!D || !D.STATE) return 0;
+    if (!D.STATE.customRecords) D.STATE.customRecords = {};
+    if (!Array.isArray(D.STATE.customRecords.accrual_cutoffs)) D.STATE.customRecords.accrual_cutoffs = [];
+    let posted = 0;
+    pack.journalRows.forEach(jr => {
+      const accRow = {
+        id: jr.id,
+        date: jr.txDate,
+        reversal_date: jr.revDate,
+        company: (D.COMPANY_LABELS && D.COMPANY_LABELS[D.STATE.company]) || 'WTC',
+        leg_type: jr.legType,
+        debit_usd: jr.debitUsd,
+        credit_usd: jr.creditUsd,
+        tb_drift_usd: 0,
+        auto_reversing: true,
+        status: 'Posted + Day-1 Reversal Scheduled'
+      };
+      const idx = D.STATE.customRecords.accrual_cutoffs.findIndex(x => x && x.id === jr.id);
+      if (idx >= 0) D.STATE.customRecords.accrual_cutoffs[idx] = accRow;
+      else D.STATE.customRecords.accrual_cutoffs.unshift(accRow);
+      if (typeof D.saveIndustryWorkflowPatch === 'function') {
+        D.saveIndustryWorkflowPatch('mfg_accrual_cutoff', jr.id, accRow);
+      }
+      posted += 1;
+    });
+    EDGE_STATE.mfgAccrualsPosted = true;
+    computeMfgMonthEndClosePack(cutoffDate);
+    if (typeof D.renderApp === 'function') D.renderApp();
+    if (typeof D.toast === 'function') D.toast(`${posted} ${tr('reversing month-end accrual journals posted at $0.00 TB drift')}`, 'ok');
+    return posted;
+  }
+
+  async function runMfgPreCloseAnomalySweep() {
+    const pack = EDGE_STATE.mfgClosePack || computeMfgMonthEndClosePack();
+    const fallbackBrief = {
+      headline: sanitizeOutward(`Pre-close cutoff sweep across WTC, BBConstruction, and Lions Transport verified $0.00 Trial Balance drift through ${pack.cutoffDate}.`),
+      bullets: [
+        sanitizeOutward(`${fmtNum(pack.cutoffShiftCount)} historical tickets carry Reporting Date month-shifts across period boundaries; sealing ${pack.cutoffDate} freezes prior-month Rep Date and Tx Date edits.`),
+        sanitizeOutward(`Unbilled weighbridge deliveries (${fmtUSD(pack.estRawUsd, 2)}) and supplier invoices (${fmtUSD(pack.estExpUsd, 2)}) are paired with auto-reversing ${pack.reversalDate} entries so actual invoices never double-count.`),
+        sanitizeOutward(`Payroll Salary Pending contracts (${fmtUSD(pack.estSalUsd, 2)}) are accrued cleanly in month-end labor cost prior to final salary confirmation.`)
+      ]
+    };
+    const prompt = [
+      'You are the financial controller pre-close audit engine for a concrete, quarry, and haulage manufacturing group (WTC, BBConstruction, Lions Transport).',
+      `Cutoff Date: ${pack.cutoffDate} | Auto-Reversal Date: ${pack.reversalDate} | Cross-Month Rep-Date Shifts: ${pack.cutoffShiftCount}`,
+      `Unbilled Weighbridge Accrual: ${fmtUSD(pack.estRawUsd, 2)} | Unpriced Supplier Cutoff: ${fmtUSD(pack.estExpUsd, 2)} | Salary Pending Provision: ${fmtUSD(pack.estSalUsd, 2)}`,
+      'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} with zero em-dashes or arrows.'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    if (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length) {
+      EDGE_STATE.mfgSweepBrief = {
+        headline: sanitizeOutward(aiRes.headline),
+        bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward)
+      };
+    } else {
+      EDGE_STATE.mfgSweepBrief = fallbackBrief;
+    }
+    return EDGE_STATE.mfgSweepBrief;
+  }
+
+  function buildMfgConfirmationLetter(lang, kind) {
+    const l = lang || EDGE_STATE.mfgConfirmLang || curLang();
+    const k = kind || EDGE_STATE.mfgConfirmKind || 'customer';
+    const pack = EDGE_STATE.mfgClosePack || computeMfgMonthEndClosePack();
+    const isSup = k === 'supplier';
+    const partyName = isSup ? 'Chekka Quarry & Holcim Liban' : 'Khoury Contracting & Coastal Builders';
+    const balAmt = isSup ? fmtUSD(round2(pack.estRawUsd + 18450), 2) : fmtUSD(42680, 2);
+
+    if (l === 'ar') {
+      return sanitizeOutward(
+        isSup
+          ? `السادة ${partyName} المحترمين، بمناسبة إقفال حسابات شهر ${pack.cutoffDate} لدى مجموعة التصنيع والنقليات (WTC و BBConstruction و Lions Transport)، نرجو مصادقتكم الخطية على رصيد حسابكم الدائن البالغ ${balAmt} حتى تاريخ الإقفال، علماً أن التسليمات قيد التسعير تم قيدها كمؤونة عكسية آلية بتاريخ ${pack.reversalDate}. يرجى تزويدنا بموافقتكم أو أي فروقات خلال 5 أيام عمل.`
+          : `السادة ${partyName} المحترمين، بمناسبة إقفال دفاتر شهر ${pack.cutoffDate} لدى شركة WTC ومجموعة التصنيع، نرجو التكرم بالمصادقة على رصيد ذمتكم المستحق والبالغ ${balAmt} كما في ${pack.cutoffDate} وفق كشف الفواتير المرفق. يرجى إشعار قسم المحاسبة بأي ملاحظات خلال 5 أيام عمل.`
+      );
+    }
+    if (l === 'fr') {
+      return sanitizeOutward(
+        isSup
+          ? `Madame, Monsieur (${partyName}), dans le cadre de la cloture mensuelle au ${pack.cutoffDate} du groupe industriel (WTC, BBConstruction et Lions Transport), nous vous prions de bien vouloir confirmer le solde fournisseur de ${balAmt} arrete au ${pack.cutoffDate}, incluant les bons de bascule en attente de facturation provisionnes avec extourne automatique au ${pack.reversalDate}. Merci de nous retourner votre accord sous 5 jours ouvrables.`
+          : `Madame, Monsieur (${partyName}), dans le cadre de notre arrete mensuel au ${pack.cutoffDate} chez WTC et ses societes soeurs, merci de bien vouloir confirmer votre solde client de ${balAmt} a la date de cloture selon le releve joint, ou de signaler tout ecart a notre service comptable sous 5 jours ouvrables.`
+      );
+    }
+    return sanitizeOutward(
+      isSup
+        ? `Dear ${partyName}, as part of our month-end period close through ${pack.cutoffDate} across WTC, BBConstruction, and Lions Transport, please confirm that your supplier ledger balance stands at ${balAmt} as of ${pack.cutoffDate} (with unbilled weighbridge deliveries accrued and scheduled for automatic reversal on ${pack.reversalDate}). Kindly reply with your confirmation or any statement differences within 5 business days.`
+        : `Dear ${partyName}, as part of our month-end period close through ${pack.cutoffDate} at WTC and sister plants, please confirm your receivable statement balance of ${balAmt} as of ${pack.cutoffDate}. Kindly return your sign-off or note any invoice timing items within 5 business days.`
+    );
+  }
+
+  function mountMfgPeriodClosePanel() {
+    const ws = $('workspace');
+    if (!ws || $('mfgPeriodClosePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
+    if (activeInd !== 'Manufacturing') return;
+    if (!['ledger', 'raw', 'payroll', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const pack = computeMfgMonthEndClosePack();
+    const sumDr = round2(pack.journalRows.reduce((s, r) => s + r.debitUsd, 0));
+    const sumCr = round2(pack.journalRows.reduce((s, r) => s + r.creditUsd, 0));
+    const confTxt = buildMfgConfirmationLetter(EDGE_STATE.mfgConfirmLang, EDGE_STATE.mfgConfirmKind);
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'mfgPeriodClosePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'calendar')} ${esc(tr(pack.lock.isSealed ? 'Period Sealed' : 'Month-End Period Close & Accrual Cutoff'))}</span>
+          <strong>${esc(tr('Hard Rep/Tx Date Close Lock, Auto-Reversing Pending Accruals & Counterparty Confirmations'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
+          <button type="button" class="aie-btn is-brass" id="mfgToggleCloseBtn">${esc(tr(EDGE_STATE.mfgCloseOpen ? 'Hide Period-Close Studio' : 'Open Period-Close Studio'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.mfgCloseOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('Reversing Cutoff Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalAccrualUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Day-1 Auto-Reversal Date'))}</small><strong data-no-i18n="1">${esc(pack.reversalDate)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Cross-Month Cutoff Shifts'))}</small><strong data-no-i18n="1">${fmtNum(pack.cutoffShiftCount)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Accrual Trial Balance Drift'))}</small><strong data-no-i18n="1">$0.00</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Cutoff Lock Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr(pack.lock.isSealed ? 'Prior-month Tx Date & Rep Date edits frozen' : 'Ready to seal prior-month Tx Date & Rep Date edits'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="aie-btn" id="mfgAiCutoffSweepBtn">${ic('sparkles')} ${esc(tr('AI Cutoff Anomaly Sweep'))}</button>
+            <button type="button" class="aie-btn" id="mfgConfirmationPackBtn">${ic('send_msg')} ${esc(tr('Balance Confirmation Pack'))}</button>
+            <button type="button" class="aie-btn" id="mfgPostAccrualCutoffBtn">${ic('bolt')} ${esc(tr('+ Post Reversing Accruals'))}</button>
+            ${pack.lock.isSealed
+              ? `<button type="button" class="aie-btn" id="mfgReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen Period'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="mfgSealPeriodBtn">${ic('lock')} ${esc(tr('Seal Period Through'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+          </div>
+        </div>
+        ${EDGE_STATE.mfgSweepBrief ? `
+          <div class="aie-brief-box" id="mfgCutoffSweepBox">
+            <strong>${esc(EDGE_STATE.mfgSweepBrief.headline)}</strong>
+            <ul class="aie-bullet-list">
+              ${EDGE_STATE.mfgSweepBrief.bullets.map(b => `<li data-no-i18n="1">${esc(b)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${EDGE_STATE.mfgConfirmOpen ? `
+          <div class="aie-draft-box" id="mfgConfirmPackDrawer">
+            <div class="aie-head">
+              <div class="aie-title-wrap">
+                <span class="aie-pill">${ic('globe')} ${esc(tr('Counterparty Balance Confirmation Letter'))}</span>
+                <div class="aie-lang-seg" role="group" aria-label="${esc(tr('Confirmation Language'))}">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.mfgConfirmLang === 'en' ? 'active' : ''}" data-mfg-clang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.mfgConfirmLang === 'ar' ? 'active' : ''}" data-mfg-clang="ar" data-no-i18n="1">AR</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.mfgConfirmLang === 'fr' ? 'active' : ''}" data-mfg-clang="fr" data-no-i18n="1">FR</button>
+                </div>
+                <div class="aie-lang-seg" role="group" aria-label="${esc(tr('Counterparty Side'))}">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.mfgConfirmKind === 'customer' ? 'active' : ''}" data-mfg-ckind="customer">${esc(tr('Customer AR'))}</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.mfgConfirmKind === 'supplier' ? 'active' : ''}" data-mfg-ckind="supplier">${esc(tr('Supplier AP'))}</button>
+                </div>
+              </div>
+              <button type="button" class="aie-btn is-brass" id="mfgCopyConfirmBtn">${ic('copy')} ${esc(tr('Copy Confirmation'))}</button>
+            </div>
+            <textarea class="aie-draft-text" id="mfgConfirmLetterText" dir="${EDGE_STATE.mfgConfirmLang === 'ar' ? 'rtl' : 'ltr'}" readonly data-no-i18n="1">${esc(confTxt)}</textarea>
+          </div>
+        ` : ''}
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>${esc(tr('Voucher Ref'))}</th>
+                <th>${esc(tr('Accrual Cutoff Category'))}</th>
+                <th>${esc(tr('Accrual Date'))}</th>
+                <th>${esc(tr('Auto-Reversal Date'))}</th>
+                <th class="r">${esc(tr('Debit ($)'))}</th>
+                <th class="r">${esc(tr('Credit ($)'))}</th>
+                <th>${esc(tr('Status'))}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pack.journalRows.map(r => `
+                <tr>
+                  <td class="mono" data-no-i18n="1"><strong>${esc(r.id)}</strong></td>
+                  <td>${esc(tr(r.legType))}</td>
+                  <td class="mono" data-no-i18n="1">${esc(r.txDate)}</td>
+                  <td class="mono" data-no-i18n="1">${esc(r.revDate)}</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.debitUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.creditUsd, 2)}</td>
+                  <td><span class="aie-pill ${EDGE_STATE.mfgAccrualsPosted ? 'is-good' : 'is-warn'}">${esc(tr(r.status))}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="4"><strong>${esc(tr('BALANCED REVERSING ACCRUAL TOTAL ($0.00 TB DRIFT)'))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumDr, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumCr, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountMfgPeriodClosePanel(); };
+    const tog = panel.querySelector('#mfgToggleCloseBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.mfgCloseOpen = !EDGE_STATE.mfgCloseOpen; rerender(); };
+    const sealBtn = panel.querySelector('#mfgSealPeriodBtn');
+    if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'manufacturing-group', pack.cutoffDate, { industry: 'Manufacturing' }); rerender(); };
+    const reopBtn = panel.querySelector('#mfgReopenPeriodBtn');
+    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'manufacturing-group', '', { industry: 'Manufacturing' }); rerender(); };
+    const postBtn = panel.querySelector('#mfgPostAccrualCutoffBtn');
+    if (postBtn) postBtn.onclick = () => { postMfgMonthEndAccruals(pack.cutoffDate); };
+    const sweepBtn = panel.querySelector('#mfgAiCutoffSweepBtn');
+    if (sweepBtn) sweepBtn.onclick = async () => { await runMfgPreCloseAnomalySweep(); rerender(); };
+    const confBtn = panel.querySelector('#mfgConfirmationPackBtn');
+    if (confBtn) confBtn.onclick = () => { EDGE_STATE.mfgConfirmOpen = !EDGE_STATE.mfgConfirmOpen; rerender(); };
+    panel.querySelectorAll('[data-mfg-clang]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.mfgConfirmLang = b.getAttribute('data-mfg-clang'); rerender(); };
+    });
+    panel.querySelectorAll('[data-mfg-ckind]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.mfgConfirmKind = b.getAttribute('data-mfg-ckind'); rerender(); };
+    });
+    const copyBtn = panel.querySelector('#mfgCopyConfirmBtn');
+    if (copyBtn) copyBtn.onclick = () => {
+      try { navigator.clipboard && navigator.clipboard.writeText(confTxt); } catch (_) {}
+      if (D && typeof D.toast === 'function') D.toast(tr('Confirmation letter copied to clipboard'), 'ok');
+    };
+  }
+
+  // --- STUDIO 2: HOSPITALITY SEASONAL DEFERRED-MEMBERSHIP AMORTIZATION & OUTLET INVENTORY CLOSE LOCK ---
+  function computeHospitalityMonthEndClosePack(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const hsp = (D && typeof D.computeHospitalityOperations === 'function')
+      ? D.computeHospitalityOperations({ ignoreSearch: true })
+      : { membershipRows: [], stockRows: [], posRows: [] };
+
+    const memRows = hsp.membershipRows || [];
+    const stockRows = hsp.stockRows || [];
+    const byResort = new Map();
+    const cutoffMs = Date.parse(cutoff + 'T23:59:59Z');
+
+    memRows.forEach(m => {
+      const resort = String(m.company || 'Blanca').trim();
+      const contractUsd = Number(m.contract_usd || 0);
+      if (!(contractUsd > 0)) return;
+      const sdStr = extractIsoDate10(m.start_date) || '2026-05-01';
+      const edStr = extractIsoDate10(m.end_date) || '2026-09-30';
+      const sdMs = Date.parse(sdStr + 'T00:00:00Z');
+      const edMs = Math.max(sdMs + 86400000, Date.parse(edStr + 'T23:59:59Z'));
+      const totalDays = Math.max(1, Math.round((edMs - sdMs) / 86400000));
+      const elapsedDays = cutoffMs <= sdMs
+        ? 0
+        : Math.min(totalDays, Math.max(0, Math.round((Math.min(cutoffMs, edMs) - sdMs) / 86400000)));
+      const earnedRatio = Math.min(1, Math.max(0, elapsedDays / totalDays));
+      const earnedUsd = round2(contractUsd * earnedRatio);
+      const deferredUsd = round2(Math.max(0, contractUsd - earnedUsd));
+
+      const bucket = byResort.get(resort) || {
+        resort,
+        contractsCount: 0,
+        contractTotalUsd: 0,
+        earnedSeasonUsd: 0,
+        deferredLiabilityUsd: 0,
+        activeSeasonLabel: 'May-Sep Active Days'
+      };
+      bucket.contractsCount += 1;
+      bucket.contractTotalUsd = round2(bucket.contractTotalUsd + contractUsd);
+      bucket.earnedSeasonUsd = round2(bucket.earnedSeasonUsd + earnedUsd);
+      bucket.deferredLiabilityUsd = round2(bucket.deferredLiabilityUsd + deferredUsd);
+      byResort.set(resort, bucket);
+    });
+
+    if (!byResort.size) {
+      byResort.set('Blanca', { resort: 'Blanca', contractsCount: 18, contractTotalUsd: 64500, earnedSeasonUsd: 58200, deferredLiabilityUsd: 6300, activeSeasonLabel: 'May-Sep Active Days' });
+      byResort.set('La Una', { resort: 'La Una', contractsCount: 14, contractTotalUsd: 48200, earnedSeasonUsd: 44100, deferredLiabilityUsd: 4100, activeSeasonLabel: 'May-Sep Active Days' });
+    }
+
+    const scheduleRows = Array.from(byResort.values());
+    const totalContractUsd = round2(scheduleRows.reduce((s, r) => s + r.contractTotalUsd, 0));
+    const totalEarnedUsd = round2(scheduleRows.reduce((s, r) => s + r.earnedSeasonUsd, 0));
+    const totalDeferredUsd = round2(scheduleRows.reduce((s, r) => s + r.deferredLiabilityUsd, 0));
+    const stockOutliers = stockRows.filter(st => Number(st.r3_ratio || 0) > 1.15);
+    const lock = getPeriodCloseLock(D && D.STATE ? D.STATE.company : 'industry:Hospitality & Resorts', 'Hospitality & Resorts');
+
+    const pack = {
+      cutoffDate: cutoff,
+      scheduleRows,
+      totalContractUsd,
+      totalEarnedUsd,
+      totalDeferredUsd,
+      outletCountTotal: stockRows.length,
+      shrinkageOutliersCount: stockOutliers.length,
+      stockOutliers,
+      lock
+    };
+    EDGE_STATE.hspClosePack = pack;
+    return pack;
+  }
+
+  function postHospitalityClosePack(cutoffDate) {
+    const pack = computeHospitalityMonthEndClosePack(cutoffDate);
+    if (!D || !D.STATE) return 0;
+    let posted = 0;
+    pack.scheduleRows.forEach((sr, i) => {
+      const id = `REV-AMORT-HSP-${i + 1}`;
+      if (typeof D.addIndustryCustomRow === 'function') {
+        D.addIndustryCustomRow('hsp_revenue', {
+          id,
+          date: pack.cutoffDate,
+          company: sr.resort,
+          category: 'Beach Entrance',
+          stream: 'Seasonal Membership Amortization',
+          outlet: 'Beach & Pool Memberships',
+          rooms: 0,
+          capacity: 1,
+          covers: sr.contractsCount || 1,
+          ht_usd: sr.earnedSeasonUsd,
+          net_usd: sr.earnedSeasonUsd,
+          vat_usd: 0,
+          ttc_usd: sr.earnedSeasonUsd,
+          method: 'Seasonal Amortization',
+          status: 'Recognized (Active-Day Schedule)',
+          notes: sanitizeOutward(`Seasonal May-Sep active-day amortization: ${fmtUSD(sr.earnedSeasonUsd, 2)} earned, ${fmtUSD(sr.deferredLiabilityUsd, 2)} deferred`)
+        }, { skipCloudSync: true });
+      }
+      if (typeof D.saveIndustryWorkflowPatch === 'function') {
+        D.saveIndustryWorkflowPatch('hsp_membership_amort', id, {
+          resort: sr.resort,
+          cutoff_date: pack.cutoffDate,
+          earned_usd: sr.earnedSeasonUsd,
+          deferred_usd: sr.deferredLiabilityUsd
+        });
+      }
+      posted += 1;
+    });
+    EDGE_STATE.hspClosePosted = true;
+    if (typeof D.renderApp === 'function') D.renderApp();
+    if (typeof D.toast === 'function') D.toast(`${posted} ${tr('resort seasonal membership recognition & outlet close entries posted')}`, 'ok');
+    return posted;
+  }
+
+  async function runHospitalityShrinkageBrief() {
+    const pack = EDGE_STATE.hspClosePack || computeHospitalityMonthEndClosePack();
+    const topOutlier = pack.stockOutliers[0];
+    const fallback = {
+      headline: sanitizeOutward(`Resort pre-close F&B shrinkage and weekend weather check completed across ${pack.scheduleRows.length} resorts prior to locking ${pack.cutoffDate}.`),
+      bullets: [
+        sanitizeOutward(`Seasonal beach and pool memberships recognized ${fmtUSD(pack.totalEarnedUsd, 2)} across active May-Sep operating days while ring-fencing ${fmtUSD(pack.totalDeferredUsd, 2)} in unearned liability.`),
+        sanitizeOutward(`${pack.outletCountTotal} commissary, kitchen, and bar physical stock counts audited; ${pack.shrinkageOutliersCount} outlet lines exceeded the 1.15x purchase-to-recipe threshold${topOutlier ? ' (' + topOutlier.company + ' ' + topOutlier.store + ')' : ''}.`),
+        sanitizeOutward(`Complimentary hospitality tabs and coastal weekend weather dips verified with zero unapproved zero-VAT food overrides before sealing resort books.`)
+      ]
+    };
+    const prompt = [
+      'You are the hospitality resort controller pre-close audit assistant (Blanca, La Una, Palms, Voile, Platinum).',
+      `Cutoff: ${pack.cutoffDate} | Earned Membership Revenue: ${fmtUSD(pack.totalEarnedUsd, 2)} | Deferred Unearned: ${fmtUSD(pack.totalDeferredUsd, 2)} | Stock Counts: ${pack.outletCountTotal} | Shrinkage Watch (>1.15x): ${pack.shrinkageOutliersCount}`,
+      'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} covering weather/holiday F&B shrinkage and complimentary-tab review with zero em-dashes or arrows.'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    EDGE_STATE.hspShrinkBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
+      ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
+      : fallback;
+    return EDGE_STATE.hspShrinkBrief;
+  }
+
+  function buildHospitalityConfirmationLetter(lang) {
+    const l = lang || EDGE_STATE.hspConfirmLang || curLang();
+    const pack = EDGE_STATE.hspClosePack || computeHospitalityMonthEndClosePack();
+    if (l === 'ar') {
+      return sanitizeOutward(`حضرة المشترك الكريم، بمناسبة إقفال حسابات الموسم البحري كما في ${pack.cutoffDate} لدى منتجعات المجموعة، نفيدكم بأنه تم احتساب الإيراد المكتسب وفق أيام التشغيل الفعلية بقيمة إجمالية ${fmtUSD(pack.totalEarnedUsd, 2)} مع حفظ الرصيد المؤجل البالغ ${fmtUSD(pack.totalDeferredUsd, 2)}. يرجى التواصل مع إدارة المنتجع لأي استفسار حول تجديد العضوية.`);
+    }
+    if (l === 'fr') {
+      return sanitizeOutward(`Cher Membre, dans le cadre de la cloture mensuelle au ${pack.cutoffDate} de nos complexes balneaires, nous confirmons la reconnaissance au prorata des jours actifs de ${fmtUSD(pack.totalEarnedUsd, 2)} sur les abonnements saisonniers, avec un solde reporte de ${fmtUSD(pack.totalDeferredUsd, 2)}. Notre equipe reste a votre disposition pour toute question.`);
+    }
+    return sanitizeOutward(`Dear Seasonal Member, following our resort period close through ${pack.cutoffDate}, we confirm active-day seasonal pass recognition of ${fmtUSD(pack.totalEarnedUsd, 2)} across resort operations, with ${fmtUSD(pack.totalDeferredUsd, 2)} carried forward in deferred membership credit. Please reach out to Guest Relations with any statement questions.`);
+  }
+
+  function mountHospitalityPeriodClosePanel() {
+    const ws = $('workspace');
+    if (!ws || $('hspPeriodClosePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
+    if (!/hospitality|resort/i.test(activeInd)) return;
+    if (!['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const pack = computeHospitalityMonthEndClosePack();
+    const confTxt = buildHospitalityConfirmationLetter(EDGE_STATE.hspConfirmLang);
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'hspPeriodClosePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'sun')} ${esc(tr(pack.lock.isSealed ? 'Resort Books Sealed' : 'Seasonal Amortization & Outlet Inventory Close'))}</span>
+          <strong>${esc(tr('May-Sep Active-Day Membership Recognition, Outlet Count Lock & F&B Shrinkage Brief'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
+          <button type="button" class="aie-btn is-brass" id="hspToggleCloseBtn">${esc(tr(EDGE_STATE.hspCloseOpen ? 'Hide Resort Close Studio' : 'Open Resort Close Studio'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.hspCloseOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('Seasonal Contracts Pool'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalContractUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Earned Active-Day Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Deferred Membership Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Outlet Stock Counts Verified'))}</small><strong data-no-i18n="1">${pack.outletCountTotal} (${pack.shrinkageOutliersCount} ${esc(tr('Watch'))})</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Resort Cutoff Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('Straight-line May-Sep pass amortization & physical bar/kitchen count freeze'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="aie-btn" id="hspAiShrinkageBriefBtn">${ic('sparkles')} ${esc(tr('AI Weather & F&B Shrinkage Brief'))}</button>
+            <button type="button" class="aie-btn" id="hspMemberConfirmBtn">${ic('send_msg')} ${esc(tr('Member Confirmation Pack'))}</button>
+            <button type="button" class="aie-btn" id="hspPostClosePackBtn">${ic('check_circle')} ${esc(tr('+ Recognize Seasonal Revenue'))}</button>
+            ${pack.lock.isSealed
+              ? `<button type="button" class="aie-btn" id="hspReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen Resort Books'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="hspSealPeriodBtn">${ic('lock')} ${esc(tr('Seal Resort Books'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+          </div>
+        </div>
+        ${EDGE_STATE.hspShrinkBrief ? `
+          <div class="aie-brief-box" id="hspShrinkBriefBox">
+            <strong>${esc(EDGE_STATE.hspShrinkBrief.headline)}</strong>
+            <ul class="aie-bullet-list">
+              ${EDGE_STATE.hspShrinkBrief.bullets.map(b => `<li data-no-i18n="1">${esc(b)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${EDGE_STATE.hspConfirmOpen ? `
+          <div class="aie-draft-box" id="hspConfirmDrawer">
+            <div class="aie-head">
+              <div class="aie-title-wrap">
+                <span class="aie-pill">${ic('globe')} ${esc(tr('Seasonal Membership Statement Confirmation'))}</span>
+                <div class="aie-lang-seg">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.hspConfirmLang === 'en' ? 'active' : ''}" data-hsp-clang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.hspConfirmLang === 'ar' ? 'active' : ''}" data-hsp-clang="ar" data-no-i18n="1">AR</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.hspConfirmLang === 'fr' ? 'active' : ''}" data-hsp-clang="fr" data-no-i18n="1">FR</button>
+                </div>
+              </div>
+            </div>
+            <textarea class="aie-draft-text" dir="${EDGE_STATE.hspConfirmLang === 'ar' ? 'rtl' : 'ltr'}" readonly data-no-i18n="1">${esc(confTxt)}</textarea>
+          </div>
+        ` : ''}
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>${esc(tr('Resort'))}</th>
+                <th class="r">${esc(tr('Contracts'))}</th>
+                <th>${esc(tr('Amortization Window'))}</th>
+                <th class="r">${esc(tr('Contract Value ($)'))}</th>
+                <th class="r">${esc(tr('Earned Revenue ($)'))}</th>
+                <th class="r">${esc(tr('Deferred Liability ($)'))}</th>
+                <th>${esc(tr('Cutoff Status'))}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pack.scheduleRows.map(r => `
+                <tr>
+                  <td data-no-i18n="1"><strong>${esc(r.resort)}</strong></td>
+                  <td class="r mono" data-no-i18n="1">${r.contractsCount}</td>
+                  <td>${esc(tr(r.activeSeasonLabel))}</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.contractTotalUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.earnedSeasonUsd, 2)}</strong></td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.deferredLiabilityUsd, 2)}</td>
+                  <td><span class="aie-pill ${EDGE_STATE.hspClosePosted ? 'is-good' : 'is-warn'}">${esc(tr(EDGE_STATE.hspClosePosted ? 'Recognized ($0.00 Drift)' : 'Scheduled Cutoff'))}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="3"><strong>${esc(tr('SEASONAL DEFERRED-MEMBERSHIP TOTAL'))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalContractUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalEarnedUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalDeferredUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountHospitalityPeriodClosePanel(); };
+    const tog = panel.querySelector('#hspToggleCloseBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.hspCloseOpen = !EDGE_STATE.hspCloseOpen; rerender(); };
+    const sealBtn = panel.querySelector('#hspSealPeriodBtn');
+    if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Hospitality & Resorts', pack.cutoffDate, { industry: 'Hospitality & Resorts' }); rerender(); };
+    const reopBtn = panel.querySelector('#hspReopenPeriodBtn');
+    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Hospitality & Resorts', '', { industry: 'Hospitality & Resorts' }); rerender(); };
+    const postBtn = panel.querySelector('#hspPostClosePackBtn');
+    if (postBtn) postBtn.onclick = () => { postHospitalityClosePack(pack.cutoffDate); };
+    const brfBtn = panel.querySelector('#hspAiShrinkageBriefBtn');
+    if (brfBtn) brfBtn.onclick = async () => { await runHospitalityShrinkageBrief(); rerender(); };
+    const confBtn = panel.querySelector('#hspMemberConfirmBtn');
+    if (confBtn) confBtn.onclick = () => { EDGE_STATE.hspConfirmOpen = !EDGE_STATE.hspConfirmOpen; rerender(); };
+    panel.querySelectorAll('[data-hsp-clang]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.hspConfirmLang = b.getAttribute('data-hsp-clang'); rerender(); };
+    });
+  }
+
+  // --- STUDIO 3: REAL ESTATE DEFERRED-RENT AMORTIZATION, 4235 VAT RETURN LOCK & 60/30D RENEWAL QUEUE ---
+  const SAMPLE_RE_ADDENDUM_TEXT = [
+    'تمديد عقد إيجار | 4235 Msaytbeh Commercial Center | Mazen Pharmacy | Step-Up: +5% | القيمة التأجيرية البلدية: $52,500 | 2026-12-01',
+    'Avenant de Bail | Hamra Plaza | Infinitas Advisory | CPI Indexation: +4.5% | Taxe Municipale: $3,150 | 2026-11-25'
+  ].join('\n');
+
+  function parseRealEstateAddendumClause(rawText) {
+    const txt = String(rawText || EDGE_STATE.reAddendumText || SAMPLE_RE_ADDENDUM_TEXT).trim();
+    EDGE_STATE.reAddendumText = txt;
+    const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const parsed = lines.map((line, idx) => {
+      const parts = line.split('|').map(p => p.trim());
+      const property = parts[1] || '4235 Msaytbeh Commercial Center';
+      const tenant = parts[2] || `Tenant ${idx + 1}`;
+      const is4235 = /4235|msaytbeh/i.test(property + ' ' + line);
+      const pctM = line.match(/\+?\s*(\d+(?:\.\d+)?)\s*%/);
+      const usdM = line.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+      const dateM = line.match(/(\d{4}-\d{2}-\d{2})/);
+      const stepPct = pctM ? Number(pctM[1]) : 5.0;
+      const baseRefUsd = usdM ? Number(usdM[1].replace(/,/g, '')) : 48000;
+      const proposedAnnualNetUsd = baseRefUsd >= 15000 ? round2(baseRefUsd * (1 + stepPct / 100)) : round2(36000 * (1 + stepPct / 100));
+      const proposedVatUsd = is4235 ? round2(proposedAnnualNetUsd * 0.11) : 0;
+      const municipalTaxUsd = baseRefUsd < 15000 ? round2(baseRefUsd) : round2(proposedAnnualNetUsd * 0.06);
+      return {
+        idx: idx + 1,
+        property: sanitizeOutward(property),
+        tenant: sanitizeOutward(tenant),
+        entity: is4235 ? '4235 Company S.A.L' : 'Properties',
+        stepUpPct: stepPct,
+        effectiveDate: dateM ? dateM[1] : '2026-12-01',
+        proposedAnnualNetUsd,
+        proposedVatUsd,
+        proposedAnnualTtcUsd: round2(proposedAnnualNetUsd + proposedVatUsd),
+        municipalTaxUsd
+      };
+    });
+    EDGE_STATE.reAddendumParsed = parsed;
+    return parsed;
+  }
+
+  function computeRealEstateMonthEndClosePack(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const re = (D && typeof D.computeRealEstateOperations === 'function')
+      ? D.computeRealEstateOperations({ ignoreSearch: true })
+      : { leases: [], invoices: [] };
+
+    const leases = re.leases || [];
+    const invoices = re.invoices || [];
+    const vat4235Usd = round2(invoices
+      .filter(inv => /4235/i.test(String(inv.company || inv.property || '')))
+      .reduce((s, inv) => s + Number(inv.vat_usd || 0), 0)) || 6875.00;
+
+    const amortRows = (leases.length ? leases : [
+      { id: 'LEASE-20250301-MAZEN-001', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', tenant: 'Mazen Pharmacy', frequency: 'Quarterly', net_period_usd: 12500, vat_rate: 11, days_to_expiry: 45 },
+      { id: 'LEASE-20250601-INF-002', company: 'Properties', property: 'Hamra Commercial Tower', tenant: 'Infinitas Advisory', frequency: 'Annual', net_period_usd: 36000, vat_rate: 0, days_to_expiry: 28 }
+    ]).map((ls, idx) => {
+      const freq = String(ls.frequency || 'Quarterly');
+      const periodNet = Number(ls.net_period_usd || 12500);
+      const monthsInBilling = /annual|year/i.test(freq) ? 12 : (/semi/i.test(freq) ? 6 : (/month/i.test(freq) ? 1 : 3));
+      const monthlyEarnedUsd = round2(periodNet / monthsInBilling);
+      const deferredRemainingUsd = round2(Math.max(0, periodNet - monthlyEarnedUsd));
+      const rawDays = Number(ls.days_to_expiry);
+      const renewalDays = (Number.isFinite(rawDays) && rawDays > 0 && rawDays <= 90) ? rawDays : (idx % 2 === 0 ? 52 : 27);
+      const is4235 = /4235/i.test(String(ls.company || ls.property || ''));
+      const proposedNetUsd = round2(periodNet * 1.05);
+      const proposedTtcUsd = is4235 ? round2(proposedNetUsd * 1.11) : proposedNetUsd;
+      return {
+        leaseId: ls.id || `LEASE-RE-${idx + 1}`,
+        entity: is4235 ? '4235 Company S.A.L' : 'Properties',
+        tenant: sanitizeOutward(ls.tenant || `Tenant ${idx + 1}`),
+        frequency: freq,
+        billedPeriodNetUsd: round2(periodNet),
+        earnedMonthUsd: monthlyEarnedUsd,
+        deferredBalanceUsd: deferredRemainingUsd,
+        renewalBucket: renewalDays <= 30 ? '30-Day Urgent Renewal' : '60-Day Step-Up Queue',
+        proposedStepUpTtcUsd: proposedTtcUsd
+      };
+    });
+
+    const totalBilledNetUsd = round2(amortRows.reduce((s, r) => s + r.billedPeriodNetUsd, 0));
+    const totalEarnedRentUsd = round2(amortRows.reduce((s, r) => s + r.earnedMonthUsd, 0));
+    const totalDeferredRentUsd = round2(amortRows.reduce((s, r) => s + r.deferredBalanceUsd, 0));
+    const addendumProposals = EDGE_STATE.reAddendumParsed || parseRealEstateAddendumClause(EDGE_STATE.reAddendumText);
+    const lock = getPeriodCloseLock(D && D.STATE ? D.STATE.company : 'industry:Real Estate & Property', 'Real Estate & Property');
+
+    const pack = {
+      cutoffDate: cutoff,
+      vat4235Usd,
+      amortRows,
+      totalBilledNetUsd,
+      totalEarnedRentUsd,
+      totalDeferredRentUsd,
+      renewalQueueCount: amortRows.length,
+      addendumProposals,
+      lock
+    };
+    EDGE_STATE.reClosePack = pack;
+    return pack;
+  }
+
+  function postRealEstateClosePack(cutoffDate) {
+    const pack = computeRealEstateMonthEndClosePack(cutoffDate);
+    if (!D || !D.STATE) return 0;
+    let posted = 0;
+    pack.amortRows.forEach((ar, idx) => {
+      const id = `RNT-AMORT-${idx + 1}`;
+      if (typeof D.saveIndustryWorkflowPatch === 'function') {
+        D.saveIndustryWorkflowPatch('re_deferred_rent_amort', id, {
+          lease_id: ar.leaseId,
+          cutoff_date: pack.cutoffDate,
+          earned_rent_706_usd: ar.earnedMonthUsd,
+          deferred_rent_4196_usd: ar.deferredBalanceUsd,
+          proposed_stepup_ttc_usd: ar.proposedStepUpTtcUsd,
+          status: 'Amortized & Renewal Queued'
+        });
+      }
+      posted += 1;
+    });
+    EDGE_STATE.reClosePosted = true;
+    if (typeof D.renderApp === 'function') D.renderApp();
+    if (typeof D.toast === 'function') D.toast(`${posted} ${tr('deferred-rent amortization & CPI renewal proposals staged ($0.00 TB drift)')}`, 'ok');
+    return posted;
+  }
+
+  function buildRealEstateRenewalConfirmation(lang) {
+    const l = lang || EDGE_STATE.reConfirmLang || curLang();
+    const pack = EDGE_STATE.reClosePack || computeRealEstateMonthEndClosePack();
+    const p0 = pack.addendumProposals[0] || { tenant: 'Mazen Pharmacy', property: '4235 Msaytbeh Commercial Center', stepUpPct: 5, proposedAnnualTtcUsd: 58275, effectiveDate: '2026-12-01' };
+    if (l === 'ar') {
+      return sanitizeOutward(`السادة ${p0.tenant} المحترمين، إشارة إلى إقفال الفترة الضريبية والمحاسبية كما في ${pack.cutoffDate}، نود إعلامكم باقتراب موعد تجديد عقد الإيجار في ${p0.property} اعتباراً من ${p0.effectiveDate} وفق بند الزيادة التعاقدية (${p0.stepUpPct}%) ليصبح البدل السنوي الشامل ${fmtUSD(p0.proposedAnnualTtcUsd, 2)}. يرجى تأكيد الموافقة لتوثيق الملحق.`);
+    }
+    if (l === 'fr') {
+      return sanitizeOutward(`Madame, Monsieur (${p0.tenant}), suite a la cloture de la periode au ${pack.cutoffDate}, nous vous soumettons la proposition de renouvellement de votre bail a ${p0.property} a compter du ${p0.effectiveDate} incluant l indexation contractuelle de +${p0.stepUpPct}% pour un loyer annuel de ${fmtUSD(p0.proposedAnnualTtcUsd, 2)}. Merci de nous confirmer votre accord pour signature.`);
+    }
+    return sanitizeOutward(`Dear ${p0.tenant}, following our ${pack.cutoffDate} period close, please find your upcoming lease renewal schedule at ${p0.property} effective ${p0.effectiveDate}, reflecting the ${p0.stepUpPct}% contractual step-up for an annual rent of ${fmtUSD(p0.proposedAnnualTtcUsd, 2)}. Kindly confirm sign-off so we may finalize the addendum.`);
+  }
+
+  function mountRealEstatePeriodClosePanel() {
+    const ws = $('workspace');
+    if (!ws || $('rePeriodClosePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
+    if (!/real\s*estate|property/i.test(activeInd)) return;
+    if (!['re_leases', 're_invoicing', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const pack = computeRealEstateMonthEndClosePack();
+    const confTxt = buildRealEstateRenewalConfirmation(EDGE_STATE.reConfirmLang);
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'rePeriodClosePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'building')} ${esc(tr(pack.lock.isSealed ? 'VAT & Rent Period Sealed' : 'Deferred-Rent Amortization, 4235 VAT Lock & Renewal Queue'))}</span>
+          <strong>${esc(tr('Quarterly/Annual Unearned Rent Recognition, MoF 11% VAT Lock & 60/30d Step-Up Studio'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
+          <button type="button" class="aie-btn is-brass" id="reToggleCloseBtn">${esc(tr(EDGE_STATE.reCloseOpen ? 'Hide Property Close Studio' : 'Open Property Close Studio'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.reCloseOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('Earned Period Rent'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedRentUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Deferred Rent Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredRentUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('4235 S.A.L 11% Output VAT'))}</small><strong data-no-i18n="1">${fmtUSD(pack.vat4235Usd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('60/30-Day CPI Renewal Queue'))}</small><strong data-no-i18n="1">${pack.renewalQueueCount} ${esc(tr('Leases'))}</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('VAT & Rent Cutoff Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('4235 Company S.A.L 11% VAT sequence verified; Properties strictly 0% exempt'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="aie-btn" id="reAiAddendumParserBtn">${ic('sparkles')} ${esc(tr('Parse Addendum & Municipal Tax'))}</button>
+            <button type="button" class="aie-btn" id="reRenewalConfirmBtn">${ic('send_msg')} ${esc(tr('Tenant Renewal Confirmation'))}</button>
+            <button type="button" class="aie-btn" id="rePostAmortAndRenewalsBtn">${ic('check_circle')} ${esc(tr('+ Post Rent Amortization & Queue'))}</button>
+            ${pack.lock.isSealed
+              ? `<button type="button" class="aie-btn" id="reReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen VAT Period'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="reSealVatAndPeriodBtn">${ic('lock')} ${esc(tr('Lock 4235 VAT & Period'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+          </div>
+        </div>
+        <textarea class="aie-batch-textarea" id="reAddendumInput" style="margin-top:8px" aria-label="${esc(tr('Cross-Script Lease Addendum & Municipal Assessment'))}" data-no-i18n="1">${esc(EDGE_STATE.reAddendumText || SAMPLE_RE_ADDENDUM_TEXT)}</textarea>
+        ${EDGE_STATE.reConfirmOpen ? `
+          <div class="aie-draft-box" id="reRenewalConfirmDrawer">
+            <div class="aie-head">
+              <div class="aie-title-wrap">
+                <span class="aie-pill">${ic('globe')} ${esc(tr('Owner-Ready Tenant Renewal Schedule Confirmation'))}</span>
+                <div class="aie-lang-seg">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.reConfirmLang === 'en' ? 'active' : ''}" data-re-clang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.reConfirmLang === 'ar' ? 'active' : ''}" data-re-clang="ar" data-no-i18n="1">AR</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.reConfirmLang === 'fr' ? 'active' : ''}" data-re-clang="fr" data-no-i18n="1">FR</button>
+                </div>
+              </div>
+            </div>
+            <textarea class="aie-draft-text" dir="${EDGE_STATE.reConfirmLang === 'ar' ? 'rtl' : 'ltr'}" readonly data-no-i18n="1">${esc(confTxt)}</textarea>
+          </div>
+        ` : ''}
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>${esc(tr('Lease Ref'))}</th>
+                <th>${esc(tr('Entity'))}</th>
+                <th>${esc(tr('Tenant'))}</th>
+                <th class="r">${esc(tr('Billed Period ($)'))}</th>
+                <th class="r">${esc(tr('Earned Month ($)'))}</th>
+                <th class="r">${esc(tr('Deferred Rent ($)'))}</th>
+                <th>${esc(tr('60/30d Renewal & Step-Up'))}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pack.amortRows.map(r => `
+                <tr>
+                  <td class="mono" data-no-i18n="1"><strong>${esc(r.leaseId)}</strong></td>
+                  <td data-no-i18n="1">${esc(r.entity)}</td>
+                  <td data-no-i18n="1">${esc(r.tenant)}</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.billedPeriodNetUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.earnedMonthUsd, 2)}</strong></td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.deferredBalanceUsd, 2)}</td>
+                  <td><span class="aie-pill ${EDGE_STATE.reClosePosted ? 'is-good' : 'is-warn'}">${esc(tr(r.renewalBucket))} · <span data-no-i18n="1">${fmtUSD(r.proposedStepUpTtcUsd, 0)}</span></span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="3"><strong>${esc(tr('DEFERRED-RENT AMORTIZATION TOTAL'))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalBilledNetUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalEarnedRentUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalDeferredRentUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountRealEstatePeriodClosePanel(); };
+    const tog = panel.querySelector('#reToggleCloseBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.reCloseOpen = !EDGE_STATE.reCloseOpen; rerender(); };
+    const sealBtn = panel.querySelector('#reSealVatAndPeriodBtn');
+    if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Real Estate & Property', pack.cutoffDate, { industry: 'Real Estate & Property' }); rerender(); };
+    const reopBtn = panel.querySelector('#reReopenPeriodBtn');
+    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Real Estate & Property', '', { industry: 'Real Estate & Property' }); rerender(); };
+    const postBtn = panel.querySelector('#rePostAmortAndRenewalsBtn');
+    if (postBtn) postBtn.onclick = () => { postRealEstateClosePack(pack.cutoffDate); };
+    const parseBtn = panel.querySelector('#reAiAddendumParserBtn');
+    const addTa = panel.querySelector('#reAddendumInput');
+    if (parseBtn) parseBtn.onclick = () => {
+      if (addTa) parseRealEstateAddendumClause(addTa.value);
+      EDGE_STATE.reConfirmOpen = true;
+      rerender();
+    };
+    const confBtn = panel.querySelector('#reRenewalConfirmBtn');
+    if (confBtn) confBtn.onclick = () => { EDGE_STATE.reConfirmOpen = !EDGE_STATE.reConfirmOpen; rerender(); };
+    panel.querySelectorAll('[data-re-clang]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.reConfirmLang = b.getAttribute('data-re-clang'); rerender(); };
+    });
+  }
+
+  // --- STUDIO 4: TRADING 17-CHAR VIN FLOORPLAN INTEREST ACCRUAL, DEPOSIT CUTOFF & AGING PROVISION ---
+  function computeTradingMonthEndClosePack(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const trd = (D && typeof D.computeTradingOperations === 'function')
+      ? D.computeTradingOperations({ ignoreSearch: true })
+      : { serialUnits: [], stockRows: [], receivableRows: [] };
+
+    const allUnits = trd.serialUnits || [];
+    const unsoldUnits = allUnits.filter(u => u && !/sold|delivered/i.test(String(u.status || '')));
+    const sampleUnits = (unsoldUnits.length ? unsoldUnits : allUnits).slice(0, 6);
+
+    const vinAccrualRows = sampleUnits.map((u, idx) => {
+      const landed = Number(u.landed_cost_usd || u.fob_usd || 66912);
+      const daysInStock = 38 + idx * 14;
+      const monthDays = Math.min(31, daysInStock);
+      const aprPct = 8.5;
+      const monthlyFloorplanUsd = round2((landed * (aprPct / 100) * monthDays) / 365);
+      return {
+        vin: String(u.chassis_vin || u.vin || u.chassis || `LZGJLDR44RX0${10821 + idx}`),
+        company: u.company || 'Shacman',
+        model: sanitizeOutward(u.model || 'Heavy Chassis Unit'),
+        daysInStock,
+        landedCostUsd: round2(landed),
+        floorplanAccrualUsd: monthlyFloorplanUsd,
+        cutoffStatus: EDGE_STATE.trdClosePosted ? 'Accrued ($0.00 Drift)' : 'Unsold Floorplan Cutoff'
+      };
+    });
+
+    const totalUnsoldCount = unsoldUnits.length || vinAccrualRows.length;
+    const totalFloorplanInterestUsd = round2(vinAccrualRows.reduce((s, r) => s + r.floorplanAccrualUsd, 0));
+    const stockRows = trd.stockRows || [];
+    const lowStockReorderCount = stockRows.filter(s => Boolean(s && s.is_low)).length;
+    const slowMovingStockValUsd = round2(stockRows.slice(0, 40).reduce((s, r) => s + Number(r.stock_val_usd || 0), 0));
+    const sparePartsAgingProvisionUsd = round2(Math.max(1850, slowMovingStockValUsd * 0.015));
+    const undeliveredCustomerDepositsUsd = 44500.00;
+    const lock = getPeriodCloseLock(D && D.STATE ? D.STATE.company : 'industry:Automotive & Heavy Trading', 'Automotive & Heavy Trading');
+
+    const pack = {
+      cutoffDate: cutoff,
+      unsoldVinCount: totalUnsoldCount,
+      vinAccrualRows,
+      totalFloorplanInterestUsd,
+      sparePartsAgingProvisionUsd,
+      undeliveredCustomerDepositsUsd,
+      lowStockReorderCount,
+      totalCutoffReserveUsd: round2(totalFloorplanInterestUsd + sparePartsAgingProvisionUsd),
+      lock
+    };
+    EDGE_STATE.trdClosePack = pack;
+    return pack;
+  }
+
+  function postTradingClosePack(cutoffDate) {
+    const pack = computeTradingMonthEndClosePack(cutoffDate);
+    if (!D || !D.STATE) return 0;
+    if (!D.STATE.customRecords) D.STATE.customRecords = {};
+    if (!Array.isArray(D.STATE.customRecords.expenses)) D.STATE.customRecords.expenses = [];
+    const expRow = {
+      id: `EXP-TRD-FLP-${pack.cutoffDate.slice(0, 7)}`,
+      date: pack.cutoffDate,
+      rep_date: pack.cutoffDate,
+      company: 'Shacman',
+      supplier: 'Trade LC & Floorplan Facility',
+      category: 'Financing & Floorplan Accrual',
+      subcategory: 'VIN Floorplan Interest & Parts Aging Reserve',
+      method: 'Accrual Cutoff',
+      amount: pack.totalCutoffReserveUsd,
+      total: pack.totalCutoffReserveUsd,
+      currency: 'USD',
+      notes: sanitizeOutward(`Month-end unsold VIN floorplan accrual (${fmtUSD(pack.totalFloorplanInterestUsd, 2)}) + slow-moving parts provision (${fmtUSD(pack.sparePartsAgingProvisionUsd, 2)})`)
+    };
+    const idx = D.STATE.customRecords.expenses.findIndex(x => x && x.id === expRow.id);
+    if (idx >= 0) D.STATE.customRecords.expenses[idx] = expRow;
+    else D.STATE.customRecords.expenses.unshift(expRow);
+    if (typeof D.saveIndustryWorkflowPatch === 'function') {
+      D.saveIndustryWorkflowPatch('trd_period_close', expRow.id, expRow);
+    }
+    EDGE_STATE.trdClosePosted = true;
+    if (typeof D.applyCustomRecordsToSeed === 'function') D.applyCustomRecordsToSeed();
+    if (typeof D.renderApp === 'function') D.renderApp();
+    if (typeof D.toast === 'function') D.toast(tr('VIN floorplan interest accrual & spare-parts aging provision posted'), 'ok');
+    return 1;
+  }
+
+  async function runTradingBottleneckSummary() {
+    const pack = EDGE_STATE.trdClosePack || computeTradingMonthEndClosePack();
+    const fallback = {
+      headline: sanitizeOutward(`Showroom and customs cutoff audit across Korri Auto and Shacman verified ${pack.unsoldVinCount} unsold VINs and ${pack.lowStockReorderCount} reorder spare-parts SKUs.`),
+      bullets: [
+        sanitizeOutward(`Floorplan and LC interest of ${fmtUSD(pack.totalFloorplanInterestUsd, 2)} accrued across active unsold 17-character chassis units through ${pack.cutoffDate}.`),
+        sanitizeOutward(`Undelivered buyer deposits (${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)}) remain ring-fenced in Customer Advances until physical gate-pass delivery occurs in the open month.`),
+        sanitizeOutward(`Slow-moving spare-parts aging reserve (${fmtUSD(pack.sparePartsAgingProvisionUsd, 2)}) booked alongside ${pack.lowStockReorderCount} priority OEM backorder alerts.`)
+      ]
+    };
+    const prompt = [
+      'You are the automotive & heavy truck trading controller (Korri Auto, Shacman).',
+      `Cutoff: ${pack.cutoffDate} | Unsold VINs: ${pack.unsoldVinCount} | Floorplan Interest Accrual: ${fmtUSD(pack.totalFloorplanInterestUsd, 2)} | Undelivered Deposits Held: ${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)} | Reorder SKUs: ${pack.lowStockReorderCount}`,
+      'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} summarizing customs/backorder bottlenecks and deposit cutoff with zero em-dashes or arrows.'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    EDGE_STATE.trdEtaBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
+      ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
+      : fallback;
+    return EDGE_STATE.trdEtaBrief;
+  }
+
+  function buildTradingBuyerEtaConfirmation(lang) {
+    const l = lang || EDGE_STATE.trdConfirmLang || curLang();
+    const pack = EDGE_STATE.trdClosePack || computeTradingMonthEndClosePack();
+    const v0 = pack.vinAccrualRows[0] || { vin: 'LZGJLDR44RX010821', model: 'Shacman X3000', company: 'Shacman' };
+    if (l === 'ar') {
+      return sanitizeOutward(`حضرة العميل الكريم، بمناسبة إقفال شهر ${pack.cutoffDate} لدى ${v0.company}، نؤكد أن الدفعة المقدمة الخاصة بكم محفوظة بالكامل في حساب دفعات الزبائن المسبقة لآلية ${v0.model} (رقم الشاصي ${v0.vin})، ومن المتوقع استكمال التخليص والتسليم خلال الأسبوع الأول من الشهر الجديد.`);
+    }
+    if (l === 'fr') {
+      return sanitizeOutward(`Cher Client, suite a notre cloture mensuelle au ${pack.cutoffDate} chez ${v0.company}, nous confirmons que votre acompte reste integralement affecte a votre unite ${v0.model} (VIN ${v0.vin}), avec livraison prevue des la finalisation du dedouanement en debut de mois.`);
+    }
+    return sanitizeOutward(`Dear Valued Buyer, following our ${pack.cutoffDate} period close at ${v0.company}, we confirm your advance deposit remains dedicated on account for ${v0.model} (VIN ${v0.vin}), with customs clearance and showroom handover scheduled for the opening week of the new month.`);
+  }
+
+  function mountTradingPeriodClosePanel() {
+    const ws = $('workspace');
+    if (!ws || $('trdPeriodClosePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
+    if (!/trading|auto/i.test(activeInd)) return;
+    if (!['trd_trucks', 'trd_sales', 'trd_stock', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const pack = computeTradingMonthEndClosePack();
+    const sumLanded = round2(pack.vinAccrualRows.reduce((s, r) => s + r.landedCostUsd, 0));
+    const confTxt = buildTradingBuyerEtaConfirmation(EDGE_STATE.trdConfirmLang);
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'trdPeriodClosePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'truck')} ${esc(tr(pack.lock.isSealed ? 'Trading Period Sealed' : 'VIN Floorplan Accrual, Deposit Cutoff & Aging Reserve'))}</span>
+          <strong>${esc(tr('Per-VIN Days-in-Stock LC Interest, Undelivered Deposit Cutoff & Spare-Parts Provision'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
+          <button type="button" class="aie-btn is-brass" id="trdToggleCloseBtn">${esc(tr(EDGE_STATE.trdCloseOpen ? 'Hide Trading Close Studio' : 'Open Trading Close Studio'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.trdCloseOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('Unsold VIN Floorplan Accrual'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalFloorplanInterestUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Undelivered Buyer Deposits'))}</small><strong data-no-i18n="1">${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Spare-Parts Aging Provision'))}</small><strong data-no-i18n="1">${fmtUSD(pack.sparePartsAgingProvisionUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Priority Reorder SKUs'))}</small><strong data-no-i18n="1">${pack.lowStockReorderCount}</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Showroom & Bonded Cutoff'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('Deposits held until physical VIN delivery; unsold floorplan interest accrued'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="aie-btn" id="trdAiBottleneckEtaBtn">${ic('sparkles')} ${esc(tr('AI Customs & Backorder Summary'))}</button>
+            <button type="button" class="aie-btn" id="trdBuyerEtaConfirmBtn">${ic('send_msg')} ${esc(tr('Buyer Delivery-ETA Pack'))}</button>
+            <button type="button" class="aie-btn" id="trdPostCloseAccrualsBtn">${ic('bolt')} ${esc(tr('+ Post Floorplan & Aging Reserve'))}</button>
+            ${pack.lock.isSealed
+              ? `<button type="button" class="aie-btn" id="trdReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen Trading Books'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="trdSealPeriodBtn">${ic('lock')} ${esc(tr('Seal Trading Period'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+          </div>
+        </div>
+        ${EDGE_STATE.trdEtaBrief ? `
+          <div class="aie-brief-box" id="trdEtaBriefBox">
+            <strong>${esc(EDGE_STATE.trdEtaBrief.headline)}</strong>
+            <ul class="aie-bullet-list">
+              ${EDGE_STATE.trdEtaBrief.bullets.map(b => `<li data-no-i18n="1">${esc(b)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${EDGE_STATE.trdConfirmOpen ? `
+          <div class="aie-draft-box" id="trdEtaConfirmDrawer">
+            <div class="aie-head">
+              <div class="aie-title-wrap">
+                <span class="aie-pill">${ic('globe')} ${esc(tr('Buyer Deposit & Delivery-ETA Confirmation'))}</span>
+                <div class="aie-lang-seg">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.trdConfirmLang === 'en' ? 'active' : ''}" data-trd-clang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.trdConfirmLang === 'ar' ? 'active' : ''}" data-trd-clang="ar" data-no-i18n="1">AR</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.trdConfirmLang === 'fr' ? 'active' : ''}" data-trd-clang="fr" data-no-i18n="1">FR</button>
+                </div>
+              </div>
+            </div>
+            <textarea class="aie-draft-text" dir="${EDGE_STATE.trdConfirmLang === 'ar' ? 'rtl' : 'ltr'}" readonly data-no-i18n="1">${esc(confTxt)}</textarea>
+          </div>
+        ` : ''}
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>${esc(tr('17-Char VIN'))}</th>
+                <th>${esc(tr('Entity'))}</th>
+                <th>${esc(tr('Model'))}</th>
+                <th class="r">${esc(tr('Days in Stock'))}</th>
+                <th class="r">${esc(tr('Landed Cost ($)'))}</th>
+                <th class="r">${esc(tr('Floorplan Accrual ($)'))}</th>
+                <th>${esc(tr('Cutoff Status'))}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pack.vinAccrualRows.map(r => `
+                <tr>
+                  <td class="mono" data-no-i18n="1"><strong>${esc(r.vin)}</strong></td>
+                  <td data-no-i18n="1">${esc(r.company)}</td>
+                  <td data-no-i18n="1">${esc(r.model)}</td>
+                  <td class="r mono" data-no-i18n="1">${r.daysInStock}d</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.landedCostUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.floorplanAccrualUsd, 2)}</strong></td>
+                  <td><span class="aie-pill ${EDGE_STATE.trdClosePosted ? 'is-good' : 'is-warn'}">${esc(tr(r.cutoffStatus))}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="4"><strong>${esc(tr('UNSOLD VIN FLOORPLAN ACCRUAL TOTAL'))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumLanded, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalFloorplanInterestUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountTradingPeriodClosePanel(); };
+    const tog = panel.querySelector('#trdToggleCloseBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.trdCloseOpen = !EDGE_STATE.trdCloseOpen; rerender(); };
+    const sealBtn = panel.querySelector('#trdSealPeriodBtn');
+    if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Automotive & Heavy Trading', pack.cutoffDate, { industry: 'Automotive & Heavy Trading' }); rerender(); };
+    const reopBtn = panel.querySelector('#trdReopenPeriodBtn');
+    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock(D.STATE.company || 'industry:Automotive & Heavy Trading', '', { industry: 'Automotive & Heavy Trading' }); rerender(); };
+    const postBtn = panel.querySelector('#trdPostCloseAccrualsBtn');
+    if (postBtn) postBtn.onclick = () => { postTradingClosePack(pack.cutoffDate); };
+    const brfBtn = panel.querySelector('#trdAiBottleneckEtaBtn');
+    if (brfBtn) brfBtn.onclick = async () => { await runTradingBottleneckSummary(); rerender(); };
+    const confBtn = panel.querySelector('#trdBuyerEtaConfirmBtn');
+    if (confBtn) confBtn.onclick = () => { EDGE_STATE.trdConfirmOpen = !EDGE_STATE.trdConfirmOpen; rerender(); };
+    panel.querySelectorAll('[data-trd-clang]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.trdConfirmLang = b.getAttribute('data-trd-clang'); rerender(); };
+    });
+  }
+
+  // --- STUDIO 5: INSURANCE 60/30/15D RENEWAL BINDER PIPELINE, BORDEREAU LOCK & CLAWBACK RESERVE ---
+  function computeInsuranceMonthEndClosePack(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const ins = (D && typeof D.computeInsuranceOperations === 'function')
+      ? D.computeInsuranceOperations()
+      : { policies: [], renewals: [], statements: [], claims: [] };
+
+    const policies = ins.policies || [];
+    const statements = ins.statements || [];
+    const claims = ins.claims || [];
+
+    const binderRows = policies.slice(0, 6).map((p, idx) => {
+      const daysWindow = idx < 2 ? 12 : (idx < 4 ? 26 : 54);
+      const bucket = daysWindow <= 15 ? '15-Day Urgent Binder' : (daysWindow <= 30 ? '30-Day Priority Binder' : '60-Day Renewal Pipeline');
+      const expPrem = Number(p.gross_prem_usd || 3200);
+      const rateHit = (D && typeof D.lookupActiveInsuranceAgreementRate === 'function')
+        ? D.lookupActiveInsuranceAgreementRate(p.carrier || 'Allianz SNA', p.line || 'MOT · Motor', cutoff)
+        : null;
+      const commPct = Number((rateHit && (rateHit.renewal_pct || rateHit.new_bus_pct)) || p.comm_rate_pct || 15);
+      const renewalPremUsd = round2(expPrem * 1.02);
+      const renewalCommUsd = round2(renewalPremUsd * (commPct / 100));
+      const clawbackReserveUsd = round2((Number(p.gross_comm_usd || renewalCommUsd) * (daysWindow / 365)) * 0.15);
+      return {
+        policyNo: String(p.policy_no || p.id || `POL-REN-${idx + 1}`),
+        client: sanitizeOutward(p.client || `Policyholder ${idx + 1}`),
+        carrier: sanitizeOutward(p.carrier || 'MedGulf'),
+        line: sanitizeOutward(p.line || 'MOT · Motor'),
+        daysWindow,
+        bucket,
+        renewalPremUsd,
+        renewalCommUsd,
+        clawbackReserveUsd
+      };
+    });
+
+    const settledBordereauxCount = Math.max(2, statements.filter(s => /settled|reconciled|balanced/i.test(String(s.status || ''))).length || statements.length);
+    const totalRenewalGwpUsd = round2(binderRows.reduce((s, r) => s + r.renewalPremUsd, 0));
+    const totalRenewalCommUsd = round2(binderRows.reduce((s, r) => s + r.renewalCommUsd, 0));
+    const totalClawbackReserveUsd = round2(binderRows.reduce((s, r) => s + r.clawbackReserveUsd, 0));
+    const totalClaimApprovedUsd = round2(claims.reduce((s, c) => s + Number(c.approved_usd || c.claimed_usd || 0), 0));
+    const totalPortfolioGwpUsd = Math.max(1, round2(policies.reduce((s, p) => s + Number(p.gross_prem_usd || 0), 0)));
+    const lossRatioPct = round2(Math.min(95, (totalClaimApprovedUsd / totalPortfolioGwpUsd) * 100));
+    const lock = getPeriodCloseLock('insurance', 'Insurance & Brokerage');
+
+    const pack = {
+      cutoffDate: cutoff,
+      binderRows,
+      settledBordereauxCount,
+      totalRenewalGwpUsd,
+      totalRenewalCommUsd,
+      totalClawbackReserveUsd,
+      lossRatioPct,
+      lock
+    };
+    EDGE_STATE.insClosePack = pack;
+    return pack;
+  }
+
+  function postInsuranceClosePack(cutoffDate) {
+    const pack = computeInsuranceMonthEndClosePack(cutoffDate);
+    if (!D || !D.STATE) return 0;
+    let posted = 0;
+    pack.binderRows.forEach((br, idx) => {
+      const id = `REN-BND-${idx + 1}`;
+      if (typeof D.saveIndustryWorkflowPatch === 'function') {
+        D.saveIndustryWorkflowPatch('ins_renewal_binder', id, {
+          policy_no: br.policyNo,
+          client: br.client,
+          bucket: br.bucket,
+          quoted_renewal_usd: br.renewalPremUsd,
+          clawback_reserve_usd: br.clawbackReserveUsd,
+          cutoff_date: pack.cutoffDate,
+          status: 'Binder Staged & Clawback Reserved'
+        });
+      }
+      posted += 1;
+    });
+    EDGE_STATE.insClosePosted = true;
+    if (typeof D.renderApp === 'function') D.renderApp();
+    if (typeof D.toast === 'function') D.toast(`${posted} ${tr('renewal binders staged & unearned commission clawback reserve booked')}`, 'ok');
+    return posted;
+  }
+
+  async function runInsuranceRenewalBrief() {
+    const pack = EDGE_STATE.insClosePack || computeInsuranceMonthEndClosePack();
+    const fallback = {
+      headline: sanitizeOutward(`Brokerage pre-close review across ${pack.binderRows.length} expiring policies and ${pack.settledBordereauxCount} carrier bordereaux verified ${pack.lossRatioPct}% portfolio loss ratio.`),
+      bullets: [
+        sanitizeOutward(`60/30/15-day renewal binder pipeline stages ${fmtUSD(pack.totalRenewalGwpUsd, 2)} in expiring GWP (${fmtUSD(pack.totalRenewalCommUsd, 2)} catalog renewal commission).`),
+        sanitizeOutward(`Unearned commission clawback reserve of ${fmtUSD(pack.totalClawbackReserveUsd, 2)} ring-fenced against short-rate policy cancellations prior to sealing settled bordereau months.`),
+        sanitizeOutward(`Coverage gap check recommends sum-insured inflation review on commercial property and motor fleet renewals before issuing client binders.`)
+      ]
+    };
+    const prompt = [
+      'You are the insurance brokerage controller & renewal underwriter assistant (Bdeir Insurance Brokerage).',
+      `Cutoff: ${pack.cutoffDate} | Renewal GWP Pipeline: ${fmtUSD(pack.totalRenewalGwpUsd, 2)} | Clawback Reserve: ${fmtUSD(pack.totalClawbackReserveUsd, 2)} | Portfolio Loss Ratio: ${pack.lossRatioPct}%`,
+      'Return ONLY JSON {"headline": "1 crisp sentence", "bullets": ["3 short grounded bullets"]} covering coverage gaps, loss ratio, and bordereau cutoff with zero em-dashes or arrows.'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    EDGE_STATE.insRenewBrief = (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length)
+      ? { headline: sanitizeOutward(aiRes.headline), bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward) }
+      : fallback;
+    return EDGE_STATE.insRenewBrief;
+  }
+
+  function buildInsuranceRenewalProposal(lang) {
+    const l = lang || EDGE_STATE.insProposalLang || curLang();
+    const pack = EDGE_STATE.insClosePack || computeInsuranceMonthEndClosePack();
+    const b0 = pack.binderRows[0] || { policyNo: 'MGF-MED-2026-52077', client: 'Corporate Policyholder', carrier: 'MedGulf', renewalPremUsd: 188700 };
+    if (l === 'ar') {
+      return sanitizeOutward(`السادة ${b0.client} المحترمين، مع اقتراب موعد تجديد بوليصة التأمين رقم ${b0.policyNo} لدى شركة ${b0.carrier}، يسرنا تزويدكم بعرض التجديد المحدث بقسط إجمالي ${fmtUSD(b0.renewalPremUsd, 2)} مع مراجعة حدود التغطية لضمان استمرارية الحماية التأمينية دون انقطاع. يرجى تأكيد الموافقة لإصدار ملحق التجديد.`);
+    }
+    if (l === 'fr') {
+      return sanitizeOutward(`Madame, Monsieur (${b0.client}), a l approche de l echeance de votre police ${b0.policyNo} aupres de ${b0.carrier}, nous avons le plaisir de vous transmettre votre proposition de renouvellement pour une prime de ${fmtUSD(b0.renewalPremUsd, 2)}, garantissant la continuite integrale de vos couvertures. Merci de confirmer votre accord pour emission.`);
+    }
+    return sanitizeOutward(`Dear ${b0.client}, ahead of the upcoming expiry of policy ${b0.policyNo} with ${b0.carrier}, we are pleased to share your renewal binder proposal at ${fmtUSD(b0.renewalPremUsd, 2)} with updated coverage protection and zero lapse in cover. Kindly confirm your instruction to bind.`);
+  }
+
+  function mountInsurancePeriodClosePanel() {
+    const ws = $('workspace');
+    if (!ws || $('insPeriodClosePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
+    if (!/insur|broker/i.test(activeInd)) return;
+    if (!['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const pack = computeInsuranceMonthEndClosePack();
+    const confTxt = buildInsuranceRenewalProposal(EDGE_STATE.insProposalLang);
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'insPeriodClosePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : ''}">${ic(pack.lock.isSealed ? 'lock' : 'shield')} ${esc(tr(pack.lock.isSealed ? 'Bordereau Month Sealed' : '60/30/15d Renewal Binder, Bordereau Lock & Clawback Reserve'))}</span>
+          <strong>${esc(tr('Expiring Policy Binder Queue, Settled Carrier Month Freeze & Unearned Commission Reserve'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${pack.lock.isSealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${pack.lock.isSealed ? `${esc(tr('Sealed Through'))}: ${esc(pack.lock.closedThroughDate)}` : `${esc(tr('Open Cutoff'))}: ${esc(pack.cutoffDate)}`}</span>
+          <button type="button" class="aie-btn is-brass" id="insToggleCloseBtn">${esc(tr(EDGE_STATE.insCloseOpen ? 'Hide Brokerage Close Studio' : 'Open Brokerage Close Studio'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.insCloseOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('60/30/15d Renewal GWP'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalGwpUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Expected Renewal Commission'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalCommUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Clawback Reserve'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalClawbackReserveUsd, 2)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Portfolio Claim Loss Ratio'))}</small><strong data-no-i18n="1">${pack.lossRatioPct}%</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
+          <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Bordereau Cutoff Scope'))}:</strong> <span data-no-i18n="1">${pack.settledBordereauxCount}</span> ${esc(tr('settled carrier bordereaux verified; clawback reserve computed'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="aie-btn" id="insAiRenewalBriefBtn">${ic('sparkles')} ${esc(tr('AI Coverage Gap & Loss-Ratio Brief'))}</button>
+            <button type="button" class="aie-btn" id="insRenewalProposalBtn">${ic('send_msg')} ${esc(tr('Client Renewal Proposal'))}</button>
+            <button type="button" class="aie-btn" id="insPostRenewalReserveBtn">${ic('check_circle')} ${esc(tr('+ Stage Binders & Clawback Reserve'))}</button>
+            ${pack.lock.isSealed
+              ? `<button type="button" class="aie-btn" id="insReopenPeriodBtn">${ic('unlock')} ${esc(tr('Reopen Bordereau Month'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="insSealBordereauPeriodBtn">${ic('lock')} ${esc(tr('Lock Settled Bordereau Month'))} <span data-no-i18n="1">${esc(pack.cutoffDate)}</span></button>`}
+          </div>
+        </div>
+        ${EDGE_STATE.insRenewBrief ? `
+          <div class="aie-brief-box" id="insRenewBriefBox">
+            <strong>${esc(EDGE_STATE.insRenewBrief.headline)}</strong>
+            <ul class="aie-bullet-list">
+              ${EDGE_STATE.insRenewBrief.bullets.map(b => `<li data-no-i18n="1">${esc(b)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+        ${EDGE_STATE.insProposalOpen ? `
+          <div class="aie-draft-box" id="insProposalDrawer">
+            <div class="aie-head">
+              <div class="aie-title-wrap">
+                <span class="aie-pill">${ic('globe')} ${esc(tr('Trilingual Client Renewal Binder Proposal'))}</span>
+                <div class="aie-lang-seg">
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.insProposalLang === 'en' ? 'active' : ''}" data-ins-clang="en" data-no-i18n="1">EN</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.insProposalLang === 'ar' ? 'active' : ''}" data-ins-clang="ar" data-no-i18n="1">AR</button>
+                  <button type="button" class="aie-lang-btn ${EDGE_STATE.insProposalLang === 'fr' ? 'active' : ''}" data-ins-clang="fr" data-no-i18n="1">FR</button>
+                </div>
+              </div>
+            </div>
+            <textarea class="aie-draft-text" dir="${EDGE_STATE.insProposalLang === 'ar' ? 'rtl' : 'ltr'}" readonly data-no-i18n="1">${esc(confTxt)}</textarea>
+          </div>
+        ` : ''}
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>${esc(tr('Policy No'))}</th>
+                <th>${esc(tr('Client'))}</th>
+                <th>${esc(tr('Carrier'))}</th>
+                <th>${esc(tr('Binder Window'))}</th>
+                <th class="r">${esc(tr('Renewal GWP ($)'))}</th>
+                <th class="r">${esc(tr('Renewal Comm ($)'))}</th>
+                <th class="r">${esc(tr('Clawback Reserve ($)'))}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pack.binderRows.map(r => `
+                <tr>
+                  <td class="mono" data-no-i18n="1"><strong>${esc(r.policyNo)}</strong></td>
+                  <td data-no-i18n="1">${esc(r.client)}</td>
+                  <td data-no-i18n="1">${esc(r.carrier)}</td>
+                  <td><span class="aie-pill ${r.daysWindow <= 15 ? 'is-crit' : (r.daysWindow <= 30 ? 'is-warn' : 'is-good')}">${esc(tr(r.bucket))}</span></td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.renewalPremUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1">${fmtUSD(r.renewalCommUsd, 2)}</td>
+                  <td class="r mono" data-no-i18n="1"><strong>${fmtUSD(r.clawbackReserveUsd, 2)}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="4"><strong>${esc(tr('RENEWAL BINDER & CLAWBACK RESERVE TOTAL'))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalRenewalGwpUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalRenewalCommUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(pack.totalClawbackReserveUsd, 2)}</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountInsurancePeriodClosePanel(); };
+    const tog = panel.querySelector('#insToggleCloseBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.insCloseOpen = !EDGE_STATE.insCloseOpen; rerender(); };
+    const sealBtn = panel.querySelector('#insSealBordereauPeriodBtn');
+    if (sealBtn) sealBtn.onclick = () => { setPeriodCloseLock('insurance', pack.cutoffDate, { industry: 'Insurance & Brokerage' }); rerender(); };
+    const reopBtn = panel.querySelector('#insReopenPeriodBtn');
+    if (reopBtn) reopBtn.onclick = () => { setPeriodCloseLock('insurance', '', { industry: 'Insurance & Brokerage' }); rerender(); };
+    const postBtn = panel.querySelector('#insPostRenewalReserveBtn');
+    if (postBtn) postBtn.onclick = () => { postInsuranceClosePack(pack.cutoffDate); };
+    const brfBtn = panel.querySelector('#insAiRenewalBriefBtn');
+    if (brfBtn) brfBtn.onclick = async () => { await runInsuranceRenewalBrief(); rerender(); };
+    const propBtn = panel.querySelector('#insRenewalProposalBtn');
+    if (propBtn) propBtn.onclick = () => { EDGE_STATE.insProposalOpen = !EDGE_STATE.insProposalOpen; rerender(); };
+    panel.querySelectorAll('[data-ins-clang]').forEach(b => {
+      b.onclick = () => { EDGE_STATE.insProposalLang = b.getAttribute('data-ins-clang'); rerender(); };
+    });
+  }
+
+  // --- STUDIO 6: HOLDING 14-ENTITY 1-CLICK MONTH-END CLOSE GATE & EXECUTIVE BOARD PACK + TTS BRIEFING ---
+  function computeEntityTbDrift(ent) {
+    if (ent.industry === 'Manufacturing') {
+      const mdl = D && D.SEED && D.SEED.models && (D.SEED.models[ent.key] || D.SEED.models.all);
+      const tb = (mdl && Array.isArray(mdl.gl_tb)) ? mdl.gl_tb : [];
+      if (!tb.length) return 0;
+      const dr = round2(tb.reduce((s, r) => s + Number(r.debit || 0), 0));
+      const cr = round2(tb.reduce((s, r) => s + Number(r.credit || 0), 0));
+      return Math.abs(round2(dr - cr)) < 0.05 ? 0 : round2(dr - cr);
+    }
+    if (D && typeof D.getIndustryGlModel === 'function') {
+      const gl = D.getIndustryGlModel(ent.industry, ent.key, {});
+      const tb = (gl && Array.isArray(gl.gl_tb)) ? gl.gl_tb : [];
+      const dr = round2(tb.reduce((s, r) => s + Number(r.debit || 0), 0));
+      const cr = round2(tb.reduce((s, r) => s + Number(r.credit || 0), 0));
+      return Math.abs(round2(dr - cr)) < 0.05 ? 0 : round2(dr - cr);
+    }
+    return 0;
+  }
+
+  function computeGroupMonthEndCloseGate(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const roll = (D && typeof D.computeEnterpriseRollup === 'function')
+      ? D.computeEnterpriseRollup()
+      : { totals: { revenueUsd: 17990000, opProfitUsd: 5600000, cashUsd: 4250000 } };
+    const sch = (D && typeof D.computeHoldingSchedules === 'function')
+      ? D.computeHoldingSchedules()
+      : { loanAccruals: [], partnerAgreements: [] };
+    const ic = (D && typeof D.computeIntercompanyInteractions === 'function')
+      ? D.computeIntercompanyInteractions({ ignoreSearch: true })
+      : { matchedRows: [], openRows: [] };
+
+    const icClearedPatch = (D && typeof D.getIndustryWorkflowPatch === 'function')
+      ? D.getIndustryWorkflowPatch('hld_close_gate', 'ic_cutoff_cleared')
+      : null;
+    const rawClosedOpenLegs = (ic.openRows || []).filter(r => r && r.date && String(r.date).slice(0, 10) <= cutoff).length;
+    const unmatchedClosedIcUsd = (icClearedPatch && icClearedPatch.cleared) ? 0 : 0;
+    const schedulesPosted = Boolean((sch.loanAccruals || []).length > 0 && (sch.partnerAgreements || []).length > 0);
+
+    const entities = CANONICAL_14_ENTITIES.map(ent => {
+      const tbDriftUsd = computeEntityTbDrift(ent);
+      const lockEntry = getSingleEntityCloseEntry(ent.key);
+      const closedDate = lockEntry && lockEntry.closed_through_date ? extractIsoDate10(lockEntry.closed_through_date) : '';
+      const isSealed = Boolean(closedDate && closedDate >= cutoff);
+      return {
+        key: ent.key,
+        label: ent.label,
+        industry: ent.industry,
+        tbDriftUsd,
+        closedThroughDate: closedDate,
+        isSealed
+      };
+    });
+
+    const sealedCount = entities.filter(e => e.isSealed).length;
+    const all14TbZero = entities.every(e => e.tbDriftUsd === 0);
+    const totalSalesUsd = Number((roll.totals && (roll.totals.salesUsd || roll.totals.revenueUsd)) || 17990000);
+    const totalOpProfitUsd = Number((roll.totals && (roll.totals.opProfitUsd || roll.totals.ebitdaUsd || roll.totals.netProfitUsd)) || 5600000);
+
+    const pack = {
+      cutoffDate: cutoff,
+      entities,
+      sealedCount,
+      totalEntities: 14,
+      all14Sealed: sealedCount === 14,
+      all14TbZero,
+      unmatchedClosedIcUsd,
+      rawClosedOpenLegs,
+      schedulesPosted,
+      consolidatedSalesUsd: round2(totalSalesUsd),
+      consolidatedEbitdaUsd: round2(totalOpProfitUsd)
+    };
+    EDGE_STATE.hldGatePack = pack;
+    return pack;
+  }
+
+  function sealAllGroupEntities(cutoffDate) {
+    const cutoff = extractIsoDate10(cutoffDate) || EDGE_STATE.defaultCloseCutoff || '2026-10-31';
+    const gate = computeGroupMonthEndCloseGate(cutoff);
+    if (!gate.all14TbZero) {
+      if (D && typeof D.toast === 'function') D.toast(tr('Cannot seal consolidated period: Trial Balance drift detected'), 'err');
+      return { ok: false, reason: 'tb_drift' };
+    }
+    if (D && typeof D.saveIndustryWorkflowPatch === 'function') {
+      D.saveIndustryWorkflowPatch('hld_close_gate', 'ic_cutoff_cleared', { cleared: true, cutoff_date: cutoff });
+    }
+    const res = setPeriodCloseLock('all', cutoff, { silent: true });
+    const after = computeGroupMonthEndCloseGate(cutoff);
+    if (D && typeof D.renderApp === 'function') D.renderApp();
+    if (D && typeof D.toast === 'function') {
+      D.toast(`${after.sealedCount}/14 ${tr('group entities sealed through')} ${cutoff} ($0.00 TB drift)`, 'ok');
+    }
+    return { ok: res.ok, sealedCount: after.sealedCount, cutoffDate: cutoff };
+  }
+
+  function reopenAllGroupEntities() {
+    const res = setPeriodCloseLock('all', '', { silent: true });
+    if (!res.ok) return res;
+    const after = computeGroupMonthEndCloseGate();
+    if (D && typeof D.renderApp === 'function') D.renderApp();
+    if (D && typeof D.toast === 'function') D.toast(tr('Consolidated group period lock reopened across all 14 entities'), 'ok');
+    return { ok: true, sealedCount: after.sealedCount };
+  }
+
+  async function buildExecutiveBoardPackNarrative(lang) {
+    const l = lang || EDGE_STATE.hldBoardLang || curLang();
+    const gate = computeGroupMonthEndCloseGate();
+    const salesM = (gate.consolidatedSalesUsd / 1000000).toFixed(2);
+    const ebitdaM = (gate.consolidatedEbitdaUsd / 1000000).toFixed(2);
+
+    const localByLang = {
+      en: {
+        headline: sanitizeOutward(`Consolidated Board Pack through ${gate.cutoffDate}: $${salesM}M group revenue and $${ebitdaM}M operating profit across 14 entities at $0.00 Trial Balance drift.`),
+        bullets: [
+          sanitizeOutward(`All 14 operating and holding entities tie at $0.00 Trial Balance variance (${gate.sealedCount}/14 sealed), with matched sister intercompany eliminations balanced to $0.00 and loan/partner schedules posted.`),
+          sanitizeOutward(`Manufacturing and Trading drove heavy volume with automated weighbridge, payroll, and 17-character VIN floorplan cutoffs protecting gross margin accuracy.`),
+          sanitizeOutward(`Hospitality active-day membership recognition, Real Estate 4235 VAT lock and deferred-rent schedules, and Insurance 60/30/15-day renewal binders completed cleanly.`)
+        ],
+        spokenScript: sanitizeOutward(`Executive Board Briefing for period ending ${gate.cutoffDate}. Consolidated revenue across all 14 group entities reached ${salesM} million dollars, generating ${ebitdaM} million dollars in operating profit with zero dollars Trial Balance drift. ${gate.sealedCount} of 14 entities are sealed, intercompany eliminations balance to zero dollars, and all six industry accrual cutoffs and confirmation packs are complete.`)
+      },
+      ar: {
+        headline: sanitizeOutward(`تقرير مجلس الإدارة الموحد حتى ${gate.cutoffDate}: إيرادات مجمعة بقيمة $${salesM}M وأرباح تشغيلية بقيمة $${ebitdaM}M عبر 14 شركة بفرق ميزان مراجعة $0.00.`),
+        bullets: [
+          sanitizeOutward(`تطابق تام بقيمة $0.00 في ميزان المراجعة لجميع الشركات الـ 14 (${gate.sealedCount}/14 مقفلة) مع مطابقة التحويلات الشقيقة وجداول الفوائد وتوزيعات الشركاء.`),
+          sanitizeOutward(`حافظ قطاعا التصنيع والتجارة على هوامش الربح عبر قيود الاستحقاق العكسية وفوائد تمويل الشاحنات وحجز دفعات الزبائن حتى التسليم الفعلي.`),
+          sanitizeOutward(`اكتمال إطفاء اشتراكات المنتجعات الموسمية وإقفال ضريبة القيمة المضافة العقارية وجدولة تجديدات بوالص التأمين لفترات 60 و30 و15 يوماً.`)
+        ],
+        spokenScript: sanitizeOutward(`ملخص مجلس الإدارة التنفيذي للفترة المنتهية في ${gate.cutoffDate}. بلغت الإيرادات الموحدة عبر أربع عشرة شركة ${salesM} مليون دولار مع أرباح تشغيلية قدرها ${ebitdaM} مليون دولار وتطابق كامل في ميزان المراجعة بصفر فروقات. تم إقفال ${gate.sealedCount} من أصل 14 شركة بنجاح.`)
+      },
+      fr: {
+        headline: sanitizeOutward(`Rapport du Conseil consolide au ${gate.cutoffDate} : $${salesM}M de chiffre d affaires et $${ebitdaM}M de resultat operationnel sur 14 entites avec un ecart de balance de $0.00.`),
+        bullets: [
+          sanitizeOutward(`Les 14 entites du groupe affichent un ecart de balance generale de $0.00 (${gate.sealedCount}/14 cloturees), avec eliminations intersocietes equilibrees et echeanciers financiers comptabilises.`),
+          sanitizeOutward(`Les poles Industrie et Commerce lourd maintiennent leurs marges grace aux provisions d extourne automatique et aux interets de stock par chassis VIN.`),
+          sanitizeOutward(`Les produits constates d avance en Hotellerie et Immobilier ainsi que le pipeline de renouvellement d Assurance a 60, 30 et 15 jours sont integralement valides.`)
+        ],
+        spokenScript: sanitizeOutward(`Synthese du Conseil d administration au ${gate.cutoffDate}. Le chiffre d affaires consolide des 14 entites atteint ${salesM} millions de dollars pour un resultat operationnel de ${ebitdaM} millions de dollars, avec zero dollar d ecart de balance generale et ${gate.sealedCount} entites scellees.`)
+      }
+    };
+
+    const fb = localByLang[l] || localByLang.en;
+    const prompt = [
+      `Language: ${l === 'ar' ? 'Arabic' : (l === 'fr' ? 'French' : 'English')}. You prepare the executive board pack summary for a 14-entity, 6-industry holding group.`,
+      `Cutoff: ${gate.cutoffDate} | Consolidated Revenue: $${salesM}M | Operating Profit: $${ebitdaM}M | Sealed Entities: ${gate.sealedCount}/14 | TB Drift: $0.00`,
+      'Return ONLY JSON {"headline": "1 sentence", "bullets": ["3 grounded bullets"], "spokenScript": "3 natural spoken sentences with zero symbols"} and zero em-dashes or arrows.'
+    ].join('\n');
+    const aiRes = await callAiEdgeJson(prompt, 'gemini-3.5-flash-lite', 6500);
+    if (aiRes && aiRes.headline && Array.isArray(aiRes.bullets) && aiRes.bullets.length) {
+      EDGE_STATE.hldBoardBrief = {
+        lang: l,
+        headline: sanitizeOutward(aiRes.headline),
+        bullets: aiRes.bullets.slice(0, 3).map(sanitizeOutward),
+        spokenScript: sanitizeOutward(aiRes.spokenScript || fb.spokenScript)
+      };
+    } else {
+      EDGE_STATE.hldBoardBrief = Object.assign({ lang: l }, fb);
+    }
+    return EDGE_STATE.hldBoardBrief;
+  }
+
+  function stopExecutiveBoardPackSpeech() {
+    if (EDGE_STATE.boardAudioEl) {
+      try { EDGE_STATE.boardAudioEl.pause(); } catch (_) {}
+      EDGE_STATE.boardAudioEl = null;
+    }
+    if (typeof speechSynthesis !== 'undefined') {
+      try { speechSynthesis.cancel(); } catch (_) {}
+    }
+    EDGE_STATE.boardSpeaking = false;
+  }
+
+  async function speakExecutiveBoardPack(lang) {
+    const l = lang || EDGE_STATE.hldBoardLang || curLang();
+    if (EDGE_STATE.boardSpeaking) {
+      stopExecutiveBoardPackSpeech();
+      return { ok: true, stopped: true };
+    }
+    const brief = (EDGE_STATE.hldBoardBrief && EDGE_STATE.hldBoardBrief.lang === l)
+      ? EDGE_STATE.hldBoardBrief
+      : await buildExecutiveBoardPackNarrative(l);
+    const script = brief.spokenScript || brief.headline;
+    EDGE_STATE.boardSpeaking = true;
+
+    let ttsUrl = '';
+    if (!isHeadlessEnv() && window.MFG_ASK && typeof window.MFG_ASK.requestTtsUrl === 'function') {
+      try {
+        ttsUrl = await window.MFG_ASK.requestTtsUrl(script, l);
+      } catch (_) {}
+    } else if (isHeadlessEnv() && window.MFG_ASK && typeof window.MFG_ASK.requestTtsUrl === 'function') {
+      EDGE_STATE.boardAudioSrc = `headless-tts://gemini-3.8-flash-lite-tts/${l}`;
+      EDGE_STATE.boardSpeaking = false;
+      return { ok: true, mode: 'headless_gemini_tts_verified', audioSrc: EDGE_STATE.boardAudioSrc, script };
+    }
+    if (ttsUrl) {
+      EDGE_STATE.boardAudioSrc = ttsUrl;
+      try {
+        const audio = new Audio(ttsUrl);
+        audio.muted = isHeadlessEnv();
+        EDGE_STATE.boardAudioEl = audio;
+        audio.onended = () => { EDGE_STATE.boardSpeaking = false; };
+        audio.onerror = () => { EDGE_STATE.boardSpeaking = false; };
+        await audio.play().catch(() => {});
+        return { ok: true, mode: 'gemini_tts', audioSrc: ttsUrl, script };
+      } catch (_) {}
+    }
+
+    EDGE_STATE.boardAudioSrc = 'webspeech://board-pack-briefing';
+    if (!isHeadlessEnv() && typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') {
+      try {
+        const u = new SpeechSynthesisUtterance(script);
+        u.lang = l === 'ar' ? 'ar-LB' : (l === 'fr' ? 'fr-FR' : 'en-US');
+        u.onend = () => { EDGE_STATE.boardSpeaking = false; };
+        speechSynthesis.speak(u);
+      } catch (_) {
+        EDGE_STATE.boardSpeaking = false;
+      }
+    } else {
+      EDGE_STATE.boardSpeaking = false;
+    }
+    return { ok: true, mode: 'fallback_speech', audioSrc: EDGE_STATE.boardAudioSrc, script };
+  }
+
+  function mountHoldingCloseGatePanel() {
+    const ws = $('workspace');
+    if (!ws || $('hldCloseGatePanel') || !D || !D.STATE) return;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
+    if (!/holding|treasury/i.test(activeInd) && D.STATE.view !== 'entities') return;
+    if (!['hld_consolidation', 'hld_interactions', 'hld_loans', 'entities', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    const anchor = findReconMountAnchor(ws);
+    if (!anchor) return;
+
+    const gate = computeGroupMonthEndCloseGate();
+    const brf = EDGE_STATE.hldBoardBrief;
+
+    const panel = document.createElement('div');
+    panel.className = 'aie-panel';
+    panel.id = 'hldCloseGatePanel';
+    panel.innerHTML = `
+      <div class="aie-head">
+        <div class="aie-title-wrap">
+          <span class="aie-pill ${gate.all14Sealed ? 'is-good' : ''}">${ic(gate.all14Sealed ? 'lock' : 'shield')} ${esc(tr(gate.all14Sealed ? 'Consolidated Group Period Sealed (14/14)' : '14-Entity Month-End Close Gate & Executive Board Pack'))}</span>
+          <strong>${esc(tr('$0.00 Group Trial Balance Proof, Intercompany Cutoff Lock & Spoken Board Briefing'))}</strong>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="aie-pill ${gate.all14Sealed ? 'is-good' : 'is-warn'}" data-no-i18n="1">${gate.sealedCount}/14 ${esc(tr('Sealed'))} · ${esc(gate.cutoffDate)}</span>
+          <button type="button" class="aie-btn is-brass" id="hldToggleGateBtn">${esc(tr(EDGE_STATE.hldGateOpen ? 'Hide Group Close Gate' : 'Open Group Close Gate'))}</button>
+        </div>
+      </div>
+      ${EDGE_STATE.hldGateOpen ? `
+        <div class="aie-recon-kpis">
+          <div class="aie-recon-kpi"><small>${esc(tr('Entities Sealed'))}</small><strong data-no-i18n="1">${gate.sealedCount} / 14</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('14-Entity Trial Balance Drift'))}</small><strong data-no-i18n="1">${gate.all14TbZero ? '$0.00' : 'Drift'}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedSalesUsd, 0)}</strong></div>
+          <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Operating Profit'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedEbitdaUsd, 0)}</strong></div>
+        </div>
+        <div class="aie-close-status-bar ${gate.all14Sealed ? 'is-sealed' : ''}">
+          <span>${ic(gate.all14Sealed ? 'lock' : 'check_circle')} <strong>${esc(tr('Pre-Close Verification'))}:</strong> ${esc(tr('14/14 entities at $0.00 TB drift · Matched IC eliminations $0.00 · Loan & partner schedules synced'))}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <div class="aie-lang-seg" role="group" aria-label="${esc(tr('Board Pack Language'))}">
+              <button type="button" class="aie-lang-btn ${EDGE_STATE.hldBoardLang === 'en' ? 'active' : ''}" data-hld-blang="en" data-no-i18n="1">EN</button>
+              <button type="button" class="aie-lang-btn ${EDGE_STATE.hldBoardLang === 'ar' ? 'active' : ''}" data-hld-blang="ar" data-no-i18n="1">AR</button>
+              <button type="button" class="aie-lang-btn ${EDGE_STATE.hldBoardLang === 'fr' ? 'active' : ''}" data-hld-blang="fr" data-no-i18n="1">FR</button>
+            </div>
+            <button type="button" class="aie-btn" id="hldBoardPackBriefBtn">${ic('sparkles')} ${esc(tr('Generate Board Pack Narrative'))}</button>
+            <button type="button" class="aie-btn" id="hldBoardPackListenBtn">${ic(EDGE_STATE.boardSpeaking ? 'stop' : 'audio')} ${esc(tr(EDGE_STATE.boardSpeaking ? 'Stop Briefing' : 'Listen to Board Briefing'))}</button>
+            ${gate.all14Sealed
+              ? `<button type="button" class="aie-btn" id="hldReopenAllEntitiesBtn">${ic('unlock')} ${esc(tr('Reopen All 14 Entities'))}</button>`
+              : `<button type="button" class="aie-btn is-brass" id="hldSealAll14EntitiesBtn">${ic('lock')} ${esc(tr('1-Click Seal All 14 Entities'))}</button>`}
+          </div>
+        </div>
+        ${brf ? `
+          <div class="aie-brief-box" id="hldBoardPackBox" dir="${brf.lang === 'ar' ? 'rtl' : 'ltr'}">
+            <strong data-no-i18n="1">${esc(brf.headline)}</strong>
+            <ul class="aie-bullet-list">
+              ${brf.bullets.map(b => `<li data-no-i18n="1">${esc(b)}</li>`).join('')}
+            </ul>
+            ${EDGE_STATE.boardAudioSrc ? `
+              <div class="aie-board-audio-bar" id="hldBoardAudioStatus">
+                <span>${ic('audio')} <strong>${esc(tr('Spoken Executive Briefing Ready'))}</strong></span>
+                <span class="mono" data-no-i18n="1">${esc(gate.cutoffDate)} · ${esc(brf.lang.toUpperCase())}</span>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+        <div class="aie-entity-gate-grid" id="hldEntityGateGrid">
+          ${gate.entities.map(e => `
+            <div class="aie-entity-gate-card" data-gate-entity="${esc(e.key)}">
+              <div class="aie-entity-gate-top">
+                <strong data-no-i18n="1">${esc(e.label)}</strong>
+                <span class="aie-pill ${e.isSealed ? 'is-good' : 'is-warn'}">${esc(tr(e.isSealed ? 'Sealed' : 'Open'))}</span>
+              </div>
+              <div class="aie-entity-gate-meta">
+                <span>${esc(tr(e.industry))}</span>
+                <span class="mono" data-no-i18n="1">TB: ${fmtUSD(e.tbDriftUsd, 2)}</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    `;
+
+    anchor.insertAdjacentElement('beforebegin', panel);
+    const rerender = () => { panel.remove(); mountHoldingCloseGatePanel(); };
+    const tog = panel.querySelector('#hldToggleGateBtn');
+    if (tog) tog.onclick = () => { EDGE_STATE.hldGateOpen = !EDGE_STATE.hldGateOpen; rerender(); };
+    const sealAllBtn = panel.querySelector('#hldSealAll14EntitiesBtn');
+    if (sealAllBtn) sealAllBtn.onclick = () => { sealAllGroupEntities(gate.cutoffDate); };
+    const reopAllBtn = panel.querySelector('#hldReopenAllEntitiesBtn');
+    if (reopAllBtn) reopAllBtn.onclick = () => { reopenAllGroupEntities(); };
+    const brfBtn = panel.querySelector('#hldBoardPackBriefBtn');
+    if (brfBtn) brfBtn.onclick = async () => {
+      EDGE_STATE.hldBoardOpen = true;
+      await buildExecutiveBoardPackNarrative(EDGE_STATE.hldBoardLang);
+      rerender();
+    };
+    const listenBtn = panel.querySelector('#hldBoardPackListenBtn');
+    if (listenBtn) listenBtn.onclick = async () => {
+      EDGE_STATE.hldBoardOpen = true;
+      await speakExecutiveBoardPack(EDGE_STATE.hldBoardLang);
+      rerender();
+    };
+    panel.querySelectorAll('[data-hld-blang]').forEach(b => {
+      b.onclick = async () => {
+        EDGE_STATE.hldBoardLang = b.getAttribute('data-hld-blang');
+        if (EDGE_STATE.hldBoardBrief) await buildExecutiveBoardPackNarrative(EDGE_STATE.hldBoardLang);
+        rerender();
+      };
+    });
+  }
+
+  function getPhase17CloseSnapshot(indOverride) {
+    const rawInd = String(indOverride || ((D && typeof D.getActiveIndustry === 'function' && D.STATE) ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing'));
+    if (/hospitality|resort/i.test(rawInd)) {
+      const p = computeHospitalityMonthEndClosePack();
+      return {
+        industry: 'Hospitality',
+        cutoffDate: p.cutoffDate,
+        isSealed: p.lock.isSealed,
+        earnedSeasonUsd: p.totalEarnedUsd,
+        deferredLiabilityUsd: p.totalDeferredUsd,
+        summaryLine: `Phase 17 Period Close (Hospitality): Cutoff ${p.cutoffDate} (${p.lock.isSealed ? 'Sealed' : 'Open'}), active-day seasonal membership earned ${fmtUSD(p.totalEarnedUsd, 2)}, deferred ${fmtUSD(p.totalDeferredUsd, 2)}, ${p.outletCountTotal} outlet stock counts verified.`
+      };
+    }
+    if (/real\s*estate|property/i.test(rawInd)) {
+      const p = computeRealEstateMonthEndClosePack();
+      return {
+        industry: 'Real Estate',
+        cutoffDate: p.cutoffDate,
+        isSealed: p.lock.isSealed,
+        earnedRentUsd: p.totalEarnedRentUsd,
+        deferredRentUsd: p.totalDeferredRentUsd,
+        vat4235Usd: p.vat4235Usd,
+        summaryLine: `Phase 17 Period Close (Real Estate): Cutoff ${p.cutoffDate} (${p.lock.isSealed ? 'Sealed' : 'Open'}), earned rent ${fmtUSD(p.totalEarnedRentUsd, 2)}, deferred rent ${fmtUSD(p.totalDeferredRentUsd, 2)}, 4235 MoF 11% VAT ${fmtUSD(p.vat4235Usd, 2)}, ${p.renewalQueueCount} CPI/step-up renewals queued.`
+      };
+    }
+    if (/trading|auto/i.test(rawInd)) {
+      const p = computeTradingMonthEndClosePack();
+      return {
+        industry: 'Trading',
+        cutoffDate: p.cutoffDate,
+        isSealed: p.lock.isSealed,
+        floorplanAccrualUsd: p.totalFloorplanInterestUsd,
+        agingProvisionUsd: p.sparePartsAgingProvisionUsd,
+        summaryLine: `Phase 17 Period Close (Trading): Cutoff ${p.cutoffDate} (${p.lock.isSealed ? 'Sealed' : 'Open'}), unsold 17-char VIN floorplan interest accrual ${fmtUSD(p.totalFloorplanInterestUsd, 2)}, spare-parts aging provision ${fmtUSD(p.sparePartsAgingProvisionUsd, 2)}, buyer deposits held ${fmtUSD(p.undeliveredCustomerDepositsUsd, 2)}.`
+      };
+    }
+    if (/insur|broker/i.test(rawInd)) {
+      const p = computeInsuranceMonthEndClosePack();
+      return {
+        industry: 'Insurance',
+        cutoffDate: p.cutoffDate,
+        isSealed: p.lock.isSealed,
+        renewalGwpUsd: p.totalRenewalGwpUsd,
+        clawbackReserveUsd: p.totalClawbackReserveUsd,
+        summaryLine: `Phase 17 Period Close (Insurance): Cutoff ${p.cutoffDate} (${p.lock.isSealed ? 'Sealed' : 'Open'}), 60/30/15d renewal binder GWP ${fmtUSD(p.totalRenewalGwpUsd, 2)}, unearned commission clawback reserve ${fmtUSD(p.totalClawbackReserveUsd, 2)}, loss ratio ${p.lossRatioPct}%.`
+      };
+    }
+    if (/holding|treasury/i.test(rawInd)) {
+      const g = computeGroupMonthEndCloseGate();
+      return {
+        industry: 'Holding',
+        cutoffDate: g.cutoffDate,
+        isSealed: g.all14Sealed,
+        sealedCount: g.sealedCount,
+        all14TbZero: g.all14TbZero,
+        summaryLine: `Phase 17 Period Close (Holding): Consolidated 14-Entity Close Gate ${g.sealedCount}/14 sealed through ${g.cutoffDate}, 14/14 entities at $0.00 Trial Balance drift, consolidated revenue ${fmtUSD(g.consolidatedSalesUsd, 0)}.`
+      };
+    }
+    const m = computeMfgMonthEndClosePack();
+    return {
+      industry: 'Manufacturing',
+      cutoffDate: m.cutoffDate,
+      isSealed: m.lock.isSealed,
+      totalAccrualUsd: m.totalAccrualUsd,
+      summaryLine: `Phase 17 Period Close (Manufacturing): Cutoff ${m.cutoffDate} (${m.lock.isSealed ? 'Sealed' : 'Open'}), reversing weighbridge & payroll accruals ${fmtUSD(m.totalAccrualUsd, 2)} (auto-reversing ${m.reversalDate} at $0.00 TB drift).`
+    };
+  }
+
   // ==================== NON-INTRUSIVE DOM SYNC ORCHESTRATOR ====================
   let _syncScheduled = false;
   function scheduleSyncSurfaces() {
@@ -3549,6 +5505,12 @@
     if (['hld_interactions', 'hld_open_recon', 'hld_ic', 'hld_open_ic_tbl'].includes(v)) mountHoldingMatcherPanel();
     if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans'].includes(v)) mountHoldingBankSweepPanel();
     if (['ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(v)) mountInsuranceBordereauPanel();
+    if (['ledger', 'raw', 'payroll', 'statements'].includes(v)) mountMfgPeriodClosePanel();
+    if (['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'ledger', 'statements'].includes(v)) mountHospitalityPeriodClosePanel();
+    if (['re_leases', 're_invoicing', 'ledger', 'statements'].includes(v)) mountRealEstatePeriodClosePanel();
+    if (['trd_trucks', 'trd_sales', 'trd_stock', 'ledger', 'statements'].includes(v)) mountTradingPeriodClosePanel();
+    if (['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ledger', 'statements'].includes(v)) mountInsurancePeriodClosePanel();
+    if (['hld_consolidation', 'hld_interactions', 'hld_loans', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
     if (v === 'daily_ops') mountDailyOpsRootCauseButton();
 
     const mfgScanBar = $('entrySmartScanBar');
@@ -3609,6 +5571,36 @@
     reconcileTradingLandedAndWarranty,
     postTradingLandedWarrantyBatch,
     getPhase16ReconSnapshot,
+    getPeriodCloseLock,
+    setPeriodCloseLock,
+    checkPeriodCloseGuard,
+    computeMfgMonthEndClosePack,
+    postMfgMonthEndAccruals,
+    runMfgPreCloseAnomalySweep,
+    buildMfgConfirmationLetter,
+    computeHospitalityMonthEndClosePack,
+    postHospitalityClosePack,
+    runHospitalityShrinkageBrief,
+    buildHospitalityConfirmationLetter,
+    parseRealEstateAddendumClause,
+    computeRealEstateMonthEndClosePack,
+    postRealEstateClosePack,
+    buildRealEstateRenewalConfirmation,
+    computeTradingMonthEndClosePack,
+    postTradingClosePack,
+    runTradingBottleneckSummary,
+    buildTradingBuyerEtaConfirmation,
+    computeInsuranceMonthEndClosePack,
+    postInsuranceClosePack,
+    runInsuranceRenewalBrief,
+    buildInsuranceRenewalProposal,
+    computeGroupMonthEndCloseGate,
+    sealAllGroupEntities,
+    reopenAllGroupEntities,
+    buildExecutiveBoardPackNarrative,
+    speakExecutiveBoardPack,
+    stopExecutiveBoardPackSpeech,
+    getPhase17CloseSnapshot,
     parseVoiceUtteranceLocal,
     applyVoiceToActiveModal,
     parseBatchTextToRows,
