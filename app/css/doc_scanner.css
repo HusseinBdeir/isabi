@@ -62,12 +62,40 @@ html.phone-scan-companion body {
 }
 
 .doc-cam-preset-bar,
+.doc-cam-card-subbar,
 .doc-cam-tools-bar,
 .doc-cam-enhance-bar {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.doc-cam-card-subbar {
+  padding: 5px 9px;
+  border-radius: 10px;
+  background: var(--surface-2, #F6F4EE);
+  border: 1px solid var(--line, #E5E0D5);
+}
+
+:root[data-theme="dark"] .doc-cam-card-subbar {
+  background: #282019;
+  border-color: #3D3126;
+}
+
+.doc-cam-card-subbar[hidden] {
+  display: none !important;
+}
+
+.doc-cam-subbar-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted, #645B50);
+  margin-right: 2px;
+}
+
+:root[data-theme="dark"] .doc-cam-subbar-lbl {
+  color: #C9BFA9;
 }
 
 .doc-cam-pill-btn {
@@ -277,6 +305,59 @@ html.phone-scan-companion body {
   inset: 17% 16%;
 }
 
+/* Narrow 4.5 : 1 VIN / Chassis Strip guide (exact 4.5:1 aspect-ratio across all laptop, tablet & phone viewports) */
+#docCameraModal .doc-cam-stage[data-doc-preset="vin"] .doc-cam-guide,
+.psc-cam-stage[data-doc-preset="vin"] .doc-cam-guide {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 84%;
+  height: auto;
+  aspect-ratio: 4.5 / 1;
+  max-height: 46%;
+  transform: translate(-50%, -50%);
+  border-radius: 8px;
+}
+
+.psc-cam-stage[data-doc-preset="vin"] .doc-cam-guide {
+  width: 90%;
+}
+
+#docCameraModal .doc-cam-stage[data-doc-preset="vin"] .doc-cam-privacy-tag,
+.psc-cam-stage[data-doc-preset="vin"] .doc-cam-privacy-tag {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+#docCameraModal .doc-cam-stage[data-doc-preset="vin"] .doc-cam-guide-msg,
+.psc-cam-stage[data-doc-preset="vin"] .doc-cam-guide-msg {
+  position: absolute;
+  bottom: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(520px, 94vw);
+  white-space: normal;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2.5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink, #231D18);
+  border: 1px solid var(--line-strong, #D5CFC2);
+}
+
+:root[data-theme="dark"] #docCameraModal .doc-cam-stage[data-doc-preset="vin"] .doc-cam-guide-msg,
+:root[data-theme="dark"] .psc-cam-stage[data-doc-preset="vin"] .doc-cam-guide-msg {
+  background: rgba(36, 28, 22, 0.94);
+  color: #F5F0E6;
+  border-color: #46382C;
+}
+
 @media (max-width: 640px) {
   #docCameraModal .doc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide,
   .psc-cam-stage[data-doc-preset="receipt"] .doc-cam-guide {
@@ -289,6 +370,10 @@ html.phone-scan-companion body {
   #docCameraModal .doc-cam-stage[data-doc-preset="card"] .doc-cam-guide,
   .psc-cam-stage[data-doc-preset="card"] .doc-cam-guide {
     inset: 19% 7%;
+  }
+  #docCameraModal .doc-cam-stage[data-doc-preset="vin"] .doc-cam-guide,
+  .psc-cam-stage[data-doc-preset="vin"] .doc-cam-guide {
+    width: 90%;
   }
 }
 

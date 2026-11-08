@@ -420,10 +420,12 @@
     );
   }
 
-  function isReasonableDocumentQuad(q, roiArea) {
+  function isReasonableDocumentQuad(q, roiArea, isVinMode) {
     if (!q || q.length !== 4) return false;
     const area = quadArea(q);
-    if (area < roiArea * 0.065 || area > roiArea * 0.96) return false;
+    const minAreaFrac = isVinMode ? 0.032 : 0.065;
+    if (area < roiArea * minAreaFrac || area > roiArea * 0.96) return false;
+    const minSidePx = isVinMode ? 6 : 8;
     for (let i = 0; i < 4; i++) {
       const pPrev = q[(i + 3) % 4];
       const pCur = q[i];
@@ -431,7 +433,7 @@
       const v1x = pPrev.x - pCur.x, v1y = pPrev.y - pCur.y;
       const v2x = pNext.x - pCur.x, v2y = pNext.y - pCur.y;
       const d1 = Math.hypot(v1x, v1y), d2 = Math.hypot(v2x, v2y);
-      if (d1 < 8 || d2 < 8) return false;
+      if (d1 < minSidePx || d2 < minSidePx) return false;
       const cosA = (v1x * v2x + v1y * v2y) / (d1 * d2);
       const deg = Math.acos(Math.max(-1, Math.min(1, cosA))) * (180 / Math.PI);
       if (deg < 52 || deg > 128) return false;
@@ -443,7 +445,7 @@
     if (Math.max(wTop, wBot) / Math.max(1, Math.min(wTop, wBot)) > 1.65) return false;
     if (Math.max(hLeft, hRight) / Math.max(1, Math.min(hLeft, hRight)) > 1.65) return false;
     const aspect = ((wTop + wBot) * 0.5) / Math.max(1, (hLeft + hRight) * 0.5);
-    return aspect >= 0.28 && aspect <= 3.6;
+    return isVinMode ? (aspect >= 1.8 && aspect <= 6.8) : (aspect >= 0.28 && aspect <= 3.6);
   }
 
   function extractQuadFromHull(hull) {
@@ -491,6 +493,7 @@
     const img = ctx.getImageData(0, 0, W, H).data;
 
     const g = guideNormRect || { x: 0.08, y: 0.08, w: 0.84, h: 0.84 };
+    const isVinMode = Boolean(g.preset === 'vin' || (g.w / Math.max(0.05, g.h)) >= 2.55);
     const padX = Math.round(W * 0.04);
     const padY = Math.round(H * 0.04);
     const rx0 = Math.max(2, Math.floor(g.x * W) - padX);
@@ -499,7 +502,7 @@
     const ry1 = Math.min(H - 3, Math.ceil((g.y + g.h) * H) + padY);
     const rw = rx1 - rx0 + 1;
     const rh = ry1 - ry0 + 1;
-    if (rw < 30 || rh < 30) return null;
+    if (rw < 30 || rh < (isVinMode ? 14 : 30)) return null;
 
     const lum = new Uint8Array(W * H);
     const cbArr = new Uint8Array(W * H);
@@ -677,7 +680,7 @@
             if (isEdgePx) boundary.push({ x: cx, y: cy });
           }
 
-          if (area < roiArea * 0.045 || area > roiArea * 0.90) continue;
+          if (area < roiArea * (isVinMode ? 0.030 : 0.045) || area > roiArea * 0.90) continue;
           if (touchesBorder > boundary.length * 0.50) continue;
           const meanX = sumX / area, meanY = sumY / area;
           const distNorm = Math.hypot((meanX - centerX) / rw, (meanY - centerY) / rh);
@@ -691,11 +694,11 @@
       }
       if (bestBoundary) {
         const candQ = extractQuadFromHull(convexHull(bestBoundary));
-        if (isReasonableDocumentQuad(candQ, roiArea)) cueAQuad = candQ;
+        if (isReasonableDocumentQuad(candQ, roiArea, isVinMode)) cueAQuad = candQ;
       }
     }
 
-    // CUE B: Crisp Sobel Edge-Aligned Rectangle (isolates white/colored cards even in front of a white shirt!)
+    // CUE B: Crisp Sobel Edge-Aligned Rectangle (isolates white/colored cards + metallic/dark VIN strips!)
     const stride = W + 1;
     const intPaper = new Int32Array(stride * (H + 1));
     const intSkin = new Int32Array(stride * (H + 1));
@@ -735,9 +738,10 @@
           ? rectSum(intEy, rx0, c - 1, rx1 + 1, c + 2)
           : rectSum(intEx, c - 1, ry0, c + 2, ry1 + 1);
       }
+      const minPeak = isHoriz ? 6 : (isVinMode ? 3 : 6);
       const peaks = [];
       for (let c = minCoord + 3; c <= maxCoord - 3; c++) {
-        if (scores[c] >= 6 && scores[c] >= scores[c - 1] && scores[c] >= scores[c + 1]) {
+        if (scores[c] >= minPeak && scores[c] >= scores[c - 1] && scores[c] >= scores[c + 1]) {
           peaks.push({ c, s: scores[c] });
         }
       }
@@ -759,7 +763,7 @@
       for (let yj = yi + 1; yj < yPeaks.length; yj++) {
         const y1 = yPeaks[yj];
         const bh = y1 - y0;
-        if (bh < 18) continue;
+        if (bh < (isVinMode ? 10 : 18)) continue;
         for (let xi = 0; xi < xPeaks.length; xi++) {
           const x0 = xPeaks[xi];
           for (let xj = xi + 1; xj < xPeaks.length; xj++) {
@@ -767,19 +771,28 @@
             const bw = x1 - x0;
             if (bw < 22) continue;
             const bArea = bw * bh;
-            if (bArea < roiArea * 0.04 || bArea > roiArea * 0.88) continue;
+            if (bArea < roiArea * (isVinMode ? 0.030 : 0.04) || bArea > roiArea * 0.90) continue;
             const aspect = bw / bh;
-            if (aspect < 0.30 || aspect > 3.5) continue;
+            if (isVinMode ? (aspect < 1.9 || aspect > 6.8) : (aspect < 0.30 || aspect > 3.5)) continue;
 
             const skinInside = rectSum(intSkin, x0 + 2, y0 + 2, x1 - 1, y1 - 1) / bArea;
             if (skinInside > 0.06) continue;
             const paperInside = rectSum(intPaper, x0 + 2, y0 + 2, x1 - 1, y1 - 1) / bArea;
-            if (paperInside < 0.55) continue;
 
             const topSupport = Math.min(1.2, rectSum(intEy, x0, y0 - 1, x1 + 1, y0 + 2) / bw);
             const botSupport = Math.min(1.2, rectSum(intEy, x0, y1 - 1, x1 + 1, y1 + 2) / bw);
             const leftSupport = Math.min(1.2, rectSum(intEx, x0 - 1, y0, x0 + 2, y1 + 1) / bh);
             const rightSupport = Math.min(1.2, rectSum(intEx, x1 - 1, y0, x1 + 2, y1 + 1) / bh);
+
+            let matQual = paperInside;
+            if (isVinMode) {
+              const charStrokes = rectSum(intEx, x0 + 3, y0 + 2, x1 - 2, y1 - 1) / bArea;
+              const isMetalVinPlate = (skinInside <= 0.045 && topSupport >= 0.36 && botSupport >= 0.36 && charStrokes >= 0.07);
+              if (paperInside < 0.45 && !isMetalVinPlate) continue;
+              if (isMetalVinPlate) matQual = Math.max(paperInside, Math.min(0.95, 0.48 + charStrokes * 1.6));
+            } else if (paperInside < 0.55) {
+              continue;
+            }
 
             // Require crisp edges on at least 3 sides (allows thumb/finger pinching 1 corner)
             const sidesStrong = (topSupport >= 0.36 ? 1 : 0) + (botSupport >= 0.30 ? 1 : 0) + (leftSupport >= 0.36 ? 1 : 0) + (rightSupport >= 0.30 ? 1 : 0);
@@ -789,7 +802,7 @@
             const cx = (x0 + x1) * 0.5, cy = (y0 + y1) * 0.5;
             const distNorm = Math.hypot((cx - centerX) / rw, (cy - centerY) / rh);
             const centrality = Math.max(0.35, 1.15 - distNorm * 1.15);
-            const totalScore = perimSupport * Math.pow(bArea / roiArea, 0.32) * paperInside * centrality;
+            const totalScore = perimSupport * Math.pow(bArea / roiArea, 0.32) * matQual * centrality;
             if (totalScore > bestCueBScore) {
               bestCueBScore = totalScore;
               cueBQuad = [
@@ -812,7 +825,7 @@
     } else {
       quadPx = cueAQuad || cueBQuad;
     }
-    if (!quadPx || !isReasonableDocumentQuad(quadPx, roiArea)) return null;
+    if (!quadPx || !isReasonableDocumentQuad(quadPx, roiArea, isVinMode)) return null;
 
     // Expand slightly by 2% outward from centroid so tight paper borders keep clean margins
     const qcx = (quadPx[0].x + quadPx[1].x + quadPx[2].x + quadPx[3].x) * 0.25;
@@ -821,6 +834,64 @@
       x: Math.max(0.005, Math.min(0.995, (qcx + (pt.x - qcx) * 1.02) / W)),
       y: Math.max(0.005, Math.min(0.995, (qcy + (pt.y - qcy) * 1.02) / H))
     }));
+  }
+
+  /**
+   * 8x8 mean-centered interior luminance signature (64 floats) used by Document / A4
+   * hands-free Auto-Snap so an unmoved page on a desk is never snapped twice, while turning
+   * or sliding to the next page immediately resets the page-turn lock.
+   */
+  function computeCanvasSignature64(srcCanvas, quadNormOpt) {
+    if (!srcCanvas || !srcCanvas.width || !srcCanvas.height) return null;
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    const w = srcCanvas.width, h = srcCanvas.height;
+    let x0 = 0.12 * w, y0 = 0.12 * h, x1 = 0.88 * w, y1 = 0.88 * h;
+    if (quadNormOpt && quadNormOpt.length === 4) {
+      const qMinX = Math.min(quadNormOpt[0].x, quadNormOpt[1].x, quadNormOpt[2].x, quadNormOpt[3].x);
+      const qMaxX = Math.max(quadNormOpt[0].x, quadNormOpt[1].x, quadNormOpt[2].x, quadNormOpt[3].x);
+      const qMinY = Math.min(quadNormOpt[0].y, quadNormOpt[1].y, quadNormOpt[2].y, quadNormOpt[3].y);
+      const qMaxY = Math.max(quadNormOpt[0].y, quadNormOpt[1].y, quadNormOpt[2].y, quadNormOpt[3].y);
+      x0 = (qMinX + (qMaxX - qMinX) * 0.10) * w;
+      x1 = (qMaxX - (qMaxX - qMinX) * 0.10) * w;
+      y0 = (qMinY + (qMaxY - qMinY) * 0.10) * h;
+      y1 = (qMaxY - (qMaxY - qMinY) * 0.10) * h;
+    }
+    const rx = Math.max(0, Math.floor(x0));
+    const ry = Math.max(0, Math.floor(y0));
+    const rw = Math.max(8, Math.min(w - rx, Math.ceil(x1 - x0)));
+    const rh = Math.max(8, Math.min(h - ry, Math.ceil(y1 - y0)));
+    const data = ctx.getImageData(rx, ry, rw, rh).data;
+    const sig = new Float32Array(64);
+    let mean = 0;
+    for (let gy = 0; gy < 8; gy++) {
+      const cy0 = Math.floor((gy * rh) / 8);
+      const cy1 = Math.max(cy0 + 1, Math.floor(((gy + 1) * rh) / 8));
+      for (let gx = 0; gx < 8; gx++) {
+        const cx0 = Math.floor((gx * rw) / 8);
+        const cx1 = Math.max(cx0 + 1, Math.floor(((gx + 1) * rw) / 8));
+        let sum = 0, cnt = 0;
+        for (let py = cy0; py < cy1; py += Math.max(1, Math.floor((cy1 - cy0) / 4))) {
+          for (let px = cx0; px < cx1; px += Math.max(1, Math.floor((cx1 - cx0) / 4))) {
+            const p = (py * rw + px) * 4;
+            sum += data[p] * 0.299 + data[p + 1] * 0.587 + data[p + 2] * 0.114;
+            cnt++;
+          }
+        }
+        const v = cnt ? (sum / cnt) : 0;
+        sig[gy * 8 + gx] = v;
+        mean += v;
+      }
+    }
+    mean /= 64;
+    for (let i = 0; i < 64; i++) sig[i] -= mean;
+    return sig;
+  }
+
+  function signatureDiff(sigA, sigB) {
+    if (!sigA || !sigB || sigA.length !== 64 || sigB.length !== 64) return 999;
+    let sum = 0;
+    for (let i = 0; i < 64; i++) sum += Math.abs(sigA[i] - sigB[i]);
+    return sum / 64;
   }
 
   function solveLinear8x8(A, b) {
@@ -858,11 +929,11 @@
     let dstW = Math.round(Math.max(Math.hypot(p1.x - p0.x, p1.y - p0.y), Math.hypot(p2.x - p3.x, p2.y - p3.y)));
     let dstH = Math.round(Math.max(Math.hypot(p3.x - p0.x, p3.y - p0.y), Math.hypot(p2.x - p1.x, p2.y - p1.y)));
     dstW = Math.max(80, dstW);
-    dstH = Math.max(80, dstH);
+    dstH = Math.max(44, dstH);
     if (dstW > cap || dstH > cap) {
       const sc = cap / Math.max(dstW, dstH);
       dstW = Math.max(80, Math.round(dstW * sc));
-      dstH = Math.max(80, Math.round(dstH * sc));
+      dstH = Math.max(44, Math.round(dstH * sc));
     }
 
     const dstPts = [
@@ -1068,7 +1139,7 @@
   const IS_TEST_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
 
   function buildPhoneScanHandoffUrl(sid, tok, preset) {
-    const pCode = preset === 'card' ? 'c' : (preset === 'document' ? 'd' : 'r');
+    const pCode = preset === 'vin' ? 'v' : (preset === 'card' ? 'c' : (preset === 'document' ? 'd' : 'r'));
     const isLoopback = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(location.hostname);
     // On localhost desktop dev, point QR to https://isabisystems.com/app/ so any phone on cellular/Wi-Fi opens HTTPS camera cleanly
     const base = (!IS_TEST_HARNESS && isLoopback)
@@ -1197,11 +1268,17 @@
     facingMode: 'environment',
     devices: [],
     deviceIdx: -1,
-    preset: 'receipt', // 'receipt' | 'document' | 'card'
+    preset: 'receipt', // 'receipt' | 'document' | 'card' | 'vin'
+    lastCardSubPreset: 'card', // 'card' | 'vin'
     zoom: 1,
     hwZoomApplied: 1,
     privacyMask: true,
     autoSnap: false,
+    _userToggledAutoSnap: false,
+    lastAutoSnapSig: null,
+    awaitingPageTurn: false,
+    missingTicksSinceSnap: 0,
+    nextAutoSnapAllowedAt: 0,
     enhanceMode: 'clean', // 'clean' | 'bw' | 'color'
     liveQuad: null, // smoothed 4-point [0..1] quad in stage coords
     steadyTicks: 0,
@@ -1223,38 +1300,61 @@
   };
 
   function defaultEnhanceForPreset(preset) {
-    return preset === 'card' ? 'color' : 'clean';
+    return (preset === 'card' || preset === 'vin') ? 'color' : 'clean';
+  }
+
+  function defaultAutoSnapForPreset(preset) {
+    return preset === 'document';
   }
 
   function resolveDefaultPreset() {
+    const domModal = $('indDomainEntryModal');
+    const domKey = (domModal && !domModal.hidden && domModal._currentDomainSpec && domModal._currentDomainSpec.key) ? String(domModal._currentDomainSpec.key) : '';
+    const inspPanel = $('recordInspector');
+    const inspBox = $('indInspAttachmentsBox');
+    const inspKey = (inspPanel && !inspPanel.hidden && inspBox && inspBox.getAttribute('data-domain-tbl')) ? String(inspBox.getAttribute('data-domain-tbl')) : '';
     const v = String((window.STATE && window.STATE.view) || '');
     const mForm = String((window.STATE && window.STATE.modalForm) || '');
-    if (/trd_trucks|equipment|driver|ins_items/i.test(v) || /equipment|driver/i.test(mForm)) return 'card';
-    if (/re_|ins_policies|ins_agreements|hld_|ledger|statements|settlement|jv/i.test(v) || /settlement|jv|document/i.test(mForm)) return 'document';
+    const ctxKey = `${domKey}|${inspKey}|${v}|${mForm}`;
+    if (/trd_trucks|trd_warranty/i.test(ctxKey)) return 'vin';
+    if (/equipment|driver|ins_items/i.test(ctxKey)) return 'card';
+    if (/re_|ins_policies|ins_agreements|ins_billing|ins_claims|ins_catalogue|hld_|ledger|statements|settlement|jv|document/i.test(ctxKey)) return 'document';
     return 'receipt';
   }
 
-  function presetGuideLabel(preset, locked) {
-    if (locked) return 'Document locked in hand. Hold steady or click Capture.';
+  function presetGuideLabel(preset, locked, awaitingTurn) {
+    if (awaitingTurn) return 'Page captured! Turn to next page or click Attach.';
+    if (locked) {
+      return preset === 'vin'
+        ? 'VIN strip locked. Hold steady or click Capture.'
+        : 'Document locked in hand. Hold steady or click Capture.';
+    }
+    if (preset === 'vin') return 'Align 17-character VIN or chassis plate inside narrow strip';
     if (preset === 'card') return 'Hold ID, VIN plate, or business card inside window (face stays excluded)';
     if (preset === 'document') return 'Hold or place A4 document inside window (surroundings cropped out)';
     return 'Hold receipt, delivery ticket, or slip inside window (document only)';
   }
 
   function getGuideNormRectForStage(stageEl, guideEl) {
-    if (!stageEl || !guideEl) return { x: 0.18, y: 0.08, w: 0.64, h: 0.84 };
+    if (!stageEl || !guideEl) {
+      return S.preset === 'vin'
+        ? { x: 0.08, y: 0.35, w: 0.84, h: 0.30, preset: 'vin' }
+        : { x: 0.18, y: 0.08, w: 0.64, h: 0.84, preset: S.preset };
+    }
     const sr = stageEl.getBoundingClientRect();
     const gr = guideEl.getBoundingClientRect();
     if (!sr.width || !sr.height || !gr.width || !gr.height) {
-      if (S.preset === 'card') return { x: 0.16, y: 0.17, w: 0.68, h: 0.66 };
-      if (S.preset === 'document') return { x: 0.11, y: 0.05, w: 0.78, h: 0.90 };
-      return { x: 0.21, y: 0.05, w: 0.58, h: 0.90 };
+      if (S.preset === 'vin') return { x: 0.08, y: 0.35, w: 0.84, h: 0.30, preset: 'vin' };
+      if (S.preset === 'card') return { x: 0.16, y: 0.17, w: 0.68, h: 0.66, preset: 'card' };
+      if (S.preset === 'document') return { x: 0.11, y: 0.05, w: 0.78, h: 0.90, preset: 'document' };
+      return { x: 0.21, y: 0.05, w: 0.58, h: 0.90, preset: 'receipt' };
     }
     return {
       x: Math.max(0, Math.min(0.95, (gr.left - sr.left) / sr.width)),
       y: Math.max(0, Math.min(0.95, (gr.top - sr.top) / sr.height)),
       w: Math.max(0.05, Math.min(1, gr.width / sr.width)),
-      h: Math.max(0.05, Math.min(1, gr.height / sr.height))
+      h: Math.max(0.05, Math.min(1, gr.height / sr.height)),
+      preset: S.preset
     };
   }
 
@@ -1363,6 +1463,7 @@
       const smallStage = captureZoomedStageCanvas(vidEl, stageEl, 360);
       const detected = detectDocumentQuadFromCanvas(smallStage, gNorm);
       if (detected) {
+        S.missingTicksSinceSnap = 0;
         if (S.liveQuad) {
           let maxDelta = 0;
           const smoothed = detected.map((pt, i) => {
@@ -1379,23 +1480,40 @@
           S.liveQuad = detected;
           S.steadyTicks = 1;
         }
+        if (S.awaitingPageTurn && Date.now() >= (S.nextAutoSnapAllowedAt || 0)) {
+          const curSig = computeCanvasSignature64(smallStage, S.liveQuad);
+          if (!S.lastAutoSnapSig || signatureDiff(curSig, S.lastAutoSnapSig) >= 6.5) {
+            S.awaitingPageTurn = false;
+            S.steadyTicks = 1;
+          }
+        }
       } else {
         S.steadyTicks = 0;
         S.liveQuad = null;
+        if (S.awaitingPageTurn) {
+          S.missingTicksSinceSnap = (S.missingTicksSinceSnap || 0) + 1;
+          if (S.missingTicksSinceSnap >= 2) {
+            S.awaitingPageTurn = false;
+            S.lastAutoSnapSig = null;
+          }
+        }
       }
 
-      const locked = Boolean(S.liveQuad && S.steadyTicks >= 4);
+      const locked = Boolean(S.liveQuad && !S.awaitingPageTurn && S.steadyTicks >= 4);
       if (guideEl) {
         guideEl.classList.toggle('is-doc-locked', locked);
         const guideSpan = guideEl.querySelector('.doc-cam-guide-msg');
-        if (guideSpan) guideSpan.textContent = presetGuideLabel(S.preset, locked);
+        if (guideSpan) guideSpan.textContent = presetGuideLabel(S.preset, locked, S.awaitingPageTurn);
       }
       drawOverlayQuad(overlayCanvas, S.liveQuad, false, locked);
 
-      if (S.autoSnap && S.liveQuad && S.steadyTicks >= 9) {
+      if (S.autoSnap && S.liveQuad && !S.awaitingPageTurn && Date.now() >= (S.nextAutoSnapAllowedAt || 0) && S.steadyTicks >= 9) {
         S.steadyTicks = 0;
-        const snapBtn = $('docCamSnapBtn') || $('pscSnapBtn');
-        if (snapBtn && !snapBtn.disabled) snapBtn.click();
+        if (stageEl && stageEl.id === 'pscStage') {
+          if (typeof S._pscSnapFn === 'function') S._pscSnapFn({ autoTriggered: true });
+        } else {
+          snapDocumentFromStage({ autoTriggered: true });
+        }
       }
     }, 95);
   }
@@ -1457,7 +1575,7 @@
       try { URL.revokeObjectURL(pageObj.previewUrl); } catch (_) {}
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const prefix = S.preset === 'card' ? 'Card_Scan' : (S.preset === 'document' ? 'Doc_Scan' : 'Receipt_Scan');
+    const prefix = S.preset === 'vin' ? 'Vin_Scan' : (S.preset === 'card' ? 'Card_Scan' : (S.preset === 'document' ? 'Doc_Scan' : 'Receipt_Scan'));
     const fileName = `${prefix}_${stamp}_p${(S.pages.indexOf(pageObj) + 1) || 1}.jpg`;
     let fileObj;
     try {
@@ -1525,14 +1643,19 @@
             </div>
             <div class="doc-cam-tools-bar" id="docCamLiveToolsBar">
               <div class="doc-cam-zoom-group" id="docCamZoomBar" role="group" aria-label="Camera zoom">
-                <button type="button" class="doc-cam-zoom-btn active" data-doc-zoom="1">1x</button>
-                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="1.5">1.5x</button>
-                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="2">2x</button>
-                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="3">3x</button>
+                <button type="button" class="doc-cam-zoom-btn active" data-doc-zoom="1" data-no-i18n="1">1x</button>
+                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="1.5" data-no-i18n="1">1.5x</button>
+                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="2" data-no-i18n="1">2x</button>
+                <button type="button" class="doc-cam-zoom-btn" data-doc-zoom="3" data-no-i18n="1">3x</button>
               </div>
               <button type="button" class="doc-cam-pill-btn is-emerald active" id="docCamPrivacyBtn" data-ui-tip="Hides background and face outside the document window">${ic('shield')} Window Only</button>
               <button type="button" class="doc-cam-pill-btn" id="docCamAutoSnapBtn" data-ui-tip="Automatically snaps when document edges are held steady">${ic('bolt')} Auto-Snap</button>
             </div>
+          </div>
+          <div class="doc-cam-card-subbar" id="docCamCardSubBar" role="group" aria-label="Card or VIN format" hidden>
+            <span class="doc-cam-subbar-lbl">Format:</span>
+            <button type="button" class="doc-cam-pill-btn active" data-doc-subpreset="card" data-ui-tip="Standard card, driver license, or registration window">ID / Business Card</button>
+            <button type="button" class="doc-cam-pill-btn" data-doc-subpreset="vin" data-ui-tip="Narrow 4.5:1 strip for windshield and door-jamb 17-character VIN plates">VIN / Chassis Strip (4.5:1)</button>
           </div>
 
           <div class="doc-cam-enhance-deck" id="docCamEnhanceDeck" hidden>
@@ -1694,12 +1817,19 @@
       stg.setAttribute('data-doc-preset', S.preset);
     }
     if (topDeck) topDeck.hidden = !isCam;
+    const cardSubBar = $('docCamCardSubBar');
+    if (cardSubBar) cardSubBar.hidden = !(isCam && (S.preset === 'card' || S.preset === 'vin'));
     if (liveTools) liveTools.hidden = !isCam;
     if (enhDeck) enhDeck.hidden = !(isPrev || isAdj);
     if (qrBtn) qrBtn.classList.toggle('active', isQr);
 
     document.querySelectorAll('#docCamPresetBar [data-doc-preset]').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-doc-preset') === S.preset);
+      const bp = b.getAttribute('data-doc-preset');
+      const isAct = bp === 'card' ? (S.preset === 'card' || S.preset === 'vin') : (bp === S.preset);
+      b.classList.toggle('active', isAct);
+    });
+    document.querySelectorAll('#docCamCardSubBar [data-doc-subpreset]').forEach(b => {
+      b.classList.toggle('active', b.getAttribute('data-doc-subpreset') === S.preset);
     });
     document.querySelectorAll('#docCamZoomBar [data-doc-zoom]').forEach(b => {
       b.classList.toggle('active', Math.abs(Number(b.getAttribute('data-doc-zoom')) - S.zoom) < 0.22);
@@ -1719,7 +1849,9 @@
           : `${ic('crop')} Auto-Crops to Paper Edges`;
       }
       const gMsg = guide.querySelector('.doc-cam-guide-msg');
-      if (gMsg && !S.liveQuad) gMsg.textContent = presetGuideLabel(S.preset, false);
+      if (gMsg && (!S.liveQuad || S.awaitingPageTurn)) {
+        gMsg.textContent = presetGuideLabel(S.preset, false, S.awaitingPageTurn);
+      }
     }
 
     if (warm) warm.hidden = !(isCam && S.camStarting && (!fb || fb.hidden));
@@ -1771,7 +1903,7 @@
     if (retakeBtn) retakeBtn.hidden = !(isPrev || isAdj);
     if (addMoreBtn) addMoreBtn.hidden = !(isPrev && pageCnt >= 1 && pageCnt < 8);
     if (confirmBtn) {
-      confirmBtn.hidden = !(pageCnt >= 1 && (isPrev || isQr));
+      confirmBtn.hidden = !(pageCnt >= 1 && (isPrev || isQr || isCam));
       confirmBtn.innerHTML = pageCnt > 1
         ? `${ic('check')} Attach ${pageCnt} Scans`
         : `${ic('check')} Attach Scan`;
@@ -1786,7 +1918,9 @@
         badge.textContent = S.qrStatus === 'connected' ? 'Phone Connected' : (pageCnt ? `${pageCnt} Page(s) Received` : 'QR Pairing Ready');
         badge.className = 'badge badge-ok doc-cam-live-pill';
       } else if (isCam && S.camLive) {
-        badge.textContent = `Document Crop · ${S.zoom}x`;
+        badge.textContent = pageCnt > 0
+          ? (pageCnt === 1 ? '1 Cropped Scan Ready' : `${pageCnt} Cropped Scans Ready`)
+          : `Document Crop · ${S.zoom}x`;
         badge.className = 'badge badge-ok doc-cam-live-pill';
       } else if (S.camStarting) {
         badge.textContent = 'Starting Scanner...';
@@ -1958,28 +2092,8 @@
     }
   }
 
-  async function snapDocumentFromStage() {
-    const vid = $('docCamVideo');
-    const stg = $('docCamStage');
-    const guide = $('docCamGuide');
-    if (vid && (!vid.videoWidth || !vid.videoHeight)) {
-      for (let i = 0; i < 12 && (!vid.videoWidth || !vid.videoHeight); i++) {
-        await new Promise(r => setTimeout(r, 60));
-      }
-    }
-    if (!vid || !vid.videoWidth || !vid.videoHeight) {
-      showToast('Scanner stream is warming up. Wait a moment or use Phone Camera.', 'err');
-      return;
-    }
-
-    const flash = $('docCamShutterFlash');
-    if (flash) {
-      flash.classList.add('active');
-      setTimeout(() => flash.classList.remove('active'), 170);
-    }
-
-    const rawCanvas = captureZoomedStageCanvas(vid, stg, 2000);
-    const gNorm = getGuideNormRectForStage(stg, guide);
+  async function processCapturedStageCanvas(rawCanvas, gNorm, snapOpts = {}) {
+    const autoTriggered = Boolean(snapOpts && snapOpts.autoTriggered);
     const detectedQuad = S.liveQuad || detectDocumentQuadFromCanvas(rawCanvas, gNorm);
     const quadNorm = detectedQuad || [
       { x: gNorm.x, y: gNorm.y },
@@ -1987,6 +2101,14 @@
       { x: gNorm.x + gNorm.w, y: gNorm.y + gNorm.h },
       { x: gNorm.x, y: gNorm.y + gNorm.h }
     ];
+
+    if (autoTriggered && S.preset === 'document' && S.awaitingPageTurn) {
+      const candSig = computeCanvasSignature64(rawCanvas, quadNorm);
+      if (S.lastAutoSnapSig && signatureDiff(candSig, S.lastAutoSnapSig) < 6.5) {
+        return { skippedDuplicate: true, keepLiveBatch: true, pageCount: S.pages.length };
+      }
+      S.awaitingPageTurn = false;
+    }
 
     // Enforce Face-Exclusion on rawCanvas outside paper quad before keeping rawCanvas for corner adjust
     const qPx = quadNorm.map(p => ({ x: p.x * rawCanvas.width, y: p.y * rawCanvas.height }));
@@ -2016,10 +2138,62 @@
       S.pages.push(pageObj);
       S.activeIdx = S.pages.length - 1;
     }
+
+    const keepLiveBatch = Boolean(autoTriggered && S.preset === 'document' && !S.replaceOnSnap && S.pages.length < 8);
     S.replaceOnSnap = false;
-    stopCameraTracks();
-    S.mode = 'preview';
-    syncModalUi();
+    if (keepLiveBatch) {
+      S.lastAutoSnapSig = computeCanvasSignature64(rawCanvas, quadNorm);
+      S.awaitingPageTurn = true;
+      S.missingTicksSinceSnap = 0;
+      S.nextAutoSnapAllowedAt = Date.now() + 1400;
+      S.steadyTicks = 0;
+      S.mode = 'camera';
+      syncModalUi();
+    } else {
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
+      stopCameraTracks();
+      S.mode = 'preview';
+      syncModalUi();
+    }
+    return { skippedDuplicate: false, keepLiveBatch, pageCount: S.pages.length, page: pageObj };
+  }
+
+  async function snapDocumentFromStage(snapOpts = {}) {
+    const vid = $('docCamVideo');
+    const stg = $('docCamStage');
+    const guide = $('docCamGuide');
+    if (vid && (!vid.videoWidth || !vid.videoHeight)) {
+      for (let i = 0; i < 12 && (!vid.videoWidth || !vid.videoHeight); i++) {
+        await new Promise(r => setTimeout(r, 60));
+      }
+    }
+    if (!vid || !vid.videoWidth || !vid.videoHeight) {
+      showToast('Scanner stream is warming up. Wait a moment or use Phone Camera.', 'err');
+      return null;
+    }
+
+    const flash = $('docCamShutterFlash');
+    if (flash) {
+      flash.classList.add('active');
+      setTimeout(() => flash.classList.remove('active'), 170);
+    }
+
+    const rawCanvas = captureZoomedStageCanvas(vid, stg, 2000);
+    const gNorm = getGuideNormRectForStage(stg, guide);
+    return processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
+  }
+
+  async function snapCanvasForBatchTest(srcCanvas, snapOpts = {}) {
+    if (!srcCanvas) return null;
+    const rawCanvas = document.createElement('canvas');
+    rawCanvas.width = srcCanvas.width;
+    rawCanvas.height = srcCanvas.height;
+    rawCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
+    const stg = $('docCamStage');
+    const guide = $('docCamGuide');
+    const gNorm = (snapOpts && snapOpts.guideNorm) || getGuideNormRectForStage(stg, guide);
+    return processCapturedStageCanvas(rawCanvas, gNorm, snapOpts);
   }
 
   async function ingestReceivedPhonePages(pagesList) {
@@ -2139,10 +2313,45 @@
 
     modal.querySelectorAll('#docCamPresetBar [data-doc-preset]').forEach(btn => {
       btn.addEventListener('click', () => {
-        S.preset = btn.getAttribute('data-doc-preset') || 'receipt';
+        const clicked = btn.getAttribute('data-doc-preset') || 'receipt';
+        if (clicked === 'card') {
+          S.preset = (S.preset === 'card' || S.preset === 'vin') ? S.preset : (S.lastCardSubPreset || 'card');
+        } else {
+          S.preset = clicked;
+        }
         S.enhanceMode = defaultEnhanceForPreset(S.preset);
+        if (!S._userToggledAutoSnap) {
+          S.autoSnap = defaultAutoSnapForPreset(S.preset);
+        }
         S.liveQuad = null;
         S.steadyTicks = 0;
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
+        if (S.mode === 'qr' && S.qrSid && S.qrTok) {
+          S.qrUrl = buildPhoneScanHandoffUrl(S.qrSid, S.qrTok, S.preset);
+          const qrBox = $('docCamQrBox');
+          if (qrBox) {
+            qrBox.innerHTML = encodeQrSvg(S.qrUrl);
+            qrBox.setAttribute('data-handoff-url', S.qrUrl);
+          }
+        }
+        syncModalUi();
+      });
+    });
+
+    modal.querySelectorAll('#docCamCardSubBar [data-doc-subpreset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sub = btn.getAttribute('data-doc-subpreset') || 'card';
+        S.preset = sub;
+        S.lastCardSubPreset = sub;
+        S.enhanceMode = defaultEnhanceForPreset(S.preset);
+        if (!S._userToggledAutoSnap) {
+          S.autoSnap = defaultAutoSnapForPreset(S.preset);
+        }
+        S.liveQuad = null;
+        S.steadyTicks = 0;
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
         syncModalUi();
       });
     });
@@ -2173,8 +2382,11 @@
     });
 
     $('docCamAutoSnapBtn').addEventListener('click', () => {
+      S._userToggledAutoSnap = true;
       S.autoSnap = !S.autoSnap;
       S.steadyTicks = 0;
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
       syncModalUi();
     });
 
@@ -2205,14 +2417,18 @@
     });
 
     $('docCamRetryBtn').addEventListener('click', startLocalCameraStream);
-    $('docCamSnapBtn').addEventListener('click', snapDocumentFromStage);
+    $('docCamSnapBtn').addEventListener('click', () => snapDocumentFromStage({ autoTriggered: false }));
 
     $('docCamRetakeBtn').addEventListener('click', () => {
       S.replaceOnSnap = true;
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
       startLocalCameraStream();
     });
     $('docCamAddMoreBtn').addEventListener('click', () => {
       S.replaceOnSnap = false;
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
       startLocalCameraStream();
     });
 
@@ -2319,6 +2535,15 @@
     S.replaceOnSnap = false;
     S._userPickedZoom = false;
     S.preset = (opts && opts.preset) || resolveDefaultPreset();
+    S.lastCardSubPreset = S.preset === 'vin'
+      ? 'vin'
+      : (/trd_/i.test(String((window.STATE && window.STATE.view) || '')) ? 'vin' : 'card');
+    S._userToggledAutoSnap = Boolean(opts && typeof opts.autoSnap === 'boolean');
+    S.autoSnap = S._userToggledAutoSnap ? Boolean(opts.autoSnap) : defaultAutoSnapForPreset(S.preset);
+    S.awaitingPageTurn = false;
+    S.lastAutoSnapSig = null;
+    S.missingTicksSinceSnap = 0;
+    S.nextAutoSnapAllowedAt = 0;
     S.enhanceMode = defaultEnhanceForPreset(S.preset);
     S.privacyMask = true;
     S.onCapture = onCaptureFiles;
@@ -2341,7 +2566,7 @@
     const psCompact = sp.get('ps');
     if (psCompact && psCompact.includes('.')) {
       const parts = psCompact.split('.');
-      const pMap = { r: 'receipt', d: 'document', c: 'card' };
+      const pMap = { r: 'receipt', d: 'document', c: 'card', v: 'vin' };
       return {
         sid: parts[0] || '',
         tok: parts[1] || '',
@@ -2364,6 +2589,11 @@
     if (!cfg || !cfg.sid || !cfg.tok) return false;
     document.documentElement.classList.add('phone-scan-companion');
     S.preset = cfg.preset;
+    S.lastCardSubPreset = S.preset === 'vin' ? 'vin' : 'card';
+    S._userToggledAutoSnap = false;
+    S.autoSnap = defaultAutoSnapForPreset(S.preset);
+    S.awaitingPageTurn = false;
+    S.lastAutoSnapSig = null;
     S.enhanceMode = defaultEnhanceForPreset(S.preset);
     S.facingMode = 'environment';
     S.zoom = 1;
@@ -2383,15 +2613,20 @@
       <div class="doc-cam-preset-bar" id="pscPresetBar">
         <button type="button" class="doc-cam-pill-btn ${S.preset === 'receipt' ? 'active' : ''}" data-psc-preset="receipt">Receipt / Slip</button>
         <button type="button" class="doc-cam-pill-btn ${S.preset === 'document' ? 'active' : ''}" data-psc-preset="document">Document / A4</button>
-        <button type="button" class="doc-cam-pill-btn ${S.preset === 'card' ? 'active' : ''}" data-psc-preset="card">ID / VIN / Card</button>
+        <button type="button" class="doc-cam-pill-btn ${(S.preset === 'card' || S.preset === 'vin') ? 'active' : ''}" data-psc-preset="card">ID / VIN / Card</button>
+      </div>
+      <div class="doc-cam-card-subbar" id="pscCardSubBar" role="group" aria-label="Card or VIN format" ${(S.preset === 'card' || S.preset === 'vin') ? '' : 'hidden'}>
+        <span class="doc-cam-subbar-lbl">Format:</span>
+        <button type="button" class="doc-cam-pill-btn ${S.preset === 'card' ? 'active' : ''}" data-psc-subpreset="card">ID / Business Card</button>
+        <button type="button" class="doc-cam-pill-btn ${S.preset === 'vin' ? 'active' : ''}" data-psc-subpreset="vin">VIN / Chassis Strip (4.5:1)</button>
       </div>
       <div class="doc-cam-tools-bar" id="pscToolsBar">
         <div class="doc-cam-zoom-group" id="pscZoomBar">
-          <button type="button" class="doc-cam-zoom-btn active" data-psc-zoom="1">1x</button>
-          <button type="button" class="doc-cam-zoom-btn" data-psc-zoom="1.5">1.5x</button>
-          <button type="button" class="doc-cam-zoom-btn" data-psc-zoom="2">2x</button>
+          <button type="button" class="doc-cam-zoom-btn active" data-psc-zoom="1" data-no-i18n="1">1x</button>
+          <button type="button" class="doc-cam-zoom-btn" data-psc-zoom="1.5" data-no-i18n="1">1.5x</button>
+          <button type="button" class="doc-cam-zoom-btn" data-psc-zoom="2" data-no-i18n="1">2x</button>
         </div>
-        <button type="button" class="doc-cam-pill-btn" id="pscAutoSnapBtn">${ic('bolt')} Auto-Snap</button>
+        <button type="button" class="doc-cam-pill-btn ${S.autoSnap ? 'active' : ''}" id="pscAutoSnapBtn">${ic('bolt')} Auto-Snap</button>
       </div>
       <div class="psc-sent-banner" id="pscSentBanner" hidden>${ic('check_circle')} Sent to your computer! Snap another page or close this tab.</div>
       <div class="psc-cam-stage" id="pscStage" data-doc-preset="${esc(S.preset)}">
@@ -2432,6 +2667,20 @@
     const syncPscUi = () => {
       const hasPrev = pscIdx >= 0 && Boolean(pscPages[pscIdx]) && !S.camLive;
       $('pscStage').setAttribute('data-doc-preset', S.preset);
+      const pscSub = $('pscCardSubBar');
+      if (pscSub) pscSub.hidden = !(S.preset === 'card' || S.preset === 'vin');
+      shell.querySelectorAll('[data-psc-preset]').forEach(b => {
+        const bp = b.getAttribute('data-psc-preset');
+        b.classList.toggle('active', bp === 'card' ? (S.preset === 'card' || S.preset === 'vin') : (bp === S.preset));
+      });
+      shell.querySelectorAll('[data-psc-subpreset]').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-psc-subpreset') === S.preset);
+      });
+      $('pscAutoSnapBtn').classList.toggle('active', S.autoSnap);
+      const pscGMsg = $('pscGuide') && $('pscGuide').querySelector('.doc-cam-guide-msg');
+      if (pscGMsg && (!S.liveQuad || S.awaitingPageTurn)) {
+        pscGMsg.textContent = presetGuideLabel(S.preset, false, S.awaitingPageTurn);
+      }
       $('pscVideo').hidden = !S.camLive;
       $('pscGuide').hidden = !S.camLive;
       $('pscPreviewImg').hidden = !hasPrev;
@@ -2440,7 +2689,7 @@
       $('pscSnapBtn').hidden = !S.camLive;
       $('pscRetakeBtn').hidden = !hasPrev;
       $('pscMoreBtn').hidden = !(hasPrev && pscPages.length < 6);
-      $('pscSendBtn').hidden = !pscPages.length || S.camLive;
+      $('pscSendBtn').hidden = !pscPages.length;
       $('pscSendBtn').innerHTML = pscPages.length > 1
         ? `${ic('check')} Send ${pscPages.length} Pages`
         : `${ic('check')} Send to Computer`;
@@ -2480,9 +2729,27 @@
 
     shell.querySelectorAll('[data-psc-preset]').forEach(b => {
       b.addEventListener('click', () => {
-        S.preset = b.getAttribute('data-psc-preset') || 'receipt';
+        const clicked = b.getAttribute('data-psc-preset') || 'receipt';
+        S.preset = clicked === 'card'
+          ? ((S.preset === 'card' || S.preset === 'vin') ? S.preset : (S.lastCardSubPreset || 'card'))
+          : clicked;
         S.enhanceMode = defaultEnhanceForPreset(S.preset);
-        shell.querySelectorAll('[data-psc-preset]').forEach(x => x.classList.toggle('active', x === b));
+        if (!S._userToggledAutoSnap) S.autoSnap = defaultAutoSnapForPreset(S.preset);
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
+        syncPscUi();
+      });
+    });
+
+    shell.querySelectorAll('[data-psc-subpreset]').forEach(b => {
+      b.addEventListener('click', () => {
+        const sub = b.getAttribute('data-psc-subpreset') || 'card';
+        S.preset = sub;
+        S.lastCardSubPreset = sub;
+        S.enhanceMode = defaultEnhanceForPreset(S.preset);
+        if (!S._userToggledAutoSnap) S.autoSnap = defaultAutoSnapForPreset(S.preset);
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
         syncPscUi();
       });
     });
@@ -2495,11 +2762,15 @@
     });
 
     $('pscAutoSnapBtn').addEventListener('click', () => {
+      S._userToggledAutoSnap = true;
       S.autoSnap = !S.autoSnap;
+      S.awaitingPageTurn = false;
+      S.lastAutoSnapSig = null;
       $('pscAutoSnapBtn').classList.toggle('active', S.autoSnap);
     });
 
-    $('pscSnapBtn').addEventListener('click', async () => {
+    const pscSnap = async (snapOpts = {}) => {
+      const autoTriggered = Boolean(snapOpts && snapOpts.autoTriggered);
       const vid = $('pscVideo');
       if (!vid || !vid.videoWidth) return;
       const stg = $('pscStage');
@@ -2511,6 +2782,11 @@
         { x: gNorm.x + gNorm.w, y: gNorm.y + gNorm.h },
         { x: gNorm.x, y: gNorm.y + gNorm.h }
       ];
+      if (autoTriggered && S.preset === 'document' && S.awaitingPageTurn) {
+        const candSig = computeCanvasSignature64(rawCanvas, quadNorm);
+        if (S.lastAutoSnapSig && signatureDiff(candSig, S.lastAutoSnapSig) < 6.5) return;
+        S.awaitingPageTurn = false;
+      }
       const pg = {
         id: 'mp_' + randomHex(6),
         rawCanvas,
@@ -2524,11 +2800,24 @@
       if (pg.outCanvas) pg.dataUrl = pg.outCanvas.toDataURL('image/jpeg', 0.78);
       if (S.replaceOnSnap && pscIdx >= 0) pscPages[pscIdx] = pg;
       else { pscPages.push(pg); pscIdx = pscPages.length - 1; }
+      const keepLivePsc = Boolean(autoTriggered && S.preset === 'document' && !S.replaceOnSnap && pscPages.length < 6);
       S.replaceOnSnap = false;
-      stopCameraTracks();
+      if (keepLivePsc) {
+        S.lastAutoSnapSig = computeCanvasSignature64(rawCanvas, quadNorm);
+        S.awaitingPageTurn = true;
+        S.missingTicksSinceSnap = 0;
+        S.nextAutoSnapAllowedAt = Date.now() + 1400;
+        S.steadyTicks = 0;
+      } else {
+        S.awaitingPageTurn = false;
+        S.lastAutoSnapSig = null;
+        stopCameraTracks();
+      }
       $('pscSentBanner').hidden = true;
       syncPscUi();
-    });
+    };
+    S._pscSnapFn = pscSnap;
+    $('pscSnapBtn').addEventListener('click', () => pscSnap({ autoTriggered: false }));
 
     shell.querySelectorAll('[data-psc-enhance]').forEach(b => {
       b.addEventListener('click', async () => {
@@ -2697,7 +2986,39 @@
     'Document Crop · 1x': 'قص المستند · 1x',
     'Document Crop · 1.5x': 'قص المستند · 1.5x',
     'Document Crop · 2x': 'قص المستند · 2x',
-    'Document Crop · 3x': 'قص المستند · 3x'
+    'Document Crop · 3x': 'قص المستند · 3x',
+    'Format:': 'النسق:',
+    'Card or VIN format': 'نسق البطاقة أو الشاسيه',
+    'ID / Business Card': 'هوية / بطاقة عمل',
+    'Standard card, driver license, or registration window': 'نافذة قياسية للبطاقة أو رخصة القيادة أو التسجيل',
+    'VIN / Chassis Strip (4.5:1)': 'شريط رقم الشاسيه VIN (4.5:1)',
+    'Narrow 4.5:1 strip for windshield and door-jamb 17-character VIN plates': 'شريط ضيق بنسبة 4.5:1 للوحات رقم الشاسيه المكون من 17 خانة على الزجاج أو الباب',
+    'Align 17-character VIN or chassis plate inside narrow strip': 'ضع لوحة رقم الشاسيه (17 خانة) داخل الشريط الضيق',
+    'VIN strip locked. Hold steady or click Capture.': 'تم تثبيت شريط الشاسيه. اثبت أو اضغط التقاط.',
+    'Page captured! Turn to next page or click Attach.': 'تم التقاط الصفحة! اقلب للصفحة التالية أو اضغط إرفاق.',
+    'Attach 2 Scans': 'إرفاق مسحين (2)',
+    'Attach 3 Scans': 'إرفاق 3 مسوحات',
+    'Attach 4 Scans': 'إرفاق 4 مسوحات',
+    'Attach 5 Scans': 'إرفاق 5 مسوحات',
+    'Attach 6 Scans': 'إرفاق 6 مسوحات',
+    'Attach 7 Scans': 'إرفاق 7 مسوحات',
+    'Attach 8 Scans': 'إرفاق 8 مسوحات',
+    '2 Cropped Scans Ready': 'مسحان مقصوصان جاهزان',
+    '3 Cropped Scans Ready': '3 مسوحات مقصوصة جاهزة',
+    '4 Cropped Scans Ready': '4 مسوحات مقصوصة جاهزة',
+    '5 Cropped Scans Ready': '5 مسوحات مقصوصة جاهزة',
+    '6 Cropped Scans Ready': '6 مسوحات مقصوصة جاهزة',
+    '7 Cropped Scans Ready': '7 مسوحات مقصوصة جاهزة',
+    '8 Cropped Scans Ready': '8 مسوحات مقصوصة جاهزة',
+    'Send 2 Pages': 'إرسال صفحتين',
+    'Send 3 Pages': 'إرسال 3 صفحات',
+    'Send 4 Pages': 'إرسال 4 صفحات',
+    'Send 5 Pages': 'إرسال 5 صفحات',
+    'Send 6 Pages': 'إرسال 6 صفحات',
+    '1x': '1×',
+    '1.5x': '1.5×',
+    '2x': '2×',
+    '3x': '3×'
   };
 
   const SCANNER_DICT_FR = {
@@ -2777,7 +3098,39 @@
     'Document Crop · 1x': 'Recadrage document · 1x',
     'Document Crop · 1.5x': 'Recadrage document · 1.5x',
     'Document Crop · 2x': 'Recadrage document · 2x',
-    'Document Crop · 3x': 'Recadrage document · 3x'
+    'Document Crop · 3x': 'Recadrage document · 3x',
+    'Format:': 'Format :',
+    'Card or VIN format': 'Format carte ou VIN',
+    'ID / Business Card': 'Pièce ID / Carte de visite',
+    'Standard card, driver license, or registration window': 'Fenêtre standard pour carte, permis de conduire ou carte grise',
+    'VIN / Chassis Strip (4.5:1)': 'Bande VIN / Châssis (4.5:1)',
+    'Narrow 4.5:1 strip for windshield and door-jamb 17-character VIN plates': 'Bande étroite 4.5:1 pour plaques VIN à 17 caractères sur pare-brise ou montant de porte',
+    'Align 17-character VIN or chassis plate inside narrow strip': 'Alignez la plaque VIN à 17 caractères dans la bande étroite',
+    'VIN strip locked. Hold steady or click Capture.': 'Bande VIN détectée. Maintenez stable ou cliquez sur Capturer.',
+    'Page captured! Turn to next page or click Attach.': 'Page capturée ! Tournez la page suivante ou cliquez sur Joindre.',
+    'Attach 2 Scans': 'Joindre 2 scans',
+    'Attach 3 Scans': 'Joindre 3 scans',
+    'Attach 4 Scans': 'Joindre 4 scans',
+    'Attach 5 Scans': 'Joindre 5 scans',
+    'Attach 6 Scans': 'Joindre 6 scans',
+    'Attach 7 Scans': 'Joindre 7 scans',
+    'Attach 8 Scans': 'Joindre 8 scans',
+    '2 Cropped Scans Ready': '2 scans recadrés prêts',
+    '3 Cropped Scans Ready': '3 scans recadrés prêts',
+    '4 Cropped Scans Ready': '4 scans recadrés prêts',
+    '5 Cropped Scans Ready': '5 scans recadrés prêts',
+    '6 Cropped Scans Ready': '6 scans recadrés prêts',
+    '7 Cropped Scans Ready': '7 scans recadrés prêts',
+    '8 Cropped Scans Ready': '8 scans recadrés prêts',
+    'Send 2 Pages': 'Envoyer 2 pages',
+    'Send 3 Pages': 'Envoyer 3 pages',
+    'Send 4 Pages': 'Envoyer 4 pages',
+    'Send 5 Pages': 'Envoyer 5 pages',
+    'Send 6 Pages': 'Envoyer 6 pages',
+    '1x': '1×',
+    '1.5x': '1.5×',
+    '2x': '2×',
+    '3x': '3×'
   };
 
   function registerScannerI18n() {
@@ -2808,12 +3161,15 @@
     encodeQrSvg,
     encodeQrMatrix,
     detectDocumentQuadFromCanvas,
+    computeCanvasSignature64,
+    signatureDiff,
     warpPerspectiveQuad,
     applyScanFilter,
     maskAnyFacesOutsideQuad,
     ingestReceivedPhonePages,
     openPhoneQrMode,
     checkQrRemoteOnce,
+    snapCanvasForBatchTest,
     registerScannerI18n,
     state: () => S,
     _toast: null

@@ -30177,14 +30177,22 @@
   };
 
   function resolveDefaultDocCamPreset() {
+    const domModal = $('indDomainEntryModal');
+    const domKey = (domModal && !domModal.hidden && domModal._currentDomainSpec && domModal._currentDomainSpec.key) ? String(domModal._currentDomainSpec.key) : '';
+    const inspPanel = $('recordInspector');
+    const inspBox = $('indInspAttachmentsBox');
+    const inspKey = (inspPanel && !inspPanel.hidden && inspBox && inspBox.getAttribute('data-domain-tbl')) ? String(inspBox.getAttribute('data-domain-tbl')) : '';
     const v = String(STATE.view || '');
     const mForm = String(STATE.modalForm || '');
-    if (/trd_trucks|equipment|driver|ins_items/i.test(v) || /equipment|driver/i.test(mForm)) return 'card';
-    if (/re_|ins_policies|ins_agreements|hld_|ledger|statements|settlement|jv/i.test(v) || /settlement|jv|document/i.test(mForm)) return 'document';
+    const ctxKey = `${domKey}|${inspKey}|${v}|${mForm}`;
+    if (/trd_trucks|trd_warranty/i.test(ctxKey)) return 'vin';
+    if (/equipment|driver|ins_items/i.test(ctxKey)) return 'card';
+    if (/re_|ins_policies|ins_agreements|ins_billing|ins_claims|ins_catalogue|hld_|ledger|statements|settlement|jv|document/i.test(ctxKey)) return 'document';
     return 'receipt';
   }
 
   function getDocCamPresetGuideText(preset) {
+    if (preset === 'vin') return 'Align 17-character VIN or chassis plate inside narrow strip';
     if (preset === 'card') return 'Align ID card, VIN plate, license, or registration inside frame';
     if (preset === 'document') return 'Align full A4 invoice, lease, policy, or contract inside corner marks';
     return 'Align receipt, delivery ticket, or scale slip clearly inside frame';
@@ -54865,18 +54873,29 @@
     const scanSampleSel = $('indEntryScanSampleSelect');
     if (scanUpBtn && scanFileInp) scanUpBtn.addEventListener('click', () => scanFileInp.click());
     if (scanFileInp) {
-      scanFileInp.addEventListener('change', () => {
-        if (scanFileInp.files && scanFileInp.files[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
-          window.MFG_SMART_SCAN.scanIntoDomainModal(scanFileInp.files[0], { captureMethod: 'File Upload' });
-        }
+      scanFileInp.multiple = true;
+      scanFileInp.addEventListener('change', async () => {
+        const picked = scanFileInp.files ? Array.from(scanFileInp.files) : [];
         scanFileInp.value = '';
+        if (picked[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+          await window.MFG_SMART_SCAN.scanIntoDomainModal(picked[0], { captureMethod: 'File Upload' });
+        }
+        if (picked.length > 1) {
+          picked.slice(1).forEach(f => { f._captureMethod = 'File Upload'; pendingDomainFiles.push(f); });
+          renderPendingDomainAtts();
+        }
       });
     }
     if (scanCamBtn) {
       scanCamBtn.addEventListener('click', () => {
-        openDocumentCameraCapture((files, method) => {
-          if (files && files[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
-            window.MFG_SMART_SCAN.scanIntoDomainModal(files[0], { captureMethod: method || 'Camera Scan' });
+        openDocumentCameraCapture(async (files, method) => {
+          const batch = Array.from(files || []);
+          if (batch[0] && window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.scanIntoDomainModal === 'function') {
+            await window.MFG_SMART_SCAN.scanIntoDomainModal(batch[0], { captureMethod: 'Camera Scan' });
+          }
+          if (batch.length > 1) {
+            batch.slice(1).forEach(f => { f._captureMethod = method || 'Camera Scan'; pendingDomainFiles.push(f); });
+            renderPendingDomainAtts();
           }
         });
       });
@@ -55285,7 +55304,7 @@
     }).join('');
 
     const attachmentsBoxHtml = `
-      <div class="pa-subgrid-box" id="indInspAttachmentsBox" data-can-edit="${canUploadAtt ? '1' : '0'}">
+      <div class="pa-subgrid-box" id="indInspAttachmentsBox" data-can-edit="${canUploadAtt ? '1' : '0'}" data-domain-tbl="${esc(domainTblKey)}">
         <div class="pa-subgrid-hdr">
           <div>
             <strong>${ic('receipt')} ${esc(attSectionTitle)}</strong>
