@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.204';
+const SHELL_CACHE = 'isabi-mfg-v19.6.205';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,39 +6,39 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.204',
-  './css/geo_dispatch.css?v=19.6.204',
-  './css/daily_ops.css?v=19.6.204',
-  './css/ask_isabi.css?v=19.6.204',
-  './css/fleet_pnl.css?v=19.6.204',
-  './css/smart_scan.css?v=19.6.204',
-  './css/doc_scanner.css?v=19.6.204',
-  './js/face.js?v=19.6.204',
-  './js/endpoints.js?v=19.6.204',
-  './js/seed_manifest.js?v=19.6.204',
-  './js/icons.js?v=19.6.204',
-  './js/geo_dispatch.js?v=19.6.204',
-  './js/forms_engine.js?v=19.6.204',
-  './js/pbi_pages.js?v=19.6.204',
-  './js/rdl_reports.js?v=19.6.204',
-  './js/kiosk_print.js?v=19.6.204',
-  './js/table_columns.js?v=19.6.204',
-  './js/daily_ops.js?v=19.6.204',
-  './js/i18n.js?v=19.6.204',
-  './js/ask_isabi.js?v=19.6.204',
-  './js/fleet_pnl.js?v=19.6.204',
-  './js/doc_scanner.js?v=19.6.204',
-  './js/smart_scan.js?v=19.6.204',
-  './js/app.js?v=19.6.204',
-  './manifest.json?v=19.6.204',
-  './favicon.ico?v=19.6.204',
-  './favicon-dark.ico?v=19.6.204',
-  './icon.svg?v=19.6.204',
-  './icon-dark.svg?v=19.6.204',
-  './icon-180.png?v=19.6.204',
-  './icon-192.png?v=19.6.204',
-  './icon-512.png?v=19.6.204',
-  './icon-512-maskable.png?v=19.6.204'
+  './css/app.css?v=19.6.205',
+  './css/geo_dispatch.css?v=19.6.205',
+  './css/daily_ops.css?v=19.6.205',
+  './css/ask_isabi.css?v=19.6.205',
+  './css/fleet_pnl.css?v=19.6.205',
+  './css/smart_scan.css?v=19.6.205',
+  './css/doc_scanner.css?v=19.6.205',
+  './js/face.js?v=19.6.205',
+  './js/endpoints.js?v=19.6.205',
+  './js/seed_manifest.js?v=19.6.205',
+  './js/icons.js?v=19.6.205',
+  './js/geo_dispatch.js?v=19.6.205',
+  './js/forms_engine.js?v=19.6.205',
+  './js/pbi_pages.js?v=19.6.205',
+  './js/rdl_reports.js?v=19.6.205',
+  './js/kiosk_print.js?v=19.6.205',
+  './js/table_columns.js?v=19.6.205',
+  './js/daily_ops.js?v=19.6.205',
+  './js/i18n.js?v=19.6.205',
+  './js/ask_isabi.js?v=19.6.205',
+  './js/fleet_pnl.js?v=19.6.205',
+  './js/doc_scanner.js?v=19.6.205',
+  './js/smart_scan.js?v=19.6.205',
+  './js/app.js?v=19.6.205',
+  './manifest.json?v=19.6.205',
+  './favicon.ico?v=19.6.205',
+  './favicon-dark.ico?v=19.6.205',
+  './icon.svg?v=19.6.205',
+  './icon-dark.svg?v=19.6.205',
+  './icon-180.png?v=19.6.205',
+  './icon-192.png?v=19.6.205',
+  './icon-512.png?v=19.6.205',
+  './icon-512-maskable.png?v=19.6.205'
 ];
 
 const VENDOR_ASSETS = [
@@ -84,7 +84,7 @@ self.addEventListener('install', event => {
                 .catch(() => null);
             });
           }
-          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.204' : url;
+          const fetchUrl = (url === './' || url === './index.html') ? './index.html?v=19.6.205' : url;
           return fetchDedup(fetchUrl, { cache: 'reload' })
             .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
             .catch(() => null);
@@ -186,7 +186,7 @@ self.addEventListener('fetch', event => {
           const res = await fetch(new Request(event.request, { cache: 'no-store' }));
           if (res && res.status === 200) {
             if (url.pathname.endsWith('/js/i18n.js')) {
-              cache.put('./js/i18n.js?v=19.6.204', res.clone());
+              cache.put('./js/i18n.js?v=19.6.205', res.clone());
             }
             return res;
           }
@@ -221,7 +221,7 @@ self.addEventListener('fetch', event => {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 3000);
-          const navUrl = new URL('./index.html?v=19.6.204', self.location.href).href;
+          const navUrl = new URL('./index.html?v=19.6.205', self.location.href).href;
           const res = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
           clearTimeout(timer);
           if (res && res.status === 200) {

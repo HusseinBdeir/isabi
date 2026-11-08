@@ -52,6 +52,7 @@
     activeAudioEl: null,
     activeSpeakBtn: null,
     activeSpeakCtrl: null,
+    activeBriefingScope: '',
     lastSpokenText: '',
     autoVoiceReadback: (function () {
       try { return localStorage.getItem('isabi_ask_auto_voice') === '1'; } catch (_) { return false; }
@@ -3722,6 +3723,51 @@
     });
   }
 
+  const DAILY_BRIEFING_I18N = {
+    ar: {
+      'Listen to Daily Briefing': 'الاستماع إلى الموجز اليومي',
+      'Preparing Briefing...': 'جارٍ تحضير الموجز...',
+      'Stop Briefing': 'إيقاف الموجز',
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": 'تشغيل موجز صوتي تنفيذي لمدة 20 ثانية لإيرادات اليوم المحدد ورصيد الصندوق والتنبيهات الرقابية النشطة'
+    },
+    fr: {
+      'Listen to Daily Briefing': 'Écouter le briefing quotidien',
+      'Preparing Briefing...': 'Préparation du briefing...',
+      'Stop Briefing': 'Arrêter le briefing',
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": "Écouter un résumé vocal exécutif de 20 secondes sur le chiffre d'affaires du jour, la caisse et les alertes Sentinel actives"
+    }
+  };
+
+  function ensureDailyBriefingI18nRegistered() {
+    if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
+    const dict = window.MFG_I18N.DICT || {};
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing']) {
+      window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
+    }
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing']) {
+      window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
+    }
+  }
+
+  function applyBriefingButtonDomState(btn, mode) {
+    if (!btn) return;
+    ensureDailyBriefingI18nRegistered();
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const icoHtml = mode === 'speaking'
+      ? (icons ? icons.svg('stop') : AI_SVGS.stop)
+      : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const enLabel = mode === 'speaking'
+      ? 'Stop Briefing'
+      : (mode === 'loading' ? 'Preparing Briefing...' : 'Listen to Daily Briefing');
+    btn.classList.toggle('is-loading', mode === 'loading');
+    btn.classList.toggle('is-speaking', mode === 'speaking');
+    btn.setAttribute('aria-pressed', (mode === 'loading' || mode === 'speaking') ? 'true' : 'false');
+    btn.innerHTML = `${icoHtml}<span class="dops-brief-lbl">${esc(enLabel)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+    }
+  }
+
   function speakIdleLabel(lang) {
     if (lang === 'ar') return 'استماع';
     if (lang === 'fr') return 'Écouter';
@@ -3736,6 +3782,10 @@
 
   function resetSpeakButtonUi(btn) {
     if (!btn) return;
+    if (btn.hasAttribute && btn.hasAttribute('data-dops-briefing')) {
+      applyBriefingButtonDomState(btn, 'idle');
+      return;
+    }
     const lang = btn.getAttribute('data-ai-speak') || 'en';
     btn.classList.remove('is-speaking', 'is-loading');
     btn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(speakIdleLabel(lang))}</span>`;
@@ -3750,6 +3800,7 @@
       resetSpeakButtonUi(_chatState.activeSpeakBtn);
       _chatState.activeSpeakBtn = null;
     }
+    _chatState.activeBriefingScope = '';
     _chatState.lastSpokenText = '';
     if (_chatState.activeAudioEl) {
       try {
@@ -4041,20 +4092,23 @@
       _chatState.lastSpokenText = plain;
       if (btnEl) {
         _chatState.activeSpeakBtn = btnEl;
-        btnEl.classList.remove('is-loading');
-        btnEl.classList.add('is-speaking');
-        btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(lang))}</span>`;
+        if (btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing')) {
+          applyBriefingButtonDomState(btnEl, 'speaking');
+        } else {
+          btnEl.classList.remove('is-loading');
+          btnEl.classList.add('is-speaking');
+          btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(lang))}</span>`;
+        }
       }
-      utt.onend = () => {
-        if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
+      const clearFallbackUi = () => {
+        const curBtn = _chatState.activeSpeakBtn || btnEl;
+        _chatState.activeSpeakBtn = null;
+        _chatState.activeBriefingScope = '';
         _chatState.lastSpokenText = '';
-        if (btnEl) resetSpeakButtonUi(btnEl);
+        if (curBtn) resetSpeakButtonUi(curBtn);
       };
-      utt.onerror = () => {
-        if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
-        _chatState.lastSpokenText = '';
-        if (btnEl) resetSpeakButtonUi(btnEl);
-      };
+      utt.onend = clearFallbackUi;
+      utt.onerror = clearFallbackUi;
       window.speechSynthesis.speak(utt);
       return true;
     } catch (_) {
@@ -4145,8 +4199,20 @@
   function speakBotReply(rawHtml, lang, btnEl) {
     const plain = cleanOut(String(rawHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
     if (!plain) return false;
-    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
-    if (isAutoTest) return true;
+    const isBriefBtn = Boolean(btnEl && btnEl.hasAttribute && btnEl.hasAttribute('data-dops-briefing'));
+    const isAutoTest = Boolean((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_TTS);
+    if (isAutoTest) {
+      if (!isBriefBtn) return true;
+      if (_chatState.activeSpeakBtn === btnEl) {
+        stopActivePlayback();
+        return true;
+      }
+      stopActivePlayback();
+      _chatState.lastSpokenText = plain;
+      _chatState.activeSpeakBtn = btnEl;
+      applyBriefingButtonDomState(btnEl, 'speaking');
+      return true;
+    }
 
     const safeLang = lang || detectLang(plain) || 'en';
     const isSameActive = Boolean(
@@ -4168,50 +4234,364 @@
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 11500);
+    const timer = setTimeout(() => ctrl.abort(), 16000);
     _chatState.activeSpeakCtrl = ctrl;
     if (btnEl) {
       _chatState.activeSpeakBtn = btnEl;
-      btnEl.classList.add('is-loading');
-      btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...'))}</span>`;
+      if (isBriefBtn) {
+        applyBriefingButtonDomState(btnEl, 'loading');
+      } else {
+        btnEl.classList.add('is-loading');
+        btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.audio}</span><span>${esc(safeLang === 'ar' ? 'جارٍ التحضير...' : (safeLang === 'fr' ? 'Audio...' : 'Voice...'))}</span>`;
+      }
     }
 
     requestCloudOrLocalTtsUrl(plain, safeLang, ctrl.signal).then(blobUrl => {
       clearTimeout(timer);
       if (ctrl.signal.aborted) return;
       _chatState.activeSpeakCtrl = null;
+      const curBtn = _chatState.activeSpeakBtn || btnEl;
       if (blobUrl) {
         audioEl.src = blobUrl;
         _chatState.activeAudioEl = audioEl;
-        if (btnEl) {
-          btnEl.classList.remove('is-loading');
-          btnEl.classList.add('is-speaking');
-          btnEl.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(safeLang))}</span>`;
+        if (curBtn) {
+          if (curBtn.hasAttribute && curBtn.hasAttribute('data-dops-briefing')) {
+            applyBriefingButtonDomState(curBtn, 'speaking');
+          } else {
+            curBtn.classList.remove('is-loading');
+            curBtn.classList.add('is-speaking');
+            curBtn.innerHTML = `<span class="ai-act-ico">${AI_SVGS.stop}</span><span>${esc(speakStopLabel(safeLang))}</span>`;
+          }
         }
         audioEl.onended = () => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
-          if (_chatState.activeSpeakBtn === btnEl) _chatState.activeSpeakBtn = null;
+          const endBtn = _chatState.activeSpeakBtn || curBtn;
+          _chatState.activeSpeakBtn = null;
+          _chatState.activeBriefingScope = '';
           _chatState.lastSpokenText = '';
-          if (btnEl) resetSpeakButtonUi(btnEl);
+          if (endBtn) resetSpeakButtonUi(endBtn);
         };
         audioEl.onerror = () => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
-          fallbackBrowserSpeech(plain, safeLang, btnEl);
+          fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         };
         audioEl.play().catch(() => {
           if (_chatState.activeAudioEl === audioEl) _chatState.activeAudioEl = null;
-          fallbackBrowserSpeech(plain, safeLang, btnEl);
+          fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || curBtn);
         });
       } else {
-        fallbackBrowserSpeech(plain, safeLang, btnEl);
+        fallbackBrowserSpeech(plain, safeLang, curBtn);
       }
     }).catch(() => {
       clearTimeout(timer);
       if (ctrl.signal.aborted) return;
       _chatState.activeSpeakCtrl = null;
-      fallbackBrowserSpeech(plain, safeLang, btnEl);
+      fallbackBrowserSpeech(plain, safeLang, _chatState.activeSpeakBtn || btnEl);
     });
     return true;
+  }
+
+  const DAILY_BRIEFING_DOMAIN_SPEC = {
+    'Manufacturing': {
+      en: { rev: 'sales revenue', sing: 'dispatch', plur: 'dispatches' },
+      ar: { rev: 'إيرادات المبيعات', sing: 'نقلة', plur: 'نقلات' },
+      fr: { rev: "le chiffre d'affaires des ventes", verbPos: "s'élève à", verbZero: 'est de', sing: 'expédition', plur: 'expéditions' }
+    },
+    'Holding & Treasury': {
+      en: { rev: 'intercompany and advisory inflows', sing: 'transfer', plur: 'transfers' },
+      ar: { rev: 'التدفقات البينية والاستشارية', sing: 'تحويل', plur: 'تحويلات' },
+      fr: { rev: 'les flux intragroupe et conseil', verbPos: "s'élèvent à", verbZero: 'sont à', sing: 'transfert', plur: 'transferts' }
+    },
+    'Hospitality & Resorts': {
+      en: { rev: 'venue and chalet revenue', sing: 'entry', plur: 'entries' },
+      ar: { rev: 'إيرادات المنتجعات والمطاعم', sing: 'عملية', plur: 'عمليات' },
+      fr: { rev: 'les revenus des établissements et chalets', verbPos: "s'élèvent à", verbZero: 'sont à', sing: 'opération', plur: 'opérations' }
+    },
+    'Automotive & Heavy Trading': {
+      en: { rev: 'vehicle and parts sales', sing: 'invoice', plur: 'invoices' },
+      ar: { rev: 'مبيعات المركبات وقطع الغيار', sing: 'فاتورة', plur: 'فواتير' },
+      fr: { rev: 'les ventes de véhicules et pièces', verbPos: "s'élèvent à", verbZero: 'sont à', sing: 'facture', plur: 'factures' }
+    },
+    'Real Estate & Property': {
+      en: { rev: 'lease rent and property sales', sing: 'entry', plur: 'entries' },
+      ar: { rev: 'إيرادات الإيجارات والمبيعات العقارية', sing: 'عقد', plur: 'عقود' },
+      fr: { rev: 'les loyers et ventes immobilières', verbPos: "s'élèvent à", verbZero: 'sont à', sing: 'écriture', plur: 'écritures' }
+    },
+    'Insurance & Brokerage': {
+      en: { rev: 'gross written premium', sing: 'policy', plur: 'policies' },
+      ar: { rev: 'إجمالي الأقساط المكتتبة', sing: 'بوليصة', plur: 'بوالص' },
+      fr: { rev: 'les primes émises brutes', verbPos: "s'élèvent à", verbZero: 'sont à', sing: 'police', plur: 'polices' }
+    }
+  };
+
+  function formatSpokenMoney(val, lang) {
+    const rounded = Math.round(Number(val || 0));
+    const absStr = Math.abs(rounded).toLocaleString('en-US');
+    if (lang === 'ar') {
+      return rounded < 0 ? `سالب ${absStr} دولار` : `${absStr} دولار`;
+    }
+    if (lang === 'fr') {
+      return rounded < 0 ? `moins ${absStr} dollars` : `${absStr} dollars`;
+    }
+    return rounded < 0 ? `minus $${absStr}` : `$${absStr}`;
+  }
+
+  function formatSpokenDate(isoDate, lang) {
+    const cleanIso = String(isoDate || '').slice(0, 10);
+    const dt = new Date(`${cleanIso}T12:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return cleanIso;
+    const loc = lang === 'ar' ? 'ar-LB' : (lang === 'fr' ? 'fr-FR' : 'en-US');
+    try {
+      return new Intl.DateTimeFormat(loc, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC'
+      }).format(dt);
+    } catch (_) {
+      return cleanIso;
+    }
+  }
+
+  function sanitizeSpokenText(raw, lang) {
+    let s = String(raw || '').trim();
+    if (!s) return '';
+    if (lang && lang !== 'en' && typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.t === 'function') {
+      const tr = window.MFG_I18N.t(s, lang);
+      if (tr && typeof tr === 'string') s = tr;
+    }
+    const andWord = lang === 'ar' ? ' و ' : (lang === 'fr' ? ' et ' : ' and ');
+    const lteWord = lang === 'ar' ? ' خلال ' : (lang === 'fr' ? " jusqu'à " : ' within ');
+    const gteWord = lang === 'ar' ? ' على الأقل ' : (lang === 'fr' ? ' au moins ' : ' at least ');
+    const overWord = lang === 'ar' ? ' أكثر من ' : (lang === 'fr' ? ' plus de ' : ' over ');
+    const underWord = lang === 'ar' ? ' أقل من ' : (lang === 'fr' ? ' moins de ' : ' under ');
+    s = s
+      .replace(/\([^)]*(?:Lebanese\s*CoA|FIFO|TTC|GWP|Z-Read|RDL|\d{4})[^)]*\)/gi, '')
+      .replace(/\b(?:TTC|Z-Read|RDL|THEO)\b/gi, '')
+      .replace(/\b(?:Rule\s*#\d+\s*[·\-:]?\s*)/gi, '')
+      .replace(/\b(?:S\d+|H\d+|T\d+|R\d+|I\d+|h\d+|t\d+|r\d+|i\d+|m\d+|step\d+|7z-[\w-]+)\b/g, '')
+      .replace(/[—–→↔]/g, ', ')
+      .replace(/&/g, andWord)
+      .replace(/\bin\s*(?:<=|≤)\s*/gi, 'within ')
+      .replace(/(?:<=|≤)/g, lteWord)
+      .replace(/(?:>=|≥)/g, gteWord)
+      .replace(/>/g, overWord)
+      .replace(/</g, underWord)
+      .replace(/\s*[·|]\s*/g, ', ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/,\s*,+/g, ',')
+      .replace(/^[,\s]+|[,\s]+$/g, '');
+    return cleanOut(s);
+  }
+
+  function resolveActiveBriefingLang(langOverride) {
+    if (langOverride && VOICE_LANG_MAP[langOverride]) return langOverride;
+    if (typeof window !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function') {
+      const uiLang = window.MFG_I18N.getLang();
+      if (uiLang && VOICE_LANG_MAP[uiLang]) return uiLang;
+    }
+    const stLang = _ctx && _ctx.STATE && _ctx.STATE.lang;
+    if (stLang && VOICE_LANG_MAP[stLang]) return stLang;
+    return _chatState.voiceLang || 'en';
+  }
+
+  function buildDailyBriefing(langOverride) {
+    const safeLang = resolveActiveBriefingLang(langOverride);
+    const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
+    const coKey = st.company || 'manufacturing-group';
+    const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+      ? _ctx.getActiveIndustry(coKey)
+      : 'Manufacturing';
+    const rawCoLbl = String((_ctx && _ctx.COMPANY_LABELS && _ctx.COMPANY_LABELS[coKey])
+      || (String(coKey).startsWith('industry:') ? String(coKey).slice(9) : ind))
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .replace(/^All\s+/i, '')
+      .trim();
+    const scopeName = sanitizeSpokenText(rawCoLbl, safeLang) || ind;
+    const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
+    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+
+    let targetDate = st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
+    let dayRevUsd = 0;
+    let dayTxCount = 0;
+    let closingTillUsd = 0;
+    let dayNetCash = 0;
+    let dayOpProfit = 0;
+
+    if (ind === 'Manufacturing') {
+      const dopsApi = (typeof window !== 'undefined' && window.MFG_DAILY_OPS) ? window.MFG_DAILY_OPS : null;
+      const lastObj = (dopsApi && typeof dopsApi.getLastDayModel === 'function') ? dopsApi.getLastDayModel() : null;
+      let dm = (lastObj && lastObj.dm && lastObj.coKey === coKey && (!st.dailyOpsDate || lastObj.dm.targetDate === st.dailyOpsDate))
+        ? lastObj.dm
+        : null;
+      if (!dm && lastObj && lastObj.ctx && dopsApi && typeof dopsApi.buildDayModel === 'function') {
+        try { dm = dopsApi.buildDayModel(lastObj.ctx); } catch (_) {}
+      }
+      if (dm) {
+        targetDate = dm.targetDate || targetDate;
+        dayRevUsd = Number(dm.salesSum && dm.salesSum.ttc || 0);
+        dayTxCount = Number(dm.salesSum && dm.salesSum.loads || 0);
+        closingTillUsd = Number(dm.liveTillUsd || 0);
+        dayNetCash = Number(dm.netCashFlow || 0);
+        dayOpProfit = Number(dm.operatingProfit || 0);
+      } else if (_ctx && typeof _ctx.getKPI === 'function') {
+        const k = _ctx.getKPI(coKey) || {};
+        dayRevUsd = Number(k.sales_ttc || 0);
+        dayTxCount = Number(k.loads || 0);
+        closingTillUsd = Number(k.cash_till || 0);
+        dayOpProfit = Number(k.operating_profit || 0);
+      }
+    } else {
+      let snap = st._lastIndDailyBriefingSnap;
+      if (!snap || snap.ind !== ind || snap.company !== coKey || (st.dailyOpsDate && snap.targetDate !== st.dailyOpsDate)) {
+        if (_ctx && typeof _ctx.renderIndustryDailyOps === 'function') {
+          try { _ctx.renderIndustryDailyOps(ind); } catch (_) {}
+          snap = st._lastIndDailyBriefingSnap;
+        }
+      }
+      if (snap) {
+        targetDate = snap.targetDate || targetDate;
+        dayRevUsd = Number(snap.dayRevUsd || 0);
+        dayTxCount = Number(snap.dayRevCount || 0);
+        closingTillUsd = Number(snap.closingTillUsd || 0);
+        dayNetCash = Number(snap.dayNetCash || 0);
+        dayOpProfit = Number(snap.dayOpProfit || 0);
+      }
+    }
+
+    const allSn = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    const openSn = (allSn || []).filter(s => s && s.severity && s.severity !== 'ok');
+    const critSn = openSn.filter(s => s.severity === 'crit');
+    const leadItem = critSn[0] || openSn[0] || null;
+    const topSentinelTitle = leadItem ? sanitizeSpokenText(leadItem.title || leadItem.category || 'Control Variance', safeLang) : '';
+
+    const domSpec = (DAILY_BRIEFING_DOMAIN_SPEC[ind] || DAILY_BRIEFING_DOMAIN_SPEC['Manufacturing'])[safeLang]
+      || DAILY_BRIEFING_DOMAIN_SPEC['Manufacturing'].en;
+    const dateStr = formatSpokenDate(targetDate, safeLang);
+    const revMoney = formatSpokenMoney(dayRevUsd, safeLang);
+    const tillMoney = formatSpokenMoney(closingTillUsd, safeLang);
+    const netAbsMoney = formatSpokenMoney(Math.abs(dayNetCash), safeLang);
+    const roundedRev = Math.round(dayRevUsd);
+    const roundedNet = Math.round(dayNetCash);
+    const openCount = openSn.length;
+    const critCount = critSn.length;
+
+    const sentences = [];
+    if (safeLang === 'ar') {
+      if (roundedRev > 0) {
+        const txPart = dayTxCount > 0 ? ` عبر ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: بلغت ${domSpec.rev} ${revMoney}${txPart}.`);
+      } else {
+        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: سجلت ${domSpec.rev} ${revMoney} دون ${domSpec.plur} مسجلة.`);
+      }
+      if (canViewBooks) {
+        const netClause = roundedNet > 0
+          ? `مع صافي تدفق نقدي داخل بقيمة ${formatSpokenMoney(dayNetCash, 'ar')}`
+          : (roundedNet < 0 ? `بعد صافي تدفق نقدي خارج بقيمة ${netAbsMoney}` : 'مع تعادل التدفق النقدي لليوم');
+        sentences.push(`رصيد الصندوق النقدي ${tillMoney}، ${netClause}.`);
+      }
+      if (openCount === 0) {
+        sentences.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
+      } else if (openCount === 1) {
+        sentences.push(`يوجد تنبيه رقابي ${critCount > 0 ? 'حرج ' : 'نشط '}واحد يتطلب المراجعة: ${topSentinelTitle}.`);
+      } else {
+        sentences.push(`توجد ${openCount} تنبيهات رقابية نشطة تتطلب المراجعة${critCount > 0 ? ` بينها ${critCount} حرجة` : ''}، أبرزها ${topSentinelTitle}.`);
+      }
+    } else if (safeLang === 'fr') {
+      if (roundedRev > 0) {
+        const txPart = dayTxCount > 0 ? ` sur ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbPos} ${revMoney}${txPart}.`);
+      } else {
+        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbZero} ${revMoney} sans ${domSpec.plur} enregistrées.`);
+      }
+      if (canViewBooks) {
+        const netClause = roundedNet > 0
+          ? `avec une entrée nette de trésorerie de ${formatSpokenMoney(dayNetCash, 'fr')} sur la journée`
+          : (roundedNet < 0 ? `après une sortie nette de trésorerie de ${netAbsMoney} sur la journée` : 'avec un flux net de trésorerie équilibré sur la journée');
+        sentences.push(`La caisse s'établit à ${tillMoney}, ${netClause}.`);
+      }
+      if (openCount === 0) {
+        sentences.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
+      } else if (openCount === 1) {
+        sentences.push(`1 alerte Sentinel ${critCount > 0 ? 'critique ' : 'active '}requiert vérification : ${topSentinelTitle}.`);
+      } else {
+        sentences.push(`${openCount} alertes Sentinel actives requièrent vérification${critCount > 0 ? `, dont ${critCount} critique${critCount > 1 ? 's' : ''},` : ','} à commencer par ${topSentinelTitle}.`);
+      }
+    } else {
+      if (roundedRev > 0) {
+        const txPart = dayTxCount > 0 ? ` across ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
+        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} reached ${revMoney}${txPart}.`);
+      } else {
+        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} stood at ${revMoney} with no recorded ${domSpec.plur}.`);
+      }
+      if (canViewBooks) {
+        const netClause = roundedNet > 0
+          ? `with net cash inflow of ${formatSpokenMoney(dayNetCash, 'en')} for the day`
+          : (roundedNet < 0 ? `after net cash outflow of ${netAbsMoney} for the day` : 'with even net cash movement for the day');
+        sentences.push(`Cash till stands at ${tillMoney}, ${netClause}.`);
+      }
+      if (openCount === 0) {
+        sentences.push('All Sentinel controls are clear with zero active flags.');
+      } else if (openCount === 1) {
+        sentences.push(`1 ${critCount > 0 ? 'critical ' : 'active '}Sentinel flag requires review: ${topSentinelTitle}.`);
+      } else {
+        sentences.push(`${openCount} active Sentinel flags require review${critCount > 0 ? `, including ${critCount} critical,` : ','} led by ${topSentinelTitle}.`);
+      }
+    }
+
+    const text = cleanOut(sentences.join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+    return {
+      lang: safeLang,
+      industry: ind,
+      company: coKey,
+      companyLabel: scopeName,
+      targetDate,
+      dayRevUsd: Math.round(dayRevUsd),
+      dayTxCount,
+      canViewBooks,
+      closingTillUsd: canViewBooks ? Math.round(closingTillUsd) : null,
+      dayNetCash: canViewBooks ? Math.round(dayNetCash) : null,
+      dayOpProfit: Math.round(dayOpProfit),
+      openSentinelCount: openCount,
+      critSentinelCount: critCount,
+      topSentinelTitle,
+      text
+    };
+  }
+
+  function speakDailyBriefing(btnEl, langOverride) {
+    if (btnEl && _chatState.activeSpeakBtn === btnEl) {
+      stopActivePlayback();
+      return { stopped: true };
+    }
+    const brief = buildDailyBriefing(langOverride);
+    const ok = speakBotReply(brief.text, brief.lang, btnEl || null);
+    if (ok && _chatState.activeSpeakBtn) {
+      _chatState.activeBriefingScope = `${brief.company}|${brief.targetDate}`;
+    }
+    return Object.assign({ ok }, brief);
+  }
+
+  function rebindBriefingButton(btnEl, targetDate) {
+    ensureDailyBriefingI18nRegistered();
+    if (!_chatState.activeBriefingScope) return;
+    const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
+    const curScope = `${st.company || 'manufacturing-group'}|${targetDate || st.dailyOpsDate || ''}`;
+    if (_chatState.activeBriefingScope !== curScope) {
+      stopActivePlayback();
+      return;
+    }
+    if (btnEl) {
+      _chatState.activeSpeakBtn = btnEl;
+      applyBriefingButtonDomState(btnEl, _chatState.activeSpeakCtrl ? 'loading' : 'speaking');
+    }
+  }
+
+  function stopBriefingIfActive() {
+    if (_chatState.activeBriefingScope || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-dops-briefing'))) {
+      stopActivePlayback();
+    }
   }
 
   function maybeAutoSpeakTurn(turnObj) {
@@ -5189,6 +5569,19 @@
     }
   }
 
+  ensureDailyBriefingI18nRegistered();
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('mfg:lang-changed', () => {
+      ensureDailyBriefingI18nRegistered();
+      if (typeof document !== 'undefined' && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        const b = document.getElementById('dopsBriefingBtn');
+        if (b) {
+          try { window.MFG_I18N.translateDom(b); } catch (_) {}
+        }
+      }
+    });
+  }
+
   window.MFG_ASK = {
     init,
     open: openDrawer,
@@ -5205,6 +5598,20 @@
     setPreferredLang,
     getPreferredLang: () => _chatState.voiceLang,
     speak: speakBotReply,
+    buildDailyBriefing,
+    speakDailyBriefing,
+    stopSpeaking: stopActivePlayback,
+    stopBriefingIfActive,
+    rebindBriefingButton,
+    requestTtsUrl: requestCloudOrLocalTtsUrl,
+    getPlaybackState: () => ({
+      speaking: Boolean(_chatState.activeSpeakBtn),
+      loading: Boolean(_chatState.activeSpeakCtrl),
+      briefingScope: _chatState.activeBriefingScope || '',
+      lastSpokenText: _chatState.lastSpokenText || '',
+      audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
+      cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
+    }),
     syncScope: syncHeaderAndChips,
     answer: answerHtmlSnapshot,
     answerQuestion,

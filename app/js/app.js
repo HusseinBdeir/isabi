@@ -50615,8 +50615,8 @@
     const ds0 = buildIndustryDomainDataset(ind, 0);
     const ds1 = buildIndustryDomainDataset(ind, 1);
     const ds2 = buildIndustryDomainDataset(ind, 2);
-    const sentinels = buildIndustrySentinelItems(ind);
-    const openSn = sentinels.filter(s => s.severity !== 'ok');
+    const sentinels = buildSentinelItems();
+    const openSn = sentinels.filter(s => s && s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
     const today = typeof todayISO === 'function' ? todayISO() : '2026-11-06';
@@ -50750,6 +50750,7 @@
     const dayCashIn = round2(dayCashList.reduce((s, m) => s + Number(m.in_usd || 0), 0));
     const dayCashOut = round2(dayCashList.reduce((s, m) => s + Number(m.out_usd || 0), 0));
     const dayNetCash = round2(dayCashIn - dayCashOut);
+    const closingTillUsd = round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + Number(m.in_usd || 0) - Number(m.out_usd || 0), 0));
 
     const dopsQ = norm(STATE.dopsSearch || '');
     const targetDmy = fmtDateDMY(targetDate);
@@ -50785,6 +50786,23 @@
 
     const totalStreamCount = ds0.rows.length + ds1.rows.length + expRows.length + docRows.length + extRows.length + empRows.length;
 
+    STATE._lastIndDailyBriefingSnap = {
+      scopeSig: `${ind}|${STATE.company}|${targetDate}`,
+      ind,
+      company: STATE.company,
+      coLbl,
+      targetDate,
+      revLabel: domainLabels.rev,
+      dayRevUsd,
+      dayRevCount: dayRevRows.length,
+      dayExpUsd,
+      dayOpProfit,
+      dayCashIn,
+      dayCashOut,
+      dayNetCash,
+      closingTillUsd
+    };
+
     return `
       <div class="dops-stage" id="dailyOpsStage" data-target-date="${esc(targetDate)}">
         <div class="dops-bar" id="dopsHeaderBar">
@@ -50808,6 +50826,10 @@
               <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}" value="${esc(targetDate)}" aria-label="Operating Transaction Date">
               <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${nextDate ? `data-dops-pick-date="${esc(nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
             </div>
+            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags">
+              ${ic('audio')}
+              <span class="dops-brief-lbl">Listen to Daily Briefing</span>
+            </button>
             <button type="button" class="dops-records-trigger" data-nav-jump="tables">
               ${ic('ledger')}
               <span>Tables</span>
@@ -50874,7 +50896,7 @@
               <span class="dops-kpi-val" id="dopsKpiCashVal">${dayNetCash > 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}</span>
               <span class="dops-kpi-unit">Period In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}</span>
             </div>
-            <div class="dops-kpi-sub">Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Facilities <b>${fmtNum(loanRows.length)}</b></div>
+            <div class="dops-kpi-sub">Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Till <b>${fmtUSD(closingTillUsd, 0)}</b></div>
           </div>
 
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" role="button" tabindex="0">
@@ -107571,6 +107593,8 @@
     }
     if (STATE.view === 'daily_ops' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.wire === 'function') {
       window.MFG_DAILY_OPS.wire(container, { STATE, MIN_DATE, MAX_DATE, renderApp, showRecordInspector, openRecordFromTableRow, stripNativeTitles });
+    } else if (STATE.view !== 'daily_ops' && window.MFG_ASK && typeof window.MFG_ASK.stopBriefingIfActive === 'function') {
+      window.MFG_ASK.stopBriefingIfActive();
     }
     if (STATE.view === 'statements' && window.MFG_RDL && typeof window.MFG_RDL.wireStatementsEvents === 'function') {
       window.MFG_RDL.wireStatementsEvents(container, SEED, STATE, renderApp);
@@ -108857,6 +108881,8 @@
         activeUser,
         allowedCompanyNames,
         getCompanyCatalog,
+        getActiveIndustry,
+        renderIndustryDailyOps,
         getKPI,
         getModel,
         filterRecords,

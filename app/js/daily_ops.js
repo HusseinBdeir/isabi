@@ -4044,7 +4044,7 @@
   function render(ctx) {
     const { STATE, esc, ic, fmtUSD, fmtUSDk, fmtNum, coBadge } = ctx;
     const dm = buildDayModel(ctx);
-    _lastDayModel = { ctx, dm };
+    _lastDayModel = { ctx, dm, coKey: STATE.company };
     const today = ctx.todayISO();
     const yestWall = shiftIsoDays(today, -1);
 
@@ -4244,6 +4244,11 @@
               <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${dm.nextDate ? `data-dops-pick-date="${esc(dm.nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
             </div>
 
+            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags">
+              ${ic('audio')}
+              <span class="dops-brief-lbl">Listen to Daily Briefing</span>
+            </button>
+
             <button type="button" class="dops-records-trigger" id="dopsOpenRecordsBtn" data-dops-open-drawer="all" data-ui-tip="Open discrete Day Records Drawer to search and inspect individual entries across all tables.">
               ${ic('ledger')}
               <span class="dops-rec-lbl">Records</span>
@@ -4390,6 +4395,10 @@
     const stage = container.querySelector('#dailyOpsStage');
     if (!stage) return;
 
+    if (window.MFG_ASK && typeof window.MFG_ASK.rebindBriefingButton === 'function') {
+      window.MFG_ASK.rebindBriefingButton(stage.querySelector('#dopsBriefingBtn'), stage.getAttribute('data-target-date') || '');
+    }
+
     const refreshBentoInPlace = () => {
       if (!_lastDayModel) {
         renderApp();
@@ -4434,6 +4443,16 @@
 
       // Let global workspace delegation handle lookup links, thermal print slips, + modals, and BU jumps
       if (t.closest('[data-rel-key], [data-print-ticket], [data-open-modal], [data-jump-co], a')) return;
+
+      // 0. 1-Tap Spoken Executive Daily Briefing ([data-dops-briefing])
+      const briefBtn = t.closest('[data-dops-briefing]');
+      if (briefBtn && stage.contains(briefBtn)) {
+        ev.preventDefault();
+        if (window.MFG_ASK && typeof window.MFG_ASK.speakDailyBriefing === 'function') {
+          window.MFG_ASK.speakDailyBriefing(briefBtn);
+        }
+        return;
+      }
 
       // 1. Inline Accordion Group Row Expand/Collapse ([data-dops-expand])
       const expEl = t.closest('[data-dops-expand]');
@@ -4605,13 +4624,18 @@
     if (!window.__dopsEscBound) {
       window.__dopsEscBound = true;
       document.addEventListener('keydown', ev => {
-        if (ev.key === 'Escape' && STATE.view === 'daily_ops' && STATE.dailyOpsDrawerOpen) {
-          const insp = document.getElementById('recordInspector');
-          if (insp && (insp.classList.contains('open') || !insp.hidden)) return;
-          const em = document.getElementById('entryModal');
-          if (em && !em.hidden) return;
+        if (ev.key !== 'Escape' || STATE.view !== 'daily_ops') return;
+        const insp = document.getElementById('recordInspector');
+        if (insp && (insp.classList.contains('open') || !insp.hidden)) return;
+        const em = document.getElementById('entryModal');
+        if (em && !em.hidden) return;
+        if (STATE.dailyOpsDrawerOpen) {
           STATE.dailyOpsDrawerOpen = false;
           renderApp();
+          return;
+        }
+        if (window.MFG_ASK && typeof window.MFG_ASK.stopBriefingIfActive === 'function') {
+          window.MFG_ASK.stopBriefingIfActive();
         }
       });
     }
@@ -4636,6 +4660,8 @@
     isAfterHoursTicket,
     fmtHumanDay,
     buildDayModel,
+    getLastDayModel: () => _lastDayModel,
+    buildBriefing: lang => (window.MFG_ASK && typeof window.MFG_ASK.buildDailyBriefing === 'function' ? window.MFG_ASK.buildDailyBriefing(lang) : null),
     render,
     wire
   };

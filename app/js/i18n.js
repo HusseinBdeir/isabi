@@ -8454,7 +8454,11 @@
       "1x": "1×",
       "1.5x": "1.5×",
       "2x": "2×",
-      "3x": "3×"
+      "3x": "3×",
+      "Listen to Daily Briefing": "الاستماع إلى الموجز اليومي",
+      "Preparing Briefing...": "جارٍ تحضير الموجز...",
+      "Stop Briefing": "إيقاف الموجز",
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": "تشغيل موجز صوتي تنفيذي لمدة 20 ثانية لإيرادات اليوم المحدد ورصيد الصندوق والتنبيهات الرقابية النشطة"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -16890,7 +16894,11 @@
       "1x": "1×",
       "1.5x": "1.5×",
       "2x": "2×",
-      "3x": "3×"
+      "3x": "3×",
+      "Listen to Daily Briefing": "Écouter le briefing quotidien",
+      "Preparing Briefing...": "Préparation du briefing...",
+      "Stop Briefing": "Arrêter le briefing",
+      "Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags": "Écouter un résumé vocal exécutif de 20 secondes sur le chiffre d'affaires du jour, la caisse et les alertes Sentinel actives"
     }
   };
 

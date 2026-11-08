@@ -399,6 +399,69 @@ body.is-daily-ops-view .period-basis-row {
   color: #7BB4F7;
 }
 
+/* 1-Tap Executive Spoken Daily Briefing Trigger (gemini-3.8-flash-lite-tts) */
+.dops-briefing-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9.5px;
+  border-radius: 7px;
+  border: 1px solid rgba(184, 130, 40, 0.42);
+  background: var(--brass-tint, rgba(200, 157, 84, 0.12));
+  color: var(--ink);
+  font-size: 11.1px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
+}
+
+.dops-briefing-btn .ic {
+  font-size: 12.5px;
+  color: var(--brass-strong, #B88228);
+  flex-shrink: 0;
+}
+
+.dops-briefing-btn:hover {
+  background: rgba(200, 157, 84, 0.22);
+  border-color: var(--brass);
+}
+
+.dops-briefing-btn.is-loading {
+  border-color: var(--brass);
+  background: rgba(200, 157, 84, 0.20);
+}
+
+.dops-briefing-btn.is-loading .ic {
+  animation: dopsBriefPulse 1s ease-in-out infinite;
+}
+
+.dops-briefing-btn.is-speaking {
+  background: var(--brass, #C89D54);
+  border-color: var(--brass, #C89D54);
+  color: #0B1730;
+  box-shadow: 0 1px 4px rgba(184, 130, 40, 0.28);
+}
+
+.dops-briefing-btn.is-speaking .ic {
+  color: #0B1730;
+}
+
+:root[data-theme="dark"] .dops-briefing-btn:not(.is-speaking) {
+  border-color: rgba(217, 165, 74, 0.44);
+  background: rgba(217, 165, 74, 0.13);
+}
+
+:root[data-theme="dark"] .dops-briefing-btn:not(.is-speaking) .ic {
+  color: var(--brass, #D9A54A);
+}
+
+@keyframes dopsBriefPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.42; }
+}
+
 /* ==================== BAND 2: 6-PILLAR EXECUTIVE SCORECARD ==================== */
 .dops-kpis {
   display: grid;
@@ -2358,6 +2421,7 @@ body.is-daily-ops-view .period-basis-row {
   }
   .dops-stage { gap: 5px; }
   .dops-bar { padding: 4px 8px; }
+  .dops-briefing-btn { height: 26px; padding: 0 8px; font-size: 10.5px; }
   .dops-kpis { gap: 5px; }
   .dops-kpi { padding: 5px 8px 4.5px; gap: 1.5px; }
   .dops-kpi-val { font-size: 16px; }
@@ -2397,6 +2461,7 @@ body.is-daily-ops-view .period-basis-row {
 @media (max-width: 1410px) and (min-width: 1024px) {
   .dops-bu-prof { display: none; }
   .dops-rec-lbl { display: none; }
+  .dops-briefing-btn { padding: 0 7.5px; gap: 4px; }
   .dops-bar { gap: 4px 7px; }
   .dops-bar-controls { gap: 4px; }
 }
@@ -2445,10 +2510,42 @@ body.is-daily-ops-view .period-basis-row {
   }
   .dops-bar {
     padding: 7px 9px;
+    max-width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .dops-active-date-lbl {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .dops-bar-controls {
     width: 100%;
+    min-width: 0;
     justify-content: space-between;
+  }
+  .dops-bar-controls .dops-search-inp {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .dops-briefing-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0 8px;
+  }
+  .dops-briefing-btn .dops-brief-lbl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dops-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
   }
   .dops-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
