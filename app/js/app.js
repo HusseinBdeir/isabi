@@ -8875,7 +8875,7 @@
       if (view === 'kiosks') return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master || p.rights.read_ops);
       if (view === 'cashflow') return !!(p.rights.read_ops || p.rights.read_fin || p.rights.enter_accounting || p.rights.enter_dispatch || p.dashboards.dash_financial_gl || p.dashboards.dash_expenses_vat);
       if (view === 'overview' || view === 'pbi') return anyDash;
-      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_executive || p.dashboards.dash_financial_gl);
+      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_overview || p.dashboards.dash_executive || p.dashboards.dash_financial_gl);
       if (view === 'statements') return anyStmt;
       if (view === 'payroll') return !!(p.rights.read_ops || p.rights.read_fin || p.dashboards.dash_payroll_hr || p.rights.enter_payroll_jv || p.rights.enter_master);
       if (view === 'ledger' || view === 'gl' || view === 'sentinels') return !!(p.rights.read_fin || p.dashboards.dash_financial_gl);
@@ -41325,7 +41325,8 @@
       : [];
     const extList = liveSisterLegs.length ? baseExtList.concat(liveSisterLegs) : baseExtList;
     const ignoreSearch = Boolean(opts.ignoreSearch);
-    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    const ignorePeriod = Boolean(opts.ignorePeriod);
+    const sig = `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._industryRev) || 0}|${STATE._indCustomRev || 0}|${extList.length}|${ignorePeriod ? 'all' : STATE.period}|${ignorePeriod ? '' : STATE.dateFrom}|${ignorePeriod ? '' : STATE.dateTo}|${ignorePeriod ? 'tx_date' : STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
     if (_icInteractionsCache && _icInteractionsSig === sig) return _icInteractionsCache;
 
     const scoped = filterRecords(extList, {
@@ -41333,7 +41334,8 @@
       includeGroupMfg: true,
       excludeMultiIndustrySeed: true,
       ignoreSearch,
-      basis: STATE.basis
+      ignorePeriod,
+      basis: ignorePeriod ? 'tx_date' : STATE.basis
     });
 
     const legs = [];
@@ -52322,10 +52324,15 @@
     }
     STATE._lastIndDopsScope = scopeSig;
 
+    const dopsUser = activeUser();
+    const canViewBooks = Boolean(isOwner(dopsUser) || (canViewHub('cashflow', dopsUser) && canViewHub('ledger', dopsUser)));
+    const canViewExp = Boolean(isOwner(dopsUser) || canViewHub('expenses', dopsUser));
+
     const ds0 = buildIndustryDomainDataset(ind, 0);
     const ds1 = buildIndustryDomainDataset(ind, 1);
     const ds2 = buildIndustryDomainDataset(ind, 2);
-    const sentinels = buildSentinelItems();
+    const rawSentinels = buildSentinelItems();
+    const sentinels = canViewBooks ? rawSentinels : rawSentinels.filter(s => s && s.id !== 'S1');
     const openSn = sentinels.filter(s => s && s.severity !== 'ok');
     const spec = INDUSTRY_SIDEBAR_SPEC[ind] || INDUSTRY_SIDEBAR_SPEC['Holding & Treasury'];
     const coLbl = COMPANY_LABELS[STATE.company] || ind;
@@ -52346,13 +52353,13 @@
     const empRows = filterRecords(SEED.records.employments || [], { ignorePeriod: true, tableKey: 'employments' });
     const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
     const eqRows = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, tableKey: 'company_equipment' });
-    const cashMoves = buildIndustryCashMoves(ind);
+    const cashMoves = buildIndustryCashMoves(ind, STATE.company, { ignorePeriod: true });
 
     const revEvents = [];
     const directEvents = [];
     const extraDates = [];
     if (ind === 'Holding & Treasury') {
-      const ic = computeIntercompanyInteractions({ ignoreSearch: true });
+      const ic = computeIntercompanyInteractions({ ignoreSearch: true, ignorePeriod: true });
       (ic.events || []).forEach(ev => {
         if (!ev || !ev.date) return;
         const d = String(ev.date).slice(0, 10);
@@ -52430,7 +52437,7 @@
           return `<button type="button" class="dops-bu-pill${active ? ' is-active' : ''}" data-jump-co="${esc(c.key)}">
             ${coBadge(c.name)}
             <span class="dops-bu-val">${fmtUSDk(snap.salesTotal || 0)}</span>
-            <span class="dops-bu-prof ${prof >= 0 ? 'pos' : 'neg'}">${prof >= 0 ? '+' : ''}${fmtUSDk(prof)}</span>
+            ${canViewBooks ? `<span class="dops-bu-prof ${prof >= 0 ? 'pos' : 'neg'}">${prof >= 0 ? '+' : ''}${fmtUSDk(prof)}</span>` : ''}
           </button>`;
         }).join('')}
       </div>
@@ -52462,7 +52469,8 @@
     const dayNetCash = round2(dayCashIn - dayCashOut);
     const closingTillUsd = round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + Number(m.in_usd || 0) - Number(m.out_usd || 0), 0));
 
-    const dopsQ = norm(STATE.dopsSearch || '');
+    const rawDopsSearch = STATE.dailyOpsSearch != null ? String(STATE.dailyOpsSearch) : String(STATE.dopsSearch || '');
+    const dopsQ = norm(rawDopsSearch);
     const targetDmy = fmtDateDMY(targetDate);
     const rowMatchesDayText = txt => {
       const s = String(txt || '');
@@ -52503,14 +52511,15 @@
       coLbl,
       targetDate,
       revLabel: domainLabels.rev,
+      canViewBooks,
       dayRevUsd,
       dayRevCount: dayRevRows.length,
-      dayExpUsd,
-      dayOpProfit,
-      dayCashIn,
-      dayCashOut,
-      dayNetCash,
-      closingTillUsd
+      dayExpUsd: canViewExp ? dayExpUsd : null,
+      dayOpProfit: canViewBooks ? dayOpProfit : null,
+      dayCashIn: canViewBooks ? dayCashIn : null,
+      dayCashOut: canViewBooks ? dayCashOut : null,
+      dayNetCash: canViewBooks ? dayNetCash : null,
+      closingTillUsd: canViewBooks ? closingTillUsd : null
     };
 
     return `
@@ -52525,7 +52534,7 @@
             </div>
           </div>
           <div class="dops-bar-controls">
-            <input type="search" id="dopsQuickSearchInput" class="dops-search-inp" value="${esc(STATE.dopsSearch || '')}" placeholder="Filter day streams..." aria-label="Filter Daily Operations">
+            <input type="search" id="dopsQuickSearchInput" class="dops-search-inp" value="${esc(rawDopsSearch)}" placeholder="Filter day streams..." aria-label="Filter Daily Operations">
             <div class="dops-quick-pills" role="group" aria-label="Quick Day Presets">
               <button type="button" class="dops-qpill${targetDate === today ? ' active' : ''}" data-dops-pick-date="${esc(today)}">Today</button>
               <button type="button" class="dops-qpill${targetDate === yestWall ? ' active' : ''}" data-dops-pick-date="${esc(yestWall)}">Yesterday</button>
@@ -52536,7 +52545,11 @@
               <input type="date" id="dopsDateInput" class="dops-date-input" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}" value="${esc(targetDate)}" aria-label="Operating Transaction Date">
               <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${nextDate ? `data-dops-pick-date="${esc(nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
             </div>
-            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags">
+            <button type="button" class="dops-handover-btn" id="dopsHandoverBriefBtn" data-dops-handover="1" aria-expanded="false" aria-label="Shift Handover" data-ui-tip="Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary">
+              ${ic('sparkles')}
+              <span class="dops-handover-lbl">Shift Handover</span>
+            </button>
+            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities">
               ${ic('audio')}
               <span class="dops-brief-lbl">Listen to Daily Briefing</span>
             </button>
@@ -52573,40 +52586,40 @@
             <div class="dops-kpi-sub">Period Direct <b>${fmtUSDk(directUsd)}</b> · Active contracts</div>
           </div>
 
-          <div class="dops-kpi accent-exp" data-nav-jump="expenses" role="button" tabindex="0">
+          <div class="dops-kpi accent-exp" ${canViewExp ? 'data-nav-jump="expenses"' : ''} role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Expenses &amp; Vault</span>
-              <span class="dops-kpi-delta neutral">${fmtNum(dayExpList.length)} day · ${fmtNum(docRows.length)} scans</span>
+              <span class="dops-kpi-delta neutral">${canViewExp ? `${fmtNum(dayExpList.length)} day · ${fmtNum(docRows.length)} scans` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(dayExpUsd, 0)}</span>
-              <span class="dops-kpi-unit">${fmtNum(dayDocList.length)} day docs</span>
+              <span class="dops-kpi-val" id="dopsKpiExpVal">${canViewExp ? fmtUSD(dayExpUsd, 0) : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${canViewExp ? `${fmtNum(dayDocList.length)} day docs` : 'Books Restricted'}</span>
             </div>
-            <div class="dops-kpi-sub">Period Bills <b>${fmtUSDk(expTotal)}</b> · Vault <b>${fmtNum(docRows.length)} filed</b></div>
+            <div class="dops-kpi-sub">${canViewExp ? `Period Bills <b>${fmtUSDk(expTotal)}</b> · Vault <b>${fmtNum(docRows.length)} filed</b>` : 'Books Restricted'}</div>
           </div>
 
-          <div class="dops-kpi accent-profit${dayOpProfit < 0 ? ' is-neg' : ''}" data-nav-jump="ledger" role="button" tabindex="0">
+          <div class="dops-kpi accent-profit${canViewBooks && dayOpProfit < 0 ? ' is-neg' : ''}" ${canViewBooks ? 'data-nav-jump="ledger"' : ''} role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
-              <span class="dops-kpi-delta ${dayOpProfit >= 0 ? 'good' : 'crit'}">${dayMarginPct}% Margin</span>
+              <span class="dops-kpi-delta ${canViewBooks ? (dayOpProfit >= 0 ? 'good' : 'crit') : 'neutral'}">${canViewBooks ? `${dayMarginPct}% Margin` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val ${dayOpProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${fmtUSD(dayOpProfit, 0)}</span>
-              <span class="dops-kpi-unit">Day Contribution</span>
+              <span class="dops-kpi-val ${canViewBooks && dayOpProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${canViewBooks ? fmtUSD(dayOpProfit, 0) : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${canViewBooks ? 'Day Contribution' : 'Books Restricted'}</span>
             </div>
-            <div class="dops-kpi-sub">Period Profit <b>${fmtUSDk(opProfit)}</b> · Lebanese CoA tied</div>
+            <div class="dops-kpi-sub">${canViewBooks ? `Period Profit <b>${fmtUSDk(opProfit)}</b> · Chart of Accounts tied` : 'Books Restricted'}</div>
           </div>
 
-          <div class="dops-kpi accent-cash" data-nav-jump="cashflow" role="button" tabindex="0">
+          <div class="dops-kpi accent-cash" ${canViewBooks ? 'data-nav-jump="cashflow"' : ''} role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Treasury &amp; Cash</span>
-              <span class="dops-kpi-delta ${dayNetCash >= 0 ? 'good' : 'warn'}">${dayNetCash >= 0 ? 'Net In' : 'Net Out'}</span>
+              <span class="dops-kpi-delta ${canViewBooks ? (dayNetCash >= 0 ? 'good' : 'warn') : 'neutral'}">${canViewBooks ? (dayNetCash >= 0 ? 'Net In' : 'Net Out') : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiCashVal">${dayNetCash > 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}</span>
-              <span class="dops-kpi-unit">Period In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}</span>
+              <span class="dops-kpi-val" id="dopsKpiCashVal">${canViewBooks ? `${dayNetCash > 0 ? '+' : ''}${fmtUSD(dayNetCash, 0)}` : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${canViewBooks ? `Period In ${fmtUSDk(cashIn)} · Out ${fmtUSDk(cashOut)}` : 'Books Restricted'}</span>
             </div>
-            <div class="dops-kpi-sub">Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Till <b>${fmtUSD(closingTillUsd, 0)}</b></div>
+            <div class="dops-kpi-sub">${canViewBooks ? `Day In <b>${fmtUSD(dayCashIn, 0)}</b> · Out <b>${fmtUSD(dayCashOut, 0)}</b> · Till <b>${fmtUSD(closingTillUsd, 0)}</b>` : 'Books Restricted'}</div>
           </div>
 
           <div class="dops-kpi accent-plant" data-nav-jump="payroll" role="button" tabindex="0">
@@ -52688,8 +52701,8 @@
                 <h2 class="dops-card-title">3 · P&amp;L, Bills &amp; Document Vault</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
-                <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(p3ExpRows.length)}</button>
+                ${canViewExp ? `<button type="button" class="dops-seg-btn" data-nav-jump="documents">Vault (${fmtNum(p3DocRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="expenses">${fmtNum(p3ExpRows.length)}</button>` : ''}
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -52698,7 +52711,7 @@
                   <colgroup><col style="width:40%"><col style="width:38%"><col style="width:22%"></colgroup>
                   <thead><tr><th>Supplier / Vault Scan</th><th>Category &amp; Method</th><th class="r">Amount</th></tr></thead>
                   <tbody>
-                    ${(p3ExpRows.length || p3DocRows.length) ? `
+                    ${!canViewExp ? `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">Expense bills require Expenses hub permission.</td></tr>` : ((p3ExpRows.length || p3DocRows.length) ? `
                       ${p3ExpRows.slice(0, 4).map(ex => `
                         <tr class="rrow" data-rkey="expenses" data-rid="${esc(ex.id)}">
                           <td class="dops-trunc"><strong>${esc(ex.supplier || ex.name)}</strong> ${repDateShiftBadge(ex)}</td>
@@ -52713,7 +52726,7 @@
                           <td class="r mono"><strong>${fmtUSD(dc.amount || 0, 0)}</strong></td>
                         </tr>
                       `).join('')}
-                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching bills or documents</td></tr>`}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching bills or documents</td></tr>`)}
                   </tbody>
                 </table>
               </div>
@@ -52727,8 +52740,8 @@
                 <h2 class="dops-card-title">4 · Treasury, External &amp; Loans</h2>
               </div>
               <div class="dops-card-actions">
-                <button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(p4ExtRows.length)})</button>
-                <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(p4LoanRows.length)}</button>
+                ${canViewBooks ? `<button type="button" class="dops-seg-btn" data-nav-jump="external">Ext (${fmtNum(p4ExtRows.length)})</button>
+                <button type="button" class="dops-disc-link" data-nav-jump="ledger_treasury">${fmtNum(p4LoanRows.length)}</button>` : ''}
               </div>
             </div>
             <div class="dops-card-body no-pad dops-flex-col">
@@ -52737,7 +52750,7 @@
                   <colgroup><col style="width:40%"><col style="width:36%"><col style="width:24%"></colgroup>
                   <thead><tr><th>Counterparty / Facility</th><th>Movement Type</th><th class="r">USD Flow</th></tr></thead>
                   <tbody>
-                    ${(p4ExtRows.length || p4LoanRows.length) ? `
+                    ${!canViewBooks ? `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">Treasury and external cash flows require Cash Flow &amp; General Ledger permissions.</td></tr>` : ((p4ExtRows.length || p4LoanRows.length) ? `
                       ${p4ExtRows.slice(0, 4).map(ex => {
                         const isOut = /out/i.test(String(ex.direction || ex.type || ''));
                         const amt = Number(ex.usd_amount || ex.amount || 0);
@@ -52756,7 +52769,7 @@
                           <td class="r mono"><strong>${fmtUSD(ln.principal || ln.amount || 0, 0)}</strong></td>
                         </tr>
                       `).join('')}
-                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching treasury entries</td></tr>`}
+                    ` : `<tr><td colspan="3" class="muted" style="text-align:center;padding:12px">No matching treasury entries</td></tr>`)}
                   </tbody>
                 </table>
               </div>
@@ -53102,7 +53115,7 @@
     };
 
     if (ind === 'Holding & Treasury') {
-      const ic = computeIntercompanyInteractions({ ignoreSearch: true });
+      const ic = computeIntercompanyInteractions({ ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod) });
       (ic.interactions || []).filter(r => r.fromCo !== 'Bdeir Holding' && r.toCo !== 'Bdeir Holding').slice(0, 8).forEach((r, idx) => {
         addMv(`hld-mv-${idx + 1}`, r.date || '2026-10-28', 'Bdeir Holding', 'ext', 'Intercompany Sister Transfer', `${r.fromCo} / ${r.toCo}`, `${r.matchType} · ${r.notes || 'Sister treasury clearing'}`, r.id || `IC-${100 + idx}`, 'Bank Wire', idx % 2 === 0 ? r.usd : -r.usd);
       });
@@ -53131,7 +53144,7 @@
       addMv('hld-mv-9', '2026-10-30', 'Bdeir Holding', 'loan', 'Partner Distribution Pool', 'Shareholder Pool (10 Slots)', 'Monthly group treasury settlement', 'HLD-4515-10', 'Bank Transfer', 42500);
       addMv('hld-mv-10', '2026-10-29', 'Bdeir Holding', 'exp', 'Corporate Shared Services', 'Bdeir Holding HQ', 'Group audit, legal & cloud infrastructure', 'HLD-EXP-22', 'Cash', -14200);
     } else if (ind === 'Hospitality & Resorts') {
-      const hsp = computeHospitalityOperations({ ignoreSearch: true });
+      const hsp = computeHospitalityOperations({ ignoreSearch: true, company: rawKey });
       (hsp.venueRows || []).slice(0, 6).forEach((r, idx) => {
         addMv(`hsp-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `${r.category} Close`, r.outlet, `${r.covers || 0} covers · POS Till Close Tied`, r.id, r.method || 'Cash', r.ttc_usd);
       });
@@ -53142,7 +53155,7 @@
         addMv(`hsp-stk-${idx + 1}`, '2026-10-26', st.company, 'exp', 'Commissary & Cellar Replenishment', st.store, `Purchases In (${st.r3_ratio.toFixed(2)}x usage ratio)`, st.id, 'Cash', -round2(st.purchases_in_usd * 0.45));
       });
     } else if (ind === 'Automotive & Heavy Trading') {
-      const trd = computeTradingOperations({ ignoreSearch: true });
+      const trd = computeTradingOperations({ ignoreSearch: true, company: rawKey });
       (trd.salesRows || []).filter(r => !r.is_gap).slice(0, 6).forEach((r, idx) => {
         addMv(`trd-mv-${idx + 1}`, r.date || '2026-10-28', r.company, 'sales', `Invoice Book ${r.book}`, r.customer, `${r.item} (Qty ${r.qty})`, r.id, r.payment_term === 'Cash' ? 'Cash' : 'Cheque / Wire', r.ttc_usd);
       });
@@ -53151,7 +53164,7 @@
         addMv(`trd-imp-${idx + 1}`, im.date || im.eta_date || '2026-10-22', im.company, 'exp', 'Import Customs & Freight', im.supplier, `${im.container_bl || im.container_ref || im.id} · ${im.origin || im.origin_port || 'Port'}`, im.id, 'LC / Wire', -round2(impCost));
       });
     } else if (ind === 'Real Estate & Property') {
-      const re = computeRealEstateOperations({ ignoreSearch: true });
+      const re = computeRealEstateOperations({ ignoreSearch: true, company: rawKey });
       (re.invoices || []).slice(0, 6).forEach((inv, idx) => {
         addMv(`re-mv-${idx + 1}`, inv.date || '2026-10-25', inv.company, 'sales', 'Commercial & Residential Rent Receipt', inv.tenant, `${inv.property} · ${inv.period} (${inv.tax_seq || inv.seq_no || inv.id})`, inv.id, 'Bank / Cash', Number(inv.collected_usd || inv.paid_usd || inv.amount_ttc_usd || inv.ttc_usd || 0));
       });
@@ -53169,15 +53182,22 @@
       });
     }
 
+    const effScopeKey = rawKey || STATE.company || ('industry:' + ind);
+    const allowed = allowedCompanyNames();
+    const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
+    for (let ri = rows.length - 1; ri >= 0; ri--) {
+      if (!matchCo(rows[ri])) rows.splice(ri, 1);
+    }
+
     if (!rows.length) {
-      addMv('ind-mv-1', '2026-10-28', coLbl, 'sales', 'Operating Cash Inflow', coLbl, 'Verified domain treasury receipt', 'DOC-001', 'Cash', kSnap.cash_in_usd || 75000);
-      addMv('ind-mv-2', '2026-10-27', coLbl, 'exp', 'Operating Cash Outflow', coLbl, 'Verified domain supplier settlement', 'DOC-002', 'Cash', -(kSnap.cash_out_usd || 26500));
+      const fallbackCo = COMPANY_BU_MATCH[effScopeKey] || coLbl;
+      if (!Array.isArray(allowed) || !allowed.length || allowed.includes(fallbackCo)) {
+        addMv('ind-mv-1', '2026-10-28', fallbackCo, 'sales', 'Operating Cash Inflow', fallbackCo, 'Verified domain treasury receipt', 'DOC-001', 'Cash', kSnap.cash_in_usd || 75000);
+        addMv('ind-mv-2', '2026-10-27', fallbackCo, 'exp', 'Operating Cash Outflow', fallbackCo, 'Verified domain supplier settlement', 'DOC-002', 'Cash', -(kSnap.cash_out_usd || 26500));
+      }
     }
 
     if (!opts.baselineOnly && STATE.customRecords) {
-      const effScopeKey = rawKey || ('industry:' + ind);
-      const allowed = allowedCompanyNames();
-      const matchCo = r => matchesCashScopeCompany(r, effScopeKey, allowed);
       forEachCashCustomDelta('sales_tickets', matchCo, (t, mult) => {
         if (isRemovedTicket(t) || !isCashSaleTicket(t)) return;
         const sgn = ticketSign(t);
@@ -55874,6 +55894,9 @@
   }
 
   function openIndustryDomainEntryModal(viewOrFormKey, prefill = {}) {
+    if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+      window.MFG_ASK.closeDailyHandover();
+    }
     if (!canModifyRecord() && !canEnterForm('sales') && !canEnterForm('expense')) {
       toast('Your seat has Read-Only view access', 'err');
       return;
@@ -58090,7 +58113,7 @@
     ensureMultiIndustrySpineSeeded();
     const options = opts && typeof opts === 'object' ? opts : {};
     const u = typeof activeUser === 'function' ? activeUser() : null;
-    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('books', u));
+    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('ledger', u));
     const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
     let canSignOff = false;
     const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
@@ -58390,6 +58413,12 @@
     }
     if (!ownerFlag && evalCoKey === 'manufacturing-group' && allowedKeys.length && !allowedKeys.includes('manufacturing-group')) {
       evalCoKey = allowedKeys[0] || evalCoKey;
+    }
+    if (!ownerFlag && !evalCoKey.startsWith('industry:') && evalCoKey !== 'manufacturing-group') {
+      const concreteEval = COMPANY_BU_MATCH[evalCoKey] || '';
+      if (!concreteEval || !isCoAllowed(concreteEval)) {
+        return buildRlsClampedSentinelSnapshot(targetInd, reqRuleId);
+      }
     }
     const actualCanSignOff = Boolean(typeof canReviewSentinels === 'function' && canReviewSentinels(u, evalCoKey));
     canSignOff = Boolean(actualCanSignOff && (options.canSignOff === undefined || options.canSignOff));
@@ -59598,6 +59627,1000 @@
         flaggedCount: totalFlaggedRows,
         topOffender: leadEn,
         tbBalanced
+      }
+    };
+  }
+
+  function computeDailyHandoverSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    ensureDocumentsVaultSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('ledger', u));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : [];
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const isCoAllowed = coName => {
+      if (ownerFlag || !coName) return true;
+      const nCo = norm(coName);
+      if (!nCo || nCo === 'all' || nCo === 'all bus' || nCo === 'universal catalog') return true;
+      return allowedCos.some(ac => norm(ac) === nCo);
+    };
+    const safeNum = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const sanitizePlain = s => String(s == null ? '' : s)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\([^)]*(?:Lebanese\s*CoA|FIFO|TTC|Z-Read|RDL|\d{4})[^)]*\)/gi, ' ')
+      .replace(/\b(?:THEO|TTC|FIFO|Z-Read|RDL|Power\s*BI|Dataverse|Power\s*Apps)\b/gi, ' ')
+      .replace(/\bLebanese\s+CoA\b/gi, 'Chart of Accounts')
+      .replace(/\b(?:S(?:1[01]|[1-9])|H[1-5]|R[1-5]|T[1-5]|P[1-5]|I[1-5]|h\d{2}|t\d{2}|r\d{2}|i\d{2}|m\d{2,3}|step\d+|7z-[\w-]+)\b/g, ' ')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    const IND_COMPANIES = {
+      'Manufacturing': ['WTC', 'BBConstruction', 'Lions Transport'],
+      'Holding & Treasury': ['Bdeir Holding'],
+      'Hospitality & Resorts': ['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'],
+      'Automotive & Heavy Trading': ['Korri Auto', 'Shacman'],
+      'Real Estate & Property': ['Properties', '4235 Company S.A.L'],
+      'Insurance & Brokerage': ['Insurance Company']
+    };
+    const IND_LOC = {
+      'Manufacturing': { ar: 'مجموعة التصنيع والكسارات', fr: 'Groupe Industrie & Carrières' },
+      'Holding & Treasury': { ar: 'الشركة القابضة والخزينة', fr: 'Holding & Trésorerie' },
+      'Hospitality & Resorts': { ar: 'الضيافة والمنتجعات', fr: 'Hôtellerie & Complexes' },
+      'Automotive & Heavy Trading': { ar: 'تجارة المركبات والمعدات الثقيلة', fr: 'Négoce Auto & Poids Lourds' },
+      'Real Estate & Property': { ar: 'العقارات وإدارة الأملاك', fr: 'Immobilier & Patrimoine' },
+      'Insurance & Brokerage': { ar: 'التأمين والوساطة', fr: 'Assurance & Courtage' }
+    };
+    const CO_LOC = {
+      'WTC': { ar: 'شركة WTC', fr: 'WTC' },
+      'BBConstruction': { ar: 'شركة BBConstruction', fr: 'BBConstruction' },
+      'Lions Transport': { ar: 'شركة Lions Transport', fr: 'Lions Transport' },
+      'Bdeir Holding': { ar: 'بدير القابضة', fr: 'Bdeir Holding' },
+      'Blanca': { ar: 'منتجع بلانكا', fr: 'Complexe Blanca' },
+      'La Una': { ar: 'لا أونا', fr: 'La Una' },
+      'Palms': { ar: 'بالمز', fr: 'Palms' },
+      'Voile': { ar: 'فوال', fr: 'Voile' },
+      'Platinum': { ar: 'بلاتينوم', fr: 'Platinum' },
+      'Korri Auto': { ar: 'كوري أوتو', fr: 'Korri Auto' },
+      'Shacman': { ar: 'شاكمان للمعدات الثقيلة', fr: 'Shacman Poids Lourds' },
+      'Properties': { ar: 'شركة العقارات (Properties)', fr: 'Properties' },
+      '4235 Company S.A.L': { ar: 'شركة 4235 ش.م.ل', fr: 'Société 4235 S.A.L' },
+      'Insurance Company': { ar: 'شركة التأمين والوساطة', fr: 'Courtage Assurance' }
+    };
+    const locCo = (coStr, lang) => {
+      const clean = sanitizePlain(coStr || '');
+      if (!clean) return lang === 'ar' ? 'النطاق النشط' : (lang === 'fr' ? 'Périmètre actif' : 'Active Scope');
+      const hit = CO_LOC[clean];
+      if (hit) return lang === 'ar' ? hit.ar : (lang === 'fr' ? hit.fr : clean);
+      if (/^all\s*bus?$/i.test(clean) || /^manufacturing(?:\s+group|-group)?$/i.test(clean)) {
+        return lang === 'ar' ? 'مجموعة التصنيع' : (lang === 'fr' ? 'Groupe Industrie' : 'Manufacturing Group');
+      }
+      if (IND_LOC[clean]) {
+        return lang === 'ar' ? IND_LOC[clean].ar : (lang === 'fr' ? IND_LOC[clean].fr : clean);
+      }
+      return clean;
+    };
+
+    // Mutation-reactive revision signature across Mfg + 5 sibling verticals + kiosk punches
+    const customRecSig = Object.keys(STATE.customRecords || {}).sort().map(k => {
+      const arr = STATE.customRecords[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      let sum = 0, vc = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) vc++;
+        sum += safeNum(r.total_ttc || r.total || r.amount || r.unit_price || r.cost || r.litres || 0);
+      }
+      return `${k}:${arr.length}:${vc}:${Math.round(sum * 100)}`;
+    }).filter(Boolean).join(';');
+    const indCustomStore = typeof getIndustryCustomRowsStore === 'function' ? getIndustryCustomRowsStore() : {};
+    const indCustomSig = Object.keys(indCustomStore).sort().map(k => {
+      const arr = indCustomStore[k];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      let vc = 0, sm = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r) continue;
+        if (r.voided) vc++;
+        sm += safeNum(r.ttc_usd || r.amount_ttc_usd || r.gross_prem_usd || r.contract_usd || r.principal_usd || r.amount_usd || 0);
+      }
+      return `${k}:${arr.length}:${vc}:${Math.round(sm * 100)}`;
+    }).filter(Boolean).join(';');
+    const indEditStore = typeof getIndustryRowEditStore === 'function' ? getIndustryRowEditStore() : {};
+    const indEditSig = Object.keys(indEditStore).sort().map(k => {
+      const e = indEditStore[k];
+      return e ? `${k}:${e.rev || 0}:${e.voided ? 1 : 0}:${(e.cells || []).join(',')}` : '';
+    }).filter(Boolean).join(';');
+    const wfPatches = (STATE && STATE.industryWorkflowPatches) || {};
+    const wfSig = Object.keys(wfPatches).sort().map(k => `${k}:${Object.keys(wfPatches[k] || {}).length}`).join(';');
+    const punchSig = Array.isArray(STATE.kioskPunches) ? `${STATE.kioskPunches.length}:${STATE.kioskPunches.filter(p => p && p.voided).length}` : '0:0';
+
+    const buildRlsClampedHandover = (indName, refDate) => {
+      const safeInd = IND_LOC[indName] ? indName : 'Manufacturing';
+      const indLoc = IND_LOC[safeInd];
+      const fbView = typeof defaultViewFor === 'function' ? defaultViewFor(u) : 'sales';
+      const safeCo = COMPANY_BU_MATCH[STATE.company] || allowedCos[0] || 'WTC';
+      const dtIso = (refDate && /^\d{4}-\d{2}-\d{2}$/.test(refDate)) ? refDate : (typeof todayISO === 'function' ? todayISO() : '2026-11-06');
+      return {
+        rlsClamped: true,
+        canViewBooks: false,
+        industry: safeInd,
+        industryAr: indLoc.ar,
+        industryFr: indLoc.fr,
+        companyKey: STATE.company || 'wtc',
+        company: safeCo,
+        companyEn: locCo(safeCo, 'en'),
+        companyAr: locCo(safeCo, 'ar'),
+        companyFr: locCo(safeCo, 'fr'),
+        targetDate: dtIso,
+        priorDate: '',
+        isCalendarYesterday: true,
+        includeAfterHours: false,
+        afterHoursCount: 0,
+        afterHoursUsd: 0,
+        dayRevUsd: 0,
+        dayTxCount: 0,
+        priorRevUsd: 0,
+        revDeltaUsd: 0,
+        revDeltaPct: 0,
+        avg7RevUsd: 0,
+        cashSalesUsd: 0,
+        creditSalesUsd: 0,
+        arCollectedUsd: 0,
+        totalCashIntakeUsd: 0,
+        dayDirectUsd: null,
+        dayExpUsd: null,
+        dayOpProfit: null,
+        closingTillUsd: null,
+        dayNetCash: null,
+        pnlBridgeBalanced: true,
+        pnlBridgeVarianceUsd: 0,
+        tieCheck: null,
+        anomalyCount: 0,
+        openSentinelCount: 0,
+        critSentinelCount: 0,
+        topAnomalyEn: 'Authorized Scope Only',
+        topAnomalyAr: 'ضمن النطاق المصرح فقط',
+        topAnomalyFr: 'Périmètre autorisé uniquement',
+        statusBadgeEn: 'Role-Scoped',
+        statusBadgeAr: 'صلاحية مقيدة',
+        statusBadgeFr: 'Accès restreint',
+        targetView: fbView,
+        canOpenRecordsDrawer: false,
+        scopeKey: `dops_ho|rls_clamped|${u ? u.id : 'anon'}|${safeInd}|${dtIso}|${SEED._customRev || 0}`,
+        kpis: [
+          { labelEn: 'Access Tier', labelAr: 'مستوى الصلاحية', labelFr: 'Niveau de droit', valStr: sanitizePlain((u && u.role) || 'Scoped'), valAr: 'مقيد حسب الدور', valFr: 'Limité au rôle', subEn: 'Daily handover restricted', subAr: 'حجب موجز المناوبة غير المصرح', subFr: 'Synthèse restreinte masquée', tone: 'neutral' },
+          { labelEn: 'Authorized Entities', labelAr: 'الشركات المصرحة', labelFr: 'Entités autorisées', valStr: `${allowedCos.length}`, valAr: `${allowedCos.length} شركات`, valFr: `${allowedCos.length} entités`, subEn: 'Row-level security enforced', subAr: 'عزل السجلات مفعل', subFr: 'Sécurité ligne active', tone: 'ok' },
+          { labelEn: 'Books & Till', labelAr: 'الدفاتر والصندوق', labelFr: 'Comptes et caisse', valStr: 'Protected', valAr: 'محجوب', valFr: 'Protégé', subEn: 'Finance or owner required', subAr: 'يتطلب مقعد مالية أو إدارة', subFr: 'Finance ou direction requis', tone: 'neutral' },
+          { labelEn: 'Data Isolation', labelAr: 'حماية البيانات', labelFr: 'Isolation des données', valStr: 'Active', valAr: 'مفعلة', valFr: 'Active', subEn: 'Zero cross-entity leakage', subAr: 'صفر تسريب بين الشركات', subFr: 'Aucune fuite inter-sociétés', tone: 'ok' }
+        ],
+        bulletsEn: [
+          'This sister-entity shift handover or treasury register lies outside the active seat permissions.',
+          `Operational visibility remains strictly scoped to ${allowedCos.join(', ') || 'authorized units'} under row-level security.`,
+          'Switch to an authorized supervisor, finance, or owner seat to review this operating day.'
+        ],
+        bulletsAr: [
+          'يقع موجز تسليم المناوبة لهذه الشركة الشقيقة أو الخزينة خارج صلاحيات المقعد الحالي.',
+          'يبقى الاطلاع التشغيلي محصوراً بالشركات المصرح بها وفق قواعد أمان السجلات.',
+          'يرجى التبديل إلى مقعد مشرف أو مالية أو إدارة مخول لمراجعة هذا اليوم التشغيلي.'
+        ],
+        bulletsFr: [
+          'Ce rapport de passation ou ce registre société sœur relève d un périmètre hors des droits du siège actif.',
+          'La visibilité opérationnelle demeure strictement limitée aux entités autorisées par la sécurité par ligne.',
+          'Passez sur un siège superviseur, finance ou direction habilité pour consulter cette journée.'
+        ],
+        drafts: null,
+        facts: { rlsClamped: true }
+      };
+    };
+
+    if (!u || (typeof canViewView === 'function' && !canViewView('daily_ops', u))) {
+      return buildRlsClampedHandover(options.industry || getActiveIndustry(STATE.company) || 'Manufacturing', options.targetDate);
+    }
+
+    let reqCoKey = '';
+    if (options.company) {
+      const rawCo = String(options.company).trim();
+      if (COMPANY_LABELS[rawCo] || rawCo.startsWith('industry:')) reqCoKey = rawCo;
+      else if (COMPANY_KEY_BY_NAME[rawCo]) reqCoKey = COMPANY_KEY_BY_NAME[rawCo];
+      else {
+        const slug = slugCompanyKey(rawCo);
+        if (COMPANY_LABELS[slug]) reqCoKey = slug;
+        else if (/^manufacturing/i.test(rawCo)) reqCoKey = 'manufacturing-group';
+        else reqCoKey = rawCo;
+      }
+    }
+
+    const targetInd = options.industry
+      || (reqCoKey ? getActiveIndustry(reqCoKey) : '')
+      || getActiveIndustry(STATE.company)
+      || 'Manufacturing';
+
+    if (!IND_COMPANIES[targetInd]) {
+      return buildRlsClampedHandover('Manufacturing', options.targetDate);
+    }
+
+    // Strict cross-company & cross-industry RLS verification
+    if (!ownerFlag) {
+      const indCos = IND_COMPANIES[targetInd] || [];
+      if (!indCos.some(c => isCoAllowed(c))) {
+        return buildRlsClampedHandover(targetInd, options.targetDate);
+      }
+      if (reqCoKey) {
+        if (reqCoKey === 'manufacturing-group') {
+          if (allowedKeys.length && !allowedKeys.includes('manufacturing-group')) {
+            return buildRlsClampedHandover(targetInd, options.targetDate);
+          }
+        } else if (reqCoKey.startsWith('industry:')) {
+          const iName = reqCoKey.slice(9);
+          if (!IND_COMPANIES[iName] || !IND_COMPANIES[iName].some(c => isCoAllowed(c))) {
+            return buildRlsClampedHandover(iName || targetInd, options.targetDate);
+          }
+        } else {
+          const concrete = COMPANY_BU_MATCH[reqCoKey] || options.company || '';
+          if (!concrete || !isCoAllowed(concrete)) {
+            return buildRlsClampedHandover(targetInd, options.targetDate);
+          }
+        }
+      }
+    }
+    if (!canViewBooks && targetInd === 'Holding & Treasury') {
+      return buildRlsClampedHandover(targetInd, options.targetDate);
+    }
+
+    const prevCo = STATE.company;
+    let evalCoKey = reqCoKey || STATE.company || 'manufacturing-group';
+    if (!reqCoKey && getActiveIndustry(evalCoKey) !== targetInd) {
+      if (targetInd === 'Manufacturing') {
+        evalCoKey = ownerFlag || allowedKeys.includes('manufacturing-group')
+          ? 'manufacturing-group'
+          : (COMPANY_KEY_BY_NAME[allowedCos[0]] || allowedKeys[0] || 'wtc');
+      } else {
+        const defIndKey = {
+          'Holding & Treasury': 'bdeirholding',
+          'Hospitality & Resorts': 'industry:Hospitality & Resorts',
+          'Automotive & Heavy Trading': 'industry:Automotive & Heavy Trading',
+          'Real Estate & Property': 'industry:Real Estate & Property',
+          'Insurance & Brokerage': 'insurance'
+        }[targetInd];
+        evalCoKey = defIndKey || ('industry:' + targetInd);
+      }
+    }
+    if (!ownerFlag && evalCoKey === 'manufacturing-group' && allowedKeys.length && !allowedKeys.includes('manufacturing-group')) {
+      evalCoKey = allowedKeys[0] || evalCoKey;
+    }
+    if (!ownerFlag && !evalCoKey.startsWith('industry:') && evalCoKey !== 'manufacturing-group') {
+      const concreteEval = COMPANY_BU_MATCH[evalCoKey] || '';
+      if (!concreteEval || !isCoAllowed(concreteEval)) {
+        return buildRlsClampedHandover(targetInd, options.targetDate);
+      }
+    }
+
+    const explicitDate = (options.targetDate && /^\d{4}-\d{2}-\d{2}$/.test(String(options.targetDate).trim()))
+      ? String(options.targetDate).trim()
+      : '';
+    const incAh = options.includeAfterHours !== undefined
+      ? Boolean(options.includeAfterHours)
+      : (STATE.dailyOpsIncludeAfterHours !== false);
+
+    const stepDayIso = (iso, delta) => {
+      const dt = new Date(`${iso}T12:00:00Z`);
+      if (Number.isNaN(dt.getTime())) return iso;
+      dt.setUTCDate(dt.getUTCDate() + delta);
+      return dt.toISOString().slice(0, 10);
+    };
+    const isValidOpIso = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= MIN_DATE && d <= MAX_DATE;
+
+    let targetDate = explicitDate || ((evalCoKey === prevCo && STATE.dailyOpsDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.dailyOpsDate)) ? STATE.dailyOpsDate : '');
+    let priorDate = '';
+    let isCalendarYesterday = true;
+    let dayRevUsd = 0;
+    let dayRevExVat = 0;
+    let dayVatUsd = 0;
+    let dayTxCount = 0;
+    let priorRevUsd = 0;
+    let priorTxCount = 0;
+    let avg7RevUsd = 0;
+    let cashSalesUsd = 0;
+    let creditSalesUsd = 0;
+    let arCollectedUsd = 0;
+    let totalCashIntakeUsd = 0;
+    let afterHoursCount = 0;
+    let afterHoursUsd = 0;
+    let includeAfterHours = false;
+    let repShiftedCount = 0;
+    let dayDirectUsdRaw = 0;
+    let dayExpUsdRaw = 0;
+    let dayOpProfitRaw = 0;
+    let pnlBridgeDiff = 0;
+    let closingTillRaw = 0;
+    let dayNetCashRaw = 0;
+    let tbDiff = 0;
+    let sentinels = [];
+    let anomalies = [];
+    let vatRegimeEn = '';
+    let vatRegimeAr = '';
+    let vatRegimeFr = '';
+    let vatRatePct = null;
+    let targetView = 'daily_ops';
+    let canOpenRecordsDrawer = false;
+
+    const DOM_UNIT_SPEC = {
+      'Manufacturing': { en: 'dispatches', ar: 'نقلات', fr: 'expéditions', revEn: 'Day Sales', revAr: 'مبيعات اليوم', revFr: 'Ventes du jour', hub: 'sales' },
+      'Holding & Treasury': { en: 'transfers', ar: 'تحويلات', fr: 'transferts', revEn: 'Intercompany Inflows', revAr: 'التدفقات البينية', revFr: 'Flux intragroupe', hub: 'hld_interactions' },
+      'Hospitality & Resorts': { en: 'entries', ar: 'عمليات', fr: 'opérations', revEn: 'Venue & Chalet Sales', revAr: 'مبيعات المطاعم والشاليهات', revFr: 'Ventes points & chalets', hub: 'hsp_revenue' },
+      'Automotive & Heavy Trading': { en: 'invoices', ar: 'فواتير', fr: 'factures', revEn: 'Vehicles & Parts Sales', revAr: 'مبيعات المركبات والقطع', revFr: 'Ventes véhicules & pièces', hub: 'trd_sales' },
+      'Real Estate & Property': { en: 'entries', ar: 'عقود', fr: 'écritures', revEn: 'Rent & Property Intake', revAr: 'إيرادات الإيجار والعقار', revFr: 'Loyers & ventes immo', hub: 're_leases' },
+      'Insurance & Brokerage': { en: 'policies', ar: 'بوالص', fr: 'polices', revEn: 'Written Premium', revAr: 'الأقساط المكتتبة', revFr: 'Primes émises', hub: 'ins_policies' }
+    }[targetInd];
+    targetView = DOM_UNIT_SPEC.hub;
+
+    try {
+      STATE.company = evalCoKey;
+      sentinels = buildSentinelItems() || [];
+
+      if (targetInd === 'Manufacturing' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.buildDayModel === 'function') {
+        canOpenRecordsDrawer = true;
+        const tempState = Object.assign({}, STATE, {
+          company: evalCoKey,
+          dailyOpsDate: targetDate,
+          dailyOpsIncludeAfterHours: incAh
+        });
+        const dopsCtx = {
+          STATE: tempState, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE,
+          todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger,
+          getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters,
+          ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd,
+          expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense,
+          isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake,
+          activeUser, isOwner, canViewHub,
+          coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2
+        };
+        const dm = window.MFG_DAILY_OPS.buildDayModel(dopsCtx);
+        targetDate = dm.targetDate;
+        includeAfterHours = Boolean(dm.includeAh);
+        afterHoursCount = safeNum(dm.ahAvailableCount);
+        afterHoursUsd = round2(safeNum(dm.ahAvailableUsd));
+        repShiftedCount = safeNum(dm.repShiftedCount);
+        dayRevUsd = round2(safeNum(dm.salesSum && dm.salesSum.ttc));
+        dayRevExVat = round2(safeNum(dm.salesSum && dm.salesSum.grossExVat));
+        dayVatUsd = round2(safeNum(dm.salesSum && dm.salesSum.vat));
+        dayTxCount = safeNum(dm.salesSum && dm.salesSum.loads);
+        cashSalesUsd = round2(safeNum(dm.salesSum && dm.salesSum.cashTtc));
+        creditSalesUsd = round2(safeNum(dm.salesSum && dm.salesSum.creditTtc));
+        arCollectedUsd = round2(safeNum(dm.arCollected));
+        totalCashIntakeUsd = round2(cashSalesUsd + arCollectedUsd);
+        dayDirectUsdRaw = round2(safeNum(dm.rawSum && dm.rawSum.totalCost));
+        dayExpUsdRaw = round2(safeNum(dm.expExVat) + safeNum(dm.salariesPaid) + safeNum(dm.salesSum && dm.salesSum.commUsd));
+        dayOpProfitRaw = round2(safeNum(dm.operatingProfit));
+        pnlBridgeDiff = round2(Math.abs((dayRevExVat - dayDirectUsdRaw - dayExpUsdRaw) - dayOpProfitRaw));
+        closingTillRaw = round2(safeNum(dm.liveTillUsd));
+        dayNetCashRaw = round2(safeNum(dm.netCashFlow));
+        avg7RevUsd = round2(safeNum(dm.avg7Sales));
+
+        const yestTot = typeof window.MFG_DAILY_OPS.computeQuickDayTotals === 'function'
+          ? window.MFG_DAILY_OPS.computeQuickDayTotals(dopsCtx, dm.idx, dm.yestDate, false)
+          : null;
+        const priorOpRow = Array.isArray(dm.pulseRows) && dm.pulseRows.length >= 2 ? dm.pulseRows[dm.pulseRows.length - 2] : null;
+        if (yestTot && (yestTot.salesTtc > 0 || yestTot.salesLoads > 0 || yestTot.rawCost > 0 || yestTot.expTotal > 0)) {
+          priorDate = dm.yestDate;
+          priorRevUsd = round2(safeNum(yestTot.salesTtc));
+          priorTxCount = safeNum(yestTot.salesLoads);
+          isCalendarYesterday = true;
+        } else if (priorOpRow && priorOpRow.date) {
+          priorDate = priorOpRow.date;
+          priorRevUsd = round2(safeNum(priorOpRow.salesTtc));
+          priorTxCount = safeNum(priorOpRow.salesLoads);
+          isCalendarYesterday = priorOpRow.date === dm.yestDate;
+        } else {
+          priorDate = dm.yestDate || stepDayIso(targetDate, -1);
+          priorRevUsd = 0;
+          priorTxCount = 0;
+          isCalendarYesterday = true;
+        }
+
+        const kpiData = typeof getKPI === 'function' ? getKPI(evalCoKey) : null;
+        tbDiff = safeNum(kpiData && kpiData.tb_check);
+        vatRatePct = 11;
+        vatRegimeEn = '11% VAT Active';
+        vatRegimeAr = 'ضريبة 11% مطبقة';
+        vatRegimeFr = 'TVA 11% active';
+
+        if (dm.openCritDefects && dm.openCritDefects.length > 0) {
+          const u0 = sanitizePlain((dm.openCritDefects[0] && dm.openCritDefects[0].equipment) || 'plant unit');
+          anomalies.push({
+            en: `${dm.openCritDefects.length} critical equipment breakdown(s) led by ${u0}`,
+            ar: `${dm.openCritDefects.length} أعطال حرجة بالآليات أبرزها ${u0}`,
+            fr: `${dm.openCritDefects.length} panne(s) critique(s) machine dont ${u0}`
+          });
+        }
+        if (dm.belowAgreedLoads > 0) {
+          anomalies.push({
+            en: `${dm.belowAgreedLoads} dispatch(es) priced below active customer agreement (${fmtUSD(safeNum(dm.belowShortfallUsd), 0)} gap)`,
+            ar: `${dm.belowAgreedLoads} نقلات مسعرة أقل من الاتفاقية السارية (فارق ${fmtUSD(safeNum(dm.belowShortfallUsd), 0)})`,
+            fr: `${dm.belowAgreedLoads} expédition(s) sous tarif accordé (écart ${fmtUSD(safeNum(dm.belowShortfallUsd), 0)})`
+          });
+        }
+        if (dm.pendingExps && dm.pendingExps.length > 0) {
+          anomalies.push({
+            en: `${dm.pendingExps.length} supplier voucher(s) awaiting final unit price`,
+            ar: `${dm.pendingExps.length} فواتير موردين بانتظار تثبيت السعر النهائي`,
+            fr: `${dm.pendingExps.length} pièce(s) fournisseur en attente de prix définitif`
+          });
+        }
+        if (dm.dayMalfs && dm.dayMalfs.length > 0) {
+          anomalies.push({
+            en: `${dm.dayMalfs.length} fuel or stock meter discrepancy log(s) (${fmtNum(Math.abs(safeNum(dm.malfNetL)), 0)} L)`,
+            ar: `${dm.dayMalfs.length} فروقات عداد محروقات أو مخزون (${fmtNum(Math.abs(safeNum(dm.malfNetL)), 0)} ليتر)`,
+            fr: `${dm.dayMalfs.length} écart(s) compteur carburant ou stock (${fmtNum(Math.abs(safeNum(dm.malfNetL)), 0)} L)`
+          });
+        }
+        if (dm.absentCount > 0) {
+          anomalies.push({
+            en: `${dm.absentCount} shift absence or leave log(s) on roster`,
+            ar: `${dm.absentCount} حالات غياب أو إجازة في سجل الدوام`,
+            fr: `${dm.absentCount} absence(s) ou congé(s) sur le poste`
+          });
+        }
+      } else {
+        // 5 Sibling Verticals: Holding, Hospitality, Trading, Real Estate, Insurance
+        const expRows = filterRecords(SEED.records.expenses || [], { ignorePeriod: true, tableKey: 'expenses' });
+        const docRows = filterRecords(SEED.records.documents || [], { ignorePeriod: true, tableKey: 'documents' });
+        const extRows = filterRecords(SEED.records.external_movements || [], { ignorePeriod: true, tableKey: 'external_movements' });
+        const attRows = filterRecords(SEED.records.attendance || [], { ignorePeriod: true, tableKey: 'attendance' });
+        const cashMoves = buildIndustryCashMoves(targetInd, evalCoKey, { ignorePeriod: true });
+
+        const revEvents = [];
+        const directEvents = [];
+        const extraDates = [];
+
+        if (targetInd === 'Holding & Treasury') {
+          const ic = computeIntercompanyInteractions({ ignoreSearch: true, ignorePeriod: true });
+          const sched = computeHoldingSchedules();
+          (ic.events || []).forEach(ev => {
+            if (!ev || !ev.date) return;
+            const d = String(ev.date).slice(0, 10);
+            const amt = safeNum(ev.usd);
+            if (ev.side === 'In') revEvents.push({ date: d, usd: amt, cashUsd: amt, creditUsd: 0 });
+            else directEvents.push({ date: d, usd: amt });
+          });
+          if ((ic.openCount || 0) > 0) {
+            anomalies.push({
+              en: `${ic.openCount} unmatched sister-company clearing leg(s) (${fmtUSD(safeNum(ic.totalOpenUsd), 0)})`,
+              ar: `${ic.openCount} قيود بينية غير مطابقة بين الشركات الشقيقة (${fmtUSD(safeNum(ic.totalOpenUsd), 0)})`,
+              fr: `${ic.openCount} écriture(s) intersociétés non lettrée(s) (${fmtUSD(safeNum(ic.totalOpenUsd), 0)})`
+            });
+          }
+          const openPrt = (sched.partnerDistributions || []).filter(p => safeNum(p.entitled_usd) - safeNum(p.paid_usd) > 1);
+          if (openPrt.length > 0) {
+            anomalies.push({
+              en: `${openPrt.length} partner distribution tranche(s) pending settlement`,
+              ar: `${openPrt.length} دفعات توزيع أرباح للشركاء قيد التسوية`,
+              fr: `${openPrt.length} tranche(s) de distribution associés en attente`
+            });
+          }
+          vatRatePct = 0;
+          vatRegimeEn = 'Holding Clearing';
+          vatRegimeAr = 'مقاصة القابضة';
+          vatRegimeFr = 'Compensation Holding';
+        } else if (targetInd === 'Hospitality & Resorts') {
+          const hsp = computeHospitalityOperations({ ignoreSearch: true });
+          (hsp.venueRows || []).forEach(r => {
+            const d = String(r.date || '').slice(0, 10);
+            const amt = safeNum(r.ttc_usd);
+            const isCr = /credit|member|account|invoice/i.test(String(r.method || ''));
+            const isAh = /^\d{2}:\d{2}/.test(String(r.time || '')) && Number(String(r.time).slice(0, 2)) >= 22;
+            revEvents.push({ date: d, usd: amt, cashUsd: isCr ? 0 : amt, creditUsd: isCr ? amt : 0, isAh });
+          });
+          (hsp.stockRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: safeNum(r.recipe_usage_usd) }));
+          (hsp.maintRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: safeNum(r.cost_usd) }));
+          (hsp.posRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          (hsp.energyRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          const posVar = (hsp.posRows || []).filter(p => Math.abs(safeNum(p.variance_usd)) > 1);
+          if (posVar.length > 0) {
+            const totV = round2(posVar.reduce((s, p) => s + Math.abs(safeNum(p.variance_usd)), 0));
+            anomalies.push({
+              en: `${posVar.length} cashier closing count variance(s) totaling ${fmtUSD(totV, 0)}`,
+              ar: `${posVar.length} فروقات جرد إقفال صناديق الكاشير بإجمالي ${fmtUSD(totV, 0)}`,
+              fr: `${posVar.length} écart(s) de clôture caisse totalisant ${fmtUSD(totV, 0)}`
+            });
+          }
+          if (safeNum(hsp.summary && hsp.summary.totalMemArrears) > 0) {
+            anomalies.push({
+              en: `Membership package balances open totaling ${fmtUSD(safeNum(hsp.summary.totalMemArrears), 0)}`,
+              ar: `أرصدة اشتراكات أعضاء مفتوحة بقيمة ${fmtUSD(safeNum(hsp.summary.totalMemArrears), 0)}`,
+              fr: `Soldes adhésions ouverts pour ${fmtUSD(safeNum(hsp.summary.totalMemArrears), 0)}`
+            });
+          }
+          vatRatePct = 11;
+          vatRegimeEn = '11% VAT Hospitality';
+          vatRegimeAr = 'ضريبة ضيافة 11%';
+          vatRegimeFr = 'TVA 11% Hôtellerie';
+        } else if (targetInd === 'Automotive & Heavy Trading') {
+          const trd = computeTradingOperations({ ignoreSearch: true });
+          (trd.salesRows || []).filter(r => !r.is_gap).forEach(r => {
+            const d = String(r.date || '').slice(0, 10);
+            const amt = safeNum(r.ttc_usd);
+            const paid = Math.min(amt, Math.max(0, safeNum(r.paid_usd != null ? r.paid_usd : (r.method === 'Cash' ? amt : amt * 0.65))));
+            revEvents.push({ date: d, usd: amt, cashUsd: paid, creditUsd: round2(Math.max(0, amt - paid)) });
+            directEvents.push({ date: d, usd: safeNum(r.cost_usd) });
+          });
+          (trd.importRows || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: safeNum(r.landed_add_usd) }));
+          (trd.grnRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          (trd.warrantyRows || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          const gaps = (trd.salesRows || []).filter(r => r && r.is_gap);
+          if (gaps.length > 0) {
+            anomalies.push({
+              en: `${gaps.length} showroom or parts invoice sequence gap(s) flagged for verification`,
+              ar: `${gaps.length} فجوات في تسلسل فواتير المعرض وقطع الغيار قيد التحقق`,
+              fr: `${gaps.length} rupture(s) de séquence factures showroom et pièces`
+            });
+          }
+          if (safeNum(trd.summary && trd.summary.unallocatedLandedUsd) > 0) {
+            anomalies.push({
+              en: `${fmtUSD(safeNum(trd.summary.unallocatedLandedUsd), 0)} unallocated import container landed cost`,
+              ar: `${fmtUSD(safeNum(trd.summary.unallocatedLandedUsd), 0)} تكاليف شحن وتخليص حاويات غير موزعة`,
+              fr: `${fmtUSD(safeNum(trd.summary.unallocatedLandedUsd), 0)} de frais d approche conteneurs non ventilés`
+            });
+          }
+          vatRatePct = 11;
+          vatRegimeEn = '11% VAT Showroom & Parts';
+          vatRegimeAr = 'ضريبة 11% مركبات وقطع';
+          vatRegimeFr = 'TVA 11% Auto & Pièces';
+        } else if (targetInd === 'Real Estate & Property') {
+          const re = computeRealEstateOperations({ ignoreSearch: true });
+          (re.invoices || []).forEach(r => {
+            const d = String(r.date || '').slice(0, 10);
+            const amt = safeNum(r.amount_ttc_usd != null ? r.amount_ttc_usd : r.ttc_usd);
+            const bal = Math.max(0, safeNum(r.balance_usd));
+            const paid = round2(Math.max(0, amt - bal));
+            revEvents.push({ date: d, usd: amt, cashUsd: paid, creditUsd: round2(Math.max(0, amt - paid)) });
+          });
+          (re.sales || []).forEach(r => {
+            const d = String(r.date || '').slice(0, 10);
+            const amt = safeNum(r.paid_usd || r.contract_usd);
+            revEvents.push({ date: d, usd: amt, cashUsd: safeNum(r.paid_usd), creditUsd: round2(Math.max(0, amt - safeNum(r.paid_usd))) });
+          });
+          (re.workorders || []).forEach(r => directEvents.push({ date: String(r.date || '').slice(0, 10), usd: safeNum(r.actual_usd) }));
+          (re.receipts || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          (re.recharges || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          if (safeNum(re.expiringLeaseCount) > 0) {
+            anomalies.push({
+              en: `${re.expiringLeaseCount} lease agreement(s) approaching renewal within 90 days`,
+              ar: `${re.expiringLeaseCount} عقود إيجار تقترب من التجديد خلال 90 يوماً`,
+              fr: `${re.expiringLeaseCount} bail(baux) arrivant à échéance sous 90 jours`
+            });
+          }
+          if (safeNum(re.summary && re.summary.openRentArUsd) > 0) {
+            anomalies.push({
+              en: `${fmtUSD(safeNum(re.summary.openRentArUsd), 0)} open tenant rent receivable balance`,
+              ar: `${fmtUSD(safeNum(re.summary.openRentArUsd), 0)} ذمم إيجارات مستأجرين مفتوحة للتحصيل`,
+              fr: `${fmtUSD(safeNum(re.summary.openRentArUsd), 0)} d arriérés locatifs ouverts à encaisser`
+            });
+          }
+          if (evalCoKey === '4235company') {
+            vatRatePct = 11;
+            vatRegimeEn = '11% VAT Commercial Leases';
+            vatRegimeAr = 'عقود تجارية خاضعة لضريبة 11%';
+            vatRegimeFr = 'Baux commerciaux TVA 11%';
+          } else if (evalCoKey === 'properties') {
+            vatRatePct = 0;
+            vatRegimeEn = '0% VAT Exempt · /2400 Mulk';
+            vatRegimeAr = 'معفى 0% · حصص ملكية /2400';
+            vatRegimeFr = 'Exonéré 0% · Quote-part /2400';
+          } else {
+            vatRatePct = 11;
+            vatRegimeEn = '11% / 0% VAT · /2400 Mulk';
+            vatRegimeAr = 'ضريبة 11% / 0% · حصص /2400';
+            vatRegimeFr = 'TVA 11% / 0% · /2400 Mulk';
+          }
+        } else if (targetInd === 'Insurance & Brokerage') {
+          const ins = computeInsuranceOperations();
+          (ins.policies || []).forEach(r => {
+            const d = String(r.date || '').slice(0, 10);
+            const amt = safeNum(r.gross_prem_usd);
+            const openAr = Math.max(0, safeNum(r.open_ar_usd));
+            const paid = round2(Math.max(0, amt - openAr));
+            revEvents.push({ date: d, usd: amt, cashUsd: paid, creditUsd: round2(Math.max(0, amt - paid)) });
+            directEvents.push({ date: d, usd: Math.max(0, safeNum(r.net_payable_4017_usd)) });
+          });
+          (ins.billing || []).forEach(r => extraDates.push(String(r.date || '').slice(0, 10)));
+          (ins.claims || []).forEach(r => directEvents.push({ date: String(r.loss_date || '').slice(0, 10), usd: safeNum(r.paid_by_insurer_usd || r.approved_usd) }));
+          if (safeNum(ins.summary && ins.summary.dueRenewals90dCount) > 0) {
+            anomalies.push({
+              en: `${ins.summary.dueRenewals90dCount} policy renewal(s) due within 90 days`,
+              ar: `${ins.summary.dueRenewals90dCount} بوالص مستحقة للتجديد خلال 90 يوماً`,
+              fr: `${ins.summary.dueRenewals90dCount} police(s) à renouveler sous 90 jours`
+            });
+          }
+          if (safeNum(ins.summary && ins.summary.openClientAr4112Usd) > 0) {
+            anomalies.push({
+              en: `${fmtUSD(safeNum(ins.summary.openClientAr4112Usd), 0)} client premium receivable awaiting collection`,
+              ar: `${fmtUSD(safeNum(ins.summary.openClientAr4112Usd), 0)} أقساط عملاء مستحقة قيد التحصيل`,
+              fr: `${fmtUSD(safeNum(ins.summary.openClientAr4112Usd), 0)} de primes clients en attente d encaissement`
+            });
+          }
+          vatRatePct = 0;
+          vatRegimeEn = 'Brokerage Net Commission';
+          vatRegimeAr = 'صافي عمولة الوساطة';
+          vatRegimeFr = 'Commission nette courtage';
+        }
+
+        const revOpDates = Array.from(new Set(revEvents.filter(e => safeNum(e.usd) > 0 && isValidOpIso(e.date)).map(e => e.date))).sort();
+        const allOpDates = Array.from(new Set([
+          ...revEvents.map(e => e.date),
+          ...directEvents.map(e => e.date),
+          ...extraDates,
+          ...expRows.map(r => String(r.date || r.rep_date || '').slice(0, 10)),
+          ...docRows.map(r => String(r.date || '').slice(0, 10)),
+          ...extRows.map(r => String(r.date || '').slice(0, 10)),
+          ...attRows.map(r => String(r.date || '').slice(0, 10)),
+          ...cashMoves.map(m => String(m.date || '').slice(0, 10))
+        ].filter(isValidOpIso))).sort();
+
+        const latestOpDate = revOpDates[revOpDates.length - 1]
+          || allOpDates[allOpDates.length - 1]
+          || (targetInd === 'Automotive & Heavy Trading' ? '2026-08-31' : '2026-11-06');
+        if (!targetDate) targetDate = latestOpDate;
+
+        const yestCalendar = stepDayIso(targetDate, -1);
+        priorDate = allOpDates.filter(d => d < targetDate).pop() || yestCalendar;
+        isCalendarYesterday = priorDate === yestCalendar;
+
+        const sumRevOn = dt => round2(revEvents.filter(e => e.date === dt).reduce((s, e) => s + safeNum(e.usd), 0));
+        const dayRevRows = revEvents.filter(e => e.date === targetDate);
+        const dayDirectRows = directEvents.filter(e => e.date === targetDate);
+        const dayExpList = expRows.filter(r => String(r.date || r.rep_date || '').slice(0, 10) === targetDate);
+        const dayCashList = cashMoves.filter(m => String(m.date || '').slice(0, 10) === targetDate);
+
+        dayRevUsd = round2(dayRevRows.reduce((s, e) => s + safeNum(e.usd), 0));
+        dayRevExVat = vatRatePct === 11 ? round2(dayRevUsd / 1.11) : dayRevUsd;
+        dayVatUsd = round2(Math.max(0, dayRevUsd - dayRevExVat));
+        dayTxCount = dayRevRows.length;
+        priorRevUsd = sumRevOn(priorDate);
+        priorTxCount = revEvents.filter(e => e.date === priorDate).length;
+
+        const prior7Dates = allOpDates.filter(d => d < targetDate).slice(-7);
+        avg7RevUsd = prior7Dates.length
+          ? round2(prior7Dates.reduce((s, d) => s + sumRevOn(d), 0) / prior7Dates.length)
+          : priorRevUsd;
+
+        cashSalesUsd = round2(dayRevRows.reduce((s, e) => s + safeNum(e.cashUsd), 0));
+        creditSalesUsd = round2(dayRevRows.reduce((s, e) => s + safeNum(e.creditUsd), 0));
+        const dayCashIn = round2(dayCashList.reduce((s, m) => s + safeNum(m.in_usd), 0));
+        const dayCashOut = round2(dayCashList.reduce((s, m) => s + safeNum(m.out_usd), 0));
+        arCollectedUsd = round2(Math.max(0, dayCashIn - cashSalesUsd));
+        totalCashIntakeUsd = round2(cashSalesUsd + arCollectedUsd);
+        afterHoursCount = dayRevRows.filter(e => e.isAh).length;
+        afterHoursUsd = round2(dayRevRows.filter(e => e.isAh).reduce((s, e) => s + safeNum(e.usd), 0));
+        includeAfterHours = incAh;
+        repShiftedCount = dayExpList.filter(r => r && r.date && r.rep_date && String(r.date).slice(0, 10) !== String(r.rep_date).slice(0, 10)).length;
+
+        dayDirectUsdRaw = round2(dayDirectRows.reduce((s, e) => s + safeNum(e.usd), 0));
+        dayExpUsdRaw = round2(dayExpList.reduce((s, r) => s + safeNum(r.total_ttc || r.amount), 0));
+        dayOpProfitRaw = round2(dayRevUsd - dayDirectUsdRaw - dayExpUsdRaw);
+        pnlBridgeDiff = round2(Math.abs((dayRevUsd - dayDirectUsdRaw - dayExpUsdRaw) - dayOpProfitRaw));
+        dayNetCashRaw = round2(dayCashIn - dayCashOut);
+        closingTillRaw = round2(cashMoves.filter(m => String(m.date || '').slice(0, 10) <= targetDate).reduce((s, m) => s + safeNum(m.in_usd) - safeNum(m.out_usd), 0));
+
+        if (canViewBooks && typeof getIndustryGlModel === 'function') {
+          const indGl = getIndustryGlModel(targetInd, evalCoKey);
+          if (indGl && Array.isArray(indGl.gl_trial_balance)) {
+            tbDiff = round2(indGl.gl_trial_balance.reduce((a, r) => a + safeNum(r.debit) - safeNum(r.credit), 0));
+          }
+        }
+      }
+    } finally {
+      STATE.company = prevCo;
+    }
+
+    if (repShiftedCount > 0) {
+      anomalies.push({
+        en: `${repShiftedCount} transaction(s) carry a deferred statutory reporting date`,
+        ar: `${repShiftedCount} حركات تحمل تاريخ تصريح محاسبي مؤجل`,
+        fr: `${repShiftedCount} opération(s) avec date comptable différée`
+      });
+    }
+
+    const visibleSentinels = canViewBooks ? sentinels : sentinels.filter(s => s && s.id !== 'S1');
+    const openSentinels = visibleSentinels.filter(s => s && s.severity && s.severity !== 'ok');
+    const critSentinels = openSentinels.filter(s => s.severity === 'crit');
+    if (openSentinels.length > 0 && anomalies.length === 0) {
+      const topSnTitle = sanitizePlain((critSentinels[0] || openSentinels[0]).title || 'Active control flag');
+      anomalies.push({
+        en: `${openSentinels.length} control alert(s) active led by ${topSnTitle}`,
+        ar: `${openSentinels.length} تنبيهات رقابية نشطة أبرزها ${topSnTitle}`,
+        fr: `${openSentinels.length} alerte(s) de contrôle active(s) dont ${topSnTitle}`
+      });
+    }
+
+    const revDeltaUsd = round2(dayRevUsd - priorRevUsd);
+    const revDeltaPct = priorRevUsd > 0
+      ? round2(((dayRevUsd - priorRevUsd) / priorRevUsd) * 100)
+      : (dayRevUsd > 0 ? 100 : 0);
+    const vs7dPct = avg7RevUsd > 0
+      ? round2(((dayRevUsd - avg7RevUsd) / avg7RevUsd) * 100)
+      : 0;
+
+    const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
+    const tbBalanced = Math.abs(tbDiff) < s1Tol;
+    const pnlBridgeBalanced = pnlBridgeDiff < 0.02;
+    const tieCheck = canViewBooks ? {
+      balanced: tbBalanced && pnlBridgeBalanced,
+      varianceUsd: tbBalanced ? 0 : round2(Math.abs(tbDiff)),
+      pnlBridgeBalanced,
+      pnlBridgeVarianceUsd: pnlBridgeBalanced ? 0 : pnlBridgeDiff
+    } : null;
+
+    const coHuman = COMPANY_BU_MATCH[evalCoKey]
+      || (evalCoKey === 'manufacturing-group' ? 'Manufacturing Group' : '')
+      || (evalCoKey.startsWith('industry:') ? evalCoKey.slice(9) : '')
+      || COMPANY_LABELS[evalCoKey]
+      || targetInd;
+    const indLoc = IND_LOC[targetInd] || IND_LOC['Manufacturing'];
+    const companyEn = locCo(coHuman, 'en');
+    const companyAr = locCo(coHuman, 'ar');
+    const companyFr = locCo(coHuman, 'fr');
+
+    const anomalyCount = anomalies.length;
+    const topAnom = anomalies[0] || null;
+    const topAnomalyEn = topAnom ? topAnom.en : 'All shift controls clear';
+    const topAnomalyAr = topAnom ? topAnom.ar : 'جميع ضوابط المناوبة سليمة';
+    const topAnomalyFr = topAnom ? topAnom.fr : 'Tous les contrôles du poste sont conformes';
+
+    const priorLblEn = isCalendarYesterday ? 'vs Yesterday' : `vs ${priorDate || 'Prior Day'}`;
+    const priorLblAr = isCalendarYesterday ? 'مقارنة بالأمس' : `مقارنة بـ ${priorDate || 'اليوم السابق'}`;
+    const priorLblFr = isCalendarYesterday ? 'vs Hier' : `vs ${priorDate || 'Jour préc.'}`;
+    const deltaSign = revDeltaPct > 0 ? '+' : '';
+    const deltaSubEn = priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblEn} (${fmtUSD(priorRevUsd, 0)})` : `${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en}`;
+    const deltaSubAr = priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblAr} (${fmtUSD(priorRevUsd, 0)})` : `${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar}`;
+    const deltaSubFr = priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblFr} (${fmtUSD(priorRevUsd, 0)})` : `${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr}`;
+
+    const kpis = [
+      {
+        labelEn: DOM_UNIT_SPEC.revEn,
+        labelAr: DOM_UNIT_SPEC.revAr,
+        labelFr: DOM_UNIT_SPEC.revFr,
+        valStr: fmtUSD(dayRevUsd, 0),
+        valAr: fmtUSD(dayRevUsd, 0),
+        valFr: fmtUSD(dayRevUsd, 0),
+        subEn: deltaSubEn,
+        subAr: deltaSubAr,
+        subFr: deltaSubFr,
+        tone: revDeltaUsd >= 0 ? 'ok' : (revDeltaPct <= -20 ? 'warn' : 'neutral')
+      },
+      {
+        labelEn: 'Cash & Credit Intake',
+        labelAr: 'التحصيل النقدي والآجل',
+        labelFr: 'Encaissements & Crédit',
+        valStr: canViewBooks ? fmtUSD(totalCashIntakeUsd, 0) : fmtUSD(cashSalesUsd, 0),
+        valAr: canViewBooks ? fmtUSD(totalCashIntakeUsd, 0) : fmtUSD(cashSalesUsd, 0),
+        valFr: canViewBooks ? fmtUSD(totalCashIntakeUsd, 0) : fmtUSD(cashSalesUsd, 0),
+        subEn: canViewBooks
+          ? `Cash ${fmtUSDk(cashSalesUsd)} · AR +${fmtUSDk(arCollectedUsd)} · Cr ${fmtUSDk(creditSalesUsd)}`
+          : `Cash ${fmtUSDk(cashSalesUsd)} · Credit ${fmtUSDk(creditSalesUsd)}`,
+        subAr: canViewBooks
+          ? `نقدي ${fmtUSDk(cashSalesUsd)} · ذمم +${fmtUSDk(arCollectedUsd)} · آجل ${fmtUSDk(creditSalesUsd)}`
+          : `نقدي ${fmtUSDk(cashSalesUsd)} · آجل ${fmtUSDk(creditSalesUsd)}`,
+        subFr: canViewBooks
+          ? `Comptant ${fmtUSDk(cashSalesUsd)} · Clients +${fmtUSDk(arCollectedUsd)} · Crédit ${fmtUSDk(creditSalesUsd)}`
+          : `Comptant ${fmtUSDk(cashSalesUsd)} · Crédit ${fmtUSDk(creditSalesUsd)}`,
+        tone: 'ok'
+      },
+      canViewBooks ? {
+        labelEn: 'Day Operating Profit',
+        labelAr: 'الربح التشغيلي لليوم',
+        labelFr: 'Résultat du jour',
+        valStr: fmtUSD(dayOpProfitRaw, 0),
+        valAr: fmtUSD(dayOpProfitRaw, 0),
+        valFr: fmtUSD(dayOpProfitRaw, 0),
+        subEn: pnlBridgeBalanced && tbBalanced ? `$0.00 Bridge · ${vatRegimeEn || 'GL Tied'}` : 'Check day bridge',
+        subAr: pnlBridgeBalanced && tbBalanced ? `مطابق $0.00 · ${vatRegimeAr || 'متوازن'}` : 'تحقق من الجسر',
+        subFr: pnlBridgeBalanced && tbBalanced ? `Pont $0.00 · ${vatRegimeFr || 'Équilibré'}` : 'Vérifier le pont',
+        tone: dayOpProfitRaw >= 0 ? 'ok' : 'warn'
+      } : {
+        labelEn: 'After-Hours & Cutoff',
+        labelAr: 'ما بعد الدوام والقطع',
+        labelFr: 'Hors horaires & Clôture',
+        valStr: afterHoursCount > 0 ? `${afterHoursCount} (${includeAfterHours ? 'Included' : 'Excluded'})` : '0 After-Hours',
+        valAr: afterHoursCount > 0 ? `${afterHoursCount} (${includeAfterHours ? 'محتسبة' : 'مستثناة'})` : '0 بعد الدوام',
+        valFr: afterHoursCount > 0 ? `${afterHoursCount} (${includeAfterHours ? 'Inclus' : 'Exclus'})` : '0 hors horaires',
+        subEn: afterHoursCount > 0 ? `${fmtUSD(afterHoursUsd, 0)} overnight · ${repShiftedCount} deferred` : `${repShiftedCount} deferred reporting`,
+        subAr: afterHoursCount > 0 ? `${fmtUSD(afterHoursUsd, 0)} مسائية · ${repShiftedCount} مؤجلة` : `${repShiftedCount} تاريخ تصريح مؤجل`,
+        subFr: afterHoursCount > 0 ? `${fmtUSD(afterHoursUsd, 0)} soir · ${repShiftedCount} différé(s)` : `${repShiftedCount} date(s) différée(s)`,
+        tone: afterHoursCount > 0 ? 'warn' : 'ok'
+      },
+      canViewBooks ? {
+        labelEn: 'Closing Cash Till',
+        labelAr: 'رصيد الصندوق النقدي',
+        labelFr: 'Solde Caisse Clôture',
+        valStr: fmtUSD(closingTillRaw, 0),
+        valAr: fmtUSD(closingTillRaw, 0),
+        valFr: fmtUSD(closingTillRaw, 0),
+        subEn: `Day Net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} Priority` : 'Clear'}`,
+        subAr: `صافي اليوم ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} أولوية` : 'سليم'}`,
+        subFr: `Flux net ${dayNetCashRaw >= 0 ? '+' : ''}${fmtUSD(dayNetCashRaw, 0)} · ${anomalyCount + openSentinels.length > 0 ? `${anomalyCount || openSentinels.length} priorité(s)` : 'Conforme'}`,
+        tone: anomalyCount > 0 || critSentinels.length > 0 ? 'warn' : 'ok'
+      } : {
+        labelEn: 'Shift Priorities',
+        labelAr: 'أولويات تسليم المناوبة',
+        labelFr: 'Priorités de passation',
+        valStr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} Open` : 'All Clear',
+        valAr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} مفتوحة` : 'سليمة بالكامل',
+        valFr: anomalyCount + openSentinels.length > 0 ? `${anomalyCount + openSentinels.length} ouverte(s)` : 'Tout conforme',
+        subEn: sanitizePlain(topAnomalyEn).slice(0, 44),
+        subAr: sanitizePlain(topAnomalyAr).slice(0, 44),
+        subFr: sanitizePlain(topAnomalyFr).slice(0, 44),
+        tone: anomalyCount + openSentinels.length > 0 ? 'warn' : 'ok'
+      }
+    ];
+
+    const ahNoteEn = afterHoursCount > 0
+      ? ` (${afterHoursCount} yesterday after-hours ticket(s) worth ${fmtUSD(afterHoursUsd, 0)} ${includeAfterHours ? 'included in' : 'excluded from'} today's cut)`
+      : '';
+    const ahNoteAr = afterHoursCount > 0
+      ? ` (${afterHoursCount} حركات مسائية من أمس بقيمة ${fmtUSD(afterHoursUsd, 0)} ${includeAfterHours ? 'محتسبة ضمن' : 'مستثناة من'} قطع اليوم)`
+      : '';
+    const ahNoteFr = afterHoursCount > 0
+      ? ` (${afterHoursCount} pièce(s) hors horaires d hier pour ${fmtUSD(afterHoursUsd, 0)} ${includeAfterHours ? 'incluses dans' : 'exclues de'} la coupe du jour)`
+      : '';
+
+    const bulletsEn = [
+      dayTxCount > 0 || dayRevUsd > 0
+        ? `${companyEn} recorded ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} on ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblEn} at ${fmtUSD(priorRevUsd, 0)}` : `7-day rolling mean ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteEn}.`
+        : `${companyEn} has $0 recorded revenue and 0 ${DOM_UNIT_SPEC.en} on ${targetDate} (${priorLblEn}: ${fmtUSD(priorRevUsd, 0)}; 7-day average: ${fmtUSD(avg7RevUsd, 0)})${ahNoteEn}.`,
+      canViewBooks
+        ? `Cash intake reached ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} cash sales plus ${fmtUSD(arCollectedUsd, 0)} receivables collected) alongside ${fmtUSD(creditSalesUsd, 0)} credit billing; Day P&L bridge reconciles at ${fmtUSD(dayOpProfitRaw, 0)} operating profit ($0.00 variance) with ${fmtUSD(closingTillRaw, 0)} closing cash till.`
+        : `Shift commercial split stands at ${fmtUSD(cashSalesUsd, 0)} cash intake and ${fmtUSD(creditSalesUsd, 0)} credit billing across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en}${repShiftedCount > 0 ? `, with ${repShiftedCount} deferred reporting-date item(s)` : ''}.`,
+      anomalyCount > 0
+        ? `Handover priority #1: ${topAnomalyEn}${anomalies[1] ? `; next: ${anomalies[1].en}` : ''}.`
+        : (openSentinels.length > 0
+          ? `Shift operations are clean on ${targetDate}; review ${openSentinels.length} period control alert(s) before shift sign-off.`
+          : `Zero shift anomalies, pricing gaps, or critical breakdowns are open for ${companyEn} on ${targetDate}.`)
+    ];
+
+    const bulletsAr = [
+      dayTxCount > 0 || dayRevUsd > 0
+        ? `سجلت ${companyAr} إيرادات يومية بقيمة ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} بتاريخ ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblAr} البالغ ${fmtUSD(priorRevUsd, 0)}` : `متوسط 7 أيام ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteAr}.`
+        : `سجلت ${companyAr} إيرادات $0 و0 ${DOM_UNIT_SPEC.ar} بتاريخ ${targetDate} (${priorLblAr}: ${fmtUSD(priorRevUsd, 0)}؛ متوسط 7 أيام: ${fmtUSD(avg7RevUsd, 0)})${ahNoteAr}.`,
+      canViewBooks
+        ? `بلغ التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} مبيعات نقدية + ${fmtUSD(arCollectedUsd, 0)} تحصيل ذمم) مقابل ${fmtUSD(creditSalesUsd, 0)} مبيعات آجلة؛ جسر أرباح وخسائر اليوم متطابق عند ربح تشغيلي ${fmtUSD(dayOpProfitRaw, 0)} (فارق $0.00) ورصيد صندوق ${fmtUSD(closingTillRaw, 0)}.`
+        : `توزعت حركات المناوبة بين ${fmtUSD(cashSalesUsd, 0)} مبيعات نقدية و${fmtUSD(creditSalesUsd, 0)} مبيعات آجلة عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar}${repShiftedCount > 0 ? ` مع ${repShiftedCount} سجلات بتاريخ تصريح مؤجل` : ''}.`,
+      anomalyCount > 0
+        ? `الأولوية الأولى لتسليم المناوبة: ${topAnomalyAr}${anomalies[1] ? `؛ يليها: ${anomalies[1].ar}` : ''}.`
+        : (openSentinels.length > 0
+          ? `عمليات المناوبة ليوم ${targetDate} منتظمة؛ يرجى مراجعة ${openSentinels.length} تنبيهات رقابية للفترة قبل إغلاق الوردية.`
+          : `صفر استثناءات تشغيلية أو فروقات تسعير أو أعطال حرجة مفتوحة لدى ${companyAr} بتاريخ ${targetDate}.`)
+    ];
+
+    const bulletsFr = [
+      dayTxCount > 0 || dayRevUsd > 0
+        ? `${companyFr} a enregistré ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} le ${targetDate} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(1)}% ${priorLblFr} à ${fmtUSD(priorRevUsd, 0)}` : `moyenne 7j ${fmtUSD(avg7RevUsd, 0)}`})${ahNoteFr}.`
+        : `${companyFr} affiche $0 d activité et 0 ${DOM_UNIT_SPEC.fr} le ${targetDate} (${priorLblFr} : ${fmtUSD(priorRevUsd, 0)} ; moyenne 7j : ${fmtUSD(avg7RevUsd, 0)})${ahNoteFr}.`,
+      canViewBooks
+        ? `Les encaissements atteignent ${fmtUSD(totalCashIntakeUsd, 0)} (${fmtUSD(cashSalesUsd, 0)} au comptant et ${fmtUSD(arCollectedUsd, 0)} de recouvrements clients) pour ${fmtUSD(creditSalesUsd, 0)} à crédit ; le pont résultat du jour cadre à ${fmtUSD(dayOpProfitRaw, 0)} ($0.00 d écart) avec ${fmtUSD(closingTillRaw, 0)} en caisse.`
+        : `La répartition du poste s établit à ${fmtUSD(cashSalesUsd, 0)} au comptant et ${fmtUSD(creditSalesUsd, 0)} à crédit sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr}${repShiftedCount > 0 ? `, dont ${repShiftedCount} écriture(s) différée(s)` : ''}.`,
+      anomalyCount > 0
+        ? `Priorité #1 de passation : ${topAnomalyFr}${anomalies[1] ? ` ; ensuite : ${anomalies[1].fr}` : ''}.`
+        : (openSentinels.length > 0
+          ? `Les opérations du ${targetDate} sont conformes ; vérifiez ${openSentinels.length} alerte(s) de contrôle avant clôture.`
+          : `Aucune anomalie de poste, écart tarifaire ou panne critique ouverte sur ${companyFr} au ${targetDate}.`)
+    ];
+
+    const drafts = {
+      en: canViewBooks
+        ? `Shift handover (${companyEn} · ${targetDate}): Revenue ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblEn}` : 'Tx Date'}). Cash intake ${fmtUSD(totalCashIntakeUsd, 0)}, credit ${fmtUSD(creditSalesUsd, 0)}, day operating profit ${fmtUSD(dayOpProfitRaw, 0)}, closing cash till ${fmtUSD(closingTillRaw, 0)}. Priority: ${topAnomalyEn}.`
+        : `Shift handover (${companyEn} · ${targetDate}): ${fmtUSD(dayRevUsd, 0)} across ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.en} (Cash ${fmtUSD(cashSalesUsd, 0)}, Credit ${fmtUSD(creditSalesUsd, 0)}). Next shift priority: ${topAnomalyEn}.`,
+      ar: canViewBooks
+        ? `تسليم المناوبة (${companyAr} · ${targetDate}): الإيرادات ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblAr}` : 'تاريخ الحركة'}). التحصيل النقدي ${fmtUSD(totalCashIntakeUsd, 0)}، الآجل ${fmtUSD(creditSalesUsd, 0)}، الربح التشغيلي لليوم ${fmtUSD(dayOpProfitRaw, 0)}، ورصيد الصندوق ${fmtUSD(closingTillRaw, 0)}. الأولوية: ${topAnomalyAr}.`
+        : `تسليم المناوبة (${companyAr} · ${targetDate}): ${fmtUSD(dayRevUsd, 0)} عبر ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.ar} (نقدي ${fmtUSD(cashSalesUsd, 0)}، آجل ${fmtUSD(creditSalesUsd, 0)}). أولوية الوردية القادمة: ${topAnomalyAr}.`,
+      fr: canViewBooks
+        ? `Passation de poste (${companyFr} · ${targetDate}) : Activité ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (${priorRevUsd > 0 ? `${deltaSign}${revDeltaPct.toFixed(0)}% ${priorLblFr}` : 'Date opération'}). Encaissements ${fmtUSD(totalCashIntakeUsd, 0)}, crédit ${fmtUSD(creditSalesUsd, 0)}, résultat du jour ${fmtUSD(dayOpProfitRaw, 0)}, caisse clôture ${fmtUSD(closingTillRaw, 0)}. Priorité : ${topAnomalyFr}.`
+        : `Passation de poste (${companyFr} · ${targetDate}) : ${fmtUSD(dayRevUsd, 0)} sur ${fmtNum(dayTxCount, 0)} ${DOM_UNIT_SPEC.fr} (Comptant ${fmtUSD(cashSalesUsd, 0)}, Crédit ${fmtUSD(creditSalesUsd, 0)}). Priorité équipe suivante : ${topAnomalyFr}.`
+    };
+
+    const statusBadgeEn = anomalyCount > 0 ? `${anomalyCount} Shift Priority` : (openSentinels.length > 0 ? `${openSentinels.length} Watchdogs` : 'Shift Clear');
+    const statusBadgeAr = anomalyCount > 0 ? `${anomalyCount} أولويات مناوبة` : (openSentinels.length > 0 ? `${openSentinels.length} تنبيهات` : 'مناوبة سليمة');
+    const statusBadgeFr = anomalyCount > 0 ? `${anomalyCount} priorité(s)` : (openSentinels.length > 0 ? `${openSentinels.length} alerte(s)` : 'Poste conforme');
+
+    const scopeKey = `dops_ho|${u ? u.id : 'anon'}|${canViewBooks ? 1 : 0}|${evalCoKey}|${targetInd}|${targetDate}|ah:${includeAfterHours ? 1 : 0}|rev:${Math.round(dayRevUsd * 100)}|prof:${canViewBooks ? Math.round(dayOpProfitRaw * 100) : 'nb'}|till:${canViewBooks ? Math.round(closingTillRaw * 100) : 'nb'}|anom:${anomalyCount}|sn:${openSentinels.length}|${SEED._customRev || 0}:${STATE._customRev || 0}|${customRecSig}|${indCustomSig}|${indEditSig}|${wfSig}|${punchSig}`;
+
+    return {
+      rlsClamped: false,
+      canViewBooks,
+      industry: targetInd,
+      industryAr: indLoc.ar,
+      industryFr: indLoc.fr,
+      companyKey: evalCoKey,
+      company: coHuman,
+      companyEn,
+      companyAr,
+      companyFr,
+      targetDate,
+      priorDate,
+      isCalendarYesterday,
+      includeAfterHours,
+      afterHoursCount,
+      afterHoursUsd,
+      repShiftedCount,
+      dayRevUsd,
+      dayRevExVat: canViewBooks ? dayRevExVat : null,
+      dayVatUsd: canViewBooks ? dayVatUsd : null,
+      dayTxCount,
+      priorRevUsd,
+      priorTxCount,
+      revDeltaUsd,
+      revDeltaPct,
+      vs7dPct,
+      avg7RevUsd,
+      cashSalesUsd,
+      creditSalesUsd,
+      arCollectedUsd: canViewBooks ? arCollectedUsd : 0,
+      totalCashIntakeUsd: canViewBooks ? totalCashIntakeUsd : cashSalesUsd,
+      dayDirectUsd: canViewBooks ? dayDirectUsdRaw : null,
+      dayExpUsd: canViewBooks ? dayExpUsdRaw : null,
+      dayOpProfit: canViewBooks ? dayOpProfitRaw : null,
+      closingTillUsd: canViewBooks ? closingTillRaw : null,
+      dayNetCash: canViewBooks ? dayNetCashRaw : null,
+      pnlBridgeBalanced,
+      pnlBridgeVarianceUsd: pnlBridgeBalanced ? 0 : pnlBridgeDiff,
+      vatRatePct,
+      vatRegimeEn,
+      vatRegimeAr,
+      vatRegimeFr,
+      tieCheck,
+      anomalyCount,
+      anomalies: anomalies.map(a => a.en),
+      openSentinelCount: openSentinels.length,
+      critSentinelCount: critSentinels.length,
+      topAnomalyEn,
+      topAnomalyAr,
+      topAnomalyFr,
+      statusBadgeEn,
+      statusBadgeAr,
+      statusBadgeFr,
+      targetView,
+      canOpenRecordsDrawer,
+      scopeKey,
+      kpis,
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts,
+      facts: {
+        industry: targetInd,
+        company: companyEn,
+        targetDate,
+        priorDate,
+        dayRevUsd,
+        dayTxCount,
+        priorRevUsd,
+        revDeltaPct,
+        avg7RevUsd,
+        cashSalesUsd,
+        creditSalesUsd,
+        arCollectedUsd: canViewBooks ? arCollectedUsd : undefined,
+        dayOpProfit: canViewBooks ? dayOpProfitRaw : undefined,
+        closingTillUsd: canViewBooks ? closingTillRaw : undefined,
+        afterHoursCount,
+        afterHoursUsd,
+        includeAfterHours,
+        repShiftedCount,
+        anomalyCount,
+        topAnomaly: topAnomalyEn,
+        openSentinelCount: openSentinels.length,
+        vatRatePct,
+        pnlBridgeBalanced,
+        tbBalanced: canViewBooks ? tbBalanced : undefined
       }
     };
   }
@@ -60908,6 +61931,9 @@
   }
 
   function openIndustryDomainInspector(opts = {}) {
+    if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+      window.MFG_ASK.closeDailyHandover();
+    }
     const ind = opts.ind || getActiveIndustry(STATE.company) || 'Holding & Treasury';
     const headers = Array.isArray(opts.headers) && opts.headers.length ? opts.headers : ['Field', 'Value'];
     const rawCells = Array.isArray(opts.cells) && opts.cells.length ? opts.cells : ['Record', COMPANY_LABELS[STATE.company] || ind];
@@ -82657,6 +83683,9 @@
   const MFG_ONLY_MODAL_FORMS = new Set(['sales', 'raw', 'pricerule', 'pricerule_raw', 'pricerule_haul', 'pricerule_comm', 'fuel', 'malfunction', 'triprate']);
 
   function openEntryModal(formType, prefill = null, opts = null) {
+    if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+      window.MFG_ASK.closeDailyHandover();
+    }
     wireEntryUnsavedPromptDom();
     if (!(opts && opts.forceSwitch)) {
       const modalCheck = $('entryModal');
@@ -88315,6 +89344,9 @@
   }
 
   function showRecordInspector(key, idOrName, opts = {}) {
+    if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+      window.MFG_ASK.closeDailyHandover();
+    }
     if (typeof key === 'string' && (key.startsWith('ind_domain:') || DOMAIN_PARENT_VIEW_MAP[key] || key === 'ind_domain')) {
       navigateToRecordOrDomainRow(key, idOrName, idOrName, opts && opts.company);
       return;
@@ -96892,6 +97924,9 @@
   }
 
   function openAuthGate(prefillEmail) {
+    if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function') {
+      window.MFG_ASK.clearSessionState();
+    }
     STATE.authed = false;
     window.__mfgSwResuming = false;
     document.documentElement.classList.remove('sw-resuming');
@@ -97292,6 +98327,9 @@
 
     FACE_STATE.pending2faUser = null;
     FACE_STATE.pendingPinUser = null;
+    if (window.MFG_ASK && typeof window.MFG_ASK.clearSessionState === 'function' && STATE.activeUserIdx !== idx) {
+      window.MFG_ASK.clearSessionState();
+    }
     user.last_login_at = nowStr.slice(0, 16);
     STATE.activeUserIdx = idx;
     if (!isDemoSandboxSession()) {
@@ -111256,7 +112294,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
-      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
+      case 'daily_ops': wsHtml = (activeInd && activeInd !== 'Manufacturing') ? renderIndustryDailyOps(activeInd) : (window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, activeUser, isOwner, canViewHub, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview()); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
       case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
@@ -114303,8 +115341,9 @@
     }
     if (STATE.view === 'daily_ops' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.wire === 'function') {
       window.MFG_DAILY_OPS.wire(container, { STATE, MIN_DATE, MAX_DATE, renderApp, showRecordInspector, openRecordFromTableRow, stripNativeTitles });
-    } else if (STATE.view !== 'daily_ops' && window.MFG_ASK && typeof window.MFG_ASK.stopBriefingIfActive === 'function') {
-      window.MFG_ASK.stopBriefingIfActive();
+    } else if (STATE.view !== 'daily_ops' && window.MFG_ASK) {
+      if (typeof window.MFG_ASK.stopBriefingIfActive === 'function') window.MFG_ASK.stopBriefingIfActive();
+      if (typeof window.MFG_ASK.stopDailyHandoverIfActive === 'function') window.MFG_ASK.stopDailyHandoverIfActive();
     }
     if (STATE.view === 'overview' && window.MFG_ASK) {
       const psBtn = container.querySelector('[data-ceo-period-summary]');
@@ -115696,6 +116735,7 @@
         computeIndustryDashboardSnapshot,
         computeInspector360Snapshot,
         computeSentinelTriageSnapshot,
+        computeDailyHandoverSnapshot,
         canReviewSentinels,
         markSentinelReviewed,
         unmarkSentinelReviewed,
@@ -115897,6 +116937,10 @@
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
         if ($('sentinelTriagePopover') && window.MFG_ASK && typeof window.MFG_ASK.closeSentinelTriage === 'function') {
           window.MFG_ASK.closeSentinelTriage();
+          return;
+        }
+        if ($('dailyOpsHandoverPopover') && window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+          window.MFG_ASK.closeDailyHandover();
           return;
         }
         const ins = $('recordInspector');
@@ -117342,6 +118386,7 @@
     computeCeoPeriodBridgeSnapshot: typeof computeCeoPeriodBridgeSnapshot === 'function' ? computeCeoPeriodBridgeSnapshot : null,
     computeInspector360Snapshot: typeof computeInspector360Snapshot === 'function' ? computeInspector360Snapshot : null,
     computeSentinelTriageSnapshot: typeof computeSentinelTriageSnapshot === 'function' ? computeSentinelTriageSnapshot : null,
+    computeDailyHandoverSnapshot: typeof computeDailyHandoverSnapshot === 'function' ? computeDailyHandoverSnapshot : null,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
     markSentinelReviewed: typeof markSentinelReviewed === 'function' ? markSentinelReviewed : null,
@@ -117354,6 +118399,8 @@
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
+    signOut: typeof signOut === 'function' ? signOut : null,
+    openAuthGate: typeof openAuthGate === 'function' ? openAuthGate : null,
     applyUserRlsAndPermissions: typeof applyUserRlsAndPermissions === 'function' ? applyUserRlsAndPermissions : null,
     ensureAlertRulesState: typeof ensureAlertRulesState === 'function' ? ensureAlertRulesState : null,
     invalidateAllSeedCaches: typeof invalidateAllSeedCaches === 'function' ? invalidateAllSeedCaches : null,

@@ -186,7 +186,20 @@
     const scopeKey = String(STATE.company || 'manufacturing-group');
     const allowed = (ctx.allowedCompanyNames() || []).join(',');
     const cr = STATE.customRecords || {};
-    const crCount = Object.keys(cr).reduce((acc, k) => acc + (Array.isArray(cr[k]) ? cr[k].length : 0), 0);
+    let crCount = 0, crHash = 0;
+    const crKeys = Object.keys(cr);
+    for (let ci = 0; ci < crKeys.length; ci++) {
+      const arr = cr[crKeys[ci]];
+      if (!Array.isArray(arr)) continue;
+      crCount += arr.length;
+      for (let ri = 0; ri < arr.length; ri++) {
+        const r = arr[ri];
+        if (!r) continue;
+        crHash += (r.voided ? -99991 : 17) + Math.round(Number(r.total_ttc || r.total || r.amount || r.litres || 0) * 100);
+        const dtStr = String(r.date || r.start_date || '');
+        if (dtStr.length >= 10) crHash += Number(dtStr.slice(8, 10)) || 0;
+      }
+    }
     const rec = (SEED && SEED.records) || {};
     const salesLen = Array.isArray(rec.sales_tickets) ? rec.sales_tickets.length : 0;
     const rawLen = Array.isArray(rec.raw_purchases) ? rec.raw_purchases.length : 0;
@@ -195,7 +208,7 @@
     const extLen = Array.isArray(rec.external_movements) ? rec.external_movements.length : 0;
     const convLen = Array.isArray(rec.conversions) ? rec.conversions.length : 0;
     const punchLen = Array.isArray(STATE.kioskPunches) ? STATE.kioskPunches.length : 0;
-    const key = `${scopeKey}|${allowed}|${SEED._customRev || 0}|${STATE._customRev || 0}|${crCount}|${salesLen}|${rawLen}|${expLen}|${prLen}|${extLen}|${convLen}|${punchLen}`;
+    const key = `${scopeKey}|${allowed}|${SEED._customRev || 0}|${STATE._customRev || 0}|${crCount}:${crHash}|${salesLen}|${rawLen}|${expLen}|${prLen}|${extLen}|${convLen}|${punchLen}`;
     if (_txIndexCacheVal && _txIndexCacheKey === key) return _txIndexCacheVal;
 
     const matchCo = buildCompanyMatcher(ctx, scopeKey);
@@ -2917,15 +2930,35 @@
     `;
   }
 
+  function resolveDopsPerms(ctx) {
+    const ent = (typeof window !== 'undefined' && window.MFG_ENTERPRISE) ? window.MFG_ENTERPRISE : null;
+    const getUser = (ctx && typeof ctx.activeUser === 'function') ? ctx.activeUser : (ent && typeof ent.activeUser === 'function' ? ent.activeUser : null);
+    const chkOwner = (ctx && typeof ctx.isOwner === 'function') ? ctx.isOwner : (ent && typeof ent.isOwner === 'function' ? ent.isOwner : null);
+    const chkHub = (ctx && typeof ctx.canViewHub === 'function') ? ctx.canViewHub : (ent && typeof ent.canViewHub === 'function' ? ent.canViewHub : null);
+    const u = getUser ? getUser() : null;
+    const owner = chkOwner ? Boolean(chkOwner(u)) : (!u);
+    const canBooks = owner || Boolean(chkHub && chkHub('cashflow', u) && chkHub('ledger', u));
+    const canExp = owner || Boolean(!chkHub || chkHub('expenses', u));
+    const canPayroll = owner || Boolean(!chkHub || chkHub('payroll', u));
+    return { canBooks, canExp, canPayroll };
+  }
+
   function renderPanel3ExpensesPnl(ctx, dm, lens, isSingleCo) {
     const { esc, ic, fmtUSD, fmtNum, coBadge, relLink } = ctx;
+    const perms = resolveDopsPerms(ctx);
+    if (!perms.canExp && !perms.canBooks) {
+      return `<div class="dops-card-body no-pad dops-flex-col"><div class="dops-empty">Day P&amp;L and Cash Till balances require Treasury &amp; General Ledger hub permissions.</div></div>`;
+    }
+    if (!perms.canExp) {
+      return `<div class="dops-card-body no-pad dops-flex-col"><div class="dops-empty">Expense bills require Expenses hub permission.</div></div>`;
+    }
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
     const expMap = ctx.STATE.dailyOpsExpanded || {};
     const profPctTxt = `${(dm.opMarginPct * 100).toFixed(1)}%`;
     const payAndComm = ctx.round2(dm.salariesPaid + dm.salesSum.commUsd);
 
-    const pnlStripHtml = `
+    const pnlStripHtml = perms.canBooks ? `
       <div class="dops-pnl-bridge dops-substrip" data-dops-open-drawer="expenses">
         <div class="dops-pnl-step">
           <small>Sales Ex-VAT</small>
@@ -2954,7 +2987,7 @@
           <b>${fmtUSD(dm.operatingProfit, 0)}</b>
         </div>
       </div>
-    `;
+    ` : '';
 
     if (lens === 'cats' || lens === 'categories') {
       const rows = (dm.expCategoryRows || []).filter(r => {
@@ -3130,6 +3163,10 @@
 
   function renderPanel4Treasury(ctx, dm, lens, isSingleCo) {
     const { esc, fmtUSD, fmtNum, coBadge } = ctx;
+    const perms = resolveDopsPerms(ctx);
+    if (!perms.canBooks) {
+      return `<div class="dops-card-body no-pad dops-flex-col"><div class="dops-empty">Treasury and external cash flows require Cash Flow &amp; General Ledger permissions.</div></div>`;
+    }
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
     const totFlow = Math.max(1, dm.cashInflow + dm.cashOutflow);
@@ -3635,6 +3672,7 @@
 
   function renderPanel6Workforce(ctx, dm, lens, isSingleCo) {
     const { esc, ic, fmtUSD, fmtNum } = ctx;
+    const perms = resolveDopsPerms(ctx);
     const qFilter = String(ctx.STATE.dailyOpsQuickFilter || 'all');
     const qNorm = String(ctx.STATE.dailyOpsQuickSearch || '').trim().toLowerCase();
 
@@ -3646,7 +3684,7 @@
         </div>
         <div class="dops-stat-box${qFilter === 'overtime' ? ' tone-brass' : (dm.attOtHours > 0 || dm.otTotalLoads > 0 ? ' tone-brass' : '')}" data-dops-qfilter="overtime" data-ui-tip="Click to filter Daily Operations to Overtime dispatches and shifts">
           <small>Overtime (${fmtNum(dm.attOtStaffCount)} staff)</small>
-          <b>+${fmtNum(dm.attOtHours, 1)}h <span class="dops-stat-muted">${dm.attOtPayUsd > 0 ? `(${fmtUSD(dm.attOtPayUsd, 0)})` : ''} · ${fmtNum(dm.otTotalLoads)} OT loads</span></b>
+          <b>+${fmtNum(dm.attOtHours, 1)}h <span class="dops-stat-muted">${perms.canPayroll && dm.attOtPayUsd > 0 ? `(${fmtUSD(dm.attOtPayUsd, 0)})` : ''} · ${fmtNum(dm.otTotalLoads)} OT loads</span></b>
         </div>
         <div class="dops-stat-box${dm.dayRegAdds.length > 0 ? ' tone-good' : ''}" data-dops-lens="plant:master_gov">
           <small>Master &amp; Governance</small>
@@ -3722,16 +3760,16 @@
     }
 
     // Default ('overview' or 'team'): 3-Stat Strip + Exceptions, Salaries, New Master & Overtime Attendance Table + Governance Bar
-    const empRows = dm.dayEmps.filter(em => {
+    const empRows = perms.canPayroll ? dm.dayEmps.filter(em => {
       if (qFilter === 'rep_shifted' && !hasRepShift(em)) return false;
       if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
       return matchesQuickSearch(qNorm, [em.staff, em.type, em.company]);
-    });
-    const salRows = dm.daySals.filter(sa => {
+    }) : [];
+    const salRows = perms.canPayroll ? dm.daySals.filter(sa => {
       if (qFilter === 'rep_shifted' && !hasRepShift(sa)) return false;
       if (qFilter === 'overtime' || qFilter === 'exceptions') return false;
       return matchesQuickSearch(qNorm, [sa.staff, sa.payroll_month, sa.method, sa.notes, sa.company]);
-    });
+    }) : [];
     const adds = (dm.dayRegAdds || []).filter(ad => {
       if (qFilter === 'rep_shifted' || qFilter === 'overtime' || qFilter === 'exceptions') return false;
       return matchesQuickSearch(qNorm, [ad.cleanName, ad.cleanSub, ad.cleanLabel]);
@@ -3793,7 +3831,7 @@
                   <tr class="rrow" data-rkey="attendance" data-rid="${esc(String(at.id || ''))}">
                     <td class="dops-trunc"><div class="dops-grp-head"><span class="dops-kind ${isAbs ? 'crit' : (oth > 0 ? 'loan' : 'team')}">${isAbs ? 'Absent' : (oth > 0 ? `+${fmtNum(oth, 0)}h OT` : 'Shift')}</span><strong>${esc(at.staff || '-')}</strong>${renderRepBadge(ctx, txDateOf(at), repDateOf(at))}</div></td>
                     <td class="dops-trunc"><span style="color:var(--muted)">${esc(shiftTxt)}${at.worked_hours ? ` · ${fmtNum(at.worked_hours, 0)}h` : ''}</span></td>
-                    <td class="r">${isAbs ? '<strong style="color:var(--crit)">Absent</strong>' : (payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(at.worked_hours || 0, 0)}h`))}</td>
+                    <td class="r">${isAbs ? '<strong style="color:var(--crit)">Absent</strong>' : (perms.canPayroll && payUsd > 0 ? `<strong>+${fmtUSD(payUsd, 0)}</strong>` : (oth > 0 ? `<strong>+${fmtNum(oth, 1)}h</strong>` : `${fmtNum(at.worked_hours || 0, 0)}h`))}</td>
                   </tr>
                 `;
               }).join('')}
@@ -3803,7 +3841,7 @@
               <tr>
                 <td>Active ${fmtNum(dm.activeStaffCount)} · Absent ${fmtNum(dm.absentCount)}</td>
                 <td>OT +${fmtNum(dm.attOtHours, 1)}h · ${fmtNum(dm.otTotalLoads)} OT Loads</td>
-                <td class="r">${fmtUSD(dm.attOtPayUsd, 0)}</td>
+                <td class="r">${perms.canPayroll ? fmtUSD(dm.attOtPayUsd, 0) : `+${fmtNum(dm.attOtHours, 1)}h`}</td>
               </tr>
             </tfoot>
           </table>
@@ -3815,9 +3853,11 @@
     `;
   }
 
-  function filterDrawerRows(dm, streamFilter, searchStr) {
+  function filterDrawerRows(dm, streamFilter, searchStr, perms) {
     const q = String(searchStr || '').trim().toLowerCase();
     return dm.stream.filter(row => {
+      if (perms && !perms.canBooks && ['external', 'fx_loans', 'ar_ap'].includes(row.group)) return false;
+      if (perms && !perms.canExp && row.group === 'expenses') return false;
       if (streamFilter === 'after_hours' && !row.isAfterHours) return false;
       else if (streamFilter === 'rep_shifted' && !row.isRepShifted) return false;
       else if (streamFilter === 'sales' && row.group !== 'sales') return false;
@@ -3842,7 +3882,8 @@
 
   function renderDrawerTableHtml(ctx, dm, streamFilter, searchStr, isSingleCo) {
     const { esc, ic, fmtUSD, fmtNum, coBadge } = ctx;
-    const filtered = filterDrawerRows(dm, streamFilter, searchStr);
+    const perms = resolveDopsPerms(ctx);
+    const filtered = filterDrawerRows(dm, streamFilter, searchStr, perms);
     if (!filtered.length) {
       return `<div class="dops-empty">${streamFilter === 'after_hours'
         ? `No Yesterday's After-Hours tickets were logged for ${esc(fmtShortDay(dm.yestDate))}.`
@@ -3899,6 +3940,7 @@
 
   function renderBentoGridHtml(ctx, dm, isSingleCo) {
     const { STATE, esc, ic, fmtNum } = ctx;
+    const perms = resolveDopsPerms(ctx);
     const commLens = STATE.dailyOpsCommLens || 'pulse';
     const dealsLens = STATE.dailyOpsDealsLens || 'highlights';
     const expLens = STATE.dailyOpsExpLens || 'bills';
@@ -3967,13 +4009,13 @@
             <h2 class="dops-card-title">3 · P&amp;L &amp; Expenses</h2>
           </div>
           <div class="dops-card-actions">
-            <div class="dops-seg" role="tablist" aria-label="Expenses Lens">
+            ${perms.canExp ? `<div class="dops-seg" role="tablist" aria-label="Expenses Lens">
               <button type="button" class="dops-seg-btn${expLens === 'bills' ? ' active' : ''}" data-dops-lens="exp:bills">Bills (${fmtNum(dm.expCount)})</button>
               <button type="button" class="dops-seg-btn${expLens === 'cats' || expLens === 'categories' ? ' active' : ''}" data-dops-lens="exp:cats">Categories</button>
               <button type="button" class="dops-seg-btn${expLens === 'stock' || expLens === 'items' ? ' active' : ''}" data-dops-lens="exp:stock">Items (${fmtNum(dm.dayExpItems.length)})</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="expenses" data-ui-tip="Inspect expense bills & stock purchases">${fmtNum(expCnt)}</button>
-            <button type="button" class="dops-add-btn" data-open-modal="expense" data-ui-tip="New Expense / Stock Bill" aria-label="New Expense Bill">${ic('plus')}</button>
+            <button type="button" class="dops-add-btn" data-open-modal="expense" data-ui-tip="New Expense / Stock Bill" aria-label="New Expense Bill">${ic('plus')}</button>` : ''}
           </div>
         </div>
         ${renderPanel3ExpensesPnl(ctx, dm, expLens, isSingleCo)}
@@ -3987,14 +4029,14 @@
             <h2 class="dops-card-title">4 · Treasury</h2>
           </div>
           <div class="dops-card-actions">
-            <div class="dops-seg" role="tablist" aria-label="Treasury Lens">
+            ${perms.canBooks ? `<div class="dops-seg" role="tablist" aria-label="Treasury Lens">
               <button type="button" class="dops-seg-btn${treasuryLens === 'bridge' ? ' active' : ''}" data-dops-lens="treasury:bridge">All (${fmtNum(dm.cashMoveRows.length)})</button>
               <button type="button" class="dops-seg-btn${dm.extItems.length > 0 ? ' has-alert' : ''}${treasuryLens === 'external' ? ' active' : ''}" data-dops-lens="treasury:external">Ext (${fmtNum(dm.extItems.length)})</button>
               <button type="button" class="dops-seg-btn${(dm.convItems.length + dm.loanEvents.length) > 0 ? ' has-alert' : ''}${treasuryLens === 'fx_loans' ? ' active' : ''}" data-dops-lens="treasury:fx_loans">FX/Ln (${fmtNum(dm.convItems.length + dm.loanEvents.length)})</button>
               <button type="button" class="dops-seg-btn${treasuryLens === 'ar_ap' ? ' active' : ''}" data-dops-lens="treasury:ar_ap">AR/AP (${fmtNum(dm.arRcptCount + dm.apSetCount)})</button>
             </div>
             <button type="button" class="dops-disc-link" data-dops-open-drawer="treasury" data-ui-tip="Inspect treasury, external, FX & loan records">${fmtNum(extCnt + fxlCnt + arapCnt)}</button>
-            <button type="button" class="dops-add-btn" data-open-modal="external" data-ui-tip="New Treasury / External Movement" aria-label="New Treasury Movement">${ic('plus')}</button>
+            <button type="button" class="dops-add-btn" data-open-modal="external" data-ui-tip="New Treasury / External Movement" aria-label="New Treasury Movement">${ic('plus')}</button>` : ''}
           </div>
         </div>
         ${renderPanel4Treasury(ctx, dm, treasuryLens, isSingleCo)}
@@ -4043,6 +4085,7 @@
 
   function render(ctx) {
     const { STATE, esc, ic, fmtUSD, fmtUSDk, fmtNum, coBadge } = ctx;
+    const perms = resolveDopsPerms(ctx);
     const dm = buildDayModel(ctx);
     _lastDayModel = { ctx, dm, coKey: STATE.company };
     const today = ctx.todayISO();
@@ -4107,7 +4150,7 @@
       footer: 'Click to inspect quarry & haulage tickets'
     });
 
-    const expPop = JSON.stringify({
+    const expPop = JSON.stringify(perms.canExp ? {
       title: `Expenses & Stock Bills · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.expCount)} bills`,
       rows: [
@@ -4117,9 +4160,14 @@
         { label: 'Warehouse & Stock Items', value: `${fmtNum(dm.dayExpItems.length)} item lines`, color: '#1F7A4C' }
       ],
       footer: 'Click to inspect expense bills & stock purchases'
+    } : {
+      title: `Expenses & Stock Bills · ${fmtHumanDay(dm.targetDate)}`,
+      badge: 'Restricted',
+      rows: [{ label: 'Expenses & Bills', value: 'Restricted', color: '#64748B', isTotal: true }],
+      footer: 'Books Restricted'
     });
 
-    const profPop = JSON.stringify({
+    const profPop = JSON.stringify(perms.canBooks ? {
       title: `Day Operating P&L · ${fmtHumanDay(dm.targetDate)}`,
       badge: profPctTxt,
       badgeTone: dm.operatingProfit >= 0 ? 'good' : 'crit',
@@ -4130,9 +4178,14 @@
         { label: 'Day Operating Profit', value: fmtUSD(dm.operatingProfit, 0), color: dm.operatingProfit >= 0 ? '#1F7A4C' : '#C8333B', isTotal: true }
       ],
       footer: `7-day active average: ${fmtUSD(dm.avg7Profit, 0)}/day`
+    } : {
+      title: `Day Operating P&L · ${fmtHumanDay(dm.targetDate)}`,
+      badge: 'Restricted',
+      rows: [{ label: 'Day Operating Profit', value: 'Restricted', color: '#64748B', isTotal: true }],
+      footer: 'Books Restricted'
     });
 
-    const cashPop = JSON.stringify({
+    const cashPop = JSON.stringify(perms.canBooks ? {
       title: `Treasury & External Cash · ${fmtHumanDay(dm.targetDate)}`,
       badge: dm.netCashFlow >= 0 ? 'Net Inflow' : 'Net Outflow',
       badgeTone: dm.netCashFlow >= 0 ? 'good' : 'warn',
@@ -4143,6 +4196,11 @@
         { label: 'Net Day Cash Flow', value: `${dm.netCashFlow >= 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}`, color: '#2356A8', isTotal: true }
       ],
       footer: `Closing Till: ${fmtUSD(dm.liveTillUsd, 0)}${dm.liveTillLbp ? ' + ' + fmtCompactLbp(dm.liveTillLbp) : ''}`
+    } : {
+      title: `Treasury & External Cash · ${fmtHumanDay(dm.targetDate)}`,
+      badge: 'Restricted',
+      rows: [{ label: 'Closing Cash Till', value: 'Restricted', color: '#64748B', isTotal: true }],
+      footer: 'Books Restricted'
     });
 
     const plantPop = JSON.stringify({
@@ -4183,11 +4241,14 @@
     const buStripHtml = (!isSingleCo && dm.entityRows && dm.entityRows.length > 1)
       ? `<div class="dops-bu-strip" id="dopsBuStrip" aria-label="Business Unit Attribution">
           ${dm.entityRows.map(r => {
-            const active = r.salesTtc > 0 || r.outlay > 0 || r.salesLoads > 0 || r.rawLoads > 0 || r.netCash !== 0;
-            return `<button type="button" class="dops-bu-pill${active ? ' is-active' : ' is-idle'}" data-jump-co="${esc(r.key)}" data-ui-tip="Filter Daily Operations to ${esc(r.name)}: Sales ${fmtUSD(r.salesTtc, 0)} · Outlay ${fmtUSD(r.outlay, 0)} · Op Profit ${fmtUSD(r.opProfit, 0)}">
+            const active = r.salesTtc > 0 || (perms.canExp && r.outlay > 0) || r.salesLoads > 0 || r.rawLoads > 0 || (perms.canBooks && r.netCash !== 0);
+            const tipTxt = perms.canBooks
+              ? `Filter Daily Operations to ${esc(r.name)}: Sales ${fmtUSD(r.salesTtc, 0)} · Outlay ${fmtUSD(r.outlay, 0)} · Op Profit ${fmtUSD(r.opProfit, 0)}`
+              : `Filter Daily Operations to ${esc(r.name)}: Sales ${fmtUSD(r.salesTtc, 0)}`;
+            return `<button type="button" class="dops-bu-pill${active ? ' is-active' : ' is-idle'}" data-jump-co="${esc(r.key)}" data-ui-tip="${tipTxt}">
               ${coBadge(r.name)}
               <span class="dops-bu-val">${fmtUSD(r.salesTtc, 0)}</span>
-              ${active ? `<span class="dops-bu-prof ${r.opProfit >= 0 ? 'pos' : 'neg'}">${r.opProfit >= 0 ? '+' : ''}${fmtUSD(r.opProfit, 0)}</span>` : ''}
+              ${active && perms.canBooks ? `<span class="dops-bu-prof ${r.opProfit >= 0 ? 'pos' : 'neg'}">${r.opProfit >= 0 ? '+' : ''}${fmtUSD(r.opProfit, 0)}</span>` : ''}
             </button>`;
           }).join('')}
         </div>`
@@ -4244,7 +4305,12 @@
               <button type="button" class="dops-step-btn" id="dopsNextDayBtn" ${dm.nextDate ? `data-dops-pick-date="${esc(dm.nextDate)}"` : 'disabled'} aria-label="Next Day">&rsaquo;</button>
             </div>
 
-            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a 20-second spoken summary of the selected day's revenue, cash till, and active Sentinel flags">
+            <button type="button" class="dops-handover-btn" id="dopsHandoverBriefBtn" data-dops-handover="1" aria-expanded="false" aria-label="Shift Handover" data-ui-tip="Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary">
+              ${ic('sparkles')}
+              <span class="dops-handover-lbl">Shift Handover</span>
+            </button>
+
+            <button type="button" class="dops-briefing-btn" id="dopsBriefingBtn" data-dops-briefing="1" aria-pressed="false" aria-label="Listen to Daily Briefing" data-ui-tip="Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities">
               ${ic('audio')}
               <span class="dops-brief-lbl">Listen to Daily Briefing</span>
             </button>
@@ -4261,7 +4327,7 @@
         <section class="dops-kpis" id="dopsKpiGrid" aria-label="Daily Shareholder Scorecard">
           <div class="dops-kpi accent-sales" data-dops-open-drawer="sales" data-chart-pop="${esc(salesPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
-              <span class="dops-kpi-lbl">Sales (TTC)</span>
+              <span class="dops-kpi-lbl">Sales</span>
               ${salesDeltaBadge}
             </div>
             <div class="dops-kpi-val-row">
@@ -4289,46 +4355,46 @@
             </div>
           </div>
 
-          <div class="dops-kpi accent-exp" data-dops-open-drawer="expenses" data-chart-pop="${esc(expPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-exp" ${perms.canExp ? 'data-dops-open-drawer="expenses"' : ''} data-chart-pop="${esc(expPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Expenses &amp; Bills</span>
-              ${expDeltaBadge}
+              ${perms.canExp ? expDeltaBadge : '<span class="dops-kpi-delta neutral">Books Restricted</span>'}
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiExpVal">${fmtUSD(dm.expTotal, 0)}</span>
-              <span class="dops-kpi-unit">${fmtNum(dm.expCount)} bills · ${fmtNum(dm.dayExpItems.length)} items</span>
+              <span class="dops-kpi-val" id="dopsKpiExpVal">${perms.canExp ? fmtUSD(dm.expTotal, 0) : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canExp ? `${fmtNum(dm.expCount)} bills · ${fmtNum(dm.dayExpItems.length)} items` : 'Books Restricted'}</span>
               <span id="dopsKpiDealsVal" hidden>${esc(dealsValTxt)}</span>
             </div>
             <div class="dops-kpi-sub">
-              Cash <b>${fmtUSD(dm.cashExp, 0)}</b> · Cr <b>${fmtUSD(dm.creditExp, 0)}</b>${topExpBill ? ` · Top <b>${esc(topExpBill.supplier)}</b>` : ''}
+              ${perms.canExp ? `Cash <b>${fmtUSD(dm.cashExp, 0)}</b> · Cr <b>${fmtUSD(dm.creditExp, 0)}</b>${topExpBill ? ` · Top <b>${esc(topExpBill.supplier)}</b>` : ''}` : 'Books Restricted'}
             </div>
           </div>
 
-          <div class="dops-kpi accent-profit${dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="exp:bills" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
+          <div class="dops-kpi accent-profit${perms.canBooks && dm.operatingProfit < 0 ? ' is-neg' : ''}" data-dops-lens="exp:bills" data-chart-pop="${esc(profPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Operating Profit</span>
-              <span class="dops-kpi-delta ${profDeltaCls}">${esc(profPctTxt)}</span>
+              <span class="dops-kpi-delta ${perms.canBooks ? profDeltaCls : 'neutral'}">${perms.canBooks ? esc(profPctTxt) : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val ${dm.operatingProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${fmtUSD(dm.operatingProfit, 0)}</span>
-              <span class="dops-kpi-unit">GM ${fmtUSD(dm.grossMargin, 0)}</span>
+              <span class="dops-kpi-val ${perms.canBooks && dm.operatingProfit < 0 ? 'crit' : ''}" id="dopsKpiProfitVal">${perms.canBooks ? fmtUSD(dm.operatingProfit, 0) : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canBooks ? `GM ${fmtUSD(dm.grossMargin, 0)}` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-sub">
-              Ex-VAT <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b> · VAT <b>${fmtUSD(dm.salesSum.vat, 0)}</b>${dm.avg7Profit ? ` · 7d <b>${fmtUSD(dm.avg7Profit, 0)}</b>` : ''}
+              ${perms.canBooks ? `Ex-VAT <b>${fmtUSD(dm.salesSum.grossExVat, 0)}</b> · VAT <b>${fmtUSD(dm.salesSum.vat, 0)}</b>${dm.avg7Profit ? ` · 7d <b>${fmtUSD(dm.avg7Profit, 0)}</b>` : ''}` : 'Books Restricted'}
             </div>
           </div>
 
           <div class="dops-kpi accent-cash" data-dops-lens="treasury:bridge" data-chart-pop="${esc(cashPop)}" role="button" tabindex="0">
             <div class="dops-kpi-top">
               <span class="dops-kpi-lbl">Treasury &amp; Cash</span>
-              <span class="dops-kpi-delta ${dm.netCashFlow > 0 ? 'good' : (dm.netCashFlow < 0 ? 'warn' : 'neutral')}">${dm.netCashFlow > 0 ? 'Net In' : (dm.netCashFlow < 0 ? 'Net Out' : 'Even')}</span>
+              <span class="dops-kpi-delta ${perms.canBooks ? (dm.netCashFlow > 0 ? 'good' : (dm.netCashFlow < 0 ? 'warn' : 'neutral')) : 'neutral'}">${perms.canBooks ? (dm.netCashFlow > 0 ? 'Net In' : (dm.netCashFlow < 0 ? 'Net Out' : 'Even')) : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-val-row">
-              <span class="dops-kpi-val" id="dopsKpiCashVal">${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}</span>
-              <span class="dops-kpi-unit">In ${fmtUSDk(dm.cashInflow)} · Out ${fmtUSDk(dm.cashOutflow)}</span>
+              <span class="dops-kpi-val" id="dopsKpiCashVal">${perms.canBooks ? `${dm.netCashFlow > 0 ? '+' : ''}${fmtUSD(dm.netCashFlow, 0)}` : 'Restricted'}</span>
+              <span class="dops-kpi-unit">${perms.canBooks ? `In ${fmtUSDk(dm.cashInflow)} · Out ${fmtUSDk(dm.cashOutflow)}` : 'Books Restricted'}</span>
             </div>
             <div class="dops-kpi-sub">
-              AR <b>+${fmtUSDk(dm.arCollected)}</b> · Ext <b>+${fmtUSDk(dm.extInEq)}/-${fmtUSDk(dm.extOutEq)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>
+              ${perms.canBooks ? `AR <b>+${fmtUSDk(dm.arCollected)}</b> · Ext <b>+${fmtUSDk(dm.extInEq)}/-${fmtUSDk(dm.extOutEq)}</b> · Till <b>${fmtUSD(dm.liveTillUsd, 0)}</b>` : 'Books Restricted'}
             </div>
           </div>
 
@@ -4398,6 +4464,9 @@
     if (window.MFG_ASK && typeof window.MFG_ASK.rebindBriefingButton === 'function') {
       window.MFG_ASK.rebindBriefingButton(stage.querySelector('#dopsBriefingBtn'), stage.getAttribute('data-target-date') || '');
     }
+    if (window.MFG_ASK && typeof window.MFG_ASK.rebindDailyHandoverButtons === 'function') {
+      window.MFG_ASK.rebindDailyHandoverButtons(stage);
+    }
 
     const refreshBentoInPlace = () => {
       if (!_lastDayModel) {
@@ -4444,7 +4513,17 @@
       // Let global workspace delegation handle lookup links, thermal print slips, + modals, and BU jumps
       if (t.closest('[data-rel-key], [data-print-ticket], [data-open-modal], [data-jump-co], a')) return;
 
-      // 0. 1-Tap Spoken Executive Daily Briefing ([data-dops-briefing])
+      // 0a. 1-Tap Shift Handover Brief & Anomaly Digest Popover ([data-dops-handover])
+      const handoverBtn = t.closest('[data-dops-handover]');
+      if (handoverBtn && stage.contains(handoverBtn)) {
+        ev.preventDefault();
+        if (window.MFG_ASK && typeof window.MFG_ASK.toggleDailyHandover === 'function') {
+          window.MFG_ASK.toggleDailyHandover(handoverBtn);
+        }
+        return;
+      }
+
+      // 0b. 1-Tap Spoken Executive Daily Briefing / Morning Standup ([data-dops-briefing])
       const briefBtn = t.closest('[data-dops-briefing]');
       if (briefBtn && stage.contains(briefBtn)) {
         ev.preventDefault();
@@ -4532,6 +4611,9 @@
       const openDrEl = t.closest('[data-dops-open-drawer]');
       if (openDrEl && stage.contains(openDrEl)) {
         ev.preventDefault();
+        if (window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+          window.MFG_ASK.closeDailyHandover();
+        }
         STATE.dailyOpsStreamFilter = openDrEl.getAttribute('data-dops-open-drawer') || 'all';
         STATE.dailyOpsDrawerOpen = true;
         renderApp();
@@ -4581,7 +4663,7 @@
     const qInp = stage.querySelector('#dopsQuickSearchInput');
     const qWrap = stage.querySelector('#dopsQuickSearchWrap');
     const qClr = stage.querySelector('#dopsQuickSearchClear');
-    if (qInp) {
+    if (qInp && qWrap) {
       qInp.addEventListener('input', () => {
         STATE.dailyOpsQuickSearch = qInp.value || '';
         if (qWrap) qWrap.classList.toggle('has-val', Boolean(STATE.dailyOpsQuickSearch));
@@ -4629,6 +4711,11 @@
         if (insp && (insp.classList.contains('open') || !insp.hidden)) return;
         const em = document.getElementById('entryModal');
         if (em && !em.hidden) return;
+        if (document.getElementById('dailyOpsHandoverPopover') && window.MFG_ASK && typeof window.MFG_ASK.closeDailyHandover === 'function') {
+          ev.stopImmediatePropagation();
+          window.MFG_ASK.closeDailyHandover();
+          return;
+        }
         if (STATE.dailyOpsDrawerOpen) {
           STATE.dailyOpsDrawerOpen = false;
           renderApp();
@@ -4659,6 +4746,7 @@
   window.MFG_DAILY_OPS = {
     isAfterHoursTicket,
     fmtHumanDay,
+    computeQuickDayTotals,
     buildDayModel,
     getLastDayModel: () => _lastDayModel,
     buildBriefing: lang => (window.MFG_ASK && typeof window.MFG_ASK.buildDailyBriefing === 'function' ? window.MFG_ASK.buildDailyBriefing(lang) : null),

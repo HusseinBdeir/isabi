@@ -34962,7 +34962,8 @@ video::-webkit-media-controls-start-playback-button {
   color: #FDE68A;
 }
 
-.sn-triage-popover {
+.sn-triage-popover,
+.dops-handover-popover {
   z-index: 9850;
 }
 .sn-pv-foot .sn-pv-signoff-btn {
@@ -34991,7 +34992,8 @@ video::-webkit-media-controls-start-playback-button {
   color: #CBD5E1;
 }
 @media (max-width: 768px) {
-  .sn-pv-draft-ta {
+  .sn-pv-draft-ta,
+  .dops-pv-draft-ta {
     font-size: 16px !important;
   }
 }

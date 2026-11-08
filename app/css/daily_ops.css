@@ -399,6 +399,57 @@ body.is-daily-ops-view .period-basis-row {
   color: #7BB4F7;
 }
 
+/* 1-Tap Shift Handover Brief & Anomaly Digest Trigger (#dopsHandoverBriefBtn) */
+.dops-handover-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(184, 130, 40, 0.42);
+  background: var(--surface, #FAF8F4);
+  color: var(--ink);
+  font-size: 11.1px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
+}
+
+.dops-handover-btn .ic {
+  font-size: 12.5px;
+  color: var(--brass-strong, #B88228);
+  flex-shrink: 0;
+}
+
+.dops-handover-btn:hover {
+  background: var(--brass-tint, rgba(200, 157, 84, 0.16));
+  border-color: var(--brass);
+}
+
+.dops-handover-btn.is-open,
+.dops-handover-btn.active {
+  background: var(--brass, #C89D54);
+  border-color: var(--brass, #C89D54);
+  color: #0B1730;
+  box-shadow: 0 1px 4px rgba(184, 130, 40, 0.26);
+}
+
+.dops-handover-btn.is-open .ic,
+.dops-handover-btn.active .ic {
+  color: #0B1730;
+}
+
+:root[data-theme="dark"] .dops-handover-btn:not(.is-open):not(.active) {
+  border-color: rgba(217, 165, 74, 0.44);
+  background: rgba(217, 165, 74, 0.11);
+}
+
+:root[data-theme="dark"] .dops-handover-btn:not(.is-open):not(.active) .ic {
+  color: var(--brass, #D9A54A);
+}
+
 /* 1-Tap Executive Spoken Daily Briefing Trigger (gemini-3.8-flash-lite-tts) */
 .dops-briefing-btn {
   display: inline-flex;
@@ -2421,6 +2472,7 @@ body.is-daily-ops-view .period-basis-row {
   }
   .dops-stage { gap: 5px; }
   .dops-bar { padding: 4px 8px; }
+  .dops-handover-btn,
   .dops-briefing-btn { height: 26px; padding: 0 8px; font-size: 10.5px; }
   .dops-kpis { gap: 5px; }
   .dops-kpi { padding: 5px 8px 4.5px; gap: 1.5px; }
@@ -2461,7 +2513,8 @@ body.is-daily-ops-view .period-basis-row {
 @media (max-width: 1410px) and (min-width: 1024px) {
   .dops-bu-prof { display: none; }
   .dops-rec-lbl { display: none; }
-  .dops-briefing-btn { padding: 0 7.5px; gap: 4px; }
+  .dops-handover-btn,
+  .dops-briefing-btn { padding: 0 7px; gap: 4px; }
   .dops-bar { gap: 4px 7px; }
   .dops-bar-controls { gap: 4px; }
 }
@@ -2531,6 +2584,7 @@ body.is-daily-ops-view .period-basis-row {
     min-width: 0;
     box-sizing: border-box;
   }
+  .dops-handover-btn,
   .dops-briefing-btn {
     flex: 1 1 auto;
     justify-content: center;
@@ -2538,6 +2592,7 @@ body.is-daily-ops-view .period-basis-row {
     max-width: 100%;
     padding: 0 8px;
   }
+  .dops-handover-btn .dops-handover-lbl,
   .dops-briefing-btn .dops-brief-lbl {
     overflow: hidden;
     text-overflow: ellipsis;

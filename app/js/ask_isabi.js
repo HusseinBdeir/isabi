@@ -101,6 +101,15 @@
     sentinelBriefInflight: new Map(),
     sentinelDraftLang: '',
     sentinelCustomDraftByScope: new Map(),
+    handoverPopoverOpen: false,
+    handoverPopoverAnchor: null,
+    handoverPopoverScope: '',
+    handoverPopoverIndustry: '',
+    handoverBriefCache: new Map(),
+    handoverBriefInflight: new Map(),
+    handoverDraftLang: '',
+    handoverCustomDraftByScope: new Map(),
+    sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
       try {
@@ -4178,7 +4187,20 @@
       'Stop Walkthrough': 'إيقاف الشرح',
       'Mark Checked': 'اعتماد المراجعة',
       'Mark All Checked': 'اعتماد الكل',
-      'Undo Check': 'إلغاء الاعتماد'
+      'Undo Check': 'إلغاء الاعتماد',
+      'Shift Handover': 'تسليم المناوبة',
+      'Shift Handover Brief': 'موجز تسليم المناوبة',
+      'Deterministic Handover': 'تسليم حتمي مطابق',
+      'AI Shift Priorities': 'أولويات المناوبة الذكية',
+      'Manager Shift Summary': 'ملخص تسليم المناوبة عبر واتساب',
+      'Play Standup': 'تشغيل الموجز الصوتي',
+      'Stop Standup': 'إيقاف الموجز الصوتي',
+      'Copy Summary': 'نسخ الملخص',
+      'Day Records': 'سجلات اليوم',
+      'Restricted': 'محجوب',
+      'Books Restricted': 'الدفاتر مقيدة',
+      'Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary': 'فتح موجز تسليم المناوبة: مقارنة الأمس باليوم والتحصيل النقدي والآجل وجسر أرباح اليوم وأولويات الوردية ومسودة واتساب',
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'تشغيل الموجز الصوتي الصباحي لإيرادات اليوم المحدد ورصيد الصندوق وأهم أولويات تسليم المناوبة'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4237,17 +4259,30 @@
       'Stop Walkthrough': 'Arrêter la revue',
       'Mark Checked': 'Valider le contrôle',
       'Mark All Checked': 'Tout valider',
-      'Undo Check': 'Annuler la validation'
+      'Undo Check': 'Annuler la validation',
+      'Shift Handover': 'Passation',
+      'Shift Handover Brief': 'Synthèse de passation',
+      'Deterministic Handover': 'Passation déterministe',
+      'AI Shift Priorities': 'Priorités de poste IA',
+      'Manager Shift Summary': 'Résumé de passation WhatsApp',
+      'Play Standup': 'Écouter le briefing',
+      'Stop Standup': 'Arrêter le briefing',
+      'Copy Summary': 'Copier le résumé',
+      'Day Records': 'Registres du jour',
+      'Restricted': 'Restreint',
+      'Books Restricted': 'Comptes restreints',
+      'Open Shift Handover Brief: yesterday-vs-today variance, cash and credit intake, Day P&L bridge, shift priorities, and manager WhatsApp summary': 'Ouvrir la synthèse de passation : écart hier/aujourd hui, encaissements et crédit, pont résultat du jour, priorités et résumé WhatsApp',
+      "Play a spoken morning standup of the selected day's revenue, cash till, and top shift handover priorities": 'Écouter le briefing vocal matinal sur le revenu du jour, la caisse et les priorités de passation'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
@@ -4286,6 +4321,28 @@
     syncPbiPopoverAudioButton();
     syncInspPopoverAudioButton();
     syncSentinelPopoverAudioButton();
+    syncDailyHandoverPopoverAudioButton();
+  }
+
+  function syncDailyHandoverPopoverAudioButton() {
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('dailyOpsHandoverPopover');
+    if (!pop) return;
+    const spkBtn = pop.querySelector('[data-dops-pv-speak]');
+    if (!spkBtn) return;
+    const isDopsActive = Boolean(
+      _chatState.activeBriefingScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-dops-briefing'))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const enLbl = isDopsActive ? 'Stop Standup' : 'Play Standup';
+    const ico = isDopsActive ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    spkBtn.classList.toggle('is-speaking', isDopsActive);
+    spkBtn.setAttribute('aria-pressed', isDopsActive ? 'true' : 'false');
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+    }
   }
 
   function syncSentinelPopoverAudioButton() {
@@ -4443,6 +4500,7 @@
     syncPbiPopoverAudioButton();
     syncInspPopoverAudioButton();
     syncSentinelPopoverAudioButton();
+    syncDailyHandoverPopoverAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -5474,72 +5532,132 @@
     return _chatState.voiceLang || 'en';
   }
 
-  function buildDailyBriefing(langOverride) {
+  function buildDailyBriefing(langOverride, opts = {}) {
     const safeLang = resolveActiveBriefingLang(langOverride);
+    const options = opts && typeof opts === 'object' ? opts : {};
     const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
-    const coKey = st.company || 'manufacturing-group';
-    const ind = (_ctx && typeof _ctx.getActiveIndustry === 'function')
-      ? _ctx.getActiveIndustry(coKey)
-      : 'Manufacturing';
-    const rawCoLbl = String((_ctx && _ctx.COMPANY_LABELS && _ctx.COMPANY_LABELS[coKey])
-      || (String(coKey).startsWith('industry:') ? String(coKey).slice(9) : ind))
-      .replace(/\s*\([^)]*\)\s*/g, ' ')
-      .replace(/^All\s+/i, '')
-      .trim();
+    const snapFn = (_ctx && typeof _ctx.computeDailyHandoverSnapshot === 'function')
+      ? _ctx.computeDailyHandoverSnapshot
+      : (typeof window !== 'undefined' && window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.computeDailyHandoverSnapshot === 'function'
+          ? window.MFG_ENTERPRISE.computeDailyHandoverSnapshot
+          : null);
+    const hoSnap = snapFn ? snapFn(options) : null;
+
+    if (hoSnap && hoSnap.rlsClamped) {
+      const rlsBullets = safeLang === 'ar' ? (hoSnap.bulletsAr || []) : (safeLang === 'fr' ? (hoSnap.bulletsFr || []) : (hoSnap.bulletsEn || []));
+      const rlsText = cleanOut(rlsBullets.slice(0, 2).join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+      return {
+        lang: safeLang,
+        rlsClamped: true,
+        scopeKey: hoSnap.scopeKey,
+        industry: hoSnap.industry || 'Manufacturing',
+        company: hoSnap.companyKey || st.company || 'wtc',
+        companyLabel: safeLang === 'ar' ? hoSnap.companyAr : (safeLang === 'fr' ? hoSnap.companyFr : hoSnap.companyEn),
+        targetDate: hoSnap.targetDate,
+        dayRevUsd: 0,
+        dayTxCount: 0,
+        cashSalesUsd: 0,
+        creditSalesUsd: 0,
+        revDeltaPct: 0,
+        anomalyCount: 0,
+        canViewBooks: false,
+        closingTillUsd: null,
+        dayNetCash: null,
+        dayOpProfit: null,
+        openSentinelCount: 0,
+        critSentinelCount: 0,
+        topSentinelTitle: '',
+        text: rlsText
+      };
+    }
+
+    const coKey = (hoSnap && hoSnap.companyKey) || st.company || 'manufacturing-group';
+    const ind = (hoSnap && hoSnap.industry)
+      || ((_ctx && typeof _ctx.getActiveIndustry === 'function') ? _ctx.getActiveIndustry(coKey) : 'Manufacturing');
+    const rawCoLbl = hoSnap
+      ? (safeLang === 'ar' ? hoSnap.companyAr : (safeLang === 'fr' ? hoSnap.companyFr : hoSnap.companyEn))
+      : String((_ctx && _ctx.COMPANY_LABELS && _ctx.COMPANY_LABELS[coKey])
+          || (String(coKey).startsWith('industry:') ? String(coKey).slice(9) : ind))
+          .replace(/\s*\([^)]*\)\s*/g, ' ')
+          .replace(/^All\s+/i, '')
+          .trim();
     const scopeName = sanitizeSpokenText(rawCoLbl, safeLang) || ind;
     const user = (_ctx && typeof _ctx.activeUser === 'function') ? _ctx.activeUser() : null;
-    const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
+    const canViewBooks = hoSnap
+      ? Boolean(hoSnap.canViewBooks)
+      : Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('ledger', user)));
 
-    let targetDate = st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
-    let dayRevUsd = 0;
-    let dayTxCount = 0;
-    let closingTillUsd = 0;
-    let dayNetCash = 0;
-    let dayOpProfit = 0;
+    let targetDate = (hoSnap && hoSnap.targetDate) || st.dailyOpsDate || (_ctx && typeof _ctx.todayISO === 'function' ? _ctx.todayISO() : '2026-11-06');
+    let dayRevUsd = hoSnap ? Number(hoSnap.dayRevUsd || 0) : 0;
+    let dayTxCount = hoSnap ? Number(hoSnap.dayTxCount || 0) : 0;
+    let closingTillUsd = hoSnap && canViewBooks ? Number(hoSnap.closingTillUsd || 0) : null;
+    let dayNetCash = hoSnap && canViewBooks ? Number(hoSnap.dayNetCash || 0) : null;
+    let dayOpProfit = hoSnap && canViewBooks ? Number(hoSnap.dayOpProfit || 0) : null;
+    const priorRevUsd = hoSnap ? Number(hoSnap.priorRevUsd || 0) : 0;
+    const revDeltaPct = hoSnap ? Number(hoSnap.revDeltaPct || 0) : 0;
+    const isCalendarYesterday = hoSnap ? Boolean(hoSnap.isCalendarYesterday) : true;
+    const afterHoursCount = hoSnap ? Number(hoSnap.afterHoursCount || 0) : 0;
+    const includeAfterHours = hoSnap ? Boolean(hoSnap.includeAfterHours) : true;
+    const cashSalesUsd = hoSnap ? Number(hoSnap.cashSalesUsd || 0) : 0;
+    const creditSalesUsd = hoSnap ? Number(hoSnap.creditSalesUsd || 0) : 0;
+    const totalCashIntakeUsd = hoSnap ? Number(hoSnap.totalCashIntakeUsd || 0) : cashSalesUsd;
+    const anomalyCount = hoSnap ? Number(hoSnap.anomalyCount || 0) : 0;
+    const topShiftPriority = hoSnap
+      ? sanitizeSpokenText(safeLang === 'ar' ? hoSnap.topAnomalyAr : (safeLang === 'fr' ? hoSnap.topAnomalyFr : hoSnap.topAnomalyEn), safeLang)
+      : '';
 
-    if (ind === 'Manufacturing') {
-      const dopsApi = (typeof window !== 'undefined' && window.MFG_DAILY_OPS) ? window.MFG_DAILY_OPS : null;
-      const lastObj = (dopsApi && typeof dopsApi.getLastDayModel === 'function') ? dopsApi.getLastDayModel() : null;
-      let dm = (lastObj && lastObj.dm && lastObj.coKey === coKey && (!st.dailyOpsDate || lastObj.dm.targetDate === st.dailyOpsDate))
-        ? lastObj.dm
-        : null;
-      if (!dm && lastObj && lastObj.ctx && dopsApi && typeof dopsApi.buildDayModel === 'function') {
-        try { dm = dopsApi.buildDayModel(lastObj.ctx); } catch (_) {}
-      }
-      if (dm) {
-        targetDate = dm.targetDate || targetDate;
-        dayRevUsd = Number(dm.salesSum && dm.salesSum.ttc || 0);
-        dayTxCount = Number(dm.salesSum && dm.salesSum.loads || 0);
-        closingTillUsd = Number(dm.liveTillUsd || 0);
-        dayNetCash = Number(dm.netCashFlow || 0);
-        dayOpProfit = Number(dm.operatingProfit || 0);
-      } else if (_ctx && typeof _ctx.getKPI === 'function') {
-        const k = _ctx.getKPI(coKey) || {};
-        dayRevUsd = Number(k.sales_ttc || 0);
-        dayTxCount = Number(k.loads || 0);
-        closingTillUsd = Number(k.cash_till || 0);
-        dayOpProfit = Number(k.operating_profit || 0);
-      }
-    } else {
-      let snap = st._lastIndDailyBriefingSnap;
-      if (!snap || snap.ind !== ind || snap.company !== coKey || (st.dailyOpsDate && snap.targetDate !== st.dailyOpsDate)) {
-        if (_ctx && typeof _ctx.renderIndustryDailyOps === 'function') {
-          try { _ctx.renderIndustryDailyOps(ind); } catch (_) {}
-          snap = st._lastIndDailyBriefingSnap;
+    if (!hoSnap) {
+      if (ind === 'Manufacturing') {
+        const dopsApi = (typeof window !== 'undefined' && window.MFG_DAILY_OPS) ? window.MFG_DAILY_OPS : null;
+        const lastObj = (dopsApi && typeof dopsApi.getLastDayModel === 'function') ? dopsApi.getLastDayModel() : null;
+        let dm = (lastObj && lastObj.dm && lastObj.coKey === coKey && (!st.dailyOpsDate || lastObj.dm.targetDate === st.dailyOpsDate))
+          ? lastObj.dm
+          : null;
+        if (!dm && lastObj && lastObj.ctx && dopsApi && typeof dopsApi.buildDayModel === 'function') {
+          try { dm = dopsApi.buildDayModel(lastObj.ctx); } catch (_) {}
         }
-      }
-      if (snap) {
-        targetDate = snap.targetDate || targetDate;
-        dayRevUsd = Number(snap.dayRevUsd || 0);
-        dayTxCount = Number(snap.dayRevCount || 0);
-        closingTillUsd = Number(snap.closingTillUsd || 0);
-        dayNetCash = Number(snap.dayNetCash || 0);
-        dayOpProfit = Number(snap.dayOpProfit || 0);
+        if (dm) {
+          targetDate = dm.targetDate || targetDate;
+          dayRevUsd = Number(dm.salesSum && dm.salesSum.ttc || 0);
+          dayTxCount = Number(dm.salesSum && dm.salesSum.loads || 0);
+          if (canViewBooks) {
+            closingTillUsd = Number(dm.liveTillUsd || 0);
+            dayNetCash = Number(dm.netCashFlow || 0);
+            dayOpProfit = Number(dm.operatingProfit || 0);
+          }
+        } else if (_ctx && typeof _ctx.getKPI === 'function') {
+          const k = _ctx.getKPI(coKey) || {};
+          dayRevUsd = Number(k.sales_ttc || 0);
+          dayTxCount = Number(k.loads || 0);
+          if (canViewBooks) {
+            closingTillUsd = Number(k.cash_till || 0);
+            dayOpProfit = Number(k.operating_profit || 0);
+          }
+        }
+      } else {
+        let snap = st._lastIndDailyBriefingSnap;
+        if (!snap || snap.ind !== ind || snap.company !== coKey || (st.dailyOpsDate && snap.targetDate !== st.dailyOpsDate)) {
+          if (_ctx && typeof _ctx.renderIndustryDailyOps === 'function') {
+            try { _ctx.renderIndustryDailyOps(ind); } catch (_) {}
+            snap = st._lastIndDailyBriefingSnap;
+          }
+        }
+        if (snap) {
+          targetDate = snap.targetDate || targetDate;
+          dayRevUsd = Number(snap.dayRevUsd || 0);
+          dayTxCount = Number(snap.dayRevCount || 0);
+          if (canViewBooks) {
+            closingTillUsd = Number(snap.closingTillUsd || 0);
+            dayNetCash = Number(snap.dayNetCash || 0);
+            dayOpProfit = Number(snap.dayOpProfit || 0);
+          }
+        }
       }
     }
 
-    const allSn = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
-    const openSn = (allSn || []).filter(s => s && s.severity && s.severity !== 'ok');
+    const allSnRaw = (_ctx && typeof _ctx.buildSentinelItems === 'function') ? _ctx.buildSentinelItems() : [];
+    const allSn = canViewBooks ? (allSnRaw || []) : (allSnRaw || []).filter(s => s && s.id !== 'S1');
+    const openSn = allSn.filter(s => s && s.severity && s.severity !== 'ok');
     const critSn = openSn.filter(s => s.severity === 'crit');
     const leadItem = critSn[0] || openSn[0] || null;
     const topSentinelTitle = leadItem ? sanitizeSpokenText(leadItem.title || leadItem.category || 'Control Variance', safeLang) : '';
@@ -5552,24 +5670,35 @@
     const netAbsMoney = formatSpokenMoney(Math.abs(dayNetCash), safeLang);
     const roundedRev = Math.round(dayRevUsd);
     const roundedNet = Math.round(dayNetCash);
-    const openCount = openSn.length;
-    const critCount = critSn.length;
+    const openCount = hoSnap ? Number(hoSnap.openSentinelCount || 0) : openSn.length;
+    const critCount = hoSnap ? Number(hoSnap.critSentinelCount || 0) : critSn.length;
+    const absDeltaPct = Math.round(Math.abs(revDeltaPct));
 
     const sentences = [];
     if (safeLang === 'ar') {
+      const deltaAr = priorRevUsd > 0
+        ? ` (${revDeltaPct >= 0 ? 'بارتفاع' : 'بانخفاض'} ${absDeltaPct} بالمئة مقارنة ${isCalendarYesterday ? 'بالأمس' : 'بيوم التشغيل السابق'})`
+        : '';
+      const ahAr = afterHoursCount > 0
+        ? `، مع ${afterHoursCount} حركات مسائية ${includeAfterHours ? 'محتسبة' : 'مستثناة'}`
+        : '';
       if (roundedRev > 0) {
         const txPart = dayTxCount > 0 ? ` عبر ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
-        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: بلغت ${domSpec.rev} ${revMoney}${txPart}.`);
+        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: بلغت ${domSpec.rev} ${revMoney}${txPart}${deltaAr}${ahAr}.`);
       } else {
-        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: سجلت ${domSpec.rev} ${revMoney} دون ${domSpec.plur} مسجلة.`);
+        sentences.push(`الموجز اليومي لـ ${scopeName} ليوم ${dateStr}: سجلت ${domSpec.rev} ${revMoney} دون ${domSpec.plur} مسجلة${deltaAr}${ahAr}.`);
       }
       if (canViewBooks) {
         const netClause = roundedNet > 0
           ? `مع صافي تدفق نقدي داخل بقيمة ${formatSpokenMoney(dayNetCash, 'ar')}`
           : (roundedNet < 0 ? `بعد صافي تدفق نقدي خارج بقيمة ${netAbsMoney}` : 'مع تعادل التدفق النقدي لليوم');
-        sentences.push(`رصيد الصندوق النقدي ${tillMoney}، ${netClause}.`);
+        sentences.push(`بلغ التحصيل النقدي ${formatSpokenMoney(totalCashIntakeUsd, 'ar')} مقابل ${formatSpokenMoney(creditSalesUsd, 'ar')} آجل؛ رصيد الصندوق النقدي ${tillMoney}، ${netClause}، والربح التشغيلي لليوم ${formatSpokenMoney(dayOpProfit, 'ar')}.`);
+      } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
+        sentences.push(`توزعت حركات المناوبة بين ${formatSpokenMoney(cashSalesUsd, 'ar')} نقداً و${formatSpokenMoney(creditSalesUsd, 'ar')} بالآجل.`);
       }
-      if (openCount === 0) {
+      if (anomalyCount > 0 && topShiftPriority) {
+        sentences.push(`أولوية تسليم المناوبة: ${topShiftPriority}${openCount > 0 ? `، إلى جانب ${openCount} تنبيهات رقابية نشطة` : ''}.`);
+      } else if (openCount === 0) {
         sentences.push('جميع الضوابط الرقابية سليمة مع صفر تنبيهات نشطة.');
       } else if (openCount === 1) {
         sentences.push(`يوجد تنبيه رقابي ${critCount > 0 ? 'حرج ' : 'نشط '}واحد يتطلب المراجعة: ${topSentinelTitle}.`);
@@ -5577,19 +5706,29 @@
         sentences.push(`توجد ${openCount} تنبيهات رقابية نشطة تتطلب المراجعة${critCount > 0 ? ` بينها ${critCount} حرجة` : ''}، أبرزها ${topSentinelTitle}.`);
       }
     } else if (safeLang === 'fr') {
+      const deltaFr = priorRevUsd > 0
+        ? ` (${revDeltaPct >= 0 ? 'en hausse de' : 'en baisse de'} ${absDeltaPct} pour cent par rapport ${isCalendarYesterday ? 'à hier' : 'au jour ouvré précédent'})`
+        : '';
+      const ahFr = afterHoursCount > 0
+        ? `, avec ${afterHoursCount} écriture${afterHoursCount > 1 ? 's' : ''} hors horaires ${includeAfterHours ? 'incluse' : 'exclue'}${afterHoursCount > 1 ? 's' : ''}`
+        : '';
       if (roundedRev > 0) {
         const txPart = dayTxCount > 0 ? ` sur ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
-        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbPos} ${revMoney}${txPart}.`);
+        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbPos} ${revMoney}${txPart}${deltaFr}${ahFr}.`);
       } else {
-        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbZero} ${revMoney} sans ${domSpec.plur} enregistrées.`);
+        sentences.push(`Briefing quotidien pour ${scopeName} du ${dateStr} : ${domSpec.rev} ${domSpec.verbZero} ${revMoney} sans ${domSpec.plur} enregistrées${deltaFr}${ahFr}.`);
       }
       if (canViewBooks) {
         const netClause = roundedNet > 0
           ? `avec une entrée nette de trésorerie de ${formatSpokenMoney(dayNetCash, 'fr')} sur la journée`
           : (roundedNet < 0 ? `après une sortie nette de trésorerie de ${netAbsMoney} sur la journée` : 'avec un flux net de trésorerie équilibré sur la journée');
-        sentences.push(`La caisse s'établit à ${tillMoney}, ${netClause}.`);
+        sentences.push(`Les encaissements atteignent ${formatSpokenMoney(totalCashIntakeUsd, 'fr')} pour ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit ; la caisse s'établit à ${tillMoney}, ${netClause}, avec un résultat du jour de ${formatSpokenMoney(dayOpProfit, 'fr')}.`);
+      } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
+        sentences.push(`L'activité du poste se répartit entre ${formatSpokenMoney(cashSalesUsd, 'fr')} au comptant et ${formatSpokenMoney(creditSalesUsd, 'fr')} à crédit.`);
       }
-      if (openCount === 0) {
+      if (anomalyCount > 0 && topShiftPriority) {
+        sentences.push(`Priorité de passation : ${topShiftPriority}${openCount > 0 ? `, ainsi que ${openCount} alerte${openCount > 1 ? 's' : ''} Sentinel active${openCount > 1 ? 's' : ''}` : ''}.`);
+      } else if (openCount === 0) {
         sentences.push('Tous les contrôles Sentinel sont au vert avec zéro alerte active.');
       } else if (openCount === 1) {
         sentences.push(`1 alerte Sentinel ${critCount > 0 ? 'critique ' : 'active '}requiert vérification : ${topSentinelTitle}.`);
@@ -5597,19 +5736,29 @@
         sentences.push(`${openCount} alertes Sentinel actives requièrent vérification${critCount > 0 ? `, dont ${critCount} critique${critCount > 1 ? 's' : ''},` : ','} à commencer par ${topSentinelTitle}.`);
       }
     } else {
+      const deltaEn = priorRevUsd > 0
+        ? ` (${revDeltaPct >= 0 ? 'up' : 'down'} ${absDeltaPct} percent versus ${isCalendarYesterday ? 'yesterday' : 'the prior operating day'})`
+        : '';
+      const ahEn = afterHoursCount > 0
+        ? `, with ${afterHoursCount} overnight after-hours ${afterHoursCount === 1 ? 'entry' : 'entries'} ${includeAfterHours ? 'included' : 'excluded'}`
+        : '';
       if (roundedRev > 0) {
         const txPart = dayTxCount > 0 ? ` across ${dayTxCount.toLocaleString('en-US')} ${dayTxCount === 1 ? domSpec.sing : domSpec.plur}` : '';
-        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} reached ${revMoney}${txPart}.`);
+        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} reached ${revMoney}${txPart}${deltaEn}${ahEn}.`);
       } else {
-        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} stood at ${revMoney} with no recorded ${domSpec.plur}.`);
+        sentences.push(`Daily briefing for ${scopeName} on ${dateStr}: ${domSpec.rev} stood at ${revMoney} with no recorded ${domSpec.plur}${deltaEn}${ahEn}.`);
       }
       if (canViewBooks) {
         const netClause = roundedNet > 0
           ? `with net cash inflow of ${formatSpokenMoney(dayNetCash, 'en')} for the day`
           : (roundedNet < 0 ? `after net cash outflow of ${netAbsMoney} for the day` : 'with even net cash movement for the day');
-        sentences.push(`Cash till stands at ${tillMoney}, ${netClause}.`);
+        sentences.push(`Cash intake stands at ${formatSpokenMoney(totalCashIntakeUsd, 'en')} alongside ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing; cash till stands at ${tillMoney}, ${netClause}, with day operating profit at ${formatSpokenMoney(dayOpProfit, 'en')}.`);
+      } else if (hoSnap && (cashSalesUsd > 0 || creditSalesUsd > 0)) {
+        sentences.push(`Shift intake splits into ${formatSpokenMoney(cashSalesUsd, 'en')} cash and ${formatSpokenMoney(creditSalesUsd, 'en')} credit billing.`);
       }
-      if (openCount === 0) {
+      if (anomalyCount > 0 && topShiftPriority) {
+        sentences.push(`Top handover priority: ${topShiftPriority}${openCount > 0 ? `, alongside ${openCount} active Sentinel ${openCount === 1 ? 'flag' : 'flags'}` : ''}.`);
+      } else if (openCount === 0) {
         sentences.push('All Sentinel controls are clear with zero active flags.');
       } else if (openCount === 1) {
         sentences.push(`1 ${critCount > 0 ? 'critical ' : 'active '}Sentinel flag requires review: ${topSentinelTitle}.`);
@@ -5619,18 +5768,25 @@
     }
 
     const text = cleanOut(sentences.join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+    const scopeKey = (hoSnap && hoSnap.scopeKey) || `${coKey}|${targetDate}|${user ? user.id : 'anon'}|ah:${includeAfterHours ? 1 : 0}`;
     return {
       lang: safeLang,
+      rlsClamped: false,
+      scopeKey,
       industry: ind,
       company: coKey,
       companyLabel: scopeName,
       targetDate,
       dayRevUsd: Math.round(dayRevUsd),
       dayTxCount,
+      cashSalesUsd: Math.round(cashSalesUsd),
+      creditSalesUsd: Math.round(creditSalesUsd),
+      revDeltaPct,
+      anomalyCount,
       canViewBooks,
       closingTillUsd: canViewBooks ? Math.round(closingTillUsd) : null,
       dayNetCash: canViewBooks ? Math.round(dayNetCash) : null,
-      dayOpProfit: Math.round(dayOpProfit),
+      dayOpProfit: canViewBooks ? Math.round(dayOpProfit) : null,
       openSentinelCount: openCount,
       critSentinelCount: critCount,
       topSentinelTitle,
@@ -5638,15 +5794,16 @@
     };
   }
 
-  function speakDailyBriefing(btnEl, langOverride) {
-    if (btnEl && _chatState.activeSpeakBtn === btnEl) {
+  function speakDailyBriefing(btnEl, langOverride, opts = {}) {
+    if ((btnEl && _chatState.activeSpeakBtn === btnEl) || (!btnEl && _chatState.activeBriefingScope)) {
       stopActivePlayback();
       return { stopped: true };
     }
-    const brief = buildDailyBriefing(langOverride);
+    const brief = buildDailyBriefing(langOverride, opts);
     const ok = speakBotReply(brief.text, brief.lang, btnEl || null);
-    if (ok && _chatState.activeSpeakBtn) {
-      _chatState.activeBriefingScope = `${brief.company}|${brief.targetDate}`;
+    if (ok) {
+      _chatState.activeBriefingScope = brief.scopeKey || `${brief.company}|${brief.targetDate}`;
+      syncDailyHandoverPopoverAudioButton();
     }
     return Object.assign({ ok }, brief);
   }
@@ -5654,8 +5811,8 @@
   function rebindBriefingButton(btnEl, targetDate) {
     ensureDailyBriefingI18nRegistered();
     if (!_chatState.activeBriefingScope) return;
-    const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
-    const curScope = `${st.company || 'manufacturing-group'}|${targetDate || st.dailyOpsDate || ''}`;
+    const curBrief = buildDailyBriefing(null, targetDate ? { targetDate } : {});
+    const curScope = curBrief.scopeKey || `${curBrief.company}|${curBrief.targetDate}`;
     if (_chatState.activeBriefingScope !== curScope) {
       stopActivePlayback();
       return;
@@ -6147,6 +6304,7 @@
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate array elements grounded strictly on this period ledger JSON:\n${JSON.stringify(groundedPayload)}`;
 
+    const reqEpoch = _chatState.sessionEpoch || 0;
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
@@ -6979,6 +7137,7 @@
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate board/auditor cover-note bullets grounded strictly on this statement JSON:\n${JSON.stringify(groundedPayload)}`;
 
+    const reqEpoch = _chatState.sessionEpoch || 0;
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
@@ -7778,6 +7937,7 @@
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate executive dashboard outlier/concentration bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
 
+    const reqEpoch = _chatState.sessionEpoch || 0;
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
@@ -8460,6 +8620,7 @@
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate executive counterparty relationship risk & commercial review bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
 
+    const reqEpoch = _chatState.sessionEpoch || 0;
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
@@ -9252,6 +9413,7 @@
     ].join('\n');
     const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate audit root-cause & pre-sign-off remediation bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
 
+    const reqEpoch = _chatState.sessionEpoch || 0;
     const runPromise = (async () => {
       let rawReply = '';
       let debugNote = '';
@@ -9917,6 +10079,885 @@
     if (_chatState.sentinelPopoverOpen) {
       closeSentinelTriagePopover();
     }
+  }
+
+  // =========================================================================
+  // DAILY OPERATIONS (#daily_ops) SHIFT HANDOVER BRIEF, ANOMALY DIGEST & STANDUP
+  // =========================================================================
+  function _scrubDailyHandoverCore(rawStr) {
+    return String(rawStr == null ? '' : rawStr)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\*\*/g, '')
+      .replace(/\bTHEO\b/gi, 'ISABI')
+      .replace(/\b(?:Power\s*BI|Dataverse|Power\s*Apps)\b/gi, 'ISABI')
+      .replace(/\bLebanese\s+CoA\b/gi, 'Chart of Accounts')
+      .replace(/\bFIFO\b/gi, 'oldest-first')
+      .replace(/\bTTC\b/gi, 'gross')
+      .replace(/\bRDL\b/gi, 'statement')
+      .replace(/\bZ-Read\b/gi, 'daily close')
+      .replace(/\b(?:S(?:1[01]|[1-9])|H[1-5]|R[1-5]|T[1-5]|P[1-5]|I[1-5]|h\d{2}|t\d{2}|r\d{2}|i\d{2}|m\d{2,3}|step\d+|7z-[a-z0-9-]+)\b/g, '')
+      .replace(/(?:(?:\b(?:GL|PCG|Account|Acct|Compte)|حساب)\s*[-#:]?\s*)\b[1-7]\d{2,4}\b/gi, '')
+      .replace(/\b(?:4011|4017|4111|4112|4113|4117|4196|4411|4427|4490|4515|5121|5300|6011|6021|6061|6155|6241|6411|7011|7061|7063|7064|7065|7071)\b/g, '')
+      .replace(/[\u2014\u2013]/g, '-')
+      .replace(/[\u2190-\u21FF\u25B8]/g, 'to');
+  }
+
+  function sanitizeDailyHandoverText(rawStr) {
+    return _scrubDailyHandoverCore(rawStr)
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function sanitizeDailyHandoverLiveInput(rawStr) {
+    const raw = String(rawStr == null ? '' : rawStr);
+    const hasTrailingSpace = /[ \t\n]$/.test(raw);
+    const core = _scrubDailyHandoverCore(raw)
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/^\s+/, '');
+    if (!core.trim()) return '';
+    return hasTrailingSpace ? (core.replace(/\s+$/, '') + (raw.endsWith('\n') ? '\n' : ' ')) : core.replace(/\s+$/, '');
+  }
+
+  function _dopsKpiValLoc(k, lang) {
+    if (!k) return '$0';
+    if (lang === 'ar' && k.valAr) return k.valAr;
+    if (lang === 'fr' && k.valFr) return k.valFr;
+    return k.valStr || '$0';
+  }
+
+  function buildDailyHandoverSummary(langOverride, opts = {}) {
+    const safeLang = (langOverride && ['en', 'ar', 'fr'].includes(langOverride))
+      ? langOverride
+      : resolveActiveBriefingLang();
+    const options = opts && typeof opts === 'object' ? Object.assign({}, opts) : {};
+    const snapFn = (_ctx && typeof _ctx.computeDailyHandoverSnapshot === 'function')
+      ? _ctx.computeDailyHandoverSnapshot
+      : (typeof window !== 'undefined' && window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.computeDailyHandoverSnapshot === 'function'
+          ? window.MFG_ENTERPRISE.computeDailyHandoverSnapshot
+          : null);
+    const snap = snapFn ? snapFn(options) : null;
+    if (!snap) {
+      return {
+        lang: safeLang,
+        rlsClamped: true,
+        canViewBooks: false,
+        canOpenRecordsDrawer: false,
+        scopeKey: 'dops_ho|uninitialized',
+        industry: 'Manufacturing',
+        companyKey: 'wtc',
+        company: 'WTC',
+        companyLabel: 'WTC',
+        targetDate: '2026-11-06',
+        priorDate: '',
+        includeAfterHours: true,
+        afterHoursCount: 0,
+        afterHoursUsd: 0,
+        dayRevUsd: 0,
+        dayTxCount: 0,
+        priorRevUsd: 0,
+        revDeltaPct: 0,
+        cashSalesUsd: 0,
+        creditSalesUsd: 0,
+        arCollectedUsd: 0,
+        totalCashIntakeUsd: 0,
+        dayOpProfit: null,
+        closingTillUsd: null,
+        dayNetCash: null,
+        pnlBridgeBalanced: true,
+        tieCheck: null,
+        anomalyCount: 0,
+        openSentinelCount: 0,
+        statusBadge: 'Protected',
+        windowSubtitle: 'Shift Handover Brief',
+        targetView: '',
+        kpis: [],
+        facts: { rlsClamped: true },
+        bullets: ['Shift handover engine is initializing.'],
+        activeBullets: ['Shift handover engine is initializing.'],
+        drafts: null,
+        isAiSource: false,
+        text: 'Shift handover engine is initializing.'
+      };
+    }
+
+    const coLoc = safeLang === 'ar' ? snap.companyAr : (safeLang === 'fr' ? snap.companyFr : snap.companyEn);
+    const badgeLoc = safeLang === 'ar' ? snap.statusBadgeAr : (safeLang === 'fr' ? snap.statusBadgeFr : snap.statusBadgeEn);
+    const windowSubtitle = sanitizeDailyHandoverText(`${coLoc} · ${snap.targetDate} · ${badgeLoc}`);
+
+    const rawDetBullets = safeLang === 'ar'
+      ? (snap.bulletsAr || snap.bulletsEn || [])
+      : (safeLang === 'fr' ? (snap.bulletsFr || snap.bulletsEn || []) : (snap.bulletsEn || []));
+    const detBullets = rawDetBullets.map(b => sanitizeDailyHandoverText(b)).filter(Boolean);
+
+    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cachedAi = (!snap.rlsClamped && _chatState.handoverBriefCache.has(cacheKey))
+      ? _chatState.handoverBriefCache.get(cacheKey)
+      : null;
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets.map(b => sanitizeDailyHandoverText(b))
+      : detBullets;
+
+    const sanitizedDrafts = (!snap.rlsClamped && snap.drafts) ? {
+      en: sanitizeDailyHandoverText(snap.drafts.en || ''),
+      ar: sanitizeDailyHandoverText(snap.drafts.ar || ''),
+      fr: sanitizeDailyHandoverText(snap.drafts.fr || '')
+    } : null;
+
+    const spokenBrief = buildDailyBriefing(safeLang, options);
+    const text = spokenBrief && spokenBrief.text
+      ? spokenBrief.text
+      : cleanOut(activeBullets.join(' ').replace(/[—–→↔]/g, ', ').replace(/\s{2,}/g, ' '));
+
+    return {
+      lang: safeLang,
+      rlsClamped: Boolean(snap.rlsClamped),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canOpenRecordsDrawer: Boolean(snap.canOpenRecordsDrawer),
+      scopeKey: snap.scopeKey,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      company: snap.company,
+      companyLabel: sanitizeDailyHandoverText(coLoc),
+      targetDate: snap.targetDate,
+      priorDate: snap.priorDate || '',
+      isCalendarYesterday: Boolean(snap.isCalendarYesterday),
+      includeAfterHours: Boolean(snap.includeAfterHours),
+      afterHoursCount: snap.afterHoursCount || 0,
+      afterHoursUsd: snap.afterHoursUsd || 0,
+      repShiftedCount: snap.repShiftedCount || 0,
+      dayRevUsd: snap.dayRevUsd || 0,
+      dayTxCount: snap.dayTxCount || 0,
+      priorRevUsd: snap.priorRevUsd || 0,
+      revDeltaUsd: snap.revDeltaUsd || 0,
+      revDeltaPct: snap.revDeltaPct || 0,
+      avg7RevUsd: snap.avg7RevUsd || 0,
+      cashSalesUsd: snap.cashSalesUsd || 0,
+      creditSalesUsd: snap.creditSalesUsd || 0,
+      arCollectedUsd: snap.canViewBooks ? (snap.arCollectedUsd || 0) : 0,
+      totalCashIntakeUsd: snap.totalCashIntakeUsd || 0,
+      dayOpProfit: snap.canViewBooks ? snap.dayOpProfit : null,
+      closingTillUsd: snap.canViewBooks ? snap.closingTillUsd : null,
+      dayNetCash: snap.canViewBooks ? snap.dayNetCash : null,
+      pnlBridgeBalanced: Boolean(snap.pnlBridgeBalanced),
+      pnlBridgeVarianceUsd: snap.pnlBridgeVarianceUsd || 0,
+      vatRatePct: snap.vatRatePct,
+      vatRegime: safeLang === 'ar' ? snap.vatRegimeAr : (safeLang === 'fr' ? snap.vatRegimeFr : snap.vatRegimeEn),
+      tieCheck: snap.canViewBooks ? snap.tieCheck : null,
+      anomalyCount: snap.anomalyCount || 0,
+      openSentinelCount: snap.openSentinelCount || 0,
+      critSentinelCount: snap.critSentinelCount || 0,
+      topPriority: sanitizeDailyHandoverText(safeLang === 'ar' ? snap.topAnomalyAr : (safeLang === 'fr' ? snap.topAnomalyFr : snap.topAnomalyEn)),
+      statusBadge: sanitizeDailyHandoverText(badgeLoc),
+      windowSubtitle,
+      targetView: snap.targetView || '',
+      kpis: Array.isArray(snap.kpis) ? snap.kpis : [],
+      facts: snap.facts || {},
+      bullets: detBullets,
+      activeBullets,
+      drafts: sanitizedDrafts,
+      isAiSource: Boolean(cachedAi && cachedAi.source === 'gemini'),
+      text
+    };
+  }
+
+  function formatDailyHandoverPlainText(sum, bulletsOverride) {
+    const s = sum || buildDailyHandoverSummary();
+    const bullets = Array.isArray(bulletsOverride) && bulletsOverride.length ? bulletsOverride : (s.activeBullets || s.bullets || []);
+    const hdr = s.lang === 'ar'
+      ? `موجز تسليم المناوبة - ${s.companyLabel}`
+      : (s.lang === 'fr'
+          ? `Synthèse de passation - ${s.companyLabel}`
+          : `Shift Handover Brief - ${s.companyLabel}`);
+    const scopeLine = `${s.targetDate} | ${s.statusBadge}`;
+    const kpiLine = (s.kpis || []).map(k => {
+      const lbl = s.lang === 'ar' ? k.labelAr : (s.lang === 'fr' ? k.labelFr : k.labelEn);
+      return `${lbl}: ${_dopsKpiValLoc(k, s.lang)}`;
+    }).join(' | ');
+    const bulletLines = bullets.map((b, i) => `${i + 1}. ${sanitizeDailyHandoverText(b)}`).join('\n');
+    return `${hdr}\n${scopeLine}\n${kpiLine}\n${bulletLines}`.replace(/[\u2014\u2013]/g, '-').replace(/[\u2190-\u21FF\u25B8]/g, 'to').trim();
+  }
+
+  async function requestDailyHandoverCommentary(detSum, opts = {}) {
+    const sum = detSum || buildDailyHandoverSummary(opts.lang, opts);
+    if (sum.rlsClamped) {
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-rls',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    }
+    const cacheKey = `${sum.scopeKey}|${sum.lang}`;
+    if (!opts.force && _chatState.handoverBriefCache.has(cacheKey)) {
+      return _chatState.handoverBriefCache.get(cacheKey);
+    }
+    if (!opts.force && _chatState.handoverBriefInflight.has(cacheKey)) {
+      return _chatState.handoverBriefInflight.get(cacheKey);
+    }
+
+    const langName = sum.lang === 'ar'
+      ? 'Arabic (Modern Standard Arabic with natural Lebanese operational manager phrasing; zero English words except company or unit codes)'
+      : (sum.lang === 'fr' ? 'French' : 'English');
+
+    const groundedPayload = {
+      industry: sum.industry,
+      company: sum.companyLabel,
+      operatingDate: sum.targetDate,
+      priorOperatingDate: sum.priorDate,
+      handoverStatus: sum.statusBadge,
+      currency: 'USD',
+      tieStatus: (sum.canViewBooks && sum.tieCheck) ? sum.tieCheck : undefined,
+      kpis: (sum.kpis || []).map(k => ({ label: k.labelEn, value: k.valStr, detail: k.subEn })),
+      handoverFacts: sum.facts
+    };
+
+    const sysPrompt = [
+      'You are an Executive Operations Director preparing a shift handover brief inside ISABI Command Center.',
+      `Write all bullet text strictly in ${langName}.`,
+      'Return ONLY valid JSON with the exact English property name "bullets" containing EXACTLY 3 separate string items: {"bullets":["sentence 1","sentence 2","sentence 3"]}. Never combine them into a single string, and do NOT rename the JSON key "bullets".',
+      'Rules:',
+      '1. Every dollar figure, percentage, counterparty/unit name, and count MUST come verbatim from the supplied JSON payload. Never invent or recompute numbers.',
+      '2. Bullet 1 summarizes today transaction-date revenue, volume, yesterday-vs-today variance, and overnight after-hours status.',
+      sum.canViewBooks
+        ? '3. Bullet 2 breaks down cash versus credit intake, closing cash till, and the reconciled $0.00 day operating profit bridge.'
+        : '3. Bullet 2 breaks down cash versus credit shift intake and deferred reporting items (never mention cash till, bank balances, operating profit, salaries, or general ledger accounts).',
+      '4. Bullet 3 prescribes concrete next-shift priorities and operational follow-ups.',
+      '5. Keep each bullet concise (14 to 28 words). Never use em-dashes, arrows, markdown bold, RDL codes, TTC, FIFO, Z-Read, Power BI, Dataverse, GL 4-digit codes, or internal assistant names.'
+    ].join('\n');
+    const usrPrompt = `Return JSON {"bullets":["bullet 1","bullet 2","bullet 3"]} with 3 separate shift handover & next-shift priority bullets grounded strictly on this JSON:\n${JSON.stringify(groundedPayload)}`;
+
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const runPromise = (async () => {
+      let rawReply = '';
+      let debugNote = '';
+      let usedModel = 'gemini-3.5-flash-lite';
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      const isLocalHost = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(location.hostname || '');
+      if (isLocalHost || window.ISABI_LOCAL_API || window.ISABI_HAS_EDGE_API) {
+        const base = String(window.ISABI_LOCAL_API || '.').replace(/\/$/, '');
+        for (let attempt = 0; attempt < 2 && !rawReply; attempt++) {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 450));
+          const locCtrl = new AbortController();
+          const locTimer = setTimeout(() => locCtrl.abort(), 8000);
+          try {
+            const rLoc = await (window.ISABI_EDGE_FETCH || fetch)(`${base}/api/ask`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'gemini-3.5-flash-lite',
+                systemPrompt: sysPrompt,
+                userPrompt: usrPrompt,
+                geminiContents
+              }),
+              signal: locCtrl.signal
+            });
+            if (rLoc.ok) {
+              const jLoc = await rLoc.json();
+              if (jLoc && jLoc.ok && jLoc.rawReply) {
+                rawReply = String(jLoc.rawReply);
+                usedModel = jLoc.model || 'gemini-3.5-flash-lite';
+              } else if (jLoc) {
+                debugNote = `loc:${jLoc.mode || ''}:${jLoc.note || ''}`;
+              }
+            } else {
+              debugNote = `loc_http_${rLoc.status}`;
+            }
+          } catch (eLoc) {
+            debugNote = `loc_err:${eLoc && eLoc.message ? eLoc.message : String(eLoc)}`;
+          } finally {
+            clearTimeout(locTimer);
+          }
+        }
+      }
+
+      if (rawReply) {
+        try {
+          const cleaned = rawReply.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(cleaned);
+          } catch (_) {
+            const merged = [];
+            const objRe = /\{[^{}]*"bullets"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+            let m;
+            while ((m = objRe.exec(cleaned)) !== null) {
+              try {
+                const sub = JSON.parse(m[0]);
+                if (sub && Array.isArray(sub.bullets)) merged.push(...sub.bullets);
+              } catch (_2) {}
+            }
+            if (merged.length) {
+              parsed = { bullets: merged };
+            } else {
+              const fb = cleaned.indexOf('{');
+              let depth = 0, inStr = false, escCh = false, endIdx = -1;
+              for (let i = fb; fb >= 0 && i < cleaned.length; i++) {
+                const ch = cleaned[i];
+                if (escCh) { escCh = false; continue; }
+                if (ch === '\\') { escCh = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === '{') depth++;
+                  else if (ch === '}' && --depth === 0) { endIdx = i; break; }
+                }
+              }
+              if (fb >= 0 && endIdx > fb) parsed = JSON.parse(cleaned.slice(fb, endIdx + 1));
+            }
+          }
+          const rawBulletArr = Array.isArray(parsed && parsed.bullets)
+            ? parsed.bullets
+            : (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === 'object' ? Object.values(parsed).find(Array.isArray) : null));
+          const extractStr = b => typeof b === 'string' ? b : (b && typeof b === 'object' ? (b.text || b.bullet || Object.values(b).find(v => typeof v === 'string') || '') : '');
+          let candBullets = Array.isArray(rawBulletArr)
+            ? rawBulletArr.map(b => sanitizeDailyHandoverText(extractStr(b))).filter(b => b.length >= 12)
+            : [];
+          if (!sum.canViewBooks) {
+            candBullets = candBullets.filter(b => !/\b(?:cash\s+till|operating\s+profit|trial\s+balance)\b/i.test(b));
+          }
+          if (candBullets.length === 1 && candBullets[0].length >= 70) {
+            const splitParts = candBullets[0]
+              .split(/(?:(?<=[.!?؟])\s+|;\s+)/)
+              .map(s => sanitizeDailyHandoverText(s))
+              .filter(s => s.length >= 12);
+            if (splitParts.length >= 2) candBullets = splitParts;
+          }
+          candBullets = candBullets.slice(0, 3);
+          if (candBullets.length >= 1 && candBullets.length < 3 && Array.isArray(sum.bullets)) {
+            for (let bi = candBullets.length; bi < 3 && bi < sum.bullets.length; bi++) {
+              candBullets.push(sum.bullets[bi]);
+            }
+          }
+          if (candBullets.length >= 2) {
+            if ((_chatState.sessionEpoch || 0) !== reqEpoch) {
+              return {
+                ok: true,
+                source: 'deterministic',
+                model: 'deterministic-cancelled',
+                lang: sum.lang,
+                scopeKey: sum.scopeKey,
+                bullets: sum.bullets.slice(0, 3)
+              };
+            }
+            const resObj = {
+              ok: true,
+              source: 'gemini',
+              model: usedModel,
+              lang: sum.lang,
+              scopeKey: sum.scopeKey,
+              bullets: candBullets
+            };
+            if (_chatState.handoverBriefCache.size >= 32) {
+              const oldest = _chatState.handoverBriefCache.keys().next().value;
+              _chatState.handoverBriefCache.delete(oldest);
+            }
+            _chatState.handoverBriefCache.set(cacheKey, resObj);
+            updateOpenDailyHandoverPopoverWithAi(resObj);
+            return resObj;
+          }
+          debugNote = `short_bullets:${candBullets.length}:${rawReply.slice(0, 140)}`;
+        } catch (eParse) {
+          debugNote = `parse_err:${eParse && eParse.message ? eParse.message : ''}:${rawReply.slice(0, 140)}`;
+        }
+      }
+
+      return {
+        ok: true,
+        source: 'deterministic',
+        model: 'deterministic-local',
+        lang: sum.lang,
+        scopeKey: sum.scopeKey,
+        note: debugNote,
+        bullets: sum.bullets.slice(0, 3)
+      };
+    })().finally(() => {
+      _chatState.handoverBriefInflight.delete(cacheKey);
+    });
+
+    _chatState.handoverBriefInflight.set(cacheKey, runPromise);
+    return runPromise;
+  }
+
+  function updateOpenDailyHandoverPopoverWithAi(aiRes) {
+    if (!aiRes || aiRes.source !== 'gemini' || typeof document === 'undefined') return;
+    const pop = document.getElementById('dailyOpsHandoverPopover');
+    if (!pop || pop.getAttribute('data-scope-key') !== aiRes.scopeKey || pop.getAttribute('data-lang') !== aiRes.lang) return;
+    const listEl = pop.querySelector('.ceo-pv-bullets');
+    if (listEl && Array.isArray(aiRes.bullets) && aiRes.bullets.length >= 2) {
+      listEl.innerHTML = aiRes.bullets.map(b => `<li>${esc(b)}</li>`).join('');
+    }
+    const badgeEl = pop.querySelector('.ceo-pv-badge');
+    if (badgeEl) {
+      badgeEl.classList.add('is-ai');
+      badgeEl.textContent = 'AI Shift Priorities';
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(badgeEl); } catch (_) {}
+      }
+    }
+  }
+
+  let _dopsHoPopOutsideBound = false;
+  function ensureDailyHandoverGlobalDismiss() {
+    if (_dopsHoPopOutsideBound || typeof document === 'undefined') return;
+    _dopsHoPopOutsideBound = true;
+    document.addEventListener('mousedown', e => {
+      if (!_chatState.handoverPopoverOpen) return;
+      const pop = document.getElementById('dailyOpsHandoverPopover');
+      if (!pop) return;
+      if (pop.contains(e.target)) return;
+      if (e.target.closest && (
+        e.target.closest('[data-dops-handover]') ||
+        e.target.closest('[data-dops-briefing]') ||
+        e.target.closest('[data-dops-pick-date]') ||
+        e.target.closest('#dopsDateInput') ||
+        e.target.closest('#dopsAfterHoursBtn') ||
+        e.target.closest('.dops-bu-strip') ||
+        e.target.closest('#langSwitch') ||
+        e.target.closest('#mobileLangBtn')
+      )) return;
+      closeDailyHandoverPopover();
+    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        if (_chatState.handoverPopoverOpen) positionDailyHandoverPopover();
+      });
+    }
+  }
+
+  function positionDailyHandoverPopover() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const pop = document.getElementById('dailyOpsHandoverPopover');
+    if (!pop) return;
+    const anchor = (_chatState.handoverPopoverAnchor && _chatState.handoverPopoverAnchor.isConnected ? _chatState.handoverPopoverAnchor : null)
+      || document.getElementById('dopsHandoverBriefBtn')
+      || document.getElementById('dopsBriefingBtn');
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
+      pop.style.left = '10px';
+      pop.style.right = '10px';
+      pop.style.width = 'auto';
+      pop.style.bottom = 'calc(72px + env(safe-area-inset-bottom, 0px))';
+      pop.style.top = 'auto';
+      pop.style.maxHeight = 'calc(100dvh - 104px)';
+      pop.style.overflowY = 'auto';
+      return;
+    }
+    pop.style.right = 'auto';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = 'calc(100dvh - 28px)';
+    pop.style.overflowY = 'auto';
+    const rect = anchor.getBoundingClientRect();
+    const popW = Math.min(508, vw - 24);
+    pop.style.width = `${popW}px`;
+    const popH = Math.min(pop.offsetHeight || 390, vh - 28);
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    let left = isRtl ? rect.left : (rect.right - popW > 12 ? rect.right - popW : rect.left);
+    left = Math.max(12, Math.min(vw - popW - 12, left));
+    let top = rect.bottom + 8;
+    if (top + popH > vh - 12 && rect.top - popH - 8 >= 20) {
+      top = rect.top - popH - 8;
+    }
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(Math.max(12, Math.min(vh - popH - 12, top)))}px`;
+  }
+
+  function openDailyHandoverPopover(anchorEl, prebuiltSummary) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureDailyHandoverGlobalDismiss();
+    const sum = prebuiltSummary || buildDailyHandoverSummary();
+    const activeBullets = sum.activeBullets || sum.bullets || [];
+    const isAiSource = Boolean(sum.isAiSource);
+
+    let pop = document.getElementById('dailyOpsHandoverPopover');
+    if (!pop) {
+      pop = document.createElement('aside');
+      pop.id = 'dailyOpsHandoverPopover';
+      pop.className = 'ceo-period-popover insp-brief-popover dops-handover-popover no-print';
+      pop.setAttribute('role', 'dialog');
+      pop.setAttribute('aria-label', 'Shift Handover Brief');
+      document.body.appendChild(pop);
+    }
+    _chatState.handoverPopoverOpen = true;
+    _chatState.handoverPopoverScope = sum.scopeKey || '';
+    _chatState.handoverPopoverIndustry = sum.industry || '';
+    _chatState.handoverPopoverAnchor = (anchorEl && anchorEl.isConnected ? anchorEl : null)
+      || document.getElementById('dopsHandoverBriefBtn');
+
+    document.querySelectorAll('[data-dops-handover]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    const prevPopLang = pop.getAttribute('data-lang') || '';
+    if (!prevPopLang || prevPopLang !== sum.lang) {
+      _chatState.handoverDraftLang = sum.lang;
+    }
+    pop.setAttribute('data-scope-key', sum.scopeKey);
+    pop.setAttribute('data-target-date', sum.targetDate);
+    pop.setAttribute('data-industry', sum.industry);
+    pop.setAttribute('data-lang', sum.lang);
+    pop.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(
+      _chatState.activeBriefingScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-dops-briefing'))
+    );
+    const speakBtnLbl = isSpeakingNow ? 'Stop Standup' : 'Play Standup';
+    const speakBtnIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const sparkIco = icons ? icons.svg('sparkles') : AI_SVGS.audio;
+    const hubIco = icons ? icons.svg('overview') : '';
+    const ledgerIco = icons ? icons.svg('ledger') : '';
+    const copyIco = icons ? icons.svg('copy') : '';
+    const shareIco = icons ? icons.svg('send_msg') : '';
+
+    const activeDraftLang = ['en', 'ar', 'fr'].includes(_chatState.handoverDraftLang) ? _chatState.handoverDraftLang : sum.lang;
+    _chatState.handoverDraftLang = activeDraftLang;
+    const hasDrafts = Boolean(!sum.rlsClamped && sum.drafts && (sum.drafts.en || sum.drafts.ar || sum.drafts.fr));
+    const draftCacheKey = `${sum.scopeKey}|${activeDraftLang}`;
+    const activeDraftText = hasDrafts
+      ? (_chatState.handoverCustomDraftByScope.has(draftCacheKey)
+          ? _chatState.handoverCustomDraftByScope.get(draftCacheKey)
+          : (sum.drafts[activeDraftLang] || sum.drafts[sum.lang] || sum.drafts.en || ''))
+      : '';
+
+    const plainBriefText = formatDailyHandoverPlainText(sum, activeBullets);
+    const waPayload = hasDrafts && activeDraftText ? activeDraftText : plainBriefText;
+    const waHref = `https://wa.me/?text=${encodeURIComponent(waPayload)}`;
+    const showDayRecordsBtn = Boolean(!sum.rlsClamped && sum.canOpenRecordsDrawer);
+    const canOpenHub = Boolean(!sum.rlsClamped && !sum.canOpenRecordsDrawer && sum.targetView && (!_ctx || typeof _ctx.canViewView !== 'function' || _ctx.canViewView(sum.targetView)));
+
+    pop.innerHTML = `
+      <div class="ceo-pv-hdr">
+        <div class="ceo-pv-title-wrap">
+          <div class="ceo-pv-title-row">
+            <span class="ceo-pv-ico">${sparkIco}</span>
+            <strong class="ceo-pv-title">Shift Handover Brief</strong>
+            <span class="ceo-pv-badge${isAiSource ? ' is-ai' : ''}">${isAiSource ? 'AI Shift Priorities' : 'Deterministic Handover'}</span>
+          </div>
+          <div class="ceo-pv-sub" data-no-i18n="1">${esc(sum.windowSubtitle)}</div>
+        </div>
+        <button type="button" class="ceo-pv-close" data-dops-pv-close="1" aria-label="Close">&times;</button>
+      </div>
+      <div class="ceo-pv-kpis">
+        ${(sum.kpis || []).map(k => {
+          const lbl = sum.lang === 'ar' ? k.labelAr : (sum.lang === 'fr' ? k.labelFr : k.labelEn);
+          const sub = sum.lang === 'ar' ? k.subAr : (sum.lang === 'fr' ? k.subFr : k.subEn);
+          const valDisp = _dopsKpiValLoc(k, sum.lang);
+          const toneCls = (k.tone === 'pos' || k.tone === 'ok') ? 'good' : ((k.tone === 'neg' || k.tone === 'warn') ? 'warn' : '');
+          return `<div class="ceo-pv-kpi" data-no-i18n="1">
+            <span class="ceo-pv-k">${esc(lbl)}</span>
+            <strong class="ceo-pv-v num">${esc(valDisp)}</strong>
+            <small class="ceo-pv-d ${toneCls}">${esc(sub)}</small>
+          </div>`;
+        }).join('')}
+      </div>
+      <ul class="ceo-pv-bullets" data-no-i18n="1">
+        ${activeBullets.map(b => `<li>${esc(b)}</li>`).join('')}
+      </ul>
+      ${hasDrafts ? `
+        <div class="insp-pv-draft-wrap dops-pv-draft-wrap">
+          <div class="insp-pv-draft-hdr">
+            <span class="insp-pv-draft-lbl">Manager Shift Summary</span>
+            <div class="insp-pv-draft-langs" data-no-i18n="1">
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'en' ? ' active' : ''}" data-dops-draft-lang="en">EN</button>
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'ar' ? ' active' : ''}" data-dops-draft-lang="ar">عربي</button>
+              <button type="button" class="insp-pv-dlang-btn${activeDraftLang === 'fr' ? ' active' : ''}" data-dops-draft-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea class="insp-pv-draft-ta dops-pv-draft-ta" id="dopsWhatsappDraftInput" data-no-i18n="1" rows="3" dir="${activeDraftLang === 'ar' ? 'rtl' : 'ltr'}">${esc(activeDraftText)}</textarea>
+        </div>
+      ` : ''}
+      <div class="ceo-pv-foot insp-pv-foot dops-pv-foot">
+        <button type="button" class="ceo-pv-btn${isSpeakingNow ? ' is-speaking' : ''}" data-dops-pv-speak="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${speakBtnIco}<span>${esc(speakBtnLbl)}</span></button>
+        ${hasDrafts ? `<button type="button" class="ceo-pv-btn is-secondary" data-dops-pv-copy-draft="1">${copyIco}<span>Copy Summary</span></button>` : ''}
+        ${hasDrafts ? `<a class="ceo-pv-btn is-secondary insp-pv-wa-link" data-dops-pv-wa="1" href="${esc(waHref)}" target="_blank" rel="noopener noreferrer">${shareIco}<span>WhatsApp</span></a>` : ''}
+        <button type="button" class="ceo-pv-btn is-secondary" data-dops-pv-copy="1">${copyIco}<span>Copy Brief</span></button>
+        ${showDayRecordsBtn ? `<button type="button" class="ceo-pv-btn is-secondary" data-dops-pv-records="1">${ledgerIco}<span>Day Records</span></button>` : ''}
+        ${canOpenHub ? `<button type="button" class="ceo-pv-btn is-secondary" data-dops-pv-hub="1">${hubIco}<span>Open Hub</span></button>` : ''}
+        <button type="button" class="ceo-pv-btn is-secondary" data-dops-pv-ask="1"><span>Ask Follow-Up</span></button>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+      try { window.MFG_I18N.translateDom(pop); } catch (_) {}
+    }
+
+    const closeBtn = pop.querySelector('[data-dops-pv-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeDailyHandoverPopover();
+      });
+    }
+
+    const draftTa = pop.querySelector('#dopsWhatsappDraftInput');
+    const waLink = pop.querySelector('[data-dops-pv-wa]');
+    if (draftTa) {
+      draftTa.addEventListener('input', () => {
+        const rawVal = draftTa.value || '';
+        const liveVal = sanitizeDailyHandoverLiveInput(rawVal);
+        if (liveVal !== rawVal) {
+          const prevEnd = typeof draftTa.selectionEnd === 'number' ? draftTa.selectionEnd : liveVal.length;
+          const delta = rawVal.length - liveVal.length;
+          draftTa.value = liveVal;
+          const nextPos = Math.max(0, Math.min(liveVal.length, prevEnd - Math.max(0, delta)));
+          try { draftTa.setSelectionRange(nextPos, nextPos); } catch (_) {}
+        }
+        const val = sanitizeDailyHandoverText(liveVal);
+        if (_chatState.handoverCustomDraftByScope.size >= 24) {
+          const oldK = _chatState.handoverCustomDraftByScope.keys().next().value;
+          _chatState.handoverCustomDraftByScope.delete(oldK);
+        }
+        _chatState.handoverCustomDraftByScope.set(`${sum.scopeKey}|${_chatState.handoverDraftLang || sum.lang}`, val);
+        if (waLink) waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(val)}`);
+      });
+      draftTa.addEventListener('change', () => {
+        draftTa.value = sanitizeDailyHandoverText(draftTa.value || '');
+      });
+    }
+
+    pop.querySelectorAll('[data-dops-draft-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextDl = lBtn.getAttribute('data-dops-draft-lang') || 'en';
+        _chatState.handoverDraftLang = nextDl;
+        pop.querySelectorAll('[data-dops-draft-lang]').forEach(x => x.classList.toggle('active', x === lBtn));
+        if (draftTa && sum.drafts) {
+          const ck = `${sum.scopeKey}|${nextDl}`;
+          const nextTxt = _chatState.handoverCustomDraftByScope.has(ck)
+            ? _chatState.handoverCustomDraftByScope.get(ck)
+            : (sum.drafts[nextDl] || sum.drafts.en || '');
+          draftTa.dir = nextDl === 'ar' ? 'rtl' : 'ltr';
+          draftTa.value = nextTxt;
+          if (waLink) waLink.setAttribute('href', `https://wa.me/?text=${encodeURIComponent(nextTxt)}`);
+        }
+      });
+    });
+
+    const pvSpkBtn = pop.querySelector('[data-dops-pv-speak]');
+    if (pvSpkBtn) {
+      pvSpkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const mainBtn = document.getElementById('dopsBriefingBtn');
+        if (_chatState.activeBriefingScope || (mainBtn && _chatState.activeSpeakBtn === mainBtn)) {
+          stopActivePlayback();
+        } else {
+          speakDailyBriefing(mainBtn || pvSpkBtn, sum.lang);
+        }
+        syncDailyHandoverPopoverAudioButton();
+      });
+    }
+
+    const writeClipHelper = async txt => {
+      let copied = false;
+      if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(txt);
+          copied = true;
+        } catch (_) {}
+      }
+      if (!copied && typeof document !== 'undefined') {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (_) {}
+      }
+    };
+
+    const pvCopyDraftBtn = pop.querySelector('[data-dops-pv-copy-draft]');
+    if (pvCopyDraftBtn) {
+      pvCopyDraftBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const txt = draftTa ? sanitizeDailyHandoverText(draftTa.value) : activeDraftText;
+        if (typeof window !== 'undefined') window.__LAST_COPIED_DOPS_DRAFT = txt;
+        await writeClipHelper(txt);
+        pvCopyDraftBtn.classList.add('is-copied');
+        pvCopyDraftBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyDraftBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyDraftBtn.isConnected) return;
+          pvCopyDraftBtn.classList.remove('is-copied');
+          pvCopyDraftBtn.innerHTML = `${copyIco}<span>Copy Summary</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyDraftBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+
+    const pvCopyBtn = pop.querySelector('[data-dops-pv-copy]');
+    if (pvCopyBtn) {
+      pvCopyBtn.addEventListener('click', async e => {
+        e.preventDefault();
+        const latestSum = buildDailyHandoverSummary(sum.lang);
+        const txt = formatDailyHandoverPlainText(latestSum, latestSum.activeBullets);
+        if (typeof window !== 'undefined') window.__LAST_COPIED_DOPS_BRIEF = txt;
+        await writeClipHelper(txt);
+        pvCopyBtn.classList.add('is-copied');
+        pvCopyBtn.innerHTML = `${icons ? icons.svg('check') : ''}<span>Copied!</span>`;
+        if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+          try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+        }
+        setTimeout(() => {
+          if (!pvCopyBtn.isConnected) return;
+          pvCopyBtn.classList.remove('is-copied');
+          pvCopyBtn.innerHTML = `${copyIco}<span>Copy Brief</span>`;
+          if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && sum.lang !== 'en') {
+            try { window.MFG_I18N.translateDom(pvCopyBtn); } catch (_) {}
+          }
+        }, 1500);
+      });
+    }
+
+    const pvRecordsBtn = pop.querySelector('[data-dops-pv-records]');
+    if (pvRecordsBtn) {
+      pvRecordsBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeDailyHandoverPopover();
+        if (_ctx && _ctx.STATE && typeof _ctx.renderApp === 'function') {
+          _ctx.STATE.dailyOpsStreamFilter = 'all';
+          _ctx.STATE.dailyOpsDrawerOpen = true;
+          _ctx.renderApp();
+        }
+      });
+    }
+
+    const pvHubBtn = pop.querySelector('[data-dops-pv-hub]');
+    if (pvHubBtn) {
+      pvHubBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const destView = sum.targetView || '';
+        closeDailyHandoverPopover();
+        if (destView && _ctx && typeof _ctx.setView === 'function' && (typeof _ctx.canViewView !== 'function' || _ctx.canViewView(destView))) {
+          _ctx.setView(destView);
+        }
+      });
+    }
+
+    const pvAskBtn = pop.querySelector('[data-dops-pv-ask]');
+    if (pvAskBtn) {
+      pvAskBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeDailyHandoverPopover();
+        openDrawer();
+        const qPrompt = sum.lang === 'ar'
+          ? `اعطني تحليل تسليم المناوبة ومقارنة الأمس باليوم وأولويات المتابعة لدى ${sum.companyLabel} بتاريخ ${sum.targetDate}`
+          : (sum.lang === 'fr'
+              ? `Donnez-moi l analyse détaillée de passation, l écart hier/aujourd hui et les priorités sur ${sum.companyLabel} au ${sum.targetDate}`
+              : `Give me a detailed shift handover breakdown, yesterday-vs-today drivers, and next-shift priorities for ${sum.companyLabel} on ${sum.targetDate}`);
+        submitQuestion(qPrompt);
+      });
+    }
+
+    positionDailyHandoverPopover();
+    const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
+    if (!isAiSource && !sum.rlsClamped && !skipBgAi) {
+      requestDailyHandoverCommentary(sum).catch(() => {});
+    }
+    return pop;
+  }
+
+  function closeDailyHandoverPopover() {
+    _chatState.handoverPopoverOpen = false;
+    _chatState.handoverPopoverScope = '';
+    _chatState.handoverPopoverIndustry = '';
+    _chatState.handoverPopoverAnchor = null;
+    _chatState.handoverDraftLang = '';
+    if (typeof document === 'undefined') return;
+    const pop = document.getElementById('dailyOpsHandoverPopover');
+    if (pop && pop.parentNode) {
+      pop.parentNode.removeChild(pop);
+    }
+    document.querySelectorAll('[data-dops-handover]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleDailyHandoverPopover(anchorEl) {
+    if (_chatState.handoverPopoverOpen) {
+      closeDailyHandoverPopover();
+      return { open: false };
+    }
+    _chatState.handoverDraftLang = resolveActiveBriefingLang();
+    const sum = buildDailyHandoverSummary();
+    openDailyHandoverPopover(anchorEl, sum);
+    return { open: true, summary: sum };
+  }
+
+  function speakDailyHandoverStandup(btnEl, langOverride, opts = {}) {
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('dopsBriefingBtn') : null);
+    const res = speakDailyBriefing(targetBtn, langOverride, opts);
+    syncDailyHandoverPopoverAudioButton();
+    return res;
+  }
+
+  function rebindDailyHandoverButtons(container) {
+    ensureDailyBriefingI18nRegistered();
+    if (!_chatState.handoverPopoverOpen) return;
+    const curSum = buildDailyHandoverSummary();
+    if (_chatState.handoverPopoverIndustry && curSum.industry !== _chatState.handoverPopoverIndustry) {
+      closeDailyHandoverPopover();
+      return;
+    }
+    const anchor = (container && container.querySelector && container.querySelector('#dopsHandoverBriefBtn'))
+      || (typeof document !== 'undefined' ? document.getElementById('dopsHandoverBriefBtn') : null);
+    if (!anchor) {
+      closeDailyHandoverPopover();
+      return;
+    }
+    _chatState.handoverPopoverAnchor = anchor;
+    if (!['en', 'ar', 'fr'].includes(_chatState.handoverDraftLang)) {
+      _chatState.handoverDraftLang = curSum.lang;
+    }
+    openDailyHandoverPopover(anchor, curSum);
+  }
+
+  function stopDailyHandoverIfActive() {
+    if (_chatState.handoverPopoverOpen) {
+      closeDailyHandoverPopover();
+    }
+  }
+
+  function clearSessionState() {
+    _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
+    stopActivePlayback();
+    closeDailyHandoverPopover();
+    closeSentinelTriagePopover();
+    closeInspectorBriefPopover();
+    closeDashboardVariancePopover();
+    closeStatementVariancePopover();
+    closeCeoVariancePopover();
+    _chatState.handoverCustomDraftByScope.clear();
+    _chatState.handoverBriefCache.clear();
+    _chatState.handoverBriefInflight.clear();
+    _chatState.sentinelCustomDraftByScope.clear();
+    _chatState.sentinelBriefCache.clear();
+    _chatState.sentinelBriefInflight.clear();
+    _chatState.inspCustomDraftByScope.clear();
+    _chatState.inspBriefCache.clear();
+    _chatState.inspBriefInflight.clear();
+    _chatState.pbiVarianceCache.clear();
+    _chatState.pbiVarianceInflight.clear();
+    _chatState.stmtVarianceCache.clear();
+    _chatState.stmtVarianceInflight.clear();
+    _chatState.periodVarianceCache.clear();
+    _chatState.periodVarianceInflight.clear();
+    _chatState.lastSpokenText = '';
   }
 
   function maybeAutoSpeakTurn(turnObj) {
@@ -11309,7 +12350,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -11335,6 +12376,10 @@
         _chatState.sentinelDraftLang = curLang;
         if (_chatState.sentinelPopoverOpen) {
           openSentinelTriagePopover(_chatState.sentinelPopoverAnchor, buildSentinelTriageSummary(curLang, { ruleId: _chatState.sentinelPopoverRuleId || '__all__' }));
+        }
+        _chatState.handoverDraftLang = curLang;
+        if (_chatState.handoverPopoverOpen) {
+          openDailyHandoverPopover(_chatState.handoverPopoverAnchor, buildDailyHandoverSummary(curLang));
         }
         if (_ctx && _ctx.STATE && _ctx.STATE.rdl && _ctx.STATE.rdl.pinnedCoverNote && window.MFG_RDL && typeof window.MFG_RDL.syncPinnedStatementCoverNote === 'function') {
           try { window.MFG_RDL.syncPinnedStatementCoverNote(document, _ctx.STATE); } catch (_) {}
@@ -11430,6 +12475,22 @@
     formatSentinelTriage: formatSentinelTriagePlainText,
     rebindSentinelSummaryButtons,
     stopSentinelSummaryIfActive,
+    buildDailyHandoverSummary,
+    sanitizeDailyHandoverText,
+    sanitizeDailyHandoverLiveInput,
+    requestDailyHandover: requestDailyHandoverCommentary,
+    requestDailyHandoverCommentary,
+    openDailyHandover: openDailyHandoverPopover,
+    openDailyHandoverPopover,
+    toggleDailyHandover: toggleDailyHandoverPopover,
+    toggleDailyHandoverPopover,
+    closeDailyHandover: closeDailyHandoverPopover,
+    closeDailyHandoverPopover,
+    formatDailyHandover: formatDailyHandoverPlainText,
+    speakDailyHandoverStandup,
+    rebindDailyHandoverButtons,
+    stopDailyHandoverIfActive,
+    clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
     rebindBriefingButton,
@@ -11455,6 +12516,10 @@
       sentinelRuleId: _chatState.activeSentinelRuleId || '',
       sentinelPopoverOpen: Boolean(_chatState.sentinelPopoverOpen),
       sentinelPopoverRuleId: _chatState.sentinelPopoverRuleId || '',
+      handoverPopoverOpen: Boolean(_chatState.handoverPopoverOpen),
+      handoverPopoverScope: _chatState.handoverPopoverScope || '',
+      handoverCustomDraftSize: _chatState.handoverCustomDraftByScope ? _chatState.handoverCustomDraftByScope.size : 0,
+      handoverBriefCacheSize: _chatState.handoverBriefCache ? _chatState.handoverBriefCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
