@@ -4966,38 +4966,38 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
 /* ---------- Desktop Full-Screen Fit Rules (Every Page Fits 100% in 1 Viewport) ---------- */
 @media (min-width: 1081px) {
   .hero-section {
-    padding: clamp(14px, 2.2vh, 26px) 0;
+    padding: 10px 0;
   }
   .hero-grid {
-    gap: 32px;
+    gap: 28px;
   }
   .hero-section .eyebrow {
-    padding: 5px 12px;
-    font-size: 10.6px;
-    margin-bottom: 12px;
+    padding: 4px 11px;
+    font-size: 10.4px;
+    margin-bottom: 9px;
   }
   .hero-title {
-    font-size: clamp(32px, 3.3vw, 45px);
-    line-height: 1.07;
-    margin-bottom: 12px;
+    font-size: clamp(30px, 3.1vw, 42px);
+    line-height: 1.06;
+    margin-bottom: 9px;
   }
   .hero-lead {
-    font-size: 14.8px;
-    line-height: 1.52;
-    margin-bottom: 16px;
+    font-size: 14.2px;
+    line-height: 1.46;
+    margin-bottom: 12px;
   }
   .hero-cta-row {
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 9px;
   }
   .hero-cta-row .btn {
-    padding: 9.5px 16px;
-    font-size: 13.4px;
+    padding: 8.5px 15px;
+    font-size: 13.2px;
   }
   .hero-trust-inline {
-    margin-bottom: 10px;
-    gap: 6px 12px;
-    font-size: 11.4px;
+    margin-bottom: 9px;
+    gap: 5px 11px;
+    font-size: 11.2px;
   }
   .hero-launcher-wrap {
     gap: 7px;
@@ -5022,55 +5022,61 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     line-height: 1.25;
   }
   .hlc-top {
-    padding: 10px 15px;
+    padding: 9px 14px;
   }
   .hlc-body {
-    padding: 12px 15px;
+    padding: 10px 14px;
   }
   .hlc-kpis {
-    gap: 9px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 8px;
   }
   .hlc-kpi {
-    padding: 9px 12px;
-  }
-  .hlc-kpi strong {
-    font-size: 20px;
-  }
-  .hlc-stage {
-    gap: 6px;
-    margin-bottom: 9px;
-  }
-  .hlc-visual-list {
-    gap: 6px;
-  }
-  .hlc-vrow {
     padding: 8px 11px;
   }
+  .hlc-kpi strong {
+    font-size: 19px;
+  }
+  .hlc-stage {
+    gap: 5px;
+    margin-bottom: 7px;
+  }
+  .hlc-visual-list {
+    gap: 5px;
+  }
+  .hlc-vrow {
+    padding: 7px 11px;
+  }
   .hlc-vrow-main b {
-    font-size: 12.6px;
+    font-size: 12.2px;
   }
   .hlc-vrow-main small {
-    font-size: 11px;
+    font-size: 10.6px;
   }
   .hlc-telemetry-strip {
-    padding: 6px 10px;
-    margin-bottom: 8px;
+    padding: 5px 9px;
+    margin-bottom: 6px;
     gap: 6px;
   }
+  .hlc-tel-cell small {
+    font-size: 9px;
+  }
+  .hlc-tel-cell b {
+    font-size: 11.4px;
+  }
   .hero-proof-list {
-    gap: 7px;
+    gap: 6px;
     padding-top: 0;
   }
   .hero-proof-item {
-    padding: 8px 12px;
+    padding: 7px 11px;
   }
   .hero-proof-item b {
-    font-size: 13.4px;
+    font-size: 13px;
   }
   .hero-proof-item small {
-    font-size: 11.8px;
-    line-height: 1.32;
+    font-size: 11.4px;
+    line-height: 1.28;
   }
   .pricing-trust-bar {
     margin-top: 10px;
@@ -5143,48 +5149,78 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   }
   /* Section 01: Architecture */
   .arch-pillars-ribbon {
-    gap: 6px;
-    margin-bottom: 7px;
+    gap: 5px;
+    margin-bottom: 5px;
   }
   .apr-item {
-    padding: 5.5px 9px;
-    gap: 7px;
+    padding: 4px 8px;
+    gap: 6px;
   }
   .apr-num {
-    width: 21px;
-    height: 21px;
-    font-size: 9.8px;
+    width: 19px;
+    height: 19px;
+    font-size: 9.2px;
   }
   .apr-item b {
-    font-size: 11.4px;
+    font-size: 11px;
   }
   .apr-item small {
-    font-size: 10px;
+    font-size: 9.6px;
   }
   .app-cat-bar {
-    margin-bottom: 8px;
+    margin-bottom: 5px;
     gap: 5px;
   }
   .app-cat-pill {
-    padding: 4.5px 11px;
-    font-size: 11.4px;
+    padding: 3.5px 10px;
+    font-size: 11px;
   }
   .app-suite-grid {
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 5px;
+    margin-bottom: 6px;
   }
   .app-tile {
-    padding: 7px 5px 6px;
-    gap: 3.5px;
+    padding: 5px 4px 4px;
+    gap: 2.5px;
   }
   .app-icon {
-    width: 32px;
-    height: 32px;
-    font-size: 16px;
+    width: 27px;
+    height: 27px;
+    font-size: 14px;
+  }
+  .app-tile b {
+    font-size: 10.6px;
   }
   .app-spotlight {
-    padding: 12px 16px;
-    gap: 14px;
+    padding: 9px 14px;
+    gap: 12px;
+  }
+  .app-spot-head .app-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 19px;
+  }
+  .app-spot-head h3 {
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+  .app-spot-head p {
+    font-size: 11.8px;
+    line-height: 1.32;
+  }
+  .app-spot-specs {
+    gap: 4px;
+  }
+  .app-spot-bullets {
+    gap: 2px;
+  }
+  .app-spot-bullets li {
+    font-size: 11.4px;
+    line-height: 1.26;
+  }
+  .app-spot-tables span {
+    font-size: 10px;
+    padding: 1.5px 5px;
   }
   .contrast-grid {
     gap: 16px;
@@ -5837,242 +5873,242 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   }
 }
 /* ---------- Widescreen & Tall-Monitor Adaptive Scaling (1536×864 & 1920×1080+) ---------- */
-@media (min-width: 1081px) and (min-height: 850px) {
+@media (min-width: 1480px) and (min-height: 725px) {
   .hero-grid {
-    gap: 40px;
+    gap: 36px;
   }
   .hero-title {
-    font-size: clamp(36px, 3.5vw, 52px);
-    margin-bottom: 14px;
+    font-size: clamp(34px, 3.3vw, 48px);
+    margin-bottom: 12px;
   }
   .hero-lead {
-    font-size: 15.6px;
-    margin-bottom: 18px;
+    font-size: 15px;
+    margin-bottom: 15px;
   }
   .hero-cta-row {
-    margin-bottom: 12px;
+    margin-bottom: 11px;
   }
   .hero-cta-row .btn {
-    padding: 11px 19px;
-    font-size: 14px;
+    padding: 10px 17px;
+    font-size: 13.6px;
   }
   .hero-trust-inline {
-    margin-bottom: 12px;
-    font-size: 12px;
+    margin-bottom: 11px;
+    font-size: 11.6px;
   }
   .hero-proof-list {
-    gap: 9px;
+    gap: 8px;
   }
   .hero-proof-item {
-    padding: 10px 14px;
+    padding: 9px 13px;
   }
   .hero-proof-item b {
-    font-size: 14.2px;
+    font-size: 13.8px;
   }
   .hero-proof-item small {
-    font-size: 12.4px;
+    font-size: 12px;
   }
   .hlc-top {
-    padding: 12px 18px;
+    padding: 11px 16px;
   }
   .hlc-body {
-    padding: 15px 18px;
+    padding: 13px 16px;
   }
   .hlc-kpi {
-    padding: 11px 14px;
-  }
-  .hlc-kpi strong {
-    font-size: 22px;
-  }
-  .hlc-vrow {
-    padding: 9.5px 13px;
-  }
-  .hlc-vrow-main b {
-    font-size: 13.2px;
-  }
-  .hlc-telemetry-strip {
-    padding: 8px 12px;
-    margin-bottom: 10px;
-  }
-  .sec-head {
-    margin-bottom: 12px;
-  }
-  .sec-head h2 {
-    font-size: clamp(22px, 2.2vw, 30px);
-    margin-bottom: 4px;
-  }
-  .sec-head p {
-    font-size: 13.5px;
-  }
-  .sec-tab {
-    padding: 6.5px 12px;
-    font-size: 12.2px;
-  }
-  .arch-pillars-ribbon {
-    gap: 9px;
-    margin-bottom: 10px;
-  }
-  .apr-item {
-    padding: 8px 12px;
-  }
-  .apr-item b {
-    font-size: 12.4px;
-  }
-  .apr-item small {
-    font-size: 10.8px;
-  }
-  .app-cat-bar {
-    margin-bottom: 10px;
-    gap: 7px;
-  }
-  .app-cat-pill {
-    padding: 6px 13px;
-    font-size: 12.2px;
-  }
-  .app-suite-grid {
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .app-tile {
-    padding: 9px 6px 8px;
-    gap: 5px;
-  }
-  .app-icon {
-    width: 36px;
-    height: 36px;
-    font-size: 18px;
-  }
-  .app-tile b {
-    font-size: 11.8px;
-  }
-  .app-spotlight {
-    padding: 15px 20px;
-    gap: 18px;
-  }
-  .stack-cards {
-    gap: 10px;
-  }
-  .stack-card {
-    padding: 13px 15px;
-  }
-  .stack-card-hdr h4 {
-    font-size: 14.6px;
-  }
-  .stack-card p {
-    font-size: 12.5px;
-  }
-  .ai-console-hdr {
-    padding: 10px 16px;
-  }
-  .ai-prompt-pills {
-    padding: 9px 16px;
-    gap: 7px;
-  }
-  .ai-pill-btn {
-    padding: 6.5px 10px;
-    font-size: 11.8px;
-  }
-  .ai-thread {
-    padding: 12px 16px;
-    max-height: 245px;
-    gap: 10px;
-  }
-  .ai-bot-bubble {
-    padding: 12px 14px;
-    font-size: 12.6px;
-  }
-  .ind-layout {
-    gap: 18px;
-  }
-  .ind-tab {
-    padding: 6px 11px;
-  }
-  .ind-tab b {
-    font-size: 13px;
-  }
-  .ind-tab small {
-    font-size: 10.6px;
-  }
-  .ind-detail {
-    padding: 15px 20px;
-  }
-  .ind-detail h3 {
-    font-size: 20px;
-  }
-  .ind-box {
     padding: 10px 13px;
   }
-  .ind-box li {
-    font-size: 12px;
-    padding: 2.5px 0;
+  .hlc-kpi strong {
+    font-size: 21px;
   }
-  .mock {
-    grid-template-columns: 230px 1fr;
+  .hlc-vrow {
+    padding: 8.5px 12px;
   }
-  .rail {
-    padding: 10px 0 8px;
+  .hlc-vrow-main b {
+    font-size: 12.8px;
   }
-  .rail .brand {
-    padding: 0 12px 8px;
+  .hlc-telemetry-strip {
+    padding: 7px 11px;
+    margin-bottom: 8px;
   }
-  .rail nav button.nav-item {
-    padding: 5px 9px;
-    font-size: 12px;
+  .sec-head {
+    margin-bottom: 10px;
   }
-  .mock .top {
-    padding: 7px 14px;
+  .sec-head h2 {
+    font-size: clamp(21px, 2.1vw, 28px);
+    margin-bottom: 3px;
   }
-  .mock .crumb b {
-    font-size: 15px;
+  .sec-head p {
+    font-size: 13px;
   }
-  .mock .kpi {
-    padding: 7px 12px;
+  .sec-tab {
+    padding: 6px 11px;
+    font-size: 11.8px;
   }
-  .mock .kpi .v {
-    font-size: 18.5px;
-  }
-  .mock .row2, .mock .row3 {
+  .arch-pillars-ribbon {
     gap: 8px;
-    padding: 7px 9px 0;
+    margin-bottom: 7px;
   }
-  .mock .row3 {
-    padding-bottom: 7px;
+  .apr-item {
+    padding: 6px 10px;
   }
-  .mock .ph {
-    padding: 6px 9px 4px;
+  .apr-item b {
+    font-size: 11.8px;
   }
-  .mock .ph h3 {
-    font-size: 12px;
+  .apr-item small {
+    font-size: 10.2px;
   }
-  table.m-grid th {
-    padding: 4px 7px;
-    font-size: 9.8px;
+  .app-cat-bar {
+    margin-bottom: 7px;
+    gap: 6px;
   }
-  table.m-grid td {
-    padding: 4px 7px;
+  .app-cat-pill {
+    padding: 4.5px 12px;
+    font-size: 11.6px;
+  }
+  .app-suite-grid {
+    gap: 6px;
+    margin-bottom: 7px;
+  }
+  .app-tile {
+    padding: 7px 5px 6px;
+    gap: 3.5px;
+  }
+  .app-icon {
+    width: 31px;
+    height: 31px;
+    font-size: 16px;
+  }
+  .app-tile b {
     font-size: 11.2px;
   }
-  .att li {
-    padding: 4px 9px 4px 11px;
-    margin: 0 0 3px;
+  .app-spotlight {
+    padding: 12px 18px;
+    gap: 16px;
   }
-  .att li b {
+  .stack-cards {
+    gap: 9px;
+  }
+  .stack-card {
+    padding: 11px 14px;
+  }
+  .stack-card-hdr h4 {
+    font-size: 14.2px;
+  }
+  .stack-card p {
+    font-size: 12.2px;
+  }
+  .ai-console-hdr {
+    padding: 9px 15px;
+  }
+  .ai-prompt-pills {
+    padding: 8px 15px;
+    gap: 6px;
+  }
+  .ai-pill-btn {
+    padding: 5.5px 9px;
     font-size: 11.4px;
   }
+  .ai-thread {
+    padding: 11px 15px;
+    max-height: 225px;
+    gap: 9px;
+  }
+  .ai-bot-bubble {
+    padding: 11px 13px;
+    font-size: 12.2px;
+  }
+  .ind-layout {
+    gap: 16px;
+  }
+  .ind-tab {
+    padding: 5px 10px;
+  }
+  .ind-tab b {
+    font-size: 12.6px;
+  }
+  .ind-tab small {
+    font-size: 10.2px;
+  }
+  .ind-detail {
+    padding: 13px 18px;
+  }
+  .ind-detail h3 {
+    font-size: 19px;
+  }
+  .ind-box {
+    padding: 9px 12px;
+  }
+  .ind-box li {
+    font-size: 11.8px;
+    padding: 2.2px 0;
+  }
+  .mock {
+    grid-template-columns: 224px 1fr;
+  }
+  .rail {
+    padding: 9px 0 7px;
+  }
+  .rail .brand {
+    padding: 0 11px 7px;
+  }
+  .rail nav button.nav-item {
+    padding: 4.5px 8px;
+    font-size: 11.6px;
+  }
+  .mock .top {
+    padding: 6px 13px;
+  }
+  .mock .crumb b {
+    font-size: 14.4px;
+  }
+  .mock .kpi {
+    padding: 6px 11px;
+  }
+  .mock .kpi .v {
+    font-size: 17.5px;
+  }
+  .mock .row2, .mock .row3 {
+    gap: 7px;
+    padding: 6px 8px 0;
+  }
+  .mock .row3 {
+    padding-bottom: 6px;
+  }
+  .mock .ph {
+    padding: 5px 8px 3px;
+  }
+  .mock .ph h3 {
+    font-size: 11.6px;
+  }
+  table.m-grid th {
+    padding: 3px 6px;
+    font-size: 9.4px;
+  }
+  table.m-grid td {
+    padding: 3px 6px;
+    font-size: 10.8px;
+  }
+  .att li {
+    padding: 3.5px 8px 3.5px 10px;
+    margin: 0 0 2px;
+  }
+  .att li b {
+    font-size: 11px;
+  }
   .att li span {
-    font-size: 10.4px;
+    font-size: 10px;
   }
   .soa-viewer {
-    padding: 14px 18px;
+    padding: 12px 16px;
   }
   .soa-meta-cell {
-    padding: 7px 11px;
+    padding: 6px 10px;
   }
   .soa-meta-cell b {
-    font-size: 15px;
+    font-size: 14.2px;
   }
 }
-@media (min-width: 1600px) and (min-height: 920px) {
+@media (min-width: 1650px) and (min-height: 860px) {
   .hero-grid {
     gap: 52px;
   }
