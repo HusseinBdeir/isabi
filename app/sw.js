@@ -1,6 +1,6 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.237';
+const SHELL_CACHE = 'isabi-mfg-v19.6.238';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
-const DATA_CACHE = 'isabi-mfg-data-v1';
+const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -8,45 +8,45 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.237',
-  './css/geo_dispatch.css?v=19.6.237',
-  './css/daily_ops.css?v=19.6.237',
-  './css/ask_isabi.css?v=19.6.237',
-  './css/fleet_pnl.css?v=19.6.237',
-  './css/smart_scan.css?v=19.6.237',
-  './css/doc_scanner.css?v=19.6.237',
-  './css/ai_edge.css?v=19.6.237',
-  './css/telematics.css?v=19.6.237',
-  './css/step_up_auth.css?v=19.6.237',
-  './js/face.js?v=19.6.237',
-  './js/endpoints.js?v=19.6.237',
-  './js/seed_manifest.js?v=19.6.237',
-  './js/icons.js?v=19.6.237',
-  './js/geo_dispatch.js?v=19.6.237',
-  './js/forms_engine.js?v=19.6.237',
-  './js/pbi_pages.js?v=19.6.237',
-  './js/rdl_reports.js?v=19.6.237',
-  './js/kiosk_print.js?v=19.6.237',
-  './js/table_columns.js?v=19.6.237',
-  './js/daily_ops.js?v=19.6.237',
-  './js/i18n.js?v=19.6.237',
-  './js/ask_isabi.js?v=19.6.237',
-  './js/fleet_pnl.js?v=19.6.237',
-  './js/doc_scanner.js?v=19.6.237',
-  './js/smart_scan.js?v=19.6.237',
-  './js/ai_edge.js?v=19.6.237',
-  './js/telematics.js?v=19.6.237',
-  './js/step_up_auth.js?v=19.6.237',
-  './js/app.js?v=19.6.237',
-  './manifest.json?v=19.6.237',
-  './favicon.ico?v=19.6.237',
-  './favicon-dark.ico?v=19.6.237',
-  './icon.svg?v=19.6.237',
-  './icon-dark.svg?v=19.6.237',
-  './icon-180.png?v=19.6.237',
-  './icon-192.png?v=19.6.237',
-  './icon-512.png?v=19.6.237',
-  './icon-512-maskable.png?v=19.6.237'
+  './css/app.css?v=19.6.238',
+  './css/geo_dispatch.css?v=19.6.238',
+  './css/daily_ops.css?v=19.6.238',
+  './css/ask_isabi.css?v=19.6.238',
+  './css/fleet_pnl.css?v=19.6.238',
+  './css/smart_scan.css?v=19.6.238',
+  './css/doc_scanner.css?v=19.6.238',
+  './css/ai_edge.css?v=19.6.238',
+  './css/telematics.css?v=19.6.238',
+  './css/step_up_auth.css?v=19.6.238',
+  './js/face.js?v=19.6.238',
+  './js/endpoints.js?v=19.6.238',
+  './js/seed_manifest.js?v=19.6.238',
+  './js/icons.js?v=19.6.238',
+  './js/geo_dispatch.js?v=19.6.238',
+  './js/forms_engine.js?v=19.6.238',
+  './js/pbi_pages.js?v=19.6.238',
+  './js/rdl_reports.js?v=19.6.238',
+  './js/kiosk_print.js?v=19.6.238',
+  './js/table_columns.js?v=19.6.238',
+  './js/daily_ops.js?v=19.6.238',
+  './js/i18n.js?v=19.6.238',
+  './js/ask_isabi.js?v=19.6.238',
+  './js/fleet_pnl.js?v=19.6.238',
+  './js/doc_scanner.js?v=19.6.238',
+  './js/smart_scan.js?v=19.6.238',
+  './js/ai_edge.js?v=19.6.238',
+  './js/telematics.js?v=19.6.238',
+  './js/step_up_auth.js?v=19.6.238',
+  './js/app.js?v=19.6.238',
+  './manifest.json?v=19.6.238',
+  './favicon.ico?v=19.6.238',
+  './favicon-dark.ico?v=19.6.238',
+  './icon.svg?v=19.6.238',
+  './icon-dark.svg?v=19.6.238',
+  './icon-180.png?v=19.6.238',
+  './icon-192.png?v=19.6.238',
+  './icon-512.png?v=19.6.238',
+  './icon-512-maskable.png?v=19.6.238'
 ];
 
 const VENDOR_ASSETS = [
@@ -65,17 +65,81 @@ const VENDOR_ASSETS = [
   './vendor/leaflet/leaflet.js'
 ];
 
+// Exact byte-length integrity map for Face ID neural weights: prevents truncated/aborted
+// streams from ever being stored in or served from DATA_CACHE.
+const MODEL_BIN_SIZES = {
+  'face_recognition_model.bin': 6444032,
+  'ssd_mobilenetv1_model.bin': 5616957,
+  'face_landmark_68_model.bin': 356840,
+  'tiny_face_detector_model.bin': 193321,
+  'face_landmark_68_tiny_model.bin': 77224
+};
+
+function expectedModelBinBytes(rawUrl) {
+  try {
+    const pathname = new URL(rawUrl, self.location.href).pathname;
+    const base = pathname.split('/').pop() || '';
+    return MODEL_BIN_SIZES[base] || 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function validateCachedVendorResponse(rawUrl, res) {
+  if (!res || res.status !== 200) return null;
+  const expected = expectedModelBinBytes(rawUrl);
+  if (!expected) return res;
+  try {
+    const buf = await res.clone().arrayBuffer();
+    if (!buf || buf.byteLength !== expected) return null;
+  } catch (_) {
+    return null;
+  }
+  return res;
+}
+
+function buildResponseFromBufferedEntry(entry) {
+  const r = new Response(entry.buf ? entry.buf.slice(0) : null, {
+    status: entry.status,
+    statusText: entry.statusText,
+    headers: new Headers(entry.headers)
+  });
+  try {
+    Object.defineProperty(r, 'url', { value: entry.url });
+    Object.defineProperty(r, 'redirected', { value: Boolean(entry.redirected) });
+  } catch (_) {}
+  return r;
+}
+
 // Deduplicate concurrent network fetches between install/warmers and active page requests
+// without leaving an unconsumed ReadableStream tee branch on 6.44 MB binary responses.
 const inflight = new Map();
 function fetchDedup(reqOrUrl, init) {
   const key = typeof reqOrUrl === 'string' ? new URL(reqOrUrl, self.location.href).href : reqOrUrl.url;
   const existing = inflight.get(key);
-  if (existing) return existing.then(res => res.clone());
-  const p = fetch(init ? new Request(key, init) : reqOrUrl).finally(() => {
+  if (existing) return existing.then(buildResponseFromBufferedEntry);
+  const p = (async () => {
+    const res = await fetch(init ? new Request(key, init) : reqOrUrl);
+    if (!res) throw new Error('Empty fetch response');
+    const nullBody = res.status === 204 || res.status === 205 || res.status === 304 || res.status < 200 || res.status > 599;
+    const buf = nullBody ? null : await res.arrayBuffer();
+    const expected = expectedModelBinBytes(key);
+    if (expected && res.status === 200 && (!buf || buf.byteLength !== expected)) {
+      throw new Error(`Truncated Face ID model binary (${key}): got ${buf ? buf.byteLength : 0}, expected ${expected}`);
+    }
+    return {
+      buf,
+      status: res.status,
+      statusText: res.statusText,
+      headers: Array.from(res.headers.entries()),
+      url: res.url || key,
+      redirected: Boolean(res.redirected)
+    };
+  })().finally(() => {
     inflight.delete(key);
   });
   inflight.set(key, p);
-  return p.then(res => res.clone());
+  return p.then(buildResponseFromBufferedEntry);
 }
 
 function isSameOriginUrl(rawUrl) {
@@ -140,25 +204,9 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      const legacyShells = keys.filter(k => k.startsWith('isabi-mfg-') && k !== SHELL_CACHE && k !== DATA_CACHE);
-      if (legacyShells.length) {
-        const dataCache = await caches.open(DATA_CACHE);
-        for (const oldKey of legacyShells) {
-          try {
-            const oldCache = await caches.open(oldKey);
-            const reqs = await oldCache.keys();
-            for (const req of reqs) {
-              if (req.url.includes('/vendor/')) {
-                const already = await dataCache.match(req, { ignoreSearch: true });
-                if (!already) {
-                  const hit = await oldCache.match(req);
-                  if (hit) await dataCache.put(req.url.includes('face-api.js') ? './vendor/face-api.js?v=1' : req, hit.clone());
-                }
-              }
-            }
-          } catch (_) {}
-          await caches.delete(oldKey);
-        }
+      const legacyCaches = keys.filter(k => k.startsWith('isabi-mfg-') && k !== SHELL_CACHE && k !== DATA_CACHE);
+      for (const oldKey of legacyCaches) {
+        await caches.delete(oldKey).catch(() => {});
       }
       await self.clients.claim();
       try {
@@ -206,20 +254,38 @@ self.addEventListener('fetch', event => {
   if (!isAnyNav && isPersistentDataUrl(url)) {
     event.respondWith(
       caches.open(DATA_CACHE).then(async cache => {
-        const exact = await cache.match(event.request);
-        if (exact) return exact;
-        if (url.pathname.includes('/vendor/')) {
-          const ignoreQ = await cache.match(event.request, { ignoreSearch: true });
-          if (ignoreQ) return ignoreQ;
+        const forceBypass = url.searchParams.has('cb');
+        if (!forceBypass) {
+          const exact = await cache.match(event.request);
+          if (exact) {
+            const validExact = await validateCachedVendorResponse(url.href, exact);
+            if (validExact) return validExact;
+            await cache.delete(event.request).catch(() => {});
+          }
+          if (url.pathname.includes('/vendor/')) {
+            const ignoreQ = await cache.match(event.request, { ignoreSearch: true });
+            if (ignoreQ) {
+              const validIgnoreQ = await validateCachedVendorResponse(url.href, ignoreQ);
+              if (validIgnoreQ) return validIgnoreQ;
+              await cache.delete(event.request, { ignoreSearch: true }).catch(() => {});
+            }
+          }
+        } else {
+          await cache.delete(event.request, { ignoreSearch: true }).catch(() => {});
         }
         try {
-          const res = await fetchDedup(event.request);
+          const res = await fetchDedup(forceBypass ? new Request(event.request.url, { cache: 'no-store' }) : event.request);
           if (res && res.status === 200 && isSameOriginUrl(res.url)) {
-            cache.put(event.request, res.clone()).catch(() => {});
+            const canonicalKey = (url.pathname.includes('/vendor/') && forceBypass)
+              ? new URL(url.pathname, self.location.origin).href
+              : event.request;
+            cache.put(canonicalKey, res.clone()).catch(() => {});
           }
           return res;
         } catch (_) {
-          return (await cache.match(event.request, { ignoreSearch: true })) || Response.error();
+          const fallback = await cache.match(event.request, { ignoreSearch: true });
+          const validFallback = fallback ? await validateCachedVendorResponse(url.href, fallback) : null;
+          return validFallback || Response.error();
         }
       })
     );
@@ -360,7 +426,9 @@ self.addEventListener('message', event => {
           const absUrl = new URL(relUrl, self.location.href).href;
           const isVendor = absUrl.includes('/vendor/');
           const hit = await cache.match(absUrl, isVendor ? { ignoreSearch: true } : undefined);
-          if (!hit) {
+          const validHit = hit && isVendor ? await validateCachedVendorResponse(absUrl, hit) : hit;
+          if (!validHit) {
+            if (hit) await cache.delete(absUrl, isVendor ? { ignoreSearch: true } : undefined).catch(() => {});
             try {
               const res = await fetchDedup(absUrl);
               if (res && res.status === 200 && isSameOriginUrl(res.url)) await cache.put(absUrl, res);

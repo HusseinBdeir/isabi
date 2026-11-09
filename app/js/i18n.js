@@ -9611,7 +9611,11 @@
       "This User Seat Only": "مقعد هذا المستخدم فقط",
       "Select All": "تحديد الكل",
       "Hidden": "مخفي",
-      "Primary": "أساسي"
+      "Primary": "أساسي",
+      "Finalizing Face ID model…": "جارٍ تجهيز نموذج بصمة الوجه…",
+      "Finalizing Face ID model...": "جارٍ تجهيز نموذج بصمة الوجه...",
+      "Verifying Face ID…": "جارٍ التحقق من بصمة الوجه…",
+      "Verifying Face ID...": "جارٍ التحقق من بصمة الوجه..."
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -19204,7 +19208,11 @@
       "This User Seat Only": "Ce siège utilisateur uniquement",
       "Select All": "Tout sélectionner",
       "Hidden": "Masqué",
-      "Primary": "Principal"
+      "Primary": "Principal",
+      "Finalizing Face ID model…": "Finalisation du modèle Face ID…",
+      "Finalizing Face ID model...": "Finalisation du modèle Face ID...",
+      "Verifying Face ID…": "Vérification Face ID en cours…",
+      "Verifying Face ID...": "Vérification Face ID en cours..."
     }
   };
 

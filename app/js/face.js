@@ -173,7 +173,7 @@ const Face = (() => {
         }
       }
       if (!earlyCancelled && !earlyConsumed && earlyStreamObj === s) {
-        earlyPreviewTimer = setTimeout(tick, 32);
+        earlyPreviewTimer = setTimeout(tick, ready ? 32 : 90);
       }
     };
     earlyPreviewTimer = setTimeout(tick, 16);
@@ -315,6 +315,108 @@ const Face = (() => {
     return ssdLoadingPromise;
   }
 
+  const EXPECTED_MODEL_BIN_BYTES = {
+    "face_recognition_model.bin": 6444032,
+    "ssd_mobilenetv1_model.bin": 5616957,
+    "face_landmark_68_model.bin": 356840,
+    "tiny_face_detector_model.bin": 193321,
+    "face_landmark_68_tiny_model.bin": 77224
+  };
+
+  let legacyCachesSanitized = false;
+  async function sanitizeModelCaches(forceEvictModels = false) {
+    if (typeof caches === "undefined" || !caches || typeof caches.keys !== "function") return;
+    try {
+      const keys = await caches.keys();
+      for (const k of keys) {
+        if (k === "isabi-mfg-data-v1" || k === "isabi-mfg-data-v2") {
+          await caches.delete(k).catch(() => {});
+          continue;
+        }
+        if (!k.startsWith("isabi-mfg-")) continue;
+        try {
+          const c = await caches.open(k);
+          const reqs = await c.keys();
+          for (const req of reqs) {
+            if (!req || !req.url || !req.url.includes("/vendor/models/")) continue;
+            if (forceEvictModels) {
+              await c.delete(req).catch(() => {});
+              continue;
+            }
+            const binName = req.url.split("?")[0].split("/").pop() || "";
+            const expectedLen = EXPECTED_MODEL_BIN_BYTES[binName] || 0;
+            if (expectedLen > 0) {
+              const hit = await c.match(req);
+              if (hit) {
+                const buf = await hit.clone().arrayBuffer().catch(() => null);
+                if (!buf || buf.byteLength !== expectedLen) {
+                  await c.delete(req).catch(() => {});
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  async function refreshModelBinInCache(base, binName) {
+    const expectedLen = EXPECTED_MODEL_BIN_BYTES[binName] || 0;
+    const urlStr = `${base}/${binName}`;
+    try {
+      const res = await fetch(`${urlStr}?cb=${Date.now()}`, { cache: "no-store" });
+      if (!res || res.status !== 200) return false;
+      const buf = await res.arrayBuffer();
+      if (expectedLen > 0 && (!buf || buf.byteLength !== expectedLen)) return false;
+      if (typeof caches !== "undefined" && caches && typeof caches.open === "function") {
+        const c = await caches.open("isabi-mfg-data-v3");
+        const cleanRes = new Response(buf, {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" }
+        });
+        await c.put(urlStr, cleanRes).catch(() => {});
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function loadNetWithSelfHealing(loaderFn, base, binName, timeoutMs = 8000) {
+    const runWithTimeout = () => new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Timeout loading ${binName}`));
+        }
+      }, timeoutMs);
+      Promise.resolve().then(loaderFn).then(
+        val => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(val);
+          }
+        },
+        err => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          }
+        }
+      );
+    });
+    try {
+      return await runWithTimeout();
+    } catch (firstErr) {
+      await sanitizeModelCaches(true);
+      await refreshModelBinInCache(base, binName);
+      return await loaderFn();
+    }
+  }
+
   async function load() {
     if (ready) return;
     if (loading) return loading;
@@ -327,6 +429,10 @@ const Face = (() => {
     });
     detectorLoading.catch(() => {});
     loading = (async () => {
+      if (!legacyCachesSanitized) {
+        legacyCachesSanitized = true;
+        await sanitizeModelCaches(false);
+      }
       await ensureFaceApiScript(true);
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       const base = "./vendor/models";
@@ -344,23 +450,43 @@ const Face = (() => {
       backend = faceapi.tf.getBackend();
       // 2-Stage Progressive Loading:
       // Stage 1 (<250ms): TinyFaceDetector (193 KB) + FaceLandmark68TinyNet (77 KB) -> immediate live reticle & liveness tracking
-      // Stage 2: FaceRecognitionNet (6.44 MB) -> 128-d descriptor verification
-      const tinyP = faceapi.nets.tinyFaceDetector.loadFromUri(base);
-      const lmP = faceapi.nets.faceLandmark68TinyNet.loadFromUri(base).then(() => {
+      // Stage 2: FaceRecognitionNet (6.44 MB) -> 128-d descriptor verification with self-healing cache validation
+      const tinyP = loadNetWithSelfHealing(
+        () => faceapi.nets.tinyFaceDetector.loadFromUri(base),
+        base,
+        "tiny_face_detector_model.bin",
+        5000
+      );
+      const lmP = loadNetWithSelfHealing(
+        () => faceapi.nets.faceLandmark68TinyNet.loadFromUri(base),
+        base,
+        "face_landmark_68_tiny_model.bin",
+        5000
+      ).then(() => {
         landmarksTiny = true;
       }).catch(async e => {
         console.warn("tiny landmark net unavailable, using full 68 net", e);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+        await loadNetWithSelfHealing(
+          () => faceapi.nets.faceLandmark68Net.loadFromUri(base),
+          base,
+          "face_landmark_68_model.bin",
+          6000
+        );
         landmarksTiny = false;
       });
-      const recP = faceapi.nets.faceRecognitionNet.loadFromUri(base);
+      const recP = loadNetWithSelfHealing(
+        () => faceapi.nets.faceRecognitionNet.loadFromUri(base),
+        base,
+        "face_recognition_model.bin",
+        9000
+      );
+      recP.catch(() => {});
 
       await Promise.all([tinyP, lmP]);
 
-      let wcv = null;
       if (!isAutoTest && typeof document !== "undefined") {
         try {
-          wcv = document.createElement("canvas");
+          const wcv = document.createElement("canvas");
           wcv.width = 128;
           wcv.height = 128;
           await Promise.resolve(faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.99 }))).catch(() => {});
@@ -386,17 +512,13 @@ const Face = (() => {
 
       if (isAutoTest) {
         await ensureSsdLoaded();
-      } else if (wcv) {
-        try {
-          await Promise.resolve(faceapi.computeFaceDescriptor(wcv)).catch(() => {});
-        } catch (_) {}
       }
 
       ready = true;
       if (typeof document !== "undefined") {
         const vp = document.getElementById("authCamViewport");
         const hint = document.getElementById("authFaceHint");
-        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
+        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting|Finalizing/i.test(hint.textContent || "")) {
           hint.textContent = "Look at camera for automatic Face ID";
           hint.className = "auth-face-hint ok";
         }

@@ -97814,12 +97814,13 @@
     if (opts && opts.liveCamera && STATE.authed) return { status: 'already-authed' };
     const defaultNeeded = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
     const enrolled = usableFaces();
+    const isEdgeBioActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     const hasRedactedEdgeBioSeats = Boolean(
       hasServerApi() &&
       !isDemoSandboxSession() &&
       (
         STATE.users.some(u => u && u.status !== 'Suspended' && u.face_enrolled && (!Array.isArray(u.face_samples) || !u.face_samples.length)) ||
-        (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !_usersApiHydratedOnce)
+        (isEdgeBioActive && (!_usersApiHydratedOnce || hasAnyEnrolledFaceId()))
       )
     );
     if (!enrolled.length && !hasRedactedEdgeBioSeats) {
@@ -97832,18 +97833,22 @@
     }
     if (det && det.modelLoading && !det.descriptor) {
       FACE_STATE.missedFrames = 0;
+      if (!FACE_STATE.modelLoadingStartedAt) FACE_STATE.modelLoadingStartedAt = Date.now();
+      ensureFaceModelsLoaded().catch(() => {});
       const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
       livenessStep(det, probeTargetEmail || '__edge_face__', opts);
       if (!FACE_STATE.pendingPinUser) {
+        const loadingElapsed = Date.now() - FACE_STATE.modelLoadingStartedAt;
         setAuthHint(
           FACE_STATE.pending2faUser
             ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-            : 'Look at camera for automatic Face ID',
+            : (loadingElapsed > 1200 ? 'Finalizing Face ID model…' : 'Look at camera for automatic Face ID'),
           'ok'
         );
       }
       return { status: 'model-loading' };
     }
+    FACE_STATE.modelLoadingStartedAt = 0;
     if (!det || !det.descriptor) {
       FACE_STATE.missedFrames = (FACE_STATE.missedFrames || 0) + 1;
       if (!FACE_STATE.edgeProbeStreak || FACE_STATE.missedFrames >= 4) {
@@ -97929,7 +97934,7 @@
           setAuthHint(
             FACE_STATE.pending2faUser
               ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-              : 'Look at camera for automatic Face ID',
+              : ((opts && (opts.videoEl || opts.liveCamera)) ? 'Verifying Face ID…' : 'Look at camera for automatic Face ID'),
             'ok'
           );
           return { status: 'edge-streak', count: FACE_STATE.edgeProbeStreak, needed: edgeNeeded, livenessOk: liveProbe.ok };
@@ -98163,6 +98168,9 @@
           window.Face.drawOverlay(overlayEl, videoEl, det, color, FACE_STATE.streakUser ? FACE_STATE.streakUser.name : '');
         }
         await handleAuthDescriptor(det, '', { liveCamera: true, videoEl });
+        if (!STATE.authed && FACE_STATE.camActive && overlayEl && window.Face && window.Face.drawOverlay && det && !det.multiple && (FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0)) {
+          window.Face.drawOverlay(overlayEl, videoEl, det, '#16A34A', FACE_STATE.streakUser ? FACE_STATE.streakUser.name : '');
+        }
       } catch (_) {
         /* ignore transient frame error */
       } finally {
@@ -98170,7 +98178,8 @@
       }
     }
     if (!STATE.authed && FACE_STATE.camActive) {
-      FACE_STATE.loopTimer = setTimeout(authFaceTick, 16);
+      const nextTickMs = (window.Face && !window.Face.ready) ? 80 : 16;
+      FACE_STATE.loopTimer = setTimeout(authFaceTick, nextTickMs);
     }
   }
 
@@ -101900,6 +101909,7 @@
     document.body.classList.remove('locked');
     setAuthStreak(0, 3);
     resetLivenessState();
+    try { window.dispatchEvent(new CustomEvent('mfg:auth-gate-closed')); } catch (_) {}
     const shouldKeepNonAuthCam = () => Boolean(
       FACE_STATE.enrolCamActive ||
       KIOSK_ATT_STATE.camActive ||
@@ -122604,12 +122614,12 @@
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) safeRender();
 
-        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser && window.Face && !window.Face.ready) {
+        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser) {
           await new Promise(resolve => {
             let done = false;
             const finish = () => { if (!done) { done = true; resolve(); } };
-            window.addEventListener('mfg:face-models-ready', finish, { once: true });
-            setTimeout(finish, 4500);
+            window.addEventListener('mfg:auth-gate-closed', finish, { once: true });
+            setTimeout(finish, 12000);
           });
         }
 
@@ -122631,7 +122641,7 @@
         if (STATE.authed || isAutoTest) {
           safeRender();
         } else {
-          // Non-blocking background warm-up of post-login caches while user is at #authGate
+          // Non-blocking background warm-up of post-login caches only when camera is not actively scanning
           const prewarmSteps = [
             () => { try { getKPI('manufacturing-group'); } catch (_) {} },
             () => { try { getKPI('wtc'); getKPI('bbconstruction'); getKPI('lionstransport'); } catch (_) {} },
@@ -122642,17 +122652,17 @@
           let pwIdx = 0;
           const runNextPrewarm = () => {
             if (STATE.authed || pwIdx >= prewarmSteps.length) return;
-            if (FACE_STATE.busy) {
-              setTimeout(runNextPrewarm, 40);
+            if (FACE_STATE.busy || FACE_STATE.camActive) {
+              setTimeout(runNextPrewarm, 250);
               return;
             }
             const stepFn = prewarmSteps[pwIdx++];
             stepFn();
             if (!STATE.authed && pwIdx < prewarmSteps.length) {
-              setTimeout(runNextPrewarm, 10);
+              setTimeout(runNextPrewarm, 40);
             }
           };
-          setTimeout(runNextPrewarm, 5);
+          setTimeout(runNextPrewarm, 50);
         }
       } catch (err) {
         console.error('Seed hydration error:', err);
@@ -122678,6 +122688,7 @@
         started = true;
         setTimeout(hydrateSeedData, 0);
       };
+      window.addEventListener('mfg:auth-gate-closed', go, { once: true });
       window.addEventListener('mfg:face-models-ready', go, { once: true });
       setTimeout(go, 6000);
     };
