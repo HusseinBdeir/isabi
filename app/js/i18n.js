@@ -9505,7 +9505,10 @@
       "Unbundled C&D (>= $55/m³)": "شامل التوصيل (>= $55/م³)",
       "Ex-Plant / Zero Haul": "تسليم المصنع / بدون نقل",
       "Internal Quarry / Plant Haul": "نقل داخلي كسارة / مصنع",
-      "Live Drawer": "درج الصندوق الحي"
+      "Live Drawer": "درج الصندوق الحي",
+      "Collection Forecast": "توقعات التحصيل النقدي",
+      "Open Counterparty Payment-Behavior, FIFO Aging & Cash-Collection Forecast Studio": "فتح استوديو سلوك سداد الأطراف وأعمار الديون (FIFO) وتوقعات التحصيل النقدي",
+      "Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio": "فتح استوديو سلوك سداد الأطراف وتوقعات التحصيل النقدي"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -18992,7 +18995,10 @@
       "Unbundled C&D (>= $55/m³)": "Franco Chantier (>= 55 $/m³)",
       "Ex-Plant / Zero Haul": "Départ Centrale / Sans Transport",
       "Internal Quarry / Plant Haul": "Transport Interne Carrière / Centrale",
-      "Live Drawer": "Tiroir de Caisse en Direct"
+      "Live Drawer": "Tiroir de Caisse en Direct",
+      "Collection Forecast": "Prévisions de Recouvrement",
+      "Open Counterparty Payment-Behavior, FIFO Aging & Cash-Collection Forecast Studio": "Ouvrir le studio de comportement de paiement, balance âgée FIFO et prévisions de recouvrement",
+      "Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio": "Ouvrir le studio de comportement de paiement et prévisions de recouvrement"
     }
   };
 

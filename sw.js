@@ -1,16 +1,16 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.30';
+const CACHE_NAME = 'isabi-systems-pwa-v6.31';
 const CACHE_VER = CACHE_NAME.replace(/^isabi-systems-pwa-v/, '');
 const SHELL_DIR = new URL('./', self.location.href).pathname;
 const STATIC_ASSETS = [
-  './manifest.json?v=6.30',
-  './favicon.ico?v=6.30',
-  './favicon-dark.ico?v=6.30',
-  './icon.svg?v=6.30',
-  './icon-dark.svg?v=6.30',
-  './icon-180.png?v=6.30',
-  './icon-192.png?v=6.30',
-  './icon-512.png?v=6.30',
-  './icon-512-maskable.png?v=6.30'
+  './manifest.json?v=6.31',
+  './favicon.ico?v=6.31',
+  './favicon-dark.ico?v=6.31',
+  './icon.svg?v=6.31',
+  './icon-dark.svg?v=6.31',
+  './icon-180.png?v=6.31',
+  './icon-192.png?v=6.31',
+  './icon-512.png?v=6.31',
+  './icon-512-maskable.png?v=6.31'
 ];
 
 function isSameOriginUrl(rawUrl) {

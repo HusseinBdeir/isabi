@@ -2,7 +2,7 @@
   "id": "./",
   "name": "ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI",
   "short_name": "ISABI Systems",
-  "description": "Custom operations, double-entry accounting, interactive executive dashboards, bilingual printable statements, touch field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.",
+  "description": "Custom operations, double-entry accounting, What-If scenario studios, executive dashboards, automated statement matching, fleet GPS telematics, field kiosks, and Ask ISABI AI with simple per-seat pricing.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -16,25 +16,25 @@
   ],
   "icons": [
     {
-      "src": "icon-192.png?v=6.30",
+      "src": "icon-192.png?v=6.31",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png?v=6.30",
+      "src": "icon-512.png?v=6.31",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512-maskable.png?v=6.30",
+      "src": "icon-512-maskable.png?v=6.31",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icon.svg?v=6.30",
+      "src": "icon.svg?v=6.31",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

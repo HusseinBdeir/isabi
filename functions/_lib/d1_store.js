@@ -2148,9 +2148,10 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               }
             }
             const uid = String((exU && exU.id) || u.id || `u-${Date.now()}`);
-            const hasFreshBio = Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
+            const bioNotStale = !(exU && exU.face_updated_at && (!u.face_updated_at || String(exU.face_updated_at) > String(u.face_updated_at)));
+            const hasFreshBio = bioNotStale && Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
             const fsJson = hasFreshBio ? JSON.stringify(u.face_samples) : ((exU && exU.face_samples) || '[]');
-            const ftJson = (Array.isArray(u.face_thumbs) && ((u.face_thumbs.length > 0 && !u.face_redacted) || u.face_cleared === true))
+            const ftJson = (bioNotStale && Array.isArray(u.face_thumbs) && ((u.face_thumbs.length > 0 && !u.face_redacted) || u.face_cleared === true))
               ? JSON.stringify(u.face_thumbs)
               : ((exU && exU.face_thumbs) || '[]');
             const fReq = 'face_required' in u ? (u.face_required ? 1 : 0) : (exU ? Number(exU.face_required || 0) : 0);
@@ -2220,7 +2221,8 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         : null;
       if (selfIn && !selfIn.face_redacted && Array.isArray(selfIn.face_samples) && (!prevSelf || stableRowSig(prevSelf) !== stableRowSig(selfIn))) {
         const exSelf = await db.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(selfEmail).first();
-        if (exSelf) {
+        const selfBioNotStale = !(exSelf && exSelf.face_updated_at && (!selfIn.face_updated_at || String(exSelf.face_updated_at) > String(selfIn.face_updated_at)));
+        if (exSelf && selfBioNotStale) {
           const fsJson = JSON.stringify(selfIn.face_samples);
           const ftJson = Array.isArray(selfIn.face_thumbs) ? JSON.stringify(selfIn.face_thumbs) : (exSelf.face_thumbs || '[]');
           const fUpd = String(selfIn.face_updated_at || exSelf.face_updated_at || '');
