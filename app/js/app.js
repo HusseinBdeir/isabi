@@ -60755,7 +60755,11 @@
     const wfPatch = (STATE && STATE.industryWorkflowPatches && STATE.industryWorkflowPatches[ind]) || {};
     const wfSig = Object.keys(wfPatch).length;
     const revCnt = Object.keys((STATE && STATE.sentinelReviews) || {}).length;
-    return `${crSig}|ic:${indCustomSig}|ie:${indEditSig}|wf:${wfSig}|rv:${revCnt}|fx:${Math.round(safeNum(getLbpFxRate()))}`;
+    const alertCustom = (STATE && STATE.alertRules && Array.isArray(STATE.alertRules.custom))
+      ? STATE.alertRules.custom
+      : (Array.isArray(STATE && STATE.customAlertRules) ? STATE.customAlertRules : []);
+    const alertSig = alertCustom.map(r => r && `${r.id}:${r.enabled ? 1 : 0}:${Math.round(safeNum(r.threshold))}`).filter(Boolean).join(',');
+    return `${crSig}|ic:${indCustomSig}|ie:${indEditSig}|wf:${wfSig}|rv:${revCnt}|al:${alertSig}|fx:${Math.round(safeNum(getLbpFxRate()))}`;
   }
 
   function computeCashflowLiquiditySnapshot(opts = {}) {
@@ -61065,6 +61069,12 @@
     };
 
     const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const safeCoKeyForRule = String(reqCo || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleIdForCo = `CA_WHATIF_${safeCoKeyForRule}`;
+    const alertCustomList = (STATE && STATE.alertRules && Array.isArray(STATE.alertRules.custom))
+      ? STATE.alertRules.custom
+      : (Array.isArray(STATE && STATE.customAlertRules) ? STATE.customAlertRules : []);
+    const hasActiveGuardrail = alertCustomList.some(r => r && r.id === ruleIdForCo && r.enabled !== false);
     const scopeKey = [
       'cf_liq',
       u ? u.id : 'anon',
@@ -61591,6 +61601,12 @@
         };
 
     const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const safeCoKeyForRule = String(reqCo || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleIdForCo = `CA_WHATIF_${safeCoKeyForRule}`;
+    const alertCustomList = (STATE && STATE.alertRules && Array.isArray(STATE.alertRules.custom))
+      ? STATE.alertRules.custom
+      : (Array.isArray(STATE && STATE.customAlertRules) ? STATE.customAlertRules : []);
+    const hasActiveGuardrail = alertCustomList.some(r => r && r.id === ruleIdForCo && r.enabled !== false);
     const scopeKey = [
       'pg_univ',
       u ? u.id : 'anon',
@@ -62251,6 +62267,12 @@
     };
 
     const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const safeCoKeyForRule = String(reqCo || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleIdForCo = `CA_WHATIF_${safeCoKeyForRule}`;
+    const alertCustomList = (STATE && STATE.alertRules && Array.isArray(STATE.alertRules.custom))
+      ? STATE.alertRules.custom
+      : (Array.isArray(STATE && STATE.customAlertRules) ? STATE.customAlertRules : []);
+    const hasActiveGuardrail = alertCustomList.some(r => r && r.id === ruleIdForCo && r.enabled !== false);
     const scopeKey = [
       'whatif_sim',
       u ? u.id : 'anon',
@@ -62328,6 +62350,7 @@
       canExp,
       canSales,
       canEditAlerts,
+      hasActiveGuardrail,
       domainMeta: domMeta,
       targetPricingView: domMeta.targetHubView || 'pricing',
       levers,
@@ -95870,7 +95893,7 @@
     if (!videoEl) return false;
     try {
       if (!streamAlive() && window.Face && typeof window.Face.consumeEarlyStream === 'function') {
-        const early = await window.Face.consumeEarlyStream();
+        const early = await window.Face.consumeEarlyStream({ keepOnAuthVideo: videoEl.id === 'authFaceVideo' });
         if (early && early.getVideoTracks && early.getVideoTracks().some(t => t.readyState === 'live')) {
           FACE_STATE.stream = early;
           if (window.Face.trackStream) window.Face.trackStream(early);
@@ -96038,8 +96061,9 @@
       setAuthHint('', '');
     } else if (!hasEnrolled && hintEl && isPreparingText && !FACE_STATE.pending2faUser) {
       setAuthHint('', '');
-    } else if (hasEnrolled && hintEl && (!hintEl.textContent || (window.Face && window.Face.ready && isPreparingText)) && FACE_STATE.camActive && videoReady && !FACE_STATE.pending2faUser) {
-      setAuthHint(window.Face && window.Face.ready ? 'Look at camera for automatic Face ID' : 'Preparing Face ID…', (window.Face && window.Face.ready) ? 'ok' : '');
+    } else if (hasEnrolled && hintEl && (!hintEl.textContent || (window.Face && (window.Face.ready || window.Face.detectorReady) && isPreparingText)) && FACE_STATE.camActive && videoReady && !FACE_STATE.pending2faUser) {
+      const scannerHot = Boolean(window.Face && (window.Face.ready || window.Face.detectorReady));
+      setAuthHint(scannerHot ? 'Look at camera for automatic Face ID' : 'Preparing Face ID…', scannerHot ? 'ok' : '');
     }
   }
 
@@ -96268,6 +96292,20 @@
       setAuthHint('', '');
       return { status: 'no-enrolled' };
     }
+    if (det && det.modelLoading && !det.descriptor) {
+      FACE_STATE.missedFrames = 0;
+      const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
+      livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+      if (!FACE_STATE.pendingPinUser) {
+        setAuthHint(
+          FACE_STATE.pending2faUser
+            ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
+            : 'Look at camera for automatic Face ID',
+          'ok'
+        );
+      }
+      return { status: 'model-loading' };
+    }
     if (!det || !det.descriptor) {
       FACE_STATE.missedFrames = (FACE_STATE.missedFrames || 0) + 1;
       if (!FACE_STATE.edgeProbeStreak || FACE_STATE.missedFrames >= 4) {
@@ -96312,7 +96350,14 @@
       weakAbove: Number(STATE.faceSettings.weakAbove || 0.45),
       minFaceFrac: isSameStreakUserOnLiveVideo ? 0.10 : Number(STATE.faceSettings.minFaceFrac || 0.14)
     });
-    const dec = enrolled.length ? window.Face.decide(m, cfg, { faceSizeFrac: det.faceSizeFrac != null ? det.faceSizeFrac : 0.25 }) : { ok: false, status: 'unknown' };
+    const pending2faIsEdgeRedacted = Boolean(
+      FACE_STATE.pending2faUser &&
+      hasRedactedEdgeBioSeats &&
+      !userFaceSamples(FACE_STATE.pending2faUser).length
+    );
+    const dec = (enrolled.length && !pending2faIsEdgeRedacted)
+      ? window.Face.decide(m, cfg, { faceSizeFrac: det.faceSizeFrac != null ? det.faceSizeFrac : 0.25 })
+      : { ok: false, status: 'unknown' };
 
     if (!dec.ok) {
       if (hasRedactedEdgeBioSeats && descArr) {
@@ -96557,7 +96602,15 @@
     if (!FACE_STATE.busy && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
       FACE_STATE.busy = true;
       try {
-        await ensureFaceModelsLoaded();
+        if (!window.Face) throw new Error('Face recognition module not loaded');
+        if (!window.Face.ready) {
+          ensureFaceModelsLoaded().catch(() => {});
+          if (!window.Face.detectorReady && typeof window.Face.loadDetector === 'function') {
+            await window.Face.loadDetector();
+          } else if (!window.Face.detectorReady) {
+            await ensureFaceModelsLoaded();
+          }
+        }
         if (STATE.authed || !FACE_STATE.camActive) {
           if (STATE.authed && !kioskOrModalCamActive()) stopFaceCamera();
           return;
@@ -96583,6 +96636,7 @@
     }
   }
 
+  let _authCamStartPromise = null;
   async function startAuthFaceScanner(forceStart = false) {
     if (PARAMS.get('phone_scan') || PARAMS.get('ps')) return false;
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
@@ -96600,6 +96654,18 @@
     if (!videoEl) {
       updateAuthFaceUi();
       return false;
+    }
+    if (!forceStart && FACE_STATE.camStarting && _authCamStartPromise) {
+      return _authCamStartPromise;
+    }
+    if (!forceStart && FACE_STATE.camActive && streamAlive()) {
+      if (videoEl.srcObject !== FACE_STATE.stream) videoEl.srcObject = FACE_STATE.stream;
+      if (videoEl.paused) videoEl.play().catch(() => {});
+      updateAuthFaceUi();
+      if (!FACE_STATE.loopTimer && !FACE_STATE.busy) {
+        FACE_STATE.loopTimer = setTimeout(authFaceTick, 10);
+      }
+      return true;
     }
     // Start loading Face ID neural models + WebGL shaders immediately in parallel with hardware camera warmup
     // (never wait for startFaceCamera or mfg:core-seed-ready before starting Face.load)
@@ -96623,36 +96689,44 @@
     const modelsPromise = startModelsWhenReady();
     FACE_STATE.camStarting = true;
     updateAuthFaceUi();
-    const camOk = await startFaceCamera(videoEl);
-    FACE_STATE.camStarting = false;
-    if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
-      stopFaceCamera();
+    const runStart = (async () => {
+      const camOk = await startFaceCamera(videoEl);
+      FACE_STATE.camStarting = false;
+      if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
+        stopFaceCamera();
+        updateAuthFaceUi();
+        return false;
+      }
+      FACE_STATE.camActive = camOk;
       updateAuthFaceUi();
-      return false;
+      if (!camOk) {
+        setAuthHint('Camera unavailable', 'warn');
+        return false;
+      }
+      const hasEnrolled = hasAnyEnrolledFaceId();
+      const faceAlreadyReady = Boolean(window.Face && (window.Face.ready || window.Face.detectorReady));
+      const videoReadyNow = Boolean($('authCamViewport')?.classList.contains('is-video-ready'));
+      setAuthHint(
+        FACE_STATE.pending2faUser
+          ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
+          : (videoReadyNow && hasEnrolled
+            ? (faceAlreadyReady
+              ? 'Look at camera for automatic Face ID'
+              : 'Preparing Face ID…')
+            : ''),
+        (videoReadyNow && hasEnrolled && faceAlreadyReady) ? 'ok' : ''
+      );
+      if (!window.Face || !window.Face.ready) modelsPromise.catch(() => {});
+      if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
+      FACE_STATE.loopTimer = setTimeout(authFaceTick, 10);
+      return true;
+    })();
+    _authCamStartPromise = runStart;
+    try {
+      return await runStart;
+    } finally {
+      if (_authCamStartPromise === runStart) _authCamStartPromise = null;
     }
-    FACE_STATE.camActive = camOk;
-    updateAuthFaceUi();
-    if (!camOk) {
-      setAuthHint('Camera unavailable', 'warn');
-      return false;
-    }
-    const hasEnrolled = hasAnyEnrolledFaceId();
-    const faceAlreadyReady = Boolean(window.Face && window.Face.ready);
-    const videoReadyNow = Boolean($('authCamViewport')?.classList.contains('is-video-ready'));
-    setAuthHint(
-      FACE_STATE.pending2faUser
-        ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-        : (videoReadyNow && hasEnrolled
-          ? (faceAlreadyReady
-            ? 'Look at camera for automatic Face ID'
-            : 'Preparing Face ID…')
-          : ''),
-      (videoReadyNow && hasEnrolled && faceAlreadyReady) ? 'ok' : ''
-    );
-    if (!faceAlreadyReady) modelsPromise.catch(() => {});
-    if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
-    FACE_STATE.loopTimer = setTimeout(authFaceTick, 10);
-    return true;
   }
 
   function stopAuthFaceScanner() {
@@ -101047,6 +101121,10 @@
   }
 
   function handleKioskAdminFaceDescriptor(det, opts = {}) {
+    if (det && det.modelLoading && !det.descriptor) {
+      KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
+      return { ok: false, reason: 'model-loading' };
+    }
     if (!det || !det.descriptor) {
       KIOSK_ADMIN_MODAL_STATE.missedFrames = (KIOSK_ADMIN_MODAL_STATE.missedFrames || 0) + 1;
       if (!opts.liveVideo || KIOSK_ADMIN_MODAL_STATE.missedFrames >= 3) {
@@ -106842,7 +106920,7 @@
         reusableStream = FACE_STATE.stream;
       } else if (!opts.forceRestart && window.Face && typeof window.Face.consumeEarlyStream === 'function') {
         try {
-          const early = await window.Face.consumeEarlyStream();
+          const early = await window.Face.consumeEarlyStream({ keepOnAuthVideo: false });
           if (early && early.getVideoTracks && early.getVideoTracks().some(t => t.readyState === 'live')) {
             reusableStream = early;
           }
@@ -106979,6 +107057,11 @@
   }
 
   function handleKioskAttDescriptor(det, opts = {}) {
+    if (det && det.modelLoading && !det.descriptor) {
+      KIOSK_ATT_STATE.missedFrames = 0;
+      KIOSK_ATT_STATE.unknownStreak = 0;
+      return { ok: false, reason: 'model-loading' };
+    }
     if (!det || !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       KIOSK_ATT_STATE.unknownStreak = 0;
@@ -119115,6 +119198,9 @@
       }
     }
 
+    window.addEventListener('mfg:face-detector-ready', () => {
+      if (!STATE.authed) updateAuthFaceUi();
+    });
     window.addEventListener('mfg:face-models-ready', () => {
       if (!STATE.authed) updateAuthFaceUi();
     });
@@ -119127,7 +119213,7 @@
         syncWithCloud(false);
       };
       window.addEventListener('mfg:face-models-ready', runInitSync, { once: true });
-      setTimeout(runInitSync, 800);
+      setTimeout(runInitSync, 6000);
     } else {
       syncWithCloud(false);
     }
@@ -119265,6 +119351,7 @@
       feedLiveAuthFrame: (vec, liveOpts = {}) =>
         handleAuthDescriptor({
           descriptor: vec,
+          modelLoading: Boolean(liveOpts.modelLoading),
           detScore: liveOpts.detScore != null ? liveOpts.detScore : 0.96,
           faceSizeFrac: liveOpts.faceSizeFrac != null ? liveOpts.faceSizeFrac : 0.26,
           ear: liveOpts.ear != null ? liveOpts.ear : null,
@@ -119274,6 +119361,10 @@
           landmarks: liveOpts.landmarks || null,
           multiple: false
         }, '', { liveCamera: true, requireLiveness: true }),
+      setPending2faUser: email => {
+        FACE_STATE.pending2faUser = email ? (STATE.users.find(x => norm(x.email) === norm(email)) || null) : null;
+        return FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : null;
+      },
       setAuthMode: (mode, seatEmail) => {
         if (seatEmail) {
           const u = STATE.users.find(x => norm(x.email) === norm(seatEmail));
@@ -120557,6 +120648,15 @@
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) safeRender();
 
+        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser && window.Face && !window.Face.ready) {
+          await new Promise(resolve => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; resolve(); } };
+            window.addEventListener('mfg:face-models-ready', finish, { once: true });
+            setTimeout(finish, 4500);
+          });
+        }
+
         const [recRes, indPayload] = await Promise.all([fetch(recordsUrl), indFetchPromise]);
         if (!recRes.ok) throw new Error('seed_records HTTP ' + recRes.status);
         const recPayload = await recRes.json();
@@ -120623,7 +120723,7 @@
         setTimeout(hydrateSeedData, 0);
       };
       window.addEventListener('mfg:face-models-ready', go, { once: true });
-      setTimeout(go, 700);
+      setTimeout(go, 6000);
     };
     if (document.readyState === 'complete') {
       kickHydration();

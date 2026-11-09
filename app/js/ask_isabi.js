@@ -12552,6 +12552,8 @@
       restricted: Boolean(snap.restricted),
       rlsClamped: Boolean(snap.rlsClamped),
       canViewBooks: Boolean(snap.canViewBooks),
+      canEditAlerts: Boolean(snap.canEditAlerts),
+      hasActiveGuardrail: Boolean(snap.hasActiveGuardrail),
       industry: snap.industry,
       companyKey: snap.companyKey,
       companyLabel: sanitizeWhatIfText(lang === 'ar' ? snap.companyAr : (lang === 'fr' ? snap.companyFr : snap.companyEn)),
@@ -12841,9 +12843,11 @@
           </div>
         </div>
         <div class="wi-be-actions">
-          <button type="button" class="ceo-pv-btn" id="wiApplyAlertRuleBtn" data-wi-apply-guardrail="1">
-            ${icons ? icons.svg('bell') : ''}<span>Create Guardrail Alert</span>
+          ${sum.canEditAlerts !== false ? `
+          <button type="button" class="ceo-pv-btn ${sum.hasActiveGuardrail ? 'is-applied' : ''}" id="wiApplyAlertRuleBtn" data-wi-apply-guardrail="1">
+            ${icons ? icons.svg('bell') : ''}<span>${sum.hasActiveGuardrail ? 'Guardrail Alert Active' : 'Create Guardrail Alert'}</span>
           </button>
+          ` : ''}
           <button type="button" class="ceo-pv-btn" id="wiOpenPricingHubBtn" data-wi-open-pricing="${esc(sum.targetPricingView || 'pricing')}">
             <span>Open Pricing & Rate Hub</span>
           </button>
@@ -13139,7 +13143,7 @@
         <div class="ceo-pv-head wi-modal-head">
           <div class="ceo-pv-titles">
             <span class="ceo-pv-eyebrow">Margin, FX & Working-Capital Sensitivity Simulator</span>
-            <strong class="ceo-pv-title" data-no-i18n="1"><span>What-If Scenario Studio</span> · ${esc(sum.companyLabel)} (${esc(sum.periodLabel)})</strong>
+            <strong class="ceo-pv-title"><span>What-If Scenario Studio</span> <span data-no-i18n="1">· ${esc(sum.companyLabel)} (${esc(sum.periodLabel)})</span></strong>
           </div>
           <div class="ceo-pv-head-actions">
             <button type="button" class="ceo-pv-btn" id="wiResetBtn" data-wi-reset="1"><span>Reset Levers</span></button>
@@ -13238,8 +13242,10 @@
           const curSum = buildWhatIfSummary();
           const hit = (curSum.presets || []).find(x => x.id === pid);
           if (hit) {
-            const fxCur = curSum.levers.fxRateLbp || 89500;
-            applyNewLevers(Object.assign({}, hit.levers, { fxRateLbp: fxCur }), pid);
+            const fxTarget = (hit.levers && Number(hit.levers.fxRateLbp) > 0)
+              ? hit.levers.fxRateLbp
+              : (curSum.levers.fxRateLbp || 89500);
+            applyNewLevers(Object.assign({}, hit.levers, { fxRateLbp: fxTarget }), pid);
           }
           return;
         }

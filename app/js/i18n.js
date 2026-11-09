@@ -98,7 +98,7 @@
       "+ Stored In": "+ إدخال للمخزن",
       "+ Transp./Reimb.": "+ بدل نقل/تعويضات",
       "+ True-Up VINs & Settle Warranty": "+ تسوية الكلفة الواصلة للشاصيهات وإشعارات الكفالة",
-      "+ Unbundled Delivery": "+ شحن التوصيل المفصول",
+      "+ Unbundled Delivery": "+ التوصيل المفصول",
       "+ Use on Machine (Repair)": "+ صرف لآلية (تصليح)",
       "+ deducts from tank (used / shortage) · − adds to tank (surplus)": "+ يخصم من الخزان (استهلاك / عجز) · − يضيف للخزان (فائض)",
       "+Add to Shelf": "+إضافة للرف",
@@ -542,7 +542,7 @@
       "AR Receipts": "مقبوضات العملاء",
       "AR aging": "أعمار الذمم المدينة",
       "AR/AP": "ذمم مدينة/دائنة",
-      "ASSIGNED TRUCK": "الشاحنة المخصصة",
+      "ASSIGNED TRUCK": "الشاحنة المعيّنة",
       "ASSIGNMENTS": "تعيينات",
       "ASSOCIATED STAFF BY SHIFT & BU DEFAULT": "الموظفون المرتبطون بكل وردية والإعداد الافتراضي للشركة",
       "ATF / Torque Converter Oil": "زيت أوتوماتيك وعلبة التروس (ATF)",
@@ -885,7 +885,7 @@
       "All Repair Parts": "جميع قطع التصليح",
       "All Resort Terminals & Generators": "كل محطات ومولدات المنتجعات",
       "All Resorts": "كل المنتجعات",
-      "All Routes": "جميع المسارات",
+      "All Routes": "كل المسارات",
       "All Rule Types": "جميع أنواع القواعد",
       "All Sale Types": "جميع أنواع المبيعات",
       "All Saved Documents & Receipts": "كل المستندات والإيصالات المحفوظة",
@@ -928,7 +928,7 @@
       "All entities tied to $0.00": "كافة الشركات مطابقة بفرق $0.00",
       "All sites (or type site name)...": "جميع المواقع (أو اكتب اسم الموقع)...",
       "All-Time": "كامل الفترة",
-      "All-Time Ledger": "دفتر الأستاذ الكامل",
+      "All-Time Ledger": "كامل السجل التاريخي",
       "All-time opening anchor": "الرصيد الافتتاحي المرجعي",
       "Allocate Pack & Match Credits": "توزيع ملف الشحن ومطابقة إشعارات الكفالة",
       "Allocated ($)": "المخصص ($)",
@@ -1222,7 +1222,7 @@
       "BU Fleet & Health Status": "أسطول الشركة والحالة الفنية",
       "BU Row-Level Security": "أمان مستوى الصفوف لوحدة الأعمال",
       "BU Scoped": "حسب الشركة",
-      "BUCKET": "الفئة",
+      "BUCKET": "البند",
       "BURN NORMAL": "استهلاك طبيعي",
       "Back": "رجوع",
       "Back-Dated Entry Explanation Guard": "حاجز تبرير القيود المؤرخة بأثر رجعي",
@@ -2101,7 +2101,7 @@
       "Copy Sum": "نسخ المجموع",
       "Copy Summary": "نسخ الملخص",
       "Copy table": "نسخ الجدول",
-      "Core 7 Trucks": "الشاحنات الـ 7 الأساسية",
+      "Core 7 Trucks": "الشاحنات السبع الأساسية",
       "Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.": "الضمانة المحاسبية الأساسية: يتحقق من تساوي إجمالي المدين مع إجمالي الدائن عبر الأصناف 1 إلى 7 في التصميم المحاسبي اللبناني لتطابق الميزانية والأرباح والخسائر حتى السنت.",
       "Corporate Legal, Audit & Shared Overhead": "المصاريف القانونية والتدقيق والخدمات المشتركة",
       "Corporate Tower Floor Plate Lease (11% VAT)": "عقد إيجار طابق مكاتب إدارية (ضريبة 11%)",
@@ -3425,7 +3425,7 @@
       "Full Executive": "صلاحية تنفيذية كاملة",
       "Full Name": "الاسم الكامل",
       "Full Oil Change (Resets Schedule)": "غيار زيت كامل (يعيد ضبط العداد)",
-      "Full P&L Statement": "بيان الأرباح والخسائر الكامل",
+      "Full P&L Statement": "كشف الأرباح والخسائر الكامل",
       "Full Roster": "الكادر مكتمل",
       "Full SOA voucher postings, Partner Loans, Repayments, External Treasury Movements, and USD ↔ LBP FX Conversions now live inside General Ledger & SOA.": "جميع قيود اليومية المزدوجة وقروض الشركاء والتسديدات وحركات الخزينة الخارجية وتحويلات العملات USD ↔ LBP متاحة بالكامل داخل وحدة الأستاذ العام وشجرة الحسابات.",
       "Full Shift (On Time)": "وردية كاملة (بالوقت المحدد)",
@@ -3927,7 +3927,7 @@
       "Input VAT Paid": "ضريبة المدخلات المدفوعة",
       "Input VAT paid": "ضريبة مدخلات مدفوعة",
       "Inspect Existing 360°": "معاينة السجل الحالي 360°",
-      "Inspect Ledger": "فحص دفتر الأستاذ",
+      "Inspect Ledger": "معاينة السجل",
       "Inspect Malfunctions": "معاينة الأعطال والفروقات",
       "Inspect Rows": "فحص السطور",
       "Inspect TB": "معاينة الميزان",
@@ -3968,7 +3968,7 @@
       "Insurance Policy": "بوليصة تأمين",
       "Insurance Policy & Endorsement": "بوليصة تأمين وملحق",
       "Insurance premiums": "أقساط التأمين",
-      "Insurance, Permits & Taxes": "تأمين ورخص وضرائب",
+      "Insurance, Permits & Taxes": "التأمين والترخيص والرسوم",
       "Insured Client": "العميل المؤمَّن له",
       "Insured Items": "الأعيان المؤمّنة",
       "Insured Vehicles, Persons & Risks": "المركبات والأشخاص والأخطار المؤمّنة",
@@ -5322,7 +5322,7 @@
       "OT Allowed": "يُسمح بالإضافي",
       "OT Bonus ($)": "بدل الإضافي ($)",
       "OT HOURS": "ساعات الإضافي",
-      "OT PAY": "أجر الإضافي",
+      "OT PAY": "بدل الإضافي",
       "OT Pay ($)": "بدل العمل الإضافي ($)",
       "OT Trips": "رحلات إضافية",
       "OT hrs": "ساعات إضافي",
@@ -6928,7 +6928,7 @@
       "Reset": "إعادة ضبط",
       "Reset Date Filter": "إعادة ضبط تصفية التاريخ",
       "Reset Default": "استعادة الافتراضي",
-      "Reset Filter": "إعادة تعيين التصفية",
+      "Reset Filter": "إعادة ضبط التصفية",
       "Reset Filters": "إعادة ضبط التصفية",
       "Reset Levers": "إعادة ضبط الروافع",
       "Reset Slicers": "إعادة ضبط الفلاتر",
@@ -7078,7 +7078,7 @@
       "SEASONAL DEFERRED-MEMBERSHIP TOTAL": "إجمالي الاشتراكات الموسمية المؤجلة والمكتسبة",
       "SEASONAL MEMBERSHIPS & INSTALLMENT ARREARS": "الاشتراكات الموسمية ومتأخرات الأقساط",
       "SERIAL UNITS, CHASSIS VIN & ENGINE REGISTRY": "سجل الوحدات المتسلسلة وأرقام الشاسيه والمحركات",
-      "SHADOW CREDIT": "رصيد النقل التقديري",
+      "SHADOW CREDIT": "رصيد التحويل الضمني",
       "SHIFT HOURS & DAY-SPECIFIC TIMINGS BY BU": "ساعات الورديات والتوقيت الخاص بالأيام لكل شركة",
       "SHOWROOM VEHICLE & PARTS TAX INVOICE": "فاتورة ضريبية للآليات وقطع الغيار",
       "SISTER COMPANY REPAYMENT: GIVEN VS. PAID BACK & NET OWED": "تسديدات الشركات الشقيقة: الممنوح مقابل المسدّد والصافي المتبقي",
@@ -8245,7 +8245,7 @@
       "Tools, Welding & Body": "العدد واللحام والحدادة",
       "Top": "الأعلى",
       "Top 10": "أول 10",
-      "Top Active Haulers": "أبرز الناقلين النشطين",
+      "Top Active Haulers": "أكثر الناقلين نشاطاً",
       "Top Catalog Items & Spare Parts by Total Spend ($)": "أعلى الأصناف وقطع الغيار حسب إجمالي الإنفاق ($)",
       "Top Clients": "أكبر العملاء",
       "Top Consumed & Issued Spare Parts, Tyres & Oils ($)": "أعلى قطع الغيار والإطارات والزيوت استهلاكاً وصرفاً ($)",
@@ -8516,7 +8516,7 @@
       "Type or dictate into the voice bar to auto-fill": "اكتب أو أملِ في شريط الإدخال الصوتي للتعبئة التلقائية",
       "Tyre": "صور",
       "Tyres & Wheels": "الإطارات والعجلات",
-      "UNBUNDLED CREDIT": "رصيد التوصيل المفصول",
+      "UNBUNDLED CREDIT": "الرصيد المفصول",
       "UNIFIED SUPPLIER, HAULER & VENDOR 3-LEG AP + CASH SPEND SUB-LEDGER": "دفتر الأستاذ الفرعي الموحد للموردين والناقلين (الذمم الثلاثية + الإنفاق النقدي)",
       "UNIVERSAL ATTENDANCE STRUCTURE & PER-COMPANY DEFAULTS": "هيكلية الحضور الموحدة والإعدادات الافتراضية لكل شركة",
       "UNIVERSAL ITEMS & SPARE PARTS CATALOG": "الدليل الشامل للأصناف وقطع الغيار",
@@ -8836,7 +8836,7 @@
       "View Section": "عرض القسم",
       "View report": "عرض التقرير",
       "Views": "العروض",
-      "Visual Comparison": "مقارنة بصرية",
+      "Visual Comparison": "المقارنة البصرية",
       "Voice Auto-Fill Applied": "تم تطبيق التعبئة الصوتية",
       "Voice Dictation Language": "لغة الإملاء الصوتي",
       "Voice Mode": "الوضع الصوتي",
@@ -9390,7 +9390,122 @@
       "⚠ UNRECOGNIZED FACE": "⚠ وجه غير معروف",
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
       "✓ SAVED": "✓ محفوظ",
-      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة"
+      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
+      "LIVE FLEET UNIT ECONOMICS · DYNAMIC PERIOD & COHORT STUDIO": "اقتصاديات تشغيل الأسطول الحية · استوديو الفترات والمجموعات الديناميكي",
+      "Click any truck, KPI card, revenue/cost segment, or monthly bar to drill down. Synced live with the active date range and company filter.": "اضغط على أي شاحنة أو بطاقة مؤشر أو شريط إيرادات/تكاليف أو شهر للتفصيل. متزامن لحظياً مع نطاق التاريخ والشركة النشطة.",
+      "Click to open the custom Date Range & Period Slicer": "اضغط لفتح محدّد نطاق التاريخ والفترة المخصص",
+      "Scorecards & P&L Studio": "بطاقات الأداء واستوديو الربحية",
+      "Routes & Corridors": "المسارات وخطوط النقل",
+      "Unpriced ($0.00) Loads": "نقلات غير مسعّرة ($0.00)",
+      "Fuel, Repairs & Bills": "الوقود والصيانة والفواتير",
+      "Integrity Safeguards": "ضوابط سلامة الحسابات",
+      "FLEET COHORT:": "مجموعة الأسطول:",
+      "COMPANY:": "الشركة:",
+      "FOCUS TRUCK:": "تركيز الشاحنة:",
+      "Search truck, plate, owner (freq-ranked)...": "ابحث عن شاحنة أو لوحة أو مالك (مرتب حسب التكرار)...",
+      "No matching trucks": "لا توجد شاحنات مطابقة",
+      "Click to explore routes": "اضغط لاستكشاف المسارات",
+      "Click to inspect volume by route": "اضغط لمعاينة الكميات حسب المسار",
+      "VOLUME HAULED": "الحجم المنقول",
+      "Transportation revenue in selected valuation mode": "إيراد النقل حسب وضع التقييم المحدد",
+      "HAULAGE REVENUE": "إيراد النقل",
+      "Click to inspect operating expenses & fuel": "اضغط لمعاينة المصاريف التشغيلية والوقود",
+      "OPERATING COSTS": "التكاليف التشغيلية",
+      "Operating net profit (CapEx excluded)": "صافي الربح التشغيلي (باستثناء الأصول الرأسمالية)",
+      "NET OPERATING MARGIN": "صافي الهامش التشغيلي",
+      "Click to audit $0.00 haulage trips": "اضغط لتدقيق نقلات السعر الصفري $0.00",
+      "UNPRICED ($0.00) TRIPS": "نقلات غير مسعّرة ($0.00)",
+      "No trucks match the current selection.": "لا توجد شاحنات تطابق الاختيار الحالي.",
+      "Open 360° Truck Inspector": "فتح البطاقة الشاملة 360° للشاحنة",
+      "Open 360° Driver Inspector": "فتح البطاقة الشاملة 360° للسائق",
+      "Drill into Sales & Raw Routes": "التفصيل في مسارات المبيعات والمواد الأولية",
+      "Drill into Raw Material Routes": "التفصيل في مسارات المواد الأولية",
+      "Audit Unpriced / Unbundled Loads": "تدقيق النقلات غير المسعّرة / المفصولة",
+      "Unbundled Credit": "رصيد التوصيل المفصول",
+      "Inspect $0.00 Trips": "معاينة نقلات $0.00",
+      "$0 Trips": "نقلات $0",
+      "Inspect Diesel & Expense Bills": "معاينة المازوت وفواتير المصاريف",
+      "Inspect Repairs, Lubes & Insurance": "معاينة الصيانة والزيوت والتأمين",
+      "Inspect Driver Overtime & Pay": "معاينة العمل الإضافي ورواتب السائقين",
+      "NET / TRIP": "الصافي / نقلة",
+      "FUEL BURN": "استهلاك الوقود",
+      "PLANT SPLIT": "توزيع المصانع",
+      "Op. Cost": "التكلفة التشغيلية",
+      "Click to open in Routes Explorer": "اضغط للفتح في مستكشف المسارات",
+      "Side-by-Side Revenue vs. Operating Cost": "مقارنة الإيرادات مقابل التكاليف التشغيلية جنباً إلى جنب",
+      "Click any truck bar to isolate or reset focus across all tabs": "اضغط على شريط أي شاحنة لعزلها أو إعادة ضبط التركيز عبر كافة التبويبات",
+      "No truck data in active range": "لا توجد بيانات شاحنات في النطاق النشط",
+      "Top Value Hauling Corridors (Selected Trucks)": "أعلى مسارات النقل قيمةً (الشاحنات المحددة)",
+      "Click any corridor to open in Routes & Hauling Explorer": "اضغط على أي مسار لفتحه في مستكشف المسارات والنقل",
+      "No routes in active period": "لا توجد مسارات في الفترة النشطة",
+      "No monthly activity found in the active period.": "لا يوجد نشاط شهري في الفترة النشطة.",
+      "Click any month row to slice the entire Command Center to that month, or click \"All-Time\" in the header to reset": "اضغط على أي شهر لتصفية مركز القيادة بالكامل على ذلك الشهر، أو اضغط \"كامل الفترة\" لإعادة الضبط",
+      "P&L LINE ITEM": "بند الأرباح والخسائر",
+      "SELECTED TOTAL": "إجمالي المحدد",
+      "Total Trips (Paid / $0.00)": "إجمالي النقلات (مدفوعة / $0.00)",
+      "Volume Hauled (m³)": "الحجم المنقول (م³)",
+      "Sales Delivery Revenue": "إيراد توصيل المبيعات",
+      "Raw Material Haulage Revenue": "إيراد نقل المواد الأولية",
+      "Unbundled / Benchmark Credit": "رصيد التوصيل المفصول / المعياري",
+      "Total Transportation Revenue": "إجمالي إيراد النقل",
+      "Diesel Fuel (Tank Out Logs)": "وقود المازوت (سجلات صرف الخزان)",
+      "Repairs & Spare Parts": "الصيانة وقطع الغيار",
+      "Driver Base + Overtime Pay": "الراتب الأساسي + إضافي السائقين",
+      "Total Operating Costs (Excl. CapEx)": "إجمالي التكاليف التشغيلية (باستثناء الأصول الرأسمالية)",
+      "Net Operating Profit / (Loss)": "صافي الربح / (الخسارة) التشغيلي",
+      "Operating Margin (%)": "هامش الربح التشغيلي (%)",
+      "Interactive Fleet Comparison & Trend Studio": "استوديو المقارنة والاتجاهات التفاعلي للأسطول",
+      "Switch between visual proportion bars, interactive monthly timeline, and line-item P&L statement": "بدّل بين أشرطة المقارنة البصرية والجدول الشهري التفاعلي وكشف الأرباح والخسائر التفصيلي",
+      "Unpriced ($0.00) Haulage Explorer & Transfer Credit": "مستكشف النقلات غير المسعّرة ($0.00) ورصيد التحويل",
+      "Click a category card below to filter unbundled sales deliveries vs. internal quarry raw material hauls": "اضغط على بطاقة الفئة أدناه لتصفية توصيلات المبيعات المفصولة مقابل نقل المواد الأولية الداخلي",
+      "ALL $0.00 TRIPS (SELECTED)": "كل نقلات $0.00 (المحددة)",
+      "UNBUNDLED SALES DELIVERIES": "توصيلات المبيعات المفصولة",
+      "INTERNAL QUARRY / PLANT RAW HAULS": "النقل الداخلي للمواد الأولية بين الكسارة والمصانع",
+      "STREAM": "المسار",
+      "COUNTERPARTY & SITE": "الطرف المقابل والموقع",
+      "CLASSIFICATION": "التصنيف",
+      "No $0.00 haulage trips match the current filter.": "لا توجد نقلات بسعر $0.00 تطابق التصفية الحالية.",
+      "Ranked by trip frequency, volume hauled, and total commercial value": "مرتبة حسب تكرار النقلات والحجم المنقول والقيمة التجارية الإجمالية",
+      "Search customer, quarry, site, material...": "ابحث عن عميل أو كسارة أو موقع أو مادة...",
+      "Sort: Most Trips": "الترتيب: الأكثر نقلات",
+      "Sort: Highest Value": "الترتيب: الأعلى قيمة",
+      "Sort: Highest Volume (m³)": "الترتيب: الأعلى حجماً (م³)",
+      "TRIPS & SHARE": "النقلات والحصة",
+      "No routes match the current filter.": "لا توجد مسارات تطابق التصفية الحالية.",
+      "Click any expense bucket card below to filter bills. Capital Expenditures are isolated from operating costs.": "اضغط على أي بطاقة فئة مصاريف أدناه لتصفية الفواتير. النفقات الرأسمالية معزولة عن التكاليف التشغيلية.",
+      "Search supplier, part, bill #, note...": "ابحث عن مورّد أو قطعة أو رقم فاتورة أو ملاحظة...",
+      "ALL OPERATING BILLS": "كافة الفواتير التشغيلية",
+      "REPAIRS, TIRES & SPARE PARTS": "الصيانة والإطارات وقطع الغيار",
+      "OILS & LUBRICANTS": "الزيوت والشحوم",
+      "INSURANCE, PERMITS & TAXES": "التأمين والترخيص والرسوم",
+      "SUBCATEGORY": "الفئة الفرعية",
+      "DESCRIPTION / NOTES": "الوصف / الملاحظات",
+      "No operating expense bills match the current filter.": "لا توجد فواتير مصاريف تشغيلية تطابق التصفية الحالية.",
+      "Click a driver card to filter overtime entries or click Reset to view all drivers": "اضغط على بطاقة السائق لتصفية قيود الإضافي أو اضغط إعادة الضبط لعرض جميع السائقين",
+      "No overtime entries match the current filter.": "لا توجد قيود عمل إضافي تطابق التصفية الحالية.",
+      "Active Period Impact:": "الأثر في الفترة النشطة:",
+      "Live Cross-Ledger Accounting & Pricing Integrity Checks": "فحوصات سلامة المحاسبة والتسعير المتقاطعة الحية",
+      "Automated safeguards ensuring CapEx isolation, single-source diesel costing, and unbundled transfer pricing": "ضوابط آلية تضمن عزل الأصول الرأسمالية، واحتساب المازوت من مصدر واحد، وتسعير النقل الداخلي المفصول",
+      "CapEx Protected": "الأصول الرأسمالية معزولة",
+      "Capital Expenditures Excluded from Operating P&L": "استبعاد النفقات الرأسمالية من حساب الأرباح والخسائر التشغيلي",
+      "Zero Capital Expenditure bills mixed into operating repairs in the active period.": "صفر فواتير أصول رأسمالية مختلطة بمصاريف الصيانة التشغيلية في الفترة النشطة.",
+      "Unbundled C&D Pricing": "تسعير التوصيل المفصول",
+      "Delivered Concrete Tickets Priced All-In (>=$55/m³) with $0.00 Separate Haul Fee": "إيصالات الباطون الواصل المسعّرة شاملاً (>=$55/م³) مع أجرة نقل منفصلة $0.00",
+      "Sales tickets billed at all-in delivered C&D rates record $0.00 in the separate delivery column. Switching to \"+ Unbundled Delivery\" credits the fleet $5.00/m³ internal transfer value.": "إيصالات المبيعات المفوترة بسعر شامل التوصيل تسجل $0.00 في خانة التوصيل المنفصل. التبديل إلى \"+ التوصيل المفصول\" يمنح الأسطول رصيد تحويل داخلي بقيمة $5.00/م³.",
+      "Internal Quarry Haulage": "نقل الكسارة الداخلي",
+      "Inbound Quarry & Inter-Plant Raw Material Hauls Logged at $0.00 Freight": "نقلات المواد الأولية الواردة من الكسارة وبين المصانع المسجلة بأجرة $0.00",
+      "Company trucks hauling aggregates from quarry or between WTC and BBConstruction plants often leave internal freight at $0.00. \"+ Unbundled Delivery\" credits $1.44/m³ ($40 floor) per load.": "شاحنات الشركة التي تنقل البحص والرمل من الكسارة أو بين مصنعي WTC وBBConstruction تترك غالباً أجرة النقل الداخلي عند $0.00. وضع \"+ التوصيل المفصول\" يحتسب $1.44/م³ (بحد أدنى $40) للنقلة.",
+      "Single-Source Fuel": "مصدر وقود موحّد",
+      "Diesel Cost Driven Strictly from Tank Dispensing Logs (Out)": "تكلفة المازوت محتسبة حصراً من سجلات صرف الخزان (صادر)",
+      "Per-truck fuel burn is calculated directly from metered Diesel Logs (direction = Out) to prevent double-counting bulk fuel supplier invoices.": "يُحتسب استهلاك الوقود لكل شاحنة مباشرة من سجلات عدّاد المازوت (صادر) لمنع الازدواجية مع فواتير شراء الوقود بالجملة.",
+      "Sales Delivery": "توصيل المبيعات",
+      "Raw Material Inbound": "توريد مواد أولية",
+      "Repairs & Parts": "الصيانة وقطع الغيار",
+      "Insurance & Permits": "التأمين والترخيص",
+      "Unbundled C&D (>= $55/m³)": "شامل التوصيل (>= $55/م³)",
+      "Ex-Plant / Zero Haul": "تسليم المصنع / بدون نقل",
+      "Internal Quarry / Plant Haul": "نقل داخلي كسارة / مصنع",
+      "Live Drawer": "درج الصندوق الحي"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -9470,7 +9585,7 @@
       "+ Stored In": "+ Entrées Magasin",
       "+ Transp./Reimb.": "+ Transp./Indemnités",
       "+ True-Up VINs & Settle Warranty": "+ Ajuster cout rendu VIN et avoirs garantie",
-      "+ Unbundled Delivery": "+ Livraison dégroupée",
+      "+ Unbundled Delivery": "+ Livraison Dégroupée",
       "+ Use on Machine (Repair)": "+ Utiliser sur Engin (Réparation)",
       "+ deducts from tank (used / shortage) · − adds to tank (surplus)": "+ déduit de la cuve (conso. / manque) · − ajoute à la cuve (surplus)",
       "+Add to Shelf": "+Ajout Rayon",
@@ -10257,13 +10372,13 @@
       "All Repair Parts": "Toutes les Pièces de Réparation",
       "All Resort Terminals & Generators": "Tous les terminaux et groupes des resorts",
       "All Resorts": "Tous les resorts",
-      "All Routes": "Tous les itinéraires",
+      "All Routes": "Tous les Itinéraires",
       "All Rule Types": "Tous Types de Règles",
       "All Sale Types": "Tous Types de Vente",
       "All Saved Documents & Receipts": "Tous les documents et reçus archivés",
       "All Schedules": "Tous les Échéanciers",
       "All Sections": "Toutes les sections",
-      "All Selected": "Tous sélectionnés",
+      "All Selected": "Tous Sélectionnés",
       "All Sentinels": "Toutes les Sentinelles",
       "All Serial Units": "Toutes les Unités VIN",
       "All Site & Truck Owners": "Tous Propriétaires Sites & Camions",
@@ -10300,7 +10415,7 @@
       "All entities tied to $0.00": "Toutes les sociétés rapprochées à 0,00 $",
       "All sites (or type site name)...": "Tous les sites (ou saisir un site)...",
       "All-Time": "Toutes Périodes",
-      "All-Time Ledger": "Grand livre historique complet",
+      "All-Time Ledger": "Grand Livre Toutes Périodes",
       "All-time opening anchor": "Ancre initiale toutes périodes",
       "Allocate Pack & Match Credits": "Ventiler dossier import et rapprocher avoirs",
       "Allocated ($)": "Alloue ($)",
@@ -10743,7 +10858,7 @@
       "Book Status": "Statut du Carnet",
       "Book Till Reconciliation Mode": "Mode Rapprochement Livre de Caisse",
       "Book paid": "Payé au livre",
-      "Booked Revenue": "Revenu comptabilisé",
+      "Booked Revenue": "Revenu Comptabilisé",
       "Booked to Supplier AP Leg 3": "Comptabilisé en dettes fournisseurs Volet 3",
       "Bookkeeping": "Tenue des Livres",
       "Books": "Comptabilité",
@@ -12791,13 +12906,13 @@
       "Full Absence (1.0d)": "Absence Complète (1,0j)",
       "Full Access (Owner)": "Accès Complet (Propriétaire)",
       "Full Benchmark P&L": "Résultat de Référence Complet",
-      "Full Commercial Value": "Valeur commerciale complète",
+      "Full Commercial Value": "Valeur Commerciale Complète",
       "Full Day": "Journée Complète",
       "Full Exec": "Direction complète",
       "Full Executive": "Direction générale complète",
       "Full Name": "Nom Complet",
       "Full Oil Change (Resets Schedule)": "Vidange Complète (Réinitialise le Cycle)",
-      "Full P&L Statement": "État P&L complet",
+      "Full P&L Statement": "Compte de Résultat Complet",
       "Full Roster": "Effectif Complet",
       "Full SOA voucher postings, Partner Loans, Repayments, External Treasury Movements, and USD ↔ LBP FX Conversions now live inside General Ledger & SOA.": "Toutes les écritures GL, prêts associés, remboursements, flux externes et conversions USD ↔ LBP sont disponibles dans Grand Livre & Plan Comptable.",
       "Full Shift (On Time)": "Poste Complet (À l'Heure)",
@@ -13299,7 +13414,7 @@
       "Input VAT Paid": "TVA déductible payée",
       "Input VAT paid": "TVA déductible payée",
       "Inspect Existing 360°": "Inspecter la fiche existante 360°",
-      "Inspect Ledger": "Inspecter le grand livre",
+      "Inspect Ledger": "Inspecter le Grand Livre",
       "Inspect Malfunctions": "Inspecter les Anomalies",
       "Inspect Rows": "Inspecter lignes",
       "Inspect TB": "Inspecter Balance",
@@ -14297,7 +14412,7 @@
       "Monthly Site Transport Earned vs. Paid ($)": "Indemnités Transport Chantier Mensuelles : Acquis vs Payé ($)",
       "Monthly Source Site Intake ($)": "Entrées mensuelles par site source ($)",
       "Monthly Staff Earnings vs. Salary Disbursements ($)": "Rémunérations Mensuelles Acquises vs Salaires Versés ($)",
-      "Monthly Timeline": "Chronologie mensuelle",
+      "Monthly Timeline": "Chronologie Mensuelle",
       "Monthly Total Sales vs Raw Material Cost & Operating Expenses with Operating Profit line": "Ventes Mensuelles vs Coût Matières & Charges d'Exploitation avec courbe de Profit Opérationnel",
       "Monthly Unit Repair & Parts ($)": "Réparations et pièces mensuelles par engin ($)",
       "Monthly bulk diesel purchases vs fleet issues and tank balance trajectory": "Achats mensuels de gasoil en vrac vs sorties flotte et trajectoire du stock cuve",
@@ -14693,8 +14808,8 @@
       "OT / Impact": "H. Sup. / Impact",
       "OT Allowed": "HS autorisées",
       "OT Bonus ($)": "Prime HS ($)",
-      "OT HOURS": "HEURES SUPP.",
-      "OT PAY": "PAIE HEURES SUPP.",
+      "OT HOURS": "HEURES SUP.",
+      "OT PAY": "PAIE HS",
       "OT Pay ($)": "Rémunération HS ($)",
       "OT Trips": "Trajets HS",
       "OT hrs": "H. Sup.",
@@ -14938,7 +15053,7 @@
       "Operating Cash Surplus": "Excédent de trésorerie d'exploitation",
       "Operating Co.": "Société exploitante",
       "Operating Companies": "Sociétés Opérationnelles",
-      "Operating Cost": "Coût d'exploitation",
+      "Operating Cost": "Coût d'Exploitation",
       "Operating Date": "Date d'Opération",
       "Operating Entities": "Sociétés Opérationnelles",
       "Operating Entities Scorecard": "Tableau de Bord des Sociétés Opérationnelles",
@@ -16235,7 +16350,7 @@
       "Reopen VAT Period": "Rouvrir la periode TVA",
       "Reorder Alert": "Alerte Réappro.",
       "Reorder Min": "Seuil Réappro.",
-      "Rep Date": "Date Compta",
+      "Rep Date": "Date Rapp.",
       "Rep Diff": "Écarts Date Rapp.",
       "Rep-Date Shifted": "Décalés en Date de Reporting",
       "Rep-Shifted": "Date Décalée",
@@ -16300,7 +16415,7 @@
       "Reset": "Réinitialiser",
       "Reset Date Filter": "Réinitialiser le filtre de dates",
       "Reset Default": "Par Défaut",
-      "Reset Filter": "Réinitialiser le filtre",
+      "Reset Filter": "Réinitialiser le Filtre",
       "Reset Filters": "Réinitialiser Filtres",
       "Reset Levers": "Réinitialiser les leviers",
       "Reset Slicers": "Réinitialiser filtres",
@@ -16379,7 +16494,7 @@
       "Revenue Category": "Catégorie de Revenu",
       "Revenue Mix": "Mix Revenus",
       "Revenue Stream": "Flux de Revenu",
-      "Revenue Valuation Mode": "Mode de valorisation des revenus",
+      "Revenue Valuation Mode": "Mode de Valorisation des Revenus",
       "Revenue share & profit contribution by vertical": "Part du chiffre et contribution au résultat par secteur",
       "Revenue − Expense": "Produits − Charges",
       "Revenue, POS & Chalets": "Recettes, Caisses POS & Chalets",
@@ -16450,7 +16565,7 @@
       "SEASONAL DEFERRED-MEMBERSHIP TOTAL": "TOTAL ABONNEMENTS SAISONNIERS ACQUIS ET REPORTES",
       "SEASONAL MEMBERSHIPS & INSTALLMENT ARREARS": "ABONNEMENTS SAISONNIERS & ARRIÉRÉS D'ÉCHÉANCES",
       "SERIAL UNITS, CHASSIS VIN & ENGINE REGISTRY": "REGISTRE DES UNITÉS VIN, CHÂSSIS & MOTEURS",
-      "SHADOW CREDIT": "CRÉDIT TRANSFERT",
+      "SHADOW CREDIT": "CRÉDIT IMPLICITE",
       "SHIFT HOURS & DAY-SPECIFIC TIMINGS BY BU": "HORAIRES DE POSTE & SPÉCIFICITÉS PAR SOCIÉTÉ",
       "SHOWROOM VEHICLE & PARTS TAX INVOICE": "FACTURE FISCALE VÉHICULES ET PIÈCES",
       "SISTER COMPANY REPAYMENT: GIVEN VS. PAID BACK & NET OWED": "REMBOURSEMENTS SOCIÉTÉS SŒURS : AVANCÉ VS REMBOURSÉ & SOLDE NET",
@@ -16899,7 +17014,7 @@
       "Show All 4 Sections": "Afficher les 4 Sections",
       "Show All Assigned": "Afficher les entités affectées",
       "Show All Cash Entries": "Afficher Toutes les Écritures de Caisse",
-      "Show All Drivers": "Afficher tous les chauffeurs",
+      "Show All Drivers": "Afficher Tous les Chauffeurs",
       "Show All Extended Entries": "Afficher Toutes les Écritures Étendues",
       "Show All External Entries": "Afficher Toutes les Écritures Externes",
       "Show All Group": "Afficher tout le groupe",
@@ -17878,7 +17993,7 @@
       "Tune": "Ajuster",
       "Turn your head slightly LEFT — just a little, keep both eyes on the camera": "Tournez légèrement la tête à GAUCHE en gardant les yeux vers la caméra",
       "Turn your head slightly RIGHT — just a little, keep both eyes on the camera": "Tournez légèrement la tête à DROITE en gardant les yeux vers la caméra",
-      "Tx Date": "Date Opér.",
+      "Tx Date": "Date Op.",
       "Tx Date Locked": "Verrouillé sur date opération",
       "Tx vs Reporting date drift": "Décalage date opération vs reporting",
       "Type": "Type",
@@ -18208,7 +18323,7 @@
       "View Section": "Section affichée",
       "View report": "Afficher l'État",
       "Views": "Vues",
-      "Visual Comparison": "Comparaison visuelle",
+      "Visual Comparison": "Comparaison Visuelle",
       "Voice Auto-Fill Applied": "Pré-remplissage vocal appliqué",
       "Voice Dictation Language": "Langue de dictée vocale",
       "Voice Mode": "Mode Vocal",
@@ -18762,7 +18877,122 @@
       "⚠ UNRECOGNIZED FACE": "⚠ VISAGE NON RECONNU",
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
       "✓ SAVED": "✓ ENREGISTRÉ",
-      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues"
+      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues",
+      "LIVE FLEET UNIT ECONOMICS · DYNAMIC PERIOD & COHORT STUDIO": "ÉCONOMIE UNITAIRE DE LA FLOTTE · STUDIO PÉRIODES & COHORTES",
+      "Click any truck, KPI card, revenue/cost segment, or monthly bar to drill down. Synced live with the active date range and company filter.": "Cliquez sur un camion, une carte KPI, un segment revenus/coûts ou une barre mensuelle pour détailler. Synchronisé avec la période et la société actives.",
+      "Click to open the custom Date Range & Period Slicer": "Cliquer pour ouvrir le sélecteur de période et plage de dates",
+      "Scorecards & P&L Studio": "Tableaux de Bord & Studio P&L",
+      "Routes & Corridors": "Itinéraires & Corridors",
+      "Unpriced ($0.00) Loads": "Chargements Non Chiffrés (0,00 $)",
+      "Fuel, Repairs & Bills": "Carburant, Réparations & Factures",
+      "Integrity Safeguards": "Garde-Fous d'Intégrité",
+      "FLEET COHORT:": "COHORTE FLOTTE :",
+      "COMPANY:": "SOCIÉTÉ :",
+      "FOCUS TRUCK:": "CIBLER CAMION :",
+      "Search truck, plate, owner (freq-ranked)...": "Rechercher camion, plaque, propriétaire...",
+      "No matching trucks": "Aucun camion correspondant",
+      "Click to explore routes": "Cliquer pour explorer les itinéraires",
+      "Click to inspect volume by route": "Cliquer pour inspecter les volumes par itinéraire",
+      "VOLUME HAULED": "VOLUME TRANSPORTÉ",
+      "Transportation revenue in selected valuation mode": "Revenu de transport selon le mode de valorisation choisi",
+      "HAULAGE REVENUE": "REVENU DE TRANSPORT",
+      "Click to inspect operating expenses & fuel": "Cliquer pour inspecter les charges d'exploitation et le carburant",
+      "OPERATING COSTS": "COÛTS D'EXPLOITATION",
+      "Operating net profit (CapEx excluded)": "Profit net d'exploitation (hors CapEx)",
+      "NET OPERATING MARGIN": "MARGE OPÉRATIONNELLE NETTE",
+      "Click to audit $0.00 haulage trips": "Cliquer pour auditer les voyages à 0,00 $",
+      "UNPRICED ($0.00) TRIPS": "VOYAGES NON CHIFFRÉS (0,00 $)",
+      "No trucks match the current selection.": "Aucun camion ne correspond à la sélection.",
+      "Open 360° Truck Inspector": "Ouvrir l'Inspecteur 360° du Camion",
+      "Open 360° Driver Inspector": "Ouvrir l'Inspecteur 360° du Chauffeur",
+      "Drill into Sales & Raw Routes": "Détailler les itinéraires ventes et matières",
+      "Drill into Raw Material Routes": "Détailler les itinéraires matières premières",
+      "Audit Unpriced / Unbundled Loads": "Auditer les chargements non chiffrés / dégroupés",
+      "Unbundled Credit": "Crédit Dégroupé",
+      "Inspect $0.00 Trips": "Inspecter les voyages à 0,00 $",
+      "$0 Trips": "Voyages 0 $",
+      "Inspect Diesel & Expense Bills": "Inspecter le gasoil et les factures de charges",
+      "Inspect Repairs, Lubes & Insurance": "Inspecter réparations, lubrifiants et assurances",
+      "Inspect Driver Overtime & Pay": "Inspecter heures sup. et paie chauffeur",
+      "NET / TRIP": "NET / VOYAGE",
+      "FUEL BURN": "CONSOMMATION CARB.",
+      "PLANT SPLIT": "RÉPARTITION CENTRALES",
+      "Op. Cost": "Coût Op.",
+      "Click to open in Routes Explorer": "Cliquer pour ouvrir dans l'explorateur d'itinéraires",
+      "Side-by-Side Revenue vs. Operating Cost": "Comparaison Revenus vs Coûts d'Exploitation",
+      "Click any truck bar to isolate or reset focus across all tabs": "Cliquez sur la barre d'un camion pour l'isoler ou réinitialiser le filtre",
+      "No truck data in active range": "Aucune donnée camion sur la période active",
+      "Top Value Hauling Corridors (Selected Trucks)": "Principaux Corridors de Transport (Camions Sélectionnés)",
+      "Click any corridor to open in Routes & Hauling Explorer": "Cliquez sur un corridor pour l'ouvrir dans l'explorateur d'itinéraires",
+      "No routes in active period": "Aucun itinéraire sur la période active",
+      "No monthly activity found in the active period.": "Aucune activité mensuelle sur la période active.",
+      "Click any month row to slice the entire Command Center to that month, or click \"All-Time\" in the header to reset": "Cliquez sur un mois pour filtrer tout le Centre de Commande sur ce mois, ou sur « Toutes Périodes » pour réinitialiser",
+      "P&L LINE ITEM": "POSTE DU COMPTE DE RÉSULTAT",
+      "SELECTED TOTAL": "TOTAL SÉLECTIONNÉ",
+      "Total Trips (Paid / $0.00)": "Total Voyages (Payés / 0,00 $)",
+      "Volume Hauled (m³)": "Volume Transporté (m³)",
+      "Sales Delivery Revenue": "Revenu Livraison Ventes",
+      "Raw Material Haulage Revenue": "Revenu Transport Matières Premières",
+      "Unbundled / Benchmark Credit": "Crédit Dégroupé / Référence",
+      "Total Transportation Revenue": "Total Revenus de Transport",
+      "Diesel Fuel (Tank Out Logs)": "Carburant Gasoil (Sorties Cuve)",
+      "Repairs & Spare Parts": "Réparations & Pièces Détachées",
+      "Driver Base + Overtime Pay": "Salaire de Base + Heures Sup. Chauffeurs",
+      "Total Operating Costs (Excl. CapEx)": "Total Coûts d'Exploitation (Hors CapEx)",
+      "Net Operating Profit / (Loss)": "Résultat Net d'Exploitation / (Perte)",
+      "Operating Margin (%)": "Marge Opérationnelle (%)",
+      "Interactive Fleet Comparison & Trend Studio": "Studio Interactif de Comparaison & Tendances Flotte",
+      "Switch between visual proportion bars, interactive monthly timeline, and line-item P&L statement": "Basculez entre barres visuelles, chronologie mensuelle interactive et compte de résultat détaillé",
+      "Unpriced ($0.00) Haulage Explorer & Transfer Credit": "Explorateur des Voyages à 0,00 $ & Crédit de Cession",
+      "Click a category card below to filter unbundled sales deliveries vs. internal quarry raw material hauls": "Cliquez sur une catégorie ci-dessous pour filtrer les livraisons ventes dégroupées vs matières internes",
+      "ALL $0.00 TRIPS (SELECTED)": "TOUS LES VOYAGES 0,00 $ (SÉLECTION)",
+      "UNBUNDLED SALES DELIVERIES": "LIVRAISONS VENTES DÉGROUPÉES",
+      "INTERNAL QUARRY / PLANT RAW HAULS": "TRANSPORTS INTERNES CARRIÈRE / CENTRALES",
+      "STREAM": "FLUX",
+      "COUNTERPARTY & SITE": "CONTREPARTIE & CHANTIER",
+      "CLASSIFICATION": "CLASSIFICATION",
+      "No $0.00 haulage trips match the current filter.": "Aucun voyage à 0,00 $ ne correspond au filtre.",
+      "Ranked by trip frequency, volume hauled, and total commercial value": "Classés par fréquence de voyages, volume transporté et valeur commerciale",
+      "Search customer, quarry, site, material...": "Rechercher client, carrière, chantier, matériau...",
+      "Sort: Most Trips": "Tri : Plus de Voyages",
+      "Sort: Highest Value": "Tri : Plus Forte Valeur",
+      "Sort: Highest Volume (m³)": "Tri : Plus Fort Volume (m³)",
+      "TRIPS & SHARE": "VOYAGES & PART",
+      "No routes match the current filter.": "Aucun itinéraire ne correspond au filtre.",
+      "Click any expense bucket card below to filter bills. Capital Expenditures are isolated from operating costs.": "Cliquez sur une catégorie de charges pour filtrer les factures. Les CapEx sont isolés des coûts d'exploitation.",
+      "Search supplier, part, bill #, note...": "Rechercher fournisseur, pièce, n° facture, note...",
+      "ALL OPERATING BILLS": "TOUTES LES FACTURES D'EXPLOITATION",
+      "REPAIRS, TIRES & SPARE PARTS": "RÉPARATIONS, PNEUS & PIÈCES DÉTACHÉES",
+      "OILS & LUBRICANTS": "HUILES & LUBRIFIANTS",
+      "INSURANCE, PERMITS & TAXES": "ASSURANCES, PERMIS & TAXES",
+      "SUBCATEGORY": "SOUS-CATÉGORIE",
+      "DESCRIPTION / NOTES": "DESCRIPTION / NOTES",
+      "No operating expense bills match the current filter.": "Aucune facture de charges ne correspond au filtre.",
+      "Click a driver card to filter overtime entries or click Reset to view all drivers": "Cliquez sur la carte d'un chauffeur pour filtrer ses heures sup. ou réinitialisez",
+      "No overtime entries match the current filter.": "Aucune écriture d'heures sup. ne correspond au filtre.",
+      "Active Period Impact:": "Impact sur la Période Active :",
+      "Live Cross-Ledger Accounting & Pricing Integrity Checks": "Contrôles d'Intégrité Comptable & Tarifaire Inter-Journaux",
+      "Automated safeguards ensuring CapEx isolation, single-source diesel costing, and unbundled transfer pricing": "Garde-fous automatisés garantissant l'isolation des CapEx, le coût gasoil source unique et les prix de cession",
+      "CapEx Protected": "CapEx Isolés",
+      "Capital Expenditures Excluded from Operating P&L": "Investissements CapEx Exclus du Compte de Résultat d'Exploitation",
+      "Zero Capital Expenditure bills mixed into operating repairs in the active period.": "Aucune facture CapEx mêlée aux réparations d'exploitation sur la période active.",
+      "Unbundled C&D Pricing": "Tarification Livraison Dégroupée",
+      "Delivered Concrete Tickets Priced All-In (>=$55/m³) with $0.00 Separate Haul Fee": "Bons de béton livré facturés tout compris (>= 55 $/m³) avec frais de transport séparé à 0,00 $",
+      "Sales tickets billed at all-in delivered C&D rates record $0.00 in the separate delivery column. Switching to \"+ Unbundled Delivery\" credits the fleet $5.00/m³ internal transfer value.": "Les bons de vente facturés franco chantier inscrivent 0,00 $ en colonne livraison. Le mode « + Livraison Dégroupée » crédite la flotte de 5,00 $/m³.",
+      "Internal Quarry Haulage": "Transport Interne Carrière",
+      "Inbound Quarry & Inter-Plant Raw Material Hauls Logged at $0.00 Freight": "Transports de matières premières carrière et inter-centrales saisis à 0,00 $ de fret",
+      "Company trucks hauling aggregates from quarry or between WTC and BBConstruction plants often leave internal freight at $0.00. \"+ Unbundled Delivery\" credits $1.44/m³ ($40 floor) per load.": "Les camions propres transportant les granulats de la carrière ou entre WTC et BBConstruction laissent souvent le fret interne à 0,00 $. Le mode « + Livraison Dégroupée » crédite 1,44 $/m³ (plancher 40 $).",
+      "Single-Source Fuel": "Carburant Source Unique",
+      "Diesel Cost Driven Strictly from Tank Dispensing Logs (Out)": "Coût du Gasoil Calculé Strictement sur les Sorties Cuve",
+      "Per-truck fuel burn is calculated directly from metered Diesel Logs (direction = Out) to prevent double-counting bulk fuel supplier invoices.": "La consommation par camion est calculée directement depuis les sorties de cuve comptées pour éviter tout double comptage des factures fournisseurs.",
+      "Sales Delivery": "Livraison Ventes",
+      "Raw Material Inbound": "Entrée Matières Premières",
+      "Repairs & Parts": "Réparations & Pièces",
+      "Insurance & Permits": "Assurances & Permis",
+      "Unbundled C&D (>= $55/m³)": "Franco Chantier (>= 55 $/m³)",
+      "Ex-Plant / Zero Haul": "Départ Centrale / Sans Transport",
+      "Internal Quarry / Plant Haul": "Transport Interne Carrière / Centrale",
+      "Live Drawer": "Tiroir de Caisse en Direct"
     }
   };
 
@@ -19111,6 +19341,10 @@
     "pinned": ["مثبتة", "épinglés"],
     "categories": ["فئات", "catégories"],
     "lfuel": ["لتر وقود", "L carburant"],
+    "shifted": ["مرحّلة", "décalés"],
+    "corridor": ["مسار", "corridor"],
+    "checks": ["فحوصات", "contrôles"],
+    "check": ["فحص", "contrôle"],
   };
 
   const SEARCH_TERMS = {
@@ -21547,6 +21781,139 @@
 
     m = trimmed.match(/^Line\s+(\d+)\s+destination$/i);
     if (m) return lang === 'ar' ? `وجهة البند ${m[1]}` : `Affectation ligne ${m[1]}`;
+
+    // Interactive Fleet Revenue & Operating Cost Studio (fleet_pnl.js)
+    m = trimmed.match(/^Interactive Truck Revenue & Operating Cost Studio\s*\((.+)\)$/i);
+    if (m) {
+      const inner = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `استوديو إيرادات وتكاليف تشغيل الشاحنات التفاعلي (${inner})` : `Studio Interactif Revenus & Coûts d'Exploitation Camions (${inner})`;
+    }
+
+    m = trimmed.match(/^Pick Trucks\s*\((\d+)\)\s*▾?$/i);
+    if (m) return lang === 'ar' ? `اختر الشاحنات (${m[1]}) ▾` : `Choisir Camions (${m[1]}) ▾`;
+
+    m = trimmed.match(/^Comparing\s+(\d+)\s+Trucks?$/i);
+    if (m) return lang === 'ar' ? `مقارنة ${m[1]} شاحنات` : `Comparaison de ${m[1]} Camion(s)`;
+
+    m = trimmed.match(/^ACTIVE TRIPS\s*\((\d+)\s+TRUCKS?\)$/i);
+    if (m) return lang === 'ar' ? `النقلات النشطة (${m[1]} شاحنات)` : `VOYAGES ACTIFS (${m[1]} CAMIONS)`;
+
+    m = trimmed.match(/^REVENUE MIX\s*·\s*([\d,]+)\s+TRIPS?\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `مزيج الإيرادات · ${m[1]} نقلة (${m[2]})` : `MIX REVENUS · ${m[1]} VOYAGES (${m[2]})`;
+
+    m = trimmed.match(/^OPERATING COST MIX\s*·\s*(.+)$/i);
+    if (m) return lang === 'ar' ? `مزيج التكاليف التشغيلية · ${m[1]}` : `MIX COÛTS D'EXPLOITATION · ${m[1]}`;
+
+    m = trimmed.match(/^Showing Only\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `عرض ${m[1]} فقط` : `Affichage unique : ${m[1]}`;
+
+    m = trimmed.match(/^Focus\s+(\S+)$/i);
+    if (m) return lang === 'ar' ? `تركيز ${m[1]}` : `Cibler ${m[1]}`;
+
+    m = trimmed.match(/^Fuel\s*\(([\d,]+)\s*L\)$/i);
+    if (m) return lang === 'ar' ? `الوقود (${m[1]} لتر)` : `Carburant (${m[1]} L)`;
+
+    m = trimmed.match(/^Repairs & Lubes\s*\(([\d,]+)\)$/i);
+    if (m) return lang === 'ar' ? `الصيانة والزيوت (${m[1]})` : `Réparations & Huiles (${m[1]})`;
+
+    m = trimmed.match(/^Driver & OT\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `السائق والإضافي (${m[1]})` : `Chauffeur & HS (${m[1]})`;
+
+    m = trimmed.match(/^([\d.,]+)\s*L\/trip\s*·\s*([\d.,]+)\s*L\/100m³$/i);
+    if (m) return lang === 'ar' ? `${m[1]} لتر/نقلة · ${m[2]} لتر/100م³` : `${m[1]} L/voyage · ${m[2]} L/100m³`;
+
+    m = trimmed.match(/^Sales\s+([\d.,]+\s*m³)\s*·\s*Raw\s+([\d.,]+\s*m³)$/i);
+    if (m) return lang === 'ar' ? `مبيعات ${m[1]} · مواد أولية ${m[2]}` : `Ventes ${m[1]} · Matières ${m[2]}`;
+
+    m = trimmed.match(/^Booked\s+(\$[\d.,]+)(?:\s*\+\s*(\$[\d.,]+)\s+Unbundled)?$/i);
+    if (m) {
+      if (m[2]) return lang === 'ar' ? `مسجّل ${m[1]} + ${m[2]} توصيل مفصول` : `Comptabilisé ${m[1]} + ${m[2]} Dégroupé`;
+      return lang === 'ar' ? `مسجّل ${m[1]}` : `Comptabilisé ${m[1]}`;
+    }
+
+    m = trimmed.match(/^(\$[\d.,]+)\/trip\s*·\s*(\$[\d.,]+)\/m³\s*\(([\d.,]+%)\s+Fuel\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]}/نقلة · ${m[2]}/م³ (${m[3]} وقود)` : `${m[1]}/voyage · ${m[2]}/m³ (${m[3]} Carb.)`;
+
+    m = trimmed.match(/^Margin\s+([+-]?[\d.,]+%)\s*·\s*([+-]?\$[\d.,]+)\/trip$/i);
+    if (m) return lang === 'ar' ? `الهامش ${m[1]} · ${m[2]}/نقلة` : `Marge ${m[1]} · ${m[2]}/voyage`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+unpriced on selected trucks\s*\(([\d,]+)\s+fleet-wide\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} غير مسعّرة للشاحنات المحددة (${m[2]} في كامل الأسطول)` : `${m[1]} non chiffrés sur sélection (${m[2]} flotte entière)`;
+
+    m = trimmed.match(/^([\d,]+)\s+bills?\s*\+\s*(\$[\d.,]+)\s+metered diesel\s*\(([\d,]+)\s*L\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فواتير + ${m[2]} مازوت بعدّاد الخزان (${m[3]} لتر)` : `${m[1]} factures + ${m[2]} gasoil compté (${m[3]} L)`;
+
+    m = trimmed.match(/^([\d.,]+%)\s+of direct maintenance bills$/i);
+    if (m) return lang === 'ar' ? `${m[1]} من فواتير الصيانة المباشرة` : `${m[1]} des factures de maintenance directe`;
+
+    m = trimmed.match(/^([\d,]+)\s+OT logs?\s*@\s*(\$[\d.,]+)\/hr$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سجلات إضافي بسعر ${m[2]}/ساعة` : `${m[1]} relevés HS à ${m[2]}/h`;
+
+    m = trimmed.match(/^Interactive Monthly Fleet Timeline\s*\((\d+)\s+Months?\)$/i);
+    if (m) return lang === 'ar' ? `الجدول الزمني الشهري التفاعلي للأسطول (${m[1]} شهراً)` : `Chronologie Mensuelle Interactive de la Flotte (${m[1]} Mois)`;
+
+    m = trimmed.match(/^Routes & Hauling Corridors\s*\(([\d,]+)\s+Corridors?\)$/i);
+    if (m) return lang === 'ar' ? `المسارات وخطوط النقل (${m[1]} مساراً)` : `Itinéraires & Corridors de Transport (${m[1]} Corridors)`;
+
+    m = trimmed.match(/^Diesel Fuel, Repairs, Lubricants & Insurance\s*\(([\d,]+)\s+Bills?\)$/i);
+    if (m) return lang === 'ar' ? `المازوت والصيانة والزيوت والتأمين (${m[1]} فاتورة)` : `Gasoil, Réparations, Lubrifiants & Assurances (${m[1]} Factures)`;
+
+    m = trimmed.match(/^Driver Overtime & Payroll Allocation\s*\(([\d,]+)\s+Logs?\)$/i);
+    if (m) return lang === 'ar' ? `العمل الإضافي للسائقين وتوزيع الرواتب (${m[1]} سجلاً)` : `Heures Sup. Chauffeurs & Ventilation Paie (${m[1]} Relevés)`;
+
+    m = trimmed.match(/^Selected Trucks\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `الشاحنات المحددة (${m[1]})` : `Camions Sélectionnés (${m[1]})`;
+
+    m = trimmed.match(/^All Drivers\s*\((\d+)\)$/i);
+    if (m) return lang === 'ar' ? `جميع السائقين (${m[1]})` : `Tous les Chauffeurs (${m[1]})`;
+
+    m = trimmed.match(/^Net\s+([+-]?\$[\d.,]+)\s*\(Rev\s+(\$[\d.,]+)\s*\/\s*Cost\s+([+-]?\$[\d.,]+)\)$/i);
+    if (m) return lang === 'ar' ? `الصافي ${m[1]} (الإيراد ${m[2]} / التكلفة ${m[3]})` : `Net ${m[1]} (Rev. ${m[2]} / Coût ${m[3]})`;
+
+    m = trimmed.match(/^\(([\d,]+)\s+paid\s*\/\s*([\d,]+)\s+\$0\)$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} مدفوعة / ${m[2]} بسعر $0)` : `(${m[1]} payés / ${m[2]} à 0 $)`;
+
+    m = trimmed.match(/^Transfer Credit:\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `رصيد التحويل الداخلي: ${m[1]}` : `Crédit de Cession Interne : ${m[1]}`;
+
+    m = trimmed.match(/^All-in C&D\s*\(\$5\.00\/m³ credit\):\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `واصل شامل النقل ($5.00/م³ رصيد): ${m[1]}` : `Rendu TTC (crédit 5,00 $/m³) : ${m[1]}`;
+
+    m = trimmed.match(/^Internal rate\s*\(\$1\.44\/m³\s*·\s*\$40 floor\):\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `التعرفة الداخلية ($1.44/م³ · حد أدنى $40): ${m[1]}` : `Tarif interne (1,44 $/m³ · plancher 40 $) : ${m[1]}`;
+
+    m = trimmed.match(/^([\d,]+)\s+CapEx asset bill\(s\) totaling\s+(\$[\d.,]+)\s+\(including TB1 truck acquisition\) are isolated from operating repairs so unit hauling margins stay accurate\.$/i);
+    if (m) return lang === 'ar' ? `تم عزل ${m[1]} فواتير أصول رأسمالية بإجمالي ${m[2]} (بما فيها شراء الشاحنة TB1) عن مصاريف الصيانة التشغيلية للحفاظ على دقة هوامش النقل.` : `${m[1]} facture(s) d'investissement CapEx totalisant ${m[2]} (dont l'acquisition du camion TB1) sont isolées des réparations d'exploitation.`;
+
+    m = trimmed.match(/^(\$[\d.,]+)\s+isolated to Balance Sheet Fixed Assets$/i);
+    if (m) return lang === 'ar' ? `${m[1]} معزولة ضمن الأصول الثابتة في الميزانية` : `${m[1]} isolés en Immobilisations au Bilan`;
+
+    m = trimmed.match(/^([\d,]+)\s+sales tickets in active range$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إيصالات مبيعات في الفترة النشطة` : `${m[1]} bons de vente sur la période active`;
+
+    m = trimmed.match(/^([\d,]+)\s+inbound raw hauls in active range$/i);
+    if (m) return lang === 'ar' ? `${m[1]} نقلات مواد أولية واردة في الفترة النشطة` : `${m[1]} voyages matières entrantes sur la période active`;
+
+    m = trimmed.match(/^([\d,]+)\s+metered fuel events verified$/i);
+    if (m) return lang === 'ar' ? `تم التحقق من ${m[1]} حركات تزويد وقود بالعدّاد` : `${m[1]} pleins gasoil comptés vérifiés`;
+
+    m = trimmed.match(/^Unbundled \/ Benchmark Credit:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `رصيد النقل المفصول / المعياري: ${m[1]}` : `Crédit Dégroupé / Référence : ${m[1]}`;
+
+    m = trimmed.match(/^Raw Material Haulage:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `نقل المواد الأولية: ${m[1]}` : `Transport Matières Premières : ${m[1]}`;
+
+    m = trimmed.match(/^Diesel Fuel:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `وقود المازوت: ${m[1]}` : `Carburant Gasoil : ${m[1]}`;
+
+    m = trimmed.match(/^Repairs, Lubes & Insurance:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `الصيانة والزيوت والتأمين: ${m[1]}` : `Réparations, Huiles & Assurances : ${m[1]}`;
+
+    m = trimmed.match(/^Driver Pay & Overtime:\s*(\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `رواتب وإضافي السائقين: ${m[1]}` : `Salaire Chauffeur & Heures Sup. : ${m[1]}`;
+
+    m = trimmed.match(/^Net:\s*([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `الصافي: ${m[1]}` : `Net : ${m[1]}`;
 
     return null;
   }

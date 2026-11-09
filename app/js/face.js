@@ -46,7 +46,9 @@ const MFG_FACE_CONFIG = {
 
 const Face = (() => {
   let ready = false;
+  let detectorReady = false;
   let loading = null;
+  let detectorLoading = null;
   let faceApiScriptPromise = null;
   let backend = "?";
   let detector = "tiny";
@@ -89,7 +91,17 @@ const Face = (() => {
   let earlyStreamObj = null;
   let earlyStreamPromise = null;
   let earlyCancelled = false;
+  let earlyConsumed = false;
+  let earlyPreviewTimer = null;
+  let earlyPreviewBusy = false;
   const trackedStreams = new Set();
+
+  function clearEarlyPreviewTimer() {
+    if (earlyPreviewTimer) {
+      clearTimeout(earlyPreviewTimer);
+      earlyPreviewTimer = null;
+    }
+  }
 
   function trackStream(s) {
     if (s) trackedStreams.add(s);
@@ -110,6 +122,8 @@ const Face = (() => {
 
   function stopAllStreams() {
     earlyCancelled = true;
+    earlyConsumed = false;
+    clearEarlyPreviewTimer();
     if (earlyStreamObj) {
       stopStreamTracks(earlyStreamObj);
       earlyStreamObj = null;
@@ -129,6 +143,40 @@ const Face = (() => {
         }
       });
     }
+  }
+
+  function startEarlyPreviewLoop(s) {
+    clearEarlyPreviewTimer();
+    const tick = async () => {
+      earlyPreviewTimer = null;
+      if (earlyCancelled || earlyConsumed || !earlyStreamObj || earlyStreamObj !== s) return;
+      if (typeof document === "undefined") return;
+      const gNow = document.getElementById("authGate");
+      const vNow = document.getElementById("authFaceVideo");
+      if (!gNow || gNow.hidden || !vNow || vNow.srcObject !== s) return;
+      if (!earlyPreviewBusy && (detectorReady || ready) && vNow.readyState >= 2 && vNow.videoWidth > 0) {
+        earlyPreviewBusy = true;
+        try {
+          const det = await detectOne(vNow, false);
+          if (!earlyCancelled && !earlyConsumed && vNow.srcObject === s) {
+            const ov = document.getElementById("authFaceOverlay");
+            if (ov) drawOverlay(ov, vNow, det, "#B8883B", "");
+            const hint = document.getElementById("authFaceHint");
+            if (hint && /Loading Face ID|Starting|Preparing/i.test(hint.textContent || "")) {
+              hint.textContent = "Look at camera for automatic Face ID";
+              hint.className = "auth-face-hint ok";
+            }
+          }
+        } catch (_) {
+        } finally {
+          earlyPreviewBusy = false;
+        }
+      }
+      if (!earlyCancelled && !earlyConsumed && earlyStreamObj === s) {
+        earlyPreviewTimer = setTimeout(tick, 32);
+      }
+    };
+    earlyPreviewTimer = setTimeout(tick, 16);
   }
 
   function prewarm() {
@@ -154,6 +202,7 @@ const Face = (() => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     if (!earlyStreamPromise) {
       earlyCancelled = false;
+      earlyConsumed = false;
       earlyStreamPromise = navigator.mediaDevices.getUserMedia({
         video: preferredVideoConstraints(),
         audio: false
@@ -179,12 +228,13 @@ const Face = (() => {
             if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
             const hint = document.getElementById("authFaceHint");
             if (hint && (!hint.textContent || /Loading Face ID|Starting|Preparing/i.test(hint.textContent))) {
-              const appScannerReady = Boolean(ready && window.MFG_FACE_TEST);
-              hint.textContent = appScannerReady
+              const scannerReady = Boolean(ready || detectorReady);
+              hint.textContent = scannerReady
                 ? "Look at camera for automatic Face ID"
                 : "Preparing Face ID…";
-              hint.className = appScannerReady ? "auth-face-hint ok" : "auth-face-hint";
+              hint.className = scannerReady ? "auth-face-hint ok" : "auth-face-hint";
             }
+            if (!earlyConsumed) startEarlyPreviewLoop(s);
           };
           if (vNow.readyState >= 2 && vNow.videoWidth > 0) revealLiveVideo();
           else {
@@ -202,9 +252,15 @@ const Face = (() => {
     }
   }
 
-  async function consumeEarlyStream() {
+  async function consumeEarlyStream(opts) {
     earlyCancelled = false;
+    earlyConsumed = true;
+    clearEarlyPreviewTimer();
+    const keepOnAuth = (opts && typeof opts === "object" && "keepOnAuthVideo" in opts)
+      ? Boolean(opts.keepOnAuthVideo)
+      : Boolean(opts !== false && typeof document !== "undefined" && document.getElementById("authGate") && !document.getElementById("authGate").hidden);
     const detachAuthVideo = (streamToDetach) => {
+      if (keepOnAuth) return;
       try {
         const vNow = typeof document !== "undefined" ? document.getElementById("authFaceVideo") : null;
         if (vNow && (!streamToDetach || vNow.srcObject === streamToDetach)) {
@@ -223,15 +279,21 @@ const Face = (() => {
     }
     if (earlyStreamPromise) {
       const p = earlyStreamPromise;
-      earlyStreamPromise = null;
       const s = await p;
-      earlyStreamObj = null;
+      if (earlyStreamPromise === p) earlyStreamPromise = null;
+      if (earlyStreamObj === s) earlyStreamObj = null;
       if (!earlyCancelled && s && s.getVideoTracks && s.getVideoTracks().some(t => t.readyState === "live")) {
         detachAuthVideo(s);
         trackStream(s);
         return s;
       }
-      detachAuthVideo(s);
+      try {
+        const vNow = typeof document !== "undefined" ? document.getElementById("authFaceVideo") : null;
+        if (vNow && (!s || vNow.srcObject === s)) {
+          try { vNow.pause(); } catch (_) {}
+          vNow.srcObject = null;
+        }
+      } catch (_) {}
       if (s) stopStreamTracks(s);
     }
     return null;
@@ -257,20 +319,32 @@ const Face = (() => {
     if (ready) return;
     if (loading) return loading;
     const isAutoTest = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    let resolveDetectorStage;
+    let rejectDetectorStage;
+    detectorLoading = new Promise((res, rej) => {
+      resolveDetectorStage = res;
+      rejectDetectorStage = rej;
+    });
+    detectorLoading.catch(() => {});
     loading = (async () => {
       await ensureFaceApiScript(true);
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       const base = "./vendor/models";
+      let webglOk = false;
       try {
-        await faceapi.tf.setBackend("webgl");
-        await faceapi.tf.ready();
-      } catch (e) {
+        webglOk = Boolean(await faceapi.tf.setBackend("webgl"));
+        if (webglOk) await faceapi.tf.ready();
+      } catch (_) {
+        webglOk = false;
+      }
+      if (!webglOk || faceapi.tf.getBackend() !== "webgl") {
         await faceapi.tf.setBackend("cpu");
         await faceapi.tf.ready();
       }
       backend = faceapi.tf.getBackend();
-      // Load ultra-fast live-video recognition pipeline first:
-      // TinyFaceDetector (193 KB) + FaceLandmark68TinyNet (77 KB, 4.6x smaller & 3x faster than full net) + FaceRecognitionNet
+      // 2-Stage Progressive Loading:
+      // Stage 1 (<250ms): TinyFaceDetector (193 KB) + FaceLandmark68TinyNet (77 KB) -> immediate live reticle & liveness tracking
+      // Stage 2: FaceRecognitionNet (6.44 MB) -> 128-d descriptor verification
       const tinyP = faceapi.nets.tinyFaceDetector.loadFromUri(base);
       const lmP = faceapi.nets.faceLandmark68TinyNet.loadFromUri(base).then(() => {
         landmarksTiny = true;
@@ -281,22 +355,40 @@ const Face = (() => {
       });
       const recP = faceapi.nets.faceRecognitionNet.loadFromUri(base);
 
-      await Promise.all([tinyP, lmP, recP]);
+      await Promise.all([tinyP, lmP]);
+
+      let wcv = null;
+      if (!isAutoTest && typeof document !== "undefined") {
+        try {
+          wcv = document.createElement("canvas");
+          wcv.width = 128;
+          wcv.height = 128;
+          await Promise.resolve(faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.99 }))).catch(() => {});
+          await Promise.resolve(landmarksTiny && faceapi.detectFaceLandmarksTiny
+            ? faceapi.detectFaceLandmarksTiny(wcv)
+            : faceapi.detectLandmarks(wcv)).catch(() => {});
+        } catch (_) {}
+      }
+
+      detectorReady = true;
+      if (resolveDetectorStage) resolveDetectorStage(true);
+      if (typeof document !== "undefined") {
+        const vp = document.getElementById("authCamViewport");
+        const hint = document.getElementById("authFaceHint");
+        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
+          hint.textContent = "Look at camera for automatic Face ID";
+          hint.className = "auth-face-hint ok";
+        }
+        try { window.dispatchEvent(new CustomEvent("mfg:face-detector-ready")); } catch (_) {}
+      }
+
+      await recP;
 
       if (isAutoTest) {
         await ensureSsdLoaded();
-      } else {
-        // Pre-compile WebGL shaders for all 3 live-video networks while webcam hardware is warming up
-        // so Frame 1 has zero 1,500ms shader-compilation freeze once the user looks at the camera.
+      } else if (wcv) {
         try {
-          const wcv = document.createElement("canvas");
-          wcv.width = 128;
-          wcv.height = 128;
-          await faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.99 })).catch(() => {});
-          await (landmarksTiny && faceapi.detectFaceLandmarksTiny
-            ? faceapi.detectFaceLandmarksTiny(wcv)
-            : faceapi.detectLandmarks(wcv)).catch(() => {});
-          await faceapi.computeFaceDescriptor(wcv).catch(() => {});
+          await Promise.resolve(faceapi.computeFaceDescriptor(wcv)).catch(() => {});
         } catch (_) {}
       }
 
@@ -312,8 +404,17 @@ const Face = (() => {
       }
     })().catch(err => {
       loading = null;
+      detectorLoading = null;
+      if (rejectDetectorStage) rejectDetectorStage(err);
       throw err;
     });
+    return loading;
+  }
+
+  async function loadDetector() {
+    if (detectorReady || ready) return true;
+    if (!loading) load().catch(() => {});
+    if (detectorLoading) return detectorLoading;
     return loading;
   }
 
@@ -446,10 +547,25 @@ const Face = (() => {
   let preferBoostPass = false;
   let liveMissCount = 0;
   async function detectOne(src, allowCropFallback = false) {
-    if (!ready) return null;
+    if (!ready && (!detectorReady || allowCropFallback)) return null;
+    const detectorOnlyMode = !ready && detectorReady;
     const isLiveVideo = !!(src && src.tagName === "VIDEO");
-    const frame = frameToCanvas(src, isLiveVideo && !allowCropFallback ? 288 : 480);
+    const frame = frameToCanvas(src, (isLiveVideo || detectorOnlyMode) && !allowCropFallback ? 288 : 480);
     if (!frame) return null;
+
+    if (detectorOnlyMode) {
+      try {
+        const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.24 });
+        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny);
+        if (r) {
+          liveMissCount = 0;
+          const packed = pack({ detection: r.detection, landmarks: r.landmarks, descriptor: null }, frame, false);
+          packed.modelLoading = true;
+          return packed;
+        }
+      } catch (_) {}
+      return null;
+    }
 
     const buildBoostFrame = () => {
       const bw = frameWidth(frame) || 288;
@@ -849,12 +965,14 @@ const Face = (() => {
     config: MFG_FACE_CONFIG,
     CONFIG: MFG_FACE_CONFIG.match,
     load,
+    loadDetector,
     prewarm,
     isPrewarming: () => Boolean(earlyStreamPromise && !earlyCancelled),
     consumeEarlyStream,
     trackStream,
     stopAllStreams,
     isReady: () => ready,
+    isDetectorReady: () => detectorReady,
     getBackend: () => backend,
     detectOne,
     detectAll,
@@ -871,6 +989,7 @@ const Face = (() => {
     drawOverlay,
     Sound,
     get ready() { return ready; },
+    get detectorReady() { return detectorReady; },
     get backend() { return backend; },
     get detector() { return detector; },
     get landmarks() { return landmarksTiny ? "68-tiny" : "68"; }
