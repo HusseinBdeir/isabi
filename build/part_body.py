@@ -67,7 +67,7 @@ BODY = f"""
           <div class="eyebrow">{ICONS["ai_mark"]} Tailored Enterprise ERP · Live in 1 to 2 Weeks</div>
           <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
           <p class="hero-lead">
-            Custom daily operations, double-entry accounting, live executive dashboards, field kiosks, and cited AI, tailored to how your business operates.
+            Custom daily operations, double-entry accounting, What-If scenario studios, live executive dashboards, fleet GPS telematics, field kiosks, and cited AI, tailored to how your business runs.
           </p>
           <div class="hero-cta-row">
             <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Explore Live Demo</a>
@@ -86,15 +86,15 @@ BODY = f"""
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>Custom-Built for Your Business in 1 to 2 Weeks</b>
-              <small>Configured for your exact branches, approvals, daily workflows, and chart of accounts.</small>
+              <b>What-If Scenario Studio, Page Guide &amp; Spoken Briefs</b>
+              <small>Stress-test price, volume, FX, and 30-day cash runway, or tap Explain Page for instant EN, AR, and FR briefings.</small>
             </div>
           </div>
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>Smooth Migration &amp; Full Data Ownership</b>
-              <small>We import your spreadsheets, match balances alongside your existing books, and let you export anytime.</small>
+              <b>Automated Statement Matching &amp; Full Data Ownership</b>
+              <small>Match supplier and bank statements automatically across languages, lock closed periods, and export your data anytime.</small>
             </div>
           </div>
         </div>
@@ -153,7 +153,7 @@ BODY = f"""
               <div class="hlc-vrow" data-hero-ind="manufacturing">
                 <div class="hlc-vrow-main">
                   <b>{ICONS["manufacturing"]} Concrete &amp; Manufacturing</b>
-                  <small>Batch Plant m³, Fleet &amp; Silos</small>
+                  <small>Batch Plant m³, Fleet GPS &amp; Silos</small>
                 </div>
                 <div class="hlc-vrow-bar"><i style="width:64%;background:#10B981"></i></div>
                 <span class="hlc-vrow-badge">29% GP</span>
@@ -162,7 +162,7 @@ BODY = f"""
               <div class="hlc-vrow" data-hero-ind="realestate">
                 <div class="hlc-vrow-main">
                   <b>{ICONS["realestate"]} Real Estate &amp; Insurance</b>
-                  <small>Leases, Policies &amp; Commissions</small>
+                  <small>Leases, Policies &amp; Renewals</small>
                 </div>
                 <div class="hlc-vrow-bar"><i style="width:42%;background:#8B5CF6"></i></div>
                 <span class="hlc-vrow-badge">94% Occ.</span>
@@ -172,7 +172,7 @@ BODY = f"""
           </div>
 
           <div class="hlc-foot-note">
-            <span>{ICONS["lock"]} Double-Entry Ledger · Offline Kiosks · Cited Ask ISABI</span>
+            <span>{ICONS["lock"]} Double-Entry Ledger · What-If Studio · Offline Kiosks · Cited AI</span>
             <a href="#sandbox" class="hlc-foot-link">Interactive Demo ▸</a>
           </div>
         </div>
@@ -207,7 +207,7 @@ BODY = f"""
                   <h4>{ICONS["key"]} Tailored Setup, Simple Seats &amp; Full Data Ownership</h4>
                   <span>From $50/Seat</span>
                 </div>
-                <p>One-time custom setup to build your exact operational workflows and ledger, paired with predictable per-seat monthly pricing and 100% client data ownership.</p>
+                <p>One-time custom setup tailored to your exact workflows and chart of accounts, paired with simple per-seat plans, automated statement matching, and 100% data ownership.</p>
                 <div class="stack-tags">
                   <span>From $3,000 Setup</span>
                   <span>From $50/Seat/Mo</span>
@@ -217,40 +217,40 @@ BODY = f"""
 
               <div class="stack-card reveal">
                 <div class="stack-card-hdr">
-                  <h4>{ICONS["apps"]} 360° Record Views, Guided Forms &amp; Kiosks</h4>
+                  <h4>{ICONS["apps"]} Smart Scan, Phone QR, 360° Views &amp; Fleet GPS</h4>
                   <span>Daily Operations</span>
                 </div>
-                <p>Scan multi-page invoices or chassis VINs with the privacy document camera and phone QR handoff, dictate entries by voice, inspect any record in 360°, and print thermal slips.</p>
+                <p>Scan multi-page invoices or chassis VINs via privacy camera and phone QR handoff, dictate forms by voice, track live fleet GPS and fuel sensors, and print thermal slips.</p>
                 <div class="stack-tags">
                   <span>Smart Scan &amp; Phone QR</span>
-                  <span>360° Record View</span>
-                  <span>Invoice / Gate Pass Print</span>
+                  <span>Fleet GPS &amp; Kiosks</span>
+                  <span>360° View &amp; Page Guide</span>
                 </div>
               </div>
 
               <div class="stack-card reveal">
                 <div class="stack-card-hdr">
-                  <h4>{ICONS["analytics"]} Executive Dashboards &amp; Printable Statements</h4>
+                  <h4>{ICONS["analytics"]} What-If Studio, Executive Cockpits &amp; Statements</h4>
                   <span>Reporting &amp; Close</span>
                 </div>
-                <p>Review your single-screen CEO cockpit and daily operations board with one-tap spoken briefings, switch Year, Month, Week, and Day, or print bilingual A4 statements.</p>
+                <p>Stress-test margins, FX, and 30-day cash maturity in the What-If Studio, tap Explain &amp; Listen on any dashboard or statement, and lock month-end periods with one click.</p>
                 <div class="stack-tags">
-                  <span>CEO Cockpit &amp; Spoken Brief</span>
-                  <span>Year / Month / Week / Day</span>
-                  <span>Bilingual A4 Statements</span>
+                  <span>What-If &amp; 30-Day Cash</span>
+                  <span>Spoken Briefs (EN/AR/FR)</span>
+                  <span>Statement Match &amp; Close Lock</span>
                 </div>
               </div>
 
               <div class="stack-card reveal">
                 <div class="stack-card-hdr">
-                  <h4>{ICONS["lock"]} Live Face Sign-In, Permissions &amp; Watchdogs</h4>
+                  <h4>{ICONS["lock"]} Face Sign-In, Step-Up 2FA &amp; Audit Watchdogs</h4>
                   <span>Security &amp; Audit</span>
                 </div>
-                <p>Photo-proof face and PIN sign-in, per-company shift rules and permissions, plus watchdogs catching missing tickets, split bills, price creep, and overdue balances.</p>
+                <p>Photo-proof face and PIN sign-in, biometric step-up verification on voids and period reopens, plus watchdogs catching off-hours overrides, split bills, and price creep.</p>
                 <div class="stack-tags">
-                  <span>Live Face + PIN Sign-In</span>
+                  <span>Face Sign-In &amp; Step-Up 2FA</span>
                   <span>Per-Company Access</span>
-                  <span>Automatic Audit Alerts</span>
+                  <span>28 Audit &amp; Off-Hours Alerts</span>
                 </div>
               </div>
             </div>
@@ -263,7 +263,7 @@ BODY = f"""
                 {badge_svg("b3")}
                 <div>
                   <b>Ask ISABI · Multilingual Ledger Intelligence</b>
-                  <small>Ask by text, two-way live voice, or attached files across balances, stock, and receivables in EN, AR, and FR, citing every voucher.</small>
+                  <small>Ask by text, live two-way voice, or attached files across balances, What-If scenarios, and statements in EN, AR, and FR, citing every voucher.</small>
                 </div>
               </div>
               <span class="hlc-status"><i></i>Live Sandbox</span>
@@ -317,7 +317,7 @@ BODY = f"""
         <div class="eyebrow">{ICONS["manufacturing"]} 02 · Proven Industry Blueprints</div>
         <h2>Engineered for Complex, Real-World Industries.</h2>
         <p>
-          Select an industry below to inspect its custom modules, daily operational flow, and before-and-after transformation.
+          Select an industry below to inspect its custom modules, reports, and daily operational workflow from morning standup to month-end close.
         </p>
       </div>
 
@@ -396,7 +396,7 @@ BODY = f"""
           <tbody>
             <tr>
               <td><b>{ICONS["apps"]} Fit to Your Workflow</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% tailored workspaces, guided forms &amp; approval rules</td>
+              <td class="isabi-col">{ICONS["check"]} 100% tailored workspaces, guided forms &amp; interactive page tours</td>
               <td>{ICONS["warn"]} Rigid templates and awkward workarounds</td>
               <td>{ICONS["cross"]} Possible only after expensive custom change orders</td>
             </tr>
@@ -408,19 +408,19 @@ BODY = f"""
             </tr>
             <tr>
               <td><b>{ICONS["analytics"]} Executive Analytics &amp; SOA</b></td>
-              <td class="isabi-col">{ICONS["check"]} Built-in interactive dashboards &amp; bilingual printable statements</td>
+              <td class="isabi-col">{ICONS["check"]} What-If scenario studio, 30-day cash bridge &amp; bilingual statements</td>
               <td>{ICONS["warn"]} Basic built-in charts and constant Excel exports</td>
               <td>{ICONS["cross"]} Sold as a separate six-figure BI project</td>
             </tr>
             <tr>
-              <td><b>{ICONS["ai"]} AI &amp; Field Kiosks</b></td>
-              <td class="isabi-col">{ICONS["check"]} Live Voice AI (EN/AR/FR), Smart Scan, Phone QR &amp; Face Kiosks</td>
+              <td><b>{ICONS["ai"]} AI, Telematics &amp; Kiosks</b></td>
+              <td class="isabi-col">{ICONS["check"]} Spoken briefings (EN/AR/FR), Smart Scan, Fleet GPS &amp; Face Kiosks</td>
               <td>{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
               <td>{ICONS["cross"]} Rarely available or requires external middleware</td>
             </tr>
             <tr>
-              <td><b>{ICONS["lock"]} Ownership &amp; Go-Live Speed</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% client-owned system &amp; data, live in 1 to 2 weeks</td>
+              <td><b>{ICONS["lock"]} Ownership, Close &amp; Speed</b></td>
+              <td class="isabi-col">{ICONS["check"]} 100% client-owned data, automated close locks, live in 1 to 2 weeks</td>
               <td>{ICONS["warn"]} 2 to 4 months locked inside vendor subscription cloud</td>
               <td>{ICONS["cross"]} 9 to 18 months on aging on-premise servers</td>
             </tr>
@@ -444,20 +444,20 @@ BODY = f"""
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["scope"]} Days 4 to 6</div>
-          <h4>2. Forms, 360° Views &amp; Kiosks</h4>
-          <p>We configure your guided entry forms, 360-degree record views, date and credit locks, and companion cashier, dispatch, fuel, and attendance kiosks.</p>
+          <h4>2. Smart Scan, 360° Views &amp; Kiosks</h4>
+          <p>We configure guided forms with Smart Scan and phone QR camera handoff, 360-degree record views, interactive page guides, and cashier, dispatch, fuel, and attendance kiosks.</p>
           <span class="sprint-deliverable">✓ Deliverable: Guided forms, record views &amp; field kiosks</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["analytics"]} Days 7 to 10</div>
-          <h4>3. Dashboards &amp; Statements</h4>
-          <p>We deliver interactive executive dashboards (with Year, Month, Week, and Day switching) alongside bilingual printable Statements of Account and tax invoices.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Executive dashboards &amp; bilingual A4 statements</span>
+          <h4>3. Cockpits, What-If &amp; Statements</h4>
+          <p>We deliver the CEO Cockpit, What-If margin and cash runway studio, interactive dashboards, spoken briefings, and bilingual printable Statements of Account.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Cockpits, What-If studio &amp; A4 statements</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["bolt"]} Days 11 to 14</div>
-          <h4>4. Migration, Watchdogs &amp; Go-Live</h4>
-          <p>We import your historical spreadsheets, turn on audit watchdogs and Ask ISABI, verify every balance side by side with your accountant, train your team, and go live.</p>
+          <h4>4. Statement Match, Locks &amp; Go-Live</h4>
+          <p>We import your spreadsheets, reconcile balances via automated statement matching, activate step-up 2FA and audit watchdogs, train your team, and go live.</p>
           <span class="sprint-deliverable">✓ Deliverable: Verified side-by-side cutover &amp; team sign-off</span>
         </div>
       </div>
@@ -503,11 +503,11 @@ BODY = f"""
               <div class="price-retainer">+$50 / seat / month · Cloud sync, updates &amp; support</div>
             </div>
             <ul class="price-features">
-              <li><i>✓</i> <span>Custom modules, double-entry ledger &amp; tailored setup ($50/seat/mo)</span></li>
-              <li><i>✓</i> <span>Role-based workspaces, 360° record views &amp; guided entry forms</span></li>
-              <li><i>✓</i> <span>Interactive executive dashboards (Sales, Expenses, Receivables, Cash)</span></li>
-              <li><i>✓</i> <span>Core bilingual printable statements (Statement of Account &amp; P&amp;L)</span></li>
-              <li><i>✓</i> <span>Historical Excel data import and team onboarding</span></li>
+              <li><i>✓</i> <span>Custom modules, double-entry ledger &amp; interactive page guides ($50/seat/mo)</span></li>
+              <li><i>✓</i> <span>Role-based workspaces, 360° record views, Smart Scan &amp; phone QR intake</span></li>
+              <li><i>✓</i> <span>Executive dashboards with spoken briefings (Sales, Expenses, AR, Cash)</span></li>
+              <li><i>✓</i> <span>Bilingual printable statements (Statement of Account, P&amp;L &amp; Tax Invoices)</span></li>
+              <li><i>✓</i> <span>Automated statement matching, Excel import &amp; month-end cutoff locks</span></li>
             </ul>
             <button type="button" class="btn btn-outline" data-select-tier="Operational Foundation ($3,000 Setup + $50/seat/mo)">Start with This Tier</button>
           </div>
@@ -523,9 +523,9 @@ BODY = f"""
             </div>
             <ul class="price-features">
               <li><i>✓</i> <span>Everything in Operational Foundation across multiple branches ($80/seat/mo)</span></li>
-              <li><i>✓</i> <span>Full executive &amp; operational dashboards (Year / Month / Week / Day)</span></li>
-              <li><i>✓</i> <span>Complete bilingual statements (SOA, aging, tax invoices &amp; Balance Sheet)</span></li>
-              <li><i>✓</i> <span>Ask ISABI Live Voice (EN/AR/FR), Smart Scan &amp; audit watchdogs</span></li>
+              <li><i>✓</i> <span>What-If Scenario Studio &amp; 30-day cash maturity bridge (Year / Month / Week / Day)</span></li>
+              <li><i>✓</i> <span>Complete bilingual statements, aging, 1-click WhatsApp drafts &amp; period close</span></li>
+              <li><i>✓</i> <span>Ask ISABI Live Voice (EN/AR/FR), Step-Up 2FA &amp; 28 audit watchdogs</span></li>
               <li><i>✓</i> <span>Companion Field Kiosk (POS or Face Attendance) &amp; parallel-run check</span></li>
             </ul>
             <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($5,600 Setup + $80/seat/mo)">Start with This Suite</button>
@@ -542,9 +542,9 @@ BODY = f"""
             </div>
             <ul class="price-features">
               <li><i>✓</i> <span>Multiple dedicated industry apps (Hospitality, Trading, Mfg, Real Estate, Insurance)</span></li>
-              <li><i>✓</i> <span>Group treasury, partner profit-split engines &amp; intercompany ledgers</span></li>
-              <li><i>✓</i> <span>Full Field Kiosk Suite (Dispatch, Quarry, Fuel &amp; Live Face Sign-In)</span></li>
-              <li><i>✓</i> <span>CEO Daily Cockpit, Per-Unit Fleet P&amp;L, Workforce Map &amp; Parts Custody</span></li>
+              <li><i>✓</i> <span>14-entity group close gate, partner profit splits &amp; intercompany ledgers</span></li>
+              <li><i>✓</i> <span>Full Field Kiosk Suite + Live Fleet GPS &amp; Fuel-Burn Sensor Telematics</span></li>
+              <li><i>✓</i> <span>CEO Daily Cockpit, What-If Group Bridge, Workforce Map &amp; Parts Custody</span></li>
               <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to go-live</span></li>
             </ul>
             <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($11,000+ Setup + $100/seat/mo)">Request Custom Group Proposal</button>
@@ -603,28 +603,28 @@ BODY = f"""
                   <input type="checkbox" value="Core Operations, Guided Forms & Double-Entry Ledger" data-cost="3000" data-wks="2" checked disabled>
                   <div>
                     <b>{ICONS["ledger"]} Core Operations &amp; Double-Entry Ledger</b>
-                    <small>Custom modules, 360° record views, COA &amp; role setup (Included)</small>
+                    <small>Custom modules, 360° views, interactive page guide &amp; role setup (Included)</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
                   <input type="checkbox" value="Interactive Executive & Operations Dashboards" data-cost="900" data-wks="1" checked>
                   <div>
                     <b>{ICONS["analytics"]} Interactive Executive Dashboards</b>
-                    <small>Year / Month / Week / Day switching, KPI drilldowns &amp; breakdowns</small>
+                    <small>CEO Cockpit, What-If Scenario Studio, 30-day cash bridge &amp; spoken briefs</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
                   <input type="checkbox" value="Bilingual Printable Statements & SOA" data-cost="700" data-wks="1" checked>
                   <div>
                     <b>{ICONS["soa"]} Printable Statements &amp; SOA</b>
-                    <small>Sortable A4 Balance Sheet, P&amp;L, Cash Flow, SOA &amp; Tax Invoices</small>
+                    <small>Bilingual A4 statements, automated statement matching &amp; period-close locks</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
                   <input type="checkbox" value="Ask ISABI AI & Automatic Audit Watchdogs" data-cost="900" data-wks="1" checked>
                   <div>
                     <b>{ICONS["ai"]} Ask ISABI &amp; Audit Watchdogs</b>
-                    <small>EN/AR/FR cited answers + missing-ticket, pricing &amp; overdue alerts</small>
+                    <small>EN/AR/FR voice AI, Smart Scan, Phone QR, Step-Up 2FA &amp; 28 watchdogs</small>
                   </div>
                 </label>
                 <label class="cfg-check">
@@ -638,7 +638,7 @@ BODY = f"""
                   <input type="checkbox" value="Plant, Gate & Live Face Sign-In Kiosks" data-cost="900" data-wks="1">
                   <div>
                     <b>{ICONS["kiosk"]} Plant, Gate &amp; Face Sign-In Kiosks</b>
-                    <small>Dispatch, weighbridge, fuel, live face attendance &amp; daily crew map</small>
+                    <small>Dispatch, weighbridge, live fleet GPS telematics, fuel &amp; face attendance</small>
                   </div>
                 </label>
                 <label class="cfg-check">

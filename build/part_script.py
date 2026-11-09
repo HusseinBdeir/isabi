@@ -32,22 +32,22 @@ JS = r"""
       lead: 'Designed for multi-property hotel groups, beach resorts, and high-volume F&B venues where daily outlet cash auditing, seasonal staffing, supplier procurement, and partner profit-sharing must reconcile every night.',
       modules: [
         'Multi-Property Business Unit Isolation (Per Resort / Venue)',
-        'Daily Outlet Revenue & End-of-Day Till Close Audit (Entrance, Cabanas, F&B, Events)',
-        'Supplier Invoices, Food & Beverage Cost Control & Stock Takes',
+        'Daily Outlet Revenue, Till Close Audit & Automated Statement Matching',
+        'What-If Margin & Cash Runway Studio + Supplier F&B Cost Control',
         'Partner Statement of Accounts (SOA) & Automated Profit-Split Engine',
         'Seasonal Staff Contracts, Advances, Tips & Biometric Attendance'
       ],
       workflows: [
         'Offline POS till posts end-of-day sales totals straight into the revenue ledger',
-        'Supervisor stamp workflow on petty cash and supplier credit purchases',
+        'Biometric step-up 2FA on voids, period reopens & off-hours overrides',
         'Automated monthly partner capital & profit distribution statements',
-        'Nightly cross-property KPI flash report delivered via native executive dashboards'
+        'One-tap Explain Page & spoken shift handover briefings in EN, AR & FR'
       ],
       reports: [
-        'Consolidated & Per-Property P&L (Year / Month / Week / Day picker)',
+        'CEO Cockpit & Per-Property P&L (Year / Month / Week / Day picker)',
+        '30-Day Liquidity Maturity Bridge & What-If Scenario Studio',
         'Printable Supplier & Partner Statement of Accounts (PDF & A4)',
-        'Outlet Gross Margin & Revenue Mix Analytics',
-        'Payroll, Attendance & Seasonal Labor Cost Ratio'
+        'Outlet Gross Margin, Revenue Mix & Seasonal Labor Cost Ratio'
       ],
       metrics: [
         ['Properties Unified', '1 to 10+ Venues'],
@@ -65,21 +65,21 @@ JS = r"""
       lead: 'Built for vehicle importers, heavy equipment distributors, and spare-parts wholesalers managing high-value inventory across bonded warehouses, showrooms, and workshop service bays with strict multi-currency accounting.',
       modules: [
         'Camera VIN Strip Scanner & Chassis Registry (In-Transit, Bonded, Showroom, Sold)',
-        'Landed Cost Calculator (FOB, Freight, Insurance, Customs Duty, Clearance)',
+        'Landed Cost Calculator & What-If FX / Margin Scenario Studio',
         'Spare Parts SKU Inventory, Multi-Warehouse Transfers & Reorder Alerts',
         'Dealer & Fleet Customer Invoicing, Installment Schedules & Aged Receivables',
-        'Dual-Entry Statutory Book Reconciliation Bridge'
+        'Automated Supplier Statement Matching & Statutory Book Bridge'
       ],
       workflows: [
         'Automated margin lock check before a showroom sales order is approved',
         'Customs clearance milestone tracking from Bill of Lading to plate registration',
-        'Overdue receivable alerts at 30, 60, and 90 days with one-click SOA PDF',
-        'Automated line-by-line variance check against statutory accounting registers'
+        'Overdue receivable alerts at 30, 60, and 90 days with one-click WhatsApp SOA',
+        'Month-end cutoff date locks with biometric step-up verification on reopens'
       ],
       reports: [
-        'Unit-by-Unit Gross Profit & Landed Cost Breakdown (Dashboards & A4)',
-        'Customer Receivable Aging (0-30, 31-60, 61-90, 90+ Days)',
-        'Bonded vs Duty-Paid Stock Valuation Report',
+        'Unit-by-Unit Gross Profit, What-If FX Bridge & Landed Cost Breakdown',
+        'Customer Receivable Aging & 30-Day Liquidity Maturity Bridge',
+        'Bonded vs Duty-Paid Stock Valuation & Spoken Executive Briefings',
         'Statutory vs Operational P&L Reconciliation Statement'
       ],
       metrics: [
@@ -93,31 +93,31 @@ JS = r"""
       sandboxKey: 'manufacturing',
       cfgName: 'Concrete, Construction & Manufacturing',
       name: 'Ready-Mix Concrete, Construction & Manufacturing',
-      sub: 'Batch plant tickets, mixer fleet dispatch, silo raw materials & credit control',
+      sub: 'Batch plant tickets, mixer fleet GPS, silo raw materials & credit control',
       badge: 'Industry Blueprint 03 · Manufacturing & Fleet Operations',
       lead: 'Engineered for ready-mix concrete plants, construction material producers, and heavy transport fleets where every cubic meter batched, cement silo delivery, and transit mixer trip must be tracked from plant dispatch to customer signature.',
       modules: [
         'Sales Tickets, Concrete Mix Grades, Pump Fees & Cement Silo Stock Control',
         'Touch Field Kiosks: Dispatch, Quarry Receiving, Fuel & Live Face Attendance',
-        'Daily Plant & Workforce Map (Live On-Site Crews, Delivery Trucks & Absences)',
-        'Specific-Truck Revenue & Cost Filter, Spare Parts Custody & Leak Watch',
-        'Multi-Company Inter-Entity Billing (Batch Plant, Construction & Transport)'
+        'Live Fleet GPS & Engine Sensor Telematics + Daily Workforce Map',
+        'Truck Revenue vs Cost Studio, What-If Margin Bridge & Parts Custody',
+        'Automated Statement Matching, Period-Close Locks & Inter-Entity Billing'
       ],
       workflows: [
         'One-tap wireless thermal print: Priced Tax Invoice or Unpriced Gate Pass',
-        'Automatic audit watchdogs flagging missing ticket numbers, fuel spikes & pricing',
-        'Live contractor credit-limit holds, locked past dates & duplicate-ticket guards',
-        'Automatic overtime & overnight shift detection directly from gate punches'
+        'Live GPS & fuel-burn sensor reconciliation catching stationary tank drops',
+        'Live contractor credit-limit holds, month-end cutoff locks & step-up 2FA',
+        'One-tap Explain Page, interactive tours & spoken shift handover briefs'
       ],
       reports: [
-        'Interactive Executive Dashboards with Year / Month / Week / Day Switcher',
+        'CEO Cockpit, What-If Scenario Studio & 30-Day Cash Maturity Bridge',
         'Customer & Project Statement of Account with Ticket Breakdown (Bilingual A4)',
         'Raw Material Yield, Silo Depletion & Gross Margin per Cubic Meter',
-        'Fleet Profitability, Diesel & Lubricant Benchmarks & Workforce Map'
+        'Live Fleet GPS Map, Truck Profitability & Diesel Sensor Benchmarks'
       ],
       metrics: [
         ['Production Tracking', 'Per Ticket & m³'],
-        ['Stock Control', 'Live Silo & Yard'],
+        ['Fleet & Stock Control', 'Live GPS & Silo'],
         ['Multi-Company', 'Inter-Entity Sync']
       ]
     },
@@ -132,19 +132,19 @@ JS = r"""
       modules: [
         'Property, Building & Unit Registry (Occupied, Vacant, Under Renovation, Reserved)',
         'Tenant Lease Contracts, Escalation Clauses & Post-Dated Check (PDC) Schedules',
-        'Automated Rent Invoicing, Deposit Ledgers & Utility Charge-Backs',
+        'Automated Rent Invoicing, Tenant Statement Matching & Utility Charge-Backs',
         'Property Maintenance Work Orders, Contractor Bids & CapEx vs OpEx Tagging',
-        'Owner & Co-Investor Distribution Schedules'
+        'What-If Occupancy / Yield Studio & Co-Investor Distribution Schedules'
       ],
       workflows: [
         '60-day and 30-day lease renewal and rent escalation notifications',
-        'Automated tenant receipt generation and overdue collection reminders',
-        'Maintenance approval routing with unit-level cost attribution',
-        'Monthly property-by-property net operating income (NOI) close'
+        'Automated tenant statement reconciliation and WhatsApp collection reminders',
+        'Month-end period-close locks and biometric step-up verification on voids',
+        'One-tap spoken portfolio briefings and interactive page tours'
       ],
       reports: [
-        'Portfolio Occupancy, Lease Expiry & Vacancy Roll-Forward',
-        'Net Operating Income (NOI) & Cap Rate by Property (Executive Dashboard)',
+        'Portfolio Occupancy, What-If Yield Bridge & Lease Expiry Roll-Forward',
+        'Net Operating Income (NOI), Cap Rate & 30-Day Cash Maturity Bridge',
         'Tenant Statement of Account & Rent Collection Aging (A4 PDF)',
         'Maintenance & CapEx Spend vs Budget'
       ],
@@ -164,27 +164,27 @@ JS = r"""
       lead: 'Built for insurance brokerages and agencies handling motor, medical, marine, property, and life policies across multiple carriers, where commission splits, sub-agent payouts, and client premium collections require exact accounting.',
       modules: [
         'Policy & Endorsement Registry (Motor, Medical, Property, Marine, Engineering)',
-        'Carrier Bordereaux, Gross vs Net Premium & Commission Split Calculation',
-        'Sub-Agent & Producer Commission Ledgers',
+        'Automated Carrier Statement & Bordereaux Matching + Commission Splits',
+        'What-If Renewal & Commission Studio + Sub-Agent Producer Ledgers',
         'Claims Intake, Survey Tracking & Settlement Status',
         '90/60/30-Day Renewal Pipeline & Client Retention Console'
       ],
       workflows: [
         'Automatic calculation of carrier net payable and brokerage commission on policy issue',
-        'Installment collection tracking with client WhatsApp and Email reminders',
-        'Endorsement pro-rata premium adjustment and credit note generation',
-        'Monthly carrier settlement reconciliation'
+        'Automated cross-script carrier bordereaux matching and period-close locks',
+        'Endorsement pro-rata premium adjustment and biometric step-up on voids',
+        'One-tap spoken book briefings and WhatsApp renewal reminders'
       ],
       reports: [
-        'Production & Commission Revenue by Line of Business and Carrier',
+        'Production, Commission Yield & What-If Retention Scenario Studio',
         'Carrier Settlement Bordereaux & Client Statement of Account (A4 PDF)',
-        'Renewal Retention Rate & Expiring Book Forecast',
+        'Renewal Retention Rate, 30-Day Cash Bridge & Expiring Book Forecast',
         'Uncollected Premium Aging & Producer Net Payable'
       ],
       metrics: [
         ['Policy Accounting', 'Gross / Net / Comm'],
         ['Renewal Pipeline', '90-60-30d Radar'],
-        ['Carrier Bordereaux', '1-Click Printable']
+        ['Carrier Bordereaux', 'Auto-Matched']
       ]
     },
     {
@@ -192,25 +192,25 @@ JS = r"""
       sandboxKey: 'holding',
       cfgName: 'Multi-Entity Holding Group',
       name: 'Multi-Entity Holding Groups & Family Offices',
-      sub: 'Group treasury, intercompany eliminations, partner capital & recruitment',
+      sub: 'Group treasury, 14-entity close gate, partner capital & recruitment',
       badge: 'Industry Blueprint 06 · Holding & Group Command',
       lead: 'The group view for owners and holding companies operating across several industries. It consolidates cash, receivables, profitability, partner capital accounts, and recruitment into one boardroom picture.',
       modules: [
-        'Holding Root-Level Treasury, Bank Accounts & Multi-Currency Cash Positioning',
-        'Intercompany Loan, Management Fee & Cross-Charge Ledger',
-        'Shareholder & Partner Capital Accounts, Drawings & Dividend Schedules',
-        'Executive Relationship, Legal Matter & Board Interaction Tracker',
+        'Holding Root-Level Treasury, 30-Day Liquidity Bridge & Multi-Currency Cash',
+        '14-Entity Group Close Gate, Intercompany Loans & Cross-Charge Ledger',
+        'What-If Group Margin & FX Studio + Partner Capital & Dividend Schedules',
+        'Biometric Step-Up 2FA Gate & Off-Hours Override Watchdog',
         'Group-Wide Automated Recruitment & Encrypted Per-Company CV Vault'
       ],
       workflows: [
-        'Overnight group consolidation across all operating Business Units',
+        'One-click 14-entity month-end close gate and consolidated board pack',
         'Automated routing of job applicant CVs into encrypted per-company document vaults',
-        'Executive exception alerts when any subsidiary breaches overdue or margin thresholds',
-        'One-click board pack generation across all operating companies'
+        'Biometric step-up verification on wire releases, voids, and period reopens',
+        'One-tap spoken CEO briefings in English, Arabic, and French'
       ],
       reports: [
-        'Group Consolidated P&L, Balance Sheet & Cash Position',
-        'Entity-by-Entity Performance & Books-Closed Status Matrix',
+        'Group Consolidated P&L, Balance Sheet, What-If Bridge & 30-Day Cash',
+        '14-Entity Close Readiness Matrix & Books-Closed Status',
         'Intercompany Balance Confirmation & Partner SOA (A4 PDF)',
         'Group Recruitment Funnel & Headcount Analytics'
       ],
@@ -569,54 +569,54 @@ JS = r"""
   const APP_SUITE = [
     {
       id: 'gl', cat: 'finance', emoji: ICONS.ledger, tone: 'tone-brass',
-      name: 'General Ledger & COA', sub: 'Double-Entry & Class 1 to 7',
+      name: 'General Ledger & COA', sub: 'Double-Entry & Period Locks',
       kicker: 'Core Accounting · Multi-Currency Ledger',
-      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, locked past dates, and role-scoped seats.',
+      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, month-end cutoff date locks, reversing accruals, and step-up 2FA.',
       bullets: [
         ICONS.scale + ' Balanced Debit & Credit validation on every operational posting',
         ICONS.globe + ' Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
-        ICONS.lock + ' Locked historical dates with authorized Reporting Date overrides'
+        ICONS.lock + ' Month-end cutoff date locks with biometric step-up verification on reopens'
       ],
-      tables: ['Journal Vouchers', 'Chart of Accounts', 'Multi-Currency FX', 'Period Locks'],
+      tables: ['Journal Vouchers', 'Chart of Accounts', 'Reversing Accruals', 'Period Close Locks'],
       sbox: 'holding', ask: 'How does the ISABI General Ledger and Class 1 to 7 Chart of Accounts work?'
     },
     {
       id: 'soa', cat: 'finance', emoji: ICONS.soa, tone: 'tone-steel',
-      name: 'Printable Statements', sub: 'Bilingual PDF & A4 Packs',
+      name: 'Printable Statements', sub: 'Bilingual A4 & Auto Match',
       kicker: 'Statutory & Partner Statements · Click-Sortable Print',
-      desc: 'Built-in bilingual printable statements including Customer, Supplier, and Partner SOAs, Balance Sheet, P&L, Cash Flow, and Tax Invoices.',
+      desc: 'Built-in bilingual printable statements with automated cross-script supplier and bank statement matching, plus one-click executive cover notes.',
       bullets: [
         ICONS.soa + ' Click-sortable running balance SOA closed with the double rule',
-        ICONS.download + ' One-click export to print-ready A4 PDF or formatted Excel',
-        ICONS.partner + ' Automated monthly partner profit-split and capital statements'
+        ICONS.sync + ' Automated cross-script (EN/AR/FR) supplier, bank, and POS statement matching',
+        ICONS.partner + ' One-click spoken statement summary and printable A4 cover note'
       ],
-      tables: ['Statement of Account A4', 'Partner SOA PDF', 'Balance Sheet & P&L'],
+      tables: ['Statement of Account A4', 'Auto Statement Match', 'Balance Sheet & P&L'],
       sbox: 'holding', ask: 'Tell me about the printable Statements of Account and P&L reports'
     },
     {
       id: 'pbi', cat: 'finance', emoji: ICONS.analytics, tone: 'tone-good',
-      name: 'Executive Dashboards', sub: 'Year / Month / Week / Day',
-      kicker: 'Live Analytics · Interactive Drilldowns',
-      desc: 'Single-screen CEO cockpit, daily operations board, and interactive dashboards with one-tap spoken briefings and Year, Month, Week, and Day switching.',
+      name: 'Executive Dashboards', sub: 'Cockpit & What-If Studio',
+      kicker: 'Live Analytics · Scenario Studio & Page Guide',
+      desc: 'Single-screen CEO cockpit, What-If margin/FX/cash scenario studio, 30-day liquidity bridge, and interactive page guide with spoken briefings.',
       bullets: [
-        ICONS.calendar + ' Single-screen CEO cockpit plus one-tap spoken Daily and Period Briefings',
-        ICONS.trend + ' Plain-English chart breakdowns, MoM variance, and 360-degree drilldowns',
+        ICONS.calendar + ' What-If Scenario Studio testing price, volume, cost, FX, and 30-day cash runway',
+        ICONS.trend + ' One-tap Explain Page, interactive spotlight tour, and spoken briefings (EN/AR/FR)',
         ICONS.bolt + ' Zero third-party BI fees across unlimited internal viewers'
       ],
-      tables: ['CEO Cockpit', 'Daily Operations', 'Spoken Briefings'],
+      tables: ['CEO Cockpit', 'What-If Scenario Studio', '30-Day Cash Bridge'],
       sbox: 'holding', ask: 'How do the interactive executive dashboards work across Operations and Finance?'
     },
     {
       id: 'ai', cat: 'field', emoji: ICONS.ai, tone: 'tone-brass',
-      name: 'Ask ISABI & Watchdogs', sub: 'Cited AI & Auto Audits',
+      name: 'Ask ISABI & Watchdogs', sub: 'Cited AI, Voice & 28 Alerts',
       kicker: 'System Intelligence · EN / AR / FR',
-      desc: 'Two-way live voice and text assistant, Smart Scan with phone QR camera handoff, voice-to-form entry, and behavioral audit watchdogs.',
+      desc: 'Two-way live voice and text assistant, Smart Scan with phone QR camera handoff, interactive page guide, and 28 behavioral and off-hours watchdogs.',
       bullets: [
-        ICONS.search + ' Catches missing tickets, split bills, supplier price creep, and repeat repairs',
-        ICONS.insurance + ' Strict company & role permissions so branch figures stay private',
+        ICONS.search + ' Catches missing tickets, split bills, price creep, and off-hours overrides',
+        ICONS.insurance + ' Biometric step-up 2FA gate on voids, period reopens, and wire releases',
         ICONS.ai_mark + ' Live Voice Mode, Smart Scan, and cited EN, AR, and FR ledger answers'
       ],
-      tables: ['Live Voice AI', 'Smart Document Scan', 'Behavioral Watchdogs'],
+      tables: ['Live Voice AI', 'Smart Scan & Phone QR', '28 Audit Watchdogs'],
       sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
     },
     {
@@ -712,15 +712,15 @@ JS = r"""
     },
     {
       id: 'fleet', cat: 'ops', emoji: ICONS.fleet, tone: 'tone-coral',
-      name: 'Fleet & Workforce Map', sub: 'Site Map, Fuel & Parts',
-      kicker: 'Heavy Transport & Maintenance · Live Plant Map',
-      desc: 'Daily Plant & Workforce Map tracking on-site crews, delivery trucks, absent drivers, spare parts custody, and diesel & hydraulic leak benchmarks.',
+      name: 'Fleet GPS & Workforce Map', sub: 'Live GPS, Fuel & Parts',
+      kicker: 'Heavy Transport & Telematics · Live Plant Map',
+      desc: 'Live Fleet GPS and engine sensor telematics reconciled against fuel tickets, stationary tank-drop alerts, workforce map, and spare parts custody.',
       bullets: [
-        ICONS.bolt + ' Specific-unit fleet revenue and cost filter plus diesel and leak alerts',
-        ICONS.fleet + ' Live site map showing active plant crews, road deliveries, and absences',
+        ICONS.bolt + ' Live truck GPS tracking, fuel-burn sensor reconciliation, and tank-drop alerts',
+        ICONS.fleet + ' Truck revenue vs cost studio plus live site workforce and delivery map',
         ICONS.scope + ' Defect-first maintenance workflow and 5-stage spare parts custody'
       ],
-      tables: ['Workforce Map', 'Spare Parts Custody', 'Fuel & Lube Watch', 'Fleet Defects'],
+      tables: ['Live Fleet GPS Map', 'Fuel Sensor Audit', 'Truck P&L Studio', 'Spare Parts Custody'],
       sbox: 'manufacturing', ask: 'How does ISABI track transit mixer fleets, fuel, and inter-company transport?'
     },
     {
@@ -751,15 +751,15 @@ JS = r"""
     },
     {
       id: 'holding', cat: 'ops', emoji: ICONS.holding, tone: 'tone-brass',
-      name: 'Holding & Group View', sub: 'Multi-Company Governance',
+      name: 'Holding & Group View', sub: '14-Entity Close & Governance',
       kicker: 'Industry App 06 · Group Consolidation & Isolation',
-      desc: 'Unifies all sister companies into one boardroom console while keeping every subsidiary strictly isolated by company and staff role.',
+      desc: 'Unifies all sister companies into one boardroom console with a 14-entity month-end close gate, What-If group bridge, and strict branch isolation.',
       bullets: [
-        ICONS.globe + ' Real-time group consolidation across multiple industries and branches',
+        ICONS.globe + ' One-click 14-entity group close gate and consolidated board pack',
         ICONS.sync + ' Intercompany loans, management fees, and cross-charge elimination',
-        ICONS.analytics + ' Executive board pack with entity-by-entity books-closed status'
+        ICONS.analytics + ' What-If group scenario studio and 30-day liquidity maturity bridge'
       ],
-      tables: ['Group Consolidation', 'Intercompany Ledger', 'Company Isolation'],
+      tables: ['14-Entity Close Gate', 'Intercompany Ledger', 'Company Isolation'],
       sbox: 'holding', ask: 'Show the Multi-Entity Holding Groups & Family Offices blueprint'
     },
     {
@@ -803,48 +803,24 @@ JS = r"""
     }
   ];
 
-  // ---------------- INDUSTRY ICONS, DAY-IN-THE-LIFE TIMELINES & BEFORE/AFTER ----------------
+  // ---------------- INDUSTRY ICONS & DAY-IN-THE-LIFE TIMELINES ----------------
   const IND_EXTRAS = {
     hospitality: {
       emoji: ICONS.hospitality,
       dayFlow: [
-        [ICONS.clock + ' 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar stock deliveries are logged against supplier POs.', '✓ Live Headcount'],
-        [ICONS.clock + ' 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print Bluetooth thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
-        [ICONS.clock + ' 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the revenue ledger by outlet.', '✓ $0 Variance'],
-        [ICONS.clock + ' 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Executive dashboards refresh consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
-      ],
-      before: [
-        ICONS.cross + ' Cashiers and accountants re-keying paper till slips into 12 separate Excel sheets every morning',
-        ICONS.cross + ' Unexplained variances between F&B supplier deliveries, bar stock, and outlet cash',
-        ICONS.cross + ' Days spent calculating monthly partner profit splits and advances by hand',
-        ICONS.cross + ' Cloud POS terminals freezing whenever beach or resort internet fluctuates'
-      ],
-      after: [
-        ICONS.check + ' Offline POS tills sync end-of-day sales totals straight into the revenue ledger automatically',
-        ICONS.check + ' Every supplier invoice and petty cash voucher requires a digital supervisor stamp',
-        ICONS.check + ' Printable Partner Statement of Accounts (PDF & A4) and profit splits generate in one click',
-        ICONS.check + ' Owners open interactive mobile-ready executive dashboards to see every property live'
+        [ICONS.clock + ' 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar deliveries are scanned via Smart Scan.', '✓ Live Headcount'],
+        [ICONS.clock + ' 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print wireless thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
+        [ICONS.clock + ' 11:30 PM · Shift Close', 'Till Audit & Statement Match', 'Managers count drawers; POS totals and supplier statements match automatically with step-up 2FA on any void.', '✓ $0 Variance'],
+        [ICONS.clock + ' 02:00 AM · Nightly Close', 'Spoken Brief & Partner Split', 'Owners tap Listen on the CEO Cockpit for an EN/AR/FR briefing across revenue, What-If cash runway, and partner splits.', '✓ Books Closed']
       ]
     },
     trading: {
       emoji: ICONS.trading,
       dayFlow: [
-        [ICONS.clock + ' 08:30 AM · Port & Customs', 'VIN & Landed Cost Intake', 'New shipment arrives: FOB invoice, freight, insurance, and customs duty are allocated per VIN chassis automatically.', '✓ Exact Unit Cost'],
-        [ICONS.clock + ' 11:45 AM · Showroom Floor', 'Margin-Locked Sales Order', 'Sales rep quotes a heavy truck; form rules verify minimum gross margin and check customer credit before approval.', '✓ Margin Protected'],
+        [ICONS.clock + ' 08:30 AM · Port & Customs', 'VIN Camera & Landed Cost', 'Staff scan chassis VIN strips with the privacy camera; FOB, freight, insurance, and customs duty allocate per unit.', '✓ Exact Unit Cost'],
+        [ICONS.clock + ' 11:45 AM · Showroom Floor', 'Margin-Locked Sales Order', 'Sales rep quotes a heavy truck; form rules verify minimum gross margin and test FX impact in the What-If Studio.', '✓ Margin Protected'],
         [ICONS.clock + ' 03:30 PM · Parts Counter', 'SKU Dispatch & Workshop', 'Spare parts counter scans items across bonded and duty-paid depots; reorder alerts fire when stock hits threshold.', '✓ Live SKU Stock'],
-        [ICONS.clock + ' 06:00 PM · Finance Desk', 'Aged SOA & Statutory Match', 'Overdue 30/60/90d installment alerts dispatch printable PDF Statements of Account and reconcile with statutory books.', '✓ Reconciled']
-      ],
-      before: [
-        ICONS.cross + ' Landed cost per vehicle guessed on spreadsheets while customs duties and clearance bills arrive late',
-        ICONS.cross + ' Sales reps giving discounts below true landed cost without management visibility',
-        ICONS.cross + ' Spare parts stock discrepancies across showrooms, bonded warehouses, and service bays',
-        ICONS.cross + ' Overdue dealer and fleet installments noticed weeks after payment dates pass'
-      ],
-      after: [
-        ICONS.check + ' Every VIN tracks its exact lifecycle (In-Transit, Bonded, Showroom, Sold) and full landed cost',
-        ICONS.check + ' Automated form gates block under-margin quotes and over-limit credit sales instantly',
-        ICONS.check + ' Real-time multi-warehouse SKU stock with automated transfer and reorder alerts',
-        ICONS.check + ' Live 0-30-60-90d receivable aging with one-click printable SOA and statutory book match'
+        [ICONS.clock + ' 06:00 PM · Finance Desk', 'Statement Match & Period Lock', 'Supplier and bank statements reconcile across languages, WhatsApp SOAs dispatch, and closed months lock cleanly.', '✓ Reconciled']
       ]
     },
     manufacturing: {
@@ -852,41 +828,17 @@ JS = r"""
       dayFlow: [
         [ICONS.clock + ' 06:30 AM · Batch Plant Gate', 'Silo Check & Crew Clock-In', 'Drivers and plant operators verify on the Face + PIN kiosk; cement silo and aggregate levels are confirmed.', '✓ Plant Ready'],
         [ICONS.clock + ' 10:15 AM · Dispatch Desk', 'Sales Ticket & Credit Gate', 'Dispatcher keys a 42 m³ C35 pump pour; form rules auto-price mix + pump fee and verify contractor credit cap.', '✓ Credit Verified'],
-        [ICONS.clock + ' 04:00 PM · Fleet & Yard', 'Mixer Trips & Fuel Audit', 'Transit mixer trips, driver allowances, and fuel burn per cubic meter are logged across plant and transport entities.', '✓ Fleet Tracked'],
-        [ICONS.clock + ' 07:00 PM · Plant Close', 'Yield & Project SOA Pack', 'Theoretical vs. actual cement consumption is audited, and customer statements grouped by project site update live.', '✓ Yield Audited']
-      ],
-      before: [
-        ICONS.cross + ' Paper delivery tickets lost between the batch plant, mixer drivers, and back-office billing',
-        ICONS.cross + ' Pouring concrete for contractors who have already exceeded their credit limit',
-        ICONS.cross + ' Cement and aggregate silo shrinkage going unnoticed until month-end physical counts',
-        ICONS.cross + ' Inter-company billing between plant, construction, and transport companies taking weeks to untangle'
-      ],
-      after: [
-        ICONS.check + ' Every cubic meter batched is captured on a governed Sales Ticket with mix grade and pump rules',
-        ICONS.check + ' Real-time credit gates alert dispatchers before a truck leaves the yard',
-        ICONS.check + ' Daily theoretical vs. actual silo depletion, Workforce Map, and m³ margin dashboards',
-        ICONS.check + ' Automated inter-entity ledger, missing-ticket watchdogs & project SOA packs (A4 PDF)'
+        [ICONS.clock + ' 04:00 PM · Fleet GPS & Yard', 'Live GPS & Fuel Sensor Audit', 'Live truck GPS and engine fuel-burn sensors reconcile against fuel tickets and flag any stationary tank drop.', '✓ GPS Verified'],
+        [ICONS.clock + ' 07:00 PM · Plant Close', 'What-If Studio & Project SOA', 'Managers review spoken shift handover briefs, test cement cost shocks in What-If Studio, and lock closed dates.', '✓ Yield Audited']
       ]
     },
     realestate: {
       emoji: ICONS.realestate,
       dayFlow: [
-        [ICONS.clock + ' 09:00 AM · Portfolio Desk', 'Lease & PDC Radar', 'System flags leases 60 days from expiry and lists post-dated checks (PDCs) maturing this week for bank deposit.', '✓ Zero Missed Dates'],
-        [ICONS.clock + ' 12:00 PM · Tenant Portal', 'Rent & Utility Billing', 'Quarterly rent invoices, escalations, and utility charge-backs generate and post to tenant ledgers automatically.', '✓ Auto-Billed'],
+        [ICONS.clock + ' 09:00 AM · Portfolio Desk', 'Lease & 30-Day Cash Radar', 'System flags leases 60 days from expiry and maps maturing post-dated checks in the 30-day liquidity bridge.', '✓ Zero Missed Dates'],
+        [ICONS.clock + ' 12:00 PM · Tenant Portal', 'Rent Billing & Auto Match', 'Quarterly rent invoices, escalations, and tenant bank transfers match automatically and post to tenant ledgers.', '✓ Auto-Billed'],
         [ICONS.clock + ' 03:00 PM · Building Ops', 'Maintenance CapEx vs OpEx', 'Facility manager approves a contractor work order; cost is tagged to the exact building unit and CapEx/OpEx account.', '✓ Unit Costed'],
-        [ICONS.clock + ' 06:30 PM · Owner View', 'Property NOI & Yield Close', 'Co-investors and owners view live occupancy, collection aging, and net operating income (NOI) per property.', '✓ Live NOI']
-      ],
-      before: [
-        ICONS.cross + ' Lease renewals, rent escalation clauses, and post-dated check dates buried in static folders',
-        ICONS.cross + ' Maintenance expenses lumped together with no clarity on unit-level profitability or CapEx vs. OpEx',
-        ICONS.cross + ' Chasing overdue tenant rent without an instant, clean Statement of Account to send',
-        ICONS.cross + ' Co-investor distributions calculated manually on error-prone spreadsheets each quarter'
-      ],
-      after: [
-        ICONS.check + ' Automated 60/30-day lease expiry, escalation, and PDC deposit alerts',
-        ICONS.check + ' Every work order and vendor bill is tied to a specific property, unit, and ledger class',
-        ICONS.check + ' One-click printable Tenant Statement of Account (A4 PDF) and collection aging dashboard',
-        ICONS.check + ' Live property-by-property NOI, occupancy roll-forward, and co-investor distribution schedules'
+        [ICONS.clock + ' 06:30 PM · Owner View', 'What-If Yield & Spoken Brief', 'Co-investors test occupancy and rent scenarios in What-If Studio and listen to spoken NOI briefings.', '✓ Live NOI']
       ]
     },
     insurance: {
@@ -895,40 +847,16 @@ JS = r"""
         [ICONS.clock + ' 09:00 AM · Underwriting', 'Policy & Endorsement Issue', 'Broker issues a corporate medical policy; gross premium, carrier net payable, and brokerage commission split calculate instantly.', '✓ Auto Split'],
         [ICONS.clock + ' 01:00 PM · Retention Desk', '90/60/30d Renewal Pipeline', 'Account executives work the automated renewal radar and send WhatsApp/Email installment reminders to clients.', '✓ High Retention'],
         [ICONS.clock + ' 04:00 PM · Claims Desk', 'Claim & Survey Tracking', 'Motor and marine claims log survey milestones and reserve statuses linked directly to the client policy record.', '✓ Full History'],
-        [ICONS.clock + ' 06:00 PM · Carrier Close', '1-Click Carrier Bordereaux', 'Finance generates printable carrier settlement bordereaux and producer commission statements with zero manual math.', '✓ Bordereaux Ready']
-      ],
-      before: [
-        ICONS.cross + ' Hours wasted reconciling carrier bordereaux spreadsheets against client premium collections',
-        ICONS.cross + ' Sub-agent and producer commission splits miscalculated on mid-term policy endorsements',
-        ICONS.cross + ' Expiring policies noticed too late, costing the brokerage valuable renewal revenue',
-        ICONS.cross + ' No unified view of uncollected client premiums vs. net payables owed to carriers'
-      ],
-      after: [
-        ICONS.check + ' Instant calculation of gross premium, carrier net payable, and producer commission on every policy',
-        ICONS.check + ' Pro-rata endorsement adjustments and credit notes post directly to the ledger',
-        ICONS.check + ' Automated 90/60/30-day renewal pipeline and client collection aging radar',
-        ICONS.check + ' One-click printable Carrier Settlement Bordereaux and Client SOA (A4 PDF)'
+        [ICONS.clock + ' 06:00 PM · Carrier Close', 'Auto Bordereaux Reconciliation', 'Finance matches carrier bordereaux statements across languages in one click and locks the monthly period.', '✓ Bordereaux Ready']
       ]
     },
     holding: {
       emoji: ICONS.holding,
       dayFlow: [
-        [ICONS.clock + ' 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify encrypted backups, and refresh executive dashboards.', '✓ 100% Green'],
-        [ICONS.clock + ' 10:30 AM · Group Treasury', 'Multi-Entity Cash & Loans', 'CFO reviews consolidated USD/EUR/AED cash positions, intercompany balances, and partner capital accounts.', '✓ Group Visibility'],
+        [ICONS.clock + ' 07:00 AM · Cloud Fleet', 'Overnight Group & Watchdog Sync', 'Scheduled pipelines audit all subsidiary Business Units, check off-hours overrides, and refresh CEO cockpits.', '✓ 100% Green'],
+        [ICONS.clock + ' 10:30 AM · Group Treasury', '30-Day Liquidity & What-If', 'CFO reviews the 30-day cash maturity bridge and stress-tests group margins and FX in the What-If Studio.', '✓ Group Visibility'],
         [ICONS.clock + ' 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants auto-route PDF CVs into encrypted per-company document vaults and structured HR review queues.', '✓ Zero Manual Filing'],
-        [ICONS.clock + ' 05:30 PM · Boardroom', 'Ask ISABI Executive Brief', 'Chairman asks ISABI for a cross-industry margin and receivable briefing; every figure cites its underlying subsidiary ledger.', '✓ Board Ready']
-      ],
-      before: [
-        ICONS.cross + ' Waiting 15 to 20 days after month-end for subsidiaries to email incompatible Excel packs',
-        ICONS.cross + ' Intercompany loans and cross-charges out of balance between sister companies',
-        ICONS.cross + ' Branch staff accidentally seeing sensitive figures belonging to other group entities',
-        ICONS.cross + ' Job applicant CVs scattered across WhatsApp chats and personal email inboxes'
-      ],
-      after: [
-        ICONS.check + ' Real-time group P&L, balance sheet, and cash position across all operating industries',
-        ICONS.check + ' Governed intercompany ledger and partner equity capital accounts that always balance',
-        ICONS.check + ' Strict company & role permissions so unlimited users see only their authorized branch',
-        ICONS.check + ' Automated group-wide recruitment pipeline wired straight into encrypted per-company CV vaults'
+        [ICONS.clock + ' 05:30 PM · Boardroom', '14-Entity Close Gate & Brief', 'Chairman runs the 1-click 14-entity close gate and listens to a spoken EN/AR/FR board briefing citing every ledger.', '✓ Board Ready']
       ]
     },
     pos: {
@@ -937,19 +865,7 @@ JS = r"""
         [ICONS.clock + ' 09:00 AM · Cashier Open', 'PIN Unlock & Drawer Float', 'Cashier unlocks the tablet till with a 4-digit PIN and logs the opening cash float.', '✓ Till Unlocked'],
         [ICONS.clock + ' 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak rush; cashier keeps ringing orders and printing wireless thermal receipts without delay.', '✓ Zero Lag'],
         [ICONS.clock + ' 06:00 PM · Reconnect', 'Auto Queue Sync', 'Wi-Fi returns; pending offline orders sync automatically to the central ledger with zero duplicate postings.', '✓ Auto Synced'],
-        [ICONS.clock + ' 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to the ledger.', '✓ Posted to ERP']
-      ],
-      before: [
-        ICONS.cross + ' Cloud POS systems freezing at the gate or bar the moment internet connectivity flickers',
-        ICONS.cross + ' Paying steep monthly per-terminal fees for every seasonal cashier tablet',
-        ICONS.cross + ' Slow browser print dialogs and garbled characters on thermal receipt printers',
-        ICONS.cross + ' Re-keying daily till close ribbons into the accounting software by hand'
-      ],
-      after: [
-        ICONS.check + ' 100% offline-ready order queue that never drops a single sale or receipt',
-        ICONS.check + ' Wireless thermal printing with one-tap Priced Invoice or Unpriced Gate Pass toggle',
-        ICONS.check + ' $0 monthly per-terminal fees across unlimited iPad, Android, or Windows tablets',
-        ICONS.check + ' Automated end-of-day sales totals sync straight into the ledger and executive dashboards'
+        [ICONS.clock + ' 11:00 PM · Shift Close', 'Drawer Count & Step-Up Gate', 'Supervisor reconciles cash + card totals, verifies voids with biometric step-up 2FA, and posts revenue to ERP.', '✓ Posted to ERP']
       ]
     },
     attendance: {
@@ -959,18 +875,6 @@ JS = r"""
         [ICONS.clock + ' 12:30 PM · Multi-Site', 'Offline Save & Auto Sync', 'Remote plant and resort punches save on the tablet and sync automatically to headquarters when internet returns.', '✓ Photo Audited'],
         [ICONS.clock + ' 05:00 PM · HR Console', 'Instant Staff Enrolment', 'HR enrols a new hire on the tablet in 15 seconds and assigns their branch, department, and shift.', '✓ Instant Enrol'],
         [ICONS.clock + ' 03:00 AM · Nightly Job', 'Payroll Shift Calculation', 'Nightly close pairs clock-in/out punches, calculates overtime and overnight shifts, and updates payroll rosters.', '✓ Payroll Ready']
-      ],
-      before: [
-        ICONS.cross + ' Proprietary fingerprint boxes breaking in dusty plants or humid beach resorts',
-        ICONS.cross + ' Buddy-punching with shared swipe cards or unverified paper sign-in sheets',
-        ICONS.cross + ' HR driving to remote sites with a USB stick at month-end to export punch logs',
-        ICONS.cross + ' Days spent manually pairing clock-in and clock-out timestamps in Excel for payroll'
-      ],
-      after: [
-        ICONS.check + ' Runs on any off-the-shelf Android or iPad tablet mounted at the gate',
-        ICONS.check + ' Live face check + PIN audit on every punch blocks buddy-punching and phone photos',
-        ICONS.check + ' Works 100% offline during power or internet cuts and syncs automatically',
-        ICONS.check + ' Nightly shift engine turns raw punches into audited attendance, lateness, and overtime'
       ]
     }
   };
@@ -1033,8 +937,8 @@ JS = r"""
   const HERO_VERTICALS = [
     { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
     { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
-    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
-    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
+    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet GPS & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
+    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Renewals', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
   ];
 
   function fmtHeroMoney(usdVal) {
@@ -1360,7 +1264,7 @@ JS = r"""
 
     const cur = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
     const ex = IND_EXTRAS[cur.id] || IND_EXTRAS.hospitality;
-    const mTab = state.indMobTab || 'modules';
+    const mTab = state.indMobTab === 'dayflow' ? 'dayflow' : 'modules';
 
     let bodyContentHtml = '';
     if (mTab === 'dayflow') {
@@ -1374,19 +1278,6 @@ JS = r"""
               <span class="ind-flow-tag">${step[3]}</span>
             </div>
           `).join('')}
-        </div>
-      `;
-    } else if (mTab === 'beforeafter') {
-      bodyContentHtml = `
-        <div class="ind-ba-grid">
-          <div class="ind-ba-card before">
-            <h4>${ICONS.warn} Before ISABI (Spreadsheets &amp; Generic Templates)</h4>
-            <ul>${ex.before.map(item => `<li>${item}</li>`).join('')}</ul>
-          </div>
-          <div class="ind-ba-card after">
-            <h4>${ICONS.check} After ISABI (Tailored All-in-One Workspace)</h4>
-            <ul>${ex.after.map(item => `<li>${item}</li>`).join('')}</ul>
-          </div>
         </div>
       `;
     } else {
@@ -1423,7 +1314,6 @@ JS = r"""
       <div class="ind-subtabs" role="tablist" aria-label="Blueprint Views">
         <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">${ICONS.box} Modules &amp; Reports</button>
         <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">${ICONS.clock} Day-in-the-Life</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">${ICONS.sync} Before vs. After</button>
       </div>
 
       ${bodyContentHtml}
@@ -2357,7 +2247,7 @@ JS = r"""
       industry: state.cfgInd,
       scale: state.cfgScaleLabel,
       modules: ['Core Operations & Double-Entry Ledger', 'Interactive Executive Dashboards', 'Bilingual Printable Statements', 'Ask ISABI & Audit Watchdogs'],
-      range: '$12,300 to $15,000',
+      range: '$6,800 to $8,200 + $80/seat/mo',
       weeks: '1 to 2 Weeks'
     };
 
@@ -2695,6 +2585,63 @@ JS = r"""
     }
 
     // 2c. Specific Functional & Operational Domain Handlers (conversational two-bubble replies)
+    if (/\b(what[- ]?if|scenario\w*|stress[- ]?test\w*|break[- ]?even|cash\s+runway|liquidity\s+bridge|maturity\s+bridge|30[- ]?day\s+cash)\b/i.test(low)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'What-If Scenario Studio & 30-Day Liquidity Bridge',
+        answer: `Every industry workspace includes an interactive <b>What-If Scenario Studio</b> and <b>30-Day Liquidity Maturity Bridge</b> on the CEO Cockpit. You can slide price, volume, raw material cost, overhead, collection days, or exchange rate shocks to see live profit, break-even thresholds, and 7/14/30-day cash inflows vs outflows.`,
+        promptText: `Would you like to test the What-If Scenario Studio in the full portal demo or review executive dashboards?`,
+        followUps: [
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+          'How do automated statement matching and period-close locks work?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+    if (/\b(explain\s+page|page\s+guide|interactive\s+tour|spotlight\s+tour|walkthrough\s+guide)\b/i.test(low)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'Universal Interactive Page Guide & Spoken Briefs',
+        answer: `Every screen in the Command Center features a built-in <b>Explain Page</b> and <b>Listen</b> button in English, Arabic, and French. Staff and owners can read key insights, launch an interactive step-by-step spotlight tour of the live screen, or share a one-click WhatsApp summary.`,
+        promptText: `Would you like to see how Live Voice Mode and spoken briefings work across dashboards and statements?`,
+        followUps: [
+          'How do Live Voice Mode and spoken briefings work?',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+    if (/\b(gps|telematics|odometer|fuel\s+sensor\w*|tank\s+drop\w*|fuel\s+theft|truck\s+tracking)\b/i.test(low)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'Live Fleet GPS & Engine Sensor Telematics',
+        answer: `Yes. ISABI tracks live truck GPS positions, speed, and engine hours, reconciles onboard fuel-level sensors and odometer deltas against fuel kiosk tickets, and automatically flags stationary tank drops, odometer rollbacks, or excessive idle burn.`,
+        promptText: `Would you like to explore the Concrete & Manufacturing fleet blueprint or see how fuel kiosks work?`,
+        actionInd: 'manufacturing',
+        followUps: [
+          'Show the Concrete & Manufacturing blueprint',
+          'How do approval rules and audit watchdogs work?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+    if (/\b(statement\s+match\w*|statement\s+recon\w*|period[- ]?close|cutoff\s+lock\w*|month[- ]?end\s+lock\w*|14[- ]?entity|reversing\s+accrual\w*|step[- ]?up|2fa|two[- ]?factor|off[- ]?hours)\b/i.test(low)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'Statement Matching, Period-Close Locks & Step-Up 2FA',
+        answer: `ISABI automates cross-script (EN/AR/FR) supplier, bank, POS, and carrier statement matching, enforces month-end cutoff date locks and auto-reversing accruals, and protects period reopens, voids, and wire releases with biometric/PIN step-up 2FA and an off-hours (22:00 to 06:00) override watchdog.`,
+        promptText: `Would you like to see how this pairs with your accountant's existing software during month-end close?`,
+        followUps: [
+          'How does dual-entry reconciliation work with our existing accountant software?',
+          'How do approval rules and audit watchdogs work?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
     if (/\b(attach\w*|document\w*|upload\w*|scan\w*|pdfs?|photos?|files?|paperwork|qr|camera)\b/i.test(low)) {
       return {
         q: cleanQ,
@@ -2999,27 +2946,25 @@ JS = r"""
 
     // 13. ROI, Hours Saved, Payback Calculator
     if (low.includes('roi') || low.includes('save') || low.includes('hour') || low.includes('payback') || low.includes('close speed')) {
-      const ent = parseInt(document.getElementById('roi-entities')?.value || '3', 10) || 3;
-      const hrs = parseInt(document.getElementById('roi-hours')?.value || '35', 10) || 35;
-      const closeDays = parseInt(document.getElementById('roi-close')?.value || '14', 10) || 14;
+      const ent = 3, hrs = 35, closeDays = 14;
       const annualHours = Math.round(hrs * 52 * 0.78 + ent * 65);
       const annualVal = annualHours * 30;
-      const estCost = ent === 1 ? 3000 : (ent <= 4 ? 5600 : 11000);
+      const estCost = 5600;
       const payback = Math.max(0.8, (estCost / (annualVal / 12))).toFixed(1);
 
       return {
         q: cleanQ,
-        title: `Quantified ROI & Close-Cycle Impact (${ent} ${ent === 1 ? 'Entity' : 'Entities'})`,
-        answer: `Based on your current ROI Estimator settings (<b>${ent} entities</b>, <b>${hrs} hrs/wk</b> of manual Excel work, and a <b>${closeDays}-day</b> monthly close), automating voucher capture, inter-branch consolidation, and SOA generation reclaims <b>${annualHours.toLocaleString('en-US')} hours per year</b>.`,
+        title: `Quantified ROI & Close-Cycle Impact (${ent} Entities)`,
+        answer: `For a typical <b>${ent}-entity</b> operation spending <b>${hrs} hrs/wk</b> on manual Excel work with a <b>${closeDays}-day</b> monthly close, automating voucher capture, statement matching, and SOA generation reclaims <b>${annualHours.toLocaleString('en-US')} hours per year</b>.`,
         headers: ['Impact Metric', 'Current Baseline', 'With ISABI Systems'],
         rows: [
           ['Manual Excel & Re-Keying', `${hrs} hrs / week`, `${annualHours.toLocaleString('en-US')} hrs/yr reclaimed`],
           ['Annual Productivity Value ($30/hr)', 'Manual overhead', '$' + annualVal.toLocaleString('en-US') + ' / year saved'],
-          ['Monthly Books Close Cycle', `${closeDays} Calendar Days`, closeDays > 10 ? 'Same-Day / 48h Close' : 'Real-Time Daily Close'],
+          ['Monthly Books Close Cycle', `${closeDays} Calendar Days`, 'Same-Day / 48h Close'],
           ['Estimated Turnkey Payback', `~$${estCost.toLocaleString('en-US')} build`, `${payback} Months to full payback`]
         ],
         total: ['Estimated System Payback Period', `${payback} Months`],
-        citation: 'Source: ISABI Operational Impact Estimator · Section 05',
+        citation: 'Source: ISABI Operational Impact Benchmark',
         followUps: [
           'What would a complete multi-branch system cost and include?',
           'How does dual-entry reconciliation work with our existing accountant software?'
@@ -3344,7 +3289,7 @@ JS = r"""
       'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://isabisystems.com/, Command Center app at https://isabisystems.com/app/).',
       'Company & Direct Principal Leadership: ISABI Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com. Never invent regional branch offices or fictional staff counts.',
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, launch the full interactive Command Center portal demo, or configure a custom quote in the Scope Configurator.',
-      'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, voice-to-form dictation and multi-row batch intake, Smart Scan with privacy document/VIN camera and instant phone QR handoff, warehouse stock controls, double-entry general ledgers (Class 1 to 7), a single-screen CEO cockpit and daily operations board with one-tap spoken Daily and Period Briefings, interactive executive dashboards (Year/Month/Week/Day), per-unit fleet P&L filters, bilingual printable A4 statements, behavioral audit watchdogs (missing tickets, split bills, supplier price creep, repeat repairs), and offline-ready field kiosks (live photo-proof face sign-in, per-company shift rules, batch staff onboarding, and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
+      'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, voice-to-form dictation and multi-row batch intake, Smart Scan with privacy document/VIN camera and instant phone QR handoff, warehouse stock controls, double-entry general ledgers (Class 1 to 7), automated cross-script statement matching, month-end cutoff date locks, reversing accruals, and a 14-entity group close gate, a single-screen CEO cockpit with an interactive What-If Margin/FX/Cash Scenario Studio and 30-Day Liquidity Maturity Bridge, built-in Explain Page interactive tours and one-tap spoken briefings (EN/AR/FR) across every screen, live fleet GPS and fuel-burn sensor telematics, per-unit fleet P&L filters, bilingual printable A4 statements, biometric/PIN step-up 2FA and 28 behavioral/off-hours audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
       'Pricing & Ownership: Single-Entity Foundation from $3,000 one-time custom setup + $50/seat/month (1 week); Multi-Entity & AI Suite from $5,600 custom setup + $80/seat/month (1 to 2 weeks); Enterprise Holding Group from $11,000+ custom setup + $100/seat/month (2 weeks); $0 extra per field kiosk. Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Focus on business features & outcomes: Focus strictly on what business owners, CFOs, and operators experience. Do NOT overspecify internal technical plumbing (never mention database engines, math internals, printer protocols, or software acronyms).',

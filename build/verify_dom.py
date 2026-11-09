@@ -312,6 +312,27 @@ document.addEventListener('DOMContentLoaded', function() {
     inlineInp.value = 'How does multi-company consolidation tie the books?';
     inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     var consolReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'Tell me about the What-If Scenario Studio and 30-day liquidity bridge';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var whatIfReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'How do Explain Page and interactive tours work for new staff?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var explainReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'How does live fleet GPS and fuel sensor telematics stop fuel shrinkage?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var gpsReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'How do statement matching, period-close locks, and biometric 2FA work?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var closeReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    var countBeforeEmptySubmit = document.querySelectorAll('#ai-inline-thread .ai-msg-user').length;
+    inlineInp.value = '   ';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var countAfterEmptySubmit = document.querySelectorAll('#ai-inline-thread .ai-msg-user').length;
     document.getElementById('ai-inline-reset').click();
 
     out.aiTest = {
@@ -336,7 +357,12 @@ document.addEventListener('DOMContentLoaded', function() {
       hasAttachIntent: attachReplyText.indexOf('360° Record View') !== -1 && attachReplyText.indexOf('Enterprise Ownership') === -1,
       hasRecipeIntent: recipeReplyText.indexOf('item-by-item recipes') !== -1,
       hasConsolIntent: consolReplyText.indexOf('consolidates unlimited entities in real time') !== -1,
-      zeroAiForbidden: !/[\u2014\u2013\u2192]/.test(attachReplyText + ' ' + recipeReplyText + ' ' + consolReplyText)
+      hasWhatIfIntent: whatIfReplyText.indexOf('What-If Scenario Studio') !== -1 && whatIfReplyText.indexOf('30-Day Liquidity Maturity Bridge') !== -1,
+      hasExplainIntent: explainReplyText.indexOf('Explain Page') !== -1 && explainReplyText.indexOf('spotlight tour') !== -1,
+      hasGpsIntent: gpsReplyText.indexOf('live truck GPS positions') !== -1 && gpsReplyText.indexOf('fuel-level sensors') !== -1,
+      hasCloseIntent: closeReplyText.indexOf('month-end cutoff date locks') !== -1 && closeReplyText.indexOf('step-up 2FA') !== -1,
+      emptySubmitRejected: countAfterEmptySubmit === countBeforeEmptySubmit,
+      zeroAiForbidden: !/[\u2014\u2013\u2192]/.test(attachReplyText + ' ' + recipeReplyText + ' ' + consolReplyText + ' ' + whatIfReplyText + ' ' + explainReplyText + ' ' + gpsReplyText + ' ' + closeReplyText)
     };
 
     // Interactive Tabs & Simulators + Secondary Tab Height Checks
@@ -503,6 +529,7 @@ document.addEventListener('DOMContentLoaded', function() {
       window.ISABI_I18N.setLang('es', false);
       var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       window.ISABI_I18N.setLang('en', false);
+      var invalidLangRejected = (window.ISABI_I18N.setLang('<scr' + 'ipt>alert(1)</scr' + 'ipt>', false) === false && document.documentElement.getAttribute('lang') === 'en');
       var enNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
       var enDir = document.documentElement.getAttribute('dir');
       var enHeroH1 = (document.querySelector('.hero-section h1')?.textContent || '').replace(/\\s+/g, ' ').trim();
@@ -525,6 +552,7 @@ document.addEventListener('DOMContentLoaded', function() {
         esNav: esNav,
         enNav: enNav,
         enDir: enDir,
+        invalidLangRejected: invalidLangRejected,
         enRestoreOk: enHeroH1.indexOf('The ERP Your Group') !== -1 && enLeadPh.indexOf('Karim Mansour') !== -1
       };
       i18nOk = (
@@ -533,7 +561,8 @@ document.addEventListener('DOMContentLoaded', function() {
         i18nDiag.arScrollOk && i18nDiag.arOptOk && i18nDiag.arPricingOk &&
         i18nDiag.arPhOk && i18nDiag.arFlowOk &&
         arDomAudit.count === 0 && frDomAudit.count === 0 &&
-        esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' && i18nDiag.enRestoreOk
+        esNav === 'Funciones' && enNav === 'Features' && enDir === 'ltr' &&
+        invalidLangRejected === true && i18nDiag.enRestoreOk
       );
     }
 
@@ -658,14 +687,23 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['hasAttachIntent'] is True, f"Attachments semantic handler did not match cleanly: {ai}"
         assert ai['hasRecipeIntent'] is True, f"Recipes semantic handler did not match cleanly: {ai}"
         assert ai['hasConsolIntent'] is True, f"Consolidation semantic handler did not match cleanly: {ai}"
+        assert ai['hasWhatIfIntent'] is True, f"What-If Scenario Studio semantic handler did not match cleanly: {ai}"
+        assert ai['hasExplainIntent'] is True, f"Interactive Page Guide semantic handler did not match cleanly: {ai}"
+        assert ai['hasGpsIntent'] is True, f"Live Fleet GPS semantic handler did not match cleanly: {ai}"
+        assert ai['hasCloseIntent'] is True, f"Period-Close & Step-Up 2FA semantic handler did not match cleanly: {ai}"
+        assert ai['emptySubmitRejected'] is True, f"Negative assertion failed: empty whitespace submit should not append user bubble: {ai}"
         assert ai['zeroAiForbidden'] is True, f"Forbidden em-dash/arrow found in AI replies: {ai}"
+
+        html_byte_len = len(base_html.encode('utf-8'))
+        assert html_byte_len <= 924658, f"Negative assertion failed: index.html byte size ({html_byte_len} B) exceeded prior 924,658 B budget"
 
         v4 = d_desk['v4Test']
         assert v4.get('i18nOk') is True, f"Showcase ISABI_I18N trilingual & registerLocale check failed: {v4}"
+        assert v4['i18nDiag'].get('invalidLangRejected') is True, f"Negative assertion failed: invalid locale tag was not rejected: {v4['i18nDiag']}"
         assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
-        assert v4['indSubtabCount'] == 3, f"Expected 3 distinct industry sub-tabs, got {v4['indSubtabCount']}"
+        assert v4['indSubtabCount'] == 2, f"Expected 2 streamlined industry sub-tabs, got {v4['indSubtabCount']}"
         assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"
-        assert v4['baCardCount'] == 2, f"Expected 2 Before/After comparison cards, got {v4['baCardCount']}"
+        assert v4['baCardCount'] == 0, f"Negative assertion failed: removed Before/After cards still present ({v4['baCardCount']})"
         assert v4['hasSoaViewer'] is True, "SOA viewer did not render in Sandbox mode 'soa'"
         assert v4['hasPwaSim'] is True, "POS & Kiosk simulator did not update on interactive click in mode 'pwa'"
         assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate roadmap panel"
