@@ -62,8 +62,8 @@ BODY = f"""
   <!-- HERO SECTION -->
   <section class="hero-section">
     <div class="wrap hero-grid">
-      <div>
-        <div>
+      <div class="hero-left-pane">
+        <div class="hero-copy-block">
           <div class="eyebrow">{ICONS["ai_mark"]} Tailored Enterprise ERP · Live in 1 to 2 Weeks</div>
           <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
           <p class="hero-lead">
@@ -72,30 +72,40 @@ BODY = f"""
           <div class="hero-cta-row">
             <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Explore Live Demo</a>
             <a href="https://wa.me/96170444955?text=Hello%20Hussein%2C%20I%20visited%20the%20ISABI%20Systems%20portal%20and%20would%20like%20to%20discuss%20building%20a%20custom%20system%20for%20our%20business." target="_blank" rel="noopener" class="btn btn-wa">{ICONS["wa"]} WhatsApp Direct</a>
+            <div class="hero-trust-inline">
+              <span><b>18</b> Custom Modules</span>
+              <i class="hero-dot"></i>
+              <span><b>EN · AR · FR</b> Native</span>
+              <i class="hero-dot"></i>
+              <span><b>100%</b> Data Ownership</span>
+            </div>
           </div>
         </div>
 
         <div class="hero-proof-list" aria-label="Core Guarantees">
           <div class="hero-proof-item">
-            <span class="hp-check">{ICONS["check"]}</span>
-            <div>
+            <span class="hp-check">01</span>
+            <div class="hp-copy">
               <b>Tailored Setup + Simple Per-Seat Plans</b>
               <small>One-time custom setup from $3,000, paired with transparent monthly plans from $50/seat.</small>
             </div>
+            <span class="hp-tag">From $50/Seat</span>
           </div>
           <div class="hero-proof-item">
-            <span class="hp-check">{ICONS["check"]}</span>
-            <div>
+            <span class="hp-check">02</span>
+            <div class="hp-copy">
               <b>What-If Scenario Studio, Page Guide &amp; Spoken Briefs</b>
               <small>Stress-test price, volume, FX, and 30-day cash runway, or tap Explain Page for instant EN, AR, and FR briefings.</small>
             </div>
+            <span class="hp-tag">Live Scenarios</span>
           </div>
           <div class="hero-proof-item">
-            <span class="hp-check">{ICONS["check"]}</span>
-            <div>
+            <span class="hp-check">03</span>
+            <div class="hp-copy">
               <b>Automated Statement Matching &amp; Full Data Ownership</b>
               <small>Match supplier and bank statements automatically across languages, lock closed periods, and export your data anytime.</small>
             </div>
+            <span class="hp-tag">Zero Lock-In</span>
           </div>
         </div>
       </div>
@@ -103,10 +113,12 @@ BODY = f"""
       <div class="hero-ledger-card" aria-label="Interactive Command Center Preview">
         <div class="hlc-top">
           <div class="hlc-brand">
+            <span class="hlc-win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
             {badge_svg("b2")}
             <span id="hlc-window-title">ISABI Live Command Center</span>
           </div>
           <div class="hlc-top-right">
+            <span class="hlc-live-tag">Consolidated · 6 Entities</span>
             <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full Interactive Command Center"><i></i>Full Portal ▸</a>
           </div>
         </div>
@@ -169,6 +181,20 @@ BODY = f"""
                 <strong class="num">$178,100</strong>
               </div>
             </div>
+            <div class="hlc-telemetry-strip">
+              <div class="hlc-tel-cell">
+                <small>Statutory vs Operational</small>
+                <b>$0.00 Variance ✓</b>
+              </div>
+              <div class="hlc-tel-cell">
+                <small>30-Day Cash Runway</small>
+                <b>+$418.5k Net Liquid</b>
+              </div>
+              <div class="hlc-tel-cell">
+                <small>Field Kiosks &amp; Fleet GPS</small>
+                <b>28 Audit Watchdogs Live</b>
+              </div>
+            </div>
           </div>
 
           <div class="hlc-foot-note">
@@ -180,7 +206,7 @@ BODY = f"""
     </div>
   </section>
 
-  <!-- SECTION 01: CAPABILITIES, CITED ASK ISABI & 18 MODULES -->
+  <!-- SECTION 01: CAPABILITIES, 18 MODULES & CITED ASK ISABI -->
   <section class="sec sec-alt" id="architecture">
     <div class="wrap">
       <div class="sec-head sec-head-split">
@@ -188,21 +214,70 @@ BODY = f"""
           <div class="eyebrow">{ICONS["apps"]} 01 · Capabilities, Modules &amp; Cited AI</div>
           <h2>Every Module Your Group Needs. One Unified Ledger.</h2>
           <p>
-            Review our four operational pillars and test Ask ISABI live below, or switch tabs to explore all 18 tailored modules.
+            Explore all 18 tailored operational and accounting modules below, or switch to the Ask ISABI Live Studio to query vouchers and scenarios.
           </p>
         </div>
         <div class="sec-tabs" role="tablist" aria-label="Platform Views">
-          <button type="button" class="sec-tab active" data-arch-view="pillars">{ICONS["cloud"]} Capabilities &amp; Ask ISABI</button>
-          <button type="button" class="sec-tab" data-arch-view="apps">{ICONS["apps"]} 18 Custom Modules</button>
+          <button type="button" class="sec-tab active" data-arch-view="apps">{ICONS["apps"]} 18 Custom Modules</button>
+          <button type="button" class="sec-tab" data-arch-view="pillars">{ICONS["ai_mark"]} Ask ISABI &amp; Core Pillars</button>
         </div>
       </div>
 
-      <!-- TAB PANEL 1 (Default): 4 CORE PILLARS + LIVE ASK ISABI SIMULATOR -->
-      <div class="arch-panel" data-arch-panel="pillars">
+      <!-- TAB PANEL 1 (Default Upfront): 4-PILLAR RIBBON + 18-APP INTERACTIVE GRID + LIVE SPOTLIGHT -->
+      <div class="arch-panel" data-arch-panel="apps">
+        <div class="arch-pillars-ribbon" aria-label="Core Architectural Guarantees">
+          <div class="apr-item">
+            <span class="apr-num">01</span>
+            <div>
+              <b>Tailored Setup &amp; Simple Seats</b>
+              <small>From $3,000 setup · From $50/seat · 100% data ownership</small>
+            </div>
+          </div>
+          <div class="apr-item">
+            <span class="apr-num">02</span>
+            <div>
+              <b>Smart Scan, Phone QR &amp; Fleet GPS</b>
+              <small>Camera OCR, voice intake, live truck GPS &amp; thermal kiosks</small>
+            </div>
+          </div>
+          <div class="apr-item">
+            <span class="apr-num">03</span>
+            <div>
+              <b>What-If Studio &amp; Spoken Briefs</b>
+              <small>30-day liquidity bridge, statement matching &amp; EN/AR/FR audio</small>
+            </div>
+          </div>
+          <div class="apr-item">
+            <span class="apr-num">04</span>
+            <div>
+              <b>Face Sign-In &amp; 28 Audit Watchdogs</b>
+              <small>Step-up biometric 2FA, period-close locks &amp; anomaly alerts</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="app-cat-bar" role="tablist" aria-label="Filter App Categories">
+          <button type="button" class="app-cat-pill active" data-app-cat="all">{ICONS["apps"]} All 18 Modules</button>
+          <button type="button" class="app-cat-pill" data-app-cat="finance">{ICONS["ledger"]} Accounting &amp; Analytics (7)</button>
+          <button type="button" class="app-cat-pill" data-app-cat="ops">{ICONS["manufacturing"]} Industry Operations (7)</button>
+          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} Kiosks, AI &amp; HR (4)</button>
+        </div>
+
+        <div class="app-suite-grid" id="app-suite-grid" role="listbox" aria-label="ISABI Application Modules">
+          <!-- Populated dynamically by JS -->
+        </div>
+
+        <div class="app-spotlight" id="app-spotlight" aria-live="polite">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </div>
+
+      <!-- TAB PANEL 2: ASK ISABI LIVE STUDIO + 4 INTERACTIVE PILLAR DEEP-DIVES -->
+      <div class="arch-panel" data-arch-panel="pillars" data-panel-hidden="1">
         <div class="ms-ai-grid">
           <div class="ms-left-col">
             <div class="stack-cards" id="ms-stack-cards">
-              <div class="stack-card reveal">
+              <div class="stack-card reveal" data-stack-ask="What would a complete multi-branch ERP rollout cost?">
                 <div class="stack-card-hdr">
                   <h4>{ICONS["key"]} Tailored Setup, Simple Seats &amp; Full Data Ownership</h4>
                   <span>From $50/Seat</span>
@@ -215,7 +290,7 @@ BODY = f"""
                 </div>
               </div>
 
-              <div class="stack-card reveal">
+              <div class="stack-card reveal" data-stack-ask="How does live fleet GPS and fuel sensor telematics stop fuel shrinkage?">
                 <div class="stack-card-hdr">
                   <h4>{ICONS["apps"]} Smart Scan, Phone QR, 360° Views &amp; Fleet GPS</h4>
                   <span>Daily Operations</span>
@@ -228,7 +303,7 @@ BODY = f"""
                 </div>
               </div>
 
-              <div class="stack-card reveal">
+              <div class="stack-card reveal" data-stack-ask="Tell me about the What-If Scenario Studio and 30-day liquidity bridge">
                 <div class="stack-card-hdr">
                   <h4>{ICONS["analytics"]} What-If Studio, Executive Cockpits &amp; Statements</h4>
                   <span>Reporting &amp; Close</span>
@@ -241,7 +316,7 @@ BODY = f"""
                 </div>
               </div>
 
-              <div class="stack-card reveal">
+              <div class="stack-card reveal" data-stack-ask="How do statement matching, period-close locks, and biometric 2FA work?">
                 <div class="stack-card-hdr">
                   <h4>{ICONS["lock"]} Face Sign-In, Step-Up 2FA &amp; Audit Watchdogs</h4>
                   <span>Security &amp; Audit</span>
@@ -289,26 +364,9 @@ BODY = f"""
           </div>
         </div>
       </div>
-
-      <!-- TAB PANEL 2: 18-APP INTERACTIVE GRID + LIVE SPOTLIGHT -->
-      <div class="arch-panel" data-arch-panel="apps" data-panel-hidden="1">
-        <div class="app-cat-bar" role="tablist" aria-label="Filter App Categories">
-          <button type="button" class="app-cat-pill active" data-app-cat="all">{ICONS["apps"]} All 18 Modules</button>
-          <button type="button" class="app-cat-pill" data-app-cat="finance">{ICONS["ledger"]} Accounting &amp; Analytics (7)</button>
-          <button type="button" class="app-cat-pill" data-app-cat="ops">{ICONS["manufacturing"]} Industry Operations (7)</button>
-          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} Kiosks, AI &amp; HR (4)</button>
-        </div>
-
-        <div class="app-suite-grid" id="app-suite-grid" role="listbox" aria-label="ISABI Application Modules">
-          <!-- Populated dynamically by JS -->
-        </div>
-
-        <div class="app-spotlight" id="app-spotlight" aria-live="polite">
-          <!-- Populated dynamically by JS -->
-        </div>
-      </div>
     </div>
   </section>
+
 
   <!-- SECTION 02: INTERACTIVE INDUSTRY BLUEPRINTS -->
   <section class="sec" id="industries">

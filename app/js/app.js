@@ -15203,6 +15203,7 @@
             ${bridge.meta ? `<span class="ceo-bridge-meta">${esc(cleanCeoText(bridge.meta))}</span>` : ''}
             <button type="button" class="ceo-variance-brief-btn ceo-whatif-btn" id="ceoWhatIfBtn" data-whatif-open="1" data-wi-source="overview" aria-expanded="false" title="Open Interactive What-If Margin, FX & Working-Capital Scenario Simulator">${ic('sliders')}<span class="ceo-wi-lbl">What-If Studio</span></button>
             <button type="button" class="ceo-variance-brief-btn ceo-collection-btn" id="ceoCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="overview" aria-expanded="false" title="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">${ic('customers')}<span class="ceo-cf-lbl">Collection Forecast</span></button>
+            <button type="button" class="ceo-variance-brief-btn ceo-payables-btn" id="ceoPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="overview" aria-expanded="false" title="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">${ic('suppliers')}<span class="ceo-po-lbl">Payables Optimizer</span></button>
             <button type="button" class="ceo-variance-brief-btn" id="ceoVarianceBriefBtn" data-ceo-variance-brief="1" aria-expanded="false" title="Open grounded Period Variance Commentary">${ic('sparkles')}<span class="ceo-vb-lbl">Variance</span></button>
             <button type="button" class="ceo-period-summary-btn" id="ceoPeriodSummaryBtn" data-ceo-period-summary="1" aria-pressed="false" title="Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags">${ic('audio')}<span class="ceo-ps-lbl">Listen to Period Summary</span></button>
           </div>
@@ -29377,7 +29378,8 @@
             ${searchBox('Search voucher #, supplier, hauler, vendor, method, reference...')}
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Haulage Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${chip('app', 'App-entered')}</div>
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="apPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="suppliers" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw" title="Open Quarry &amp; Haulage Tickets">${ic('raw')} Quarry &amp; Haulage</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses" title="Open Expenses &amp; Overhead Vouchers">${ic('expenses')} Expenses &amp; Overhead</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_suppliers" title="Open Master Suppliers &amp; Haulers Registry">${ic('reg_customers')} Suppliers Registry</button>
@@ -40258,6 +40260,7 @@
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
@@ -42537,6 +42540,7 @@
             <div class="panel-title"><span>${ic('hld_due_matrix')} SISTER COMPANY REPAYMENT &amp; DUE FROM / DUE TO MATRIX (${bList.length} PAIRS)</span></div>
             <div style="display:flex;gap:6px;align-items:center">
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_due_matrix" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
               ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Repayment_Matrix')}
               ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
             </div>
@@ -42698,6 +42702,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search company, IC ref, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hld_interactions" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
             ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Repayment_Ledger')}
             ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
@@ -44312,6 +44317,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search resort, outlet, category, notes...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_revenue" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
             ${exportBtn('hspRevenuePanel', 'Hospitality_Venue_Revenue')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Venue Revenue Entry</button>' : ''}
           </div>
@@ -44580,6 +44586,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search member, chalet unit, resort...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="hsp_members" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="hsp_members" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
             ${exportBtn('hspMembershipsPanel', 'Hospitality_Seasonal_Memberships')}
             <button type="button" class="btn btn-outline-bar" data-ind-open-new="hsp_tariffs">+ Seasonal Tariff</button>
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Membership Contract</button>' : ''}
@@ -45693,6 +45700,7 @@
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
               ${searchBox('Search customer, entity, promise date...')}
               <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_receivables" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
               ${exportBtn('trdReceivablesPanel', 'Trading_Receivables_Advances')}
               ${canEnterForm('receipt', u) ? '<button type="button" class="btn btn-primary" data-open-modal="receipt">+ Customer Settlement</button>' : ''}
             </div>
@@ -45886,6 +45894,7 @@
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search invoice, chassis, customer, book...')}
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="trd_sales" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="trd_sales" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
             ${exportBtn('trdSalesPanel', 'Trading_Sales_Invoices')}
             ${canEnterForm('sales', u) ? '<button type="button" class="btn btn-primary" data-open-modal="sales">+ Sales Invoice</button>' : ''}
           </div>
@@ -47208,6 +47217,7 @@
             <button type="button" class="${submode === 'receipts' ? 'active' : ''}" data-nav-jump="re_receipts">Tenant Receipts &amp; Advances (${data.receipts.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="re_leases" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="re_leases" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
           ${exportBtn(submode === 'invoicing' ? 're_invoicing' : submode === 'receipts' ? 're_receipts' : 're_leases')}
         </div>
       </div>
@@ -48564,6 +48574,7 @@
             <button type="button" class="${submode === 'items' ? 'active' : ''}" data-nav-jump="ins_items">Insured Items (${data.items.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_policies" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_policies" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
           ${exportBtn(submode === 'renewals' ? 'ins_renewals' : (submode === 'items' ? 'ins_items' : 'ins_policies'))}
         </div>
       </div>
@@ -48835,6 +48846,7 @@
             <button type="button" class="${submode === 'statements' ? 'active' : ''}" data-nav-jump="ins_statements">Statement Recon (${data.statements.length})</button>
           </div>
           <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="indCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="ins_billing" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${ic('customers')} Collection Forecast</button>
+              <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="indPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="ins_billing" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow &amp; Early-Settlement Optimizer Studio">${ic('suppliers')} Payables Optimizer</button>
           ${exportBtn(submode === 'remittances' ? 'ins_remittances' : (submode === 'statements' ? 'ins_statements' : 'ins_billing'))}
         </div>
       </div>
@@ -63827,6 +63839,1053 @@
     };
   }
 
+  function computePayablesOptimizerSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const addDaysISO = (isoStr, deltaDays) => {
+      const base = String(isoStr || '2026-10-31').slice(0, 10);
+      const d = new Date(`${base}T00:00:00Z`);
+      if (Number.isNaN(d.getTime())) return base;
+      d.setUTCDate(d.getUTCDate() + Math.round(Number(deltaDays) || 0));
+      return d.toISOString().slice(0, 10);
+    };
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const actualCanBooks = Boolean(canViewHub('cashflow', u) && canViewHub('books', u) && !/Sales/i.test(String((u && u.role) || '')));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined || options.canViewBooks));
+    const canCash = Boolean(canViewHub('cashflow', u) && !/Sales/i.test(String((u && u.role) || '')) && (options.canViewBooks === undefined || options.canViewBooks) && (options.canCash === undefined || options.canCash));
+    const allowedCos = typeof allowedCompanyNames === 'function' ? allowedCompanyNames(u) : [];
+    const canPayables = Boolean((canViewView('expenses', u) || canViewView('suppliers', u) || canAccessTable('suppliers', u) || canViewView('sales', u) || isOwner(u)) && (options.canPayables === undefined || options.canPayables));
+    const canEditAlerts = Boolean((canReviewSentinels() || isOwner(u)) && canViewBooks && !options.rlsClamped);
+
+    const reqCo = String(options.companyKey || options.company || STATE.company || 'all').trim();
+    const indFromReq = reqCo.startsWith('industry:') ? reqCo.slice(9).trim() : '';
+    const ind = String(options.industry || indFromReq || (typeof getActiveIndustry === 'function' ? getActiveIndustry(reqCo) : 'Manufacturing') || 'Manufacturing').trim();
+
+    let rlsClamped = false;
+    if (!isOwner(u)) {
+      if (reqCo === 'all' || reqCo === 'manufacturing-group' || reqCo.startsWith('industry:')) {
+        const allMfg = ['WTC', 'BBConstruction', 'Lions Transport'];
+        const hasAllMfg = allMfg.every(c => allowedCos.includes(c));
+        if (reqCo === 'manufacturing-group' && !hasAllMfg) {
+          rlsClamped = true;
+        } else if (reqCo === 'all' && allowedCos.length < 3) {
+          rlsClamped = true;
+        } else if (reqCo.startsWith('industry:')) {
+          const indCos = getCompanyCatalog().filter(c => c.industry === indFromReq).map(c => c.name);
+          if (!indCos.length || !indCos.every(c => allowedCos.includes(c))) {
+            rlsClamped = true;
+          }
+        }
+      } else {
+        const reqLabel = COMPANY_LABELS[reqCo] || reqCo;
+        if (!allowedCos.some(c => norm(c) === norm(reqLabel) || norm(c) === norm(reqCo))) {
+          rlsClamped = true;
+        }
+      }
+    }
+
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: todayISO() || '2026-10-31', label: 'All Time' };
+    const anchorDate = String(options.asOfDate || range.to || todayISO() || '2026-10-31').slice(0, 10);
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.slice(9) : reqCo) || 'All Entities');
+
+    if (rlsClamped || (!canPayables && !canViewBooks && !canCash)) {
+      const zeroBuckets = { currentUsd: 0, bucket11_30Usd: 0, bucket31_60Usd: 0, bucket60PlusUsd: 0, advanceUsd: 0 };
+      const zeroHorizon = {
+        tranche1_7dUsd: 0, tranche8_14dUsd: 0, tranche15_30dUsd: 0, beyond30dUsd: 0,
+        scheduled30dOutflowUsd: 0, earlyDiscountSavingsUsd: 0, net30dCashOutflowUsd: 0,
+        baseline30dOutflowUsd: 0, delta30dOutflowUsd: 0
+      };
+      return {
+        scopeKey: `pay|restricted|${reqCo}|${u ? u.id : 'anon'}`,
+        leverSig: '0|0|14',
+        industry: ind,
+        companyKey: reqCo,
+        companyLabel: coLabel,
+        companyEn: coLabel,
+        companyAr: coLabel,
+        companyFr: coLabel,
+        periodKey: range.label || 'Active Period',
+        periodLabel: range.label || 'Active Period',
+        periodEn: range.label || 'Active Period',
+        periodAr: range.label || 'Active Period',
+        periodFr: range.label || 'Active Period',
+        asOfDate: anchorDate,
+        rlsClamped,
+        restricted: true,
+        booksRedacted: true,
+        canViewBooks: false,
+        canCash: false,
+        canPayables,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView: 'suppliers',
+        levers: { holdReleaseDisputePct: 0, earlyDiscountCapturePct: 0, liquidityRunwayFloorDays: 14 },
+        leverSpecs: [],
+        presets: [],
+        summary: {
+          grossOpenApUsd: 0,
+          unallocatedAdvancesUsd: 0,
+          overdue30PlusUsd: 0,
+          overdue60PlusUsd: 0,
+          heldCount: 0,
+          heldAmountUsd: 0,
+          activeCounterpartyCount: 0,
+          weightedAvgTermsDays: 0,
+          runwayDays: 0,
+          isRunwayCritical: false,
+          closingCombinedTillUsd: null,
+          projected30dTillUsd: null
+        },
+        agingBuckets: zeroBuckets,
+        horizon: zeroHorizon,
+        tieCheck: {
+          agingBalanced: true,
+          agingVarianceUsd: 0,
+          horizonBalanced: true,
+          horizonVarianceUsd: 0
+        },
+        counterparties: [],
+        disbursementList: [],
+        headlineEn: 'Payables optimizer telemetry is restricted to authorized payables and treasury seats for this entity scope.',
+        headlineAr: 'بيانات محسّن المدفوعات مقيدة لمقاعد الذمم الدائنة والخزينة المخولة ضمن هذا النطاق.',
+        headlineFr: 'Les données d optimisation des dettes sont réservées aux sièges fournisseurs et trésorerie autorisés pour ce périmètre.',
+        spokenEn: 'Payables optimizer telemetry is restricted for this seat or entity scope.',
+        spokenAr: 'بيانات محسّن المدفوعات مقيدة لهذا المقعد أو النطاق.',
+        spokenFr: 'Les prévisions de décaissement sont restreintes pour ce siège ou périmètre.',
+        bulletsEn: [],
+        bulletsAr: [],
+        bulletsFr: [],
+        drafts: { whatsappEn: '', whatsappAr: '', whatsappFr: '' }
+      };
+    }
+
+    const clampNum = (v, lo, hi, def = 0) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(lo, Math.min(hi, n));
+    };
+
+    const rawLevers = (options.levers && typeof options.levers === 'object') ? options.levers : options;
+    const levers = {
+      holdReleaseDisputePct: round2(clampNum(rawLevers.holdReleaseDisputePct, -40, 60, 0)),
+      earlyDiscountCapturePct: round2(clampNum(rawLevers.earlyDiscountCapturePct, 0, 10, 0)),
+      liquidityRunwayFloorDays: Math.round(clampNum(rawLevers.liquidityRunwayFloorDays, 7, 60, 14))
+    };
+
+    const domainSpecByInd = {
+      'Manufacturing': {
+        counterpartyNounEn: 'Supplier & Hauler Account',
+        counterpartyNounAr: 'حساب المورد والناقل',
+        counterpartyNounFr: 'Compte fournisseur et transporteur',
+        counterpartyPluralEn: 'Suppliers, Quarries & 3-Leg AP',
+        counterpartyPluralAr: 'الموردون والمقالع وذمم الأرجل الثلاث',
+        counterpartyPluralFr: 'Fournisseurs, carrières et 3 volets AP',
+        chronoTableLabelEn: 'Supplier 3-Leg Terms & Rates (7z-chrono)',
+        chronoTableLabelAr: 'شروط وأسعار الموردين (7z-chrono)',
+        chronoTableLabelFr: 'Conditions fournisseurs et tarifs (7z-chrono)',
+        targetHubView: 'suppliers'
+      },
+      'Holding & Treasury': {
+        counterpartyNounEn: 'Intercompany Creditor Corridor',
+        counterpartyNounAr: 'ممر الدائن بين الشركات',
+        counterpartyNounFr: 'Corridor créancier inter-sociétés',
+        counterpartyPluralEn: 'Sister Corridors & Borrowings',
+        counterpartyPluralAr: 'ممرات القروض والذمم الدائنة الشقيقة',
+        counterpartyPluralFr: 'Corridors et emprunts inter-sociétés',
+        chronoTableLabelEn: 'Intercompany Facility & Rate Windows (7z-chrono)',
+        chronoTableLabelAr: 'نوافذ تسهيلات وفائدة المجموعة (7z-chrono)',
+        chronoTableLabelFr: 'Facilités et taux inter-sociétés (7z-chrono)',
+        targetHubView: 'hld_due_matrix'
+      },
+      'Hospitality & Resorts': {
+        counterpartyNounEn: 'Resort Vendor & Purveyor',
+        counterpartyNounAr: 'مورد ومتعهد المنتجع',
+        counterpartyNounFr: 'Fournisseur et prestataire resort',
+        counterpartyPluralEn: 'Resort F&B, Utility & Vendor Payables',
+        counterpartyPluralAr: 'ذمم المأكولات والمشروبات والخدمات للمنتجعات',
+        counterpartyPluralFr: 'Dettes F&B, fluides et fournisseurs resort',
+        chronoTableLabelEn: 'Resort Supply Contracts & Seasonal Terms (7z-chrono)',
+        chronoTableLabelAr: 'عقود التوريد والخدمات الموسمية (7z-chrono)',
+        chronoTableLabelFr: 'Contrats d approvisionnement resort (7z-chrono)',
+        targetHubView: 'hsp_expenses'
+      },
+      'Automotive & Heavy Trading': {
+        counterpartyNounEn: 'Factory & Landed Cost Creditor',
+        counterpartyNounAr: 'دائن المصنع وتكاليف الشحن والجمارك',
+        counterpartyNounFr: 'Créancier usine et coûts d approche',
+        counterpartyPluralEn: 'Vehicle POs, Freight & Floorplan Payables',
+        counterpartyPluralAr: 'ذمم طلبيات الشاحنات والشحن والتخليص',
+        counterpartyPluralFr: 'Commandes camions, fret et floorplan',
+        chronoTableLabelEn: 'Factory PO & Trade Financing Terms (7z-chrono)',
+        chronoTableLabelAr: 'شروط تمويل وتوريد الوكالات (7z-chrono)',
+        chronoTableLabelFr: 'Conditions de financement commercial (7z-chrono)',
+        targetHubView: 'trd_purchases'
+      },
+      'Real Estate & Property': {
+        counterpartyNounEn: 'Property Contractor & Service Provider',
+        counterpartyNounAr: 'متعهد الصيانة ومقدم الخدمات العقارية',
+        counterpartyNounFr: 'Entrepreneur et prestataire immobilier',
+        counterpartyPluralEn: 'Contractor, CAM & Municipal Payables',
+        counterpartyPluralAr: 'ذمم المتعهدين والصيانة والرسوم البلدية',
+        counterpartyPluralFr: 'Dettes travaux, charges CAM et taxes',
+        chronoTableLabelEn: 'Contractor Rate Agreements & CAM Schedules (7z-chrono)',
+        chronoTableLabelAr: 'اتفاقيات بدلات الصيانة والخدمات المشتركة (7z-chrono)',
+        chronoTableLabelFr: 'Accords de prestations et barèmes CAM (7z-chrono)',
+        targetHubView: 're_expenses'
+      },
+      'Insurance & Brokerage': {
+        counterpartyNounEn: 'Insurance Carrier & Sub-Agent Creditor',
+        counterpartyNounAr: 'شركة التأمين والوكيل الفرعي الدائن',
+        counterpartyNounFr: 'Compagnie d assurance et sous-agent créditeur',
+        counterpartyPluralEn: 'Carrier Premium Bordereaux & Commission Splits',
+        counterpartyPluralAr: 'جداول تسوية أقساط الشركات وحصص الوكلاء',
+        counterpartyPluralFr: 'Bordereaux compagnies et rétrocessions',
+        chronoTableLabelEn: 'Carrier Settlement & Commission Protocols (7z-chrono)',
+        chronoTableLabelAr: 'بروتوكولات تسوية الشركات والعمولات (7z-chrono)',
+        chronoTableLabelFr: 'Protocoles de règlement compagnies (7z-chrono)',
+        targetHubView: 'ins_settlements'
+      }
+    };
+    const domMeta = domainSpecByInd[ind] || domainSpecByInd['Manufacturing'];
+
+    const leverSpecs = [
+      {
+        key: 'holdReleaseDisputePct',
+        unit: '%',
+        min: -40,
+        max: 60,
+        step: 5,
+        labelEn: 'Disputed / Pending Hold Release Adjustment (%)',
+        labelAr: 'تعديل تحرير المدفوعات المعلقة أو قيد النزاع (%)',
+        labelFr: 'Ajustement de libération des retenues (%)'
+      },
+      {
+        key: 'earlyDiscountCapturePct',
+        unit: '%',
+        min: 0,
+        max: 10,
+        step: 0.5,
+        labelEn: 'Early-Settlement Discount Capture (%)',
+        labelAr: 'تحصيل خصومات السداد المبكر (%)',
+        labelFr: 'Capture des escomptes pour règlement anticipé (%)'
+      },
+      {
+        key: 'liquidityRunwayFloorDays',
+        unit: 'd',
+        min: 7,
+        max: 60,
+        step: 1,
+        labelEn: 'Minimum Liquidity Runway Buffer (Days)',
+        labelAr: 'الحد الأدنى لمهلة السيولة الاحتياطية (أيام)',
+        labelFr: 'Marge minimale de sécurité trésorerie (jours)'
+      }
+    ];
+
+    const presets = [
+      {
+        id: 'standard',
+        labelEn: 'Standard Weekly Run',
+        labelAr: 'دورة الدفع الأسبوعية المعتادة',
+        labelFr: 'Règlement hebdomadaire standard',
+        levers: { holdReleaseDisputePct: 0, earlyDiscountCapturePct: 0, liquidityRunwayFloorDays: 14 }
+      },
+      {
+        id: 'early_disc',
+        labelEn: 'Early-Discount Maximizer',
+        labelAr: 'تعظيم خصومات السداد المبكر',
+        labelFr: 'Optimiseur d escomptes anticipés',
+        levers: { holdReleaseDisputePct: 15, earlyDiscountCapturePct: 3, liquidityRunwayFloorDays: 10 }
+      },
+      {
+        id: 'cash_conserv',
+        labelEn: 'Cash Conservation Hold',
+        labelAr: 'تجميد لحفظ السيولة الاحتياطية',
+        labelFr: 'Préservation de trésorerie',
+        levers: { holdReleaseDisputePct: -30, earlyDiscountCapturePct: 0, liquidityRunwayFloorDays: 28 }
+      },
+      {
+        id: 'vendor_priority',
+        labelEn: 'Critical Supplier Priority',
+        labelAr: 'أولوية الموردين الحيويين',
+        labelFr: 'Priorité fournisseurs critiques',
+        levers: { holdReleaseDisputePct: -20, earlyDiscountCapturePct: 2, liquidityRunwayFloorDays: 21 }
+      }
+    ];
+
+    // Saved payment holds / approvals overlay
+    const holdMap = new Map();
+    if (Array.isArray(options.savedHolds)) {
+      options.savedHolds.forEach(h => {
+        if (!h || typeof h !== 'object') return;
+        const cpKey = norm(h.counterparty || h.name || '');
+        if (!cpKey) return;
+        holdMap.set(cpKey, {
+          counterparty: scrubOutwardGuideText(String(h.counterparty || h.name || '').slice(0, 80)),
+          held: Boolean(h.held),
+          approvedAmountUsd: round2(clampNum(h.approvedAmountUsd != null ? h.approvedAmountUsd : h.amountUsd, 0, 1e9, 0)),
+          scheduledDate: String(h.scheduledDate || h.date || anchorDate).slice(0, 10),
+          note: scrubOutwardGuideText(String(h.note || '').slice(0, 140))
+        });
+      });
+    }
+
+    // Extract raw creditor candidates per vertical
+    const rawCandidates = [];
+    if (ind === 'Manufacturing') {
+      const mfgModelKey = (reqCo === 'all' || reqCo.startsWith('industry:')) ? 'manufacturing-group' : reqCo;
+      const mfgModel = (SEED && SEED.models && SEED.models[mfgModelKey]) || (typeof getModel === 'function' ? getModel() : null);
+      const supRows = typeof getScopedModelSuppliers === 'function' ? getScopedModelSuppliers(mfgModel) : [];
+      const legApBrk = computeThreeLegPayablesBreakdown({ company: mfgModelKey, ignorePeriod: true });
+      supRows.forEach((s, idx) => {
+        const sName = scrubOutwardGuideText(String(s.Supplier || s.name || `Supplier ${idx + 1}`).trim());
+        const defaultCoLabel = mfgModelKey === 'bbconstruction' ? 'BBConstruction' : (mfgModelKey === 'lionstransport' ? 'Lions Transport' : 'WTC');
+        const sCo = String(s.company || defaultCoLabel).trim();
+        if (!isOwner(u) && sCo !== 'Both' && !allowedCos.some(ac => norm(ac) === norm(sCo))) return;
+
+        const legRow = legApBrk.byNorm.get(normSupPayable(sName)) || null;
+        const quarryRem = legRow ? legRow.quarry_rem : Number(s.ap_material || 0);
+        const transRem = legRow ? legRow.trans_rem : Number(s.ap_haulage || 0);
+        const expRem = legRow ? legRow.exp_rem_ttc : Number(s.ap_expense || 0);
+        const rawBal = Number(s.ap_balance || 0);
+        const grossAp = round2(Math.max(0, rawBal > 0 ? rawBal : (quarryRem + transRem + expRem)));
+        const advUsd = round2(rawBal < 0 ? Math.abs(rawBal) : 0);
+        const creditPurchases = round2(Math.max(grossAp, Number(s.ap_on_credit || (s.ap_material + s.ap_haulage + s.ap_expense) || 0)));
+        const settledTot = round2(Math.max(0, Number(s.ap_settled || s.settlements_paid || 0)));
+        if (grossAp <= 0.01 && advUsd <= 0.01 && creditPurchases <= 0.01) return;
+
+        const creditDays = Math.max(15, Number(s.credit_days || 30));
+        const creditLimitUsd = round2(Math.max(2500, Number(s.credit_limit || 20000)));
+        const isCritical = quarryRem > 0 || transRem > 0;
+        const legRole = (quarryRem > 0 && transRem > 0)
+          ? 'Quarry & Hauler'
+          : (quarryRem > 0 ? 'Leg 1 Material (Quarry)' : (transRem > 0 ? 'Leg 2 Haulage' : 'Leg 3 Credit Expense'));
+        const chronoWindowLabel = `Standard 3-Leg Supply Agreement (${creditDays}d)`;
+        const ageDays = Math.max(0, Number(s.days_since_purchase != null ? s.days_since_purchase : (grossAp > 10000 ? 38 : 14)));
+        const txCnt = Math.max(1, Number(s.raw_loads || 0) + Number(s.settlements_paid ? 2 : 1));
+
+        rawCandidates.push({
+          id: String(s.id || `mfg-sup-${idx + 1}`),
+          name: sName,
+          company: sCo === 'Both' ? 'WTC / BBC' : sCo,
+          segment: legRole,
+          isCritical,
+          grossApUsd: grossAp,
+          advanceUsd: advUsd,
+          invoicedUsd: creditPurchases,
+          settledUsd: settledTot,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel,
+          chronoFallback: true,
+          ageDays,
+          txCount: txCnt,
+          defaultApprovedUsd: round2(grossAp * 0.45),
+          defaultScheduledDate: addDaysISO(anchorDate, Math.min(10, Math.max(3, Math.round(creditDays / 4))))
+        });
+      });
+    } else if (ind === 'Holding & Treasury') {
+      const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
+      const bilat = Array.isArray(icRes && icRes.byBilateral) ? icRes.byBilateral : [];
+      bilat.forEach((b, idx) => {
+        const grossAp = round2(Math.max(0, Number(b.netUnpaidUsd || 0)));
+        const givenUsd = round2(Math.max(grossAp, Number(b.givenUsd || 0)));
+        const paidUsd = round2(Math.max(0, Number(b.paidBackUsd || 0)));
+        if (grossAp <= 0.01 && givenUsd <= 0.01) return;
+        const rateInfo = typeof lookupActiveHoldingLoanRate === 'function'
+          ? lookupActiveHoldingLoanRate(b.borrowerCo || 'WTC', anchorDate)
+          : null;
+        const creditDays = 30;
+        const creditLimitUsd = round2(Math.max(25000, givenUsd * 0.8));
+        const chronoWindowLabel = rateInfo && !rateInfo.isFallback
+          ? `${rateInfo.start_date || '2026-01-01'} to ${rateInfo.end_date || 'Open'} (${rateInfo.rate_pct || 6.5}% p.a.)`
+          : 'Baseline Sister Creditor Corridor (30d)';
+        const ageDays = b.repayPct >= 80 ? 10 : (b.repayPct >= 40 ? 30 : 65);
+        rawCandidates.push({
+          id: `hld-ap-${idx + 1}`,
+          name: scrubOutwardGuideText(`${b.borrowerCo} (Payable to ${b.lenderCo})`),
+          company: 'Bdeir Holding',
+          segment: 'Intercompany Liability / Sister Corridor',
+          isCritical: true,
+          grossApUsd: grossAp,
+          advanceUsd: 0,
+          invoicedUsd: givenUsd,
+          settledUsd: paidUsd,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel: scrubOutwardGuideText(chronoWindowLabel),
+          chronoFallback: Boolean(!rateInfo || rateInfo.isFallback),
+          ageDays,
+          txCount: Math.max(1, Number(b.totalCount || 1)),
+          defaultApprovedUsd: round2(grossAp * 0.40),
+          defaultScheduledDate: addDaysISO(anchorDate, 7)
+        });
+      });
+    } else if (ind === 'Hospitality & Resorts') {
+      const expList = Array.isArray(SEED.records && SEED.records.expenses) ? SEED.records.expenses : [];
+      const hspSups = new Map();
+      expList.forEach((x, idx) => {
+        const cCo = String(x.company || 'Blanca').trim();
+        if (!['Blanca', 'La Una', 'Palms', 'Voile', 'Platinum'].includes(cCo)) return;
+        const sName = scrubOutwardGuideText(String(x.supplier || `Resort Vendor ${idx + 1}`).trim());
+        if (!sName || sName.startsWith('(')) return;
+        const key = `${norm(cCo)}|${norm(sName)}`;
+        const cur = hspSups.get(key) || {
+          id: `hsp-sup-${idx + 1}`,
+          name: sName,
+          company: cCo,
+          segment: String(x.category || 'Resort Operations & F&B'),
+          isCritical: /fuel|diesel|energy|beverage|linen/i.test(String(x.category || '')),
+          grossApUsd: 0,
+          advanceUsd: 0,
+          invoicedUsd: 0,
+          settledUsd: 0,
+          txCount: 0
+        };
+        const amt = round2(Math.max(0, Number(x.amount || 0)));
+        cur.invoicedUsd = round2(cur.invoicedUsd + amt);
+        cur.grossApUsd = round2(cur.grossApUsd + amt * 0.35);
+        cur.settledUsd = round2(cur.settledUsd + amt * 0.65);
+        cur.txCount += 1;
+        hspSups.set(key, cur);
+      });
+      Array.from(hspSups.values()).forEach((s, idx) => {
+        if (s.grossApUsd <= 0.01 && s.invoicedUsd <= 0.01) return;
+        const creditDays = 21;
+        const creditLimitUsd = round2(Math.max(5000, s.invoicedUsd * 0.5));
+        const chronoWindowLabel = 'Seasonal Resort Supply & Utility Contract (21d)';
+        const ageDays = s.grossApUsd > 2000 ? 32 : 12;
+        rawCandidates.push({
+          id: s.id,
+          name: s.name,
+          company: s.company,
+          segment: s.segment,
+          isCritical: s.isCritical,
+          grossApUsd: s.grossApUsd,
+          advanceUsd: 0,
+          invoicedUsd: s.invoicedUsd,
+          settledUsd: s.settledUsd,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel,
+          chronoFallback: true,
+          ageDays,
+          txCount: s.txCount,
+          defaultApprovedUsd: round2(s.grossApUsd * 0.5),
+          defaultScheduledDate: addDaysISO(anchorDate, 6)
+        });
+      });
+    } else if (ind === 'Automotive & Heavy Trading') {
+      const trd = computeTradingOperations();
+      const purchases = Array.isArray(trd && trd.purchaseRows) ? trd.purchaseRows : [];
+      const trdSups = new Map();
+      purchases.forEach((p, idx) => {
+        const sName = scrubOutwardGuideText(String(p.supplier || `Vehicle Supplier ${idx + 1}`).trim());
+        const key = norm(sName);
+        const cur = trdSups.get(key) || {
+          id: `trd-sup-${idx + 1}`,
+          name: sName,
+          company: String(p.company || 'Shacman'),
+          segment: 'Vehicle PO & Landed Cost',
+          isCritical: true,
+          grossApUsd: 0,
+          advanceUsd: 0,
+          invoicedUsd: 0,
+          settledUsd: 0,
+          txCount: 0
+        };
+        const amt = round2(Math.max(0, Number(p.amount_usd || p.amount || 0)));
+        const open = round2(Math.max(0, Number(p.open_ap_usd != null ? p.open_ap_usd : (amt * 0.4))));
+        cur.invoicedUsd = round2(cur.invoicedUsd + amt);
+        cur.grossApUsd = round2(cur.grossApUsd + open);
+        cur.settledUsd = round2(cur.settledUsd + Math.max(0, amt - open));
+        cur.txCount += 1;
+        trdSups.set(key, cur);
+      });
+      if (!trdSups.size) {
+        trdSups.set('shacman_factory', {
+          id: 'trd-sup-1',
+          name: 'Shacman Heavy Vehicle Assembly Plant',
+          company: 'Shacman',
+          segment: 'Chassis & Assembly Factory PO',
+          isCritical: true,
+          grossApUsd: 48500,
+          advanceUsd: 0,
+          invoicedUsd: 120000,
+          settledUsd: 71500,
+          txCount: 4
+        });
+        trdSups.set('customs_freight', {
+          id: 'trd-sup-2',
+          name: 'Beirut Port & Customs Clearance Forwarding',
+          company: 'Korri Auto',
+          segment: 'Landed Freight & Customs Payable',
+          isCritical: true,
+          grossApUsd: 14200,
+          advanceUsd: 0,
+          invoicedUsd: 38000,
+          settledUsd: 23800,
+          txCount: 6
+        });
+      }
+      Array.from(trdSups.values()).forEach(s => {
+        const creditDays = 45;
+        const creditLimitUsd = round2(Math.max(20000, s.invoicedUsd * 0.6));
+        const chronoWindowLabel = 'Automotive Assembly & Factory Floorplan (45d)';
+        const ageDays = s.grossApUsd > 20000 ? 42 : 18;
+        rawCandidates.push({
+          id: s.id,
+          name: s.name,
+          company: s.company,
+          segment: s.segment,
+          isCritical: s.isCritical,
+          grossApUsd: s.grossApUsd,
+          advanceUsd: s.advanceUsd,
+          invoicedUsd: s.invoicedUsd,
+          settledUsd: s.settledUsd,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel,
+          chronoFallback: true,
+          ageDays,
+          txCount: s.txCount,
+          defaultApprovedUsd: round2(s.grossApUsd * 0.35),
+          defaultScheduledDate: addDaysISO(anchorDate, 8)
+        });
+      });
+    } else if (ind === 'Real Estate & Property') {
+      const re = computeRealEstateOperations();
+      const expList = Array.isArray(re && re.expenses) ? re.expenses : [];
+      const reSups = new Map();
+      expList.forEach((x, idx) => {
+        const sName = scrubOutwardGuideText(String(x.vendor || x.contractor || x.supplier || `Contractor ${idx + 1}`).trim());
+        const key = norm(sName);
+        const cur = reSups.get(key) || {
+          id: `re-con-${idx + 1}`,
+          name: sName,
+          company: String(x.company || '4235 Company S.A.L'),
+          segment: 'Facility CAM & Maintenance Contractor',
+          isCritical: /elevator|hvac|facility|tax/i.test(String(x.category || '')),
+          grossApUsd: 0,
+          advanceUsd: 0,
+          invoicedUsd: 0,
+          settledUsd: 0,
+          txCount: 0
+        };
+        const amt = round2(Math.max(0, Number(x.amount_usd || x.amount || 0)));
+        const open = round2(Math.max(0, Number(x.open_usd != null ? x.open_usd : (amt * 0.35))));
+        cur.invoicedUsd = round2(cur.invoicedUsd + amt);
+        cur.grossApUsd = round2(cur.grossApUsd + open);
+        cur.settledUsd = round2(cur.settledUsd + Math.max(0, amt - open));
+        cur.txCount += 1;
+        reSups.set(key, cur);
+      });
+      if (!reSups.size) {
+        reSups.set('otis_elevators', {
+          id: 're-con-1',
+          name: 'Otis Elevator Maintenance Co.',
+          company: '4235 Company S.A.L',
+          segment: 'Commercial HVAC & Elevator Maintenance',
+          isCritical: true,
+          grossApUsd: 9400,
+          advanceUsd: 0,
+          invoicedUsd: 18500,
+          settledUsd: 9100,
+          txCount: 3
+        });
+        reSups.set('beirut_municipality', {
+          id: 're-con-2',
+          name: 'Beirut Municipal Property Tax Department',
+          company: 'Properties',
+          segment: 'Municipal Taxes & Built Property Duty',
+          isCritical: true,
+          grossApUsd: 12500,
+          advanceUsd: 0,
+          invoicedUsd: 25000,
+          settledUsd: 12500,
+          txCount: 2
+        });
+      }
+      Array.from(reSups.values()).forEach(s => {
+        const creditDays = 30;
+        const creditLimitUsd = round2(Math.max(8000, s.invoicedUsd * 0.5));
+        const chronoWindowLabel = 'Commercial Property Maintenance Agreement (30d)';
+        const ageDays = s.grossApUsd > 5000 ? 34 : 14;
+        rawCandidates.push({
+          id: s.id,
+          name: s.name,
+          company: s.company,
+          segment: s.segment,
+          isCritical: s.isCritical,
+          grossApUsd: s.grossApUsd,
+          advanceUsd: s.advanceUsd,
+          invoicedUsd: s.invoicedUsd,
+          settledUsd: s.settledUsd,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel,
+          chronoFallback: true,
+          ageDays,
+          txCount: s.txCount,
+          defaultApprovedUsd: round2(s.grossApUsd * 0.4),
+          defaultScheduledDate: addDaysISO(anchorDate, 7)
+        });
+      });
+    } else if (ind === 'Insurance & Brokerage') {
+      const ins = computeInsuranceOperations();
+      const carriers = ['Allianz SNA', 'AXA Middle East', 'Bankers Assurance', 'Fidelity Insurance'];
+      carriers.forEach((cName, idx) => {
+        const ag = typeof lookupActiveInsuranceAgreementRate === 'function'
+          ? lookupActiveInsuranceAgreementRate(cName, 'Motor', anchorDate)
+          : null;
+        const grossAp = round2(16500 + (idx * 8400));
+        const invoicedUsd = round2(grossAp * 2.2);
+        const settledUsd = round2(invoicedUsd - grossAp);
+        const creditDays = 30;
+        const creditLimitUsd = round2(Math.max(10000, invoicedUsd * 0.6));
+        const chronoWindowLabel = ag && !ag.isFallback
+          ? `${ag.start_date || '2026-01-01'} to ${ag.end_date || 'Open'} (${ag.comm_pct || 15}% Comm)`
+          : 'Carrier Premium Bordereau Agreement (30d)';
+        const ageDays = idx === 0 ? 38 : (idx === 1 ? 22 : 12);
+        rawCandidates.push({
+          id: `ins-car-${idx + 1}`,
+          name: scrubOutwardGuideText(cName),
+          company: 'Insurance Company',
+          segment: 'Carrier Premium Bordereau Payable (Class 4011)',
+          isCritical: true,
+          grossApUsd: grossAp,
+          advanceUsd: 0,
+          invoicedUsd,
+          settledUsd,
+          creditDays,
+          creditLimitUsd,
+          chronoWindowLabel: scrubOutwardGuideText(chronoWindowLabel),
+          chronoFallback: Boolean(!ag || ag.isFallback),
+          ageDays,
+          txCount: 4 + idx,
+          defaultApprovedUsd: round2(grossAp * 0.5),
+          defaultScheduledDate: addDaysISO(anchorDate, 5)
+        });
+      });
+    }
+
+    // Optional deterministic override for 0-AP / stress test harness assertions
+    const overrideGrossAp = options.overrideGrossApUsd !== undefined ? clampNum(options.overrideGrossApUsd, 0, 1e9, 0) : null;
+    const rawTotalAp = round2(rawCandidates.reduce((s, r) => s + r.grossApUsd, 0));
+    const apScale = overrideGrossAp !== null
+      ? (rawTotalAp > 0 ? (overrideGrossAp / rawTotalAp) : 0)
+      : 1;
+
+    // Build full per-counterparty telemetry with $0.00 AP aging & 30d horizon ties
+    const counterparties = rawCandidates.map((r, idx) => {
+      const grossApUsd = overrideGrossAp !== null
+        ? (overrideGrossAp === 0 ? 0 : round2(r.grossApUsd * apScale))
+        : round2(r.grossApUsd);
+      const advanceUsd = round2(r.advanceUsd || 0);
+      const invoicedUsd = round2(Math.max(grossApUsd, r.invoicedUsd * (overrideGrossAp === 0 ? 0 : 1)));
+      const settledUsd = round2(Math.max(0, r.settledUsd));
+      const creditDays = Math.max(0, Math.round(Number(r.creditDays || 30)));
+      const creditLimitUsd = round2(Math.max(500, Number(r.creditLimitUsd || 20000)));
+
+      // Deterministic AP Aging Buckets summing to exact grossApUsd ($0.00 variance)
+      const ageDays = Math.max(0, Math.round(Number(r.ageDays || 14)));
+      let w0 = 0.28, w11 = 0.38, w31 = 0.22, w60 = 0.12;
+      if (ageDays <= 10) {
+        w0 = 0.70; w11 = 0.22; w31 = 0.08; w60 = 0.00;
+      } else if (ageDays <= 30) {
+        w0 = 0.30; w11 = 0.46; w31 = 0.16; w60 = 0.08;
+      } else if (ageDays <= 60) {
+        w0 = 0.14; w11 = 0.26; w31 = 0.40; w60 = 0.20;
+      } else {
+        w0 = 0.06; w11 = 0.14; w31 = 0.28; w60 = 0.52;
+      }
+      const currentUsd = grossApUsd > 0 ? round2(grossApUsd * w0) : 0;
+      const bucket11_30Usd = grossApUsd > 0 ? round2(grossApUsd * w11) : 0;
+      const bucket31_60Usd = grossApUsd > 0 ? round2(grossApUsd * w31) : 0;
+      const bucket60PlusUsd = grossApUsd > 0
+        ? round2(Math.max(0, grossApUsd - currentUsd - bucket11_30Usd - bucket31_60Usd))
+        : 0;
+
+      // Saved hold / approval overlay
+      const savedH = holdMap.get(norm(r.name)) || null;
+      const held = savedH ? Boolean(savedH.held) : (bucket60PlusUsd > creditLimitUsd * 0.4);
+      const approvedAmountUsd = savedH
+        ? round2(Math.min(grossApUsd, Math.max(0, savedH.approvedAmountUsd)))
+        : round2(Math.min(grossApUsd, Math.max(0, r.defaultApprovedUsd || (grossApUsd > 0 ? round2(currentUsd + bucket11_30Usd * 0.5) : 0))));
+      const scheduledDate = savedH && savedH.scheduledDate
+        ? savedH.scheduledDate
+        : (r.defaultScheduledDate || addDaysISO(anchorDate, Math.min(12, Math.max(2, Math.round(creditDays / 4)))));
+      const holdNote = savedH ? savedH.note : '';
+
+      // Early discount eligibility (e.g. 2% prompt discount if settled within 10 days)
+      const discountEligible = creditDays >= 20 && ageDays <= 18 && !held && grossApUsd > 0;
+      const discountPct = discountEligible ? (levers.earlyDiscountCapturePct > 0 ? levers.earlyDiscountCapturePct : 2) : 0;
+
+      // 30-Day Cash-Outflow Maturity Tranches with $0.00 exact tie
+      let target30dUsd = 0;
+      let tranche1_7dUsd = 0;
+      let tranche8_14dUsd = 0;
+      let tranche15_30dUsd = 0;
+      let beyond30dUsd = 0;
+
+      if (grossApUsd > 0) {
+        if (held) {
+          // If held, disbursements are frozen and pushed beyond 30 days
+          target30dUsd = 0;
+          tranche1_7dUsd = 0;
+          tranche8_14dUsd = 0;
+          tranche15_30dUsd = 0;
+          beyond30dUsd = grossApUsd;
+        } else {
+          const holdModShare = (levers.holdReleaseDisputePct / 100) * 0.12;
+          const earlyDiscModShare = (levers.earlyDiscountCapturePct / 100) * 0.18;
+          const base30dRatio = clampNum(0.64 + holdModShare + earlyDiscModShare, 0.15, 0.98, 0.64);
+          target30dUsd = round2(grossApUsd * base30dRatio);
+
+          const w1_7 = clampNum(0.38 + (discountEligible && levers.earlyDiscountCapturePct > 0 ? 0.15 : 0), 0.20, 0.68, 0.38);
+          const w8_14 = 0.32;
+          tranche1_7dUsd = round2(target30dUsd * w1_7);
+          tranche8_14dUsd = round2(target30dUsd * w8_14);
+          tranche15_30dUsd = round2(Math.max(0, target30dUsd - tranche1_7dUsd - tranche8_14dUsd));
+          beyond30dUsd = round2(Math.max(0, grossApUsd - tranche1_7dUsd - tranche8_14dUsd - tranche15_30dUsd));
+        }
+      }
+
+      const scheduled30dOutflowUsd = round2(tranche1_7dUsd + tranche8_14dUsd + tranche15_30dUsd);
+      const earlyDiscountSavingsUsd = discountEligible ? round2(tranche1_7dUsd * (discountPct / 100)) : 0;
+      const net30dCashOutflowUsd = round2(scheduled30dOutflowUsd - earlyDiscountSavingsUsd);
+
+      // Priority & 7z-freq operational ranking score
+      const priorityScore = round2(
+        (bucket60PlusUsd * 2.2) +
+        (bucket31_60Usd * 1.4) +
+        (r.isCritical ? 2500 : 0) +
+        (discountEligible ? 1800 : 0) +
+        (grossApUsd * 0.8) +
+        (Math.max(1, r.txCount || 1) * 35)
+      );
+
+      const recommendedActionEn = held
+        ? 'Payment Held (Pending Invoice Verification & Dispute Release)'
+        : (discountEligible && levers.earlyDiscountCapturePct > 0
+          ? `Accelerate Week 1 Disbursement to Capture ${discountPct}% Early Discount`
+          : (bucket60PlusUsd > 0.01
+            ? 'Prioritize 60+d Overdue Settlement in Next Payment Run'
+            : (grossApUsd > 0.01 ? 'Scheduled Standard Weekly AP Disbursement' : 'Account Current (Zero Open Balance)')));
+
+      const recommendedActionAr = held
+        ? 'الدفع مجمد (بانتظار تدقيق الفواتير وحل النزاع)'
+        : (discountEligible && levers.earlyDiscountCapturePct > 0
+          ? `تسريع صرف دفعة الأسبوع الأول لتحصيل خصم ${discountPct}% للسداد المبكر`
+          : (bucket60PlusUsd > 0.01
+            ? 'منح الأولوية لسداد المتأخرات فوق 60 يوماً في دورة الصرف القادمة'
+            : (grossApUsd > 0.01 ? 'جدولة دورة الصرف الأسبوعية المعتادة' : 'الحساب مسدد بالكامل')));
+
+      const recommendedActionFr = held
+        ? 'Paiement bloqué (en attente de vérification des factures et résolution du litige)'
+        : (discountEligible && levers.earlyDiscountCapturePct > 0
+          ? `Accélérer le règlement en Semaine 1 pour capter l escompte de ${discountPct}%`
+          : (bucket60PlusUsd > 0.01
+            ? 'Prioriser le règlement des arriérés de plus de 60 jours'
+            : (grossApUsd > 0.01 ? 'Règlement programmé selon le cycle hebdomadaire normal' : 'Compte soldé')));
+
+      const discClauseEn = discountEligible && levers.earlyDiscountCapturePct > 0
+        ? ` We have applied an early-settlement discount of ${discountPct}%, saving ${fmtUSD(earlyDiscountSavingsUsd, 2)} on this remittance.`
+        : '';
+      const discClauseAr = discountEligible && levers.earlyDiscountCapturePct > 0
+        ? ` تم تطبيق خصم سداد مبكر بنسبة ${discountPct}%، ما يحقق وفراً قدره ${fmtUSD(earlyDiscountSavingsUsd, 2)} على هذه الحوالة.`
+        : '';
+      const discClauseFr = discountEligible && levers.earlyDiscountCapturePct > 0
+        ? ` Un escompte pour règlement anticipé de ${discountPct}% a été appliqué, réalisant une économie de ${fmtUSD(earlyDiscountSavingsUsd, 2)}.`
+        : '';
+
+      const scheduledAmtToReport = held ? 0 : (approvedAmountUsd > 0 ? approvedAmountUsd : tranche1_7dUsd);
+      const whatsappEn = scrubOutwardGuideText(
+        `Hello ${r.name}, this is the ${r.company} Treasury & Accounts Payable Desk. We have scheduled payment of ${fmtUSD(scheduledAmtToReport, 2)} against your open balance of ${fmtUSD(grossApUsd, 2)} for settlement by ${scheduledDate}.${discClauseEn}`
+      );
+      const whatsappAr = scrubOutwardGuideText(
+        `مرحباً ${r.name}، معكم مكتب الخزينة والذمم الدائنة في ${r.company}. تم جدولة دفعة تسوية بقيمة ${fmtUSD(scheduledAmtToReport, 2)} من رصيدكم القائم ${fmtUSD(grossApUsd, 2)} للتحويل بتاريخ ${scheduledDate}.${discClauseAr}`
+      );
+      const whatsappFr = scrubOutwardGuideText(
+        `Bonjour ${r.name}, ici le bureau Trésorerie et Dettes fournisseurs de ${r.company}. Nous avons programmé un règlement de ${fmtUSD(scheduledAmtToReport, 2)} sur votre solde ouvert de ${fmtUSD(grossApUsd, 2)} pour exécution d ici le ${scheduledDate}.${discClauseFr}`
+      );
+
+      return {
+        id: r.id,
+        rank: idx + 1,
+        name: r.name,
+        company: r.company,
+        segment: r.segment,
+        isCritical: r.isCritical,
+        txCount: r.txCount,
+        priorityScore,
+        grossApUsd,
+        advanceUsd,
+        invoicedUsd,
+        settledUsd,
+        currentUsd,
+        bucket11_30Usd,
+        bucket31_60Usd,
+        bucket60PlusUsd,
+        overdue30PlusUsd: round2(bucket31_60Usd + bucket60PlusUsd),
+        creditDays,
+        creditLimitUsd,
+        chronoWindowLabel: r.chronoWindowLabel,
+        chronoFallback: r.chronoFallback,
+        ageDays,
+        held,
+        approvedAmountUsd,
+        scheduledDate,
+        holdNote,
+        hasSavedHold: Boolean(savedH),
+        discountEligible,
+        discountPct,
+        earlyDiscountSavingsUsd,
+        tranche1_7dUsd,
+        tranche8_14dUsd,
+        tranche15_30dUsd,
+        beyond30dUsd,
+        scheduled30dOutflowUsd,
+        net30dCashOutflowUsd,
+        recommendedActionEn,
+        recommendedActionAr,
+        recommendedActionFr,
+        whatsappEn,
+        whatsappAr,
+        whatsappFr
+      };
+    });
+
+    // Rank strictly by operational priority descending (7z-freq — never alphabetical localeCompare)
+    counterparties.sort((a, b) => (b.priorityScore - a.priorityScore) || (b.grossApUsd - a.grossApUsd) || (b.txCount - a.txCount));
+    counterparties.forEach((c, i) => { c.rank = i + 1; });
+
+    // Portfolio aggregations with exact $0.00 reconciliation ties
+    const grossOpenApUsd = round2(counterparties.reduce((s, c) => s + c.grossApUsd, 0));
+    const unallocatedAdvancesUsd = round2(counterparties.reduce((s, c) => s + c.advanceUsd, 0));
+    const currentUsd = round2(counterparties.reduce((s, c) => s + c.currentUsd, 0));
+    const bucket11_30Usd = round2(counterparties.reduce((s, c) => s + c.bucket11_30Usd, 0));
+    const bucket31_60Usd = round2(counterparties.reduce((s, c) => s + c.bucket31_60Usd, 0));
+    const bucket60PlusUsd = round2(counterparties.reduce((s, c) => s + c.bucket60PlusUsd, 0));
+    const agingSum = round2(currentUsd + bucket11_30Usd + bucket31_60Usd + bucket60PlusUsd);
+    const agingVarianceUsd = round2(agingSum - grossOpenApUsd);
+
+    const tranche1_7dUsd = round2(counterparties.reduce((s, c) => s + c.tranche1_7dUsd, 0));
+    const tranche8_14dUsd = round2(counterparties.reduce((s, c) => s + c.tranche8_14dUsd, 0));
+    const tranche15_30dUsd = round2(counterparties.reduce((s, c) => s + c.tranche15_30dUsd, 0));
+    const beyond30dUsd = round2(counterparties.reduce((s, c) => s + c.beyond30dUsd, 0));
+    const scheduled30dOutflowUsd = round2(tranche1_7dUsd + tranche8_14dUsd + tranche15_30dUsd);
+    const horizonSum = round2(scheduled30dOutflowUsd + beyond30dUsd);
+    const horizonVarianceUsd = round2(horizonSum - grossOpenApUsd);
+
+    const totalEarlyDiscountSavingsUsd = round2(counterparties.reduce((s, c) => s + c.earlyDiscountSavingsUsd, 0));
+    const net30dCashOutflowUsd = round2(scheduled30dOutflowUsd - totalEarlyDiscountSavingsUsd);
+
+    const heldCount = counterparties.filter(c => c.held).length;
+    const heldAmountUsd = round2(counterparties.filter(c => c.held).reduce((s, c) => s + c.grossApUsd, 0));
+    const overdue30PlusUsd = round2(bucket31_60Usd + bucket60PlusUsd);
+    const overdue60PlusUsd = bucket60PlusUsd;
+
+    // Retrieve live cash till balance for liquidity runway (redacted if seat lacks books/cash permissions)
+    const booksRedacted = Boolean(!canViewBooks || !canCash);
+    let closingCombinedTillUsd = null;
+    let projected30dTillUsd = null;
+    if (!booksRedacted && typeof computeCashflowLiquiditySnapshot === 'function') {
+      try {
+        const snap = computeCashflowLiquiditySnapshot({ companyKey: reqCo, asOfDate: anchorDate });
+        if (snap && snap.summary && snap.summary.closingCombinedTillUsd !== null && snap.summary.closingCombinedTillUsd !== undefined) {
+          closingCombinedTillUsd = snap.summary.closingCombinedTillUsd;
+          projected30dTillUsd = round2(closingCombinedTillUsd - net30dCashOutflowUsd);
+        }
+      } catch (_) {}
+    }
+    const dailyBurnRateUsd = round2(Math.max(1, net30dCashOutflowUsd / 30));
+    const runwayDays = closingCombinedTillUsd !== null ? Math.max(0, Math.round(closingCombinedTillUsd / dailyBurnRateUsd)) : 0;
+    const isRunwayCritical = closingCombinedTillUsd !== null && runwayDays < levers.liquidityRunwayFloorDays;
+
+    const weightedAvgTermsDays = grossOpenApUsd > 0
+      ? Math.round(counterparties.reduce((s, c) => s + (c.creditDays * c.grossApUsd), 0) / grossOpenApUsd)
+      : 30;
+
+    // Check if CA_AP guardrail rule exists
+    const alertSt = ensureAlertRulesState();
+    const safeCoKey = String(reqCo).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_AP_${safeCoKey}`;
+    const hasActiveAlertRule = Boolean(alertSt.custom.some(r => r && r.id === ruleId && r.enabled !== false));
+
+    const scopeKey = `pay|${reqCo}|${ind}|${anchorDate}|${levers.holdReleaseDisputePct}|${levers.earlyDiscountCapturePct}|${levers.liquidityRunwayFloorDays}`;
+    const leverSig = `${levers.holdReleaseDisputePct}|${levers.earlyDiscountCapturePct}|${levers.liquidityRunwayFloorDays}`;
+
+    const headlineEn = `Total open payables across ${coLabel} stand at ${fmtUSD(grossOpenApUsd, 2)} with ${fmtUSD(tranche1_7dUsd, 2)} scheduled for immediate 7-day disbursement. Till liquidity runway is projected at ${runwayDays} days against ${fmtUSD(net30dCashOutflowUsd, 2)} 30-day cash outflow.`;
+    const headlineAr = `يبلغ إجمالي الذمم الدائنة القائمة عبر ${coLabel} ما قيمته ${fmtUSD(grossOpenApUsd, 2)} مع جدولة ${fmtUSD(tranche1_7dUsd, 2)} للصرف الفوري خلال 7 أيام. تقدر مهلة السيولة في الصندوق بنحو ${runwayDays} يوماً مقابل تدفقات نقدية خارجة قدرها ${fmtUSD(net30dCashOutflowUsd, 2)} خلال 30 يوماً.`;
+    const headlineFr = `Le total des dettes fournisseurs pour ${coLabel} s établit à ${fmtUSD(grossOpenApUsd, 2)} avec ${fmtUSD(tranche1_7dUsd, 2)} programmés pour décaissement immédiat à 7 jours. La marge de liquidité en caisse est estimée à ${runwayDays} jours face à ${fmtUSD(net30dCashOutflowUsd, 2)} de sorties de trésorerie sur 30 jours.`;
+
+    const bulletsEn = [
+      `Immediate Week 1 payment run: ${fmtUSD(tranche1_7dUsd, 2)} across ${counterparties.filter(c => c.tranche1_7dUsd > 0).length} creditors.`,
+      `Overdue 60+ days balance: ${fmtUSD(bucket60PlusUsd, 2)} (${grossOpenApUsd > 0 ? ((bucket60PlusUsd / grossOpenApUsd) * 100).toFixed(1) : 0}% of portfolio).`,
+      `Active payment holds: ${heldCount} counterparties representing ${fmtUSD(heldAmountUsd, 2)} frozen pending invoice verification.`,
+      `Early settlement discounts capture: ${fmtUSD(totalEarlyDiscountSavingsUsd, 2)} in net cash savings.`,
+      `Till liquidity status: ${isRunwayCritical ? 'Critical Runway Warning' : 'Adequate Liquidity Runway'} (${runwayDays} days vs ${levers.liquidityRunwayFloorDays}d floor).`
+    ];
+
+    const bulletsAr = [
+      `دفعة الأسبوع الأول الفورية: ${fmtUSD(tranche1_7dUsd, 2)} موزعة على ${counterparties.filter(c => c.tranche1_7dUsd > 0).length} دائناً.`,
+      `رصيد المتأخرات فوق 60 يوماً: ${fmtUSD(bucket60PlusUsd, 2)} (${grossOpenApUsd > 0 ? ((bucket60PlusUsd / grossOpenApUsd) * 100).toFixed(1) : 0}% من إجمالي الذمم).`,
+      `تجميدات الدفع النشطة: ${heldCount} أطراف تمثل ${fmtUSD(heldAmountUsd, 2)} معلقة بانتظار تدقيق الفواتير.`,
+      `وفورات السداد المبكر المحققة: ${fmtUSD(totalEarlyDiscountSavingsUsd, 2)} كوفورات نقدية صافية.`,
+      `حالة سيولة الصندوق: ${isRunwayCritical ? 'تحذير حرج لمهلة السيولة' : 'مهلة سيولة احتياطية كافية'} (${runwayDays} يوماً مقابل حد أدنى ${levers.liquidityRunwayFloorDays} يوماً).`
+    ];
+
+    const bulletsFr = [
+      `Règlement immédiat Semaine 1 : ${fmtUSD(tranche1_7dUsd, 2)} répartis sur ${counterparties.filter(c => c.tranche1_7dUsd > 0).length} créanciers.`,
+      `Solde échu de plus de 60 jours : ${fmtUSD(bucket60PlusUsd, 2)} (${grossOpenApUsd > 0 ? ((bucket60PlusUsd / grossOpenApUsd) * 100).toFixed(1) : 0}% du portefeuille).`,
+      `Blocages actifs : ${heldCount} créanciers représentant ${fmtUSD(heldAmountUsd, 2)} gelés en attente de validation.`,
+      `Escomptes anticipés captés : ${fmtUSD(totalEarlyDiscountSavingsUsd, 2)} d économies nettes de trésorerie.`,
+      `État de liquidité en caisse : ${isRunwayCritical ? 'Alerte critique de marge de sécurité' : 'Marge de sécurité adéquate'} (${runwayDays} jours vs seuil ${levers.liquidityRunwayFloorDays} j).`
+    ];
+
+    const topCp = counterparties[0] || null;
+    const defaultWhatsappEn = topCp ? topCp.whatsappEn : '';
+    const defaultWhatsappAr = topCp ? topCp.whatsappAr : '';
+    const defaultWhatsappFr = topCp ? topCp.whatsappFr : '';
+
+    return {
+      scopeKey,
+      leverSig,
+      industry: ind,
+      companyKey: reqCo,
+      companyLabel: coLabel,
+      companyEn: coLabel,
+      companyAr: coLabel,
+      companyFr: coLabel,
+      periodKey: range.label || 'Active Period',
+      periodLabel: range.label || 'Active Period',
+      periodEn: range.label || 'Active Period',
+      periodAr: range.label || 'Active Period',
+      periodFr: range.label || 'Active Period',
+      asOfDate: anchorDate,
+      rlsClamped: false,
+      restricted: false,
+      booksRedacted,
+      canViewBooks,
+      canCash,
+      canPayables,
+      canEditAlerts,
+      hasActiveAlertRule,
+      targetHubView: domMeta.targetHubView,
+      domainMeta: domMeta,
+      levers,
+      leverSpecs,
+      presets,
+      summary: {
+        grossOpenApUsd,
+        unallocatedAdvancesUsd,
+        currentUsd,
+        bucket11_30Usd,
+        bucket31_60Usd,
+        bucket60PlusUsd,
+        overdue30PlusUsd,
+        overdue60PlusUsd,
+        heldCount,
+        heldAmountUsd,
+        activeCounterpartyCount: counterparties.length,
+        weightedAvgTermsDays,
+        runwayDays,
+        isRunwayCritical,
+        closingCombinedTillUsd,
+        projected30dTillUsd
+      },
+      agingBuckets: {
+        currentUsd,
+        bucket11_30Usd,
+        bucket31_60Usd,
+        bucket60PlusUsd,
+        advanceUsd: unallocatedAdvancesUsd
+      },
+      horizon: {
+        tranche1_7dUsd,
+        tranche8_14dUsd,
+        tranche15_30dUsd,
+        beyond30dUsd,
+        scheduled30dOutflowUsd,
+        earlyDiscountSavingsUsd: totalEarlyDiscountSavingsUsd,
+        net30dCashOutflowUsd
+      },
+      tieCheck: {
+        agingBalanced: Math.abs(agingVarianceUsd) < 0.01,
+        agingVarianceUsd,
+        horizonBalanced: Math.abs(horizonVarianceUsd) < 0.01,
+        horizonVarianceUsd
+      },
+      counterparties,
+      disbursementList: counterparties,
+      headlineEn,
+      headlineAr,
+      headlineFr,
+      spokenEn: [headlineEn, ...bulletsEn].join(' '),
+      spokenAr: [headlineAr, ...bulletsAr].join(' '),
+      spokenFr: [headlineFr, ...bulletsFr].join(' '),
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts: {
+        whatsappEn: defaultWhatsappEn,
+        whatsappAr: defaultWhatsappAr,
+        whatsappFr: defaultWhatsappFr
+      }
+    };
+  }
+
+  function applyPayablesAlertRule(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const snap = computePayablesOptimizerSnapshot(options);
+    if (!snap || snap.restricted || snap.rlsClamped || !snap.canEditAlerts || (!canReviewSentinels() && !isOwner(u))) {
+      return { ok: false, error: 'Payables guardrail creation is restricted for this seat or scope.' };
+    }
+    const st = ensureAlertRulesState();
+    const safeCoKey = String(snap.companyKey || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_AP_${safeCoKey}`;
+    const overdueCapUsd = Math.max(1000, round2((snap.summary.overdue60PlusUsd || snap.summary.grossOpenApUsd * 0.2 || 5000) * 0.9));
+    const existingIdx = st.custom.findIndex(r => r && r.id === ruleId);
+    const seqCode = existingIdx >= 0
+      ? st.custom[existingIdx].code
+      : ('#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0'));
+    const cleanName = scrubOutwardGuideText(`${snap.companyLabel} 60+d AP & Liquidity Runway Payables Guardrail`);
+    const cleanWhy = scrubOutwardGuideText(
+      `Payables Optimizer Guardrail (${snap.periodLabel}): cap 60+d overdue payables at ${fmtUSD(overdueCapUsd, 0)} and safeguard ${snap.summary.runwayDays}d till liquidity runway against ${fmtUSD(snap.horizon.net30dCashOutflowUsd, 0)} 30-day disbursements.`
+    );
+    const ruleObj = {
+      id: ruleId,
+      code: seqCode,
+      name: cleanName,
+      metric: 'ap_overdue_60_usd',
+      target: '',
+      op: '>',
+      threshold: overdueCapUsd,
+      mode: 'warn_and_audit',
+      company: snap.companyKey === 'all' || String(snap.companyKey).startsWith('industry:') ? 'all' : snap.companyLabel,
+      why: cleanWhy,
+      enabled: true,
+      created_by: String((u && u.full_name) || 'Owner'),
+      updated_at: new Date().toISOString()
+    };
+    if (existingIdx >= 0) {
+      st.custom[existingIdx] = ruleObj;
+    } else {
+      st.custom.push(ruleObj);
+    }
+    STATE.customAlertRules = st.custom;
+    if (!options.skipPersist) {
+      persistAlertRulesChange({}, [ruleObj]);
+    }
+    return {
+      ok: true,
+      updatedExisting: existingIdx >= 0,
+      rule: ruleObj,
+      snapshot: snap
+    };
+  }
+
   function computeInspector360Snapshot(opts = {}) {
     ensureMultiIndustrySpineSeeded();
     const options = opts && typeof opts === 'object' ? opts : {};
@@ -66174,6 +67233,7 @@
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
             ${exportBtn('extEntriesPanel', 'External_Entries')}
             ${isHoldingExt ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="hld_extended" data-ui-tip="Open dedicated Holding Extended Stakeholder Ledger Hub">${ic('external')} Extended Ledger Hub (${fmtNum(extdCnt)})</button>` : ''}
             ${isHoldingExt && canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="extended" data-prefill-co="Bdeir Holding" data-prefill-extkind="Extended">+ Extended Entry</button>' : ''}
@@ -66416,6 +67476,7 @@
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
             ${exportBtn('fxConversionsPanel', 'FX_Conversions')}
             ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
           </div>
@@ -66614,6 +67675,7 @@
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             <button type="button" class="btn cf-liquidity-brief-btn cf-collection-btn" id="cfCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="cashflow" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior & Cash-Collection Forecast Studio">Collection Forecast</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-payables-btn" id="cfPayablesOptimizerBtn" data-payables-optimizer-open="1" data-po-source="cashflow" aria-expanded="false" data-ui-tip="Open Supplier Payables, 3-Leg Cash-Outflow & Early-Settlement Optimizer Studio">Payables Optimizer</button>
             ${exportBtn('treasuryLoansPanel', 'Partner_Loans')}
             ${canEnterForm('treasury') ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
           </div>
@@ -120795,6 +121857,8 @@
         applyWhatIfGuardrailRule,
         computeCollectionForecastSnapshot,
         applyCollectionAlertRule,
+        computePayablesOptimizerSnapshot,
+        applyPayablesAlertRule,
         canReviewSentinels,
         markSentinelReviewed,
         unmarkSentinelReviewed,
@@ -122514,6 +123578,8 @@
     applyWhatIfGuardrailRule: typeof applyWhatIfGuardrailRule === 'function' ? applyWhatIfGuardrailRule : null,
     computeCollectionForecastSnapshot: typeof computeCollectionForecastSnapshot === 'function' ? computeCollectionForecastSnapshot : null,
     applyCollectionAlertRule: typeof applyCollectionAlertRule === 'function' ? applyCollectionAlertRule : null,
+    computePayablesOptimizerSnapshot: typeof computePayablesOptimizerSnapshot === 'function' ? computePayablesOptimizerSnapshot : null,
+    applyPayablesAlertRule: typeof applyPayablesAlertRule === 'function' ? applyPayablesAlertRule : null,
     getState: () => STATE,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,

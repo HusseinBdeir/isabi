@@ -328,8 +328,34 @@ const Face = (() => {
     if (typeof caches === "undefined" || !caches || typeof caches.keys !== "function") return;
     try {
       const keys = await caches.keys();
+      let targetV3 = null;
       for (const k of keys) {
         if (k === "isabi-mfg-data-v1" || k === "isabi-mfg-data-v2") {
+          if (!forceEvictModels) {
+            try {
+              const oldCache = await caches.open(k);
+              const oldReqs = await oldCache.keys();
+              for (const req of oldReqs) {
+                if (!req || !req.url || !req.url.includes("/vendor/models/")) continue;
+                const cleanUrl = req.url.split("?")[0];
+                const fileName = cleanUrl.split("/").pop() || "";
+                const expectedLen = EXPECTED_MODEL_BIN_BYTES[fileName] || 0;
+                const hit = await oldCache.match(req);
+                if (!hit) continue;
+                if (expectedLen > 0) {
+                  const buf = await hit.clone().arrayBuffer().catch(() => null);
+                  if (!buf || buf.byteLength !== expectedLen) continue;
+                } else if (!fileName.endsWith(".json")) {
+                  continue;
+                }
+                if (!targetV3) targetV3 = await caches.open("isabi-mfg-data-v3");
+                const existingV3 = await targetV3.match(cleanUrl);
+                if (!existingV3) {
+                  await targetV3.put(cleanUrl, hit.clone()).catch(() => {});
+                }
+              }
+            } catch (_) {}
+          }
           await caches.delete(k).catch(() => {});
           continue;
         }
@@ -455,13 +481,13 @@ const Face = (() => {
         () => faceapi.nets.tinyFaceDetector.loadFromUri(base),
         base,
         "tiny_face_detector_model.bin",
-        5000
+        12000
       );
       const lmP = loadNetWithSelfHealing(
         () => faceapi.nets.faceLandmark68TinyNet.loadFromUri(base),
         base,
         "face_landmark_68_tiny_model.bin",
-        5000
+        12000
       ).then(() => {
         landmarksTiny = true;
       }).catch(async e => {
@@ -470,7 +496,7 @@ const Face = (() => {
           () => faceapi.nets.faceLandmark68Net.loadFromUri(base),
           base,
           "face_landmark_68_model.bin",
-          6000
+          12000
         );
         landmarksTiny = false;
       });
@@ -478,7 +504,7 @@ const Face = (() => {
         () => faceapi.nets.faceRecognitionNet.loadFromUri(base),
         base,
         "face_recognition_model.bin",
-        9000
+        25000
       );
       recP.catch(() => {});
 
@@ -509,6 +535,15 @@ const Face = (() => {
       }
 
       await recP;
+
+      if (!isAutoTest && typeof document !== "undefined" && typeof faceapi.computeFaceDescriptor === "function") {
+        try {
+          const rcv = document.createElement("canvas");
+          rcv.width = 112;
+          rcv.height = 112;
+          await Promise.resolve(faceapi.computeFaceDescriptor(rcv)).catch(() => {});
+        } catch (_) {}
+      }
 
       if (isAutoTest) {
         await ensureSsdLoaded();

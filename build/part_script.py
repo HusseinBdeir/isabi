@@ -16,8 +16,9 @@ JS = r"""
   }
   const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
-  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" class="sbox-mini-badge" style="flex-shrink:0"><g class="badge-ii" fill="#281D15"><rect x="33" y="16" width="20" height="67"/><rect x="67" y="16" width="20" height="67"/></g><g class="badge-rule" fill="#B88228"><rect x="33" y="92" width="54" height="3.6" rx="0.5"/><rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/></g></svg>';
-  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="var(--wm-ink, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="var(--wm-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
+  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="28" height="28" class="sbox-mini-badge" style="flex-shrink:0"><g class="badge-ii" fill="#281D15"><rect x="33" y="16" width="20" height="67"/><rect x="67" y="16" width="20" height="67"/></g><g class="badge-rule" fill="#B88228"><rect x="33" y="92" width="54" height="3.6" rx="0.5"/><rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/></g></svg>';
+  const RAIL_MARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="rail-brand-badge" aria-hidden="true"><g class="badge-ii" fill="var(--wm-ink, #281D15)"><rect x="33" y="16" width="20" height="67"/><rect x="67" y="16" width="20" height="67"/></g><g class="badge-rule" fill="var(--wm-rule, #B88228)"><rect x="33" y="92" width="54" height="3.6" rx="0.5"/><rect x="33" y="100.2" width="54" height="3.6" rx="0.5"/></g></svg>';
+  const RAIL_WORDMARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="rail-brand-wordmark" role="img" aria-label="ISABI Systems"><g class="wm-word" fill="var(--wm-ink, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.26 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g class="wm-rule" fill="var(--wm-rule, #B88228)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g class="wm-sys" fill="var(--wm-sys, #4A3628)" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q64.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q43.22 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>';
   const ICONS = __ICONS_JSON__;
 
   // ---------------- 8 INDUSTRY BLUEPRINTS ----------------
@@ -882,7 +883,7 @@ JS = r"""
   // ---------------- STATE ----------------
   const state = {
     activeSec: 'architecture',
-    archView: 'pillars',
+    archView: 'apps',
     appCat: 'all',
     activeAppId: 'gl',
     activeInd: 'hospitality',
@@ -998,6 +999,20 @@ JS = r"""
             <strong class="num">${fmtHeroMoney(v.val)}</strong>
           </div>
         `).join('')}
+      </div>
+      <div class="hlc-telemetry-strip">
+        <div class="hlc-tel-cell">
+          <small>Statutory vs Operational</small>
+          <b>$0.00 Variance ✓</b>
+        </div>
+        <div class="hlc-tel-cell">
+          <small>${selV ? 'Vertical Margin / Yield' : '30-Day Cash Runway'}</small>
+          <b>${selV ? selV.badge + ' Verified' : '+$418.5k Net Liquid'}</b>
+        </div>
+        <div class="hlc-tel-cell">
+          <small>${selV ? 'Operational Scope' : 'Field Kiosks &amp; Fleet GPS'}</small>
+          <b>${selV ? selV.sub : '28 Audit Watchdogs Live'}</b>
+        </div>
       </div>
     `;
   }
@@ -1412,60 +1427,149 @@ JS = r"""
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const totalMult = cm.mult * pm.mult;
 
-    // MODE 2: PRINTABLE STATEMENT OF ACCOUNT (22 STATEMENTS) VIEWER
+    // MODE 2: PRINTABLE STATEMENT OF ACCOUNT vs STATUTORY TRIAL BALANCE VIEWER
     if (state.sboxMode === 'soa') {
       mockEl.className = 'mock mode-full';
       const docType = state.soaDoc || 'soa';
+      const fmt2 = v => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      if (docType === 'tb') {
+        const baseRev = (d.kpis && d.kpis[0] ? d.kpis[0].v : 420) * 1000 * totalMult;
+        const tbRows = [
+          ['Class 1 · 10100-14900', 'Share Capital, Retained Earnings & Partner Equity', 0, baseRev * 0.62, -baseRev * 0.62],
+          ['Class 2 · 21100-28900', 'Property, Plant, Fleet & Operating Equipment (Net)', baseRev * 0.54, 0, baseRev * 0.54],
+          ['Class 3 · 31100-37900', 'Silos, Bonded VINs, Spare Parts & F&B Stock', baseRev * 0.28, 0, baseRev * 0.28],
+          ['Class 4 · 40100-46900', 'Trade Receivables (AR), Supplier Payables (AP) & Tax', baseRev * 0.24, baseRev * 0.19, baseRev * 0.05],
+          ['Class 5 · 51100-53900', 'Multi-Currency Banks, Safes, POS Vaults & Checks', baseRev * 0.37, 0, baseRev * 0.37],
+          ['Class 6 · 60100-67900', 'Cost of Goods Sold, Payroll, Fuel & Site Operations', baseRev * 0.68, 0, baseRev * 0.68],
+          ['Class 7 · 70100-75900', 'Invoiced Sales, Outlet Revenue & Service Contracts', 0, baseRev * 1.30, -baseRev * 1.30]
+        ];
+        const tbTotDeb = tbRows.reduce((s, r) => s + r[2], 0);
+        const tbTotCred = tbRows.reduce((s, r) => s + r[3], 0);
+        const tbNetIncome = baseRev * 0.62;
+        const tbBodyHtml = tbRows.map(r => `<tr>
+          <td class="mono"><b>${r[0]}</b></td>
+          <td>${r[1]}</td>
+          <td class="n">${r[2] ? fmt2(r[2]) : '-'}</td>
+          <td class="n">${r[3] ? fmt2(r[3]) : '-'}</td>
+          <td class="n"><b>${fmt2(Math.abs(r[4]))} ${r[4] >= 0 ? 'DR' : 'CR'}</b></td>
+          <td><span class="m-chip closed">0.00 Variance ✓</span></td>
+        </tr>`).join('');
+
+        mockEl.innerHTML = `
+          <div class="soa-viewer" data-soa-active="tb">
+            <div class="soa-hdr">
+              <div>
+                <span class="ind-badge-pill">${ICONS.scale} Statutory Trial Balance (Classes 1 to 7) · ${d.groupTitle}</span>
+                <h3 style="font-size:20px;margin:4px 0">Statutory Trial Balance &amp; Operational Book Bridge (${cm.sym})</h3>
+                <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Lebanese / Regional Class 1 to 7 COA · Operational vs Statutory Book Reconciled to 0.00</span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="sbox-theme-btn" data-soa-doc="soa">${ICONS.soa} Statement of Account</button>
+                <button type="button" class="sbox-theme-btn active" data-soa-doc="tb">${ICONS.scale} Statutory Trial Balance</button>
+              </div>
+            </div>
+
+            <div class="soa-meta-grid">
+              <div class="soa-meta-cell"><small>Total Trial Balance Debits (${cm.sym})</small><b class="num">${fmt2(tbTotDeb)}</b></div>
+              <div class="soa-meta-cell"><small>Total Trial Balance Credits (${cm.sym})</small><b class="num">${fmt2(tbTotCred)}</b></div>
+              <div class="soa-meta-cell"><small>Net Operating Surplus (Class 7 - 6)</small><b class="num">${fmt2(tbNetIncome)}</b></div>
+              <div class="soa-meta-cell"><small>Operational vs Statutory Variance</small><b class="num" style="color:var(--good)">0.00 (${cm.sym}) ✓</b></div>
+            </div>
+
+            <div class="soa-aging-strip">
+              <span><b>Class 1 to 5 Balance Sheet:</b> 100% Balanced ✓</span>
+              <span><b>Class 6 &amp; 7 P&amp;L:</b> Tied to Sub-Ledgers ✓</span>
+              <span><b>Intercompany Eliminations:</b> 0.00 Drift</span>
+              <span><b>Cutoff Lock:</b> Verified via Step-Up 2FA</span>
+            </div>
+
+            <div class="panel">
+              <table class="m-grid">
+                <thead>
+                  <tr><th>Account Class &amp; Range</th><th>Statutory &amp; Operational Classification</th><th class="n">Total Debit (${cm.sym})</th><th class="n">Total Credit (${cm.sym})</th><th class="n">Closing Position (${cm.sym})</th><th>Book Parity</th></tr>
+                </thead>
+                <tbody>
+                  ${tbBodyHtml}
+                  <tr class="total">
+                    <td colspan="2"><b>Total Statutory Trial Balance (Classes 1 to 7 · Closed with the ISABI Double Rule)</b></td>
+                    <td class="n"><b>${fmt2(tbTotDeb)}</b></td>
+                    <td class="n"><b>${fmt2(tbTotCred)}</b></td>
+                    <td class="n"><b>0.00 Net Drift</b></td>
+                    <td><b>Reconciled ✓</b></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+        updateAiScopeBar();
+        return;
+      }
+
       let rowsHtml = '';
-      let runBal = 18400 * cm.mult;
-      d.journal.forEach((r, idx) => {
-        const deb = r[4] ? (r[4] * cm.mult) : 0;
-        const cred = r[5] ? (r[5] * cm.mult) : 0;
+      const openBal = 18400 * cm.mult;
+      let runBal = openBal;
+      let totSoaDeb = 0;
+      let totSoaCred = 0;
+      d.journal.forEach(r => {
+        const deb = r[4] ? (r[4] * totalMult) : 0;
+        const cred = r[5] ? (r[5] * totalMult) : 0;
+        totSoaDeb += deb;
+        totSoaCred += cred;
         runBal += (deb - cred);
         rowsHtml += `<tr>
           <td>${DAY_TOKENS[r[0]] || r[0]}</td>
           <td class="mono">${r[1]}</td>
           <td>${r[2]}</td>
           <td>${r[3]}</td>
-          <td class="n">${deb ? deb.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-          <td class="n">${cred ? cred.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-          <td class="n"><b>${runBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+          <td class="n">${deb ? fmt2(deb) : '-'}</td>
+          <td class="n">${cred ? fmt2(cred) : '-'}</td>
+          <td class="n"><b>${fmt2(runBal)}</b></td>
         </tr>`;
       });
 
+      const primaryEnt = (d.entities && d.entities[0] && d.entities[0][0]) ? d.entities[0][0] : d.groupTitle;
       mockEl.innerHTML = `
-        <div class="soa-viewer">
+        <div class="soa-viewer" data-soa-active="soa">
           <div class="soa-hdr">
             <div>
-              <span class="ind-badge-pill">${ICONS.soa} Bilingual Printable Statement Preview · ${d.groupTitle}</span>
-              <h3 style="font-size:20px;margin:4px 0">Audited Statement of Account &amp; Trial Balance (${cm.sym})</h3>
-              <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Lebanese / Regional Class 1 to 7 COA · Reconciled to $0.00 Variance</span>
+              <span class="ind-badge-pill">${ICONS.soa} Counterparty Statement of Account · ${d.groupTitle}</span>
+              <h3 style="font-size:20px;margin:4px 0">Audited Statement of Account · ${primaryEnt} (${cm.sym})</h3>
+              <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Counterparty AR/AP Sub-Ledger · Ready for A4 PDF &amp; WhatsApp Dispatch</span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="sbox-theme-btn ${docType === 'soa' ? 'active' : ''}" data-soa-doc="soa">${ICONS.soa} Statement of Account</button>
-              <button type="button" class="sbox-theme-btn ${docType === 'tb' ? 'active' : ''}" data-soa-doc="tb">${ICONS.scale} Statutory Trial Balance</button>
+              <button type="button" class="sbox-theme-btn active" data-soa-doc="soa">${ICONS.soa} Statement of Account</button>
+              <button type="button" class="sbox-theme-btn" data-soa-doc="tb">${ICONS.scale} Statutory Trial Balance</button>
             </div>
           </div>
 
           <div class="soa-meta-grid">
-            <div class="soa-meta-cell"><small>Opening Balance (${cm.sym})</small><b class="num">${(18400 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
-            <div class="soa-meta-cell"><small>Period Debits</small><b class="num">${(42600 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
-            <div class="soa-meta-cell"><small>Period Credits</small><b class="num">${(38900 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
-            <div class="soa-meta-cell"><small>Statutory Book Variance</small><b class="num" style="color:var(--good)">0.00 (${cm.sym}) ✓</b></div>
+            <div class="soa-meta-cell"><small>Opening Balance (${cm.sym})</small><b class="num">${fmt2(openBal)}</b></div>
+            <div class="soa-meta-cell"><small>Invoiced / Period Debits</small><b class="num">${fmt2(totSoaDeb)}</b></div>
+            <div class="soa-meta-cell"><small>Collections / Period Credits</small><b class="num">${fmt2(totSoaCred)}</b></div>
+            <div class="soa-meta-cell"><small>Closing Balance Due (${cm.sym})</small><b class="num" style="color:var(--brass-deep)">${fmt2(runBal)}</b></div>
+          </div>
+
+          <div class="soa-aging-strip">
+            <span><b>0 to 30 Days:</b> 64% Current</span>
+            <span><b>31 to 60 Days:</b> 22% Active</span>
+            <span><b>61 to 90 Days:</b> 9% Follow-Up</span>
+            <span><b>90+ Days:</b> 5% Flagged · Credit Gate Active</span>
           </div>
 
           <div class="panel">
             <table class="m-grid">
               <thead>
-                <tr><th>Date</th><th>Voucher Ref</th><th>Business Unit</th><th>Class &amp; Account Description</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th><th class="n">Running Balance (${cm.sym})</th></tr>
+                <tr><th>Date</th><th>Voucher Ref</th><th>Business Unit</th><th>Counterparty &amp; Voucher Description</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th><th class="n">Running Balance (${cm.sym})</th></tr>
               </thead>
               <tbody>
                 ${rowsHtml}
                 <tr class="total">
-                  <td colspan="4"><b>Closing Audited Balance (Closed with the ISABI Double Rule)</b></td>
-                  <td class="n">${(42600 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                  <td class="n">${(38900 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                  <td class="n"><b>${runBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+                  <td colspan="4"><b>Closing Counterparty Statement Balance (Closed with the ISABI Double Rule)</b></td>
+                  <td class="n">${fmt2(totSoaDeb)}</td>
+                  <td class="n">${fmt2(totSoaCred)}</td>
+                  <td class="n"><b>${fmt2(runBal)}</b></td>
                 </tr>
               </tbody>
             </table>
@@ -1544,11 +1648,22 @@ JS = r"""
       return;
     }
 
-    // MODE 1 (DEFAULT): 6-INDUSTRY LIVE ERP & EXECUTIVE ANALYTICS COMMAND CENTER
+    // MODE 1 (DEFAULT): 6-INDUSTRY LIVE ERP & 8 DEDICATED MODULE PAGES
     mockEl.className = 'mock';
-    const navItems = ['Overview', 'Sales & Revenue', 'Purchases & Stock', 'Cash & Treasury', 'General Ledger', 'Statements'];
+    const navMeta = [
+      ['Overview', ICONS.analytics],
+      ['Sales & Revenue', ICONS.trend],
+      ['Purchases & Stock', ICONS.box],
+      ['Cash & Treasury', ICONS.holding],
+      ['General Ledger', ICONS.ledger],
+      ['Statements', ICONS.soa]
+    ];
+    const govMeta = [
+      ['Business Units', ICONS.realestate],
+      ['Audit Trail', ICONS.lock]
+    ];
 
-    const kpisHtml = d.kpis.map(k => {
+    const renderKpiCards = list => list.map(k => {
       const val = k.fixed ? k.v : (k.v * totalMult).toFixed(1);
       return `
         <div class="kpi ${k.books ? 'books' : ''}">
@@ -1582,24 +1697,453 @@ JS = r"""
       </tr>`;
     }).join('');
 
-    const focusChart = state.sboxNav === 'Sales & Revenue' || state.sboxNav === 'Purchases & Stock';
-    const focusEnt = state.sboxNav === 'Business Units' || state.sboxNav === 'Cash & Treasury';
-    const focusAlerts = state.sboxNav === 'Audit Trail';
-    const focusGl = state.sboxNav === 'General Ledger' || state.sboxNav === 'Statements';
+    const alertsHtml = `<ul class="att">${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}</ul>`;
+    const glTableHtml = `
+      <table class="m-grid">
+        <thead>
+          <tr><th class="hide-xs">Date</th><th>Voucher</th><th class="hide-xs">Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
+        </thead>
+        <tbody>
+          ${jHtml}
+          <tr class="total">
+            <td class="hide-xs"></td>
+            <td><b>Total</b></td>
+            <td class="hide-xs"></td>
+            <td><b>Audited Batch</b></td>
+            <td class="n">${totDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="n">${totCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const baseRevK = d.kpis && d.kpis[0] ? Number(d.kpis[0].v) : 420;
+    const baseMargin = d.kpis && d.kpis[1] ? d.kpis[1].v : 26.8;
+    const baseCashK = d.kpis && d.kpis[2] ? Number(d.kpis[2].v) : 210;
+    const baseArK = d.kpis && d.kpis[3] ? Number(d.kpis[3].v) : 28.4;
+    const fmtM = v => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let pageViewTitle = d.viewTitle;
+    let kpisHtml = renderKpiCards(d.kpis);
+    let mobTab1Lbl = `${ICONS.trend} Chart &amp; Entities`;
+    let mobTab2Lbl = `${ICONS.ledger} General Ledger &amp; Alerts`;
+    let row2InnerHtml = `
+      <div class="panel">
+        <div class="ph">
+          <h3>${ICONS.analytics} Monthly Revenue Trajectory</h3>
+          <div class="legend">
+            <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
+            <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
+            <span><i class="sw-box s-3"></i>${d.seriesNames[2]}</span>
+          </div>
+        </div>
+        <div class="chartwrap" id="sbox-chart-wrap">
+          ${buildSandboxChart(d, cm.mult, cm.sym)}
+          <div class="chart-tip" id="sbox-chart-tip" hidden></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph">
+          <h3>${ICONS.realestate} Operating Entities &amp; Books Status</h3>
+          <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+        </div>
+        <table class="m-grid">
+          <thead>
+            <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
+          </thead>
+          <tbody>${entHtml}</tbody>
+        </table>
+      </div>
+    `;
+    let row3InnerHtml = `
+      <div class="panel">
+        <div class="ph"><h3>${ICONS.bell} Executive Exceptions &amp; Watchdogs</h3></div>
+        ${alertsHtml}
+      </div>
+      <div class="panel">
+        <div class="ph">
+          <h3>${ICONS.ledger} Audited General Ledger Stream (Double-Entry)</h3>
+          <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
+        </div>
+        ${glTableHtml}
+      </div>
+    `;
+
+    if (state.sboxNav === 'Sales & Revenue') {
+      pageViewTitle = 'Sales, Invoicing & Receivables Command';
+      kpisHtml = renderKpiCards([
+        { k: 'Gross Invoiced Sales', v: baseRevK, unit: 'k', d: '+11.2% vs prior period', cls: 'good' },
+        { k: 'Cash & POS Settled', v: +(baseRevK * 0.74).toFixed(1), unit: 'k', d: '74% immediate settlement', cls: 'good' },
+        { k: 'Active Trade AR', v: +(baseRevK * 0.26).toFixed(1), unit: 'k', d: 'Within approved credit caps', cls: '' },
+        { k: 'Receivables > 60d', v: baseArK, unit: 'k', d: 'Automated SOA queued', cls: 'crit' },
+        { k: 'Realized Margin', v: baseMargin, unit: '%', d: 'Form margin locks active', cls: 'good', fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.trend} Revenue Breakdown by Stream (${cm.sym})</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Revenue Line / Channel</th><th class="n">Invoiced</th><th class="n">Collected</th><th class="hide-xs">Pricing Rule</th><th>Credit Gate</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>${d.seriesNames[0]}</b></td><td class="n">${(baseRevK * 0.48 * totalMult).toFixed(1)}k</td><td class="n">${(baseRevK * 0.41 * totalMult).toFixed(1)}k</td><td class="mu hide-xs">Contract / Tariff</td><td><span class="m-chip closed">Enforced</span></td></tr>
+              <tr><td><b>${d.seriesNames[1]}</b></td><td class="n">${(baseRevK * 0.33 * totalMult).toFixed(1)}k</td><td class="n">${(baseRevK * 0.29 * totalMult).toFixed(1)}k</td><td class="mu hide-xs">Volume Tiered</td><td><span class="m-chip closed">Enforced</span></td></tr>
+              <tr><td><b>${d.seriesNames[2]}</b></td><td class="n">${(baseRevK * 0.19 * totalMult).toFixed(1)}k</td><td class="n">${(baseRevK * 0.18 * totalMult).toFixed(1)}k</td><td class="mu hide-xs">TTC / POS List</td><td><span class="m-chip closed">Enforced</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.ar} Customer Receivable Aging Matrix (0 to 90+ Days)</h3>
+            <span style="font-size:11px;color:var(--m-muted)">FIFO Allocation</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Aging Bucket</th><th class="n">Balance (${cm.sym})</th><th class="n">Share</th><th class="hide-xs">Credit Policy</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Current (0 to 30 Days)</b></td><td class="n">${(baseArK * 1.8 * totalMult).toFixed(1)}k</td><td class="n">64%</td><td class="mu hide-xs">Standard Terms</td><td><span class="m-chip closed">Current</span></td></tr>
+              <tr><td><b>31 to 60 Days</b></td><td class="n">${(baseArK * 0.62 * totalMult).toFixed(1)}k</td><td class="n">22%</td><td class="mu hide-xs">Statement Sent</td><td><span class="m-chip closed">Monitored</span></td></tr>
+              <tr><td><b>Over 60 Days Past Due</b></td><td class="n">${(baseArK * 0.41 * totalMult).toFixed(1)}k</td><td class="n">14%</td><td class="mu hide-xs">Dispatch Hold</td><td><span class="m-chip warn">SOA Queued</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Live Sales Invoices &amp; POS Revenue Vouchers</h3></div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Sales &amp; Credit Control Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'Purchases & Stock') {
+      pageViewTitle = 'Procurement, 3-Leg Landed Cost & Stock Ledger';
+      kpisHtml = renderKpiCards([
+        { k: 'Period Purchases', v: +(baseRevK * 0.56).toFixed(1), unit: 'k', d: '3-way matched to intake', cls: 'good' },
+        { k: 'Stock & Silo Valuation', v: +(baseCashK * 1.15).toFixed(1), unit: 'k', d: 'FIFO & landed cost verified', cls: '' },
+        { k: 'Supplier Payables (AP)', v: +(baseArK * 0.88).toFixed(1), unit: 'k', d: 'Reconciled to vendor SOA', cls: '' },
+        { k: 'Price-Creep Alerts', v: '0', unit: ' Unapproved', d: 'Form tolerance lock active', cls: 'good', fixed: true },
+        { k: '3-Leg Cost Match', v: '100', unit: '%', d: 'PO, GRN & Bill tied', cls: 'good', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.box} Warehouse, Silo &amp; Bonded Stock Valuation</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">Live Perpetual Inventory</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Stock Location / Depot</th><th class="n">Valuation (${cm.sym})</th><th class="n">Turnover</th><th class="hide-xs">Reorder Gate</th><th>Audit Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Primary Operating Depot / Silo #1</b></td><td class="n">${(baseCashK * 0.58 * totalMult).toFixed(1)}k</td><td class="n">14.2d</td><td class="mu hide-xs">Above Minimum</td><td><span class="m-chip closed">Verified</span></td></tr>
+              <tr><td><b>Bonded / Secondary Warehouse</b></td><td class="n">${(baseCashK * 0.36 * totalMult).toFixed(1)}k</td><td class="n">21.0d</td><td class="mu hide-xs">Customs Tracked</td><td><span class="m-chip closed">Verified</span></td></tr>
+              <tr><td><b>Parts, Consumables &amp; Provisions</b></td><td class="n">${(baseCashK * 0.21 * totalMult).toFixed(1)}k</td><td class="n">9.4d</td><td class="mu hide-xs">Auto Reorder Batch</td><td><span class="m-chip warn">Order Queued</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.scale} 3-Leg Landed Cost &amp; Supplier Intake Pipeline</h3>
+            <span style="font-size:11px;color:var(--m-muted)">PO · Intake · Vendor Bill</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Procurement Stage</th><th class="n">Volume (${cm.sym})</th><th class="n">Vouchers</th><th class="hide-xs">Verification</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>1. Approved Purchase Orders</b></td><td class="n">${(baseRevK * 0.44 * totalMult).toFixed(1)}k</td><td class="n">38 POs</td><td class="mu hide-xs">Principal Stamp</td><td><span class="m-chip closed">Approved</span></td></tr>
+              <tr><td><b>2. Weighbridge / Gate Intake</b></td><td class="n">${(baseRevK * 0.42 * totalMult).toFixed(1)}k</td><td class="n">36 GRNs</td><td class="mu hide-xs">Camera &amp; Scale Slip</td><td><span class="m-chip closed">Matched</span></td></tr>
+              <tr><td><b>3. Customs, Freight &amp; Vendor SOA</b></td><td class="n">${(baseRevK * 0.12 * totalMult).toFixed(1)}k</td><td class="n">14 Bills</td><td class="mu hide-xs">OCR Statement Match</td><td><span class="m-chip closed">0.00 Drift</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Procurement &amp; Stock Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Supplier Bills &amp; Inventory Journal Stream</h3></div>
+          ${glTableHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'Cash & Treasury') {
+      pageViewTitle = 'Multi-Currency Treasury, Vaults & 30-Day Liquidity';
+      kpisHtml = renderKpiCards([
+        { k: 'Consolidated Cash & Bank', v: baseCashK, unit: 'k', d: 'All vaults & banks reconciled', cls: 'good' },
+        { k: '30-Day Net Cash Runway', v: +(baseCashK * 1.28).toFixed(1), unit: 'k', d: 'After scheduled AP & payroll', cls: 'good' },
+        { k: 'Cleared Receipts (MTD)', v: +(baseRevK * 0.81).toFixed(1), unit: 'k', d: 'Bank statements auto-matched', cls: '' },
+        { k: 'Post-Dated Checks (PDC)', v: +(baseArK * 1.45).toFixed(1), unit: 'k', d: 'Maturity radar active', cls: '' },
+        { k: 'Treasury Books', v: '100', unit: '%', d: 'Zero unallocated cash', cls: 'good', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.holding} Multi-Currency Bank Accounts, Safes &amp; POS Vaults</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">Class 5 Treasury</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Treasury Account / Vault</th><th class="n">Balance (${cm.sym})</th><th class="n">Cleared</th><th class="hide-xs">Last Statement Match</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>51100 Primary Operating Bank (USD/EUR)</b></td><td class="n">${(baseCashK * 0.62 * totalMult).toFixed(1)}k</td><td class="n">100%</td><td class="mu hide-xs">Today 17:30</td><td><span class="m-chip closed">Reconciled</span></td></tr>
+              <tr><td><b>53100 Central Cash Safe &amp; POS Vaults</b></td><td class="n">${(baseCashK * 0.23 * totalMult).toFixed(1)}k</td><td class="n">100%</td><td class="mu hide-xs">Shift Close Verified</td><td><span class="m-chip closed">Matched</span></td></tr>
+              <tr><td><b>51200 Post-Dated Checks (PDC) Custody</b></td><td class="n">${(baseCashK * 0.15 * totalMult).toFixed(1)}k</td><td class="n">98.4%</td><td class="mu hide-xs">Maturity Calendar</td><td><span class="m-chip closed">Audited</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.analytics} 30-Day Liquidity Maturity Bridge (${cm.sym})</h3>
+            <span style="font-size:11px;color:var(--m-muted)">What-If Cash Studio</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Maturity Window</th><th class="n">Scheduled Inflows</th><th class="n">Committed Outflows</th><th class="n">Net Cumulative Cash</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Days 1 to 7 (Current Week)</b></td><td class="n">+${(baseCashK * 0.34 * totalMult).toFixed(1)}k</td><td class="n">-${(baseCashK * 0.19 * totalMult).toFixed(1)}k</td><td class="n"><b>${(baseCashK * 1.15 * totalMult).toFixed(1)}k</b></td></tr>
+              <tr><td><b>Days 8 to 15 (Mid-Month)</b></td><td class="n">+${(baseCashK * 0.29 * totalMult).toFixed(1)}k</td><td class="n">-${(baseCashK * 0.21 * totalMult).toFixed(1)}k</td><td class="n"><b>${(baseCashK * 1.23 * totalMult).toFixed(1)}k</b></td></tr>
+              <tr><td><b>Days 16 to 30 (Month-End Close)</b></td><td class="n">+${(baseCashK * 0.41 * totalMult).toFixed(1)}k</td><td class="n">-${(baseCashK * 0.36 * totalMult).toFixed(1)}k</td><td class="n"><b>${(baseCashK * 1.28 * totalMult).toFixed(1)}k</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Bank Transfers, Settlements &amp; Cash Journal</h3></div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Treasury &amp; Signatory Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'General Ledger') {
+      pageViewTitle = 'Double-Entry General Ledger & Class 1 to 7 COA';
+      kpisHtml = renderKpiCards([
+        { k: 'Batch Debits Posted', v: +(totDebit / 1000).toFixed(1), unit: 'k', d: 'Double-entry enforced', cls: 'good' },
+        { k: 'Batch Credits Posted', v: +(totCredit / 1000).toFixed(1), unit: 'k', d: '100% balanced to 0.00', cls: 'good' },
+        { k: 'Unbalanced Vouchers', v: '0', unit: ' Entries', d: 'Blocked at form level', cls: 'good', fixed: true },
+        { k: 'Statutory Variance', v: '0.00', unit: ' ' + cm.sym, d: 'Operational = Statutory', cls: 'good', fixed: true },
+        { k: 'Period Cutoff Lock', v: 'Locked', unit: ' 2FA', d: 'Reopen requires Face 2FA', cls: '', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.ledger} Audited General Ledger Stream (Double-Entry)</h3>
+            <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
+          </div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.scale} Chart of Accounts Summary (Classes 1 to 7)</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>COA Class</th><th>Classification</th><th class="n">Net Position</th><th>Book Parity</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="mono"><b>Class 1 to 3</b></td><td>Equity, Fixed Assets &amp; Inventory Stock</td><td class="n">${(baseRevK * 1.42 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">Balanced</span></td></tr>
+              <tr><td class="mono"><b>Class 4 &amp; 5</b></td><td>Third-Party AR/AP &amp; Treasury Vaults</td><td class="n">${(baseCashK * 1.12 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">Balanced</span></td></tr>
+              <tr><td class="mono"><b>Class 6 &amp; 7</b></td><td>Operating Revenue &amp; Direct Cost of Sales</td><td class="n">${(baseRevK * 1.00 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">Balanced</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.realestate} Entity Book Status &amp; Cutoff Locks</h3></div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
+            </thead>
+            <tbody>${entHtml}</tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Ledger &amp; Reconciliation Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'Statements') {
+      pageViewTitle = 'Executive Financial Statements & Counterparty SOA Hub';
+      kpisHtml = renderKpiCards([
+        { k: 'Consolidated Revenue', v: baseRevK, unit: 'k', d: 'Tied to Class 7 ledger', cls: 'good' },
+        { k: 'Gross Operating Profit', v: +(baseRevK * 0.42).toFixed(1), unit: 'k', d: 'After direct cost of sales', cls: 'good' },
+        { k: 'Net Operating Income', v: +(baseRevK * 0.27).toFixed(1), unit: 'k', d: `${baseMargin}% net margin`, cls: 'good' },
+        { k: 'Printable Statements', v: '22', unit: ' Reports', d: 'Bilingual A4 PDF & Excel', cls: '', fixed: true },
+        { k: 'Statement Matching', v: '100', unit: '%', d: 'OCR supplier & bank match', cls: 'good', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.soa} Consolidated Income Statement (P&amp;L) Summary (${cm.sym})</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Statement Line (Class 6 &amp; 7)</th><th class="n">Current Period</th><th class="n">% of Rev</th><th>Statutory Tie</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>70100-70900 Gross Operating Revenue</b></td><td class="n">${fmtM(baseRevK * 1000 * totalMult)}</td><td class="n">100.0%</td><td><span class="m-chip closed">0.00 Variance</span></td></tr>
+              <tr><td><b>60100-60900 Direct Cost of Goods &amp; Intake</b></td><td class="n">(${fmtM(baseRevK * 580 * totalMult)})</td><td class="n">58.0%</td><td><span class="m-chip closed">0.00 Variance</span></td></tr>
+              <tr><td><b>61100-64900 Payroll, Fleet &amp; Site Overhead</b></td><td class="n">(${fmtM(baseRevK * 150 * totalMult)})</td><td class="n">15.0%</td><td><span class="m-chip closed">0.00 Variance</span></td></tr>
+              <tr class="total"><td><b>Net Operating Profit (EBITDA)</b></td><td class="n"><b>${fmtM(baseRevK * 270 * totalMult)}</b></td><td class="n"><b>27.0%</b></td><td><b>Audited ✓</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.scale} Counterparty SOA &amp; Partner Distribution Pack</h3>
+            <span style="font-size:11px;color:var(--m-muted)">EN · AR · FR Ready</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Statement Type</th><th class="n">Active Accounts</th><th class="n">Closing Balance</th><th>Dispatch</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Customer Receivable SOA</b></td><td class="n">48 Accounts</td><td class="n">${(baseArK * 2.4 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">WhatsApp / PDF</span></td></tr>
+              <tr><td><b>Supplier &amp; Customs SOA</b></td><td class="n">32 Vendors</td><td class="n">${(baseArK * 1.1 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">OCR Matched</span></td></tr>
+              <tr><td><b>Partner Equity &amp; Profit Split SOA</b></td><td class="n">6 Partners</td><td class="n">${(baseRevK * 0.27 * totalMult).toFixed(1)}k</td><td><span class="m-chip closed">Ready to Sign</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Underlying Statement Voucher Register</h3></div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Statement &amp; Close Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'Business Units') {
+      pageViewTitle = 'Multi-Entity Business Units & Intercompany Governance';
+      kpisHtml = renderKpiCards([
+        { k: 'Operating Entities', v: String(d.entities.length), unit: ' Active', d: 'Strict per-entity isolation', cls: 'good', fixed: true },
+        { k: 'Consolidated Revenue', v: baseRevK, unit: 'k', d: 'Real-time group rollup', cls: 'good' },
+        { k: 'Interco Eliminations', v: '0.00', unit: ' Drift', d: 'Mirror vouchers auto-posted', cls: 'good', fixed: true },
+        { k: 'Role-Scoped Seats', v: '42', unit: ' Users', d: 'Per-branch access matrix', cls: '', fixed: true },
+        { k: 'Group Close Gate', v: `${d.entities.length}/${d.entities.length}`, unit: ' Ready', d: 'All subsidiary books tied', cls: 'good', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph">
+            <h3>${ICONS.realestate} Subsidiary &amp; Branch Performance Matrix</h3>
+            <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
+            </thead>
+            <tbody>${entHtml}</tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.sync} Intercompany Due-To / Due-From Mirror Ledger</h3>
+            <span style="font-size:11px;color:var(--m-muted)">Zero Consolidation Drift</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Originating Entity</th><th>Counterparty Entity</th><th class="n">Amount (${cm.sym})</th><th>Elimination</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>${d.entities[0] ? d.entities[0][0] : 'Entity #1'}</b></td><td>${d.entities[1] ? d.entities[1][0] : 'Group Treasury'}</td><td class="n">${fmtM(18500 * totalMult)}</td><td><span class="m-chip closed">Auto-Mirrored</span></td></tr>
+              <tr><td><b>${d.entities[1] ? d.entities[1][0] : 'Entity #2'}</b></td><td>${d.entities[2] ? d.entities[2][0] : 'Shared Fleet'}</td><td class="n">${fmtM(9400 * totalMult)}</td><td><span class="m-chip closed">Auto-Mirrored</span></td></tr>
+              <tr class="total"><td colspan="2"><b>Net Intercompany Consolidation Variance</b></td><td class="n"><b>0.00</b></td><td><b>Balanced ✓</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Cross-Entity Consolidated Journal Stream</h3></div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.bell} Multi-Entity Governance Watchdogs</h3></div>
+          ${alertsHtml}
+        </div>
+      `;
+    } else if (state.sboxNav === 'Audit Trail') {
+      pageViewTitle = 'Immutable Audit Trail, Biometric 2FA & 28 Watchdogs';
+      kpisHtml = renderKpiCards([
+        { k: 'Active Watchdogs', v: '28', unit: ' Rules', d: 'Real-time anomaly scanning', cls: 'good', fixed: true },
+        { k: 'Flagged Exceptions', v: String(d.alerts.length), unit: ' Active', d: 'Ready for executive review', cls: 'crit', fixed: true },
+        { k: 'Step-Up 2FA Stamps', v: '19', unit: ' Verified', d: 'Face + PIN on voids & locks', cls: 'good', fixed: true },
+        { k: 'Off-Hours Overrides', v: '0', unit: ' Unapproved', d: 'Instant WhatsApp alert', cls: 'good', fixed: true },
+        { k: 'Audit Log Integrity', v: '100', unit: '%', d: 'Append-only hash chain', cls: 'good', books: true, fixed: true }
+      ]);
+      row2InnerHtml = `
+        <div class="panel panel-focus">
+          <div class="ph"><h3>${ICONS.bell} Executive Exceptions &amp; Active Watchdog Queue</h3></div>
+          ${alertsHtml}
+        </div>
+        <div class="panel">
+          <div class="ph">
+            <h3>${ICONS.lock} Immutable Step-Up 2FA &amp; Sensitive Action Log</h3>
+            <span style="font-size:11px;color:var(--m-muted)">Biometric Face + PIN Verified</span>
+          </div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Time</th><th>Actor &amp; Role</th><th>Protected Action</th><th>Verification</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="mono">${DAY_TOKENS.D0} 17:42</td><td><b>H. Bdeir · Principal</b></td><td>Month-End Period Cutoff Lock (${pm.label})</td><td><span class="m-chip closed">Face 2FA ✓</span></td></tr>
+              <tr><td class="mono">${DAY_TOKENS.D0} 15:18</td><td><b>R. Mansour · Controller</b></td><td>Credit-Limit Gate Override (Voucher ${d.journal[0][1]})</td><td><span class="m-chip closed">PIN + Stamp ✓</span></td></tr>
+              <tr><td class="mono">${DAY_TOKENS.D1} 19:05</td><td><b>M. Salameh · Supervisor</b></td><td>Supplier Statement OCR Reconciliation Tie</td><td><span class="m-chip closed">Verified ✓</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+      row3InnerHtml = `
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.ledger} Audited Double-Entry Voucher Trail</h3></div>
+          ${glTableHtml}
+        </div>
+        <div class="panel">
+          <div class="ph"><h3>${ICONS.kiosk} Behavioral Sentinel Coverage (28 Active Rules)</h3></div>
+          <table class="m-grid">
+            <thead>
+              <tr><th>Sentinel Rule</th><th>Scope</th><th>Last Scan</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>Split-Bill &amp; Threshold Bypass</b></td><td>Procurement &amp; POS</td><td class="mu">Live</td><td><span class="m-chip closed">0 Breaches</span></td></tr>
+              <tr><td><b>Supplier Unit-Price Creep (&gt;2%)</b></td><td>AP &amp; Inventory</td><td class="mu">Live</td><td><span class="m-chip closed">Guarded</span></td></tr>
+              <tr><td><b>Stationary Fuel Drop &amp; GPS Drift</b></td><td>Fleet &amp; Generators</td><td class="mu">Live</td><td><span class="m-chip closed">100% Tied</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
 
     const mTab = state.sboxMobTab || 'chart';
 
     mockEl.innerHTML = `
       <aside class="rail">
-        <div class="brand">
+        <div class="brand" aria-label="ISABI Systems">
           ${RAIL_MARK_SVG}
-          <span style="font-family:Archivo,sans-serif;font-weight:800;letter-spacing:0.06em;font-size:15px">ISABI SYSTEMS</span>
+          ${RAIL_WORDMARK_SVG}
         </div>
         <nav aria-label="Sandbox ERP Navigation">
-          ${navItems.map(nm => `<button type="button" class="nav-item ${state.sboxNav === nm ? 'on' : ''}" data-sbox-nav="${nm}"><span>${nm}</span></button>`).join('')}
+          ${navMeta.map(([nm, ic]) => `<button type="button" class="nav-item ${state.sboxNav === nm ? 'on' : ''}" data-sbox-nav="${nm}"><span class="nav-ic">${ic}</span><span class="nav-lbl">${nm}</span></button>`).join('')}
           <div class="grp">Governance</div>
-          <button type="button" class="nav-item ${state.sboxNav === 'Business Units' ? 'on' : ''}" data-sbox-nav="Business Units"><span>Business Units</span></button>
-          <button type="button" class="nav-item ${state.sboxNav === 'Audit Trail' ? 'on' : ''}" data-sbox-nav="Audit Trail"><span>Audit Trail</span></button>
+          ${govMeta.map(([nm, ic]) => `<button type="button" class="nav-item ${state.sboxNav === nm ? 'on' : ''}" data-sbox-nav="${nm}"><span class="nav-ic">${ic}</span><span class="nav-lbl">${nm}</span></button>`).join('')}
         </nav>
         <div class="me">
           <span class="av">HB</span>
@@ -1607,11 +2151,11 @@ JS = r"""
         </div>
       </aside>
 
-      <div class="main">
+      <div class="main" data-active-nav="${state.sboxNav}">
         <header class="top">
           <div class="crumb">
             <span>${d.groupTitle} · ${state.sboxNav}</span>
-            <b>${d.viewTitle}</b>
+            <b>${pageViewTitle}</b>
           </div>
           <div class="tools">
             <select class="pill-select" id="sbox-period-sel" aria-label="Sandbox Period">
@@ -1624,7 +2168,7 @@ JS = r"""
               <option value="EUR" ${state.sboxCurr === 'EUR' ? 'selected' : ''}>EUR (€)</option>
               <option value="AED" ${state.sboxCurr === 'AED' ? 'selected' : ''}>AED</option>
             </select>
-            <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
+            <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} (${state.sboxNav}) numbers and highlight key action items">
               <span>${ICONS.ai} Ask ISABI</span>
             </button>
             <a href="app/?demo=1&amp;autologin=1&amp;industry=${state.sboxInd}" class="primary-mock sbox-launch-portal hide-xs" style="text-decoration:none" title="Open the full interactive Command Center for ${d.groupTitle}">
@@ -1636,70 +2180,16 @@ JS = r"""
         <section class="kpis">${kpisHtml}</section>
 
         <div class="sbox-mob-tabs" role="tablist" aria-label="Mobile Sandbox Views">
-          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">${ICONS.trend} Chart &amp; Entities</button>
-          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">${ICONS.ledger} General Ledger &amp; Alerts</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">${mobTab1Lbl}</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">${mobTab2Lbl}</button>
         </div>
 
         <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
-          <div class="panel ${focusChart ? 'panel-focus' : ''}">
-            <div class="ph">
-              <h3>${ICONS.analytics} Monthly Revenue Trajectory</h3>
-              <div class="legend">
-                <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
-                <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
-                <span><i class="sw-box s-3"></i>${d.seriesNames[2]}</span>
-              </div>
-            </div>
-            <div class="chartwrap" id="sbox-chart-wrap">
-              ${buildSandboxChart(d, cm.mult, cm.sym)}
-              <div class="chart-tip" id="sbox-chart-tip" hidden></div>
-            </div>
-          </div>
-
-          <div class="panel ${focusEnt ? 'panel-focus' : ''}">
-            <div class="ph">
-              <h3>${ICONS.realestate} Operating Entities &amp; Books Status</h3>
-              <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
-            </div>
-            <table class="m-grid">
-              <thead>
-                <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
-              </thead>
-              <tbody>${entHtml}</tbody>
-            </table>
-          </div>
+          ${row2InnerHtml}
         </section>
 
         <section class="row3" ${mTab !== 'ledger' ? 'data-mob-hide="1"' : ''}>
-          <div class="panel ${focusAlerts ? 'panel-focus' : ''}">
-            <div class="ph"><h3>${ICONS.bell} Executive Exceptions &amp; Watchdogs</h3></div>
-            <ul class="att">
-              ${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}
-            </ul>
-          </div>
-
-          <div class="panel ${focusGl ? 'panel-focus' : ''}">
-            <div class="ph">
-              <h3>${ICONS.ledger} Audited General Ledger Stream (Double-Entry)</h3>
-              <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
-            </div>
-            <table class="m-grid">
-              <thead>
-                <tr><th class="hide-xs">Date</th><th>Voucher</th><th class="hide-xs">Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
-              </thead>
-              <tbody>
-                ${jHtml}
-                <tr class="total">
-                  <td class="hide-xs"></td>
-                  <td><b>Total</b></td>
-                  <td class="hide-xs"></td>
-                  <td><b>Audited Batch</b></td>
-                  <td class="n">${totDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                  <td class="n">${totCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          ${row3InnerHtml}
         </section>
       </div>
     `;
@@ -3077,8 +3567,11 @@ JS = r"""
 
     return `
       <div class="ai-msg-bot">
-        ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble is-conversational">
+          <div class="ai-bot-hdr">
+            <span class="ai-bot-kicker">${ICONS.ai_mark} ISABI · Executive Ledger Intelligence</span>
+            <span class="ai-bot-verified">✓ Cited</span>
+          </div>
           <p>Welcome. I am <b>ISABI</b>, the assistant built into ISABI Systems. I can walk you through our 8 live industry systems, run numbers in the <b>${sbox.groupTitle}</b> sandbox, or answer questions about how we build around your accounting.</p>
         </div>
       </div>
@@ -3168,17 +3661,22 @@ JS = r"""
     const bubble1Html = isConv
       ? `
       <div class="ai-msg-bot"${turnDataAttr}>
-        ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble is-conversational"${dirAttr}>
+          <div class="ai-bot-hdr">
+            <span class="ai-bot-kicker">${ICONS.ai_mark} ISABI · ${item.title || 'System Intelligence'}</span>
+            <span class="ai-bot-verified">✓ Verified</span>
+          </div>
           <p>${item.answer}</p>
           ${bulletsHtml}
         </div>
       </div>`
       : `
       <div class="ai-msg-bot"${turnDataAttr}>
-        ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble"${dirAttr}>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--ai-accent);font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
+          <div class="ai-bot-hdr">
+            <span class="ai-bot-kicker">${ICONS.ai_mark} ISABI · ${item.title}</span>
+            <span class="ai-bot-verified">✓ Ledger Cited</span>
+          </div>
           <p>${item.answer}</p>
           ${bulletsHtml}
           ${tableBlockHtml}
@@ -3230,7 +3728,6 @@ JS = r"""
     return `
       <div class="ai-msg-user"${userDirAttr}>${escapeHtml(qText)}</div>
       <div class="ai-msg-bot ai-msg-thinking">
-        ${BADGE_MINI_SVG}
         <div class="ai-thinking-bubble"${botDirAttr}>
           <span>${label}</span>
           <span class="ai-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -3245,7 +3742,7 @@ JS = r"""
     const drawerThread = document.getElementById('ai-drawer-thread');
 
     const pillsHtml = AI_PROMPTS.map((p, i) => `
-      <button type="button" class="ai-pill-btn ${i === state.activeAiPillIdx ? 'active' : ''}" data-ai-idx="${i}">${p.q}</button>
+      <button type="button" class="ai-pill-btn ${i === state.activeAiPillIdx ? 'active' : ''}" data-ai-idx="${i}"><span class="ai-pill-ic" aria-hidden="true">${ICONS.ai_mark}</span><span class="ai-pill-txt">${p.q}</span></button>
     `).join('');
 
     if (pillsEl) pillsEl.innerHTML = pillsHtml;
@@ -4055,6 +4552,13 @@ JS = r"""
       const archViewBtn = e.target.closest('[data-arch-view]');
       if (archViewBtn) {
         activateArchView(archViewBtn.dataset.archView);
+        return;
+      }
+
+      const stackAskCard = e.target.closest('[data-stack-ask]');
+      if (stackAskCard) {
+        document.querySelectorAll('#ms-stack-cards .stack-card').forEach(c => c.classList.toggle('active', c === stackAskCard));
+        askIsabiQuestion(stackAskCard.dataset.stackAsk, false, true);
         return;
       }
 

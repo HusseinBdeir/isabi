@@ -147,6 +147,18 @@
     collectionDraftLang: '',
     collectionCustomDraftByScope: new Map(),
     activeCollectionSpeechScope: '',
+    payablesOptimizerOpen: false,
+    payablesOptimizerAnchor: null,
+    payablesOptimizerSource: 'overview',
+    payablesOptimizerScope: '',
+    payablesLeversByEntity: new Map(),
+    payablesActivePreset: 'standard',
+    payablesSelectedCp: '',
+    payablesCache: new Map(),
+    payablesInflight: new Map(),
+    payablesDraftLang: '',
+    payablesCustomDraftByScope: new Map(),
+    activePayablesSpeechScope: '',
     sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
@@ -6728,6 +6740,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureCeoPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildCeoPeriodSummary();
@@ -7585,6 +7598,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureStmtPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildStatementSummary();
@@ -8378,6 +8392,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensurePbiPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildDashboardSummary();
@@ -9050,6 +9065,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureInspPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildInspectorSummary();
@@ -9857,6 +9873,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureSentinelPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildSentinelTriageSummary();
@@ -10781,6 +10798,7 @@
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     ensureDailyBriefingI18nRegistered();
     ensureDailyHandoverGlobalDismiss();
     const sum = prebuiltSummary || buildDailyHandoverSummary();
@@ -11642,6 +11660,7 @@
     ensurePageGuideGlobalDismiss();
 
     // Mutual exclusion with all other executive brief popovers
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
@@ -11872,6 +11891,7 @@
         <button type="button" class="ceo-pv-btn" data-pg-next-tour="1"><span>Spotlight on Screen</span></button>
         <button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>
         <button type="button" class="ceo-pv-btn" id="pgOpenCollectionForecastBtn" data-pg-open-collection="1"><span>Collection Forecast</span></button>
+        <button type="button" class="ceo-pv-btn" id="pgOpenPayablesOptimizerBtn" data-pg-open-payables="1"><span>Payables Optimizer</span></button>
         <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
       </div>
     `;
@@ -12052,6 +12072,14 @@
         e.preventDefault();
         closePageGuidePopover();
         openCollectionForecastStudio(openCollectionFootBtn, { source: 'page_guide' });
+      });
+    }
+    const openPayablesFootBtn = pop.querySelector('[data-pg-open-payables]');
+    if (openPayablesFootBtn) {
+      openPayablesFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+        openPayablesOptimizerStudio(openPayablesFootBtn, { source: 'page_guide' });
       });
     }
 
@@ -12275,6 +12303,14 @@
           toggleCollectionForecastStudio(cfBtn, { source: src });
           return;
         }
+        const poBtn = e.target.closest && e.target.closest('[data-payables-optimizer-open]');
+        if (poBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = poBtn.getAttribute('data-po-source') || 'overview';
+          togglePayablesOptimizerStudio(poBtn, { source: src });
+          return;
+        }
         const wiBtn = e.target.closest && e.target.closest('[data-whatif-open]');
         if (wiBtn) {
           e.preventDefault();
@@ -12315,6 +12351,9 @@
     }
     if (typeof rebindCollectionForecastButtons === 'function') {
       rebindCollectionForecastButtons(container);
+    }
+    if (typeof rebindPayablesOptimizerButtons === 'function') {
+      rebindPayablesOptimizerButtons(container);
     }
     if (!_chatState.pageGuideOpen) return;
     const curView = (_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview';
@@ -13109,6 +13148,7 @@
     ensureWhatIfGlobalEvents();
 
     // Mutual exclusion with all 7 executive popovers & Collection Forecast Studio
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
@@ -14404,6 +14444,7 @@
     ensureCollectionGlobalEvents();
 
     // Two-way mutual exclusion with #whatIfSimulatorModal, #pageGuidePopover, and all 6 executive popovers
+    if (_chatState.payablesOptimizerOpen) closePayablesOptimizerStudio();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
@@ -14814,9 +14855,1191 @@
     }
   }
 
+    // =========================================================================
+  // PAYABLES & CASH-OUTFLOW OPTIMIZER STUDIO (#payablesOptimizerModal)
+  // Deterministic 3-Leg AP, Maturity Schedules, Rate Ceilings & AI Treasury
+  // =========================================================================
+
+  const PAYABLES_HOLDS_STORAGE_KEY = 'isabi_payables_holds_v1';
+
+  function sanitizePayablesOptimizerText(val, allowLines) {
+    return sanitizeCollectionForecastText(val, allowLines);
+  }
+
+  function sanitizePayablesLiveInput(val) {
+    return sanitizeCollectionLiveInput(val);
+  }
+
+  function normalizePayablesLevers(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clampNum = (v, minV, maxV, fallback) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 10) / 10));
+    };
+    return {
+      holdReleaseDisputePct: clampNum(src.holdReleaseDisputePct != null ? src.holdReleaseDisputePct : src.hold_release_dispute_pct, -40, 60, 0),
+      earlyDiscountCapturePct: clampNum(src.earlyDiscountCapturePct != null ? src.earlyDiscountCapturePct : src.early_discount_capture_pct, 0, 10, 0),
+      liquidityRunwayFloorDays: Math.round(clampNum(src.liquidityRunwayFloorDays != null ? src.liquidityRunwayFloorDays : src.liquidity_runway_floor_days, 7, 60, 14))
+    };
+  }
+
+  function getActivePayablesCompanyKey(coOverride) {
+    const st = (_ctx && _ctx.STATE) || {};
+    return String(coOverride || st.company || 'manufacturing-group');
+  }
+
+  function getPayablesLeversForEntity(coKeyOverride) {
+    const coKey = getActivePayablesCompanyKey(coKeyOverride);
+    if (_chatState.payablesLeversByEntity.has(coKey)) {
+      return Object.assign({}, _chatState.payablesLeversByEntity.get(coKey));
+    }
+    return normalizePayablesLevers({});
+  }
+
+  function setPayablesLeversForEntity(coKeyOverride, nextLevers) {
+    const coKey = getActivePayablesCompanyKey(coKeyOverride);
+    const clean = normalizePayablesLevers(nextLevers);
+    if (!_chatState.payablesLeversByEntity.has(coKey) && _chatState.payablesLeversByEntity.size >= 32) {
+      const oldestKey = _chatState.payablesLeversByEntity.keys().next().value;
+      if (oldestKey !== undefined) _chatState.payablesLeversByEntity.delete(oldestKey);
+    }
+    _chatState.payablesLeversByEntity.set(coKey, clean);
+    return clean;
+  }
+
+  function loadSavedPayablesHolds(coKeyFilter) {
+    let rawStr = null;
+    try {
+      rawStr = localStorage.getItem(PAYABLES_HOLDS_STORAGE_KEY);
+    } catch (_) {}
+    if (!rawStr) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawStr);
+    } catch (_) {
+      try { localStorage.removeItem(PAYABLES_HOLDS_STORAGE_KEY); } catch (_2) {}
+      return [];
+    }
+
+    let rawItems = [];
+    let needsRewrite = false;
+    if (Array.isArray(parsed)) {
+      rawItems = parsed;
+      needsRewrite = true;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.items)) {
+        rawItems = parsed.items;
+        if (parsed.version !== 1) needsRewrite = true;
+      } else if (Array.isArray(parsed.holds)) {
+        rawItems = parsed.holds;
+        needsRewrite = true;
+      } else {
+        needsRewrite = true;
+      }
+    } else {
+      return [];
+    }
+
+    const clampAmt = (v, minV, maxV, def) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 100) / 100));
+    };
+
+    const normalized = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (!it || typeof it !== 'object') {
+        needsRewrite = true;
+        continue;
+      }
+      const rawId = String(it.id || `ph_${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `ph_${i + 1}`;
+      const cleanCp = sanitizePayablesOptimizerText(it.counterparty || it.name || it.supplier || 'Creditor').slice(0, 72) || 'Creditor';
+      const coKey = sanitizePayablesOptimizerText(it.coKey || it.companyKey || it.company || 'manufacturing-group').slice(0, 64) || 'manufacturing-group';
+      const approvedAmountUsd = clampAmt(it.approvedAmountUsd != null ? it.approvedAmountUsd : it.amountUsd, 0, 1e9, 0);
+      const rawDate = String(it.scheduledDate || it.date || '2026-11-15').slice(0, 10);
+      const scheduledDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : '2026-11-15';
+      const held = Boolean(it.held);
+      const note = sanitizePayablesOptimizerText(it.note || '').slice(0, 120);
+      if (cleanCp !== it.counterparty || it.id !== rawId || approvedAmountUsd !== it.approvedAmountUsd) needsRewrite = true;
+      normalized.push({
+        id: rawId,
+        counterparty: cleanCp,
+        coKey,
+        approvedAmountUsd,
+        scheduledDate,
+        held,
+        note,
+        savedAt: String(it.savedAt || '2026-11-09')
+      });
+    }
+    if (normalized.length > 16) {
+      normalized.splice(0, normalized.length - 16);
+      needsRewrite = true;
+    }
+    if (needsRewrite) {
+      try {
+        localStorage.setItem(PAYABLES_HOLDS_STORAGE_KEY, JSON.stringify({ version: 1, items: normalized }));
+      } catch (_) {}
+    }
+    if (!coKeyFilter) return normalized;
+    const wantCo = String(coKeyFilter).trim();
+    return normalized.filter(x => x.coKey === wantCo || x.coKey === 'all');
+  }
+
+  function savePayablesHold(spec, coKeyOverride) {
+    const src = spec && typeof spec === 'object' ? spec : { counterparty: String(spec || '') };
+    const cleanCp = sanitizePayablesOptimizerText(src.counterparty || src.name || 'Creditor').slice(0, 72) || 'Creditor';
+    const coKey = sanitizePayablesOptimizerText(coKeyOverride || src.coKey || getActivePayablesCompanyKey()).slice(0, 64) || 'manufacturing-group';
+    const nAmt = Number(src.approvedAmountUsd != null ? src.approvedAmountUsd : src.amountUsd);
+    const approvedAmountUsd = Number.isFinite(nAmt) ? Math.max(0, Math.min(1e9, Math.round(nAmt * 100) / 100)) : 0;
+    const rawDate = String(src.scheduledDate || src.date || ((_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-15')).slice(0, 10);
+    const scheduledDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : '2026-11-15';
+    const held = Boolean(src.held);
+    const note = sanitizePayablesOptimizerText(src.note || '').slice(0, 120);
+    const all = loadSavedPayablesHolds();
+    const existingIdx = all.findIndex(x => x.coKey === coKey && x.counterparty.toLowerCase() === cleanCp.toLowerCase());
+    const id = existingIdx >= 0
+      ? all[existingIdx].id
+      : `ph_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id,
+      counterparty: cleanCp,
+      coKey,
+      approvedAmountUsd,
+      scheduledDate,
+      held,
+      note,
+      savedAt: (_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-09'
+    };
+    if (existingIdx >= 0) {
+      all[existingIdx] = entry;
+    } else {
+      all.push(entry);
+    }
+    while (all.length > 16) all.shift();
+    try {
+      localStorage.setItem(PAYABLES_HOLDS_STORAGE_KEY, JSON.stringify({ version: 1, items: all }));
+    } catch (_) {}
+    return entry;
+  }
+
+  function deletePayablesHold(idOrCp) {
+    const target = String(idOrCp || '').trim().toLowerCase();
+    if (!target) return false;
+    const all = loadSavedPayablesHolds();
+    const next = all.filter(x => x.id.toLowerCase() !== target && x.counterparty.toLowerCase() !== target);
+    try {
+      localStorage.setItem(PAYABLES_HOLDS_STORAGE_KEY, JSON.stringify({ version: 1, items: next }));
+    } catch (_) {}
+    return next.length !== all.length;
+  }
+
+  function buildPayablesOptimizerSummary(langOverride, opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride)
+      ? langOverride
+      : ((window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || _chatState.voiceLang || 'en');
+
+    const coKey = getActivePayablesCompanyKey(options.companyKey);
+    const activeLevers = options.levers
+      ? normalizePayablesLevers(options.levers)
+      : getPayablesLeversForEntity(coKey);
+    const savedHolds = Array.isArray(options.savedHolds)
+      ? options.savedHolds
+      : loadSavedPayablesHolds(coKey);
+
+    const snap = (_ctx && typeof _ctx.computePayablesOptimizerSnapshot === 'function')
+      ? _ctx.computePayablesOptimizerSnapshot(Object.assign({}, options, { companyKey: coKey, levers: activeLevers, savedHolds }))
+      : null;
+
+    if (!snap) {
+      return {
+        lang: safeLang,
+        scopeKey: 'pay|unavailable',
+        leverSig: '0|0|14',
+        industry: 'Manufacturing',
+        companyKey: coKey,
+        companyLabel: 'All Entities',
+        periodLabel: 'Active Period',
+        rlsClamped: false,
+        restricted: true,
+        booksRedacted: true,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView: 'suppliers',
+        levers: activeLevers,
+        leverSpecs: [],
+        presets: [],
+        savedHolds: [],
+        summary: {},
+        agingBuckets: {},
+        horizon: {},
+        tieCheck: { agingBalanced: true, agingVarianceUsd: 0, horizonBalanced: true, horizonVarianceUsd: 0 },
+        counterparties: [],
+        disbursementList: [],
+        selectedCounterparty: null,
+        headline: 'Payables optimizer telemetry is unavailable.',
+        bullets: [],
+        activeBullets: [],
+        drafts: { en: '', ar: '', fr: '' },
+        aiBrief: null,
+        aiLoading: false
+      };
+    }
+
+    const coLabel = snap.companyLabel;
+    const headline = safeLang === 'ar' ? snap.headlineAr : (safeLang === 'fr' ? snap.headlineFr : snap.headlineEn);
+    const bullets = safeLang === 'ar' ? snap.bulletsAr : (safeLang === 'fr' ? snap.bulletsFr : snap.bulletsEn);
+
+    let selectedCp = null;
+    if (_chatState.payablesSelectedCp && Array.isArray(snap.counterparties)) {
+      selectedCp = snap.counterparties.find(c => c.name.toLowerCase() === _chatState.payablesSelectedCp.toLowerCase()) || null;
+    }
+    if (!selectedCp && Array.isArray(snap.counterparties) && snap.counterparties.length > 0) {
+      selectedCp = snap.counterparties[0];
+    }
+
+    const cachedBrief = _chatState.payablesCache.get(snap.scopeKey) || null;
+    const aiLoading = Boolean(_chatState.payablesInflight.get(snap.scopeKey));
+    const activeBullets = (cachedBrief && Array.isArray(cachedBrief.bullets) && cachedBrief.bullets.length)
+      ? cachedBrief.bullets
+      : bullets;
+
+    const drafts = {
+      en: selectedCp ? selectedCp.whatsappEn : snap.drafts.whatsappEn,
+      ar: selectedCp ? selectedCp.whatsappAr : snap.drafts.whatsappAr,
+      fr: selectedCp ? selectedCp.whatsappFr : snap.drafts.whatsappFr
+    };
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      leverSig: snap.leverSig,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      companyLabel: coLabel,
+      periodLabel: snap.periodLabel,
+      asOfDate: snap.asOfDate,
+      rlsClamped: snap.rlsClamped,
+      restricted: snap.restricted,
+      booksRedacted: snap.booksRedacted,
+      canViewBooks: snap.canViewBooks,
+      canCash: snap.canCash,
+      canPayables: snap.canPayables,
+      canEditAlerts: snap.canEditAlerts,
+      hasActiveAlertRule: snap.hasActiveAlertRule,
+      targetHubView: snap.targetHubView,
+      domainMeta: snap.domainMeta,
+      levers: snap.levers,
+      leverSpecs: snap.leverSpecs,
+      presets: snap.presets,
+      savedHolds,
+      summary: snap.summary,
+      agingBuckets: snap.agingBuckets,
+      horizon: snap.horizon,
+      tieCheck: snap.tieCheck,
+      counterparties: snap.counterparties,
+      disbursementList: snap.disbursementList,
+      selectedCounterparty: selectedCp,
+      headline,
+      bullets,
+      activeBullets,
+      drafts,
+      aiBrief: cachedBrief,
+      aiLoading
+    };
+  }
+
+  function formatPayablesPlainText(sum, langOverride) {
+    if (!sum) return '';
+    const safeLang = langOverride || sum.lang || 'en';
+    const draft = (sum.drafts && sum.drafts[safeLang]) || (sum.drafts && sum.drafts.en) || '';
+    return sanitizePayablesOptimizerText(draft, true);
+  }
+
+  function requestPayablesOptimizerAiBrief(summary, forceRefresh) {
+    if (!summary || summary.restricted || summary.rlsClamped) {
+      return Promise.resolve(null);
+    }
+    const scopeKey = summary.scopeKey;
+    if (!forceRefresh && _chatState.payablesCache.has(scopeKey)) {
+      return Promise.resolve(_chatState.payablesCache.get(scopeKey));
+    }
+    if (_chatState.payablesInflight.has(scopeKey)) {
+      return _chatState.payablesInflight.get(scopeKey);
+    }
+
+    const langName = summary.lang === 'ar' ? 'Arabic (عربي)' : (summary.lang === 'fr' ? 'French (Français)' : 'English');
+    const p = new Promise(resolve => {
+      if (typeof window !== 'undefined' && window.__ALLOW_HEADLESS_AI === false) {
+        const mockBrief = {
+          headline: summary.headline,
+          bullets: summary.bullets.slice(0, 4),
+          spokenScript: summary.headline + ' ' + summary.bullets.slice(0, 3).join(' '),
+          recommendedActions: [
+            'Release Week 1 payment run for early-discount eligible suppliers.',
+            'Maintain invoice verification hold on disputed balances.',
+            'Review till liquidity runway against the 14-day safety floor.'
+          ]
+        };
+        _chatState.payablesCache.set(scopeKey, mockBrief);
+        resolve(mockBrief);
+        return;
+      }
+
+      const sysPrompt = [
+        'You are the Senior Treasury & Accounts Payable Executive for a multi-industry commercial group.',
+        `Produce a rigorous, grounded disbursement schedule briefing in ${langName}.`,
+        'Never use em-dashes, en-dashes, unicode arrows, or internal script/table codes.',
+        `Scope: ${summary.companyLabel} (${summary.industry}) | As of: ${summary.asOfDate}`,
+        `Gross Open AP: ${summary.summary.grossOpenApUsd} USD | Immediate 7-Day Run: ${summary.horizon.tranche1_7dUsd} USD`,
+        `Overdue 60+ Days: ${summary.summary.overdue60PlusUsd} USD | Early Discount Savings: ${summary.horizon.earlyDiscountSavingsUsd} USD`,
+        `Till Liquidity Runway: ${summary.summary.runwayDays} days | Minimum Floor: ${summary.levers.liquidityRunwayFloorDays} days`,
+        `Top Creditors (${(summary.counterparties || []).length}): ${(summary.counterparties || []).slice(0, 5).map(c => `${c.name}: Gross ${c.grossApUsd}$, Sched ${c.tranche1_7dUsd}$, Held ${c.held}`).join('; ')}`,
+        'Return ONLY valid JSON: {"headline": "1 concise sentence summarizing open payables, immediate run and liquidity runway", "bullets": ["Exact Week 1 disbursement figure and creditor count", "60+ days overdue risk assessment", "Early-discount savings captured", "Cash runway versus floor buffer"], "spokenScript": "2 to 3 natural spoken sentences without symbols walking the treasurer through this disbursement plan", "recommendedActions": ["Immediate payment recommendation", "Cash runway protection recommendation", "Dispute hold recommendation"]}'
+      ].filter(Boolean).join('\n');
+
+      const usrPrompt = `Provide the treasury payables & cash-outflow executive briefing for ${summary.companyLabel} in ${langName}.`;
+      const base = String((typeof window !== 'undefined' && window.ISABI_LOCAL_API) || '.').replace(/\/$/, '');
+      const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+
+      ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${base}/api/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gemini-3.5-flash-lite',
+          systemPrompt: sysPrompt,
+          userPrompt: usrPrompt,
+          geminiContents
+        })
+      })
+        .then(r => (r && r.ok ? r.json() : null))
+        .then(data => {
+          let parsed = null;
+          const rawReply = (data && (data.text || (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text))) || '';
+          if (rawReply) {
+            try {
+              const cleanJson = rawReply.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
+              parsed = JSON.parse(cleanJson);
+            } catch (_) {
+              const m = rawReply.match(/\{[\s\S]*\}/);
+              if (m) {
+                try { parsed = JSON.parse(m[0]); } catch (_2) {}
+              }
+            }
+          }
+          const cleanBrief = {
+            headline: (parsed && parsed.headline) ? sanitizePayablesOptimizerText(parsed.headline) : summary.headline,
+            bullets: (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length)
+              ? parsed.bullets.map(b => sanitizePayablesOptimizerText(b)).slice(0, 4)
+              : summary.bullets.slice(0, 4),
+            spokenScript: (parsed && parsed.spokenScript)
+              ? sanitizePayablesOptimizerText(parsed.spokenScript)
+              : summary.headline,
+            recommendedActions: (parsed && Array.isArray(parsed.recommendedActions) && parsed.recommendedActions.length)
+              ? parsed.recommendedActions.map(a => sanitizePayablesOptimizerText(a))
+              : []
+          };
+          _chatState.payablesCache.set(scopeKey, cleanBrief);
+          resolve(cleanBrief);
+        })
+        .catch(() => {
+          resolve(null);
+        });
+    });
+
+    _chatState.payablesInflight.set(scopeKey, p);
+    p.finally(() => { _chatState.payablesInflight.delete(scopeKey); });
+    return p;
+  }
+
+  function formatPayablesLeverBadgeText(key, val) {
+    const n = Number(val) || 0;
+    if (key === 'holdReleaseDisputePct') {
+      return (n > 0 ? `+${n}%` : `${n}%`);
+    }
+    if (key === 'earlyDiscountCapturePct') {
+      return `${n.toFixed(1)}%`;
+    }
+    if (key === 'liquidityRunwayFloorDays') {
+      return `${Math.round(n)}d`;
+    }
+    return String(val);
+  }
+
+  function renderPayablesSavedHoldsHtml(sum) {
+    const presets = Array.isArray(sum.presets) ? sum.presets : [];
+    const saved = Array.isArray(sum.savedHolds) ? sum.savedHolds : [];
+    const fmtUsd = v => (_ctx && typeof _ctx.fmtUSD === 'function')
+      ? _ctx.fmtUSD(Number(v || 0), 0)
+      : ('$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const presetHtml = presets.map(p => {
+      const lbl = sum.lang === 'ar' ? p.labelAr : (sum.lang === 'fr' ? p.labelFr : p.labelEn);
+      const isAct = _chatState.payablesActivePreset === p.id;
+      return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-po-preset="${esc(p.id)}">${esc(lbl)}</button>`;
+    }).join('');
+    const savedHtml = saved.map(pr => `
+      <span class="wi-saved-pill" data-no-i18n="1">
+        <button type="button" class="wi-saved-load-btn" data-po-saved-cp="${esc(pr.counterparty)}">
+          ${esc(pr.counterparty)}: ${esc(fmtUsd(pr.approvedAmountUsd))} (${esc(pr.scheduledDate)})${pr.held ? ' [Hold]' : ''}
+        </button>
+        <button type="button" class="wi-saved-del-btn" data-po-del-hold="${esc(pr.id)}" aria-label="Delete saved payment hold">&times;</button>
+      </span>
+    `).join('');
+    return presetHtml + savedHtml;
+  }
+
+  function renderPayablesAgingCardHtml(sum) {
+    const ag = sum.agingBuckets || {};
+    const tot = Math.max(1, sum.summary.grossOpenApUsd || 1);
+    const pCurrent = Math.min(100, Math.max(0, ((ag.currentUsd || 0) / tot) * 100));
+    const p11 = Math.min(100, Math.max(0, ((ag.bucket11_30Usd || 0) / tot) * 100));
+    const p31 = Math.min(100, Math.max(0, ((ag.bucket31_60Usd || 0) / tot) * 100));
+    const p60 = Math.min(100, Math.max(0, ((ag.bucket60PlusUsd || 0) / tot) * 100));
+
+    const hz = sum.horizon || {};
+    const pH1 = Math.min(100, Math.max(0, ((hz.tranche1_7dUsd || 0) / tot) * 100));
+    const pH2 = Math.min(100, Math.max(0, ((hz.tranche8_14dUsd || 0) / tot) * 100));
+    const pH3 = Math.min(100, Math.max(0, ((hz.tranche15_30dUsd || 0) / tot) * 100));
+    const pH4 = Math.min(100, Math.max(0, ((hz.beyond30dUsd || 0) / tot) * 100));
+
+    return `
+      <div class="wi-col-head">
+        <span class="pg-sec-title">Accounts Payable Aging (Class 4)</span>
+        <span class="badge ${sum.tieCheck.agingBalanced ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${sum.tieCheck.agingBalanced ? '$0.00 Variance' : `$${sum.tieCheck.agingVarianceUsd.toFixed(2)} Var`}
+        </span>
+      </div>
+      <div class="cf-aging-bars">
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Current (0-10d)</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill emerald" style="width:${pCurrent}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(ag.currentUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">11-30 Days</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill info" style="width:${p11}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(ag.bucket11_30Usd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">31-60 Days</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill brass" style="width:${p31}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(ag.bucket31_60Usd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">60+ Days Overdue</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill crit" style="width:${p60}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(ag.bucket60PlusUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+      </div>
+
+      <div class="wi-col-head" style="margin-top:14px">
+        <span class="pg-sec-title">30-Day Cash-Outflow Maturity Tranches</span>
+        <span class="badge ${sum.tieCheck.horizonBalanced ? 'badge-emerald' : 'badge-crit'} num" data-no-i18n="1">
+          ${sum.tieCheck.horizonBalanced ? '$0.00 Variance' : `$${sum.tieCheck.horizonVarianceUsd.toFixed(2)} Var`}
+        </span>
+      </div>
+      <div class="cf-aging-bars">
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Immediate Week 1 Run</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill info" style="width:${pH1}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(hz.tranche1_7dUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Week 2 Disbursements</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill emerald" style="width:${pH2}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(hz.tranche8_14dUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Weeks 3-4 Disbursements</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill brass" style="width:${pH3}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(hz.tranche15_30dUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+        <div class="cf-aging-bar-row">
+          <span class="cf-bar-lbl">Deferred / Holds</span>
+          <div class="cf-bar-track"><div class="cf-bar-fill steel" style="width:${pH4}%"></div></div>
+          <span class="cf-bar-val num" data-no-i18n="1">$${Math.round(hz.beyond30dUsd || 0).toLocaleString('en-US')}</span>
+        </div>
+      </div>
+
+      <div class="cf-aging-foot">
+        <span><span>Till Liquidity</span>: <b class="num" data-no-i18n="1">${sum.summary.closingCombinedTillUsd !== null ? `$${Math.round(sum.summary.closingCombinedTillUsd).toLocaleString('en-US')}` : 'Redacted'}</b></span>
+        <span><span>Runway</span>: <b class="num ${sum.summary.isRunwayCritical ? 'crit' : 'good'}" data-no-i18n="1">${sum.summary.runwayDays} Days</b></span>
+        <span><span>Early Discount Savings</span>: <b class="good num" data-no-i18n="1">+$${Math.round(hz.earlyDiscountSavingsUsd || 0).toLocaleString('en-US')}</b></span>
+      </div>
+    `;
+  }
+
+  function renderPayablesTelemetryInnerHtml(sum) {
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const cl = sum.disbursementList || [];
+    const selCp = sum.selectedCounterparty;
+
+    const rowsHtml = cl.map(c => {
+      const isSel = selCp && selCp.name === c.name;
+      const rowCls = isSel ? 'is-selected-cp' : '';
+      return `
+        <tr class="cf-cp-row ${rowCls}" data-po-select-cp="${esc(c.name)}" role="button" tabindex="0">
+          <td class="num" data-no-i18n="1">${c.rank}</td>
+          <td>
+            <div class="cf-cp-name-cell">
+              <span class="cf-cp-title" data-no-i18n="1">${esc(c.name)}</span>
+              <span class="cf-cp-sub mu" data-no-i18n="1">${esc(c.company)} · ${esc(c.segment)}</span>
+            </div>
+          </td>
+          <td class="r num" data-no-i18n="1"><b>$${Math.round(c.grossApUsd).toLocaleString('en-US')}</b></td>
+          <td class="r num ${c.bucket60PlusUsd > 0 ? 'crit' : 'mu'}" data-no-i18n="1">${c.bucket60PlusUsd > 0 ? `$${Math.round(c.bucket60PlusUsd).toLocaleString('en-US')}` : '$0'}</td>
+          <td class="r num good" data-no-i18n="1">${c.earlyDiscountSavingsUsd > 0 ? `+$${Math.round(c.earlyDiscountSavingsUsd).toLocaleString('en-US')}` : '$0'}</td>
+          <td class="r num brass" data-no-i18n="1"><b>$${Math.round(c.tranche1_7dUsd).toLocaleString('en-US')}</b></td>
+          <td class="r num" data-no-i18n="1">${esc(c.scheduledDate)}</td>
+          <td class="c">
+            <span class="badge ${c.held ? 'badge-crit' : 'badge-emerald'}" data-no-i18n="1">${c.held ? 'Held' : 'Approved'}</span>
+          </td>
+          <td class="c">
+            <button type="button" class="btn btn-ghost-bar cf-plan-btn" data-po-select-cp="${esc(c.name)}" aria-label="Select creditor" data-no-i18n="1">Remit</button>
+          </td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="9" class="mu c" data-no-i18n="1">No open payables records found in active scope.</td></tr>';
+
+    const aiBriefText = sum.aiBrief
+      ? (sum.aiBrief.headline + '\n\n' + (sum.aiBrief.bullets || []).map(b => `• ${b}`).join('\n'))
+      : (sum.headline + '\n\n' + sum.bullets.map(b => `• ${b}`).join('\n'));
+
+    const activeDraftText = sum.drafts[sum.lang] || sum.drafts.en || '';
+
+    return `
+      <div class="wi-kpi-grid cf-kpi-grid">
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Gross Open AP</span>
+          <span class="wi-kpi-val num" data-no-i18n="1">$${Math.round(sum.summary.grossOpenApUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${sum.summary.activeCounterpartyCount} Creditors · ${sum.summary.weightedAvgTermsDays}d Terms</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Immediate 7-Day Run</span>
+          <span class="wi-kpi-val num brass" data-no-i18n="1">$${Math.round(sum.horizon.tranche1_7dUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">Scheduled Week 1 Outflow</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Early Discount Savings</span>
+          <span class="wi-kpi-val num good" data-no-i18n="1">+$${Math.round(sum.horizon.earlyDiscountSavingsUsd || 0).toLocaleString('en-US')}</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${sum.levers.earlyDiscountCapturePct}% Targeted Capture</span>
+        </div>
+        <div class="wi-kpi-card">
+          <span class="wi-kpi-lbl">Till Liquidity Runway</span>
+          <span class="wi-kpi-val num ${sum.summary.isRunwayCritical ? 'crit' : 'good'}" data-no-i18n="1">${sum.summary.runwayDays} Days</span>
+          <span class="wi-kpi-sub mu" data-no-i18n="1">${sum.summary.isRunwayCritical ? 'Below 14d Floor' : 'Adequate Buffer'}</span>
+        </div>
+      </div>
+
+      <div class="wi-alert-strip">
+        <div class="wi-alert-info">
+          <span class="wi-alert-pill ${sum.hasActiveAlertRule ? 'badge-emerald' : 'badge-brass'}">
+            ${sum.hasActiveAlertRule ? 'Payables Alert Active' : 'No Active Alert'}
+          </span>
+          <span class="wi-alert-txt mu" data-no-i18n="1">
+            ${sum.hasActiveAlertRule
+              ? `Guardrail rule active for ${esc(sum.companyLabel)} 60+d payables and liquidity buffer.`
+              : `Create automated guardrail alert for ${esc(sum.companyLabel)} to monitor 60+d payables.`}
+          </span>
+        </div>
+        <div class="wi-alert-actions">
+          <button type="button" class="ceo-pv-btn is-primary" id="poApplyAlertRuleBtn" ${sum.canEditAlerts ? '' : 'disabled'}>
+            <span>${sum.hasActiveAlertRule ? 'Update Payables Alert' : 'Create Payables Alert'}</span>
+          </button>
+          <button type="button" class="ceo-pv-btn" id="poOpenHubBtn" data-po-nav="${esc(sum.targetHubView)}">
+            <span>Open Hub</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-card cf-call-list-panel">
+        <div class="panel-head" style="gap:8px;flex-wrap:wrap">
+          <div class="panel-title"><span>Priority Disbursement Run (7z-freq Ranked)</span></div>
+          <div class="panel-meta mu" data-no-i18n="1">${cl.length} Creditors · Click row to generate WhatsApp Remittance</div>
+        </div>
+        <div class="table-wrap cf-table-wrap">
+          <table class="ledger-table cf-call-table" id="poDisbursementTable">
+            <thead>
+              <tr>
+                <th style="width:36px">#</th>
+                <th>Creditor</th>
+                <th class="r">Open AP</th>
+                <th class="r">Overdue 60+</th>
+                <th class="r">Discount</th>
+                <th class="r">Scheduled ($)</th>
+                <th class="r">Due Date</th>
+                <th class="c">Hold</th>
+                <th class="c">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="cf-bottom-split">
+        <div class="panel-card cf-ai-brief-card" id="poAiBriefCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>Treasury &amp; Disbursement Executive Brief</span></div>
+            <button type="button" class="btn btn-ghost-bar" id="poRefreshAiBtn" ${sum.aiLoading ? 'disabled' : ''}>
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Refresh Payables Brief</span>
+            </button>
+          </div>
+          <div class="cf-ai-brief-body" id="poAiBriefBody">
+            <pre class="cf-ai-brief-text" data-no-i18n="1">${esc(aiBriefText)}</pre>
+          </div>
+        </div>
+
+        <div class="panel-card cf-wa-card" id="poWaCard">
+          <div class="panel-head">
+            <div class="panel-title"><span>WhatsApp Remittance Draft</span></div>
+            <div class="cf-wa-lang-pills">
+              <button type="button" class="cf-wa-lang-btn ${sum.lang === 'en' ? 'active' : ''}" data-po-wa-lang="en">EN</button>
+              <button type="button" class="cf-wa-lang-btn ${sum.lang === 'ar' ? 'active' : ''}" data-po-wa-lang="ar">عربي</button>
+              <button type="button" class="cf-wa-lang-btn ${sum.lang === 'fr' ? 'active' : ''}" data-po-wa-lang="fr">FR</button>
+            </div>
+          </div>
+          <textarea id="poWhatsappDraftInput" class="cf-wa-textarea" rows="4" data-no-i18n="1" placeholder="WhatsApp Remittance draft...">${esc(activeDraftText)}</textarea>
+          <div class="cf-wa-foot">
+            <button type="button" class="ceo-pv-btn" id="poCopyDraftBtn"><span>Copy Remittance</span></button>
+            <button type="button" class="ceo-pv-btn is-primary insp-wa-btn" id="poSendWaBtn"><span>Send Remittance via WhatsApp</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let _poEscKeyWired = false;
+  function ensurePayablesGlobalEvents() {
+    if (_poEscKeyWired || typeof document === 'undefined') return;
+    _poEscKeyWired = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.payablesOptimizerOpen) {
+        closePayablesOptimizerStudio();
+      }
+    });
+  }
+
+  function openPayablesOptimizerStudio(anchorEl, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensurePayablesGlobalEvents();
+
+    // Two-way mutual exclusion with #collectionForecastModal, #whatIfSimulatorModal, #pageGuidePopover, and all 6 executive popovers
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-po-source'))
+      || _chatState.payablesOptimizerSource
+      || 'overview';
+    _chatState.payablesOptimizerSource = source;
+    if (anchorEl) _chatState.payablesOptimizerAnchor = anchorEl;
+
+    const sum = buildPayablesOptimizerSummary(undefined, options);
+    _chatState.payablesOptimizerOpen = true;
+    _chatState.payablesOptimizerScope = sum.scopeKey;
+    if (sum.selectedCounterparty && !_chatState.payablesSelectedCp) {
+      _chatState.payablesSelectedCp = sum.selectedCounterparty.name;
+    }
+
+    document.querySelectorAll('[data-payables-optimizer-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    let modal = document.getElementById('payablesOptimizerModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'payablesOptimizerModal';
+      modal.className = 'wi-modal-backdrop cf-modal-backdrop po-modal-backdrop no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'poModalTitle');
+      document.body.appendChild(modal);
+    }
+    modal.hidden = false;
+    modal.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-source', source);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const leverRowsHtml = (sum.leverSpecs || []).map(spec => {
+      const k = spec.key;
+      const curVal = sum.levers[k] != null ? sum.levers[k] : 0;
+      const lbl = sum.lang === 'ar' ? spec.labelAr : (sum.lang === 'fr' ? spec.labelFr : spec.labelEn);
+      const badgeTxt = formatPayablesLeverBadgeText(k, curVal);
+      return `
+        <div class="wi-lever-row" data-po-lever-row="${esc(k)}">
+          <div class="wi-lever-top">
+            <label class="wi-lever-lbl" for="poSlider_${esc(k)}" data-no-i18n="1">${esc(lbl)}</label>
+            <span class="wi-lever-badge num" data-po-badge="${esc(k)}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="wi-lever-controls" data-no-i18n="1">
+            <button type="button" class="wi-step-btn" data-po-step="${esc(k)}" data-po-dir="-1" aria-label="Decrease ${esc(spec.labelEn)}">&minus;</button>
+            <input type="range" class="wi-slider" id="poSlider_${esc(k)}" data-po-slider="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}">
+            <button type="button" class="wi-step-btn" data-po-step="${esc(k)}" data-po-dir="1" aria-label="Increase ${esc(spec.labelEn)}">+</button>
+            <input type="number" class="wi-num-input num" id="poNum_${esc(k)}" data-po-num="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(spec.labelEn)} numeric value">
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const cpOptionsHtml = (sum.counterparties || []).map(c => {
+      const isSel = sum.selectedCounterparty && c.name === sum.selectedCounterparty.name;
+      return `<option value="${esc(c.name)}" ${isSel ? 'selected' : ''} data-no-i18n="1">${esc(c.name)} ($${Math.round(c.grossApUsd || 0).toLocaleString('en-US')})</option>`;
+    }).join('');
+
+    const defApprAmt = sum.selectedCounterparty
+      ? (sum.selectedCounterparty.approvedAmountUsd || sum.selectedCounterparty.tranche1_7dUsd || 0)
+      : 0;
+    const defSchedDate = sum.selectedCounterparty
+      ? (sum.selectedCounterparty.scheduledDate || sum.asOfDate || '2026-11-15')
+      : (sum.asOfDate || '2026-11-15');
+    const defHeld = Boolean(sum.selectedCounterparty && sum.selectedCounterparty.held);
+
+    modal.innerHTML = `
+      <div class="wi-modal-card cf-modal-card po-modal-card" role="document">
+        <div class="ceo-pv-head wi-modal-head">
+          <div class="ceo-pv-title-wrap">
+            <div class="pg-eyebrow-row">
+              <span class="ceo-pv-eyebrow">SUPPLIER PAYABLES, 3-LEG OUTFLOW &amp; EARLY-SETTLEMENT STUDIO</span>
+              <span class="pg-ind-badge" id="poEntityBadge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.periodLabel)}</span>
+            </div>
+            <h3 class="ceo-pv-title" id="poModalTitle">Payables &amp; Cash-Outflow Optimizer Studio</h3>
+          </div>
+          <div class="wi-head-actions">
+            <button type="button" class="ceo-pv-close" id="poCloseModalBtn" data-po-close="1" aria-label="Close Payables Optimizer Studio" data-no-i18n="1">&times;</button>
+          </div>
+        </div>
+
+        <div class="wi-presets-toolbar" id="poPresetsToolbar">
+          <div class="wi-presets-list" id="poPresetsList">
+            ${renderPayablesSavedHoldsHtml(sum)}
+          </div>
+          <div class="wi-preset-save-wrap">
+            <button type="button" class="ceo-pv-btn" id="poResetLeversBtn" data-po-reset="1"><span>Reset Levers</span></button>
+            <form class="wi-save-form cf-promise-form po-hold-form" id="poHoldForm">
+              <select id="poHoldCpSelect" class="wi-save-input cf-cp-select" data-no-i18n="1" aria-label="Select creditor for payment hold">
+                ${cpOptionsHtml || '<option value="Creditor" data-no-i18n="1">Creditor</option>'}
+              </select>
+              <input type="number" id="poApprovedAmountInput" class="wi-save-input cf-amt-input num" min="0" max="1000000000" step="50" value="${defApprAmt}" placeholder="Approved $" aria-label="Approved disbursement amount USD" data-no-i18n="1">
+              <input type="date" id="poScheduledDateInput" class="wi-save-input cf-date-input" value="${esc(defSchedDate)}" aria-label="Scheduled disbursement date">
+              <label class="cf-hold-lbl"><input type="checkbox" id="poHoldCheck" ${defHeld ? 'checked' : ''}><span>Payment Hold</span></label>
+              <button type="submit" class="ceo-pv-btn is-primary" id="poSaveHoldBtn"><span>+ Save Hold</span></button>
+            </form>
+          </div>
+        </div>
+
+        <div class="wi-studio-grid cf-studio-grid">
+          <div class="wi-levers-col cf-levers-col">
+            <div class="wi-col-head">
+              <span class="pg-sec-title">Disbursement &amp; Liquidity Levers</span>
+              <span class="wi-col-sub">Adjust dispute holds, early discount capture &amp; liquidity runway floor</span>
+            </div>
+            <div class="wi-levers-list" id="poLeversList">
+              ${leverRowsHtml}
+            </div>
+            <div class="wi-tornado-card cf-aging-card po-aging-card" id="poAgingCard">
+              ${renderPayablesAgingCardHtml(sum)}
+            </div>
+          </div>
+
+          <div class="wi-telemetry-col cf-telemetry-col po-telemetry-col" id="poTelemetryMount">
+            ${renderPayablesTelemetryInnerHtml(sum)}
+          </div>
+        </div>
+
+        <div class="ceo-pv-foot wi-modal-foot">
+          <button type="button" class="ceo-pv-btn" id="poSpeakBtn" data-po-speak="1">
+            ${(icons && icons.svg('audio')) || AI_SVGS.audio}<span>Listen to Disbursement Brief</span>
+          </button>
+          <div class="wi-foot-right">
+            <button type="button" class="ceo-pv-btn is-primary" id="poOpenCopilotBtn" data-po-open-copilot="1">
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Open in Full Copilot</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+
+    // Wire events inside modal
+    const closeBtn = modal.querySelector('#poCloseModalBtn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePayablesOptimizerStudio();
+      });
+    }
+
+    modal.addEventListener('click', e => {
+      if (e.target === modal) {
+        closePayablesOptimizerStudio();
+      }
+    });
+
+    // Presets buttons & saved hold loading
+    modal.querySelectorAll('[data-po-preset]').forEach(pBtn => {
+      pBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const pid = pBtn.getAttribute('data-po-preset') || 'standard';
+        _chatState.payablesActivePreset = pid;
+        const pSpec = (sum.presets || []).find(x => x.id === pid);
+        if (pSpec && pSpec.levers) {
+          setPayablesLeversForEntity(sum.companyKey, pSpec.levers);
+          openPayablesOptimizerStudio(anchorEl, { source, levers: pSpec.levers });
+        }
+      });
+    });
+
+    modal.querySelectorAll('[data-po-saved-cp]').forEach(sBtn => {
+      sBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const cpName = sBtn.getAttribute('data-po-saved-cp') || '';
+        if (!cpName) return;
+        _chatState.payablesSelectedCp = cpName;
+        const nextSum = buildPayablesOptimizerSummary();
+        const teleMount = modal.querySelector('#poTelemetryMount');
+        if (teleMount) teleMount.innerHTML = renderPayablesTelemetryInnerHtml(nextSum);
+      });
+    });
+
+    // Levers sliders & steppers
+    modal.querySelectorAll('[data-po-slider]').forEach(sl => {
+      sl.addEventListener('input', e => {
+        const k = sl.getAttribute('data-po-slider');
+        const v = Number(sl.value);
+        const cur = getPayablesLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        setPayablesLeversForEntity(sum.companyKey, cur);
+        const numInput = modal.querySelector(`[data-po-num="${k}"]`);
+        if (numInput) numInput.value = v;
+        const badge = modal.querySelector(`[data-po-badge="${k}"]`);
+        if (badge) badge.textContent = formatPayablesLeverBadgeText(k, v);
+        // Live update aging card and telemetry
+        const updatedSum = buildPayablesOptimizerSummary(undefined, { companyKey: sum.companyKey, levers: cur });
+        const agingMount = modal.querySelector('#poAgingCard');
+        if (agingMount) agingMount.innerHTML = renderPayablesAgingCardHtml(updatedSum);
+        const teleMount = modal.querySelector('#poTelemetryMount');
+        if (teleMount) teleMount.innerHTML = renderPayablesTelemetryInnerHtml(updatedSum);
+      });
+    });
+
+    modal.querySelectorAll('[data-po-num]').forEach(ni => {
+      ni.addEventListener('change', e => {
+        const k = ni.getAttribute('data-po-num');
+        const v = Number(ni.value);
+        const cur = getPayablesLeversForEntity(sum.companyKey);
+        cur[k] = v;
+        setPayablesLeversForEntity(sum.companyKey, cur);
+        const sl = modal.querySelector(`[data-po-slider="${k}"]`);
+        if (sl) sl.value = v;
+        const badge = modal.querySelector(`[data-po-badge="${k}"]`);
+        if (badge) badge.textContent = formatPayablesLeverBadgeText(k, v);
+        const updatedSum = buildPayablesOptimizerSummary(undefined, { companyKey: sum.companyKey, levers: cur });
+        const agingMount = modal.querySelector('#poAgingCard');
+        if (agingMount) agingMount.innerHTML = renderPayablesAgingCardHtml(updatedSum);
+        const teleMount = modal.querySelector('#poTelemetryMount');
+        if (teleMount) teleMount.innerHTML = renderPayablesTelemetryInnerHtml(updatedSum);
+      });
+    });
+
+    modal.querySelectorAll('[data-po-step]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        const k = btn.getAttribute('data-po-step');
+        const dir = Number(btn.getAttribute('data-po-dir') || 1);
+        const sl = modal.querySelector(`[data-po-slider="${k}"]`);
+        if (!sl) return;
+        const step = Number(sl.step) || 1;
+        const nextVal = Math.max(Number(sl.min), Math.min(Number(sl.max), Number(sl.value) + (step * dir)));
+        sl.value = nextVal;
+        sl.dispatchEvent(new Event('input'));
+      });
+    });
+
+    // Hold Form submission
+    const holdForm = modal.querySelector('#poHoldForm');
+    if (holdForm) {
+      holdForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const cpSel = modal.querySelector('#poHoldCpSelect');
+        const amtInput = modal.querySelector('#poApprovedAmountInput');
+        const dateInput = modal.querySelector('#poScheduledDateInput');
+        const check = modal.querySelector('#poHoldCheck');
+        const cpName = cpSel ? cpSel.value : '';
+        if (!cpName) return;
+        savePayablesHold({
+          counterparty: cpName,
+          approvedAmountUsd: amtInput ? Number(amtInput.value || 0) : 0,
+          scheduledDate: dateInput ? dateInput.value : '',
+          held: Boolean(check && check.checked)
+        }, sum.companyKey);
+        openPayablesOptimizerStudio(anchorEl, { source });
+      });
+    }
+
+    // Delegation for selecting counterparty / deleting hold
+    modal.addEventListener('click', e => {
+      const delBtn = e.target.closest && e.target.closest('[data-po-del-hold]');
+      if (delBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = delBtn.getAttribute('data-po-del-hold');
+        deletePayablesHold(id);
+        openPayablesOptimizerStudio(anchorEl, { source });
+        return;
+      }
+      const selRow = e.target.closest && e.target.closest('[data-po-select-cp]');
+      if (selRow) {
+        e.preventDefault();
+        const cpName = selRow.getAttribute('data-po-select-cp');
+        if (cpName) {
+          _chatState.payablesSelectedCp = cpName;
+          const freshSum = buildPayablesOptimizerSummary(undefined, { companyKey: sum.companyKey });
+          const teleMount = modal.querySelector('#poTelemetryMount');
+          if (teleMount) teleMount.innerHTML = renderPayablesTelemetryInnerHtml(freshSum);
+          const cpSel = modal.querySelector('#poHoldCpSelect');
+          if (cpSel) cpSel.value = cpName;
+          if (freshSum.selectedCounterparty) {
+            const amtInput = modal.querySelector('#poApprovedAmountInput');
+            if (amtInput) amtInput.value = freshSum.selectedCounterparty.approvedAmountUsd || freshSum.selectedCounterparty.tranche1_7dUsd || 0;
+            const dateInput = modal.querySelector('#poScheduledDateInput');
+            if (dateInput) dateInput.value = freshSum.selectedCounterparty.scheduledDate || freshSum.asOfDate;
+            const check = modal.querySelector('#poHoldCheck');
+            if (check) check.checked = Boolean(freshSum.selectedCounterparty.held);
+          }
+        }
+        return;
+      }
+      const alertBtn = e.target.closest && e.target.closest('#poApplyAlertRuleBtn');
+      if (alertBtn) {
+        e.preventDefault();
+        if (_ctx && typeof _ctx.applyPayablesAlertRule === 'function') {
+          const res = _ctx.applyPayablesAlertRule({ companyKey: sum.companyKey });
+          if (res && res.ok) {
+            if (_ctx.toast) _ctx.toast(sum.lang === 'ar' ? 'تم إنشاء تنبيه المدفوعات بنجاح' : (sum.lang === 'fr' ? 'Alerte dettes enregistrée' : 'Payables guardrail alert created successfully'));
+            openPayablesOptimizerStudio(anchorEl, { source });
+          }
+        }
+        return;
+      }
+      const navBtn = e.target.closest && e.target.closest('[data-po-nav]');
+      if (navBtn) {
+        e.preventDefault();
+        const view = navBtn.getAttribute('data-po-nav');
+        closePayablesOptimizerStudio();
+        if (_ctx && typeof _ctx.renderApp === 'function') {
+          _ctx.STATE.view = view;
+          _ctx.renderApp();
+        }
+        return;
+      }
+      const refreshAiBtn = e.target.closest && e.target.closest('#poRefreshAiBtn');
+      if (refreshAiBtn) {
+        e.preventDefault();
+        refreshAiBtn.setAttribute('disabled', 'true');
+        requestPayablesOptimizerAiBrief(sum, true).then(brief => {
+          refreshAiBtn.removeAttribute('disabled');
+          const txtEl = modal.querySelector('#poAiBriefBody pre');
+          if (txtEl && brief) {
+            txtEl.textContent = brief.headline + '\n\n' + (brief.bullets || []).map(b => `• ${b}`).join('\n');
+          }
+        });
+        return;
+      }
+      const copyDraftBtn = e.target.closest && e.target.closest('#poCopyDraftBtn');
+      if (copyDraftBtn) {
+        e.preventDefault();
+        const ta = modal.querySelector('#poWhatsappDraftInput');
+        const txt = ta ? ta.value : '';
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyDraftBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = sum.lang === 'ar' ? 'تم النسخ!' : (sum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { span.textContent = prev; }, 1400);
+        }
+        return;
+      }
+      const sendWaBtn = e.target.closest && e.target.closest('#poSendWaBtn');
+      if (sendWaBtn) {
+        e.preventDefault();
+        const ta = modal.querySelector('#poWhatsappDraftInput');
+        const txt = ta ? ta.value : '';
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+        return;
+      }
+      const langBtn = e.target.closest && e.target.closest('[data-po-wa-lang]');
+      if (langBtn) {
+        e.preventDefault();
+        const l = langBtn.getAttribute('data-po-wa-lang');
+        modal.querySelectorAll('[data-po-wa-lang]').forEach(b => b.classList.remove('active'));
+        langBtn.classList.add('active');
+        const ta = modal.querySelector('#poWhatsappDraftInput');
+        if (ta && sum.drafts && sum.drafts[l]) {
+          ta.value = sum.drafts[l];
+        }
+        return;
+      }
+      const speakBtn = e.target.closest && e.target.closest('#poSpeakBtn');
+      if (speakBtn) {
+        e.preventDefault();
+        speakPayablesOptimizer(speakBtn, undefined, { source });
+        return;
+      }
+    });
+
+    syncPayablesModalAudioButton();
+    return modal;
+  }
+
+  function syncPayablesModalAudioButton() {
+    const modal = document.getElementById('payablesOptimizerModal');
+    if (!modal) return;
+    const btn = modal.querySelector('#poSpeakBtn');
+    if (!btn) return;
+    const isSpeaking = Boolean(_chatState.activePayablesSpeechScope && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl));
+    btn.classList.toggle('is-speaking', isSpeaking);
+    btn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+    const span = btn.querySelector('span');
+    if (span) {
+      span.textContent = isSpeaking ? 'Stop Disbursement Readback' : 'Listen to Disbursement Brief';
+    }
+  }
+
+  function closePayablesOptimizerStudio() {
+    _chatState.payablesOptimizerOpen = false;
+    _chatState.payablesOptimizerScope = '';
+    _chatState.payablesOptimizerAnchor = null;
+    if (_chatState.activePayablesSpeechScope) {
+      stopActivePlayback();
+    }
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('payablesOptimizerModal');
+    if (modal) {
+      modal.hidden = true;
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
+    }
+    document.querySelectorAll('[data-payables-optimizer-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function togglePayablesOptimizerStudio(anchorEl, opts = {}) {
+    if (_chatState.payablesOptimizerOpen) {
+      closePayablesOptimizerStudio();
+      return null;
+    }
+    return openPayablesOptimizerStudio(anchorEl, opts);
+  }
+
+  function speakPayablesOptimizer(btnEl, langOverride, opts = {}) {
+    const sum = buildPayablesOptimizerSummary(langOverride, opts);
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve({ ok: false, restricted: true });
+    }
+    if (_chatState.activePayablesSpeechScope === sum.scopeKey && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl)) {
+      stopActivePlayback();
+      syncPayablesModalAudioButton();
+      return Promise.resolve({ ok: true, stopped: true });
+    }
+    stopActivePlayback();
+    const safeLang = sum.lang || 'en';
+    const plainScript = sanitizePayablesOptimizerText([sum.headline, ...(sum.activeBullets || sum.bullets || [])].join(' '));
+    _chatState.activePayablesSpeechScope = sum.scopeKey;
+    _chatState.lastSpokenText = plainScript;
+    _chatState.activeSpeakCaption = sum.headline;
+    if (btnEl) _chatState.activeSpeakBtn = btnEl;
+    syncPayablesModalAudioButton();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if (!audioUrl || !_chatState.activePayablesSpeechScope) {
+          _chatState.activePayablesSpeechScope = '';
+          syncPayablesModalAudioButton();
+          return { ok: false, script: plainScript, summary: sum };
+        }
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activePayablesSpeechScope = '';
+                syncPayablesModalAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activePayablesSpeechScope = '';
+                syncPayablesModalAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activePayablesSpeechScope = '';
+        syncPayablesModalAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  function rebindPayablesOptimizerButtons(container) {
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      ['#ceoPayablesOptimizerBtn', '#apPayablesOptimizerBtn', '#indPayablesOptimizerBtn', '#cfPayablesOptimizerBtn', '#pbiPayablesOptimizerBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (!_chatState.payablesOptimizerOpen) return;
+    openPayablesOptimizerStudio(_chatState.payablesOptimizerAnchor, { source: _chatState.payablesOptimizerSource });
+  }
+
+  function stopPayablesOptimizerIfActive() {
+    if (_chatState.payablesOptimizerOpen) {
+      closePayablesOptimizerStudio();
+    }
+  }
+
+
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
+    closePayablesOptimizerStudio();
     closeCollectionForecastStudio();
     closeWhatIfStudio();
     closePageGuidePopover();
@@ -14826,6 +16049,12 @@
     closeDashboardVariancePopover();
     closeStatementVariancePopover();
     closeCeoVariancePopover();
+    _chatState.payablesLeversByEntity.clear();
+    _chatState.payablesCache.clear();
+    _chatState.payablesInflight.clear();
+    _chatState.payablesCustomDraftByScope.clear();
+    _chatState.payablesSelectedCp = '';
+    _chatState.activePayablesSpeechScope = '';
     _chatState.collectionLeversByEntity.clear();
     _chatState.collectionCache.clear();
     _chatState.collectionInflight.clear();
@@ -15531,6 +16760,18 @@
     const drawer = document.getElementById('aiDrawer');
     if (drawer && window.MFG_I18N) {
       window.MFG_I18N.translateDom(drawer);
+    }
+    const payablesModal = document.getElementById('payablesOptimizerModal');
+    if (payablesModal) {
+      payablesModal.dir = clean === 'ar' ? 'rtl' : 'ltr';
+    }
+    const collectionModal = document.getElementById('collectionForecastModal');
+    if (collectionModal) {
+      collectionModal.dir = clean === 'ar' ? 'rtl' : 'ltr';
+    }
+    const whatIfModal = document.getElementById('whatIfSimulatorModal');
+    if (whatIfModal) {
+      whatIfModal.dir = clean === 'ar' ? 'rtl' : 'ltr';
     }
   }
 
@@ -16455,6 +17696,20 @@
     speakCollectionForecast,
     rebindCollectionForecastButtons,
     stopCollectionForecastIfActive,
+    buildPayablesOptimizerSummary,
+    sanitizePayablesOptimizerText,
+    sanitizePayablesLiveInput,
+    formatPayablesOptimizer: formatPayablesPlainText,
+    requestPayablesOptimizerAiBrief,
+    openPayablesOptimizerStudio,
+    closePayablesOptimizerStudio,
+    togglePayablesOptimizerStudio,
+    speakPayablesOptimizer,
+    rebindPayablesOptimizerButtons,
+    stopPayablesOptimizerIfActive,
+    loadSavedPayablesHolds,
+    savePayablesHold,
+    deletePayablesHold,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -16501,6 +17756,10 @@
       collectionForecastScope: _chatState.collectionForecastScope || '',
       collectionSpeechScope: _chatState.activeCollectionSpeechScope || '',
       collectionCacheSize: _chatState.collectionCache ? _chatState.collectionCache.size : 0,
+      payablesOptimizerOpen: Boolean(_chatState.payablesOptimizerOpen),
+      payablesOptimizerScope: _chatState.payablesOptimizerScope || '',
+      payablesSpeechScope: _chatState.activePayablesSpeechScope || '',
+      payablesCacheSize: _chatState.payablesCache ? _chatState.payablesCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
