@@ -96416,7 +96416,7 @@
         out.face_required = false;
         out.face_updated_at = exTs;
         out.face_cleared = true;
-      } else if (inTs && (!exTs || inTs > exTs)) {
+      } else if (inTs && (!exTs || inTs >= exTs)) {
         out.face_samples = [];
         out.face_thumbs = inThumbs.length ? inThumbs : [];
         out.face_enrolled = true;
@@ -98091,14 +98091,17 @@
   function hydrateServerUsersOnce() {
     if (!hasServerApi() || isDemoSandboxSession()) return Promise.resolve(false);
     if (_usersHydrateInFlight) return _usersHydrateInFlight;
+    const earlyP = window.__ISABI_EARLY_USERS_PROMISE;
+    if (earlyP) window.__ISABI_EARLY_USERS_PROMISE = null;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
-    _usersHydrateInFlight = edgeApiFetch('./api/users', { signal: ctrl.signal })
-      .then(r => {
-        clearTimeout(t);
-        return r && r.ok ? r.json() : null;
-      })
+    const fetchFreshUsers = () => edgeApiFetch('./api/users', { signal: ctrl.signal }).then(r => (r && r.ok ? r.json() : null));
+    const dataP = (earlyP && !navigator.webdriver && !window.__MFG_HEADLESS_TEST)
+      ? Promise.resolve(earlyP).then(d => (d && Array.isArray(d.users)) ? d : fetchFreshUsers()).catch(() => fetchFreshUsers())
+      : fetchFreshUsers();
+    _usersHydrateInFlight = dataP
       .then(d => {
+        clearTimeout(t);
         if (d && Array.isArray(d.users)) return applyServerUsersPayload(d.users, d);
         return false;
       })
@@ -98689,11 +98692,14 @@
     const now = Date.now();
     const userKey = norm(matchedEmail || '');
     if (userKey && FACE_STATE.livenessUser !== userKey) {
+      const wasAnonPrewarm = FACE_STATE.livenessUser === '__edge_face__';
       FACE_STATE.livenessUser = userKey;
-      FACE_STATE.livenessHistory = [];
-      FACE_STATE.eyeClosedSeen = false;
-      FACE_STATE.lastBlinkAt = 0;
-      FACE_STATE.lastTurnAt = 0;
+      if (!wasAnonPrewarm) {
+        FACE_STATE.livenessHistory = [];
+        FACE_STATE.eyeClosedSeen = false;
+        FACE_STATE.lastBlinkAt = 0;
+        FACE_STATE.lastTurnAt = 0;
+      }
     }
 
     const ear = (det && typeof det.ear === 'number')
@@ -98889,6 +98895,7 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       FACE_STATE.edgeProbeStreak = 0;
+      FACE_STATE.detectorStreak = 0;
       setAuthStreak(0, defaultNeeded);
       setAuthHint('', '');
       return { status: 'no-enrolled' };
@@ -98899,12 +98906,20 @@
       ensureFaceModelsLoaded().catch(() => {});
       const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
       livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+      const isLiveVideoSingleFace = Boolean(opts && opts.videoEl && !det.multiple);
+      if (isLiveVideoSingleFace) {
+        FACE_STATE.detectorStreak = (FACE_STATE.detectorStreak || 0) + 1;
+        if (!FACE_STATE.pendingPinUser) {
+          const liveNeeded = FACE_STATE.pending2faUser ? defaultNeeded : 2;
+          setAuthStreak(1, liveNeeded);
+        }
+      }
       if (!FACE_STATE.pendingPinUser) {
         const loadingElapsed = Date.now() - FACE_STATE.modelLoadingStartedAt;
         setAuthHint(
           FACE_STATE.pending2faUser
             ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-            : (loadingElapsed > 1200 ? 'Finalizing Face ID model…' : 'Look at camera for automatic Face ID'),
+            : (isLiveVideoSingleFace ? 'Verifying Face ID…' : (loadingElapsed > 1200 ? 'Finalizing Face ID model…' : 'Look at camera for automatic Face ID')),
           'ok'
         );
       }
@@ -98916,10 +98931,14 @@
       if (!FACE_STATE.edgeProbeStreak || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.edgeProbeStreak = 0;
       }
-      if ((!FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak) || FACE_STATE.missedFrames >= 4) {
+      if (!FACE_STATE.detectorStreak || FACE_STATE.missedFrames >= 4) {
+        FACE_STATE.detectorStreak = 0;
+      }
+      if ((!FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak && !FACE_STATE.detectorStreak) || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
         FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.detectorStreak = 0;
         if (!FACE_STATE.pendingPinUser) {
           setAuthStreak(0, defaultNeeded);
           setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at camera for automatic Face ID' : ''), '');
@@ -98932,10 +98951,13 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       FACE_STATE.edgeProbeStreak = 0;
+      FACE_STATE.detectorStreak = 0;
       setAuthStreak(0, defaultNeeded);
       setAuthHint('One person in frame at a time', 'warn');
       return { status: 'multiple' };
     }
+    const hadDetectorLock = Boolean(opts && opts.videoEl && (FACE_STATE.detectorStreak || 0) >= 1);
+    FACE_STATE.detectorStreak = 0;
 
     const descArr = (det.descriptor && det.descriptor.length === 128)
       ? Array.from(det.descriptor, v => Number(Number(v).toFixed(5)))
@@ -98989,6 +99011,9 @@
         const edgeNeeded = (opts && opts.videoEl && !FACE_STATE.pending2faUser) ? 2 : defaultNeeded;
         const probeTargetEmail = FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : '';
         const liveProbe = livenessStep(det, probeTargetEmail || '__edge_face__', opts);
+        if (hadDetectorLock && !FACE_STATE.edgeProbeStreak) {
+          FACE_STATE.edgeProbeStreak = 1;
+        }
         FACE_STATE.edgeProbeStreak = (FACE_STATE.edgeProbeStreak || 0) + 1;
 
         if (FACE_STATE.edgeProbeStreak < edgeNeeded) {
@@ -99136,7 +99161,7 @@
       FACE_STATE.streakCount += 1;
     } else {
       FACE_STATE.streakUser = dec.best;
-      FACE_STATE.streakCount = 1;
+      FACE_STATE.streakCount = (hadDetectorLock && needed === 2) ? 2 : 1;
     }
     FACE_STATE.bestDist = m.bestDist;
     FACE_STATE.secondDist = m.secondDist;
@@ -99226,11 +99251,11 @@
           return;
         }
         if (overlayEl && window.Face.drawOverlay) {
-          const color = det && !det.multiple ? ((FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0) ? '#16A34A' : '#B8883B') : '#DC2626';
+          const color = det && !det.multiple ? ((FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0 || FACE_STATE.detectorStreak > 0) ? '#16A34A' : '#B8883B') : '#DC2626';
           window.Face.drawOverlay(overlayEl, videoEl, det, color, FACE_STATE.streakUser ? FACE_STATE.streakUser.name : '');
         }
         await handleAuthDescriptor(det, '', { liveCamera: true, videoEl });
-        if (!STATE.authed && FACE_STATE.camActive && overlayEl && window.Face && window.Face.drawOverlay && det && !det.multiple && (FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0)) {
+        if (!STATE.authed && FACE_STATE.camActive && overlayEl && window.Face && window.Face.drawOverlay && det && !det.multiple && (FACE_STATE.streakCount > 0 || FACE_STATE.edgeProbeStreak > 0 || FACE_STATE.detectorStreak > 0)) {
           window.Face.drawOverlay(overlayEl, videoEl, det, '#16A34A', FACE_STATE.streakUser ? FACE_STATE.streakUser.name : '');
         }
       } catch (_) {
@@ -102909,6 +102934,7 @@
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
     FACE_STATE.edgeProbeStreak = 0;
+    FACE_STATE.detectorStreak = 0;
     FACE_STATE.edgeProbeCooldownUntil = 0;
     FACE_STATE.edgeProbeBusy = false;
     FACE_STATE.disambiguatePin = '';
@@ -102960,6 +102986,7 @@
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
     FACE_STATE.edgeProbeStreak = 0;
+    FACE_STATE.detectorStreak = 0;
     FACE_STATE.edgeProbeCooldownUntil = 0;
     FACE_STATE.edgeProbeBusy = false;
     FACE_STATE.seatDrawerOpen = false;
@@ -103287,6 +103314,11 @@
             updateAuthFaceUi();
             setAuthHint(`Face verified for ${user.full_name}. Enter PIN to finish sign-in.`, 'ok');
             return '2fa_pin_pending';
+          }
+          if (isPinlessBypass && user && Array.isArray(user.face_samples) && user.face_samples.length) {
+            user.face_samples = [];
+            user.face_redacted = true;
+            FACE_STATE.cooldownUntil = 0;
           }
           authError((jErr && jErr.error) || ('Verification failed for ' + user.full_name + '.'));
           return false;
@@ -122291,6 +122323,7 @@
         pendingPin: FACE_STATE.pendingPinUser ? FACE_STATE.pendingPinUser.email : null,
         streakCount: FACE_STATE.streakCount,
         edgeProbeStreak: FACE_STATE.edgeProbeStreak || 0,
+        detectorStreak: FACE_STATE.detectorStreak || 0,
         enrolCaptures: FACE_STATE.enrolCaptures.length,
         enrolledSeats: STATE.users.filter(userHasFaceId).map(u => u.email)
       }),
@@ -122381,7 +122414,7 @@
             : null),
           landmarks: liveOpts.landmarks || null,
           multiple: false
-        }, '', { liveCamera: true, requireLiveness: true }),
+        }, '', { liveCamera: true, requireLiveness: true, videoEl: liveOpts.videoEl || undefined }),
       setPending2faUser: email => {
         FACE_STATE.pending2faUser = email ? (STATE.users.find(x => norm(x.email) === norm(email)) || null) : null;
         return FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : null;
@@ -122414,6 +122447,7 @@
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
         FACE_STATE.edgeProbeStreak = 0;
+        FACE_STATE.detectorStreak = 0;
         FACE_STATE.edgeProbeCooldownUntil = 0;
         FACE_STATE.edgeProbeBusy = false;
         FACE_STATE.pending2faUser = null;
@@ -123744,7 +123778,7 @@
     if (SEED._recordsReady && window.MFG_SEED) return;
     const kickHydration = () => {
       const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
-      if (isAutoTest || STATE.authed || FACE_STATE.authCamStoppedByUser || !window.Face || window.Face.ready) {
+      if (isAutoTest || STATE.authed || FACE_STATE.authCamStoppedByUser) {
         setTimeout(hydrateSeedData, 0);
         return;
       }
@@ -123755,8 +123789,15 @@
         setTimeout(hydrateSeedData, 0);
       };
       window.addEventListener('mfg:auth-gate-closed', go, { once: true });
-      window.addEventListener('mfg:face-models-ready', go, { once: true });
-      setTimeout(go, 6000);
+      const idleTry = () => {
+        if (started) return;
+        if (STATE.authed || FACE_STATE.authCamStoppedByUser || (!FACE_STATE.busy && !FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak && !FACE_STATE.detectorStreak)) {
+          go();
+        } else {
+          setTimeout(go, 2500);
+        }
+      };
+      setTimeout(idleTry, 4500);
     };
     if (document.readyState === 'complete') {
       kickHydration();

@@ -23191,17 +23191,6 @@
     ensureDomObserver();
     syncLangSwitchersDom();
     if (_activeLang !== 'en') translateDom(document.body);
-    if (!window.__MFG_I18N_FRESH_FETCHED && typeof location !== 'undefined' && location.protocol === 'https:' && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
-      window.__MFG_I18N_FRESH_FETCHED = true;
-      setTimeout(() => {
-        try {
-          const s = document.createElement('script');
-          s.src = './js/i18n.js?cb=' + Math.floor(Date.now() / 60000);
-          s.async = true;
-          document.head.appendChild(s);
-        } catch (_) {}
-      }, 150);
-    }
   }
 
   if (typeof document !== 'undefined') {

@@ -160,11 +160,17 @@ const Face = (() => {
           const det = await detectOne(vNow, false);
           if (!earlyCancelled && !earlyConsumed && vNow.srcObject === s) {
             const ov = document.getElementById("authFaceOverlay");
-            if (ov) drawOverlay(ov, vNow, det, "#B8883B", "");
+            const singleFace = Boolean(det && !det.multiple);
+            if (ov) drawOverlay(ov, vNow, det, singleFace ? "#16A34A" : "#B8883B", "");
             const hint = document.getElementById("authFaceHint");
-            if (hint && /Loading Face ID|Starting|Preparing/i.test(hint.textContent || "")) {
-              hint.textContent = "Look at camera for automatic Face ID";
-              hint.className = "auth-face-hint ok";
+            if (hint) {
+              if (singleFace && /Loading Face ID|Starting|Preparing|Look at camera/i.test(hint.textContent || "")) {
+                hint.textContent = "Verifying Face ID\u2026";
+                hint.className = "auth-face-hint ok";
+              } else if (/Loading Face ID|Starting|Preparing/i.test(hint.textContent || "")) {
+                hint.textContent = "Look at camera for automatic Face ID";
+                hint.className = "auth-face-hint ok";
+              }
             }
           }
         } catch (_) {
@@ -462,6 +468,14 @@ const Face = (() => {
       await ensureFaceApiScript(true);
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       const base = "./vendor/models";
+      try {
+        if (faceapi.tf && typeof faceapi.tf.env === "function") {
+          // Disable 2x2 vec4 packed im2col GLSL shaders on WebGL: prevents Windows D3D11/ANGLE fxc.exe
+          // from blocking the main thread for ~10.2s during gl.linkProgram while keeping ~45ms inference
+          // and bit-identical 128-d descriptors.
+          faceapi.tf.env().set("WEBGL_PACK", false);
+        }
+      } catch (_) {}
       let webglOk = false;
       try {
         webglOk = Boolean(await faceapi.tf.setBackend("webgl"));
@@ -477,73 +491,55 @@ const Face = (() => {
       // 2-Stage Progressive Loading:
       // Stage 1 (<250ms): TinyFaceDetector (193 KB) + FaceLandmark68TinyNet (77 KB) -> immediate live reticle & liveness tracking
       // Stage 2: FaceRecognitionNet (6.44 MB) -> 128-d descriptor verification with self-healing cache validation
-      const tinyP = loadNetWithSelfHealing(
-        () => faceapi.nets.tinyFaceDetector.loadFromUri(base),
-        base,
-        "tiny_face_detector_model.bin",
-        12000
-      );
-      const lmP = loadNetWithSelfHealing(
-        () => faceapi.nets.faceLandmark68TinyNet.loadFromUri(base),
-        base,
-        "face_landmark_68_tiny_model.bin",
-        12000
-      ).then(() => {
-        landmarksTiny = true;
-      }).catch(async e => {
-        console.warn("tiny landmark net unavailable, using full 68 net", e);
-        await loadNetWithSelfHealing(
-          () => faceapi.nets.faceLandmark68Net.loadFromUri(base),
+      if (!detectorReady) {
+        const tinyP = loadNetWithSelfHealing(
+          () => faceapi.nets.tinyFaceDetector.loadFromUri(base),
           base,
-          "face_landmark_68_model.bin",
+          "tiny_face_detector_model.bin",
           12000
         );
-        landmarksTiny = false;
-      });
+        const lmP = loadNetWithSelfHealing(
+          () => faceapi.nets.faceLandmark68TinyNet.loadFromUri(base),
+          base,
+          "face_landmark_68_tiny_model.bin",
+          12000
+        ).then(() => {
+          landmarksTiny = true;
+        }).catch(async e => {
+          console.warn("tiny landmark net unavailable, using full 68 net", e);
+          await loadNetWithSelfHealing(
+            () => faceapi.nets.faceLandmark68Net.loadFromUri(base),
+            base,
+            "face_landmark_68_model.bin",
+            12000
+          );
+          landmarksTiny = false;
+        });
+
+        await Promise.all([tinyP, lmP]);
+
+        detectorReady = true;
+        if (resolveDetectorStage) resolveDetectorStage(true);
+        if (typeof document !== "undefined") {
+          const vp = document.getElementById("authCamViewport");
+          const hint = document.getElementById("authFaceHint");
+          if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
+            hint.textContent = "Look at camera for automatic Face ID";
+            hint.className = "auth-face-hint ok";
+          }
+          try { window.dispatchEvent(new CustomEvent("mfg:face-detector-ready")); } catch (_) {}
+        }
+      } else if (resolveDetectorStage) {
+        resolveDetectorStage(true);
+      }
+
       const recP = loadNetWithSelfHealing(
         () => faceapi.nets.faceRecognitionNet.loadFromUri(base),
         base,
         "face_recognition_model.bin",
         25000
       );
-      recP.catch(() => {});
-
-      await Promise.all([tinyP, lmP]);
-
-      if (!isAutoTest && typeof document !== "undefined") {
-        try {
-          const wcv = document.createElement("canvas");
-          wcv.width = 128;
-          wcv.height = 128;
-          await Promise.resolve(faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.99 }))).catch(() => {});
-          await Promise.resolve(landmarksTiny && faceapi.detectFaceLandmarksTiny
-            ? faceapi.detectFaceLandmarksTiny(wcv)
-            : faceapi.detectLandmarks(wcv)).catch(() => {});
-        } catch (_) {}
-      }
-
-      detectorReady = true;
-      if (resolveDetectorStage) resolveDetectorStage(true);
-      if (typeof document !== "undefined") {
-        const vp = document.getElementById("authCamViewport");
-        const hint = document.getElementById("authFaceHint");
-        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
-          hint.textContent = "Look at camera for automatic Face ID";
-          hint.className = "auth-face-hint ok";
-        }
-        try { window.dispatchEvent(new CustomEvent("mfg:face-detector-ready")); } catch (_) {}
-      }
-
       await recP;
-
-      if (!isAutoTest && typeof document !== "undefined" && typeof faceapi.computeFaceDescriptor === "function") {
-        try {
-          const rcv = document.createElement("canvas");
-          rcv.width = 112;
-          rcv.height = 112;
-          await Promise.resolve(faceapi.computeFaceDescriptor(rcv)).catch(() => {});
-        } catch (_) {}
-      }
 
       if (isAutoTest) {
         await ensureSsdLoaded();
