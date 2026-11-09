@@ -9605,7 +9605,13 @@
       "Role Type (Sup + Entry)": "نوع الدور (مشرف + إدخال)",
       "Role Type (Owner / Admin)": "نوع الدور (مالك / مدير)",
       "Role Type (Sales)": "نوع الدور (مبيعات)",
-      "Role Type (Custom Role)": "نوع الدور (دور مخصص)"
+      "Role Type (Custom Role)": "نوع الدور (دور مخصص)",
+      "Select which sidebar tabs this role type can access, or uncheck Select All on any tab to choose which pages inside that tab are accessible.": "حدد تبويبات الشريط الجانبي التي يمكن لهذا الدور الوصول إليها، أو ألغِ تحديد «تحديد الكل» في أي تبويب لاختيار الصفحات الفرعية المتاحة داخله.",
+      "Apply to Role Type": "تطبيق على نوع الدور",
+      "This User Seat Only": "مقعد هذا المستخدم فقط",
+      "Select All": "تحديد الكل",
+      "Hidden": "مخفي",
+      "Primary": "أساسي"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -19192,7 +19198,13 @@
       "Role Type (Sup + Entry)": "Type de rôle (Sup + Saisie)",
       "Role Type (Owner / Admin)": "Type de rôle (Propriétaire / Admin)",
       "Role Type (Sales)": "Type de rôle (Ventes)",
-      "Role Type (Custom Role)": "Type de rôle (Rôle personnalisé)"
+      "Role Type (Custom Role)": "Type de rôle (Rôle personnalisé)",
+      "Select which sidebar tabs this role type can access, or uncheck Select All on any tab to choose which pages inside that tab are accessible.": "Sélectionnez les onglets latéraux accessibles pour ce type de rôle, ou décochez Tout sélectionner sur un onglet pour choisir les sous-pages accessibles.",
+      "Apply to Role Type": "Appliquer au type de rôle",
+      "This User Seat Only": "Ce siège utilisateur uniquement",
+      "Select All": "Tout sélectionner",
+      "Hidden": "Masqué",
+      "Primary": "Principal"
     }
   };
 

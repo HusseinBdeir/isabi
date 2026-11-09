@@ -68184,13 +68184,13 @@
         <div class="perm-sec-box perm-hub-access-sec" id="permSecHubsPages" ${activeCat !== 'all' && activeCat !== 'hubs' && activeCat !== 'rights' ? 'hidden' : ''}>
           <div class="perm-sec-head perm-hub-access-head">
             <div>
-              <span class="perm-sec-num">TABS</span>
-              <strong>Sidebar Tabs &amp; Sub-Pages Access (${enabledMatrixHubs}/${totalMatrixHubs} Sidebar Tabs · ${enabledMatrixPages}/${totalMatrixPages} Pages)</strong>
+              <span class="perm-sec-num">00</span>
+              <strong>Sidebar Tabs &amp; Sub-Pages Access</strong> <span class="perm-sec-cnt">(${enabledMatrixHubs}/${totalMatrixHubs} · ${enabledMatrixPages}/${totalMatrixPages})</span>
               <small class="perm-hub-access-sub">Select which sidebar tabs this role type can access, or uncheck Select All on any tab to choose which pages inside that tab are accessible.</small>
             </div>
             <div class="perm-sec-quick perm-hub-access-controls">
               <div class="perm-hub-scope-switch" role="group" aria-label="Sidebar tab policy scope">
-                <button type="button" class="perm-mini-btn ${scopeMode === 'role' ? 'active' : ''}" data-perm-hub-scope="role">Apply to Role Type (${esc(perms.preset.shortTitle || perms.roleKey)})</button>
+                <button type="button" class="perm-mini-btn ${scopeMode === 'role' ? 'active' : ''}" data-perm-hub-scope="role"><span>Apply to Role Type</span> · <span>${esc(perms.preset.shortTitle || perms.roleKey)}</span></button>
                 <button type="button" class="perm-mini-btn ${scopeMode === 'seat' ? 'active' : ''}" data-perm-hub-scope="seat">This User Seat Only</button>
               </div>
               <label class="perm-select-all-toggle ${allTabsAndPagesSelected ? 'is-on' : ''}">
@@ -68220,10 +68220,10 @@
                   ${h.totalPages > 1 ? `
                     <label class="perm-hub-all-toggle ${h.allPagesOn ? 'is-all' : (h.partialPages ? 'is-partial' : 'is-off')}">
                       <input type="checkbox" class="perm-cb-sm" data-perm-hub-all="${esc(h.id)}" ${h.allPagesOn ? 'checked' : ''}>
-                      <span>Select All (${h.onPages}/${h.totalPages})</span>
+                      <span>Select All</span> <span>(${h.onPages}/${h.totalPages})</span>
                     </label>
                   ` : `
-                    <span class="perm-hub-single-badge ${h.visible ? 'on' : 'off'}">${h.visible ? '1/1 Page' : 'Hidden'}</span>
+                    <span class="perm-hub-single-badge ${h.visible ? 'on' : 'off'}">${h.visible ? '1/1' : '<span>Hidden</span>'}</span>
                   `}
                 </div>
                 <div class="perm-hub-pages-list ${h.allPagesOn && h.totalPages > 1 ? 'is-all-selected' : 'is-custom-pages'}">
