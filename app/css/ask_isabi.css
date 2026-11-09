@@ -2665,6 +2665,276 @@
   }
 }
 
+/* ============================================================================
+   Counterparty Payment-Behavior & Cash-Collection Forecast Studio
+   ============================================================================ */
+.ceo-collection-btn,
+.pbi-collection-btn,
+.cf-collection-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ceo-collection-btn svg,
+.pbi-collection-btn svg,
+.cf-collection-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+#collectionForecastModal.cf-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10086;
+  background: rgba(15, 23, 42, 0.44);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+#collectionForecastModal[hidden] {
+  display: none !important;
+}
+
+.cf-modal-card {
+  width: min(1180px, 100%);
+  max-height: calc(100dvh - 32px);
+}
+
+#cfPresetsToolbar.wi-presets-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
+}
+
+:root[data-theme="dark"] #cfPresetsToolbar.wi-presets-toolbar {
+  background: rgba(30, 41, 59, 0.65);
+  border-bottom-color: rgba(148, 163, 184, 0.16);
+}
+
+#cfPresetsList.wi-presets-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wi-preset-save-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cf-promise-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cf-cp-select {
+  min-width: 150px;
+  max-width: 220px;
+  font-size: 16px;
+}
+
+.cf-amt-input {
+  min-width: 96px;
+  width: 110px;
+  font-size: 16px;
+}
+
+.cf-date-input {
+  min-width: 132px;
+  width: 142px;
+  font-size: 16px;
+}
+
+.cf-hold-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .cf-hold-lbl {
+  color: #cbd5e1;
+}
+
+.cf-levers-col,
+.cf-telemetry-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cf-aging-foot {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(15, 23, 42, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: #475569;
+}
+
+:root[data-theme="dark"] .cf-aging-foot {
+  border-top-color: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+}
+
+.cf-call-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+}
+
+:root[data-theme="dark"] .cf-call-table-wrap {
+  background: #0f172a;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.cf-call-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.cf-call-table th,
+.cf-call-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.cf-call-table th.r,
+.cf-call-table td.r {
+  text-align: end;
+}
+
+.cf-call-table th {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+:root[data-theme="dark"] .cf-call-table th {
+  background: #1e293b;
+  color: #94a3b8;
+  border-bottom-color: rgba(148, 163, 184, 0.16);
+}
+
+:root[data-theme="dark"] .cf-call-table td {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+}
+
+.cf-call-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.cf-call-row:hover {
+  background: #eff6ff;
+}
+
+.cf-call-row.is-selected {
+  background: #dbeafe;
+}
+
+:root[data-theme="dark"] .cf-call-row:hover {
+  background: rgba(37, 99, 235, 0.15);
+}
+
+:root[data-theme="dark"] .cf-call-row.is-selected {
+  background: rgba(37, 99, 235, 0.26);
+}
+
+.cf-call-sub {
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+:root[data-theme="dark"] .cf-call-sub {
+  color: #94a3b8;
+}
+
+.cf-draft-cp-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: #2563eb;
+  margin-inline-start: 4px;
+}
+
+:root[data-theme="dark"] .cf-draft-cp-pill {
+  color: #60a5fa;
+}
+
+#cfApplyAlertRuleBtn.is-applied {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+}
+
+:root[data-theme="dark"] #cfApplyAlertRuleBtn.is-applied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #34d399;
+  color: #6ee7b7;
+}
+
+#cfWhatsappDraftInput {
+  font-size: 16px;
+}
+
+@media (max-width: 900px) {
+  #collectionForecastModal.cf-modal-backdrop {
+    padding: 8px;
+  }
+  .cf-modal-card {
+    max-height: calc(100dvh - 16px);
+  }
+}
+
+@media (max-width: 640px) {
+  .cf-promise-form {
+    width: 100%;
+  }
+  .cf-cp-select,
+  .cf-amt-input,
+  .cf-date-input {
+    flex: 1 1 120px;
+    max-width: 100%;
+  }
+}
+
+
 
 
 

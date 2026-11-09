@@ -5407,6 +5407,7 @@
           <div class="pbi-hero-actions">
             ${activeSlicerCount ? `<span class="badge badge-warn sr-only">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-whatif-btn" id="pbiWhatIfBtn" data-whatif-open="1" data-wi-source="pbi" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX &amp; Working-Capital Scenario Simulator">${pbiIcon('sliders')}<span class="pbi-wi-lbl">What-If Studio</span></button>
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-collection-btn" id="pbiCollectionForecastBtn" data-collection-forecast-open="1" data-cf-source="pbi" aria-expanded="false" data-ui-tip="Open Counterparty Payment-Behavior &amp; Cash-Collection Forecast Studio">${pbiIcon('customers')}<span class="pbi-cf-lbl">Collection Forecast</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${pbiIcon('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${pbiIcon('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="pbi-drawer-toggle ${!pbiCatalogCollapsed ? 'active' : ''}" id="pbiToggleCatalogBtn" aria-label="Toggle analytical pages catalog">
@@ -9639,6 +9640,7 @@
     if (_hubChipCountsCacheKey === cKey && _hubChipCountsCacheVal) return _hubChipCountsCacheVal;
     const byKey = {};
     let rawPrCnt = 0;
+    let extdCnt = 0;
     for (let i = 0; i < TABLE_CATALOG.length; i++) {
       const t = TABLE_CATALOG[i];
       const tUniv = Boolean(t.universal);
@@ -9652,10 +9654,15 @@
         byKey.price_rules = salesCnt;
       } else {
         byKey[t.key] = tRows.length;
+        if (t.key === 'external_movements') {
+          for (let j = 0; j < tRows.length; j++) {
+            if (/^extended$/i.test(tRows[j].kind || '')) extdCnt++;
+          }
+        }
       }
     }
     _hubChipCountsCacheKey = cKey;
-    _hubChipCountsCacheVal = { byKey, rawPrCnt };
+    _hubChipCountsCacheVal = { byKey, rawPrCnt, extdCnt };
     return _hubChipCountsCacheVal;
   }
 
@@ -9902,11 +9909,12 @@
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
     const isRawPrMode = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
+    const isExtdTblMode = meta.key === 'external_movements' && isHoldingTbl && activeView.id === 'extended';
     const visibleViews = meta.key === 'price_rules'
       ? (isRawPrMode ? views.filter(v => /^raw_/i.test(v.id)) : views.filter(v => !/^raw_/i.test(v.id)))
       : views;
     const effGroup = isRawPrMode ? '2 · Purchases, Expenses & Payables' : meta.group;
-    const effLabel = isRawPrMode ? 'Raw & Haulage Agreements' : ((meta.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : meta.label);
+    const effLabel = isRawPrMode ? 'Raw & Haulage Agreements' : (isExtdTblMode ? 'Extended Stakeholder Ledger' : ((meta.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : meta.label));
     const domainScopedRaw = meta.key === 'price_rules'
       ? (isRawPrMode
           ? rlsScopedRaw.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
@@ -9986,7 +9994,7 @@
               ${tablePool.filter(t => t.group === g).map(t => {
                 const tUniv = Boolean(t.universal);
                 const cnt = chipCounts.byKey[t.key] != null ? chipCounts.byKey[t.key] : 0;
-                const isChipAct = t.key === meta.key && !(t.key === 'price_rules' && /^raw_/i.test(activeView.id));
+                const isChipAct = t.key === meta.key && !(t.key === 'price_rules' && /^raw_/i.test(activeView.id)) && !(t.key === 'external_movements' && isExtdTblMode);
                 const showUnivTag = tUniv && !/Universal/i.test(t.group || '');
                 const tChipLbl = (t.key === 'external_movements' && !isHoldingTbl) ? 'External Movements' : t.label;
                 const mainChip = `<button type="button" class="filter-chip ${isChipAct ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(tChipLbl)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${showUnivTag ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
@@ -9994,6 +10002,10 @@
                   const rawPrCnt = chipCounts.rawPrCnt;
                   const isRawPrAct = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
                   return mainChip + `<button type="button" class="filter-chip ${isRawPrAct ? 'active' : ''}" data-tbl-key="price_rules" data-tbl-view="raw_all" data-ui-tip="Raw Material &amp; Site Haulage Price Agreements">Raw &amp; Haulage Agreements <span class="mono" style="opacity:.75">(${fmtNum(rawPrCnt)})</span></button>`;
+                }
+                if (t.key === 'external_movements' && isHoldingTbl) {
+                  const extdCnt = chipCounts.extdCnt || 0;
+                  return mainChip + `<button type="button" class="filter-chip ${isExtdTblMode ? 'active' : ''}" data-tbl-key="external_movements" data-tbl-view="extended" data-ui-tip="Holding Extended Stakeholder Ledger (Haj Mohamad &amp; Stakeholders)">Extended Stakeholder Ledger <span class="mono" style="opacity:.75">(${fmtNum(extdCnt)})</span></button>`;
                 }
                 return mainChip;
               }).join('')}
@@ -10065,10 +10077,10 @@
               ${(() => {
                 const modalFormId = meta.key === 'price_rules'
                   ? (/^raw_/i.test(activeView.id) ? 'pricerule_raw' : (activeView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
-                  : meta.form;
+                  : (isExtdTblMode ? 'extended' : meta.form);
                 const modalBtnLbl = meta.key === 'price_rules'
                   ? (/^raw_/i.test(activeView.id) ? 'Raw & Haulage Agreement' : (activeView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
-                  : (meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''));
+                  : (isExtdTblMode ? 'Extended Entry' : (meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, '')));
                 return canEnterForm(modalFormId) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(modalFormId)}">+ New ${esc(modalBtnLbl)}</button>` : '';
               })()}
             </div>

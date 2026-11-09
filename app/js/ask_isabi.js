@@ -135,6 +135,18 @@
     whatIfDraftLang: '',
     whatIfCustomDraftByScope: new Map(),
     activeWhatIfSpeechScope: '',
+    collectionForecastOpen: false,
+    collectionForecastAnchor: null,
+    collectionForecastSource: 'overview',
+    collectionForecastScope: '',
+    collectionLeversByEntity: new Map(),
+    collectionActivePreset: 'standard',
+    collectionSelectedCp: '',
+    collectionCache: new Map(),
+    collectionInflight: new Map(),
+    collectionDraftLang: '',
+    collectionCustomDraftByScope: new Map(),
+    activeCollectionSpeechScope: '',
     sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
@@ -4649,6 +4661,7 @@
         !_chatState.activeSentinelSummaryScope &&
         !_chatState.activePageGuideSpeechScope &&
         !_chatState.activeWhatIfSpeechScope &&
+        !_chatState.activeCollectionSpeechScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4672,6 +4685,7 @@
     syncDailyHandoverPopoverAudioButton();
     if (typeof syncPageGuidePopoverAudioButton === 'function') syncPageGuidePopoverAudioButton();
     if (typeof syncWhatIfModalAudioButton === 'function') syncWhatIfModalAudioButton();
+    if (typeof syncCollectionModalAudioButton === 'function') syncCollectionModalAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4693,6 +4707,7 @@
     _chatState.activeSentinelRuleId = '';
     _chatState.activePageGuideSpeechScope = '';
     _chatState.activeWhatIfSpeechScope = '';
+    _chatState.activeCollectionSpeechScope = '';
     if (hadPageGuideAudio && typeof clearPageSectionSpotlight === 'function') {
       clearPageSectionSpotlight();
     }
@@ -6712,6 +6727,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensureCeoPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildCeoPeriodSummary();
@@ -7568,6 +7584,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensureStmtPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildStatementSummary();
@@ -8360,6 +8377,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensurePbiPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildDashboardSummary();
@@ -9031,6 +9049,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensureInspPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildInspectorSummary();
@@ -9837,6 +9856,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensureSentinelPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildSentinelTriageSummary();
@@ -10760,6 +10780,7 @@
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     ensureDailyBriefingI18nRegistered();
     ensureDailyHandoverGlobalDismiss();
     const sum = prebuiltSummary || buildDailyHandoverSummary();
@@ -11622,6 +11643,7 @@
 
     // Mutual exclusion with all other executive brief popovers
     if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
     if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
     if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
@@ -11849,6 +11871,7 @@
         <button type="button" class="ceo-pv-btn ${isSpeakingNow ? 'is-speaking' : ''}" id="pgListenBtn" data-pg-pv-speak="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${spkIco}<span>${esc(spkLbl)}</span></button>
         <button type="button" class="ceo-pv-btn" data-pg-next-tour="1"><span>Spotlight on Screen</span></button>
         <button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>
+        <button type="button" class="ceo-pv-btn" id="pgOpenCollectionForecastBtn" data-pg-open-collection="1"><span>Collection Forecast</span></button>
         <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
       </div>
     `;
@@ -12020,6 +12043,15 @@
         e.preventDefault();
         closePageGuidePopover();
         openWhatIfStudio(openWhatIfFootBtn, { source: 'page_guide' });
+      });
+    }
+
+    const openCollectionFootBtn = pop.querySelector('[data-pg-open-collection]');
+    if (openCollectionFootBtn) {
+      openCollectionFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+        openCollectionForecastStudio(openCollectionFootBtn, { source: 'page_guide' });
       });
     }
 
@@ -12235,6 +12267,14 @@
     if (!_pgTopbarDelegationWired) {
       _pgTopbarDelegationWired = true;
       document.addEventListener('click', e => {
+        const cfBtn = e.target.closest && e.target.closest('[data-collection-forecast-open]');
+        if (cfBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = cfBtn.getAttribute('data-cf-source') || 'overview';
+          toggleCollectionForecastStudio(cfBtn, { source: src });
+          return;
+        }
         const wiBtn = e.target.closest && e.target.closest('[data-whatif-open]');
         if (wiBtn) {
           e.preventDefault();
@@ -12265,13 +12305,16 @@
   function rebindPageGuideButtons(container) {
     mountTopbarPageGuideButtons();
     if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-      ['#cfLiquidityBriefBtn', '#cfListenBriefBtn', '#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn'].forEach(sel => {
+      ['#cfLiquidityBriefBtn', '#cfListenBriefBtn', '#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn', '#ceoCollectionForecastBtn', '#arCollectionForecastBtn', '#indCollectionForecastBtn', '#cfCollectionForecastBtn', '#pbiCollectionForecastBtn'].forEach(sel => {
         const el = container.querySelector && container.querySelector(sel);
         if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
       });
     }
     if (typeof rebindWhatIfButtons === 'function') {
       rebindWhatIfButtons(container);
+    }
+    if (typeof rebindCollectionForecastButtons === 'function') {
+      rebindCollectionForecastButtons(container);
     }
     if (!_chatState.pageGuideOpen) return;
     const curView = (_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview';
@@ -13065,7 +13108,8 @@
     ensureDailyBriefingI18nRegistered();
     ensureWhatIfGlobalEvents();
 
-    // Mutual exclusion with all 7 executive popovers
+    // Mutual exclusion with all 7 executive popovers & Collection Forecast Studio
+    if (_chatState.collectionForecastOpen) closeCollectionForecastStudio();
     if (_chatState.pageGuideOpen) closePageGuidePopover();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
     if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
@@ -13485,9 +13529,1295 @@
     }
   }
 
+  // ============================================================================
+  // COUNTERPARTY PAYMENT-BEHAVIOR & CASH-COLLECTION FORECAST STUDIO
+  // ============================================================================
+  const COLLECTION_PROMISES_STORAGE_KEY = 'isabi_collection_promises_v1';
+
+  function sanitizeCollectionForecastText(val, preserveNewlines = false) {
+    return _scrubPageGuideCore(val, preserveNewlines);
+  }
+
+  function sanitizeCollectionLiveInput(val) {
+    return sanitizePageGuideLiveInput(val);
+  }
+
+  function normalizeCollectionLevers(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clampNum = (v, minV, maxV, fallback) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 10) / 10));
+    };
+    return {
+      cadenceBoostDays: Math.round(clampNum(src.cadenceBoostDays != null ? src.cadenceBoostDays : src.cadence_boost_days, -15, 30, 0)),
+      overdueRecoveryPct: clampNum(src.overdueRecoveryPct != null ? src.overdueRecoveryPct : src.overdue_recovery_pct, -40, 60, 0),
+      discountIncentivePct: clampNum(src.discountIncentivePct != null ? src.discountIncentivePct : src.discount_incentive_pct, 0, 10, 0)
+    };
+  }
+
+  function getActiveCollectionCompanyKey(coOverride) {
+    const st = (_ctx && _ctx.STATE) || {};
+    return String(coOverride || st.company || 'manufacturing-group');
+  }
+
+  function getCollectionLeversForEntity(coKeyOverride) {
+    const coKey = getActiveCollectionCompanyKey(coKeyOverride);
+    if (_chatState.collectionLeversByEntity.has(coKey)) {
+      return Object.assign({}, _chatState.collectionLeversByEntity.get(coKey));
+    }
+    return normalizeCollectionLevers({});
+  }
+
+  function setCollectionLeversForEntity(coKeyOverride, nextLevers) {
+    const coKey = getActiveCollectionCompanyKey(coKeyOverride);
+    const clean = normalizeCollectionLevers(nextLevers);
+    if (!_chatState.collectionLeversByEntity.has(coKey) && _chatState.collectionLeversByEntity.size >= 32) {
+      const oldestKey = _chatState.collectionLeversByEntity.keys().next().value;
+      if (oldestKey !== undefined) _chatState.collectionLeversByEntity.delete(oldestKey);
+    }
+    _chatState.collectionLeversByEntity.set(coKey, clean);
+    return clean;
+  }
+
+  function loadSavedCollectionPromises(coKeyFilter) {
+    let rawStr = null;
+    try {
+      rawStr = localStorage.getItem(COLLECTION_PROMISES_STORAGE_KEY);
+    } catch (_) {
+      return [];
+    }
+    if (!rawStr) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawStr);
+    } catch (_) {
+      try { localStorage.removeItem(COLLECTION_PROMISES_STORAGE_KEY); } catch (_2) {}
+      return [];
+    }
+    let rawItems = [];
+    let needsRewrite = false;
+    if (Array.isArray(parsed)) {
+      rawItems = parsed;
+      needsRewrite = true;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.items)) {
+        rawItems = parsed.items;
+        if (parsed.version !== 1) needsRewrite = true;
+      } else if (Array.isArray(parsed.promises)) {
+        rawItems = parsed.promises;
+        needsRewrite = true;
+      } else {
+        needsRewrite = true;
+      }
+    } else {
+      return [];
+    }
+
+    const clampAmt = (v, minV, maxV, def) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return def;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 100) / 100));
+    };
+
+    const normalized = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (!it || typeof it !== 'object') {
+        needsRewrite = true;
+        continue;
+      }
+      const rawId = String(it.id || `pr_${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `pr_${i + 1}`;
+      const cleanCp = sanitizeCollectionForecastText(it.counterparty || it.name || it.customer || 'Counterparty').slice(0, 72) || 'Counterparty';
+      const coKey = sanitizeCollectionForecastText(it.coKey || it.companyKey || it.company || 'manufacturing-group').slice(0, 64) || 'manufacturing-group';
+      const promisedAmountUsd = clampAmt(it.promisedAmountUsd != null ? it.promisedAmountUsd : it.amountUsd, 0, 1e9, 0);
+      const rawDate = String(it.promisedDate || it.date || '2026-11-15').slice(0, 10);
+      const promisedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : '2026-11-15';
+      const creditHold = Boolean(it.creditHold);
+      const note = sanitizeCollectionForecastText(it.note || '').slice(0, 120);
+      if (cleanCp !== it.counterparty || it.id !== rawId || promisedAmountUsd !== it.promisedAmountUsd) needsRewrite = true;
+      normalized.push({
+        id: rawId,
+        counterparty: cleanCp,
+        coKey,
+        promisedAmountUsd,
+        promisedDate,
+        creditHold,
+        note,
+        savedAt: String(it.savedAt || '2026-11-09')
+      });
+    }
+    if (normalized.length > 16) {
+      normalized.splice(0, normalized.length - 16);
+      needsRewrite = true;
+    }
+    if (needsRewrite) {
+      try {
+        localStorage.setItem(COLLECTION_PROMISES_STORAGE_KEY, JSON.stringify({ version: 1, items: normalized }));
+      } catch (_) {}
+    }
+    if (!coKeyFilter) return normalized;
+    const wantCo = String(coKeyFilter).trim();
+    return normalized.filter(x => x.coKey === wantCo || x.coKey === 'all');
+  }
+
+  function saveCollectionPromise(spec, coKeyOverride) {
+    const src = spec && typeof spec === 'object' ? spec : { counterparty: String(spec || '') };
+    const cleanCp = sanitizeCollectionForecastText(src.counterparty || src.name || 'Counterparty').slice(0, 72) || 'Counterparty';
+    const coKey = sanitizeCollectionForecastText(coKeyOverride || src.coKey || getActiveCollectionCompanyKey()).slice(0, 64) || 'manufacturing-group';
+    const nAmt = Number(src.promisedAmountUsd != null ? src.promisedAmountUsd : src.amountUsd);
+    const promisedAmountUsd = Number.isFinite(nAmt) ? Math.max(0, Math.min(1e9, Math.round(nAmt * 100) / 100)) : 0;
+    const rawDate = String(src.promisedDate || src.date || ((_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-15')).slice(0, 10);
+    const promisedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : '2026-11-15';
+    const creditHold = Boolean(src.creditHold);
+    const note = sanitizeCollectionForecastText(src.note || '').slice(0, 120);
+    const all = loadSavedCollectionPromises();
+    const existingIdx = all.findIndex(x => x.coKey === coKey && x.counterparty.toLowerCase() === cleanCp.toLowerCase());
+    const id = existingIdx >= 0
+      ? all[existingIdx].id
+      : `pr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry = {
+      id,
+      counterparty: cleanCp,
+      coKey,
+      promisedAmountUsd,
+      promisedDate,
+      creditHold,
+      note,
+      savedAt: (_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-09'
+    };
+    if (existingIdx >= 0) {
+      all[existingIdx] = entry;
+    } else {
+      all.push(entry);
+    }
+    while (all.length > 16) all.shift();
+    try {
+      localStorage.setItem(COLLECTION_PROMISES_STORAGE_KEY, JSON.stringify({ version: 1, items: all }));
+    } catch (_) {}
+    return entry;
+  }
+
+  function deleteCollectionPromise(idOrCp) {
+    const target = String(idOrCp || '').trim().toLowerCase();
+    if (!target) return false;
+    const all = loadSavedCollectionPromises();
+    const next = all.filter(x => x.id.toLowerCase() !== target && x.counterparty.toLowerCase() !== target);
+    try {
+      localStorage.setItem(COLLECTION_PROMISES_STORAGE_KEY, JSON.stringify({ version: 1, items: next }));
+    } catch (_) {}
+    return next.length !== all.length;
+  }
+
+  function buildCollectionForecastSummary(langOverride, opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride)
+      ? langOverride
+      : ((window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || _chatState.voiceLang || 'en');
+
+    const coKey = getActiveCollectionCompanyKey(options.companyKey);
+    const activeLevers = options.levers
+      ? normalizeCollectionLevers(options.levers)
+      : getCollectionLeversForEntity(coKey);
+    const savedPromises = Array.isArray(options.savedPromises)
+      ? options.savedPromises
+      : loadSavedCollectionPromises(coKey);
+
+    const snap = (_ctx && typeof _ctx.computeCollectionForecastSnapshot === 'function')
+      ? _ctx.computeCollectionForecastSnapshot(Object.assign({}, options, { companyKey: coKey, levers: activeLevers, savedPromises }))
+      : null;
+
+    if (!snap) {
+      return {
+        lang: safeLang,
+        scopeKey: 'coll|unavailable',
+        leverSig: '0|0|0',
+        industry: 'Manufacturing',
+        companyKey: coKey,
+        companyLabel: 'All Entities',
+        periodLabel: 'Active Period',
+        rlsClamped: false,
+        restricted: true,
+        booksRedacted: true,
+        canEditAlerts: false,
+        hasActiveAlertRule: false,
+        targetHubView: 'customers',
+        levers: activeLevers,
+        leverSpecs: [],
+        presets: [],
+        savedPromises: [],
+        summary: {},
+        agingBuckets: {},
+        horizon: {},
+        tieCheck: { agingBalanced: true, agingVarianceUsd: 0, horizonBalanced: true, horizonVarianceUsd: 0 },
+        counterparties: [],
+        callList: [],
+        selectedCounterparty: null,
+        headline: 'Collection forecast unavailable.',
+        spoken: 'Collection forecast unavailable.',
+        bullets: [],
+        activeBullets: [],
+        isAiSource: false,
+        drafts: { en: '', ar: '', fr: '' }
+      };
+    }
+
+    const pickLoc = (enVal, arVal, frVal) => {
+      const raw = safeLang === 'ar' ? (arVal || enVal) : (safeLang === 'fr' ? (frVal || enVal) : enVal);
+      return sanitizeCollectionForecastText(raw);
+    };
+
+    const headline = pickLoc(snap.headlineEn, snap.headlineAr, snap.headlineFr);
+    const spoken = pickLoc(snap.spokenEn, snap.spokenAr, snap.spokenFr);
+    const rawBullets = safeLang === 'ar'
+      ? (snap.bulletsAr || snap.bulletsEn || [])
+      : (safeLang === 'fr' ? (snap.bulletsFr || snap.bulletsEn || []) : (snap.bulletsEn || []));
+    const bullets = rawBullets.map(b => sanitizeCollectionForecastText(b)).filter(Boolean);
+
+    const cacheKey = `${snap.scopeKey}|${safeLang}`;
+    const cachedAi = _chatState.collectionCache.get(cacheKey);
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length >= 2)
+      ? cachedAi.bullets.map(b => sanitizeCollectionForecastText(b)).filter(Boolean)
+      : bullets;
+
+    const callList = Array.isArray(snap.callList) ? snap.callList : [];
+    const selectedCp = callList.find(c => c.name === _chatState.collectionSelectedCp)
+      || callList[0]
+      || null;
+
+    const drafts = {
+      en: sanitizeCollectionForecastText(selectedCp ? selectedCp.whatsappEn : ((snap.drafts && snap.drafts.whatsappEn) || headline), true),
+      ar: sanitizeCollectionForecastText(selectedCp ? selectedCp.whatsappAr : ((snap.drafts && snap.drafts.whatsappAr) || headline), true),
+      fr: sanitizeCollectionForecastText(selectedCp ? selectedCp.whatsappFr : ((snap.drafts && snap.drafts.whatsappFr) || headline), true)
+    };
+
+    return {
+      lang: safeLang,
+      scopeKey: snap.scopeKey,
+      leverSig: snap.leverSig,
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      companyLabel: pickLoc(snap.companyEn || snap.companyLabel, snap.companyAr, snap.companyFr),
+      periodLabel: pickLoc(snap.periodEn || snap.periodLabel, snap.periodAr, snap.periodFr),
+      asOfDate: snap.asOfDate,
+      rlsClamped: Boolean(snap.rlsClamped),
+      restricted: Boolean(snap.restricted),
+      booksRedacted: Boolean(snap.booksRedacted),
+      canViewBooks: Boolean(snap.canViewBooks),
+      canCash: Boolean(snap.canCash),
+      canSales: Boolean(snap.canSales),
+      canEditAlerts: Boolean(snap.canEditAlerts),
+      hasActiveAlertRule: Boolean(snap.hasActiveAlertRule),
+      domainMeta: snap.domainMeta || {},
+      targetHubView: snap.targetHubView || 'customers',
+      levers: snap.levers || activeLevers,
+      leverSpecs: Array.isArray(snap.leverSpecs) ? snap.leverSpecs : [],
+      presets: Array.isArray(snap.presets) ? snap.presets : [],
+      savedPromises,
+      summary: snap.summary || {},
+      agingBuckets: snap.agingBuckets || {},
+      horizon: snap.horizon || {},
+      tieCheck: snap.tieCheck || { agingBalanced: true, agingVarianceUsd: 0, horizonBalanced: true, horizonVarianceUsd: 0 },
+      counterparties: Array.isArray(snap.counterparties) ? snap.counterparties : [],
+      callList,
+      selectedCounterparty: selectedCp,
+      headline,
+      spoken,
+      bullets,
+      activeBullets,
+      isAiSource: Boolean(cachedAi && cachedAi.source === 'ai'),
+      drafts
+    };
+  }
+
+  function formatCollectionPlainText(summaryObj, draftLangOverride) {
+    const sum = summaryObj || buildCollectionForecastSummary();
+    const dLang = ['en', 'ar', 'fr'].includes(draftLangOverride) ? draftLangOverride : sum.lang;
+    const cpKey = sum.selectedCounterparty ? sum.selectedCounterparty.name : '__portfolio__';
+    const customKey = `${sum.scopeKey}|${cpKey}|${dLang}`;
+    if (_chatState.collectionCustomDraftByScope.has(customKey)) {
+      return sanitizeCollectionForecastText(_chatState.collectionCustomDraftByScope.get(customKey), true);
+    }
+    const baseDraft = (sum.drafts && sum.drafts[dLang]) || sum.headline || '';
+    return sanitizeCollectionForecastText(baseDraft, true);
+  }
+
+  function requestCollectionForecastAiBrief(summaryObj, opts = {}) {
+    const sum = summaryObj || buildCollectionForecastSummary(undefined, opts);
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve({
+        ok: false,
+        restricted: true,
+        bullets: sum ? sum.bullets : [],
+        spoken: sum ? sum.spoken : '',
+        source: 'deterministic'
+      });
+    }
+    const safeLang = sum.lang || 'en';
+    const cacheKey = `${sum.scopeKey}|${safeLang}`;
+    if (!opts.force && _chatState.collectionCache.has(cacheKey)) {
+      return Promise.resolve(_chatState.collectionCache.get(cacheKey));
+    }
+    if (!opts.force && _chatState.collectionInflight.has(cacheKey)) {
+      return _chatState.collectionInflight.get(cacheKey);
+    }
+
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const langName = safeLang === 'ar' ? 'Arabic (العربية)' : (safeLang === 'fr' ? 'French (Français)' : 'English');
+    const s = sum.summary || {};
+    const h = sum.horizon || {};
+    const ag = sum.agingBuckets || {};
+    const topCalls = (sum.callList || []).slice(0, 3).map(c => `${c.name}: AR $${c.grossArUsd} (Overdue 30+ $${c.overdue30PlusUsd}, Lag ${c.medianLagDays}d, Rel ${c.reliabilityScorePct}%)`).join('; ');
+    const promptLines = [
+      `You are the Treasury & Receivables Director for ${sum.companyLabel} (${sum.industry}, ${sum.periodLabel}).`,
+      `Write 3 concise, grounded collection action bullets in ${langName} based strictly on these deterministic figures:`,
+      `- Gross Open AR: $${s.grossOpenArUsd || 0} (Current 0-10d: $${ag.currentUsd || 0}, 11-30d: $${ag.bucket11_30Usd || 0}, 31-60d: $${ag.bucket31_60Usd || 0}, 60+d: $${ag.bucket60PlusUsd || 0}, Advances: $${ag.advanceUsd || 0})`,
+      `- Expected 30-Day Cash Inflow: $${h.net30dCashInflowUsd || 0} (Days 1-7: $${h.tranche1_7dUsd || 0}, Days 8-14: $${h.tranche8_14dUsd || 0}, Days 15-30: $${h.tranche15_30dUsd || 0})`,
+      `- Simulated DSO: ${s.simulatedDsoDays || 0}d (Delta: ${s.dsoDeltaDays || 0}d vs baseline ${s.baselineDsoDays || 0}d), Median Lag: ${s.medianLagDays || 0}d (P90: ${s.p90LagDays || 0}d), Over 7z-chrono Ceiling: ${s.overCeilingCount || 0} accounts ($${s.overCeilingUsd || 0})`,
+      `- Top Priority Call List: ${topCalls || 'None'}`,
+      `Rules: Never invent numbers. Never use em-dashes, en-dashes, or arrows. Return 3 short bullet lines.`
+    ];
+
+    const p = fetch('./api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.5-flash-lite',
+        lang: safeLang,
+        messages: [{ role: 'user', content: promptLines.join('\n') }]
+      })
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        _chatState.collectionInflight.delete(cacheKey);
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch) {
+          return { ok: false, cancelled: true, bullets: sum.bullets, spoken: sum.spoken, source: 'deterministic' };
+        }
+        const rawTxt = data && typeof (data.reply || data.text || data.answer) === 'string'
+          ? (data.reply || data.text || data.answer)
+          : '';
+        const parsedBullets = parseVarianceBulletsFromAi(rawTxt, sum.bullets).map(b => sanitizeCollectionForecastText(b)).filter(Boolean);
+        const isAi = parsedBullets.length >= 2 && Boolean(rawTxt.trim());
+        const finalBullets = isAi ? parsedBullets.slice(0, 4) : sum.bullets;
+        const finalSpoken = sanitizeCollectionForecastText([sum.headline, ...finalBullets].join(' '));
+        const resObj = {
+          ok: true,
+          bullets: finalBullets,
+          spoken: finalSpoken,
+          source: isAi ? 'ai' : 'deterministic'
+        };
+        if (!_chatState.collectionCache.has(cacheKey) && _chatState.collectionCache.size >= 32) {
+          const oldestKey = _chatState.collectionCache.keys().next().value;
+          if (oldestKey !== undefined) _chatState.collectionCache.delete(oldestKey);
+        }
+        _chatState.collectionCache.set(cacheKey, resObj);
+        if (_chatState.collectionForecastOpen && _chatState.collectionForecastScope === sum.scopeKey) {
+          updateCollectionLiveTelemetryDom();
+        }
+        return resObj;
+      })
+      .catch(() => {
+        _chatState.collectionInflight.delete(cacheKey);
+        const fallback = {
+          ok: true,
+          bullets: sum.bullets,
+          spoken: sum.spoken,
+          source: 'deterministic'
+        };
+        return fallback;
+      });
+
+    _chatState.collectionInflight.set(cacheKey, p);
+    return p;
+  }
+
+  function syncCollectionModalAudioButton() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('collectionForecastModal');
+    if (!modal || modal.hidden) return;
+    const btn = modal.querySelector('#cfSpeakBtn');
+    if (!btn) return;
+    const isPlaying = Boolean(_chatState.activeCollectionSpeechScope && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl));
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const ico = isPlaying ? ((icons && icons.svg('stop')) || AI_SVGS.stop) : ((icons && icons.svg('audio')) || AI_SVGS.audio);
+    const enLbl = isPlaying ? 'Stop Audio Readback' : 'Listen to Collection Brief';
+    btn.classList.toggle('is-speaking', isPlaying);
+    btn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+    btn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(btn); } catch (_) {}
+    }
+  }
+
+  function formatCollectionLeverBadgeText(key, val) {
+    const n = Number(val || 0);
+    if (key === 'cadenceBoostDays') {
+      return `${n > 0 ? '+' : ''}${Math.round(n)}d`;
+    }
+    if (key === 'discountIncentivePct') {
+      return `${n.toFixed(1).replace(/\.0$/, '')}%`;
+    }
+    return `${n > 0 ? '+' : ''}${n.toFixed(1).replace(/\.0$/, '')}%`;
+  }
+
+  function renderCollectionTelemetryInnerHtml(sum) {
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const s = sum.summary || {};
+    const ag = sum.agingBuckets || {};
+    const h = sum.horizon || {};
+    const tc = sum.tieCheck || {};
+    const fmtUsd = v => (_ctx && typeof _ctx.fmtUSD === 'function')
+      ? _ctx.fmtUSD(Number(v || 0), 0)
+      : ('$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const fmtSignedUsd = v => {
+      const n = Number(v || 0);
+      return (n > 0 ? '+' : (n < 0 ? '-' : '')) + fmtUsd(Math.abs(n));
+    };
+
+    const kpiCards = [
+      {
+        labelEn: 'Gross Open Receivables',
+        val: fmtUsd(s.grossOpenArUsd),
+        delta: `30+d: ${fmtUsd(s.overdue30PlusUsd)} | Adv: ${fmtUsd(s.unallocatedAdvancesUsd)}`,
+        tone: (s.overdue60PlusUsd || 0) > 0 ? 'warn' : 'ok'
+      },
+      {
+        labelEn: 'Expected 30-Day Cash Inflow',
+        val: fmtUsd(h.net30dCashInflowUsd),
+        delta: `${fmtSignedUsd(h.delta30dInflowUsd)} vs base (${fmtUsd(h.baseline30dInflowUsd)})`,
+        tone: (h.delta30dInflowUsd || 0) >= 0 ? 'ok' : 'warn'
+      },
+      {
+        labelEn: 'Simulated DSO & Lag Profile',
+        val: `${Number(s.simulatedDsoDays || 0).toFixed(1)}d`,
+        delta: `Med ${s.medianLagDays || 0}d | P90 ${s.p90LagDays || 0}d (${(s.dsoDeltaDays || 0) > 0 ? '+' : ''}${Number(s.dsoDeltaDays || 0).toFixed(1)}d)`,
+        tone: (s.dsoDeltaDays || 0) <= 0 ? 'ok' : 'warn'
+      },
+      {
+        labelEn: 'Reliability & 7z-chrono Ceilings',
+        val: `${s.portfolioReliabilityPct || 0}%`,
+        delta: `${s.overCeilingCount || 0} Over Ceiling (${fmtUsd(s.overCeilingUsd)})`,
+        tone: (s.overCeilingCount || 0) === 0 ? 'ok' : 'warn'
+      }
+    ];
+
+    const kpiCardsHtml = kpiCards.map(k => `
+      <div class="ceo-pv-kpi wi-kpi-card is-${esc(k.tone)}">
+        <span class="ceo-pv-kpi-lbl">${esc(k.labelEn)}</span>
+        <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(k.val)}</strong>
+        <span class="ceo-pv-kpi-delta" data-no-i18n="1">${esc(k.delta)}</span>
+      </div>
+    `).join('');
+
+    const maxTranche = Math.max(1, h.tranche1_7dUsd || 0, h.tranche8_14dUsd || 0, h.tranche15_30dUsd || 0, h.beyond30dUsd || 0);
+    const trancheRows = [
+      { label: 'Days 1-7 Immediate Inflow', usd: h.tranche1_7dUsd || 0, cls: 'is-pos' },
+      { label: 'Days 8-14 Near-Term Inflow', usd: h.tranche8_14dUsd || 0, cls: 'is-pos' },
+      { label: 'Days 15-30 Period Close', usd: h.tranche15_30dUsd || 0, cls: 'is-pos' },
+      { label: 'Beyond 30 Days Carryover', usd: h.beyond30dUsd || 0, cls: (h.beyond30dUsd || 0) > 0 ? 'is-neg' : 'is-zero' }
+    ];
+    const trancheRowsHtml = trancheRows.map(tr => {
+      const pctW = Math.max(4, Math.min(100, Math.round((Math.abs(tr.usd) / maxTranche) * 100)));
+      return `
+        <div class="wi-tornado-row">
+          <span class="wi-tornado-lbl">${esc(tr.label)}</span>
+          <div class="wi-tornado-track">
+            <span class="wi-tornado-fill ${tr.cls}" style="width:${pctW}%"></span>
+          </div>
+          <strong class="wi-tornado-val num ${tr.cls}" data-no-i18n="1">${esc(fmtUsd(tr.usd))}</strong>
+        </div>
+      `;
+    }).join('');
+
+    const callList = Array.isArray(sum.callList) ? sum.callList : [];
+    const selName = sum.selectedCounterparty ? sum.selectedCounterparty.name : '';
+    const callRowsHtml = callList.length ? callList.map(c => {
+      const isSel = c.name === selName;
+      const tierCls = c.reliabilityTier === 'High' ? 'is-tied' : 'is-warn';
+      return `
+        <tr class="cf-call-row ${isSel ? 'is-selected' : ''}" data-cf-select-cp="${esc(c.name)}" role="button" tabindex="0">
+          <td class="mono" data-no-i18n="1">#${c.rank}</td>
+          <td>
+            <strong data-no-i18n="1">${esc(c.name)}</strong>
+            <div class="cf-call-sub" data-no-i18n="1">${esc(c.company)} · ${esc(c.chronoWindowLabel)}</div>
+          </td>
+          <td class="r mono" data-no-i18n="1"><strong>${esc(fmtUsd(c.grossArUsd))}</strong></td>
+          <td class="r mono ${c.overdue30PlusUsd > 0 ? 'crit' : ''}" data-no-i18n="1">${esc(fmtUsd(c.overdue30PlusUsd))}</td>
+          <td class="r mono" data-no-i18n="1">
+            <span class="pg-tie-pill ${c.isOverCeiling ? 'is-warn' : 'is-tied'}" data-no-i18n="1">${c.utilizationPct}% of ${esc(fmtUsd(c.creditLimitUsd))}</span>
+          </td>
+          <td class="r mono" data-no-i18n="1">
+            <span class="pg-tie-pill ${tierCls}" data-no-i18n="1">${c.medianLagDays}d / ${c.reliabilityScorePct}%</span>
+          </td>
+          <td class="r mono good" data-no-i18n="1"><strong>${esc(fmtUsd(c.expected30dInflowUsd))}</strong></td>
+          <td>
+            ${c.creditHold ? '<span class="pg-tie-pill is-warn">Credit Hold</span> ' : ''}
+            <span class="cf-act-txt" data-no-i18n="1">${esc(sum.lang === 'ar' ? c.recommendedActionAr : (sum.lang === 'fr' ? c.recommendedActionFr : c.recommendedActionEn))}</span>
+          </td>
+        </tr>
+      `;
+    }).join('') : `<tr><td colspan="8" class="cf-empty-cell">No open counterparty receivables in this scope.</td></tr>`;
+
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.collectionDraftLang) ? _chatState.collectionDraftLang : sum.lang;
+    const draftText = formatCollectionPlainText(sum, dLang);
+    const draftDir = dLang === 'ar' ? 'rtl' : 'ltr';
+
+    return `
+      <div class="ceo-pv-kpis wi-kpi-grid" id="cfKpiGrid">
+        ${kpiCardsHtml}
+      </div>
+
+      <div class="wi-tornado-card" id="cfHorizonCard">
+        <div class="wi-card-head">
+          <span class="pg-sec-title">30-Day Cash-Collection Maturity Tranches</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="pg-tie-pill ${tc.horizonBalanced ? 'is-tied' : 'is-warn'}" id="cfHorizonTieBadge">
+              <span>30d Horizon Tie</span>: <strong data-no-i18n="1">${tc.horizonBalanced ? '$0.00' : esc(fmtUsd(tc.horizonVarianceUsd))}</strong>
+            </span>
+            ${sum.canEditAlerts !== false ? `
+            <button type="button" class="ceo-pv-btn ${sum.hasActiveAlertRule ? 'is-applied' : ''}" id="cfApplyAlertRuleBtn" data-cf-apply-alert="1">
+              ${(icons && icons.svg('bell')) || ''}<span>${sum.hasActiveAlertRule ? 'Collection Alert Active' : 'Create Collection Alert'}</span>
+            </button>
+            ` : ''}
+            <button type="button" class="ceo-pv-btn" id="cfOpenArHubBtn" data-cf-open-hub="${esc(sum.targetHubView || 'customers')}">
+              <span>Open Receivables Hub</span>
+            </button>
+          </div>
+        </div>
+        <div class="wi-tornado-list" id="cfHorizonList">
+          ${trancheRowsHtml}
+        </div>
+      </div>
+
+      <div class="wi-tornado-card cf-calllist-card" id="cfCallListCard">
+        <div class="wi-card-head">
+          <span class="pg-sec-title">Priority Collection Call List (7z-freq Ranked)</span>
+          <span class="pg-tie-pill is-tied" data-no-i18n="1">${callList.length} Counterparties</span>
+        </div>
+        <div class="cf-call-table-wrap">
+          <table class="cf-call-table" id="cfCallListTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Counterparty &amp; 7z-chrono Window</th>
+                <th class="r">Open AR ($)</th>
+                <th class="r">Overdue 30+ ($)</th>
+                <th class="r">Ceiling Util.</th>
+                <th class="r">Lag / Rel.</th>
+                <th class="r">30d Inflow ($)</th>
+                <th>Recommended Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${callRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="wi-insights-card" id="cfInsightsCard">
+        <div class="wi-card-head">
+          <span class="pg-sec-title">Treasury &amp; Collection Executive Brief</span>
+          <div class="wi-insights-head-right">
+            <span class="ceo-pv-source ${sum.isAiSource ? 'is-ai' : 'is-det'}" id="cfSourceBadge">
+              ${sum.isAiSource ? 'AI Scenario Brief' : 'Deterministic Engine'}
+            </span>
+            <button type="button" class="ceo-pv-btn" id="cfRefreshAiBtn" data-cf-refresh-ai="1">
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Refresh AI Brief</span>
+            </button>
+          </div>
+        </div>
+        <p class="ceo-pv-headline" id="cfHeadlineText" data-no-i18n="1">${esc(sum.headline)}</p>
+        <ul class="ceo-pv-list" id="cfBulletsList" data-no-i18n="1">
+          ${(sum.activeBullets || []).map(b => `<li>${esc(b)}</li>`).join('')}
+        </ul>
+      </div>
+
+      <div class="insp-pv-draft-box wi-draft-box" id="cfWhatsappDraftBox">
+        <div class="insp-pv-draft-head">
+          <span class="insp-pv-draft-lbl">
+            <span>WhatsApp Payment-Plan Reminder</span>
+            ${selName ? `<strong class="cf-draft-cp-pill" data-no-i18n="1">(${esc(selName)})</strong>` : ''}
+          </span>
+          <div class="insp-pv-draft-actions">
+            <div class="insp-pv-lang-pills" role="group" aria-label="Payment Plan Language" data-no-i18n="1">
+              <button type="button" class="insp-pv-lang-pill ${dLang === 'en' ? 'active' : ''}" data-no-i18n="1" data-cf-draft-lang="en">EN</button>
+              <button type="button" class="insp-pv-lang-pill ${dLang === 'ar' ? 'active' : ''}" data-no-i18n="1" data-cf-draft-lang="ar">عربي</button>
+              <button type="button" class="insp-pv-lang-pill ${dLang === 'fr' ? 'active' : ''}" data-no-i18n="1" data-cf-draft-lang="fr">FR</button>
+            </div>
+            <button type="button" class="ceo-pv-btn" id="cfCopyDraftBtn" data-cf-copy-draft="1">${(icons && icons.svg('copy')) || ''}<span>Copy Plan</span></button>
+            <button type="button" class="ceo-pv-btn is-whatsapp" id="cfWaShareBtn" data-cf-wa-share="1"><span>WhatsApp</span></button>
+          </div>
+        </div>
+        <textarea id="cfWhatsappDraftInput" class="insp-pv-draft-textarea" rows="3" dir="${draftDir}" data-no-i18n="1" aria-label="WhatsApp Payment-Plan Reminder">${esc(draftText)}</textarea>
+      </div>
+    `;
+  }
+
+  function renderCollectionAgingCardHtml(sum) {
+    const ag = sum.agingBuckets || {};
+    const tc = sum.tieCheck || {};
+    const s = sum.summary || {};
+    const fmtUsd = v => (_ctx && typeof _ctx.fmtUSD === 'function')
+      ? _ctx.fmtUSD(Number(v || 0), 0)
+      : ('$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const maxBucket = Math.max(1, ag.currentUsd || 0, ag.bucket11_30Usd || 0, ag.bucket31_60Usd || 0, ag.bucket60PlusUsd || 0);
+    const rows = [
+      { label: 'Current (0-10 Days)', usd: ag.currentUsd || 0, cls: 'is-pos' },
+      { label: '11-30 Days', usd: ag.bucket11_30Usd || 0, cls: 'is-pos' },
+      { label: '31-60 Days Overdue', usd: ag.bucket31_60Usd || 0, cls: (ag.bucket31_60Usd || 0) > 0 ? 'is-neg' : 'is-zero' },
+      { label: '60+ Days Overdue', usd: ag.bucket60PlusUsd || 0, cls: (ag.bucket60PlusUsd || 0) > 0 ? 'is-neg' : 'is-zero' }
+    ];
+    return `
+      <div class="wi-card-head">
+        <span class="pg-sec-title">FIFO AR Aging Buckets</span>
+        <span class="pg-tie-pill ${tc.agingBalanced ? 'is-tied' : 'is-warn'}" id="cfAgingTieBadge">
+          <span>FIFO Aging Tie</span>: <strong data-no-i18n="1">${tc.agingBalanced ? '$0.00' : esc(fmtUsd(tc.agingVarianceUsd))}</strong>
+        </span>
+      </div>
+      <div class="wi-tornado-list">
+        ${rows.map(r => {
+          const pctW = Math.max(4, Math.min(100, Math.round((Math.abs(r.usd) / maxBucket) * 100)));
+          return `
+            <div class="wi-tornado-row">
+              <span class="wi-tornado-lbl">${esc(r.label)}</span>
+              <div class="wi-tornado-track"><span class="wi-tornado-fill ${r.cls}" style="width:${pctW}%"></span></div>
+              <strong class="wi-tornado-val num ${r.cls}" data-no-i18n="1">${esc(fmtUsd(r.usd))}</strong>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="cf-aging-foot">
+        <span><span>Unallocated Advances</span>: <strong data-no-i18n="1">${esc(fmtUsd(ag.advanceUsd || 0))}</strong></span>
+        <span><span>7z-chrono Excess</span>: <strong data-no-i18n="1">${esc(fmtUsd(s.overCeilingUsd || 0))} (${s.overCeilingCount || 0})</strong></span>
+      </div>
+    `;
+  }
+
+  function renderCollectionSavedPromisesHtml(sum) {
+    const presets = Array.isArray(sum.presets) ? sum.presets : [];
+    const saved = Array.isArray(sum.savedPromises) ? sum.savedPromises : [];
+    const fmtUsd = v => (_ctx && typeof _ctx.fmtUSD === 'function')
+      ? _ctx.fmtUSD(Number(v || 0), 0)
+      : ('$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const presetHtml = presets.map(p => {
+      const lbl = sum.lang === 'ar' ? p.labelAr : (sum.lang === 'fr' ? p.labelFr : p.labelEn);
+      const isAct = _chatState.collectionActivePreset === p.id;
+      return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-cf-preset="${esc(p.id)}">${esc(lbl)}</button>`;
+    }).join('');
+    const savedHtml = saved.map(pr => `
+      <span class="wi-saved-pill" data-no-i18n="1">
+        <button type="button" class="wi-saved-load-btn" data-cf-saved-cp="${esc(pr.counterparty)}">
+          ${esc(pr.counterparty)}: ${esc(fmtUsd(pr.promisedAmountUsd))} (${esc(pr.promisedDate)})${pr.creditHold ? ' [Hold]' : ''}
+        </button>
+        <button type="button" class="wi-saved-del-btn" data-cf-del-promise="${esc(pr.id)}" aria-label="Delete saved payment promise">&times;</button>
+      </span>
+    `).join('');
+    return presetHtml + savedHtml;
+  }
+
+  function wireCollectionTelemetryEvents(modal, sum) {
+    if (!modal) return;
+    const draftTextarea = modal.querySelector('#cfWhatsappDraftInput');
+    if (draftTextarea) {
+      draftTextarea.addEventListener('input', () => {
+        const cleanVal = sanitizeCollectionLiveInput(draftTextarea.value);
+        if (draftTextarea.value !== cleanVal) draftTextarea.value = cleanVal;
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.collectionDraftLang) ? _chatState.collectionDraftLang : sum.lang;
+        const cpKey = sum.selectedCounterparty ? sum.selectedCounterparty.name : '__portfolio__';
+        const customKey = `${sum.scopeKey}|${cpKey}|${curDLang}`;
+        if (!_chatState.collectionCustomDraftByScope.has(customKey) && _chatState.collectionCustomDraftByScope.size >= 32) {
+          const oldestKey = _chatState.collectionCustomDraftByScope.keys().next().value;
+          if (oldestKey !== undefined) _chatState.collectionCustomDraftByScope.delete(oldestKey);
+        }
+        _chatState.collectionCustomDraftByScope.set(customKey, cleanVal);
+      });
+    }
+
+    modal.querySelectorAll('[data-cf-draft-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextDLang = lBtn.getAttribute('data-cf-draft-lang') || 'en';
+        _chatState.collectionDraftLang = nextDLang;
+        modal.querySelectorAll('[data-cf-draft-lang]').forEach(b => b.classList.toggle('active', b === lBtn));
+        if (draftTextarea) {
+          const latestSum = buildCollectionForecastSummary();
+          draftTextarea.dir = nextDLang === 'ar' ? 'rtl' : 'ltr';
+          draftTextarea.value = formatCollectionPlainText(latestSum, nextDLang);
+        }
+      });
+    });
+
+    const copyBtn = modal.querySelector('[data-cf-copy-draft]');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const latestSum = buildCollectionForecastSummary();
+        const dLang = ['en', 'ar', 'fr'].includes(_chatState.collectionDraftLang) ? _chatState.collectionDraftLang : latestSum.lang;
+        const txt = draftTextarea ? sanitizeCollectionForecastText(draftTextarea.value, true) : formatCollectionPlainText(latestSum, dLang);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = latestSum.lang === 'ar' ? 'تم النسخ!' : (latestSum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { span.textContent = prev; }, 1400);
+        }
+      });
+    }
+
+    const waBtn = modal.querySelector('[data-cf-wa-share]');
+    if (waBtn) {
+      waBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const latestSum = buildCollectionForecastSummary();
+        const dLang = ['en', 'ar', 'fr'].includes(_chatState.collectionDraftLang) ? _chatState.collectionDraftLang : latestSum.lang;
+        const txt = draftTextarea ? sanitizeCollectionForecastText(draftTextarea.value, true) : formatCollectionPlainText(latestSum, dLang);
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+      });
+    }
+
+    modal.querySelectorAll('[data-cf-select-cp]').forEach(rowEl => {
+      rowEl.addEventListener('click', e => {
+        e.preventDefault();
+        const cpName = rowEl.getAttribute('data-cf-select-cp') || '';
+        if (!cpName) return;
+        _chatState.collectionSelectedCp = cpName;
+        const cpSel = modal.querySelector('#cfPromiseCpSelect');
+        if (cpSel) cpSel.value = cpName;
+        const nextSum = buildCollectionForecastSummary();
+        if (nextSum.selectedCounterparty) {
+          const amtInp = modal.querySelector('#cfPromiseAmountInput');
+          const dtInp = modal.querySelector('#cfPromiseDateInput');
+          const holdChk = modal.querySelector('#cfPromiseHoldCheck');
+          if (amtInp) amtInp.value = String(nextSum.selectedCounterparty.promisedAmountUsd || nextSum.selectedCounterparty.expected30dInflowUsd || 0);
+          if (dtInp) dtInp.value = String(nextSum.selectedCounterparty.promisedDate || nextSum.asOfDate || '2026-11-15');
+          if (holdChk) holdChk.checked = Boolean(nextSum.selectedCounterparty.creditHold);
+        }
+        updateCollectionLiveTelemetryDom(nextSum);
+      });
+    });
+
+    const applyAlertBtn = modal.querySelector('[data-cf-apply-alert]');
+    if (applyAlertBtn) {
+      applyAlertBtn.addEventListener('click', e => {
+        e.preventDefault();
+        if (!_ctx || typeof _ctx.applyCollectionAlertRule !== 'function') return;
+        const latestSum = buildCollectionForecastSummary();
+        const res = _ctx.applyCollectionAlertRule({ levers: latestSum.levers, savedPromises: latestSum.savedPromises });
+        if (res && res.ok) {
+          applyAlertBtn.classList.add('is-applied');
+          const span = applyAlertBtn.querySelector('span');
+          if (span) {
+            span.textContent = latestSum.lang === 'ar' ? 'تنبيه التحصيل مفعّل' : (latestSum.lang === 'fr' ? 'Alerte recouvrement active' : 'Collection Alert Active');
+          }
+          if (_ctx && typeof _ctx.toast === 'function') {
+            _ctx.toast(
+              latestSum.lang === 'ar'
+                ? 'تم تفعيل قاعدة تنبيه متأخرات التحصيل (60+ يوم)'
+                : (latestSum.lang === 'fr' ? 'Alerte de recouvrement 60+ j activée' : '60+d Collection Guardrail Alert Rule saved'),
+              'ok'
+            );
+          }
+        }
+      });
+    }
+
+    const openHubBtn = modal.querySelector('[data-cf-open-hub]');
+    if (openHubBtn) {
+      openHubBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const targetView = openHubBtn.getAttribute('data-cf-open-hub') || 'customers';
+        closeCollectionForecastStudio();
+        if (_ctx && typeof _ctx.setView === 'function') {
+          _ctx.setView(targetView);
+        }
+      });
+    }
+
+    const refreshAiBtn = modal.querySelector('[data-cf-refresh-ai]');
+    if (refreshAiBtn) {
+      refreshAiBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const latestSum = buildCollectionForecastSummary();
+        refreshAiBtn.disabled = true;
+        requestCollectionForecastAiBrief(latestSum, { force: true }).finally(() => {
+          refreshAiBtn.disabled = false;
+        });
+      });
+    }
+  }
+
+  function updateCollectionLiveTelemetryDom(sumObj) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('collectionForecastModal');
+    if (!modal) return;
+    const sum = sumObj || buildCollectionForecastSummary();
+    _chatState.collectionForecastScope = sum.scopeKey;
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const lv = sum.levers || {};
+    ['cadenceBoostDays', 'overdueRecoveryPct', 'discountIncentivePct'].forEach(k => {
+      const badge = modal.querySelector(`[data-cf-badge="${k}"]`);
+      if (badge) badge.textContent = formatCollectionLeverBadgeText(k, lv[k]);
+      const slider = modal.querySelector(`[data-cf-slider="${k}"]`);
+      if (slider && document.activeElement !== slider) slider.value = String(lv[k]);
+      const numInp = modal.querySelector(`[data-cf-num="${k}"]`);
+      if (numInp && document.activeElement !== numInp) numInp.value = String(lv[k]);
+    });
+
+    const agingCard = modal.querySelector('#cfAgingCard');
+    if (agingCard) {
+      agingCard.innerHTML = renderCollectionAgingCardHtml(sum);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(agingCard); } catch (_) {}
+      }
+    }
+
+    const mount = modal.querySelector('#cfTelemetryMount');
+    if (mount) {
+      mount.innerHTML = renderCollectionTelemetryInnerHtml(sum);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(mount); } catch (_) {}
+      }
+      wireCollectionTelemetryEvents(modal, sum);
+    }
+  }
+
+  let _cfEscKeyWired = false;
+  function ensureCollectionGlobalEvents() {
+    if (_cfEscKeyWired || typeof document === 'undefined') return;
+    _cfEscKeyWired = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.collectionForecastOpen) {
+        closeCollectionForecastStudio();
+      }
+    });
+  }
+
+  function openCollectionForecastStudio(anchorEl, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureCollectionGlobalEvents();
+
+    // Two-way mutual exclusion with #whatIfSimulatorModal, #pageGuidePopover, and all 6 executive popovers
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-cf-source'))
+      || _chatState.collectionForecastSource
+      || 'overview';
+    _chatState.collectionForecastSource = source;
+    if (anchorEl) _chatState.collectionForecastAnchor = anchorEl;
+
+    const sum = buildCollectionForecastSummary(undefined, options);
+    _chatState.collectionForecastOpen = true;
+    _chatState.collectionForecastScope = sum.scopeKey;
+    if (sum.selectedCounterparty && !_chatState.collectionSelectedCp) {
+      _chatState.collectionSelectedCp = sum.selectedCounterparty.name;
+    }
+
+    document.querySelectorAll('[data-collection-forecast-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    let modal = document.getElementById('collectionForecastModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'collectionForecastModal';
+      modal.className = 'wi-modal-backdrop cf-modal-backdrop no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'cfModalTitle');
+      document.body.appendChild(modal);
+    }
+    modal.hidden = false;
+    modal.dir = sum.lang === 'ar' ? 'rtl' : 'ltr';
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-source', source);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const leverRowsHtml = (sum.leverSpecs || []).map(spec => {
+      const k = spec.key;
+      const curVal = sum.levers[k] != null ? sum.levers[k] : 0;
+      const lbl = sum.lang === 'ar' ? spec.labelAr : (sum.lang === 'fr' ? spec.labelFr : spec.labelEn);
+      const badgeTxt = formatCollectionLeverBadgeText(k, curVal);
+      return `
+        <div class="wi-lever-row" data-cf-lever-row="${esc(k)}">
+          <div class="wi-lever-top">
+            <label class="wi-lever-lbl" for="cfSlider_${esc(k)}" data-no-i18n="1">${esc(lbl)}</label>
+            <span class="wi-lever-badge num" data-cf-badge="${esc(k)}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="wi-lever-controls" data-no-i18n="1">
+            <button type="button" class="wi-step-btn" data-cf-step="${esc(k)}" data-cf-dir="-1" aria-label="Decrease ${esc(spec.labelEn)}">&minus;</button>
+            <input type="range" class="wi-slider" id="cfSlider_${esc(k)}" data-cf-slider="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}">
+            <button type="button" class="wi-step-btn" data-cf-step="${esc(k)}" data-cf-dir="1" aria-label="Increase ${esc(spec.labelEn)}">+</button>
+            <input type="number" class="wi-num-input num" id="cfNum_${esc(k)}" data-cf-num="${esc(k)}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(spec.labelEn)} numeric value">
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const cpOptionsHtml = (sum.counterparties || []).map(c => {
+      const isSel = sum.selectedCounterparty && c.name === sum.selectedCounterparty.name;
+      return `<option value="${esc(c.name)}" ${isSel ? 'selected' : ''} data-no-i18n="1">${esc(c.name)} ($${Math.round(c.grossArUsd || 0).toLocaleString('en-US')})</option>`;
+    }).join('');
+
+    const defPromAmt = sum.selectedCounterparty
+      ? (sum.selectedCounterparty.promisedAmountUsd || sum.selectedCounterparty.expected30dInflowUsd || 0)
+      : 0;
+    const defPromDate = sum.selectedCounterparty
+      ? (sum.selectedCounterparty.promisedDate || sum.asOfDate || '2026-11-15')
+      : (sum.asOfDate || '2026-11-15');
+    const defHold = Boolean(sum.selectedCounterparty && sum.selectedCounterparty.creditHold);
+
+    modal.innerHTML = `
+      <div class="wi-modal-card cf-modal-card" role="document">
+        <div class="ceo-pv-head wi-modal-head">
+          <div class="ceo-pv-title-wrap">
+            <div class="pg-eyebrow-row">
+              <span class="ceo-pv-eyebrow">COUNTERPARTY PAYMENT-BEHAVIOR &amp; 30-DAY CASH-COLLECTION STUDIO</span>
+              <span class="pg-ind-badge" id="cfEntityBadge" data-no-i18n="1">${esc(sum.companyLabel)} · ${esc(sum.industry)}</span>
+              <span class="pg-ind-badge" data-no-i18n="1">${esc(sum.periodLabel)}</span>
+            </div>
+            <h3 class="ceo-pv-title" id="cfModalTitle">Collection Forecast &amp; Payment-Behavior Studio</h3>
+          </div>
+          <div class="wi-head-actions">
+            <button type="button" class="ceo-pv-close" id="cfCloseModalBtn" data-cf-close="1" aria-label="Close Collection Forecast Studio" data-no-i18n="1">&times;</button>
+          </div>
+        </div>
+
+        <div class="wi-presets-toolbar" id="cfPresetsToolbar">
+          <div class="wi-presets-list" id="cfPresetsList">
+            ${renderCollectionSavedPromisesHtml(sum)}
+          </div>
+          <div class="wi-preset-save-wrap">
+            <button type="button" class="ceo-pv-btn" id="cfResetLeversBtn" data-cf-reset="1"><span>Reset Levers</span></button>
+            <form class="wi-save-form cf-promise-form" id="cfPromiseForm">
+              <select id="cfPromiseCpSelect" class="wi-save-input cf-cp-select" data-no-i18n="1" aria-label="Select counterparty for payment promise">
+                ${cpOptionsHtml || '<option value="Counterparty" data-no-i18n="1">Counterparty</option>'}
+              </select>
+              <input type="number" id="cfPromiseAmountInput" class="wi-save-input cf-amt-input num" min="0" max="1000000000" step="50" value="${defPromAmt}" placeholder="Promise $" aria-label="Promised settlement amount USD">
+              <input type="date" id="cfPromiseDateInput" class="wi-save-input cf-date-input" value="${esc(defPromDate)}" aria-label="Promised settlement date">
+              <label class="cf-hold-lbl"><input type="checkbox" id="cfPromiseHoldCheck" ${defHold ? 'checked' : ''}><span>Credit Hold</span></label>
+              <button type="submit" class="ceo-pv-btn is-primary" id="cfSavePromiseBtn"><span>+ Save Promise</span></button>
+            </form>
+          </div>
+        </div>
+
+        <div class="wi-studio-grid cf-studio-grid">
+          <div class="wi-levers-col cf-levers-col">
+            <div class="wi-col-head">
+              <span class="pg-sec-title">Collection Cadence &amp; Recovery Levers</span>
+              <span class="wi-col-sub">Adjust follow-up cadence, overdue blitz &amp; early-pay discount</span>
+            </div>
+            <div class="wi-levers-list" id="cfLeversList">
+              ${leverRowsHtml}
+            </div>
+            <div class="wi-tornado-card cf-aging-card" id="cfAgingCard">
+              ${renderCollectionAgingCardHtml(sum)}
+            </div>
+          </div>
+
+          <div class="wi-telemetry-col cf-telemetry-col" id="cfTelemetryMount">
+            ${renderCollectionTelemetryInnerHtml(sum)}
+          </div>
+        </div>
+
+        <div class="ceo-pv-foot wi-modal-foot">
+          <button type="button" class="ceo-pv-btn" id="cfSpeakBtn" data-cf-speak="1">
+            ${(icons && icons.svg('audio')) || AI_SVGS.audio}<span>Listen to Collection Brief</span>
+          </button>
+          <div class="wi-foot-right">
+            <button type="button" class="ceo-pv-btn is-primary" id="cfOpenCopilotBtn" data-cf-open-copilot="1">
+              ${(icons && icons.svg('sparkle')) || AI_SVGS.sparkle}<span>Open in Full Copilot</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+
+    modal.onclick = e => {
+      if (e.target === modal) closeCollectionForecastStudio();
+    };
+
+    const closeBtn = modal.querySelector('[data-cf-close]');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closeCollectionForecastStudio();
+      });
+    }
+
+    const applyNewLevers = (nextLv, presetId = 'custom') => {
+      _chatState.collectionActivePreset = presetId;
+      setCollectionLeversForEntity(sum.companyKey, nextLv);
+      const nextSum = buildCollectionForecastSummary();
+      const pList = modal.querySelector('#cfPresetsList');
+      if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+      wireCollectionPresetButtons(modal, sum.companyKey);
+      updateCollectionLiveTelemetryDom(nextSum);
+    };
+
+    function wireCollectionPresetButtons(mEl, coKey) {
+      mEl.querySelectorAll('[data-cf-preset]').forEach(pBtn => {
+        pBtn.addEventListener('click', e => {
+          e.preventDefault();
+          const pid = pBtn.getAttribute('data-cf-preset') || 'standard';
+          const pSpec = (sum.presets || []).find(x => x.id === pid);
+          if (pSpec && pSpec.levers) {
+            applyNewLevers(pSpec.levers, pid);
+          }
+        });
+      });
+      mEl.querySelectorAll('[data-cf-saved-cp]').forEach(sBtn => {
+        sBtn.addEventListener('click', e => {
+          e.preventDefault();
+          const cpName = sBtn.getAttribute('data-cf-saved-cp') || '';
+          if (!cpName) return;
+          _chatState.collectionSelectedCp = cpName;
+          const nextSum = buildCollectionForecastSummary();
+          updateCollectionLiveTelemetryDom(nextSum);
+        });
+      });
+      mEl.querySelectorAll('[data-cf-del-promise]').forEach(dBtn => {
+        dBtn.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const pid = dBtn.getAttribute('data-cf-del-promise') || '';
+          deleteCollectionPromise(pid);
+          const nextSum = buildCollectionForecastSummary();
+          const pList = mEl.querySelector('#cfPresetsList');
+          if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+          wireCollectionPresetButtons(mEl, coKey);
+          updateCollectionLiveTelemetryDom(nextSum);
+        });
+      });
+    }
+    wireCollectionPresetButtons(modal, sum.companyKey);
+
+    const resetBtn = modal.querySelector('[data-cf-reset]');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', e => {
+        e.preventDefault();
+        applyNewLevers(normalizeCollectionLevers({}), 'standard');
+      });
+    }
+
+    const promiseForm = modal.querySelector('#cfPromiseForm');
+    if (promiseForm) {
+      promiseForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const cpSel = modal.querySelector('#cfPromiseCpSelect');
+        const amtInp = modal.querySelector('#cfPromiseAmountInput');
+        const dtInp = modal.querySelector('#cfPromiseDateInput');
+        const holdChk = modal.querySelector('#cfPromiseHoldCheck');
+        const cpName = (cpSel && cpSel.value) || (_chatState.collectionSelectedCp) || 'Counterparty';
+        const amtVal = amtInp ? Number(amtInp.value || 0) : 0;
+        const dtVal = (dtInp && dtInp.value) || sum.asOfDate || '2026-11-15';
+        const holdVal = Boolean(holdChk && holdChk.checked);
+        saveCollectionPromise({
+          counterparty: cpName,
+          coKey: sum.companyKey,
+          promisedAmountUsd: amtVal,
+          promisedDate: dtVal,
+          creditHold: holdVal
+        }, sum.companyKey);
+        _chatState.collectionSelectedCp = cpName;
+        const nextSum = buildCollectionForecastSummary();
+        const pList = modal.querySelector('#cfPresetsList');
+        if (pList) pList.innerHTML = renderCollectionSavedPromisesHtml(nextSum);
+        wireCollectionPresetButtons(modal, sum.companyKey);
+        updateCollectionLiveTelemetryDom(nextSum);
+      });
+    }
+
+    modal.querySelectorAll('[data-cf-slider]').forEach(slider => {
+      slider.addEventListener('input', () => {
+        const k = slider.getAttribute('data-cf-slider');
+        const cur = getCollectionLeversForEntity(sum.companyKey);
+        cur[k] = Number(slider.value);
+        applyNewLevers(cur, 'custom');
+      });
+    });
+
+    modal.querySelectorAll('[data-cf-num]').forEach(numInp => {
+      numInp.addEventListener('change', () => {
+        const k = numInp.getAttribute('data-cf-num');
+        const cur = getCollectionLeversForEntity(sum.companyKey);
+        cur[k] = Number(numInp.value);
+        applyNewLevers(cur, 'custom');
+      });
+    });
+
+    modal.querySelectorAll('[data-cf-step]').forEach(stepBtn => {
+      stepBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const k = stepBtn.getAttribute('data-cf-step');
+        const dir = Number(stepBtn.getAttribute('data-cf-dir') || 1);
+        const spec = (sum.leverSpecs || []).find(s => s.key === k);
+        const step = spec ? Number(spec.step || 1) : 1;
+        const cur = getCollectionLeversForEntity(sum.companyKey);
+        cur[k] = Number(cur[k] || 0) + dir * step;
+        applyNewLevers(cur, 'custom');
+      });
+    });
+
+    wireCollectionTelemetryEvents(modal, sum);
+
+    const spkBtn = modal.querySelector('#cfSpeakBtn');
+    if (spkBtn) {
+      spkBtn.addEventListener('click', e => {
+        e.preventDefault();
+        speakCollectionForecast(spkBtn);
+      });
+    }
+
+    const openCopilotBtn = modal.querySelector('#cfOpenCopilotBtn');
+    if (openCopilotBtn) {
+      openCopilotBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const latestSum = buildCollectionForecastSummary();
+        const q = `Analyze the 30-day cash-collection forecast for ${latestSum.companyLabel} (Gross Open AR $${latestSum.summary.grossOpenArUsd || 0}, Expected 30d Cash Inflow $${latestSum.horizon.net30dCashInflowUsd || 0}, DSO ${latestSum.summary.simulatedDsoDays || 0}d) and prioritize the top overdue accounts to call today.`;
+        closeCollectionForecastStudio();
+        openDrawer(q);
+      });
+    }
+
+    syncCollectionModalAudioButton();
+    const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
+    if (!sum.isAiSource && !sum.restricted && !sum.rlsClamped && !skipBgAi) {
+      requestCollectionForecastAiBrief(sum).catch(() => {});
+    }
+    return modal;
+  }
+
+  function closeCollectionForecastStudio() {
+    _chatState.collectionForecastOpen = false;
+    _chatState.collectionForecastScope = '';
+    _chatState.collectionForecastAnchor = null;
+    if (_chatState.activeCollectionSpeechScope) {
+      stopActivePlayback();
+    }
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('collectionForecastModal');
+    if (modal) {
+      modal.hidden = true;
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
+    }
+    document.querySelectorAll('[data-collection-forecast-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleCollectionForecastStudio(anchorEl, opts = {}) {
+    if (_chatState.collectionForecastOpen) {
+      closeCollectionForecastStudio();
+      return null;
+    }
+    return openCollectionForecastStudio(anchorEl, opts);
+  }
+
+  function speakCollectionForecast(btnEl, langOverride, opts = {}) {
+    const sum = buildCollectionForecastSummary(langOverride, opts);
+    if (!sum || sum.restricted || sum.rlsClamped) {
+      return Promise.resolve({ ok: false, restricted: true });
+    }
+    if (_chatState.activeCollectionSpeechScope === sum.scopeKey && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl)) {
+      stopActivePlayback();
+      syncCollectionModalAudioButton();
+      return Promise.resolve({ ok: true, stopped: true });
+    }
+    stopActivePlayback();
+    const safeLang = sum.lang || 'en';
+    const plainScript = sanitizeCollectionForecastText([sum.headline, ...(sum.activeBullets || sum.bullets || [])].join(' '));
+    _chatState.activeCollectionSpeechScope = sum.scopeKey;
+    _chatState.lastSpokenText = plainScript;
+    _chatState.activeSpeakCaption = sum.headline;
+    if (btnEl) _chatState.activeSpeakBtn = btnEl;
+    syncCollectionModalAudioButton();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if (!audioUrl || !_chatState.activeCollectionSpeechScope) {
+          _chatState.activeCollectionSpeechScope = '';
+          syncCollectionModalAudioButton();
+          return { ok: false, script: plainScript, summary: sum };
+        }
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeCollectionSpeechScope = '';
+                syncCollectionModalAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeCollectionSpeechScope = '';
+                syncCollectionModalAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activeCollectionSpeechScope = '';
+        syncCollectionModalAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  function rebindCollectionForecastButtons(container) {
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      ['#ceoCollectionForecastBtn', '#arCollectionForecastBtn', '#indCollectionForecastBtn', '#cfCollectionForecastBtn', '#pbiCollectionForecastBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (!_chatState.collectionForecastOpen) return;
+    openCollectionForecastStudio(_chatState.collectionForecastAnchor, { source: _chatState.collectionForecastSource });
+  }
+
+  function stopCollectionForecastIfActive() {
+    if (_chatState.collectionForecastOpen) {
+      closeCollectionForecastStudio();
+    }
+  }
+
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
+    closeCollectionForecastStudio();
     closeWhatIfStudio();
     closePageGuidePopover();
     closeDailyHandoverPopover();
@@ -13496,6 +14826,12 @@
     closeDashboardVariancePopover();
     closeStatementVariancePopover();
     closeCeoVariancePopover();
+    _chatState.collectionLeversByEntity.clear();
+    _chatState.collectionCache.clear();
+    _chatState.collectionInflight.clear();
+    _chatState.collectionCustomDraftByScope.clear();
+    _chatState.collectionSelectedCp = '';
+    _chatState.activeCollectionSpeechScope = '';
     _chatState.whatIfLeversByEntity.clear();
     _chatState.whatIfCache.clear();
     _chatState.whatIfInflight.clear();
@@ -14915,7 +16251,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'ceoCollectionForecastBtn', 'arCollectionForecastBtn', 'indCollectionForecastBtn', 'cfCollectionForecastBtn', 'pbiCollectionForecastBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -14924,6 +16260,10 @@
           document.querySelectorAll('.sn-ai-act-btn').forEach(b => {
             try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
+        }
+        _chatState.collectionDraftLang = curLang;
+        if (_chatState.collectionForecastOpen) {
+          openCollectionForecastStudio(_chatState.collectionForecastAnchor, { source: _chatState.collectionForecastSource });
         }
         _chatState.whatIfDraftLang = curLang;
         if (_chatState.whatIfOpen) {
@@ -15099,6 +16439,22 @@
     speakWhatIfScenario,
     rebindWhatIfButtons,
     stopWhatIfIfActive,
+    buildCollectionForecastSummary,
+    sanitizeCollectionForecastText,
+    sanitizeCollectionLiveInput,
+    getCollectionLeversForEntity,
+    setCollectionLeversForEntity,
+    loadSavedCollectionPromises,
+    saveCollectionPromise,
+    deleteCollectionPromise,
+    formatCollectionForecast: formatCollectionPlainText,
+    requestCollectionForecastAiBrief,
+    openCollectionForecastStudio,
+    closeCollectionForecastStudio,
+    toggleCollectionForecastStudio,
+    speakCollectionForecast,
+    rebindCollectionForecastButtons,
+    stopCollectionForecastIfActive,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -15141,6 +16497,10 @@
       whatIfScope: _chatState.whatIfScope || '',
       whatIfSpeechScope: _chatState.activeWhatIfSpeechScope || '',
       whatIfCacheSize: _chatState.whatIfCache ? _chatState.whatIfCache.size : 0,
+      collectionForecastOpen: Boolean(_chatState.collectionForecastOpen),
+      collectionForecastScope: _chatState.collectionForecastScope || '',
+      collectionSpeechScope: _chatState.activeCollectionSpeechScope || '',
+      collectionCacheSize: _chatState.collectionCache ? _chatState.collectionCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0
