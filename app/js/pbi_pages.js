@@ -5406,6 +5406,7 @@
           </div>
           <div class="pbi-hero-actions">
             ${activeSlicerCount ? `<span class="badge badge-warn sr-only">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-whatif-btn" id="pbiWhatIfBtn" data-whatif-open="1" data-wi-source="pbi" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX &amp; Working-Capital Scenario Simulator">${pbiIcon('sliders')}<span class="pbi-wi-lbl">What-If Studio</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${pbiIcon('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${pbiIcon('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="pbi-drawer-toggle ${!pbiCatalogCollapsed ? 'active' : ''}" id="pbiToggleCatalogBtn" aria-label="Toggle analytical pages catalog">

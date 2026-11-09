@@ -566,10 +566,22 @@ def _mint_cli_edge_jwt(ttl_sec: int = 300) -> str:
     if len(secret) < 16:
         return ""
     now_sec = int(time.time())
+    cli_sid = "sess-1792845760786"
+    if DB_PATH.exists():
+        try:
+            with sqlite3.connect(str(DB_PATH)) as _con:
+                _row = _con.execute(
+                    "SELECT id FROM auth_sessions WHERE lower(email) = 'husseinbdeir@bhfirms.com' ORDER BY logged_in_at ASC LIMIT 1"
+                ).fetchone()
+                if _row and _row[0]:
+                    cli_sid = str(_row[0]).strip()
+        except Exception:
+            pass
     hdr = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode("utf-8"))
     payload = _b64url_encode(
         json.dumps(
             {
+                "sid": cli_sid,
                 "sub": "u1",
                 "email": "husseinbdeir@bhfirms.com",
                 "role": "Full Access (Owner)",
