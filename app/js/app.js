@@ -3363,7 +3363,7 @@
       ol = Math.round(Number(lt.out_lbp || 0) + cd.perOutL);
       perTillU = liveU;
       perTillL = liveL;
-    } else if (SEED._recordsReady) {
+    } else if (SEED._recordsReady && !daily.length) {
       const f = range.from || MIN_DATE;
       const t = range.to || MAX_DATE;
       const allMoves = buildCashTillMoves({ company: coKey, ignorePeriod: true, forceFullFin: true });
@@ -15053,6 +15053,7 @@
           <span class="ceo-bridge-title">${esc(cleanCeoText(bridge.title || 'Consolidated P&L Value Bridge'))}</span>
           <div class="ceo-bridge-hdr-actions">
             ${bridge.meta ? `<span class="ceo-bridge-meta">${esc(cleanCeoText(bridge.meta))}</span>` : ''}
+            <button type="button" class="ceo-variance-brief-btn ceo-whatif-btn" id="ceoWhatIfBtn" data-whatif-open="1" data-wi-source="overview" aria-expanded="false" title="Open Interactive What-If Margin, FX & Working-Capital Scenario Simulator">${ic('sliders')}<span class="ceo-wi-lbl">What-If Studio</span></button>
             <button type="button" class="ceo-variance-brief-btn" id="ceoVarianceBriefBtn" data-ceo-variance-brief="1" aria-expanded="false" title="Open grounded Period Variance Commentary">${ic('sparkles')}<span class="ceo-vb-lbl">Variance</span></button>
             <button type="button" class="ceo-period-summary-btn" id="ceoPeriodSummaryBtn" data-ceo-period-summary="1" aria-pressed="false" title="Play a spoken summary of the active period's P&L bridge, prior-period variance, cash till, and active Sentinel flags">${ic('audio')}<span class="ceo-ps-lbl">Listen to Period Summary</span></button>
           </div>
@@ -39523,7 +39524,7 @@
     const targetFinalLbp = (cf.live_till && cf.live_till.lbp != null) ? Math.round(Number(cf.live_till.lbp) + customNetLbpAll) : null;
 
     const dayMap = new Map();
-    if (SEED._recordsReady && fullFin) {
+    if (SEED._recordsReady && fullFin && !dailySrc.length) {
       movesByDate.forEach((md, iso) => {
         dayMap.set(iso, { iu: round2(md.iu), ou: round2(md.ou), il: Math.round(md.il), ol: Math.round(md.ol) });
       });
@@ -39549,8 +39550,8 @@
     }
 
     const sortedDates = Array.from(dayMap.keys()).sort();
-    let runUsd = (SEED._recordsReady && fullFin && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
-    let runLbp = (SEED._recordsReady && fullFin && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
+    let runUsd = (SEED._recordsReady && fullFin && !dailySrc.length && targetFinalUsd !== null) ? round2(targetFinalUsd - totalMovesNetU) : 0;
+    let runLbp = (SEED._recordsReady && fullFin && !dailySrc.length && targetFinalLbp !== null) ? Math.round(targetFinalLbp - totalMovesNetL) : 0;
     const out = [];
     for (let i = 0; i < sortedDates.length; i++) {
       const iso = sortedDates[i];
@@ -40100,6 +40101,7 @@
             </div>
             <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
             <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
@@ -52190,6 +52192,7 @@
             <div class="panel-meta" style="margin-top:2px">Page ${esc(activePage.num)}: <b>${esc(activePage.label)}</b> · ${esc(activePage.title)}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-whatif-btn" id="pbiWhatIfBtn" data-whatif-open="1" data-wi-source="pbi" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX &amp; Working-Capital Scenario Simulator">${ic('sliders')}<span class="pbi-wi-lbl">What-If Studio</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-explain-btn" id="pbiExplainOutliersBtn" data-pbi-explain="1" aria-expanded="false" data-ui-tip="Explain active dashboard KPIs, top-3 concentration &amp; outliers">${ic('sparkles')}<span class="pbi-exp-lbl">Explain</span></button>
             <button type="button" class="pbi-drawer-toggle pbi-ai-act-btn pbi-listen-btn" id="pbiListenSummaryBtn" data-pbi-summary="1" data-ui-tip="Listen to spoken walkthrough of active dashboard">${ic('audio')}<span class="pbi-lsn-lbl">Listen</span></button>
             <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activePage.view)}">Open ${esc(activePage.label)} Hub</button>
@@ -61549,9 +61552,12 @@
     if (!quickActions.length) {
       quickActions = [
         { type: 'tour', labelEn: 'Start Section Tour', labelAr: 'بدء جولة الأقسام', labelFr: 'Lancer la Visite' },
+        { type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' },
         { type: 'view', view: viewId === 'cashflow' ? 'overview' : 'cashflow', labelEn: viewId === 'cashflow' ? 'Executive Overview' : 'Cash Flow & Till', labelAr: viewId === 'cashflow' ? 'الملخص التنفيذي' : 'التدفق النقدي والصندوق', labelFr: viewId === 'cashflow' ? 'Vue Exécutive' : 'Trésorerie & Caisse' },
         { type: 'view', view: 'sentinels', labelEn: `Sentinels (${fmtNum(openSentinels.length)})`, labelAr: `التنبيهات (${fmtNum(openSentinels.length)})`, labelFr: `Sentinelles (${fmtNum(openSentinels.length)})` }
       ];
+    } else if (!quickActions.some(q => q && q.type === 'whatif')) {
+      quickActions.push({ type: 'whatif', labelEn: 'What-If Simulator', labelAr: 'محاكاة السيناريو', labelFr: 'Simulateur What-If' });
     }
 
     const drafts = (isCashflowContext && cfSnap && !cfSnap.restricted)
@@ -61640,6 +61646,597 @@
       promptChipsFr,
       quickActions,
       drafts
+    };
+  }
+
+  function computeWhatIfScenarioSnapshot(opts = {}) {
+    ensureMultiIndustrySpineSeeded();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    const ownerFlag = Boolean(typeof isOwner === 'function' && isOwner(u));
+    const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : ['all'];
+    const safeNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+    const clampNum = (v, minV, maxV, defV) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return defV;
+      return Math.min(maxV, Math.max(minV, n));
+    };
+
+    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let rlsClamped = false;
+    if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
+      if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
+        reqCo = allowedKeys[0];
+        rlsClamped = true;
+      } else if (reqCo !== 'all' && !allowedKeys.includes(reqCo)) {
+        reqCo = allowedKeys[0] || 'wtc';
+        rlsClamped = true;
+      }
+    }
+
+    const ind = options.industry || getActiveIndustry(reqCo);
+    const isMfg = ind === 'Manufacturing';
+    const coLabel = scrubOutwardGuideText(COMPANY_LABELS[reqCo] || (reqCo.startsWith('industry:') ? reqCo.replace(/^industry:/, '') : reqCo) || ind) || ind;
+    const range = (typeof periodRange === 'function' && periodRange()) || { from: '1900-01-01', to: '2026-10-31', label: 'YTD 2026' };
+    const anchorDate = String(options.asOfDate || range.to || todayISO() || '2026-10-28').slice(0, 10);
+
+    const actualCanCash = Boolean(typeof canViewHub === 'function' ? canViewHub('cashflow', u) : true);
+    const actualCanBooks = Boolean(actualCanCash && (typeof canViewHub === 'function' ? canViewHub('books', u) : true));
+    const actualCanExp = Boolean(typeof canViewView === 'function' ? canViewView('expenses', u) : true);
+    const actualCanSales = Boolean(typeof canViewView === 'function' ? canViewView('sales', u) : true);
+    const actualCanEditAlerts = Boolean(typeof canReviewSentinels === 'function' ? canReviewSentinels() : ownerFlag);
+
+    const canCash = Boolean(actualCanCash && (options.canCash === undefined ? true : options.canCash));
+    const canViewBooks = Boolean(actualCanBooks && (options.canViewBooks === undefined ? true : options.canViewBooks));
+    const canExp = Boolean(actualCanExp && (options.canExp === undefined ? true : options.canExp));
+    const canSales = Boolean(actualCanSales && (options.canSales === undefined ? true : options.canSales));
+    const canEditAlerts = Boolean(actualCanEditAlerts && canViewBooks && !rlsClamped && (options.canEditAlerts === undefined ? true : options.canEditAlerts));
+
+    const liveFxRate = Math.max(15000, safeNum(getLbpFxRate() || 89500));
+    const rawLevers = (options.levers && typeof options.levers === 'object') ? options.levers : options;
+    const levers = {
+      pricePct: round2(clampNum(rawLevers.pricePct, -50, 100, 0)),
+      volumePct: round2(clampNum(rawLevers.volumePct, -80, 200, 0)),
+      directCostPct: round2(clampNum(rawLevers.directCostPct, -50, 200, 0)),
+      overheadPct: round2(clampNum(rawLevers.overheadPct, -50, 200, 0)),
+      dsoDeltaDays: Math.round(clampNum(rawLevers.dsoDeltaDays, -30, 60, 0)),
+      fxRateLbp: Math.round(clampNum(rawLevers.fxRateLbp, 15000, 250000, liveFxRate))
+    };
+    const leverSig = `${levers.pricePct}:${levers.volumePct}:${levers.directCostPct}:${levers.overheadPct}:${levers.dsoDeltaDays}:${levers.fxRateLbp}`;
+
+    const domainMetaMap = {
+      'Manufacturing': {
+        targetHubView: 'pricing',
+        targetHubLabelEn: 'Commercial Pricing & Rules',
+        targetHubLabelAr: 'التسعير التجاري والقواعد',
+        targetHubLabelFr: 'Tarification Commerciale',
+        unitLabelEn: 'Tons',
+        unitLabelAr: 'طن',
+        unitLabelFr: 'Tonnes',
+        leverLabels: {
+          price: { en: 'Aggregate & Concrete Price (/m³ & /Ton)', ar: 'سعر البحص والباطون (/م³ و/طن)', fr: 'Prix Granulats & Béton (/m³ & /T)' },
+          volume: { en: 'Dispatched Tonnage & Loads Volume', ar: 'حجم الحمولات والأطنان المباعة', fr: 'Volume Tonnage & Chargements' },
+          directCost: { en: 'Diesel, Quarry & Haulage Direct Cost', ar: 'تكلفة المازوت والمقالع والنقل المباشرة', fr: 'Coût Direct Gasoil, Carrière & Transport' },
+          overhead: { en: 'Plant Overhead & Payroll Run-Rate', ar: 'المصاريف التشغيلية والرواتب الثابتة', fr: 'Charges Fixes Usine & Paie' },
+          dso: { en: 'Customer AR Collection Speed (DSO Days)', ar: 'سرعة تحصيل ذمم العملاء (أيام)', fr: 'Délai d\'Encaissement Clients (Jours DSO)' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      },
+      'Holding & Treasury': {
+        targetHubView: 'hld_loans',
+        targetHubLabelEn: 'Loans, Capital & Schedules',
+        targetHubLabelAr: 'القروض ورأس المال والجداول',
+        targetHubLabelFr: 'Prêts, Capital & Échéanciers',
+        unitLabelEn: 'Group Entities',
+        unitLabelAr: 'شركة تابعة',
+        unitLabelFr: 'Entités Groupe',
+        leverLabels: {
+          price: { en: 'Group Yield & Management Fee Rate', ar: 'عائد المجموعة ونسبة رسوم الإدارة', fr: 'Rendement Groupe & Frais de Gestion' },
+          volume: { en: 'Consolidated Portfolio Activity Volume', ar: 'حجم نشاط المحفظة الموحدة', fr: 'Volume d\'Activité Consolidé' },
+          directCost: { en: 'Facility Interest & Direct Cost', ar: 'فوائد التسهيلات والتكلفة المباشرة', fr: 'Intérêts & Coûts Directs' },
+          overhead: { en: 'Holding Treasury & Advisory Overhead', ar: 'المصاريف الإدارية والرواتب القابضة', fr: 'Frais Généraux & Paie Holding' },
+          dso: { en: 'Intercompany & AR Settlement Days', ar: 'أيام تسوية الحسابات المشتركة والذمم', fr: 'Délai de Règlement Interco & Clients' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      },
+      'Hospitality & Resorts': {
+        targetHubView: 'hsp_memberships',
+        targetHubLabelEn: 'Memberships & Seasonal Tariffs',
+        targetHubLabelAr: 'العضويات والتعرفات الموسمية',
+        targetHubLabelFr: 'Adhésions & Tarifs Saisonniers',
+        unitLabelEn: 'Covers & Bookings',
+        unitLabelAr: 'حجز وزائر',
+        unitLabelFr: 'Couverts & Séjours',
+        leverLabels: {
+          price: { en: 'Chalet, Cabana & POS Tariff Rate', ar: 'تعرفة الشاليهات والكابانا ونقاط البيع', fr: 'Tarifs Chalets, Cabanas & POS' },
+          volume: { en: 'Resort Occupancy & Guest Covers', ar: 'نسبة إشغال المنتجع وعدد الرواد', fr: 'Occupation Resort & Couverts' },
+          directCost: { en: 'Generator Diesel & Kitchen/Bar COGS', ar: 'مازوت المولدات وتكلفة المطبخ والبار', fr: 'Gasoil Générateurs & Coût Cuisine/Bar' },
+          overhead: { en: 'Resort Maintenance & Staff Payroll', ar: 'صيانة المنتجع ورواتب الموظفين', fr: 'Maintenance Resort & Paie' },
+          dso: { en: 'Membership & Event AR Collection Days', ar: 'أيام تحصيل رسوم العضويات والحفلات', fr: 'Délai d\'Encaissement Adhésions' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      },
+      'Automotive & Heavy Trading': {
+        targetHubView: 'trd_trucks',
+        targetHubLabelEn: 'Showroom & Serial Units Pricing',
+        targetHubLabelAr: 'تسعير صالة العرض والوحدات',
+        targetHubLabelFr: 'Tarifs Showroom & Unités',
+        unitLabelEn: 'Units & Orders',
+        unitLabelAr: 'آلية وطلبية',
+        unitLabelFr: 'Unités & Commandes',
+        leverLabels: {
+          price: { en: 'Truck, Vehicle & Spare Parts Selling Price', ar: 'سعر بيع الشاحنات والآليات وقطع الغيار', fr: 'Prix de Vente Camions & Pièces' },
+          volume: { en: 'Showroom Unit Deliveries & Parts Volume', ar: 'حجم تسليم الآليات ومبيعات القطع', fr: 'Volume Livraisons & Pièces' },
+          directCost: { en: 'FOB Import, Customs & Landed Cost', ar: 'تكلفة الاستيراد والجمارك والشحن', fr: 'Coût d\'Importation FOB & Douane' },
+          overhead: { en: 'Showroom, Warranty & Staff Overhead', ar: 'مصاريف الصالة والكفالات والرواتب', fr: 'Charges Showroom, Garantie & Paie' },
+          dso: { en: 'Dealer & Fleet Receivable Days (DSO)', ar: 'أيام تحصيل ذمم العملاء والأساطيل', fr: 'Délai d\'Encaissement Clients (DSO)' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      },
+      'Real Estate & Property': {
+        targetHubView: 're_leases',
+        targetHubLabelEn: 'Leases & Rent Roll Schedule',
+        targetHubLabelAr: 'عقود الإيجار وجدول العوائد',
+        targetHubLabelFr: 'Baux & État Locatif',
+        unitLabelEn: 'Leased Units',
+        unitLabelAr: 'وحدة مؤجرة',
+        unitLabelFr: 'Lots Loués',
+        leverLabels: {
+          price: { en: 'Annual Lease Rent & Sale Price (/m²)', ar: 'بدل الإيجار السنوي وسعر البيع (/م²)', fr: 'Loyer Annuel & Prix au m²' },
+          volume: { en: 'Portfolio Occupancy & Unit Absorption', ar: 'نسبة إشغال العقارات والوحدات المؤجرة', fr: 'Taux d\'Occupation & Absorption' },
+          directCost: { en: 'Common Area (CAM) & Fit-Out Works Cost', ar: 'تكلفة صيانة الأجزاء المشتركة والتجهيز', fr: 'Coûts Entretien CAM & Travaux' },
+          overhead: { en: 'Property Management, Taxes & Payroll', ar: 'مصاريف إدارة الأملاك والضرائب والرواتب', fr: 'Gestion Immobilière, Taxes & Paie' },
+          dso: { en: 'Tenant Rent Arrears Collection Days', ar: 'أيام تحصيل متأخرات الإيجار', fr: 'Délai de Recouvrement des Loyers' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      },
+      'Insurance & Brokerage': {
+        targetHubView: 'ins_catalogue',
+        targetHubLabelEn: 'Lines, Products & Commission Rates',
+        targetHubLabelAr: 'فروع التأمين ونسب العمولات',
+        targetHubLabelFr: 'Branches & Taux de Commission',
+        unitLabelEn: 'Active Policies',
+        unitLabelAr: 'بوليصة نشطة',
+        unitLabelFr: 'Polices Actives',
+        leverLabels: {
+          price: { en: 'Brokerage Commission & Policy Tariff', ar: 'نسبة عمولة الوساطة وتعرفة البوالص', fr: 'Taux de Commission & Tarif Police' },
+          volume: { en: 'Written Policy & Renewal Retention Volume', ar: 'حجم إصدار وتجديد البوالص', fr: 'Volume d\'Émission & Renouvellements' },
+          directCost: { en: 'Sub-Agent Split & Client Discount Cost', ar: 'حصة الوسطاء الفرعيين والحسومات', fr: 'Rétrocession Sous-Agents & Remises' },
+          overhead: { en: 'Brokerage Operations & Staff Payroll', ar: 'مصاريف مكتب الوساطة والرواتب', fr: 'Charges de Courtage & Paie' },
+          dso: { en: 'Unpaid Premium Collection Days (DSO)', ar: 'أيام تحصيل الأقساط غير المسددة', fr: 'Délai d\'Encaissement des Primes' },
+          fx: { en: 'LBP Exchange Rate Stress (LL/$)', ar: 'سعر صرف الليرة اللبنانية (ل.ل/$)', fr: 'Taux de Change LBP (LL/$)' }
+        }
+      }
+    };
+    const domMeta = domainMetaMap[ind] || domainMetaMap['Manufacturing'];
+
+    if (!canViewBooks || !canCash || !canExp || rlsClamped) {
+      const mutSig = buildGuideMutationSignature(ind, reqCo);
+      const restrictedScope = `wi_restricted|${u ? u.id : 'anon'}|${ind}|${reqCo}|${leverSig}|${mutSig}`;
+      const zeroMetrics = {
+        revenueUsd: 0,
+        directCostUsd: 0,
+        grossMarginUsd: 0,
+        grossMarginPct: 0,
+        overheadUsd: 0,
+        opProfitUsd: 0,
+        opMarginPct: 0,
+        units: 0,
+        closingCombinedTillUsd: 0,
+        projected30dTillUsd: 0,
+        runwayDays: 0,
+        fxRateLbp: liveFxRate
+      };
+      return {
+        scopeKey: restrictedScope,
+        leverSig,
+        industry: ind,
+        companyKey: reqCo,
+        companyLabel: coLabel,
+        periodLabel: range.label || 'Active Period',
+        asOfDate: anchorDate,
+        rlsClamped: true,
+        restricted: true,
+        canViewBooks: false,
+        canCash: false,
+        canExp: false,
+        canEditAlerts: false,
+        domainMeta: domMeta,
+        levers,
+        baseline: Object.assign({}, zeroMetrics),
+        simulated: Object.assign({}, zeroMetrics),
+        deltas: {
+          revenueUsd: 0,
+          revenuePct: 0,
+          directCostUsd: 0,
+          grossMarginUsd: 0,
+          grossMarginPts: 0,
+          overheadUsd: 0,
+          opProfitUsd: 0,
+          opMarginPts: 0,
+          priceEffectUsd: 0,
+          volumeEffectUsd: 0,
+          directCostEffectUsd: 0,
+          overheadEffectUsd: 0,
+          dsoCashImpactUsd: 0,
+          fxRevalDeltaUsd: 0,
+          operatingCashFlow30dDeltaUsd: 0,
+          cashFlowTotalDeltaUsd: 0,
+          projected30dTillDeltaUsd: 0,
+          runwayDeltaDays: 0,
+          decompositionResidualUsd: 0
+        },
+        breakEven: {
+          unitContributionPositive: false,
+          breakEvenVolumeRatioPct: null,
+          breakEvenUnits: null,
+          isoProfitVolumeDeltaPct: null
+        },
+        tornadoBars: [],
+        headlineEn: `${coLabel} What-If Scenario Simulator is restricted for this seat.`,
+        headlineAr: `محاكي السيناريوهات المالية لـ ${coLabel} مقيد لصلاحيات هذا المقعد.`,
+        headlineFr: `Le simulateur de scénarios pour ${coLabel} est restreint pour ce siège.`,
+        bulletsEn: ['Switch to an Owner, CFO, or Supervisor seat with Accounting and Treasury permissions to model price, cost, FX, and DSO scenarios.'],
+        bulletsAr: ['يرجى التبديل إلى مقعد مالك أو مدير مالي أو مشرف مخول لمحاكاة سيناريوهات الأسعار والتكاليف وسعر الصرف والسيولة.'],
+        bulletsFr: ['Passez sur un siège Propriétaire, DAF ou Superviseur autorisé pour simuler les scénarios de prix, coûts, change et trésorerie.'],
+        drafts: {
+          en: `${coLabel} (${anchorDate}): Scenario simulation details are restricted for this seat.`,
+          ar: `${coLabel} (${anchorDate}): تفاصيل محاكاة السيناريو مقيدة لهذا المقعد.`,
+          fr: `${coLabel} (${anchorDate}): Les détails de simulation sont restreints pour ce siège.`
+        }
+      };
+    }
+
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const cfSnap = computeCashflowLiquiditySnapshot({ company: reqCo, industry: ind, user: u });
+    const ovr = (options.overrideBaseline && typeof options.overrideBaseline === 'object') ? options.overrideBaseline : null;
+
+    const baseRev = Math.max(0, round2(ovr && ovr.revenueUsd !== undefined ? safeNum(ovr.revenueUsd) : safeNum(kpi.sales_ttc)));
+    const baseDirectCost = Math.max(0, round2(ovr && ovr.directCostUsd !== undefined ? safeNum(ovr.directCostUsd) : safeNum(kpi.raw_cost)));
+    const baseGrossMargin = round2(baseRev - baseDirectCost);
+    const rawBaseOpProfit = ovr && ovr.opProfitUsd !== undefined
+      ? safeNum(ovr.opProfitUsd)
+      : safeNum(kpi.operating_profit != null ? kpi.operating_profit : (baseGrossMargin - safeNum(kpi.expenses_total) - safeNum(kpi.salaries_paid)));
+    const baseOverhead = ovr && ovr.overheadUsd !== undefined
+      ? Math.max(0, round2(safeNum(ovr.overheadUsd)))
+      : Math.max(0, round2(baseGrossMargin - rawBaseOpProfit));
+    const baseOpProfit = round2(baseGrossMargin - baseOverhead);
+    const baseGrossMarginPct = baseRev > 0 ? round2((baseGrossMargin / baseRev) * 100) : 0;
+    const baseOpMarginPct = baseRev > 0 ? round2((baseOpProfit / baseRev) * 100) : 0;
+
+    let defaultUnits = 100;
+    if (isMfg) defaultUnits = Math.max(1, round2(safeNum(kpi.tons_sold || (safeNum(kpi.loads) * 22) || 12500)));
+    else if (ind === 'Holding & Treasury') defaultUnits = 14;
+    else if (ind === 'Hospitality & Resorts') defaultUnits = Math.max(1, round2(safeNum(kpi.loads || 1850)));
+    else if (ind === 'Automotive & Heavy Trading') defaultUnits = Math.max(1, round2(safeNum(kpi.loads || 44)));
+    else if (ind === 'Real Estate & Property') defaultUnits = Math.max(1, round2(safeNum(kpi.loads || 28)));
+    else if (ind === 'Insurance & Brokerage') defaultUnits = Math.max(1, round2(safeNum(kpi.loads || 42)));
+    const baseUnits = Math.max(1, round2(ovr && ovr.units !== undefined ? safeNum(ovr.units) : defaultUnits));
+
+    const pMult = 1 + (levers.pricePct / 100);
+    const vMult = 1 + (levers.volumePct / 100);
+    const cMult = 1 + (levers.directCostPct / 100);
+    const oMult = 1 + (levers.overheadPct / 100);
+
+    const simUnits = Math.max(0, round2(baseUnits * vMult));
+    const simRev = Math.max(0, round2(baseRev * pMult * vMult));
+    const simDirectCost = Math.max(0, round2(baseDirectCost * cMult * vMult));
+    const simGrossMargin = round2(simRev - simDirectCost);
+    const simOverhead = Math.max(0, round2(baseOverhead * oMult));
+    const simOpProfit = round2(simGrossMargin - simOverhead);
+    const simGrossMarginPct = simRev > 0 ? round2((simGrossMargin / simRev) * 100) : 0;
+    const simOpMarginPct = simRev > 0 ? round2((simOpProfit / simRev) * 100) : 0;
+
+    // Exact 4-Factor Additive Operating Profit Decomposition:
+    // priceEffectUsd + volumeEffectUsd + directCostEffectUsd + overheadEffectUsd === (simOpProfit - baseOpProfit)
+    const priceEffectUsd = round2(baseRev * (pMult - 1) * vMult);
+    const volumeEffectUsd = round2((baseRev - baseDirectCost) * (vMult - 1));
+    const directCostEffectUsd = round2(-baseDirectCost * (cMult - 1) * vMult);
+    const overheadEffectUsd = round2(-(simOverhead - baseOverhead));
+    const opProfitDeltaUsd = round2(simOpProfit - baseOpProfit);
+    const rawDecompSum = round2(priceEffectUsd + volumeEffectUsd + directCostEffectUsd + overheadEffectUsd);
+    const adjOverheadEffectUsd = round2(overheadEffectUsd + (opProfitDeltaUsd - rawDecompSum));
+    const decompositionResidualUsd = round2(opProfitDeltaUsd - (priceEffectUsd + volumeEffectUsd + directCostEffectUsd + adjOverheadEffectUsd));
+
+    // Break-Even Volume & Iso-Profit Volume Tolerance (guarded against <= 0 unit contribution)
+    const unitRevAtNewPrice = baseRev * pMult;
+    const unitVarCostAtNewCost = baseDirectCost * cMult;
+    const unitContributionPool = round2(unitRevAtNewPrice - unitVarCostAtNewCost);
+    const unitContributionPositive = unitContributionPool > 0.01;
+    let breakEvenVolumeRatioPct = null;
+    let breakEvenUnits = null;
+    let isoProfitVolumeDeltaPct = null;
+    if (unitContributionPositive) {
+      breakEvenVolumeRatioPct = round2(Math.min(999.9, Math.max(0, (simOverhead / unitContributionPool) * 100)));
+      breakEvenUnits = round2(baseUnits * (breakEvenVolumeRatioPct / 100));
+      const reqVolMult = (baseOpProfit + simOverhead) / unitContributionPool;
+      isoProfitVolumeDeltaPct = round2(Math.min(999.9, Math.max(-99.9, (reqVolMult - 1) * 100)));
+    }
+
+    // Working-Capital DSO & LBP FX Stress on 30-Day Cash Till & Runway
+    const baseFxRate = Math.max(15000, safeNum(cfSnap && cfSnap.fxRate ? cfSnap.fxRate : liveFxRate));
+    const baseClosingLbp = safeNum(cfSnap && cfSnap.closingLbp ? cfSnap.closingLbp : 0);
+    const baseCombinedTillUsd = round2(safeNum(cfSnap && cfSnap.closingCombinedUsd ? cfSnap.closingCombinedUsd : kpi.cash_till));
+    const baseProjected30dTillUsd = round2(safeNum(cfSnap && cfSnap.maturityBridge && cfSnap.maturityBridge.d30 ? cfSnap.maturityBridge.d30.projectedTillUsd : baseCombinedTillUsd));
+    const openArTotal = Math.max(0, safeNum(cfSnap && cfSnap.openArTotal != null ? cfSnap.openArTotal : kpi.ar_balance));
+
+    const fxRevalDeltaUsd = round2((baseClosingLbp / levers.fxRateLbp) - (baseClosingLbp / baseFxRate));
+    const dailyBillingRate = Math.max(openArTotal / 45, simRev / 365);
+    const dsoCashImpactUsd = round2(-levers.dsoDeltaDays * dailyBillingRate);
+    const operatingCashFlow30dDeltaUsd = round2(opProfitDeltaUsd * 0.25);
+    const cashFlowTotalDeltaUsd = round2(operatingCashFlow30dDeltaUsd + dsoCashImpactUsd + fxRevalDeltaUsd);
+    const simProjected30dTillUsd = round2(baseProjected30dTillUsd + cashFlowTotalDeltaUsd);
+
+    const baseOut30d = Math.max(3000, safeNum(cfSnap && cfSnap.maturityBridge && cfSnap.maturityBridge.d30 ? cfSnap.maturityBridge.d30.totalOutUsd : (baseOverhead / 4)));
+    const dailyOutflowBurn = Math.max(100, round2(baseOut30d / 30));
+    const simDailyOutflowBurn = Math.max(100, round2((baseOut30d * ((cMult + oMult) / 2)) / 30));
+    const baseRunwayDays = Math.max(0, Math.min(999, Math.round(baseProjected30dTillUsd / dailyOutflowBurn)));
+    const simRunwayDays = Math.max(0, Math.min(999, Math.round(simProjected30dTillUsd / simDailyOutflowBurn)));
+
+    const tornadoBars = [
+      {
+        key: 'price',
+        labelEn: 'Price / Tariff Lever',
+        labelAr: 'أثر السعر والتعرفة',
+        labelFr: 'Effet Prix / Tarif',
+        leverTxt: `${levers.pricePct >= 0 ? '+' : ''}${levers.pricePct}%`,
+        usd: priceEffectUsd
+      },
+      {
+        key: 'volume',
+        labelEn: 'Volume / Occupancy Lever',
+        labelAr: 'أثر الحجم والإشغال',
+        labelFr: 'Effet Volume / Occupation',
+        leverTxt: `${levers.volumePct >= 0 ? '+' : ''}${levers.volumePct}%`,
+        usd: volumeEffectUsd
+      },
+      {
+        key: 'directCost',
+        labelEn: 'Direct / Fuel Cost Lever',
+        labelAr: 'أثر التكلفة المباشرة والوقود',
+        labelFr: 'Effet Coûts Directs / Carburant',
+        leverTxt: `${levers.directCostPct >= 0 ? '+' : ''}${levers.directCostPct}%`,
+        usd: directCostEffectUsd
+      },
+      {
+        key: 'overhead',
+        labelEn: 'Fixed Overhead & Payroll',
+        labelAr: 'أثر المصاريف الثابتة والرواتب',
+        labelFr: 'Effet Charges Fixes & Paie',
+        leverTxt: `${levers.overheadPct >= 0 ? '+' : ''}${levers.overheadPct}%`,
+        usd: adjOverheadEffectUsd
+      },
+      {
+        key: 'workingCap',
+        labelEn: 'DSO & LBP FX Cash Impact',
+        labelAr: 'أثر سرعة التحصيل وسعر الصرف',
+        labelFr: 'Impact Cash DSO & Taux LBP',
+        leverTxt: `${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}d | ${fmtNum(levers.fxRateLbp)}`,
+        usd: round2(dsoCashImpactUsd + fxRevalDeltaUsd)
+      }
+    ];
+
+    const revDeltaUsd = round2(simRev - baseRev);
+    const revDeltaPct = baseRev > 0 ? round2((revDeltaUsd / baseRev) * 100) : 0;
+    const gmDeltaUsd = round2(simGrossMargin - baseGrossMargin);
+    const gmDeltaPts = round2(simGrossMarginPct - baseGrossMarginPct);
+    const opMarginPts = round2(simOpMarginPct - baseOpMarginPct);
+    const tillDeltaUsd = round2(simProjected30dTillUsd - baseProjected30dTillUsd);
+    const runwayDeltaDays = simRunwayDays - baseRunwayDays;
+
+    const fmtSignedUsd = v => `${v >= 0 ? '+' : '-'}${fmtUSD(Math.abs(v))}`;
+    const fmtSignedPct = v => `${v >= 0 ? '+' : ''}${round2(v)}%`;
+
+    const isoTextEn = unitContributionPositive
+      ? `Break-even requires ${breakEvenVolumeRatioPct}% of baseline volume (${fmtNum(breakEvenUnits)} ${domMeta.unitLabelEn}); to match baseline operating profit at these rates, volume can shift by ${fmtSignedPct(isoProfitVolumeDeltaPct)}.`
+      : `Unit contribution margin is negative under this price/cost combination; increase unit price or reduce direct cost before scaling volume.`;
+    const isoTextAr = unitContributionPositive
+      ? `تتطلب نقطة التعادل ${breakEvenVolumeRatioPct}% من الحجم الأساسي (${fmtNum(breakEvenUnits)} ${domMeta.unitLabelAr})؛ وللحفاظ على نفس الربح التشغيلي الأساسي يمكن أن يتغير الحجم بنسبة ${fmtSignedPct(isoProfitVolumeDeltaPct)}.`
+      : `هامش المساهمة للوحدة سلبي في هذا السيناريو؛ يرجى رفع سعر البيع أو خفض التكلفة المباشرة قبل زيادة الحجم.`;
+    const isoTextFr = unitContributionPositive
+      ? `Le seuil de rentabilité exige ${breakEvenVolumeRatioPct}% du volume de base (${fmtNum(breakEvenUnits)} ${domMeta.unitLabelFr}) ; pour maintenir le résultat d'exploitation initial, le volume peut varier de ${fmtSignedPct(isoProfitVolumeDeltaPct)}.`
+      : `La marge sur coût variable unitaire est négative dans ce scénario ; ajustez le prix ou les coûts directs avant d'augmenter le volume.`;
+
+    const headlineEn = scrubOutwardGuideText(
+      `${coLabel} What-If Scenario shifts Operating Profit by ${fmtSignedUsd(opProfitDeltaUsd)} (to ${fmtUSD(simOpProfit)}, ${simOpMarginPct}% margin) and 30-Day Cash Till by ${fmtSignedUsd(tillDeltaUsd)} (to ${fmtUSD(simProjected30dTillUsd)}, ${simRunwayDays}d runway).`
+    );
+    const headlineAr = scrubOutwardGuideText(
+      `يؤدي سيناريو المحاكاة لـ ${coLabel} إلى تغيير الربح التشغيلي بمقدار ${fmtSignedUsd(opProfitDeltaUsd)} (ليصل إلى ${fmtUSD(simOpProfit)}، بهامش ${simOpMarginPct}%) وتغيير السيولة المتوقعة لـ 30 يوما بمقدار ${fmtSignedUsd(tillDeltaUsd)} (إلى ${fmtUSD(simProjected30dTillUsd)}، تغطية ${simRunwayDays} يوما).`
+    );
+    const headlineFr = scrubOutwardGuideText(
+      `Le scénario What-If sur ${coLabel} fait varier le résultat d'exploitation de ${fmtSignedUsd(opProfitDeltaUsd)} (à ${fmtUSD(simOpProfit)}, marge ${simOpMarginPct}%) et la caisse projetée à 30j de ${fmtSignedUsd(tillDeltaUsd)} (à ${fmtUSD(simProjected30dTillUsd)}, autonomie ${simRunwayDays}j).`
+    );
+
+    const bulletsEn = [
+      scrubOutwardGuideText(`P&L Sensitivity Bridge: Price (${fmtSignedUsd(priceEffectUsd)}), Volume (${fmtSignedUsd(volumeEffectUsd)}), Direct Cost (${fmtSignedUsd(directCostEffectUsd)}), and Fixed Overhead (${fmtSignedUsd(adjOverheadEffectUsd)}) move Operating Profit from ${fmtUSD(baseOpProfit)} to ${fmtUSD(simOpProfit)}.`),
+      scrubOutwardGuideText(isoTextEn),
+      scrubOutwardGuideText(`Working Capital & FX Runway: ${levers.dsoDeltaDays === 0 ? 'Unchanged DSO' : (levers.dsoDeltaDays < 0 ? Math.abs(levers.dsoDeltaDays) + 'd faster AR collection' : levers.dsoDeltaDays + 'd slower AR collection')} (${fmtSignedUsd(dsoCashImpactUsd)}) and LBP at ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) project a 30-day till of ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} days coverage).`)
+    ];
+    const bulletsAr = [
+      scrubOutwardGuideText(`جسر حساسية الأرباح: أثر السعر (${fmtSignedUsd(priceEffectUsd)})، والحجم (${fmtSignedUsd(volumeEffectUsd)})، والتكلفة المباشرة (${fmtSignedUsd(directCostEffectUsd)})، والمصاريف الثابتة (${fmtSignedUsd(adjOverheadEffectUsd)}) ينقل الربح التشغيلي من ${fmtUSD(baseOpProfit)} إلى ${fmtUSD(simOpProfit)}.`),
+      scrubOutwardGuideText(isoTextAr),
+      scrubOutwardGuideText(`رأس المال العامل وسعر الصرف: تغير أيام التحصيل (${fmtSignedUsd(dsoCashImpactUsd)}) وسعر الصرف عند ${fmtNum(levers.fxRateLbp)} ل.ل/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) يضع رصيد الصندوق المتوقع لـ 30 يوما عند ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} يوما).`)
+    ];
+    const bulletsFr = [
+      scrubOutwardGuideText(`Pont de sensibilité P&L : l'effet Prix (${fmtSignedUsd(priceEffectUsd)}), Volume (${fmtSignedUsd(volumeEffectUsd)}), Coûts Directs (${fmtSignedUsd(directCostEffectUsd)}) et Charges Fixes (${fmtSignedUsd(adjOverheadEffectUsd)}) porte le résultat d'exploitation de ${fmtUSD(baseOpProfit)} à ${fmtUSD(simOpProfit)}.`),
+      scrubOutwardGuideText(isoTextFr),
+      scrubOutwardGuideText(`BFR et Taux de Change : l'évolution du délai clients DSO (${fmtSignedUsd(dsoCashImpactUsd)}) et un taux LBP à ${fmtNum(levers.fxRateLbp)} LL/$ (${fmtSignedUsd(fxRevalDeltaUsd)}) projettent une caisse à 30j de ${fmtUSD(simProjected30dTillUsd)} (${simRunwayDays} jours d'autonomie).`)
+    ];
+
+    const drafts = {
+      en: [
+        `*${coLabel} - What-If Scenario & Sensitivity Brief (${range.label})*`,
+        `1. *Scenario Levers*: Price ${fmtSignedPct(levers.pricePct)} | Volume ${fmtSignedPct(levers.volumePct)} | Direct Cost ${fmtSignedPct(levers.directCostPct)} | Overhead ${fmtSignedPct(levers.overheadPct)} | DSO ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}d | FX ${fmtNum(levers.fxRateLbp)} LL/$`,
+        `2. *Simulated P&L*: Revenue ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | Gross Margin ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | Operating Profit ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
+        `3. *Break-Even & Volume Tolerance*: ${bulletsEn[1]}`,
+        `4. *30-Day Treasury Runway*: Projected Till ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs baseline, ${simRunwayDays}d cash runway).`
+      ].join('\n'),
+      ar: [
+        `*${coLabel} - موجز محاكاة السيناريو والحساسية المالية (${range.label})*`,
+        `1. *مؤشرات السيناريو*: السعر ${fmtSignedPct(levers.pricePct)} | الحجم ${fmtSignedPct(levers.volumePct)} | التكلفة المباشرة ${fmtSignedPct(levers.directCostPct)} | المصاريف الثابتة ${fmtSignedPct(levers.overheadPct)} | التحصيل ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays} يوم | الصرف ${fmtNum(levers.fxRateLbp)} ل.ل/$`,
+        `2. *النتائج المالية المحاكاة*: الإيرادات ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | مجمل الربح ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | الربح التشغيلي ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
+        `3. *نقطة التعادل وتحمل الحجم*: ${bulletsAr[1]}`,
+        `4. *السيولة المتوقعة لـ 30 يوما*: رصيد الصندوق المتوقع ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} عن الأساس، تغطية ${simRunwayDays} يوما).`
+      ].join('\n'),
+      fr: [
+        `*${coLabel} - Synthèse de Simulation What-If & Sensibilité (${range.label})*`,
+        `1. *Leviers du Scénario* : Prix ${fmtSignedPct(levers.pricePct)} | Volume ${fmtSignedPct(levers.volumePct)} | Coûts Directs ${fmtSignedPct(levers.directCostPct)} | Charges Fixes ${fmtSignedPct(levers.overheadPct)} | DSO ${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}j | FX ${fmtNum(levers.fxRateLbp)} LL/$`,
+        `2. *P&L Simulé* : Chiffre d'affaires ${fmtUSD(simRev)} (${fmtSignedUsd(revDeltaUsd)}) | Marge Brute ${fmtUSD(simGrossMargin)} (${simGrossMarginPct}%) | Résultat d'exploitation ${fmtUSD(simOpProfit)} (${fmtSignedUsd(opProfitDeltaUsd)})`,
+        `3. *Seuil de Rentabilité* : ${bulletsFr[1]}`,
+        `4. *Trésorerie à 30 Jours* : Solde Caisse Projeté ${fmtUSD(simProjected30dTillUsd)} (${fmtSignedUsd(tillDeltaUsd)} vs base, autonomie ${simRunwayDays}j).`
+      ].join('\n')
+    };
+
+    const mutSig = buildGuideMutationSignature(ind, reqCo);
+    const scopeKey = [
+      'whatif_sim',
+      u ? u.id : 'anon',
+      ind,
+      reqCo,
+      range.from,
+      range.to,
+      STATE.dateBasis || 'rep',
+      leverSig,
+      baseRev,
+      baseDirectCost,
+      baseOpProfit,
+      baseProjected30dTillUsd,
+      mutSig
+    ].join('|');
+
+    return {
+      scopeKey,
+      leverSig,
+      industry: ind,
+      companyKey: reqCo,
+      companyLabel: coLabel,
+      periodLabel: range.label || 'Active Period',
+      asOfDate: anchorDate,
+      rlsClamped: false,
+      restricted: false,
+      canViewBooks,
+      canCash,
+      canExp,
+      canSales,
+      canEditAlerts,
+      domainMeta: domMeta,
+      levers,
+      baseline: {
+        revenueUsd: baseRev,
+        directCostUsd: baseDirectCost,
+        grossMarginUsd: baseGrossMargin,
+        grossMarginPct: baseGrossMarginPct,
+        overheadUsd: baseOverhead,
+        opProfitUsd: baseOpProfit,
+        opMarginPct: baseOpMarginPct,
+        units: baseUnits,
+        closingCombinedTillUsd: baseCombinedTillUsd,
+        projected30dTillUsd: baseProjected30dTillUsd,
+        runwayDays: baseRunwayDays,
+        fxRateLbp: baseFxRate
+      },
+      simulated: {
+        revenueUsd: simRev,
+        directCostUsd: simDirectCost,
+        grossMarginUsd: simGrossMargin,
+        grossMarginPct: simGrossMarginPct,
+        overheadUsd: simOverhead,
+        opProfitUsd: simOpProfit,
+        opMarginPct: simOpMarginPct,
+        units: simUnits,
+        closingCombinedTillUsd: round2(baseCombinedTillUsd + fxRevalDeltaUsd),
+        projected30dTillUsd: simProjected30dTillUsd,
+        runwayDays: simRunwayDays,
+        fxRateLbp: levers.fxRateLbp
+      },
+      deltas: {
+        revenueUsd: revDeltaUsd,
+        revenuePct: revDeltaPct,
+        directCostUsd: round2(simDirectCost - baseDirectCost),
+        grossMarginUsd: gmDeltaUsd,
+        grossMarginPts: gmDeltaPts,
+        overheadUsd: round2(simOverhead - baseOverhead),
+        opProfitUsd: opProfitDeltaUsd,
+        opMarginPts,
+        priceEffectUsd,
+        volumeEffectUsd,
+        directCostEffectUsd,
+        overheadEffectUsd: adjOverheadEffectUsd,
+        dsoCashImpactUsd,
+        fxRevalDeltaUsd,
+        operatingCashFlow30dDeltaUsd,
+        cashFlowTotalDeltaUsd,
+        projected30dTillDeltaUsd: tillDeltaUsd,
+        runwayDeltaDays,
+        decompositionResidualUsd
+      },
+      breakEven: {
+        unitContributionPositive,
+        breakEvenVolumeRatioPct,
+        breakEvenUnits,
+        isoProfitVolumeDeltaPct
+      },
+      tornadoBars,
+      headlineEn,
+      headlineAr,
+      headlineFr,
+      bulletsEn,
+      bulletsAr,
+      bulletsFr,
+      drafts
+    };
+  }
+
+  function applyWhatIfGuardrailRule(opts = {}) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const u = options.user || (typeof activeUser === 'function' ? activeUser() : null);
+    if (!canReviewSentinels() && !isOwner(u)) {
+      return { ok: false, error: 'Restricted: only Owner or Supervisor seats may create or modify alert guardrails.' };
+    }
+    const snap = computeWhatIfScenarioSnapshot(options);
+    if (!snap || snap.restricted || snap.rlsClamped) {
+      return { ok: false, error: 'Scenario guardrail creation is restricted for this seat or scope.' };
+    }
+    const st = ensureAlertRulesState();
+    const safeCoKey = String(snap.companyKey || 'all').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ruleId = `CA_WHATIF_${safeCoKey}`;
+    const monthlyBudgetCap = Math.max(500, round2((snap.simulated.overheadUsd || 18000) / 12));
+    const existingIdx = st.custom.findIndex(r => r && r.id === ruleId);
+    const seqCode = existingIdx >= 0
+      ? st.custom[existingIdx].code
+      : ('#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0'));
+    const cleanName = scrubOutwardGuideText(`${snap.companyLabel} What-If Spend & Margin Guardrail`);
+    const cleanWhy = scrubOutwardGuideText(
+      `What-If Scenario Guardrail (${snap.periodLabel}): keep 30d category spend within ${fmtUSD(monthlyBudgetCap)} to protect simulated ${snap.simulated.opMarginPct}% operating margin and ${fmtUSD(snap.simulated.projected30dTillUsd)} 30-day cash till.`
+    );
+    const ruleObj = {
+      id: ruleId,
+      code: seqCode,
+      name: cleanName,
+      metric: 'expense_cat_30d_usd',
+      target: '',
+      op: '>',
+      threshold: monthlyBudgetCap,
+      mode: 'warn_and_audit',
+      company: snap.companyKey === 'all' || String(snap.companyKey).startsWith('industry:') ? 'all' : snap.companyLabel,
+      why: cleanWhy,
+      enabled: true,
+      created_by: String((u && u.full_name) || 'Owner'),
+      updated_at: new Date().toISOString()
+    };
+    if (existingIdx >= 0) {
+      st.custom[existingIdx] = ruleObj;
+    } else {
+      st.custom.push(ruleObj);
+    }
+    if (!options.skipPersist) {
+      persistAlertRulesChange({}, [ruleObj]);
+    }
+    return {
+      ok: true,
+      updatedExisting: existingIdx >= 0,
+      rule: ruleObj,
+      snapshot: snap
     };
   }
 
@@ -93661,12 +94258,12 @@
 
   // Project the app entries onto the seed registers (voided rows drop out, new rows sort in by date, and fleet owner/driver links stay synchronized)
   const _FLEET_DEP_KEYS = new Set(['equipment', 'company_equipment', 'drivers', 'company_drivers', 'suppliers', 'customers', 'sites', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'price_rules']);
-  const _SEED_TWIN_TX_KEYS = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries', 'attendance', 'external_movements']);
+  const _SEED_TWIN_TX_KEYS = new Set(['sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries', 'attendance', 'external_movements', 'loans', 'loan_settlements']);
   const _normTwinAlpha = x => String(x || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, '');
   const _cleanTwinTkt = v => norm(String(v || '').replace(/^#+/, ''));
   function _isSeedTwinMatch(k, s, r) {
     if (!s || !r || s === r || isAppRecord(s) || s.voided) return false;
-    const dS = String(s.date || '').slice(0, 10), dR = String(r.date || '').slice(0, 10);
+    const dS = String(s.date || s.start_date || '').slice(0, 10), dR = String(r.date || r.start_date || '').slice(0, 10);
     if (!dS || !dR || dS !== dR) return false;
     if (norm(s.company || 'WTC') !== norm(r.company || 'WTC')) return false;
     if (k === 'sales_tickets') {
@@ -93699,6 +94296,11 @@
     }
     if (k === 'external_movements') {
       return Boolean(norm(s.counterparty || s.party) && norm(s.counterparty || s.party) === norm(r.counterparty || r.party) && Math.abs(Number(s.usd_amount ?? s.amount ?? 0) - Number(r.usd_amount ?? r.amount ?? 0)) < 0.5 && Math.abs(Number(s.lbp_amount || 0) - Number(r.lbp_amount || 0)) < 1000);
+    }
+    if (k === 'loans' || k === 'loan_settlements') {
+      const pS = _normTwinAlpha(s.borrower || s.counterparty || s.lender || s.party);
+      const pR = _normTwinAlpha(r.borrower || r.counterparty || r.lender || r.party);
+      return Boolean(pS && pS === pR && Math.abs(Number(s.usd_amount ?? s.amount ?? s.principal ?? 0) - Number(r.usd_amount ?? r.amount ?? r.principal ?? 0)) < 0.5);
     }
     return false;
   }
@@ -99308,7 +99910,8 @@
           }
         } catch (_) {}
       }
-      if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : pin !== '1111') : true)) {
+      const demoFallbackPin = String((DEFAULT_USERS.find(du => norm(du.email) === norm(user.email)) || {}).pin_code || '1111').trim();
+      if (!verifiedViaApi && (!localPinStr ? (Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE) && !isDemoSandboxSession() ? true : (pin !== demoFallbackPin && pin !== '1111')) : true)) {
         if (silentProbe) return false;
         if (rateLimitedErr) {
           loginLockUntil = Date.now() + 30000;
@@ -117935,6 +118538,8 @@
         computeDailyHandoverSnapshot,
         computeCashflowLiquiditySnapshot,
         computeUniversalPageGuideSnapshot,
+        computeWhatIfScenarioSnapshot,
+        applyWhatIfGuardrailRule,
         canReviewSentinels,
         markSentinelReviewed,
         unmarkSentinelReviewed,
@@ -118156,6 +118761,10 @@
         if (prevDocModal && !prevDocModal.hidden) { closeDocumentPreviewModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
+        if ($('whatIfSimulatorModal') && !$('whatIfSimulatorModal').hidden && window.MFG_ASK && typeof window.MFG_ASK.closeWhatIfStudio === 'function') {
+          window.MFG_ASK.closeWhatIfStudio();
+          return;
+        }
         if ($('pageGuidePopover') && window.MFG_ASK && typeof window.MFG_ASK.closePageGuide === 'function') {
           window.MFG_ASK.closePageGuide();
           return;
@@ -119626,6 +120235,8 @@
     computeDailyHandoverSnapshot: typeof computeDailyHandoverSnapshot === 'function' ? computeDailyHandoverSnapshot : null,
     computeCashflowLiquiditySnapshot: typeof computeCashflowLiquiditySnapshot === 'function' ? computeCashflowLiquiditySnapshot : null,
     computeUniversalPageGuideSnapshot: typeof computeUniversalPageGuideSnapshot === 'function' ? computeUniversalPageGuideSnapshot : null,
+    computeWhatIfScenarioSnapshot: typeof computeWhatIfScenarioSnapshot === 'function' ? computeWhatIfScenarioSnapshot : null,
+    applyWhatIfGuardrailRule: typeof applyWhatIfGuardrailRule === 'function' ? applyWhatIfGuardrailRule : null,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
     markSentinelReviewed: typeof markSentinelReviewed === 'function' ? markSentinelReviewed : null,
@@ -119638,6 +120249,7 @@
     refreshCustomRecords: () => { applyCustomRecordsToSeed(); invalidateAllSeedCaches(); },
     INDUSTRY_SIDEBAR_SPEC: typeof INDUSTRY_SIDEBAR_SPEC !== 'undefined' ? INDUSTRY_SIDEBAR_SPEC : null,
     STATE,
+    state: STATE,
     signOut: typeof signOut === 'function' ? signOut : null,
     openAuthGate: typeof openAuthGate === 'function' ? openAuthGate : null,
     applyUserRlsAndPermissions: typeof applyUserRlsAndPermissions === 'function' ? applyUserRlsAndPermissions : null,
