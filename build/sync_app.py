@@ -2,6 +2,7 @@
 Ensures https://isabisystems.com/app/ serves the exact verified Command Center assets.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -37,10 +38,43 @@ SUB_DIRS = [
 ]
 
 
+def verify_shell_version_parity() -> str:
+    sw_path = os.path.join(APP_SRC_ROOT, "sw.js")
+    idx_path = os.path.join(APP_SRC_ROOT, "index.html")
+    man_path = os.path.join(APP_SRC_ROOT, "manifest.json")
+    with open(sw_path, "r", encoding="utf-8") as f:
+        sw_txt = f.read()
+    with open(idx_path, "r", encoding="utf-8") as f:
+        idx_txt = f.read()
+    with open(man_path, "r", encoding="utf-8") as f:
+        man_txt = f.read()
+
+    m_cache = re.search(r"SHELL_CACHE\s*=\s*['\"]isabi-mfg-v([^'\"]+)['\"]", sw_txt)
+    if not m_cache:
+        raise SystemExit("ERROR: Could not parse SHELL_CACHE version in sw.js")
+    ver = m_cache.group(1)
+
+    m_html_ver = re.search(r"__MFG_SHELL_VER\s*=\s*['\"]([^'\"]+)['\"]", idx_txt)
+    if not m_html_ver or m_html_ver.group(1) != ver:
+        raise SystemExit(
+            f"ERROR: Version mismatch: sw.js SHELL_CACHE={ver} vs index.html __MFG_SHELL_VER={m_html_ver.group(1) if m_html_ver else 'MISSING'}"
+        )
+
+    for label, txt in [("sw.js", sw_txt), ("index.html", idx_txt), ("manifest.json", man_txt)]:
+        q_vers = set(re.findall(r"\?v=([0-9]+\.[0-9]+\.[0-9]+)", txt))
+        if q_vers != {ver}:
+            raise SystemExit(f"ERROR: ?v= query string mismatch in {label}: found {sorted(q_vers)}, expected {[ver]}")
+
+    return ver
+
+
 def sync_command_app() -> int:
     if not os.path.isdir(APP_SRC_ROOT):
         print(f"WARN: {APP_SRC_ROOT} not found, skipping app/ sync.")
         return 0
+
+    ver = verify_shell_version_parity()
+    print(f"OK: Shell version parity verified (v{ver} across sw.js, index.html, manifest.json)")
 
     audit_script = os.path.join(APP_SRC_ROOT, "build", "audit_i18n.py")
     if os.path.isfile(audit_script) and os.environ.get("ISABI_SKIP_I18N_AUDIT") != "1" and "--skip-i18n-audit" not in sys.argv:

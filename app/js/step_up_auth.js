@@ -136,10 +136,123 @@
     return diff === 0;
   }
 
+  const BASELINE_STEP_UP_AUDITS = [
+    {
+      id: 'sua-base-wtc-01',
+      ts: '2026-10-31T23:18:00.000Z',
+      local_time: '23:18',
+      hour_local: 23,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Manufacturing',
+      company: 'WTC',
+      action_code: 'period_close_reopen',
+      action_label: 'Reopen Locked Period (2026-10)',
+      target_ref: 'WTC-CLOSE-2026-10',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: true,
+      burst_anomaly: false
+    },
+    {
+      id: 'sua-base-hsp-01',
+      ts: '2026-10-30T22:42:00.000Z',
+      local_time: '22:42',
+      hour_local: 22,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Hospitality',
+      company: 'La Una',
+      action_code: 'void_settled_folio',
+      action_label: 'Void Settled Folio / Receipt',
+      target_ref: 'LU-POS-88412',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: true,
+      burst_anomaly: false
+    },
+    {
+      id: 'sua-base-trd-01',
+      ts: '2026-10-29T14:15:00.000Z',
+      local_time: '14:15',
+      hour_local: 14,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Trading',
+      company: 'Korri Auto / Shacman',
+      action_code: 'vin_customs_release',
+      action_label: 'Authorize VIN Customs Release',
+      target_ref: 'SHAC-X3000-0142',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: false,
+      burst_anomaly: false
+    },
+    {
+      id: 'sua-base-re-01',
+      ts: '2026-10-28T11:30:00.000Z',
+      local_time: '11:30',
+      hour_local: 11,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Real Estate',
+      company: 'Properties',
+      action_code: 'security_deposit_release',
+      action_label: 'Authorize Security Deposit Refund',
+      target_ref: 'RE-DEP-2026-019',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: false,
+      burst_anomaly: false
+    },
+    {
+      id: 'sua-base-ins-01',
+      ts: '2026-10-27T16:05:00.000Z',
+      local_time: '16:05',
+      hour_local: 16,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Insurance',
+      company: 'BHF Insurance Brokerage',
+      action_code: 'carrier_net_settlement',
+      action_label: 'Post Carrier Net Remittance Settlement',
+      target_ref: 'INS-REM-2026-10',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: false,
+      burst_anomaly: false
+    },
+    {
+      id: 'sua-base-hld-01',
+      ts: '2026-10-26T01:12:00.000Z',
+      local_time: '01:12',
+      hour_local: 1,
+      user_id: 'USR-001',
+      email: 'hussein@bhfirms.com',
+      user_name: 'Hussein Bdeir',
+      role: 'Owner',
+      industry: 'Holding',
+      company: 'Bdeir Holding',
+      action_code: 'intercompany_treasury_wire',
+      action_label: 'Authorize Intercompany Treasury Sweep',
+      target_ref: 'HLD-IC-SWEEP-104',
+      auth_method: 'Face ID + PIN 2FA',
+      off_hours: true,
+      burst_anomaly: false
+    }
+  ];
+
   function getAuditsList() {
     const st = C && C.getState ? C.getState() : window.STATE;
-    if (!st) return [];
-    if (!Array.isArray(st.stepUpAudits)) st.stepUpAudits = [];
+    if (!st) return BASELINE_STEP_UP_AUDITS.slice();
+    if (!Array.isArray(st.stepUpAudits) || !st.stepUpAudits.length) {
+      st.stepUpAudits = BASELINE_STEP_UP_AUDITS.map(r => Object.assign({}, r));
+    }
     return st.stepUpAudits;
   }
 
@@ -829,7 +942,7 @@
         ${showPin ? `
           <div class="sua-pin-group">
             <label class="sua-pin-label" for="suaPinInput">${esc(tr('Access PIN for'))} <span data-no-i18n="1">${esc(user.full_name)}</span></label>
-            <input type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" class="sua-pin-input" id="suaPinInput" placeholder="••••" />
+            <input type="text" inputmode="numeric" autocomplete="off" data-lpignore="true" data-1p-ignore="true" maxlength="8" class="sua-pin-input" id="suaPinInput" placeholder="••••" />
           </div>
         ` : ''}
 
@@ -971,15 +1084,17 @@
   }
 
   function renderWatchdogCardHtml() {
+    const st = C && C.getState ? C.getState() : window.STATE;
     const rows = getVisibleStepUpAudits();
     const offCount = rows.filter(r => r.off_hours).length;
     const burstCount = rows.filter(r => r.burst_anomaly).length;
     const face2faCount = rows.filter(r => /face/i.test(r.auth_method || '')).length;
     const lang = _briefState.lang || curLang();
     const hasAlerts = offCount > 0 || burstCount > 0;
+    const scopeSig = `${st ? (st.company || '') : ''}|${rows.length}`;
 
     return `
-      <div class="sua-watchdog-card" id="stepUpWatchdogPanel" data-ui-lang="${esc(curLang())}" dir="${curLang() === 'ar' ? 'rtl' : 'ltr'}">
+      <div class="sua-watchdog-card" id="stepUpWatchdogPanel" data-ui-lang="${esc(curLang())}" data-scope-sig="${esc(scopeSig)}" dir="${curLang() === 'ar' ? 'rtl' : 'ltr'}">
         <div class="sua-watchdog-top">
           <div class="sua-watchdog-title">
             <span class="sua-pill ${hasAlerts ? 'is-alert' : 'is-ok'}">${esc(tr(hasAlerts ? 'Off-Hours Override Alert' : 'Step-Up Gate Active'))}</span>
@@ -1082,12 +1197,18 @@
   function mountWatchdogNow() {
     const st = C && C.getState ? C.getState() : window.STATE;
     if (!st || !st.authed) return;
-    if (st.view !== 'sentinels' && st.view !== 'users') return;
+    if (st.view !== 'sentinels' && st.view !== 'alert_rules' && st.view !== 'users') return;
     const ws = $('workspace');
     if (!ws) return;
+    const rows = getVisibleStepUpAudits();
+    const expectedSig = `${st.company || ''}|${rows.length}`;
     const existing = $('stepUpWatchdogPanel');
     if (existing) {
-      if (existing.getAttribute('data-ui-lang') === curLang()) return;
+      if (existing.getAttribute('data-scope-sig') === expectedSig) {
+        existing.setAttribute('data-ui-lang', curLang());
+        existing.dir = curLang() === 'ar' ? 'rtl' : 'ltr';
+        return;
+      }
       existing.remove();
     }
 
@@ -1095,7 +1216,30 @@
     holder.innerHTML = renderWatchdogCardHtml();
     const card = holder.firstElementChild;
     if (!card) return;
-    ws.appendChild(card);
+    if (st.view === 'sentinels') {
+      const checkPanel = $('sentinelsCheckPanel');
+      if (checkPanel && checkPanel.parentNode) {
+        checkPanel.insertAdjacentElement('beforebegin', card);
+      } else {
+        ws.appendChild(card);
+      }
+    } else if (st.view === 'alert_rules') {
+      const firstCard = ws.querySelector('.panel-card');
+      if (firstCard && firstCard.parentNode) {
+        firstCard.insertAdjacentElement('beforebegin', card);
+      } else {
+        ws.appendChild(card);
+      }
+    } else if (st.view === 'users') {
+      const enrolPanel = $('faceEnrolPanel');
+      if (enrolPanel && enrolPanel.parentNode) {
+        enrolPanel.insertAdjacentElement('afterend', card);
+      } else {
+        ws.appendChild(card);
+      }
+    } else {
+      ws.appendChild(card);
+    }
     wireWatchdogEvents(card);
   }
 
@@ -1108,13 +1252,22 @@
     });
   }
 
+  let _langListenerBound = false;
+
   function bindContext(ctx) {
     C = ctx || {};
     const st = C.getState ? C.getState() : window.STATE;
     if (st) {
       const saved = loadStoredAudits();
-      if (!Array.isArray(st.stepUpAudits)) st.stepUpAudits = saved;
-      else if (saved.length) mergeStepUpAudits(saved);
+      if (!Array.isArray(st.stepUpAudits) || !st.stepUpAudits.length) {
+        st.stepUpAudits = saved.length ? saved : BASELINE_STEP_UP_AUDITS.map(r => Object.assign({}, r));
+      } else if (saved.length) {
+        mergeStepUpAudits(saved);
+      }
+    }
+    if (!_langListenerBound && typeof window !== 'undefined') {
+      _langListenerBound = true;
+      window.addEventListener('mfg:lang-changed', () => scheduleMountWatchdog());
     }
     if (!_domObs && typeof MutationObserver !== 'undefined') {
       _domObs = new MutationObserver(() => scheduleMountWatchdog());

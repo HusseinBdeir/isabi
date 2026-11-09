@@ -1604,14 +1604,34 @@
     };
   }
 
+  function currentSurfaceScopeSig() {
+    const co = (D && D.STATE && D.STATE.company) ? String(D.STATE.company) : '';
+    const per = (D && D.STATE) ? `${D.STATE.periodMode || ''}:${D.STATE.periodValue || ''}` : '';
+    const v = (D && D.STATE && D.STATE.view) ? String(D.STATE.view) : '';
+    return `${co}|${per}|${v}`;
+  }
+
+  function ensureFreshPanel(panelId) {
+    const existing = $(panelId);
+    if (!existing) return true;
+    const sig = currentSurfaceScopeSig();
+    if (existing.getAttribute('data-aie-scope') !== sig) {
+      existing.remove();
+      return true;
+    }
+    return false;
+  }
+
   function mountBehavioralSentinelPanel() {
-    const checkPanel = $('sentinelsCheckPanel');
-    if (!checkPanel || $('aiBehavioralSentinelPanel')) return;
+    const ws = $('workspace');
+    const checkPanel = $('sentinelsCheckPanel') || (ws && D && D.STATE && D.STATE.view === 'alert_rules' ? ws.querySelector('.panel-card, .panel') : null);
+    if (!checkPanel || !ensureFreshPanel('aiBehavioralSentinelPanel')) return;
     const data = computeBehavioralPatterns();
 
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'aiBehavioralSentinelPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     const splitRev = Boolean(data.reviews.split_bills);
     const creepRev = Boolean(data.reviews.price_creep);
     const repRev = Boolean(data.reviews.repeat_repairs);
@@ -1727,11 +1747,12 @@
   function mountHoldingMatcherPanel() {
     const ws = $('workspace');
     const host = $('hldOpenReconPanel') || $('hldInteractionsPanel') || (ws && (ws.querySelector('.panel, .panel-card') || ws.firstElementChild));
-    if (!host || $('hldAiMatchPanel')) return;
+    if (!host || !ensureFreshPanel('hldAiMatchPanel')) return;
     const matches = computeHoldingSemanticMatches();
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'hldAiMatchPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
 
     panel.innerHTML = `
       <div class="aie-head">
@@ -1803,8 +1824,8 @@
 
   function mountInsuranceBordereauPanel() {
     const ws = $('workspace');
-    if (!ws || $('insAiBordereauPanel')) return;
-    if (!D || !D.STATE || !['ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(D.STATE.view)) return;
+    if (!ws || !ensureFreshPanel('insAiBordereauPanel')) return;
+    if (!D || !D.STATE || !['ins_policies', 'ins_renewals', 'ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(D.STATE.view)) return;
     const firstPanel = ws.querySelector('.panel, .panel-card') || ws.firstElementChild;
     if (!firstPanel) return;
 
@@ -1821,6 +1842,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'insAiBordereauPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -1831,13 +1853,13 @@
           <button type="button" class="aie-btn is-brass" id="insAiToggleReconBtn">${esc(tr(EDGE_STATE.insReconOpen ? 'Hide Bordereau Matcher' : 'Open Bordereau Matcher'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Expected Gross Comm'))}</small><strong data-no-i18n="1">${fmtUSD(sumExp, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Producer / Sub-Agent Split'))}</small><strong data-no-i18n="1">${fmtUSD(sumSub, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Retained Brokerage Net'))}</small><strong data-no-i18n="1">${fmtUSD(sumRet, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Carrier Net Payable'))}</small><strong data-no-i18n="1">${fmtUSD(sumNetPay, 2)}</strong></div>
+      </div>
       ${EDGE_STATE.insReconOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Expected Gross Comm'))}</small><strong data-no-i18n="1">${fmtUSD(sumExp, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Producer / Sub-Agent Split'))}</small><strong data-no-i18n="1">${fmtUSD(sumSub, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Retained Brokerage Net'))}</small><strong data-no-i18n="1">${fmtUSD(sumRet, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Carrier Net Payable'))}</small><strong data-no-i18n="1">${fmtUSD(sumNetPay, 2)}</strong></div>
-        </div>
         ${gaps.length ? `
           <div class="aie-endorse-gap-strip">
             <span class="aie-pill is-warn">${ic('warn')} ${gaps.length} ${esc(tr('Uncollected Endorsements'))} (<span data-no-i18n="1">${fmtUSD(gapCommUsd, 2)}</span>)</span>
@@ -2309,9 +2331,9 @@
 
   function mountMfgStatementReconPanel() {
     const ws = $('workspace');
-    if (!ws || $('mfgAiStatementReconPanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('mfgAiStatementReconPanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-    if (activeInd !== 'Manufacturing' || !['suppliers', 'raw'].includes(D.STATE.view)) return;
+    if (activeInd !== 'Manufacturing' || !['expenses', 'suppliers', 'raw', 'raw_pricing', 'raw_jv'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -2326,6 +2348,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'mfgAiStatementReconPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -2336,13 +2359,13 @@
           <button type="button" class="aie-btn is-brass" id="mfgAiToggleReconBtn">${esc(tr(EDGE_STATE.mfgReconOpen ? 'Hide Statement Studio' : 'Open Statement Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Statement Weighed Qty'))}</small><strong data-no-i18n="1">${fmtNum(sumQty, 1)} Ton</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Contract Expected ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumExp, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Supplier Billed ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumBilled, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('3-Leg Open Payables Tie'))}</small><strong data-no-i18n="1">${fmtUSD(openApUsd, 0)}</strong></div>
+      </div>
       ${EDGE_STATE.mfgReconOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Statement Weighed Qty'))}</small><strong data-no-i18n="1">${fmtNum(sumQty, 1)} Ton</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Contract Expected ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumExp, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Supplier Billed ($)'))}</small><strong data-no-i18n="1">${fmtUSD(sumBilled, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('3-Leg Open Payables Tie'))}</small><strong data-no-i18n="1">${fmtUSD(openApUsd, 0)}</strong></div>
-        </div>
         <textarea class="aie-batch-textarea" id="mfgAiReconInput" style="margin-top:8px" aria-label="${esc(tr('Supplier Weighbridge Statement Lines'))}" data-no-i18n="1">${esc(EDGE_STATE.mfgReconText || SAMPLE_MFG_SUPPLIER_STATEMENT)}</textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="aie-btn" id="mfgAiRunReconBtn">${ic('bolt')} ${esc(tr('Run 3-Way Match'))}</button>
@@ -2534,8 +2557,8 @@
 
   function mountHospitalitySettlementPanel() {
     const ws = $('workspace');
-    if (!ws || $('hspAiSettlementReconPanel') || !D || !D.STATE) return;
-    if (!['hsp_pos', 'hsp_revenue', 'hsp_memberships'].includes(D.STATE.view)) return;
+    if (!ws || !ensureFreshPanel('hspAiSettlementReconPanel') || !D || !D.STATE) return;
+    if (!['hsp_pos', 'hsp_revenue', 'hsp_memberships', 'hsp_packages', 'hsp_tariffs'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -2549,6 +2572,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'hspAiSettlementReconPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -2559,13 +2583,13 @@
           <button type="button" class="aie-btn is-brass" id="hspAiToggleReconBtn">${esc(tr(EDGE_STATE.hspReconOpen ? 'Hide Settlement Studio' : 'Open Settlement Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Gross Batch Amount'))}</small><strong data-no-i18n="1">${fmtUSD(sumGross, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Acquirer / MDR Fees'))}</small><strong data-no-i18n="1">${fmtUSD(sumFee, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Net Bank Deposit'))}</small><strong data-no-i18n="1">${fmtUSD(sumNet, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('11% Output VAT Split'))}</small><strong data-no-i18n="1">${fmtUSD(sumVat, 2)}</strong></div>
+      </div>
       ${EDGE_STATE.hspReconOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Gross Batch Amount'))}</small><strong data-no-i18n="1">${fmtUSD(sumGross, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Acquirer / MDR Fees'))}</small><strong data-no-i18n="1">${fmtUSD(sumFee, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Net Bank Deposit'))}</small><strong data-no-i18n="1">${fmtUSD(sumNet, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('11% Output VAT Split'))}</small><strong data-no-i18n="1">${fmtUSD(sumVat, 2)}</strong></div>
-        </div>
         <textarea class="aie-batch-textarea" id="hspAiReconInput" style="margin-top:8px" aria-label="${esc(tr('Hospitality Settlement Batch Lines'))}" data-no-i18n="1">${esc(EDGE_STATE.hspReconText || SAMPLE_HSP_SETTLEMENT_BATCH)}</textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="aie-btn" id="hspAiRunReconBtn">${ic('bolt')} ${esc(tr('Reconcile Terminal & Folios'))}</button>
@@ -2912,8 +2936,8 @@
 
   function mountRealEstateCamDepositPanel() {
     const ws = $('workspace');
-    if (!ws || $('reAiCamDepositReconPanel') || !D || !D.STATE) return;
-    if (!['re_leases', 're_invoicing', 're_receipts', 're_workorders', 're_recharges'].includes(D.STATE.view)) return;
+    if (!ws || !ensureFreshPanel('reAiCamDepositReconPanel') || !D || !D.STATE) return;
+    if (!['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 're_workorders', 're_recharges'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -2925,6 +2949,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'reAiCamDepositReconPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -2935,13 +2960,13 @@
           <button type="button" class="aie-btn is-brass" id="reAiToggleReconBtn">${esc(tr(EDGE_STATE.reReconOpen ? 'Hide CAM & Escrow Studio' : 'Open CAM & Escrow Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Prorated CAM Recharges'))}</small><strong data-no-i18n="1">${fmtUSD(pack.camTotalUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('FIFO Wire Allocations'))}</small><strong data-no-i18n="1">${fmtUSD(pack.wireTotalUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Ring-Fenced Deposit Escrow'))}</small><strong data-no-i18n="1">${fmtUSD(pack.depositHeldUsd, 0)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Refundable Escrow Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.depositRefundableUsd, 0)}</strong></div>
+      </div>
       ${EDGE_STATE.reReconOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Prorated CAM Recharges'))}</small><strong data-no-i18n="1">${fmtUSD(pack.camTotalUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('FIFO Wire Allocations'))}</small><strong data-no-i18n="1">${fmtUSD(pack.wireTotalUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Ring-Fenced Deposit Escrow'))}</small><strong data-no-i18n="1">${fmtUSD(pack.depositHeldUsd, 0)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Refundable Escrow Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.depositRefundableUsd, 0)}</strong></div>
-        </div>
         <textarea class="aie-batch-textarea" id="reAiReconInput" style="margin-top:8px" aria-label="${esc(tr('Real Estate CAM & Wire Lines'))}" data-no-i18n="1">${esc(EDGE_STATE.reReconText || SAMPLE_RE_CAM_WIRE_PACK)}</textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="aie-btn" id="reAiArrearsDraftBtn">${ic('send_msg')} ${esc(tr('Trilingual Tenant Notice'))}</button>
@@ -3198,8 +3223,8 @@
 
   function mountTradingLandedWarrantyPanel() {
     const ws = $('workspace');
-    if (!ws || $('trdAiLandedWarrantyPanel') || !D || !D.STATE) return;
-    if (!['trd_purchases', 'trd_landed', 'trd_trucks', 'trd_warranty'].includes(D.STATE.view)) return;
+    if (!ws || !ensureFreshPanel('trdAiLandedWarrantyPanel') || !D || !D.STATE) return;
+    if (!['trd_sales', 'trd_purchases', 'trd_landed', 'trd_trucks', 'trd_warranty'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -3211,6 +3236,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'trdAiLandedWarrantyPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -3221,13 +3247,13 @@
           <button type="button" class="aie-btn is-brass" id="trdAiToggleReconBtn">${esc(tr(EDGE_STATE.trdReconOpen ? 'Hide Shipment & Warranty Studio' : 'Open Shipment & Warranty Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Shipment Landed Pool'))}</small><strong data-no-i18n="1">${fmtUSD(pack.packAddUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('VIN Units Trued Up'))}</small><strong data-no-i18n="1">${pack.vinRows.length} VINs</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('OEM Warranty Credits'))}</small><strong data-no-i18n="1">${fmtUSD(pack.warrantyCreditUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Unallocated Remainder'))}</small><strong data-no-i18n="1">$0.00</strong></div>
+      </div>
       ${EDGE_STATE.trdReconOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Shipment Landed Pool'))}</small><strong data-no-i18n="1">${fmtUSD(pack.packAddUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('VIN Units Trued Up'))}</small><strong data-no-i18n="1">${pack.vinRows.length} VINs</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('OEM Warranty Credits'))}</small><strong data-no-i18n="1">${fmtUSD(pack.warrantyCreditUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Unallocated Remainder'))}</small><strong data-no-i18n="1">$0.00</strong></div>
-        </div>
         <textarea class="aie-batch-textarea" id="trdAiReconInput" style="margin-top:8px" aria-label="${esc(tr('Trading Shipment & Warranty Pack'))}" data-no-i18n="1">${esc(EDGE_STATE.trdReconText || SAMPLE_TRD_LANDED_WARRANTY_PACK)}</textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="aie-btn" id="trdAiRunReconBtn">${ic('bolt')} ${esc(tr('Allocate Pack & Match Credits'))}</button>
@@ -3405,7 +3431,7 @@
 
   function mountHoldingBankSweepPanel() {
     const ws = $('workspace');
-    if (!ws || $('hldAiBankSweepPanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('hldAiBankSweepPanel') || !D || !D.STATE) return;
     if (!['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
@@ -3418,6 +3444,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'hldAiBankSweepPanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -3428,13 +3455,13 @@
           <button type="button" class="aie-btn is-brass" id="hldAiToggleBankBtn">${esc(tr(EDGE_STATE.hldBankOpen ? 'Hide Treasury Recon' : 'Open Treasury Recon'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Matched IC Due From / To'))}</small><strong data-no-i18n="1">${fmtUSD(pack.dueFromUsd, 0)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Net Elimination'))}</small><strong data-no-i18n="1">${fmtUSD(pack.netMirrorElimUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Synced Loan Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.accruedLoanUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Unbooked Bank Fees & FX'))}</small><strong data-no-i18n="1">${fmtUSD(pack.unbookedFeeTotalUsd, 2)}</strong></div>
+      </div>
       ${EDGE_STATE.hldBankOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Matched IC Due From / To'))}</small><strong data-no-i18n="1">${fmtUSD(pack.dueFromUsd, 0)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Net Elimination'))}</small><strong data-no-i18n="1">${fmtUSD(pack.netMirrorElimUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Synced Loan Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.accruedLoanUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Unbooked Bank Fees & FX'))}</small><strong data-no-i18n="1">${fmtUSD(pack.unbookedFeeTotalUsd, 2)}</strong></div>
-        </div>
         <textarea class="aie-batch-textarea" id="hldAiBankInput" style="margin-top:8px" aria-label="${esc(tr('Multi-Bank Treasury Sweep Lines'))}" data-no-i18n="1">${esc(EDGE_STATE.hldBankText || SAMPLE_HLD_BANK_SWEEP_LINES)}</textarea>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;flex-wrap:wrap">
           <button type="button" class="aie-btn" id="hldAiRunBankBtn">${ic('bolt')} ${esc(tr('Classify Sweeps & Fees'))}</button>
@@ -3900,10 +3927,10 @@
 
   function mountMfgPeriodClosePanel() {
     const ws = $('workspace');
-    if (!ws || $('mfgPeriodClosePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('mfgPeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
     if (activeInd !== 'Manufacturing') return;
-    if (!['ledger', 'raw', 'payroll', 'statements'].includes(D.STATE.view)) return;
+    if (!['ledger', 'coa_classes', 'gl_automation', 'raw', 'expenses', 'payroll', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -3915,6 +3942,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'mfgPeriodClosePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -3926,13 +3954,13 @@
           <button type="button" class="aie-btn is-brass" id="mfgToggleCloseBtn">${esc(tr(EDGE_STATE.mfgCloseOpen ? 'Hide Period-Close Studio' : 'Open Period-Close Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Reversing Cutoff Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalAccrualUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Day-1 Auto-Reversal Date'))}</small><strong data-no-i18n="1">${esc(pack.reversalDate)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Cross-Month Cutoff Shifts'))}</small><strong data-no-i18n="1">${fmtNum(pack.cutoffShiftCount)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Accrual Trial Balance Drift'))}</small><strong data-no-i18n="1">$0.00</strong></div>
+      </div>
       ${EDGE_STATE.mfgCloseOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Reversing Cutoff Accruals'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalAccrualUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Day-1 Auto-Reversal Date'))}</small><strong data-no-i18n="1">${esc(pack.reversalDate)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Cross-Month Cutoff Shifts'))}</small><strong data-no-i18n="1">${fmtNum(pack.cutoffShiftCount)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Accrual Trial Balance Drift'))}</small><strong data-no-i18n="1">$0.00</strong></div>
-        </div>
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
           <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Cutoff Lock Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr(pack.lock.isSealed ? 'Prior-month Tx Date & Rep Date edits frozen' : 'Ready to seal prior-month Tx Date & Rep Date edits'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4193,10 +4221,10 @@
 
   function mountHospitalityPeriodClosePanel() {
     const ws = $('workspace');
-    if (!ws || $('hspPeriodClosePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('hspPeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
     if (!/hospitality|resort/i.test(activeInd)) return;
-    if (!['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    if (!['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'hsp_packages', 'hsp_pos', 'ledger', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -4206,6 +4234,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'hspPeriodClosePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -4217,13 +4246,13 @@
           <button type="button" class="aie-btn is-brass" id="hspToggleCloseBtn">${esc(tr(EDGE_STATE.hspCloseOpen ? 'Hide Resort Close Studio' : 'Open Resort Close Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Seasonal Contracts Pool'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalContractUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Earned Active-Day Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Deferred Membership Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Outlet Stock Counts Verified'))}</small><strong data-no-i18n="1">${pack.outletCountTotal} (${pack.shrinkageOutliersCount} ${esc(tr('Watch'))})</strong></div>
+      </div>
       ${EDGE_STATE.hspCloseOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Seasonal Contracts Pool'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalContractUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Earned Active-Day Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Deferred Membership Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Outlet Stock Counts Verified'))}</small><strong data-no-i18n="1">${pack.outletCountTotal} (${pack.shrinkageOutliersCount} ${esc(tr('Watch'))})</strong></div>
-        </div>
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
           <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Resort Cutoff Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('Straight-line May-Sep pass amortization & physical bar/kitchen count freeze'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4462,10 +4491,10 @@
 
   function mountRealEstatePeriodClosePanel() {
     const ws = $('workspace');
-    if (!ws || $('rePeriodClosePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('rePeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
     if (!/real\s*estate|property/i.test(activeInd)) return;
-    if (!['re_leases', 're_invoicing', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    if (!['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 'ledger', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -4475,6 +4504,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'rePeriodClosePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -4486,13 +4516,13 @@
           <button type="button" class="aie-btn is-brass" id="reToggleCloseBtn">${esc(tr(EDGE_STATE.reCloseOpen ? 'Hide Property Close Studio' : 'Open Property Close Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Earned Period Rent'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedRentUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Deferred Rent Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredRentUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('4235 S.A.L 11% Output VAT'))}</small><strong data-no-i18n="1">${fmtUSD(pack.vat4235Usd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('60/30-Day CPI Renewal Queue'))}</small><strong data-no-i18n="1">${pack.renewalQueueCount} ${esc(tr('Leases'))}</strong></div>
+      </div>
       ${EDGE_STATE.reCloseOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Earned Period Rent'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalEarnedRentUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Deferred Rent Balance'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalDeferredRentUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('4235 S.A.L 11% Output VAT'))}</small><strong data-no-i18n="1">${fmtUSD(pack.vat4235Usd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('60/30-Day CPI Renewal Queue'))}</small><strong data-no-i18n="1">${pack.renewalQueueCount} ${esc(tr('Leases'))}</strong></div>
-        </div>
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
           <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('VAT & Rent Cutoff Scope'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('4235 Company S.A.L 11% VAT sequence verified; Properties strictly 0% exempt'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4711,10 +4741,10 @@
 
   function mountTradingPeriodClosePanel() {
     const ws = $('workspace');
-    if (!ws || $('trdPeriodClosePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('trdPeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
     if (!/trading|auto/i.test(activeInd)) return;
-    if (!['trd_trucks', 'trd_sales', 'trd_stock', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    if (!['trd_trucks', 'trd_sales', 'trd_purchases', 'trd_stock', 'ledger', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -4725,6 +4755,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'trdPeriodClosePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -4736,13 +4767,13 @@
           <button type="button" class="aie-btn is-brass" id="trdToggleCloseBtn">${esc(tr(EDGE_STATE.trdCloseOpen ? 'Hide Trading Close Studio' : 'Open Trading Close Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Unsold VIN Floorplan Accrual'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalFloorplanInterestUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Undelivered Buyer Deposits'))}</small><strong data-no-i18n="1">${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Spare-Parts Aging Provision'))}</small><strong data-no-i18n="1">${fmtUSD(pack.sparePartsAgingProvisionUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Priority Reorder SKUs'))}</small><strong data-no-i18n="1">${pack.lowStockReorderCount}</strong></div>
+      </div>
       ${EDGE_STATE.trdCloseOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Unsold VIN Floorplan Accrual'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalFloorplanInterestUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Undelivered Buyer Deposits'))}</small><strong data-no-i18n="1">${fmtUSD(pack.undeliveredCustomerDepositsUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Spare-Parts Aging Provision'))}</small><strong data-no-i18n="1">${fmtUSD(pack.sparePartsAgingProvisionUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Priority Reorder SKUs'))}</small><strong data-no-i18n="1">${pack.lowStockReorderCount}</strong></div>
-        </div>
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
           <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Showroom & Bonded Cutoff'))}:</strong> <span data-no-i18n="1">${esc(pack.lock.entityLabel)}</span> · ${esc(tr('Deposits held until physical VIN delivery; unsold floorplan interest accrued'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4961,10 +4992,10 @@
 
   function mountInsurancePeriodClosePanel() {
     const ws = $('workspace');
-    if (!ws || $('insPeriodClosePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('insPeriodClosePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
     if (!/insur|broker/i.test(activeInd)) return;
-    if (!['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    if (!['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ins_remittances', 'ledger', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -4974,6 +5005,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'insPeriodClosePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -4985,13 +5017,13 @@
           <button type="button" class="aie-btn is-brass" id="insToggleCloseBtn">${esc(tr(EDGE_STATE.insCloseOpen ? 'Hide Brokerage Close Studio' : 'Open Brokerage Close Studio'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('60/30/15d Renewal GWP'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalGwpUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Expected Renewal Commission'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalCommUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Clawback Reserve'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalClawbackReserveUsd, 2)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Portfolio Claim Loss Ratio'))}</small><strong data-no-i18n="1">${pack.lossRatioPct}%</strong></div>
+      </div>
       ${EDGE_STATE.insCloseOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('60/30/15d Renewal GWP'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalGwpUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Expected Renewal Commission'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalRenewalCommUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Clawback Reserve'))}</small><strong data-no-i18n="1">${fmtUSD(pack.totalClawbackReserveUsd, 2)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Portfolio Claim Loss Ratio'))}</small><strong data-no-i18n="1">${pack.lossRatioPct}%</strong></div>
-        </div>
         <div class="aie-close-status-bar ${pack.lock.isSealed ? 'is-sealed' : ''}">
           <span>${ic(pack.lock.isSealed ? 'lock' : 'shield')} <strong>${esc(tr('Bordereau Cutoff Scope'))}:</strong> <span data-no-i18n="1">${pack.settledBordereauxCount}</span> ${esc(tr('settled carrier bordereaux verified; clawback reserve computed'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -5314,10 +5346,10 @@
 
   function mountHoldingCloseGatePanel() {
     const ws = $('workspace');
-    if (!ws || $('hldCloseGatePanel') || !D || !D.STATE) return;
+    if (!ws || !ensureFreshPanel('hldCloseGatePanel') || !D || !D.STATE) return;
     const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : '';
     if (!/holding|treasury/i.test(activeInd) && D.STATE.view !== 'entities') return;
-    if (!['hld_consolidation', 'hld_interactions', 'hld_loans', 'entities', 'ledger', 'statements'].includes(D.STATE.view)) return;
+    if (!['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans', 'hld_distributions', 'entities', 'ledger', 'statements'].includes(D.STATE.view)) return;
     const anchor = findReconMountAnchor(ws);
     if (!anchor) return;
 
@@ -5327,6 +5359,7 @@
     const panel = document.createElement('div');
     panel.className = 'aie-panel';
     panel.id = 'hldCloseGatePanel';
+    panel.setAttribute('data-aie-scope', currentSurfaceScopeSig());
     panel.innerHTML = `
       <div class="aie-head">
         <div class="aie-title-wrap">
@@ -5338,13 +5371,13 @@
           <button type="button" class="aie-btn is-brass" id="hldToggleGateBtn">${esc(tr(EDGE_STATE.hldGateOpen ? 'Hide Group Close Gate' : 'Open Group Close Gate'))}</button>
         </div>
       </div>
+      <div class="aie-recon-kpis">
+        <div class="aie-recon-kpi"><small>${esc(tr('Entities Sealed'))}</small><strong data-no-i18n="1">${gate.sealedCount} / 14</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('14-Entity Trial Balance Drift'))}</small><strong data-no-i18n="1">${gate.all14TbZero ? '$0.00' : 'Drift'}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedSalesUsd, 0)}</strong></div>
+        <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Operating Profit'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedEbitdaUsd, 0)}</strong></div>
+      </div>
       ${EDGE_STATE.hldGateOpen ? `
-        <div class="aie-recon-kpis">
-          <div class="aie-recon-kpi"><small>${esc(tr('Entities Sealed'))}</small><strong data-no-i18n="1">${gate.sealedCount} / 14</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('14-Entity Trial Balance Drift'))}</small><strong data-no-i18n="1">${gate.all14TbZero ? '$0.00' : 'Drift'}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Revenue'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedSalesUsd, 0)}</strong></div>
-          <div class="aie-recon-kpi"><small>${esc(tr('Consolidated Operating Profit'))}</small><strong data-no-i18n="1">${fmtUSD(gate.consolidatedEbitdaUsd, 0)}</strong></div>
-        </div>
         <div class="aie-close-status-bar ${gate.all14Sealed ? 'is-sealed' : ''}">
           <span>${ic(gate.all14Sealed ? 'lock' : 'check_circle')} <strong>${esc(tr('Pre-Close Verification'))}:</strong> ${esc(tr('14/14 entities at $0.00 TB drift · Matched IC eliminations $0.00 · Loan & partner schedules synced'))}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -5508,20 +5541,20 @@
   function syncAllSurfacesNow() {
     if (!D || !D.STATE) return;
     const v = D.STATE.view;
-    if (v === 'sentinels') mountBehavioralSentinelPanel();
-    if (['suppliers', 'raw'].includes(v)) mountMfgStatementReconPanel();
-    if (['hsp_pos', 'hsp_revenue', 'hsp_memberships'].includes(v)) mountHospitalitySettlementPanel();
-    if (['re_leases', 're_invoicing', 're_receipts', 're_workorders', 're_recharges'].includes(v)) mountRealEstateCamDepositPanel();
-    if (['trd_purchases', 'trd_landed', 'trd_trucks', 'trd_warranty'].includes(v)) mountTradingLandedWarrantyPanel();
-    if (['hld_interactions', 'hld_open_recon', 'hld_ic', 'hld_open_ic_tbl'].includes(v)) mountHoldingMatcherPanel();
+    if (['sentinels', 'alert_rules'].includes(v)) mountBehavioralSentinelPanel();
+    if (['expenses', 'suppliers', 'raw', 'raw_pricing', 'raw_jv'].includes(v)) mountMfgStatementReconPanel();
+    if (['hsp_pos', 'hsp_revenue', 'hsp_memberships', 'hsp_packages', 'hsp_tariffs'].includes(v)) mountHospitalitySettlementPanel();
+    if (['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 're_workorders', 're_recharges'].includes(v)) mountRealEstateCamDepositPanel();
+    if (['trd_sales', 'trd_purchases', 'trd_landed', 'trd_trucks', 'trd_warranty'].includes(v)) mountTradingLandedWarrantyPanel();
+    if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_ic', 'hld_open_ic_tbl'].includes(v)) mountHoldingMatcherPanel();
     if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans'].includes(v)) mountHoldingBankSweepPanel();
-    if (['ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(v)) mountInsuranceBordereauPanel();
-    if (['ledger', 'raw', 'payroll', 'statements'].includes(v)) mountMfgPeriodClosePanel();
-    if (['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'ledger', 'statements'].includes(v)) mountHospitalityPeriodClosePanel();
-    if (['re_leases', 're_invoicing', 'ledger', 'statements'].includes(v)) mountRealEstatePeriodClosePanel();
-    if (['trd_trucks', 'trd_sales', 'trd_stock', 'ledger', 'statements'].includes(v)) mountTradingPeriodClosePanel();
-    if (['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ledger', 'statements'].includes(v)) mountInsurancePeriodClosePanel();
-    if (['hld_consolidation', 'hld_interactions', 'hld_loans', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
+    if (['ins_policies', 'ins_renewals', 'ins_statements', 'ins_carrier', 'ins_stm_tbl', 'ins_billing', 'ins_remittances'].includes(v)) mountInsuranceBordereauPanel();
+    if (['ledger', 'coa_classes', 'gl_automation', 'raw', 'expenses', 'payroll', 'statements'].includes(v)) mountMfgPeriodClosePanel();
+    if (['hsp_memberships', 'hsp_stock', 'hsp_revenue', 'hsp_packages', 'hsp_pos', 'ledger', 'statements'].includes(v)) mountHospitalityPeriodClosePanel();
+    if (['re_properties', 're_units', 're_leases', 're_invoicing', 're_receipts', 'ledger', 'statements'].includes(v)) mountRealEstatePeriodClosePanel();
+    if (['trd_trucks', 'trd_sales', 'trd_purchases', 'trd_stock', 'ledger', 'statements'].includes(v)) mountTradingPeriodClosePanel();
+    if (['ins_policies', 'ins_renewals', 'ins_billing', 'ins_statements', 'ins_remittances', 'ledger', 'statements'].includes(v)) mountInsurancePeriodClosePanel();
+    if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans', 'hld_distributions', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
     if (v === 'daily_ops') mountDailyOpsRootCauseButton();
 
     const mfgScanBar = $('entrySmartScanBar');
@@ -5564,6 +5597,14 @@
   function init(deps) {
     D = deps || {};
     EDGE_STATE.voiceLang = curLang();
+
+    if (typeof window !== 'undefined' && !window.__aieLangListenerBound) {
+      window.__aieLangListenerBound = true;
+      window.addEventListener('mfg:lang-changed', () => {
+        EDGE_STATE.voiceLang = curLang();
+        scheduleSyncSurfaces();
+      });
+    }
 
     const obs = new MutationObserver(() => {
       scheduleSyncSurfaces();

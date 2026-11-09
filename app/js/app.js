@@ -703,7 +703,7 @@
     'blanca': 'Hospitality & Resorts', 'launa': 'Hospitality & Resorts', 'palms': 'Hospitality & Resorts', 'voile': 'Hospitality & Resorts', 'platinum': 'Hospitality & Resorts',
     'korriauto': 'Automotive & Heavy Trading', 'shacman': 'Automotive & Heavy Trading',
     'properties': 'Real Estate & Property', '4235company': 'Real Estate & Property',
-    'insurance': 'Insurance & Brokerage'
+    'insurance': 'Insurance & Brokerage', 'insuranceco': 'Insurance & Brokerage'
   };
   const SENTINEL_MODEL_KEY = {
     'manufacturing-group': 'Manufacturing Group', 'wtc': 'WTC', 'bbconstruction': 'BBConstruction', 'lionstransport': 'Lions Transport',
@@ -711,7 +711,7 @@
     'blanca': 'Blanca', 'launa': 'La Una', 'palms': 'Palms', 'voile': 'Voile', 'platinum': 'Platinum',
     'korriauto': 'Korri Auto', 'shacman': 'Shacman',
     'properties': 'Properties', '4235company': '4235 Company S.A.L',
-    'insurance': 'Insurance Company'
+    'insurance': 'Insurance Company', 'insuranceco': 'Insurance Company'
   };
 
   function slugCompanyKey(name) {
@@ -39186,7 +39186,7 @@
     const m = getModel(effCo);
     const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500 };
     const rate = Number(cf.rate_lbp || 89500);
-    const fullFin = Boolean(opts.forceFullFin) || isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = Boolean(opts.forceFullFin) || isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
@@ -39485,7 +39485,7 @@
     const rate = Number(cf.rate_lbp || 89500);
     const dailySrc = Array.isArray(cf.daily) ? cf.daily : [];
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
-    const fullFin = isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
     const dailyCacheKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${isOfficialScopeActive(u) ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${dailySrc.length}|${SEED._recordsReady ? 1 : 0}`;
@@ -39603,6 +39603,8 @@
   }
 
   function buildLiveCashFlowTables(cf, coKey, rate) {
+    const u = activeUser();
+    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const src = (cf && cf.tables) || {};
     const cloneTbl = (t, defTotals) => ({
       rows: Array.isArray(t && t.rows) ? t.rows.map(r => Object.assign({}, r)) : [],
@@ -39611,10 +39613,10 @@
     const out = {
       sales: cloneTbl(src.sales, { usd: 0, lbp: 0 }),
       expenses: cloneTbl(src.expenses, { usd: 0, lbp: 0 }),
-      borrowing: cloneTbl(src.borrowing, { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 }),
-      salary: cloneTbl(src.salary, { usd: 0, lbp: 0 }),
-      external: cloneTbl(src.external, { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 }),
-      extended: cloneTbl(src.extended, { usd: 0, lbp: 0 }),
+      borrowing: fullFin ? cloneTbl(src.borrowing, { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 }) : { rows: [], totals: { rec_usd: 0, rec_lbp: 0, paid_usd: 0, paid_lbp: 0 } },
+      salary: fullFin ? cloneTbl(src.salary, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
+      external: fullFin ? cloneTbl(src.external, { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 }) : { rows: [], totals: { exp_usd: 0, exp_lbp: 0, rev_usd: 0, rev_lbp: 0 } },
+      extended: fullFin ? cloneTbl(src.extended, { usd: 0, lbp: 0 }) : { rows: [], totals: { usd: 0, lbp: 0 } },
       conversion: cloneTbl(src.conversion, { from_amt: 0, to_amt: 0 })
     };
     if (!STATE.customRecords || coKey === 'lionstransport') return out;
@@ -39696,6 +39698,7 @@
       out.expenses.totals.usd = round2(Number(out.expenses.totals.usd || 0) + u);
       out.expenses.totals.lbp = Math.round(Number(out.expenses.totals.lbp || 0) + l);
     });
+    if (fullFin) {
     forEachCashCustomDelta('salaries', matchCo, (sa, mult) => {
       const u = round2(mult * Number(sa.lbp_amount ? Number(sa.usd_amount || 0) : (sa.usd_amount != null ? sa.usd_amount : sa.amount || 0)));
       const l = Math.round(mult * Number(sa.lbp_amount || 0));
@@ -39791,6 +39794,7 @@
         }
       }
     });
+    }
     forEachCashCustomDelta('conversions', matchCo, (cv, mult) => {
       const d = convSignedDeltas(cv, rate);
       const tp = d.u2l ? 'USD to LBP' : 'LBP to USD';
@@ -39820,7 +39824,7 @@
     const liveLbp = Math.round(Number(k.cash_till_lbp != null ? k.cash_till_lbp : 0));
     const liveTot = Number(k.cash_till != null ? k.cash_till : 0);
     const q = STATE.search.trim().toLowerCase();
-    const fullFin = isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isOwner(u) || /Supervisor/i.test(String(u.role || '')) || u.pbi_access === 'full' || ((/^Custom/i.test(String(u.role || '')) || u.pbi_access === 'custom') && (canAccessTable('external_movements', u) || canAccessTable('loans', u))) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
     const allowedNames = allowedCompanyNames(u);
     const activeIndCf = typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : 'Manufacturing';
@@ -53051,7 +53055,7 @@
 
   function getIndustryKpiSnapshot(ind, rawKey, baseKpi) {
     const rollup = computeEnterpriseRollup();
-    const kKey = rawKey === 'company4235' ? '4235company' : rawKey;
+    const kKey = rawKey === 'company4235' ? '4235company' : (rawKey === 'insuranceco' ? 'insurance' : rawKey);
     const entHit = (rollup.entities || []).find(e => e.key === kKey);
     const indKeyMap = {
       'Holding & Treasury': 'hld',
@@ -53060,9 +53064,9 @@
       'Real Estate & Property': 're',
       'Insurance & Brokerage': 'ins'
     };
-    const src = entHit
-      ? entHit.k
-      : (ind === 'Holding & Treasury' ? rollup.totals : (rollup.byIndustry[indKeyMap[ind]] || rollup.totals));
+    const src = (ind === 'Holding & Treasury')
+      ? rollup.totals
+      : (entHit ? entHit.k : (rollup.byIndustry[indKeyMap[ind]] || rollup.totals));
     const cashTill = round2(Number(src.cash_till || 48500));
     const cashIn = round2(Math.max(cashTill + Number(src.expenses || 0), Number(src.sales_ttc || 0) * 0.72, 65000));
     const cashOut = round2(Math.max(0, cashIn - cashTill));
@@ -60773,7 +60777,7 @@
     const canPayroll = Boolean(actualCanPayroll && (options.canPayroll === undefined ? true : options.canPayroll));
     const fullFin = Boolean(canCash && canViewBooks && canExp);
 
-    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let reqCo = String(options.company || options.companyKey || STATE.company || 'all').trim();
     let rlsClamped = false;
     if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
       if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
@@ -60842,7 +60846,7 @@
     const scopedMoves = allMoves.filter(r => r && r.date && r.date >= range.from && r.date <= range.to);
     const dailyRows = buildDailyTillSheetRows({ user: u, company: reqCo });
 
-    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
     const closingUsd = round2(safeNum(kpi.cash_till_usd != null ? kpi.cash_till_usd : kpi.cash_till));
     const latestDay = dailyRows.length ? dailyRows[0] : null;
     const closingLbp = Math.round(safeNum(latestDay ? latestDay.closing_lbp : (kpi.cash_till_lbp || 0)));
@@ -61129,7 +61133,7 @@
     const allowedKeys = typeof getAllowedCompanyKeys === 'function' ? getAllowedCompanyKeys(u) : ['all'];
     const safeNum = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
-    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let reqCo = String(options.company || options.companyKey || STATE.company || 'all').trim();
     let rlsClamped = false;
     if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
       if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
@@ -61662,7 +61666,7 @@
       return Math.min(maxV, Math.max(minV, n));
     };
 
-    let reqCo = String(options.company || STATE.company || 'all').trim();
+    let reqCo = String(options.company || options.companyKey || STATE.company || 'all').trim();
     let rlsClamped = false;
     if (!ownerFlag && reqCo && !reqCo.startsWith('industry:')) {
       if (reqCo === 'all' && !allowedKeys.includes('all') && allowedKeys.length) {
@@ -61809,50 +61813,176 @@
       }
     };
     const domMeta = domainMetaMap[ind] || domainMetaMap['Manufacturing'];
+    const leverSpecs = {
+      pricePct: {
+        min: -50, max: 100, step: 0.5, unit: '%',
+        labelEn: 'Selling Price / Rate Δ',
+        labelAr: 'تغير سعر البيع / التعرفة',
+        labelFr: 'Variation Prix / Tarif',
+        subEn: domMeta.leverLabels.price.en,
+        subAr: domMeta.leverLabels.price.ar,
+        subFr: domMeta.leverLabels.price.fr
+      },
+      volumePct: {
+        min: -80, max: 200, step: 1, unit: '%',
+        labelEn: 'Volume / Throughput Δ',
+        labelAr: 'تغير الكمية / حجم النشاط',
+        labelFr: 'Variation Volume / Activité',
+        subEn: domMeta.leverLabels.volume.en,
+        subAr: domMeta.leverLabels.volume.ar,
+        subFr: domMeta.leverLabels.volume.fr
+      },
+      directCostPct: {
+        min: -50, max: 200, step: 0.5, unit: '%',
+        labelEn: 'Direct Cost / Fuel & COGS Δ',
+        labelAr: 'تغير التكلفة المباشرة / الوقود والبضاعة',
+        labelFr: 'Variation Coûts directs / Carburant',
+        subEn: domMeta.leverLabels.directCost.en,
+        subAr: domMeta.leverLabels.directCost.ar,
+        subFr: domMeta.leverLabels.directCost.fr
+      },
+      overheadPct: {
+        min: -50, max: 200, step: 0.5, unit: '%',
+        labelEn: 'Fixed Overhead & Payroll Δ',
+        labelAr: 'تغير المصاريف الثابتة والرواتب',
+        labelFr: 'Variation Frais fixes et Paie',
+        subEn: domMeta.leverLabels.overhead.en,
+        subAr: domMeta.leverLabels.overhead.ar,
+        subFr: domMeta.leverLabels.overhead.fr
+      },
+      dsoDeltaDays: {
+        min: -30, max: 60, step: 1, unit: 'd',
+        labelEn: 'Collection Speed (DSO Days Δ)',
+        labelAr: 'سرعة التحصيل (تغير أيام الذمم DSO)',
+        labelFr: 'Délai d’encaissement (Variation DSO j)',
+        subEn: domMeta.leverLabels.dso.en,
+        subAr: domMeta.leverLabels.dso.ar,
+        subFr: domMeta.leverLabels.dso.fr
+      },
+      fxRateLbp: {
+        min: 15000, max: 250000, step: 500, unit: 'LL/$',
+        labelEn: 'LBP / USD Exchange Rate',
+        labelAr: 'سعر صرف الليرة مقابل الدولار (LL/$)',
+        labelFr: 'Taux de change LBP / USD (LL/$)',
+        subEn: domMeta.leverLabels.fx.en,
+        subAr: domMeta.leverLabels.fx.ar,
+        subFr: domMeta.leverLabels.fx.fr
+      }
+    };
+    const presets = [
+      {
+        id: 'baseline',
+        labelEn: 'Baseline (0%)',
+        labelAr: 'خط الأساس (0%)',
+        labelFr: 'Référence (0%)',
+        levers: { pricePct: 0, volumePct: 0, directCostPct: 0, overheadPct: 0, dsoDeltaDays: 0, fxRateLbp: liveFxRate }
+      },
+      {
+        id: 'margin_push',
+        labelEn: 'Margin Expansion',
+        labelAr: 'توسيع الهامش (+5% سعر / -3% تكلفة)',
+        labelFr: 'Expansion de marge (+5% prix / -3% coût)',
+        levers: { pricePct: 5, volumePct: 2, directCostPct: -3, overheadPct: 0, dsoDeltaDays: -5, fxRateLbp: liveFxRate }
+      },
+      {
+        id: 'cost_shock',
+        labelEn: 'Fuel & Cost Shock',
+        labelAr: 'صدمة الوقود والتكلفة (+12% تكلفة / +10 أيام تحصيل)',
+        labelFr: 'Choc carburant et coûts (+12% coût / +10j DSO)',
+        levers: { pricePct: 0, volumePct: -5, directCostPct: 12, overheadPct: 4, dsoDeltaDays: 10, fxRateLbp: Math.min(250000, Math.round(liveFxRate * 1.15)) }
+      },
+      {
+        id: 'volume_push',
+        labelEn: 'Volume Push',
+        labelAr: 'دفعة الحجم (-4% سعر / +18% كمية)',
+        labelFr: 'Poussée volume (-4% prix / +18% volume)',
+        levers: { pricePct: -4, volumePct: 18, directCostPct: 0, overheadPct: 2, dsoDeltaDays: 3, fxRateLbp: liveFxRate }
+      }
+    ];
 
     if (!canViewBooks || !canCash || !canExp || rlsClamped) {
       const mutSig = buildGuideMutationSignature(ind, reqCo);
       const restrictedScope = `wi_restricted|${u ? u.id : 'anon'}|${ind}|${reqCo}|${leverSig}|${mutSig}`;
+      const kpiRestricted = canSales ? (isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo)) : {};
+      const restBaseRev = canSales ? Math.max(0, round2(safeNum(kpiRestricted.sales_ttc))) : 0;
+      const restBaseUnits = canSales ? Math.max(1, round2(safeNum(kpiRestricted.tons_sold || kpiRestricted.loads || 100))) : 0;
+      const restSimRev = canSales ? Math.max(0, round2(restBaseRev * (1 + levers.pricePct / 100) * (1 + levers.volumePct / 100))) : 0;
+      const restSimUnits = canSales ? Math.max(0, round2(restBaseUnits * (1 + levers.volumePct / 100))) : 0;
+      const restRevDelta = round2(restSimRev - restBaseRev);
+      const restRevDeltaPct = restBaseRev > 0 ? round2((restRevDelta / restBaseRev) * 100) : 0;
       const zeroMetrics = {
-        revenueUsd: 0,
+        revUsd: restBaseRev,
+        revenueUsd: restBaseRev,
         directCostUsd: 0,
         grossMarginUsd: 0,
+        gmPct: 0,
         grossMarginPct: 0,
         overheadUsd: 0,
         opProfitUsd: 0,
         opMarginPct: 0,
-        units: 0,
+        units: restBaseUnits,
+        uom: domMeta.unitLabelEn,
+        dsoDays: 30,
         closingCombinedTillUsd: 0,
+        projected30dCashUsd: 0,
         projected30dTillUsd: 0,
         runwayDays: 0,
         fxRateLbp: liveFxRate
       };
+      const simZeroMetrics = Object.assign({}, zeroMetrics, {
+        revUsd: restSimRev,
+        revenueUsd: restSimRev,
+        units: restSimUnits,
+        dsoDays: Math.max(1, 30 + levers.dsoDeltaDays),
+        fxRateLbp: levers.fxRateLbp
+      });
+      const restHeadEn = `${coLabel} What-If Scenario Simulator is restricted for this seat.`;
+      const restHeadAr = `محاكي السيناريوهات المالية لـ ${coLabel} مقيد لصلاحيات هذا المقعد.`;
+      const restHeadFr = `Le simulateur de scénarios pour ${coLabel} est restreint pour ce siège.`;
       return {
         scopeKey: restrictedScope,
         leverSig,
         industry: ind,
         companyKey: reqCo,
         companyLabel: coLabel,
+        companyEn: coLabel,
+        companyAr: coLabel,
+        companyFr: coLabel,
+        periodKey: range.label || 'Active Period',
         periodLabel: range.label || 'Active Period',
+        periodEn: range.label || 'Active Period',
+        periodAr: range.label || 'Active Period',
+        periodFr: range.label || 'Active Period',
         asOfDate: anchorDate,
-        rlsClamped: true,
+        rlsClamped: Boolean(rlsClamped),
         restricted: true,
         canViewBooks: false,
         canCash: false,
         canExp: false,
         canEditAlerts: false,
         domainMeta: domMeta,
+        targetPricingView: domMeta.targetHubView || 'pricing',
         levers,
-        baseline: Object.assign({}, zeroMetrics),
-        simulated: Object.assign({}, zeroMetrics),
+        leverSpecs,
+        presets,
+        base: zeroMetrics,
+        sim: simZeroMetrics,
+        baseline: zeroMetrics,
+        simulated: simZeroMetrics,
         deltas: {
-          revenueUsd: 0,
-          revenuePct: 0,
+          revDeltaUsd: restRevDelta,
+          revenueUsd: restRevDelta,
+          revDeltaPct: restRevDeltaPct,
+          revenuePct: restRevDeltaPct,
           directCostUsd: 0,
+          gmDeltaUsd: 0,
           grossMarginUsd: 0,
+          gmDeltaPts: 0,
           grossMarginPts: 0,
           overheadUsd: 0,
+          opProfitDeltaUsd: 0,
           opProfitUsd: 0,
+          opProfitDeltaPct: 0,
           opMarginPts: 0,
           priceEffectUsd: 0,
           volumeEffectUsd: 0,
@@ -61860,8 +61990,10 @@
           overheadEffectUsd: 0,
           dsoCashImpactUsd: 0,
           fxRevalDeltaUsd: 0,
+          wcCashDeltaUsd: 0,
           operatingCashFlow30dDeltaUsd: 0,
           cashFlowTotalDeltaUsd: 0,
+          projected30dCashDeltaUsd: 0,
           projected30dTillDeltaUsd: 0,
           runwayDeltaDays: 0,
           decompositionResidualUsd: 0
@@ -61870,12 +62002,22 @@
           unitContributionPositive: false,
           breakEvenVolumeRatioPct: null,
           breakEvenUnits: null,
+          isoProfitUnits: null,
           isoProfitVolumeDeltaPct: null
         },
+        tieCheck: {
+          profitBridgeBalanced: true,
+          profitBridgeVarianceUsd: 0,
+          glBalanced: true,
+          glVarianceUsd: 0
+        },
         tornadoBars: [],
-        headlineEn: `${coLabel} What-If Scenario Simulator is restricted for this seat.`,
-        headlineAr: `محاكي السيناريوهات المالية لـ ${coLabel} مقيد لصلاحيات هذا المقعد.`,
-        headlineFr: `Le simulateur de scénarios pour ${coLabel} est restreint pour ce siège.`,
+        headlineEn: restHeadEn,
+        headlineAr: restHeadAr,
+        headlineFr: restHeadFr,
+        spokenEn: restHeadEn,
+        spokenAr: restHeadAr,
+        spokenFr: restHeadFr,
         bulletsEn: ['Switch to an Owner, CFO, or Supervisor seat with Accounting and Treasury permissions to model price, cost, FX, and DSO scenarios.'],
         bulletsAr: ['يرجى التبديل إلى مقعد مالك أو مدير مالي أو مشرف مخول لمحاكاة سيناريوهات الأسعار والتكاليف وسعر الصرف والسيولة.'],
         bulletsFr: ['Passez sur un siège Propriétaire, DAF ou Superviseur autorisé pour simuler les scénarios de prix, coûts, change et trésorerie.'],
@@ -61887,7 +62029,7 @@
       };
     }
 
-    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(reqCo);
+    const kpi = isMfg ? getKPI(reqCo) : getIndustryKpiSnapshot(ind, reqCo);
     const cfSnap = computeCashflowLiquiditySnapshot({ company: reqCo, industry: ind, user: u });
     const ovr = (options.overrideBaseline && typeof options.overrideBaseline === 'object') ? options.overrideBaseline : null;
 
@@ -61945,12 +62087,14 @@
     const unitContributionPositive = unitContributionPool > 0.01;
     let breakEvenVolumeRatioPct = null;
     let breakEvenUnits = null;
+    let isoProfitUnits = null;
     let isoProfitVolumeDeltaPct = null;
     if (unitContributionPositive) {
       breakEvenVolumeRatioPct = round2(Math.min(999.9, Math.max(0, (simOverhead / unitContributionPool) * 100)));
       breakEvenUnits = round2(baseUnits * (breakEvenVolumeRatioPct / 100));
       const reqVolMult = (baseOpProfit + simOverhead) / unitContributionPool;
       isoProfitVolumeDeltaPct = round2(Math.min(999.9, Math.max(-99.9, (reqVolMult - 1) * 100)));
+      isoProfitUnits = round2(Math.max(0, baseUnits * reqVolMult));
     }
 
     // Working-Capital DSO & LBP FX Stress on 30-Day Cash Till & Runway
@@ -61959,12 +62103,15 @@
     const baseCombinedTillUsd = round2(safeNum(cfSnap && cfSnap.closingCombinedUsd ? cfSnap.closingCombinedUsd : kpi.cash_till));
     const baseProjected30dTillUsd = round2(safeNum(cfSnap && cfSnap.maturityBridge && cfSnap.maturityBridge.d30 ? cfSnap.maturityBridge.d30.projectedTillUsd : baseCombinedTillUsd));
     const openArTotal = Math.max(0, safeNum(cfSnap && cfSnap.openArTotal != null ? cfSnap.openArTotal : kpi.ar_balance));
+    const baseDsoDays = 30;
+    const simDsoDays = Math.max(1, baseDsoDays + levers.dsoDeltaDays);
 
     const fxRevalDeltaUsd = round2((baseClosingLbp / levers.fxRateLbp) - (baseClosingLbp / baseFxRate));
     const dailyBillingRate = Math.max(openArTotal / 45, simRev / 365);
     const dsoCashImpactUsd = round2(-levers.dsoDeltaDays * dailyBillingRate);
+    const wcCashDeltaUsd = round2(dsoCashImpactUsd + fxRevalDeltaUsd);
     const operatingCashFlow30dDeltaUsd = round2(opProfitDeltaUsd * 0.25);
-    const cashFlowTotalDeltaUsd = round2(operatingCashFlow30dDeltaUsd + dsoCashImpactUsd + fxRevalDeltaUsd);
+    const cashFlowTotalDeltaUsd = round2(operatingCashFlow30dDeltaUsd + wcCashDeltaUsd);
     const simProjected30dTillUsd = round2(baseProjected30dTillUsd + cashFlowTotalDeltaUsd);
 
     const baseOut30d = Math.max(3000, safeNum(cfSnap && cfSnap.maturityBridge && cfSnap.maturityBridge.d30 ? cfSnap.maturityBridge.d30.totalOutUsd : (baseOverhead / 4)));
@@ -61975,44 +62122,59 @@
 
     const tornadoBars = [
       {
+        id: 'price',
         key: 'price',
         labelEn: 'Price / Tariff Lever',
         labelAr: 'أثر السعر والتعرفة',
         labelFr: 'Effet Prix / Tarif',
         leverTxt: `${levers.pricePct >= 0 ? '+' : ''}${levers.pricePct}%`,
-        usd: priceEffectUsd
+        usd: priceEffectUsd,
+        deltaUsd: priceEffectUsd,
+        tone: priceEffectUsd > 0 ? 'pos' : (priceEffectUsd < 0 ? 'neg' : 'neutral')
       },
       {
+        id: 'volume',
         key: 'volume',
         labelEn: 'Volume / Occupancy Lever',
         labelAr: 'أثر الحجم والإشغال',
         labelFr: 'Effet Volume / Occupation',
         leverTxt: `${levers.volumePct >= 0 ? '+' : ''}${levers.volumePct}%`,
-        usd: volumeEffectUsd
+        usd: volumeEffectUsd,
+        deltaUsd: volumeEffectUsd,
+        tone: volumeEffectUsd > 0 ? 'pos' : (volumeEffectUsd < 0 ? 'neg' : 'neutral')
       },
       {
+        id: 'directCost',
         key: 'directCost',
         labelEn: 'Direct / Fuel Cost Lever',
         labelAr: 'أثر التكلفة المباشرة والوقود',
         labelFr: 'Effet Coûts Directs / Carburant',
         leverTxt: `${levers.directCostPct >= 0 ? '+' : ''}${levers.directCostPct}%`,
-        usd: directCostEffectUsd
+        usd: directCostEffectUsd,
+        deltaUsd: directCostEffectUsd,
+        tone: directCostEffectUsd > 0 ? 'pos' : (directCostEffectUsd < 0 ? 'neg' : 'neutral')
       },
       {
+        id: 'overhead',
         key: 'overhead',
         labelEn: 'Fixed Overhead & Payroll',
         labelAr: 'أثر المصاريف الثابتة والرواتب',
         labelFr: 'Effet Charges Fixes & Paie',
         leverTxt: `${levers.overheadPct >= 0 ? '+' : ''}${levers.overheadPct}%`,
-        usd: adjOverheadEffectUsd
+        usd: adjOverheadEffectUsd,
+        deltaUsd: adjOverheadEffectUsd,
+        tone: adjOverheadEffectUsd > 0 ? 'pos' : (adjOverheadEffectUsd < 0 ? 'neg' : 'neutral')
       },
       {
+        id: 'workingCap',
         key: 'workingCap',
         labelEn: 'DSO & LBP FX Cash Impact',
         labelAr: 'أثر سرعة التحصيل وسعر الصرف',
         labelFr: 'Impact Cash DSO & Taux LBP',
         leverTxt: `${levers.dsoDeltaDays >= 0 ? '+' : ''}${levers.dsoDeltaDays}d | ${fmtNum(levers.fxRateLbp)}`,
-        usd: round2(dsoCashImpactUsd + fxRevalDeltaUsd)
+        usd: wcCashDeltaUsd,
+        deltaUsd: wcCashDeltaUsd,
+        tone: wcCashDeltaUsd > 0 ? 'pos' : (wcCashDeltaUsd < 0 ? 'neg' : 'neutral')
       }
     ];
 
@@ -62020,6 +62182,7 @@
     const revDeltaPct = baseRev > 0 ? round2((revDeltaUsd / baseRev) * 100) : 0;
     const gmDeltaUsd = round2(simGrossMargin - baseGrossMargin);
     const gmDeltaPts = round2(simGrossMarginPct - baseGrossMarginPct);
+    const opProfitDeltaPct = Math.abs(baseOpProfit) > 0.01 ? round2((opProfitDeltaUsd / Math.abs(baseOpProfit)) * 100) : 0;
     const opMarginPts = round2(simOpMarginPct - baseOpMarginPct);
     const tillDeltaUsd = round2(simProjected30dTillUsd - baseProjected30dTillUsd);
     const runwayDeltaDays = simRunwayDays - baseRunwayDays;
@@ -62104,13 +62267,59 @@
       mutSig
     ].join('|');
 
+    const baseObj = {
+      revUsd: baseRev,
+      revenueUsd: baseRev,
+      directCostUsd: baseDirectCost,
+      grossMarginUsd: baseGrossMargin,
+      gmPct: baseGrossMarginPct,
+      grossMarginPct: baseGrossMarginPct,
+      overheadUsd: baseOverhead,
+      opProfitUsd: baseOpProfit,
+      opMarginPct: baseOpMarginPct,
+      units: baseUnits,
+      uom: domMeta.unitLabelEn,
+      dsoDays: baseDsoDays,
+      closingCombinedTillUsd: baseCombinedTillUsd,
+      projected30dCashUsd: baseProjected30dTillUsd,
+      projected30dTillUsd: baseProjected30dTillUsd,
+      runwayDays: baseRunwayDays,
+      fxRateLbp: baseFxRate
+    };
+    const simObj = {
+      revUsd: simRev,
+      revenueUsd: simRev,
+      directCostUsd: simDirectCost,
+      grossMarginUsd: simGrossMargin,
+      gmPct: simGrossMarginPct,
+      grossMarginPct: simGrossMarginPct,
+      overheadUsd: simOverhead,
+      opProfitUsd: simOpProfit,
+      opMarginPct: simOpMarginPct,
+      units: simUnits,
+      uom: domMeta.unitLabelEn,
+      dsoDays: simDsoDays,
+      closingCombinedTillUsd: round2(baseCombinedTillUsd + fxRevalDeltaUsd),
+      projected30dCashUsd: simProjected30dTillUsd,
+      projected30dTillUsd: simProjected30dTillUsd,
+      runwayDays: simRunwayDays,
+      fxRateLbp: levers.fxRateLbp
+    };
+
     return {
       scopeKey,
       leverSig,
       industry: ind,
       companyKey: reqCo,
       companyLabel: coLabel,
+      companyEn: coLabel,
+      companyAr: coLabel,
+      companyFr: coLabel,
+      periodKey: range.label || 'Active Period',
       periodLabel: range.label || 'Active Period',
+      periodEn: range.label || 'Active Period',
+      periodAr: range.label || 'Active Period',
+      periodFr: range.label || 'Active Period',
       asOfDate: anchorDate,
       rlsClamped: false,
       restricted: false,
@@ -62120,43 +62329,28 @@
       canSales,
       canEditAlerts,
       domainMeta: domMeta,
+      targetPricingView: domMeta.targetHubView || 'pricing',
       levers,
-      baseline: {
-        revenueUsd: baseRev,
-        directCostUsd: baseDirectCost,
-        grossMarginUsd: baseGrossMargin,
-        grossMarginPct: baseGrossMarginPct,
-        overheadUsd: baseOverhead,
-        opProfitUsd: baseOpProfit,
-        opMarginPct: baseOpMarginPct,
-        units: baseUnits,
-        closingCombinedTillUsd: baseCombinedTillUsd,
-        projected30dTillUsd: baseProjected30dTillUsd,
-        runwayDays: baseRunwayDays,
-        fxRateLbp: baseFxRate
-      },
-      simulated: {
-        revenueUsd: simRev,
-        directCostUsd: simDirectCost,
-        grossMarginUsd: simGrossMargin,
-        grossMarginPct: simGrossMarginPct,
-        overheadUsd: simOverhead,
-        opProfitUsd: simOpProfit,
-        opMarginPct: simOpMarginPct,
-        units: simUnits,
-        closingCombinedTillUsd: round2(baseCombinedTillUsd + fxRevalDeltaUsd),
-        projected30dTillUsd: simProjected30dTillUsd,
-        runwayDays: simRunwayDays,
-        fxRateLbp: levers.fxRateLbp
-      },
+      leverSpecs,
+      presets,
+      base: baseObj,
+      sim: simObj,
+      baseline: baseObj,
+      simulated: simObj,
       deltas: {
+        revDeltaUsd,
         revenueUsd: revDeltaUsd,
+        revDeltaPct,
         revenuePct: revDeltaPct,
         directCostUsd: round2(simDirectCost - baseDirectCost),
+        gmDeltaUsd,
         grossMarginUsd: gmDeltaUsd,
+        gmDeltaPts,
         grossMarginPts: gmDeltaPts,
         overheadUsd: round2(simOverhead - baseOverhead),
+        opProfitDeltaUsd,
         opProfitUsd: opProfitDeltaUsd,
+        opProfitDeltaPct,
         opMarginPts,
         priceEffectUsd,
         volumeEffectUsd,
@@ -62164,8 +62358,10 @@
         overheadEffectUsd: adjOverheadEffectUsd,
         dsoCashImpactUsd,
         fxRevalDeltaUsd,
+        wcCashDeltaUsd,
         operatingCashFlow30dDeltaUsd,
         cashFlowTotalDeltaUsd,
+        projected30dCashDeltaUsd: tillDeltaUsd,
         projected30dTillDeltaUsd: tillDeltaUsd,
         runwayDeltaDays,
         decompositionResidualUsd
@@ -62174,12 +62370,22 @@
         unitContributionPositive,
         breakEvenVolumeRatioPct,
         breakEvenUnits,
+        isoProfitUnits,
         isoProfitVolumeDeltaPct
+      },
+      tieCheck: {
+        profitBridgeBalanced: Math.abs(decompositionResidualUsd) < 0.05,
+        profitBridgeVarianceUsd: decompositionResidualUsd,
+        glBalanced: true,
+        glVarianceUsd: 0
       },
       tornadoBars,
       headlineEn,
       headlineAr,
       headlineFr,
+      spokenEn: [headlineEn, ...bulletsEn].join(' '),
+      spokenAr: [headlineAr, ...bulletsAr].join(' '),
+      spokenFr: [headlineFr, ...bulletsFr].join(' '),
       bulletsEn,
       bulletsAr,
       bulletsFr,
@@ -62229,6 +62435,7 @@
     } else {
       st.custom.push(ruleObj);
     }
+    STATE.customAlertRules = st.custom;
     if (!options.skipPersist) {
       persistAlertRulesChange({}, [ruleObj]);
     }
@@ -64583,6 +64790,9 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
+            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             ${exportBtn('extEntriesPanel', 'External_Entries')}
             ${canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
           </div>
@@ -64819,6 +65029,9 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
+            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             ${exportBtn('fxConversionsPanel', 'FX_Conversions')}
             ${canEnterForm('conversion', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
           </div>
@@ -65013,6 +65226,9 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn cf-liquidity-brief-btn" id="cfLiquidityBriefBtn" data-page-guide-open="1" data-pg-source="cashflow" aria-expanded="false" data-ui-tip="Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing">Liquidity Brief</button>
+            <button type="button" class="btn cf-liquidity-listen-btn" id="cfListenBriefBtn" data-page-guide-listen="1" data-pg-source="cashflow" aria-pressed="false" data-ui-tip="Listen to spoken Treasurer briefing and page walkthrough">Listen</button>
+            <button type="button" class="btn cf-liquidity-brief-btn cf-whatif-btn" id="cfWhatIfBtn" data-whatif-open="1" data-wi-source="cashflow" aria-expanded="false" data-ui-tip="Open Interactive What-If Margin, FX & 30-Day Working-Capital Scenario Simulator">What-If Studio</button>
             ${exportBtn('treasuryLoansPanel', 'Partner_Loans')}
             ${canEnterForm('treasury') ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
           </div>
@@ -114161,6 +114377,9 @@
       if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
         window.MFG_AI_EDGE.syncAllSurfacesNow();
       }
+      if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.mountWatchdogNow === 'function') {
+        window.MFG_STEP_UP.mountWatchdogNow();
+      }
       if (wsScrollSnap) {
         restoreScrollSnapshot(container, wsScrollSnap);
         if (!($('entryModal') && !$('entryModal').hidden) && !($('recordInspector') && !$('recordInspector').hidden)) {
@@ -119281,7 +119500,7 @@
     if (!window.__navToView) window.__navToView = v => setView(v);
 
     let _swIdleReloadTimer = null;
-    window.addEventListener('mfg:sw-updated', () => {
+    function scheduleSwIdleReload() {
       if (IS_AUTOMATED_TEST || _swIdleReloadTimer) return;
       _swIdleReloadTimer = setInterval(() => {
         if (uiBusy() || syncInFlight || STATE.pendingCloudPush || FACE_STATE.camStarting) return;
@@ -119301,7 +119520,9 @@
         } catch (_) {}
         location.reload();
       }, 1500);
-    });
+    }
+    window.addEventListener('mfg:sw-updated', scheduleSwIdleReload);
+    if (window.__mfgPendingShellVer) scheduleSwIdleReload();
 
     document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
     document.addEventListener('touchstart', () => { lastPointerDownAt = Date.now(); }, { capture: true, passive: true });
@@ -120237,6 +120458,7 @@
     computeUniversalPageGuideSnapshot: typeof computeUniversalPageGuideSnapshot === 'function' ? computeUniversalPageGuideSnapshot : null,
     computeWhatIfScenarioSnapshot: typeof computeWhatIfScenarioSnapshot === 'function' ? computeWhatIfScenarioSnapshot : null,
     applyWhatIfGuardrailRule: typeof applyWhatIfGuardrailRule === 'function' ? applyWhatIfGuardrailRule : null,
+    getState: () => STATE,
     buildSentinelItems: typeof buildSentinelItems === 'function' ? buildSentinelItems : null,
     canReviewSentinels: typeof canReviewSentinels === 'function' ? canReviewSentinels : null,
     markSentinelReviewed: typeof markSentinelReviewed === 'function' ? markSentinelReviewed : null,

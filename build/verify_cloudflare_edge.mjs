@@ -1997,7 +1997,7 @@ finally:
                 face_thumbs: [${JSON.stringify(tinyPngDataUrl)}],
                 face_cleared: false,
                 face_enrolled: true,
-                face_updated_at: '2026-11-08T22:00:00.000Z'
+                face_updated_at: new Date(Date.now() + 60000).toISOString()
               })
             })
           });

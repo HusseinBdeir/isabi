@@ -124,6 +124,17 @@
     pageGuideCustomDraftByScope: new Map(),
     pageGuideInlineQa: null,
     activePageGuideSpeechScope: '',
+    whatIfOpen: false,
+    whatIfAnchor: null,
+    whatIfSource: 'overview',
+    whatIfScope: '',
+    whatIfLeversByEntity: new Map(),
+    whatIfActivePreset: 'baseline',
+    whatIfCache: new Map(),
+    whatIfInflight: new Map(),
+    whatIfDraftLang: '',
+    whatIfCustomDraftByScope: new Map(),
+    activeWhatIfSpeechScope: '',
     sessionEpoch: 0,
     lastSpokenText: '',
     playbackRate: (function () {
@@ -4253,7 +4264,39 @@
       'Explain what is happening on this page, highlight key insights, and take an interactive tour': 'شرح ما يجري في هذه الصفحة، وإبراز أهم الرؤى، وبدء جولة تفاعلية',
       'Listen to a spoken walkthrough of this page and its key insights': 'الاستماع إلى شرح صوتي تفاعلي لهذه الصفحة وأهم المؤشرات',
       'Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing': 'فتح توقعات السيولة اليومية وجسر استحقاقات 30 يوما وموجز أمين الخزينة',
-      'Listen to spoken Treasurer briefing and page walkthrough': 'الاستماع إلى موجز أمين الخزينة الصوتي وشرح الصفحة'
+      'Listen to spoken Treasurer briefing and page walkthrough': 'الاستماع إلى موجز أمين الخزينة الصوتي وشرح الصفحة',
+      'What-If Studio': 'استوديو المحاكاة',
+      'What-If Scenario Studio': 'استوديو محاكاة السيناريو والحساسية المالية',
+      'Margin, FX & Working-Capital Sensitivity Simulator': 'محاكي حساسية الهوامش وسعر الصرف ورأس المال العامل',
+      'Open Interactive What-If Margin, FX & Working-Capital Scenario Simulator': 'فتح محاكي السيناريو التفاعلي للهوامش وسعر الصرف ورأس المال العامل',
+      'Open What-If Cash, DSO & FX Sensitivity Simulator': 'فتح محاكي حساسية السيولة وأيام التحصيل وسعر الصرف',
+      'Presets & Saved Scenarios': 'النماذج الجاهزة والسيناريوهات المحفوظة',
+      'Save custom scenario...': 'اسم السيناريو لحفظه...',
+      'Save Scenario': 'حفظ السيناريو',
+      'Reset Levers': 'إعادة الضبط',
+      'Interactive Scenario Levers': 'مفاتيح التحكم بالسيناريو',
+      'Baseline vs Simulated Telemetry': 'مقارنة خط الأساس بالسيناريو المحاكى',
+      'Simulated Revenue': 'الإيرادات المحاكاة',
+      'Simulated Gross Margin': 'إجمالي الهامش المحاكى',
+      'Simulated Operating Profit': 'الربح التشغيلي المحاكى',
+      '30-Day Projected Cash & Runway': 'السيولة المتوقعة لـ 30 يوما وفترة التغطية',
+      'Simulated Activity Volume': 'حجم النشاط المحاكى',
+      'Profit & Cash Sensitivity Bridge': 'جسر حساسية الأرباح والسيولة (تحليل تورنادو)',
+      '4-Factor P&L Tie': 'مطابقة عوامل الربح الأربعة',
+      'Break-Even & Iso-Profit Guardrails': 'عتبة التعادل وحجم الحفاظ على الربح',
+      'Break-Even Volume': 'حجم نقطة التعادل',
+      'Iso-Profit Volume Needed': 'الحجم المطلوب للحفاظ على الربح',
+      'Contribution Margin <= 0': 'هامش المساهمة للوحدة صفر أو سالب',
+      'Create Guardrail Alert': 'إنشاء تنبيه رقابي للهامش',
+      'Guardrail Alert Active': 'تم تفعيل التنبيه الرقابي',
+      'Open Pricing & Rate Hub': 'فتح مركز الأسعار والتعرفة',
+      'Key Sensitivity Takeaways': 'أهم خلاصات الحساسية والقرارات',
+      'AI Sensitivity Brief': 'تحليل الحساسية الذكي',
+      'AI Scenario Brief': 'ملخص السيناريو الذكي',
+      'Deterministic Engine': 'محرك حسابي حتمي',
+      'WhatsApp Scenario Note': 'مذكرة السيناريو عبر واتساب',
+      'Copy Scenario': 'نسخ السيناريو',
+      'Close': 'إغلاق'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4362,17 +4405,49 @@
       'Explain what is happening on this page, highlight key insights, and take an interactive tour': 'Expliquer le contenu de cette page, afficher les points clés et lancer une visite interactive',
       'Listen to a spoken walkthrough of this page and its key insights': 'Écouter une présentation vocale de cette page et de ses indicateurs clés',
       'Open Daily Liquidity Forecast, 30-Day AR/AP Maturity Bridge & Treasurer Briefing': 'Ouvrir la prévision de liquidité quotidienne, le pont d\'échéances à 30 jours et la note trésorier',
-      'Listen to spoken Treasurer briefing and page walkthrough': 'Écouter le briefing vocal du trésorier et la présentation de la page'
+      'Listen to spoken Treasurer briefing and page walkthrough': 'Écouter le briefing vocal du trésorier et la présentation de la page',
+      'What-If Studio': 'Studio What-If',
+      'What-If Scenario Studio': 'Studio de Simulation & Sensibilité What-If',
+      'Margin, FX & Working-Capital Sensitivity Simulator': 'Simulateur de sensibilité marges, taux de change et BFR',
+      'Open Interactive What-If Margin, FX & Working-Capital Scenario Simulator': 'Ouvrir le simulateur interactif What-If (marges, taux de change et BFR)',
+      'Open What-If Cash, DSO & FX Sensitivity Simulator': 'Ouvrir le simulateur de sensibilité trésorerie, délai clients et change',
+      'Presets & Saved Scenarios': 'Scénarios Prédéfinis & Enregistrés',
+      'Save custom scenario...': 'Nom du scénario à enregistrer...',
+      'Save Scenario': 'Enregistrer Scénario',
+      'Reset Levers': 'Réinitialiser',
+      'Interactive Scenario Levers': 'Leviers Interactifs du Scénario',
+      'Baseline vs Simulated Telemetry': 'Comparaison Référence vs Scénario Simulé',
+      'Simulated Revenue': 'Revenu Simulé',
+      'Simulated Gross Margin': 'Marge Brute Simulée',
+      'Simulated Operating Profit': 'Résultat d\'Exploitation Simulé',
+      '30-Day Projected Cash & Runway': 'Trésorerie Projetée 30j & Autonomie',
+      'Simulated Activity Volume': 'Volume d\'Activité Simulé',
+      'Profit & Cash Sensitivity Bridge': 'Pont de Sensibilité Résultat & Trésorerie (Tornado)',
+      '4-Factor P&L Tie': 'Cadrage P&L 4 Facteurs',
+      'Break-Even & Iso-Profit Guardrails': 'Point Mort & Volume Iso-Résultat',
+      'Break-Even Volume': 'Volume Point Mort',
+      'Iso-Profit Volume Needed': 'Volume Iso-Résultat Requis',
+      'Contribution Margin <= 0': 'Marge sur coût variable <= 0',
+      'Create Guardrail Alert': 'Créer Alerte Garde-Fou',
+      'Guardrail Alert Active': 'Alerte Garde-Fou Active',
+      'Open Pricing & Rate Hub': 'Ouvrir Grille Tarifaire',
+      'Key Sensitivity Takeaways': 'Points Clés de Sensibilité & Actions',
+      'AI Sensitivity Brief': 'Analyse IA de Sensibilité',
+      'AI Scenario Brief': 'Synthèse IA du Scénario',
+      'Deterministic Engine': 'Moteur Déterministe',
+      'WhatsApp Scenario Note': 'Note de Scénario WhatsApp',
+      'Copy Scenario': 'Copier le Scénario',
+      'Close': 'Fermer'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover'] || !dict.ar['Explain Page']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover'] || !dict.ar['Explain Page'] || !dict.ar['What-If Studio']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover'] || !dict.ar['Explain Page']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover'] || !dict.fr['Explain Page'] || !dict.fr['What-If Studio']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
@@ -4573,6 +4648,7 @@
         !_chatState.activeInspSummaryScope &&
         !_chatState.activeSentinelSummaryScope &&
         !_chatState.activePageGuideSpeechScope &&
+        !_chatState.activeWhatIfSpeechScope &&
         (_chatState.activeAudioEl || (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-ai-speak')))
       );
       bar.hidden = !isPlayingInChat;
@@ -4595,6 +4671,7 @@
     syncSentinelPopoverAudioButton();
     syncDailyHandoverPopoverAudioButton();
     if (typeof syncPageGuidePopoverAudioButton === 'function') syncPageGuidePopoverAudioButton();
+    if (typeof syncWhatIfModalAudioButton === 'function') syncWhatIfModalAudioButton();
   }
 
   function stopActivePlayback(opts = {}) {
@@ -4615,6 +4692,7 @@
     _chatState.activeSentinelSummaryScope = '';
     _chatState.activeSentinelRuleId = '';
     _chatState.activePageGuideSpeechScope = '';
+    _chatState.activeWhatIfSpeechScope = '';
     if (hadPageGuideAudio && typeof clearPageSectionSpotlight === 'function') {
       clearPageSectionSpotlight();
     }
@@ -6633,6 +6711,7 @@
   function openCeoVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensureCeoPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildCeoPeriodSummary();
@@ -7488,6 +7567,7 @@
   function openStatementVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensureStmtPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildStatementSummary();
@@ -8279,6 +8359,7 @@
   function openDashboardVariancePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensurePbiPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildDashboardSummary();
@@ -8949,6 +9030,7 @@
   function openInspectorBriefPopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensureInspPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildInspectorSummary();
@@ -9754,6 +9836,7 @@
   function openSentinelTriagePopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensureSentinelPopoverGlobalDismiss();
     const sum = prebuiltSummary || buildSentinelTriageSummary();
@@ -10676,6 +10759,7 @@
   function openDailyHandoverPopover(anchorEl, prebuiltSummary) {
     if (typeof document === 'undefined') return null;
     if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     ensureDailyBriefingI18nRegistered();
     ensureDailyHandoverGlobalDismiss();
     const sum = prebuiltSummary || buildDailyHandoverSummary();
@@ -11063,7 +11147,7 @@
       .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
       .replace(/\bTHEO\b/gi, 'ISABI')
       .replace(/\b(?:Microsoft|Dataverse|Power\s*BI|Power\s*Apps|Dynamics\s*365|SharePoint)\b/gi, 'ISABI')
-      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+)\b/gi, '');
+      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}(?:_[a-z0-9_]+)?(?:\.py)?|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+|GL\s*[1-7]\d{3})\b/gi, '');
     if (preserveNewlines) {
       return s
         .split('\n')
@@ -11090,7 +11174,7 @@
       .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
       .replace(/\bTHEO\b/gi, 'ISABI')
       .replace(/\b(?:Microsoft|Dataverse|Power\s*BI|Power\s*Apps|Dynamics\s*365|SharePoint)\b/gi, 'ISABI')
-      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+)\b/gi, '');
+      .replace(/\b(?:step\d{1,3}|[mhtri]\d{2,3}(?:_[a-z0-9_]+)?(?:\.py)?|7z-[a-z0-9-]+|bhf_[a-z0-9_]+|cr519_[a-z0-9_]+|GL\s*[1-7]\d{3})\b/gi, '');
     if (s.length > 2400) s = s.slice(0, 2400);
     return s;
   }
@@ -11537,6 +11621,7 @@
     ensurePageGuideGlobalDismiss();
 
     // Mutual exclusion with all other executive brief popovers
+    if (_chatState.whatIfOpen) closeWhatIfStudio();
     if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
     if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
     if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
@@ -11763,6 +11848,7 @@
       <div class="ceo-pv-foot pg-pv-foot">
         <button type="button" class="ceo-pv-btn ${isSpeakingNow ? 'is-speaking' : ''}" id="pgListenBtn" data-pg-pv-speak="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${spkIco}<span>${esc(spkLbl)}</span></button>
         <button type="button" class="ceo-pv-btn" data-pg-next-tour="1"><span>Spotlight on Screen</span></button>
+        <button type="button" class="ceo-pv-btn" id="pgOpenWhatIfBtn" data-pg-open-whatif="1"><span>What-If Studio</span></button>
         <button type="button" class="ceo-pv-btn is-primary" data-pg-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
       </div>
     `;
@@ -11925,6 +12011,15 @@
       spkFootBtn.addEventListener('click', e => {
         e.preventDefault();
         speakPageGuideWalkthrough(_chatState.pageGuideAnchor || spkFootBtn, undefined, { source });
+      });
+    }
+
+    const openWhatIfFootBtn = pop.querySelector('[data-pg-open-whatif]');
+    if (openWhatIfFootBtn) {
+      openWhatIfFootBtn.addEventListener('click', e => {
+        e.preventDefault();
+        closePageGuidePopover();
+        openWhatIfStudio(openWhatIfFootBtn, { source: 'page_guide' });
       });
     }
 
@@ -12140,6 +12235,14 @@
     if (!_pgTopbarDelegationWired) {
       _pgTopbarDelegationWired = true;
       document.addEventListener('click', e => {
+        const wiBtn = e.target.closest && e.target.closest('[data-whatif-open]');
+        if (wiBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const src = wiBtn.getAttribute('data-wi-source') || 'overview';
+          toggleWhatIfStudio(wiBtn, { source: src });
+          return;
+        }
         const openBtn = e.target.closest && e.target.closest('[data-page-guide-open]');
         if (openBtn) {
           e.preventDefault();
@@ -12162,14 +12265,17 @@
   function rebindPageGuideButtons(container) {
     mountTopbarPageGuideButtons();
     if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-      const cfBrief = container.querySelector && container.querySelector('#cfLiquidityBriefBtn');
-      const cfListen = container.querySelector && container.querySelector('#cfListenBriefBtn');
-      if (cfBrief) { try { window.MFG_I18N.translateDom(cfBrief); } catch (_) {} }
-      if (cfListen) { try { window.MFG_I18N.translateDom(cfListen); } catch (_) {} }
+      ['#cfLiquidityBriefBtn', '#cfListenBriefBtn', '#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (typeof rebindWhatIfButtons === 'function') {
+      rebindWhatIfButtons(container);
     }
     if (!_chatState.pageGuideOpen) return;
     const curView = (_ctx && _ctx.STATE && _ctx.STATE.view) || 'overview';
-    if (_chatState.pageGuideSource === 'cashflow' && curView !== 'cashflow') {
+    if (_chatState.pageGuideSource === 'cashflow' && !['cashflow', 'external', 'conversions', 'ledger_treasury'].includes(curView)) {
       _chatState.pageGuideSource = 'topbar';
       _chatState.pageGuideAnchor = document.getElementById('topbarPageGuideBtn');
     }
@@ -12193,9 +12299,1190 @@
     clearPageSectionSpotlight();
   }
 
+  // ============================================================================
+  // INTERACTIVE WHAT-IF MARGIN, FX & WORKING-CAPITAL SCENARIO STUDIO
+  // ============================================================================
+  const WHATIF_STORAGE_KEY = 'isabi_whatif_scenarios_v1';
+
+  function sanitizeWhatIfText(val, preserveNewlines = false) {
+    return _scrubPageGuideCore(val, preserveNewlines);
+  }
+
+  function sanitizeWhatIfLiveInput(val) {
+    return sanitizePageGuideLiveInput(val);
+  }
+
+  function normalizeWhatIfLevers(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clampNum = (v, minV, maxV, fallback) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(minV, Math.min(maxV, Math.round(n * 10) / 10));
+    };
+    const fxDefault = (window.MFG_FX && Number(window.MFG_FX.rate) > 1000) ? Math.round(Number(window.MFG_FX.rate)) : 89500;
+    return {
+      pricePct: clampNum(src.pricePct != null ? src.pricePct : src.price_pct, -50, 100, 0),
+      volumePct: clampNum(src.volumePct != null ? src.volumePct : src.volume_pct, -80, 200, 0),
+      directCostPct: clampNum(src.directCostPct != null ? src.directCostPct : (src.costPct != null ? src.costPct : src.direct_cost_pct), -50, 200, 0),
+      overheadPct: clampNum(src.overheadPct != null ? src.overheadPct : src.opexPct, -50, 200, 0),
+      dsoDeltaDays: Math.round(clampNum(src.dsoDeltaDays != null ? src.dsoDeltaDays : src.dso_delta_days, -30, 60, 0)),
+      fxRateLbp: Math.round(clampNum(src.fxRateLbp != null ? src.fxRateLbp : src.fx_rate_lbp, 15000, 250000, fxDefault))
+    };
+  }
+
+  function getActiveWhatIfCompanyKey(coOverride) {
+    const st = (_ctx && _ctx.STATE) || {};
+    return String(coOverride || st.company || 'manufacturing-group');
+  }
+
+  function getWhatIfLeversForEntity(coKeyOverride) {
+    const coKey = getActiveWhatIfCompanyKey(coKeyOverride);
+    if (_chatState.whatIfLeversByEntity.has(coKey)) {
+      return Object.assign({}, _chatState.whatIfLeversByEntity.get(coKey));
+    }
+    const def = normalizeWhatIfLevers({});
+    return def;
+  }
+
+  function setWhatIfLeversForEntity(coKeyOverride, nextLevers) {
+    const coKey = getActiveWhatIfCompanyKey(coKeyOverride);
+    const clean = normalizeWhatIfLevers(nextLevers);
+    if (!_chatState.whatIfLeversByEntity.has(coKey) && _chatState.whatIfLeversByEntity.size >= 32) {
+      const oldestKey = _chatState.whatIfLeversByEntity.keys().next().value;
+      if (oldestKey !== undefined) _chatState.whatIfLeversByEntity.delete(oldestKey);
+    }
+    _chatState.whatIfLeversByEntity.set(coKey, clean);
+    return clean;
+  }
+
+  function loadSavedWhatIfScenarios(coKeyFilter) {
+    let rawStr = null;
+    try {
+      rawStr = localStorage.getItem(WHATIF_STORAGE_KEY);
+    } catch (_) {
+      return [];
+    }
+    if (!rawStr) return [];
+    let parsed = null;
+    try {
+      parsed = JSON.parse(rawStr);
+    } catch (_) {
+      try { localStorage.removeItem(WHATIF_STORAGE_KEY); } catch (_2) {}
+      return [];
+    }
+    let rawItems = [];
+    let needsRewrite = false;
+    if (Array.isArray(parsed)) {
+      rawItems = parsed;
+      needsRewrite = true;
+    } else if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.items)) {
+        rawItems = parsed.items;
+        if (parsed.version !== 1) needsRewrite = true;
+      } else if (Array.isArray(parsed.scenarios)) {
+        rawItems = parsed.scenarios;
+        needsRewrite = true;
+      } else {
+        needsRewrite = true;
+      }
+    } else {
+      return [];
+    }
+
+    const normalized = [];
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (!it || typeof it !== 'object') {
+        needsRewrite = true;
+        continue;
+      }
+      const rawId = String(it.id || `sc_${i + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `sc_${i + 1}`;
+      const cleanName = sanitizeWhatIfText(it.name || it.label || 'Saved Scenario').slice(0, 40) || 'Saved Scenario';
+      const coKey = sanitizeWhatIfText(it.coKey || it.companyKey || it.company || 'manufacturing-group').slice(0, 64) || 'manufacturing-group';
+      const levers = normalizeWhatIfLevers(it.levers || it);
+      if (cleanName !== it.name || !it.levers || it.id !== rawId) needsRewrite = true;
+      normalized.push({
+        id: rawId,
+        name: cleanName,
+        coKey,
+        levers,
+        savedAt: String(it.savedAt || '2026-11-08')
+      });
+    }
+    if (normalized.length > 16) {
+      normalized.splice(0, normalized.length - 16);
+      needsRewrite = true;
+    }
+    if (needsRewrite) {
+      try {
+        localStorage.setItem(WHATIF_STORAGE_KEY, JSON.stringify({ version: 1, items: normalized }));
+      } catch (_) {}
+    }
+    if (coKeyFilter) {
+      return normalized.filter(x => x.coKey === coKeyFilter || x.coKey === 'ALL');
+    }
+    return normalized;
+  }
+
+  function saveWhatIfScenario(nameRaw, leversOverride, coKeyOverride) {
+    const cleanName = sanitizeWhatIfText(nameRaw || '').slice(0, 40);
+    if (!cleanName) return null;
+    const coKey = getActiveWhatIfCompanyKey(coKeyOverride);
+    const levers = normalizeWhatIfLevers(leversOverride || getWhatIfLeversForEntity(coKey));
+    const all = loadSavedWhatIfScenarios();
+    const existingIdx = all.findIndex(x => x.coKey === coKey && x.name.toLowerCase() === cleanName.toLowerCase());
+    const entry = {
+      id: existingIdx >= 0 ? all[existingIdx].id : `wi_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      name: cleanName,
+      coKey,
+      levers,
+      savedAt: (_ctx && typeof _ctx.todayISO === 'function') ? _ctx.todayISO() : '2026-11-08'
+    };
+    if (existingIdx >= 0) {
+      all[existingIdx] = entry;
+    } else {
+      all.push(entry);
+    }
+    while (all.length > 16) {
+      all.shift();
+    }
+    try {
+      localStorage.setItem(WHATIF_STORAGE_KEY, JSON.stringify({ version: 1, items: all }));
+    } catch (_) {}
+    return entry;
+  }
+
+  function deleteWhatIfScenario(scenarioId) {
+    const cleanId = String(scenarioId || '').trim();
+    if (!cleanId) return false;
+    const all = loadSavedWhatIfScenarios();
+    const next = all.filter(x => x.id !== cleanId);
+    try {
+      localStorage.setItem(WHATIF_STORAGE_KEY, JSON.stringify({ version: 1, items: next }));
+    } catch (_) {}
+    return next.length !== all.length;
+  }
+
+  function buildWhatIfSummary(langOverride, opts = {}) {
+    ensureDailyBriefingI18nRegistered();
+    const lang = resolveActiveBriefingLang(langOverride);
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const coKey = getActiveWhatIfCompanyKey(options.companyKey || options.company);
+    const hasInlineLevers = Boolean(
+      options.levers ||
+      ['pricePct', 'volumePct', 'directCostPct', 'overheadPct', 'dsoDeltaDays', 'fxRateLbp'].some(k => options[k] !== undefined)
+    );
+    const currentLevers = hasInlineLevers
+      ? setWhatIfLeversForEntity(coKey, Object.assign({}, getWhatIfLeversForEntity(coKey), options.levers || options))
+      : getWhatIfLeversForEntity(coKey);
+
+    const computeFn = (_ctx && typeof _ctx.computeWhatIfScenarioSnapshot === 'function')
+      ? _ctx.computeWhatIfScenarioSnapshot
+      : (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.computeWhatIfScenarioSnapshot === 'function'
+          ? window.MFG_ENTERPRISE.computeWhatIfScenarioSnapshot
+          : null);
+
+    const snap = computeFn
+      ? computeFn(Object.assign({}, currentLevers, { companyKey: coKey, periodKey: options.periodKey }))
+      : null;
+
+    if (!snap) {
+      return {
+        scopeKey: `whatif|fallback|${lang}`,
+        lang,
+        draftLang: lang,
+        restricted: true,
+        rlsClamped: false,
+        canViewBooks: false,
+        industry: 'Manufacturing',
+        companyKey: coKey,
+        companyLabel: 'All Manufacturing Group',
+        periodLabel: 'All-Time',
+        levers: currentLevers,
+        leverSpecs: {},
+        presets: [],
+        savedScenarios: [],
+        base: { revUsd: 0, grossMarginUsd: 0, gmPct: 0, opProfitUsd: 0, opMarginPct: 0, projected30dCashUsd: 0, runwayDays: 0, dsoDays: 30, uom: 'loads' },
+        sim: { revUsd: 0, grossMarginUsd: 0, gmPct: 0, opProfitUsd: 0, opMarginPct: 0, projected30dCashUsd: 0, runwayDays: 0, dsoDays: 30, uom: 'loads' },
+        deltas: { revDeltaUsd: 0, revDeltaPct: 0, gmDeltaUsd: 0, gmDeltaPts: 0, opProfitDeltaUsd: 0, opProfitDeltaPct: 0, wcCashDeltaUsd: 0, projected30dCashDeltaUsd: 0, priceEffectUsd: 0, volumeEffectUsd: 0, directCostEffectUsd: 0, overheadEffectUsd: 0 },
+        breakEven: { breakEvenUnits: 0, breakEvenVolumeRatioPct: 0, isoProfitVolumeDeltaPct: 0, unitContributionPositive: false },
+        tornadoBars: [],
+        tieCheck: { profitBridgeBalanced: true, profitBridgeVarianceUsd: 0, glBalanced: true, glVarianceUsd: 0 },
+        targetPricingView: 'pricing',
+        bullets: ['What-If Scenario Studio is ready.'],
+        activeBullets: ['What-If Scenario Studio is ready.'],
+        drafts: { en: '', ar: '', fr: '' },
+        activeDraft: '',
+        spokenScript: 'What-If Scenario Studio is ready.',
+        isAiSource: false
+      };
+    }
+
+    const cacheKey = `${snap.scopeKey}|${lang}`;
+    const cachedAi = _chatState.whatIfCache.get(cacheKey);
+    const detBulletsRaw = lang === 'ar' ? snap.bulletsAr : (lang === 'fr' ? snap.bulletsFr : snap.bulletsEn);
+    const detBullets = (Array.isArray(detBulletsRaw) ? detBulletsRaw : []).map(b => sanitizeWhatIfText(b)).filter(Boolean);
+    const activeBullets = (cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length)
+      ? cachedAi.bullets
+      : detBullets;
+    const isAiSource = Boolean(cachedAi && Array.isArray(cachedAi.bullets) && cachedAi.bullets.length);
+
+    const drafts = {
+      en: sanitizeWhatIfText((snap.drafts && snap.drafts.en) || '', true),
+      ar: sanitizeWhatIfText((snap.drafts && snap.drafts.ar) || '', true),
+      fr: sanitizeWhatIfText((snap.drafts && snap.drafts.fr) || '', true)
+    };
+    if (cachedAi && cachedAi.whatsappDraft) {
+      drafts[lang] = sanitizeWhatIfText(cachedAi.whatsappDraft, true);
+    }
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.whatIfDraftLang) ? _chatState.whatIfDraftLang : lang;
+    const customDraftKey = `${snap.scopeKey}|${dLang}`;
+    const activeDraft = _chatState.whatIfCustomDraftByScope.has(customDraftKey)
+      ? _chatState.whatIfCustomDraftByScope.get(customDraftKey)
+      : (drafts[dLang] || drafts[lang] || drafts.en);
+
+    const spokenRaw = (cachedAi && cachedAi.spokenScript)
+      ? cachedAi.spokenScript
+      : (lang === 'ar' ? snap.spokenAr : (lang === 'fr' ? snap.spokenFr : snap.spokenEn));
+
+    return {
+      scopeKey: snap.scopeKey,
+      lang,
+      draftLang: dLang,
+      restricted: Boolean(snap.restricted),
+      rlsClamped: Boolean(snap.rlsClamped),
+      canViewBooks: Boolean(snap.canViewBooks),
+      industry: snap.industry,
+      companyKey: snap.companyKey,
+      companyLabel: sanitizeWhatIfText(lang === 'ar' ? snap.companyAr : (lang === 'fr' ? snap.companyFr : snap.companyEn)),
+      periodKey: snap.periodKey,
+      periodLabel: sanitizeWhatIfText(lang === 'ar' ? snap.periodAr : (lang === 'fr' ? snap.periodFr : snap.periodEn)),
+      levers: snap.levers,
+      leverSpecs: snap.leverSpecs || {},
+      presets: Array.isArray(snap.presets) ? snap.presets : [],
+      savedScenarios: loadSavedWhatIfScenarios(snap.companyKey),
+      base: snap.base,
+      sim: snap.sim,
+      deltas: snap.deltas,
+      breakEven: snap.breakEven,
+      tornadoBars: (Array.isArray(snap.tornadoBars) ? snap.tornadoBars : []).map(bar => ({
+        id: bar.id,
+        label: sanitizeWhatIfText(lang === 'ar' ? bar.labelAr : (lang === 'fr' ? bar.labelFr : bar.labelEn)),
+        deltaUsd: Number(bar.deltaUsd || 0),
+        tone: bar.tone || 'neutral'
+      })),
+      tieCheck: snap.tieCheck || { profitBridgeBalanced: true, profitBridgeVarianceUsd: 0, glBalanced: true, glVarianceUsd: 0 },
+      targetPricingView: snap.targetPricingView || 'pricing',
+      bullets: detBullets,
+      activeBullets,
+      drafts,
+      activeDraft,
+      spokenScript: sanitizeWhatIfText(spokenRaw),
+      isAiSource
+    };
+  }
+
+  function formatWhatIfPlainText(summaryObj, langOverride) {
+    const sum = summaryObj || buildWhatIfSummary(langOverride);
+    const dLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.draftLang || sum.lang || 'en');
+    const customKey = `${sum.scopeKey}|${dLang}`;
+    if (_chatState.whatIfCustomDraftByScope.has(customKey)) {
+      return sanitizeWhatIfText(_chatState.whatIfCustomDraftByScope.get(customKey), true);
+    }
+    return sanitizeWhatIfText((sum.drafts && sum.drafts[dLang]) || sum.activeDraft || '', true);
+  }
+
+  function requestWhatIfAiBrief(prebuiltSummary, opts = {}) {
+    const sum = prebuiltSummary || buildWhatIfSummary(opts.lang, opts);
+    const lang = ['en', 'ar', 'fr'].includes(opts.lang) ? opts.lang : (sum.lang || 'en');
+    const cacheKey = `${sum.scopeKey}|${lang}`;
+    if (sum.restricted || sum.rlsClamped) {
+      return Promise.resolve(sum);
+    }
+    if (!opts.force && _chatState.whatIfCache.has(cacheKey)) {
+      return Promise.resolve(buildWhatIfSummary(lang, opts));
+    }
+    if (_chatState.whatIfInflight.has(cacheKey)) {
+      return _chatState.whatIfInflight.get(cacheKey);
+    }
+
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const reqScopeKey = sum.scopeKey;
+    const langName = lang === 'ar' ? 'Arabic (العربية)' : (lang === 'fr' ? 'French (Français)' : 'English');
+    const fmtUsd = (_ctx && typeof _ctx.fmtUSD === 'function') ? _ctx.fmtUSD : (v => '$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const lv = sum.levers || {};
+    const d = sum.deltas || {};
+    const be = sum.breakEven || {};
+
+    const sysPrompt = [
+      'You are the Chief Financial Officer and Strategic Margin Advisor inside the ISABI Command Center.',
+      `Write exclusively in ${langName}. Ground every number strictly in the deterministic What-If Scenario Snapshot below. Never invent figures or counterparties.`,
+      'Never use em-dashes, en-dashes, unicode arrows, or internal script/table codes.',
+      `Entity: ${sum.companyLabel} (${sum.industry}) | Period: ${sum.periodLabel}`,
+      `Levers: Price ${lv.pricePct >= 0 ? '+' : ''}${lv.pricePct}%, Volume ${lv.volumePct >= 0 ? '+' : ''}${lv.volumePct}%, Direct Cost ${lv.directCostPct >= 0 ? '+' : ''}${lv.directCostPct}%, Overhead ${lv.overheadPct >= 0 ? '+' : ''}${lv.overheadPct}%, DSO ${lv.dsoDeltaDays >= 0 ? '+' : ''}${lv.dsoDeltaDays}d, FX ${Number(lv.fxRateLbp || 89500).toLocaleString('en-US')} LL/$`,
+      `Baseline vs Simulated: Revenue ${fmtUsd(sum.base.revUsd)} to ${fmtUsd(sum.sim.revUsd)} (${d.revDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.revDeltaUsd)}, ${d.revDeltaPct >= 0 ? '+' : ''}${d.revDeltaPct}%), Gross Margin ${fmtUsd(sum.base.grossMarginUsd)} (${sum.base.gmPct}%) to ${fmtUsd(sum.sim.grossMarginUsd)} (${sum.sim.gmPct}%), Operating Profit ${fmtUsd(sum.base.opProfitUsd)} (${sum.base.opMarginPct}%) to ${fmtUsd(sum.sim.opProfitUsd)} (${sum.sim.opMarginPct}%, delta ${d.opProfitDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.opProfitDeltaUsd)})`,
+      `4-Factor Profit Bridge (ties to $0.00): Price Effect ${fmtUsd(d.priceEffectUsd)}, Volume Effect ${fmtUsd(d.volumeEffectUsd)}, Direct Cost Effect ${fmtUsd(d.directCostEffectUsd)}, Overhead Effect ${fmtUsd(d.overheadEffectUsd)}`,
+      sum.canViewBooks
+        ? `30-Day Cash & Working Capital: Projected Till ${fmtUsd(sum.sim.projected30dCashUsd)} (${d.projected30dCashDeltaUsd >= 0 ? '+' : ''}${fmtUsd(d.projected30dCashDeltaUsd)} vs baseline, DSO ${sum.sim.dsoDays}d, WC Cash Shift ${fmtUsd(d.wcCashDeltaUsd)}, Runway ${sum.sim.runwayDays}d)`
+        : 'Books & Treasury balances are restricted for this seat; discuss only revenue, volume, and unit break-even.',
+      `Break-Even & Iso-Profit: Break-Even Volume ${be.breakEvenVolumeRatioPct != null ? be.breakEvenVolumeRatioPct + '% of baseline' : 'Contribution Margin <= 0'} | Iso-Profit Volume Delta Needed: ${be.isoProfitVolumeDeltaPct != null ? (be.isoProfitVolumeDeltaPct >= 0 ? '+' : '') + be.isoProfitVolumeDeltaPct + '%' : 'N/A'}`,
+      'Return ONLY valid JSON: {"bullets": ["Headline revenue & profit sensitivity takeaway with exact figures", "4-factor bridge & break-even/iso-profit insight with exact figures", "Concrete pricing, cost, or working-capital action recommendation"], "spokenScript": "3 to 4 natural spoken sentences walking the executive through this simulated scenario with zero symbols", "whatsappDraft": "Formatted 4-line executive WhatsApp scenario note"}'
+    ].filter(Boolean).join('\n');
+
+    const usrPrompt = `Analyze this What-If scenario for ${sum.companyLabel} and return grounded sensitivity insights in ${langName}.`;
+    const geminiContents = [{ role: 'user', parts: [{ text: usrPrompt }] }];
+    const base = String((typeof window !== 'undefined' && window.ISABI_LOCAL_API) || '.').replace(/\/$/, '');
+
+    const p = ((typeof window !== 'undefined' && window.ISABI_EDGE_FETCH) || fetch)(`${base}/api/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.5-flash-lite',
+        systemPrompt: sysPrompt,
+        userPrompt: usrPrompt,
+        geminiContents
+      })
+    })
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(data => {
+        _chatState.whatIfInflight.delete(cacheKey);
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch) return buildWhatIfSummary(lang, opts);
+        const rawText = data && (data.rawReply || data.reply || data.text || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content));
+        if (!rawText) return buildWhatIfSummary(lang, opts);
+        let cleaned = String(rawText).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        const sIdx = cleaned.indexOf('{');
+        const eIdx = cleaned.lastIndexOf('}');
+        if (sIdx >= 0 && eIdx > sIdx) cleaned = cleaned.slice(sIdx, eIdx + 1);
+        const parsed = JSON.parse(cleaned);
+        if (parsed && Array.isArray(parsed.bullets) && parsed.bullets.length) {
+          let cleanBullets = parsed.bullets
+            .slice(0, 4)
+            .map(b => sanitizeWhatIfText(typeof b === 'string' ? b : (b && (b.text || b.bullet) || '')))
+            .filter(Boolean);
+          if (!sum.canViewBooks) {
+            cleanBullets = cleanBullets.filter(b => !/\b(?:cash\s+till|operating\s+profit|gross\s+margin|runway)\b/i.test(b));
+          }
+          if (cleanBullets.length) {
+            if (!_chatState.whatIfCache.has(cacheKey) && _chatState.whatIfCache.size >= 48) {
+              const oldest = _chatState.whatIfCache.keys().next().value;
+              if (oldest !== undefined) _chatState.whatIfCache.delete(oldest);
+            }
+            _chatState.whatIfCache.set(cacheKey, {
+              bullets: cleanBullets,
+              spokenScript: parsed.spokenScript ? sanitizeWhatIfText(parsed.spokenScript) : sum.spokenScript,
+              whatsappDraft: parsed.whatsappDraft ? sanitizeWhatIfText(parsed.whatsappDraft, true) : ''
+            });
+          }
+        }
+        const liveSum = buildWhatIfSummary(lang, opts);
+        // Only update live modal DOM if the user is still on the exact same scopeKey
+        if (_chatState.whatIfOpen && _chatState.whatIfScope === reqScopeKey && liveSum.scopeKey === reqScopeKey) {
+          updateWhatIfLiveTelemetryDom(liveSum);
+        }
+        return liveSum;
+      })
+      .catch(() => {
+        _chatState.whatIfInflight.delete(cacheKey);
+        return buildWhatIfSummary(lang, opts);
+      });
+
+    _chatState.whatIfInflight.set(cacheKey, p);
+    return p;
+  }
+
+  function syncWhatIfModalAudioButton() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('whatIfSimulatorModal');
+    if (!modal) return;
+    const spkBtn = modal.querySelector('#wiListenBtn');
+    if (!spkBtn) return;
+    const isWiSpeaking = Boolean(
+      _chatState.activeWhatIfSpeechScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn === spkBtn && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl))
+    );
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const ico = isWiSpeaking ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const enLbl = isWiSpeaking ? 'Stop Walkthrough' : 'Play Walkthrough';
+    spkBtn.classList.toggle('is-speaking', isWiSpeaking);
+    spkBtn.setAttribute('aria-pressed', isWiSpeaking ? 'true' : 'false');
+    spkBtn.innerHTML = `${ico}<span>${esc(enLbl)}</span>`;
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(spkBtn); } catch (_) {}
+    }
+  }
+
+  function formatWhatIfLeverBadgeText(key, val) {
+    const n = Number(val || 0);
+    if (key === 'fxRateLbp') {
+      return `${Math.round(n).toLocaleString('en-US')} LL/$`;
+    }
+    if (key === 'dsoDeltaDays') {
+      const r = Math.round(n);
+      return `${r > 0 ? '+' : ''}${r}d`;
+    }
+    return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+  }
+
+  function renderWhatIfTelemetryInnerHtml(sum) {
+    const fmtUsd = (_ctx && typeof _ctx.fmtUSD === 'function') ? _ctx.fmtUSD : (v => '$' + Math.round(Number(v || 0)).toLocaleString('en-US'));
+    const fmtSigned = v => {
+      const r = Math.round(Number(v || 0));
+      if (r > 0) return '+' + fmtUsd(r);
+      if (r < 0) return '-' + fmtUsd(Math.abs(r));
+      return '$0';
+    };
+    const b = sum.base || {};
+    const s = sum.sim || {};
+    const d = sum.deltas || {};
+    const be = sum.breakEven || {};
+    const tc = sum.tieCheck || { profitBridgeBalanced: true, profitBridgeVarianceUsd: 0 };
+    const isAi = Boolean(sum.isAiSource);
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+
+    const kpiCardsHtml = sum.canViewBooks
+      ? `
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="rev">
+          <span class="ceo-pv-kpi-lbl">Simulated Revenue</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.revUsd))}</strong>
+          <small class="ceo-pv-kpi-sub ${d.revDeltaUsd > 0 ? 'pos' : (d.revDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">${esc(fmtSigned(d.revDeltaUsd))} (${d.revDeltaPct >= 0 ? '+' : ''}${d.revDeltaPct}%) · Base ${esc(fmtUsd(b.revUsd))}</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="gm">
+          <span class="ceo-pv-kpi-lbl">Simulated Gross Margin</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.grossMarginUsd))} <span class="wi-kpi-pct">(${s.gmPct}%)</span></strong>
+          <small class="ceo-pv-kpi-sub ${d.gmDeltaUsd > 0 ? 'pos' : (d.gmDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">${esc(fmtSigned(d.gmDeltaUsd))} (${d.gmDeltaPts >= 0 ? '+' : ''}${d.gmDeltaPts} pt) · Base ${b.gmPct}%</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="op">
+          <span class="ceo-pv-kpi-lbl">Simulated Operating Profit</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.opProfitUsd))} <span class="wi-kpi-pct">(${s.opMarginPct}%)</span></strong>
+          <small class="ceo-pv-kpi-sub ${d.opProfitDeltaUsd > 0 ? 'pos' : (d.opProfitDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">${esc(fmtSigned(d.opProfitDeltaUsd))} (${d.opProfitDeltaPct >= 0 ? '+' : ''}${d.opProfitDeltaPct}%) · Base ${esc(fmtUsd(b.opProfitUsd))}</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="cash">
+          <span class="ceo-pv-kpi-lbl">30-Day Projected Cash & Runway</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.projected30dCashUsd))} <span class="wi-kpi-pct">(${s.runwayDays}d)</span></strong>
+          <small class="ceo-pv-kpi-sub ${d.projected30dCashDeltaUsd > 0 ? 'pos' : (d.projected30dCashDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">WC ${esc(fmtSigned(d.wcCashDeltaUsd))} · DSO ${s.dsoDays}d</small>
+        </div>
+      `
+      : `
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="rev">
+          <span class="ceo-pv-kpi-lbl">Simulated Revenue</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${esc(fmtUsd(s.revUsd))}</strong>
+          <small class="ceo-pv-kpi-sub ${d.revDeltaUsd > 0 ? 'pos' : (d.revDeltaUsd < 0 ? 'neg' : '')}" data-no-i18n="1">${esc(fmtSigned(d.revDeltaUsd))} (${d.revDeltaPct >= 0 ? '+' : ''}${d.revDeltaPct}%) · Base ${esc(fmtUsd(b.revUsd))}</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="vol">
+          <span class="ceo-pv-kpi-lbl">Simulated Activity Volume</span>
+          <strong class="ceo-pv-kpi-val num" data-no-i18n="1">${Math.round(Number(s.units || 0)).toLocaleString('en-US')} ${esc(s.uom || 'loads')}</strong>
+          <small class="ceo-pv-kpi-sub" data-no-i18n="1">Base ${Math.round(Number(b.units || 0)).toLocaleString('en-US')} ${esc(b.uom || 'loads')}</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="gm">
+          <span class="ceo-pv-kpi-lbl">Simulated Gross Margin</span>
+          <strong class="ceo-pv-kpi-val" data-no-i18n="1">${sum.lang === 'ar' ? 'الدفاتر مقيدة' : (sum.lang === 'fr' ? 'Comptes restreints' : 'Books Restricted')}</strong>
+          <small class="ceo-pv-kpi-sub" data-no-i18n="1">RLS</small>
+        </div>
+        <div class="ceo-pv-kpi wi-kpi-card" data-wi-kpi="cash">
+          <span class="ceo-pv-kpi-lbl">30-Day Projected Cash & Runway</span>
+          <strong class="ceo-pv-kpi-val" data-no-i18n="1">${sum.lang === 'ar' ? 'الدفاتر مقيدة' : (sum.lang === 'fr' ? 'Comptes restreints' : 'Books Restricted')}</strong>
+          <small class="ceo-pv-kpi-sub" data-no-i18n="1">DSO ${s.dsoDays}d</small>
+        </div>
+      `;
+
+    const bars = Array.isArray(sum.tornadoBars) ? sum.tornadoBars : [];
+    const maxAbsBar = Math.max(1, ...bars.map(x => Math.abs(Number(x.deltaUsd || 0))));
+    const tornadoRowsHtml = bars.map(bar => {
+      const pct = Math.min(100, Math.max(bar.deltaUsd !== 0 ? 4 : 0, Math.round((Math.abs(bar.deltaUsd) / maxAbsBar) * 100)));
+      const toneCls = bar.deltaUsd > 0 ? 'is-pos' : (bar.deltaUsd < 0 ? 'is-neg' : 'is-zero');
+      return `
+        <div class="wi-tornado-row ${toneCls}" data-wi-bar="${esc(bar.id)}">
+          <div class="wi-tornado-lbl" data-no-i18n="1">${esc(bar.label)}</div>
+          <div class="wi-tornado-track">
+            <span class="wi-tornado-fill ${toneCls}" style="width:${pct}%"></span>
+          </div>
+          <div class="wi-tornado-val num ${toneCls}" data-no-i18n="1">${esc(fmtSigned(bar.deltaUsd))}</div>
+        </div>
+      `;
+    }).join('');
+
+    const beVolStr = be.unitContributionPositive && be.breakEvenVolumeRatioPct != null
+      ? `${Math.round(Number(be.breakEvenUnits || 0)).toLocaleString('en-US')} ${s.uom || 'units'} (${be.breakEvenVolumeRatioPct}% of baseline)`
+      : (sum.lang === 'ar' ? 'هامش المساهمة للوحدة صفر أو سالب' : (sum.lang === 'fr' ? 'Marge sur coût variable <= 0' : 'Contribution Margin <= 0'));
+    const isoVolStr = be.unitContributionPositive && be.isoProfitVolumeDeltaPct != null
+      ? `${be.isoProfitVolumeDeltaPct >= 0 ? '+' : ''}${be.isoProfitVolumeDeltaPct}% (${Math.round(Number(be.isoProfitUnits || 0)).toLocaleString('en-US')} ${s.uom || 'units'})`
+      : (sum.lang === 'ar' ? 'يتطلب رفع السعر أو خفض التكلفة' : (sum.lang === 'fr' ? 'Hausse tarifaire ou baisse coût requise' : 'Requires price increase or cost reduction'));
+
+    const dLang = ['en', 'ar', 'fr'].includes(_chatState.whatIfDraftLang) ? _chatState.whatIfDraftLang : sum.lang;
+    const draftText = formatWhatIfPlainText(sum, dLang);
+    const draftDir = dLang === 'ar' ? 'rtl' : 'ltr';
+
+    return `
+      <div class="ceo-pv-kpis wi-kpi-grid" id="wiKpiGrid">
+        ${kpiCardsHtml}
+      </div>
+
+      <div class="wi-tornado-card" id="wiTornadoCard">
+        <div class="wi-card-head">
+          <span class="pg-sec-title">Profit & Cash Sensitivity Bridge</span>
+          <span class="pg-tie-pill ${tc.profitBridgeBalanced ? 'is-tied' : 'is-warn'}">
+            <span>4-Factor P&L Tie</span>: <strong data-no-i18n="1">${tc.profitBridgeBalanced ? '$0.00' : esc(fmtUsd(tc.profitBridgeVarianceUsd))}</strong>
+          </span>
+        </div>
+        <div class="wi-tornado-list" id="wiTornadoList">
+          ${tornadoRowsHtml}
+        </div>
+      </div>
+
+      <div class="wi-breakeven-banner" id="wiBreakEvenBanner">
+        <div class="wi-be-metrics">
+          <div class="wi-be-item">
+            <span class="wi-be-lbl">Break-Even Volume</span>
+            <strong class="wi-be-val num" id="wiBreakEvenVal" data-no-i18n="1">${esc(beVolStr)}</strong>
+          </div>
+          <div class="wi-be-item">
+            <span class="wi-be-lbl">Iso-Profit Volume Needed</span>
+            <strong class="wi-be-val num" id="wiIsoProfitVal" data-no-i18n="1">${esc(isoVolStr)}</strong>
+          </div>
+        </div>
+        <div class="wi-be-actions">
+          <button type="button" class="ceo-pv-btn" id="wiApplyAlertRuleBtn" data-wi-apply-guardrail="1">
+            ${icons ? icons.svg('bell') : ''}<span>Create Guardrail Alert</span>
+          </button>
+          <button type="button" class="ceo-pv-btn" id="wiOpenPricingHubBtn" data-wi-open-pricing="${esc(sum.targetPricingView || 'pricing')}">
+            <span>Open Pricing & Rate Hub</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="wi-insights-card" id="wiInsightsCard">
+        <div class="wi-card-head">
+          <span class="pg-sec-title">Key Sensitivity Takeaways</span>
+          <div class="wi-insights-head-right">
+            <span class="ceo-pv-badge ${isAi ? 'is-ai' : 'is-det'}" id="wiSourceBadge">${isAi ? 'AI Scenario Brief' : 'Deterministic Engine'}</span>
+            <button type="button" class="ceo-pv-btn wi-ai-btn" id="wiGenerateAiBriefBtn" data-wi-gen-ai="1">
+              ${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>AI Sensitivity Brief</span>
+            </button>
+          </div>
+        </div>
+        <ol class="ceo-pv-list wi-bullets-list" id="wiBulletsList" data-no-i18n="1">
+          ${(sum.activeBullets || []).map(x => `<li>${esc(x)}</li>`).join('')}
+        </ol>
+      </div>
+
+      <div class="insp-pv-draft-wrap wi-draft-wrap" id="wiDraftWrap">
+        <div class="insp-pv-draft-head">
+          <span class="insp-pv-draft-lbl">WhatsApp Scenario Note</span>
+          <div class="insp-pv-lang-pills" role="group" aria-label="Scenario Note Language" data-no-i18n="1">
+            <button type="button" class="insp-pv-lang-btn ${dLang === 'en' ? 'active' : ''}" data-wi-draft-lang="en">EN</button>
+            <button type="button" class="insp-pv-lang-btn ${dLang === 'ar' ? 'active' : ''}" data-wi-draft-lang="ar">عربي</button>
+            <button type="button" class="insp-pv-lang-btn ${dLang === 'fr' ? 'active' : ''}" data-wi-draft-lang="fr">FR</button>
+          </div>
+        </div>
+        <textarea id="wiWhatsappDraftInput" class="insp-pv-draft-box" data-no-i18n="1" rows="3" dir="${draftDir}">${esc(draftText)}</textarea>
+        <div class="pg-draft-actions">
+          <button type="button" class="ceo-pv-btn" id="wiCopyDraftBtn" data-wi-copy-draft="1">${icons ? icons.svg('copy') : ''}<span>Copy Scenario</span></button>
+          <button type="button" class="ceo-pv-btn insp-wa-btn" id="wiWhatsappShareBtn" data-wi-wa-share="1"><span>WhatsApp</span></button>
+        </div>
+      </div>
+    `;
+  }
+
+  function wireWhatIfTelemetryEvents(modal, sum) {
+    if (!modal) return;
+    const draftTextarea = modal.querySelector('#wiWhatsappDraftInput');
+    if (draftTextarea) {
+      draftTextarea.addEventListener('input', () => {
+        const cleanVal = sanitizeWhatIfLiveInput(draftTextarea.value);
+        if (draftTextarea.value !== cleanVal) draftTextarea.value = cleanVal;
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.whatIfDraftLang) ? _chatState.whatIfDraftLang : sum.lang;
+        const customKey = `${sum.scopeKey}|${curDLang}`;
+        if (!_chatState.whatIfCustomDraftByScope.has(customKey) && _chatState.whatIfCustomDraftByScope.size >= 32) {
+          const oldest = _chatState.whatIfCustomDraftByScope.keys().next().value;
+          if (oldest !== undefined) _chatState.whatIfCustomDraftByScope.delete(oldest);
+        }
+        _chatState.whatIfCustomDraftByScope.set(customKey, cleanVal);
+      });
+    }
+
+    modal.querySelectorAll('[data-wi-draft-lang]').forEach(lBtn => {
+      lBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const nextDLang = lBtn.getAttribute('data-wi-draft-lang') || 'en';
+        _chatState.whatIfDraftLang = nextDLang;
+        modal.querySelectorAll('[data-wi-draft-lang]').forEach(b => b.classList.toggle('active', b === lBtn));
+        const curSum = buildWhatIfSummary();
+        if (draftTextarea) {
+          draftTextarea.dir = nextDLang === 'ar' ? 'rtl' : 'ltr';
+          draftTextarea.value = formatWhatIfPlainText(curSum, nextDLang);
+        }
+      });
+    });
+
+    const copyBtn = modal.querySelector('[data-wi-copy-draft]');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const curSum = buildWhatIfSummary();
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.whatIfDraftLang) ? _chatState.whatIfDraftLang : curSum.lang;
+        const txt = draftTextarea ? sanitizeWhatIfText(draftTextarea.value, true) : formatWhatIfPlainText(curSum, curDLang);
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText(txt).catch(() => {});
+        }
+        const span = copyBtn.querySelector('span');
+        if (span) {
+          const prev = span.textContent;
+          span.textContent = curSum.lang === 'ar' ? 'تم النسخ!' : (curSum.lang === 'fr' ? 'Copié !' : 'Copied!');
+          setTimeout(() => { span.textContent = prev; }, 1400);
+        }
+      });
+    }
+
+    const waBtn = modal.querySelector('[data-wi-wa-share]');
+    if (waBtn) {
+      waBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const curSum = buildWhatIfSummary();
+        const curDLang = ['en', 'ar', 'fr'].includes(_chatState.whatIfDraftLang) ? _chatState.whatIfDraftLang : curSum.lang;
+        const txt = draftTextarea ? sanitizeWhatIfText(draftTextarea.value, true) : formatWhatIfPlainText(curSum, curDLang);
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(txt)}`;
+        try { window.open(waUrl, '_blank', 'noopener,noreferrer'); } catch (_) {}
+      });
+    }
+
+    const genAiBtn = modal.querySelector('[data-wi-gen-ai]');
+    if (genAiBtn) {
+      genAiBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const curSum = buildWhatIfSummary();
+        genAiBtn.classList.add('is-loading');
+        requestWhatIfAiBrief(curSum, { force: true }).finally(() => {
+          if (genAiBtn.isConnected) genAiBtn.classList.remove('is-loading');
+        });
+      });
+    }
+
+    const guardrailBtn = modal.querySelector('[data-wi-apply-guardrail]');
+    if (guardrailBtn) {
+      guardrailBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const curSum = buildWhatIfSummary();
+        const applyFn = (_ctx && typeof _ctx.applyWhatIfGuardrailRule === 'function')
+          ? _ctx.applyWhatIfGuardrailRule
+          : (window.MFG_ENTERPRISE && typeof window.MFG_ENTERPRISE.applyWhatIfGuardrailRule === 'function'
+              ? window.MFG_ENTERPRISE.applyWhatIfGuardrailRule
+              : null);
+        if (!applyFn) return;
+        const res = applyFn(Object.assign({}, curSum.levers, { companyKey: curSum.companyKey }));
+        if (res && res.ok) {
+          guardrailBtn.classList.add('is-applied');
+          const span = guardrailBtn.querySelector('span');
+          if (span) {
+            span.textContent = 'Guardrail Alert Active';
+            if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+              try { window.MFG_I18N.translateDom(guardrailBtn); } catch (_) {}
+            }
+          }
+        }
+      });
+    }
+
+    const pricingBtn = modal.querySelector('[data-wi-open-pricing]');
+    if (pricingBtn) {
+      pricingBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const targetView = pricingBtn.getAttribute('data-wi-open-pricing') || 'pricing';
+        closeWhatIfStudio();
+        if (_ctx && typeof _ctx.setView === 'function') {
+          _ctx.setView(targetView);
+        }
+      });
+    }
+  }
+
+  function updateWhatIfLiveTelemetryDom(sumObj) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('whatIfSimulatorModal');
+    if (!modal) return;
+    const sum = sumObj || buildWhatIfSummary();
+    _chatState.whatIfScope = sum.scopeKey;
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-industry', sum.industry);
+
+    // Sync slider/number values and badge labels without destroying focused inputs
+    const lv = sum.levers || {};
+    ['pricePct', 'volumePct', 'directCostPct', 'overheadPct', 'dsoDeltaDays', 'fxRateLbp'].forEach(k => {
+      const badge = modal.querySelector(`[data-wi-badge="${k}"]`);
+      if (badge) badge.textContent = formatWhatIfLeverBadgeText(k, lv[k]);
+      const slider = modal.querySelector(`[data-wi-slider="${k}"]`);
+      if (slider && document.activeElement !== slider) slider.value = String(lv[k]);
+      const numInp = modal.querySelector(`[data-wi-num="${k}"]`);
+      if (numInp && document.activeElement !== numInp) numInp.value = String(lv[k]);
+    });
+
+    const mount = modal.querySelector('#wiTelemetryMount');
+    if (mount) {
+      mount.innerHTML = renderWhatIfTelemetryInnerHtml(sum);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(mount); } catch (_) {}
+      }
+      wireWhatIfTelemetryEvents(modal, sum);
+    }
+  }
+
+  function renderWhatIfSavedScenariosHtml(sum) {
+    const presets = Array.isArray(sum.presets) ? sum.presets : [];
+    const saved = Array.isArray(sum.savedScenarios) ? sum.savedScenarios : [];
+    const presetHtml = presets.map(p => {
+      const lbl = sum.lang === 'ar' ? p.labelAr : (sum.lang === 'fr' ? p.labelFr : p.labelEn);
+      const isAct = _chatState.whatIfActivePreset === p.id;
+      return `<button type="button" class="wi-preset-chip ${isAct ? 'active' : ''}" data-no-i18n="1" data-wi-preset="${esc(p.id)}">${esc(lbl)}</button>`;
+    }).join('');
+    const savedHtml = saved.map(sc => {
+      const isAct = _chatState.whatIfActivePreset === `saved:${sc.id}`;
+      return `
+        <span class="wi-saved-pill ${isAct ? 'active' : ''}" data-no-i18n="1">
+          <button type="button" class="wi-saved-load-btn" data-wi-saved-id="${esc(sc.id)}">${esc(sc.name)}</button>
+          <button type="button" class="wi-saved-del-btn" data-wi-del-saved="${esc(sc.id)}" aria-label="Delete saved scenario">&times;</button>
+        </span>
+      `;
+    }).join('');
+    return presetHtml + savedHtml;
+  }
+
+  let _wiEscKeyWired = false;
+  function ensureWhatIfGlobalEvents() {
+    if (_wiEscKeyWired || typeof document === 'undefined') return;
+    _wiEscKeyWired = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _chatState.whatIfOpen) {
+        closeWhatIfStudio();
+      }
+    });
+  }
+
+  function openWhatIfStudio(anchorEl, opts = {}) {
+    if (typeof document === 'undefined') return null;
+    ensureDailyBriefingI18nRegistered();
+    ensureWhatIfGlobalEvents();
+
+    // Mutual exclusion with all 7 executive popovers
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    if (_chatState.handoverPopoverOpen) closeDailyHandoverPopover();
+    if (_chatState.sentinelPopoverOpen) closeSentinelTriagePopover();
+    if (_chatState.inspPopoverOpen) closeInspectorBriefPopover();
+    if (_chatState.pbiPopoverOpen) closeDashboardVariancePopover();
+    if (_chatState.stmtPopoverOpen) closeStatementVariancePopover();
+    if (_chatState.periodPopoverOpen) closeCeoVariancePopover();
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const source = options.source
+      || (anchorEl && anchorEl.getAttribute && anchorEl.getAttribute('data-wi-source'))
+      || _chatState.whatIfSource
+      || 'overview';
+    _chatState.whatIfSource = source;
+    if (anchorEl) _chatState.whatIfAnchor = anchorEl;
+
+    const sum = buildWhatIfSummary(undefined, options);
+    _chatState.whatIfOpen = true;
+    _chatState.whatIfScope = sum.scopeKey;
+
+    document.querySelectorAll('[data-whatif-open]').forEach(b => {
+      b.classList.add('is-open', 'active');
+      b.setAttribute('aria-expanded', 'true');
+    });
+
+    let modal = document.getElementById('whatIfSimulatorModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'whatIfSimulatorModal';
+      modal.className = 'wi-modal-backdrop no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-label', 'What-If Scenario Studio');
+      document.body.appendChild(modal);
+    }
+
+    const isRtl = sum.lang === 'ar' || document.documentElement.getAttribute('dir') === 'rtl';
+    modal.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
+    modal.setAttribute('data-scope-key', sum.scopeKey);
+    modal.setAttribute('data-industry', sum.industry);
+
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const isSpeakingNow = Boolean(_chatState.activeWhatIfSpeechScope);
+    const spkIco = isSpeakingNow ? (icons ? icons.svg('stop') : AI_SVGS.stop) : (icons ? icons.svg('audio') : AI_SVGS.audio);
+    const spkLbl = isSpeakingNow ? 'Stop Walkthrough' : 'Play Walkthrough';
+
+    const leverKeys = ['pricePct', 'volumePct', 'directCostPct', 'overheadPct', 'dsoDeltaDays', 'fxRateLbp'];
+    const leversHtml = leverKeys.map(k => {
+      const spec = (sum.leverSpecs && sum.leverSpecs[k]) || { min: -50, max: 100, step: 0.5, unit: '%', labelEn: k, labelAr: k, labelFr: k, subEn: '', subAr: '', subFr: '' };
+      const lbl = sum.lang === 'ar' ? spec.labelAr : (sum.lang === 'fr' ? spec.labelFr : spec.labelEn);
+      const sub = sum.lang === 'ar' ? spec.subAr : (sum.lang === 'fr' ? spec.subFr : spec.subEn);
+      const curVal = sum.levers[k] != null ? sum.levers[k] : 0;
+      const badgeTxt = formatWhatIfLeverBadgeText(k, curVal);
+      return `
+        <div class="wi-lever-row" data-wi-lever-row="${k}">
+          <div class="wi-lever-top">
+            <div class="wi-lever-titles" data-no-i18n="1">
+              <strong class="wi-lever-lbl">${esc(lbl)}</strong>
+              <small class="wi-lever-sub">${esc(sub)}</small>
+            </div>
+            <span class="wi-lever-badge num" data-wi-badge="${k}" data-no-i18n="1">${esc(badgeTxt)}</span>
+          </div>
+          <div class="wi-lever-controls" data-no-i18n="1">
+            <button type="button" class="wi-step-btn" data-wi-step-key="${k}" data-wi-step-dir="-1" aria-label="Decrease ${esc(lbl)}">&minus;</button>
+            <input type="range" class="wi-slider" id="wiSlider_${k}" data-wi-slider="${k}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(lbl)}">
+            <button type="button" class="wi-step-btn" data-wi-step-key="${k}" data-wi-step-dir="1" aria-label="Increase ${esc(lbl)}">+</button>
+            <input type="number" class="wi-num-input num" id="wiNum_${k}" data-wi-num="${k}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${curVal}" aria-label="${esc(lbl)} value">
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    modal.innerHTML = `
+      <div class="wi-modal-card">
+        <div class="ceo-pv-head wi-modal-head">
+          <div class="ceo-pv-titles">
+            <span class="ceo-pv-eyebrow">Margin, FX & Working-Capital Sensitivity Simulator</span>
+            <strong class="ceo-pv-title" data-no-i18n="1"><span>What-If Scenario Studio</span> · ${esc(sum.companyLabel)} (${esc(sum.periodLabel)})</strong>
+          </div>
+          <div class="ceo-pv-head-actions">
+            <button type="button" class="ceo-pv-btn" id="wiResetBtn" data-wi-reset="1"><span>Reset Levers</span></button>
+            <button type="button" class="ceo-pv-close" id="wiCloseModalBtn" data-wi-close="1" aria-label="Close" data-no-i18n="1">&times;</button>
+          </div>
+        </div>
+
+        <div class="wi-preset-bar">
+          <div class="wi-preset-chips" id="wiPresetChipsMount">
+            ${renderWhatIfSavedScenariosHtml(sum)}
+          </div>
+          <div class="wi-save-form">
+            <input type="text" class="wi-save-input" id="wiScenarioNameInput" maxlength="40" placeholder="Save custom scenario..." autocomplete="off">
+            <button type="button" class="ceo-pv-btn is-primary" id="wiSaveScenarioBtn" data-wi-save-scenario="1"><span>Save Scenario</span></button>
+          </div>
+        </div>
+
+        <div class="wi-studio-grid">
+          <div class="wi-levers-panel">
+            <div class="wi-panel-hdr">
+              <span class="pg-sec-title">Interactive Scenario Levers</span>
+            </div>
+            <div class="wi-levers-list">
+              ${leversHtml}
+            </div>
+          </div>
+
+          <div class="wi-telemetry-panel">
+            <div class="wi-panel-hdr">
+              <span class="pg-sec-title">Baseline vs Simulated Telemetry</span>
+            </div>
+            <div id="wiTelemetryMount">
+              ${renderWhatIfTelemetryInnerHtml(sum)}
+            </div>
+          </div>
+        </div>
+
+        <div class="ceo-pv-foot wi-modal-foot">
+          <button type="button" class="ceo-pv-btn ${isSpeakingNow ? 'is-speaking' : ''}" id="wiListenBtn" data-wi-listen="1" aria-pressed="${isSpeakingNow ? 'true' : 'false'}">${spkIco}<span>${esc(spkLbl)}</span></button>
+          <div class="wi-foot-right">
+            <button type="button" class="ceo-pv-btn is-primary" id="wiAskCopilotBtn" data-wi-open-copilot="1">${icons ? icons.svg('sparkle') : AI_SVGS.sparkle}<span>Open in Full Copilot</span></button>
+            <button type="button" class="ceo-pv-btn" id="wiCloseFootBtn" data-wi-close="1"><span>Close</span></button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      try { window.MFG_I18N.translateDom(modal); } catch (_) {}
+    }
+
+    wireWhatIfTelemetryEvents(modal, sum);
+
+    // Backdrop click outside card closes modal
+    modal.addEventListener('mousedown', e => {
+      if (e.target === modal) {
+        closeWhatIfStudio();
+      }
+    });
+
+    modal.querySelectorAll('[data-wi-close]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        closeWhatIfStudio();
+      });
+    });
+
+    const applyNewLevers = (nextLevers, presetTag) => {
+      _chatState.whatIfActivePreset = presetTag || 'custom';
+      const coKey = getActiveWhatIfCompanyKey();
+      setWhatIfLeversForEntity(coKey, nextLevers);
+      const updatedSum = buildWhatIfSummary();
+      const chipsMount = modal.querySelector('#wiPresetChipsMount');
+      if (chipsMount) {
+        chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(updatedSum);
+      }
+      updateWhatIfLiveTelemetryDom(updatedSum);
+    };
+
+    const resetBtn = modal.querySelector('[data-wi-reset]');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const fxDef = (window.MFG_FX && Number(window.MFG_FX.rate) > 1000) ? Math.round(Number(window.MFG_FX.rate)) : 89500;
+        applyNewLevers({ pricePct: 0, volumePct: 0, directCostPct: 0, overheadPct: 0, dsoDeltaDays: 0, fxRateLbp: fxDef }, 'baseline');
+      });
+    }
+
+    const chipsMount = modal.querySelector('#wiPresetChipsMount');
+    if (chipsMount) {
+      chipsMount.addEventListener('click', e => {
+        const pBtn = e.target.closest && e.target.closest('[data-wi-preset]');
+        if (pBtn) {
+          e.preventDefault();
+          const pid = pBtn.getAttribute('data-wi-preset');
+          const curSum = buildWhatIfSummary();
+          const hit = (curSum.presets || []).find(x => x.id === pid);
+          if (hit) {
+            const fxCur = curSum.levers.fxRateLbp || 89500;
+            applyNewLevers(Object.assign({}, hit.levers, { fxRateLbp: fxCur }), pid);
+          }
+          return;
+        }
+        const sBtn = e.target.closest && e.target.closest('[data-wi-saved-id]');
+        if (sBtn) {
+          e.preventDefault();
+          const sid = sBtn.getAttribute('data-wi-saved-id');
+          const allSaved = loadSavedWhatIfScenarios();
+          const hit = allSaved.find(x => x.id === sid);
+          if (hit && hit.levers) {
+            applyNewLevers(hit.levers, `saved:${hit.id}`);
+          }
+          return;
+        }
+        const delBtn = e.target.closest && e.target.closest('[data-wi-del-saved]');
+        if (delBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const sid = delBtn.getAttribute('data-wi-del-saved');
+          deleteWhatIfScenario(sid);
+          if (_chatState.whatIfActivePreset === `saved:${sid}`) {
+            _chatState.whatIfActivePreset = 'custom';
+          }
+          const curSum = buildWhatIfSummary();
+          chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(curSum);
+        }
+      });
+    }
+
+    const saveInp = modal.querySelector('#wiScenarioNameInput');
+    const saveBtn = modal.querySelector('#wiSaveScenarioBtn');
+    const handleSaveScenario = () => {
+      if (!saveInp) return;
+      const cleanName = sanitizeWhatIfText(saveInp.value || '').slice(0, 40);
+      if (!cleanName) return;
+      const entry = saveWhatIfScenario(cleanName, getWhatIfLeversForEntity());
+      if (entry) {
+        saveInp.value = '';
+        _chatState.whatIfActivePreset = `saved:${entry.id}`;
+        const curSum = buildWhatIfSummary();
+        if (chipsMount) chipsMount.innerHTML = renderWhatIfSavedScenariosHtml(curSum);
+      }
+    };
+    if (saveBtn) {
+      saveBtn.addEventListener('click', e => {
+        e.preventDefault();
+        handleSaveScenario();
+      });
+    }
+    if (saveInp) {
+      saveInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleSaveScenario();
+        }
+      });
+    }
+
+    // Wire sliders, numeric inputs, and +/- steppers
+    modal.querySelectorAll('[data-wi-slider]').forEach(slider => {
+      slider.addEventListener('input', () => {
+        const k = slider.getAttribute('data-wi-slider');
+        const cur = getWhatIfLeversForEntity();
+        cur[k] = Number(slider.value);
+        const numEl = modal.querySelector(`[data-wi-num="${k}"]`);
+        if (numEl) numEl.value = String(cur[k]);
+        applyNewLevers(cur, 'custom');
+      });
+    });
+
+    modal.querySelectorAll('[data-wi-num]').forEach(numEl => {
+      const syncFromNum = () => {
+        const k = numEl.getAttribute('data-wi-num');
+        const cur = getWhatIfLeversForEntity();
+        cur[k] = Number(numEl.value);
+        const normLv = normalizeWhatIfLevers(cur);
+        const slider = modal.querySelector(`[data-wi-slider="${k}"]`);
+        if (slider) slider.value = String(normLv[k]);
+        applyNewLevers(normLv, 'custom');
+      };
+      numEl.addEventListener('input', syncFromNum);
+      numEl.addEventListener('change', () => {
+        const k = numEl.getAttribute('data-wi-num');
+        const normLv = getWhatIfLeversForEntity();
+        numEl.value = String(normLv[k]);
+      });
+    });
+
+    modal.querySelectorAll('[data-wi-step-key]').forEach(stepBtn => {
+      stepBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const k = stepBtn.getAttribute('data-wi-step-key');
+        const dir = Number(stepBtn.getAttribute('data-wi-step-dir') || 1);
+        const curSum = buildWhatIfSummary();
+        const spec = (curSum.leverSpecs && curSum.leverSpecs[k]) || { step: 1 };
+        const stepSize = k === 'pricePct' || k === 'volumePct' || k === 'directCostPct' || k === 'overheadPct' ? 1 : (Number(spec.step) || 1);
+        const cur = getWhatIfLeversForEntity();
+        cur[k] = Number(cur[k] || 0) + dir * stepSize;
+        applyNewLevers(cur, 'custom');
+      });
+    });
+
+    const listenBtn = modal.querySelector('#wiListenBtn');
+    if (listenBtn) {
+      listenBtn.addEventListener('click', e => {
+        e.preventDefault();
+        speakWhatIfScenario(listenBtn);
+      });
+    }
+
+    const openCopilotBtn = modal.querySelector('#wiAskCopilotBtn');
+    if (openCopilotBtn) {
+      openCopilotBtn.addEventListener('click', e => {
+        e.preventDefault();
+        const curSum = buildWhatIfSummary();
+        const lv = curSum.levers || {};
+        const q = `Simulate What-If scenario for ${curSum.companyLabel}: Price ${lv.pricePct >= 0 ? '+' : ''}${lv.pricePct}%, Volume ${lv.volumePct >= 0 ? '+' : ''}${lv.volumePct}%, Direct Cost ${lv.directCostPct >= 0 ? '+' : ''}${lv.directCostPct}%, Overhead ${lv.overheadPct >= 0 ? '+' : ''}${lv.overheadPct}%, DSO ${lv.dsoDeltaDays >= 0 ? '+' : ''}${lv.dsoDeltaDays}d, and recommend action priorities.`;
+        closeWhatIfStudio();
+        openDrawer(q);
+      });
+    }
+
+    return modal;
+  }
+
+  function closeWhatIfStudio() {
+    _chatState.whatIfOpen = false;
+    _chatState.whatIfScope = '';
+    _chatState.whatIfAnchor = null;
+    if (_chatState.activeWhatIfSpeechScope) {
+      stopActivePlayback();
+    }
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('whatIfSimulatorModal');
+    if (modal && modal.parentNode) {
+      modal.parentNode.removeChild(modal);
+    }
+    document.querySelectorAll('[data-whatif-open]').forEach(b => {
+      b.classList.remove('is-open', 'active');
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function toggleWhatIfStudio(anchorEl, opts = {}) {
+    if (_chatState.whatIfOpen) {
+      closeWhatIfStudio();
+      return { open: false };
+    }
+    _chatState.whatIfDraftLang = resolveActiveBriefingLang();
+    openWhatIfStudio(anchorEl, opts);
+    return { open: true, summary: buildWhatIfSummary(undefined, opts) };
+  }
+
+  function speakWhatIfScenario(btnEl, langOverride, opts = {}) {
+    ensureDailyBriefingI18nRegistered();
+    const targetBtn = btnEl || (typeof document !== 'undefined' ? document.getElementById('wiListenBtn') : null);
+    const sum = buildWhatIfSummary(langOverride, opts);
+    if (
+      (_chatState.activeWhatIfSpeechScope && _chatState.activeWhatIfSpeechScope === sum.scopeKey) ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn === targetBtn && (_chatState.activeAudioEl || _chatState.activeSpeakCtrl))
+    ) {
+      stopActivePlayback();
+      return Promise.resolve({ stopped: true, scopeKey: sum.scopeKey });
+    }
+
+    stopActivePlayback();
+    const reqEpoch = _chatState.sessionEpoch || 0;
+    const safeLang = ['en', 'ar', 'fr'].includes(langOverride) ? langOverride : (sum.lang || 'en');
+    const plainScript = sanitizeWhatIfText(sum.spokenScript || (sum.activeBullets || []).join(' '));
+
+    _chatState.activeWhatIfSpeechScope = sum.scopeKey;
+    _chatState.activeSpeakBtn = targetBtn;
+    _chatState.lastSpokenText = plainScript;
+    syncWhatIfModalAudioButton();
+
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    _chatState.activeSpeakCtrl = ctrl;
+
+    return requestCloudOrLocalTtsUrl(plainScript, safeLang, ctrl ? ctrl.signal : undefined)
+      .then(audioUrl => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        if ((_chatState.sessionEpoch || 0) !== reqEpoch || _chatState.activeWhatIfSpeechScope !== sum.scopeKey) {
+          return { cancelled: true };
+        }
+        if (!audioUrl) {
+          _chatState.activeWhatIfSpeechScope = '';
+          syncWhatIfModalAudioButton();
+          return { ok: false, fallbackText: plainScript, summary: sum };
+        }
+        syncWhatIfModalAudioButton();
+        if (typeof Audio !== 'undefined') {
+          try {
+            const audioEl = new Audio(audioUrl);
+            audioEl.playbackRate = _chatState.playbackRate || 1;
+            _chatState.activeAudioEl = audioEl;
+            audioEl.onended = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeWhatIfSpeechScope = '';
+                syncWhatIfModalAudioButton();
+              }
+            };
+            audioEl.onerror = () => {
+              if (_chatState.activeAudioEl === audioEl) {
+                _chatState.activeAudioEl = null;
+                _chatState.activeWhatIfSpeechScope = '';
+                syncWhatIfModalAudioButton();
+              }
+            };
+            audioEl.play().catch(() => {});
+          } catch (_) {}
+        }
+        return { ok: true, audioUrl, lang: safeLang, script: plainScript, summary: sum };
+      })
+      .catch(() => {
+        if (_chatState.activeSpeakCtrl === ctrl) _chatState.activeSpeakCtrl = null;
+        _chatState.activeWhatIfSpeechScope = '';
+        syncWhatIfModalAudioButton();
+        return { ok: false, script: plainScript, summary: sum };
+      });
+  }
+
+  function rebindWhatIfButtons(container) {
+    if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+      ['#ceoWhatIfBtn', '#pbiWhatIfBtn', '#cfWhatIfBtn'].forEach(sel => {
+        const el = container.querySelector && container.querySelector(sel);
+        if (el) { try { window.MFG_I18N.translateDom(el); } catch (_) {} }
+      });
+    }
+    if (!_chatState.whatIfOpen) return;
+    openWhatIfStudio(_chatState.whatIfAnchor, { source: _chatState.whatIfSource });
+  }
+
+  function stopWhatIfIfActive() {
+    if (_chatState.whatIfOpen) {
+      closeWhatIfStudio();
+    }
+  }
+
   function clearSessionState() {
     _chatState.sessionEpoch = (_chatState.sessionEpoch || 0) + 1;
     stopActivePlayback();
+    closeWhatIfStudio();
     closePageGuidePopover();
     closeDailyHandoverPopover();
     closeSentinelTriagePopover();
@@ -12203,6 +13490,11 @@
     closeDashboardVariancePopover();
     closeStatementVariancePopover();
     closeCeoVariancePopover();
+    _chatState.whatIfLeversByEntity.clear();
+    _chatState.whatIfCache.clear();
+    _chatState.whatIfInflight.clear();
+    _chatState.whatIfCustomDraftByScope.clear();
+    _chatState.activeWhatIfSpeechScope = '';
     _chatState.pageGuideCustomDraftByScope.clear();
     _chatState.pageGuideCache.clear();
     _chatState.pageGuideInflight.clear();
@@ -13617,7 +14909,7 @@
       if (typeof document !== 'undefined') {
         const curLang = (window.MFG_I18N && window.MFG_I18N.getLang && window.MFG_I18N.getLang()) || 'en';
         if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && curLang !== 'en') {
-          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
+          ['topbarPageGuideBtn', 'topbarPageListenBtn', 'mobilePageGuideBtn', 'cfLiquidityBriefBtn', 'cfListenBriefBtn', 'cfWhatIfBtn', 'ceoWhatIfBtn', 'pbiWhatIfBtn', 'dopsHandoverBriefBtn', 'dopsBriefingBtn', 'ceoPeriodSummaryBtn', 'ceoVarianceBriefBtn', 'stmtExplainVarianceBtn', 'stmtListenSummaryBtn', 'pbiExplainOutliersBtn', 'pbiListenSummaryBtn', 'inspExplainBriefBtn', 'inspListenReviewBtn', 'indInspExplainBriefBtn', 'indInspListenReviewBtn', 'snExplainTriageBtn', 'snListenTriageBtn'].forEach(id => {
             const b = document.getElementById(id);
             if (b) {
               try { window.MFG_I18N.translateDom(b); } catch (_) {}
@@ -13626,6 +14918,10 @@
           document.querySelectorAll('.sn-ai-act-btn').forEach(b => {
             try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
+        }
+        _chatState.whatIfDraftLang = curLang;
+        if (_chatState.whatIfOpen) {
+          openWhatIfStudio(_chatState.whatIfAnchor, { source: _chatState.whatIfSource });
         }
         _chatState.pageGuideDraftLang = curLang;
         if (_chatState.pageGuideOpen) {
@@ -13781,6 +15077,22 @@
     mountTopbarPageGuideButtons,
     rebindPageGuideButtons,
     stopPageGuideIfActive,
+    buildWhatIfSummary,
+    sanitizeWhatIfText,
+    sanitizeWhatIfLiveInput,
+    getWhatIfLeversForEntity,
+    setWhatIfLeversForEntity,
+    loadSavedWhatIfScenarios,
+    saveWhatIfScenario,
+    deleteWhatIfScenario,
+    formatWhatIf: formatWhatIfPlainText,
+    requestWhatIfAiBrief,
+    openWhatIfStudio,
+    closeWhatIfStudio,
+    toggleWhatIfStudio,
+    speakWhatIfScenario,
+    rebindWhatIfButtons,
+    stopWhatIfIfActive,
     clearSessionState,
     stopSpeaking: stopActivePlayback,
     stopBriefingIfActive,
@@ -13819,6 +15131,10 @@
       pageGuideSpeechScope: _chatState.activePageGuideSpeechScope || '',
       pageGuideCustomDraftSize: _chatState.pageGuideCustomDraftByScope ? _chatState.pageGuideCustomDraftByScope.size : 0,
       pageGuideCacheSize: _chatState.pageGuideCache ? _chatState.pageGuideCache.size : 0,
+      whatIfOpen: Boolean(_chatState.whatIfOpen),
+      whatIfScope: _chatState.whatIfScope || '',
+      whatIfSpeechScope: _chatState.activeWhatIfSpeechScope || '',
+      whatIfCacheSize: _chatState.whatIfCache ? _chatState.whatIfCache.size : 0,
       lastSpokenText: _chatState.lastSpokenText || '',
       audioSrc: _chatState.activeAudioEl ? (_chatState.activeAudioEl.src || '') : '',
       cacheSize: _chatState.ttsAudioCache ? _chatState.ttsAudioCache.size : 0

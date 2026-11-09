@@ -226,6 +226,8 @@
   border-radius: 10px;
   background: #FFFFFF;
   color: #1C1917;
+  -webkit-text-security: disc;
+  text-security: disc;
 }
 
 .sua-pin-input:focus {
