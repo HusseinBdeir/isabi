@@ -381,14 +381,18 @@ document.addEventListener('DOMContentLoaded', function() {
       return 765;
     }
 
+    var appsPanelInit = document.querySelector('[data-arch-panel="apps"]');
+    var archDefaultIsApps = appsPanelInit ? !appsPanelInit.hasAttribute('data-panel-hidden') : false;
+    var hasPillarRibbon = document.querySelectorAll('.arch-pillars-ribbon .apr-item').length === 4;
+    var pillarsTabBtn = document.querySelector('[data-arch-view="pillars"]');
+    if (pillarsTabBtn) pillarsTabBtn.click();
+    var archPillarsH = Math.round(document.getElementById('architecture').getBoundingClientRect().height);
     var appsTabBtn = document.querySelector('[data-arch-view="apps"]');
     if (appsTabBtn) appsTabBtn.click();
     var archAppsH = Math.round(document.getElementById('architecture').getBoundingClientRect().height);
     var posTile = document.querySelector('[data-app-id="pos"]');
     if (posTile) posTile.click();
     var spotTitle = document.querySelector('#app-spotlight h3') ? document.querySelector('#app-spotlight h3').textContent : '';
-    var pillarsTabBtn = document.querySelector('[data-arch-view="pillars"]');
-    if (pillarsTabBtn) pillarsTabBtn.click();
 
     var indSubtabCount = document.querySelectorAll('.ind-subtabs .ind-subtab-btn').length;
     var dfBtn = document.querySelector('[data-ind-subtab="dayflow"]');
@@ -405,6 +409,16 @@ document.addEventListener('DOMContentLoaded', function() {
     var soaModeBtn = document.querySelector('[data-sbox-mode="soa"]');
     if (soaModeBtn) soaModeBtn.click();
     var hasSoaViewer = !!document.querySelector('#sandbox-mock .soa-viewer');
+    var soaDocBtn = document.querySelector('[data-soa-doc="soa"]');
+    if (soaDocBtn) soaDocBtn.click();
+    var soaDocTitle = document.querySelector('.soa-hdr h3') ? document.querySelector('.soa-hdr h3').textContent : '';
+    var soaDocHtml = document.querySelector('#sandbox-mock .soa-viewer') ? document.querySelector('#sandbox-mock .soa-viewer').innerHTML : '';
+    var tbDocBtn = document.querySelector('[data-soa-doc="tb"]');
+    if (tbDocBtn) tbDocBtn.click();
+    var tbDocTitle = document.querySelector('.soa-hdr h3') ? document.querySelector('.soa-hdr h3').textContent : '';
+    var tbDocHtml = document.querySelector('#sandbox-mock .soa-viewer') ? document.querySelector('#sandbox-mock .soa-viewer').innerHTML : '';
+    var soaDocDifferent = (soaDocTitle !== tbDocTitle && soaDocHtml !== tbDocHtml && tbDocTitle.indexOf('Trial Balance') !== -1);
+    if (soaDocBtn) soaDocBtn.click();
 
     var pwaModeBtn = document.querySelector('[data-sbox-mode="pwa"]');
     if (pwaModeBtn) pwaModeBtn.click();
@@ -419,6 +433,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var erpModeBtn = document.querySelector('[data-sbox-mode="erp"]');
     if (erpModeBtn) erpModeBtn.click();
+    var railBrandSvgCount = document.querySelectorAll('.rail .brand svg').length;
+    var sboxPageTitles = {};
+    var sboxNavItems = ['Overview','Sales & Revenue','Purchases & Stock','Cash & Treasury','General Ledger','Statements','Business Units','Audit Trail'];
+    sboxNavItems.forEach(function(nm) {
+      var nb = document.querySelector('[data-sbox-nav="' + nm + '"]');
+      if (nb) nb.click();
+      var t = document.querySelector('.mock .crumb b') ? document.querySelector('.mock .crumb b').textContent.trim() : '';
+      if (t) sboxPageTitles[t] = 1;
+    });
+    var ovBtn = document.querySelector('[data-sbox-nav="Overview"]');
+    if (ovBtn) ovBtn.click();
+    var distinctSboxPages = Object.keys(sboxPageTitles).length;
 
     var roadTab = document.querySelector('[data-ing-tab="roadmap"]');
     if (roadTab) roadTab.click();
@@ -517,7 +543,7 @@ document.addEventListener('DOMContentLoaded', function() {
       var arModBtn = document.querySelector('[data-ind-subtab="modules"]');
       if (arModBtn) arModBtn.click();
       window.ISABI_I18N.translateDom(document.getElementById('industries'));
-      // Layer 3 Showcase Runtime Crawl Gate: audit visible DOM across blueprints, subtabs & sandbox modes
+      // Layer 3 Showcase Runtime Crawl Gate: audit visible DOM across blueprints, subtabs, 8 sidebar pages & SOA/TB modes
       document.querySelectorAll('[data-ind-tab]').forEach(function(b) { b.click(); });
       document.querySelectorAll('[data-ind-subtab]').forEach(function(b) { b.click(); });
       document.querySelectorAll('[data-demo-tab]').forEach(function(b) { b.click(); });
@@ -525,6 +551,32 @@ document.addEventListener('DOMContentLoaded', function() {
       var arDomAudit = window.ISABI_I18N.auditDom(document.body, 'ar');
       window.ISABI_I18N.setLang('fr', false);
       var frDomAudit = window.ISABI_I18N.auditDom(document.body, 'fr');
+      ['Overview','Sales & Revenue','Purchases & Stock','Cash & Treasury','General Ledger','Statements','Business Units','Audit Trail'].forEach(function(nm) {
+        var nb = document.querySelector('[data-sbox-nav="' + nm + '"]');
+        if (nb) nb.click();
+        window.ISABI_I18N.setLang('ar', false);
+        var aSub = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'ar');
+        if (aSub.count) { arDomAudit.count += aSub.count; arDomAudit.items = arDomAudit.items.concat(aSub.items); }
+        window.ISABI_I18N.setLang('fr', false);
+        var fSub = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'fr');
+        if (fSub.count) { frDomAudit.count += fSub.count; frDomAudit.items = frDomAudit.items.concat(fSub.items); }
+      });
+      var soaM = document.querySelector('[data-sbox-mode="soa"]');
+      if (soaM) soaM.click();
+      ['soa', 'tb'].forEach(function(dk) {
+        var db = document.querySelector('[data-soa-doc="' + dk + '"]');
+        if (db) db.click();
+        window.ISABI_I18N.setLang('ar', false);
+        var aDoc = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'ar');
+        if (aDoc.count) { arDomAudit.count += aDoc.count; arDomAudit.items = arDomAudit.items.concat(aDoc.items); }
+        window.ISABI_I18N.setLang('fr', false);
+        var fDoc = window.ISABI_I18N.auditDom(document.getElementById('sandbox'), 'fr');
+        if (fDoc.count) { frDomAudit.count += fDoc.count; frDomAudit.items = frDomAudit.items.concat(fDoc.items); }
+      });
+      var erpM = document.querySelector('[data-sbox-mode="erp"]');
+      if (erpM) erpM.click();
+      var ovB = document.querySelector('[data-sbox-nav="Overview"]');
+      if (ovB) ovB.click();
       window.ISABI_I18N.registerLocale('es', { label: 'ES', nativeName: 'Español', dir: 'ltr' }, { 'Features': 'Funciones' });
       window.ISABI_I18N.setLang('es', false);
       var esNav = document.querySelector('#main-nav a[data-sec-link="architecture"]')?.textContent || '';
@@ -566,10 +618,16 @@ document.addEventListener('DOMContentLoaded', function() {
       );
     }
 
-    out.v4Test = {
+      out.v4Test = {
       i18nOk: i18nOk,
       i18nDiag: i18nDiag,
       spotTitle: spotTitle,
+      archDefaultIsApps: archDefaultIsApps,
+      hasPillarRibbon: hasPillarRibbon,
+      archPillarsH: archPillarsH,
+      soaDocDifferent: soaDocDifferent,
+      railBrandSvgCount: railBrandSvgCount,
+      distinctSboxPages: distinctSboxPages,
       indSubtabCount: indSubtabCount,
       flowCardCount: flowCardCount,
       baCardCount: baCardCount,
@@ -623,13 +681,14 @@ document.addEventListener('DOMContentLoaded', function() {
         d_desk = probe_viewport(1366, 768, 'DESK')
         d_desk_1440 = probe_viewport(1440, 810, 'DESK')
         d_desk_1536 = probe_viewport(1536, 864, 'DESK')
+        d_desk_1920 = probe_viewport(1920, 1080, 'DESK')
         d_mob = probe_viewport(390, 844, 'MOB')
 
         if os.path.exists(diag_html):
             os.remove(diag_html)
 
-        # Desktop multi-viewport single-screen assertions (1366x768, 1440x810, 1536x864)
-        for vp_lbl, dvp in [('1366x768', d_desk), ('1440x810', d_desk_1440), ('1536x864', d_desk_1536)]:
+        # Desktop multi-viewport single-screen assertions (1366x768, 1440x810, 1536x864, 1920x1080)
+        for vp_lbl, dvp in [('1366x768', d_desk), ('1440x810', d_desk_1440), ('1536x864', d_desk_1536), ('1920x1080', d_desk_1920)]:
             assert dvp['scrollW'] <= dvp['vw'], f"{vp_lbl} horizontal overflow! scrollW={dvp['scrollW']} > vw={dvp['vw']}"
             assert dvp['cardOverflows'] == [], f"{vp_lbl} card overflows detected: {dvp['cardOverflows']}"
             avail_h = dvp['vh'] - dvp['hdrBottom']
@@ -637,6 +696,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 assert abs(sec_h - avail_h) <= 2, f"{vp_lbl} section {sec_sel} height ({sec_h}px) != viewport availH ({avail_h}px)!"
             for alt_tab_lbl, alt_h in [
                 ('arch:apps', dvp['v4Test']['archAppsH']),
+                ('arch:pillars', dvp['v4Test']['archPillarsH']),
                 ('ing:roadmap', dvp['v4Test']['ingRoadH']),
                 ('ing:faq', dvp['v4Test']['ingFaqH']),
                 ('pricing:builder', dvp['v4Test']['priceBuilderH']),
@@ -700,6 +760,10 @@ document.addEventListener('DOMContentLoaded', function() {
         v4 = d_desk['v4Test']
         assert v4.get('i18nOk') is True, f"Showcase ISABI_I18N trilingual & registerLocale check failed: {v4}"
         assert v4['i18nDiag'].get('invalidLangRejected') is True, f"Negative assertion failed: invalid locale tag was not rejected: {v4['i18nDiag']}"
+        assert v4.get('archDefaultIsApps') is True and v4.get('hasPillarRibbon') is True, f"Section 01 did not default to upfront 18 Custom Modules + 4-pillar ribbon: {v4}"
+        assert v4.get('soaDocDifferent') is True, f"Negative assertion failed: Statement of Account and Statutory Trial Balance rendered identical view: {v4}"
+        assert v4.get('railBrandSvgCount') == 2, f"Expected 2 single-line SVGs (mark + wordmark) in .rail .brand, got {v4.get('railBrandSvgCount')}"
+        assert v4.get('distinctSboxPages') == 8, f"Negative assertion failed: expected 8 distinct ERP pages across left-sidebar tabs, got {v4.get('distinctSboxPages')}"
         assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
         assert v4['indSubtabCount'] == 2, f"Expected 2 streamlined industry sub-tabs, got {v4['indSubtabCount']}"
         assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"

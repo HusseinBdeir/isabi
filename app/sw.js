@@ -374,7 +374,7 @@ self.addEventListener('fetch', event => {
 
   // Unversioned assets & direct non-shell navigations (e.g. viewing `/app/icon-512.png` or `/app/manifest.json` directly)
   event.respondWith(
-    fetchDedup(event.request.url, { cache: 'no-cache' })
+    (event.request.cache === 'reload' ? fetch(event.request) : fetchDedup(event.request.url, { cache: 'no-cache' }))
       .then(async res => {
         if (!isAnyNav && res && res.status === 200 && isSameOriginUrl(res.url)) {
           const clone = res.clone();

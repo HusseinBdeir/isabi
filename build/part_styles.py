@@ -15,6 +15,7 @@ CSS = r"""
   --plate: #F4F6FA;
   --brass: #B88228;
   --brass-strong: #9A691B;
+  --brass-deep: #9A691B;
   --brass-ink: #0B1730;
   --brass-tint: rgba(201, 146, 52, 0.10);
   --brass-border: rgba(201, 146, 52, 0.34);
@@ -32,6 +33,7 @@ CSS = r"""
   --steel-tint: rgba(37, 99, 235, 0.08);
   --good: #16803C;
   --good-bg: #E8F5ED;
+  --good-tint: #E8F5ED;
   --warn: #D97706;
   --warn-bg: #FEF3C7;
   --crit: #C8333B;
@@ -114,6 +116,7 @@ CSS = r"""
   --plate: #081124;
   --brass: #D9A54A;
   --brass-strong: #E5B764;
+  --brass-deep: #E5B764;
   --brass-ink: #0B1730;
   --brass-tint: rgba(217, 165, 74, 0.12);
   --brass-border: rgba(217, 165, 74, 0.38);
@@ -131,6 +134,7 @@ CSS = r"""
   --steel-tint: rgba(79, 143, 214, 0.14);
   --good: #3DB36A;
   --good-bg: rgba(61, 179, 106, 0.14);
+  --good-tint: rgba(61, 179, 106, 0.14);
   --warn: #F09045;
   --warn-bg: rgba(240, 144, 69, 0.14);
   --crit: #E25A61;
@@ -4965,6 +4969,11 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
 }
 /* ---------- Desktop Full-Screen Fit Rules (Every Page Fits 100% in 1 Viewport) ---------- */
 @media (min-width: 1081px) {
+  .wrap,
+  .hdr-inner {
+    width: 100%;
+    max-width: min(95vw, 1720px);
+  }
   .hero-section {
     padding: 10px 0;
   }

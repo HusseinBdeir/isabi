@@ -1739,7 +1739,10 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "FR Ready":{"ar":"جاهز FR","fr":"Prêt FR"},
 "0.00 (USD) ✓":{"ar":"0.00 (USD) ✓","fr":"0,00 (USD) ✓"},
 "0.00 (EUR) ✓":{"ar":"0.00 (EUR) ✓","fr":"0,00 (EUR) ✓"},
-"0.00 (AED) ✓":{"ar":"0.00 (AED) ✓","fr":"0,00 (AED) ✓"}
+"0.00 (AED) ✓":{"ar":"0.00 (AED) ✓","fr":"0,00 (AED) ✓"},
+"Balance":{"ar":"الرصيد","fr":"Solde"},
+"Opening Balance":{"ar":"الرصيد الافتتاحي","fr":"Solde d'Ouverture"},
+"Running Balance":{"ar":"الرصيد المتحرك","fr":"Solde Progressif"}
 };;
 
     const SHOWCASE_LOWER = {};

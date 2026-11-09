@@ -100,7 +100,7 @@ ORG_JSONLD = _json.dumps({
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.31",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.32",
     "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, What-If scenario studios, interactive executive dashboards, automated statement matching, fleet GPS telematics, field kiosks, and the Ask ISABI assistant with simple per-seat pricing.",
