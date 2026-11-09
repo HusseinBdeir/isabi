@@ -739,7 +739,7 @@
   function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
     if (groupOverride === 'expenses') groupOverride = 'raw';
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
-    const effectiveGroupId = groupOverride === 'comm' ? 'sales' : groupOverride;
+    const effectiveGroupId = groupOverride === 'comm' ? 'sales' : (groupOverride === 'extended' ? 'treasury' : groupOverride);
     const activeGroup = (effectiveGroupId && FORM_GROUPS.find(g => g.id === effectiveGroupId)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
     return `
       <div class="pa-modal-groups">
@@ -753,6 +753,7 @@
         ${(() => {
           const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
           const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
+          const isHoldingScope = groupOverride === 'extended' || (typeof window !== 'undefined' && typeof window.__mfgGetActiveIndustry === 'function' && window.__mfgGetActiveIndustry() === 'Holding & Treasury');
           const rawPrTab = showRawPr ? `
           <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Haulage Rate agreement">
             <span>Price Agreement</span>
@@ -767,6 +768,12 @@
               return baseTab + `
           <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" title="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
             <span>Commission Rule</span>
+          </button>`;
+            }
+            if (activeGroup.id === 'treasury' && f.id === 'external' && isHoldingScope && (!canEnterFn || canEnterFn('external'))) {
+              return baseTab + `
+          <button type="button" class="modal-tab ${groupOverride === 'extended' && activeForm === 'external' ? 'active' : ''}" data-form="extended" title="Record a Holding Extended Stakeholder Ledger cash inflow, outflow, or opening balance">
+            <span>Extended Entry</span>
           </button>`;
             }
             if (rawAnchorObj && f.id === rawAnchorObj.id) {
@@ -815,7 +822,7 @@
   function renderExtendedFormBody(fType, ctx, helpers) {
     const rec = getRecords(ctx);
     const comps = helpers.allowedCompanyNames();
-    const company = helpers.defaultEntryCompany();
+    const company = (ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'extended' && comps.includes('Bdeir Holding')) ? 'Bdeir Holding' : helpers.defaultEntryCompany();
     const today = todayISO();
     const dateAttrs = `min="${MIN_DATE}" max="${today}" required`;
     const stCo = String((ctx && ctx.STATE && ctx.STATE.company) || '').trim();
@@ -2333,7 +2340,20 @@
     }
 
     if (fType === 'external') {
-      const externalPartyNames = uniqSorted(['Haj Ali', 'Haj Mohamad', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'George', 'Bdeir Holding'].concat((rec.external_movements || []).map(x => x.counterparty || x.name)), fIdx && fIdx.counterparty);
+      const isExtdMode = Boolean(ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'extended');
+      const baseParties = isExtdMode
+        ? ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms', 'Haj Ali', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Voile', 'Bdeir Holding']
+        : ['Haj Ali', 'Haj Mohamad', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'George', 'Bdeir Holding'];
+      let cpFreqMap = fIdx && fIdx.counterparty;
+      if (isExtdMode) {
+        cpFreqMap = new Map();
+        ((rec.external_movements || []).filter(x => /^extended$/i.test(String(x.kind || '')))).forEach(x => {
+          const k = String(x.counterparty || x.name || '').trim().toLowerCase();
+          if (k) cpFreqMap.set(k, (cpFreqMap.get(k) || 0) + 1);
+        });
+      }
+      const externalPartyNames = uniqSorted(baseParties.concat((rec.external_movements || []).filter(x => !isExtdMode || /^extended$/i.test(String(x.kind || ''))).map(x => x.counterparty || x.name)), cpFreqMap);
+      const showExtKindField = isExtdMode || /^bdeir\s*holding$/i.test(String(company || '').trim());
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -2343,7 +2363,7 @@
           ${fld('Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid)']], 'Inflow'), { id: 'wrap_tr_dir' })}
-          ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Stakeholder Ledger)']], 'External'), { id: 'wrap_ext_kind', hidden: !/^bdeir\s*holding$/i.test(String(company || '').trim()) })}
+          ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Stakeholder Ledger)']], isExtdMode ? 'Extended' : 'External'), { id: 'wrap_ext_kind', hidden: !showExtKindField })}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
@@ -2354,7 +2374,7 @@
           <div><small id="lbl_tr_c1">Prior Net Position</small><b id="calc_tr_c1">—</b></div>
           <div><small id="lbl_tr_c2">Inflow Now</small><b id="calc_tr_c2">$0.00</b></div>
           <div><small id="lbl_tr_c3">Net Position After</small><b id="calc_tr_c3">—</b></div>
-          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">External Inflow</b></div>
+          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">${isExtdMode ? 'Extended Inflow' : 'External Inflow'}</b></div>
         </div>
       `;
     }

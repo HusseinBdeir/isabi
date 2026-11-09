@@ -8814,11 +8814,11 @@
   });
 
   const INDUSTRY_SLOT_TO_MFG_HUB = {
-    hld_consolidation: 'sales', hld_intercompany: 'raw', hld_partnerships: 'fleet', hld_treasury: 'warehouse',
-    hsp_frontdesk: 'sales', hsp_memberships: 'raw', hsp_fnb_stock: 'fleet', hsp_facilities: 'warehouse',
-    trd_sales: 'sales', trd_procurement: 'raw', trd_fleet_warranty: 'fleet', trd_warehouse: 'warehouse',
-    re_leasing: 'sales', re_unit_sales: 'raw', re_portfolio: 'fleet', re_facilities: 'warehouse',
-    ins_policies: 'sales', ins_billing: 'raw', ins_claims: 'fleet', ins_carriers: 'warehouse'
+    hld_consolidation: 'sales', hld_interactions: 'raw', hld_intercompany: 'raw', hld_partners: 'fleet', hld_partnerships: 'fleet', hld_loans: 'warehouse', hld_treasury: 'warehouse',
+    hsp_revenue: 'sales', hsp_frontdesk: 'sales', hsp_memberships: 'raw', hsp_stock: 'fleet', hsp_fnb_stock: 'fleet', hsp_energy: 'warehouse', hsp_facilities: 'warehouse',
+    trd_sales: 'sales', trd_purchases: 'raw', trd_procurement: 'raw', trd_trucks: 'fleet', trd_fleet_warranty: 'fleet', trd_stock: 'warehouse', trd_warehouse: 'warehouse',
+    re_leases: 'sales', re_leasing: 'sales', re_sales: 'raw', re_unit_sales: 'raw', re_properties: 'fleet', re_portfolio: 'fleet', re_workorders: 'warehouse', re_facilities: 'warehouse',
+    ins_policies: 'sales', ins_billing: 'raw', ins_claims: 'fleet', ins_catalogue: 'warehouse', ins_carriers: 'warehouse'
   };
 
   function isHubInActiveIndustry(h, indId) {
@@ -9006,7 +9006,11 @@
         const mfgHub = getHubDef(mfgSlot);
         const tabIdx = h.tabs.findIndex(t => t.view === canonView);
         if (mfgHub && mfgHub.tabs && mfgHub.tabs[tabIdx] && Object.prototype.hasOwnProperty.call(hp.pages, mfgHub.tabs[tabIdx].view)) {
-          return Boolean(hp.pages[mfgHub.tabs[tabIdx].view]);
+          const mappedVal = Boolean(hp.pages[mfgHub.tabs[tabIdx].view]);
+          if (mappedVal) return true;
+          const anySiblingMappedOn = h.tabs.some((st, sIdx) => mfgHub.tabs[sIdx] && Object.prototype.hasOwnProperty.call(hp.pages, mfgHub.tabs[sIdx].view) && Boolean(hp.pages[mfgHub.tabs[sIdx].view]));
+          if (!anySiblingMappedOn && tabIdx === 0 && isHubEnabledInPolicy(parentHubId, hp, u)) return true;
+          return false;
         }
       }
       if (Object.prototype.hasOwnProperty.call(hp.hubs, parentHubId) && hp.hubs[parentHubId]) {
@@ -56559,16 +56563,16 @@
       const defDir = /out|withdraw|paid/i.test(String(prefill.direction || '')) ? 'Outflow' : 'Inflow';
       const defUsd = prefill.usd_amount != null ? prefill.usd_amount : (prefill.usd != null ? prefill.usd : (prefill.amount != null ? prefill.amount : '5000'));
       const defLbp = prefill.lbp_amount != null ? prefill.lbp_amount : (prefill.lbp != null ? prefill.lbp : '0');
-      const fxNow = getActiveFxRate();
+      const fxNow = getLbpFxRate(prefill.date || today) || 89500;
       fieldsHtml = `
         ${fldWrap('Holding Entity *', `<input type="text" id="ide_company" class="mono" readonly style="${roStyle}" value="Bdeir Holding">`)}
         ${fldWrap('Extended Voucher # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'EXTD-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Transaction Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
-        ${fldWrap('Stakeholder / Counterparty *', `<input type="text" id="ide_party" list="dl_ide_hld_extd_parties" style="${inpStyle}" value="${esc(defParty)}" placeholder="Select or type stakeholder...">${dlHtml('dl_ide_hld_extd_parties', extdParties)}`, 'Ranked by stakeholder transaction frequency')}
+        ${fldWrap('Stakeholder / Counterparty *', `<input type="text" id="ide_party" list="dl_ide_hld_extd_parties" style="${inpStyle}" value="${esc(defParty)}" placeholder="Select or type stakeholder..."><datalist id="dl_ide_hld_extd_parties">${extdParties.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>`, 'Ranked by stakeholder transaction frequency')}
         ${fldWrap('Cash Direction *', `<select id="ide_direction" data-plain-options="1" style="${inpStyle}"><option value="Inflow" ${defDir === 'Inflow' ? 'selected' : ''}>Cash Inflow (Received from Stakeholder)</option><option value="Outflow" ${defDir === 'Outflow' ? 'selected' : ''}>Cash Outflow (Paid to Stakeholder)</option></select>`)}
         ${fldWrap('USD Amount ($)', `<input type="number" id="ide_usd" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defUsd)}">`)}
         ${fldWrap('LBP Amount (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(defLbp)}">`)}
-        ${fldWrap(`Total USD Equivalent (${fmtFxRateLbl(fxNow)} LL/$)`, `<input type="text" id="ide_tot_usd" class="mono" readonly style="${roStyle}" value="$5,000.00">`, 'Deterministic dual-currency FX conversion')}
+        ${fldWrap(`Total USD Equivalent (${fmtNum(fxNow)} LL/$)`, `<input type="text" id="ide_tot_usd" class="mono" readonly style="${roStyle}" value="$5,000.00">`, 'Deterministic dual-currency FX conversion')}
         ${fldWrap('Reference & Ledger Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Extended stakeholder ledger movement')}">`)}
       `;
     } else {
@@ -56863,7 +56867,7 @@
       } else if (spec.key === 'hld_extended') {
         const usd = Math.max(0, numVal('ide_usd'));
         const lbp = Math.max(0, numVal('ide_lbp'));
-        const fx = getActiveFxRate() || 89500;
+        const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
         const tot = round2(usd + (lbp / fx));
         const dir = strVal('ide_direction') || 'Inflow';
         if ($('ide_tot_usd')) $('ide_tot_usd').value = `${dir === 'Inflow' ? '+' : '-'}${fmtUSD(tot, 2)} (${dir})`;
@@ -57932,7 +57936,7 @@
         const usd = Math.max(0, round2(numVal('ide_usd')));
         const lbp = Math.max(0, Math.round(numVal('ide_lbp')));
         const dt = strVal('ide_date') || today;
-        const fx = getLbpFxRate(dt) || getActiveFxRate() || 89500;
+        const fx = getLbpFxRate(dt) || 89500;
         const totUsd = round2(usd + (lbp / fx));
         if (!(totUsd > 0)) { showMsg('Extended Stakeholder Entry requires a positive USD or LBP amount.', true); return; }
         const notes = strVal('ide_notes') || 'Extended stakeholder ledger movement';
@@ -96928,6 +96932,16 @@
     if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
     if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
     if (remote.roleTabPolicies && mergeRoleTabPolicies(remote.roleTabPolicies)) { changed = true; }
+    if (!isPushing && !remote._scopedForSession && STATE.roleTabPolicies && typeof STATE.roleTabPolicies === 'object') {
+      const remRtp = (remote.roleTabPolicies && typeof remote.roleTabPolicies === 'object') ? remote.roleTabPolicies : {};
+      Object.keys(STATE.roleTabPolicies).forEach(rk => {
+        const lObj = STATE.roleTabPolicies[rk];
+        const rObj = remRtp[rk];
+        const lTs = String((lObj && lObj.updated_at) || '');
+        const rTs = String((rObj && rObj.updated_at) || '');
+        if (lTs && (!rObj || lTs > rTs)) needPush = true;
+      });
+    }
     if (Array.isArray(remote.stepUpAudits) && window.MFG_STEP_UP && typeof window.MFG_STEP_UP.mergeStepUpAudits === 'function') {
       if (window.MFG_STEP_UP.mergeStepUpAudits(remote.stepUpAudits)) changed = true;
     }
@@ -98341,8 +98355,9 @@
     return out;
   }
 
-  function ensureDraftHubPagesPolicy(previewUser) {
+  function ensureDraftHubPagesPolicy(previewUser, activeInd) {
     const pUser = previewUser || getDraftSeatPreviewUser();
+    const effInd = activeInd || (STATE.permHubIndFilter && INDUSTRY_SIDEBAR_SPEC[STATE.permHubIndFilter] ? STATE.permHubIndFilter : (typeof getSeatPrimaryIndustry === 'function' ? getSeatPrimaryIndustry(pUser) : (getActiveIndustry(STATE.company) || 'Manufacturing')));
     if (!STATE.draftCustomPerms) {
       const canon = resolveCanonicalRoleKey(pUser && pUser.role);
       if (canon === 'Custom') {
@@ -98354,31 +98369,46 @@
           : {};
       }
     }
+    const existingHp = getEffectiveHubPagePolicy(pUser);
     if (!STATE.draftCustomPerms.hubPagesCustomized || !STATE.draftCustomPerms.hubs || !STATE.draftCustomPerms.pages) {
-      const existingHp = getEffectiveHubPagePolicy(pUser);
-      const hubsMap = {};
-      const pagesMap = {};
-      HUB_CATALOG.forEach(h => {
-        const hOn = canViewHub(h.id, pUser);
-        hubsMap[h.id] = hOn;
-        (h.tabs || []).forEach(t => {
-          pagesMap[t.view] = hOn && canViewView(t.view, pUser);
-        });
-      });
       STATE.draftCustomPerms.hubPagesCustomized = true;
       STATE.draftCustomPerms.hubPagesSelectAll = Boolean(existingHp && existingHp.selectAll);
-      STATE.draftCustomPerms.hubs = hubsMap;
-      STATE.draftCustomPerms.pages = pagesMap;
+      STATE.draftCustomPerms.hubs = (existingHp && existingHp.hubs && typeof existingHp.hubs === 'object') ? Object.assign({}, existingHp.hubs) : {};
+      STATE.draftCustomPerms.pages = (existingHp && existingHp.pages && typeof existingHp.pages === 'object') ? Object.assign({}, existingHp.pages) : {};
     }
+    HUB_CATALOG.filter(h => isHubInActiveIndustry(h, effInd)).forEach(h => {
+      if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.hubs, h.id)) {
+        const hOn = canViewHub(h.id, pUser);
+        STATE.draftCustomPerms.hubs[h.id] = hOn;
+        (h.tabs || []).forEach(t => {
+          if (!Object.prototype.hasOwnProperty.call(STATE.draftCustomPerms.pages, t.view)) {
+            STATE.draftCustomPerms.pages[t.view] = hOn && canViewView(t.view, pUser);
+          }
+        });
+      }
+    });
     return STATE.draftCustomPerms;
+  }
+
+  function clearSiblingSlotOverridesForMfgHub(draft, mfgHubId) {
+    if (!draft || !['sales', 'raw', 'fleet', 'warehouse'].includes(mfgHubId)) return;
+    Object.keys(INDUSTRY_SLOT_TO_MFG_HUB).forEach(sibHubId => {
+      if (INDUSTRY_SLOT_TO_MFG_HUB[sibHubId] === mfgHubId) {
+        if (draft.hubs) delete draft.hubs[sibHubId];
+        const sibDef = getHubDef(sibHubId);
+        if (sibDef && Array.isArray(sibDef.tabs) && draft.pages) {
+          sibDef.tabs.forEach(t => { delete draft.pages[t.view]; });
+        }
+      }
+    });
   }
 
   function commitHubPagesPolicyToRoleIfNeeded(roleKey) {
     const canonRole = resolveCanonicalRoleKey(roleKey || val('nu_role') || 'Entry');
     if (!STATE.roleTabPolicies || typeof STATE.roleTabPolicies !== 'object') STATE.roleTabPolicies = {};
     if (STATE.draftCustomPerms && STATE.draftCustomPerms.hubPagesCustomized) {
+      const curSeat = getEditingSeatUser();
       if (STATE.permHubScopeMode === 'seat') {
-        const curSeat = getEditingSeatUser();
         if (curSeat && STATE.editingUserId && STATE.editingUserId !== '__new__') {
           const parsed = parseUserCustomPerms(curSeat.custom_perms) || {};
           parsed.hubPagesCustomized = true;
@@ -98388,6 +98418,16 @@
           curSeat.custom_perms = JSON.stringify(parsed);
         }
       } else {
+        if (curSeat && STATE.editingUserId && STATE.editingUserId !== '__new__' && curSeat.custom_perms) {
+          const parsed = parseUserCustomPerms(curSeat.custom_perms);
+          if (parsed && parsed.hubPagesCustomized) {
+            delete parsed.hubPagesCustomized;
+            delete parsed.hubPagesSelectAll;
+            delete parsed.hubs;
+            delete parsed.pages;
+            curSeat.custom_perms = Object.keys(parsed).length ? JSON.stringify(parsed) : '{}';
+          }
+        }
         STATE.roleTabPolicies[canonRole] = {
           customized: true,
           selectAll: Boolean(STATE.draftCustomPerms.hubPagesSelectAll),
@@ -99271,7 +99311,7 @@
       const pUser = getDraftSeatPreviewUser();
       const sCos = parseUserCompanies(pUser && pUser.companies);
       const sInds = Array.from(new Set(sCos.map(c => getActiveIndustry(c)).filter(Boolean)));
-      const defInd = sInds[0] || getActiveIndustry(STATE.company) || 'Manufacturing';
+      const defInd = (typeof getSeatPrimaryIndustry === 'function' ? getSeatPrimaryIndustry(pUser) : sInds[0]) || getActiveIndustry(STATE.company) || 'Manufacturing';
       return (STATE.permHubIndFilter && INDUSTRY_SIDEBAR_SPEC[STATE.permHubIndFilter]) ? STATE.permHubIndFilter : defInd;
     };
 
@@ -99300,14 +99340,15 @@
 
     root.querySelectorAll('[data-perm-tabs-select-all]').forEach(cb => {
       cb.addEventListener('change', () => {
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser());
         const activeInd = getActiveHubMatrixIndustry();
+        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
         const targetHubs = HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeInd));
         const isSelfAdmin = isEditingSelfActiveOwner();
         if (cb.checked) {
           targetHubs.forEach(h => {
             draft.hubs[h.id] = true;
             (h.tabs || []).forEach(t => { draft.pages[t.view] = true; });
+            if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
           draft.hubPagesSelectAll = true;
         } else {
@@ -99316,6 +99357,7 @@
             const keepOn = h.id === 'overview' || (h.id === 'users' && isSelfAdmin);
             draft.hubs[h.id] = keepOn;
             (h.tabs || []).forEach(t => { draft.pages[t.view] = keepOn; });
+            if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
         }
         STATE.userFormDirty = true;
@@ -99339,9 +99381,14 @@
               STATE.draftCustomPerms = null;
             }
           }
-          if (STATE.roleTabPolicies && STATE.roleTabPolicies[curCanonRole]) {
-            delete STATE.roleTabPolicies[curCanonRole];
-          }
+          if (!STATE.roleTabPolicies || typeof STATE.roleTabPolicies !== 'object') STATE.roleTabPolicies = {};
+          STATE.roleTabPolicies[curCanonRole] = {
+            customized: false,
+            selectAll: false,
+            hubs: {},
+            pages: {},
+            updated_at: new Date().toISOString()
+          };
           const curSeat = getEditingSeatUser();
           if (curSeat && curSeat.custom_perms) {
             const parsed = parseUserCustomPerms(curSeat.custom_perms);
@@ -99360,14 +99407,15 @@
           return;
         }
         if (act === 'ops') {
-          const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser());
           const activeInd = getActiveHubMatrixIndustry();
+          const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
           const targetHubs = HUB_CATALOG.filter(h => isHubInActiveIndustry(h, activeInd));
           draft.hubPagesSelectAll = false;
           targetHubs.forEach(h => {
             const isOpsHub = !['cashflow', 'ledger', 'sentinels', 'reports', 'users'].includes(h.id) || (h.id === 'users' && isSelfAdmin);
             draft.hubs[h.id] = isOpsHub;
             (h.tabs || []).forEach(t => { draft.pages[t.view] = isOpsHub; });
+            if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, h.id);
           });
           STATE.userFormDirty = true;
           commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
@@ -99387,13 +99435,15 @@
           toast('Active Owner seat cannot lock itself out of Users & Security');
           return;
         }
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser());
+        const activeInd = getActiveHubMatrixIndustry();
+        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         draft.hubPagesSelectAll = false;
         draft.hubs[hubId] = Boolean(cb.checked);
         (hubDef ? hubDef.tabs || [] : []).forEach(t => {
           draft.pages[t.view] = Boolean(cb.checked);
         });
+        if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
         refreshRoleAndAccessMatrixUi(root);
@@ -99406,7 +99456,8 @@
         if (!hubId) return;
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         if (!hubDef) return;
-        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser());
+        const activeInd = getActiveHubMatrixIndustry();
+        const draft = ensureDraftHubPagesPolicy(getDraftSeatPreviewUser(), activeInd);
         draft.hubPagesSelectAll = false;
         draft.hubs[hubId] = true;
         if (cb.checked) {
@@ -99416,6 +99467,7 @@
             draft.pages[t.view] = idx === 0;
           });
         }
+        if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
         refreshRoleAndAccessMatrixUi(root);
@@ -99433,9 +99485,10 @@
           toast('Active Owner seat cannot lock itself out of Users & Security');
           return;
         }
+        const activeInd = getActiveHubMatrixIndustry();
         const prevPreview = getDraftSeatPreviewUser();
         const wasHubOn = canViewHub(hubId, prevPreview);
-        const draft = ensureDraftHubPagesPolicy(prevPreview);
+        const draft = ensureDraftHubPagesPolicy(prevPreview, activeInd);
         const hubDef = HUB_CATALOG.find(h => h.id === hubId);
         draft.hubPagesSelectAll = false;
         if (!wasHubOn && cb.checked && hubDef) {
@@ -99449,6 +99502,7 @@
             draft.hubs[hubId] = (hubDef.tabs || []).some(t => Boolean(draft.pages[t.view]));
           }
         }
+        if (activeInd === 'Manufacturing') clearSiblingSlotOverridesForMfgHub(draft, hubId);
         STATE.userFormDirty = true;
         commitHubPagesPolicyToRoleIfNeeded(roleEl ? roleEl.value : 'Entry');
         refreshRoleAndAccessMatrixUi(root);
@@ -99530,13 +99584,32 @@
         STATE.draftAccessOverride = null;
         const cur = getEditingSeatUser();
         const curRoleCanon = cur ? resolveCanonicalRoleKey(cur.role) : 'Entry';
+        const parsedCp = cur ? parseUserCustomPerms(cur.custom_perms) : null;
         if (cur && curRoleCanon === 'Custom') {
           STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(cur);
-        } else if (cur && curRoleCanon === 'Entry') {
-          const curPerms = getEffectivePermissions(cur);
-          STATE.draftCustomPerms = { rights: { modify_text: !!curPerms.rights.modify_text } };
+          STATE.permHubScopeMode = (parsedCp && parsedCp.hubPagesCustomized && !(STATE.roleTabPolicies && STATE.roleTabPolicies['Custom'] && STATE.roleTabPolicies['Custom'].customized)) ? 'seat' : 'role';
+        } else if (cur) {
+          let nextDraft = null;
+          if (parsedCp && parsedCp.rights && typeof parsedCp.rights.modify_text === 'boolean') {
+            nextDraft = { rights: { modify_text: !!parsedCp.rights.modify_text } };
+          } else if (curRoleCanon === 'Entry') {
+            const curPerms = getEffectivePermissions(cur);
+            nextDraft = { rights: { modify_text: !!curPerms.rights.modify_text } };
+          }
+          if (parsedCp && parsedCp.hubPagesCustomized) {
+            if (!nextDraft) nextDraft = {};
+            nextDraft.hubPagesCustomized = true;
+            nextDraft.hubPagesSelectAll = Boolean(parsedCp.hubPagesSelectAll);
+            nextDraft.hubs = Object.assign({}, parsedCp.hubs || {});
+            nextDraft.pages = Object.assign({}, parsedCp.pages || {});
+            STATE.permHubScopeMode = 'seat';
+          } else {
+            STATE.permHubScopeMode = 'role';
+          }
+          STATE.draftCustomPerms = nextDraft;
         } else {
           STATE.draftCustomPerms = null;
+          STATE.permHubScopeMode = 'role';
         }
         updateSeatEditorDom();
         toast('Reverted unsaved field changes');
@@ -101249,15 +101322,16 @@
           { view: 'ins_claims', label: 'FNOL Claims' }
         ]
       };
-      const deckHubs = (!q && indFilter !== 'all') ? (quickHubsByInd[indFilter] || null) : null;
+      const deckInd = indFilter !== 'all' ? indFilter : (STATE.company !== 'manufacturing-group' ? liveInd : null);
+      const deckHubs = (!q && deckInd) ? (quickHubsByInd[deckInd] || null) : null;
       if (deckHubs && deckHubs.length) {
-        const grp = allowedIndGroups.find(g => g.id === indFilter);
-        const targetKey = indFilter === 'Manufacturing'
+        const grp = allowedIndGroups.find(g => g.id === deckInd);
+        const targetKey = deckInd === 'Manufacturing'
           ? (allowedCos.includes('manufacturing-group') ? 'manufacturing-group' : (grp && grp.permittedCos[0] ? grp.permittedCos[0].key : 'wtc'))
-          : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${indFilter}`);
+          : (grp && grp.permittedCos.length === 1 ? grp.permittedCos[0].key : `industry:${deckInd}`);
         quickDeckEl.hidden = false;
         quickDeckEl.innerHTML = `
-          <div class="ep-co-quick-title">Jump Directly to ${esc(indFilter)} Hubs</div>
+          <div class="ep-co-quick-title">Jump Directly to ${esc(deckInd)} Hubs</div>
           <div class="ep-co-quick-chips">
             ${deckHubs.map(h => `<button type="button" class="ep-co-quick-chip" data-ep-quick-view="${esc(h.view)}" data-ep-quick-co="${esc(targetKey)}">${esc(h.label)}</button>`).join('')}
           </div>
@@ -101267,7 +101341,7 @@
             ev.stopPropagation();
             const qView = chip.getAttribute('data-ep-quick-view') || 'overview';
             const qCo = chip.getAttribute('data-ep-quick-co') || STATE.company;
-            if (getActiveIndustry(STATE.company) !== indFilter) {
+            if (getActiveIndustry(STATE.company) !== deckInd) {
               selectCompanyScope(qCo, true);
             } else {
               switchEl.classList.remove('open');
@@ -101493,7 +101567,12 @@
     const activeIndNow = getActiveIndustry(STATE.company);
     let compatViewNow = resolveIndustryCompatibleView(STATE.view, activeIndNow);
     if (!canViewView(compatViewNow, user)) {
-      compatViewNow = resolveIndustryCompatibleView(defaultViewFor(user), activeIndNow);
+      const curHubNow = VIEW_TO_HUB[compatViewNow];
+      if (curHubNow && canViewHub(curHubNow, user)) {
+        compatViewNow = resolveHubView(curHubNow, user);
+      } else {
+        compatViewNow = resolveIndustryCompatibleView(defaultViewFor(user), activeIndNow);
+      }
     }
     if (compatViewNow !== STATE.view) {
       STATE.view = compatViewNow;
@@ -119640,7 +119719,16 @@
     if (view === 'payroll_analytics') view = 'payroll';
     if (view === 'jv') view = 'raw_jv';
     if (!VIEW_TITLES[view]) view = 'overview';
-    if (!canViewView(view)) { toast('Your seat has no access to that module', 'err'); view = defaultViewFor(); }
+    view = resolveIndustryCompatibleView(view, getActiveIndustry(STATE.company));
+    if (!canViewView(view)) {
+      const targetHub = VIEW_TO_HUB[view];
+      if (targetHub && canViewHub(targetHub)) {
+        view = resolveHubView(targetHub);
+      } else {
+        toast('Your seat has no access to that module', 'err');
+        view = resolveIndustryCompatibleView(defaultViewFor(), getActiveIndustry(STATE.company));
+      }
+    }
     if (STATE.kioskLocked && view !== 'kiosks') {
       toast('🔒 Kiosk Shell is locked — unlock with Admin PIN (2401) first', 'warn');
       view = 'kiosks';
@@ -119651,7 +119739,6 @@
     if (view !== 'kiosks' && KIOSK_ATT_STATE.camActive) {
       stopKioskAttCamera();
     }
-    view = resolveIndustryCompatibleView(view, getActiveIndustry(STATE.company));
     STATE.view = view;
     if (UNIV_VIEW_TO_TABLE_KEY[view]) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[view];
@@ -121277,6 +121364,7 @@
       defaultViewFor: u => defaultViewFor(u || activeUser()),
       getEffectiveHubPagePolicy: u => getEffectiveHubPagePolicy(u || activeUser()),
       getEffectivePermissions: u => getEffectivePermissions(u || activeUser()),
+      getState: () => STATE,
       selectSeatForEdit: (id, opts) => selectSeatForEdit(id, opts)
     };
 
