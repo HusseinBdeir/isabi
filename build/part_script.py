@@ -1823,13 +1823,13 @@ JS = r"""
         </div>
       `;
     } else if (state.sboxNav === 'Purchases & Stock') {
-      pageViewTitle = 'Procurement, 3-Leg Landed Cost & Stock Ledger';
+      pageViewTitle = 'Procurement, Three-Way Landed Cost & Stock Ledger';
       kpisHtml = renderKpiCards([
         { k: 'Period Purchases', v: +(baseRevK * 0.56).toFixed(1), unit: 'k', d: '3-way matched to intake', cls: 'good' },
         { k: 'Stock & Silo Valuation', v: +(baseCashK * 1.15).toFixed(1), unit: 'k', d: 'FIFO & landed cost verified', cls: '' },
         { k: 'Supplier Payables (AP)', v: +(baseArK * 0.88).toFixed(1), unit: 'k', d: 'Reconciled to vendor SOA', cls: '' },
         { k: 'Price-Creep Alerts', v: '0', unit: ' Unapproved', d: 'Form tolerance lock active', cls: 'good', fixed: true },
-        { k: '3-Leg Cost Match', v: '100', unit: '%', d: 'PO, GRN & Bill tied', cls: 'good', books: true, fixed: true }
+        { k: 'Three-Way Cost Match', v: '100', unit: '%', d: 'PO, GRN & Bill tied', cls: 'good', books: true, fixed: true }
       ]);
       row2InnerHtml = `
         <div class="panel panel-focus">
@@ -1850,7 +1850,7 @@ JS = r"""
         </div>
         <div class="panel">
           <div class="ph">
-            <h3>${ICONS.scale} 3-Leg Landed Cost &amp; Supplier Intake Pipeline</h3>
+            <h3>${ICONS.scale} Three-Way Landed Cost &amp; Supplier Intake Pipeline</h3>
             <span style="font-size:11px;color:var(--m-muted)">PO · Intake · Vendor Bill</span>
           </div>
           <table class="m-grid">

@@ -17502,6 +17502,10 @@
             try { window.MFG_I18N.translateDom(b); } catch (_) {}
           });
         }
+        _chatState.payablesDraftLang = curLang;
+        if (_chatState.payablesOptimizerOpen) {
+          openPayablesOptimizerStudio(_chatState.payablesOptimizerAnchor, { source: _chatState.payablesOptimizerSource });
+        }
         _chatState.collectionDraftLang = curLang;
         if (_chatState.collectionForecastOpen) {
           openCollectionForecastStudio(_chatState.collectionForecastAnchor, { source: _chatState.collectionForecastSource });
