@@ -57,6 +57,37 @@ const CR_KEY_TO_TABLE = {
   salaries: 'salary_payments'
 };
 
+// Till close rows that the gate till endpoint totals from the tills' own sales (kiosk_verify.js, bucket
+// hsp_pos, ids POS-<SITE>-<yyyymmdd>-<6 hex>) are owned by the server. A copy held by a Command Center
+// client is never written back over them, whatever its rev: the next till batch would only re-total a
+// row the client had changed, and a stale copy could roll the totals back.
+export function isServerOwnedCustomRow(bucket, rowId) {
+  return bucket === 'hsp_pos' && /^POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(rowId || ''));
+}
+
+// Row edits and workflow patches are keyed "<prefix>::<bucket>::<row id>" (or by the row id alone). One that
+// targets a server-owned till close row is not stored either, so it cannot restate the till's totals.
+export function isServerOwnedRowEditKey(editKey) {
+  return /(^|::)POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
+}
+
+// Removes every client copy of a server-owned row from a store document before it is stored or mirrored,
+// so one client's copy never reaches the other clients through the shared store.
+export function stripServerOwnedCustomRows(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const icr = doc.industryCustomRows;
+  if (icr && typeof icr === 'object' && Array.isArray(icr.hsp_pos)) {
+    icr.hsp_pos = icr.hsp_pos.filter(r => !(r && isServerOwnedCustomRow('hsp_pos', String(r.id || r.code || '').trim())));
+  }
+  const ire = doc.industryRowEdits;
+  if (ire && typeof ire === 'object') {
+    for (const ek of Object.keys(ire)) {
+      if (isServerOwnedRowEditKey(ek)) delete ire[ek];
+    }
+  }
+  return doc;
+}
+
 // Canonical entity display/storage names across all 6 ISABI industries (14 BHFIRMS entities)
 const CANON_COMPANY_MAP = {
   wtc: 'WTC',
@@ -1671,6 +1702,7 @@ export async function handleIndustryDomainStore(request, env, session, body) {
   const editsMap = (body && body.industryRowEdits && typeof body.industryRowEdits === 'object') ? body.industryRowEdits : {};
   let savedRows = 0;
   let savedEdits = 0;
+  let ignoredServerOwned = 0;   // rows and patches aimed at server-totalled till close rows
 
   for (const [bucket, arr] of Object.entries(customMap)) {
     if (!bucket || !Array.isArray(arr)) continue;
@@ -1678,6 +1710,7 @@ export async function handleIndustryDomainStore(request, env, session, body) {
       if (!r || typeof r !== 'object') continue;
       const rid = String(r.id || r.code || '').trim();
       if (!rid) continue;
+      if (isServerOwnedCustomRow(bucket, rid)) { ignoredServerOwned++; continue; }
       const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
       if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
       const incRev = Number(r.rev || 1);
@@ -1702,6 +1735,7 @@ export async function handleIndustryDomainStore(request, env, session, body) {
 
   for (const [ek, ev] of Object.entries(editsMap)) {
     if (!ek || !ev || typeof ev !== 'object') continue;
+    if (isServerOwnedRowEditKey(ek)) { ignoredServerOwned++; continue; }
     const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
     if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) continue;
     const incRev = Number(ev.rev || 1);
@@ -1724,7 +1758,7 @@ export async function handleIndustryDomainStore(request, env, session, body) {
     ).bind(ek, incRev, incVoid, incTs, JSON.stringify(ev)).run();
     savedEdits++;
   }
-  return jsonResponse({ ok: true, rows: savedRows, edits: savedEdits });
+  return jsonResponse({ ok: true, rows: savedRows, edits: savedEdits, ignoredServerOwned });
 }
 
 function buildBoundRecordUpsertStmt(db, canonTable, cols, rawRec) {
@@ -1951,6 +1985,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         if (!r || typeof r !== 'object') continue;
         const rid = String(r.id || r.code || '').trim();
         if (!rid || pSigs.get(rid) === stableRowSig(r)) continue;
+        if (isServerOwnedCustomRow(bk, rid)) continue;
         const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
         if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
         subStmts.push(
@@ -1965,6 +2000,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
     const curIre = (storePayload.industryRowEdits && typeof storePayload.industryRowEdits === 'object') ? storePayload.industryRowEdits : {};
     for (const [ek, ev] of Object.entries(curIre)) {
       if (!ek || !ev || typeof ev !== 'object') continue;
+      if (isServerOwnedRowEditKey(ek)) continue;
       if (prevIre[ek] && stableRowSig(prevIre[ek]) === stableRowSig(ev)) continue;
       const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
       if (restrictRls && (!edCo || !canAccessCompany(session, edCo))) continue;
@@ -2923,6 +2959,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
       await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
     }
+    if (pKey === 'mfg_web_store') stripServerOwnedCustomRows(incomingDoc);
     const newTs = String(incomingDoc.updatedAt || new Date().toISOString());
     incomingDoc.updatedAt = newTs;
 

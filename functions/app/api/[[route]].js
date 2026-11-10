@@ -31,6 +31,7 @@ import { handleTelematics } from '../../_lib/telematics.js';
 import { handleKioskOptions, handleKioskVerify } from '../../_lib/kiosk_verify.js';
 import {
   applyEdgeCors,
+  canAccessCompany,
   checkD1RateLimit,
   extractRequestSession,
   hashClientIp,
@@ -100,7 +101,7 @@ async function routeAppApi(context) {
     return handleUsersGet(request, env, session);
   }
   if (subPath === '/kiosk/verify' && request.method === 'POST') {
-    return handleKioskVerify(request, env, session, body, { isOwnerOrFullGroupSession });
+    return handleKioskVerify(request, env, session, body, { isOwnerOrFullGroupSession, canAccessCompany });
   }
 
   const isDemoReq = request.headers.get('X-ISABI-Demo') === '1';

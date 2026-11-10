@@ -101,6 +101,28 @@ async function ensureKioskSchema(db) {
       )`
     ),
     db.prepare(
+      `CREATE TABLE IF NOT EXISTS kiosk_pos_sales (
+        id TEXT PRIMARY KEY,
+        site_key TEXT DEFAULT '',
+        day TEXT DEFAULT '',
+        num TEXT DEFAULT '',
+        user_id TEXT DEFAULT '',
+        user_name TEXT DEFAULT '',
+        total_usd REAL DEFAULT 0,
+        total_lbp REAL DEFAULT 0,
+        net_usd REAL DEFAULT 0,
+        net_lbp REAL DEFAULT 0,
+        rate REAL DEFAULT 0,
+        voided INTEGER DEFAULT 0,
+        rev INTEGER DEFAULT 0,
+        payload_json TEXT DEFAULT '{}',
+        updated_at TEXT DEFAULT ''
+      )`
+    ),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_kiosk_pos_sales_site_day ON kiosk_pos_sales (site_key, day, user_id)'
+    ),
+    db.prepare(
       `CREATE TABLE IF NOT EXISTS kiosk_rate_limits (
         bucket_key TEXT PRIMARY KEY,
         fails INTEGER DEFAULT 0,
@@ -204,12 +226,263 @@ async function authorizeKioskRequest(request, env, body, session, isOwnerFn) {
         if (entry.site_key && entry.site_key !== '*' && entry.site_key !== reqSite) {
           return { ok: false, status: 403, error: 'Kiosk station key is bound to a different site.' };
         }
+        // A key can be limited to one kind of tablet, so a till key cannot pull the attendance roster
+        // and an attendance key cannot plant a till account.
+        const scope = String(entry.scope || '').toLowerCase();
+        const opName = String((body && body.op) || '').trim().toLowerCase();
+        if (scope === 'attendance' && !ATTENDANCE_OPS.has(opName)) {
+          return { ok: false, status: 403, error: 'This station key is for an attendance tablet.' };
+        }
+        if (scope === 'pos' && ATTENDANCE_OPS.has(opName)) {
+          return { ok: false, status: 403, error: 'This station key is for a till.' };
+        }
         return { ok: true, mode: 'station_key', isOwner: false, siteBound: entry.site_key || '*' };
       }
     }
   }
 
   return { ok: false, status: 401, error: 'Invalid kiosk station key.' };
+}
+
+// ---- Resort gate till (bhfirms\pos) sales intake ----
+// Each sale is stored once in kiosk_pos_sales (keyed on the till's own sale id). After every batch the
+// affected cashier-days are re-totalled from that table and written as one row per resort, day and
+// cashier into the Command Center's POS till close register (industry_custom_rows, bucket hsp_pos).
+// All arithmetic here is plain sums rounded to cents; nothing is estimated.
+
+const POS_SITE_COMPANY = {
+  launa: 'La Una',
+  blanca: 'Blanca',
+  palms: 'Palms',
+  voile: 'Voile',
+  platinum: 'Platinum'
+};
+// Site code -> company in the Command Center, for every tablet site. The company is always taken from
+// the site a request is authorised for, never from a field the tablet sends.
+const KIOSK_SITE_COMPANY = Object.assign({}, POS_SITE_COMPANY, {
+  wtc: 'WTC',
+  bbco: 'BBConstruction',
+  lions: 'Lions Transport',
+  korri: 'Korri Auto',
+  shacman: 'Shacman',
+  props: 'Properties'
+});
+// Attendance staff and till cashiers at the same site are separate people lists with separate lockouts:
+// attendance rows live under "<site>__att" in kiosk_biometrics and in the rate-limit buckets.
+// Own-property lookups only: a site named "constructor" or "__proto__" is not a company.
+function posCompanyOf(siteKey) {
+  return Object.prototype.hasOwnProperty.call(POS_SITE_COMPANY, siteKey) ? POS_SITE_COMPANY[siteKey] : '';
+}
+function siteCompanyOf(siteKey) {
+  return Object.prototype.hasOwnProperty.call(KIOSK_SITE_COMPANY, siteKey) ? KIOSK_SITE_COMPANY[siteKey] : '';
+}
+// The staff register of a site's company, split into people who are on (active, not voided) and ids
+// that are switched off there. Someone switched off in the register is off at the door too, for the
+// roster and for server-side matching alike. The register is optional: without it both lists are empty.
+async function readStaffRegister(db, company) {
+  const on = [];
+  const offIds = new Set();
+  if (!company) return { on, offIds };
+  try {
+    const res = await db.prepare('SELECT id, name, role, status, voided FROM staff_members WHERE company = ?1 LIMIT 4000').bind(company).all();
+    for (const sm of (res.results || [])) {
+      const sid = String(sm.id || '').trim();
+      const status = String(sm.status === null || sm.status === undefined ? '' : sm.status).trim().toLowerCase();
+      if (Number(sm.voided) === 0 && (status === 'active' || status === '')) on.push({ id: sid, name: sm.name, role: sm.role });
+      else offIds.add(sid);
+    }
+  } catch (_) { /* no staff register in this database */ }
+  return { on, offIds };
+}
+const ATTENDANCE_OPS = new Set(['sync', 'push', 'roster', 'verify']);
+const ATTENDANCE_SUFFIX = '__att';
+// Ids arrive from tablets and are echoed back into other tablets' pages, so only plain id characters pass.
+const SAFE_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+const POS_MAX_SALES_PER_REQUEST = 100;
+const POS_MAX_SALE_JSON_BYTES = 20000;
+
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function posNum(v, min, max) {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < min || n > max) return null;
+  return n;
+}
+
+function validatePosSale(s, siteKey, maxDay, minDay) {
+  if (!s || typeof s !== 'object') return { ok: false, reason: 'not-an-object' };
+  const id = String(s.id || '').trim();
+  if (id.length < 8 || id.length > 80 || !/^[A-Za-z0-9_.:-]+$/.test(id)) return { ok: false, reason: 'bad-id' };
+  const day = String(s.day || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (maxDay && day > maxDay) || (minDay && day < minDay)) return { ok: false, id, reason: 'bad-day' };
+  if (s.resort !== undefined && s.resort !== null && normSiteKey(s.resort) !== siteKey) {
+    return { ok: false, id, reason: 'other-site' };
+  }
+  const totalUsd = posNum(s.totalUSD, 0, 1e6);
+  const totalLbp = posNum(s.totalLBP, 0, 1e12);
+  const netUsd = posNum(s.netUSD, -1e6, 1e6);
+  const netLbp = posNum(s.netLBP, -1e12, 1e12);
+  const rate = posNum(s.rate, 1, 1e8);
+  if (totalUsd === null || totalLbp === null || netUsd === null || netLbp === null || rate === null) {
+    return { ok: false, id, reason: 'bad-amount' };
+  }
+  if (s.lines !== undefined && (!Array.isArray(s.lines) || s.lines.length > 100)) {
+    return { ok: false, id, reason: 'bad-lines' };
+  }
+  const json = JSON.stringify(s);
+  if (json.length > POS_MAX_SALE_JSON_BYTES) return { ok: false, id, reason: 'too-large' };
+  return {
+    ok: true,
+    row: {
+      id,
+      day,
+      num: String(s.num || '').slice(0, 60),
+      userId: String(s.userId || 'anon').trim().slice(0, 80) || 'anon',
+      userName: String(s.userName || '').slice(0, 120),
+      totalUsd, totalLbp, netUsd, netLbp, rate,
+      voided: s.voided ? 1 : 0,
+      rev: Math.max(0, Math.floor(posNum(s.rev, 0, 1e9) || 0)),
+      json
+    }
+  };
+}
+
+// Re-total one cashier-day from kiosk_pos_sales and upsert its till close row.
+async function mirrorPosTillClose(db, siteKey, day, userId, nowIso) {
+  const company = posCompanyOf(siteKey);
+  if (!company) return false;
+  const res = await db.prepare(
+    `SELECT user_name, total_usd, net_usd, net_lbp, rate FROM kiosk_pos_sales
+     WHERE site_key = ?1 AND day = ?2 AND user_id = ?3 AND voided = 0 ORDER BY updated_at, id`
+  ).bind(siteKey, day, userId).all();
+  const rows = res.results || [];
+  let billed = 0;
+  let collectedUsd = 0;
+  let collectedLbp = 0;
+  let collectedTotal = 0;
+  let cashier = '';
+  for (const r of rows) {
+    const rate = Number(r.rate) || 0;
+    billed += Number(r.total_usd) || 0;
+    collectedUsd += Number(r.net_usd) || 0;
+    collectedLbp += Number(r.net_lbp) || 0;
+    collectedTotal += (Number(r.net_usd) || 0) + (rate > 0 ? (Number(r.net_lbp) || 0) / rate : 0);
+    if (r.user_name) cashier = String(r.user_name);
+  }
+  billed = round2(billed);
+  collectedTotal = round2(collectedTotal);
+  const variance = round2(collectedTotal - billed);
+  const userTag = (await sha256Hex(`${siteKey}:${userId}`)).slice(0, 6).toUpperCase();
+  const rowId = `POS-${siteKey.toUpperCase()}-${day.replace(/-/g, '')}-${userTag}`;
+  const ex = await db.prepare(
+    'SELECT rev, voided, payload_json FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2'
+  ).bind('hsp_pos', rowId).first();
+  const exObj = ex ? safeParseJson(ex.payload_json, {}) : {};
+  if (!rows.length && !ex) return false;
+  // A cashier-day whose sales were all voided keeps its row with zero totals. It is never retired as a
+  // tombstone: a tombstone held by a Command Center client could later hide the row when sales resume.
+  const voided = false;
+  const body = {
+    id: rowId,
+    date: day,
+    company,
+    terminal: `${company} Gate Till`,
+    shift: 'Full Day',
+    cashier: cashier || exObj.cashier || 'Cashier',
+    bills_count: rows.length,
+    pos_billed_ttc: billed,
+    cash_usd: collectedTotal,
+    card_whish_usd: 0,
+    comp_usd: 0,
+    variance_usd: variance,
+    status: Math.abs(variance) <= 1 ? 'Balanced' : 'Close Variance',
+    notes: rows.length
+      ? `Gate till, ${rows.length} sales. Collected USD ${round2(collectedUsd).toFixed(2)} and LBP ${Math.round(collectedLbp)}.`
+      : 'Gate till, 0 sales. Every sale of this cashier on this day was voided.',
+    source: 'pos_till'
+  };
+  const same = ex && Boolean(Number(ex.voided)) === voided &&
+    ['cashier', 'bills_count', 'pos_billed_ttc', 'cash_usd', 'variance_usd', 'status', 'notes']
+      .every(k => exObj[k] === body[k]);
+  if (same) return false;
+  const rev = (ex ? Number(ex.rev || 1) : 0) + 1;
+  const payload = Object.assign({}, body, {
+    _customBucket: 'hsp_pos',
+    _createdAt: exObj._createdAt || nowIso,
+    voided,
+    rev,
+    updated_at: nowIso,
+    updatedAt: nowIso
+  });
+  await db.prepare(
+    'INSERT OR REPLACE INTO industry_custom_rows (bucket, row_id, company, rev, voided, updated_at, payload_json) VALUES (?1,?2,?3,?4,?5,?6,?7)'
+  ).bind('hsp_pos', rowId, company, rev, voided ? 1 : 0, nowIso, JSON.stringify(payload)).run();
+  return true;
+}
+
+async function handlePosSales(env, body, siteKey, nowIso) {
+  const incoming = Array.isArray(body && body.sales) ? body.sales : null;
+  if (!incoming) return kioskJson({ ok: false, error: 'sales[] is required.' }, 400);
+  if (incoming.length > POS_MAX_SALES_PER_REQUEST) {
+    return kioskJson({ ok: false, error: `Send at most ${POS_MAX_SALES_PER_REQUEST} sales per request.` }, 413);
+  }
+  // A till's clock can run a little ahead; anything dated more than two days from now is a bad clock.
+  // A till that was offline for a season may still send its backlog; anything older than 400 days is not a backlog.
+  const maxDay = new Date(Date.parse(nowIso) + 2 * 86400000).toISOString().slice(0, 10);
+  const minDay = new Date(Date.parse(nowIso) - 400 * 86400000).toISOString().slice(0, 10);
+  const accepted = [];
+  const rejected = [];
+  const touched = new Map();
+  for (const s of incoming) {
+    const v = validatePosSale(s, siteKey, maxDay, minDay);
+    if (!v.ok) {
+      rejected.push({ id: v.id || String((s && s.id) || '').slice(0, 80), reason: v.reason });
+      continue;
+    }
+    const r = v.row;
+    const ex = await env.DB.prepare(
+      'SELECT site_key, day, user_id, rev, voided FROM kiosk_pos_sales WHERE id = ?1'
+    ).bind(r.id).first();
+    if (ex && ex.site_key !== siteKey) {
+      rejected.push({ id: r.id, reason: 'other-site' });
+      continue;
+    }
+    if (!ex || r.rev >= Number(ex.rev || 0)) {
+      // A void is final on the till, so it is never undone by a later or replayed copy.
+      const voided = (ex && Number(ex.voided)) || r.voided ? 1 : 0;
+      await env.DB.prepare(
+        `INSERT OR REPLACE INTO kiosk_pos_sales
+         (id, site_key, day, num, user_id, user_name, total_usd, total_lbp, net_usd, net_lbp, rate, voided, rev, payload_json, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)`
+      ).bind(
+        r.id, siteKey, r.day, r.num, r.userId, r.userName,
+        r.totalUsd, r.totalLbp, r.netUsd, r.netLbp, r.rate, voided, r.rev, r.json, nowIso
+      ).run();
+      touched.set(`${r.day}|${r.userId}`, { day: r.day, userId: r.userId });
+      if (ex && (ex.day !== r.day || ex.user_id !== r.userId)) {
+        touched.set(`${ex.day}|${ex.user_id}`, { day: ex.day, userId: ex.user_id });
+      }
+    }
+    accepted.push(r.id);
+  }
+  let mirrored = 0;
+  let mirrorError = '';
+  for (const t of touched.values()) {
+    try {
+      if (await mirrorPosTillClose(env.DB, siteKey, t.day, t.userId, nowIso)) mirrored++;
+    } catch (e) {
+      mirrorError = String((e && e.message) || e).slice(0, 160);
+    }
+  }
+  if (mirrorError) {
+    // The sales are stored, but the till must send them again so the register is re-totalled: a replay
+    // changes nothing in kiosk_pos_sales and touches the same cashier-days.
+    return kioskJson({ ok: false, error: 'The till close register could not be updated. The till will retry.', mirrorError, rejected }, 503);
+  }
+  return kioskJson({ ok: true, sales: accepted, rejected, mirrored, company: posCompanyOf(siteKey) });
 }
 
 function match1NDescriptors(probe, rosterRows, opts = {}) {
@@ -262,7 +535,12 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
   const siteKey = normSiteKey(body && (body.site || body.resort || body.station || 'default_kiosk'));
   const clientIp = extractClientIp(request);
   const ipHash = (await sha256Hex(clientIp)).slice(0, 24);
-  const ipBucket = `ip:${ipHash}:${siteKey}`;
+  if (siteKey.endsWith(ATTENDANCE_SUFFIX)) {
+    return kioskJson({ ok: false, error: 'Unknown site.' }, 400);
+  }
+  const isAttendanceOp = ATTENDANCE_OPS.has(op);
+  const bioSite = isAttendanceOp ? `${siteKey}${ATTENDANCE_SUFFIX}` : siteKey;
+  const ipBucket = `ip:${ipHash}:${bioSite}`;
 
   // Global per-IP+site sliding-window brute-force guard
   const ipLock = await checkKioskLock(env.DB, ipBucket, nowMs);
@@ -282,6 +560,15 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     return kioskJson({ ok: false, error: auth.error }, auth.status || 401);
   }
 
+  // A signed-in seat that is not an Owner reaches a site only if it has access to that site's company.
+  if (auth.mode === 'session' && !auth.isOwner) {
+    const seatCompany = siteCompanyOf(siteKey);
+    const canAccess = typeof helpers.canAccessCompany === 'function' ? helpers.canAccessCompany : null;
+    if (!seatCompany || !canAccess || !canAccess(session, seatCompany)) {
+      return kioskJson({ ok: false, error: 'This seat has no access to that site.' }, 403);
+    }
+  }
+
   // Owner-only station key provisioning / rotation
   if (op === 'provision_station_key') {
     if (!auth.isOwner) {
@@ -290,6 +577,10 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     const rawKey = String((body && body.rawKey) || '').trim();
     if (rawKey.length < 12) {
       return kioskJson({ ok: false, error: 'Station key must be at least 12 characters.' }, 400);
+    }
+    const scopeIn = String((body && body.scope) || '').trim().toLowerCase();
+    if (scopeIn && scopeIn !== 'pos' && scopeIn !== 'attendance') {
+      return kioskJson({ ok: false, error: 'scope must be pos, attendance or empty.' }, 400);
     }
     const targetSite = (body && body.site === '*') ? '*' : siteKey;
     const keyHash = await sha256Hex(rawKey);
@@ -301,13 +592,25 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
       label: String(body.label || targetSite).slice(0, 80),
       site_key: targetSite,
       key_hash: keyHash,
+      scope: scopeIn,
       created_at: nowIso
     };
     keys.push(entry);
     await env.DB.prepare(
       'INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES (?1, ?2, ?3, ?4, 1)'
     ).bind('kiosk_station_keys', JSON.stringify({ keys }), nowIso, String((session && session.email) || 'owner')).run();
-    return kioskJson({ ok: true, id: entry.id, site_key: targetSite, label: entry.label });
+    return kioskJson({ ok: true, id: entry.id, site_key: targetSite, label: entry.label, scope: entry.scope });
+  }
+
+  // ---- 0. Resort gate till sales intake (`pos_sales`) ----
+  if (op === 'pos_sales') {
+    if (auth.mode === 'session' && !auth.isOwner) {
+      return kioskJson({ ok: false, error: 'Kiosk station key required to post till sales.' }, 403);
+    }
+    if (!(body && (body.site || body.resort || body.station))) {
+      return kioskJson({ ok: false, error: 'resort is required.' }, 400);
+    }
+    return handlePosSales(env, body, siteKey, nowIso);
   }
 
   // ---- 1. POS Cashier Roster Sync (`sync_users`) ----
@@ -316,7 +619,8 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     let upserted = 0;
     for (const u of incoming) {
       if (!u || !u.id) continue;
-      const pid = String(u.id).trim().slice(0, 80);
+      const pid = String(u.id).trim();
+      if (!SAFE_ID_RE.test(pid)) continue;
       const ex = await env.DB.prepare(
         'SELECT pinhash, pin_salt, face_samples FROM kiosk_biometrics WHERE site_key = ?1 AND person_id = ?2'
       ).bind(siteKey, pid).first();
@@ -365,7 +669,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     const samples = Array.isArray(body && (body.descriptors || body.faces || body.samples))
       ? (body.descriptors || body.faces || body.samples).filter(isValidVec128)
       : [];
-    if (!pid || samples.length < 3) {
+    if (!pid || !SAFE_ID_RE.test(pid) || samples.length < 3) {
       return kioskJson({ ok: false, error: 'User id and 3 valid 128-d pose samples are required.' }, 400);
     }
     const peersRes = await env.DB.prepare(
@@ -520,12 +824,15 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     const staffIn = Array.isArray(body && body.staff) ? body.staff : [];
     const faces = Array.isArray(body && body.faces) ? body.faces : [];
     const syncedPunches = [];
+    const rejectedPunches = [];
     const syncedFaces = [];
 
     for (const p of punches) {
       if (!p || !p.id) continue;
-      const pid = String(p.id).trim().slice(0, 80);
-      const ex = await env.DB.prepare('SELECT rev FROM kiosk_punches_ext WHERE id = ?1').bind(pid).first();
+      const pid = String(p.id).trim();
+      if (!SAFE_ID_RE.test(pid)) continue;
+      const ex = await env.DB.prepare('SELECT rev, site_key FROM kiosk_punches_ext WHERE id = ?1').bind(pid).first();
+      if (ex && ex.site_key !== siteKey) { rejectedPunches.push(pid); continue; }   // a punch id belongs to the site that first sent it
       const inRev = Number(p.rev || 0);
       if (!ex || inRev >= Number(ex.rev || 0)) {
         await env.DB.prepare(
@@ -554,8 +861,8 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     const staffMetaById = new Map();
     for (const st of staffIn) {
       if (!st || !st.id) continue;
-      const sid = String(st.id).trim().slice(0, 80);
-      if (sid) staffMetaById.set(sid, st);
+      const sid = String(st.id).trim();
+      if (SAFE_ID_RE.test(sid)) staffMetaById.set(sid, st);
     }
     const byStaff = new Map();
     for (const sid of staffMetaById.keys()) {
@@ -563,13 +870,14 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     }
     for (const f of faces) {
       if (!f || !f.staffId || !f.id) continue;
-      const sid = String(f.staffId).trim().slice(0, 80);
+      const sid = String(f.staffId).trim();
+      if (!SAFE_ID_RE.test(sid) || !SAFE_ID_RE.test(String(f.id))) continue;
       if (!byStaff.has(sid)) byStaff.set(sid, []);
       byStaff.get(sid).push(f);
       syncedFaces.push(String(f.id));
     }
     for (const [sid, list] of byStaff.entries()) {
-      const ex = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1 AND person_id = ?2').bind(siteKey, sid).first();
+      const ex = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1 AND person_id = ?2').bind(bioSite, sid).first();
       const meta = staffMetaById.get(sid) || {};
       const exSamples = ex ? safeParseJson(ex.face_samples, []).filter(isValidVec128) : [];
       let pinHash = String(meta.pinhash || (ex ? ex.pinhash : '') || '').trim().toLowerCase();
@@ -598,7 +906,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
          (site_key, person_id, name, official_name, role, dept, active, pinhash, pin_salt, face_samples, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
       ).bind(
-        siteKey,
+        bioSite,
         sid,
         staffName || sid,
         officialName,
@@ -612,17 +920,40 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
       ).run();
     }
 
-    return kioskJson({ ok: true, punches: syncedPunches, faces: syncedFaces, syncedPunches, syncedFaces, punchesAccepted: syncedPunches, facesAccepted: syncedFaces });
+    return kioskJson({ ok: true, punches: syncedPunches, faces: syncedFaces, staff: Array.from(staffMetaById.keys()), rejectedPunches, syncedPunches, syncedFaces, punchesAccepted: syncedPunches, facesAccepted: syncedFaces });
   }
 
   // ---- 7. Attendance Roster Pull (`roster`, supporting `redact: true` & `restore: true`) ----
   if (op === 'roster') {
     const redact = Boolean(body && (body.redact || body.redacted));
     const includeFaces = Boolean(!redact || (body && (body.restore || body.includeFaces || body.include_faces || redact)));
-    const rowsRes = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1').bind(siteKey).all();
+    const rowsRes = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1').bind(bioSite).all();
     const staff = [];
     const facesOut = [];
-    for (const r of (rowsRes.results || [])) {
+    const kioskRows = rowsRes.results || [];
+    // Staff registered in the Command Center for this site's company join the roster too, so they can
+    // be enrolled at the door without being typed again. Ids are the staff register's own ids.
+    // The company comes from the site this request is authorised for, never from the request body.
+    const siteBu = siteCompanyOf(siteKey);
+    // People voided or made inactive in the staff register drop off the roster even if they were enrolled at the door.
+    const register = await readStaffRegister(env.DB, siteBu);
+    const offIds = register.offIds;
+    {
+      {
+        const known = new Set(kioskRows.map(r => r.person_id));
+        for (const sm of register.on) {
+          const sid = sm.id;
+          if (!SAFE_ID_RE.test(sid) || known.has(sid)) continue;
+          known.add(sid);
+          staff.push({
+            id: sid, name: sm.name || sid, officialName: '', role: sm.role || '', dept: '', active: true,
+            hasPin: false, has_pin: false, has_face: false, faceSamples: 0, serverSamples: 0
+          });
+        }
+      }
+    }
+    for (const r of kioskRows) {
+      if (Number(r.active) === 0 || offIds.has(r.person_id)) continue;   // switched off: not on the roster
       const vecs = safeParseJson(r.face_samples, []).filter(isValidVec128);
       const stObj = {
         id: r.person_id,
@@ -643,7 +974,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
         if (redact) {
           vecs.forEach((_, idx) => {
             facesOut.push({
-              id: `${r.person_id}-s${idx + 1}`,
+              id: `${r.person_id}:${idx + 1}`,
               staffId: r.person_id,
               sample: idx + 1,
               redacted: true,
@@ -654,7 +985,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
           });
           if (!vecs.length && r.pinhash) {
             facesOut.push({
-              id: `pin-${r.person_id}`,
+              id: `${r.person_id}:0`,
               staffId: r.person_id,
               sample: 0,
               redacted: true,
@@ -666,7 +997,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
         } else {
           vecs.forEach((v, idx) => {
             facesOut.push({
-              id: `${r.person_id}-s${idx + 1}`,
+              id: `${r.person_id}:${idx + 1}`,
               staffId: r.person_id,
               sample: idx + 1,
               descriptor: v,
@@ -675,7 +1006,7 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
           });
           if (!vecs.length && r.pinhash) {
             facesOut.push({
-              id: `pin-${r.person_id}`,
+              id: `${r.person_id}:0`,
               staffId: r.person_id,
               sample: 0,
               descriptor: [],
@@ -694,8 +1025,9 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
     if (method === 'capability_check') {
       return kioskJson({ ok: true, capability: 'verify', supported: true });
     }
-    const rowsRes = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1 AND active = 1').bind(siteKey).all();
-    const rows = rowsRes.results || [];
+    const rowsRes = await env.DB.prepare('SELECT * FROM kiosk_biometrics WHERE site_key = ?1 AND active = 1').bind(bioSite).all();
+    const offAtRegister = (await readStaffRegister(env.DB, siteCompanyOf(siteKey))).offIds;
+    const rows = (rowsRes.results || []).filter(r => !offAtRegister.has(r.person_id));
 
     if (method === 'pin') {
       const checkOnly = Boolean(body && body.checkOnly);
