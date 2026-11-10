@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  pin_code TEXT DEFAULT '1111',
+  pin_code TEXT DEFAULT '',
   role TEXT NOT NULL DEFAULT 'Entry',
   companies TEXT NOT NULL DEFAULT 'WTC',
   pbi_access TEXT DEFAULT 'full',

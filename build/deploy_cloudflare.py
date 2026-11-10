@@ -514,7 +514,39 @@ def configure_domain_and_dns(acct_id: str):
                 print("======================================================================")
 
 
+def warn_weak_seat_pins(env: dict):
+    """Read-only check after a deploy: name the live seats whose 4-digit PIN is a repeated pair (1212, 7777).
+
+    Every demo PIN the app has ever shipped has that shape, so a live seat that still matches is signing in
+    with a PIN anyone can read. The check returns seat ids only, never a PIN, and never fails the deploy.
+    """
+    sql = (
+        "SELECT id FROM users WHERE COALESCE(status,'Active') != 'Suspended' "
+        "AND LENGTH(pin_code) = 4 AND substr(pin_code,1,2) = substr(pin_code,3,2) ORDER BY id"
+    )
+    try:
+        r = run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--json", f"--command={sql}"], env, check=False)
+        rows = (json.loads(r.stdout)[0].get("results") or []) if r.returncode == 0 else None
+    except Exception:
+        rows = None
+    if rows is None:
+        print("Seat PIN check skipped (could not read the live users table).")
+    elif rows:
+        ids = ", ".join(str(x.get("id")) for x in rows)
+        print("=" * 70)
+        print(f"WARNING: {len(rows)} live seat(s) still use a repeated-pair PIN that matches the published demo PINs:")
+        print(f"  {ids}")
+        print("  Change each PIN in Users & Security, or suspend the seat.")
+        print("=" * 70)
+    else:
+        print("Seat PIN check: no live seat uses a repeated-pair PIN.")
+
+
 def main():
+    if "--check-seat-pins" in sys.argv:
+        env = build_env()
+        warn_weak_seat_pins(env)
+        return
     env = build_env()
     ok, acct_id = ensure_logged_in(env)
     if not ok:
@@ -526,6 +558,7 @@ def main():
     upload_secrets(env)
     seed_remote_d1(env)
     deploy_pages(env)
+    warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")
     print("Preview URL live immediately: https://isabi-systems.pages.dev/")

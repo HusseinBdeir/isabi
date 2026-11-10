@@ -790,6 +790,9 @@ def build_upsert_stmt(table: str, target_cols: list[str], row_dict: dict) -> str
         norm_row["company"] = canonicalize_company(norm_row["company"])
     if table in ("products", "sites", "equipment", "drivers") and norm_row.get("name") is None:
         norm_row["name"] = str(norm_row.get("id") or "")
+    if table == "users" and "pin_code" in col_set and norm_row.get("pin_code") is None:
+        # Always write the column: the live table still carries an old DEFAULT, and a seat with no PIN stays blank.
+        norm_row["pin_code"] = ""
     cols = []
     vals = []
     for k in target_cols:

@@ -2552,6 +2552,73 @@ finally:
         aud: [ownerAudits31.map(a => a.id), bbcAudits31.map(a => a.id)]
       }));
     }
+
+    // 32. No default PIN: a seat saved without a PIN cannot sign in with any PIN; blank and redacted saves keep the PIN on file;
+    //     the sync mirror stores no default either; a PIN-only lookup is not made ambiguous by seats that have no PIN.
+    const e32Seat = { id: 'u-edge32-nopin', email: 'edge32nopin@wtc-lb.com', full_name: 'Edge32 No PIN', role: 'Entry', companies: 'WTC', status: 'Active' };
+    const e32Hdr = { 'X-ISABI-Session': ownerToken };
+    const e32PinOnlyBefore = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true });
+    const e32Create = await httpReq('POST', '/app/api/users', { user: e32Seat }, e32Hdr);
+    const e32Default = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '1111', method: 'PIN' });
+    const e32Empty = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '', method: 'PIN' });
+    const e32SetPin = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_code: '640275' }) }, e32Hdr);
+    const e32Good = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
+    const e32BlankSave = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_code: '' }) }, e32Hdr);
+    const e32StillGood = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
+    const e32RedactedSave = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_redacted: true, pin_code: '111222' }) }, e32Hdr);
+    const e32AfterRedacted = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
+    const e32RedactedPinRefused = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '111222', method: 'PIN' });
+    const e32PinOnlyUnique = await httpReq('POST', '/app/api/auth/login', { pin: '640275', method: 'PIN' });
+
+    // Sync mirror: an Owner patch that carries a new seat with no pin_code must store no PIN for it
+    const e32Mirror = { id: 'u-edge32-mirror', email: 'edge32mirror@wtc-lb.com', full_name: 'Edge32 Mirror Seat', role: 'Entry', companies: 'WTC', status: 'Active' };
+    const e32Cur = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, e32Hdr);
+    const e32Doc = JSON.parse(JSON.stringify(e32Cur.json?.docs?.mfg_web_store || {}));
+    const e32UsersNow = await httpReq('GET', '/app/api/users', null, e32Hdr);
+    e32Doc.users = (e32UsersNow.json?.users || []).concat([e32Mirror]);
+    const e32PrevTs = Date.parse(String(e32Doc.updatedAt || '')) || 0;
+    e32Doc.updatedAt = new Date(Math.max(e32PrevTs, Date.now()) + 60000).toISOString();
+    const e32Patch = await httpReq('POST', '/app/api/sync', {
+      op: 'patch',
+      doc: 'mfg_web_store',
+      ifMatchUpdatedAt: String(e32Cur.json?.docs?.mfg_web_store?.updatedAt || ''),
+      awaitMirror: true,
+      patch: { mfg_web_store: e32Doc }
+    }, e32Hdr);
+    const e32UsersAfter = await httpReq('GET', '/app/api/users', null, e32Hdr);
+    const e32MirrorRow = (e32UsersAfter.json?.users || []).find(u => u && u.email === e32Mirror.email);
+    const e32MirrorDefault = await httpReq('POST', '/app/api/auth/login', { email: e32Mirror.email, pin: '1111', method: 'PIN' });
+    const e32PinOnlyAfter = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true });
+
+    const e32Denied = r => r.status === 401 && !(r.json && r.json.ok) && !(r.json && r.json.token);
+    if (
+      e32Create.status === 200 &&
+      e32Denied(e32Default) &&
+      e32Denied(e32Empty) &&
+      e32SetPin.status === 200 &&
+      e32Good.status === 200 && Boolean(e32Good.json?.token) &&
+      e32BlankSave.status === 200 &&
+      e32StillGood.status === 200 && Boolean(e32StillGood.json?.token) &&
+      e32RedactedSave.status === 200 &&
+      e32AfterRedacted.status === 200 && Boolean(e32AfterRedacted.json?.token) &&
+      e32Denied(e32RedactedPinRefused) &&
+      e32PinOnlyUnique.status === 200 && e32PinOnlyUnique.json?.user?.email === e32Seat.email &&
+      e32Patch.status === 200 &&
+      Boolean(e32MirrorRow) && !String(e32MirrorRow.pin_code || '').trim() &&
+      e32Denied(e32MirrorDefault) &&
+      e32PinOnlyAfter.status !== 409 && e32PinOnlyAfter.status === e32PinOnlyBefore.status
+    ) {
+      pass('edge-32-no-default-pin', 'No-PIN seat rejects 1111 and empty PIN (401); owner-set PIN signs in; blank and redacted saves keep the PIN on file; sync mirror stores no default; PIN-only lookup unaffected by no-PIN seats');
+    } else {
+      fail('edge-32-no-default-pin', JSON.stringify({
+        create: e32Create.status,
+        denied: [e32Default.status, e32Empty.status, e32RedactedPinRefused.status, e32MirrorDefault.status],
+        set: [e32SetPin.status, e32BlankSave.status, e32RedactedSave.status],
+        good: [e32Good.status, e32StillGood.status, e32AfterRedacted.status],
+        pinOnly: [e32PinOnlyBefore.status, e32PinOnlyAfter.status, e32PinOnlyUnique.status, e32PinOnlyUnique.json?.user?.email],
+        mirror: [e32Patch.status, e32Patch.json?.error, e32MirrorRow ? String(e32MirrorRow.pin_code || '') : 'missing']
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

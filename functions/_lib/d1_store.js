@@ -459,8 +459,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
     const allActive = await loadAllActive();
     const matched = [];
     for (const cand of allActive) {
-      const exp = String(cand.pin_code || '1111').trim();
-      if (await constantTimeEqual(pin, exp)) matched.push(cand);
+      // A seat with no PIN on file never matches: there is no default PIN.
+      const exp = String(cand.pin_code || '').trim();
+      if (exp && (await constantTimeEqual(pin, exp))) matched.push(cand);
     }
     if (matched.length > 1) {
       return jsonResponse({ ok: false, ambiguous: true, error: 'Select your account below to finish signing in.' }, 409);
@@ -498,7 +499,8 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   }
 
   const wsFaceSettings = await readWorkspaceFaceSettings(env.DB);
-  const expectedPin = String(row.pin_code || '1111').trim();
+  // No default PIN: a seat with no PIN on file cannot pass a PIN check until an Owner sets one.
+  const expectedPin = String(row.pin_code || '').trim();
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
   const authMode = resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio);
   const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
@@ -548,7 +550,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
             error: 'Two-factor Access PIN is required.'
           }, isStepUp ? 403 : 401);
         }
-        const okPin = await constantTimeEqual(pin, expectedPin);
+        const okPin = Boolean(expectedPin) && (await constantTimeEqual(pin, expectedPin));
         if (!okPin) {
           return isStepUp
             ? jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 403)
@@ -559,7 +561,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       if (authMode === 'face_only' && hasEnrolledBio) {
         return failAuth('This seat requires Face ID sign-in.');
       }
-      const okPin = pin && (await constantTimeEqual(pin, expectedPin));
+      const okPin = Boolean(pin && expectedPin) && (await constantTimeEqual(pin, expectedPin));
       if (!okPin) {
         return failAuth('Invalid Access PIN.');
       }
@@ -820,8 +822,8 @@ export async function handleUsersPost(request, env, session, body) {
     )
   );
   const pinVal = preserveExistingPin
-    ? String(existing.pin_code || '1111')
-    : String(u.pin_code || (existing && existing.pin_code) || '1111');
+    ? String(existing.pin_code || '')
+    : String(u.pin_code || (existing && existing.pin_code) || '');
   const effRole = String(u.role || (existing && existing.role) || 'Entry');
   const effCos = u.companies !== undefined ? String(u.companies) : String((existing && existing.companies) || 'WTC');
   const effPbi = String(u.pbi_access || (existing && existing.pbi_access) || 'partial');
@@ -2171,8 +2173,8 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               )
             );
             const pinVal = preserveExPin
-              ? String(exU.pin_code || '1111')
-              : String(u.pin_code || (exU && exU.pin_code) || '1111');
+              ? String(exU.pin_code || '')
+              : String(u.pin_code || (exU && exU.pin_code) || '');
             const effRole = String(u.role || (exU && exU.role) || 'Entry');
             const effCos = String(u.companies || (exU && exU.companies) || 'WTC');
             const effPbi = String(u.pbi_access || (exU && exU.pbi_access) || 'partial');
