@@ -2846,7 +2846,16 @@
           s.supplier ? `<div>Site Owner: <b>${esc(s.supplier)}</b></div>` : '',
           s.customer ? `<div>Linked Customer: <b>${esc(s.customer)}</b></div>` : ''
         ].filter(Boolean).join('');
-        const loadsLine = `<div>Loads: <b>${st.raw}</b> Raw · <b>${st.sales}</b> Delivery</div>`;
+        const canSeeSiteRules = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('price_rules'));
+        const canSeeRawRulesGeo = !(ctx && typeof ctx.canAccessTable === 'function' && !ctx.canAccessTable('raw_purchases'));
+        const rawRulePool = (SEED && SEED.records && SEED.records.price_rules) || [];
+        const scopedRulePool = (canSeeSiteRules && ctx && typeof ctx.filterRecords === 'function')
+          ? ctx.filterRecords(rawRulePool, { ignorePeriod: true, ignoreSearch: true, tableKey: 'price_rules' })
+          : rawRulePool;
+        const siteRulesCnt = canSeeSiteRules
+          ? scopedRulePool.filter(r => r && !r.voided && !r._multiIndustrySeed && !/^commission$/i.test(String(r.rule_type || '').trim()) && (canSeeRawRulesGeo || !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())) && norm(r.site) === norm(s.name)).length
+          : 0;
+        const loadsLine = `<div>Loads: <b>${st.raw}</b> Raw · <b>${st.sales}</b> Delivery</div>${canSeeSiteRules ? `<div>Price Agreements: <b>${siteRulesCnt}</b></div>` : ''}`;
         marker.bindPopup(`
           <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>

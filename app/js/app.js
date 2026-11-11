@@ -9237,6 +9237,8 @@
     }
     return !finOnlyTables.includes(tableKey);
   }
+  window.__mfgFilterRecords = filterRecords;
+  window.__mfgCanAccessTable = canAccessTable;
 
   const RDL_VERTICAL_INDUSTRY = {
     '23': 'Holding & Treasury',
@@ -9392,6 +9394,8 @@
   function allowedCompanyNames(u) {
     return parseUserCompanies(u || activeUser());
   }
+  window.__mfgAllowedCompanyNames = allowedCompanyNames;
+  window.__mfgIsOfficialScopeActive = isOfficialScopeActive;
   function defaultEntryCompany() {
     const names = allowedCompanyNames();
     if (STATE.company === DEMO_COMPANY_KEY) {
@@ -10937,6 +10941,70 @@
       getSiteHaulageProfile,
       ensureSiteHasRegion
     };
+  }
+
+  function cascadeSiteRename(oldName, newName, extraApiPosts) {
+    const cleanOld = String(oldName || '').trim();
+    const cleanNew = String(newName || '').trim();
+    const oldNorm = norm(cleanOld);
+    if (!cleanOld || !cleanNew || !oldNorm || cleanOld === cleanNew) return 0;
+    const siteRefTables = [
+      'price_rules', 'sales_tickets', 'raw_purchases',
+      'jv_partnerships', 'jv_distributions',
+      'logistics_allowances', 'overtime_rates', 'company_equipment',
+      'trip_rates', 'freelance_entries'
+    ];
+    let touchedCount = 0;
+    siteRefTables.forEach(tk => {
+      const custArr = Array.isArray(STATE.customRecords && STATE.customRecords[tk]) ? STATE.customRecords[tk] : null;
+      const seedArr = Array.isArray(SEED && SEED.records && SEED.records[tk]) ? SEED.records[tk] : null;
+      if (!custArr && !seedArr) return;
+      if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+      const seenIds = new Set();
+      const combined = (STATE.customRecords[tk] || []).concat(seedArr || []);
+      let tableChanged = false;
+      combined.forEach(r => {
+        if (!r) return;
+        const rid = String(r.id || '');
+        if (rid) {
+          if (seenIds.has(rid)) return;
+          seenIds.add(rid);
+        }
+        if (r.voided) return;
+        const matchSite = Boolean(r.site && norm(r.site) === oldNorm);
+        const matchOrigSite = Boolean(r.origin_site && norm(r.origin_site) === oldNorm);
+        if (!matchSite && !matchOrigSite) return;
+        if (matchSite) r.site = cleanNew;
+        if (matchOrigSite) r.origin_site = cleanNew;
+        if (seedArr && rid) {
+          const sIdx = seedArr.findIndex(x => x && String(x.id) === rid);
+          if (sIdx >= 0) {
+            if (matchSite) seedArr[sIdx].site = cleanNew;
+            if (matchOrigSite) seedArr[sIdx].origin_site = cleanNew;
+          }
+        }
+        if (rid) {
+          const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === rid);
+          if (cIdx >= 0) Object.assign(STATE.customRecords[tk][cIdx], r);
+          else STATE.customRecords[tk].unshift(Object.assign({}, r));
+        }
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, Object.assign({}, r)]);
+        tableChanged = true;
+        touchedCount++;
+      });
+      if (tableChanged && SEED) {
+        if (!SEED._tableRev) SEED._tableRev = {};
+        SEED._tableRev[tk] = (SEED._tableRev[tk] || 0) + 1;
+      }
+    });
+    if (touchedCount > 0 && SEED) {
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      _filterRecordsWeakCache = new WeakMap();
+    }
+    if (STATE.univConnPartyFilter && norm(STATE.univConnPartyFilter) === oldNorm) {
+      STATE.univConnPartyFilter = cleanNew;
+    }
+    return touchedCount;
   }
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
@@ -13514,6 +13582,634 @@
   //   - Sales Tickets inside an active customer agreement use that agreement's rate (`unit_price`, `trans_unit_price`, tiers, UoM conversion, or `truck_size`).
   //   - Sales Tickets falling outside an agreement window fall back to active predecessor/successor rules, Product List Price (`listPriceRule` / `listPrice`), or `$0.00` when no List Price exists, and reset `trans_unit_price` when no transport rule covers the date.
   //   - Raw Purchases re-evaluate `findRule` for `Purchase Price (Site)` / `Purchase Price (Supplier)` and `Transport Price (Site)`, falling back to `listPriceRule` or `$0.00` (`price_pending = true`) when moving/shrinking dates creates an unpriced gap.
+  // ---------------------------------------------------------------------------
+  // Statement Confirmation Watermark Guard & Live Dry-Run Backfill Preview
+  // ---------------------------------------------------------------------------
+  function canonWatermarkIndustry(indRaw) {
+    const s = norm(indRaw || '');
+    if (!s || /manufact|wtc|bbconstruction|lions|concrete|quarry/.test(s)) return 'manufacturing';
+    if (/real\s*estate|propert|4235/.test(s)) return 'realestate';
+    if (/trad|auto|shacman|korri/.test(s)) return 'trading';
+    if (/hospit|resort|blanca|la\s*una|palms|voile|platinum/.test(s)) return 'hospitality';
+    if (/insur|broker/.test(s)) return 'insurance';
+    if (/hold|treasur|bdeir\s*holding/.test(s)) return 'holding';
+    return s;
+  }
+
+  function canonWatermarkCompany(coRaw) {
+    const s = norm(coRaw || '');
+    if (!s || s === 'all' || s === 'group' || s === 'all companies' || s === 'consolidated' || s === 'manufacturing-group') return 'all';
+    return s;
+  }
+
+  function buildStatementWatermarkKey(spec) {
+    const sp = spec || {};
+    const indKey = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
+    const coKey = canonWatermarkCompany(sp.company || STATE.company || 'all');
+    const ptKey = norm(sp.partyType || 'customer') || 'customer';
+    const pnKey = norm(sp.partyName || 'all') || 'all';
+    return `${indKey}::${coKey}::${ptKey}::${pnKey}`;
+  }
+
+  function getStatementWatermark(spec) {
+    const key = typeof spec === 'string' ? spec : buildStatementWatermarkKey(spec);
+    if (typeof getIndustryWorkflowPatch !== 'function') return null;
+    const rec = getIndustryWorkflowPatch('statement_watermark', key);
+    if (!rec || rec.cleared || !/^\d{4}-\d{2}-\d{2}$/.test(String(rec.confirmed_through || ''))) return null;
+    return rec;
+  }
+
+  function getEffectiveStatementWatermark(spec) {
+    const sp = spec || {};
+    if (typeof getIndustryWorkflowPatch !== 'function') return null;
+    const indKey = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
+    const coKey = canonWatermarkCompany(sp.company || STATE.company || 'all');
+    const ptKey = norm(sp.partyType || 'customer') || 'customer';
+    const pnKey = norm(sp.partyName || 'all') || 'all';
+    const keysToCheck = [
+      `${indKey}::${coKey}::${ptKey}::${pnKey}`,
+      `${indKey}::all::${ptKey}::${pnKey}`,
+      `${indKey}::${coKey}::register::all`,
+      `${indKey}::all::register::all`
+    ];
+    let best = null;
+    const consider = (cand) => {
+      if (!cand || cand.cleared) return;
+      const dt = String(cand.confirmed_through || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return;
+      if (!best || dt > String(best.confirmed_through || '').slice(0, 10)) best = cand;
+    };
+    keysToCheck.forEach(k => consider(getIndustryWorkflowPatch('statement_watermark', k)));
+    if (coKey === 'all' && typeof getIndustryRowEditStore === 'function') {
+      const store = getIndustryRowEditStore() || {};
+      const prefix = `WF::STATEMENT_WATERMARK::${indKey.toUpperCase()}::`;
+      const suffixParty = `::${ptKey.toUpperCase()}::${pnKey.toUpperCase()}`;
+      const suffixReg = `::REGISTER::ALL`;
+      Object.keys(store).forEach(fullK => {
+        if (!fullK.startsWith(prefix)) return;
+        if (fullK.endsWith(suffixParty) || fullK.endsWith(suffixReg)) consider(store[fullK]);
+      });
+    }
+    return best;
+  }
+
+  function setStatementWatermark(spec) {
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    if (u && typeof canModifyData === 'function' && !canModifyData(u) && !(typeof canVoid === 'function' && canVoid(u))) {
+      return { ok: false, error: tr('Only authorized finance or supervisor seats can confirm statement watermarks.') };
+    }
+    const sp = spec || {};
+    const dt = String(sp.confirmedThrough || sp.confirmed_through || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+      return { ok: false, error: tr('Valid statement end date (YYYY-MM-DD) is required.') };
+    }
+    const key = buildStatementWatermarkKey(sp);
+    const payload = {
+      key,
+      industry: canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing'),
+      company: String(sp.company || STATE.company || 'ALL').trim() || 'ALL',
+      party_type: norm(sp.partyType || 'customer') || 'customer',
+      party_name: String(sp.partyName || 'ALL').trim() || 'ALL',
+      report_id: String(sp.reportId || ''),
+      confirmed_through: dt,
+      closing_balance_usd: sp.closingBalanceUsd != null && Number.isFinite(Number(sp.closingBalanceUsd))
+        ? round2(Number(sp.closingBalanceUsd))
+        : null,
+      confirmed_by: (u && (u.full_name || u.name || u.username)) || 'Finance',
+      confirmed_at: nextMonotonicIso(),
+      cleared: false
+    };
+    saveIndustryWorkflowPatch('statement_watermark', key, payload);
+    STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
+    if (typeof syncWithCloud === 'function' && !sp.skipCloudSync) syncWithCloud(true);
+    return { ok: true, key, watermark: payload };
+  }
+
+  function clearStatementWatermark(spec) {
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    if (u && typeof canVoid === 'function' && !canVoid(u)) {
+      return { ok: false, error: tr('Only supervisor seats can clear a confirmed statement watermark.') };
+    }
+    const sp = spec || {};
+    const key = typeof sp === 'string' ? sp : buildStatementWatermarkKey(sp);
+    const clearedAt = nextMonotonicIso();
+    const who = (u && (u.full_name || u.name || u.username)) || 'Supervisor';
+    const clearPatch = {
+      key,
+      confirmed_through: '',
+      cleared: true,
+      cleared_by: who,
+      cleared_at: clearedAt
+    };
+    saveIndustryWorkflowPatch('statement_watermark', key, clearPatch);
+    if (typeof sp === 'object' && sp) {
+      const indKey = canonWatermarkIndustry(sp.industry || STATE.industry || 'manufacturing');
+      const ptKey = norm(sp.partyType || 'customer') || 'customer';
+      const pnKey = norm(sp.partyName || 'all') || 'all';
+      const allKey = `${indKey}::all::${ptKey}::${pnKey}`;
+      if (allKey !== key && getStatementWatermark(allKey)) {
+        saveIndustryWorkflowPatch('statement_watermark', allKey, Object.assign({}, clearPatch, { key: allKey }));
+      }
+    }
+    STATE._watermarkRev = (STATE._watermarkRev || 0) + 1;
+    if (typeof syncWithCloud === 'function' && !(sp && sp.skipCloudSync)) syncWithCloud(true);
+    return { ok: true, key };
+  }
+
+  function nextDayAfterIso(isoStr) {
+    if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(isoStr).slice(0, 10))) return '';
+    const d = new Date(String(isoStr).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return '';
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function resolvePostWatermarkAdjustmentDate(company, watermarkDate, industry) {
+    let cand = typeof todayISO === 'function' ? todayISO() : '2026-11-11';
+    const afterWm = nextDayAfterIso(watermarkDate);
+    if (afterWm && afterWm > cand) cand = afterWm;
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.checkPeriodCloseGuard === 'function') {
+      const pGuard = window.MFG_AI_EDGE.checkPeriodCloseGuard(
+        company || STATE.company || 'WTC',
+        cand,
+        cand,
+        { industry: industry || STATE.industry || 'Manufacturing' }
+      );
+      if (pGuard && (pGuard.blocked || pGuard.locked) && pGuard.closedThroughDate) {
+        const afterClosed = nextDayAfterIso(pGuard.closedThroughDate);
+        if (afterClosed && afterClosed > cand) cand = afterClosed;
+      }
+    }
+    return cand;
+  }
+
+  function buildPriorStatementAdjMap() {
+    const map = new Map();
+    const addComp = (comp, rowRef, storeType, bucketKey) => {
+      if (!comp || !comp.srcKey) return;
+      const k = String(comp.srcKey);
+      let cur = map.get(k);
+      if (!cur) {
+        cur = { exVat: 0, vat: 0, ttc: 0, amt: 0, refs: [] };
+        map.set(k, cur);
+      }
+      cur.exVat = round2(cur.exVat + Number(comp.exVat || 0));
+      cur.vat = round2(cur.vat + Number(comp.vat || 0));
+      cur.ttc = round2(cur.ttc + Number(comp.ttc || 0));
+      cur.amt = round2(cur.amt + Number(comp.amt || 0));
+      cur.refs.push({ row: rowRef, storeType, bucketKey });
+    };
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      const arr = (STATE.customRecords && Array.isArray(STATE.customRecords[tk])) ? STATE.customRecords[tk] : [];
+      arr.forEach(r => {
+        if (!r || r.voided || !r._is_statement_adj || !Array.isArray(r._adj_components)) return;
+        r._adj_components.forEach(c => addComp(c, r, 'mfg', tk));
+      });
+    });
+    if (typeof getIndustryCustomRowsStore === 'function') {
+      const indStore = getIndustryCustomRowsStore() || {};
+      Object.keys(indStore).forEach(bk => {
+        const arr = Array.isArray(indStore[bk]) ? indStore[bk] : [];
+        arr.forEach(r => {
+          if (!r || r.voided || !r._is_statement_adj || !Array.isArray(r._adj_components)) return;
+          r._adj_components.forEach(c => addComp(c, r, 'ind', bk));
+        });
+      });
+    }
+    return map;
+  }
+
+  function retireStatementAdjComponents(srcKeys, extraApiPosts) {
+    const keySet = new Set((Array.isArray(srcKeys) ? srcKeys : []).filter(Boolean).map(String));
+    if (!keySet.size) return 0;
+    let retiredRows = 0;
+    const nowIso = nextMonotonicIso();
+    ['sales_tickets', 'raw_purchases'].forEach(tk => {
+      const cArr = (STATE.customRecords && Array.isArray(STATE.customRecords[tk])) ? STATE.customRecords[tk] : [];
+      const sArr = (SEED && SEED.records && Array.isArray(SEED.records[tk])) ? SEED.records[tk] : [];
+      cArr.forEach(r => {
+        if (!r || r.voided || !r._is_statement_adj || !Array.isArray(r._adj_components)) return;
+        const rem = r._adj_components.filter(c => c && !keySet.has(String(c.srcKey)));
+        if (rem.length === r._adj_components.length) return;
+        if (!rem.length) {
+          r.voided = true;
+          r.void_reason = 'Superseded by Supervisor historical schedule override';
+          r.modified_at = nowIso;
+        } else {
+          r._adj_components = rem;
+          if (tk === 'sales_tickets') {
+            const sumEx = round2(rem.reduce((s, c) => s + Number(c.exVat || 0), 0));
+            const sumVat = round2(rem.reduce((s, c) => s + Number(c.vat || 0), 0));
+            const sumTtc = round2(sumEx + sumVat);
+            const isNeg = sumTtc < -0.004 || (Math.abs(sumTtc) < 0.005 && sumEx < -0.004);
+            r.method = isNeg ? 'CR Return' : 'Credit';
+            r.return = isNeg;
+            r.price = Math.abs(sumEx);
+            r.total = Math.abs(sumEx);
+            r.vat = Math.abs(sumVat);
+            r.total_ttc = Math.abs(sumTtc);
+          } else {
+            const sumAmt = round2(rem.reduce((s, c) => s + Number(c.amt || 0), 0));
+            const isNeg = sumAmt < -0.004;
+            r.method = isNeg ? 'CR Return' : 'Credit';
+            r.return = isNeg;
+            if (Number(r.trans_cost || 0) > 0 && Number(r.cost || 0) === 0) {
+              r.trans_cost = Math.abs(sumAmt);
+            } else {
+              r.cost = Math.abs(sumAmt);
+            }
+            r.total = Math.abs(sumAmt);
+          }
+          r.modified_at = nowIso;
+        }
+        const sHit = sArr.find(x => x && String(x.id) === String(r.id));
+        if (sHit) Object.assign(sHit, r);
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, r]);
+        retiredRows++;
+      });
+    });
+    if (typeof getIndustryCustomRowsStore === 'function') {
+      const indStore = getIndustryCustomRowsStore() || {};
+      let indTouched = false;
+      Object.keys(indStore).forEach(bk => {
+        const arr = Array.isArray(indStore[bk]) ? indStore[bk] : [];
+        arr.forEach(r => {
+          if (!r || r.voided || !r._is_statement_adj || !Array.isArray(r._adj_components)) return;
+          const rem = r._adj_components.filter(c => c && !keySet.has(String(c.srcKey)));
+          if (rem.length === r._adj_components.length) return;
+          r.voided = !rem.length;
+          r._adj_components = rem;
+          r.updated_at = nowIso;
+          r.updatedAt = nowIso;
+          indTouched = true;
+          retiredRows++;
+        });
+      });
+      if (indTouched && typeof saveIndustryCustomRowsStore === 'function') {
+        saveIndustryCustomRowsStore();
+        if (typeof invalidateIndustryDomainCaches === 'function') invalidateIndustryDomainCaches();
+      }
+    }
+    return retiredRows;
+  }
+
+  function postManufacturingWatermarkAdjustments(salesBuckets, rawBuckets, scheduleRef, extraApiPosts) {
+    const created = [];
+    const nowIso = nextMonotonicIso();
+    if (!Array.isArray(STATE.customRecords.sales_tickets)) STATE.customRecords.sales_tickets = [];
+    if (!Array.isArray(STATE.customRecords.raw_purchases)) STATE.customRecords.raw_purchases = [];
+    const pushMfgAdj = (tk, rec) => {
+      STATE.customRecords[tk].unshift(Object.assign({}, rec));
+      if (SEED && SEED.records && Array.isArray(SEED.records[tk])) {
+        SEED.records[tk].unshift(rec);
+      }
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, rec]);
+      else if (typeof postRecordToLocalApi === 'function') postRecordToLocalApi(tk, rec);
+      created.push({ table: tk, row: rec });
+    };
+    salesBuckets.forEach(b => {
+      const exD = round2(b.exVatDelta || 0);
+      const vatD = round2(b.vatDelta || 0);
+      const ttcD = round2(exD + vatD);
+      if (Math.abs(exD) < 0.005 && Math.abs(vatD) < 0.005) return;
+      const adjDate = resolvePostWatermarkAdjustmentDate(b.company, b.watermarkDate, 'Manufacturing');
+      const emitSaleLeg = (legEx, legVat, suffix) => {
+        const legTtc = round2(legEx + legVat);
+        if (Math.abs(legTtc) < 0.005 && Math.abs(legEx) < 0.005) return;
+        const isCreditNote = legTtc < -0.004 || (Math.abs(legTtc) < 0.005 && legEx < -0.004);
+        const uid = `ADJ-SL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}${suffix}`;
+        const noteKind = isCreditNote ? 'Credit Adjustment' : 'Debit Adjustment';
+        const rec = {
+          id: uid,
+          ticket_no: uid,
+          name: uid,
+          date: adjDate,
+          rep_date: adjDate,
+          company: b.company || 'WTC',
+          customer: b.customer,
+          site: b.site || '',
+          product: `Schedule ${noteKind} (${scheduleRef || 'Agreement'})`,
+          sale_type: 'Delivery',
+          transport_by: 'Company fleet',
+          uom: 'm³',
+          qty: 0,
+          unit_price: Math.abs(legEx),
+          mat_indiff: true,
+          price: Math.abs(legEx),
+          trans_unit_price: 0,
+          trans_price: 0,
+          total: Math.abs(legEx),
+          vat: Math.abs(legVat),
+          total_ttc: Math.abs(legTtc),
+          iva: Boolean(b.isOfficial || Math.abs(legVat) >= 0.005),
+          method: isCreditNote ? 'CR Return' : 'Credit',
+          return: isCreditNote,
+          price_rule: 'Manual',
+          notes: `${noteKind} for ${b.components.length} confirmed statement ticket(s) dated <= ${b.watermarkDate} (${scheduleRef || 'Schedule'})`,
+          source: 'app',
+          _is_statement_adj: true,
+          _adj_watermark_date: b.watermarkDate,
+          _adj_schedule_ref: String(scheduleRef || ''),
+          _adj_components: b.components.slice(),
+          created_at: nowIso,
+          modified_at: nowIso
+        };
+        pushMfgAdj('sales_tickets', rec);
+      };
+      if (Math.abs(exD) >= 0.005 && Math.abs(vatD) >= 0.005 && Math.sign(exD) !== Math.sign(vatD)) {
+        emitSaleLeg(exD, 0, '-EX');
+        emitSaleLeg(0, vatD, '-VAT');
+      } else {
+        emitSaleLeg(exD, vatD, '');
+      }
+    });
+    rawBuckets.forEach(b => {
+      const amtD = round2(b.amtDelta || 0);
+      if (Math.abs(amtD) < 0.005) return;
+      const adjDate = resolvePostWatermarkAdjustmentDate(b.company, b.watermarkDate, 'Manufacturing');
+      const isCreditNote = amtD < -0.004;
+      const uid = `ADJ-RM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const noteKind = isCreditNote ? 'Credit Adjustment' : 'Debit Adjustment';
+      const isHaul = b.leg === 'haul';
+      const absAmt = Math.abs(amtD);
+      const rec = {
+        id: uid,
+        ticket_no: uid,
+        name: uid,
+        date: adjDate,
+        rep_date: adjDate,
+        company: b.company || 'WTC',
+        site: b.site || '',
+        site_owner: isHaul ? '' : b.supplier,
+        truck_owner: isHaul ? b.supplier : '',
+        transport_by: isHaul ? 'Third-party truck' : 'Company fleet',
+        product: `Schedule ${noteKind} (${scheduleRef || 'Agreement'})`,
+        uom: 'm³',
+        qty: 0,
+        unit_cost: isHaul ? 0 : absAmt,
+        mat_indiff: !isHaul,
+        cost: isHaul ? 0 : absAmt,
+        trans_unit_cost: isHaul ? absAmt : 0,
+        trans_indiff: isHaul,
+        trans_cost: isHaul ? absAmt : 0,
+        total: absAmt,
+        price_pending: false,
+        price_entered_manually: true,
+        method: isCreditNote ? 'CR Return' : 'Credit',
+        return: isCreditNote,
+        notes: `${noteKind} (${isHaul ? 'Haulage' : 'Material'}) for ${b.components.length} confirmed statement ticket(s) dated <= ${b.watermarkDate} (${scheduleRef || 'Schedule'})`,
+        source: 'app',
+        _is_statement_adj: true,
+        _adj_watermark_date: b.watermarkDate,
+        _adj_schedule_ref: String(scheduleRef || ''),
+        _adj_components: b.components.slice(),
+        created_at: nowIso,
+        modified_at: nowIso
+      };
+      pushMfgAdj('raw_purchases', rec);
+    });
+    if (created.length && SEED) {
+      if (SEED._tableRev) {
+        SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+        SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
+      }
+      if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
+      else SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return created;
+  }
+
+  function createEmptyBackfillPreview(kind) {
+    return {
+      kind: kind || 'schedule',
+      totalAffected: 0,
+      salesAffected: 0,
+      rawAffected: 0,
+      attAffected: 0,
+      pendingAdded: 0,
+      pendingCleared: 0,
+      netArDeltaUsd: 0,
+      netApDeltaUsd: 0,
+      netDomainDeltaUsd: 0,
+      isMonetary: kind !== 'attendance',
+      deltaLabel: '',
+      rows: [],
+      preWatermarkCount: 0,
+      postWatermarkCount: 0,
+      preWatermarkDeltaUsd: 0,
+      maxWatermarkDate: '',
+      watermarkParties: [],
+      adjustmentsCreated: 0
+    };
+  }
+
+  function fmtChronoSignedUsd(val) {
+    const n = round2(Number(val || 0));
+    const sign = n > 0.004 ? '+' : (n < -0.004 ? '-' : '');
+    return `${sign}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  async function authorizeWatermarkStepUpOverride(preview, contextLabel) {
+    const u = typeof activeUser === 'function' ? activeUser() : null;
+    if (u && typeof canVoid === 'function' && !canVoid(u)) {
+      toast(tr('Supervisor rights are required to override a confirmed statement watermark.'), 'err');
+      return false;
+    }
+    const maxWm = (preview && preview.maxWatermarkDate) || '';
+    const spec = {
+      actionCode: 'statement_watermark_override',
+      actionLabel: `${tr('Override Confirmed Statement Watermark')} (${maxWm || 'SOA'})`,
+      targetRef: String(contextLabel || 'schedule_backfill'),
+      company: STATE.company || 'WTC',
+      industry: typeof getActiveIndustry === 'function' ? getActiveIndustry(STATE.company) : (STATE.industry || 'Manufacturing')
+    };
+    if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.satisfiesLeaseSync === 'function' && window.MFG_STEP_UP.satisfiesLeaseSync(spec)) {
+      return true;
+    }
+    if (window.MFG_STEP_UP && typeof window.MFG_STEP_UP.requireStepUpAuth === 'function') {
+      const res = await window.MFG_STEP_UP.requireStepUpAuth(spec);
+      return Boolean(res && (typeof res === 'object' ? res.ok !== false : res));
+    }
+    return true;
+  }
+
+  function promptChronoWatermarkActionModal(preview, opts) {
+    const o = opts || {};
+    const p = preview || createEmptyBackfillPreview();
+    if (!(p.preWatermarkCount > 0)) return Promise.resolve('check');
+    return new Promise(resolve => {
+      const existing = document.getElementById('chronoWatermarkGuardModal');
+      if (existing) existing.remove();
+      const adjDate = resolvePostWatermarkAdjustmentDate(o.company || STATE.company || 'WTC', p.maxWatermarkDate, o.industry || STATE.industry);
+      const partiesStr = (p.watermarkParties || []).slice(0, 3).join(', ') + ((p.watermarkParties || []).length > 3 ? ` +${p.watermarkParties.length - 3}` : '');
+      const canSupOverride = typeof canVoid === 'function' ? canVoid(activeUser()) : true;
+      const overlay = document.createElement('div');
+      overlay.id = 'chronoWatermarkGuardModal';
+      overlay.className = 'chrono-wm-modal-backdrop';
+      overlay.innerHTML = `
+        <div class="chrono-wm-modal-card" role="dialog" aria-modal="true" aria-labelledby="chronoWmModalTitle">
+          <div class="chrono-wm-modal-hdr">
+            <span class="chrono-wm-lock-badge">${esc(tr('Confirmed Statement Guard'))}</span>
+            <button type="button" class="chrono-wm-close-btn" data-wm-choice="cancel" aria-label="${esc(tr('Cancel'))}">&times;</button>
+          </div>
+          <h3 id="chronoWmModalTitle" class="chrono-wm-modal-title">${esc(tr('Retroactive Edit Crosses Confirmed Statement Date'))}</h3>
+          <p class="chrono-wm-modal-desc">
+            ${esc(tr('This schedule change affects'))} <strong>${p.preWatermarkCount}</strong> ${esc(tr('record(s) dated on or before'))}
+            <strong>${esc(p.maxWatermarkDate)}</strong>${partiesStr ? ` (${esc(partiesStr)})` : ''}${p.isMonetary ? ` · ${esc(tr('Confirmed-period net delta'))}: <strong>${esc(fmtChronoSignedUsd(p.preWatermarkDeltaUsd))}</strong>` : ''}.
+            ${p.postWatermarkCount > 0 ? `${esc(tr('Open-period records after watermark'))}: <strong>${p.postWatermarkCount}</strong>.` : ''}
+          </p>
+          <div class="chrono-wm-choice-stack">
+            <button type="button" class="btn btn-primary chrono-wm-btn-adjust" data-wm-choice="adjust">
+              <span class="chrono-wm-btn-main">${esc(tr('Post Current-Period Adjustment (Recommended)'))}</span>
+              <span class="chrono-wm-btn-sub">${esc(tr('Keep confirmed statement history untouched and post a dated Credit/Debit Adjustment on'))} ${esc(adjDate)}</span>
+            </button>
+            <button type="button" class="btn btn-outline chrono-wm-btn-override" data-wm-choice="override" ${canSupOverride ? '' : 'disabled'}>
+              <span class="chrono-wm-btn-main">${esc(tr('Supervisor Override: Reprice Confirmed History'))}</span>
+              <span class="chrono-wm-btn-sub">${esc(canSupOverride ? tr('Requires Supervisor step-up verification to rewrite historical lines directly') : tr('Supervisor seat required to rewrite confirmed statement history'))}</span>
+            </button>
+          </div>
+          <div class="chrono-wm-modal-ftr">
+            <button type="button" class="btn btn-ghost" data-wm-choice="cancel">${esc(tr('Cancel'))}</button>
+          </div>
+        </div>
+      `;
+      let settled = false;
+      const finish = val => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(val);
+      };
+      const onKey = ev => {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          finish(null);
+        }
+      };
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', async ev => {
+        if (ev.target === overlay) {
+          finish(null);
+          return;
+        }
+        const btn = ev.target.closest('[data-wm-choice]');
+        if (!btn || btn.disabled) return;
+        const ch = btn.getAttribute('data-wm-choice');
+        if (ch === 'cancel') {
+          finish(null);
+        } else if (ch === 'adjust') {
+          finish('adjust');
+        } else if (ch === 'override') {
+          const ok = await authorizeWatermarkStepUpOverride(p, o.contextLabel || 'schedule_override');
+          if (ok) finish('override');
+        }
+      });
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function renderChronoBackfillPreviewHtml(preview, uiOpts) {
+    const p = preview || createEmptyBackfillPreview();
+    const o = uiOpts || {};
+    const total = Number(p.totalAffected || 0);
+    if (total === 0 && o.hideWhenZero) return '';
+    const hasWm = Number(p.preWatermarkCount || 0) > 0;
+    const toneCls = hasWm ? 'is-watermark' : (total > 0 ? 'is-impact' : 'is-zero');
+    let headline = '';
+    if (total === 0) {
+      headline = `${tr('Live Backfill Check')}: ${tr('0 existing records affected by this schedule window')}`;
+    } else if (!p.isMonetary) {
+      headline = `${tr('Will update')} ${total} ${tr('attendance record(s)')}`;
+    } else {
+      const parts = [];
+      parts.push(`${tr('Will reprice')} ${total} ${tr('record(s)')}`);
+      if (p.pendingAdded > 0) parts.push(`${p.pendingAdded} ${tr('move to Pending Price')}`);
+      if (p.pendingCleared > 0) parts.push(`${p.pendingCleared} ${tr('Pending Price resolved')}`);
+      if (Math.abs(p.netArDeltaUsd || 0) >= 0.005) parts.push(`${tr('Net AR delta')} ${fmtChronoSignedUsd(p.netArDeltaUsd)}`);
+      if (Math.abs(p.netApDeltaUsd || 0) >= 0.005) parts.push(`${tr('Net AP delta')} ${fmtChronoSignedUsd(p.netApDeltaUsd)}`);
+      if (Math.abs(p.netDomainDeltaUsd || 0) >= 0.005 && Math.abs(p.netArDeltaUsd || 0) < 0.005 && Math.abs(p.netApDeltaUsd || 0) < 0.005) {
+        parts.push(`${p.deltaLabel || tr('Net schedule delta')} ${fmtChronoSignedUsd(p.netDomainDeltaUsd)}`);
+      }
+      headline = parts.join(' · ');
+    }
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    const shownRows = rows.slice(0, 35);
+    const moreCount = Math.max(0, rows.length - shownRows.length);
+    const adjDate = hasWm ? resolvePostWatermarkAdjustmentDate(o.company || STATE.company || 'WTC', p.maxWatermarkDate, o.industry || STATE.industry) : '';
+    const canSupOverride = typeof canVoid === 'function' ? canVoid(activeUser()) : true;
+
+    return `
+      <div class="chrono-bf-pill ${toneCls}" data-total-affected="${total}" data-pre-wm="${p.preWatermarkCount || 0}">
+        <div class="chrono-bf-pill-top">
+          <span class="chrono-bf-badge">${esc(hasWm ? tr('Statement Guard') : (total > 0 ? tr('Backfill Impact') : tr('No Backfill Impact')))}</span>
+          <span class="chrono-bf-headline">${esc(headline)}</span>
+        </div>
+        ${hasWm ? `
+          <div class="chrono-bf-wm-alert">
+            <div class="chrono-bf-wm-text">
+              <strong>${p.preWatermarkCount}</strong> ${esc(tr('record(s) fall on or before Confirmed Statement date'))}
+              <strong>${esc(p.maxWatermarkDate)}</strong>${p.isMonetary ? ` (${esc(fmtChronoSignedUsd(p.preWatermarkDeltaUsd))})` : ''}.
+              ${esc(tr('Post a current-period adjustment on'))} <strong>${esc(adjDate)}</strong> ${esc(tr('to keep confirmed statements unchanged, or use Supervisor Override.'))}
+            </div>
+            ${o.showQuickActions !== false ? `
+              <div class="chrono-bf-wm-actions">
+                <button type="button" class="btn btn-xs btn-primary" data-chrono-wm-save="adjust">${esc(tr('Save + Post Current-Period Adjustment'))}</button>
+                ${canSupOverride ? `<button type="button" class="btn btn-xs btn-outline" data-chrono-wm-save="override">${esc(tr('Supervisor Override'))}</button>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+        ${shownRows.length > 0 ? `
+          <details class="chrono-bf-details">
+            <summary>${esc(tr('Inspect affected records'))} (${rows.length})</summary>
+            <div class="chrono-bf-table-wrap">
+              <table class="chrono-bf-table">
+                <thead>
+                  <tr>
+                    <th>${esc(tr('Ref'))}</th>
+                    <th>${esc(tr('Date'))}</th>
+                    <th>${esc(tr('Counterparty'))}</th>
+                    <th class="num">${esc(tr('Current'))}</th>
+                    <th class="num">${esc(tr('Updated'))}</th>
+                    <th class="num">${esc(tr('Delta'))}</th>
+                    <th>${esc(tr('Status'))}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shownRows.map(r => `
+                    <tr class="${r.preWatermark ? 'is-wm-locked' : ''}">
+                      <td class="mono">${esc(r.ref || '')}</td>
+                      <td class="mono">${esc(r.date || '')}</td>
+                      <td>${esc(r.party || '')}</td>
+                      <td class="num mono">${esc(r.oldDisplay != null ? r.oldDisplay : fmtChronoSignedUsd(r.oldVal || 0).replace(/^\+/, ''))}</td>
+                      <td class="num mono">${esc(r.newDisplay != null ? r.newDisplay : fmtChronoSignedUsd(r.newVal || 0).replace(/^\+/, ''))}</td>
+                      <td class="num mono bold">${esc(r.deltaDisplay != null ? r.deltaDisplay : fmtChronoSignedUsd(r.delta || 0))}</td>
+                      <td>${esc(r.preWatermark ? `${tr('Confirmed')} <= ${r.watermarkDate}` : (r.status || tr('Open Period')))}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              ${moreCount > 0 ? `<div class="chrono-bf-more">+${moreCount} ${esc(tr('additional affected record(s)'))}</div>` : ''}
+            </div>
+          </details>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function wireChronoBackfillPreviewEvents(hostEl, onQuickSaveMode) {
+    if (!hostEl || typeof onQuickSaveMode !== 'function') return;
+    hostEl.querySelectorAll('[data-chrono-wm-save]').forEach(btn => {
+      btn.onclick = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const mode = btn.getAttribute('data-chrono-wm-save');
+        if (mode) onQuickSaveMode(mode);
+      };
+    });
+  }
+
   function backfillPriceRuleToTickets(ruleRow, origRow, extraApiPosts, opts) {
     if (!ruleRow && !origRow) return { salesUpdated: 0, rawUpdated: 0, totalUpdated: 0 };
     if (window.__fastInspectorModifyTest) return { salesUpdated: 0, rawUpdated: 0, totalUpdated: 0 };
@@ -59044,6 +59740,10 @@
     if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
       window.MFG_AI_EDGE.syncAllSurfacesNow();
     }
+    if (typeof stripNativeTitles === 'function') stripNativeTitles(modal);
+    if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
+      window.MFG_I18N.translateDom(modal);
+    }
   }
 
   function lookupIndustryDomainRecord(queryStr) {
@@ -69393,6 +70093,247 @@
       `;
     }).join('');
 
+    const relatedAgreementsInfo = (() => {
+      const canSeeRelAgr = Boolean(isOwner() || canModifyData() || canViewHub('pricing') || canViewHub('sales') || canViewHub('ledger'));
+      if (!canSeeRelAgr || isChronoDomainRow) return null;
+      const ownerSeat = isOwner();
+      const allowedCos = allowedCompanyNames();
+      const isDomCoAllowed = co => ownerSeat || !co || allowedCos.some(ac => norm(ac) === norm(co));
+      const singleDomCo = (!/^industry:/i.test(String(STATE.company || '')) && STATE.company && STATE.company !== 'all' && !(typeof isDemoScopeActive === 'function' && isDemoScopeActive()))
+        ? (COMPANY_BU_MATCH[STATE.company] || COMPANY_LABELS[STATE.company] || '')
+        : '';
+      const hideRelCo = Boolean(singleDomCo);
+      const valByHdr = re => {
+        const idx = headers.findIndex(h => re.test(String(h || '').trim()));
+        return idx >= 0 && cells[idx] != null ? String(cells[idx]).trim() : '';
+      };
+      const fmtWin = (sd, ed) => `${sd ? fmtDateDMY(sd) : 'Open'} to ${(!ed || /^open$/i.test(String(ed))) ? 'Open' : fmtDateDMY(ed)}`;
+      const isWinActive = ed => {
+        const s = String(ed || '').trim();
+        return !s || /^open$/i.test(s) || s.slice(0, 10) >= todayISO();
+      };
+
+      if (ind === 'Real Estate & Property' && typeof computeRealEstateOperations === 'function') {
+        const re = computeRealEstateOperations({ ignoreSearch: true }) || {};
+        const propCell = valByHdr(/property|building|asset|tower|center/i) || secondaryLbl;
+        const unitCell = valByHdr(/^unit|shop|suite/i);
+        const tenantCell = valByHdr(/tenant|lessee|client/i);
+        const allLeases = (re.leases || []).filter(l => l && !l.voided && !l._scheduleVoided && isDomCoAllowed(l.company));
+        let hits = allLeases.filter(l => {
+          if (singleDomCo && l.company && norm(l.company) !== norm(singleDomCo)) return false;
+          if (unitCell && l.unit && (norm(l.unit).includes(norm(unitCell)) || norm(unitCell).includes(norm(l.unit.replace(/\s*\([^)]*\)\s*/g, ''))))) return true;
+          if (tenantCell && !/vacant|available/i.test(tenantCell) && l.tenant && (norm(l.tenant) === norm(tenantCell) || norm(tenantCell).includes(norm(l.tenant)))) return true;
+          if (propCell && l.property && (norm(l.property) === norm(propCell) || norm(propCell).includes(norm(l.property)) || norm(l.property).includes(norm(propCell)) || norm(l.property) === norm(primaryId))) return true;
+          return false;
+        });
+        if (!hits.length && /^PROP-/i.test(primaryId)) {
+          const propObj = (re.properties || []).find(p => norm(p.id) === norm(primaryId) || norm(p.code) === norm(primaryId));
+          if (propObj) {
+            hits = allLeases.filter(l => (!singleDomCo || norm(l.company) === norm(singleDomCo)) && norm(l.property) === norm(propObj.name));
+          }
+        }
+        return {
+          title: 'Related Lease & Rent Agreements',
+          sub: `Chronological rent & escalation schedules linked to ${secondaryLbl || primaryId}`,
+          formKey: 're_leases',
+          newBtnLbl: '+ New Lease Schedule',
+          newPrefill: { company: rowCompany || singleDomCo || 'Properties', property: propCell || '', unit: unitCell || '', tenant: (!/vacant|available/i.test(tenantCell) ? tenantCell : '') },
+          cols: [...(hideRelCo ? [] : ['Entity']), 'Lease ID', 'Unit & Tenant', 'Period Net / TTC', 'Effective Window', 'Status'],
+          rows: hits.map(l => ({
+            id: l.id,
+            formKey: 're_leases',
+            co: l.company || 'Properties',
+            cells: [
+              ...(hideRelCo ? [] : [l.company || 'Properties']),
+              l.id,
+              `${l.unit || '-'} · ${l.tenant || '-'}`,
+              `${fmtUSD(l.net_period_usd || 0, 0)} (${l.vat_rate ? l.vat_rate + '% VAT · ' + fmtUSD(l.ttc_period_usd || 0, 0) : '0% VAT'})`,
+              fmtWin(l.start_date, l.end_date),
+              l.status || (isWinActive(l.end_date) ? 'Active' : 'Ended')
+            ],
+            active: isWinActive(l.end_date)
+          }))
+        };
+      }
+
+      if (ind === 'Hospitality & Resorts' && typeof computeHospitalityOperations === 'function') {
+        const hsp = computeHospitalityOperations({ ignoreSearch: true }) || {};
+        const tierCell = valByHdr(/tier|venue|outlet|unit|chalet|cabana|category/i) || secondaryLbl;
+        const targetResort = rowCompany || singleDomCo || valByHdr(/resort|company|entity/i);
+        const allTariffs = (hsp.tariffRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+        let hits = allTariffs.filter(t => {
+          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+          if (targetResort && t.company && norm(t.company) === norm(targetResort)) return true;
+          if (tierCell && t.tier && (norm(t.tier).includes(norm(tierCell)) || norm(tierCell).includes(norm(t.tier)))) return true;
+          return false;
+        });
+        return {
+          title: 'Related Seasonal & Daily Tariff Agreements',
+          sub: `Chronological chalet, cabana & venue rate schedules for ${targetResort || secondaryLbl}`,
+          formKey: 'hsp_tariffs',
+          newBtnLbl: '+ New Seasonal Tariff',
+          newPrefill: { company: targetResort || 'Blanca', tier: tierCell || '' },
+          cols: [...(hideRelCo ? [] : ['Resort']), 'Tariff ID', 'Tier & Season', 'Daily / Seasonal Rate', 'Effective Window', 'Status'],
+          rows: hits.map(t => ({
+            id: t.id,
+            formKey: 'hsp_tariffs',
+            co: t.company || 'Blanca',
+            cells: [
+              ...(hideRelCo ? [] : [t.company || 'Blanca']),
+              t.id,
+              `${t.tier || '-'} · ${t.season || '-'}`,
+              `${fmtUSD(t.daily_chalet_ttc_usd || t.nightly_rate_usd || 0, 0)}/day · ${fmtUSD(t.season_contract_usd || t.seasonal_rate_usd || 0, 0)}/season`,
+              fmtWin(t.start_date, t.end_date),
+              t.status || (isWinActive(t.end_date) ? 'Active' : 'Closed')
+            ],
+            active: isWinActive(t.end_date)
+          }))
+        };
+      }
+
+      if (ind === 'Automotive & Heavy Trading' && typeof computeTradingOperations === 'function') {
+        const trd = computeTradingOperations({ ignoreSearch: true }) || {};
+        const modelCell = valByHdr(/model|family|item|segment|category/i) || secondaryLbl;
+        const targetCo = rowCompany || singleDomCo || valByHdr(/company|entity/i);
+        const allTargets = (trd.targetRows || []).filter(t => t && !t.voided && !t._scheduleVoided && isDomCoAllowed(t.company));
+        const hits = allTargets.filter(t => {
+          if (singleDomCo && t.company && norm(t.company) !== norm(singleDomCo)) return false;
+          if (targetCo && t.company && norm(t.company) !== norm(targetCo)) return false;
+          if (modelCell && t.segment) {
+            const mTokens = norm(modelCell).split(/\s+/).filter(tok => tok.length >= 4);
+            if (mTokens.some(tok => norm(t.segment).includes(tok))) return true;
+          }
+          return Boolean(targetCo && norm(t.company) === norm(targetCo));
+        });
+        return {
+          title: 'Related OEM Price List & Rebate Schedules',
+          sub: `Chronological unit list price & landed cost schedules for ${targetCo || secondaryLbl}`,
+          formKey: 'trd_targets',
+          newBtnLbl: '+ New Price Target',
+          newPrefill: { company: targetCo || 'Shacman', segment: modelCell || '' },
+          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Segment / Model', 'List Net / Landed Cost', 'Effective Window', 'Status'],
+          rows: hits.map(t => ({
+            id: t.id,
+            formKey: 'trd_targets',
+            co: t.company || 'Shacman',
+            cells: [
+              ...(hideRelCo ? [] : [t.company || 'Shacman']),
+              t.id,
+              `${t.segment || t.price_list || '-'}`,
+              `${fmtUSD(t.unit_net_usd || 0, 0)} Net · ${fmtUSD(t.unit_cost_usd || 0, 0)} Cost`,
+              fmtWin(t.start_date, t.end_date),
+              isWinActive(t.end_date) ? 'Active' : 'Closed'
+            ],
+            active: isWinActive(t.end_date)
+          }))
+        };
+      }
+
+      if (ind === 'Insurance & Brokerage' && typeof computeInsuranceOperations === 'function') {
+        const ins = computeInsuranceOperations() || {};
+        const explicitCarrier = valByHdr(/carrier|insurer/i);
+        const carrierCell = explicitCarrier || secondaryLbl;
+        const lineCell = valByHdr(/line|product|category/i);
+        const allAgr = (ins.agreements || []).filter(a => a && !a.voided && !a._scheduleVoided && isDomCoAllowed(a.company || 'Insurance Company'));
+        let hits = allAgr.filter(a => {
+          if (carrierCell && a.carrier && (norm(a.carrier) === norm(carrierCell) || norm(carrierCell).includes(norm(a.carrier)))) return true;
+          if (lineCell && a.line) {
+            const lk = norm(lineCell).split(/\s+/)[0];
+            if (lk && lk.length >= 2 && norm(a.line).startsWith(lk)) return true;
+          }
+          return false;
+        });
+        if (!hits.length && !explicitCarrier && !lineCell) hits = allAgr.slice(0, 6);
+        return {
+          title: 'Related Carrier Commission Agreements',
+          sub: `Chronological brokerage commission & override schedules linked to ${carrierCell || primaryId}`,
+          formKey: 'ins_agreements',
+          newBtnLbl: '+ New Carrier Agreement',
+          newPrefill: { carrier: carrierCell || 'MedGulf', line: lineCell || '' },
+          cols: ['Agreement ID', 'Carrier & Line', 'New / Renewal %', 'Effective Window', 'Status'],
+          rows: hits.map(a => ({
+            id: a.id,
+            formKey: 'ins_agreements',
+            co: 'Insurance Company',
+            cells: [
+              a.id,
+              `${a.carrier || '-'} · ${a.line || '-'}`,
+              `${Number(a.new_bus_pct || 0).toFixed(1)}% New · ${Number(a.renewal_pct || 0).toFixed(1)}% Ren`,
+              fmtWin(a.start_date, a.end_date),
+              a.status || (isWinActive(a.end_date) ? 'Active' : 'Closed')
+            ],
+            active: isWinActive(a.end_date)
+          }))
+        };
+      }
+
+      if (ind === 'Holding & Treasury' && typeof computeHoldingSchedules === 'function') {
+        const hld = computeHoldingSchedules() || {};
+        const explicitEnt = valByHdr(/entities|entity|company|from|to|lender|borrower/i);
+        const partnerCell = valByHdr(/partner|stakeholder/i);
+        const entCell = explicitEnt || partnerCell || secondaryLbl;
+        const allPartners = (hld.partnerAgreements || []).filter(p => p && !p.voided && !p._scheduleVoided && isDomCoAllowed(p.entity || 'Bdeir Holding') && (!singleDomCo || !p.entity || norm(p.entity) === norm(singleDomCo)));
+        const pHits = allPartners.filter(p => !entCell || (explicitEnt && (norm(p.entity || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(p.entity || '')))) || (partnerCell && (norm(p.partner || '').includes(norm(partnerCell)) || norm(partnerCell).includes(norm(p.partner || '')))));
+        const fHits = (hld.facilitySchedules || []).filter(f => f && !f.voided && !f._scheduleVoided && isDomCoAllowed(f.company) && (!singleDomCo || !f.company || norm(f.company) === norm(singleDomCo)) && (!entCell || (explicitEnt && (norm(f.company || '').includes(norm(explicitEnt)) || norm(explicitEnt).includes(norm(f.company || '')) || norm(f.lender || '').includes(norm(explicitEnt)))) || (partnerCell && norm(f.lender || '').includes(norm(partnerCell)))));
+        const mapPartnerRow = p => ({
+          id: p.id,
+          formKey: 'hld_partners',
+          co: p.entity || 'Bdeir Holding',
+          cells: [...(hideRelCo ? [] : [p.entity || 'Bdeir Holding']), p.id, `Partner Split · ${p.partner || '-'}`, `${Number(p.pct || 0).toFixed(1)}% Share (${fmtUSD(p.entitled_usd || 0, 0)})`, fmtWin(p.start_date, p.end_date), p.status || 'Active'],
+          active: isWinActive(p.end_date)
+        });
+        const combined = [
+          ...pHits.map(mapPartnerRow),
+          ...fHits.map(f => ({
+            id: f.id,
+            formKey: 'hld_loans',
+            co: f.company || 'Bdeir Holding',
+            cells: [...(hideRelCo ? [] : [f.company || 'Bdeir Holding']), f.id, `${f.type || 'Facility'} · ${f.lender || '-'}`, `${Number(f.interest_rate_pct || 0).toFixed(1)}% APR (${fmtUSD(f.balance_usd || 0, 0)} Bal)`, fmtWin(f.start_date, f.end_date), f.status || 'Active'],
+            active: isWinActive(f.end_date)
+          }))
+        ];
+        return {
+          title: 'Related Partner Split & Facility Rate Agreements',
+          sub: `Chronological equity split & credit facility rate schedules linked to ${entCell || primaryId}`,
+          formKey: 'hld_partners',
+          newBtnLbl: '+ New Partner Agreement',
+          newPrefill: { entity: entCell || singleDomCo || 'Bdeir Holding' },
+          cols: [...(hideRelCo ? [] : ['Entity']), 'Schedule ID', 'Counterparty & Scope', 'Agreed Rate / Split', 'Effective Window', 'Status'],
+          rows: (combined.length || explicitEnt) ? combined : allPartners.slice(0, 4).map(mapPartnerRow)
+        };
+      }
+      return null;
+    })();
+
+    const relatedAgreementsBoxHtml = relatedAgreementsInfo ? `
+      <div class="pa-subgrid-box" id="indInspRelatedAgreementsBox" data-rel-agr-count="${relatedAgreementsInfo.rows.length}">
+        <div class="pa-subgrid-hdr">
+          <div>
+            <strong>${ic('pricing')} ${esc(relatedAgreementsInfo.title)}</strong>
+            <span class="pa-subgrid-sub">${esc(relatedAgreementsInfo.sub)}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="badge ${relatedAgreementsInfo.rows.length ? 'badge-ok' : 'badge-neutral'}">${relatedAgreementsInfo.rows.length} ${relatedAgreementsInfo.rows.length === 1 ? 'Agreement' : 'Agreements'}</span>
+            ${(canEditAny && !textOnlyLock) ? `<button type="button" class="btn btn-outline-bar btn-sm" data-ind-new-rel-agr="${esc(relatedAgreementsInfo.formKey)}">${esc(relatedAgreementsInfo.newBtnLbl)}</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:220px">
+          <table class="ledger-table">
+            <thead>
+              <tr>${relatedAgreementsInfo.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${relatedAgreementsInfo.rows.length ? relatedAgreementsInfo.rows.map(rw => `
+                <tr class="site-rule-row" data-ind-open-rel-agr="${esc(rw.id)}" data-ind-rel-form="${esc(rw.formKey)}" data-ind-rel-co="${esc(rw.co)}" role="button" tabindex="0" data-ui-tip="Click to open and edit this rate schedule">
+                  ${rw.cells.map((cv, ci) => `<td class="${ci === rw.cells.length - 2 || cv === rw.id ? 'mono' : ''}">${ci === rw.cells.length - 1 ? `<span class="badge ${rw.active ? 'badge-ok' : 'badge-neutral'}">${esc(cv)}</span>` : esc(cv)}</td>`).join('')}
+                </tr>
+              `).join('') : `<tr><td colspan="${relatedAgreementsInfo.cols.length}" class="site-rule-empty-cell">No rate agreements linked yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : '';
+
     const attachmentsBoxHtml = `
       <div class="pa-subgrid-box" id="indInspAttachmentsBox" data-can-edit="${canUploadAtt ? '1' : '0'}" data-domain-tbl="${esc(domainTblKey)}">
         <div class="pa-subgrid-hdr">
@@ -69510,6 +70451,8 @@
             </div>
             <div id="indInspValidationMsg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600"></div>
           </div>
+
+          ${relatedAgreementsBoxHtml}
 
           ${attachmentsBoxHtml}
 
@@ -70056,6 +70999,36 @@
         closeRecordInspector();
         openIndustryDomainEntryModal(resolved.formKey, resolved.prefill);
       };
+      const relAgrBox = $('indInspRelatedAgreementsBox');
+      if (relAgrBox && relatedAgreementsInfo) {
+        relAgrBox.querySelectorAll('[data-ind-new-rel-agr]').forEach(btn => {
+          btn.addEventListener('click', ev => {
+            ev.preventDefault();
+            const fk = btn.getAttribute('data-ind-new-rel-agr') || relatedAgreementsInfo.formKey;
+            closeRecordInspector();
+            openIndustryDomainEntryModal(fk, relatedAgreementsInfo.newPrefill || {});
+          });
+        });
+        relAgrBox.querySelectorAll('[data-ind-open-rel-agr]').forEach(tr => {
+          const openRelSched = () => {
+            const agrId = tr.getAttribute('data-ind-open-rel-agr') || '';
+            const agrCo = tr.getAttribute('data-ind-rel-co') || rowCompany;
+            const resolved = findDomainRecordPrefillForModal(ind, tr.getAttribute('data-ind-rel-form') || '', agrId, [], [agrId], agrCo, '');
+            closeRecordInspector();
+            openIndustryDomainEntryModal(resolved.formKey, resolved.prefill);
+          };
+          tr.addEventListener('click', ev => {
+            ev.preventDefault();
+            openRelSched();
+          });
+          tr.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+              ev.preventDefault();
+              openRelSched();
+            }
+          });
+        });
+      }
       const thermalBtn = $('indInspThermalSlipBtn');
       if (thermalBtn && window.MFG_PRINT) {
         thermalBtn.onclick = () => {
@@ -80062,6 +81035,261 @@
     return { supplier, before, amount, disc, payableLeg, dupHit };
   }
 
+  function renderSitePriceAgreementsSubgrid(siteName, origSiteName, siteRow, isEditingSite) {
+    const wrapEl = $('sitePriceAgreementsWrap');
+    if (!wrapEl) return;
+    if (typeof canAccessTable === 'function' && !canAccessTable('price_rules')) {
+      wrapEl.hidden = true;
+      wrapEl.innerHTML = '';
+      return;
+    }
+    const cleanSite = String(siteName || '').trim();
+    const cleanOrig = String(origSiteName || '').trim();
+    const sNorm = norm(cleanSite);
+    const origNorm = norm(cleanOrig);
+    if (!sNorm && !origNorm) {
+      wrapEl.hidden = true;
+      wrapEl.innerHTML = '';
+      return;
+    }
+    const canSeeRawRules = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+    const isRawRuleType = r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim());
+    const seenRuleIds = new Set();
+    const mergedRulePool = [
+      ...((STATE.customRecords && STATE.customRecords.price_rules) || []),
+      ...((SEED.records && SEED.records.price_rules) || [])
+    ];
+    const dedupedSiteCandidates = mergedRulePool.filter(r => {
+      if (!r) return false;
+      const rid = String(r.id || '');
+      if (rid) {
+        if (seenRuleIds.has(rid)) return false;
+        seenRuleIds.add(rid);
+      }
+      if (r.voided || r._multiIndustrySeed || isCommRule(r)) return false;
+      if (!canSeeRawRules && isRawRuleType(r)) return false;
+      const rsNorm = norm(r.site || '');
+      if (!rsNorm) return false;
+      return Boolean((sNorm && rsNorm === sNorm) || (origNorm && rsNorm === origNorm));
+    });
+    const allSiteRules = filterRecords(dedupedSiteCandidates, {
+      ignorePeriod: true,
+      ignoreCompany: true,
+      ignoreSearch: true,
+      tableKey: 'price_rules'
+    });
+    if (!isEditingSite && allSiteRules.length === 0) {
+      wrapEl.hidden = true;
+      wrapEl.innerHTML = '';
+      return;
+    }
+
+    const singleBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const showAllCos = Boolean(FORM_UI.siteRulesAllEntities);
+    const inBuRules = singleBu
+      ? allSiteRules.filter(r => !r.company || canonTwBu(r.company) === singleBu || norm(r.company) === norm(singleBu))
+      : allSiteRules;
+    const otherBuCount = singleBu ? Math.max(0, allSiteRules.length - inBuRules.length) : 0;
+    const scopedRules = (singleBu && !showAllCos) ? inBuRules : allSiteRules;
+    const hideCo = Boolean(singleBu && !showAllCos);
+
+    const todayStr = todayISO();
+    const isRuleActiveNow = r => {
+      const ed = String(r.end_date || '').trim().slice(0, 10);
+      return !ed || ed >= todayStr;
+    };
+
+    const totalCnt = scopedRules.length;
+    const activeCnt = scopedRules.filter(isRuleActiveNow).length;
+    const rawCnt = scopedRules.filter(isRawRuleType).length;
+    const salesCnt = Math.max(0, totalCnt - rawCnt);
+
+    const activeTab = (!canSeeRawRules && FORM_UI.siteRuleTab === 'raw') ? 'all' : (FORM_UI.siteRuleTab || 'all');
+    const tabFiltered = scopedRules.filter(r => {
+      if (activeTab === 'active') return isRuleActiveNow(r);
+      if (activeTab === 'raw') return isRawRuleType(r);
+      if (activeTab === 'sales') return !isRawRuleType(r);
+      return true;
+    });
+
+    const rawSearch = String(FORM_UI.siteRuleSearch || '');
+    const qNorm = norm(rawSearch);
+    const searchFiltered = qNorm
+      ? tabFiltered.filter(r => {
+          const hay = [r.rule_type, r.product, r.supplier, r.customer, r.company, r.start_date, r.end_date, r.unit, r.name]
+            .map(x => norm(x || ''))
+            .join(' ');
+          return hay.includes(qNorm);
+        })
+      : tabFiltered;
+
+    searchFiltered.sort((a, b) => {
+      const aAct = isRuleActiveNow(a) ? 1 : 0;
+      const bAct = isRuleActiveNow(b) ? 1 : 0;
+      if (bAct !== aAct) return bAct - aAct;
+      const bTkt = Number(b.matched_tickets || 0);
+      const aTkt = Number(a.matched_tickets || 0);
+      if (bTkt !== aTkt) return bTkt - aTkt;
+      const sdCmp = String(b.start_date || '').localeCompare(String(a.start_date || ''));
+      if (sdCmp !== 0) return sdCmp;
+      return String(a.product || '').localeCompare(String(b.product || ''));
+    });
+
+    const displayRows = searchFiltered.slice(0, 60);
+    const canAddRaw = typeof canEnterForm === 'function' && canEnterForm('pricerule_raw');
+    const canAddSales = typeof canEnterForm === 'function' && canEnterForm('pricerule');
+    const colCount = hideCo ? 6 : 7;
+
+    const rowsHtml = displayRows.length ? displayRows.map(r => {
+      const rt = String(r.rule_type || '').trim();
+      const isRaw = isRawRuleType(r);
+      const isTrOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rt);
+      const flatMat = isMatIndiffRule(r);
+      const flatTr = isTransIndiffRule(r);
+      const rawMat = isTrOnly
+        ? null
+        : (flatMat ? ruleIndiffPrice(r) : (r.unit_price != null && r.unit_price !== '' ? Number(r.unit_price) : (r.price != null && r.price !== '' ? Number(r.price) : null)));
+      const rawTr = flatTr
+        ? ruleTransIndiffPrice(r)
+        : (r.trans_unit_price != null && r.trans_unit_price !== '' ? Number(r.trans_unit_price) : (r.trans_price != null && r.trans_price !== '' ? Number(r.trans_price) : (isTrOnly && (r.unit_price != null || r.price != null) ? Number(r.unit_price ?? r.price) : null)));
+      const bundledQuarry = /^Purchase Price \(Site\)$/i.test(rt) && (r.includes_transport === true || r.includes_transport === 1);
+
+      const matBasis = flatMat ? '/ Load' : '/ ' + (r.unit || 'm³');
+      const trBasis = flatTr ? '/ Load' : '/ ' + (r.rate_per || r.unit || 'm³');
+
+      const matHtml = (rawMat != null && Number.isFinite(Number(rawMat)))
+        ? `<span class="mono site-rule-price${Number(rawMat) < 0 ? ' is-credit' : ''}">${esc(fmtUSD(rawMat, 2))}</span> <small class="site-rule-uom">${esc(matBasis)}</small>`
+        : (isTrOnly ? `<span class="mu">Haulage Only</span>` : `<span class="mu">-</span>`);
+
+      const trHtml = bundledQuarry
+        ? `<span class="badge badge-brass">Incl. in Mat</span>`
+        : ((rawTr != null && Number.isFinite(Number(rawTr)) && (Number(rawTr) !== 0 || isTrOnly))
+            ? `<span class="mono site-rule-price">${esc(fmtUSD(rawTr, 2))}</span> <small class="site-rule-uom">${esc(trBasis)}</small>`
+            : `<span class="mu">-</span>`);
+
+      let typeLbl = 'Sales Delivery';
+      let typeCls = 'is-sales';
+      if (/^Purchase Price \(Site\)$/i.test(rt)) { typeLbl = 'Quarry Material'; typeCls = 'is-raw'; }
+      else if (/^Transport Price \(Site\)$/i.test(rt)) { typeLbl = 'Site Haulage'; typeCls = 'is-haul'; }
+      else if (/^Haulage \(Customer Site\)$/i.test(rt)) { typeLbl = 'Customer Haulage'; typeCls = 'is-haul'; }
+      else if (/Pickup/i.test(rt)) { typeLbl = 'Sales Pickup'; typeCls = 'is-sales'; }
+
+      const partyLbl = isRaw
+        ? (r.supplier || (siteRow && siteRow.supplier) || 'Site Default')
+        : (r.customer || (siteRow && siteRow.customer) || 'Site Default');
+      const prodLbl = r.product || 'All Products';
+      const sdLbl = r.start_date ? fmtDateDMY(r.start_date) : 'Open';
+      const edLbl = r.end_date ? fmtDateDMY(r.end_date) : 'Open';
+      const actNow = isRuleActiveNow(r);
+      const statusHtml = actNow
+        ? `<span class="badge badge-ok">Active</span>`
+        : `<span class="badge badge-neutral">Ended</span>`;
+
+      return `
+        <tr class="site-rule-row${actNow ? '' : ' is-ended'}" data-open-site-rule="${esc(r.id)}" role="button" tabindex="0" data-ui-tip="Click to open and edit this price agreement">
+          ${hideCo ? '' : `<td><span class="site-rule-co">${esc(r.company || 'Shared')}</span></td>`}
+          <td><span class="site-rule-type-pill ${typeCls}">${esc(typeLbl)}</span></td>
+          <td>
+            <div class="site-rule-party">${esc(partyLbl)}</div>
+            <div class="site-rule-prod">${esc(prodLbl)}</div>
+          </td>
+          <td class="r">${matHtml}</td>
+          <td class="r">${trHtml}</td>
+          <td class="mono site-rule-win">${esc(sdLbl)} to ${esc(edLbl)}</td>
+          <td class="r">${statusHtml}</td>
+        </tr>
+      `;
+    }).join('') : `
+      <tr>
+        <td colspan="${colCount}" class="site-rule-empty-cell">
+          ${totalCnt === 0
+            ? (otherBuCount > 0
+                ? `No price agreements in ${esc(singleBu)} for <b>${esc(cleanSite || cleanOrig)}</b> (${otherBuCount} in other allowed entities).`
+                : `No price agreements linked to <b>${esc(cleanSite || cleanOrig)}</b> yet.`)
+            : `No price agreements match the active filter${rawSearch ? ` "${esc(rawSearch)}"` : ''}.`}
+        </td>
+      </tr>
+    `;
+
+    const prevSearch = $('siteRulesSearchInput');
+    const searchWasFocused = Boolean(prevSearch && document.activeElement === prevSearch);
+    const selStart = searchWasFocused ? prevSearch.selectionStart : null;
+    const selEnd = searchWasFocused ? prevSearch.selectionEnd : null;
+
+    wrapEl.hidden = false;
+    wrapEl.innerHTML = `
+      <div class="pa-subgrid site-rules-subgrid" id="sitePriceAgreementsPanel" data-site-rules-total="${totalCnt}" data-site-rules-active="${activeCnt}">
+        <div class="site-rules-toolbar">
+          <div class="site-rules-head-left">
+            <div class="site-rules-title-row">
+              <span class="site-rules-kicker">${ic('pricing')} Related Price Agreements</span>
+              <span class="site-rules-count">${activeCnt} Active · ${totalCnt} ${totalCnt === 1 ? 'Agreement' : 'Agreements'}${hideCo ? ` in ${esc(singleBu)}` : ''}</span>
+              ${singleBu && (otherBuCount > 0 || showAllCos) ? `
+                <button type="button" class="att-preset-pill site-rules-co-toggle" data-site-rules-all-cos="1">
+                  ${showAllCos ? `Showing All Entities · Filter to ${esc(singleBu)}` : `+${otherBuCount} in Other Entities · Show All`}
+                </button>
+              ` : ''}
+            </div>
+            <div class="site-rules-tabs" role="tablist" aria-label="Filter site price agreements">
+              <button type="button" class="filter-chip site-rules-tab ${activeTab === 'all' ? 'active' : ''}" data-site-rule-tab="all">
+                <span>All</span><b>${totalCnt}</b>
+              </button>
+              <button type="button" class="filter-chip site-rules-tab ${activeTab === 'active' ? 'active' : ''}" data-site-rule-tab="active">
+                <span>Active</span><b>${activeCnt}</b>
+              </button>
+              ${canSeeRawRules ? `<button type="button" class="filter-chip site-rules-tab ${activeTab === 'raw' ? 'active' : ''}" data-site-rule-tab="raw">
+                <span>Quarry &amp; Haulage</span><b>${rawCnt}</b>
+              </button>` : ''}
+              <button type="button" class="filter-chip site-rules-tab ${activeTab === 'sales' ? 'active' : ''}" data-site-rule-tab="sales">
+                <span>Sales &amp; Delivery</span><b>${salesCnt}</b>
+              </button>
+            </div>
+          </div>
+          <div class="site-rules-head-right">
+            ${totalCnt > 2 || rawSearch ? `
+              <div class="site-rules-search-wrap">
+                <input type="search" id="siteRulesSearchInput" class="loan-subgrid-search site-rules-search" value="${esc(rawSearch)}" placeholder="Filter product or party..." autocomplete="off">
+              </div>
+            ` : ''}
+            <div class="site-rules-actions">
+              ${canAddRaw ? `<button type="button" class="btn btn-sm site-rule-add-btn" data-site-new-rule="pricerule_raw">+ Quarry / Haulage Rule</button>` : ''}
+              ${canAddSales ? `<button type="button" class="btn btn-sm site-rule-add-btn is-brass" data-site-new-rule="pricerule">+ Sales Rule</button>` : ''}
+              ${totalCnt > 0 ? `<button type="button" class="btn btn-sm site-rule-hub-btn" data-site-open-rules-hub="1" data-ui-tip="Open Price Agreements filtered to ${esc(cleanSite || cleanOrig)}">Price Rules ↗</button>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap site-rules-table-wrap">
+          <table class="ledger-table site-rules-table">
+            <thead>
+              <tr>
+                ${hideCo ? '' : '<th>Entity</th>'}
+                <th>Agreement Type</th>
+                <th>Counterparty &amp; Product</th>
+                <th class="r">Material Rate</th>
+                <th class="r">Haulage Rate</th>
+                <th>Effective Window</th>
+                <th class="r">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    if (searchWasFocused) {
+      const nextSearch = $('siteRulesSearchInput');
+      if (nextSearch) {
+        nextSearch.focus({ preventScroll: true });
+        if (selStart != null && selEnd != null) {
+          try { nextSearch.setSelectionRange(selStart, selEnd); } catch (_) {}
+        }
+      }
+    }
+  }
+
   function recalcFormInner() {
     try {
       if (
@@ -81837,6 +83065,12 @@
         }
         const siteEditId = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord.id : '';
         syncUniversalMainDupHint('f_site', 'sites', 'Site', { excludeId: siteEditId });
+        const curSiteInputVal = siteInp ? String(siteInp.value || '').trim() : '';
+        const origSiteVal = editingSiteRec && editingSiteRec.orig ? String(editingSiteRec.orig.name || '').trim() : '';
+        const resolvedSiteRow = (editingSiteRec && editingSiteRec.orig)
+          || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(curSiteInputVal || origSiteVal))
+          || null;
+        renderSitePriceAgreementsSubgrid(curSiteInputVal || origSiteVal, origSiteVal, resolvedSiteRow, Boolean(editingSiteRec));
         return {};
       }
       if (STATE.modalForm === 'region') {
@@ -85862,6 +87096,7 @@
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketSeriesTabOpen = false; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
+    FORM_UI.siteRuleTab = 'all'; FORM_UI.siteRuleSearch = ''; FORM_UI.siteRulesAllEntities = false;
     FORM_UI.malfCatScope = 'all'; FORM_UI.lastMalfItem = val('f_malf_item'); FORM_UI.lastMalfCo = val('f_company'); FORM_UI.malfUomManual = false;
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -86506,11 +87741,88 @@
             targetEl.dispatchEvent(new Event('change', { bubbles: true }));
           }
           recalcForm();
+          return;
+        }
+        const siteRuleTabBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rule-tab]') : null;
+        if (siteRuleTabBtn) {
+          ev.preventDefault();
+          FORM_UI.siteRuleTab = siteRuleTabBtn.getAttribute('data-site-rule-tab') || 'all';
+          recalcForm();
+          return;
+        }
+        const siteRulesCoBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-rules-all-cos]') : null;
+        if (siteRulesCoBtn) {
+          ev.preventDefault();
+          FORM_UI.siteRulesAllEntities = !FORM_UI.siteRulesAllEntities;
+          recalcForm();
+          return;
+        }
+        const siteNewRuleBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-new-rule]') : null;
+        if (siteNewRuleBtn) {
+          ev.preventDefault();
+          const targetForm = siteNewRuleBtn.getAttribute('data-site-new-rule') || 'pricerule';
+          const origSiteName = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig && STATE.editingRecord.orig.name) || '').trim();
+          const curSiteName = String(val('f_site') || origSiteName).trim();
+          const siteRecObj = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig)
+            || ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(curSiteName))
+            || null;
+          const pf = {
+            site: curSiteName,
+            _origSiteOnDiscard: origSiteName,
+            _fromSiteFormSwitch: STATE.modalForm === 'site',
+            supplier: siteRecObj && siteRecObj.supplier ? siteRecObj.supplier : '',
+            customer: siteRecObj && siteRecObj.customer ? siteRecObj.customer : ''
+          };
+          openEntryModal(targetForm, pf, { label: targetForm === 'pricerule_raw' ? 'Quarry / Haulage Agreement' : 'Sales Price Agreement' });
+          return;
+        }
+        const siteRulesHubBtn = ev.target && ev.target.closest ? ev.target.closest('[data-site-open-rules-hub]') : null;
+        if (siteRulesHubBtn) {
+          ev.preventDefault();
+          const origSiteName = String((STATE.editingRecord && STATE.editingRecord.crKey === 'sites' && STATE.editingRecord.orig && STATE.editingRecord.orig.name) || '').trim();
+          const curSiteName = String(val('f_site') || origSiteName).trim();
+          if (isEntryModalDirty()) {
+            promptUnsavedEntrySwitch({ type: 'site_rules_hub', siteName: curSiteName, origSiteName: origSiteName || curSiteName, label: 'Price Rules' });
+            return;
+          }
+          closeEntryModal(true);
+          openSiteRulesHubForSite(curSiteName);
+          return;
+        }
+        const openSiteRuleRow = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
+        if (openSiteRuleRow) {
+          ev.preventDefault();
+          const ruleId = openSiteRuleRow.getAttribute('data-open-site-rule') || '';
+          const ruleRow = resolveInspectorRecord('price_rules', ruleId);
+          if (ruleRow) {
+            const ruleForm = resolveFormTypeForEditableRecord('price_rules', ruleRow);
+            if (ruleForm) {
+              openEntryModal(ruleForm, { editRecord: { crKey: 'price_rules', row: ruleRow } }, { label: ruleRow.name || 'Price Agreement' });
+            } else {
+              if (isEntryModalDirty()) {
+                promptUnsavedEntrySwitch({ type: 'inspector', crKey: 'price_rules', rowId: ruleRow.id || ruleId, label: ruleRow.name || 'Price Agreement' });
+                return;
+              }
+              closeEntryModal(true);
+              showRecordInspector('price_rules', ruleRow.id || ruleId);
+            }
+          }
+        }
+      });
+      body.addEventListener('keydown', ev => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        const openSiteRuleRow = ev.target && ev.target.closest ? ev.target.closest('[data-open-site-rule]') : null;
+        if (openSiteRuleRow) {
+          ev.preventDefault();
+          openSiteRuleRow.click();
         }
       });
       body.addEventListener('input', ev => {
         if (ev.target && ev.target.id === 'openLoansSearchInput') {
           FORM_UI.openLoanSearch = ev.target.value || '';
+          recalcForm();
+        } else if (ev.target && ev.target.id === 'siteRulesSearchInput') {
+          FORM_UI.siteRuleSearch = ev.target.value || '';
           recalcForm();
         }
       });
@@ -90842,6 +92154,9 @@
           extraApiPosts.push(['loans', Object.assign({}, l)]);
         });
       }
+      if (crKey === 'sites' && isEditingExisting && editCtx && editCtx.orig && String(editCtx.orig.name || '').trim() !== String(record.name || '').trim()) {
+        cascadeSiteRename(editCtx.orig.name, record.name, extraApiPosts);
+      }
       if (crKey === 'sites' && window.MFG_GEO) {
         if (isEditingExisting && editCtx && editCtx.orig && typeof window.MFG_GEO.clearLocationPin === 'function') {
           const origCat = resolveSiteCategory(editCtx.orig);
@@ -91150,7 +92465,24 @@
         FORM_UI.initialModalSig = getEntryModalStateSignature();
       } else if (afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
         if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
-          openEntryModal(afterSaveTarget.formType, afterSaveTarget.prefill || null, { forceSwitch: true });
+          const nextPf = afterSaveTarget.prefill ? Object.assign({}, afterSaveTarget.prefill) : null;
+          if (nextPf) {
+            if (nextPf._fromSiteFormSwitch && crKey === 'sites' && record && record.name) {
+              nextPf.site = record.name;
+            }
+            delete nextPf._origSiteOnDiscard;
+            delete nextPf._fromSiteFormSwitch;
+          }
+          openEntryModal(afterSaveTarget.formType, nextPf, { forceSwitch: true });
+        } else if (afterSaveTarget.type === 'inspector' && afterSaveTarget.crKey) {
+          closeEntryModal(true);
+          const nextRowId = (record && String(afterSaveTarget.crKey) === String(crKey))
+            ? (record.id || afterSaveTarget.rowId)
+            : afterSaveTarget.rowId;
+          showRecordInspector(afterSaveTarget.crKey, nextRowId);
+        } else if (afterSaveTarget.type === 'site_rules_hub') {
+          closeEntryModal(true);
+          openSiteRulesHubForSite((crKey === 'sites' && record && record.name) ? record.name : (afterSaveTarget.siteName || ''));
         } else if (afterSaveTarget.type === 'pending_expense' && afterSaveTarget.expId) {
           closeEntryModal(true);
           openPendingExpensePriceModal(afterSaveTarget.expId);
@@ -91511,7 +92843,7 @@
     body.querySelectorAll('input, select, textarea').forEach(el => {
       if (!el.id && !el.name) return;
       if (el.type === 'file') return;
-      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput') return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.classList.contains('aie-voice-input') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput') return;
       const key = el.id || el.name;
       const v = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
       parts.push(key + '=' + v);
@@ -91595,6 +92927,26 @@
     return true;
   }
 
+  function openSiteRulesHubForSite(siteName) {
+    const cleanName = String(siteName || '').trim();
+    if (STATE.view === 'reg_sites' || STATE.view === 'reg_regions') {
+      STATE.univConnTableKey = 'price_rules';
+      STATE.univConnPartyFilter = cleanName;
+      STATE.univConnView = 'site_all';
+      STATE.univConnSubRole = '';
+      STATE.univConnSearch = '';
+      renderApp();
+      const expCard = $('connTableExplorerCard');
+      if (expCard && typeof expCard.scrollIntoView === 'function') {
+        try { expCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+      }
+    } else {
+      STATE.activeTableKey = 'price_rules';
+      STATE.search = cleanName;
+      setView('tables');
+    }
+  }
+
   function executeDiscardAndSwitchEntry() {
     const target = FORM_UI.pendingSwitchTarget;
     hideEntryUnsavedPrompt();
@@ -91605,7 +92957,23 @@
       return;
     }
     if (target.type === 'form' && target.formType) {
-      openEntryModal(target.formType, target.prefill || null, { forceSwitch: true });
+      const nextPf = target.prefill ? Object.assign({}, target.prefill) : null;
+      if (nextPf && Object.prototype.hasOwnProperty.call(nextPf, '_origSiteOnDiscard')) {
+        nextPf.site = nextPf._origSiteOnDiscard || '';
+        delete nextPf._origSiteOnDiscard;
+        delete nextPf._fromSiteFormSwitch;
+      }
+      openEntryModal(target.formType, nextPf, { forceSwitch: true });
+      return;
+    }
+    if (target.type === 'inspector' && target.crKey && target.rowId) {
+      closeEntryModal(true);
+      showRecordInspector(target.crKey, target.rowId);
+      return;
+    }
+    if (target.type === 'site_rules_hub') {
+      closeEntryModal(true);
+      openSiteRulesHubForSite(target.origSiteName || target.siteName || '');
       return;
     }
     if (target.type === 'pending_expense' && target.expId) {
@@ -91816,6 +93184,10 @@
         const inspRowId = String(activeRowForHeader.id);
         openInspBtn.hidden = false;
         openInspBtn.onclick = () => {
+          if (isEntryModalDirty()) {
+            promptUnsavedEntrySwitch({ type: 'inspector', crKey: inspCrKey, rowId: inspRowId, label: '360° Details' });
+            return;
+          }
           closeEntryModal(true);
           showRecordInspector(inspCrKey, inspRowId);
         };
@@ -92035,7 +93407,7 @@
             const controls = Array.from(body.querySelectorAll('.form-grid-3 input, .form-grid-3 select, .form-grid input, .form-grid select')).filter(el => {
               if (el.disabled || el.readOnly || el.type === 'hidden' || el.type === 'checkbox') return false;
               if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) return false;
-              if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search')) return false;
+              if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.id === 'openLoansSearchInput' || el.id === 'siteRulesSearchInput') return false;
               const wrap = el.closest('.form-field');
               if (wrap && wrap.hidden) return false;
               return el.offsetParent !== null;
@@ -92055,9 +93427,9 @@
           if (!t || !t.closest) return;
           if (t.closest('.modal-foot')) return;
           if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
-          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput')) return;
+          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput' || t.id === 'siteRulesSearchInput')) return;
           if (ev.type === 'click') {
-            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview]')) return;
+            if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview], [data-site-rule-tab], [data-site-rules-all-cos], [data-open-site-rule], [data-site-new-rule], [data-site-open-rules-hub]')) return;
             const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
             if (!actBtn) return;
             if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
@@ -92153,6 +93525,23 @@
       }
       if (prefill.owner && $('f_supplier')) {
         $('f_supplier').value = prefill.owner;
+      }
+      if ((prefill.supplier || prefill.sup) && $('f_supplier')) {
+        $('f_supplier').value = String(prefill.supplier || prefill.sup);
+        FORM_UI.lastSupplier = '';
+      }
+      if ((prefill.customer || prefill.cust) && $('f_customer')) {
+        $('f_customer').value = String(prefill.customer || prefill.cust);
+        FORM_UI.lastCustomer = '';
+      }
+      if ((prefill.ruleType || prefill.ruletype) && $('f_ruletype')) {
+        $('f_ruletype').value = String(prefill.ruleType || prefill.ruletype);
+      } else if (prefill.site && form === 'pricerule' && $('f_ruletype')) {
+        $('f_ruletype').value = 'Sales (Delivery)';
+      }
+      if (prefill.site && $('f_site')) {
+        $('f_site').value = String(prefill.site);
+        FORM_UI.lastSite = '';
       }
       if (prefill.region && $('f_region') && form === 'site') {
         $('f_region').value = prefill.region;
@@ -94662,12 +96051,17 @@
         const jvParts = (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name));
         const siteJvDists = (rec.jv_distributions || []).filter(d => norm(d.site) === norm(name));
         const siteLog = (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name));
-        if (qRules.length || rawLoads.length || row.supplier || row.is_jv || !row.customer) {
+        const canSeeRawSiteRules = typeof canAccessTable !== 'function' || canAccessTable('raw_purchases');
+        if (canSeeRawSiteRules && (qRules.length || rawLoads.length || row.supplier || row.is_jv || !row.customer)) {
           addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', qRules, ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
-          addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', rawLoads, ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
         }
         if (sRules.length || salesLoads.length || row.customer) {
           addGrid('sg_st_srules', `Sales & Delivery Agreements at ${name}`, 'Sales Rules', 'Sales Rules', 'price_rules', sRules, ['company', 'rule_type', 'customer', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+        }
+        if (qRules.length || rawLoads.length || row.supplier || row.is_jv || !row.customer) {
+          addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', rawLoads, ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
+        }
+        if (sRules.length || salesLoads.length || row.customer) {
           addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', salesLoads, ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
         }
         if (jvParts.length || row.is_jv || !row.customer) {
@@ -97190,7 +98584,7 @@
     } else if (panelId === 'listPricePanel') {
       allowedSgIds = ['sg_p_rules', 'sg_p_sales'];
     } else if (panelId === 'deliveryTransCompPanel') {
-      allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_st_sales', 'sg_st_rules'];
+      allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_st_sales', 'sg_st_rules', 'sg_st_srules'];
     } else if (panelId === 'commissionProductPanel' || panelId === 'commissionLedgerPanel') {
       allowedSgIds = ['sg_pr_sales', 'sg_pr_comm_rcpt', 'sg_p_sales', 'sg_p_rules', 'sg_s_comm_rcpt', 'sg_s_rules'];
     } else if (panelId === 'snOverdueAr') {
@@ -97224,9 +98618,9 @@
     } else if (panelId === 'salesProdPanel') {
       allowedSgIds = ['sg_p_sales', 'sg_p_rules'];
     } else if (panelId === 'salesSitePanel') {
-      allowedSgIds = ['sg_st_sales', 'sg_st_rules'];
+      allowedSgIds = ['sg_st_sales', 'sg_st_rules', 'sg_st_srules'];
     } else if (panelId === 'sitesPanel') {
-      allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_st_jv', 'sg_st_jv_dist'];
+      allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_st_srules', 'sg_st_jv', 'sg_st_jv_dist'];
     } else if (panelId === 'jvSitesEntPanel' || panelId === 'jvPartPanel') {
       allowedSgIds = ['sg_st_jv', 'sg_st_jv_dist', 'sg_st_raw', 'sg_jv_dist'];
     } else if (panelId === 'rawSupPanel' || panelId === 'apLegBridgePanel') {
@@ -97252,7 +98646,7 @@
       } else if (/commission/i.test(tableTitle)) {
         allowedSgIds = ['sg_pr_sales', 'sg_pr_comm_rcpt', 'sg_s_comm_rcpt', 'sg_s_rules', 'sg_p_sales'];
       } else if (/below[-\s]*agreed|lapsed|price|corridor|tariff|rate\s+comparison/i.test(tableTitle)) {
-        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_rules', 'sg_p_sales', 'sg_st_rules', 'sg_st_sales', 'sg_st_raw', 'sg_s_rules', 'sg_s_haul', 'sg_s_mat', 'sg_pr_sales', 'sg_pr_raw'];
+        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_rules', 'sg_p_sales', 'sg_st_rules', 'sg_st_srules', 'sg_st_sales', 'sg_st_raw', 'sg_s_rules', 'sg_s_haul', 'sg_s_mat', 'sg_pr_sales', 'sg_pr_raw'];
       } else if (/receivable|overdue|\bar\b|credit\s+limit|vat\s+invoice/i.test(tableTitle)) {
         allowedSgIds = ['sg_c_sales', 'sg_c_rcpts', 'sg_c_vat', 'sg_c_cred', 'sg_ar_sales', 'sg_ar_rcpt'];
       } else if (/payable|\bap\b|3-leg|settlement/i.test(tableTitle)) {
@@ -97266,9 +98660,9 @@
       } else if (/\bjv\b|partner|entitlement/i.test(tableTitle)) {
         allowedSgIds = ['sg_st_jv', 'sg_st_jv_dist', 'sg_st_raw', 'sg_jv_dist'];
       } else if (/sales|revenue|grade|delivery/i.test(tableTitle)) {
-        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_sales', 'sg_p_rules', 'sg_st_sales', 'sg_st_rules', 'sg_eq_sales', 'sg_d_sales'];
+        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_sales', 'sg_p_rules', 'sg_st_sales', 'sg_st_rules', 'sg_st_srules', 'sg_eq_sales', 'sg_d_sales'];
       } else if (/quarry|raw\s+material|haulage/i.test(tableTitle)) {
-        allowedSgIds = ['sg_s_mat', 'sg_s_haul', 'sg_s_rules', 'sg_st_raw', 'sg_st_rules', 'sg_p_raw', 'sg_eq_raw', 'sg_d_raw'];
+        allowedSgIds = ['sg_s_mat', 'sg_s_haul', 'sg_s_rules', 'sg_st_raw', 'sg_st_rules', 'sg_st_srules', 'sg_p_raw', 'sg_eq_raw', 'sg_d_raw'];
       }
     }
 
@@ -97283,7 +98677,7 @@
       const sNorm = (filterSite && !/^\(/.test(filterSite)) ? norm(filterSite) : '';
       if (pNorm && (crKey === 'customers' || crKey === 'sites' || crKey === 'suppliers')) {
         list = list.map(sg => {
-          if (['sg_c_sales', 'sg_c_rules', 'sg_st_raw', 'sg_st_sales', 'sg_st_rules', 'sg_s_mat', 'sg_s_rules'].includes(sg.id)) {
+          if (['sg_c_sales', 'sg_c_rules', 'sg_st_raw', 'sg_st_sales', 'sg_st_rules', 'sg_st_srules', 'sg_s_mat', 'sg_s_rules'].includes(sg.id)) {
             const matchingRows = (sg.rows || []).filter(r => !r.product || norm(r.product) === pNorm);
             const exactRows = (sg.rows || []).filter(r => norm(r.product) === pNorm);
             const picked = exactRows.length > 0 ? exactRows : matchingRows;
@@ -97669,6 +99063,8 @@
           ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
           ${(key === 'staff_members' || key === 'employments' || key === 'staff_assignments') && canEnterForm('staffassignment') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspLogStaffAssignBtn">${ic('staffassignment')} + Log Role or Equipment</button>` : ''}
           ${key === 'staff_members' && canEnterForm('employment') ? `<button type="button" class="pa-cmd-btn" id="inspNewStaffContractBtn">${ic('employment')} + New Contract</button>` : ''}
+          ${key === 'sites' && canEnterForm('pricerule_raw') ? `<button type="button" class="pa-cmd-btn" id="inspNewSiteRawRuleBtn">${ic('pricing')} + Quarry Agreement</button>` : ''}
+          ${key === 'sites' && canEnterForm('pricerule') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspNewSiteSalesRuleBtn">${ic('pricing')} + Sales Agreement</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
@@ -98134,6 +99530,22 @@
         const stName = row.staff || row.name || '';
         closeRecordInspector();
         openEntryModal('employment', { staff: stName, role: row.role || '', co: row.company || '' });
+      });
+    }
+    const inspNewSiteRawRuleBtn = $('inspNewSiteRawRuleBtn');
+    if (inspNewSiteRawRuleBtn) {
+      inspNewSiteRawRuleBtn.addEventListener('click', () => {
+        const sName = row.name || row.site || '';
+        closeRecordInspector();
+        openEntryModal('pricerule_raw', { site: sName, supplier: row.supplier || '' });
+      });
+    }
+    const inspNewSiteSalesRuleBtn = $('inspNewSiteSalesRuleBtn');
+    if (inspNewSiteSalesRuleBtn) {
+      inspNewSiteSalesRuleBtn.addEventListener('click', () => {
+        const sName = row.name || row.site || '';
+        closeRecordInspector();
+        openEntryModal('pricerule', { site: sName, customer: row.customer || '' });
       });
     }
     const inspLogPartBtn = $('inspLogPartBtn');
@@ -99367,6 +100779,7 @@
           const itemSuffix = mCls.isDiesel ? '' : ` · ${mCls.item}`;
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${itemSuffix}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         } else if (key === 'sites') {
+          const origSiteCat = resolveSiteCategory(origRowSnap);
           if ('includes_transport' in pendingUpdates) {
             row.haulage_mode = row.includes_transport ? 'supplier_delivered' : 'separate';
           }
@@ -99374,8 +100787,20 @@
             row.geo_zone = row.region || '';
           }
           row.site_category = (!row.is_jv && !isSupplierDeliveredSite(row) && row.customer && !row.supplier) ? 'customer' : 'supplier';
+          const siteNameChanged = String((origRowSnap && origRowSnap.name) || '').trim() !== String(row.name || '').trim();
+          const siteCatChanged = origSiteCat !== row.site_category;
+          const sitePinRemoved = row.latitude == null || row.longitude == null;
+          if (window.MFG_GEO && typeof window.MFG_GEO.clearLocationPin === 'function' && origRowSnap && origRowSnap.name) {
+            if (siteNameChanged || siteCatChanged || sitePinRemoved) {
+              window.MFG_GEO.clearLocationPin({ name: origRowSnap.name, siteCategory: origSiteCat, excludeId: row.id }, SEED);
+            }
+          }
           if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
             window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
+          }
+          row._inspSiteCascadePosts = [];
+          if (siteNameChanged && origRowSnap && origRowSnap.name) {
+            cascadeSiteRename(origRowSnap.name, row.name, row._inspSiteCascadePosts);
           }
           normalizeDistinctSiteCategories(SEED);
         } else if (key === 'repair_items') {
@@ -99439,12 +100864,17 @@
         }
         row.modified_by = activeUser().email;
         row.modified_at = nextMonotonicIso();
+        const inspSiteCascadePosts = Array.isArray(row._inspSiteCascadePosts) ? row._inspSiteCascadePosts : [];
+        delete row._inspSiteCascadePosts;
         if (!Array.isArray(STATE.customRecords[key])) STATE.customRecords[key] = [];
         const cIdx = STATE.customRecords[key].findIndex(x => String(x.id) === String(row.id));
         if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
         else STATE.customRecords[key].unshift(Object.assign({}, row));
+        if (window.__fastInspectorModifyTest && inspSiteCascadePosts.length) {
+          applyCustomRecordsToSeed();
+        }
         if (!window.__fastInspectorModifyTest) {
-          const inspExtraPosts = [];
+          const inspExtraPosts = inspSiteCascadePosts.slice();
           let touchedInspPeers = [];
           if (isEffInspTbl && row.start_date) {
             touchedInspPeers = syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
@@ -123030,6 +124460,8 @@
       window.MFG_GEO.wireGeoStudio(container, {
         SEED,
         STATE,
+        canAccessTable,
+        filterRecords,
         rerenderWorkspace: () => renderApp(),
         openInspector: (k, id) => showRecordInspector(k, id),
         editRecord: (k, id) => openEntryModalForRecord(k, id),

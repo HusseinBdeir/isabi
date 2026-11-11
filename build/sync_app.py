@@ -9,7 +9,7 @@ import sys
 
 ISABI_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PARENT_DIR = os.path.dirname(ISABI_ROOT)
-APP_SRC_ROOT = (
+APP_SRC_ROOT = os.environ.get("ISABI_APP_SRC") or (
     os.path.join(_PARENT_DIR, "isabi-app")
     if os.path.isdir(os.path.join(_PARENT_DIR, "isabi-app"))
     else os.path.join(_PARENT_DIR, "mfg-web")

@@ -2073,8 +2073,19 @@
     const isMfg = activeInd === 'Manufacturing';
     const inIndDim = r => Boolean(r && !r.voided && (isMfg ? !r._multiIndustrySeed : r._industry === activeInd));
     const inInd = r => Boolean(inIndDim(r) && (!singleBu || !r.company || r.company === singleBu));
-    const payCutoffStamp = (_activePbiState && _activePbiState.payrollCutoffMode) || 'closed_month';
-    const stamp = `${activeInd}|${singleBu}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const stRef = _activePbiState || (typeof window !== 'undefined' ? window.STATE : null);
+    const stCoStamp = String((stRef && stRef.company) || '');
+    const rlsArr = (typeof window !== 'undefined' && typeof window.__mfgAllowedCompanyNames === 'function')
+      ? window.__mfgAllowedCompanyNames()
+      : (Array.isArray(stRef && stRef.allowedCompanyNames) ? stRef.allowedCompanyNames : []);
+    const rlsCosStamp = Array.isArray(rlsArr) ? rlsArr.join(',') : '';
+    const offStamp = ((typeof window !== 'undefined' && typeof window.__mfgIsOfficialScopeActive === 'function' && window.__mfgIsOfficialScopeActive()) || Boolean(stRef && (stRef.officialOnly || stRef._officialScopeActive))) ? 1 : 0;
+    const demoStamp = Boolean(stRef && (stRef.demoVisitor || stRef.company === 'demo')) ? 1 : 0;
+    const activeSeatIdx = stRef && stRef.activeUserIdx != null ? stRef.activeUserIdx : '';
+    const canSeePr = !(typeof window !== 'undefined' && typeof window.__mfgCanAccessTable === 'function' && !window.__mfgCanAccessTable('price_rules'));
+    const canSeeRawPr = !(typeof window !== 'undefined' && typeof window.__mfgCanAccessTable === 'function' && !window.__mfgCanAccessTable('raw_purchases'));
+    const payCutoffStamp = (stRef && stRef.payrollCutoffMode) || 'closed_month';
+    const stamp = `${activeInd}|${singleBu}|${stCoStamp}|${activeSeatIdx}|${rlsCosStamp}|${offStamp}|${demoStamp}|${canSeePr ? 1 : 0}:${canSeeRawPr ? 1 : 0}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -2342,8 +2353,16 @@
       }
     });
 
-    (rec.price_rules || []).forEach(pr => {
+    const scopedPrList = !canSeePr
+      ? []
+      : ((typeof window !== 'undefined' && typeof window.__mfgFilterRecords === 'function')
+          ? window.__mfgFilterRecords(rec.price_rules || [], { ignorePeriod: true, ignoreSearch: true, tableKey: 'price_rules' })
+          : (rec.price_rules || []).filter(inInd));
+    scopedPrList.forEach(pr => {
       if (!inIndDim(pr)) return;
+      const rtTrim = String(pr.rule_type || '').trim();
+      const isRawRt = /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rtTrim);
+      if (isRawRt && !canSeeRawPr) return;
       if (pr.customer) {
         const e = ensure(rel.custByName, pr.customer, initCust);
         if (e && !pr.end_date) e.active_rules++;
@@ -2361,11 +2380,10 @@
         }
       }
       if (pr.site) {
-        const e = ensure(rel.siteByName, pr.site, initSite);
-        if (e && !pr.end_date) e.active_rules++;
-        const rtTrim = String(pr.rule_type || '').trim();
-        if (!/^Commission$/i.test(rtTrim) && !pr.end_date) {
-          const isRawRt = /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rtTrim);
+        const isPrActiveNow = !pr.end_date || String(pr.end_date).trim().slice(0, 10) >= localTodayPbi();
+        if (!/^Commission$/i.test(rtTrim) && isPrActiveNow) {
+          const e = ensure(rel.siteByName, pr.site, initSite);
+          if (e) e.active_rules++;
           const ce = ensureSiteCat(isRawRt ? 'supplier' : 'customer', pr.site);
           if (ce) ce.active_rules++;
         }
@@ -9786,6 +9804,9 @@
     if (colKey === 'sales_loads' && (tableKey === 'customers' || tableKey === 'products' || tableKey === 'product_types')) return { connKey: 'sales_tickets' };
     if (colKey === 'active_rules' && (tableKey === 'customers' || tableKey === 'products')) return { connKey: 'price_rules', viewId: 'active' };
     if (colKey === 'active_rules' && tableKey === 'suppliers') return { connKey: 'price_rules', viewId: 'raw_active' };
+    if (colKey === 'active_rules' && tableKey === 'sites') return { connKey: 'price_rules', viewId: 'site_all' };
+    if (colKey === 'raw_loads' && tableKey === 'sites') return { connKey: 'raw_purchases' };
+    if (colKey === 'sales_loads' && tableKey === 'sites') return { connKey: 'sales_tickets' };
     if (colKey === 'haul_loads' && tableKey === 'suppliers') return { connKey: 'raw_purchases', subRole: 'haul' };
     if (colKey === 'raw_loads' && tableKey === 'suppliers') return { connKey: 'raw_purchases', subRole: 'raw' };
     if (colKey === 'expenses_count' && (tableKey === 'suppliers' || tableKey === 'expense_categories' || tableKey === 'expense_subcategories')) return { connKey: 'expenses' };
@@ -9863,6 +9884,9 @@
       pushVal(r.currency);
       pushVal(r.from_currency);
       pushVal(r.to_currency);
+    } else if (parentKey === 'sites') {
+      pushVal(r.site);
+      pushVal(r.origin_site);
     }
     return Array.from(new Set(out));
   }
@@ -10382,6 +10406,21 @@
     const siteMeta = TABLE_CATALOG.find(t => t.key === 'sites');
     const regCols = (regMeta && regMeta.cols) || ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'];
     const selReg = (window.MFG_GEO && window.MFG_GEO.STUDIO && window.MFG_GEO.STUDIO.selectedRegion) || '';
+    const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, TABLE_CATALOG);
+    const siteRelTablesMeta = ((siteMeta && siteMeta.relTables) || [])
+      .filter(rk => rk !== 'regions' && (typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable(rk)))
+      .map(rk => TABLE_CATALOG.find(t => t.key === rk))
+      .filter(Boolean);
+    const activeConnKey = (STATE.univConnTableKey && siteRelTablesMeta.some(rt => rt.key === STATE.univConnTableKey))
+      ? STATE.univConnTableKey
+      : '';
+    if (STATE.univConnTableKey && !activeConnKey) {
+      STATE.univConnTableKey = '';
+      STATE.univConnPartyFilter = '';
+      STATE.univConnSearch = '';
+      STATE.univConnView = '';
+      STATE.univConnSubRole = '';
+    }
 
     // 1. Regions & Zones Table (#regionsRegPanel)
     const regRawList = (SEED.records && SEED.records.regions) || [];
@@ -10416,9 +10455,15 @@
         ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
         : HUB_LOOKUP_TARGETS[c];
       const isLookup = lkTarget && lkTarget !== tableKey && v != null && v !== '' && cell !== '—';
+      const inlineConnSpec = (!isLookup && tableKey === 'sites' && isNum && Number(v) > 0) ? resolveInlineConnTableForCol(c, 'sites') : null;
+      const hasConnTarget = Boolean(inlineConnSpec && siteRelTablesMeta.some(rt => rt.key === inlineConnSpec.connKey));
+      const partyKeyVal = hasConnTarget ? String(r.name || '').trim() : '';
+      const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal);
       const innerHtml = isLookup
         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-        : (formatHubSpecialCellHtml(c, v, cell, r, tableKey) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell)));
+        : (hasConnTarget && partyKeyVal
+            ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
+            : (formatHubSpecialCellHtml(c, v, cell, r, tableKey) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell))));
       return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, tableKey)}` : innerHtml}</td>`;
     };
 
@@ -10471,7 +10516,9 @@
     const siteViews = siteMeta.views || [{ id: 'all', label: 'All Sites' }];
     const activeSiteViewId = (STATE.tableViews && STATE.tableViews.sites) || 'all';
     const activeSiteView = siteViews.find(v => v.id === activeSiteViewId) || siteViews[0];
-    const activeSiteCols = (activeSiteView && Array.isArray(activeSiteView.cols) && activeSiteView.cols.length) ? activeSiteView.cols : siteMeta.cols;
+    const canSeeSitePriceRules = typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable('price_rules');
+    const rawActiveSiteCols = (activeSiteView && Array.isArray(activeSiteView.cols) && activeSiteView.cols.length) ? activeSiteView.cols : siteMeta.cols;
+    const activeSiteCols = canSeeSitePriceRules ? rawActiveSiteCols : rawActiveSiteCols.filter(c => c !== 'active_rules');
     const siteViewFiltered = activeSiteView && activeSiteView.fn ? sitesRegFiltered.filter(r => activeSiteView.fn(r, rel)) : sitesRegFiltered;
     const siteDefSort = getHubTableDefaultSort(siteMeta, activeSiteView.id);
     const siteRows = sortRows(siteViewFiltered, 'ureg_sites', siteDefSort.key, siteDefSort.dir);
@@ -10570,9 +10617,11 @@
                                   const catCls = isJv ? 'is-jv' : (isCustOnly ? 'is-cust' : '');
                                   const catLbl = isJv ? 'JV 50/50' : (isBund ? 'Quarry (Mat+Trans)' : (isDual ? 'Raw & Sales' : (isCustOnly ? 'Delivery' : 'Quarry')));
                                   const sLoads = rLoads + sLoadsCnt;
+                                  const sRulesCnt = canSeeSitePriceRules ? Number(se.active_rules || 0) : 0;
                                   return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
                                     <b>${esc(ms.name)}</b>
                                     <span class="reg-exp-site-cat ${catCls}">${catLbl}</span>
+                                    ${sRulesCnt > 0 ? `<span class="mono reg-exp-site-rules">${fmtNum(sRulesCnt)} ${sRulesCnt === 1 ? 'rule' : 'rules'}</span>` : ''}
                                     ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} ${sLoads === 1 ? 'load' : 'loads'}</span>` : ''}
                                   </button>`;
                                 }).join('')}
@@ -10601,6 +10650,36 @@
                 ${selReg !== '__unassigned__' && canEnterForm('site') ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" data-open-modal="site" data-prefill-region="${esc(selReg)}">+ Add Site in ${esc(selReg)}</button>` : ''}
                 <button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" id="clearRegionFilterBtn">Show All ${fmtNum(allSitesBase.length)} Sites</button>
               </div>
+            </div>
+          ` : ''}
+
+          ${siteRelTablesMeta.length ? `
+            <div class="pa-hub-rel-strip pa-hub-conns-bar">
+              <div class="pa-hub-conns">
+                <span class="pa-conn-hdr">
+                  <span class="pa-conn-ico">${pbiIcon('link')}</span>
+                  <span class="pa-hub-lbl">Connected Tables:</span>
+                </span>
+                <div class="pa-conn-chips">
+                  ${siteRelTablesMeta.map(rt => {
+                    const isSiteRulesChip = rt.key === 'price_rules';
+                    const canSeeRawPrChip = typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable('raw_purchases');
+                    const rCnt = isSiteRulesChip
+                      ? ctx.filterRecords((SEED.records && SEED.records.price_rules) || [], { ignorePeriod: true, ignoreSearch: true, tableKey: 'price_rules' }).filter(pr => Boolean(pr.site) && !/^commission$/i.test(String(pr.rule_type || '').trim()) && (canSeeRawPrChip || !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(pr.rule_type || '').trim()))).length
+                      : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
+                    const rtLbl = isSiteRulesChip ? 'Site Price Agreements' : rt.label;
+                    const isConnOpen = activeConnKey === rt.key;
+                    const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
+                    return `<button type="button" class="filter-chip conn-table-chip ${isConnOpen ? 'active' : ''}" data-conn-table-key="${esc(rt.key)}" data-ui-tip="${isConnOpen ? 'Click to close inline preview' : 'Click to preview ' + fmtNum(rCnt) + ' linked ' + esc(rtLbl) + ' records inline'}">
+                      <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
+                      <span class="conn-chip-lbl">${esc(rtLbl)}</span>
+                      <span class="conn-chip-cnt mono">(${fmtNum(rCnt)})</span>
+                      <span class="conn-chip-chev" aria-hidden="true">${isConnOpen ? '▴' : '▾'}</span>
+                    </button>`;
+                  }).join('')}
+                </div>
+              </div>
+              ${activeConnKey ? renderConnTableExplorerHtml(ctx, siteMeta, rel, chipCounts, activeConnKey) : ''}
             </div>
           ` : ''}
 
@@ -10681,20 +10760,30 @@
     const connMeta = TABLE_CATALOG.find(t => t.key === connKey);
     if (!connMeta) return '';
     const isRawPr = meta.key === 'suppliers' && connKey === 'price_rules';
+    const isSitePr = meta.key === 'sites' && connKey === 'price_rules';
     const connIsUniv = Boolean(connMeta.universal);
     const connRawList = (SEED.records && SEED.records[connKey]) || [];
-    const rlsScoped = filterRecords(connRawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: connIsUniv, ignoreRls: connIsUniv });
+    const rlsScoped = filterRecords(connRawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: connIsUniv, ignoreRls: connIsUniv, tableKey: connKey });
+    const canSeeRawPrConn = typeof ctx.canAccessTable !== 'function' || ctx.canAccessTable('raw_purchases');
     const domainScoped = connKey === 'price_rules'
-      ? (isRawPr
-          ? rlsScoped.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
-          : rlsScoped.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')))
+      ? (isSitePr
+          ? rlsScoped.filter(r => Boolean(r.site) && !/^commission$/i.test(String(r.rule_type || '').trim()) && (canSeeRawPrConn || !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())))
+          : (isRawPr
+              ? rlsScoped.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
+              : rlsScoped.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))))
       : rlsScoped;
 
     const rawViews = connMeta.views || [{ id: 'all', label: 'All ' + connMeta.label }];
+    const sitePrViews = [
+      { id: 'site_all', label: 'All Site Agreements', cols: ['company', 'rule_type', 'supplier', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] },
+      { id: 'site_active', label: 'Active Agreements', fn: r => !r.end_date || String(r.end_date).trim().slice(0, 10) >= localTodayPbi(), cols: ['company', 'rule_type', 'supplier', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] },
+      ...(canSeeRawPrConn ? [{ id: 'site_raw', label: 'Quarry & Haulage', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] : []),
+      { id: 'site_sales', label: 'Sales & Delivery', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }
+    ];
     const connViews = connKey === 'price_rules'
-      ? (isRawPr ? rawViews.filter(v => /^raw_/i.test(v.id)) : rawViews.filter(v => !/^raw_/i.test(v.id)))
+      ? (isSitePr ? sitePrViews : (isRawPr ? rawViews.filter(v => /^raw_/i.test(v.id)) : rawViews.filter(v => !/^raw_/i.test(v.id))))
       : ((connKey === 'sales_tickets' && !STATE._canSeeTaxBreakdown) ? rawViews.filter(v => v.id !== 'iva') : rawViews);
-    const defaultViewId = isRawPr ? 'raw_all' : ((connViews[0] && connViews[0].id) || 'all');
+    const defaultViewId = isSitePr ? 'site_all' : (isRawPr ? 'raw_all' : ((connViews[0] && connViews[0].id) || 'all'));
     const activeConnViewId = STATE.univConnView || defaultViewId;
     const activeConnView = connViews.find(v => v.id === activeConnViewId) || connViews[0] || { id: 'all', label: 'All ' + connMeta.label };
     const connAfterView = activeConnView && activeConnView.fn ? domainScoped.filter(r => activeConnView.fn(r, rel)) : domainScoped;
@@ -10753,16 +10842,16 @@
     const connLimit = (STATE.shown && STATE.shown['conn_' + connKey]) || 10;
     const connShown = connRows.slice(0, connLimit);
 
-    const effConnLabel = isRawPr ? 'Raw & Haulage Agreements' : connMeta.label;
+    const effConnLabel = isSitePr ? 'Site Price Agreements' : (isRawPr ? 'Raw & Haulage Agreements' : connMeta.label);
     const connIco = TABLE_ICON_MAP[connKey] || connMeta.navView || 'tables';
-    const homeSpec = isRawPr
+    const homeSpec = (isRawPr || (isSitePr && activeConnView.id === 'site_raw'))
       ? { view: 'raw_pricing', label: 'Quarry & Haulage Rates' }
       : (TABLE_HOME_VIEW_MAP[connKey] || (connMeta.navView ? { view: connMeta.navView, label: connMeta.label } : { view: 'tables', label: 'All Tables' }));
     const modalFormId = connKey === 'price_rules'
-      ? (isRawPr ? 'pricerule_raw' : (activeConnView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
+      ? ((isRawPr || activeConnView.id === 'site_raw') ? 'pricerule_raw' : (activeConnView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
       : connMeta.form;
     const modalBtnLbl = connKey === 'price_rules'
-      ? (isRawPr ? 'Raw & Haulage Agreement' : (activeConnView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
+      ? ((isRawPr || activeConnView.id === 'site_raw') ? 'Raw & Haulage Agreement' : (activeConnView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
       : (connMeta.singularLabel || connMeta.label.replace(/ies$/, 'y').replace(/s$/, ''));
 
     return `

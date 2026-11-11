@@ -1389,6 +1389,7 @@
             </div>
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
+          <div class="form-field span-3" id="sitePriceAgreementsWrap" hidden></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
       `;

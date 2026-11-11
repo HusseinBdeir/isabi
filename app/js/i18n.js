@@ -10025,7 +10025,69 @@
       "to keep confirmed statements unchanged, or use Supervisor Override.": "للحفاظ على الكشوفات المؤكدة دون تغيير، أو استخدم تجاوز المشرف.",
       "Contract Hours": "ساعات العقد",
       "Default 12h": "الافتراضي 12 ساعة",
-      "Net carrier payable delta": "فرق صافي مستحقات الناقل"
+      "Net carrier payable delta": "فرق صافي مستحقات الناقل",
+      "Related Price Agreements": "اتفاقيات الأسعار المرتبطة",
+      "+ Quarry / Haulage Rule": "+ قاعدة كسارة / نقل",
+      "+ Sales Rule": "+ قاعدة مبيعات",
+      "+ Quarry Agreement": "+ اتفاقية كسارة",
+      "+ Sales Agreement": "+ اتفاقية مبيعات",
+      "Price Rules ↗": "قواعد الأسعار ↗",
+      "Filter site price agreements": "تصفية اتفاقيات أسعار الموقع",
+      "Filter product or party...": "تصفية حسب الصنف أو الطرف...",
+      "Agreement Type": "نوع الاتفاقية",
+      "Counterparty & Product": "الطرف المقابل والصنف",
+      "Material Rate": "تعرفة المادة",
+      "Sales & Delivery": "المبيعات والتسليم",
+      "Site Haulage": "نقل موقع",
+      "Customer Haulage": "نقل عميل",
+      "Sales Pickup": "استلام مبيعات",
+      "Haulage Only": "نقل فقط",
+      "Site Default": "افتراضي الموقع",
+      "All Products": "جميع الأصناف",
+      "Active Agreements": "الاتفاقيات النشطة",
+      "All Site Agreements": "جميع اتفاقيات الموقع",
+      "Click to open and edit this price agreement": "اضغط لفتح وتعديل اتفاقية الأسعار هذه",
+      "Click to open and edit this rate schedule": "اضغط لفتح وتعديل جدول الأسعار هذا",
+      "No rate agreements linked yet.": "لا توجد اتفاقيات أسعار مرتبطة بعد.",
+      "No price agreements linked to": "لا توجد اتفاقيات أسعار مرتبطة بـ",
+      "yet.": "بعد.",
+      "Price Agreements": "اتفاقيات الأسعار",
+      "Price Agreements:": "اتفاقيات الأسعار:",
+      "rule": "قاعدة",
+      "rules": "قواعد",
+      "/ Load": "/ نقلة",
+      "Related Lease & Rent Agreements": "عقود الإيجار والبدلات المرتبطة",
+      "+ New Lease Agreement": "+ عقد إيجار جديد",
+      "Unit & Tenant": "الوحدة والمستأجر",
+      "Monthly / Annual Rent": "الإيجار الشهري / السنوي",
+      "Related Seasonal & Daily Tariff Agreements": "اتفاقيات التعرفات الموسمية واليومية المرتبطة",
+      "+ New Seasonal Tariff": "+ تعرفة موسمية جديدة",
+      "Tier & Season": "الفئة والموسم",
+      "Daily / Seasonal Rate": "التعرفة اليومية / الموسمية",
+      "Related OEM Price List & Rebate Schedules": "لوائح أسعار المصنع والحسومات المرتبطة",
+      "+ New Price Target": "+ هدف سعري جديد",
+      "Segment / Model": "الفئة / الطراز",
+      "List Net / Landed Cost": "سعر اللائحة / التكلفة الواصلة",
+      "Related Carrier Commission Agreements": "اتفاقيات عمولات شركات التأمين المرتبطة",
+      "+ New Carrier Agreement": "+ اتفاقية عمولة جديدة",
+      "Carrier & Line": "الشركة والفرع",
+      "New / Renewal %": "نسبة الجديد / التجديد %",
+      "Related Partner Split & Facility Rate Agreements": "اتفاقيات حصص الشركاء وفوائد التسهيلات المرتبطة",
+      "+ New Partner Agreement": "+ اتفاقية شريك جديدة",
+      "Counterparty & Scope": "الطرف المقابل والنطاق",
+      "Agreed Rate / Split": "النسبة / الفائدة المتفق عليها",
+      "Site Sales & Delivery Price Agreements": "اتفاقيات أسعار المبيعات والتسليم للموقع",
+      "Quarry & Haulage Price Agreements": "اتفاقيات أسعار الكسارة والنقل",
+      "Site Price Agreements": "اتفاقيات أسعار المواقع",
+      "Editing": "تعديل",
+      "as": "بصفته",
+      "updates ledger in place": "يحدّث الدفتر مباشرة",
+      "· updates ledger in place": "· يحدّث الدفتر مباشرة",
+      "✓ Geographic Containment Verified:": "✓ تم التحقق من الاحتواء الجغرافي:",
+      "is inside Region": "يقع داخل منطقة",
+      "Quarry Rules": "قواعد الكسارة",
+      "+ New Lease Schedule": "+ جدول إيجار جديد",
+      "Period Net / TTC": "صافي الفترة / شامل الضريبة"
     },
     fr: {
       "Loan or Settlement": "Prêt ou Règlement",
@@ -20032,7 +20094,69 @@
       "to keep confirmed statements unchanged, or use Supervisor Override.": "pour conserver les relevés confirmés intacts, ou utilisez la dérogation Superviseur.",
       "Contract Hours": "Heures contractuelles",
       "Default 12h": "12 h par défaut",
-      "Net carrier payable delta": "Écart net à payer au transporteur"
+      "Net carrier payable delta": "Écart net à payer au transporteur",
+      "Related Price Agreements": "Accords tarifaires liés",
+      "+ Quarry / Haulage Rule": "+ Règle carrière / transport",
+      "+ Sales Rule": "+ Règle de vente",
+      "+ Quarry Agreement": "+ Accord carrière",
+      "+ Sales Agreement": "+ Accord de vente",
+      "Price Rules ↗": "Règles tarifaires ↗",
+      "Filter site price agreements": "Filtrer les accords tarifaires du site",
+      "Filter product or party...": "Filtrer par produit ou tiers...",
+      "Agreement Type": "Type d'accord",
+      "Counterparty & Product": "Contrepartie & Produit",
+      "Material Rate": "Tarif matière",
+      "Sales & Delivery": "Ventes & Livraison",
+      "Site Haulage": "Transport site",
+      "Customer Haulage": "Transport client",
+      "Sales Pickup": "Enlèvement vente",
+      "Haulage Only": "Transport seul",
+      "Site Default": "Par défaut du site",
+      "All Products": "Tous les produits",
+      "Active Agreements": "Accords actifs",
+      "All Site Agreements": "Tous les accords du site",
+      "Click to open and edit this price agreement": "Cliquer pour ouvrir et modifier cet accord tarifaire",
+      "Click to open and edit this rate schedule": "Cliquer pour ouvrir et modifier ce barème",
+      "No rate agreements linked yet.": "Aucun accord tarifaire lié pour le moment.",
+      "No price agreements linked to": "Aucun accord tarifaire lié à",
+      "yet.": "pour le moment.",
+      "Price Agreements": "Accords tarifaires",
+      "Price Agreements:": "Accords tarifaires :",
+      "rule": "règle",
+      "rules": "règles",
+      "/ Load": "/ Voyage",
+      "Related Lease & Rent Agreements": "Baux et accords locatifs liés",
+      "+ New Lease Agreement": "+ Nouveau bail",
+      "Unit & Tenant": "Unité & Locataire",
+      "Monthly / Annual Rent": "Loyer mensuel / annuel",
+      "Related Seasonal & Daily Tariff Agreements": "Grilles tarifaires saisonnières et journalières liées",
+      "+ New Seasonal Tariff": "+ Nouveau tarif saisonnier",
+      "Tier & Season": "Catégorie & Saison",
+      "Daily / Seasonal Rate": "Tarif jour / saison",
+      "Related OEM Price List & Rebate Schedules": "Barèmes constructeurs et remises liés",
+      "+ New Price Target": "+ Nouvel objectif tarifaire",
+      "Segment / Model": "Segment / Modèle",
+      "List Net / Landed Cost": "Prix net / Coût rendu",
+      "Related Carrier Commission Agreements": "Accords de commission compagnies liés",
+      "+ New Carrier Agreement": "+ Nouvel accord compagnie",
+      "Carrier & Line": "Compagnie & Branche",
+      "New / Renewal %": "% Aff. nouv. / Renouv.",
+      "Related Partner Split & Facility Rate Agreements": "Accords de répartition associés et taux de lignes liés",
+      "+ New Partner Agreement": "+ Nouvel accord associé",
+      "Counterparty & Scope": "Contrepartie & Périmètre",
+      "Agreed Rate / Split": "Taux / Quote-part convenu",
+      "Site Sales & Delivery Price Agreements": "Accords tarifaires ventes et livraison du site",
+      "Quarry & Haulage Price Agreements": "Accords tarifaires carrière et transport",
+      "Site Price Agreements": "Accords tarifaires des sites",
+      "Editing": "Modification de",
+      "as": "en tant que",
+      "updates ledger in place": "met à jour le grand livre sur place",
+      "· updates ledger in place": "· met à jour le grand livre sur place",
+      "✓ Geographic Containment Verified:": "✓ Inclusion géographique vérifiée :",
+      "is inside Region": "est dans la région",
+      "Quarry Rules": "Règles carrière",
+      "+ New Lease Schedule": "+ Nouveau barème de bail",
+      "Period Net / TTC": "Net période / TTC"
     }
   };
 
@@ -22991,6 +23115,85 @@
 
     m = trimmed.match(/^Net:\s*([+-]?\$[\d.,]+)$/i);
     if (m) return lang === 'ar' ? `الصافي: ${m[1]}` : `Net : ${m[1]}`;
+
+    m = trimmed.match(/^Rem\s+([+-]?\$[\d.,]+)$/i);
+    if (m) return lang === 'ar' ? `المتبقي ${m[1]}` : `Reste ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)\s+Agreements?(?:\s+in\s+(.+))?$/i);
+    if (m) {
+      const cnt = m[1];
+      const one = cnt === '1';
+      const co = m[2] ? ` ${lang === 'ar' ? 'ضمن' : 'dans'} ${m[2]}` : '';
+      return lang === 'ar'
+        ? `${cnt} ${one ? 'اتفاقية' : 'اتفاقيات'}${co}`
+        : `${cnt} ${one ? 'Accord' : 'Accords'}${co}`;
+    }
+
+    m = trimmed.match(/^Open Price Agreements filtered to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `فتح اتفاقيات الأسعار المصفّاة حسب ${m[1]}` : `Ouvrir les accords tarifaires filtrés sur ${m[1]}`;
+
+    m = trimmed.match(/^Click to preview\s+([\d,]+)\s+linked\s+(.+?)\s+records inline$/i);
+    if (m) {
+      const tbl = translateCore(m[2].trim(), lang, depth + 1);
+      return lang === 'ar' ? `اضغط لمعاينة ${m[1]} سجلات مرتبطة في ${tbl} مباشرة` : `Cliquer pour prévisualiser ${m[1]} enregistrements liés (${tbl})`;
+    }
+
+    m = trimmed.match(/^Showing All Entities\s*·\s*Filter to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `عرض جميع الشركات · التصفية حسب ${m[1]}` : `Toutes les entités affichées · Filtrer sur ${m[1]}`;
+
+    m = trimmed.match(/^\+(\d+)\s+in Other Entities\s*·\s*Show All$/i);
+    if (m) return lang === 'ar' ? `+${m[1]} في شركات أخرى · عرض الكل` : `+${m[1]} dans d'autres entités · Tout afficher`;
+
+    m = trimmed.match(/^No price agreements in\s+(.+?)\s+for$/i);
+    if (m) return lang === 'ar' ? `لا توجد اتفاقيات أسعار في ${m[1]} لـ` : `Aucun accord tarifaire dans ${m[1]} pour`;
+
+    m = trimmed.match(/^\((\d+)\s+in other allowed entities\)\.?$/i);
+    if (m) return lang === 'ar' ? `(${m[1]} في شركات أخرى متاحة).` : `(${m[1]} dans d'autres entités autorisées).`;
+
+    m = trimmed.match(/^No price agreements match the active filter(?:\s+"(.+)")?\.$/i);
+    if (m) {
+      const q = m[1] ? (lang === 'ar' ? ` "${m[1]}"` : ` « ${m[1]} »`) : '';
+      return lang === 'ar' ? `لا توجد اتفاقيات أسعار تطابق التصفية الحالية${q}.` : `Aucun accord tarifaire ne correspond au filtre actif${q}.`;
+    }
+
+    m = trimmed.match(/^Chronological (?:lease|rent) & escalation schedules linked to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `جداول عقود الإيجار والزيادات الدورية المرتبطة بـ ${m[1]}` : `Barèmes chronologiques de baux et d'indexation liés à ${m[1]}`;
+
+    m = trimmed.match(/^Chronological chalet, cabana & venue rate schedules for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `جداول أسعار الشاليهات والكبائن والمرافق الزمنية لـ ${m[1]}` : `Grilles tarifaires chronologiques chalets, cabines et espaces pour ${m[1]}`;
+
+    m = trimmed.match(/^Chronological unit list price & landed cost schedules for\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `جداول أسعار البيع والتكلفة الواصلة الزمنية لـ ${m[1]}` : `Barèmes chronologiques des prix catalogue et coûts rendus pour ${m[1]}`;
+
+    m = trimmed.match(/^Chronological brokerage commission & override schedules linked to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `جداول عمولات الوساطة والحوافز الزمنية المرتبطة بـ ${m[1]}` : `Barèmes chronologiques de commissions et surprimes liés à ${m[1]}`;
+
+    m = trimmed.match(/^Chronological equity split & credit facility rate schedules linked to\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `جداول توزيع حصص الشركاء وفوائد التسهيلات المرتبطة بـ ${m[1]}` : `Barèmes chronologiques de répartition associés et taux de lignes liés à ${m[1]}`;
+
+    m = trimmed.match(/^Region\s+(.+?)\s+active$/i);
+    if (m) {
+      const rTr = translateCore(m[1].trim(), lang, depth + 1);
+      return lang === 'ar' ? `المنطقة ${rTr} نشطة` : `Région ${rTr} active`;
+    }
+
+    m = trimmed.match(/^sites created here must be located inside\s+(.+?)\.$/i);
+    if (m) return lang === 'ar' ? `يجب أن تقع المواقع المنشأة هنا داخل ${m[1]}.` : `les sites créés ici doivent être situés dans ${m[1]}.`;
+
+    m = trimmed.match(/^Verified inside\s+(.+?)\.$/i);
+    if (m) return lang === 'ar' ? `تم التحقق داخل ${m[1]}.` : `Vérifié dans ${m[1]}.`;
+
+    m = trimmed.match(/^Site name inside\s+(.+?)\.\.\.$/i);
+    if (m) return lang === 'ar' ? `اسم الموقع داخل ${m[1]}...` : `Nom du site dans ${m[1]}...`;
+
+    m = trimmed.match(/^GPS\s+([\d.,\s+-]+)$/i);
+    if (m) return `GPS ${m[1]}`;
+
+    m = trimmed.match(/^Quarry & Haulage Agreements at\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اتفاقيات الكسارة والنقل في ${m[1]}` : `Accords carrière et transport à ${m[1]}`;
+
+    m = trimmed.match(/^Sales & Delivery Agreements at\s+(.+)$/i);
+    if (m) return lang === 'ar' ? `اتفاقيات المبيعات والتسليم في ${m[1]}` : `Accords ventes et livraison à ${m[1]}`;
 
     return null;
   }
