@@ -46,14 +46,14 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.32">
-  <link rel="icon" href="icon.svg?v=6.32" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.32" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.32" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.32">
-  <link rel="icon" href="favicon-dark.ico?v=6.32" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.32" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.32">
+  <link rel="manifest" href="manifest.json?v=6.33">
+  <link rel="icon" href="icon.svg?v=6.33" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.33" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.33" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.33">
+  <link rel="icon" href="favicon-dark.ico?v=6.33" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.33" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.33">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -99,18 +99,19 @@ ORG_JSONLD = _json.dumps({
     "@type": "ProfessionalService",
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
+    "legalName": "Isabi Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.32",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.33",
     "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, What-If scenario studios, interactive executive dashboards, automated statement matching, fleet GPS telematics, field kiosks, and the Ask ISABI assistant with simple per-seat pricing.",
-    "email": "hbdeir16@gmail.com",
+    "email": "husseinbdeir@isabisystems.com",
     "telephone": "+96170444955",
     "founder": {"@type": "Person", "name": "Hussein Bdeir", "jobTitle": "Founder and Principal Systems Architect"},
     "areaServed": ["Lebanon", "Middle East", "Worldwide"],
-    "address": {"@type": "PostalAddress", "addressCountry": "LB"},
+    "address": {"@type": "PostalAddress", "addressLocality": "Beirut", "addressCountry": "LB"},
     "knowsAbout": ["Enterprise Resource Planning", "Multi-Entity Operations", "Executive Dashboards & Reporting", "Double-Entry Accounting", "POS & Gate Kiosks", "Automated Financial Controls"],
-    "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en", "ar", "fr"]}],
+    "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "husseinbdeir@isabisystems.com", "availableLanguage": ["en", "ar", "fr"]}],
     "priceRange": "$3,000 to $11,000+ setup + $50 to $100/seat/mo"
 }, ensure_ascii=False)
 HEAD = HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD).replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
@@ -149,15 +150,15 @@ def main():
             print(f"ERROR: Found forbidden {label} ({forbidden!r}) in output HTML", file=sys.stderr)
             sys.exit(1)
 
-    with open(OUT_HTML, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(full_html)
-    with open(os.path.join(ROOT, 'CNAME'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write('isabisystems.com\n')
-    with open(os.path.join(ROOT, 'robots.txt'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(ROBOTS_TXT)
+    with open(OUT_HTML, 'wb') as f:
+        f.write(full_html.replace('\r\n', '\n').encode('utf-8'))
+    with open(os.path.join(ROOT, 'CNAME'), 'wb') as f:
+        f.write(b'isabisystems.com\n')
+    with open(os.path.join(ROOT, 'robots.txt'), 'wb') as f:
+        f.write(ROBOTS_TXT.replace('\r\n', '\n').encode('utf-8'))
     today_iso = datetime.date.today().isoformat()
-    with open(os.path.join(ROOT, 'sitemap.xml'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(build_sitemap_xml(today_iso))
+    with open(os.path.join(ROOT, 'sitemap.xml'), 'wb') as f:
+        f.write(build_sitemap_xml(today_iso).replace('\r\n', '\n').encode('utf-8'))
 
     # Check JS syntax with node --check (falls back to VS Code Electron-as-Node if node is not on PATH)
     tmp_js = os.path.join(ROOT, 'build', '_check_syntax.js')
@@ -185,7 +186,7 @@ def main():
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
     if os.path.isdir(mirror_dir):
         import shutil
-        for mf in ('index.html', 'reset.html', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'favicon-dark.ico', 'icon.svg', 'icon-dark.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
+        for mf in ('index.html', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'favicon-dark.ico', 'icon.svg', 'icon-dark.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
             msrc = os.path.join(ROOT, mf)
             if os.path.exists(msrc):
                 shutil.copy2(msrc, os.path.join(mirror_dir, mf))

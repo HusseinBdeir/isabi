@@ -10,16 +10,20 @@ import {
   canAccessSentinelScope,
   canManageUsersSeat,
   canReviewSentinelsSession,
+  checkD1RateLimit,
   checkSlidingRateLimit,
   clearSessionCookie,
-  constantTimeEqual,
   extractRequestSession,
   hashClientIp,
+  hashSeatPin,
+  isHashedPin,
   isOwnerOrFullGroupSession,
+  isWeakPin,
   jsonResponse,
   parseAllowedCompanies,
   signEdgeSession,
-  verifyActiveEdgeSession
+  verifyActiveEdgeSession,
+  verifySeatPin
 } from './security.js';
 
 export const ALLOWED_TABLES = new Set([
@@ -239,6 +243,7 @@ function bestRowFaceDist(descriptor, rawSamples) {
 function stripBiometricsForPayload(uObj) {
   if (!uObj || typeof uObj !== 'object') return {};
   const clean = Object.assign({}, uObj);
+  delete clean.pin_code;
   delete clean.face_samples;
   delete clean.face_thumbs;
   delete clean.payload_json;
@@ -250,10 +255,13 @@ function stripBiometricsForPayload(uObj) {
   return clean;
 }
 
-function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
+function hydrateUserRow(r, _redactPin = true, redactBiometrics = false) {
   const d = Object.assign({}, safeJsonParse(r.payload_json, {}), r);
   delete d.payload_json;
   delete d._verifiedPin;
+  const hasStoredPin = Boolean(String(r.pin_code || '').trim());
+  delete d.pin_code;
+  d.pin_redacted = hasStoredPin;
   const parsedSamples = safeJsonParse(d.face_samples, []);
   const validSamples = Array.isArray(parsedSamples) ? parsedSamples.filter(isValidFaceVec) : [];
   const parsedThumbs = safeJsonParse(d.face_thumbs, []);
@@ -265,12 +273,6 @@ function hydrateUserRow(r, redactPin = false, redactBiometrics = false) {
   else delete d.face_cleared;
   d.custom_perms = safeJsonParse(d.custom_perms, null);
   if (d.custom_perms && typeof d.custom_perms !== 'object') d.custom_perms = null;
-  if (redactPin) {
-    delete d.pin_code;
-    d.pin_redacted = true;
-  } else {
-    delete d.pin_redacted;
-  }
   // Never expose raw 128-d biometric vectors over HTTP; keep verification strictly server-side
   d.face_redacted = Boolean(d.face_enrolled);
   delete d.face_samples;
@@ -339,77 +341,133 @@ function resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio) {
   return mode;
 }
 
-const AUTH_FAIL_MAX_PER_EMAIL = 8;
-const AUTH_FAIL_MAX_PER_IP = 18;
-const AUTH_FAIL_WINDOW_SEC = 60;
+// Escalating multi-tier D1 sign-in lockout:
+// - Per IP (/64) & per IP+email: 5 fails -> 5m, 10 fails -> 30m, 15+ fails -> 24h (resets after 24h quiet or valid login)
+const LOCKOUT_WINDOW_MS = 24 * 3600 * 1000;
 
-async function isAuthRateLimited(db, ipHash, emailRaw) {
-  if (!db || !ipHash) return false;
-  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
-  const ipKey = `rl:auth_ip:${ipHash}:${slot}`;
+async function readLockEntry(db, key) {
+  const r = await db.prepare('SELECT payload_json FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(key).first();
+  if (!r || !r.payload_json) return null;
+  const obj = safeJsonParse(r.payload_json, null);
+  return obj && typeof obj === 'object' ? obj : null;
+}
+
+async function checkAuthLockout(db, ipHash, emailRaw) {
+  if (!db || !ipHash) return { locked: false, retryAfterSec: 0 };
+  const nowMs = Date.now();
   const emailClean = String(emailRaw || '').trim().toLowerCase();
-  const emKey = emailClean ? `rl:auth_em:${ipHash}:${emailClean}:${slot}` : '';
+  const keys = [`rl:lock_ip:${ipHash}`];
+  if (emailClean) {
+    keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
+  }
   try {
-    const ipRow = await db.prepare('SELECT rev FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(ipKey).first();
-    if (ipRow && Number(ipRow.rev || 0) >= AUTH_FAIL_MAX_PER_IP) return true;
-    if (emKey) {
-      const emRow = await db.prepare('SELECT rev FROM edge_kv_store WHERE doc_key = ?1 LIMIT 1').bind(emKey).first();
-      if (emRow && Number(emRow.rev || 0) >= AUTH_FAIL_MAX_PER_EMAIL) return true;
+    let maxUntil = 0;
+    for (const k of keys) {
+      const entry = await readLockEntry(db, k);
+      if (entry && Number(entry.lockedUntilMs || 0) > nowMs) {
+        maxUntil = Math.max(maxUntil, Number(entry.lockedUntilMs));
+      }
+    }
+    if (maxUntil > nowMs) {
+      return { locked: true, retryAfterSec: Math.max(1, Math.ceil((maxUntil - nowMs) / 1000)) };
     }
   } catch (_) {}
-  return false;
+  return { locked: false, retryAfterSec: 0 };
+}
+
+async function bumpLockCounter(db, key, windowMs, nowMs, nowIso) {
+  const initJson = JSON.stringify({ fails: 1, windowStartMs: nowMs, lockedUntilMs: 0 });
+  const row = await db.prepare(
+    `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
+     VALUES (?1, ?2, ?3, 1)
+     ON CONFLICT(doc_key) DO UPDATE SET
+       rev = CASE
+         WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN 1
+         ELSE edge_kv_store.rev + 1
+       END,
+       payload_json = json_object(
+         'fails',
+         CASE
+           WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN 1
+           ELSE edge_kv_store.rev + 1
+         END,
+         'windowStartMs',
+         CASE
+           WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN ?4
+           ELSE COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), ?4)
+         END,
+         'lockedUntilMs',
+         MAX(
+           COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.lockedUntilMs') AS INTEGER), 0),
+           CASE
+             WHEN (CASE WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN 1 ELSE edge_kv_store.rev + 1 END) >= 15 THEN (?4 + 86400000)
+             WHEN (CASE WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN 1 ELSE edge_kv_store.rev + 1 END) >= 10 THEN (?4 + 1800000)
+             WHEN (CASE WHEN (?4 - COALESCE(CAST(json_extract(edge_kv_store.payload_json, '$.windowStartMs') AS INTEGER), 0)) > ?5 THEN 1 ELSE edge_kv_store.rev + 1 END) >= 5 THEN (?4 + 300000)
+             ELSE 0
+           END
+         )
+       ),
+       updated_at = ?3
+     RETURNING payload_json`
+  ).bind(key, initJson, nowIso, nowMs, windowMs).first();
+  const parsed = row ? safeJsonParse(row.payload_json, null) : null;
+  return parsed && typeof parsed === 'object' ? parsed : { fails: 1, windowStartMs: nowMs, lockedUntilMs: 0 };
 }
 
 async function recordAuthFailure(db, ipHash, emailRaw) {
   const emailClean = String(emailRaw || '').trim().toLowerCase();
-  const memIp = checkSlidingRateLimit(`auth_fail_ip:${ipHash}`, AUTH_FAIL_MAX_PER_IP, AUTH_FAIL_WINDOW_SEC * 1000);
+  const memIp = checkSlidingRateLimit(`auth_fail_ip:${ipHash}`, 5, 300000);
   const memEm = emailClean
-    ? checkSlidingRateLimit(`auth_fail_em:${ipHash}:${emailClean}`, AUTH_FAIL_MAX_PER_EMAIL, AUTH_FAIL_WINDOW_SEC * 1000)
+    ? checkSlidingRateLimit(`auth_fail_em:${ipHash}:${emailClean}`, 5, 300000)
     : { allowed: true };
-  if (!db || !ipHash) return !memIp.allowed || !memEm.allowed;
-  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
-  const ipKey = `rl:auth_ip:${ipHash}:${slot}`;
-  const emKey = emailClean ? `rl:auth_em:${ipHash}:${emailClean}:${slot}` : '';
-  const nowIso = new Date().toISOString();
+  if (!db || !ipHash) {
+    const throttled = !memIp.allowed || !memEm.allowed;
+    return { throttled, retryAfterSec: throttled ? 300 : 0 };
+  }
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
   try {
-    if (Math.random() < 0.08) {
-      await db.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'rl:auth_%' AND doc_key NOT LIKE ?1").bind(`%:${slot}`).run();
+    if (Math.random() < 0.05) {
+      const cutoffIso = new Date(nowMs - 48 * 3600 * 1000).toISOString();
+      await db.prepare("DELETE FROM edge_kv_store WHERE (doc_key LIKE 'rl:lock_%' OR doc_key LIKE 'rl:auth_%') AND updated_at < ?1").bind(cutoffIso).run();
     }
-    const ipRes = await db.prepare(
-      `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
-       VALUES (?1, '1', ?2, 1)
-       ON CONFLICT(doc_key) DO UPDATE SET updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1
-       RETURNING rev`
-    ).bind(ipKey, nowIso).first();
-    let emCount = 0;
-    if (emKey) {
-      const emRes = await db.prepare(
-        `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
-         VALUES (?1, '1', ?2, 1)
-         ON CONFLICT(doc_key) DO UPDATE SET updated_at = excluded.updated_at, rev = edge_kv_store.rev + 1
-         RETURNING rev`
-      ).bind(emKey, nowIso).first();
-      emCount = Number((emRes && emRes.rev) || 0);
+    const ipState = await bumpLockCounter(db, `rl:lock_ip:${ipHash}`, LOCKOUT_WINDOW_MS, nowMs, nowIso);
+    let maxUntil = Number(ipState.lockedUntilMs || 0);
+    if (emailClean) {
+      const emIpState = await bumpLockCounter(db, `rl:lock_em_ip:${ipHash}:${emailClean}`, LOCKOUT_WINDOW_MS, nowMs, nowIso);
+      maxUntil = Math.max(maxUntil, Number(emIpState.lockedUntilMs || 0));
     }
-    const ipCount = Number((ipRes && ipRes.rev) || 0);
-    return ipCount > AUTH_FAIL_MAX_PER_IP || emCount > AUTH_FAIL_MAX_PER_EMAIL;
+    if (maxUntil > nowMs) {
+      return { throttled: true, retryAfterSec: Math.max(1, Math.ceil((maxUntil - nowMs) / 1000)) };
+    }
+    return { throttled: false, retryAfterSec: 0 };
   } catch (_) {
-    return !memIp.allowed || !memEm.allowed;
+    const throttled = !memIp.allowed || !memEm.allowed;
+    return { throttled, retryAfterSec: throttled ? 300 : 0 };
   }
 }
 
 async function clearAuthFailure(db, ipHash, emailRaw) {
-  if (!db || !ipHash || !emailRaw) return;
-  const slot = Math.floor(Date.now() / (AUTH_FAIL_WINDOW_SEC * 1000));
-  const emKey = `rl:auth_em:${ipHash}:${String(emailRaw).trim().toLowerCase()}:${slot}`;
+  if (!db || !ipHash) return;
+  const emailClean = String(emailRaw || '').trim().toLowerCase();
+  const keys = [`rl:lock_ip:${ipHash}`];
+  if (emailClean) keys.push(`rl:lock_em_ip:${ipHash}:${emailClean}`);
   try {
-    await db.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(emKey).run();
+    const ph = keys.map((_, i) => `?${i + 1}`).join(',');
+    await db.prepare(`DELETE FROM edge_kv_store WHERE doc_key IN (${ph})`).bind(...keys).run();
   } catch (_) {}
 }
 
-export async function handleStatus(env) {
-  if (!env || !env.DB) {
-    return jsonResponse({ ok: true, edge: true, d1_ready: false, r2_ready: Boolean(env && env.BUCKET), engine: 'ISABI Edge Worker (D1 pending binding)' });
+export async function handleStatus(env, session = null) {
+  const d1Ready = Boolean(env && env.DB);
+  const r2Ready = Boolean(env && env.BUCKET);
+  if (!d1Ready || !session || !isOwnerOrFullGroupSession(session)) {
+    return jsonResponse({
+      ok: true,
+      edge: true,
+      d1_ready: d1Ready,
+      r2_ready: r2Ready
+    });
   }
   const coreTables = ['sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'customer_receipts', 'supplier_payments', 'salary_payments', 'users'];
   const counts = {};
@@ -429,11 +487,22 @@ export async function handleStatus(env) {
     ok: true,
     edge: true,
     d1_ready: true,
-    r2_ready: Boolean(env.BUCKET),
+    r2_ready: r2Ready,
     engine: 'ISABI Edge SQL (Cloudflare D1 + R2)',
     db_size_kb: Math.max(16355, Math.round(totalRows * 0.19)),
     counts
   });
+}
+
+async function upgradePlaintextSeatPinIfNeeded(db, row, rawPin) {
+  if (!db || !row || !row.id || !rawPin) return;
+  try {
+    const hashed = await hashSeatPin(rawPin);
+    const basePayload = stripBiometricsForPayload(safeJsonParse(row.payload_json, {}));
+    await db.prepare('UPDATE users SET pin_code = ?1, payload_json = ?2 WHERE id = ?3')
+      .bind(hashed, JSON.stringify(basePayload), row.id)
+      .run();
+  } catch (_) {}
 }
 
 export async function handleAuthLogin(request, env, body, verifiedCallerSession) {
@@ -450,15 +519,26 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const isFaceMethod = /^face\s*id/i.test(method);
   const ipHash = await hashClientIp(request);
 
-  if (await isAuthRateLimited(env.DB, ipHash, email)) {
-    return jsonResponse({ ok: false, rate_limited: true, error: 'Too many failed sign-in attempts. Please wait 60 seconds.' }, 429);
+  const lockState = await checkAuthLockout(env.DB, ipHash, email);
+  if (lockState.locked) {
+    return jsonResponse({
+      ok: false,
+      rate_limited: true,
+      retry_after_sec: lockState.retryAfterSec,
+      error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(lockState.retryAfterSec / 60))} minute(s).`
+    }, 429, { 'Retry-After': String(lockState.retryAfterSec) });
   }
 
   let row = null;
   const failAuth = async (errMsg, status = 401) => {
-    const throttled = await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
-    if (throttled) {
-      return jsonResponse({ ok: false, rate_limited: true, error: 'Too many failed sign-in attempts. Please wait 60 seconds.' }, 429);
+    const res = await recordAuthFailure(env.DB, ipHash, email || (row && row.email) || '');
+    if (res.throttled) {
+      return jsonResponse({
+        ok: false,
+        rate_limited: true,
+        retry_after_sec: res.retryAfterSec,
+        error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(res.retryAfterSec / 60))} minute(s).`
+      }, 429, { 'Retry-After': String(res.retryAfterSec) });
     }
     return jsonResponse({ ok: false, error: errMsg }, status);
   };
@@ -466,14 +546,14 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const isStepUp = Boolean(body && body.step_up === true);
   const isVerifyOnly = Boolean((body && body.verify_only === true) || isStepUp);
   let callerSess = null;
-  if (isStepUp || method === 'Owner Impersonation' || (isVerifyOnly && body && body.allow_pin_only_verify === true)) {
+  if (isVerifyOnly || isStepUp || method === 'Owner Impersonation') {
     callerSess = verifiedCallerSession !== undefined
       ? verifiedCallerSession
       : await verifyActiveEdgeSession(await extractRequestSession(request, env), env);
+    if (isVerifyOnly && !callerSess) {
+      return jsonResponse({ ok: false, error: 'Active session required for identity verification.' }, 401);
+    }
     if (isStepUp) {
-      if (!callerSess) {
-        return jsonResponse({ ok: false, error: 'Active session required for step-up identity confirmation.' }, 401);
-      }
       const cEm = String(callerSess.email || '').trim().toLowerCase();
       if (email && cEm && email !== cEm) {
         return jsonResponse({ ok: false, error: 'Step-up verification must match the currently signed-in account.' }, 403);
@@ -495,19 +575,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   if (email) {
     row = await env.DB.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(email).first();
-  } else if (pin) {
-    const allActive = await loadAllActive();
-    const matched = [];
-    for (const cand of allActive) {
-      // A seat with no PIN on file never matches: there is no default PIN.
-      const exp = String(cand.pin_code || '').trim();
-      if (exp && (await constantTimeEqual(pin, exp))) matched.push(cand);
-    }
-    if (matched.length > 1) {
-      return jsonResponse({ ok: false, ambiguous: true, error: 'Select your account below to finish signing in.' }, 409);
-    }
-    if (matched.length === 1) row = matched[0];
-  } else if (isFaceMethod && isValidFaceVec(faceDesc)) {
+  } else if (isVerifyOnly && callerSess && isFaceMethod && isValidFaceVec(faceDesc)) {
     const allActive = await loadAllActive();
     let bestCand = null;
     let bestDist = Infinity;
@@ -529,13 +597,15 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       return failAuth('Face ID not recognized.');
     }
   } else {
-    return jsonResponse({ ok: false, error: 'Email or PIN is required.' }, 400);
+    return jsonResponse({ ok: false, error: 'Email and Access PIN are required.' }, 400);
   }
   if (!row) {
-    return failAuth(email ? 'User seat not found in roster.' : 'Invalid Access PIN.');
+    return failAuth('Invalid email or Access PIN.');
   }
   if (String(row.status || '') === 'Suspended') {
-    return jsonResponse({ ok: false, error: 'This user seat is currently suspended.' }, 403);
+    return callerSess
+      ? jsonResponse({ ok: false, error: 'This user seat is currently suspended.' }, 403)
+      : failAuth('Invalid email or Access PIN.');
   }
 
   const wsFaceSettings = await readWorkspaceFaceSettings(env.DB);
@@ -543,7 +613,9 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const expectedPin = String(row.pin_code || '').trim();
   const hasEnrolledBio = safeJsonParse(row.face_samples, []).some(isValidFaceVec);
   const authMode = resolveServerSeatAuthMode(row, wsFaceSettings, hasEnrolledBio);
-  const needsTwoFactor = (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
+  // Remote web sessions NEVER issue a JWT/cookie on a client-supplied 128-float vector alone:
+  // Face ID login on the web always requires Email + PIN + Face ID (`both`).
+  const needsTwoFactor = (!isVerifyOnly && isFaceMethod) || (authMode === 'both' && hasEnrolledBio) || /2fa/i.test(method);
   if (isStepUp && callerSess) {
     const rowIdMatch = String(row.id || '') === String(callerSess.sub || '');
     const rowEmMatch = String(row.email || '').trim().toLowerCase() === String(callerSess.email || '').trim().toLowerCase();
@@ -554,6 +626,7 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
   const allowOwnerImpersonation = Boolean(!isStepUp && callerSess && method === 'Owner Impersonation' && isOwnerOrFullGroupSession(callerSess));
 
   let verifiedFaceDist = null;
+  let pinUpgradeNeeded = false;
 
   if (!allowOwnerImpersonation) {
     if (isFaceMethod) {
@@ -581,30 +654,46 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
       verifiedFaceDist = Number(targetDist.toFixed(4));
       if (needsTwoFactor && (!isVerifyOnly || isStepUp)) {
         if (!pin) {
-          return jsonResponse({
+          if (!callerSess) {
+            const rl = await recordAuthFailure(env.DB, ipHash, email || row.email || '');
+            if (rl.throttled) {
+              return jsonResponse({
+                ok: false,
+                rate_limited: true,
+                retry_after_sec: rl.retryAfterSec,
+                error: `Too many failed sign-in attempts. Please wait ${Math.max(1, Math.ceil(rl.retryAfterSec / 60))} minute(s).`
+              }, 429, { 'Retry-After': String(rl.retryAfterSec) });
+            }
+          }
+          const pinReqOut = {
             ok: false,
             two_factor_pin_required: true,
             email: row.email,
-            full_name: row.full_name,
-            user: hydrateUserRow(row, true, true),
             error: 'Two-factor Access PIN is required.'
-          }, isStepUp ? 403 : 401);
+          };
+          if (callerSess) {
+            pinReqOut.full_name = row.full_name;
+            pinReqOut.user = hydrateUserRow(row, true, true);
+          }
+          return jsonResponse(pinReqOut, isStepUp ? 403 : 401);
         }
-        const okPin = Boolean(expectedPin) && (await constantTimeEqual(pin, expectedPin));
-        if (!okPin) {
+        const pinCheck = await verifySeatPin(pin, expectedPin);
+        if (!pinCheck.ok) {
           return isStepUp
             ? jsonResponse({ ok: false, error: 'Two-factor Access PIN is required.' }, 403)
             : failAuth('Two-factor Access PIN is required.');
         }
+        pinUpgradeNeeded = pinCheck.needsUpgrade;
       }
     } else {
       if (authMode === 'face_only' && hasEnrolledBio) {
-        return failAuth('This seat requires Face ID sign-in.');
+        return failAuth('This seat requires Face ID + PIN sign-in.');
       }
-      const okPin = Boolean(pin && expectedPin) && (await constantTimeEqual(pin, expectedPin));
-      if (!okPin) {
-        return failAuth('Invalid Access PIN.');
+      const pinCheck = await verifySeatPin(pin, expectedPin);
+      if (!pinCheck.ok) {
+        return failAuth('Invalid email or Access PIN.');
       }
+      pinUpgradeNeeded = pinCheck.needsUpgrade;
       const mustVerifyFace = (needsTwoFactor && hasEnrolledBio) || /face\s*id/i.test(method) || (body && body.face_descriptor !== undefined);
       if (needsTwoFactor && !hasEnrolledBio && /face\s*id/i.test(method)) {
         return failAuth('Face ID is not enrolled for this seat.');
@@ -616,7 +705,6 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
               ok: false,
               two_factor_face_required: true,
               email: row.email,
-              full_name: row.full_name,
               error: 'Two-factor Face ID biometric verification is required.'
             }, isStepUp ? 403 : 401);
           }
@@ -642,9 +730,13 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
     }
   }
 
+  if (pinUpgradeNeeded && pin) {
+    await upgradePlaintextSeatPinIfNeeded(env.DB, row, pin);
+  }
+
   if (isVerifyOnly) {
     await clearAuthFailure(env.DB, ipHash, row.email);
-    const redactDist = isStepUp || Boolean(body && body.redact_dist === true);
+    const redactDist = isStepUp || Boolean(body && body.redact_dist === true) || !(callerSess && canManageUsersSeat(callerSess));
     const verifyOut = {
       ok: true,
       edge: true,
@@ -689,9 +781,14 @@ export async function handleAuthLogin(request, env, body, verifiedCallerSession)
 
   const isHttps = new URL(request.url).protocol === 'https:';
   const userOut = hydrateUserRow(Object.assign({}, row, { last_login_at: nowIso }), true, false);
+  // Real browsers send `Sec-Fetch-Site` and rely exclusively on the HttpOnly session cookie (zero JS-accessible JWT in localStorage).
+  // Non-browser CLI / verification clients omit `Sec-Fetch-Site` and receive `token` for header-based API calls.
+  const isBrowserFetch = Boolean(request.headers.get('Sec-Fetch-Site'));
+  const loginPayload = { ok: true, edge: true, user: userOut, session_id: sessId, face_dist: verifiedFaceDist };
+  if (!isBrowserFetch) loginPayload.token = token;
 
   return jsonResponse(
-    { ok: true, edge: true, user: userOut, session_id: sessId, token, face_dist: verifiedFaceDist },
+    loginPayload,
     200,
     { 'Set-Cookie': buildSessionCookie(token, 60 * 60 * 24 * 14, isHttps) }
   );
@@ -711,7 +808,323 @@ export async function handleAuthLogout(request, env, session) {
   );
 }
 
+const OVERRIDE_UNLOCK_KEYS = [
+  'unlock_unit_price',
+  'unlock_trans_price',
+  'unlock_qty_cap',
+  'unlock_uom',
+  'unlock_method',
+  'unlock_fleet_cascade',
+  'unlock_site_owner',
+  'unlock_vat_serial',
+  'unlock_formula_totals'
+];
+
+const OVERRIDE_FIELD_TO_UNLOCK_KEY = {
+  f_date: 'unlock_formula_totals',
+  f_unitprice: 'unlock_unit_price',
+  f_price: 'unlock_unit_price',
+  f_transunitprice: 'unlock_trans_price',
+  f_qty: 'unlock_qty_cap',
+  f_uom: 'unlock_uom',
+  f_malf_uom: 'unlock_uom',
+  f_method: 'unlock_method',
+  f_truckowner: 'unlock_fleet_cascade',
+  f_truck: 'unlock_fleet_cascade',
+  f_driver: 'unlock_fleet_cascade',
+  f_metertype: 'unlock_fleet_cascade',
+  f_subcategory: 'unlock_fleet_cascade',
+  f_siteowner: 'unlock_site_owner',
+  f_vatinvoice: 'unlock_vat_serial',
+  f_amount: 'unlock_formula_totals',
+  f_mat_total: 'unlock_formula_totals',
+  f_trans_total: 'unlock_formula_totals',
+  f_total_usd: 'unlock_formula_totals',
+  f_fxrate: 'unlock_formula_totals'
+};
+
+const DUMMY_OVERRIDE_PBKDF2 = 'pbkdf2$sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+let _overrideAuditSchemaReady = false;
+async function ensureOverrideAuditSchema(db) {
+  if (!db || _overrideAuditSchemaReady) return;
+  try {
+    await db.batch([
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS override_audit (
+           id TEXT PRIMARY KEY,
+           created_at TEXT NOT NULL DEFAULT '',
+           caller_user_id TEXT DEFAULT '',
+           caller_email TEXT DEFAULT '',
+           caller_role TEXT DEFAULT '',
+           supervisor_user_id TEXT DEFAULT '',
+           supervisor_email TEXT DEFAULT '',
+           supervisor_name TEXT DEFAULT '',
+           supervisor_role TEXT DEFAULT '',
+           company TEXT DEFAULT '',
+           form_key TEXT DEFAULT '',
+           field_id TEXT DEFAULT '',
+           field_label TEXT DEFAULT '',
+           unlock_all INTEGER DEFAULT 0,
+           record_id TEXT DEFAULT '',
+           ip_hash TEXT DEFAULT ''
+         )`
+      ),
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_override_audit_co_created ON override_audit (company, created_at DESC)')
+    ]);
+    _overrideAuditSchemaReady = true;
+  } catch (_) {}
+}
+
+function isSupervisorOrOwnerRole(roleRaw, uidRaw = '') {
+  const uid = String(uidRaw || '').trim();
+  if (uid === 'u1' || uid === 'u2') return true;
+  return /owner|admin|full\s*access|supervisor/i.test(String(roleRaw || ''));
+}
+
+function canUserRowAuthorizeOverride(row, fieldId, unlockAll) {
+  if (!row) return false;
+  if (isSupervisorOrOwnerRole(row.role, row.id)) return true;
+  const roleStr = String(row.role || '').trim();
+  const cp = safeJsonParse(row.custom_perms, null);
+  if (cp && typeof cp === 'object' && cp.unlocks && typeof cp.unlocks === 'object' && (/^custom/i.test(roleStr) || cp.unlocksCustomized === true)) {
+    if (unlockAll) {
+      return OVERRIDE_UNLOCK_KEYS.every(k => cp.unlocks[k] === true);
+    }
+    const uk = OVERRIDE_FIELD_TO_UNLOCK_KEY[String(fieldId || '').trim()];
+    return Boolean(uk && cp.unlocks[uk] === true);
+  }
+  return false;
+}
+
+function shareAnyAllowedCompany(sessA, sessB) {
+  if (!sessA || !sessB) return false;
+  if (isOwnerOrFullGroupSession(sessA) || isOwnerOrFullGroupSession(sessB)) {
+    const aList = parseAllowedCompanies(sessA.companies);
+    const bList = parseAllowedCompanies(sessB.companies);
+    if ((aList.includes('*') || isOwnerOrFullGroupSession(sessA)) && (bList.length > 0 || isOwnerOrFullGroupSession(sessB))) return true;
+    if ((bList.includes('*') || isOwnerOrFullGroupSession(sessB)) && (aList.length > 0 || isOwnerOrFullGroupSession(sessA))) return true;
+  }
+  const aCos = parseAllowedCompanies(sessA.companies).map(c => CANON_COMPANY_MAP[c.replace(/\s+/g, ' ')] || c);
+  const bCos = new Set(parseAllowedCompanies(sessB.companies).map(c => CANON_COMPANY_MAP[c.replace(/\s+/g, ' ')] || c));
+  return aCos.some(c => bCos.has(c));
+}
+
+export async function handleVerifyOverride(request, env, session, body, url) {
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Supervisor override API is disabled for demo sandbox headers.' }, 403);
+  }
+  if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Edge database unavailable.' }, 503);
+
+  if (request.method === 'GET') {
+    if (!isOwnerOrFullGroupSession(session) && !isSupervisorOrOwnerRole(session.role, session.sub)) {
+      return jsonResponse({ ok: false, error: 'Supervisor or Owner privileges are required to view override audit logs.' }, 403);
+    }
+    await ensureOverrideAuditSchema(env.DB);
+    const lim = Math.min(200, Math.max(1, parseInt((url && url.searchParams && url.searchParams.get('limit')) || '50', 10) || 50));
+    const res = await env.DB.prepare('SELECT * FROM override_audit ORDER BY created_at DESC LIMIT ?1').bind(lim).all();
+    const isFullOwner = isOwnerOrFullGroupSession(session);
+    const audits = (res.results || []).filter(r => {
+      if (isFullOwner) return true;
+      const co = String(r.company || '').trim();
+      if (co) return canAccessSentinelScope(session, co);
+      return String(r.supervisor_user_id || '') === String(session.sub || '') || String(r.caller_user_id || '') === String(session.sub || '');
+    }).map(r => Object.assign({}, r, { unlock_all: Boolean(r.unlock_all) }));
+    return jsonResponse({ ok: true, audits });
+  }
+
+  const email = String((body && body.email) || '').trim().toLowerCase();
+  const pin = String((body && body.pin) || '').trim();
+  const company = String((body && body.company) || '').trim().slice(0, 80);
+  const formKey = String((body && body.form_key) || '').trim().slice(0, 60);
+  const fieldId = String((body && body.field_id) || '').trim().slice(0, 80);
+  const fieldLabel = String((body && body.field_label) || '').trim().slice(0, 120);
+  const unlockAll = Boolean(body && body.unlock_all === true);
+  const recordId = String((body && body.record_id) || '').trim().slice(0, 80);
+
+  const ipHash = await hashClientIp(request);
+  const callerKey = String(session.sub || session.email || 'anon').trim().toLowerCase();
+  const callerLockKey = `rl:lock_ov_caller:${callerKey}`;
+  const pairLockKey = email ? `rl:lock_ov_pair:${ipHash}:${email}` : '';
+  const ovLockKeys = pairLockKey ? [callerLockKey, pairLockKey] : [callerLockKey];
+
+  const nowCheckMs = Date.now();
+  let maxOvLockedUntil = 0;
+  for (const lk of ovLockKeys) {
+    const entry = await readLockEntry(env.DB, lk);
+    if (entry && Number(entry.lockedUntilMs || 0) > nowCheckMs) {
+      maxOvLockedUntil = Math.max(maxOvLockedUntil, Number(entry.lockedUntilMs));
+    }
+  }
+  if (maxOvLockedUntil > nowCheckMs) {
+    const retrySec = Math.max(1, Math.ceil((maxOvLockedUntil - nowCheckMs) / 1000));
+    return jsonResponse({
+      ok: false,
+      rate_limited: true,
+      retry_after_sec: retrySec,
+      error: `Too many failed override attempts. Please wait ${Math.max(1, Math.ceil(retrySec / 60))} minute(s).`
+    }, 429, { 'Retry-After': String(retrySec) });
+  }
+
+  if (!email || !pin) {
+    return jsonResponse({ ok: false, error: 'Supervisor email and Access PIN are required.' }, 400);
+  }
+
+  const failOverride = async (errMsg, status = 401) => {
+    const memCaller = checkSlidingRateLimit(`ov_fail_caller:${callerKey}`, 5, 300000);
+    const memPair = email ? checkSlidingRateLimit(`ov_fail_pair:${ipHash}:${email}`, 5, 300000) : { allowed: true };
+    let throttled = !memCaller.allowed || !memPair.allowed;
+    let retrySec = throttled ? 300 : 0;
+    try {
+      const fMs = Date.now();
+      const fIso = new Date(fMs).toISOString();
+      for (const lk of ovLockKeys) {
+        const lState = await bumpLockCounter(env.DB, lk, LOCKOUT_WINDOW_MS, fMs, fIso);
+        if (Number(lState.lockedUntilMs || 0) > fMs) {
+          throttled = true;
+          retrySec = Math.max(retrySec, Math.ceil((Number(lState.lockedUntilMs) - fMs) / 1000));
+        }
+      }
+    } catch (_) {}
+    if (throttled) {
+      const waitSec = Math.max(1, retrySec);
+      return jsonResponse({
+        ok: false,
+        rate_limited: true,
+        retry_after_sec: waitSec,
+        error: `Too many failed override attempts. Please wait ${Math.max(1, Math.ceil(waitSec / 60))} minute(s).`
+      }, 429, { 'Retry-After': String(waitSec) });
+    }
+    return jsonResponse({ ok: false, error: errMsg }, status);
+  };
+
+  const row = await env.DB.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(email).first();
+  if (!row || String(row.status || '') === 'Suspended') {
+    await verifySeatPin(pin, DUMMY_OVERRIDE_PBKDF2);
+    return failOverride('Invalid Supervisor email or Access PIN.', 401);
+  }
+
+  // Always perform constant-time PBKDF2 work first, then check role & company RLS BEFORE PIN validity
+  // so unauthorized/cross-BU targets never leak a 401-vs-403 PIN oracle.
+  const expectedPin = String(row.pin_code || '').trim();
+  const pinCheck = expectedPin
+    ? await verifySeatPin(pin, expectedPin)
+    : (await verifySeatPin(pin, DUMMY_OVERRIDE_PBKDF2), { ok: false, needsUpgrade: false });
+
+  if (!canUserRowAuthorizeOverride(row, fieldId, unlockAll)) {
+    return failOverride('Supervisor or Owner privileges are required to authorize field overrides.', 403);
+  }
+
+  const supSessionLike = {
+    sub: row.id,
+    email: row.email,
+    role: row.role,
+    companies: row.companies,
+    pbi: row.pbi_access || 'partial'
+  };
+  const normCo = company.toLowerCase().replace(/\s+/g, ' ');
+  if (normCo && normCo !== 'all' && normCo !== 'all bus' && normCo !== 'shared') {
+    if (!canAccessSentinelScope(session, company)) {
+      return failOverride('Caller session is not authorized for this company scope.', 403);
+    }
+    if (!canAccessSentinelScope(supSessionLike, company)) {
+      return failOverride('Authorizing Supervisor does not have access to this company.', 403);
+    }
+  } else if (normCo === 'all' || normCo === 'all bus') {
+    if (!isOwnerOrFullGroupSession(session) || !isOwnerOrFullGroupSession(supSessionLike)) {
+      return failOverride('Group-wide override requires full-group Owner authorization.', 403);
+    }
+  } else if (!shareAnyAllowedCompany(session, supSessionLike)) {
+    return failOverride('Authorizing Supervisor does not share an assigned company with this session.', 403);
+  }
+
+  if (!pinCheck.ok) {
+    return failOverride('Invalid Supervisor email or Access PIN.', 401);
+  }
+  if (pinCheck.needsUpgrade) {
+    await upgradePlaintextSeatPinIfNeeded(env.DB, row, pin);
+  }
+
+  await ensureOverrideAuditSchema(env.DB);
+  const randBytes = crypto.getRandomValues(new Uint8Array(4));
+  const randHex = Array.from(randBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const auditId = `ova-${Date.now()}-${randHex}`;
+  const createdAt = new Date().toISOString();
+
+  await Promise.all([
+    env.DB.prepare(
+      `INSERT INTO override_audit (
+         id, created_at, caller_user_id, caller_email, caller_role,
+         supervisor_user_id, supervisor_email, supervisor_name, supervisor_role,
+         company, form_key, field_id, field_label, unlock_all, record_id, ip_hash
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`
+    ).bind(
+      auditId,
+      createdAt,
+      String(session.sub || ''),
+      String(session.email || ''),
+      String(session.role || ''),
+      String(row.id || ''),
+      String(row.email || ''),
+      String(row.full_name || ''),
+      String(row.role || ''),
+      company,
+      formKey,
+      fieldId || (unlockAll ? '__all' : ''),
+      fieldLabel,
+      unlockAll ? 1 : 0,
+      recordId,
+      ipHash
+    ).run(),
+    ...ovLockKeys.map(lk => env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(lk).run().catch(() => {}))
+  ]);
+
+  return jsonResponse({
+    ok: true,
+    audit_id: auditId,
+    created_at: createdAt,
+    company,
+    field_id: fieldId || (unlockAll ? '__all' : ''),
+    unlock_all: unlockAll,
+    authorized_by: {
+      id: row.id,
+      full_name: row.full_name || '',
+      email: row.email || '',
+      role: row.role || ''
+    }
+  });
+}
+
+export async function handleSeedGet(request, env, session, kindRaw) {
+  if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  if (isDemoHeader(request)) return jsonResponse({ ok: false, error: 'Demo sandbox uses synthetic demo seeds.' }, 403);
+  const kind = String(kindRaw || '').trim().toLowerCase();
+  if (kind !== 'core' && kind !== 'records' && kind !== 'industries') {
+    return jsonResponse({ ok: false, error: 'Invalid seed kind.' }, 400);
+  }
+  if (!env || !env.BUCKET) {
+    return jsonResponse({ ok: false, error: 'Private seed vault unavailable.' }, 503);
+  }
+  const r2Key = `seeds/seed_${kind}.json`;
+  const obj = await env.BUCKET.get(r2Key);
+  if (!obj) {
+    return jsonResponse({ ok: false, error: 'Seed snapshot not found in vault.' }, 404);
+  }
+  return new Response(obj.body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff'
+    }
+  });
+}
+
 export async function handleUsersGet(request, env, session) {
+  if (!session || isDemoHeader(request)) {
+    return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
+  }
   if (!env || !env.DB) return jsonResponse({ ok: true, users: [], sessions: [] });
   const [[uRes, sRes], wsFaceSettings] = await Promise.all([
     env.DB.batch([
@@ -720,16 +1133,15 @@ export async function handleUsersGet(request, env, session) {
     ]),
     readWorkspaceFaceSettings(env.DB)
   ]);
-  const isDemo = Boolean(isDemoHeader(request));
-  const isOwner = Boolean(session && !isDemo && isOwnerOrFullGroupSession(session));
-  const canManage = Boolean(session && !isDemo && canManageUsersSeat(session));
-  const sessEmail = session && !isDemo ? String(session.email || '').trim().toLowerCase() : '';
+  const isOwner = Boolean(isOwnerOrFullGroupSession(session));
+  const canManage = Boolean(canManageUsersSeat(session));
+  const sessEmail = String(session.email || '').trim().toLowerCase();
+  const sessSub = String(session.sub || '').trim();
   const users = (uRes.results || []).map(r => {
-    if (!session || isDemo) return hydrateUserRow(r, true, true);
-    if (isOwner) return hydrateUserRow(r, false, false);
+    if (isOwner) return hydrateUserRow(r, true, false);
     const rEmail = String(r.email || '').trim().toLowerCase();
-    const isSelf = Boolean(sessEmail && rEmail === sessEmail);
-    if (isSelf) return hydrateUserRow(r, false, false);
+    const isSelf = Boolean((sessSub && String(r.id || '') === sessSub) || (sessEmail && rEmail === sessEmail));
+    if (isSelf) return hydrateUserRow(r, true, false);
     if (canManage) {
       const rCos = parseAllowedCompanies(r.companies);
       const rOwner = String(r.role || '').toLowerCase().includes('owner') || r.id === 'u1' || r.id === 'u2';
@@ -737,23 +1149,21 @@ export async function handleUsersGet(request, env, session) {
         return hydrateUserRow(r, true, false);
       }
     }
-    return hydrateUserRow(r, true, true);
-  });
+    return null;
+  }).filter(Boolean);
   let sessions = [];
-  if (session && !isDemo) {
-    const rawSess = sRes.results || [];
-    if (isOwner) {
-      sessions = rawSess;
-    } else if (canManage) {
-      sessions = rawSess.filter(s => {
-        const sEm = String((s && s.email) || '').trim().toLowerCase();
-        if (sessEmail && sEm === sessEmail) return true;
-        const sCos = parseAllowedCompanies(s && s.companies);
-        return sCos.length > 0 && !sCos.includes('*') && sCos.some(c => canAccessCompany(session, c));
-      });
-    } else {
-      sessions = rawSess.filter(s => sessEmail && String((s && s.email) || '').trim().toLowerCase() === sessEmail);
-    }
+  const rawSess = sRes.results || [];
+  if (isOwner) {
+    sessions = rawSess;
+  } else if (canManage) {
+    sessions = rawSess.filter(s => {
+      const sEm = String((s && s.email) || '').trim().toLowerCase();
+      if (sessEmail && sEm === sessEmail) return true;
+      const sCos = parseAllowedCompanies(s && s.companies);
+      return sCos.length > 0 && !sCos.includes('*') && sCos.some(c => canAccessCompany(session, c));
+    });
+  } else {
+    sessions = rawSess.filter(s => sessEmail && String((s && s.email) || '').trim().toLowerCase() === sessEmail);
   }
   return jsonResponse({ ok: true, edge: true, users, sessions, faceSettings: wsFaceSettings });
 }
@@ -778,9 +1188,26 @@ export async function handleUsersPost(request, env, session, body) {
   const isOwnerSession = isOwnerOrFullGroupSession(session);
   const canManage = canManageUsersSeat(session);
 
+  if (!u.pin_redacted) {
+    const rawSubmittedPin = String(u.pin_code || '').trim();
+    if (rawSubmittedPin && !isHashedPin(rawSubmittedPin) && isWeakPin(rawSubmittedPin)) {
+      return jsonResponse({
+        ok: false,
+        weak_pin: true,
+        error: 'Choose a stronger Access PIN (4 to 12 digits, avoiding repeated digits like 1111 or sequences like 1234).'
+      }, 400);
+    }
+  }
+
   if (!canManage) {
     const sessEmail = String(session.email || '').trim().toLowerCase();
-    if (!existing || sessEmail !== emailClean || sessEmail !== String(existing.email || '').trim().toLowerCase()) {
+    const submittedId = String(u.id || '').trim();
+    if (
+      !existing ||
+      sessEmail !== emailClean ||
+      sessEmail !== String(existing.email || '').trim().toLowerCase() ||
+      (submittedId && submittedId !== String(existing.id || ''))
+    ) {
       return jsonResponse({ ok: false, error: 'Insufficient permissions to modify team seats.' }, 403);
     }
     const selfHasFreshBio = Array.isArray(u.face_samples) && ((u.face_samples.length > 0 && !u.face_redacted) || u.face_cleared === true);
@@ -861,9 +1288,28 @@ export async function handleUsersPost(request, env, session, body) {
       (!isOwnerSession && !isSelfSeat)
     )
   );
-  const pinVal = preserveExistingPin
-    ? String(existing.pin_code || '')
-    : String(u.pin_code || (existing && existing.pin_code) || '');
+  let pinVal = '';
+  if (preserveExistingPin) {
+    pinVal = String(existing.pin_code || '');
+  } else {
+    const rawNewPin = String(u.pin_code || '').trim();
+    if (rawNewPin) {
+      if (isHashedPin(rawNewPin)) {
+        pinVal = rawNewPin;
+      } else {
+        if (isWeakPin(rawNewPin)) {
+          return jsonResponse({
+            ok: false,
+            weak_pin: true,
+            error: 'Choose a stronger Access PIN (4 to 12 digits, avoiding repeated digits like 1111 or sequences like 1234).'
+          }, 400);
+        }
+        pinVal = await hashSeatPin(rawNewPin);
+      }
+    } else {
+      pinVal = String((existing && existing.pin_code) || '');
+    }
+  }
   const effRole = String(u.role || (existing && existing.role) || 'Entry');
   const effCos = u.companies !== undefined ? String(u.companies) : String((existing && existing.companies) || 'WTC');
   const effPbi = String(u.pbi_access || (existing && existing.pbi_access) || 'partial');
@@ -875,7 +1321,6 @@ export async function handleUsersPost(request, env, session, body) {
     id: uid,
     full_name: String(u.full_name),
     email: emailClean,
-    pin_code: pinVal,
     role: effRole,
     companies: effCos,
     pbi_access: effPbi,
@@ -2217,9 +2662,16 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
                 (restrictRls && !isSelfMirror)
               )
             );
-            const pinVal = preserveExPin
+            let rawPinVal = preserveExPin
               ? String(exU.pin_code || '')
-              : String(u.pin_code || (exU && exU.pin_code) || '');
+              : String(u.pin_code || (exU && exU.pin_code) || '').trim();
+            if (!preserveExPin && rawPinVal && !isHashedPin(rawPinVal) && isWeakPin(rawPinVal)) {
+              if (exU && exU.pin_code) rawPinVal = String(exU.pin_code || '');
+              else continue;
+            }
+            const pinVal = (rawPinVal && !isHashedPin(rawPinVal))
+              ? await hashSeatPin(rawPinVal)
+              : rawPinVal;
             const effRole = String(u.role || (exU && exU.role) || 'Entry');
             const effCos = String(u.companies || (exU && exU.companies) || 'WTC');
             const effPbi = String(u.pbi_access || (exU && exU.pbi_access) || 'partial');
@@ -2230,7 +2682,6 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               id: uid,
               full_name: String(u.full_name),
               email: emClean,
-              pin_code: pinVal,
               role: effRole,
               companies: effCos,
               pbi_access: effPbi,
@@ -2242,6 +2693,7 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
               seat_updated_at: seatUpd,
               auth_mode: authModeVal
             }));
+            delete cleanPayload.pin_redacted;
             delete cleanPayload.face_redacted;
             delete cleanPayload.face_enrolled;
             subStmts.push(
@@ -2715,9 +3167,40 @@ async function readEdgeKvDoc(db, key) {
   };
 }
 
-async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy) {
+async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy, casOpts = null) {
   const slices = chunkStringSurrogateSafe(jsonStr, KV_CHUNK_CHARS);
   const headSlice = slices[0];
+  if (casOpts && typeof casOpts === 'object') {
+    const casRes = casOpts.exists
+      ? await db.prepare(
+          `UPDATE edge_kv_store
+           SET payload_json = ?1, updated_at = ?2, updated_by = ?3, rev = rev + 1
+           WHERE doc_key = ?4 AND updated_at = ?5`
+        ).bind(headSlice, updatedAt, updatedBy, key, String(casOpts.updatedAt || '')).run()
+      : await db.prepare(
+          `INSERT OR IGNORE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
+           VALUES (?1, ?2, ?3, ?4, 1)`
+        ).bind(key, headSlice, updatedAt, updatedBy).run();
+    if (!casRes || !casRes.meta || Number(casRes.meta.changes || 0) === 0) {
+      return { ok: false, conflict: true };
+    }
+    const tailStmts = [
+      db.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1').bind(`${key}__part_%`)
+    ];
+    for (let partIdx = 1; partIdx < slices.length; partIdx++) {
+      const partKey = `${key}__part_${String(partIdx).padStart(4, '0')}`;
+      tailStmts.push(
+        db.prepare(
+          'INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES (?1, ?2, ?3, ?4, 1)'
+        ).bind(partKey, slices[partIdx], updatedAt, updatedBy)
+      );
+    }
+    for (let i = 0; i < tailStmts.length; i += 500) {
+      await db.batch(tailStmts.slice(i, i + 500));
+    }
+    return { ok: true, conflict: false };
+  }
+
   const stmts = [
     db.prepare(
       `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev)
@@ -2740,13 +3223,10 @@ async function writeEdgeKvDoc(db, key, jsonStr, updatedAt, updatedBy) {
     );
   }
 
-  if (stmts.length <= 500) {
-    await db.batch(stmts);
-  } else {
-    for (let i = 0; i < stmts.length; i += 500) {
-      await db.batch(stmts.slice(i, i + 500));
-    }
+  for (let i = 0; i < stmts.length; i += 500) {
+    await db.batch(stmts.slice(i, i + 500));
   }
+  return { ok: true, conflict: false };
 }
 
 function redactFaceSamplesFromUserObj(u) {
@@ -2760,6 +3240,9 @@ function redactFaceSamplesFromUserObj(u) {
   copy.face_redacted = Boolean(copy.face_enrolled);
   if (!copy.face_enrolled && copy.face_updated_at) copy.face_cleared = true;
   delete copy.face_samples;
+  if (copy.pin_code || copy.pin_redacted) copy.pin_redacted = true;
+  delete copy.pin_code;
+  delete copy._verifiedPin;
   return copy;
 }
 
@@ -2781,9 +3264,7 @@ function scopeStoreDocForSession(docObj, session) {
       const em = String(u.email || '').trim().toLowerCase();
       const isSelf = Boolean(sessEmail && em === sessEmail);
       if (isSelf) {
-        const uSelf = redactFaceSamplesFromUserObj(u);
-        delete uSelf.pin_redacted;
-        return uSelf;
+        return redactFaceSamplesFromUserObj(u);
       }
       if (canManage) {
         const uCos = parseAllowedCompanies(u.companies);
@@ -2918,6 +3399,25 @@ export function isKioskOwnedDoc(docKey) {
   return k === 'kiosk_station_keys' || k === 'kiosk_station_auth' || k === 'pos_revenue_posting' || k.startsWith('kiosk_key_seen:');
 }
 
+export async function handleAuthMe(env, session) {
+  if (!session || !env || !env.DB) {
+    return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+  }
+  let userOut = null;
+  try {
+    const uid = String(session.sub || '').trim();
+    const em = String(session.email || '').trim().toLowerCase();
+    const row = uid
+      ? await env.DB.prepare('SELECT * FROM users WHERE id = ?1 LIMIT 1').bind(uid).first()
+      : (em ? await env.DB.prepare('SELECT * FROM users WHERE lower(email) = ?1 LIMIT 1').bind(em).first() : null);
+    if (!row || String(row.status || '') === 'Suspended') {
+      return jsonResponse({ ok: true, edge: true, authenticated: false, session: null, user: null });
+    }
+    userOut = hydrateUserRow(row, true, false);
+  } catch (_) {}
+  return jsonResponse({ ok: true, edge: true, authenticated: true, session, user: userOut });
+}
+
 export async function handleSync(request, env, session, body, _ctx) {
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required.' }, 401);
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'D1 not bound' }, 503);
@@ -2981,29 +3481,62 @@ export async function handleSync(request, env, session, body, _ctx) {
       await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
     }
     if (pKey === 'mfg_web_store') stripServerOwnedCustomRows(incomingDoc);
-    const newTs = String(incomingDoc.updatedAt || new Date().toISOString());
+    let newTs = String(incomingDoc.updatedAt || new Date().toISOString());
+    if (newTs === currentTs) {
+      const parsedMs = Date.parse(newTs);
+      newTs = Number.isFinite(parsedMs) ? new Date(parsedMs + 1).toISOString() : `${newTs}.1`;
+    }
     incomingDoc.updatedAt = newTs;
 
-    // Mirror relational deltas BEFORE advancing edge_kv_store so transient D1 errors never drop rows
+    const updatedByStr = String(incomingDoc.updatedBy || (session && session.email) || '');
+    const kvPayloadDoc = (pKey === 'mfg_web_store' && Array.isArray(incomingDoc.users))
+      ? Object.assign({}, incomingDoc, { users: incomingDoc.users.map(redactFaceSamplesFromUserObj) })
+      : incomingDoc;
+
+    // Claim the atomic `edge_kv_store` CAS slot FIRST so concurrent CAS losers never touch relational D1 tables
+    const kvRes = await writeEdgeKvDoc(
+      env.DB,
+      pKey,
+      JSON.stringify(kvPayloadDoc),
+      newTs,
+      updatedByStr,
+      { exists: Boolean(currentRow), updatedAt: currentTs }
+    );
+    if (kvRes && kvRes.conflict) {
+      const latestRow = await readEdgeKvDoc(env.DB, pKey);
+      const latestRaw = latestRow ? safeJsonParse(latestRow.payload_json, {}) : {};
+      if (pKey === 'mfg_web_store') {
+        await overlayCanonicalSubStoresOnMfgDoc(env.DB, latestRaw);
+      }
+      const latestScoped = pKey === 'mfg_web_store' ? scopeStoreDocForSession(latestRaw, session) : latestRaw;
+      return jsonResponse({
+        ok: true,
+        conflict: true,
+        updatedAt: latestRow ? String(latestRow.updated_at || '') : '',
+        docs: { [pKey]: latestScoped }
+      });
+    }
+
     let mirrorStats = undefined;
     if (pKey === 'mfg_web_store') {
       mirrorStats = await mirrorStoreDeltaToD1Tables(env.DB, incomingDoc, prevDoc, session);
       if (mirrorStats && mirrorStats.error) {
+        try {
+          if (currentRow) {
+            await writeEdgeKvDoc(env.DB, pKey, currentRow.payload_json, currentTs, '');
+          } else {
+            await env.DB.batch([
+              env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key = ?1').bind(pKey),
+              env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1').bind(`${pKey}__part_%`)
+            ]);
+          }
+        } catch (_) {}
         return jsonResponse({ ok: false, error: `Relational mirror failed: ${mirrorStats.error}` }, 500);
       }
       if (Array.isArray(incomingDoc.users)) {
-        incomingDoc.users = incomingDoc.users.map(redactFaceSamplesFromUserObj);
+        incomingDoc.users = kvPayloadDoc.users;
       }
     }
-
-    const updatedByStr = String(incomingDoc.updatedBy || (session && session.email) || '');
-    await writeEdgeKvDoc(
-      env.DB,
-      pKey,
-      JSON.stringify(incomingDoc),
-      newTs,
-      updatedByStr
-    );
     if (pKey === 'mfg_web_store' && isOwnerOrFullGroupSession(session) && incomingDoc.faceSettings && typeof incomingDoc.faceSettings === 'object') {
       const pubFs = sanitizePublicFaceSettings(incomingDoc.faceSettings);
       if (pubFs) {
@@ -3037,7 +3570,7 @@ async function purgePhoneScanR2Pages(env, pagesJsonRaw) {
 export async function handlePhoneScan(request, env, url, body, session) {
   if (!env || !env.DB) return jsonResponse({ ok: true, found: false });
   const ipHash = await hashClientIp(request);
-  const rl = checkSlidingRateLimit(`phone-scan:${ipHash}`, 45, 60000);
+  const rl = await checkD1RateLimit(env, `phone-scan:${ipHash}`, 45, 60);
   if (!rl.allowed) {
     return jsonResponse({ ok: false, error: 'Phone scan rate limit exceeded.' }, 429);
   }
@@ -3119,6 +3652,9 @@ export async function handlePhoneScan(request, env, url, body, session) {
   let status = String((body && body.status) || (existing && existing.status) || 'waiting').slice(0, 40);
   const rtcOffer = body && body.rtcOffer ? JSON.stringify(body.rtcOffer) : String((existing && existing.rtc_offer) || '');
   const rtcAnswer = body && body.rtcAnswer ? JSON.stringify(body.rtcAnswer) : String((existing && existing.rtc_answer) || '');
+  if (rtcOffer.length > 32768 || rtcAnswer.length > 32768) {
+    return jsonResponse({ ok: false, error: 'WebRTC signaling payload exceeds 32 KB limit.' }, 413);
+  }
   const mergedPages = existing ? safeJsonParse(existing.pages_json, []) : [];
   const seenIds = new Set(mergedPages.map(p => p && String(p.id || '')));
   const safeSid = sid.replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -3155,6 +3691,23 @@ export async function handlePhoneScan(request, env, url, body, session) {
   return jsonResponse({ ok: true, status, pageCount: mergedPages.length });
 }
 
+const SAFE_INLINE_BLOB_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']);
+function buildSafeRawBlobHeaders(rawMime) {
+  let m = String(rawMime || '').trim().toLowerCase().split(';')[0].trim();
+  if (m === 'image/jpg') m = 'image/jpeg';
+  const safeInline = SAFE_INLINE_BLOB_MIMES.has(m);
+  const headers = {
+    'Content-Type': safeInline ? m : 'application/octet-stream',
+    'Cache-Control': 'private, max-age=86400',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': 'sandbox'
+  };
+  if (!safeInline) {
+    headers['Content-Disposition'] = 'attachment';
+  }
+  return headers;
+}
+
 export async function handleBlobs(request, env, session, url, body) {
   if (!env || !env.DB) return jsonResponse({ ok: false, error: 'Storage unavailable' }, 503);
   if (!session) return jsonResponse({ ok: false, error: 'Authentication required' }, 401);
@@ -3175,10 +3728,7 @@ export async function handleBlobs(request, env, session, url, body) {
         if (wantRaw) {
           return new Response(obj.body, {
             status: 200,
-            headers: {
-              'Content-Type': meta.mime_type || 'application/octet-stream',
-              'Cache-Control': 'private, max-age=86400'
-            }
+            headers: buildSafeRawBlobHeaders(meta.mime_type)
           });
         }
         const ab = await obj.arrayBuffer();
@@ -3206,10 +3756,7 @@ export async function handleBlobs(request, env, session, url, body) {
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         return new Response(bytes, {
           status: 200,
-          headers: {
-            'Content-Type': meta.mime_type || 'application/octet-stream',
-            'Cache-Control': 'private, max-age=86400'
-          }
+          headers: buildSafeRawBlobHeaders(meta.mime_type)
         });
       }
       return jsonResponse({
@@ -3264,7 +3811,7 @@ export async function handleBlobs(request, env, session, url, body) {
   }
 
   const [prefix, b64Data] = dataUrl.split(';base64,');
-  const mimeType = prefix.replace(/^data:/i, '') || 'image/jpeg';
+  const mimeType = String(prefix.replace(/^data:/i, '') || 'image/jpeg').slice(0, 100);
   const approxBytes = Math.floor((b64Data.length * 3) / 4);
   if (approxBytes > 8 * 1024 * 1024) {
     return jsonResponse({ ok: false, error: 'Attachment exceeds 8 MB limit' }, 413);
@@ -3304,16 +3851,26 @@ export async function handleBlobs(request, env, session, url, body) {
 
 export async function handleShowcaseLead(request, env, body) {
   if (!env || !env.DB) return jsonResponse({ ok: true, stored: false });
+  const ipHash = await hashClientIp(request);
+  const rl = await checkD1RateLimit(env, `leads:${ipHash}`, 5, 600);
+  if (!rl.allowed) {
+    return jsonResponse({ ok: false, error: 'Too many submissions. Please try again shortly.' }, 429);
+  }
+  const fullName = String((body && body.name) || '').trim().slice(0, 120);
+  const contact = String((body && body.contact) || '').trim().slice(0, 140);
+  if (!fullName || !contact) {
+    return jsonResponse({ ok: false, error: 'Name and contact details are required.' }, 400);
+  }
   await env.DB.prepare(
     `INSERT INTO isabi_leads (full_name, company_name, industry, scale, contact, notes, lang, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
   ).bind(
-    String((body && body.name) || '').slice(0, 120),
-    String((body && body.company) || '').slice(0, 140),
-    String((body && body.industry) || '').slice(0, 80),
-    String((body && body.scale) || '').slice(0, 80),
-    String((body && body.contact) || '').slice(0, 140),
-    String((body && body.notes) || '').slice(0, 2000),
+    fullName,
+    String((body && body.company) || '').trim().slice(0, 140),
+    String((body && body.industry) || '').trim().slice(0, 80),
+    String((body && body.scale) || '').trim().slice(0, 80),
+    contact,
+    String((body && body.notes) || '').trim().slice(0, 2000),
     String((body && body.lang) || 'en').slice(0, 8),
     new Date().toISOString()
   ).run();
@@ -3323,6 +3880,10 @@ export async function handleShowcaseLead(request, env, body) {
 export async function handleShowcaseLog(request, env, body) {
   if (!env || !env.DB) return jsonResponse({ ok: true });
   const ipHash = await hashClientIp(request);
+  const rl = await checkD1RateLimit(env, `asklog:${ipHash}`, 30, 60);
+  if (!rl.allowed) {
+    return jsonResponse({ ok: false, error: 'Log rate limit exceeded.' }, 429);
+  }
   await env.DB.prepare(
     `INSERT INTO ask_logs (surface, lang, industry, query, reply_title, ip_hash, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`

@@ -445,3 +445,23 @@ CREATE TABLE IF NOT EXISTS isabi_leads (
   lang TEXT DEFAULT 'en',
   created_at TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS override_audit (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT '',
+  caller_user_id TEXT DEFAULT '',
+  caller_email TEXT DEFAULT '',
+  caller_role TEXT DEFAULT '',
+  supervisor_user_id TEXT DEFAULT '',
+  supervisor_email TEXT DEFAULT '',
+  supervisor_name TEXT DEFAULT '',
+  supervisor_role TEXT DEFAULT '',
+  company TEXT DEFAULT '',
+  form_key TEXT DEFAULT '',
+  field_id TEXT DEFAULT '',
+  field_label TEXT DEFAULT '',
+  unlock_all INTEGER DEFAULT 0,
+  record_id TEXT DEFAULT '',
+  ip_hash TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_override_audit_co_created ON override_audit (company, created_at DESC);

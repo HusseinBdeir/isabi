@@ -776,11 +776,35 @@ class BatchWriter:
         if not self.cur_lines:
             return
         fp = self.out_dir / f"batch_{self.batch_idx:04d}.sql"
-        fp.write_text("".join(self.cur_lines), encoding="utf-8", newline="\n")
+        fp.write_bytes("".join(self.cur_lines).replace("\r\n", "\n").encode("utf-8"))
         self.files.append(fp)
         self.batch_idx += 1
         self.cur_lines = []
         self.cur_bytes = 0
+
+
+def _b64url_nopad(raw_bytes: bytes) -> str:
+    import base64 as _b64
+    return _b64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("ascii")
+
+
+def _hash_seed_pin(pin_val: str, row_id: str = "", email: str = "") -> str:
+    raw = str(pin_val or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("pbkdf2$sha256$"):
+        parts = raw.split("$")
+        if len(parts) == 5 and len(parts[3]) == 32 and len(parts[4]) == 64:
+            try:
+                salt_b = bytes.fromhex(parts[3])
+                dk_b = bytes.fromhex(parts[4])
+                return f"pbkdf2$sha256${parts[2]}${_b64url_nopad(salt_b)}${_b64url_nopad(dk_b)}"
+            except ValueError:
+                pass
+        return raw
+    salt = hashlib.sha256(f"isabi-d1-seed-pbkdf2-v1:{row_id}:{email.strip().lower()}:{raw}".encode("utf-8")).digest()[:16]
+    dk = hashlib.pbkdf2_hmac("sha256", raw.encode("utf-8"), salt, 100_000, dklen=32)
+    return f"pbkdf2$sha256$100000${_b64url_nopad(salt)}${_b64url_nopad(dk)}"
 
 
 def build_upsert_stmt(table: str, target_cols: list[str], row_dict: dict) -> str:
@@ -790,9 +814,16 @@ def build_upsert_stmt(table: str, target_cols: list[str], row_dict: dict) -> str
         norm_row["company"] = canonicalize_company(norm_row["company"])
     if table in ("products", "sites", "equipment", "drivers") and norm_row.get("name") is None:
         norm_row["name"] = str(norm_row.get("id") or "")
-    if table == "users" and "pin_code" in col_set and norm_row.get("pin_code") is None:
-        # Always write the column: the live table still carries an old DEFAULT, and a seat with no PIN stays blank.
-        norm_row["pin_code"] = ""
+    if table == "users" and "pin_code" in col_set:
+        if norm_row.get("pin_code") is None:
+            # Always write the column: the live table still carries an old DEFAULT, and a seat with no PIN stays blank.
+            norm_row["pin_code"] = ""
+        elif str(norm_row.get("pin_code") or "").strip():
+            norm_row["pin_code"] = _hash_seed_pin(
+                str(norm_row["pin_code"]),
+                str(norm_row.get("id") or ""),
+                str(norm_row.get("email") or ""),
+            )
     cols = []
     vals = []
     for k in target_cols:
@@ -817,6 +848,7 @@ def build_upsert_stmt(table: str, target_cols: list[str], row_dict: dict) -> str
             if k != "payload_json" and v is not None and v != "":
                 base_payload[k] = v
         if table == "users":
+            base_payload.pop("pin_code", None)
             base_payload.pop("face_samples", None)
             base_payload.pop("face_thumbs", None)
             base_payload.pop("face_redacted", None)
@@ -1159,6 +1191,9 @@ def collect_target_rows(
                 ku_c["face_enrolled"] = enrolled
                 ku_c["face_sample_count"] = max(1, valid_cnt) if enrolled else 0
                 ku_c["face_redacted"] = True
+                ku_c["pin_redacted"] = True
+                ku_c.pop("pin_code", None)
+                ku_c.pop("_verifiedPin", None)
                 ku_c.pop("face_samples", None)
                 ku_c.pop("face_thumbs", None)
                 ku_c.pop("_d1_authoritative_id", None)

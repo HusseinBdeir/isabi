@@ -319,6 +319,12 @@
 
     let rlsBlockedCompany = '';
     let coKey = (_ctx && _ctx.STATE && _ctx.STATE.company) || 'manufacturing-group';
+    if (String(coKey).toLowerCase() === 'democompany') {
+      const dInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
+        ? _ctx.getActiveIndustry('democompany')
+        : ((_ctx && _ctx.STATE && _ctx.STATE.demoCompanyIndustry) || 'Hospitality & Resorts');
+      coKey = dInd === 'Manufacturing' ? 'manufacturing-group' : `industry:${dInd}`;
+    }
     let coNames = allowed.slice();
     const wantsAllEntities = isEntityComparisonPrompt(cleanQ) || matchedAliases.length > 1;
 
@@ -1175,7 +1181,7 @@
     const targetInd = domainMentionInd || (activeInd !== 'Manufacturing' ? activeInd : null);
     if (targetInd && !/\b(trial\s+balance|coa|double[- ]entry|pcg|journal\s+voucher|daily\s+ops|daily\s+operations)\b/i.test(low)) {
       if (targetInd === 'Holding & Treasury' && window.MFG_HOLDING && typeof window.MFG_HOLDING.compute === 'function') {
-        const h = window.MFG_HOLDING.compute();
+        const h = window.MFG_HOLDING.compute({ company: scope.coKey, ignoreSearch: true });
         const hk = h.kpis || {};
         const icRows = h.intercompany || [];
         const pRows = h.partners || [];
@@ -1280,7 +1286,7 @@
         };
       }
       if (targetInd === 'Hospitality & Resorts' && window.MFG_HOSPITALITY && typeof window.MFG_HOSPITALITY.compute === 'function') {
-        const d = window.MFG_HOSPITALITY.compute();
+        const d = window.MFG_HOSPITALITY.compute({ company: scope.coKey, ignoreSearch: true });
         const hk = d.kpis || {};
         const sRows = d.salesRows || [];
         const mRows = d.memberRows || [];
@@ -1381,7 +1387,7 @@
         };
       }
       if (targetInd === 'Automotive & Heavy Trading' && window.MFG_TRADING && typeof window.MFG_TRADING.compute === 'function') {
-        const d = window.MFG_TRADING.compute();
+        const d = window.MFG_TRADING.compute({ company: scope.coKey, ignoreSearch: true });
         const tk = d.kpis || {};
         const vRows = d.vehicleRows || [];
         const stRows = d.stockRows || [];
@@ -1474,7 +1480,7 @@
         };
       }
       if (targetInd === 'Real Estate & Property' && window.MFG_REALESTATE && typeof window.MFG_REALESTATE.compute === 'function') {
-        const d = window.MFG_REALESTATE.compute();
+        const d = window.MFG_REALESTATE.compute({ company: scope.coKey, ignoreSearch: true });
         const rk = d.kpis || {};
         const lRows = d.leases || [];
         const rRows = d.rentInvoices || [];
@@ -1566,7 +1572,7 @@
         };
       }
       if (targetInd === 'Insurance & Brokerage' && window.MFG_INSURANCE && typeof window.MFG_INSURANCE.compute === 'function') {
-        const d = window.MFG_INSURANCE.compute();
+        const d = window.MFG_INSURANCE.compute({ company: scope.coKey, ignoreSearch: true });
         const ik = d.kpis || {};
         const pRows = d.policies || [];
         const cRows = d.carrierMatrix || [];
@@ -4344,7 +4350,13 @@
       'Deterministic Engine': 'محرك حسابي حتمي',
       'WhatsApp Scenario Note': 'مذكرة السيناريو عبر واتساب',
       'Copy Scenario': 'نسخ السيناريو',
-      'Close': 'إغلاق'
+      'Close': 'إغلاق',
+      'Page Guide': 'دليل الصفحة',
+      'Page Guide & Display': 'دليل الصفحة والعرض',
+      'Page Guide, Spoken Walkthrough, Smart Scan, Language & Theme': 'دليل الصفحة والشرح الصوتي والمسح الذكي واللغة والمظهر',
+      'Quick Actions': 'إجراءات سريعة',
+      'Display & Language': 'العرض واللغة',
+      'Appearance': 'المظهر'
     },
     fr: {
       'Listen to Daily Briefing': 'Écouter le briefing quotidien',
@@ -4485,17 +4497,23 @@
       'Deterministic Engine': 'Moteur Déterministe',
       'WhatsApp Scenario Note': 'Note de Scénario WhatsApp',
       'Copy Scenario': 'Copier le Scénario',
-      'Close': 'Fermer'
+      'Close': 'Fermer',
+      'Page Guide': 'Guide de la Page',
+      'Page Guide & Display': 'Guide & Affichage',
+      'Page Guide, Spoken Walkthrough, Smart Scan, Language & Theme': 'Guide de la page, visite vocale, scan intelligent, langue et thème',
+      'Quick Actions': 'Actions Rapides',
+      'Display & Language': 'Affichage & Langue',
+      'Appearance': 'Apparence'
     }
   };
 
   function ensureDailyBriefingI18nRegistered() {
     if (typeof window === 'undefined' || !window.MFG_I18N || typeof window.MFG_I18N.registerLocale !== 'function') return;
     const dict = window.MFG_I18N.DICT || {};
-    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover'] || !dict.ar['Explain Page'] || !dict.ar['What-If Studio']) {
+    if (!dict.ar || !dict.ar['Listen to Daily Briefing'] || !dict.ar['Listen to Period Summary'] || !dict.ar['Statement Variance & Cover Note'] || !dict.ar['Dashboard Variance & Outlier Brief'] || !dict.ar['Counterparty 360° Brief'] || !dict.ar['Sentinel Exception Triage'] || !dict.ar['Shift Handover'] || !dict.ar['Explain Page'] || !dict.ar['What-If Studio'] || !dict.ar['Page Guide & Display']) {
       window.MFG_I18N.registerLocale('ar', { code: 'ar', label: 'عربي', shortLabel: 'AR', nativeName: 'العربية', dir: 'rtl', bcp47: 'ar-LB' }, DAILY_BRIEFING_I18N.ar);
     }
-    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover'] || !dict.fr['Explain Page'] || !dict.fr['What-If Studio']) {
+    if (!dict.fr || !dict.fr['Listen to Daily Briefing'] || !dict.fr['Listen to Period Summary'] || !dict.fr['Statement Variance & Cover Note'] || !dict.fr['Dashboard Variance & Outlier Brief'] || !dict.fr['Counterparty 360° Brief'] || !dict.fr['Sentinel Exception Triage'] || !dict.fr['Shift Handover'] || !dict.fr['Explain Page'] || !dict.fr['What-If Studio'] || !dict.fr['Page Guide & Display']) {
       window.MFG_I18N.registerLocale('fr', { code: 'fr', label: 'FR', shortLabel: 'FR', nativeName: 'Français', dir: 'ltr', bcp47: 'fr-FR' }, DAILY_BRIEFING_I18N.fr);
     }
   }
@@ -6201,7 +6219,7 @@
     return `${ind}|${coKey}|${st.period || 'all'}|${st.dateFrom || ''}|${st.dateTo || ''}|${st.basis || 'tx'}|${uid}`;
   }
 
-  function buildCeoPeriodSummary(langOverride) {
+  function buildCeoPeriodSummary(langOverride, opts) {
     ensureDailyBriefingI18nRegistered();
     const safeLang = resolveActiveBriefingLang(langOverride);
     const st = (_ctx && _ctx.STATE) ? _ctx.STATE : {};
@@ -6211,8 +6229,8 @@
     const canViewBooks = Boolean(canHub('cashflow', user) && (!_ctx || typeof _ctx.canViewHub !== 'function' || _ctx.canViewHub('books', user)));
     const scopeKey = computeActivePeriodScopeKey();
 
-    let snap = null;
-    if (_ctx && typeof _ctx.computeCeoPeriodBridgeSnapshot === 'function') {
+    let snap = (opts && opts.snapOverride) ? opts.snapOverride : null;
+    if (!snap && _ctx && typeof _ctx.computeCeoPeriodBridgeSnapshot === 'function') {
       try { snap = _ctx.computeCeoPeriodBridgeSnapshot(coKey, st.period); } catch (_) {}
     }
     if (!snap) {
@@ -6223,7 +6241,12 @@
       const gm = Number(k.gross_margin != null ? k.gross_margin : (net - raw));
       const op = Number(k.operating_profit || 0);
       const opex = Math.max(0, gm - op);
-      const den = Math.max(1, net || rev);
+      const revBase = net || rev;
+      const den = Math.max(1, revBase);
+      const roundPct = v => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Number(n.toFixed(1)) : 0;
+      };
       snap = {
         industry: ind,
         company: coKey,
@@ -6234,7 +6257,7 @@
         periodLabel: 'All-Time',
         compareLabel: '',
         isAllTime: true,
-        cur: { revUsd: rev, netSalesUsd: net, directCostUsd: raw, grossMarginUsd: gm, gmPct: (gm / den) * 100, opExUsd: opex, opProfitUsd: op, opMarginPct: (op / den) * 100, txCount: Number(k.loads || 0), hasActivity: rev > 0 },
+        cur: { revUsd: rev, netSalesUsd: net, directCostUsd: raw, grossMarginUsd: gm, gmPct: revBase > 0 ? roundPct((gm / den) * 100) : 0, opExUsd: opex, opProfitUsd: op, opMarginPct: revBase > 0 ? roundPct((op / den) * 100) : 0, txCount: Number(k.loads || 0), hasActivity: rev > 0 },
         prev: null,
         books: { cashTillUsd: Number(k.cash_till || 0), arBalanceUsd: Number(k.ar_balance || 0), arOverdueUsd: Number(k.ar_overdue || 0) },
         topDriver: null,
@@ -6264,12 +6287,29 @@
     const hasPrior = Boolean(deltaPrev && (deltaPrev.hasActivity || Math.abs(Number(deltaPrev.revUsd || 0)) > 0.01 || Math.abs(Number(deltaPrev.opProfitUsd || 0)) > 0.01));
     const meaningfulBothRev = Boolean(hasPrior && Number(deltaPrev.revUsd || 0) >= 500 && Number(deltaCur.revUsd || 0) >= 500);
 
+    const snapInd = snap.industry || ind;
+    const resolveUnclampedPct = (winObj, dollarField, pctField) => {
+      if (!winObj) return 0;
+      const revDen = snapInd === 'Automotive & Heavy Trading'
+        ? (Number(winObj.revUsd || 0) || Number(winObj.netSalesUsd || 0))
+        : (Number(winObj.netSalesUsd || 0) || Number(winObj.revUsd || 0));
+      if (!(revDen > 0)) return 0;
+      const rawPct = Number(winObj[pctField]);
+      if (Number.isFinite(rawPct) && Math.abs(rawPct) < 100) {
+        return Number(rawPct.toFixed(1));
+      }
+      if (winObj[dollarField] != null && Number.isFinite(Number(winObj[dollarField]))) {
+        return Number(((Number(winObj[dollarField]) / revDen) * 100).toFixed(1));
+      }
+      return Number.isFinite(rawPct) ? Number(rawPct.toFixed(1)) : 0;
+    };
+
     const revDeltaUsd = hasPrior ? Math.round(Number(deltaCur.revUsd || 0) - Number(deltaPrev.revUsd || 0)) : null;
     const revDeltaPct = (hasPrior && Number(deltaPrev.revUsd || 0) >= 500)
       ? Math.max(-99.9, Math.min(999.9, Number((((Number(deltaCur.revUsd || 0) - Number(deltaPrev.revUsd || 0)) / Number(deltaPrev.revUsd)) * 100).toFixed(1))))
       : null;
     const gmDeltaPts = meaningfulBothRev
-      ? Math.max(-99.9, Math.min(99.9, Number((Number(deltaCur.gmPct || 0) - Number(deltaPrev.gmPct || 0)).toFixed(1))))
+      ? Number((resolveUnclampedPct(deltaCur, 'grossMarginUsd', 'gmPct') - resolveUnclampedPct(deltaPrev, 'grossMarginUsd', 'gmPct')).toFixed(1))
       : null;
     const opProfitDeltaUsd = hasPrior ? Math.round(Number(deltaCur.opProfitUsd || 0) - Number(deltaPrev.opProfitUsd || 0)) : null;
     const opProfitDeltaPct = (hasPrior && Math.abs(Number(deltaPrev.opProfitUsd || 0)) >= 500)
@@ -6286,8 +6326,9 @@
     const gmUsdRound = Math.round(Number(cur.grossMarginUsd || 0));
     const opExUsdRound = Math.round(Number(cur.opExUsd || 0));
     const opProfUsdRound = Math.round(Number(cur.opProfitUsd || 0));
-    const gmPctRound = Number(Number(cur.gmPct || 0).toFixed(1));
-    const opPctRound = Number(Number(cur.opMarginPct || 0).toFixed(1));
+    const hasPositiveRev = revUsdRound > 0 || Number(cur.netSalesUsd || 0) > 0;
+    const gmPctRound = hasPositiveRev ? resolveUnclampedPct(cur, 'grossMarginUsd', 'gmPct') : 0;
+    const opPctRound = hasPositiveRev ? resolveUnclampedPct(cur, 'opProfitUsd', 'opMarginPct') : 0;
     const txCount = Math.round(Number(cur.txCount || 0));
 
     const cashTillRound = canViewBooks ? Math.round(Number(snap.books && snap.books.cashTillUsd || 0)) : null;
@@ -11602,16 +11643,38 @@
         try { window.MFG_I18N.translateDom(btn); } catch (_) {}
       }
     });
+    if (typeof syncTopbarMoreStatus === 'function') syncTopbarMoreStatus();
   }
 
   function positionPageGuidePopover() {
     if (typeof document === 'undefined') return;
     const pop = document.getElementById('pageGuidePopover');
     if (!pop) return;
-    const anchor = _chatState.pageGuideAnchor
+    let anchor = _chatState.pageGuideAnchor
       || document.getElementById('cfLiquidityBriefBtn')
       || document.getElementById('topbarPageGuideBtn')
       || document.getElementById('mobilePageGuideBtn');
+    if (anchor && anchor.getBoundingClientRect) {
+      const r0 = anchor.getBoundingClientRect();
+      if (r0.width === 0 && r0.height === 0) {
+        const fallbacks = [
+          document.getElementById('topbarMoreBtn'),
+          document.getElementById('mobileMoreBtn'),
+          document.getElementById('askIsabiBtn'),
+          document.getElementById('topbar')
+        ];
+        for (let i = 0; i < fallbacks.length; i++) {
+          const fb = fallbacks[i];
+          if (fb && fb.getBoundingClientRect) {
+            const rf = fb.getBoundingClientRect();
+            if (rf.width > 0 && rf.height > 0) {
+              anchor = fb;
+              break;
+            }
+          }
+        }
+      }
+    }
     const vw = window.innerWidth || 1366;
     const vh = window.innerHeight || 768;
     if (vw <= 768 || !anchor || !anchor.getBoundingClientRect) {
@@ -11657,6 +11720,7 @@
         e.target.closest('[data-page-guide-listen]') ||
         e.target.closest('#langSwitch') ||
         e.target.closest('#mobileLangBtn') ||
+        e.target.closest('.tm-mob-lang-switch') ||
         e.target.closest('#inlineAudioPlayerBar')
       )) return;
       closePageGuidePopover();
@@ -11702,6 +11766,7 @@
     if (typeof document === 'undefined') return null;
     ensureDailyBriefingI18nRegistered();
     ensurePageGuideGlobalDismiss();
+    if (typeof closeTopbarMoreMenus === 'function') closeTopbarMoreMenus();
 
     // Mutual exclusion with all other executive brief popovers
     if (_chatState.treasuryForecastOpen) closeTreasuryForecastStudio();
@@ -12160,6 +12225,7 @@
     }
 
     positionPageGuidePopover();
+    if (typeof syncTopbarMoreStatus === 'function') syncTopbarMoreStatus();
     const skipBgAi = Boolean((typeof navigator !== 'undefined' && navigator.webdriver || window.__MFG_HEADLESS_TEST) && !window.__ALLOW_HEADLESS_AI);
     if (!isAiSource && !sum.restricted && !sum.rlsClamped && !skipBgAi) {
       requestPageGuideCommentary(sum, { source }).catch(() => {});
@@ -12184,6 +12250,7 @@
       b.classList.remove('is-open', 'active');
       b.setAttribute('aria-expanded', 'false');
     });
+    if (typeof syncTopbarMoreStatus === 'function') syncTopbarMoreStatus();
   }
 
   function togglePageGuidePopover(anchorEl, opts = {}) {
@@ -12304,18 +12371,256 @@
       });
   }
 
+  function closeTopbarMoreMenus() {
+    if (typeof document === 'undefined') return;
+    ['topbarMorePopover', 'mobileMorePopover'].forEach(id => {
+      const pop = document.getElementById(id);
+      if (pop) pop.hidden = true;
+    });
+    ['topbarMoreBtn', 'mobileMoreBtn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.classList.remove('is-menu-open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  function positionTopbarMorePopover(popEl, btnEl) {
+    if (typeof document === 'undefined' || !popEl || popEl.hidden || !btnEl || !btnEl.getBoundingClientRect) return;
+    const vw = window.innerWidth || 1366;
+    const vh = window.innerHeight || 768;
+    const rect = btnEl.getBoundingClientRect();
+    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+    popEl.setAttribute('dir', isRtl ? 'rtl' : 'ltr');
+    const maxW = popEl.id === 'mobileMorePopover' ? 276 : 292;
+    const popW = Math.min(maxW, Math.max(220, vw - 16));
+    popEl.style.width = `${popW}px`;
+    let left = isRtl ? rect.left : (rect.right - popW);
+    left = Math.max(8, Math.min(vw - popW - 8, left));
+    const popH = Math.min(popEl.offsetHeight || 236, vh - 16);
+    let top = rect.bottom + 6;
+    if (top + popH > vh - 8 && rect.top - popH - 6 >= 8) {
+      top = rect.top - popH - 6;
+    }
+    popEl.style.left = `${Math.round(left)}px`;
+    popEl.style.top = `${Math.round(Math.max(8, Math.min(vh - popH - 8, top)))}px`;
+  }
+
+  function syncTopbarMoreStatus() {
+    if (typeof document === 'undefined') return;
+    const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
+    const sparkleIco = icons ? icons.svg('sparkle') : AI_SVGS.sparkle;
+    const audioIco = icons ? icons.svg('audio') : AI_SVGS.audio;
+    const langCode = String(
+      (window.MFG_I18N && typeof window.MFG_I18N.getLang === 'function' && window.MFG_I18N.getLang())
+      || document.documentElement.getAttribute('lang')
+      || 'en'
+    ).trim().toLowerCase();
+    const langBadge = langCode === 'ar' ? 'عربي' : langCode.toUpperCase();
+
+    ['topbarMoreLangBadge', 'mobileMoreLangBadge'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.textContent !== langBadge) el.textContent = langBadge;
+    });
+
+    document.querySelectorAll('.tm-mob-lang-switch [data-lang-btn]').forEach(btn => {
+      const isAct = btn.getAttribute('data-lang-btn') === langCode;
+      btn.classList.toggle('active', isAct);
+      btn.setAttribute('aria-pressed', isAct ? 'true' : 'false');
+    });
+
+    const isPgSpeaking = Boolean(
+      _chatState.activePageGuideSpeechScope ||
+      (_chatState.activeSpeakBtn && _chatState.activeSpeakBtn.hasAttribute && _chatState.activeSpeakBtn.hasAttribute('data-page-guide-listen'))
+    );
+    const isPgOpen = Boolean(_chatState.pageGuideOpen);
+
+    ['topbarMoreBtn', 'mobileMoreBtn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.classList.toggle('is-speaking', isPgSpeaking);
+      btn.classList.toggle('has-active-guide', isPgOpen && !isPgSpeaking);
+      const icoSpan = btn.querySelector('.tm-ico');
+      if (icoSpan) {
+        const wantMode = isPgSpeaking ? 'audio' : 'sparkle';
+        if (icoSpan.getAttribute('data-ico-mode') !== wantMode) {
+          icoSpan.setAttribute('data-ico-mode', wantMode);
+          icoSpan.innerHTML = isPgSpeaking ? audioIco : sparkleIco;
+        }
+      }
+    });
+
+    const isKioskLocked = Boolean(
+      (document.body && document.body.classList.contains('kiosk-locked')) ||
+      (document.documentElement && (document.documentElement.classList.contains('kiosk-prelock') || document.documentElement.classList.contains('phone-scan-companion')))
+    );
+    if (isKioskLocked) {
+      closeTopbarMoreMenus();
+    }
+    const isKioskSurface = Boolean(
+      isKioskLocked || (document.body && document.body.classList.contains('is-kiosks-view'))
+    );
+
+    // Ensure desktop controls stay slotted inside #topbarMorePopover
+    const topScanSlot = document.getElementById('topbarMoreScanSlot');
+    const topScanSec = document.getElementById('topbarMoreScanSec');
+    const topScanBtn = document.getElementById('topbarSmartScanBtn');
+    if (topScanSlot && topScanBtn && topScanBtn.parentNode !== topScanSlot) {
+      topScanSlot.appendChild(topScanBtn);
+    }
+    if (topScanSec) {
+      topScanSec.hidden = Boolean(!topScanBtn || topScanBtn.hidden || isKioskSurface);
+    }
+    const topLangSlot = document.getElementById('topbarMoreLangSlot');
+    const langSw = document.getElementById('langSwitch');
+    if (topLangSlot && langSw && langSw.parentNode !== topLangSlot) {
+      topLangSlot.appendChild(langSw);
+    }
+    const topThemeSlot = document.getElementById('topbarMoreThemeSlot');
+    const themeBtn = document.getElementById('themeToggleBtn');
+    if (topThemeSlot && themeBtn && themeBtn.parentNode !== topThemeSlot) {
+      topThemeSlot.appendChild(themeBtn);
+    }
+
+    // Ensure mobile secondary controls stay slotted inside #mobileMorePopover
+    const mobActSlot = document.getElementById('mobileMoreActionsSlot');
+    const mobActSec = document.getElementById('mobileMoreActionsSec');
+    const mobScanBtn = document.getElementById('mobileSmartScanBtn');
+    if (mobScanBtn && !mobScanBtn.querySelector('.ss-mob-lbl')) {
+      const lbl = document.createElement('span');
+      lbl.className = 'ss-mob-lbl';
+      lbl.textContent = 'Smart Scan';
+      mobScanBtn.appendChild(lbl);
+      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && langCode !== 'en') {
+        try { window.MFG_I18N.translateDom(lbl); } catch (_) {}
+      }
+    }
+    if (mobActSlot && mobScanBtn && mobScanBtn.parentNode !== mobActSlot) {
+      mobActSlot.insertBefore(mobScanBtn, mobActSlot.firstChild);
+    }
+    const mobNewBtn = document.getElementById('mobileNewEntryBtn');
+    if (mobActSlot && mobNewBtn && mobNewBtn.parentNode !== mobActSlot) {
+      mobActSlot.appendChild(mobNewBtn);
+    }
+    if (mobActSec) {
+      const scanVis = Boolean(mobScanBtn && !mobScanBtn.hidden && !isKioskSurface);
+      const newVis = Boolean(mobNewBtn && !mobNewBtn.hidden);
+      mobActSec.hidden = !(scanVis || newVis);
+    }
+    const mobLangSlot = document.getElementById('mobileMoreLangSlot');
+    const mobLangBtn = document.getElementById('mobileLangBtn');
+    if (mobLangSlot && mobLangBtn && mobLangBtn.parentNode !== mobLangSlot) {
+      mobLangBtn.hidden = true;
+      mobLangSlot.appendChild(mobLangBtn);
+    }
+    const mobThemeSlot = document.getElementById('mobileMoreThemeSlot');
+    const mobThemeBtn = document.getElementById('mobileThemeBtn');
+    if (mobThemeSlot && mobThemeBtn && mobThemeBtn.parentNode !== mobThemeSlot) {
+      mobThemeSlot.appendChild(mobThemeBtn);
+    }
+
+    const dPop = document.getElementById('topbarMorePopover');
+    const dBtn = document.getElementById('topbarMoreBtn');
+    if (dPop && !dPop.hidden && dBtn) positionTopbarMorePopover(dPop, dBtn);
+    const mPop = document.getElementById('mobileMorePopover');
+    const mBtn = document.getElementById('mobileMoreBtn');
+    if (mPop && !mPop.hidden && mBtn) positionTopbarMorePopover(mPop, mBtn);
+  }
+
+  function toggleTopbarMoreMenu(mode) {
+    if (typeof document === 'undefined') return { open: false };
+    mountTopbarPageGuideButtons();
+    const isMob = mode === 'mobile';
+    const pop = document.getElementById(isMob ? 'mobileMorePopover' : 'topbarMorePopover');
+    const btn = document.getElementById(isMob ? 'mobileMoreBtn' : 'topbarMoreBtn');
+    if (!pop || !btn) return { open: false };
+    const willOpen = Boolean(pop.hidden);
+    closeTopbarMoreMenus();
+    if (!willOpen) return { open: false };
+    if (_chatState.pageGuideOpen) closePageGuidePopover();
+    const coPop = document.getElementById('companySwitchPopover');
+    if (coPop && !coPop.hidden) {
+      const coDone = document.getElementById('companySwitchDoneBtn');
+      if (coDone) coDone.click();
+      else coPop.hidden = true;
+    }
+    syncTopbarMoreStatus();
+    pop.hidden = false;
+    btn.classList.add('is-menu-open');
+    btn.setAttribute('aria-expanded', 'true');
+    positionTopbarMorePopover(pop, btn);
+    return { open: true };
+  }
+
   let _pgTopbarDelegationWired = false;
+  let _lastTopbarMoreScopeKey = '';
   function mountTopbarPageGuideButtons() {
     if (typeof document === 'undefined') return;
     ensureDailyBriefingI18nRegistered();
     const icons = window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function' ? window.MFG_ICONS : null;
     const sparkleIco = icons ? icons.svg('sparkle') : AI_SVGS.sparkle;
     const audioIco = icons ? icons.svg('audio') : AI_SVGS.audio;
+    const translateIfNeeded = el => {
+      if (el && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
+        try { window.MFG_I18N.translateDom(el); } catch (_) {}
+      }
+    };
 
-    // 1. Mount universal Explain Page + Listen pill bar right beside #topbar .top-left .crumb
-    const topLeft = document.querySelector('#topbar .top-left');
-    if (topLeft && !document.getElementById('topbarPageGuideBar')) {
-      const bar = document.createElement('div');
+    // 1. Desktop progressive-disclosure Quick Menu (#topbarMoreWrap -> #topbarMorePopover)
+    //    Keeps #topbar .top-left clean for #topbarTitle while housing Page Guide, Listen, Smart Scan, Language & Theme 1 tap away.
+    const toolActions = document.querySelector('#topbar .tool-actions');
+    if (toolActions && !document.getElementById('topbarMoreWrap')) {
+      const wrap = document.createElement('div');
+      wrap.className = 'topbar-more-wrap desktop-tool-btn no-print';
+      wrap.id = 'topbarMoreWrap';
+      wrap.innerHTML = `
+        <button type="button" class="topbar-more-btn" id="topbarMoreBtn" data-topbar-more-toggle="desktop" aria-haspopup="dialog" aria-expanded="false" aria-controls="topbarMorePopover" aria-label="Page Guide &amp; Display" data-ui-tip="Page Guide, Spoken Walkthrough, Smart Scan, Language &amp; Theme">
+          <span class="tm-ico" data-ico-mode="sparkle" aria-hidden="true">${sparkleIco}</span>
+          <span class="tm-lang-badge" id="topbarMoreLangBadge" data-no-i18n="1">EN</span>
+          <span class="tm-caret" data-no-i18n="1" aria-hidden="true">▾</span>
+        </button>
+      `;
+      toolActions.appendChild(wrap);
+      translateIfNeeded(wrap);
+    }
+
+    let dPop = document.getElementById('topbarMorePopover');
+    if (toolActions && !dPop && document.body) {
+      dPop = document.createElement('div');
+      dPop.className = 'topbar-more-popover no-print';
+      dPop.id = 'topbarMorePopover';
+      dPop.setAttribute('role', 'dialog');
+      dPop.setAttribute('aria-label', 'Page Guide & Display');
+      dPop.hidden = true;
+      dPop.innerHTML = `
+        <div class="tm-sec tm-sec-guide" id="topbarMoreGuideSec">
+          <div class="tm-sec-lbl">Page Guide</div>
+        </div>
+        <div class="tm-sec tm-sec-scan" id="topbarMoreScanSec">
+          <div class="tm-sec-lbl">Quick Actions</div>
+          <div class="tm-slot-row" id="topbarMoreScanSlot"></div>
+        </div>
+        <div class="tm-sec tm-sec-prefs" id="topbarMorePrefsSec">
+          <div class="tm-sec-lbl">Display &amp; Language</div>
+          <div class="tm-pref-row">
+            <span class="tm-pref-lbl">Language</span>
+            <div class="tm-pref-ctrl" id="topbarMoreLangSlot"></div>
+          </div>
+          <div class="tm-pref-row">
+            <span class="tm-pref-lbl">Appearance</span>
+            <div class="tm-pref-ctrl" id="topbarMoreThemeSlot"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(dPop);
+      translateIfNeeded(dPop);
+    }
+
+    const dGuideSec = document.getElementById('topbarMoreGuideSec');
+    let bar = document.getElementById('topbarPageGuideBar');
+    if (!bar && (dGuideSec || document.querySelector('#topbar .top-left'))) {
+      bar = document.createElement('div');
       bar.className = 'topbar-page-guide-bar no-print';
       bar.id = 'topbarPageGuideBar';
       bar.innerHTML = `
@@ -12326,39 +12631,186 @@
           ${audioIco}<span class="pg-lsn-lbl">Listen</span>
         </button>
       `;
-      topLeft.appendChild(bar);
-      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-        try { window.MFG_I18N.translateDom(bar); } catch (_) {}
-      }
+      (dGuideSec || document.querySelector('#topbar .top-left')).appendChild(bar);
+      translateIfNeeded(bar);
+    } else if (bar && dGuideSec && bar.parentNode !== dGuideSec) {
+      dGuideSec.appendChild(bar);
     }
 
-    // 2. Mount compact mobile Explain Page trigger in #topbar .top-mobile-actions
+    // 2. Mobile progressive-disclosure Quick Menu (#mobileMoreWrap -> #mobileMorePopover)
     const mobActions = document.querySelector('#topbar .top-mobile-actions');
-    if (mobActions && !document.getElementById('mobilePageGuideBtn')) {
-      const mobBtn = document.createElement('button');
+    if (mobActions && !document.getElementById('mobileMoreWrap')) {
+      const mWrap = document.createElement('div');
+      mWrap.className = 'topbar-more-wrap mobile-more-wrap no-print';
+      mWrap.id = 'mobileMoreWrap';
+      mWrap.innerHTML = `
+        <button type="button" class="topbar-more-btn mobile-more-btn" id="mobileMoreBtn" data-topbar-more-toggle="mobile" aria-haspopup="dialog" aria-expanded="false" aria-controls="mobileMorePopover" aria-label="Page Guide &amp; Display" data-ui-tip="Page Guide, Spoken Walkthrough, Smart Scan, Language &amp; Theme">
+          <span class="tm-ico" data-ico-mode="sparkle" aria-hidden="true">${sparkleIco}</span>
+          <span class="tm-lang-badge" id="mobileMoreLangBadge" data-no-i18n="1">EN</span>
+          <span class="tm-caret" data-no-i18n="1" aria-hidden="true">▾</span>
+        </button>
+      `;
+      mobActions.appendChild(mWrap);
+      translateIfNeeded(mWrap);
+    }
+
+    let mPop = document.getElementById('mobileMorePopover');
+    if (mobActions && !mPop && document.body) {
+      mPop = document.createElement('div');
+      mPop.className = 'topbar-more-popover mobile-more-popover no-print';
+      mPop.id = 'mobileMorePopover';
+      mPop.setAttribute('role', 'dialog');
+      mPop.setAttribute('aria-label', 'Page Guide & Display');
+      mPop.hidden = true;
+      mPop.innerHTML = `
+        <div class="tm-sec tm-sec-guide" id="mobileMoreGuideSec">
+          <div class="tm-sec-lbl">Page Guide</div>
+          <div class="topbar-page-guide-bar mobile-pg-bar" id="mobilePageGuideBar"></div>
+        </div>
+        <div class="tm-sec tm-sec-scan" id="mobileMoreActionsSec">
+          <div class="tm-sec-lbl">Quick Actions</div>
+          <div class="tm-slot-grid" id="mobileMoreActionsSlot"></div>
+        </div>
+        <div class="tm-sec tm-sec-prefs" id="mobileMorePrefsSec">
+          <div class="tm-sec-lbl">Display &amp; Language</div>
+          <div class="tm-pref-row">
+            <span class="tm-pref-lbl">Language</span>
+            <div class="tm-pref-ctrl" id="mobileMoreLangSlot">
+              <div class="lang-switch tm-mob-lang-switch" role="group" aria-label="Language" data-no-i18n="1">
+                <button type="button" class="lang-btn active" data-lang-btn="en">EN</button>
+                <button type="button" class="lang-btn" data-lang-btn="ar">عربي</button>
+                <button type="button" class="lang-btn" data-lang-btn="fr">FR</button>
+              </div>
+            </div>
+          </div>
+          <div class="tm-pref-row">
+            <span class="tm-pref-lbl">Appearance</span>
+            <div class="tm-pref-ctrl" id="mobileMoreThemeSlot"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(mPop);
+      translateIfNeeded(mPop);
+    }
+
+    const mobGuideBar = document.getElementById('mobilePageGuideBar');
+    let mobBtn = document.getElementById('mobilePageGuideBtn');
+    if (!mobBtn && (mobGuideBar || mobActions)) {
+      mobBtn = document.createElement('button');
       mobBtn.type = 'button';
-      mobBtn.className = 'mobile-pg-trigger no-print';
+      mobBtn.className = 'topbar-pg-btn mobile-pg-trigger no-print';
       mobBtn.id = 'mobilePageGuideBtn';
       mobBtn.setAttribute('data-page-guide-open', '1');
       mobBtn.setAttribute('data-pg-source', 'mobile');
       mobBtn.setAttribute('aria-expanded', 'false');
       mobBtn.setAttribute('aria-label', 'Explain Page');
       mobBtn.setAttribute('data-ui-tip', 'Explain what is happening on this page, highlight key insights, and take an interactive tour');
-      mobBtn.innerHTML = `${sparkleIco}<span>Explain Page</span>`;
-      const mobAskBtn = document.getElementById('mobileAskIsabiBtn');
-      if (mobAskBtn && mobAskBtn.parentNode === mobActions) {
-        mobActions.insertBefore(mobBtn, mobAskBtn);
-      } else {
-        mobActions.appendChild(mobBtn);
-      }
-      if (window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
-        try { window.MFG_I18N.translateDom(mobBtn); } catch (_) {}
-      }
+      mobBtn.innerHTML = `${sparkleIco}<span class="pg-btn-lbl">Explain Page</span>`;
+      (mobGuideBar || mobActions).appendChild(mobBtn);
+      translateIfNeeded(mobBtn);
+    } else if (mobBtn && mobGuideBar && mobBtn.parentNode !== mobGuideBar) {
+      mobGuideBar.appendChild(mobBtn);
     }
+
+    if (mobGuideBar && !document.getElementById('mobilePageListenBtn')) {
+      const mobLsn = document.createElement('button');
+      mobLsn.type = 'button';
+      mobLsn.className = 'topbar-pg-btn topbar-pg-listen no-print';
+      mobLsn.id = 'mobilePageListenBtn';
+      mobLsn.setAttribute('data-page-guide-listen', '1');
+      mobLsn.setAttribute('data-pg-source', 'mobile');
+      mobLsn.setAttribute('aria-pressed', 'false');
+      mobLsn.setAttribute('data-ui-tip', 'Listen to a spoken walkthrough of this page and its key insights');
+      mobLsn.innerHTML = `${audioIco}<span class="pg-lsn-lbl">Listen</span>`;
+      mobGuideBar.appendChild(mobLsn);
+      translateIfNeeded(mobLsn);
+    }
+
+    // 3. Also mount direct Explain Page + Listen strip inside Ask ISABI (#aiDrawer) right above #aiChips
+    const aiDrawer = document.getElementById('aiDrawer');
+    const aiChips = document.getElementById('aiChips');
+    if (aiDrawer && aiChips && !document.getElementById('aiDrawerPageGuideBar')) {
+      const dBar = document.createElement('div');
+      dBar.className = 'ai-drawer-pg-bar no-print';
+      dBar.id = 'aiDrawerPageGuideBar';
+      dBar.innerHTML = `
+        <span class="ai-drawer-pg-lbl">Page Guide</span>
+        <div class="ai-drawer-pg-actions">
+          <button type="button" class="topbar-pg-btn ai-drawer-pg-explain" id="aiDrawerExplainBtn" data-ai-drawer-pg-explain="1" data-ui-tip="Explain what is happening on this page, highlight key insights, and take an interactive tour">
+            ${sparkleIco}<span class="pg-btn-lbl">Explain Page</span>
+          </button>
+          <button type="button" class="topbar-pg-btn ai-drawer-pg-listen" id="aiDrawerListenBtn" data-page-guide-listen="1" data-pg-source="topbar" aria-pressed="false" data-ui-tip="Listen to a spoken walkthrough of this page and its key insights">
+            ${audioIco}<span class="pg-lsn-lbl">Listen</span>
+          </button>
+        </div>
+      `;
+      aiDrawer.insertBefore(dBar, aiChips);
+      translateIfNeeded(dBar);
+    }
+
+    syncTopbarMoreStatus();
 
     if (!_pgTopbarDelegationWired) {
       _pgTopbarDelegationWired = true;
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => syncTopbarMoreStatus(), { once: true });
+      }
+      window.addEventListener('mfg:lang-changed', () => syncTopbarMoreStatus());
+      window.addEventListener('popstate', () => closeTopbarMoreMenus());
+      window.addEventListener('resize', () => {
+        const vwNow = window.innerWidth || 1366;
+        const dP = document.getElementById('topbarMorePopover');
+        const mP = document.getElementById('mobileMorePopover');
+        if (vwNow <= 860 && dP && !dP.hidden) closeTopbarMoreMenus();
+        else if (vwNow > 860 && mP && !mP.hidden) closeTopbarMoreMenus();
+        else syncTopbarMoreStatus();
+      });
+      document.addEventListener('keydown', e => {
+        const isCmdK = (e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'k';
+        if (e.key === 'Escape' || isCmdK) {
+          const dP = document.getElementById('topbarMorePopover');
+          const mP = document.getElementById('mobileMorePopover');
+          if ((dP && !dP.hidden) || (mP && !mP.hidden)) {
+            closeTopbarMoreMenus();
+          }
+        }
+      });
+      document.addEventListener('mousedown', e => {
+        const dP = document.getElementById('topbarMorePopover');
+        const mP = document.getElementById('mobileMorePopover');
+        if ((!dP || dP.hidden) && (!mP || mP.hidden)) return;
+        const t = e.target;
+        if (t && t.closest && (
+          t.closest('#topbarMorePopover') ||
+          t.closest('#mobileMorePopover') ||
+          t.closest('#topbarMoreWrap') ||
+          t.closest('#mobileMoreWrap')
+        )) return;
+        closeTopbarMoreMenus();
+      }, true);
       document.addEventListener('click', e => {
+        const moreToggle = e.target.closest && e.target.closest('[data-topbar-more-toggle]');
+        if (moreToggle) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleTopbarMoreMenu(moreToggle.getAttribute('data-topbar-more-toggle') || 'desktop');
+          return;
+        }
+        const drawerExplain = e.target.closest && e.target.closest('[data-ai-drawer-pg-explain]');
+        if (drawerExplain) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeDrawer();
+          const anchor = document.getElementById('topbarMoreBtn') || document.getElementById('mobileMoreBtn') || document.getElementById('askIsabiBtn');
+          _chatState.pageGuideDraftLang = resolveActiveBriefingLang();
+          const sum = buildPageGuideSummary(undefined, { source: 'topbar' });
+          openPageGuidePopover(anchor, sum, { source: 'topbar' });
+          return;
+        }
+        if (e.target.closest && e.target.closest('#topbarSmartScanBtn, #mobileSmartScanBtn, #mobileNewEntryBtn, #topbarSearchBtn, #mobileSearchBtn')) {
+          closeTopbarMoreMenus();
+          return;
+        }
         const cfBtn = e.target.closest && e.target.closest('[data-collection-forecast-open]');
         if (cfBtn) {
           e.preventDefault();
@@ -12412,6 +12864,15 @@
           e.preventDefault();
           e.stopPropagation();
           const src = listenBtn.getAttribute('data-pg-source') || 'topbar';
+          if (listenBtn.closest('#aiDrawer')) {
+            closeDrawer();
+            const targetListenBtn = document.getElementById('topbarPageListenBtn') || document.getElementById('mobilePageListenBtn') || listenBtn;
+            speakPageGuideWalkthrough(targetListenBtn, undefined, { source: src });
+            return;
+          }
+          if (listenBtn.closest('#topbarMorePopover, #mobileMorePopover')) {
+            closeTopbarMoreMenus();
+          }
           speakPageGuideWalkthrough(listenBtn, undefined, { source: src });
         }
       });
@@ -12419,6 +12880,11 @@
   }
 
   function rebindPageGuideButtons(container) {
+    const curMoreKey = `${(_ctx && _ctx.STATE && _ctx.STATE.view) || ''}|${(_ctx && _ctx.STATE && _ctx.STATE.company) || ''}`;
+    if (_lastTopbarMoreScopeKey && _lastTopbarMoreScopeKey !== curMoreKey) {
+      closeTopbarMoreMenus();
+    }
+    _lastTopbarMoreScopeKey = curMoreKey;
     mountTopbarPageGuideButtons();
     if (container && window.MFG_I18N && typeof window.MFG_I18N.translateDom === 'function' && window.MFG_I18N.getLang && window.MFG_I18N.getLang() !== 'en') {
       ['#cfLiquidityBriefBtn', '#cfListenBriefBtn', '#cfWhatIfBtn', '#ceoWhatIfBtn', '#pbiWhatIfBtn', '#ceoCollectionForecastBtn', '#arCollectionForecastBtn', '#indCollectionForecastBtn', '#cfCollectionForecastBtn', '#pbiCollectionForecastBtn'].forEach(sel => {
@@ -19307,6 +19773,7 @@
     closePayablesOptimizerStudio();
     closeCollectionForecastStudio();
     closeWhatIfStudio();
+    closeTopbarMoreMenus();
     closePageGuidePopover();
     closeDailyHandoverPopover();
     closeSentinelTriagePopover();
@@ -19474,6 +19941,7 @@
   }
 
   function buildLlmContextMessages(cleanQ, lang, scope, fallback, turnAtts = [], opts = {}) {
+    const user = scope ? scope.user : null;
     const scopeCo = scope && scope.coKey ? scope.coKey : undefined;
     const activeInd = (_ctx && typeof _ctx.getActiveIndustry === 'function')
       ? _ctx.getActiveIndustry(scopeCo)
@@ -20288,6 +20756,7 @@
   function openDrawer(optionalPrompt) {
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
+    closeTopbarMoreMenus();
     if (_ctx && typeof _ctx.closeRail === 'function') _ctx.closeRail();
     ensureComposerControlsMounted();
     syncHeaderAndChips(true);

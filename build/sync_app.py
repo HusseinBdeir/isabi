@@ -20,7 +20,6 @@ TOP_FILES = [
     "index.html",
     "sw.js",
     "manifest.json",
-    "reset.html",
     "favicon.ico",
     "favicon-dark.ico",
     "icon.svg",
@@ -30,6 +29,12 @@ TOP_FILES = [
     "icon-512.png",
     "icon-512-maskable.png",
 ]
+
+EXCLUDED_JS_FILES = {
+    "seed_core.json",
+    "seed_records.json",
+    "seed_industries.json",
+}
 
 SUB_DIRS = [
     "css",
@@ -108,13 +113,49 @@ def sync_command_app() -> int:
             target_root = dst_dir if rel == "." else os.path.join(dst_dir, rel)
             os.makedirs(target_root, exist_ok=True)
             for f in files:
+                if dname == "js" and rel == "." and f in EXCLUDED_JS_FILES:
+                    stale_dst = os.path.join(target_root, f)
+                    if os.path.exists(stale_dst):
+                        os.remove(stale_dst)
+                    continue
                 shutil.copyfile(os.path.join(root, f), os.path.join(target_root, f))
                 copied += 1
 
-    # Remove retired monolithic seed_data.js if replaced by split seed_core.json + seed_records.json
-    legacy_seed = os.path.join(APP_OUT, "js", "seed_data.js")
-    if os.path.exists(legacy_seed) and not os.path.exists(os.path.join(APP_SRC_ROOT, "js", "seed_data.js")):
-        os.remove(legacy_seed)
+    # Overwrite local_dev_roster.js with an empty public stub so real staff seats/emails never ship in /app/js/
+    public_roster_stub = os.path.join(APP_OUT, "js", "local_dev_roster.js")
+    if os.path.isdir(os.path.dirname(public_roster_stub)):
+        with open(public_roster_stub, "w", encoding="utf-8", newline="\n") as f:
+            f.write(
+                "/* Public bundle stub: real dev seats live only in server D1 */\n"
+                "window.__ISABI_LOCAL_DEV_USERS = [];\n"
+                "window.__ISABI_LOCAL_MULTI_SEATS = [];\n"
+            )
+
+    # Remove retired/private files so they are never bundled into public /app/
+    for stale_path in (
+        os.path.join(APP_OUT, "js", "seed_data.js"),
+        os.path.join(APP_OUT, "js", "seed_core.json"),
+        os.path.join(APP_OUT, "js", "seed_records.json"),
+        os.path.join(APP_OUT, "js", "seed_industries.json"),
+        os.path.join(APP_OUT, "reset.html"),
+        os.path.join(APP_OUT, "server.py"),
+        os.path.join(ISABI_ROOT, "reset.html"),
+    ):
+        if os.path.exists(stale_path):
+            os.remove(stale_path)
+
+    # Security gate: assert zero internal @bhfirms.com emails ship in public /app/js/
+    js_out_dir = os.path.join(APP_OUT, "js")
+    if os.path.isdir(js_out_dir):
+        for root, _, files in os.walk(js_out_dir):
+            for fname in files:
+                if not fname.endswith(".js"):
+                    continue
+                fpath = os.path.join(root, fname)
+                with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                if "@bhfirms.com" in content.lower():
+                    raise SystemExit(f"ERROR: Internal @bhfirms.com address leaked into public bundle: {fpath}")
 
     print(f"OK: Synced {copied} Command Center files from {APP_SRC_ROOT} -> {APP_OUT}")
     return copied

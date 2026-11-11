@@ -7,6 +7,13 @@ migrations
 functions
 node_modules
 wrangler.toml
+reset.html
+_redirects
+app/reset.html
+app/server.py
+app/js/seed_core.json
+app/js/seed_records.json
+app/js/seed_industries.json
 package.json
 package-lock.json
 __pycache__

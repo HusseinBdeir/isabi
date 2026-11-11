@@ -6,7 +6,16 @@
     "/reset",
     "/reset.html",
     "/app/reset",
-    "/app/reset.html"
+    "/app/reset.html",
+    "/app/server.py",
+    "/wrangler.toml",
+    "/build/*",
+    "/functions/*",
+    "/migrations/*",
+    "/exports/*",
+    "/app/js/seed_core.json",
+    "/app/js/seed_records.json",
+    "/app/js/seed_industries.json"
   ],
   "exclude": []
 }

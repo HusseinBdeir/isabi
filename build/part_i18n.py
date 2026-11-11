@@ -324,6 +324,7 @@ SHOWCASE_I18N_JS = r'''    // ==================================================
 "ISABI App:":{"ar":"تطبيق ISABI:","fr":"Application ISABI :"},
 "WhatsApp (+961 70 444 955)":{"ar":"واتساب (+961 70 444 955)","fr":"WhatsApp (+961 70 444 955)"},
 "ISABI Systems. Founded and architected by Hussein Bdeir. All rights reserved.":{"ar":"ISABI Systems. تأسيس وهندسة حسين بدير. جميع الحقوق محفوظة.","fr":"ISABI Systems. Fondé et conçu par Hussein Bdeir. Tous droits réservés."},
+"Isabi Systems · Beirut, Lebanon. Founded and architected by Hussein Bdeir. All rights reserved.":{"ar":"Isabi Systems · بيروت، لبنان. تأسيس وهندسة حسين بدير. جميع الحقوق محفوظة.","fr":"Isabi Systems · Beyrouth, Liban. Fondé et conçu par Hussein Bdeir. Tous droits réservés."},
 "Custom Setup + Per-Seat Plans · Operations & Accounting · Executive Dashboards · Printable Statements · Field Kiosks · Ask ISABI AI":{"ar":"تأسيس مخصص + باقات للمستخدم · العمليات والمحاسبة · لوحات تنفيذية · كشوفات مطبوعة · أكشاك ميدانية · Ask ISABI","fr":"Mise en Place sur Mesure + Forfaits · Opérations & Comptabilité · Tableaux Exécutifs · Relevés · Bornes · Ask ISABI"},
 "Tailored Setup, Simple Seats & Full Data Ownership":{"ar":"تأسيس مخصص، اشتراك مبسط وملكية كاملة للبيانات","fr":"Déploiement sur Mesure, Forfaits Simples & Propriété des Données"},
 "Full Data Ownership":{"ar":"ملكية كاملة للبيانات","fr":"Propriété Totale des Données"},

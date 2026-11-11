@@ -318,6 +318,15 @@
     const raw = String(stateCo || '');
     if (CO_LEGAL[raw]) return CO_LEGAL[raw].co;
     const s = raw.toLowerCase();
+    if (s === 'democompany') {
+      const dInd = (typeof window !== 'undefined' && window.MFG_ENTERPRISE && window.MFG_ENTERPRISE.STATE && window.MFG_ENTERPRISE.STATE.demoCompanyIndustry) || 'Hospitality & Resorts';
+      if (dInd === 'Holding & Treasury') return 'Bdeir Holding';
+      if (dInd === 'Hospitality & Resorts') return 'Hospitality Group';
+      if (dInd === 'Automotive & Heavy Trading') return 'Trading Group';
+      if (dInd === 'Real Estate & Property') return 'Real Estate Group';
+      if (dInd === 'Insurance & Brokerage') return 'Insurance Company';
+      return 'ALL';
+    }
     if (s === 'wtc') return 'WTC';
     if (s === 'bbconstruction' || s === 'bbc') return 'BBConstruction';
     if (s === 'lionstransport' || s === 'lions transport' || s === 'lt') return 'Lions Transport';
@@ -780,8 +789,12 @@
       apRmLegsAll.push(row);
     };
 
+    const effIndStateCo = (STATE && STATE.company === 'democompany')
+      ? (ind === 'Manufacturing' ? 'manufacturing-group' : `industry:${ind}`)
+      : (STATE && STATE.company);
+
     if (ind === 'Hospitality & Resorts' && typeof E.computeHospitalityOperations === 'function') {
-      const hsp = E.computeHospitalityOperations({ ignoreSearch: true, company: STATE.company });
+      const hsp = E.computeHospitalityOperations({ ignoreSearch: true, company: effIndStateCo });
       (hsp.venueRows || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const isCr = /credit|account|receivable/i.test(String(r.method || ''));
         pushSale({
@@ -839,7 +852,7 @@
         }
       });
     } else if (ind === 'Automotive & Heavy Trading' && typeof E.computeTradingOperations === 'function') {
-      const trd = E.computeTradingOperations();
+      const trd = E.computeTradingOperations({ ignoreSearch: true, company: effIndStateCo });
       (trd.salesRows || []).filter(r => !r.is_gap && coMatch(r.company, co, allowedCos)).forEach(r => {
         const vInv = `${r.book || 'INV'}-${r.seq || r.id}`;
         pushSale({
@@ -867,7 +880,7 @@
         });
       });
     } else if (ind === 'Real Estate & Property' && typeof E.computeRealEstateOperations === 'function') {
-      const re = E.computeRealEstateOperations({ ignoreSearch: true, company: STATE.company });
+      const re = E.computeRealEstateOperations({ ignoreSearch: true, company: effIndStateCo });
       (re.invoices || []).filter(r => coMatch(r.company, co, allowedCos)).forEach(r => {
         const hasVat = Number(r.vat_usd || 0) > 0;
         const taxSeq = (r.tax_seq && !/N\/A/i.test(r.tax_seq)) ? String(r.tax_seq) : String(r.id);
@@ -1042,7 +1055,8 @@
     const offScope = Boolean(STATE._officialScopeActive);
     const indRev = (SEED && (SEED._indCustomRev || SEED._industryRev)) || 0;
     const editRev = STATE && STATE.industryRowEdits ? Object.keys(STATE.industryRowEdits).length : 0;
-    const sig = `${co}|${ind}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
+    const demoSig = (STATE && STATE.company === 'democompany') ? `${STATE.demoCompanyIndustry || ''}|1` : (Boolean(STATE && STATE.demoVisitor) ? '1' : '0');
+    const sig = `${co}|${ind}|${demoSig}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${Boolean(SEED && SEED._multiIndustrySpineSeeded) ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${indRev}|${editRev}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const isMfgAll = !co || co === 'ALL';
@@ -2659,7 +2673,7 @@
     const viewRows = periodRows.slice(-150);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account} · Sub-account: ${p.subAccount === 'ALL' ? 'All Sub-accounts' : p.subAccount}`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Account: ${p.account || 'ALL'} · Sub-account: ${!p.subAccount || p.subAccount === 'ALL' ? 'All Sub-accounts' : p.subAccount}`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2732,7 +2746,7 @@
     const dt = ctx.domainTerms || DOMAIN_RDL_TERMS['Manufacturing'];
     const recWord = isMfg ? 'tickets' : dt.txPlural;
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Customer: ${p.customer} · Product: ${p.product} · Site: ${p.site} · ${rows.length} ${recWord} (showing ${viewRows.length})`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Customer: ${p.customer || 'ALL'} · Product: ${p.product || 'ALL'} · Site: ${p.site || 'ALL'} · ${rows.length} ${recWord} (showing ${viewRows.length})`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2803,7 +2817,7 @@
     const viewRows = rows.slice(0, 160);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Supplier: ${p.supplier} · Category: ${p.category} · ${rows.length} vouchers (showing ${viewRows.length})`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Supplier: ${p.supplier || 'ALL'} · Category: ${p.category || 'ALL'} · ${rows.length} vouchers (showing ${viewRows.length})`)}
       <table class="rdl-table">
         <thead>
           <tr>
@@ -3044,7 +3058,7 @@
     const viewRows = rows.slice(0, 160);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Type: ${p.equipType} · Equipment: ${p.equipment} · Driver: ${p.driver} · ${rows.length} dispensings`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Type: ${p.equipType || 'ALL'} · Equipment: ${p.equipment || 'ALL'} · Driver: ${p.driver || 'ALL'} · ${rows.length} dispensings`)}
       <table class="rdl-table">
         <thead>
           <tr>

@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.245';
+const SHELL_CACHE = 'isabi-mfg-v19.6.248';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,45 +8,48 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.245',
-  './css/geo_dispatch.css?v=19.6.245',
-  './css/daily_ops.css?v=19.6.245',
-  './css/ask_isabi.css?v=19.6.245',
-  './css/fleet_pnl.css?v=19.6.245',
-  './css/smart_scan.css?v=19.6.245',
-  './css/doc_scanner.css?v=19.6.245',
-  './css/ai_edge.css?v=19.6.245',
-  './css/telematics.css?v=19.6.245',
-  './css/step_up_auth.css?v=19.6.245',
-  './js/face.js?v=19.6.245',
-  './js/endpoints.js?v=19.6.245',
-  './js/seed_manifest.js?v=19.6.245',
-  './js/icons.js?v=19.6.245',
-  './js/geo_dispatch.js?v=19.6.245',
-  './js/forms_engine.js?v=19.6.245',
-  './js/pbi_pages.js?v=19.6.245',
-  './js/rdl_reports.js?v=19.6.245',
-  './js/kiosk_print.js?v=19.6.245',
-  './js/table_columns.js?v=19.6.245',
-  './js/daily_ops.js?v=19.6.245',
-  './js/i18n.js?v=19.6.245',
-  './js/ask_isabi.js?v=19.6.245',
-  './js/fleet_pnl.js?v=19.6.245',
-  './js/doc_scanner.js?v=19.6.245',
-  './js/smart_scan.js?v=19.6.245',
-  './js/ai_edge.js?v=19.6.245',
-  './js/telematics.js?v=19.6.245',
-  './js/step_up_auth.js?v=19.6.245',
-  './js/app.js?v=19.6.245',
-  './manifest.json?v=19.6.245',
-  './favicon.ico?v=19.6.245',
-  './favicon-dark.ico?v=19.6.245',
-  './icon.svg?v=19.6.245',
-  './icon-dark.svg?v=19.6.245',
-  './icon-180.png?v=19.6.245',
-  './icon-192.png?v=19.6.245',
-  './icon-512.png?v=19.6.245',
-  './icon-512-maskable.png?v=19.6.245'
+  './css/app.css?v=19.6.248',
+  './css/geo_dispatch.css?v=19.6.248',
+  './css/daily_ops.css?v=19.6.248',
+  './css/ask_isabi.css?v=19.6.248',
+  './css/fleet_pnl.css?v=19.6.248',
+  './css/smart_scan.css?v=19.6.248',
+  './css/doc_scanner.css?v=19.6.248',
+  './css/ai_edge.css?v=19.6.248',
+  './css/telematics.css?v=19.6.248',
+  './css/step_up_auth.css?v=19.6.248',
+  './css/command_palette.css?v=19.6.248',
+  './js/face.js?v=19.6.248',
+  './js/endpoints.js?v=19.6.248',
+  './js/seed_manifest.js?v=19.6.248',
+  './js/icons.js?v=19.6.248',
+  './js/geo_dispatch.js?v=19.6.248',
+  './js/forms_engine.js?v=19.6.248',
+  './js/pbi_pages.js?v=19.6.248',
+  './js/rdl_reports.js?v=19.6.248',
+  './js/kiosk_print.js?v=19.6.248',
+  './js/table_columns.js?v=19.6.248',
+  './js/daily_ops.js?v=19.6.248',
+  './js/i18n.js?v=19.6.248',
+  './js/ask_isabi.js?v=19.6.248',
+  './js/fleet_pnl.js?v=19.6.248',
+  './js/doc_scanner.js?v=19.6.248',
+  './js/smart_scan.js?v=19.6.248',
+  './js/ai_edge.js?v=19.6.248',
+  './js/telematics.js?v=19.6.248',
+  './js/local_dev_roster.js?v=19.6.248',
+  './js/step_up_auth.js?v=19.6.248',
+  './js/command_palette.js?v=19.6.248',
+  './js/app.js?v=19.6.248',
+  './manifest.json?v=19.6.248',
+  './favicon.ico?v=19.6.248',
+  './favicon-dark.ico?v=19.6.248',
+  './icon.svg?v=19.6.248',
+  './icon-dark.svg?v=19.6.248',
+  './icon-180.png?v=19.6.248',
+  './icon-192.png?v=19.6.248',
+  './icon-512.png?v=19.6.248',
+  './icon-512-maskable.png?v=19.6.248'
 ];
 
 const VENDOR_ASSETS = [
@@ -185,7 +188,7 @@ self.addEventListener('install', event => {
           if (url.includes('?v=')) {
             return cache.match(url).then(cached => {
               if (cached) return null;
-              return fetchDedup(url)
+              return fetchDedup(url, { cache: 'reload' })
                 .then(res => (res && res.status === 200 && isSameOriginUrl(res.url) ? cache.put(url, res) : null))
                 .catch(() => null);
             });
@@ -220,7 +223,7 @@ self.addEventListener('activate', event => {
 });
 
 function isPersistentDataUrl(url) {
-  return url.pathname.includes('/vendor/') || /\/seed_(core|records|industries)\.json$/.test(url.pathname);
+  return url.pathname.includes('/vendor/') || /\/seed_(?:demo_)?(core|records|industries)\.json$/.test(url.pathname);
 }
 
 self.addEventListener('fetch', event => {
@@ -393,6 +396,19 @@ self.addEventListener('fetch', event => {
 let warmingInProgress = false;
 self.addEventListener('message', event => {
   const data = event.data || {};
+  if (data.type === 'PURGE_SEED_CACHE') {
+    event.waitUntil(
+      caches.open(DATA_CACHE).then(async cache => {
+        const keys = await cache.keys();
+        for (const req of keys) {
+          if (/\/api\/seed\/|\/seed_(core|records|industries)\.json\b/.test(req.url)) {
+            await cache.delete(req).catch(() => {});
+          }
+        }
+      }).catch(() => {})
+    );
+    return;
+  }
   if (data.type !== 'WARM_DATA_CACHE' || warmingInProgress) return;
   warmingInProgress = true;
   event.waitUntil(
@@ -402,21 +418,33 @@ self.addEventListener('message', event => {
         const manifest = data.manifest || {};
         const targets = [];
         VENDOR_ASSETS.forEach(u => targets.push(u));
-        if (manifest.core) targets.push(manifest.core);
-        if (manifest.records) targets.push(manifest.records);
-        if (manifest.industries) targets.push(manifest.industries);
+        let activeCoreHref = '';
+        let activeRecHref = '';
+        let activeIndHref = '';
+        if (data.isDemo) {
+          if (manifest.demoCore) { targets.push(manifest.demoCore); activeCoreHref = new URL(manifest.demoCore, self.location.href).href; }
+          if (manifest.demoRecords) { targets.push(manifest.demoRecords); activeRecHref = new URL(manifest.demoRecords, self.location.href).href; }
+          if (manifest.demoIndustries) { targets.push(manifest.demoIndustries); activeIndHref = new URL(manifest.demoIndustries, self.location.href).href; }
+        } else if (data.isServerHeld) {
+          if (data.authed === true) {
+            if (manifest.apiCore) { targets.push(manifest.apiCore); activeCoreHref = new URL(manifest.apiCore, self.location.href).href; }
+            if (manifest.apiRecords) { targets.push(manifest.apiRecords); activeRecHref = new URL(manifest.apiRecords, self.location.href).href; }
+            if (manifest.apiIndustries) { targets.push(manifest.apiIndustries); activeIndHref = new URL(manifest.apiIndustries, self.location.href).href; }
+          }
+        } else {
+          if (manifest.core) { targets.push(manifest.core); activeCoreHref = new URL(manifest.core, self.location.href).href; }
+          if (manifest.records) { targets.push(manifest.records); activeRecHref = new URL(manifest.records, self.location.href).href; }
+          if (manifest.industries) { targets.push(manifest.industries); activeIndHref = new URL(manifest.industries, self.location.href).href; }
+        }
 
-        // Prune superseded seed_*.json?d=<old> entries so DATA_CACHE stays lean across future snapshots
+        // Prune superseded seed_*.json?d=<old> or /api/seed/*?d=<old> entries so DATA_CACHE stays lean across snapshots
         const existingKeys = await cache.keys();
-        const activeCoreHref = manifest.core ? new URL(manifest.core, self.location.href).href : '';
-        const activeRecHref = manifest.records ? new URL(manifest.records, self.location.href).href : '';
-        const activeIndHref = manifest.industries ? new URL(manifest.industries, self.location.href).href : '';
         for (const req of existingKeys) {
-          if (/\/seed_core\.json\b/.test(req.url) && activeCoreHref && req.url !== activeCoreHref) {
+          if ((/\/seed_(?:demo_)?core\.json\b|\/api\/seed\/core\b/.test(req.url)) && activeCoreHref && req.url !== activeCoreHref) {
             await cache.delete(req);
-          } else if (/\/seed_records\.json\b/.test(req.url) && activeRecHref && req.url !== activeRecHref) {
+          } else if ((/\/seed_(?:demo_)?records\.json\b|\/api\/seed\/records\b/.test(req.url)) && activeRecHref && req.url !== activeRecHref) {
             await cache.delete(req);
-          } else if (/\/seed_industries\.json\b/.test(req.url) && activeIndHref && req.url !== activeIndHref) {
+          } else if ((/\/seed_(?:demo_)?industries\.json\b|\/api\/seed\/industries\b/.test(req.url)) && activeIndHref && req.url !== activeIndHref) {
             await cache.delete(req);
           }
         }
@@ -430,7 +458,7 @@ self.addEventListener('message', event => {
           if (!validHit) {
             if (hit) await cache.delete(absUrl, isVendor ? { ignoreSearch: true } : undefined).catch(() => {});
             try {
-              const res = await fetchDedup(absUrl);
+              const res = await fetchDedup(absUrl, absUrl.includes('/api/seed/') ? { credentials: 'same-origin' } : undefined);
               if (res && res.status === 200 && isSameOriginUrl(res.url)) await cache.put(absUrl, res);
             } catch (_) {}
           }

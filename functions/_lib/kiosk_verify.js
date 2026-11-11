@@ -3,7 +3,6 @@
 // Enforces <= 0.50 Euclidean threshold + >= 0.08 rival margin, D1 sliding-window rate limits, and 0 distance oracle leakage.
 
 const KIOSK_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kiosk-Key, X-ISABI-Demo'
 };
@@ -155,11 +154,26 @@ function normSiteKey(raw) {
 }
 
 function extractClientIp(request) {
-  return String(
+  let raw = String(
     request.headers.get('CF-Connecting-IP') ||
     request.headers.get('X-Forwarded-For') ||
     'local'
-  ).split(',')[0].trim().slice(0, 80);
+  ).split(',')[0].trim().toLowerCase();
+  if (raw.startsWith('::ffff:') && raw.includes('.')) raw = raw.slice(7);
+  if (raw.includes(':')) {
+    const z = raw.indexOf('%');
+    if (z > 0) raw = raw.slice(0, z);
+    const dbl = raw.split('::');
+    if (dbl.length <= 2) {
+      const left = dbl[0] ? dbl[0].split(':').filter(Boolean) : [];
+      const right = dbl.length === 2 && dbl[1] ? dbl[1].split(':').filter(Boolean) : [];
+      const full = dbl.length === 2
+        ? left.concat(Array(Math.max(0, 8 - (left.length + right.length))).fill('0'), right).slice(0, 8)
+        : left;
+      if (full.length >= 4) return full.slice(0, 4).map(h => h.padStart(4, '0')).join(':') + '::/64';
+    }
+  }
+  return raw.slice(0, 80) || 'local';
 }
 
 async function checkKioskLock(db, bucketKey, nowMs) {
@@ -173,6 +187,12 @@ async function checkKioskLock(db, bucketKey, nowMs) {
 }
 
 async function recordKioskFailure(db, bucketKey, nowMs, maxFails = 5, lockMs = 30000, windowMs = 60000) {
+  if (Math.random() < 0.05) {
+    try {
+      await db.prepare('DELETE FROM kiosk_rate_limits WHERE locked_until < ?1 AND window_start < ?2')
+        .bind(nowMs, nowMs - 3600000).run();
+    } catch (_) {}
+  }
   const row = await db.prepare('SELECT fails, window_start, locked_until FROM kiosk_rate_limits WHERE bucket_key = ?1').bind(bucketKey).first();
   let fails = 1;
   let winStart = nowMs;
@@ -211,7 +231,10 @@ async function authorizeKioskRequest(request, env, body, session, isOwnerFn) {
   const bodyKey = String((body && (body.key || body.stationKey)) || '').trim();
   const candidate = hdrKey || bearerKey || bodyKey;
 
-  if (!candidate || candidate.length < 6) {
+  if (!candidate) {
+    return { ok: false, missing: true, status: 401, error: 'Kiosk station key or Supervisor session required.' };
+  }
+  if (candidate.length < 6) {
     return { ok: false, status: 401, error: 'Kiosk station key or Supervisor session required.' };
   }
 
@@ -1149,8 +1172,19 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
   const isAttendanceOp = ATTENDANCE_OPS.has(op);
   const bioSite = isAttendanceOp ? `${siteKey}${ATTENDANCE_SUFFIX}` : siteKey;
   const ipBucket = `ip:${ipHash}:${bioSite}`;
+  const authIpBucket = `auth_ip:${ipHash}`;
 
-  // Global per-IP+site sliding-window brute-force guard
+  // Global per-IP station-key brute-force guard (independent of caller-chosen site) + per-IP+site biometric guard
+  const authIpLock = await checkKioskLock(env.DB, authIpBucket, nowMs);
+  if (authIpLock.locked) {
+    return kioskJson({
+      ok: false,
+      matched: false,
+      reason: 'locked',
+      retryAfterSec: authIpLock.retryAfterSec,
+      error: `Too many failed attempts. Wait ${authIpLock.retryAfterSec}s.`
+    }, 429);
+  }
   const ipLock = await checkKioskLock(env.DB, ipBucket, nowMs);
   if (ipLock.locked) {
     return kioskJson({
@@ -1164,7 +1198,9 @@ export async function handleKioskVerify(request, env, session, body, helpers = {
 
   const auth = await authorizeKioskRequest(request, env, body || {}, session, helpers.isOwnerOrFullGroupSession);
   if (!auth.ok) {
-    await recordKioskFailure(env.DB, ipBucket, nowMs, 15, 30000, 60000);
+    if (!auth.missing) {
+      await recordKioskFailure(env.DB, authIpBucket, nowMs, 12, 60000, 60000);
+    }
     return kioskJson({ ok: false, error: auth.error }, auth.status || 401);
   }
 

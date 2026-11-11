@@ -5,7 +5,7 @@ JS = r"""
   'use strict';
 
   const WA_NUMBER = '96170444955';
-  const EMAIL_ADDR = 'hbdeir16@gmail.com';
+  const EMAIL_ADDR = 'husseinbdeir@isabisystems.com';
   const SEC_IDS = ['architecture', 'industries', 'sandbox', 'ingenuity', 'pricing', 'portal'];
   const NOW = new Date();
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -3500,7 +3500,7 @@ JS = r"""
         q: cleanQ,
         conversational: true,
         title: 'Direct Principal Access · Hussein Bdeir',
-        answer: `You work directly with <b>Hussein Bdeir</b>, Founder and Principal Systems Architect. You can message him anytime on WhatsApp at <b>+961 70 444 955</b> or email <b>hbdeir16@gmail.com</b> for a 30-minute walkthrough.`,
+        answer: `You work directly with <b>Hussein Bdeir</b>, Founder and Principal Systems Architect. You can message him anytime on WhatsApp at <b>+961 70 444 955</b> or email <b>husseinbdeir@isabisystems.com</b> for a 30-minute walkthrough.`,
         promptText: `Would you like to open WhatsApp now, or price out your scope on the page first?`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -3784,7 +3784,7 @@ JS = r"""
   function buildGeminiSystemPrompt(lang, hasAudioInput = false) {
     return [
       'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://isabisystems.com/, Command Center app at https://isabisystems.com/app/).',
-      'Company & Direct Principal Leadership: ISABI Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com. Never invent regional branch offices or fictional staff counts.',
+      'Company & Direct Principal Leadership: Isabi Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Beirut, Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: husseinbdeir@isabisystems.com. Never invent regional branch offices or fictional staff counts.',
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, launch the full interactive Command Center portal demo, or configure a custom quote in the Scope Configurator.',
       'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, voice-to-form dictation and multi-row batch intake, Smart Scan with privacy document/VIN camera and instant phone QR handoff, warehouse stock controls, double-entry general ledgers (Class 1 to 7), automated cross-script statement matching, month-end cutoff date locks, reversing accruals, and a 14-entity group close gate, a single-screen CEO cockpit with an interactive What-If Margin/FX/Cash Scenario Studio and 30-Day Liquidity Maturity Bridge, built-in Explain Page interactive tours and one-tap spoken briefings (EN/AR/FR) across every screen, live fleet GPS and fuel-burn sensor telematics, per-unit fleet P&L filters, bilingual printable A4 statements, biometric/PIN step-up 2FA and 28 behavioral/off-hours audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
@@ -3838,6 +3838,14 @@ JS = r"""
       .trim();
   }
 
+  function escapeAiCloudHtml(str) {
+    return escapeHtml(sanitizeCleanText(str));
+  }
+
+  function formatSafeCloudAiRichText(str) {
+    return escapeAiCloudHtml(str).replace(/\*\*([^*\n]{1,160})\*\*/g, '<b>$1</b>');
+  }
+
   function parseCloudAiReply(rawReply, cleanQ, lang, fallbackResp) {
     try {
       let cleaned = String(rawReply || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -3851,22 +3859,25 @@ JS = r"""
       const hasTable = Array.isArray(obj.headers) && obj.headers.length && Array.isArray(obj.rows) && obj.rows.length;
       const transcriptClean = obj.userTranscript ? sanitizeCleanText(obj.userTranscript) : '';
       const resolvedLang = transcriptClean ? detectQueryLanguage(transcriptClean) : lang;
+      const rawActionInd = String(obj.actionInd || '').trim();
+      const safeActionInd = (rawActionInd && SBOX_LABELS && SBOX_LABELS[rawActionInd]) ? rawActionInd : fallbackResp.actionInd;
+      const safeActionCfg = obj.actionCfg ? sanitizeCleanText(obj.actionCfg).slice(0, 80) : fallbackResp.actionCfg;
       return {
         q: transcriptClean || cleanQ,
         userTranscript: transcriptClean || undefined,
         voiceSummary: obj.voiceSummary ? sanitizeCleanText(obj.voiceSummary) : undefined,
         lang: resolvedLang,
         conversational: obj.conversational !== undefined ? Boolean(obj.conversational) : !hasTable,
-        title: sanitizeCleanText(obj.title || fallbackResp.title || 'System Intelligence'),
-        answer: sanitizeCleanText(obj.answer),
-        promptText: obj.promptText ? sanitizeCleanText(obj.promptText) : fallbackResp.promptText,
-        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => sanitizeCleanText(b)) : [],
-        headers: hasTable ? obj.headers.map(h => sanitizeCleanText(h)) : undefined,
-        rows: hasTable ? obj.rows.map(r => Array.isArray(r) ? r.map(c => sanitizeCleanText(c)) : []) : undefined,
-        total: Array.isArray(obj.total) && obj.total.length ? obj.total.map(t => sanitizeCleanText(t)) : undefined,
-        citation: sanitizeCleanText(obj.citation || fallbackResp.citation || 'ISABI Systems'),
-        actionInd: obj.actionInd || fallbackResp.actionInd,
-        actionCfg: obj.actionCfg || fallbackResp.actionCfg,
+        title: escapeAiCloudHtml(obj.title || fallbackResp.title || 'System Intelligence'),
+        answer: formatSafeCloudAiRichText(obj.answer),
+        promptText: obj.promptText ? escapeAiCloudHtml(obj.promptText) : fallbackResp.promptText,
+        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => formatSafeCloudAiRichText(b)) : [],
+        headers: hasTable ? obj.headers.map(h => escapeAiCloudHtml(h)) : undefined,
+        rows: hasTable ? obj.rows.map(r => Array.isArray(r) ? r.map(c => escapeAiCloudHtml(c)) : []) : undefined,
+        total: Array.isArray(obj.total) && obj.total.length ? obj.total.map(t => escapeAiCloudHtml(t)) : undefined,
+        citation: escapeAiCloudHtml(obj.citation || fallbackResp.citation || 'ISABI Systems'),
+        actionInd: safeActionInd,
+        actionCfg: safeActionCfg,
         followUps: Array.isArray(obj.followUps) && obj.followUps.length
           ? obj.followUps.slice(0, 3).map(f => sanitizeCleanText(f)).filter(Boolean)
           : (fallbackResp.followUps || [])
@@ -3875,6 +3886,10 @@ JS = r"""
       return null;
     }
   }
+  window.__ISABI_TEST_AI_REPLY = (rawReply, cleanQ = 'test') => {
+    const parsed = parseCloudAiReply(rawReply, cleanQ, 'en', { title: 'Test', promptText: '', citation: 'ISABI Systems', followUps: [] });
+    return parsed ? { parsed, html: formatAiMessageHTML(parsed, false, 0) } : null;
+  };
 
   function logAskQuestionAsync(cleanQ, lang, replyTitle) {
     if (navigator.webdriver || window.__ISABI_SYNC_TEST) return;
@@ -3911,7 +3926,15 @@ JS = r"""
   }
 
   function normalizeShowcaseSpeech(rawStr, lang = 'en') {
-    let s = sanitizeCleanText(String(rawStr || '').replace(/<[^>]+>/g, ' '))
+    let s = sanitizeCleanText(
+      String(rawStr || '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+    )
       .replace(/^(?:Speak in a [^:]{3,65}:\s*|تحدث بنبرة[^:：]{3,65}[:：]\s*|Parlez sur un ton[^:]{3,65}:\s*)/i, '')
       .replace(/\s*·\s*/g, ', ')
       .replace(/\s*\|\s*/g, ', ')

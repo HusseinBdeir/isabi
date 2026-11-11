@@ -77,8 +77,19 @@ const srcWranglerState = path.join(ROOT, '.wrangler', 'state');
 if (fs.existsSync(srcWranglerState)) {
   fs.cpSync(srcWranglerState, tmpPersist, { recursive: true });
 }
+const tmpBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-bundle-'));
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-edge-'));
 const jwtSecret = crypto.randomBytes(32).toString('hex');
+
+const PY_SETUP = [
+  path.join(os.homedir(), '.local', 'python312', 'python.exe'),
+  'python'
+].find(p => p === 'python' || fs.existsSync(p));
+execFileSync(PY_SETUP, [path.join(ROOT, 'build', 'stage_pages_bundle.py'), tmpBundle], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  windowsHide: true
+});
 
 const NODE_BIN = [
   path.join(os.homedir(), '.local', 'node', 'node.exe'),
@@ -90,9 +101,32 @@ for (const [ek, ev] of Object.entries(process.env)) {
 }
 wranglerEnv.CI = '1';
 wranglerEnv.WRANGLER_SEND_METRICS = 'false';
+
+// Populate local R2 `isabi-vault/seeds/seed_*.json` for Phase 1B authenticated seed gating
+const appJsSrcDir = path.resolve(ROOT, '..', 'isabi-app', 'js');
+for (const kind of ['core', 'records', 'industries']) {
+  const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
+  if (fs.existsSync(seedFile)) {
+    execFileSync(NODE_BIN, [
+      WRANGLER_JS,
+      'r2', 'object', 'put',
+      `isabi-vault/seeds/seed_${kind}.json`,
+      `--file=${seedFile}`,
+      '--content-type=application/json',
+      '--local',
+      '--persist-to', tmpPersist
+    ], {
+      cwd: ROOT,
+      env: wranglerEnv,
+      stdio: 'ignore',
+      windowsHide: true
+    });
+  }
+}
+
 const wranglerProc = spawn(NODE_BIN, [
   WRANGLER_JS,
-  'pages', 'dev', '.',
+  'pages', 'dev', tmpBundle,
   '--ip', '127.0.0.1',
   '--port', String(PORT),
   '--persist-to', tmpPersist,
@@ -180,16 +214,8 @@ async function main() {
       fail('edge-01-showcase-health', JSON.stringify({ status: hRes.status, body: hRes.json, hdr: mRes.headers['x-isabi-edge'] }));
     }
 
-    // 2. Command Center /app/api/status & D1 row counts
+    // 2. Command Center /app/api/status (anon omits row counts) & HMAC-SHA256 JWT + HttpOnly Cookie
     const stRes = await httpReq('GET', '/app/api/status');
-    const cnt = stRes.json?.counts || {};
-    if (stRes.status === 200 && stRes.json?.ok && stRes.json?.d1_ready && stRes.json?.r2_ready && Number(cnt.sales_tickets) >= 26553 && Number(cnt.raw_purchases) >= 24826 && Number(cnt.users) >= 16) {
-      pass('edge-02-app-status-d1-seeded', `sales=${cnt.sales_tickets} raw=${cnt.raw_purchases} users=${cnt.users}`);
-    } else {
-      fail('edge-02-app-status-d1-seeded', JSON.stringify(stRes.json).slice(0, 300));
-    }
-
-    // 3. HMAC-SHA256 JWT + HttpOnly Cookie + Constant-Time PIN Verification
     const badLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '9999', method: 'PIN' });
     const ownerLogin = await httpReq('POST', '/app/api/auth/login', { email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN', device: 'Verify Suite' });
     const entryLogin = await httpReq('POST', '/app/api/auth/login', { email: 'sabahkassab@bhfirms.com', pin: '3333', method: 'PIN', device: 'Verify Suite' });
@@ -197,6 +223,13 @@ async function main() {
     const entryToken = entryLogin.json?.token || '';
     const setCookieHdr = String(ownerLogin.headers['set-cookie'] || '');
     const meRes = await httpReq('GET', '/app/api/auth/me', null, { 'X-ISABI-Session': ownerToken });
+    const stOwnerRes = await httpReq('GET', '/app/api/status', null, { 'X-ISABI-Session': ownerToken });
+    const cnt = stOwnerRes.json?.counts || {};
+    if (stRes.status === 200 && stRes.json?.ok && stRes.json?.d1_ready && stRes.json?.r2_ready && stRes.json?.counts === undefined && Number(cnt.sales_tickets) >= 26553 && Number(cnt.raw_purchases) >= 24826 && Number(cnt.users) >= 16) {
+      pass('edge-02-app-status-d1-seeded', `anon counts=undefined; Owner sales=${cnt.sales_tickets} raw=${cnt.raw_purchases} users=${cnt.users}`);
+    } else {
+      fail('edge-02-app-status-d1-seeded', JSON.stringify({ anon: stRes.json, owner: stOwnerRes.json }).slice(0, 350));
+    }
 
     if (badLogin.status === 401 && ownerLogin.status === 200 && ownerToken && setCookieHdr.includes('isabi_edge_sess=') && setCookieHdr.includes('HttpOnly') && entryLogin.status === 200 && entryToken && meRes.json?.authenticated === true) {
       pass('edge-03-auth-hmac-jwt-pin', `401 bad PIN, HttpOnly cookie + HMAC JWT verified for Owner & Entry`);
@@ -234,16 +267,17 @@ async function main() {
       fail('edge-05-bu-rls-write-and-demo-guard', JSON.stringify({ cross: rlsForbiddenWrite.status, demo: demoForbiddenWrite.status, ok: allowedWrite.status }));
     }
 
-    // 6. Seat Security: Unauthenticated PIN stripping + Entry privilege-escalation block
+    // 6. Seat Security: Unauthenticated /app/api/users=401 + Authenticated PIN stripping + Entry privilege-escalation block
     const anonUsers = await httpReq('GET', '/app/api/users');
-    const anyLeakedPin = (anonUsers.json?.users || []).some(u => u && u.pin_code);
+    const ownerUsers06 = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
+    const anyLeakedPin = (ownerUsers06.json?.users || []).some(u => u && u.pin_code);
     const entryEscalate = await httpReq('POST', '/app/api/users', {
-      user: { id: 'u1', email: 'husseinbdeir@bhfirms.com', full_name: 'Hussein Bdeir', role: 'Full Access (Owner)', pin_code: '0000' }
+      user: { id: 'u1', email: 'husseinbdeir@bhfirms.com', full_name: 'Hussein Bdeir', role: 'Full Access (Owner)', pin_code: '4918' }
     }, { 'X-ISABI-Session': entryToken });
-    if (anonUsers.status === 200 && !anyLeakedPin && entryEscalate.status === 403) {
-      pass('edge-06-users-seat-security', `Anon PINs redacted (0 leaked), Entry -> Owner seat edit=403`);
+    if (anonUsers.status === 401 && !anonUsers.json?.users && ownerUsers06.status === 200 && (ownerUsers06.json?.users || []).length >= 16 && !anyLeakedPin && entryEscalate.status === 403) {
+      pass('edge-06-users-seat-security', `Anon /users=401, Owner /users PINs redacted (0 leaked), Entry -> Owner seat edit=403`);
     } else {
-      fail('edge-06-users-seat-security', JSON.stringify({ leaked: anyLeakedPin, escalate: entryEscalate.status }));
+      fail('edge-06-users-seat-security', JSON.stringify({ anon: anonUsers.status, ownerStatus: ownerUsers06.status, leaked: anyLeakedPin, escalate: entryEscalate.status }));
     }
 
     // 7. Multi-Device CAS Sync (`mfg_web_store`)
@@ -709,7 +743,7 @@ try:
     r_op = d1_sim.execute("SELECT id, pin_code, status, companies, face_samples FROM users WHERE email='ops@bhfirms.com'").fetchone()
     stale_cnt = d1_sim.execute("SELECT COUNT(*) FROM edge_kv_store WHERE doc_key='mfg_web_store__part_0005'").fetchone()[0]
     d1_sim.close()
-    assert r_u1 == ("u1", "9876", "Full Access (Owner)", "[[0.9,0.8]]", "2026-11-08 14:00:00"), f"u1: {r_u1}"
+    assert r_u1[1].startswith("pbkdf2$sha256$100000$") and r_u1 == ("u1", eds._hash_seed_pin("9876", "u1", "husseinbdeir@bhfirms.com"), "Full Access (Owner)", "[[0.9,0.8]]", "2026-11-08 14:00:00"), f"u1: {r_u1}"
     assert r_op == ("u-edge-1", "4321", "Suspended", "WTC", "[[0.5,0.5]]") and stale_cnt == 0, f"ops: {r_op}, stale={stale_cnt}"
     print("PY_DELTA_MERGE_OK")
 finally:
@@ -718,7 +752,7 @@ finally:
     try {
       const pyOut = execFileSync(pyBin, ['-c', pyScript], { encoding: 'utf8', windowsHide: true });
       if (pyOut.includes('PY_DELTA_MERGE_OK')) {
-        pass('edge-16-python-delta-manifest-and-dual-store-merge', '0 writes unchanged, code-edit upsert + vanished/composite DELETE + dual-store union-merge');
+        pass('edge-16-python-delta-manifest-and-dual-store-merge', '0 writes unchanged, code-edit upsert + vanished/composite DELETE + dual-store union-merge + PBKDF2 seed hash');
       } else {
         fail('edge-16-python-delta-manifest-and-dual-store-merge', pyOut.slice(0, 300));
       }
@@ -726,7 +760,7 @@ finally:
       fail('edge-16-python-delta-manifest-and-dual-store-merge', String(pyErr.stderr || pyErr.message || pyErr).slice(0, 400));
     }
 
-    // 17. Unauthenticated 401 Wall, CSRF/CORS Lock, Self-Escalation & Supervisor Scope Locks, and 128-d Face ID Auth
+    // 17. Unauthenticated 401 Wall, CSRF/CORS Lock, Self-Escalation & Supervisor Scope Locks, Weak-PIN Reject, and 128-d Face ID + PIN Auth
     const unauthUsersPost = await httpReq('POST', '/app/api/users', { user: { id: 'u1', email: 'husseinbdeir@bhfirms.com', full_name: 'Anon Tamper', role: 'Full Access (Owner)' } });
     const unauthRecordsGet = await httpReq('GET', '/app/api/records?table=sales_tickets&company=WTC&limit=5');
     const unauthRecordsPost = await httpReq('POST', '/app/api/records', { table: 'expenses', record: { id: 'anon-exp', company: 'WTC', amount: 1 } });
@@ -749,14 +783,21 @@ finally:
       Origin: 'https://isabisystems.com'
     });
 
-    // Entry self-POST privilege lock + single-BU Supervisor cross-BU/Owner escalation block
+    // Entry self-POST privilege lock + weak PIN reject + single-BU Supervisor cross-BU/Owner escalation block
+    const weakPinAttempt17 = await httpReq('POST', '/app/api/users', {
+      user: {
+        email: 'sabahkassab@bhfirms.com',
+        full_name: 'Sabah Kassab',
+        pin_code: '0000'
+      }
+    }, { 'X-ISABI-Session': entryToken });
     const entrySelfEscalate = await httpReq('POST', '/app/api/users', {
       user: {
         email: 'sabahkassab@bhfirms.com',
         full_name: 'Sabah Kassab',
         role: 'Full Access (Owner)',
         companies: 'All',
-        pin_code: '0000',
+        pin_redacted: true,
         pbi_access: 'full',
         custom_perms: { admin: true },
         last_login_at: new Date().toISOString()
@@ -764,6 +805,11 @@ finally:
     }, { 'X-ISABI-Session': entryToken });
     const usersAfterSelf = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const sabahAfterSelf = (usersAfterSelf.json?.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
+    const sabahPinStill3333 = await httpReq('POST', '/app/api/auth/login', {
+      email: 'sabahkassab@bhfirms.com',
+      pin: '3333',
+      method: 'PIN'
+    });
     const bbcSupLogin = await httpReq('POST', '/app/api/auth/login', {
       email: 'site.bbc@bhfirms.com',
       pin: '6666',
@@ -777,7 +823,7 @@ finally:
       user: { id: 'u-sup-escape', email: 'escape@bhfirms.com', full_name: 'Scope Escape', role: 'Supervisor', companies: 'WTC' }
     }, { 'X-ISABI-Session': bbcSupToken });
 
-    // Server-side 128-d Euclidean L2 Face ID verification
+    // Server-side 128-d Euclidean L2 Face ID + PIN verification (remote web never issues JWT on Face ID vector alone)
     const vecBase = Array.from({ length: 128 }, (_, i) => Number((Math.sin(i + 1) * 0.12).toFixed(5)));
     const vecNear = vecBase.map((v, i) => Number((v + (i % 2 === 0 ? 0.002 : -0.002)).toFixed(5)));
     const vecFar = Array.from({ length: 128 }, (_, i) => Number((Math.cos(i + 1) * 0.25).toFixed(5)));
@@ -794,8 +840,9 @@ finally:
       }
     }, { 'X-ISABI-Session': ownerToken });
     const faceNoVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', method: 'Face ID' });
-    const faceWrongVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', method: 'Face ID', face_descriptor: vecFar });
-    const faceGoodVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', method: 'Face ID', face_descriptor: vecNear });
+    const faceWrongVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', pin: '7412', method: 'Face ID + PIN 2FA', face_descriptor: vecFar });
+    const faceNoPin = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', method: 'Face ID', face_descriptor: vecNear });
+    const faceGoodVec = await httpReq('POST', '/app/api/auth/login', { email: 'faceverify@bhfirms.com', pin: '7412', method: 'Face ID + PIN 2FA', face_descriptor: vecNear });
 
     if (
       unauthUsersPost.status === 401 &&
@@ -809,22 +856,28 @@ finally:
       evilCookiePost.status === 401 &&
       !evilCookiePost.headers['access-control-allow-origin'] &&
       goodOriginGet.headers['access-control-allow-origin'] === 'https://isabisystems.com' &&
+      weakPinAttempt17.status === 400 &&
       entrySelfEscalate.status === 200 &&
       entrySelfEscalate.json?.lockedPrivileges === true &&
       sabahAfterSelf?.role === 'Entry' &&
       sabahAfterSelf?.companies === 'WTC' &&
-      sabahAfterSelf?.pin_code === '3333' &&
+      sabahAfterSelf?.pin_code === undefined &&
+      sabahAfterSelf?.pin_redacted === true &&
+      sabahPinStill3333.status === 200 &&
       supEditOwner.status === 403 &&
       supGrantOutScope.status === 403 &&
       faceNoVec.status === 401 &&
       faceWrongVec.status === 401 &&
+      faceNoPin.status === 401 &&
+      faceNoPin.json?.two_factor_pin_required === true &&
+      !faceNoPin.json?.token &&
       faceGoodVec.status === 200 &&
       Boolean(faceGoodVec.json?.token) &&
       faceGoodVec.json?.user?.pin_code === undefined
     ) {
       pass(
         'edge-17-unauth-401-privilege-lock-faceid-and-cors',
-        '7 unauth endpoints=401, CSRF/CORS locked, Entry/Supervisor escalation blocked, 128-d Face ID verified'
+        '7 unauth endpoints=401, CSRF/CORS locked, weak PIN=400, Entry/Supervisor escalation blocked, Face ID requires PIN+128-d match'
       );
     } else {
       fail('edge-17-unauth-401-privilege-lock-faceid-and-cors', JSON.stringify({
@@ -833,10 +886,11 @@ finally:
         evilCookie: evilCookiePost.status,
         evilCors: evilCookiePost.headers['access-control-allow-origin'],
         goodCors: goodOriginGet.headers['access-control-allow-origin'],
-        entrySelf: entrySelfEscalate.json?.user,
+        weakPin: weakPinAttempt17.status,
+        entrySelf: [entrySelfEscalate.status, sabahAfterSelf?.pin_code, sabahAfterSelf?.pin_redacted, sabahPinStill3333.status],
         supEditOwner: supEditOwner.status,
         supGrantOutScope: supGrantOutScope.status,
-        face: [faceNoVec.status, faceWrongVec.status, faceGoodVec.status, faceGoodVec.json?.user?.pin_code]
+        face: [faceNoVec.status, faceWrongVec.status, faceNoPin.status, faceGoodVec.status, faceGoodVec.json?.user?.pin_code]
       }));
     }
 
@@ -938,7 +992,7 @@ finally:
       };
     })()`);
 
-    // 19b (Adversarial + Positive): Cold-browser descriptor-only Face ID lookup + `auth_mode: 'both'` step-up 2FA enforcement
+    // 19b (Adversarial + Positive): Cold-browser descriptor-only Face ID block + `auth_mode: 'both'` step-up 2FA enforcement
     const coldFaceOnly = await httpReq('POST', '/app/api/auth/login', {
       method: 'Face ID',
       face_descriptor: vecNear
@@ -964,6 +1018,7 @@ finally:
       method: 'PIN'
     });
     const bothFaceOnlyCold = await httpReq('POST', '/app/api/auth/login', {
+      email: 'both2fa@bhfirms.com',
       method: 'Face ID',
       face_descriptor: vecBothNear
     });
@@ -1031,15 +1086,15 @@ finally:
       browserDemoCheck?.isDemoFn === true &&
       browserDemoCheck?.demoQuarantined === true &&
       browserDemoCheck?.storedSessTok === '' &&
-      coldFaceOnly.status === 200 &&
-      Boolean(coldFaceOnly.json?.token) &&
-      coldFaceOnly.json?.user?.email === 'faceverify@bhfirms.com' &&
+      coldFaceOnly.status === 400 &&
+      !coldFaceOnly.json?.token &&
       bothPinOnly.status === 401 &&
       bothPinOnly.json?.two_factor_face_required === true &&
       !bothPinOnly.json?.token &&
       bothFaceOnlyCold.status === 401 &&
       bothFaceOnlyCold.json?.two_factor_pin_required === true &&
       bothFaceOnlyCold.json?.email === 'both2fa@bhfirms.com' &&
+      !bothFaceOnlyCold.json?.user &&
       !bothFaceOnlyCold.json?.token &&
       bothCombinedOk.status === 200 &&
       Boolean(bothCombinedOk.json?.token) &&
@@ -1056,15 +1111,15 @@ finally:
     ) {
       pass(
         'edge-19-demo-quarantine-2fa-coldface-geomerged-and-scoped-r2',
-        'Demo JWT quarantined, Demo AI routed, cold Face ID + both-2FA verified, geo_config 0-KM + tombstones merged, empty-co blob scoped to WTC'
+        'Demo JWT quarantined, Demo AI same-origin gated, vector-only Face ID blocked (400), both-2FA verified, geo_config merged, empty-co blob scoped'
       );
     } else {
       fail('edge-19-demo-quarantine-2fa-coldface-geomerged-and-scoped-r2', JSON.stringify({
         demoLogin: [demoLoginAttempt.status, demoLoginAttempt.json, Boolean(demoLoginAttempt.headers['set-cookie'])],
         demoWrite: demoUnauthWrite.status,
-        demoAsk: [demoAskAllowed.status, demoUnauthAskBlocked.status],
+        demoAsk: [demoAskAllowed.status, demoAskNoOriginBlocked.status, demoUnauthAskBlocked.status],
         browserDemoCheck,
-        coldFace: [coldFaceOnly.status, coldFaceOnly.json?.user?.email],
+        coldFace: [coldFaceOnly.status, coldFaceOnly.json],
         both2fa: [bothPinOnly.status, bothPinOnly.json?.two_factor_face_required, bothFaceOnlyCold.status, bothFaceOnlyCold.json?.two_factor_pin_required, bothCombinedOk.status],
         gm: { a: Boolean(gm.sites?.sitea), b: Boolean(gm.sites?.siteb), stale: Boolean(gm.sites?.sitestale), p0: gm.pairKmOverrides?.['site:wtc|site:sitea'], pre: gm.pairKmOverrides?.['site:wtc|site:readded'] },
         blob: [autoScopedPut.status, autoScopedEntryGet.status, autoScopedBbcGet.status]
@@ -1162,7 +1217,12 @@ finally:
     const usersAfterSyncMirror = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const unauthUsers20 = await httpReq('GET', '/app/api/users');
     const mirroredBothSeat = (usersAfterSyncMirror.json?.users || []).find(u => u.email === 'both2fa@bhfirms.com');
-    const unauthFaceSeat = (unauthUsers20.json?.users || []).find(u => u.email === 'faceverify@bhfirms.com');
+    const mirroredBothStillLogsIn = await httpReq('POST', '/app/api/auth/login', {
+      email: 'both2fa@bhfirms.com',
+      pin: '8520',
+      method: 'Face ID + PIN 2FA',
+      face_descriptor: vecBothNear
+    });
 
     // 20c (Adversarial): Missing `ISABI_JWT_SECRET` fails closed against retired dev fallback secret
     const secMod = await import('../functions/_lib/security.js');
@@ -1191,20 +1251,22 @@ finally:
       !(arAfterDel.json?.custom || []).some(c => c.id === 'cr-r3-del') &&
       !(srAfterDel.json?.reviews && srAfterDel.json.reviews['sr-r3-wtc-del']) &&
       mirroredBothSeat?.pbi_access === 'ops_only' &&
-      mirroredBothSeat?.pin_code === '8520' &&
+      mirroredBothSeat?.pin_code === undefined &&
+      mirroredBothSeat?.pin_redacted === true &&
       mirroredBothSeat?.face_enrolled === true &&
       mirroredBothSeat?.face_sample_count === 1 &&
       mirroredBothSeat?.face_redacted === true &&
       mirroredBothSeat?.face_samples === undefined &&
-      unauthFaceSeat?.face_enrolled === true &&
-      unauthFaceSeat?.face_redacted === true &&
-      unauthFaceSeat?.face_samples === undefined &&
+      mirroredBothStillLogsIn.status === 200 &&
+      Boolean(mirroredBothStillLogsIn.json?.token) &&
+      unauthUsers20.status === 401 &&
+      !unauthUsers20.json?.users &&
       forgedVerify === null &&
       signEmptyThrew === true
     ) {
       pass(
         'edge-20-scoped-sync-rls-substore-deletes-user-mirror-and-jwt-failclosed',
-        'Read-side sync RLS scoped, control_store=403, cross-BU preserved on scoped patch, sub-store deletes + redacted-safe user mirror verified, empty JWT secret fails closed'
+        'Read-side sync RLS scoped, control_store=403, cross-BU preserved, sub-store deletes + PIN-redacted user mirror verified, anon /users=401, empty JWT secret fails closed'
       );
     } else {
       fail('edge-20-scoped-sync-rls-substore-deletes-user-mirror-and-jwt-failclosed', JSON.stringify({
@@ -1212,8 +1274,8 @@ finally:
         otherSeat: [otherSeatInSync?.face_redacted, otherSeatInSync?.face_samples, otherSeatInSync?.custom_perms],
         bbcStillIntact20,
         delOk: [!(arAfterDel.json?.custom || []).some(c => c.id === 'cr-r3-del'), !(srAfterDel.json?.reviews && srAfterDel.json.reviews['sr-r3-wtc-del'])],
-        mirrored: [mirroredBothSeat?.pbi_access, mirroredBothSeat?.pin_code, mirroredBothSeat?.face_samples?.length],
-        unauthFace: [unauthFaceSeat?.face_enrolled, unauthFaceSeat?.face_redacted, unauthFaceSeat?.face_samples],
+        mirrored: [mirroredBothSeat?.pbi_access, mirroredBothSeat?.pin_code, mirroredBothSeat?.pin_redacted, mirroredBothStillLogsIn.status],
+        unauthUsers: [unauthUsers20.status, Boolean(unauthUsers20.json?.users)],
         jwt: [forgedVerify, signEmptyThrew]
       }));
     }
@@ -1224,13 +1286,13 @@ finally:
       pin: '7412',
       method: 'PIN + Face ID 2FA',
       face_descriptor: vecFar
-    });
+    }, { 'CF-Connecting-IP': '198.51.100.20' });
     const pinPlusCoworkerFace = await httpReq('POST', '/app/api/auth/login', {
       email: 'both2fa@bhfirms.com',
       pin: '8520',
       method: 'PIN + Face ID 2FA',
       face_descriptor: vecNear
-    });
+    }, { 'CF-Connecting-IP': '198.51.100.20' });
     const pinPlusRightFace = await httpReq('POST', '/app/api/auth/login', {
       email: 'faceverify@bhfirms.com',
       pin: '7412',
@@ -1249,12 +1311,24 @@ finally:
         full_name: 'Face Verify Seat',
         role: 'Entry',
         companies: 'WTC',
-        pin_code: '9999',
+        pin_code: '9482',
         custom_perms: JSON.stringify({ rights: { modify_text: true } })
       }
     }, { 'X-ISABI-Session': wtcSupTok });
     const ownerCheck21 = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const faceSeatAfterSup = (ownerCheck21.json?.users || []).find(u => u.email === 'faceverify@bhfirms.com');
+    const faceSeatTamper9999Denied = await httpReq('POST', '/app/api/auth/login', {
+      email: 'faceverify@bhfirms.com',
+      pin: '9482',
+      method: 'PIN + Face ID 2FA',
+      face_descriptor: vecNear
+    }, { 'CF-Connecting-IP': '198.51.100.21' });
+    const faceSeatOrig7412Ok = await httpReq('POST', '/app/api/auth/login', {
+      email: 'faceverify@bhfirms.com',
+      pin: '7412',
+      method: 'PIN + Face ID 2FA',
+      face_descriptor: vecNear
+    });
 
     if (
       pinPlusWrongFace.status === 401 &&
@@ -1268,33 +1342,41 @@ finally:
       wtcSupSyncCoworker?.pin_code === undefined &&
       wtcSupSyncCoworker?.pin_redacted === true &&
       wtcSupPinTamper.status === 200 &&
-      faceSeatAfterSup?.pin_code === '7412'
+      faceSeatAfterSup?.pin_code === undefined &&
+      faceSeatAfterSup?.pin_redacted === true &&
+      faceSeatTamper9999Denied.status === 401 &&
+      faceSeatOrig7412Ok.status === 200
     ) {
       pass(
         'edge-21-pin-plus-face2fa-enforcement-and-supervisor-pin-isolation',
-        'PIN+Face 2FA blocks wrong & coworker faces (401), Supervisor sees pin_redacted=true & face_redacted=true & cannot overwrite coworker PIN (7412 preserved)'
+        'PIN+Face 2FA blocks wrong & coworker faces (401), all seats pin_redacted=true over HTTP, Supervisor cannot overwrite coworker PIN (7412 preserved)'
       );
     } else {
       fail('edge-21-pin-plus-face2fa-enforcement-and-supervisor-pin-isolation', JSON.stringify({
         twoFa: [pinPlusWrongFace.status, pinPlusCoworkerFace.status, pinPlusRightFace.status],
         supGet: [wtcSupCoworker?.pin_code, wtcSupCoworker?.pin_redacted, wtcSupCoworker?.face_redacted, wtcSupCoworker?.face_samples],
         supSync: [wtcSupSyncCoworker?.pin_code, wtcSupSyncCoworker?.pin_redacted],
-        afterTamperPin: faceSeatAfterSup?.pin_code
+        afterTamperPin: [faceSeatAfterSup?.pin_code, faceSeatAfterSup?.pin_redacted, faceSeatTamper9999Denied.status, faceSeatOrig7412Ok.status]
       }));
     }
 
-    // 22. C1 + L1: Block `GET /app/api/records?table=users`, Zero Raw `face_samples` in All HTTP Responses, Cold `verify_only` Face Check, & Server-Side Logout Revocation
+    // 22. C1 + L1: Block `GET /app/api/records?table=users`, Zero Raw `face_samples` in All HTTP Responses, Auth-Gated `verify_only` Face Check, & Server-Side Logout Revocation
     const entryUsersTableLeak = await httpReq('GET', '/app/api/records?table=users', null, { 'X-ISABI-Session': entryToken });
     const ownerUsersTableLeak = await httpReq('GET', '/app/api/records?table=users', null, { 'X-ISABI-Session': ownerToken });
     const ownerUsers22 = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const ownerSync22 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const anyRawFaceUsers = (ownerUsers22.json?.users || []).some(u => Array.isArray(u && u.face_samples));
     const anyRawFaceSync = (ownerSync22.json?.docs?.mfg_web_store?.users || []).some(u => Array.isArray(u && u.face_samples));
-    const verifyOnlyFace = await httpReq('POST', '/app/api/auth/login', {
+    const verifyOnlyFaceUnauth = await httpReq('POST', '/app/api/auth/login', {
       method: 'Face ID',
       verify_only: true,
       face_descriptor: vecNear
     });
+    const verifyOnlyFaceAuth = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      face_descriptor: vecNear
+    }, { 'X-ISABI-Session': ownerToken });
     const logoutLogin = await httpReq('POST', '/app/api/auth/login', {
       email: 'sabahkassab@bhfirms.com',
       pin: '3333',
@@ -1309,23 +1391,25 @@ finally:
       ownerUsersTableLeak.status === 403 &&
       !anyRawFaceUsers &&
       !anyRawFaceSync &&
-      verifyOnlyFace.status === 200 &&
-      verifyOnlyFace.json?.verify_only === true &&
-      !verifyOnlyFace.json?.token &&
-      !verifyOnlyFace.headers['set-cookie'] &&
+      verifyOnlyFaceUnauth.status === 401 &&
+      !verifyOnlyFaceUnauth.json?.user &&
+      verifyOnlyFaceAuth.status === 200 &&
+      verifyOnlyFaceAuth.json?.verify_only === true &&
+      !verifyOnlyFaceAuth.json?.token &&
+      !verifyOnlyFaceAuth.headers['set-cookie'] &&
       preLogoutGet.status === 200 &&
       doLogoutRes.status === 200 &&
       postLogoutReplay.status === 401
     ) {
       pass(
         'edge-22-users-table-block-biometric-redaction-and-logout-revocation',
-        'records?table=users=403, 0 raw face_samples over HTTP, verify_only=200 (no cookie/JWT), replayed JWT after logout=401'
+        'records?table=users=403, 0 raw face_samples over HTTP, unauth verify_only=401, authed verify_only=200, replayed JWT after logout=401'
       );
     } else {
       fail('edge-22-users-table-block-biometric-redaction-and-logout-revocation', JSON.stringify({
         tbl: [entryUsersTableLeak.status, ownerUsersTableLeak.status],
         rawFace: [anyRawFaceUsers, anyRawFaceSync],
-        verifyOnly: [verifyOnlyFace.status, verifyOnlyFace.json?.verify_only, Boolean(verifyOnlyFace.json?.token), Boolean(verifyOnlyFace.headers['set-cookie'])],
+        verifyOnly: [verifyOnlyFaceUnauth.status, verifyOnlyFaceAuth.status, verifyOnlyFaceAuth.json?.verify_only, Boolean(verifyOnlyFaceAuth.json?.token), Boolean(verifyOnlyFaceAuth.headers['set-cookie'])],
         logout: [preLogoutGet.status, doLogoutRes.status, postLogoutReplay.status]
       }));
     }
@@ -1551,13 +1635,13 @@ finally:
         full_name: 'Suspend Test Seat',
         role: 'Supervisor',
         companies: 'WTC',
-        pin_code: '5151',
+        pin_code: '5184',
         status: 'Active'
       }
     }, { 'X-ISABI-Session': ownerToken });
     const suspLogin26 = await httpReq('POST', '/app/api/auth/login', {
       email: 'suspend26@bhfirms.com',
-      pin: '5151',
+      pin: '5184',
       method: 'PIN'
     });
     const suspTok26 = String(suspLogin26.json?.token || '');
@@ -1569,7 +1653,7 @@ finally:
         full_name: 'Suspend Test Seat',
         role: 'Supervisor',
         companies: 'WTC',
-        pin_code: '5151',
+        pin_code: '5184',
         status: 'Suspended'
       }
     }, { 'X-ISABI-Session': ownerToken });
@@ -1711,7 +1795,7 @@ finally:
       }));
     }
 
-    // 28. Non-Local TDZ Boot Guard, v(N-1)->v(N) Upgrade Continuity, & Redacted Edge 128-d Face ID Browser E2E (>= 3 Adversarial Negative Assertions)
+    // 28. Non-Local TDZ Boot Guard, Cookie-Only Auth, R2 Seed Gate & Redacted Edge 128-d Face ID + PIN Browser E2E
     const vec28 = Array.from({ length: 128 }, (_, i) => Number((Math.sin((i + 1) * 0.41) * 0.22).toFixed(5)));
     // Boundary vector at Euclidean L2 distance d = 0.490 (strictly inside 0.48 < d <= 0.50)
     const vec28Boundary = vec28.map((v, i) => (i === 0 ? Number((v + 0.49).toFixed(5)) : v));
@@ -1728,7 +1812,7 @@ finally:
         role: 'Full Access (Owner)',
         companies: 'All',
         auth_mode: 'either',
-        pin_code: '2828',
+        pin_code: '2847',
         status: 'Active',
         face_samples: [vec28],
         face_thumbs: [tinyPngDataUrl],
@@ -1744,7 +1828,7 @@ finally:
         role: 'Full Access (Owner)',
         companies: 'All',
         auth_mode: 'both',
-        pin_code: '8282',
+        pin_code: '8249',
         status: 'Active',
         face_samples: [vec28Both],
         face_thumbs: [tinyPngDataUrl],
@@ -1760,7 +1844,7 @@ finally:
         role: 'Entry',
         companies: 'WTC',
         auth_mode: 'pin_only',
-        pin_code: '2929',
+        pin_code: '2947',
         status: 'Active',
         face_samples: [vec28PinOnly],
         face_updated_at: '2026-11-08T18:02:00.000Z'
@@ -1828,15 +1912,21 @@ finally:
       }
     }
 
-    const verifyOnly2faRes = await httpReq('POST', '/app/api/auth/login', {
+    const verifyOnly2faUnauthRes = await httpReq('POST', '/app/api/auth/login', {
       method: 'Face ID',
       verify_only: true,
       face_descriptor: vec28Both
     });
+    const verifyOnly2faAuthRes = await httpReq('POST', '/app/api/auth/login', {
+      method: 'Face ID',
+      verify_only: true,
+      face_descriptor: vec28Both
+    }, { 'X-ISABI-Session': ownerToken });
     const fullLogin2faNoPinRes = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge28both@bhfirms.com',
       method: 'Face ID',
       face_descriptor: vec28Both
-    });
+    }, { 'CF-Connecting-IP': '198.51.100.89' });
     const unauthAllowPinOnlyRes = await httpReq('POST', '/app/api/auth/login', {
       method: 'Face ID',
       verify_only: true,
@@ -1850,9 +1940,11 @@ finally:
       face_descriptor: vec28PinOnly
     }, { 'X-ISABI-Session': ownerToken });
     const imposterHttpRes = await httpReq('POST', '/app/api/auth/login', {
-      method: 'Face ID',
+      email: 'edge28face@bhfirms.com',
+      pin: '2847',
+      method: 'Face ID + PIN 2FA',
       face_descriptor: vec28Imposter
-    });
+    }, { 'CF-Connecting-IP': '198.51.100.90' });
 
     consoleErrors.length = 0;
     await sendCdp('Network.clearBrowserCookies');
@@ -1884,7 +1976,8 @@ finally:
       const bootReady = await evalJs(`Boolean(
         window.MFG_FACE_TEST &&
         typeof window.MFG_FACE_TEST.state === 'function' &&
-        window.MFG_FACE_TEST.state().enrolledSeats.includes('edge28face@bhfirms.com')
+        document.getElementById('authEmailInput') &&
+        document.getElementById('authPinInput')
       )`);
       if (bootReady) break;
       await sleep(250);
@@ -1900,8 +1993,23 @@ finally:
       window.dispatchEvent(new CustomEvent('mfg:face-models-ready'));
 
       const stBoot = window.MFG_FACE_TEST.state();
+      const preAuthDeferred = Boolean(window.MFG_SEED && window.MFG_SEED._preAuthDeferred);
+      const recordsReadyBefore = Boolean(window.MFG_SEED && window.MFG_SEED._recordsReady);
       const vecBoundary = ${JSON.stringify(vec28Boundary)};
       const vecImp = ${JSON.stringify(vec28Imposter)};
+
+      // Negative Assertion 0: Pre-credential Face ID scan holds at awaiting-credentials (never unlocks on vector alone)
+      window.MFG_FACE_TEST.resetLiveness();
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
+      await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
+      const fNoCreds = await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: 0.03, parallax3d: 0.014 });
+      const stAfterNoCreds = window.MFG_FACE_TEST.state();
+
+      // Enter Email + PIN on the server-held sign-in gate before scanning Face ID
+      const emGateInp = document.getElementById('authEmailInput');
+      const pinGateInp = document.getElementById('authPinInput');
+      if (emGateInp) { emGateInp.value = 'edge28face@bhfirms.com'; emGateInp.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (pinGateInp) { pinGateInp.value = '2847'; pinGateInp.dispatchEvent(new Event('input', { bubbles: true })); }
 
       // Negative Assertion 1: Single frame builds streak without false "Face not recognized" or premature unlock
       window.MFG_FACE_TEST.resetLiveness();
@@ -1929,7 +2037,7 @@ finally:
 
       await new Promise(r => setTimeout(r, 820));
 
-      // Positive Boundary Assertion 4: Enrolled vector at d=0.490 (0.48 < d <= 0.50) + live blink/turn unlocks & mints JWT
+      // Positive Boundary Assertion 4: Enrolled vector at d=0.490 (0.48 < d <= 0.50) + Email + PIN + live blink/turn unlocks via HttpOnly cookie
       window.MFG_FACE_TEST.resetLiveness();
       await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.29, yaw: -0.03, parallax3d: -0.014 });
       await window.MFG_FACE_TEST.feedLiveAuthFrame(vecBoundary, { ear: 0.18, yaw: 0.0, parallax3d: 0.0 });
@@ -1939,9 +2047,22 @@ finally:
       const tokMinted = localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || '';
       const meCheck = await window.ISABI_EDGE_FETCH('./api/auth/me').then(r => r.json());
 
-      // Navigate to #users and verify Edge-redacted pose parity, thumb preservation, AR/FR i18n, clear tombstone, re-enrol, and 6-digit redacted PIN
+      // Wait for post-login R2 seed hydration & authenticated /api/users hydration
+      for (let w = 0; w < 40; w++) {
+        const readyNow = Boolean(
+          window.MFG_SEED &&
+          window.MFG_SEED._recordsReady &&
+          Array.isArray(window.STATE?.users) &&
+          window.STATE.users.some(u => u && u.id === 'u-edge28-face')
+        );
+        if (readyNow) break;
+        await new Promise(r => setTimeout(r, 150));
+      }
+      const recordsReadyAfterLogin = Boolean(window.MFG_SEED && window.MFG_SEED._recordsReady);
+
+      // Navigate to #users and verify Edge-redacted pose parity, thumb preservation, AR/FR i18n, clear tombstone, re-enrol, and logout seed purge
       location.hash = '#users';
-      await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 280));
       const sel = document.getElementById('enrolUserSelect');
       let badgeTxt = '';
       let dirHasEnrolled = false;
@@ -1952,6 +2073,10 @@ finally:
       let frAuditSample = [];
       let clearedStaysFalse = false;
       let reenrolledStaysTrue = false;
+      let seedCacheCountBeforeLogout = 0;
+      let seedCacheCountAfterLogout = -1;
+      let unauthUsersStatusAfterLogout = 0;
+      let usersLenAfterLogout = -1;
       if (sel) {
         sel.value = 'u-edge28-face';
         sel.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1982,12 +2107,11 @@ finally:
           await new Promise(r => setTimeout(r, 320));
           const uResAfterClear = await window.ISABI_EDGE_FETCH('./api/users').then(r => r.json());
           const srvClearedSeat = (uResAfterClear.users || []).find(u => u.id === 'u-edge28-face');
-          // Simulate cross-device merge where Device B still held older local samples before receiving the remote clear
           const localFaceSeat = window.STATE.users.find(u => u.id === 'u-edge28-face');
           if (localFaceSeat && srvClearedSeat) {
             clearedStaysFalse = Boolean(srvClearedSeat.face_enrolled === false && srvClearedSeat.face_redacted === false && localFaceSeat.face_enrolled === false && localFaceSeat.face_cleared === true);
           }
-          // Re-enrol on server at newer timestamp and re-hydrate via /api/users to prove no post-clear lockout
+          // Re-enrol on server at newer timestamp and verify via authenticated /api/users BEFORE logout
           await window.ISABI_EDGE_FETCH('./api/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2001,45 +2125,37 @@ finally:
               })
             })
           });
-          // Force unauthenticated redacted hydration check by signing out and checking redacted seat state + 6-digit PIN entry
+          const authedUsersAfterReenrol = await window.ISABI_EDGE_FETCH('./api/users').then(r => r.json());
+          const srvReenrolled = (authedUsersAfterReenrol.users || []).find(u => u.id === 'u-edge28-face');
+          reenrolledStaysTrue = Boolean(
+            srvReenrolled &&
+            srvReenrolled.face_enrolled === true &&
+            srvReenrolled.face_redacted === true &&
+            srvReenrolled.pin_code === undefined &&
+            srvReenrolled.pin_redacted === true
+          );
+
+          const dataCacheBefore = await caches.open('isabi-mfg-data-v3');
+          seedCacheCountBeforeLogout = (await dataCacheBefore.keys()).filter(rq => rq.url.includes('/api/seed/')).length;
+
+          // Sign out: clears session cookie, wipes STATE.users, and purges cached /api/seed/* responses
           const signOutBtn = document.getElementById('signOutBtn') || document.querySelector('[data-action="signout"]');
           if (signOutBtn) signOutBtn.click();
-          await window.ISABI_EDGE_FETCH('./api/auth/logout', { method: 'POST' });
-          localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
-          // Clear cached pin_code on u-edge28-inherit so it is strictly pin_redacted on #authGate
-          const inhSeat = window.STATE.users.find(u => u.email === 'edge28inherit@bhfirms.com');
-          if (inhSeat) {
-            inhSeat.pin_code = '';
-            inhSeat.pin_redacted = true;
-            delete inhSeat._verifiedPin;
-          }
-          // Hydrate unauthenticated /api/users into STATE.users via page reload or openAuthGate
-          const unauthUsers = await fetch('./api/users').then(r => r.json());
-          const srvReenrolled = (unauthUsers.users || []).find(u => u.id === 'u-edge28-face');
-          reenrolledStaysTrue = Boolean(srvReenrolled && srvReenrolled.face_enrolled === true && srvReenrolled.face_redacted === true);
+          await new Promise(r => setTimeout(r, 350));
+          const unauthUsersAfterRes = await fetch('./api/users');
+          unauthUsersStatusAfterLogout = unauthUsersAfterRes.status;
+          usersLenAfterLogout = (window.STATE?.users || []).length;
+          const dataCacheAfter = await caches.open('isabi-mfg-data-v3');
+          seedCacheCountAfterLogout = (await dataCacheAfter.keys()).filter(rq => rq.url.includes('/api/seed/')).length;
         }
       }
 
-      // Ensure we are on #authGate to test 6-digit redacted PIN ('482915') without digit-4 wipe
-      if (window.STATE && window.STATE.authed) {
-        window.STATE.authed = false;
-        const ag = document.getElementById('authGate');
-        if (ag) ag.hidden = false;
-      }
-      const inhIdx = window.STATE.users.findIndex(u => u.email === 'edge28inherit@bhfirms.com');
-      if (inhIdx >= 0) {
-        window.STATE.users[inhIdx].pin_code = '';
-        window.STATE.users[inhIdx].pin_redacted = true;
-        delete window.STATE.users[inhIdx]._verifiedPin;
-      }
+      // Test 6-digit PIN ('482915') on server-held #authGate: typing 4 digits does NOT auto-submit or wipe input; submitting form signs in
       const emInp = document.getElementById('authEmailInput');
       if (emInp) {
         emInp.value = 'edge28inherit@bhfirms.com';
         emInp.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      const quickSeatBtn = Array.from(document.querySelectorAll('#quickSeatList [data-quick-seat]'))
-        .find(b => (b.textContent || '').includes('Edge SixDigit Inherit') || b.getAttribute('data-quick-seat') === 'edge28inherit@bhfirms.com');
-      if (quickSeatBtn) quickSeatBtn.click();
       const pinInp = document.getElementById('authPinInput');
       let pinAtDigit4 = '';
       let sixDigitAuthed = false;
@@ -2050,14 +2166,15 @@ finally:
           pinInp.value = ch;
           pinInp.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        // Wait past 180ms silent probe window to prove 4th digit 401 does NOT wipe pinInp.value!
         await new Promise(r => setTimeout(r, 260));
         pinAtDigit4 = pinInp.value;
         for (const ch of ['48291', '482915']) {
           pinInp.value = ch;
           pinInp.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        await new Promise(r => setTimeout(r, 550));
+        const loginForm = document.getElementById('authLoginForm');
+        if (loginForm) loginForm.requestSubmit();
+        await new Promise(r => setTimeout(r, 600));
         const st6 = window.MFG_FACE_TEST.state();
         sixDigitAuthed = Boolean(st6 && st6.authed);
         sixDigitActiveEmail = (st6 && st6.activeEmail) || '';
@@ -2066,6 +2183,10 @@ finally:
       return {
         bootOk: true,
         stBoot,
+        preAuthDeferred,
+        recordsReadyBefore,
+        fNoCredsStatus: fNoCreds?.status,
+        stAfterNoCreds,
         f1Status: f1?.status,
         stAfterF1,
         hintAfterF1,
@@ -2082,6 +2203,7 @@ finally:
         gateHidden,
         tokMintedLen: tokMinted.length,
         meAuth: Boolean(meCheck && meCheck.authenticated),
+        recordsReadyAfterLogin,
         badgeTxt,
         dirHasEnrolled,
         thumbImgCount,
@@ -2091,6 +2213,10 @@ finally:
         frAuditSample,
         clearedStaysFalse,
         reenrolledStaysTrue,
+        seedCacheCountBeforeLogout,
+        seedCacheCountAfterLogout,
+        unauthUsersStatusAfterLogout,
+        usersLenAfterLogout,
         pinAtDigit4,
         sixDigitAuthed,
         sixDigitActiveEmail
@@ -2102,7 +2228,7 @@ finally:
     }
 
     const unexpectedErrors28 = consoleErrors.filter(
-      e => !/status of 401.*\/app\/api\/(auth\/login|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync)/i.test(String(e || ''))
+      e => !/status of 401.*\/app\/api\/(users|auth\/login|staff_biometrics|work_schedules|geo_config|industry_domain_store|sentinel_reviews|alert_rules|sync)/i.test(String(e || ''))
     );
 
     if (
@@ -2113,11 +2239,14 @@ finally:
       rateLimitFirstStatus === 401 &&
       rateLimitNinthStatus === 429 &&
       rateLimitNinthFlag === true &&
-      verifyOnly2faRes.status === 200 &&
-      verifyOnly2faRes.json?.verify_only === true &&
-      !verifyOnly2faRes.json?.token &&
+      verifyOnly2faUnauthRes.status === 401 &&
+      !verifyOnly2faUnauthRes.json?.user &&
+      verifyOnly2faAuthRes.status === 200 &&
+      verifyOnly2faAuthRes.json?.verify_only === true &&
+      !verifyOnly2faAuthRes.json?.token &&
       fullLogin2faNoPinRes.status === 401 &&
       fullLogin2faNoPinRes.json?.two_factor_pin_required === true &&
+      !fullLogin2faNoPinRes.json?.user &&
       unauthAllowPinOnlyRes.status === 401 &&
       authAllowPinOnlyRes.status === 200 &&
       authAllowPinOnlyRes.json?.verify_only === true &&
@@ -2125,7 +2254,12 @@ finally:
       imposterHttpRes.json?.face_dist === undefined &&
       e28Flow?.bootOk === true &&
       e28Flow.stBoot?.authed === false &&
+      e28Flow.stBoot?.enrolledSeats?.length === 0 &&
+      e28Flow.preAuthDeferred === true &&
+      e28Flow.recordsReadyBefore === false &&
       e28Flow.stBoot?.confirmFrames === 3 &&
+      e28Flow.fNoCredsStatus === 'awaiting-credentials' &&
+      e28Flow.stAfterNoCreds?.authed === false &&
       e28Flow.f1Status === 'edge-streak' &&
       e28Flow.stAfterF1?.authed === false &&
       !/not recognized/i.test(e28Flow.hintAfterF1 || '') &&
@@ -2142,8 +2276,9 @@ finally:
       e28Flow.stAfterOk?.authed === true &&
       e28Flow.stAfterOk?.activeEmail === 'edge28face@bhfirms.com' &&
       e28Flow.gateHidden === true &&
-      e28Flow.tokMintedLen > 20 &&
+      e28Flow.tokMintedLen === 0 &&
       e28Flow.meAuth === true &&
+      e28Flow.recordsReadyAfterLogin === true &&
       e28Flow.badgeTxt.includes('1/3 Poses Saved') &&
       e28Flow.dirHasEnrolled === true &&
       e28Flow.thumbImgCount >= 1 &&
@@ -2151,20 +2286,24 @@ finally:
       e28Flow.frAuditCount === 0 &&
       e28Flow.clearedStaysFalse === true &&
       e28Flow.reenrolledStaysTrue === true &&
+      e28Flow.seedCacheCountBeforeLogout >= 1 &&
+      e28Flow.seedCacheCountAfterLogout === 0 &&
+      e28Flow.unauthUsersStatusAfterLogout === 401 &&
+      e28Flow.usersLenAfterLogout === 0 &&
       e28Flow.pinAtDigit4 === '4829' &&
       e28Flow.sixDigitAuthed === true &&
       e28Flow.sixDigitActiveEmail === 'edge28inherit@bhfirms.com'
     ) {
       pass(
         'edge-28-remote-tdz-boot-and-redacted-faceid-e2e',
-        `0 TDZ errors, ws-default 2FA + 429 rate-limit + 6-digit redacted PIN + thumb/clear/reenrol + AR/FR 0 untranslated + d=${e28Flow.fOkDist} live Face ID OK`
+        `0 TDZ, cookie-only auth (0 localStorage JWT), R2 seed hydrated & purged on logout, Email+PIN+Face ID d=${e28Flow.fOkDist} OK`
       );
     } else {
       fail('edge-28-remote-tdz-boot-and-redacted-faceid-e2e', JSON.stringify({
         consoleErrors,
         wsBoth: [wsDefaultBothPinOnlyRes.status, wsDefaultBothPinOnlyRes.json?.two_factor_face_required],
         rateLim: [rateLimitFirstStatus, rateLimitNinthStatus, rateLimitNinthFlag],
-        verify2fa: [verifyOnly2faRes.status, Boolean(verifyOnly2faRes.json?.token)],
+        verify2fa: [verifyOnly2faUnauthRes.status, verifyOnly2faAuthRes.status, Boolean(verifyOnly2faAuthRes.json?.token)],
         full2fa: [fullLogin2faNoPinRes.status, fullLogin2faNoPinRes.json?.two_factor_pin_required],
         pinOnly: [unauthAllowPinOnlyRes.status, authAllowPinOnlyRes.status],
         impOracle: [imposterHttpRes.status, imposterHttpRes.json?.face_dist],
@@ -2257,13 +2396,13 @@ finally:
         full_name: 'BBC Only Seat',
         role: 'Entry',
         companies: 'BBConstruction',
-        pin_code: '5858',
+        pin_code: '5839',
         status: 'Active'
       }
     }, { 'X-ISABI-Session': ownerToken });
     const bbcTelLogin = await httpReq('POST', '/app/api/auth/login', {
       email: 'bbc.tel@bhfirms.com',
-      pin: '5858',
+      pin: '5839',
       method: 'PIN'
     });
     const bbcTelTok = String(bbcTelLogin.json?.token || '');
@@ -2367,10 +2506,10 @@ finally:
       pin: '1111',
       verify_only: true,
       step_up: true
-    });
+    }, { 'CF-Connecting-IP': '198.51.100.31' });
     const suCrossSeat = await httpReq('POST', '/app/api/auth/login', {
       email: 'bbc.tel@bhfirms.com',
-      pin: '5858',
+      pin: '5839',
       verify_only: true,
       step_up: true,
       redact_dist: true
@@ -2553,22 +2692,23 @@ finally:
       }));
     }
 
-    // 32. No default PIN: a seat saved without a PIN cannot sign in with any PIN; blank and redacted saves keep the PIN on file;
-    //     the sync mirror stores no default either; a PIN-only lookup is not made ambiguous by seats that have no PIN.
+    // 32. No default PIN + Zero Bare-PIN Seat Enumeration: a seat saved without a PIN cannot sign in with any PIN;
+    //     blank and redacted saves keep the PBKDF2 PIN on file; sync mirror stores no default; bare-PIN login returns 400.
     const e32Seat = { id: 'u-edge32-nopin', email: 'edge32nopin@wtc-lb.com', full_name: 'Edge32 No PIN', role: 'Entry', companies: 'WTC', status: 'Active' };
     const e32Hdr = { 'X-ISABI-Session': ownerToken };
-    const e32PinOnlyBefore = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true });
+    const e32IpHdr = { 'CF-Connecting-IP': '198.51.100.32' };
+    const e32PinOnlyBefore = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true }, e32IpHdr);
     const e32Create = await httpReq('POST', '/app/api/users', { user: e32Seat }, e32Hdr);
-    const e32Default = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '1111', method: 'PIN' });
-    const e32Empty = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '', method: 'PIN' });
+    const e32Default = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '1111', method: 'PIN' }, e32IpHdr);
+    const e32Empty = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '', method: 'PIN' }, e32IpHdr);
     const e32SetPin = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_code: '640275' }) }, e32Hdr);
-    const e32Good = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
+    const e32Good = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' }, e32IpHdr);
     const e32BlankSave = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_code: '' }) }, e32Hdr);
-    const e32StillGood = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
-    const e32RedactedSave = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_redacted: true, pin_code: '111222' }) }, e32Hdr);
-    const e32AfterRedacted = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' });
-    const e32RedactedPinRefused = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '111222', method: 'PIN' });
-    const e32PinOnlyUnique = await httpReq('POST', '/app/api/auth/login', { pin: '640275', method: 'PIN' });
+    const e32StillGood = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' }, e32IpHdr);
+    const e32RedactedSave = await httpReq('POST', '/app/api/users', { user: Object.assign({}, e32Seat, { pin_redacted: true, pin_code: '491827' }) }, e32Hdr);
+    const e32AfterRedacted = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '640275', method: 'PIN' }, e32IpHdr);
+    const e32RedactedPinRefused = await httpReq('POST', '/app/api/auth/login', { email: e32Seat.email, pin: '491827', method: 'PIN' }, e32IpHdr);
+    const e32PinOnlyUnique = await httpReq('POST', '/app/api/auth/login', { pin: '640275', method: 'PIN' }, e32IpHdr);
 
     // Sync mirror: an Owner patch that carries a new seat with no pin_code must store no PIN for it
     const e32Mirror = { id: 'u-edge32-mirror', email: 'edge32mirror@wtc-lb.com', full_name: 'Edge32 Mirror Seat', role: 'Entry', companies: 'WTC', status: 'Active' };
@@ -2587,8 +2727,8 @@ finally:
     }, e32Hdr);
     const e32UsersAfter = await httpReq('GET', '/app/api/users', null, e32Hdr);
     const e32MirrorRow = (e32UsersAfter.json?.users || []).find(u => u && u.email === e32Mirror.email);
-    const e32MirrorDefault = await httpReq('POST', '/app/api/auth/login', { email: e32Mirror.email, pin: '1111', method: 'PIN' });
-    const e32PinOnlyAfter = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true });
+    const e32MirrorDefault = await httpReq('POST', '/app/api/auth/login', { email: e32Mirror.email, pin: '1111', method: 'PIN' }, { 'CF-Connecting-IP': '198.51.100.33' });
+    const e32PinOnlyAfter = await httpReq('POST', '/app/api/auth/login', { pin: '1111', method: 'PIN', verify_only: true }, { 'CF-Connecting-IP': '198.51.100.33' });
 
     const e32Denied = r => r.status === 401 && !(r.json && r.json.ok) && !(r.json && r.json.token);
     if (
@@ -2602,21 +2742,608 @@ finally:
       e32RedactedSave.status === 200 &&
       e32AfterRedacted.status === 200 && Boolean(e32AfterRedacted.json?.token) &&
       e32Denied(e32RedactedPinRefused) &&
-      e32PinOnlyUnique.status === 200 && e32PinOnlyUnique.json?.user?.email === e32Seat.email &&
+      e32PinOnlyUnique.status === 400 && !e32PinOnlyUnique.json?.token &&
       e32Patch.status === 200 &&
       Boolean(e32MirrorRow) && !String(e32MirrorRow.pin_code || '').trim() &&
       e32Denied(e32MirrorDefault) &&
-      e32PinOnlyAfter.status !== 409 && e32PinOnlyAfter.status === e32PinOnlyBefore.status
+      e32PinOnlyBefore.status === 401 && e32PinOnlyAfter.status === 401
     ) {
-      pass('edge-32-no-default-pin', 'No-PIN seat rejects 1111 and empty PIN (401); owner-set PIN signs in; blank and redacted saves keep the PIN on file; sync mirror stores no default; PIN-only lookup unaffected by no-PIN seats');
+      pass('edge-32-no-default-pin', 'No-PIN seat rejects 1111 and empty PIN (401); owner-set PBKDF2 PIN signs in; blank and redacted saves keep PIN; sync mirror stores no default; bare-PIN login blocked (400)');
     } else {
       fail('edge-32-no-default-pin', JSON.stringify({
         create: e32Create.status,
         denied: [e32Default.status, e32Empty.status, e32RedactedPinRefused.status, e32MirrorDefault.status],
         set: [e32SetPin.status, e32BlankSave.status, e32RedactedSave.status],
         good: [e32Good.status, e32StillGood.status, e32AfterRedacted.status],
-        pinOnly: [e32PinOnlyBefore.status, e32PinOnlyAfter.status, e32PinOnlyUnique.status, e32PinOnlyUnique.json?.user?.email],
+        pinOnly: [e32PinOnlyBefore.status, e32PinOnlyAfter.status, e32PinOnlyUnique.status, e32PinOnlyUnique.json],
         mirror: [e32Patch.status, e32Patch.json?.error, e32MirrorRow ? String(e32MirrorRow.pin_code || '') : 'missing']
+      }));
+    }
+
+    // 33. Phase 1 + 1B Edge Hardening: Showcase OPTIONS CORS, Static Bundle Lockdown, R2 Seed Gate, Vault HTML XSS Sandbox, Security Headers & Showcase AI Escaping
+    const e33CorsOpt = await httpReq('OPTIONS', '/api/ask', null, {
+      Origin: 'https://isabisystems.com',
+      'Access-Control-Request-Method': 'POST'
+    });
+    const e33BlockedPaths = [
+      '/wrangler.toml',
+      '/app/server.py',
+      '/build/assemble.py',
+      '/exports/cloudflare_edge_meta.json',
+      '/functions/_lib/security.js',
+      '/app/js/seed_core.json',
+      '/app/js/seed_records.json',
+      '/app/js/seed_industries.json'
+    ];
+    const e33BlockedRes = await Promise.all(e33BlockedPaths.map(p => httpReq('GET', p)));
+    const e33DemoSeedRes = await httpReq('GET', '/app/js/seed_demo_core.json');
+    const e33SeedAnon = await httpReq('GET', '/app/api/seed/core');
+    const e33SeedDemo = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken, 'X-ISABI-Demo': '1' });
+    const e33SeedOwner = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken });
+    const e33SeedBadKind = await httpReq('GET', '/app/api/seed/unknown', null, { 'X-ISABI-Session': ownerToken });
+
+    // Vault raw HTML attachment quarantine (forces octet-stream + attachment + CSP sandbox + nosniff)
+    const e33HtmlPut = await httpReq('POST', '/app/api/blobs', {
+      id: 'att-xss-html-33',
+      company: 'WTC',
+      dataUrl: 'data:text/html;base64,' + Buffer.from('<script>alert(1)</script>').toString('base64')
+    }, { 'X-ISABI-Session': ownerToken });
+    const e33HtmlRaw = await httpReq('GET', '/app/api/blobs?id=att-xss-html-33&raw=1', null, { 'X-ISABI-Session': ownerToken });
+
+    // Security headers on `/` + `/reset.html` X-Robots-Tag + Showcase AI output HTML escaping
+    const e33RootRes = await httpReq('GET', '/');
+    const e33ResetRes = await httpReq('GET', '/reset.html');
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
+    for (let i = 0; i < 25; i++) {
+      const hasHelper = await evalJs(`typeof window.__ISABI_TEST_AI_REPLY === 'function'`);
+      if (hasHelper) break;
+      await sleep(250);
+    }
+    const e33AiXss = await evalJs(`(() => {
+      const r = window.__ISABI_TEST_AI_REPLY(JSON.stringify({
+        title: '<img src=x onerror=alert(1)>',
+        answer: '**Safe** <script>evil()</script>',
+        bullets: ['<b>tag</b>'],
+        actionInd: 'javascript:alert(1)'
+      }));
+      if (!r) return null;
+      return {
+        html: String(r.html || ''),
+        actionInd: String(r.parsed?.actionInd || '')
+      };
+    })()`);
+
+    const rootCsp = String(e33RootRes.headers['content-security-policy'] || '');
+    const htmlCt = String(e33HtmlRaw.headers['content-type'] || '');
+    const htmlCd = String(e33HtmlRaw.headers['content-disposition'] || '');
+    const htmlCsp = String(e33HtmlRaw.headers['content-security-policy'] || '');
+    if (
+      e33CorsOpt.status === 204 &&
+      e33CorsOpt.headers['access-control-allow-origin'] === 'https://isabisystems.com' &&
+      e33BlockedRes.every(r => r.status === 404) &&
+      e33DemoSeedRes.status === 200 &&
+      e33SeedAnon.status === 401 &&
+      e33SeedDemo.status === 403 &&
+      e33SeedOwner.status === 200 &&
+      String(e33SeedOwner.headers['cache-control'] || '').includes('no-store') &&
+      Boolean(e33SeedOwner.json && typeof e33SeedOwner.json === 'object') &&
+      e33SeedBadKind.status === 400 &&
+      e33HtmlPut.status === 200 &&
+      e33HtmlRaw.status === 200 &&
+      htmlCt.includes('application/octet-stream') &&
+      htmlCd.includes('attachment') &&
+      htmlCsp.includes('sandbox') &&
+      e33HtmlRaw.headers['x-content-type-options'] === 'nosniff' &&
+      Boolean(e33RootRes.headers['strict-transport-security']) &&
+      rootCsp.includes("frame-ancestors 'none'") &&
+      rootCsp.includes("object-src 'none'") &&
+      e33RootRes.headers['x-frame-options'] === 'DENY' &&
+      e33RootRes.headers['x-content-type-options'] === 'nosniff' &&
+      e33ResetRes.status === 200 &&
+      String(e33ResetRes.headers['x-robots-tag'] || '').includes('noindex') &&
+      Boolean(e33AiXss) &&
+      !e33AiXss.html.includes('<img') &&
+      !e33AiXss.html.includes('<script') &&
+      e33AiXss.html.includes('&lt;img') &&
+      e33AiXss.html.includes('<b>Safe</b>') &&
+      e33AiXss.actionInd === ''
+    ) {
+      pass(
+        'edge-33-phase1-bundle-seed-gate-headers-and-xss-quarantine',
+        'OPTIONS /api/ask=204 + 8 internal/seed paths=404 + R2 /seed/core 401/403/200(no-store) + HTML blob sandboxed + HSTS/CSP/XFO/Robots + Showcase AI XSS escaped'
+      );
+    } else {
+      fail('edge-33-phase1-bundle-seed-gate-headers-and-xss-quarantine', JSON.stringify({
+        cors: [e33CorsOpt.status, e33CorsOpt.headers['access-control-allow-origin']],
+        blocked: e33BlockedRes.map((r, i) => [e33BlockedPaths[i], r.status]),
+        demoSeed: e33DemoSeedRes.status,
+        seedGate: [e33SeedAnon.status, e33SeedDemo.status, e33SeedOwner.status, e33SeedBadKind.status, e33SeedOwner.headers['cache-control']],
+        blobXss: [e33HtmlPut.status, e33HtmlRaw.status, htmlCt, htmlCd, htmlCsp, e33HtmlRaw.headers['x-content-type-options']],
+        hdrs: [Boolean(e33RootRes.headers['strict-transport-security']), rootCsp.slice(0, 120), e33RootRes.headers['x-frame-options'], e33ResetRes.status, e33ResetRes.headers['x-robots-tag']],
+        aiXss: e33AiXss
+      }));
+    }
+
+    // 34. Phase 1.3–1.4: Public PII/2401 scrub + ?demo=1 Demo Workspace badge + D1 /app/api/auth/verify-override RLS, Audit & 5-attempt Lockout
+    const e34AppJsDir = path.join(ROOT, 'app', 'js');
+    const e34JsFiles = fs.readdirSync(e34AppJsDir).filter(f => f.endsWith('.js'));
+    const e34LeakedBhfirms = [];
+    const e34LeakedPin2401 = [];
+    for (const jf of e34JsFiles) {
+      const txt = fs.readFileSync(path.join(e34AppJsDir, jf), 'utf8');
+      if (/@bhfirms\.com/i.test(txt)) e34LeakedBhfirms.push(jf);
+      if (/PIN\s*\(?2401\)?|===\s*['"]2401['"]/i.test(txt)) e34LeakedPin2401.push(jf);
+    }
+    const e34OvAnon = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' });
+    const e34OvDemo = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'X-ISABI-Demo': '1' });
+    const e34OvSelfEntry = await httpReq('POST', '/app/api/auth/verify-override', { email: 'sabahkassab@bhfirms.com', pin: '3333', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34OvCrossBu = await httpReq('POST', '/app/api/auth/verify-override', { email: 'site.bbc@bhfirms.com', pin: '6666', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34Ov2401 = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '2401', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken });
+    const e34OvOk = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_tab: 'sales', field_id: 'f_price', record_id: 'ST-TEST-1' }, { 'X-ISABI-Session': entryToken });
+    const e34AuditEntryDenied = await httpReq('GET', '/app/api/auth/verify-override?company=WTC', null, { 'X-ISABI-Session': entryToken });
+    const e34AuditOwner = await httpReq('GET', '/app/api/auth/verify-override?company=WTC', null, { 'X-ISABI-Session': ownerToken });
+    const e34HasAuditRow = (e34AuditOwner.json?.audits || []).some(r => r && r.id === e34OvOk.json?.audit_id && r.supervisor_email === 'fleet.lions@bhfirms.com');
+    let e34FifthStatus = 0;
+    for (let i = 0; i < 5; i++) {
+      const r = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '9999', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'CF-Connecting-IP': '198.51.100.219' });
+      e34FifthStatus = r.status;
+    }
+    const e34LockedValid = await httpReq('POST', '/app/api/auth/verify-override', { email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', field_id: 'f_price' }, { 'X-ISABI-Session': entryToken, 'CF-Connecting-IP': '198.51.100.219' });
+
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/?demo=1&autologin=1` });
+    let e34DemoDom = null;
+    for (let i = 0; i < 60; i++) {
+      e34DemoDom = await evalJs(`(() => {
+        const b = document.getElementById('topbarDemoBadge');
+        const rn = document.getElementById('railUserName');
+        const gate = document.getElementById('authGate');
+        if (!b || !rn || !gate || !gate.hidden) return null;
+        return {
+          badgeHidden: Boolean(b.hidden),
+          badgeText: String(b.textContent || '').trim(),
+          railUser: String(rn.textContent || '').trim(),
+          topbarTitle: String((document.getElementById('topbarTitle') || {}).textContent || '').trim()
+        };
+      })()`).catch(() => null);
+      if (e34DemoDom) break;
+      await sleep(250);
+    }
+
+    if (
+      e34LeakedBhfirms.length === 0 &&
+      e34LeakedPin2401.length === 0 &&
+      e34OvAnon.status === 401 &&
+      e34OvDemo.status === 403 &&
+      e34OvSelfEntry.status === 403 &&
+      e34OvCrossBu.status === 403 &&
+      e34Ov2401.status === 401 &&
+      e34OvOk.status === 200 &&
+      e34OvOk.json?.ok === true &&
+      e34AuditEntryDenied.status === 403 &&
+      e34HasAuditRow &&
+      e34FifthStatus === 429 &&
+      e34LockedValid.status === 429 &&
+      Boolean(e34DemoDom) &&
+      e34DemoDom.badgeHidden === false &&
+      e34DemoDom.badgeText === 'Demo Workspace' &&
+      !/Hussein Bdeir/i.test(e34DemoDom.railUser)
+    ) {
+      pass(
+        'edge-34-phase1-override-rls-audit-lockout-pii-scrub-and-demo-badge',
+        `0 @bhfirms.com & 0 PIN 2401 in /app/js | D1 verify-override 401/403/200(audit=${e34OvOk.json.audit_id})/429 | Demo badge="${e34DemoDom.badgeText}" persona="${e34DemoDom.railUser}"`
+      );
+    } else {
+      fail('edge-34-phase1-override-rls-audit-lockout-pii-scrub-and-demo-badge', JSON.stringify({
+        leakedBhfirms: e34LeakedBhfirms,
+        leakedPin2401: e34LeakedPin2401,
+        anon: e34OvAnon.status,
+        demo: e34OvDemo.status,
+        entry: e34OvSelfEntry.status,
+        crossBu: e34OvCrossBu.status,
+        p2401: e34Ov2401.status,
+        ok: [e34OvOk.status, e34OvOk.json],
+        auditEntry: e34AuditEntryDenied.status,
+        hasAuditRow: e34HasAuditRow,
+        fifth: e34FifthStatus,
+        lockedValid: e34LockedValid.status,
+        demoDom: e34DemoDom
+      }));
+    }
+
+    // 35. Red-Team Upgrade, Concurrent CAS Sync Race, Multi-IP DoS Resistance & Cold-Reload Cookie Resume
+    const pyHashesStdout = execFileSync('python', [
+      '-c',
+      [
+        'import sys, json, hashlib',
+        'sys.path.insert(0, "build")',
+        'import export_d1_seed as eds, deploy_cloudflare as dc',
+        'h_seed = eds._hash_seed_pin("5739", "u-edge34-seed", "edge34seed@bhfirms.com")',
+        'h_rand = dc._hash_random_pbkdf2("8426")',
+        'salt_hex = b"0123456789abcdef".hex()',
+        'dk_hex = hashlib.pbkdf2_hmac("sha256", b"6183", bytes.fromhex(salt_hex), 100000, dklen=32).hex()',
+        'h_hex_legacy = f"pbkdf2$sha256$100000${salt_hex}${dk_hex}"',
+        'print(json.dumps({"seed": h_seed, "rand": h_rand, "hex": h_hex_legacy}))'
+      ].join('; ')
+    ], { cwd: ROOT, encoding: 'utf8', windowsHide: true });
+    const pyHashes = JSON.parse((pyHashesStdout || '{}').trim() || '{}');
+
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-edge34-seed', email: 'edge34seed@bhfirms.com', full_name: 'Edge34 Seed Hash', role: 'Entry', companies: 'WTC', auth_mode: 'pin_only', pin_code: pyHashes.seed, status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-edge34-rand', email: 'edge34rand@bhfirms.com', full_name: 'Edge34 Deploy Hash', role: 'Entry', companies: 'WTC', auth_mode: 'pin_only', pin_code: pyHashes.rand, status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-edge34-hex', email: 'edge34hex@bhfirms.com', full_name: 'Edge34 Legacy Hex', role: 'Entry', companies: 'WTC', auth_mode: 'pin_only', pin_code: pyHashes.hex, status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+
+    const e34LoginSeed = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge34seed@bhfirms.com', pin: '5739', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.181' });
+    const e34LoginRand = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge34rand@bhfirms.com', pin: '8426', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.182' });
+    const e34LoginHex1 = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge34hex@bhfirms.com', pin: '6183', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.183' });
+    const e34LoginHex2 = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge34hex@bhfirms.com', pin: '6183', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.184' });
+
+    // Concurrent `Promise.all` sync patches sharing the exact same `ifMatchUpdatedAt`
+    const curSync34 = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
+    const baseDoc34 = curSync34.json?.docs?.mfg_web_store || {};
+    const sharedIfMatch34 = String(baseDoc34.updatedAt || '');
+    const doc34A = JSON.parse(JSON.stringify(baseDoc34));
+    const doc34B = JSON.parse(JSON.stringify(baseDoc34));
+    const ts34A = new Date(Date.now() + 90000).toISOString();
+    const ts34B = new Date(Date.now() + 91000).toISOString();
+    doc34A.updatedAt = ts34A;
+    doc34B.updatedAt = ts34B;
+    doc34A.customRecords = Object.assign({}, doc34A.customRecords || {}, {
+      expenses: [{ id: 'exp-cas-race-34-A', company: 'WTC', date: '2026-11-11', code: 'CAS-A', name: 'CAS Winner A', amount: 111, rev: 1, updated_at: ts34A }, ...(doc34A.customRecords?.expenses || [])]
+    });
+    doc34B.customRecords = Object.assign({}, doc34B.customRecords || {}, {
+      expenses: [{ id: 'exp-cas-race-34-B', company: 'WTC', date: '2026-11-11', code: 'CAS-B', name: 'CAS Winner B', amount: 222, rev: 1, updated_at: ts34B }, ...(doc34B.customRecords?.expenses || [])]
+    });
+
+    const [raceResA, raceResB] = await Promise.all([
+      httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sharedIfMatch34, awaitMirror: true, patch: { mfg_web_store: doc34A } }, { 'X-ISABI-Session': ownerToken }),
+      httpReq('POST', '/app/api/sync', { op: 'patch', doc: 'mfg_web_store', ifMatchUpdatedAt: sharedIfMatch34, awaitMirror: true, patch: { mfg_web_store: doc34B } }, { 'X-ISABI-Session': ownerToken })
+    ]);
+    const aWon = raceResA.status === 200 && !raceResA.json?.conflict;
+    const bWon = raceResB.status === 200 && !raceResB.json?.conflict;
+    const aConflict = raceResA.status === 200 && raceResA.json?.conflict === true;
+    const bConflict = raceResB.status === 200 && raceResB.json?.conflict === true;
+    const exactlyOneCasWinner = (aWon && bConflict) || (bWon && aConflict);
+    const expTable34 = await httpReq('GET', '/app/api/records?table=expenses&limit=500', null, { 'X-ISABI-Session': ownerToken });
+    const expRows34 = expTable34.json?.rows || [];
+    const hasRowA = expRows34.some(r => r && r.id === 'exp-cas-race-34-A');
+    const hasRowB = expRows34.some(r => r && r.id === 'exp-cas-race-34-B');
+    const zeroCasLoserLeak = (aWon && hasRowA && !hasRowB) || (bWon && hasRowB && !hasRowA);
+
+    // Multi-IP global lockout DoS resistance: 16 bad PINs across 4 distinct source IPs must NOT lock out a 5th legitimate IP
+    for (const attackerIp of ['198.51.100.201', '198.51.100.202', '198.51.100.203', '198.51.100.204']) {
+      for (let k = 0; k < 4; k++) {
+        await httpReq('POST', '/app/api/auth/login', {
+          email: 'husseinbdeir@bhfirms.com', pin: '0000', method: 'PIN'
+        }, { 'CF-Connecting-IP': attackerIp });
+      }
+    }
+    const legitOwnerAfterSpray = await httpReq('POST', '/app/api/auth/login', {
+      email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.205' });
+
+    // Cold-reload HttpOnly cookie resume on `/app/` (zero localStorage JWT, zero sessionStorage sw_resume)
+    const remoteScript35 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        window.__ISABI_SIMULATE_REMOTE_HOST = true;
+        window.__ISABI_TEST_EDGE = true;
+        window.ISABI_HAS_EDGE_API = true;
+        try {
+          localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+          sessionStorage.removeItem('isabi_mfg_sw_resume');
+        } catch (_) {}
+      `
+    });
+    await sendCdp('Network.clearBrowserCookies');
+    await sendCdp('Network.setCookie', {
+      name: 'isabi_edge_sess',
+      value: ownerToken,
+      domain: '127.0.0.1',
+      path: '/',
+      httpOnly: true
+    });
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/` });
+    let e34ReloadResume = { authed: false, gateHidden: false, recordsReady: false, lsTok: '' };
+    for (let w = 0; w < 50; w++) {
+      e34ReloadResume = await evalJs(`({
+        authed: Boolean(window.MFG_FACE_TEST && window.MFG_FACE_TEST.state().authed),
+        gateHidden: Boolean(document.getElementById('authGate')?.hidden),
+        recordsReady: Boolean(window.MFG_SEED && window.MFG_SEED._recordsReady),
+        lsTok: localStorage.getItem('isabi_mfg_edge_sess_tok_v1') || ''
+      })`).catch(() => e34ReloadResume);
+      if (e34ReloadResume.authed && e34ReloadResume.gateHidden && e34ReloadResume.recordsReady) break;
+      await sleep(200);
+    }
+    if (remoteScript35 && remoteScript35.identifier) {
+      await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript35.identifier }).catch(() => {});
+    }
+
+    // Multi-IP callerLockKey D1 lockout persistence on `/app/api/auth/verify-override`
+    const seedEntryTok = String(e34LoginSeed.json?.token || '');
+    let ovFifthStatus = 0;
+    for (let k = 1; k <= 5; k++) {
+      const ovBad = await httpReq('POST', '/app/api/auth/verify-override', {
+        email: 'husseinbdeir@bhfirms.com',
+        pin: '0000',
+        company: 'WTC',
+        form_key: 'sales',
+        field_id: 'f_unitprice'
+      }, { 'X-ISABI-Session': seedEntryTok, 'CF-Connecting-IP': `198.51.100.${210 + k}` });
+      if (k === 5) ovFifthStatus = ovBad.status;
+    }
+    const ovSixthValidBlocked = await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'husseinbdeir@bhfirms.com',
+      pin: '1111',
+      company: 'WTC',
+      form_key: 'sales',
+      field_id: 'f_unitprice'
+    }, { 'X-ISABI-Session': seedEntryTok, 'CF-Connecting-IP': '198.51.100.216' });
+
+    if (
+      e34LoginSeed.status === 200 &&
+      Boolean(e34LoginSeed.headers['set-cookie']) &&
+      e34LoginRand.status === 200 &&
+      Boolean(e34LoginRand.headers['set-cookie']) &&
+      e34LoginHex1.status === 200 &&
+      e34LoginHex2.status === 200 &&
+      exactlyOneCasWinner &&
+      zeroCasLoserLeak &&
+      legitOwnerAfterSpray.status === 200 &&
+      ovFifthStatus === 429 &&
+      ovSixthValidBlocked.status === 429 &&
+      e34ReloadResume.authed &&
+      e34ReloadResume.gateHidden &&
+      e34ReloadResume.recordsReady &&
+      e34ReloadResume.lsTok === ''
+    ) {
+      pass(
+        'edge-35-redteam-pbkdf2-seam-cas-race-dos-and-cookie-resume',
+        'Python Base64URL + legacy-hex PBKDF2 login=200 + Promise.all CAS race=0 loser leak + 4-IP spray=0 legit DoS + callerLockKey D1 429 + cold reload HttpOnly cookie resume OK'
+      );
+    } else {
+      fail('edge-35-redteam-pbkdf2-seam-cas-race-dos-and-cookie-resume', JSON.stringify({
+        logins: [e34LoginSeed.status, e34LoginRand.status, e34LoginHex1.status, e34LoginHex2.status],
+        casRace: { aStatus: raceResA.status, bStatus: raceResB.status, aWon, bWon, aConflict, bConflict, hasRowA, hasRowB },
+        legitAfterSpray: legitOwnerAfterSpray.status,
+        ovLock: [ovFifthStatus, ovSixthValidBlocked.status],
+        reloadResume: e34ReloadResume
+      }));
+    }
+
+    // 36. Red-Team Phase 1 Negative & Boundary Suite: Self-Only Entry /app/api/users, Strict Edge CORS (incl. /app/api/kiosk/verify), Cross-Company Modal Unlock Reset, Custom Unlock Keys & Override Lockout/Oracle Isolation
+    const e36UsersAnon = await httpReq('GET', '/app/api/users');
+    const e36UsersDemo = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': entryToken, 'X-ISABI-Demo': '1' });
+    const e36UsersEntry = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': entryToken });
+    const e36UsersOwner = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
+    const e36EntrySelfOnly = Array.isArray(e36UsersEntry.json?.users) &&
+      e36UsersEntry.json.users.length === 1 &&
+      String(e36UsersEntry.json.users[0]?.email || '').toLowerCase() === 'sabahkassab@bhfirms.com' &&
+      e36UsersEntry.json.users[0]?.pin_code === undefined &&
+      e36UsersEntry.json.users[0]?.face_samples === undefined;
+    const e36OwnerRedacted = Array.isArray(e36UsersOwner.json?.users) &&
+      e36UsersOwner.json.users.length >= 10 &&
+      e36UsersOwner.json.users.every(u => u && u.pin_code === undefined && u.face_samples === undefined);
+    const e36EntryTakeoverU1 = await httpReq('POST', '/app/api/users', {
+      user: { id: 'u1', email: 'sabahkassab@bhfirms.com', full_name: 'Sabah Takeover', role: 'Full Access (Owner)', companies: '*' }
+    }, { 'X-ISABI-Session': entryToken });
+
+    // Strict CORS on OPTIONS across /app/api/ask, /app/api/kiosk/verify, and /api/status
+    const e36OptAskEvil = await httpReq('OPTIONS', '/app/api/ask', null, { Origin: 'https://evil.example' });
+    const e36OptKioskEvil = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://evil.example' });
+    const e36OptStatusEvil = await httpReq('OPTIONS', '/api/status', null, { Origin: 'https://evil.example' });
+    const e36OptKioskGh = await httpReq('OPTIONS', '/app/api/kiosk/verify', null, { Origin: 'https://husseinbdeir.github.io' });
+    const e36OptUsersGh = await httpReq('OPTIONS', '/app/api/users', null, { Origin: 'https://husseinbdeir.github.io' });
+    const e36CorsStrictOk =
+      e36OptAskEvil.status === 204 && !e36OptAskEvil.headers['access-control-allow-origin'] &&
+      e36OptKioskEvil.status === 204 && !e36OptKioskEvil.headers['access-control-allow-origin'] &&
+      e36OptStatusEvil.status === 204 && !e36OptStatusEvil.headers['access-control-allow-origin'] &&
+      e36OptKioskGh.status === 204 && e36OptKioskGh.headers['access-control-allow-origin'] === 'https://husseinbdeir.github.io' &&
+      e36OptUsersGh.status === 204 && !e36OptUsersGh.headers['access-control-allow-origin'];
+
+    // Seed multi-BU clerk + Custom unlock seat for override boundary checks
+    await httpReq('POST', '/app/api/users', {
+      user: { id: 'u-edge36-clerk', email: 'edge36clerk@bhfirms.com', full_name: 'Edge36 Clerk', role: 'Entry', companies: 'WTC, BBConstruction', auth_mode: 'pin_only', pin_code: '5839', status: 'Active' }
+    }, { 'X-ISABI-Session': ownerToken });
+    await httpReq('POST', '/app/api/users', {
+      user: {
+        id: 'u-edge36-custom',
+        email: 'edge36custom@bhfirms.com',
+        full_name: 'Edge36 Custom Authorizer',
+        role: 'Custom',
+        companies: 'WTC',
+        auth_mode: 'pin_only',
+        pin_code: '4927',
+        custom_perms: { unlocksCustomized: true, unlocks: { unlock_uom: true, unlock_formula_totals: true, unlock_unit_price: false } },
+        status: 'Active'
+      }
+    }, { 'X-ISABI-Session': ownerToken });
+    const e36ClerkLogin = await httpReq('POST', '/app/api/auth/login', {
+      email: 'edge36clerk@bhfirms.com', pin: '5839', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.240' });
+    const e36ClerkTok = String(e36ClerkLogin.json?.token || '');
+
+    // Custom unlock keys f_malf_uom & f_amount -> 200, while ungranted f_unitprice -> 403
+    const e36CustomMalfUom = await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'edge36custom@bhfirms.com', pin: '4927', company: 'WTC', form_key: 'malfunction', field_id: 'f_malf_uom'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.241' });
+    const e36CustomAmount = await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'edge36custom@bhfirms.com', pin: '4927', company: 'WTC', form_key: 'receipt', field_id: 'f_amount'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.241' });
+    const e36CustomPriceDenied = await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'edge36custom@bhfirms.com', pin: '4927', company: 'WTC', form_key: 'sales', field_id: 'f_unitprice'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.242' });
+
+    // Reset clerk counter with a valid WTC override, then verify cross-BU wrong PIN ('0000') returns 403 (not 401 -> 0 PIN oracle)
+    await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_key: 'sales', field_id: 'f_unitprice'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.242' });
+    const e36CrossBuWrongPin = await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'site.bbc@bhfirms.com', pin: '0000', company: 'WTC', form_key: 'sales', field_id: 'f_unitprice'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.243' });
+    // Clear clerk counter again before DOM cross-company modal check
+    await httpReq('POST', '/app/api/auth/verify-override', {
+      email: 'fleet.lions@bhfirms.com', pin: '7777', company: 'WTC', form_key: 'sales', field_id: 'f_unitprice'
+    }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.243' });
+
+    // Cross-company #f_company switch inside #entryModal must wipe Supervisor override & re-lock f_unitprice
+    const remoteScript36 = await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        window.__ISABI_SIMULATE_REMOTE_HOST = true;
+        window.__ISABI_TEST_EDGE = true;
+        window.ISABI_HAS_EDGE_API = true;
+        try {
+          localStorage.removeItem('isabi_mfg_users_v2');
+          localStorage.removeItem('isabi_mfg_current_user_v2');
+          localStorage.removeItem('isabi_mfg_edge_sess_tok_v1');
+          sessionStorage.removeItem('isabi_mfg_sw_resume');
+        } catch (_) {}
+      `
+    });
+    await sendCdp('Network.clearBrowserCookies');
+    await sendCdp('Network.setCookie', {
+      name: 'isabi_edge_sess',
+      value: e36ClerkTok,
+      domain: '127.0.0.1',
+      path: '/',
+      httpOnly: true
+    });
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/app/` });
+    for (let w = 0; w < 50; w++) {
+      const ready = await evalJs(`Boolean(window.MFG_FACE_TEST && window.MFG_FACE_TEST.state().authed && window.MFG_SEED && window.MFG_SEED._recordsReady)`).catch(() => false);
+      if (ready) break;
+      await sleep(200);
+    }
+    const e36ModalCrossCo = await evalJs(`(async () => {
+      const addBtn = document.getElementById('newEntryBtn') || document.getElementById('mobileNewEntryBtn') || document.querySelector('[data-open-entry]');
+      if (addBtn) addBtn.click();
+      await new Promise(r => setTimeout(r, 120));
+      const salesGroup = document.querySelector('[data-pa-group="sales"]');
+      if (salesGroup) salesGroup.click();
+      const salesTab = document.querySelector('.modal-tab[data-form="sales"]');
+      if (salesTab) salesTab.click();
+      await new Promise(r => setTimeout(r, 120));
+      const coEl = document.getElementById('f_company');
+      if (!coEl) return { err: 'no f_company', activeRole: String((window.MFG_FACE_TEST?.state()?.currentUser || '')) };
+      coEl.value = 'BBConstruction';
+      coEl.dispatchEvent(new Event('input', { bubbles: true }));
+      coEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 120));
+      const pill = document.querySelector('[data-lock-pill="f_unitprice"]');
+      if (pill) pill.click();
+      await new Promise(r => setTimeout(r, 80));
+      const emInp = document.getElementById('paAdminEmailInput');
+      const pinInp = document.getElementById('paAdminPinInput');
+      const btnAll = document.getElementById('paConfirmAllUnlockBtn');
+      if (!emInp || !pinInp || !btnAll) {
+        return {
+          err: 'missing unlock prompt inputs',
+          boxHtml: String(document.getElementById('paAdminUnlockBox')?.innerHTML || '').slice(0, 220),
+          pillExists: Boolean(pill)
+        };
+      }
+      emInp.value = 'site.bbc@bhfirms.com';
+      pinInp.value = '6666';
+      btnAll.click();
+      for (let i = 0; i < 30; i++) {
+        const pEl = document.getElementById('f_unitprice');
+        if (pEl && !pEl.readOnly && pEl.dataset.policyLockedNow !== '1') break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      const pAfterBbcUnlock = document.getElementById('f_unitprice');
+      const dEl = document.getElementById('f_date');
+      const nEl = document.getElementById('f_notes');
+      const unlockedOnBbc = Boolean(pAfterBbcUnlock && !pAfterBbcUnlock.readOnly && dEl && !dEl.readOnly);
+      if (dEl) {
+        dEl.value = '2026-09-01';
+        dEl.dispatchEvent(new Event('input', { bubbles: true }));
+        dEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const bbcStampPresent = /\\[Supervisor Override by/i.test(String(nEl?.value || ''));
+      coEl.value = 'WTC';
+      coEl.dispatchEvent(new Event('input', { bubbles: true }));
+      coEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 150));
+      const pAfterWtcSwitch = document.getElementById('f_unitprice');
+      const dAfterWtcSwitch = document.getElementById('f_date');
+      const nAfterWtcSwitch = document.getElementById('f_notes');
+      const relockedOnWtc = Boolean(
+        pAfterWtcSwitch && (pAfterWtcSwitch.readOnly || pAfterWtcSwitch.dataset.policyLockedNow === '1') &&
+        dAfterWtcSwitch && dAfterWtcSwitch.readOnly && dAfterWtcSwitch.value !== '2026-09-01' &&
+        !/\\[Supervisor Override by/i.test(String(nAfterWtcSwitch?.value || ''))
+      );
+      return {
+        unlockedOnBbc,
+        bbcStampPresent,
+        relockedOnWtc,
+        dateAfterWtc: dAfterWtcSwitch?.value || '',
+        notesAfterWtc: nAfterWtcSwitch?.value || ''
+      };
+    })()`);
+    if (remoteScript36 && remoteScript36.identifier) {
+      await sendCdp('Page.removeScriptToEvaluateOnNewDocument', { identifier: remoteScript36.identifier }).catch(() => {});
+    }
+
+    // Shared-NAT Login DoS isolation: 5 bad overrides on IP 198.51.100.244 lock override (429) WITHOUT 429-blocking login on same IP
+    let e36SharedNatOv5 = 0;
+    for (let k = 1; k <= 5; k++) {
+      const r = await httpReq('POST', '/app/api/auth/verify-override', {
+        email: 'fleet.lions@bhfirms.com', pin: '0000', company: 'WTC', form_key: 'sales', field_id: 'f_unitprice'
+      }, { 'X-ISABI-Session': e36ClerkTok, 'CF-Connecting-IP': '198.51.100.244' });
+      e36SharedNatOv5 = r.status;
+    }
+    const e36SharedNatLoginOk = await httpReq('POST', '/app/api/auth/login', {
+      email: 'husseinbdeir@bhfirms.com', pin: '1111', method: 'PIN'
+    }, { 'CF-Connecting-IP': '198.51.100.244' });
+
+    if (
+      e36UsersAnon.status === 401 &&
+      e36UsersDemo.status === 401 &&
+      e36UsersEntry.status === 200 &&
+      e36EntrySelfOnly &&
+      e36OwnerRedacted &&
+      e36EntryTakeoverU1.status === 403 &&
+      e36CorsStrictOk &&
+      e36CustomMalfUom.status === 200 &&
+      e36CustomAmount.status === 200 &&
+      e36CustomPriceDenied.status === 403 &&
+      e36CrossBuWrongPin.status === 403 &&
+      e36ModalCrossCo &&
+      e36ModalCrossCo.unlockedOnBbc === true &&
+      e36ModalCrossCo.bbcStampPresent === true &&
+      e36ModalCrossCo.relockedOnWtc === true &&
+      e36SharedNatOv5 === 429 &&
+      e36SharedNatLoginOk.status === 200
+    ) {
+      pass(
+        'edge-36-phase1-redteam-users-rls-cors-cross-co-relock-and-ov-isolation',
+        'Entry /app/api/users=1 self-only + evil OPTIONS ACAO=none (kiosk+ask+status) + BBC->WTC modal switch relocks f_unitprice + cross-BU wrong PIN=403 + shared-NAT login=200 after ov-429'
+      );
+    } else {
+      fail('edge-36-phase1-redteam-users-rls-cors-cross-co-relock-and-ov-isolation', JSON.stringify({
+        users: [e36UsersAnon.status, e36UsersDemo.status, e36UsersEntry.status, e36EntrySelfOnly, e36OwnerRedacted, e36EntryTakeoverU1.status],
+        cors: {
+          askEvil: [e36OptAskEvil.status, e36OptAskEvil.headers['access-control-allow-origin']],
+          kioskEvil: [e36OptKioskEvil.status, e36OptKioskEvil.headers['access-control-allow-origin']],
+          statusEvil: [e36OptStatusEvil.status, e36OptStatusEvil.headers['access-control-allow-origin']],
+          kioskGh: [e36OptKioskGh.status, e36OptKioskGh.headers['access-control-allow-origin']],
+          usersGh: [e36OptUsersGh.status, e36OptUsersGh.headers['access-control-allow-origin']]
+        },
+        customKeys: [e36CustomMalfUom.status, e36CustomAmount.status, e36CustomPriceDenied.status],
+        crossBuWrongPin: e36CrossBuWrongPin.status,
+        modalCrossCo: e36ModalCrossCo,
+        sharedNat: [e36SharedNatOv5, e36SharedNatLoginOk.status]
       }));
     }
   } finally {
@@ -2626,6 +3353,7 @@ finally:
     await sleep(300);
     try { fs.rmSync(udd, { recursive: true, force: true }); } catch (_) {}
     try { fs.rmSync(tmpPersist, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(tmpBundle, { recursive: true, force: true }); } catch (_) {}
   }
 
   const failed = results.filter(r => !r.ok);
@@ -2637,5 +3365,8 @@ main().catch(err => {
   console.error('FATAL:', err);
   killTree(edgeProc.pid);
   killTree(wranglerProc.pid);
+  try { fs.rmSync(udd, { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(tmpPersist, { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(tmpBundle, { recursive: true, force: true }); } catch (_) {}
   process.exit(1);
 });

@@ -45,10 +45,44 @@ function buildResetHtml(isApp) {
 `;
 }
 
+function isBlockedInternalPath(pathname) {
+  const p = String(pathname || '').toLowerCase();
+  if (
+    p === '/wrangler.toml' ||
+    p === '/app/server.py' ||
+    p === '/app/js/seed_core.json' ||
+    p === '/app/js/seed_records.json' ||
+    p === '/app/js/seed_industries.json' ||
+    p.startsWith('/build/') ||
+    p === '/build' ||
+    p.startsWith('/functions/') ||
+    p === '/functions' ||
+    p.startsWith('/migrations/') ||
+    p === '/migrations' ||
+    p.startsWith('/exports/') ||
+    p === '/exports'
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
   const p = url.pathname;
+  if (isBlockedInternalPath(p)) {
+    return new Response(request.method === 'HEAD' ? null : 'Not Found', {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-ISABI-Edge': '1'
+      }
+    });
+  }
   if ((request.method === 'GET' || request.method === 'HEAD') && (p === '/reset' || p === '/reset.html' || p === '/app/reset' || p === '/app/reset.html')) {
     const isApp = p.startsWith('/app/');
     const html = buildResetHtml(isApp);
@@ -57,7 +91,12 @@ export async function onRequest(context) {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'X-Robots-Tag': 'noindex, nofollow',
         'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'Permissions-Policy': 'microphone=(self), camera=(self), geolocation=(self)',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'X-ISABI-Edge': '1'
       }

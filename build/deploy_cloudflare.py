@@ -18,6 +18,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -26,7 +27,8 @@ BUILD_DIR = pathlib.Path(__file__).resolve().parent
 if str(BUILD_DIR) not in sys.path:
     sys.path.insert(0, str(BUILD_DIR))
 
-from export_d1_seed import COMMITTED_MANIFEST_JSON, DB_PATH, file_sha256, promote_pending_manifest
+from export_d1_seed import COMMITTED_MANIFEST_JSON, DB_PATH, KV_CHUNK_CHARS, _chunk_str_for_kv, file_sha256, promote_pending_manifest, sql_lit
+from stage_pages_bundle import stage_pages_bundle
 
 ISABI_ROOT = BUILD_DIR.parent
 WRANGLER_TOML = ISABI_ROOT / "wrangler.toml"
@@ -145,12 +147,13 @@ def read_wrangler_oauth_token() -> str:
         pathlib.Path.home() / ".wrangler" / "config" / "default.toml",
         pathlib.Path.home() / ".config" / ".wrangler" / "config" / "default.toml",
     ]
-    for cfg in candidates:
-        if cfg.exists():
-            txt = cfg.read_text(encoding="utf-8", errors="ignore")
-            m = re.search(r'oauth_token\s*=\s*"([^"]+)"', txt)
-            if m:
-                return m.group(1).strip()
+    existing = [c for c in candidates if c.exists()]
+    existing.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for cfg in existing:
+        txt = cfg.read_text(encoding="utf-8", errors="ignore")
+        m = re.search(r'oauth_token\s*=\s*"([^"]+)"', txt)
+        if m:
+            return m.group(1).strip()
     return ""
 
 
@@ -357,12 +360,332 @@ def seed_remote_d1(env: dict):
     save_edge_meta(meta)
 
 
+def upload_r2_private_seeds(env: dict, r2_enabled: bool):
+    if not r2_enabled:
+        print("WARN: R2 bucket `isabi-vault` unavailable; skipping private seed upload.")
+        return
+    app_js_dir = ISABI_ROOT.parent / "isabi-app" / "js"
+    if not app_js_dir.is_dir():
+        print(f"WARN: `{app_js_dir}` not present on this machine; skipping R2 private seed upload.")
+        return
+    meta = load_edge_meta()
+    r2_shas = dict(meta.get("r2_seed_shas") or {})
+    force_upload = "--force-r2-seeds" in sys.argv
+    for kind in ("core", "records", "industries"):
+        src = app_js_dir / f"seed_{kind}.json"
+        if not src.is_file():
+            print(f"WARN: Missing private seed file `{src}`; skipping.")
+            continue
+        sha = file_sha256(src)
+        if not force_upload and r2_shas.get(kind) == sha:
+            print(f"R2 private seed `seeds/seed_{kind}.json` unchanged (0 uploads).")
+            continue
+        print(f"Uploading private operational seed `seeds/seed_{kind}.json` ({src.stat().st_size:,} B) to R2 `isabi-vault`...")
+        run_wrangler(
+            [
+                "r2",
+                "object",
+                "put",
+                f"isabi-vault/seeds/seed_{kind}.json",
+                f"--file={src}",
+                "--content-type=application/json",
+                "--remote",
+            ],
+            env,
+            check=True,
+        )
+        r2_shas[kind] = sha
+        meta["r2_seed_shas"] = r2_shas
+        save_edge_meta(meta)
+
+
+def _b64url_nopad(raw_bytes: bytes) -> str:
+    import base64 as _b64
+    return _b64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("ascii")
+
+
+def _hash_random_pbkdf2(raw_pin: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", raw_pin.encode("utf-8"), salt, 100_000, dklen=32)
+    return f"pbkdf2$sha256$100000${_b64url_nopad(salt)}${_b64url_nopad(dk)}"
+
+
+def _upgrade_hex_pbkdf2_if_needed(pin_val: str) -> str:
+    if not pin_val.startswith("pbkdf2$sha256$"):
+        return pin_val
+    parts = pin_val.split("$")
+    if len(parts) == 5 and len(parts[3]) == 32 and len(parts[4]) == 64:
+        try:
+            salt_b = bytes.fromhex(parts[3])
+            dk_b = bytes.fromhex(parts[4])
+            return f"pbkdf2$sha256${parts[2]}${_b64url_nopad(salt_b)}${_b64url_nopad(dk_b)}"
+        except ValueError:
+            return pin_val
+    return pin_val
+
+
+def migrate_remote_d1_pins_to_pbkdf2(env: dict):
+    """Idempotently upgrades any plaintext or legacy-hex D1 `users.pin_code` to canonical Base64URL PBKDF2-SHA256 (100k) and strips `pin_code` from JSON blobs."""
+    r = run_wrangler(
+        ["d1", "execute", "isabi-ledger", "--remote", "--json", "--command=SELECT id, email, pin_code, payload_json FROM users"],
+        env,
+        check=False,
+    )
+    if r.returncode != 0:
+        print("WARN: Could not inspect remote D1 `users` for PBKDF2 migration.")
+        return
+    try:
+        rows = json.loads(r.stdout)[0].get("results") or []
+    except Exception:
+        rows = []
+
+    user_updates: list[str] = []
+    for row in rows:
+        uid = str(row.get("id") or "")
+        if not uid:
+            continue
+        raw_pin = str(row.get("pin_code") or "").strip()
+        new_pin = raw_pin
+        if raw_pin:
+            if not raw_pin.startswith("pbkdf2$sha256$"):
+                new_pin = _hash_random_pbkdf2(raw_pin)
+            else:
+                new_pin = _upgrade_hex_pbkdf2_if_needed(raw_pin)
+        pj_str = str(row.get("payload_json") or "")
+        new_pj = pj_str
+        if pj_str:
+            try:
+                pj_obj = json.loads(pj_str)
+            except Exception:
+                pj_obj = None
+            if isinstance(pj_obj, dict):
+                mutated = False
+                if "pin_code" in pj_obj:
+                    pj_obj.pop("pin_code", None)
+                    mutated = True
+                if "_verifiedPin" in pj_obj:
+                    pj_obj.pop("_verifiedPin", None)
+                    mutated = True
+                if new_pin and pj_obj.get("pin_redacted") is not True:
+                    pj_obj["pin_redacted"] = True
+                    mutated = True
+                if mutated:
+                    new_pj = json.dumps(pj_obj, ensure_ascii=False)
+        if new_pin != raw_pin or new_pj != pj_str:
+            user_updates.append(
+                f"UPDATE users SET pin_code = {sql_lit(new_pin)}, payload_json = {sql_lit(new_pj)} WHERE id = {sql_lit(uid)};\n"
+            )
+
+    if user_updates:
+        with tempfile.TemporaryDirectory(prefix="isabi-d1-pins-") as td:
+            sql_fp = pathlib.Path(td) / "migrate_pins.sql"
+            sql_fp.write_bytes("".join(user_updates).encode("utf-8"))
+            run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={sql_fp}"], env, check=True)
+        print(f"Migrated {len(user_updates)} remote D1 `users` row(s) to PBKDF2-SHA256 & redacted payload_json.")
+    else:
+        print("Remote D1 `users` PBKDF2 PIN check: all seats already hashed & payload_json redacted (0 writes).")
+
+    # Also scrub any legacy `pin_code` inside `edge_kv_store` `mfg_web_store` chunks
+    kv_res = run_wrangler(
+        [
+            "d1",
+            "execute",
+            "isabi-ledger",
+            "--remote",
+            "--json",
+            "--command=SELECT doc_key, payload_json, updated_at, updated_by, rev FROM edge_kv_store WHERE doc_key = 'mfg_web_store' OR doc_key LIKE 'mfg_web_store__part_%' ORDER BY doc_key",
+        ],
+        env,
+        check=False,
+    )
+    if kv_res.returncode != 0:
+        return
+    try:
+        kv_rows = json.loads(kv_res.stdout)[0].get("results") or []
+    except Exception:
+        kv_rows = []
+    if not kv_rows:
+        return
+    raw_kv = "".join(str(x.get("payload_json") or "") for x in kv_rows)
+    try:
+        kv_doc = json.loads(raw_kv)
+    except Exception:
+        kv_doc = None
+    if not isinstance(kv_doc, dict) or not isinstance(kv_doc.get("users"), list):
+        return
+    kv_dirty = False
+    cleaned_users = []
+    for u in kv_doc["users"]:
+        if not isinstance(u, dict):
+            cleaned_users.append(u)
+            continue
+        uc = dict(u)
+        if "pin_code" in uc or "_verifiedPin" in uc or "face_samples" in uc or "face_thumbs" in uc or uc.get("pin_redacted") is not True:
+            uc.pop("pin_code", None)
+            uc.pop("_verifiedPin", None)
+            uc.pop("face_samples", None)
+            uc.pop("face_thumbs", None)
+            uc["pin_redacted"] = True
+            uc["face_redacted"] = True
+            kv_dirty = True
+        cleaned_users.append(uc)
+    if not kv_dirty:
+        print("Remote D1 `edge_kv_store` PIN scrub check: already clean (0 writes).")
+        return
+    kv_doc["users"] = cleaned_users
+    clean_str = json.dumps(kv_doc, ensure_ascii=False)
+    chunks = _chunk_str_for_kv(clean_str, KV_CHUNK_CHARS, 64_000)
+    upd_at = str(kv_rows[0].get("updated_at") or "")
+    upd_by = str(kv_rows[0].get("updated_by") or "security_scrub")
+    rev = int(kv_rows[0].get("rev") or 1)
+    kv_stmts: list[str] = [
+        f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ('mfg_web_store', {sql_lit(chunks[0])}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev});\n"
+    ]
+    expected_keys = {"mfg_web_store"}
+    for idx, ch in enumerate(chunks[1:], start=1):
+        pk = f"mfg_web_store__part_{idx:04d}"
+        expected_keys.add(pk)
+        kv_stmts.append(
+            f"INSERT OR REPLACE INTO edge_kv_store (doc_key, payload_json, updated_at, updated_by, rev) VALUES ({sql_lit(pk)}, {sql_lit(ch)}, {sql_lit(upd_at)}, {sql_lit(upd_by)}, {rev});\n"
+        )
+    for old_r in kv_rows:
+        ok_key = str(old_r.get("doc_key") or "")
+        if ok_key and ok_key not in expected_keys:
+            kv_stmts.append(f"DELETE FROM edge_kv_store WHERE doc_key = {sql_lit(ok_key)};\n")
+    with tempfile.TemporaryDirectory(prefix="isabi-d1-kv-") as td:
+        for s_idx, stmt in enumerate(kv_stmts):
+            fp = pathlib.Path(td) / f"kv_{s_idx:04d}.sql"
+            fp.write_bytes(stmt.encode("utf-8"))
+            run_wrangler(["d1", "execute", "isabi-ledger", "--remote", f"--file={fp}"], env, check=True)
+    print(f"Scrubbed legacy PIN fields from remote D1 `edge_kv_store` across {len(chunks)} chunk(s).")
+
+
 def deploy_pages(env: dict):
-    print("Deploying ISABI Showcase + Command Center + Edge Functions to Cloudflare Pages (`isabi-systems`)...")
-    r = run_wrangler(["pages", "deploy", ".", "--project-name=isabi-systems", "--branch=main", "--commit-dirty=true"], env, check=True)
-    print(r.stdout)
-    if r.stderr:
-        print(r.stderr)
+    print("Staging allowlisted public bundle + deploying Edge Functions to Cloudflare Pages (`isabi-systems`)...")
+    with tempfile.TemporaryDirectory(prefix="isabi-pages-bundle-") as tmp_dir:
+        staged_count = stage_pages_bundle(pathlib.Path(tmp_dir))
+        print(f"  Staged {staged_count} public files (zero internal build/SQL/seed artifacts).")
+        r = run_wrangler(
+            ["pages", "deploy", str(tmp_dir), "--project-name=isabi-systems", "--branch=main", "--commit-dirty=true"],
+            env,
+            check=True,
+        )
+        print(r.stdout)
+        if r.stderr:
+            print(r.stderr)
+
+
+def cleanup_preview_deployments_and_purge_cache(acct_id: str):
+    token = read_wrangler_oauth_token()
+    if not token or not acct_id:
+        return
+    proj_res = cf_api("GET", f"/accounts/{acct_id}/pages/projects/isabi-systems", token)
+    keep_ids: set[str] = set()
+    if proj_res.get("success") and isinstance(proj_res.get("result"), dict):
+        res_obj = proj_res["result"]
+        cd_id = str((res_obj.get("canonical_deployment") or {}).get("id") or "")
+        ld_id = str((res_obj.get("latest_deployment") or {}).get("id") or "")
+        if cd_id:
+            keep_ids.add(cd_id)
+        if ld_id:
+            keep_ids.add(ld_id)
+    if keep_ids:
+        deleted = 0
+        for _ in range(4):
+            deps_res = cf_api("GET", f"/accounts/{acct_id}/pages/projects/isabi-systems/deployments?per_page=25", token)
+            deps = (deps_res.get("result") or []) if deps_res.get("success") else []
+            to_del = [str(d.get("id") or "") for d in deps if str(d.get("id") or "") and str(d.get("id") or "") not in keep_ids]
+            if not to_del:
+                break
+            progressed = False
+            failed_ids: list[str] = []
+            for dep_id in to_del:
+                del_res = cf_api("DELETE", f"/accounts/{acct_id}/pages/projects/isabi-systems/deployments/{dep_id}?force=true", token)
+                if del_res.get("success"):
+                    deleted += 1
+                    progressed = True
+                else:
+                    failed_ids.append(dep_id)
+            if failed_ids and not progressed:
+                print(f"WARN: {len(failed_ids)} non-canonical Pages deployment(s) could not be deleted: {', '.join(failed_ids[:5])}")
+            if not progressed:
+                break
+        if deleted:
+            print(f"Removed {deleted} historical non-canonical Pages deployment snapshot(s).")
+
+    z_list = cf_api("GET", "/zones?name=isabisystems.com", token)
+    zone = (z_list.get("result") or [None])[0] if z_list.get("success") else None
+    if zone and zone.get("id"):
+        purge = cf_api("POST", f"/zones/{zone['id']}/purge_cache", token, {"purge_everything": True})
+        if purge.get("success"):
+            print("Purged Cloudflare Edge CDN cache for `isabisystems.com`.")
+
+
+def ensure_email_routing(token: str, acct_id: str, zid: str):
+    """Idempotently ensures Cloudflare Email Routing destination `hbdeir16@gmail.com` and rule `husseinbdeir@isabisystems.com` -> `hbdeir16@gmail.com`."""
+    if not token or not acct_id or not zid:
+        return
+    dest_email = "hbdeir16@gmail.com"
+    custom_email = "husseinbdeir@isabisystems.com"
+
+    # 1. Ensure verified destination address exists on the Cloudflare account
+    addrs_res = cf_api("GET", f"/accounts/{acct_id}/email/routing/addresses?per_page=50", token)
+    addrs = (addrs_res.get("result") or []) if addrs_res.get("success") else []
+    dest_obj = next((a for a in addrs if str(a.get("email") or "").strip().lower() == dest_email), None)
+    if not dest_obj:
+        c_res = cf_api("POST", f"/accounts/{acct_id}/email/routing/addresses", token, {"email": dest_email})
+        if c_res.get("success"):
+            dest_obj = c_res.get("result") or {}
+            print(f"Created Cloudflare Email Routing destination `{dest_email}` (verification email sent if not yet verified).")
+
+    # 2. Ensure Email Routing MX/SPF DNS is enabled when unconfigured and no conflicting MX blocks it
+    er_res = cf_api("GET", f"/zones/{zid}/email/routing", token)
+    er_info = (er_res.get("result") or {}) if er_res.get("success") else {}
+    if not er_info.get("enabled"):
+        en_res = cf_api("POST", f"/zones/{zid}/email/routing/dns", token, {"name": "isabisystems.com"})
+        if not en_res.get("success"):
+            en_res = cf_api("POST", f"/zones/{zid}/email/routing/enable", token, {})
+        if en_res.get("success"):
+            print("Enabled Cloudflare Email Routing MX/SPF/DKIM DNS for `isabisystems.com`.")
+        else:
+            print(
+                "NOTE: Cloudflare Email Routing rule is active; complete 1-click MX cutover in Cloudflare Dashboard "
+                "(isabisystems.com -> Email -> Email Routing -> Enable Email Routing)."
+            )
+
+    # 3. Upsert active forwarding rule `husseinbdeir@isabisystems.com` -> `hbdeir16@gmail.com`
+    rules_res = cf_api("GET", f"/zones/{zid}/email/routing/rules?per_page=50", token)
+    rules = (rules_res.get("result") or []) if rules_res.get("success") else []
+    rule_payload = {
+        "name": "Isabi Systems Principal Inbox (husseinbdeir@isabisystems.com)",
+        "enabled": True,
+        "matchers": [{"type": "literal", "field": "to", "value": custom_email}],
+        "actions": [{"type": "forward", "value": [dest_email]}],
+    }
+    existing_rule = None
+    for rl in rules:
+        for m in rl.get("matchers") or []:
+            if m.get("type") == "literal" and m.get("field") == "to" and str(m.get("value") or "").strip().lower() == custom_email:
+                existing_rule = rl
+                break
+        if existing_rule:
+            break
+    if existing_rule and existing_rule.get("id"):
+        acts = existing_rule.get("actions") or []
+        already_ok = (
+            bool(existing_rule.get("enabled"))
+            and any(a.get("type") == "forward" and dest_email in [str(x).lower() for x in (a.get("value") or [])] for a in acts)
+        )
+        if not already_ok:
+            u_res = cf_api("PUT", f"/zones/{zid}/email/routing/rules/{existing_rule['id']}", token, rule_payload)
+            if u_res.get("success"):
+                print(f"Updated Cloudflare Email Routing rule `{custom_email}` -> `{dest_email}`.")
+        else:
+            print(f"Cloudflare Email Routing verified: `{custom_email}` -> `{dest_email}` (legal entity: Isabi Systems, Beirut, Lebanon).")
+    else:
+        p_res = cf_api("POST", f"/zones/{zid}/email/routing/rules", token, rule_payload)
+        if p_res.get("success"):
+            print(f"Provisioned Cloudflare Email Routing rule `{custom_email}` -> `{dest_email}`.")
 
 
 def configure_domain_and_dns(acct_id: str):
@@ -500,6 +823,8 @@ def configure_domain_and_dns(acct_id: str):
                     if rt_post.get("success"):
                         print("Configured Cloudflare Edge Worker 301 redirect: www.isabisystems.com/* -> https://isabisystems.com/*")
 
+        ensure_email_routing(token, acct_id, zid)
+
         if str(zone.get("status") or "").lower() == "active":
             print(f"Cloudflare Zone `isabisystems.com` verified ACTIVE (id={zid}).")
         else:
@@ -515,14 +840,10 @@ def configure_domain_and_dns(acct_id: str):
 
 
 def warn_weak_seat_pins(env: dict):
-    """Read-only check after a deploy: name the live seats whose 4-digit PIN is a repeated pair (1212, 7777).
-
-    Every demo PIN the app has ever shipped has that shape, so a live seat that still matches is signing in
-    with a PIN anyone can read. The check returns seat ids only, never a PIN, and never fails the deploy.
-    """
+    """Read-only check after a deploy: verify every active seat with a PIN is PBKDF2-SHA256 hashed."""
     sql = (
         "SELECT id FROM users WHERE COALESCE(status,'Active') != 'Suspended' "
-        "AND LENGTH(pin_code) = 4 AND substr(pin_code,1,2) = substr(pin_code,3,2) ORDER BY id"
+        "AND COALESCE(pin_code,'') != '' AND pin_code NOT LIKE 'pbkdf2$sha256$%' ORDER BY id"
     )
     try:
         r = run_wrangler(["d1", "execute", "isabi-ledger", "--remote", "--json", f"--command={sql}"], env, check=False)
@@ -530,16 +851,15 @@ def warn_weak_seat_pins(env: dict):
     except Exception:
         rows = None
     if rows is None:
-        print("Seat PIN check skipped (could not read the live users table).")
+        print("Seat PIN hash check skipped (could not read the live users table).")
     elif rows:
         ids = ", ".join(str(x.get("id")) for x in rows)
         print("=" * 70)
-        print(f"WARNING: {len(rows)} live seat(s) still use a repeated-pair PIN that matches the published demo PINs:")
+        print(f"WARNING: {len(rows)} live seat(s) still carry a non-PBKDF2 PIN in D1:")
         print(f"  {ids}")
-        print("  Change each PIN in Users & Security, or suspend the seat.")
         print("=" * 70)
     else:
-        print("Seat PIN check: no live seat uses a repeated-pair PIN.")
+        print("Seat PIN hash check: 100% of active seat PINs are PBKDF2-SHA256 hashed.")
 
 
 def main():
@@ -556,13 +876,16 @@ def main():
     stamp_wrangler_toml(d1_uuid, r2_ok)
     ensure_pages_project(env)
     upload_secrets(env)
+    upload_r2_private_seeds(env, r2_ok)
     seed_remote_d1(env)
+    migrate_remote_d1_pins_to_pbkdf2(env)
     deploy_pages(env)
     warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
+    cleanup_preview_deployments_and_purge_cache(acct_id)
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")
-    print("Preview URL live immediately: https://isabi-systems.pages.dev/")
-    print("Command Center preview URL:   https://isabi-systems.pages.dev/app/")
+    print("Production URL:             https://isabisystems.com/")
+    print("Command Center URL:         https://isabisystems.com/app/")
 
 
 if __name__ == "__main__":

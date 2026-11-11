@@ -57,6 +57,84 @@ export async function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+const PBKDF2_ITERS = 100000;
+const HEX_PIN_RE = /^pbkdf2\$sha256\$\d+\$([0-9a-fA-F]{32})\$([0-9a-fA-F]{64})$/;
+const B64_PIN_RE = /^pbkdf2\$sha256\$\d+\$[A-Za-z0-9_-]{16,44}\$[A-Za-z0-9_-]{32,88}$/;
+
+function hexToBytes(hexStr) {
+  const out = new Uint8Array(hexStr.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hexStr.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+export function isHashedPin(val) {
+  if (typeof val !== 'string') return false;
+  const s = val.trim();
+  return HEX_PIN_RE.test(s) || B64_PIN_RE.test(s);
+}
+
+export function isWeakPin(pin) {
+  const s = String(pin || '').trim();
+  if (isHashedPin(s)) return false;
+  if (!/^\d{4,12}$/.test(s)) return true;
+  if (/^(\d)\1+$/.test(s)) return true;
+  if ('0123456789012345'.includes(s) || '9876543210987654'.includes(s) || '09876543210'.includes(s)) return true;
+  return false;
+}
+
+export async function hashSeatPin(pin, iterations = PBKDF2_ITERS) {
+  const clean = String(pin || '').trim();
+  if (!clean) return '';
+  if (B64_PIN_RE.test(clean) && !HEX_PIN_RE.test(clean)) return clean;
+  if (HEX_PIN_RE.test(clean)) {
+    const parts = clean.split('$');
+    return `pbkdf2$sha256$${parts[2]}$${b64UrlEncode(hexToBytes(parts[3]))}$${b64UrlEncode(hexToBytes(parts[4]))}`;
+  }
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const baseKey = await crypto.subtle.importKey('raw', ENC.encode(clean), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
+    baseKey,
+    256
+  );
+  return `pbkdf2$sha256$${iterations}$${b64UrlEncode(salt)}$${b64UrlEncode(new Uint8Array(bits))}`;
+}
+
+export async function verifySeatPin(candidatePin, storedVal) {
+  const cand = String(candidatePin || '').trim();
+  const stored = String(storedVal || '').trim();
+  if (!cand || !stored) return { ok: false, needsUpgrade: false };
+  if (isHashedPin(stored)) {
+    const parts = stored.split('$');
+    const iters = Math.max(1000, Math.min(600000, parseInt(parts[2], 10) || PBKDF2_ITERS));
+    const isHexLegacy = HEX_PIN_RE.test(stored);
+    let salt;
+    let expected;
+    try {
+      salt = isHexLegacy ? hexToBytes(parts[3]) : b64UrlDecode(parts[3]);
+      expected = isHexLegacy ? hexToBytes(parts[4]) : b64UrlDecode(parts[4]);
+    } catch (_) {
+      return { ok: false, needsUpgrade: false };
+    }
+    const baseKey = await crypto.subtle.importKey('raw', ENC.encode(cand), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iters },
+      baseKey,
+      expected.byteLength * 8
+    );
+    const actual = new Uint8Array(bits);
+    if (actual.length !== expected.length) return { ok: false, needsUpgrade: false };
+    let diff = 0;
+    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
+    const ok = diff === 0;
+    return { ok, needsUpgrade: Boolean(ok && isHexLegacy) };
+  }
+  const ok = await constantTimeEqual(cand, stored);
+  return { ok, needsUpgrade: ok };
+}
+
 export async function signEdgeSession(claims, env, ttlSeconds = 60 * 60 * 24 * 14) {
   const secret = resolveEdgeJwtSecret(env);
   if (!secret) {
@@ -111,18 +189,40 @@ export function parseCookieHeader(cookieHdr) {
   return out;
 }
 
-export function isAllowedCorsOrigin(origin) {
+export function isAllowedCorsOrigin(origin, request = null, env = null) {
   const o = String(origin || '').trim();
   if (!o) return false;
-  if (
-    o === 'https://isabisystems.com' ||
-    o === 'https://www.isabisystems.com' ||
-    o === 'https://isabi-systems.pages.dev'
-  ) {
+  if (o === 'https://isabisystems.com' || o === 'https://www.isabisystems.com') {
     return true;
   }
-  if (/^https:\/\/[a-z0-9-]+\.isabi-systems\.pages\.dev$/i.test(o)) return true;
-  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(o)) return true;
+  if (o === 'https://husseinbdeir.github.io' && request) {
+    try {
+      const reqPath = new URL(request.url).pathname || '';
+      if (reqPath === '/app/api/kiosk' || reqPath.startsWith('/app/api/kiosk/') || reqPath === '/api/kiosk' || reqPath.startsWith('/api/kiosk/')) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+  if (env && String(env.CORS_ALLOWED_ORIGIN || '').trim() && o === String(env.CORS_ALLOWED_ORIGIN).trim()) {
+    return true;
+  }
+  if (env && String(env.ALLOW_PAGES_PREVIEW_ORIGIN || '') === '1') {
+    if (o === 'https://isabi-systems.pages.dev' || /^https:\/\/[a-z0-9-]+\.isabi-systems\.pages\.dev$/i.test(o)) {
+      return true;
+    }
+  }
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(o)) {
+    if (env && String(env.ISABI_ALLOW_DEV_SECRET || '') === '1') return true;
+    if (request) {
+      try {
+        const reqHost = new URL(request.url).hostname;
+        if (reqHost === '127.0.0.1' || reqHost === 'localhost') return true;
+      } catch (_) {}
+      return false;
+    }
+    return false;
+  }
   return false;
 }
 
@@ -149,9 +249,13 @@ export async function extractRequestSession(request, env) {
       if (reqRef) {
         try { refOrigin = new URL(reqRef).origin; } catch (_) {}
       }
-      const checkOrigin = reqOrigin || refOrigin;
-      if (!checkOrigin || (checkOrigin !== selfOrigin && !isAllowedCorsOrigin(checkOrigin))) {
-        return null;
+      if (reqOrigin) {
+        if (reqOrigin !== selfOrigin && !isAllowedCorsOrigin(reqOrigin, request, env)) return null;
+      } else if (refOrigin) {
+        if (refOrigin !== selfOrigin && !isAllowedCorsOrigin(refOrigin, request, env)) return null;
+      } else {
+        const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
+        if (fetchSite !== 'same-origin') return null;
       }
     }
     const s = await verifyEdgeSession(cookies.isabi_edge_sess, env);
@@ -287,9 +391,35 @@ export function canManageUsersSeat(session) {
   return role.includes('owner') || role.includes('supervisor') || session.sub === 'u1' || session.sub === 'u2';
 }
 
+export function normalizeIpForRateLimit(rawIp) {
+  let ip = String(rawIp || 'local').split(',')[0].trim().toLowerCase();
+  if (!ip) return 'local';
+  if (ip.startsWith('::ffff:') && ip.includes('.')) {
+    ip = ip.slice(7);
+  }
+  if (!ip.includes(':')) return ip.slice(0, 64);
+  // Collapse IPv6 addresses to their /64 prefix (first 4 hextets) so interface rotation cannot evade limits
+  const zoneIdx = ip.indexOf('%');
+  if (zoneIdx > 0) ip = ip.slice(0, zoneIdx);
+  const dbl = ip.split('::');
+  if (dbl.length > 2) return ip.slice(0, 64);
+  const left = dbl[0] ? dbl[0].split(':').filter(Boolean) : [];
+  const right = dbl.length === 2 && dbl[1] ? dbl[1].split(':').filter(Boolean) : [];
+  if (dbl.length === 2) {
+    const fill = Math.max(0, 8 - (left.length + right.length));
+    const full = left.concat(Array(fill).fill('0'), right).slice(0, 8);
+    return full.slice(0, 4).map(h => h.padStart(4, '0')).join(':') + '::/64';
+  }
+  if (left.length >= 4) {
+    return left.slice(0, 4).map(h => h.padStart(4, '0')).join(':') + '::/64';
+  }
+  return ip.slice(0, 64);
+}
+
 export async function hashClientIp(request) {
-  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'local';
-  const digest = await crypto.subtle.digest('SHA-256', ENC.encode('isabi-ip:' + ip));
+  const raw = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'local';
+  const norm = normalizeIpForRateLimit(raw);
+  const digest = await crypto.subtle.digest('SHA-256', ENC.encode('isabi-ip:' + norm));
   return b64UrlEncode(digest).slice(0, 16);
 }
 
@@ -313,37 +443,46 @@ export function checkSlidingRateLimit(key, maxReqs = 45, windowMs = 60000) {
   };
 }
 
-export function isSameOriginBrowserRequest(request, urlObj) {
+export function isSameOriginBrowserRequest(request, urlObj, env = null) {
   const targetOrigin = (urlObj && urlObj.origin) || (() => {
     try { return new URL(request.url).origin; } catch (_) { return ''; }
   })();
   const reqOrigin = String(request.headers.get('Origin') || '').trim();
   if (reqOrigin) {
-    return reqOrigin === targetOrigin || isAllowedCorsOrigin(reqOrigin);
+    return reqOrigin === targetOrigin || isAllowedCorsOrigin(reqOrigin, request, env);
   }
   const reqRef = String(request.headers.get('Referer') || '').trim();
   if (reqRef) {
     try {
       const refOrigin = new URL(reqRef).origin;
-      if (refOrigin === targetOrigin || isAllowedCorsOrigin(refOrigin)) return true;
-    } catch (_) {}
+      if (refOrigin === targetOrigin || isAllowedCorsOrigin(refOrigin, request, env)) return true;
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
   const fetchSite = String(request.headers.get('Sec-Fetch-Site') || '').trim().toLowerCase();
   if (fetchSite === 'same-origin') return true;
   return false;
 }
 
-export async function checkD1RateLimit(env, bucketKey, maxReqs = 15, windowSec = 60) {
+export async function checkD1RateLimit(env, bucketKey, maxReqs = 15, windowSec = 60, failClosed = false) {
+  const mustFailClosed = typeof failClosed === 'object' && failClosed !== null
+    ? Boolean(failClosed.failClosed)
+    : Boolean(failClosed);
   const mem = checkSlidingRateLimit(bucketKey, maxReqs, windowSec * 1000);
   if (!mem.allowed) return { allowed: false, remaining: 0 };
-  if (!env || !env.DB) return mem;
+  if (!env || !env.DB) return mustFailClosed ? { allowed: false, remaining: 0, dbError: true } : mem;
   const slot = Math.floor(Date.now() / (windowSec * 1000));
   const docKey = `rl:${bucketKey}:${slot}`;
   const nowIso = new Date().toISOString();
+  const cutoffIso = new Date(Date.now() - 86400000 * 2).toISOString();
   try {
     if (Math.random() < 0.05) {
-      await env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1 AND doc_key != ?2')
-        .bind(`rl:${bucketKey}:%`, docKey).run();
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM edge_kv_store WHERE doc_key LIKE ?1 AND doc_key != ?2').bind(`rl:${bucketKey}:%`, docKey),
+        env.DB.prepare("DELETE FROM edge_kv_store WHERE doc_key LIKE 'rl:%' AND updated_at < ?1").bind(cutoffIso)
+      ]);
     }
     const row = await env.DB.prepare(
       `INSERT INTO edge_kv_store (doc_key, payload_json, updated_at, rev)
@@ -354,6 +493,7 @@ export async function checkD1RateLimit(env, bucketKey, maxReqs = 15, windowSec =
     const count = Number((row && row.rev) || 1);
     return { allowed: count <= maxReqs, remaining: Math.max(0, maxReqs - count) };
   } catch (_) {
+    if (mustFailClosed) return { allowed: false, remaining: 0, dbError: true };
     return mem;
   }
 }
@@ -395,14 +535,25 @@ export async function verifyActiveEdgeSession(session, env) {
   }
 }
 
-export function applyEdgeCors(response, request) {
+export function applyEdgeCors(response, request, env = null) {
   if (!response || !request) return response;
   const origin = String(request.headers.get('Origin') || '').trim();
-  if (!origin || !isAllowedCorsOrigin(origin)) return response;
+  if (!origin || !isAllowedCorsOrigin(origin, request, env)) {
+    if (!response.headers.has('Access-Control-Allow-Origin')) return response;
+    const strippedHeaders = new Headers(response.headers);
+    strippedHeaders.delete('Access-Control-Allow-Origin');
+    const isNull = response.status === 204 || response.status === 304;
+    return new Response(isNull ? null : response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: strippedHeaders
+    });
+  }
   const headers = new Headers(response.headers);
   headers.set('Access-Control-Allow-Origin', origin);
   headers.set('Vary', 'Origin');
-  return new Response(response.body, {
+  const isNullBody = response.status === 204 || response.status === 304;
+  return new Response(isNullBody ? null : response.body, {
     status: response.status,
     statusText: response.statusText,
     headers
@@ -413,9 +564,14 @@ export function jsonResponse(payload, status = 200, extraHeaders = {}) {
   const headers = Object.assign({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
     'X-ISABI-Edge': '1',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-ISABI-Session, X-ISABI-Demo'
   }, extraHeaders);
+  if (status === 204 || status === 304) {
+    delete headers['Content-Type'];
+    return new Response(null, { status, headers });
+  }
   return new Response(JSON.stringify(payload), { status, headers });
 }
