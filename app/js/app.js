@@ -1882,14 +1882,22 @@
   }
 
   function getModel(coOverride) {
-    ensureMultiIndustrySpineSeeded();
+    // Not before the script has finished initialising: the spine seeder reads let/const caches declared far
+    // below. Today it returns at once then (the seed is not loaded yet), so skipping it changes nothing.
+    if (_iifeBooted) ensureMultiIndustrySpineSeeded();
     const rawKey = coOverride || STATE.company;
     const effKey = resolveEffectiveModelKey(rawKey);
     const base = SEED.models[effKey] || SEED.models['manufacturing-group'] || {
       periods: {}, monthly: [], products: [], customers: [], suppliers: [], sites: [], equipment: [], gl_tb: [], soa_stream: []
     };
     const ind = typeof getActiveIndustry === 'function' ? getActiveIndustry(rawKey) : 'Manufacturing';
-    if (ind && ind !== 'Manufacturing' && typeof getIndustryGlModel === 'function') {
+    // Until this script has finished initialising (_iifeBooted), the industry ledger builder and its caches
+    // (_indGlModelCache, _indGlInFlight) are still uninitialised. The start-up ensureGlobalFinanceTablesSeeded()
+    // call reaches here, so a device whose saved company is a sibling-industry one threw a ReferenceError that
+    // stopped the whole app on the sign-in screen. Serve the base model during start-up, as a Manufacturing scope
+    // always has; once booted, syncGlAccountsRegistry() sees a different model object and re-syncs the registry
+    // for the industry the next time a ledger or table view asks for it. Gate: build/verify_boot_saved_scope.mjs.
+    if (ind && ind !== 'Manufacturing' && _iifeBooted && typeof getIndustryGlModel === 'function') {
       return getIndustryGlModel(ind, rawKey, base);
     }
     return base;
