@@ -35833,3 +35833,108 @@ video::-webkit-media-controls-start-playback-button {
     flex-shrink: 0;
   }
 }
+
+/* ============================================================================
+   Phase 3 (v19.6.254): responsive geometry, phone touch ergonomics, dialog focus
+   ============================================================================ */
+
+/* Executive Overview control rows wrap onto a second line instead of being cut off */
+.ceo-bridge-hdr {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.ceo-bridge-hdr-actions {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+@media (max-width: 900px) {
+  .ceo-chart-panel .ph {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .ceo-chart-panel .ceo-ph-right {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+}
+
+/* Focus placed on a dialog container by js/a11y_dialog.js shows no ring */
+[role="dialog"][tabindex="-1"]:focus,
+#workspace:focus {
+  outline: none;
+}
+
+/* A closed Ask ISABI drawer is off screen, so it must also be out of the Tab order */
+.ai-drawer:not(.open) {
+  visibility: hidden;
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.24s;
+}
+.ai-drawer.open {
+  visibility: visible;
+}
+
+/* Phone touch ergonomics: 40px targets on the controls a thumb has to hit, 16px inputs (no iOS zoom) */
+@media (pointer: coarse) and (max-width: 860px) {
+  header.top .mobile-menu-btn,
+  header.top #mobileSearchBtn,
+  header.top #mobileAskIsabiBtn,
+  header.top #mobileMoreBtn {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  #companySwitchTrigger {
+    min-height: 40px;
+  }
+  .grain-switch,
+  .date-range-bar,
+  .basis-switch {
+    height: auto;
+    min-height: 42px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    align-items: stretch;
+  }
+  .grain-btn,
+  .basis-btn {
+    min-height: 40px;
+  }
+  .date-range-bar .date-seg-slot,
+  .date-range-bar .date-seg-pill {
+    align-self: stretch;
+    align-items: stretch;
+  }
+  .date-range-bar .date-seg-part,
+  .date-range-bar .date-seg-cal {
+    min-height: 40px;
+  }
+  .date-range-bar .date-seg-cal {
+    min-width: 22px;
+  }
+  .date-range-bar .date-seg-dash,
+  .date-range-bar .date-range-sep {
+    align-self: center;
+  }
+  .date-range-bar .date-range-reset {
+    min-height: 40px;
+    min-width: 32px;
+  }
+  .m-subnav-pill,
+  .hub-subtab {
+    min-height: 40px;
+  }
+  #mobileBottomDock .dock-btn {
+    min-height: 44px;
+  }
+  #workspace input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not(.kiosk-unlock-pin-input),
+  #workspace select,
+  #workspace textarea {
+    font-size: 16px !important;
+  }
+  #workspace .pa-table-control-deck .table-toolbar .search-input#tableSearchInput,
+  #workspace .pa-table-control-deck .table-toolbar .search-input {
+    font-size: 16px !important;
+    height: 40px !important;
+  }
+}

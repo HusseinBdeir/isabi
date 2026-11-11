@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Page not found | ISABI Systems</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="/icon-dark.svg" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", Tahoma, sans-serif;
+      background: #FAF9F6;
+      color: #281D15;
+      display: grid;
+      place-items: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      padding: 32px 28px 28px;
+      background: #FCF9F2;
+      border: 1px solid #C4913A;
+      border-radius: 14px;
+      text-align: center;
+      box-shadow: 0 10px 28px rgba(40, 29, 21, 0.08);
+    }
+    .mark { width: 56px; height: 56px; margin: 0 auto 14px; display: block; }
+    .code {
+      display: inline-block;
+      margin: 0 0 10px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #C4913A;
+      color: #8A6220;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+    h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.25; }
+    p { margin: 0 0 22px; color: #4A3628; font-size: 15px; line-height: 1.55; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 18px;
+      border-radius: 10px;
+      border: 1px solid #C4913A;
+      color: #281D15;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .btn.primary { background: #C89D54; border-color: #C89D54; }
+    .btn:hover { background: #F3E7CF; }
+    .btn.primary:hover { background: #BE9147; }
+    .btn:focus-visible { outline: 2px solid #281D15; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img class="mark" src="/icon.svg" alt="ISABI Systems" width="56" height="56">
+    <div class="code">404</div>
+    <h1 id="t">This page does not exist</h1>
+    <p id="s">The address may be mistyped, or the page may have moved.</p>
+    <div class="actions">
+      <a class="btn primary" id="a1" href="/">Go to ISABI Systems</a>
+      <a class="btn" id="a2" href="/app/">Open the Command Center</a>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var copy = {
+        en: { title: 'Page not found | ISABI Systems', t: 'This page does not exist', s: 'The address may be mistyped, or the page may have moved.', site: 'Go to ISABI Systems', app: 'Open the Command Center' },
+        ar: { title: 'الصفحة غير موجودة | ISABI Systems', t: 'هذه الصفحة غير موجودة', s: 'قد يكون العنوان مكتوباً بشكل غير صحيح، أو ربما تم نقل الصفحة.', site: 'الانتقال إلى ISABI Systems', app: 'فتح مركز القيادة' },
+        fr: { title: 'Page introuvable | ISABI Systems', t: "Cette page n'existe pas", s: "L'adresse est peut-être mal saisie, ou la page a été déplacée.", site: 'Aller sur ISABI Systems', app: 'Ouvrir le Centre de Commande' }
+      };
+      var lang = '';
+      try { lang = localStorage.getItem('isabi.lang.v1') || localStorage.getItem('isabi_mfg_lang') || ''; } catch (e) {}
+      if (!copy[lang]) lang = String(navigator.language || 'en').slice(0, 2).toLowerCase();
+      if (!copy[lang]) lang = 'en';
+      var c = copy[lang];
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      document.title = c.title;
+      document.getElementById('t').textContent = c.t;
+      document.getElementById('s').textContent = c.s;
+      var a1 = document.getElementById('a1'), a2 = document.getElementById('a2');
+      var inApp = /^\/app(\/|$)/i.test(location.pathname);
+      a1.textContent = inApp ? c.app : c.site;
+      a1.href = inApp ? '/app/' : '/';
+      a2.textContent = inApp ? c.site : c.app;
+      a2.href = inApp ? '/' : '/app/';
+    })();
+  </script>
+</body>
+</html>

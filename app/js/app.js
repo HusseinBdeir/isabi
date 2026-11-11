@@ -108168,12 +108168,18 @@
   }
   window.__mfgSetDemoCompanyIndustry = setDemoCompanyIndustry;
 
-  function selectCompanyScope(coKey, closePopover = true) {
+  // True only between a pick that left the company switcher open and the moment that same popover closes
+  // or reopens. It lets "industry tab, then company" count as one Back step without ever merging two
+  // separate visits to the switcher.
+  let _coPickOpenSession = false;
+  function selectCompanyScope(coKey, closePopover = true, opts = null) {
     if (!coKey) return;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
     const nextInd = getActiveIndustry(coKey);
     const prevView = STATE.view;
+    const prevCompany = STATE.company;
+    const fromHistory = Boolean(opts && opts.fromHistory);
     STATE.company = coKey;
     const nextDemo = isDemoScopeActive();
     if (prevDemo !== nextDemo) {
@@ -108212,7 +108218,27 @@
     }
     if (STATE.authed && VIEW_TITLES[STATE.view]) {
       const targetHash = '#' + STATE.view;
-      if (location.hash !== targetHash || STATE.view !== prevView) {
+      if (!fromHistory && prevCompany !== coKey) {
+        // A company switch is its own history entry, so browser Back returns to the previous company.
+        // Several picks made while the switcher stays open (industry tab, then company) collapse into one entry.
+        const popNow = $('companySwitchPopover');
+        const curState = history.state;
+        const collapse = Boolean(_coPickOpenSession && curState && curState.coPick && popNow && !popNow.hidden);
+        const nextState = { view: STATE.view, company: STATE.company };
+        if (!closePopover) nextState.coPick = true;
+        try {
+          if (collapse) {
+            history.replaceState(nextState, '', targetHash);
+          } else {
+            history.replaceState({ view: prevView, company: prevCompany }, '', location.href);
+            history.pushState(nextState, '', targetHash);
+          }
+        } catch (_) {}
+        _coPickOpenSession = !closePopover;
+        if (location.hash !== targetHash) {
+          try { location.hash = targetHash; } catch (__) {}
+        }
+      } else if (location.hash !== targetHash || STATE.view !== prevView || fromHistory) {
         try {
           history.replaceState({ view: STATE.view, company: STATE.company }, '', targetHash);
         } catch (_) {}
@@ -108633,6 +108659,7 @@
     const doneBtn = $('companySwitchDoneBtn');
 
     const setOpen = (open) => {
+      _coPickOpenSession = false;
       switchEl.classList.toggle('open', !!open);
       if (popEl) popEl.hidden = !open;
       if (trigBtn) trigBtn.setAttribute('aria-expanded', String(!!open));
@@ -109921,6 +109948,20 @@
     if (dOver) dOver.classList.toggle('on', group === 'exec');
     if (dDisp) dDisp.classList.toggle('on', group === 'commercial' || group === 'plant' || group === 'dispatch');
     if (dBooks) dBooks.classList.toggle('on', group === 'books' || group === 'universal' || group === 'system' || group === 'master');
+    // The operations dock button is named after the active industry, never a fixed Manufacturing word.
+    const dDispLbl = dDisp ? dDisp.querySelector('span') : null;
+    if (dDispLbl) {
+      const dockOpsLabels = {
+        'Manufacturing': 'Dispatch',
+        'Holding & Treasury': 'Holding',
+        'Hospitality & Resorts': 'Resorts',
+        'Automotive & Heavy Trading': 'Trading',
+        'Real Estate & Property': 'Properties',
+        'Insurance & Brokerage': 'Policies'
+      };
+      const opsLbl = dockOpsLabels[activeInd] || 'Operations';
+      if (dDispLbl.textContent !== opsLbl) dDispLbl.textContent = opsLbl;
+    }
     if (dEntry && dEntryLbl) {
       if (canEnterAny(user)) {
         dEntry.hidden = false;
@@ -109934,7 +109975,10 @@
           site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver', staff: 'New Staff',
           fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
         };
-        dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
+        const ctxEntryForm = contextFormForView(v, user);
+        const mfgOnlyEntryForms = { sales: 1, raw: 1, fuel: 1, malfunction: 1, pricerule_raw: 1, jv: 1 };
+        const siblingDomainEntry = activeInd !== 'Manufacturing' && (/^(hld_|hsp_|trd_|re_|ins_)/.test(String(v || '')) || mfgOnlyEntryForms[ctxEntryForm]);
+        dEntryLbl.textContent = siblingDomainEntry ? 'New Entry' : (formLabels[ctxEntryForm] || 'Post Entry');
       } else {
         dEntry.hidden = true;
       }
@@ -128749,7 +128793,11 @@
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
       const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'universal', 'system', 'master']);
-      const firstHub = HUB_CATALOG.find(h => grps.includes(h.group) && isHubInActiveIndustry(h) && canViewHub(h.id, u));
+      // The operations button opens the active industry's own first hub (Revenue, Leases, Policies...),
+      // ahead of the shared Expenses and Payroll hubs that sit earlier in the catalog.
+      const indSpec = dv === 'sales' ? INDUSTRY_SIDEBAR_SPEC[getActiveIndustry(STATE.company)] : null;
+      const ownSlot = indSpec ? indSpec.slots.find(s => getHubDef(s.hub) && canViewHub(s.hub, u)) : null;
+      const firstHub = (ownSlot && getHubDef(ownSlot.hub)) || HUB_CATALOG.find(h => grps.includes(h.group) && isHubInActiveIndustry(h) && canViewHub(h.id, u));
       if (firstHub) clickHub(firstHub.id);
       else setView(dv);
     }));
@@ -129499,24 +129547,50 @@
     // History: back / forward + hash links move between modules (only after sign-in)
     window.addEventListener('popstate', e => {
       if (!STATE.authed) return;
-      if (e.state && e.state.company) {
-        const allowedCos = getAllowedCompanyKeys(activeUser());
-        if (allowedCos.includes(e.state.company) || String(e.state.company).startsWith('industry:')) {
-          STATE.company = e.state.company;
-          saveFilterState();
+      const v = (e.state && e.state.view) || (location.hash || '').replace(/^#/, '') || 'overview';
+      let scopeRestored = false;
+      _coPickOpenSession = false;
+      if (e.state && e.state.company && e.state.company !== STATE.company && !STATE.kioskLocked) {
+        const histCo = String(e.state.company);
+        const histUser = activeUser();
+        const allowedCos = getAllowedCompanyKeys(histUser);
+        // Same rule renderApp applies: a company the seat holds, or an industry the seat has a company in.
+        const histCatalog = getCompanyCatalog();
+        const permittedIndScope = histCo.startsWith('industry:') && allowedCompanyNames(histUser).some(n => {
+          const hit = histCatalog.find(c => c.name.toLowerCase() === String(n).toLowerCase());
+          return hit && hit.industry === histCo.slice(9);
+        });
+        if (allowedCos.includes(histCo) || permittedIndScope) {
+          // Restore through the same path as a manual switch (sidebar, demo data scope, default statement),
+          // without writing a new history entry.
+          selectCompanyScope(histCo, true, { fromHistory: true });
+          scopeRestored = true;
         }
       }
-      const v = (e.state && e.state.view) || (location.hash || '').replace(/^#/, '') || 'overview';
-      if (VIEW_TITLES[v]) setView(v, { noPush: true });
+      if (VIEW_TITLES[v] && (!scopeRestored || v !== STATE.view)) setView(v, { noPush: true });
     });
+    const LEGACY_HASH_VIEW_ALIASES = {
+      cashflow_analytics: 'cashflow', sales_vat: 'customers', sales_analytics: 'sales', raw_analytics: 'raw',
+      expenses_analytics: 'expenses', fleet_analytics: 'fleet_drivers', payroll_analytics: 'payroll', jv: 'raw_jv'
+    };
     window.addEventListener('hashchange', () => {
-      const v = (location.hash || '').replace(/^#/, '');
+      const rawHash = (location.hash || '').replace(/^#/, '');
+      const v = LEGACY_HASH_VIEW_ALIASES[rawHash] || rawHash;
       if (!STATE.authed) {
         if (VIEW_TITLES[v]) STATE.view = v;
         history.replaceState({ view: STATE.view }, '', lockedCleanUrl);
         return;
       }
-      if (VIEW_TITLES[v] && v !== STATE.view) setView(v, { noPush: true });
+      if (VIEW_TITLES[v]) {
+        if (v !== STATE.view) setView(v, { noPush: true });
+        return;
+      }
+      // Unknown or mistyped fragment: stay on the current module and put its address back.
+      if (VIEW_TITLES[STATE.view]) {
+        try {
+          history.replaceState({ view: STATE.view, company: STATE.company }, '', '#' + STATE.view);
+        } catch (_) {}
+      }
     });
 
     // SQLite / Cloudflare D1 Edge API status & zero-404 first-visit Edge auto-detection

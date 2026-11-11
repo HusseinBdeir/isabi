@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.256';
+const SHELL_CACHE = 'isabi-mfg-v19.6.257';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,48 +8,49 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.256',
-  './css/geo_dispatch.css?v=19.6.256',
-  './css/daily_ops.css?v=19.6.256',
-  './css/ask_isabi.css?v=19.6.256',
-  './css/fleet_pnl.css?v=19.6.256',
-  './css/smart_scan.css?v=19.6.256',
-  './css/doc_scanner.css?v=19.6.256',
-  './css/ai_edge.css?v=19.6.256',
-  './css/telematics.css?v=19.6.256',
-  './css/step_up_auth.css?v=19.6.256',
-  './css/command_palette.css?v=19.6.256',
-  './js/face.js?v=19.6.256',
-  './js/endpoints.js?v=19.6.256',
-  './js/seed_manifest.js?v=19.6.256',
-  './js/icons.js?v=19.6.256',
-  './js/geo_dispatch.js?v=19.6.256',
-  './js/forms_engine.js?v=19.6.256',
-  './js/pbi_pages.js?v=19.6.256',
-  './js/rdl_reports.js?v=19.6.256',
-  './js/kiosk_print.js?v=19.6.256',
-  './js/table_columns.js?v=19.6.256',
-  './js/daily_ops.js?v=19.6.256',
-  './js/i18n.js?v=19.6.256',
-  './js/ask_isabi.js?v=19.6.256',
-  './js/fleet_pnl.js?v=19.6.256',
-  './js/doc_scanner.js?v=19.6.256',
-  './js/smart_scan.js?v=19.6.256',
-  './js/ai_edge.js?v=19.6.256',
-  './js/telematics.js?v=19.6.256',
-  './js/local_dev_roster.js?v=19.6.256',
-  './js/step_up_auth.js?v=19.6.256',
-  './js/command_palette.js?v=19.6.256',
-  './js/app.js?v=19.6.256',
-  './manifest.json?v=19.6.256',
-  './favicon.ico?v=19.6.256',
-  './favicon-dark.ico?v=19.6.256',
-  './icon.svg?v=19.6.256',
-  './icon-dark.svg?v=19.6.256',
-  './icon-180.png?v=19.6.256',
-  './icon-192.png?v=19.6.256',
-  './icon-512.png?v=19.6.256',
-  './icon-512-maskable.png?v=19.6.256'
+  './css/app.css?v=19.6.257',
+  './css/geo_dispatch.css?v=19.6.257',
+  './css/daily_ops.css?v=19.6.257',
+  './css/ask_isabi.css?v=19.6.257',
+  './css/fleet_pnl.css?v=19.6.257',
+  './css/smart_scan.css?v=19.6.257',
+  './css/doc_scanner.css?v=19.6.257',
+  './css/ai_edge.css?v=19.6.257',
+  './css/telematics.css?v=19.6.257',
+  './css/step_up_auth.css?v=19.6.257',
+  './css/command_palette.css?v=19.6.257',
+  './js/face.js?v=19.6.257',
+  './js/endpoints.js?v=19.6.257',
+  './js/seed_manifest.js?v=19.6.257',
+  './js/icons.js?v=19.6.257',
+  './js/geo_dispatch.js?v=19.6.257',
+  './js/forms_engine.js?v=19.6.257',
+  './js/pbi_pages.js?v=19.6.257',
+  './js/rdl_reports.js?v=19.6.257',
+  './js/kiosk_print.js?v=19.6.257',
+  './js/table_columns.js?v=19.6.257',
+  './js/daily_ops.js?v=19.6.257',
+  './js/i18n.js?v=19.6.257',
+  './js/ask_isabi.js?v=19.6.257',
+  './js/fleet_pnl.js?v=19.6.257',
+  './js/doc_scanner.js?v=19.6.257',
+  './js/smart_scan.js?v=19.6.257',
+  './js/ai_edge.js?v=19.6.257',
+  './js/telematics.js?v=19.6.257',
+  './js/local_dev_roster.js?v=19.6.257',
+  './js/step_up_auth.js?v=19.6.257',
+  './js/command_palette.js?v=19.6.257',
+  './js/a11y_dialog.js?v=19.6.257',
+  './js/app.js?v=19.6.257',
+  './manifest.json?v=19.6.257',
+  './favicon.ico?v=19.6.257',
+  './favicon-dark.ico?v=19.6.257',
+  './icon.svg?v=19.6.257',
+  './icon-dark.svg?v=19.6.257',
+  './icon-180.png?v=19.6.257',
+  './icon-192.png?v=19.6.257',
+  './icon-512.png?v=19.6.257',
+  './icon-512-maskable.png?v=19.6.257'
 ];
 
 const VENDOR_ASSETS = [
@@ -161,6 +162,20 @@ function isSameOriginHtmlShell(res) {
   return ct.includes('text/html');
 }
 
+// A script, style, image or data URL answered with an HTML document is the host's fallback page, not the asset.
+// Storing it would pin a broken file under that version until the next release, so only genuine assets are cached.
+function isCacheableAsset(rawUrl, res) {
+  if (!res || res.status !== 200 || !isSameOriginUrl(res.url)) return false;
+  let pathname = '';
+  try {
+    pathname = new URL(rawUrl, self.location.href).pathname;
+  } catch (_) {
+    return false;
+  }
+  if (/(?:\/|\.html?)$/i.test(pathname)) return true;
+  return !(res.headers.get('content-type') || '').toLowerCase().includes('text/html');
+}
+
 // Strip same-origin URL redirect history (`res.redirected === true` from Cloudflare Pages `308 /index.html -> /`)
 // while rejecting cross-origin captive-portal redirects and guarding status `0`/`204`/`205`/`304`.
 async function cleanNavigationResponse(res) {
@@ -189,7 +204,7 @@ self.addEventListener('install', event => {
             return cache.match(url).then(cached => {
               if (cached) return null;
               return fetchDedup(url, { cache: 'reload' })
-                .then(res => (res && res.status === 200 && isSameOriginUrl(res.url) ? cache.put(url, res) : null))
+                .then(res => (isCacheableAsset(url, res) ? cache.put(url, res) : null))
                 .catch(() => null);
             });
           }
@@ -211,6 +226,16 @@ self.addEventListener('activate', event => {
       for (const oldKey of legacyCaches) {
         await caches.delete(oldKey).catch(() => {});
       }
+      // Earlier versions could store the host's fallback page under an asset URL in the persistent data cache
+      // (for example a missing vendor image). Drop those entries; genuine models, seeds and fonts are untouched.
+      try {
+        const dataCache = await caches.open(DATA_CACHE);
+        for (const req of await dataCache.keys()) {
+          if (!isSameOriginUrl(req.url)) continue;
+          const hit = await dataCache.match(req);
+          if (hit && !isCacheableAsset(req.url, hit)) await dataCache.delete(req).catch(() => {});
+        }
+      } catch (_) {}
       await self.clients.claim();
       try {
         const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -278,7 +303,7 @@ self.addEventListener('fetch', event => {
         }
         try {
           const res = await fetchDedup(forceBypass ? new Request(event.request.url, { cache: 'no-store' }) : event.request);
-          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
+          if (isCacheableAsset(event.request.url, res)) {
             const canonicalKey = (url.pathname.includes('/vendor/') && forceBypass)
               ? new URL(url.pathname, self.location.origin).href
               : event.request;
@@ -301,7 +326,7 @@ self.addEventListener('fetch', event => {
       caches.open(SHELL_CACHE).then(async cache => {
         try {
           const res = await fetch(new Request(event.request.url, { cache: 'no-store' }));
-          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
+          if (isCacheableAsset(event.request.url, res)) {
             if (url.pathname.endsWith('/js/i18n.js')) {
               cache.put(`./js/i18n.js?v=${SHELL_VER}`, res.clone()).catch(() => {});
             }
@@ -322,7 +347,7 @@ self.addEventListener('fetch', event => {
         if (exact) return exact;
         try {
           const res = await fetchDedup(event.request);
-          if (res && res.status === 200 && isSameOriginUrl(res.url)) {
+          if (isCacheableAsset(event.request.url, res)) {
             cache.put(event.request, res.clone()).catch(() => {});
           }
           return res;
@@ -379,7 +404,7 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     (event.request.cache === 'reload' ? fetch(event.request) : fetchDedup(event.request.url, { cache: 'no-cache' }))
       .then(async res => {
-        if (!isAnyNav && res && res.status === 200 && isSameOriginUrl(res.url)) {
+        if (!isAnyNav && isCacheableAsset(event.request.url, res)) {
           const clone = res.clone();
           caches.open(SHELL_CACHE).then(c => c.put(event.request, clone).catch(() => {})).catch(() => {});
         }
@@ -459,7 +484,7 @@ self.addEventListener('message', event => {
             if (hit) await cache.delete(absUrl, isVendor ? { ignoreSearch: true } : undefined).catch(() => {});
             try {
               const res = await fetchDedup(absUrl, absUrl.includes('/api/seed/') ? { credentials: 'same-origin' } : undefined);
-              if (res && res.status === 200 && isSameOriginUrl(res.url)) await cache.put(absUrl, res);
+              if (isCacheableAsset(absUrl, res)) await cache.put(absUrl, res);
             } catch (_) {}
           }
         }
