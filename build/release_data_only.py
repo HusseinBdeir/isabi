@@ -5,28 +5,31 @@ another session has unfinished UI or Edge-API work in the `isabi-app` or `isabi`
 shell change to ship. `sync_app.py` + `deploy_cloudflare.py` would publish whatever is in the working tree; this script
 publishes the committed site plus the new data, and nothing else.
 
+Where the data lives (since v19.6.248): the operational seeds are private objects in R2 (`isabi-vault/seeds/
+seed_{core,records,industries}.json`, served to a signed-in seat by `./api/seed/:kind`); the ledger rows are in D1; the
+public site carries only `app/js/seed_manifest.js`, which names the seed hashes.
+
 What it guarantees
-  * Only committed code is deployed. The site comes from a clean git worktree of HEAD, and the D1 export / deploy
-    helpers are loaded from HEAD too, so uncommitted edits in build/ or functions/ never run and never ship.
+  * Only committed code is deployed. The site comes from a clean git worktree of HEAD, staged by that commit's own
+    `build/stage_pages_bundle.py` (the public allowlist), and the D1 export / deploy helpers are loaded from HEAD too,
+    so uncommitted edits in build/, functions/ or app/ never run and never ship.
   * The working tree is never touched. The release commit is built from blobs written straight into the index
-    (seed_core.json, seed_records.json, seed_manifest.js, app/index.html).
+    (app/js/seed_manifest.js and app/index.html).
   * Installed devices fetch the new data: the shell loads `js/seed_manifest.js?v=<ver>` cache-first, so the release
     changes that URL to `...&d=<coreHash>` in app/index.html. No shell version bump.
   * The store document, the sign-in sessions and the seats are left alone: their D1 statements are dropped from the
     delta (the Edge API owns them).
-  * The public site carries the site only: build/, migrations/, exports/, functions/ source and wrangler.toml are not
-    uploaded as static files (`wrangler pages deploy` does not honour .assetsignore, so the upload folder is staged
-    here). Functions are still compiled from the worktree's functions/.
 
 Order of a release (THEO runs it; each stage refuses when the one before it has not been done):
   1. isabi-app:  python build/topup_from_sharepoint.py --until <date> --skip-cloud      (all six gates)
   2. isabi-app:  commit the data files and the loader
-  3. isabi:      python build/release_data_only.py commit      seeds + manifest + index.html into a release commit
+  3. isabi:      python build/release_data_only.py commit      manifest + index.html into a release commit
   4. isabi-app:  python build/reconcile_cloud_store.py --until <date>                    (cloud store twins)
   5. isabi:      python build/release_data_only.py export      D1 delta, nothing written remotely
   6. isabi:      python build/release_data_only.py upload      apply the delta to remote D1
-  7. isabi:      python build/release_data_only.py pages       deploy the committed site from a clean worktree
-  8. git push origin main (both repos), then check the live manifest hash.
+  7. isabi:      python build/release_data_only.py r2          upload the changed private seeds to R2
+  8. isabi:      python build/release_data_only.py pages       deploy the committed site from a clean worktree
+  9. git push origin main (both repos), then `status` to compare live with disk.
 `check` is read-only and can be run at any time. `status` prints what is live against what is on disk.
 """
 from __future__ import annotations
@@ -54,12 +57,6 @@ MANIFEST_RE = re.compile(r"__MFG_SEED_MANIFEST=(\{.*\});")
 INDEX_MANIFEST_RE = re.compile(rb"(js/seed_manifest\.js\?v=[0-9][0-9.]*)(?:&amp;d=[0-9a-f]+)?")
 STMT_RE = re.compile(r"^\s*(INSERT OR REPLACE INTO|INSERT INTO|DELETE FROM)\s+\"?([A-Za-z0-9_]+)\"?", re.I)
 EDGE_OWNED = {"edge_kv_store", "auth_sessions", "users"}  # store document, sign-in sessions, seats and PINs
-# Never uploaded as static files (top-level names, plus the patterns below anywhere in the tree).
-NOT_PUBLIC_TOP = {
-    "build", "migrations", "exports", "functions", "node_modules", "wrangler.toml", "package.json", "package-lock.json",
-    ".assetsignore", ".gitignore", ".gitattributes", ".git", ".github", ".wrangler", ".dev.vars",
-}
-NOT_PUBLIC_SUFFIX = (".py", ".pyc", ".sql", ".db", ".sqlite")
 
 
 def sha10(data: bytes) -> str:
@@ -136,13 +133,19 @@ def live_manifest() -> dict:
 
 # ----------------------------------------------------------------------------------------------------- stages
 
+def _seed_file(kind: str) -> Path:
+    return ISABI_APP / "js" / f"seed_{kind}.json"
+
+
 def stage_status() -> None:
+    E, D = mods()
     hm = head_manifest()
-    core = (ISABI_APP / "js" / "seed_core.json").read_bytes()
-    recs = (ISABI_APP / "js" / "seed_records.json").read_bytes()
+    meta = D.load_edge_meta()
+    r2 = meta.get("r2_seed_shas") or {}
     print(f"shell at HEAD        : v{shell_version()}  ({head_sha()[:7]})")
     print(f"isabi HEAD manifest  : core {hm.get('coreHash')} records {hm.get('recordsHash')} industries {hm.get('industriesHash')} generated {hm.get('generated_at')}")
-    print(f"isabi-app seeds      : core {sha10(core)} records {sha10(recs)}")
+    print("isabi-app seeds      : " + " ".join(f"{k} {sha10(_seed_file(k).read_bytes())}" for k in ("core", "records", "industries") if _seed_file(k).is_file()))
+    print("private seeds in R2  : " + " ".join(f"{k} {str(r2.get(k) or '?')[:10]}" for k in ("core", "records", "industries")) + "  (as recorded by the last upload from this PC)")
     try:
         lm = live_manifest()
         print(f"live site manifest   : core {lm.get('coreHash')} records {lm.get('recordsHash')} industries {lm.get('industriesHash')} generated {lm.get('generated_at')}")
@@ -166,22 +169,21 @@ def stage_check() -> None:
 
 
 def stage_commit(message: str = "") -> None:
-    """Release commit from blobs: the two seeds, the manifest in the committed format, and app/index.html pointing at
-    the new manifest. The working tree and any uncommitted work in it are left exactly as they are."""
+    """Release commit from blobs: the public manifest with the new seed hashes, and app/index.html pointing at it.
+    The seeds themselves are private (R2) and are not in this repository. The working tree is left as it is."""
     if git(["diff", "--cached", "--name-only"]).stdout.strip():
-        raise SystemExit("ABORT: the isabi index has staged changes; a data release commits only its own four files")
-    core = (ISABI_APP / "js" / "seed_core.json").read_bytes()
-    recs = (ISABI_APP / "js" / "seed_records.json").read_bytes()
+        raise SystemExit("ABORT: the isabi index has staged changes; a data release commits only its own two files")
+    core = _seed_file("core").read_bytes()
+    recs = _seed_file("records").read_bytes()
     core_h, recs_h = sha10(core), sha10(recs)
     hm = head_manifest()
     if hm.get("coreHash") == core_h and hm.get("recordsHash") == recs_h:
-        print(f"Nothing to commit: HEAD already carries core {core_h} / records {recs_h}")
+        print(f"Nothing to commit: HEAD already names core {core_h} / records {recs_h}")
         return
     snap_gen = ""
     try:
         with open(ISABI_APP / "data" / "mfg_snapshot.json", encoding="utf-8") as fh:
-            head_txt = fh.read(400)
-        m_gen = re.search(r'"generated_at"\s*:\s*"([^"]+)"', head_txt)
+            m_gen = re.search(r'"generated_at"\s*:\s*"([^"]+)"', fh.read(400))
         snap_gen = m_gen.group(1) if m_gen else ""
     except OSError:
         pass
@@ -189,10 +191,14 @@ def stage_commit(message: str = "") -> None:
         snap_gen = str(json.loads(core.decode("utf-8")).get("generated_at") or "")
     if not snap_gen:
         raise SystemExit("ABORT: cannot read generated_at of the new seed")
-    new_m = dict(hm)  # keeps the committed keys and their order; the industries seed stays the one that is live
+    new_m = dict(hm)  # keeps the committed keys and their order (industries and demo seeds stay as they are live)
     new_m["generated_at"] = snap_gen
-    new_m["core"] = f"./js/seed_core.json?d={core_h}"
-    new_m["records"] = f"./js/seed_records.json?d={recs_h}"
+    for key, val in (
+        ("core", f"./js/seed_core.json?d={core_h}"), ("records", f"./js/seed_records.json?d={recs_h}"),
+        ("apiCore", f"./api/seed/core?d={core_h}"), ("apiRecords", f"./api/seed/records?d={recs_h}"),
+    ):
+        if key in new_m:
+            new_m[key] = val
     new_m["coreHash"] = core_h
     new_m["recordsHash"] = recs_h
     old_man = head_blob("app/js/seed_manifest.js")
@@ -208,12 +214,7 @@ def stage_commit(message: str = "") -> None:
         raise SystemExit(f"ABORT: app/index.html references seed_manifest.js {len(hits)} times; expected 1")
     idx_bytes = INDEX_MANIFEST_RE.sub(lambda mo: mo.group(1) + b"&amp;d=" + core_h.encode("ascii"), old_idx)
     staged = {}
-    for path, data in (
-        ("app/js/seed_core.json", core),
-        ("app/js/seed_records.json", recs),
-        ("app/js/seed_manifest.js", man_bytes),
-        ("app/index.html", idx_bytes),
-    ):
+    for path, data in (("app/js/seed_manifest.js", man_bytes), ("app/index.html", idx_bytes)):
         sha = git(["hash-object", "-w", "--stdin"], input_bytes=data).stdout.decode("ascii").strip()
         git(["update-index", "--add", "--cacheinfo", f"100644,{sha},{path}"])
         staged[path] = sha
@@ -225,11 +226,10 @@ def stage_commit(message: str = "") -> None:
     print((r.stdout or "").strip()[-600:])
     if r.returncode != 0:
         print((r.stderr or "").strip()[-600:])
-        raise SystemExit("ABORT: commit failed; the four paths are still staged")
-    # Read back what was committed.
+        raise SystemExit("ABORT: commit failed; the two paths are still staged")
     cm = head_manifest()
-    if cm.get("coreHash") != sha10(head_blob("app/js/seed_core.json")) or cm.get("recordsHash") != sha10(head_blob("app/js/seed_records.json")):
-        raise SystemExit("ABORT: committed manifest does not match the committed seeds")
+    if cm.get("coreHash") != core_h or cm.get("recordsHash") != recs_h:
+        raise SystemExit("ABORT: committed manifest does not name the seeds on disk")
     print(f"Committed {head_sha()[:7]}: core {core_h} / records {recs_h}; app/index.html loads seed_manifest.js?v={shell_version()}&d={core_h}")
 
 
@@ -251,15 +251,16 @@ def batch_counts(files: list[Path]) -> tuple[Counter, Counter]:
 def stage_export() -> None:
     E, _ = mods()
     hm = head_manifest()
-    if hm.get("coreHash") != sha10((ISABI_APP / "js" / "seed_core.json").read_bytes()):
-        raise SystemExit("ABORT: isabi HEAD does not carry the seed that is on disk in isabi-app; run the commit stage first")
-    # The industries seed that is live is the one committed here, whatever the working tree holds.
-    live_ind = E.OUT_DIR / "_live_seed_industries.json"
-    E.OUT_DIR.mkdir(parents=True, exist_ok=True)
-    live_ind.write_bytes(head_blob("app/js/seed_industries.json"))
+    if hm.get("coreHash") != sha10(_seed_file("core").read_bytes()):
+        raise SystemExit("ABORT: isabi HEAD does not name the seed that is on disk in isabi-app; run the commit stage first")
+    # The sibling-industry seed must be the one that is live: a data-only release never changes it.
+    live_ind = _seed_file("industries")
     if hm.get("industriesHash") and sha10(live_ind.read_bytes()) != hm["industriesHash"]:
-        raise SystemExit("ABORT: committed industries seed does not match the committed manifest")
-    E.SEED_INDUSTRIES_JSON = live_ind
+        raise SystemExit(
+            f"ABORT: isabi-app/js/seed_industries.json ({sha10(live_ind.read_bytes())}) is not the live industries seed "
+            f"({hm['industriesHash']}); a data-only release cannot carry a sibling-industry change"
+        )
+    E.OUT_DIR.mkdir(parents=True, exist_ok=True)
     if not E.COMMITTED_MANIFEST_JSON.exists():
         raise SystemExit("ABORT: no committed D1 manifest on this PC; a delta is not possible and a full seed is out of scope here")
     for old in E.OUT_DIR.glob("batch_*.sql"):
@@ -326,7 +327,7 @@ def stage_upload() -> None:
     if not stamp_p.exists():
         raise SystemExit("ABORT: run the export stage first")
     stamp = json.loads(stamp_p.read_text(encoding="utf-8"))
-    live_ind = E.OUT_DIR / "_live_seed_industries.json"
+    live_ind = _seed_file("industries")
     checks = {
         "mfg.db": (stamp["db_sha256"], E.file_sha256(E.DB_PATH)),
         "mfg_snapshot.json": (stamp["snapshot_sha256"], E.file_sha256(E.SNAPSHOT_JSON)),
@@ -387,19 +388,44 @@ def stage_upload() -> None:
     print("D1 delta applied. live store updatedAt now:", live_updated_at())
 
 
-def _is_public(rel: Path) -> bool:
-    parts = rel.parts
-    if parts[0] in NOT_PUBLIC_TOP or any(p in ("__pycache__", ".git") for p in parts):
-        return False
-    return not rel.name.lower().endswith(NOT_PUBLIC_SUFFIX)
+def stage_r2() -> None:
+    """Upload the changed private seeds (core, records) to R2. The hashes must be the ones HEAD's manifest names."""
+    _, D = mods()
+    hm = head_manifest()
+    env = D.build_env()
+    ok, _acct = D.ensure_logged_in(env)
+    if not ok:
+        raise SystemExit(2)
+    meta = D.load_edge_meta()
+    r2_shas = dict(meta.get("r2_seed_shas") or {})
+    for kind, key in (("core", "coreHash"), ("records", "recordsHash")):
+        src = _seed_file(kind)
+        full = hashlib.sha256(src.read_bytes()).hexdigest()
+        if full[:10] != hm.get(key):
+            raise SystemExit(f"ABORT: seed_{kind}.json on disk ({full[:10]}) is not the one HEAD's manifest names ({hm.get(key)}); run the commit stage first")
+        if r2_shas.get(kind) == full:
+            print(f"R2 seeds/seed_{kind}.json already holds {full[:10]} (no upload)")
+            continue
+        print(f"Uploading seeds/seed_{kind}.json ({src.stat().st_size:,} B, {full[:10]}) to R2 isabi-vault...", flush=True)
+        D.run_wrangler(["r2", "object", "put", f"isabi-vault/seeds/seed_{kind}.json", f"--file={src}", "--content-type=application/json", "--remote"], env, check=True)
+        r2_shas[kind] = full
+        meta = D.load_edge_meta()
+        meta["r2_seed_shas"] = r2_shas
+        D.save_edge_meta(meta)
+    print("Private seeds in R2 match the committed manifest.")
 
 
 def stage_pages(message: str = "", keep: bool = False) -> None:
-    """Deploy the committed site: a clean worktree of HEAD supplies functions/ and wrangler.toml, and only the public
-    files of that worktree are uploaded as static assets."""
+    """Deploy the committed site: a clean worktree of HEAD supplies functions/ and wrangler.toml, and that commit's own
+    build/stage_pages_bundle.py stages the public allowlist that is uploaded."""
     _, D = mods()
     head = head_sha()
     hm = head_manifest()
+    meta = D.load_edge_meta()
+    r2 = meta.get("r2_seed_shas") or {}
+    for kind, key in (("core", "coreHash"), ("records", "recordsHash")):
+        if str(r2.get(kind) or "")[:10] != hm.get(key):
+            raise SystemExit(f"ABORT: R2 does not hold the {kind} seed the manifest names ({hm.get(key)}); run the r2 stage first")
     tag = time.strftime("%Y%m%d-%H%M%S")
     wt = WORKTREES / f"isabi-release-{tag}"
     bundle = WORKTREES / f"isabi-release-{tag}-public"
@@ -409,30 +435,23 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
         st = git(["status", "--porcelain"], cwd=wt).stdout.strip()
         if st:
             raise SystemExit(f"ABORT: the release worktree is not clean:\n{st}")
-        n = 0
-        for src in wt.rglob("*"):
-            if not src.is_file():
-                continue
-            rel = src.relative_to(wt)
-            if not _is_public(rel):
-                continue
-            dst = bundle / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dst)
-            n += 1
-        for must_not in ("build", "migrations", "exports", "functions", "wrangler.toml", ".dev.vars", ".git"):
+        stager_src = (wt / "build" / "stage_pages_bundle.py").read_text(encoding="utf-8")
+        stager = types.ModuleType("stage_pages_bundle_release")
+        stager.__file__ = str(wt / "build" / "stage_pages_bundle.py")  # its ISABI_ROOT resolves to the worktree
+        exec(compile(stager_src, stager.__file__, "exec"), stager.__dict__)
+        n = stager.stage_pages_bundle(bundle)
+        for must_not in ("build", "migrations", "exports", "functions", "wrangler.toml", ".dev.vars", ".git", "app/js/seed_core.json", "app/js/seed_records.json", "app/js/seed_industries.json"):
             if (bundle / must_not).exists():
                 raise SystemExit(f"ABORT: {must_not} must not be in the public bundle")
         for must in ("index.html", "_headers", "_routes.json", "app/index.html", "app/sw.js", "app/js/app.js", "app/js/seed_manifest.js"):
             if not (bundle / must).is_file():
                 raise SystemExit(f"ABORT: {must} is missing from the public bundle")
         man = parse_manifest((bundle / "app" / "js" / "seed_manifest.js").read_text(encoding="utf-8"))
-        for key, fn in (("coreHash", "seed_core.json"), ("recordsHash", "seed_records.json"), ("industriesHash", "seed_industries.json")):
-            if man.get(key) and sha10((bundle / "app" / "js" / fn).read_bytes()) != man[key]:
-                raise SystemExit(f"ABORT: {fn} does not match the manifest hash {man[key]}")
+        if man != hm:
+            raise SystemExit("ABORT: the staged manifest is not the committed one")
         if f"seed_manifest.js?v={shell_version()}&amp;d={man['coreHash']}" not in (bundle / "app" / "index.html").read_text(encoding="utf-8"):
             raise SystemExit("ABORT: app/index.html does not point at the new seed manifest")
-        print(f"Public bundle: {n} files from {head[:7]} (build/, migrations/, exports/, functions/ source and wrangler.toml left out)")
+        print(f"Public bundle: {n} allowlisted files from {head[:7]}")
         env = D.build_env()
         ok, acct = D.ensure_logged_in(env)
         if not ok:
@@ -469,7 +488,7 @@ def stage_pages(message: str = "", keep: bool = False) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Publish a Manufacturing data top-up without shipping the shell.")
-    ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "pages"])
+    ap.add_argument("stage", choices=["status", "check", "commit", "export", "upload", "r2", "pages"])
     ap.add_argument("--message", default="", help="Commit / deployment message (default: derived from the seed date)")
     ap.add_argument("--keep", action="store_true", help="pages: keep the release worktree and bundle for inspection")
     a = ap.parse_args()
@@ -483,6 +502,8 @@ def main() -> None:
         stage_export()
     elif a.stage == "upload":
         stage_upload()
+    elif a.stage == "r2":
+        stage_r2()
     else:
         stage_pages(a.message, a.keep)
 
