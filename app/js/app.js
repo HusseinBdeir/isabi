@@ -104155,13 +104155,18 @@
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Verify active HttpOnly cookie session on Edge hosts when needed
     if (isEdgeActive && STATE.authed && !_edgeSessionToken && !_edgeCookieAuthed && !isDemoSandboxSession()) {
+      const ctrlMe = new AbortController();
+      const tMe = setTimeout(() => ctrlMe.abort(), 6000);   // a dead network must not hold the rest of the sync open
       try {
-        const rMe = await edgeApiFetch('./api/auth/me');
+        const rMe = await edgeApiFetch('./api/auth/me', { signal: ctrlMe.signal });
         if (rMe && rMe.ok) {
           const jMe = await rMe.json().catch(() => null);
           if (jMe && jMe.authenticated) _edgeCookieAuthed = true;
         }
-      } catch (_) {}
+      } catch (_) {
+      } finally {
+        clearTimeout(tMe);
+      }
     }
 
     // 1. Relational SQLite / Cloudflare D1 Edge API
@@ -104619,6 +104624,16 @@
   function setAuthHint(text, cls) {
     const el = $('authFaceHint');
     if (!el) return;
+    // The engine is fetched on first use. If that failed with no connection, keep saying why while the camera
+    // is asking for it, instead of going blank or sitting on "Preparing Face ID".
+    if (FACE_STATE.faceEngineOffline) {
+      if (navigator.onLine !== false || STATE.authed || (window.Face && window.Face.ready)) {
+        FACE_STATE.faceEngineOffline = false;
+      } else if (!text || /Preparing Face ID/i.test(text)) {
+        text = 'Face ID needs a connection the first time on this device';
+        cls = 'warn';
+      }
+    }
     el.textContent = text;
     el.className = 'auth-face-hint' + (cls ? ' ' + cls : '');
   }
@@ -105281,7 +105296,12 @@
       try {
         if (!window.Face) throw new Error('Face recognition module not loaded');
         if (!window.Face.ready) {
-          ensureFaceModelsLoaded().catch(() => {});
+          ensureFaceModelsLoaded().catch(() => {
+            if (!STATE.authed && navigator.onLine === false && !window.Face.ready) {
+              FACE_STATE.faceEngineOffline = true;
+              setAuthHint('', '');
+            }
+          });
           if (!window.Face.detectorReady && typeof window.Face.loadDetector === 'function') {
             await window.Face.loadDetector();
           } else if (!window.Face.detectorReady) {
@@ -105336,6 +105356,29 @@
       updateAuthFaceUi();
       return false;
     }
+    // Face ID on demand: the sign-in screen starts the camera and the engine by itself only on a device that
+    // uses Face ID (kiosk, used before, or camera already allowed). Otherwise it waits behind "Tap for Face ID".
+    // A forced start (the tap, or the Face step of a 2-step sign-in) always goes through.
+    if (forceStart) {
+      // The person asked for Face ID (the tap) or the sign-in needs it (Face step): neither an earlier pause
+      // nor the on-demand hold may stand in the way of the camera.
+      FACE_STATE.authCamStoppedByUser = false;
+      FACE_STATE.authCamOnDemand = false;
+    } else if (!FACE_STATE.pending2faUser && window.Face && typeof window.Face.gateAutoStart === 'function') {
+      const autoStart = await window.Face.gateAutoStart();
+      if (STATE.authed) return false;
+      if (!autoStart) {
+        // Held by policy, not paused by a person: kept in its own flag so a later forced start is never refused.
+        // Re-checked on every focus or visibility change, so only touch the screen the first time.
+        if (!FACE_STATE.authCamOnDemand) {
+          FACE_STATE.authCamOnDemand = true;
+          updateAuthFaceUi();
+          setAuthHint('', '');
+        }
+        return false;
+      }
+      FACE_STATE.authCamOnDemand = false;
+    }
     if (!forceStart && FACE_STATE.camStarting && _authCamStartPromise) {
       return _authCamStartPromise;
     }
@@ -105365,7 +105408,14 @@
           }
         }
         return true;
-      }).catch(() => false);
+      }).catch(() => {
+        // The engine is fetched on first use: with no connection on a device that never used Face ID, say so
+        if (!STATE.authed && navigator.onLine === false && !(window.Face && window.Face.ready)) {
+          FACE_STATE.faceEngineOffline = true;
+          setAuthHint('', '');
+        }
+        return false;
+      });
     };
     const modelsPromise = startModelsWhenReady();
     FACE_STATE.camStarting = true;
@@ -128505,8 +128555,11 @@
         stopAuthFaceScanner();
         stopFaceCamera();
         setAuthHint('', '');
+        // Pausing the camera here means "not on this device": the sign-in screen stops starting Face ID by itself.
+        if (window.Face && typeof window.Face.forgetDeviceFaceId === 'function' && !STATE.kioskLocked) window.Face.forgetDeviceFaceId();
       } else {
         FACE_STATE.authCamStoppedByUser = false;
+        if (window.Face && typeof window.Face.resumeDeviceFaceId === 'function') window.Face.resumeDeviceFaceId();
         startAuthFaceScanner(true);
       }
     };
@@ -128516,6 +128569,8 @@
     if (authCamOffEl) authCamOffEl.addEventListener('click', () => {
       if (!FACE_STATE.camActive && getWorkspaceAuthMode() !== 'pin_only') {
         FACE_STATE.authCamStoppedByUser = false;
+        // The person is asking for Face ID here: lift an earlier pause (the device is marked once it loads)
+        if (window.Face && typeof window.Face.resumeDeviceFaceId === 'function') window.Face.resumeDeviceFaceId();
         startAuthFaceScanner(true);
       }
     });
@@ -129657,7 +129712,8 @@
       if (!STATE.authed) updateAuthFaceUi();
     });
     // Cloud relay: on start, when the tab comes back, when the network returns
-    if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST && window.Face && !window.Face.ready) {
+    const faceEngineWarming = Boolean(window.Face && !window.Face.ready && (typeof window.Face.gateAutoStartNow !== 'function' || window.Face.gateAutoStartNow()));
+    if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST && faceEngineWarming) {
       let syncedInit = false;
       const runInitSync = () => {
         if (syncedInit) return;
@@ -129818,6 +129874,14 @@
         FACE_STATE.pending2faUser = email ? (STATE.users.find(x => norm(x.email) === norm(email)) || null) : null;
         return FACE_STATE.pending2faUser ? FACE_STATE.pending2faUser.email : null;
       },
+      // The Face step of a 2-step sign-in, exactly as performLogin starts it (forced start)
+      startGateFaceStep: () => startAuthFaceScanner(true),
+      gateCamState: () => ({
+        onDemand: Boolean(FACE_STATE.authCamOnDemand),
+        stoppedByUser: Boolean(FACE_STATE.authCamStoppedByUser),
+        camActive: Boolean(FACE_STATE.camActive),
+        hint: ($('authFaceHint') || {}).textContent || ''
+      }),
       setAuthMode: (mode, seatEmail) => {
         if (seatEmail) {
           const u = STATE.users.find(x => norm(x.email) === norm(seatEmail));
@@ -131404,7 +131468,7 @@
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) safeRender();
 
-        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser) {
+        if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser && !FACE_STATE.authCamOnDemand) {
           await new Promise(resolve => {
             let done = false;
             const finish = () => { if (!done) { done = true; resolve(); } };
@@ -131487,7 +131551,7 @@
     }
     const kickHydration = () => {
       const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
-      if (isAutoTest || STATE.authed || FACE_STATE.authCamStoppedByUser) {
+      if (isAutoTest || STATE.authed || FACE_STATE.authCamStoppedByUser || FACE_STATE.authCamOnDemand) {
         setTimeout(hydrateSeedData, 0);
         return;
       }
@@ -131500,7 +131564,7 @@
       window.addEventListener('mfg:auth-gate-closed', go, { once: true });
       const idleTry = () => {
         if (started) return;
-        if (STATE.authed || FACE_STATE.authCamStoppedByUser || (!FACE_STATE.busy && !FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak && !FACE_STATE.detectorStreak)) {
+        if (STATE.authed || FACE_STATE.authCamStoppedByUser || FACE_STATE.authCamOnDemand || (!FACE_STATE.busy && !FACE_STATE.streakCount && !FACE_STATE.edgeProbeStreak && !FACE_STATE.detectorStreak)) {
           go();
         } else {
           setTimeout(go, 2500);

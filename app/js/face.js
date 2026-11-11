@@ -69,6 +69,7 @@ const Face = (() => {
         s.onload = () => (typeof faceapi !== "undefined" ? resolve() : reject(new Error("face-api.js loaded without global")));
         s.onerror = () => {
           faceApiScriptPromise = null;
+          try { s.remove(); } catch (_) {}
           reject(new Error("Failed to load vendor/face-api.js"));
         };
         (document.head || document.documentElement).appendChild(s);
@@ -185,6 +186,90 @@ const Face = (() => {
     earlyPreviewTimer = setTimeout(tick, 16);
   }
 
+  // ---- Face ID on demand ---------------------------------------------------------------------------
+  // The engine (1.3 MB script) and its weights (6.4 MB to 12 MB) are fetched only on a device that uses
+  // Face ID: a kiosk station, a device where Face ID has been started before, or a browser that has
+  // already granted this site the camera. Everyone else gets the "Tap for Face ID" overlay and pays
+  // nothing until they tap it.
+  const FACE_DEVICE_KEY = "isabi_mfg_face_device_v1";
+  let gateAutoNow = false;
+  let gateAutoPromise = null;
+
+  function isKioskBoot() {
+    try {
+      const kParam = String(new URLSearchParams(window.location.search || "").get("kiosk") || "").toLowerCase();
+      return kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel" || /ISABIKiosk\//i.test(navigator.userAgent || "");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Device setting: "1" = Face ID is used here, "0" = paused here by a person, absent = never asked for.
+  function readDeviceFaceSetting() {
+    try { return localStorage.getItem(FACE_DEVICE_KEY); } catch (_) { return null; }
+  }
+
+  function deviceUsesFaceId() {
+    return readDeviceFaceSetting() === "1";
+  }
+
+  // Called once the engine has really loaded (never on a mere attempt), and again whenever it is asked for.
+  function markDeviceUsesFaceId() {
+    gateAutoNow = true;
+    gateAutoPromise = Promise.resolve(true);
+    try { localStorage.setItem(FACE_DEVICE_KEY, "1"); } catch (_) {}
+  }
+
+  // "Pause Camera" on the sign-in screen: the person does not want Face ID here. Recorded as "0" so it also
+  // holds on browsers that keep the camera permission; "Tap for Face ID" turns it back on.
+  function forgetDeviceFaceId() {
+    if (isKioskBoot()) return;
+    gateAutoNow = false;
+    gateAutoPromise = Promise.resolve(false);
+    try { localStorage.setItem(FACE_DEVICE_KEY, "0"); } catch (_) {}
+  }
+
+  // "Tap for Face ID" after a pause: lift the pause; the device is marked again once the engine has loaded.
+  function resumeDeviceFaceId() {
+    if (readDeviceFaceSetting() !== "0") return;
+    try { localStorage.removeItem(FACE_DEVICE_KEY); } catch (_) {}
+    gateAutoPromise = null;
+  }
+
+  function cameraAlreadyGranted() {
+    try {
+      if (!navigator.permissions || typeof navigator.permissions.query !== "function") return Promise.resolve(false);
+      return navigator.permissions.query({ name: "camera" }).then(st => Boolean(st && st.state === "granted")).catch(() => false);
+    } catch (_) {
+      return Promise.resolve(false);
+    }
+  }
+
+  // Resolves true when the sign-in screen should start the camera and the engine by itself.
+  function gateAutoStart() {
+    if (gateAutoPromise) return gateAutoPromise;
+    if (typeof window === "undefined") return Promise.resolve(false);
+    const setting = readDeviceFaceSetting();
+    if (isKioskBoot() || setting === "1") {
+      gateAutoNow = true;
+      gateAutoPromise = Promise.resolve(true);
+      return gateAutoPromise;
+    }
+    gateAutoNow = false;
+    if (setting === "0") {
+      gateAutoPromise = Promise.resolve(false);
+      return gateAutoPromise;
+    }
+    const pending = cameraAlreadyGranted().then(ok => {
+      // A tap or a pause that happened while the browser was answering wins over this answer
+      if (gateAutoPromise !== pending) return gateAutoNow;
+      gateAutoNow = ok;
+      return ok;
+    });
+    gateAutoPromise = pending;
+    return gateAutoPromise;
+  }
+
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
     // If booting into a Kiosk station (?kiosk=attendance|sales|raw|fuel or Android Kiosk wrapper),
@@ -193,12 +278,16 @@ const Face = (() => {
     try {
       const sp = new URLSearchParams(window.location.search || "");
       if (sp.get("phone_scan") || sp.get("ps")) return;
-      const kParam = String(sp.get("kiosk") || "").toLowerCase();
-      if (kParam === "attendance" || kParam === "sales" || kParam === "raw" || kParam === "fuel" || /ISABIKiosk\//i.test(navigator.userAgent || "")) {
+      if (isKioskBoot()) {
+        gateAutoStart();
         load().catch(() => {});
         return;
       }
     } catch (_) {}
+    gateAutoStart().then(ok => { if (ok) prewarmGate(); });
+  }
+
+  function prewarmGate() {
     // Request webcam stream AND start neural model loading in parallel immediately when #authGate is visible
     // so both camera hardware and WebGL shaders are hot at the same time (zero sequential wait).
     const gate = document.getElementById("authGate");
@@ -449,10 +538,23 @@ const Face = (() => {
     }
   }
 
+  let lastLoadFailAt = 0;
   async function load() {
-    if (ready) return;
-    if (loading) return loading;
     const isAutoTest = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    // A loaded engine is what "this device uses Face ID" means: from then on the sign-in screen starts it by
+    // itself and the Service Worker keeps the weights for offline use. Never on a mere attempt (an offline tap
+    // must not mark the device), never under a test harness, and never against a person's pause.
+    const markIfWanted = () => {
+      if (!isAutoTest && readDeviceFaceSetting() !== "0") markDeviceUsesFaceId();
+    };
+    if (ready) { markIfWanted(); return; }
+    if (loading) {
+      // Asked for again while the weights are still coming in (pause, then tap): mark once the engine is there
+      if (typeof faceapi !== "undefined") markIfWanted();
+      return loading;
+    }
+    // The sign-in loop retries many times a second: after a failure, wait a little before trying the network again
+    if (Date.now() - lastLoadFailAt < 4000) throw new Error("Face ID engine unavailable, retrying shortly");
     let resolveDetectorStage;
     let rejectDetectorStage;
     detectorLoading = new Promise((res, rej) => {
@@ -467,6 +569,7 @@ const Face = (() => {
       }
       await ensureFaceApiScript(true);
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
+      markIfWanted();
       const base = "./vendor/models";
       try {
         if (faceapi.tf && typeof faceapi.tf.env === "function") {
@@ -556,6 +659,7 @@ const Face = (() => {
         try { window.dispatchEvent(new CustomEvent("mfg:face-models-ready")); } catch (_) {}
       }
     })().catch(err => {
+      lastLoadFailAt = Date.now();
       loading = null;
       detectorLoading = null;
       if (rejectDetectorStage) rejectDetectorStage(err);
@@ -1120,6 +1224,11 @@ const Face = (() => {
     load,
     loadDetector,
     prewarm,
+    gateAutoStart,
+    gateAutoStartNow: () => gateAutoNow,
+    deviceUsesFaceId,
+    forgetDeviceFaceId,
+    resumeDeviceFaceId,
     isPrewarming: () => Boolean(earlyStreamPromise && !earlyCancelled),
     consumeEarlyStream,
     trackStream,

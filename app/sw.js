@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.257';
+const SHELL_CACHE = 'isabi-mfg-v19.6.258';
 const SHELL_VER = SHELL_CACHE.replace(/^isabi-mfg-v/, '');
 const DATA_CACHE = 'isabi-mfg-data-v3';
 const SHELL_DIR = new URL('./', self.location.href).pathname;
@@ -8,52 +8,54 @@ const SHELL_DIR = new URL('./', self.location.href).pathname;
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.257',
-  './css/geo_dispatch.css?v=19.6.257',
-  './css/daily_ops.css?v=19.6.257',
-  './css/ask_isabi.css?v=19.6.257',
-  './css/fleet_pnl.css?v=19.6.257',
-  './css/smart_scan.css?v=19.6.257',
-  './css/doc_scanner.css?v=19.6.257',
-  './css/ai_edge.css?v=19.6.257',
-  './css/telematics.css?v=19.6.257',
-  './css/step_up_auth.css?v=19.6.257',
-  './css/command_palette.css?v=19.6.257',
-  './js/face.js?v=19.6.257',
-  './js/endpoints.js?v=19.6.257',
-  './js/seed_manifest.js?v=19.6.257',
-  './js/icons.js?v=19.6.257',
-  './js/geo_dispatch.js?v=19.6.257',
-  './js/forms_engine.js?v=19.6.257',
-  './js/pbi_pages.js?v=19.6.257',
-  './js/rdl_reports.js?v=19.6.257',
-  './js/kiosk_print.js?v=19.6.257',
-  './js/table_columns.js?v=19.6.257',
-  './js/daily_ops.js?v=19.6.257',
-  './js/i18n.js?v=19.6.257',
-  './js/ask_isabi.js?v=19.6.257',
-  './js/fleet_pnl.js?v=19.6.257',
-  './js/doc_scanner.js?v=19.6.257',
-  './js/smart_scan.js?v=19.6.257',
-  './js/ai_edge.js?v=19.6.257',
-  './js/telematics.js?v=19.6.257',
-  './js/local_dev_roster.js?v=19.6.257',
-  './js/step_up_auth.js?v=19.6.257',
-  './js/command_palette.js?v=19.6.257',
-  './js/a11y_dialog.js?v=19.6.257',
-  './js/app.js?v=19.6.257',
-  './manifest.json?v=19.6.257',
-  './favicon.ico?v=19.6.257',
-  './favicon-dark.ico?v=19.6.257',
-  './icon.svg?v=19.6.257',
-  './icon-dark.svg?v=19.6.257',
-  './icon-180.png?v=19.6.257',
-  './icon-192.png?v=19.6.257',
-  './icon-512.png?v=19.6.257',
-  './icon-512-maskable.png?v=19.6.257'
+  './css/app.css?v=19.6.258',
+  './css/geo_dispatch.css?v=19.6.258',
+  './css/daily_ops.css?v=19.6.258',
+  './css/ask_isabi.css?v=19.6.258',
+  './css/fleet_pnl.css?v=19.6.258',
+  './css/smart_scan.css?v=19.6.258',
+  './css/doc_scanner.css?v=19.6.258',
+  './css/ai_edge.css?v=19.6.258',
+  './css/telematics.css?v=19.6.258',
+  './css/step_up_auth.css?v=19.6.258',
+  './css/command_palette.css?v=19.6.258',
+  './js/face.js?v=19.6.258',
+  './js/endpoints.js?v=19.6.258',
+  './js/seed_manifest.js?v=19.6.258',
+  './js/icons.js?v=19.6.258',
+  './js/geo_dispatch.js?v=19.6.258',
+  './js/forms_engine.js?v=19.6.258',
+  './js/pbi_pages.js?v=19.6.258',
+  './js/rdl_reports.js?v=19.6.258',
+  './js/kiosk_print.js?v=19.6.258',
+  './js/table_columns.js?v=19.6.258',
+  './js/daily_ops.js?v=19.6.258',
+  './js/i18n.js?v=19.6.258',
+  './js/ask_isabi.js?v=19.6.258',
+  './js/fleet_pnl.js?v=19.6.258',
+  './js/doc_scanner.js?v=19.6.258',
+  './js/smart_scan.js?v=19.6.258',
+  './js/ai_edge.js?v=19.6.258',
+  './js/telematics.js?v=19.6.258',
+  './js/local_dev_roster.js?v=19.6.258',
+  './js/step_up_auth.js?v=19.6.258',
+  './js/command_palette.js?v=19.6.258',
+  './js/a11y_dialog.js?v=19.6.258',
+  './js/app.js?v=19.6.258',
+  './manifest.json?v=19.6.258',
+  './favicon.ico?v=19.6.258',
+  './favicon-dark.ico?v=19.6.258',
+  './icon.svg?v=19.6.258',
+  './icon-dark.svg?v=19.6.258',
+  './icon-180.png?v=19.6.258',
+  './icon-192.png?v=19.6.258',
+  './icon-512.png?v=19.6.258',
+  './icon-512-maskable.png?v=19.6.258'
 ];
 
-const VENDOR_ASSETS = [
+// Face ID engine + weights (about 13.7 MB): warmed for offline use only on a device that uses Face ID
+// (the page says so with `warmFace`); whatever Face ID actually fetches is still cached on first use.
+const FACE_ASSETS = [
   './vendor/face-api.js?v=1',
   './vendor/models/tiny_face_detector_model-weights_manifest.json',
   './vendor/models/tiny_face_detector_model.bin',
@@ -64,10 +66,19 @@ const VENDOR_ASSETS = [
   './vendor/models/face_landmark_68_model-weights_manifest.json',
   './vendor/models/face_landmark_68_model.bin',
   './vendor/models/ssd_mobilenetv1_model-weights_manifest.json',
-  './vendor/models/ssd_mobilenetv1_model.bin',
+  './vendor/models/ssd_mobilenetv1_model.bin'
+];
+const MAP_ASSETS = [
   './vendor/leaflet/leaflet.css',
   './vendor/leaflet/leaflet.js'
 ];
+
+// Shell navigation: how long to wait for the network while a cached shell is ready to step in, and how long
+// to keep answering from cache straight away after the network has just proved dead.
+const NAV_WAIT_MS = 2000;
+const NET_DOWN_HOLD_MS = 15000;
+const NAV_TIMED_OUT = Symbol('nav-timed-out');
+let netDownUntil = 0;
 
 // Exact byte-length integrity map for Face ID neural weights: prevents truncated/aborted
 // streams from ever being stored in or served from DATA_CACHE.
@@ -201,9 +212,18 @@ self.addEventListener('install', event => {
       Promise.all(
         SHELL_ASSETS.map(url => {
           if (url.includes('?v=')) {
-            return cache.match(url).then(cached => {
+            return cache.match(url).then(async cached => {
               if (cached) return null;
-              return fetchDedup(url, { cache: 'reload' })
+              // The page (or the previous worker) has normally just fetched this exact versioned URL. Take that
+              // copy, or revalidate it (a 304 carries no body), instead of downloading the whole shell twice.
+              try {
+                const prior = await caches.match(new URL(url, self.location.href).href);
+                if (prior && isCacheableAsset(url, prior)) {
+                  await cache.put(url, prior.clone());
+                  return null;
+                }
+              } catch (_) {}
+              return fetchDedup(url, { cache: 'no-cache' })
                 .then(res => (isCacheableAsset(url, res) ? cache.put(url, res) : null))
                 .catch(() => null);
             });
@@ -360,7 +380,8 @@ self.addEventListener('fetch', event => {
   }
 
   // Shell HTML navigation (`/app/` or `/app/index.html`): network-first against canonical `./?v=...`
-  // with strict same-origin `text/html` validation, `cleanNavigationResponse`, and 3s offline/captive-portal fallback
+  // with strict same-origin `text/html` validation and `cleanNavigationResponse`. A cached shell steps in after
+  // NAV_WAIT_MS (and at once for NET_DOWN_HOLD_MS after a timeout); with nothing cached the network is awaited.
   if (isShellNav) {
     event.respondWith(
       (async () => {
@@ -370,29 +391,57 @@ self.addEventListener('fetch', event => {
           (await cache.match('./')) ||
           (await caches.match('./index.html')) ||
           (await caches.match('./'));
+        const cachedShell = await matchCachedShell();
+        let rawRes = null;
+        // The network copy is never aborted: when the cached shell answers first, this keeps running.
+        const netShell = (async () => {
+          const navUrl = new URL(`./?v=${SHELL_VER}`, self.location.href).href;
+          rawRes = await fetch(new Request(navUrl, { cache: 'no-cache' }));
+          if (!isSameOriginHtmlShell(rawRes)) return null;
+          return cleanNavigationResponse(rawRes);
+        })();
+        netShell.catch(() => {});
+        const storeShell = res => Promise.all([
+          cache.put('./', res.clone()),
+          cache.put('./index.html', res.clone())
+        ]).catch(() => {});
+        // A shell that arrives after the cached one has already answered was never shown, so the page never
+        // fetched that release's assets. Keep it only when it is this worker's own version: a newer release's
+        // HTML over this cache's older scripts would be a mixed shell on the next offline start. The newer
+        // release arrives through its own Service Worker install instead.
+        const finishInBackground = () => event.waitUntil(
+          netShell.then(async r => {
+            if (!r) return;
+            netDownUntil = 0;
+            const html = await r.clone().text();
+            if (html.includes(`__MFG_SHELL_VER = '${SHELL_VER}'`)) await storeShell(r);
+          }).catch(() => {})
+        );
         try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 3000);
-          let rawRes;
-          try {
-            const navUrl = new URL(`./?v=${SHELL_VER}`, self.location.href).href;
-            rawRes = await fetch(new Request(navUrl, { cache: 'no-cache' }), { signal: ctrl.signal });
-          } finally {
-            clearTimeout(timer);
+          if (cachedShell && Date.now() < netDownUntil) {
+            finishInBackground();
+            return cleanNavigationResponse(cachedShell);
           }
-          if (isSameOriginHtmlShell(rawRes)) {
-            const cleanRes = await cleanNavigationResponse(rawRes);
-            cache.put('./', cleanRes.clone()).catch(() => {});
-            cache.put('./index.html', cleanRes.clone()).catch(() => {});
-            return cleanRes;
+          let timer = null;
+          const first = cachedShell
+            ? await Promise.race([netShell, new Promise(resolve => { timer = setTimeout(() => resolve(NAV_TIMED_OUT), NAV_WAIT_MS); })])
+            : await netShell;
+          if (timer) clearTimeout(timer);
+          if (first === NAV_TIMED_OUT) {
+            netDownUntil = Date.now() + NET_DOWN_HOLD_MS;
+            finishInBackground();
+            return cleanNavigationResponse(cachedShell);
           }
-          const cachedFallback = await matchCachedShell();
-          if (cachedFallback) return cleanNavigationResponse(cachedFallback);
+          if (first) {
+            netDownUntil = 0;
+            event.waitUntil(storeShell(first));
+            return first;
+          }
+          if (cachedShell) return cleanNavigationResponse(cachedShell);
           if (rawRes && isSameOriginUrl(rawRes.url)) return cleanNavigationResponse(rawRes);
           return Response.error();
         } catch (_) {
-          const fallback = await matchCachedShell();
-          if (fallback) return cleanNavigationResponse(fallback);
+          if (cachedShell) return cleanNavigationResponse(cachedShell);
           return Response.error();
         }
       })()
@@ -442,7 +491,8 @@ self.addEventListener('message', event => {
         const cache = await caches.open(DATA_CACHE);
         const manifest = data.manifest || {};
         const targets = [];
-        VENDOR_ASSETS.forEach(u => targets.push(u));
+        MAP_ASSETS.forEach(u => targets.push(u));
+        if (data.warmFace) FACE_ASSETS.forEach(u => targets.push(u));
         let activeCoreHref = '';
         let activeRecHref = '';
         let activeIndHref = '';
