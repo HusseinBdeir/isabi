@@ -2839,7 +2839,7 @@
   const SAMPLE_RE_CAM_WIRE_PACK = [
     'CAM | 4235 Msaytbeh | كهرباء ومولد مشترك | Pool Cost: $4,400.00 | Markup: 5%',
     'CAM | 776 Ras Beirut (Hamra Pavillon) | صيانة مصاعد وتكييف مشترك | Pool Cost: $2,800.00 | Markup: 5%',
-    'WIRE | محمد علي فوز | Fresh USD Bank Wire | Amount: $9,975.00 | 2026-10-30',
+    'WIRE | أرز الشرق العقارية | Fresh USD Bank Wire | Amount: $9,975.00 | 2026-10-30',
     'WIRE | Infinitas SAL | Bank Transfer USD | Amount: $5,550.00 | 2026-10-31'
   ].join('\n');
 
@@ -2869,24 +2869,35 @@
         const mkM = line.match(/markup\s*:\s*([\d,.]+)\s*%/i);
         const poolCost = costM ? Number(costM[1].replace(/,/g, '')) : 4400;
         const markupPct = mkM ? Number(mkM[1].replace(/,/g, '')) : 5;
+        const firstTok = propName.toLowerCase().split(/\s+/)[0] || '';
+        const hitProp = properties.find(p => {
+          if (!p) return false;
+          const hay = [p.name, p.code, p.plot_no, p.id].filter(Boolean).join(' ').toLowerCase();
+          return semanticSimilarity(propName, p.name || '') >= 0.35 || (firstTok && hay.includes(firstTok));
+        });
 
         let occUnits = units.filter(u =>
           u &&
           !/vacant|fit-out/i.test(String(u.occupancy || 'Occupied')) &&
-          (semanticSimilarity(propName, u.property || '') >= 0.35 || String(u.property || '').toLowerCase().includes(propName.toLowerCase().split(' ')[0]))
+          (semanticSimilarity(propName, u.property || '') >= 0.35 || (firstTok && String(u.property || '').toLowerCase().includes(firstTok)))
         );
-        if (!occUnits.length) {
-          const hitProp = properties.find(p => p && (semanticSimilarity(propName, p.name || '') >= 0.35 || String(p.name || '').toLowerCase().includes(propName.toLowerCase().split(' ')[0])));
-          if (hitProp) {
-            const matchLease = leases.find(l => l && semanticSimilarity(hitProp.name, l.property || '') >= 0.35);
-            occUnits = [{
-              code: hitProp.code || hitProp.id || `PRP-${idx + 1}`,
-              company: hitProp.company || 'Properties',
-              property: hitProp.name,
-              tenant: (matchLease && matchLease.tenant) || (/776|hamra/i.test(hitProp.name) ? 'Hamra Medical & Diagnostics' : `${hitProp.name} Commercial Tenant`),
-              area_sqm: Number(hitProp.area_sqm || 500)
-            }];
-          }
+        if (!occUnits.length && hitProp) {
+          occUnits = units.filter(u =>
+            u &&
+            !/vacant|fit-out/i.test(String(u.occupancy || 'Occupied')) &&
+            String(u.company || '') === String(hitProp.company || '') &&
+            /4235/i.test(String(hitProp.company || ''))
+          );
+        }
+        if (!occUnits.length && hitProp) {
+          const matchLease = leases.find(l => l && (semanticSimilarity(hitProp.name, l.property || '') >= 0.35 || String(l.company || '') === String(hitProp.company || '')));
+          occUnits = [{
+            code: hitProp.code || hitProp.id || `PRP-${idx + 1}`,
+            company: hitProp.company || 'Properties',
+            property: hitProp.name,
+            tenant: (matchLease && matchLease.tenant) || (/776|hamra/i.test(hitProp.name) ? 'Hamra Medical & Diagnostics' : `${hitProp.name} Commercial Tenant`),
+            area_sqm: Number(hitProp.area_sqm || 500)
+          }];
         }
         const totSqm = occUnits.reduce((s, u) => s + Number(u.area_sqm || 0), 0) || 1;
         occUnits.slice(0, 4).forEach(u => {
@@ -2924,10 +2935,11 @@
         let bestLease = null;
         let bestSc = 0;
         leases.forEach(l => {
-          const sc = semanticSimilarity(tenantRaw, l.tenant || '');
+          const sc = Math.max(semanticSimilarity(tenantRaw, l.tenant || ''), semanticSimilarity(tenantRaw, l.id || '') * 0.85);
           if (sc > bestSc) { bestSc = sc; bestLease = l; }
         });
-        const matchedTenant = bestLease ? bestLease.tenant : (/فوز|fawz/i.test(tenantRaw) ? 'Mohamad Ali Fawz' : sanitizeOutward(tenantRaw));
+        if (bestSc < 0.25) bestLease = demoOnly(leases.length ? leases[idx % leases.length] : null, null);
+        const matchedTenant = bestLease ? bestLease.tenant : sanitizeOutward(tenantRaw);
         const company = (bestLease && bestLease.company) || (/hamra/i.test(matchedTenant) ? 'Properties' : '4235 Company S.A.L');
         const property = (bestLease && bestLease.property) || '4235 Msaytbeh';
 
@@ -5880,7 +5892,36 @@
     scheduleSyncSurfaces();
   }
 
+  function resetTransientDemoInputs() {
+    EDGE_STATE.insReconText = '';
+    EDGE_STATE.insReconRows = null;
+    EDGE_STATE.mfgReconText = '';
+    EDGE_STATE.mfgReconRows = null;
+    EDGE_STATE.hspReconText = '';
+    EDGE_STATE.hspReconRows = null;
+    EDGE_STATE.reReconText = '';
+    EDGE_STATE.reReconPack = null;
+    EDGE_STATE.trdReconText = '';
+    EDGE_STATE.trdReconPack = null;
+    EDGE_STATE.hldBankText = '';
+    EDGE_STATE.hldBankPack = null;
+    EDGE_STATE.hldMatches = null;
+    EDGE_STATE.reAddendumText = '';
+    EDGE_STATE.reAddendumParsed = null;
+    EDGE_STATE.mfgClosePack = null;
+    EDGE_STATE.hspClosePack = null;
+    EDGE_STATE.reClosePack = null;
+    EDGE_STATE.trdClosePack = null;
+    EDGE_STATE.insClosePack = null;
+    EDGE_STATE.hldGatePack = null;
+    EDGE_STATE.hldBoardBrief = null;
+    if (EDGE_STATE.dopsBriefCache && typeof EDGE_STATE.dopsBriefCache.clear === 'function') {
+      EDGE_STATE.dopsBriefCache.clear();
+    }
+  }
+
   window.MFG_AI_EDGE = {
+    resetTransientDemoInputs,
     init,
     syncAllSurfacesNow,
     semanticSimilarity,

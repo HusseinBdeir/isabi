@@ -137,8 +137,37 @@
     return Boolean(HAS_LOCAL_API || window.__ISABI_TEST_EDGE || (window.ISABI_HAS_EDGE_API && !IS_HEADLESS_HARNESS));
   }
   function edgeApiFetch(url, opts = {}) {
+    const urlStr = String(url || '');
+    const method = String((opts && opts.method) || 'GET').toUpperCase();
+    const isAuthCheckUrl = /\/api\/auth\/(?:login|logout|me)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isReadOnlyAiOrScan = /\/api\/(?:ai-edge|ask|smart-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const isStateDataReadUrl = /\/api\/(?:sentinel_reviews|alert_rules|industry_domain_store|staff_biometrics|work_schedules|geo_config|records|blobs|sync|phone-scan)(?:\b|\/|\?|$)/i.test(urlStr);
+    const inDemoSession = isDemoSandboxSession();
+    const inDemoCo = !inDemoSession && STATE.company === DEMO_COMPANY_KEY;
+    if ((inDemoSession || inDemoCo) && method !== 'GET' && method !== 'HEAD' && !isAuthCheckUrl && !isReadOnlyAiOrScan) {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, demo_isolated: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    }
+    if (inDemoCo && (method === 'GET' || method === 'HEAD') && isStateDataReadUrl) {
+      return Promise.resolve(new Response(JSON.stringify({
+        ok: true,
+        demo_isolated: true,
+        items: [],
+        rows: [],
+        reviews: {},
+        rules: { overrides: {}, custom: [] },
+        records: {},
+        industryCustomRows: {},
+        industryRowEdits: {}
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    }
     const headers = Object.assign({}, opts.headers || {});
-    if (isDemoScopeActive()) {
+    if (inDemoSession) {
       headers['X-ISABI-Demo'] = '1';
     } else if (_edgeSessionToken && !headers['X-ISABI-Session']) {
       headers['X-ISABI-Session'] = _edgeSessionToken;
@@ -275,7 +304,7 @@
 
   const STATE = {
     view: 'overview',
-    company: (SAVED_FILTER.company && typeof SAVED_FILTER.company === 'string') ? SAVED_FILTER.company : 'manufacturing-group',
+    company: (SAVED_FILTER.company && typeof SAVED_FILTER.company === 'string' && SAVED_FILTER.company !== DEMO_COMPANY_KEY) ? SAVED_FILTER.company : 'manufacturing-group',
     demoCompanyIndustry: 'Hospitality & Resorts',
     companySwitchIndFilter: 'all',
     enterpriseScalePreview: false,
@@ -2769,7 +2798,7 @@
   }
 
   function saveFilterState() {
-    if (IS_AUTOMATED_TEST) return;
+    if (IS_AUTOMATED_TEST || isDemoScopeActive() || STATE.company === DEMO_COMPANY_KEY) return;
     try {
       appStoreSetRaw('isabi_mfg_filter_state_v1', JSON.stringify({
         company: STATE.company,
@@ -3114,9 +3143,16 @@
   function matchesCashScopeCompany(r, coKey, allowed, opts = {}) {
     if (!r) return false;
     const c = String(r.company || 'WTC').trim() || 'WTC';
-    if (Array.isArray(allowed) && allowed.length && !allowed.includes(c)) return false;
-    if (opts.excludeLions && /^lions\s*transport$/i.test(c)) return false;
     const sk = String(coKey || 'manufacturing-group');
+    if (sk !== DEMO_COMPANY_KEY && Array.isArray(allowed) && allowed.length && !allowed.includes(c)) return false;
+    if (opts.excludeLions && /^lions\s*transport$/i.test(c)) return false;
+    if (sk === DEMO_COMPANY_KEY) {
+      const targetInd = getActiveIndustry(DEMO_COMPANY_KEY);
+      if (targetInd === 'Manufacturing') return /^(wtc|bbconstruction|lions\s*transport)$/i.test(c);
+      const rowKey = COMPANY_KEY_BY_NAME[c] || slugCompanyKey(c);
+      const rowInd = r._industry || COMPANY_INDUSTRY_BY_KEY[rowKey] || inferIndustryForCompany(c);
+      return rowInd === targetInd;
+    }
     if (sk === 'manufacturing-group') {
       return /^(wtc|bbconstruction|lions\s*transport)$/i.test(c);
     }
@@ -17466,7 +17502,7 @@
 
   function persistSentinelReviewRows(changedMap) {
     saveLocalAuthAndRecords();
-    if (hasServerApi() && !isDemoSandboxSession() && changedMap && Object.keys(changedMap).length) {
+    if (hasServerApi() && !isDemoScopeActive() && changedMap && Object.keys(changedMap).length) {
       edgeApiFetch('./api/sentinel_reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -19353,7 +19389,7 @@
   function persistAlertRulesChange(changedOverrides, changedCustom) {
     invalidateAlertRuleCaches();
     saveLocalAuthAndRecords();
-    if (hasServerApi() && !isDemoSandboxSession()) {
+    if (hasServerApi() && !isDemoScopeActive()) {
       edgeApiFetch('./api/alert_rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32049,7 +32085,7 @@
         tx.objectStore('blobs').put({ id: bid, data_url: dataUrl, updated_at: Date.now() });
       } catch (_) {}
     });
-    if (hasServerApi() && !isDemoSandboxSession() && dataUrl.includes(';base64,') && !/^data:image\/svg\+xml/i.test(dataUrl) && !/^(mi-doc-|dom-doc-)/.test(bid)) {
+    if (hasServerApi() && !isDemoScopeActive() && dataUrl.includes(';base64,') && !/^data:image\/svg\+xml/i.test(dataUrl) && !/^(mi-doc-|dom-doc-)/.test(bid)) {
       let co = String(companyHint || '').trim();
       if (!co && typeof document !== 'undefined') {
         const formCoEl = document.querySelector('#entryModal:not([hidden]) [name="company"], #entryModal:not([hidden]) #f_company');
@@ -32084,7 +32120,7 @@
         tx.objectStore('blobs').delete(bid);
       } catch (_) {}
     });
-    if (hasServerApi() && !isDemoSandboxSession()) {
+    if (hasServerApi() && !isDemoScopeActive()) {
       edgeApiFetch(`./api/blobs?id=${encodeURIComponent(bid)}`, { method: 'DELETE' }).catch(() => {});
     }
   }
@@ -47084,6 +47120,17 @@
       `;
     }).join('');
 
+    const gapRows = (trd.salesRows || []).filter(r => r && r.is_gap);
+    const firstGapId = gapRows[0] ? String(gapRows[0].id || '') : '';
+    const gapValText = s.invoiceGapCount > 0
+      ? `${s.invoiceGapCount} ${s.invoiceGapCount === 1 ? 'Gap' : 'Gaps'}${firstGapId ? ` (${esc(firstGapId)}${s.invoiceGapCount > 1 ? ` +${s.invoiceGapCount - 1}` : ''})` : ''}`
+      : '0 Missing Serials';
+    const korriEntered = (trd.salesRows || []).filter(r => r && !r.is_gap && r.company === 'Korri Auto').length;
+    const korriGaps = gapRows.filter(r => r.company === 'Korri Auto').length;
+    const shacmanEntered = (trd.salesRows || []).filter(r => r && !r.is_gap && r.company === 'Shacman').length;
+    const shacmanGaps = gapRows.filter(r => r.company === 'Shacman').length;
+    const gapSubText = `Korri ${korriEntered} entered (${korriGaps} ${korriGaps === 1 ? 'gap' : 'gaps'}) · Shacman ${shacmanEntered}/${shacmanEntered + shacmanGaps} ${shacmanGaps === 0 ? 'clean' : `(${shacmanGaps} gaps)`}`;
+
     const kpiHtml = `
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
@@ -47113,8 +47160,8 @@
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Invoice Books Sequence Check</div>
-          <div class="kpi-val ${s.invoiceGapCount > 0 ? 'warn' : 'good'}">${s.invoiceGapCount > 0 ? `${s.invoiceGapCount} Gap (PH-KA-2026-D02)` : '0 Missing Serials'}</div>
-          <div class="kpi-sub">Korri 34 entered (1 gap) · Shacman 20/20 clean</div>
+          <div class="kpi-val ${s.invoiceGapCount > 0 ? 'warn' : 'good'}">${gapValText}</div>
+          <div class="kpi-sub">${esc(gapSubText)}</div>
         </div>
       </div>
     `;
@@ -48441,7 +48488,7 @@
     };
 
     const properties = pickRe('properties', [
-      { id: 'PROP-4235', code: 'PLOT-4235-MSY', company: '4235 Company S.A.L', name: '4235 Msaytbeh Commercial Center', cadastry: 'Msaytbeh (Beirut)', plot_no: '4235', asset_class: 'Commercial Mixed-Use Building', area_sqm: 3120, units_total: 9, units_occupied: 8, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 10000000, share_val_usd: 10000000, annual_rent_usd: 306700, annual_noi_usd: 268400, status: 'Income Producing' },
+      { id: 'PROP-4235', code: 'PLOT-4235-MSY', company: '4235 Company S.A.L', name: '4235 Msaytbeh Commercial Center', cadastry: 'Msaytbeh (Beirut)', plot_no: '4235', asset_class: 'Commercial Mixed-Use Building', area_sqm: 3120, units_total: 9, units_occupied: 8, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 10000000, share_val_usd: 10000000, annual_rent_usd: 277500, annual_noi_usd: 225750, status: 'Income Producing' },
       { id: 'PROP-QROUH', code: 'PLOT-11-30-QRH', company: 'Properties', name: '11-30/13 Qrouh Coastal Development Land', cadastry: 'Qrouh (Keserwan)', plot_no: '11-30/13', asset_class: 'Prime Development Land', area_sqm: 18500, units_total: 1, units_occupied: 1, deed_shares: 1200, ownership_pct: 50.0, lgb_gross_usd: 15000000, share_val_usd: 7500000, annual_rent_usd: 0, annual_noi_usd: 0, status: 'Land Bank (LGB Appraised)' },
       { id: 'PROP-KAAK', code: 'PLOT-KAAK-SNB', company: 'Properties', name: 'Kaakaayit al Snoubar Agricultural & Solar Estate', cadastry: 'Kaakaayit al Snoubar (South)', plot_no: 'KAAK-01', asset_class: 'Estate & Agricultural Plot', area_sqm: 42000, units_total: 2, units_occupied: 2, deed_shares: 2400, ownership_pct: 100.0, lgb_gross_usd: 5000000, share_val_usd: 5000000, annual_rent_usd: 28000, annual_noi_usd: 24200, status: 'Income Producing' },
       { id: 'PROP-776RB', code: 'PLOT-776-HAMRA', company: 'Properties', name: '776 Ras Beirut (Hamra Pavillon)', cadastry: 'Ras Beirut (Hamra)', plot_no: '776', asset_class: 'Commercial & Medical Tower', area_sqm: 1640, units_total: 4, units_occupied: 4, deed_shares: 600, ownership_pct: 25.0, lgb_gross_usd: 4850000, share_val_usd: 1212500, annual_rent_usd: 78000, annual_noi_usd: 66500, status: 'Income Producing' },
@@ -48538,7 +48585,7 @@
     ]);
 
     const ownership = pickRe('ownership', [
-      { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 268400, entitled_noi_usd: 268400, distributed_usd: 220000, retained_reserve_usd: 48400, status: 'Distributed' },
+      { id: 'OWN-4235', company: '4235 Company S.A.L', property: '4235 Msaytbeh Commercial Center', holder: '4235 Company S.A.L (Bdeir Holding Group)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 225750, entitled_noi_usd: 225750, distributed_usd: 220000, retained_reserve_usd: 5750, status: 'Distributed' },
       { id: 'OWN-QROUH', company: 'Properties', property: '11-30/13 Qrouh Coastal Development Land', holder: 'Bdeir Holding Co-Ownership Pool (50%)', deed_shares: 1200, share_pct: 50.0, gross_noi_usd: 0, entitled_noi_usd: 0, distributed_usd: 0, retained_reserve_usd: 0, status: 'Land Bank Hold' },
       { id: 'OWN-776RB', company: 'Properties', property: '776 Ras Beirut (Hamra Pavillon)', holder: 'Bdeir Holding Co-Ownership Pool (25%)', deed_shares: 600, share_pct: 25.0, gross_noi_usd: 66500, entitled_noi_usd: 16625, distributed_usd: 15000, retained_reserve_usd: 1625, status: 'Distributed' },
       { id: 'OWN-1354MH', company: 'Properties', property: '1354/50 Mina el Hosn (Marina Tower)', holder: 'Bdeir Holding Wholly Owned (100%)', deed_shares: 2400, share_pct: 100.0, gross_noi_usd: 84500, entitled_noi_usd: 84500, distributed_usd: 75000, retained_reserve_usd: 9500, status: 'Distributed' },
@@ -48625,7 +48672,7 @@
       if (rlsReSet && (!r.company || !rlsReSet.has(String(r.company).toLowerCase()))) return false;
       return true;
     });
-    const fProperties = byCo(properties);
+    let fProperties = byCo(properties);
     const fUnits = byCo(units);
     const fInvoices = byCo(invoices).filter(r => rePm.matchDate(r.date));
     let fLeases = byCo(leases).filter(r => rePm.matchSpan(r.start_date, r.end_date));
@@ -48636,7 +48683,7 @@
     const fSales = byCo(sales).filter(r => rePm.matchDate(r.date));
     const fInstalments = byCo(instalments).filter(r => rePm.matchDate(r.due_date || r.date));
     const fValuations = byCo(valuations);
-    const fOwnership = byCo(ownership);
+    let fOwnership = byCo(ownership);
     const fWorkorders = byCo(workorders).filter(r => rePm.matchDate(r.date));
     const fRecharges = byCo(recharges).filter(r => rePm.matchDate(r.date));
 
@@ -48655,11 +48702,52 @@
     }, 0));
     const totalInvoicedTtcUsd = round2(fInvoices.reduce((s, r) => s + Number(r.amount_ttc_usd || 0), 0));
     const totalVat11Usd = round2(fInvoices.reduce((s, r) => s + Number(r.vat_usd || 0), 0));
+    const official4235VatCollectedUsd = round2(fInvoices.filter(r => r.company === '4235 Company S.A.L').reduce((s, r) => {
+      const vat = Number(r.vat_usd || 0);
+      if (!(vat > 0)) return s;
+      const ttc = Number(r.amount_ttc_usd || 0);
+      const coll = Math.max(0, Number(r.collected_usd || 0));
+      return s + (ttc > 0 ? vat * Math.min(1, coll / ttc) : (coll > 0 ? vat : 0));
+    }, 0));
     const totalCollectedRentUsd = round2(fInvoices.reduce((s, r) => s + Number(r.collected_usd || 0), 0));
     const openRentArUsd = round2(fInvoices.reduce((s, r) => s + Number(r.open_ar_usd || 0), 0));
     const unallocatedAdvancesUsd = round2(fReceipts.reduce((s, r) => s + Number(r.unallocated_adv_usd || 0), 0));
     const securityDepositsHeldUsd = round2(fReceipts.reduce((s, r) => s + Number(r.deposit_gl4196_usd || 0), 0));
-    const portfolioNoiUsd = round2(fProperties.reduce((s, r) => s + Number(r.annual_noi_usd || 0), 0));
+    const leaseNetByProp = new Map();
+    const propHasLeaseRow = new Set();
+    fLeases.forEach(l => {
+      const pName = String(l.property || '').trim();
+      if (!pName) return;
+      propHasLeaseRow.add(pName);
+      if (l.status === 'Closed Window') return;
+      const netYr = l.annual_net_usd != null
+        ? Number(l.annual_net_usd || 0)
+        : (Number(l.vat_rate || 0) > 0 ? Number(l.annual_ttc_usd || 0) / 1.11 : Number(l.annual_ttc_usd || 0));
+      leaseNetByProp.set(pName, round2((leaseNetByProp.get(pName) || 0) + netYr));
+    });
+    const knownPropNames = new Set(fProperties.map(r => String(r.name || r.property || '').trim()).filter(Boolean));
+    fProperties = fProperties.map(r => {
+      const pName = String(r.name || r.property || '').trim();
+      if (!propHasLeaseRow.has(pName)) return r;
+      return Object.assign({}, r, { annual_noi_usd: round2((leaseNetByProp.get(pName) || 0) * 0.875) });
+    });
+    fOwnership = fOwnership.map(o => {
+      const pName = String(o.property || '').trim();
+      if (!propHasLeaseRow.has(pName)) return o;
+      const gNoi = round2((leaseNetByProp.get(pName) || 0) * 0.875);
+      const pct = Number(o.share_pct != null ? o.share_pct : ((Number(o.deed_shares || 2400) / 2400) * 100));
+      const entNoi = round2(gNoi * (pct / 100));
+      const dist = Number(o.distributed_usd != null ? o.distributed_usd : (o.distributed_ytd_usd || 0));
+      return Object.assign({}, o, {
+        gross_noi_usd: gNoi,
+        entitled_noi_usd: entNoi,
+        retained_reserve_usd: Math.max(0, round2(entNoi - dist))
+      });
+    });
+    let portfolioNoiUsd = round2(fProperties.reduce((s, r) => s + Number(r.annual_noi_usd || 0), 0));
+    leaseNetByProp.forEach((netYr, pName) => {
+      if (!knownPropNames.has(pName)) portfolioNoiUsd = round2(portfolioNoiUsd + round2(netYr * 0.875));
+    });
 
     const salesContractUsd = fSales.reduce((s, r) => s + r.contract_usd, 0);
     const salesPaidUsd = fSales.reduce((s, r) => s + r.paid_usd, 0);
@@ -48702,6 +48790,7 @@
         contractedAnnualNetRentUsd,
         totalInvoicedTtcUsd,
         totalVat11Usd,
+        official4235VatCollectedUsd,
         totalCollectedRentUsd,
         openRentArUsd,
         unallocatedAdvancesUsd,
@@ -48960,7 +49049,13 @@
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">Properties Portfolio Rent Roll</div>
               <div class="kpi-val mono" style="font-size:18px">${fmtUSD(filteredLeases.filter(x => x.company === 'Properties').reduce((a, b) => a + b.annual_ttc_usd, 0), 0)}</div>
-              <div class="kpi-sub">Marina Tower · Hamra Pavillon · Mazraa · Baghdad</div>
+              <div class="kpi-sub">${esc((() => {
+                const propRows = (data.properties || []).filter(x => x.company === 'Properties');
+                if (isDemoScopeActive()) return 'Marina Tower · Hamra Pavillon · Mazraa · Baghdad';
+                if (!propRows.length) return '0 Properties plots in scope';
+                const topLabels = propRows.slice(0, 3).map(x => String(x.name || x.property || '').replace(/^\d+(?:\/\d+)?\s+/, '').trim()).filter(Boolean);
+                return `${propRows.length} plots (${topLabels.join(' · ')})`;
+              })())}</div>
             </div>
             <div class="kpi-card" style="margin:0">
               <div class="kpi-lbl">VAT Seq Audit (4235 S.A.L)</div>
@@ -49305,7 +49400,7 @@
         </div>
         <div class="kpi-card">
           <div class="kpi-lbl">Portfolio Annual NOI</div>
-          <div class="kpi-val mono">${fmtUSD(data.properties.reduce((a, r) => a + r.annual_noi_usd, 0), 0)}</div>
+          <div class="kpi-val mono">${fmtUSD(filteredProps.reduce((a, r) => a + Number(r.annual_noi_usd || 0), 0), 0)}</div>
           <div class="kpi-sub">Net operating income across income-producing assets</div>
         </div>
       </div>
@@ -50174,9 +50269,9 @@
       summary: {
         totalPolicyCount: (!rlsInsAllowed || liveIns || insPm.pr ? fPolicies.filter(p => !/endorsement/i.test(String(p.type || ''))).length : (38 + customPolOnlyCount)),
         endorsementCount: (!rlsInsAllowed || liveIns || insPm.pr ? fPolicies.filter(p => /endorsement/i.test(String(p.type || ''))).length : (4 + customEndOnlyCount)),
-        carriersCount: 6,
-        linesCount: 12,
-        productsCount: catalogue.length >= 52 ? catalogue.length : 52,
+        carriersCount: isDemoScopeActive() ? 6 : (new Set([].concat(fPolicies.map(p => p.carrier), agreements.map(a => a.carrier)).filter(Boolean)).size || 0),
+        linesCount: isDemoScopeActive() ? 12 : (new Set([].concat(catalogue.map(c => c.line), fPolicies.map(p => p.line)).filter(Boolean)).size || 0),
+        productsCount: isDemoScopeActive() ? (catalogue.length >= 52 ? catalogue.length : 52) : catalogue.length,
         agreementsCount: liveIns ? agreements.length : (21 + customInsAgr.length),
         gwpUsd,
         grossComm7063Usd,
@@ -51085,7 +51180,7 @@
       const driftTol = getAlertParam('ind_hld_02', 'drift_tol_usd', 1);
       const expCap = getAlertParam('ind_hld_03', 'overhead_cap_usd', 75000);
       const maxFac = getAlertParam('ind_hld_04', 'max_facilities', 10);
-      const facCnt = loans.length || 6;
+      const facCnt = isDemoScopeActive() ? (loans.length || 6) : loans.length;
       return onlyEnabled([
         {
           id: 'H1', ruleId: 'ind_hld_01',
@@ -52721,12 +52816,15 @@
           const c = r.category || 'Corporate Shared Services';
           byCat[c] = round2((byCat[c] || 0) + Math.abs(Number(r.total || r.amount || 0)));
         });
+        const hldSupAp = round2(((glModel && glModel.suppliers) || []).reduce((a, s) => a + Math.max(0, Number(s.ap_balance || 0)), 0));
+        const hldCreditExpUnpaid = round2(expRows.filter(r => /credit|unpaid|payable/i.test(String(r.method || r.status || ''))).reduce((a, r) => a + Math.abs(Number(r.total || r.amount || 0)), 0));
+        const hldPayablesUsd = hldSupAp > 0 ? hldSupAp : (isDemoScopeActive() ? (hldCreditExpUnpaid || 15600) : hldCreditExpUnpaid);
         return {
           kpis: [
             { label: 'Holding HQ Overhead', val: fmtUSD(totExp, 0), sub: `${fmtNum(expRows.length)} audited HQ vouchers`, cls: 'brass' },
             { label: 'Shared-Service Categories', val: fmtNum(Object.keys(byCat).length), sub: 'Legal, statutory audit & executive', cls: 'good' },
             { label: 'HQ Overhead Ceiling', val: fmtUSD(getAlertParam('ind_hld_03', 'overhead_cap_usd', 75000), 0), sub: 'Live tunable budget threshold', cls: 'good' },
-            { label: 'Holding Supplier Payables', val: '$15,600', sub: '3-leg credit minus settlements', cls: 'warn' },
+            { label: 'Holding Supplier Payables', val: fmtUSD(hldPayablesUsd, 0), sub: '3-leg credit minus settlements', cls: hldPayablesUsd > 0 ? 'warn' : 'good' },
             { label: 'Group Overhead Ratio', val: `${((totExp / Math.max(1, entRollup.totals.sales_ttc)) * 100).toFixed(2)}%`, sub: 'Share of consolidated group revenue', cls: 'good' },
             { label: 'Voucher Approval Rate', val: '100% Signed', sub: 'Executive sign-off verified', cls: 'good' }
           ],
@@ -53192,7 +53290,12 @@
             { label: 'NOI Cash Distributed', val: fmtUSD(totDist, 0), sub: 'Settled to ownership pools', cls: 'brass' },
             { label: 'Retained Building Reserve', val: fmtUSD(totRes, 0), sub: 'CAPEX & municipal reserve', cls: 'warn' },
             { label: 'Real Estate Trial Balance', val: fmtUSD(tb.reduce((a, r) => a + r.debit, 0), 0), sub: '$0.00 double-entry variance', cls: 'good' },
-            { label: 'Official 4235 VAT Collected', val: fmtUSD(s.totalVat11Usd, 0), sub: '11% corporate property VAT', cls: 'good' }
+            {
+              label: (re.isSingleEntity && STATE.company === 'properties') ? 'Official VAT Collected' : 'Official 4235 VAT Collected',
+              val: fmtUSD(s.official4235VatCollectedUsd != null ? s.official4235VatCollectedUsd : s.totalVat11Usd, 0),
+              sub: (re.isSingleEntity && STATE.company === 'properties') ? 'Properties portfolio (VAT-exempt)' : '11% corporate property VAT collected',
+              cls: 'good'
+            }
           ],
           chartTitle: 'Entitled NOI by Property Co-Ownership Pool (/2400 Shares $)',
           bars: own.map(o => ({ label: o.property, val: isDemoScopeActive() ? Math.max(1000, o.entitled_noi_usd) : Number(o.entitled_noi_usd || 0), sub: `${o.deed_shares}/2400 shares (${o.share_pct}%) · Paid ${fmtUSD(o.distributed_usd, 0)}` })),
@@ -55268,8 +55371,8 @@
     const domainDocs = [
       // 1. Holding & Treasury: Capital Outlay Deeds, Board Resolutions & Facility Schedules
       mk('mi-domdoc-hld-cap-1', 'DOC-HLD-104', '2026-09-24', 'Bdeir Holding', 'Holding & Treasury', 'Contract & Agreement', 'Board Capital Resolution & Cadastral Deed Extract · EXP-HLD-102', 'Matouk Bassiouny Corporate Law', 'RES-HLD-2026-09', 'expenses', 'mi-exp-hld-2', 'EXP-HLD-102', 9102, 'HLD_EXP_102_Board_Resolution_Deed.svg', 'File Upload', 'Notarized board capital resolution and cadastral deed extract attached to holding legal outlay'),
-      mk('mi-domdoc-hld-ln-1', 'DOC-HLD-105', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Contract & Agreement', 'Signed Group Credit Facility Agreement · LN-HLD-101', 'Bdeir Family Holding Trust', 'FAC-HLD-2026-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Credit_Facility_Schedule.svg', 'File Upload', 'Executed central treasury facility agreement and drawdown schedule'),
-      mk('mi-domdoc-hld-ln-2', 'DOC-HLD-106', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Bank & Transfer Slip', 'Swift Drawdown Confirmation Advice · LN-HLD-101', 'Bdeir Family Holding Trust', 'SWF-HLD-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Drawdown_Wire_Slip.svg', 'Camera Scan', 'Bank credit advice confirming facility disbursement'),
+      mk('mi-domdoc-hld-ln-1', 'DOC-HLD-105', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Contract & Agreement', 'Signed Group Credit Facility Agreement · LN-HLD-101', 'Cedar Capital Partners Trust', 'FAC-HLD-2026-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Credit_Facility_Schedule.svg', 'File Upload', 'Executed central treasury facility agreement and drawdown schedule'),
+      mk('mi-domdoc-hld-ln-2', 'DOC-HLD-106', '2026-02-15', 'Bdeir Holding', 'Holding & Treasury', 'Bank & Transfer Slip', 'Swift Drawdown Confirmation Advice · LN-HLD-101', 'Cedar Capital Partners Trust', 'SWF-HLD-101', 'loans', 'mi-loan-hld-1', 'LN-HLD-101', 120000, 'HLD_LN_101_Drawdown_Wire_Slip.svg', 'Camera Scan', 'Bank credit advice confirming facility disbursement'),
 
       // 2. Hospitality & Resorts: Signed Chalet/Cabana Contracts & Commissary HACCP Delivery Notes
       mk('mi-domdoc-hsp-mem-1', 'DOC-BLA-104', '2026-05-01', 'Blanca', 'Hospitality & Resorts', 'Contract & Agreement', 'Signed Royal Cabana Seasonal Contract · MEM-2026-001', 'Khoury Family Trust', 'MEM-2026-001', 'hsp_memberships', 'MEM-2026-001', 'MEM-2026-001', 28000, 'Blanca_MEM_2026_001_Cabana_Contract.svg', 'File Upload', 'Executed Summer 2026 Royal Cabana #B-01 membership contract'),
@@ -55416,7 +55519,7 @@
     const ENTITIES = [
       {
         ind: 'Holding & Treasury', co: 'Bdeir Holding', code: 'HLD', region: 'Beirut Central', corridor: 'Beirut CBD & Verdun', lat: 33.8886, lng: 35.4955,
-        partner: 'Bdeir Family Holding Trust', extIn: 68000, extOut: 24500, loanTaken: 120000,
+        partner: 'Cedar Capital Partners Trust', extIn: 68000, extOut: 24500, loanTaken: 120000,
         suppliers: [
           { name: 'Deloitte & Touche Advisory ME', role: 'Audit & Statutory Tax', cat: 'Office & Facility', subcat: 'Audit & Legal', iva: true, mof: '1044812-601', phone: '+961 1 364 700', expAmt: 14500, recAmt: 2400, recItem: 'Monthly Group Statutory Audit & Tax Retainer' },
           { name: 'Matouk Bassiouny Corporate Law', role: 'Corporate Counsel', cat: 'Insurance, Permits & Taxes', subcat: 'Legal & Notary', iva: true, mof: '2091145-601', phone: '+961 1 985 120', expAmt: 8200, recAmt: 1500, recItem: 'Subsidiary Governance & M&A Retainer' }
@@ -56733,16 +56836,17 @@
       };
     });
     const indCustomers = ((SEED.records && SEED.records.customers) || []).filter(matchIndRow).map(c => {
-      const salesTtc = round2(Number(c.sales_ttc || 45000));
-      const arBal = round2(Number(c.ar_balance || 9500));
-      const netS = round2(salesTtc / 1.11);
+      const salesTtc = round2(Number(c.sales_ttc != null ? c.sales_ttc : (demoGl ? 45000 : 0)));
+      const arBal = round2(Number(c.ar_balance != null ? c.ar_balance : (demoGl ? 9500 : 0)));
+      const vatReg = c.vat_registered != null ? Boolean(c.vat_registered) : Boolean(demoGl || salesTtc > 0);
+      const netS = vatReg ? round2(salesTtc / 1.11) : salesTtc;
       const vatS = round2(salesTtc - netS);
       return {
         Customer: c.name,
-        'VAT Registered': 'Yes',
-        credit_days: Number(c.credit_days || 30),
-        credit_limit: Number(c.credit_limit || 75000),
-        loads: 12,
+        'VAT Registered': vatReg ? 'Yes' : 'No',
+        credit_days: Number(c.credit_days != null ? c.credit_days : 30),
+        credit_limit: Number(c.credit_limit != null ? c.credit_limit : (demoGl ? 75000 : 0)),
+        loads: Number(c.loads != null ? c.loads : (demoGl ? 12 : 0)),
         sales_ttc: salesTtc,
         net_sales: netS,
         sales_vat: vatS,
@@ -56750,12 +56854,12 @@
         credit_sales_ttc: salesTtc,
         cash_sales: 0,
         cash_sales_ttc: 0,
-        ar_settled: round2(salesTtc - arBal),
-        receipts_cash: round2(salesTtc - arBal),
-        receipts: round2(salesTtc - arBal),
+        ar_settled: round2(Math.max(0, salesTtc - arBal)),
+        receipts_cash: round2(Math.max(0, salesTtc - arBal)),
+        receipts: round2(Math.max(0, salesTtc - arBal)),
         opening_ar: 0,
-        ar_rem_ex_vat: round2(arBal / 1.11),
-        vat_receivable: round2(arBal - arBal / 1.11),
+        ar_rem_ex_vat: vatReg ? round2(arBal / 1.11) : arBal,
+        vat_receivable: vatReg ? round2(arBal - arBal / 1.11) : 0,
         ar_current: arBal,
         ar_1_10: 0,
         ar_11_30: 0,
@@ -56763,41 +56867,46 @@
         ar_1_60: 0,
         ar_60_plus: 0,
         ar_balance: arBal,
-        last_sale: '2026-09-28'
+        last_sale: String(c.last_sale || (demoGl ? '2026-09-28' : ''))
       };
     });
-    const indProducts = ((SEED.records && SEED.records.products) || []).filter(matchIndRow).map(p => ({
-      Product: p.name,
-      Type: p.type || 'Domain Service',
-      UoM: p.uom || 'Unit',
-      loads: 14,
-      qty_sold: 14,
-      tons_sold: 14,
-      sales_ttc: round2(Number(p.list_price || 500) * 14),
-      net_sales: round2((Number(p.list_price || 500) * 14) / 1.11),
-      trans_rev: 0,
-      commission_due: 0,
-      raw_qty: 0,
-      raw_cost: 0,
-      avg_price_ttc: Number(p.list_price || 500),
-      avg_price_net: round2(Number(p.list_price || 500) / 1.11),
-      avg_raw_cost: 0
-    }));
+    const indProducts = ((SEED.records && SEED.records.products) || []).filter(matchIndRow).map(p => {
+      const pLoads = Number(p.loads != null ? p.loads : (demoGl ? 14 : 0));
+      const listPr = Number(p.list_price != null ? p.list_price : (demoGl ? 500 : 0));
+      const pSalesTtc = round2(p.sales_ttc != null ? Number(p.sales_ttc) : (listPr * pLoads));
+      return {
+        Product: p.name,
+        Type: p.type || 'Domain Service',
+        UoM: p.uom || 'Unit',
+        loads: pLoads,
+        qty_sold: Number(p.qty_sold != null ? p.qty_sold : pLoads),
+        tons_sold: Number(p.tons_sold != null ? p.tons_sold : pLoads),
+        sales_ttc: pSalesTtc,
+        net_sales: round2(pSalesTtc / 1.11),
+        trans_rev: 0,
+        commission_due: 0,
+        raw_qty: 0,
+        raw_cost: 0,
+        avg_price_ttc: listPr,
+        avg_price_net: round2(listPr / 1.11),
+        avg_raw_cost: 0
+      };
+    });
     const indSites = ((SEED.records && SEED.records.sites) || []).filter(matchIndRow).map(st => ({
       Site: st.name,
       Region: st.region || '',
-      loads: 10,
-      raw_loads: 6,
-      sales_ttc: 28000,
-      raw_cost: 9400
+      loads: Number(st.loads != null ? st.loads : (demoGl ? 10 : 0)),
+      raw_loads: Number(st.raw_loads != null ? st.raw_loads : (demoGl ? 6 : 0)),
+      sales_ttc: Number(st.sales_ttc != null ? st.sales_ttc : (demoGl ? 28000 : 0)),
+      raw_cost: Number(st.raw_cost != null ? st.raw_cost : (demoGl ? 9400 : 0))
     }));
     const indEquipment = ((SEED.records && SEED.records.equipment) || []).filter(matchIndRow).map(eq => ({
       Equipment: eq.name,
       Type: eq.type || 'Vehicle',
-      Ownership: 'Company',
-      loads: 12,
-      fuel_litres: 320,
-      expenses: 1850
+      Ownership: eq.ownership || 'Company',
+      loads: Number(eq.loads != null ? eq.loads : (demoGl ? 12 : 0)),
+      fuel_litres: Number(eq.fuel_litres != null ? eq.fuel_litres : (demoGl ? 320 : 0)),
+      expenses: Number(eq.expenses != null ? eq.expenses : (demoGl ? 1850 : 0))
     }));
 
     const merged = Object.assign({}, baseModel || {}, {
@@ -56809,6 +56918,7 @@
       sites: indSites,
       equipment: indEquipment,
       gl_tb: glTb,
+      gl_trial_balance: glTb,
       glTied: Math.abs(glTb.reduce((s, a) => s + Number(a.debit || 0) - Number(a.credit || 0), 0)) < 0.01,
       glVariance: 0,
       soa_stream: soaStream,
@@ -56904,7 +57014,7 @@
   }
 
   function postIndustryDomainStoreToLocalApi() {
-    if (!hasServerApi() || isDemoSandboxSession()) return;
+    if (!hasServerApi() || isDemoScopeActive()) return;
     if (rosterIsServerHeld() && !STATE.authed) return;
     try {
       const pLeg = STATE._purgedIndustryLegacy || { rows: [], editKeys: [] };
@@ -67762,7 +67872,7 @@
     } catch (_e) { /* safe fallback */ }
 
     const hasIndustryLiveOrDemo = key => Boolean(
-      (typeof isDemoSandboxSession === 'function' && isDemoSandboxSession()) ||
+      (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) ||
       (SEED && SEED.industryLive && SEED.industryLive[key])
     );
     if ((indKey === 'holding' || reqCo === 'all') && (hasIndustryLiveOrDemo('holding') || (SEED.records && Array.isArray(SEED.records.loans) && SEED.records.loans.length > 0))) {
@@ -68399,7 +68509,7 @@
     };
     const includeIndustry = targetSlug => reqCo === 'all' || indKey === targetSlug;
     const hasIndustryLiveOrDemo = key => Boolean(
-      (typeof isDemoSandboxSession === 'function' && isDemoSandboxSession()) ||
+      (typeof isDemoScopeActive === 'function' && isDemoScopeActive()) ||
       (SEED && SEED.industryLive && SEED.industryLive[key])
     );
 
@@ -73682,7 +73792,7 @@
           u.statements_access = sTier || 'partial';
           u.seat_updated_at = new Date().toISOString();
           saveLocalAuthAndRecords();
-          if (hasServerApi() && !isDemoSandboxSession()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
+          if (hasServerApi() && !isDemoScopeActive()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
           syncWithCloud(true);
           if (STATE.showAddUserForm && String(STATE.editingUserId) === String(u.id)) {
             STATE.draftRoleOverride = u.role;
@@ -73720,7 +73830,7 @@
           }
           u.seat_updated_at = new Date().toISOString();
           saveLocalAuthAndRecords();
-          if (hasServerApi() && !isDemoSandboxSession()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
+          if (hasServerApi() && !isDemoScopeActive()) { try { edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }).catch(() => {}); } catch (_) {} }
           syncWithCloud(true);
           if (STATE.showAddUserForm && String(STATE.editingUserId) === String(u.id)) {
             STATE.draftAccessOverride = `${u.pbi_access}|${u.statements_access}`;
@@ -78009,7 +78119,7 @@
       const formKey = String(STATE.modalForm || STATE.activeKiosk || '');
       const recId = String((STATE.editingRecord && STATE.editingRecord.id) || '');
 
-      if (hasServerApi() && !isDemoSandboxSession()) {
+      if (hasServerApi() && !isDemoScopeActive()) {
         try {
           const res = await edgeApiFetch('./api/auth/verify-override', {
             method: 'POST',
@@ -78087,7 +78197,7 @@
       return {
         ok: true,
         authorizerName: candSeat.full_name || candSeat.email,
-        auditId: isDemoSandboxSession() ? `demo-ova-${Date.now()}` : `local-ova-${Date.now()}`
+        auditId: isDemoScopeActive() ? `demo-ova-${Date.now()}` : `local-ova-${Date.now()}`
       };
     };
 
@@ -92412,7 +92522,7 @@
 
   async function postRecordToLocalApi(crKey, record) {
     const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
-    if (!hasServerApi() || isDemoSandboxSession() || !tblName || !record || !record.id) return;
+    if (!hasServerApi() || isDemoScopeActive() || !tblName || !record || !record.id) return;
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 8000);
@@ -103900,6 +104010,7 @@
   } catch (_) {}
 
   function setPendingCloudPush(flag) {
+    if (flag && isDemoScopeActive()) return;
     if (flag) _localPushSeq += 1;
     STATE.pendingCloudPush = Boolean(flag);
     if (!IS_AUTOMATED_TEST) {
@@ -104062,6 +104173,13 @@
   }
 
   async function syncWithCloud(pushChanges = false) {
+    if (isDemoScopeActive()) {
+      if (!isDemoSandboxSession()) {
+        STATE.cloudStatus = '● Demo Sandbox';
+        updateCloudBadges();
+      }
+      return Promise.resolve(false);
+    }
     if (pushChanges) setPendingCloudPush(true);
     if (syncInFlight) { if (pushChanges) STATE.pushAfterSync = true; return syncInFlight; }
     _lastCloudSyncStartedAt = Date.now();
@@ -104152,6 +104270,11 @@
   }
 
   async function doSync(pushChanges) {
+    if (isDemoScopeActive() && !isDemoSandboxSession()) {
+      STATE.cloudStatus = '● Demo Sandbox';
+      updateCloudBadges();
+      return;
+    }
     const isEdgeActive = Boolean(window.ISABI_HAS_EDGE_API || window.__ISABI_TEST_EDGE);
     // Verify active HttpOnly cookie session on Edge hosts when needed
     if (isEdgeActive && STATE.authed && !_edgeSessionToken && !_edgeCookieAuthed && !isDemoSandboxSession()) {
@@ -104254,7 +104377,7 @@
     }
 
     // 2. Multi-Device Cloud Sync (Option A: Same-Origin Cloudflare D1 `/api/sync` -> Option C Relay Fallback)
-    const isPublicDemoSandbox = isDemoSandboxSession();
+    const isPublicDemoSandbox = isDemoScopeActive();
     if (isEdgeActive && !STATE.authed && !isPublicDemoSandbox) {
       STATE.cloudStatus = '● Ready (Sign In)';
       updateCloudBadges();
@@ -105839,7 +105962,7 @@
     updateSeatEditorDom();
     updateEnrolStudioDom();
     toast(existingIdx >= 0 ? `✓ Seat updated · ${name} (${finalRole} · ${companies})` : `✓ Seat created · ${name} (PIN ${pin})`);
-    if (hasServerApi() && !isDemoSandboxSession()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: newUser }) }); } catch (_) { /* offline */ } }
+    if (hasServerApi() && !isDemoScopeActive()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: newUser }) }); } catch (_) { /* offline */ } }
     await syncWithCloud(true);
     return true;
   }
@@ -107028,7 +107151,7 @@
       saveLocalAuthAndRecords();
       updateSeatEditorDom();
       updateEnrolStudioDom();
-      if (hasServerApi() && !isDemoSandboxSession()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) { /* offline */ } }
+      if (hasServerApi() && !isDemoScopeActive()) { try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) { /* offline */ } }
       syncWithCloud(true);
       toast(`${u.full_name} ${u.status === 'Suspended' ? 'suspended' : 're-activated'}`);
     }));
@@ -107398,7 +107521,7 @@
 
   async function persistStaffBiometricEntryNow(staffKey, entryObj) {
     if (!staffKey || !entryObj) return;
-    if (hasServerApi() && !isDemoSandboxSession()) {
+    if (hasServerApi() && !isDemoScopeActive()) {
       try {
         await edgeApiFetch('./api/staff_biometrics', {
           method: 'POST',
@@ -107453,7 +107576,7 @@
 
     saveLocalAuthAndRecords();
     const syncTask = async () => {
-      if (!target.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+      if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
         try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
       }
       if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
@@ -107666,7 +107789,7 @@
     saveLocalAuthAndRecords();
     updateEnrolStudioDom();
     toast(`Cleared Face ID for ${target.full_name}`);
-    if (!target.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+    if (!target.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
       try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
     }
     if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
@@ -108165,18 +108288,291 @@
     return String(name || 'IS').split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('');
   }
 
-  function syncDemoScopeDataState() {
-    if (SEED && SEED._rawIndustryPayload) {
-      unpackIndustrySeedPayload(SEED._rawIndustryPayload);
+  let _demoCompanySandboxActive = false;
+  let _demoCompanyLiveSnap = null;
+  let _demoCompanySandboxSeed = null;
+  let _demoCompanyIndPromise = null;
+  let _preloadedDemoBundle = null;
+  let _demoCompanyPrevRealCo = 'manufacturing-group';
+  const _demoCompanySandboxStores = { customRecords: {}, industryCustomRows: {}, industryRowEdits: {} };
+
+  async function buildStandaloneDemoBundle(coreJson, recJson, indJson) {
+    const tmpSeed = { models: {}, records: {}, sentinels: [] };
+    if (coreJson) await unpackPackedRecordsIntoSeed(coreJson, false, tmpSeed);
+    if (recJson) await unpackPackedRecordsIntoSeed(recJson, false, tmpSeed);
+    const demoLive = indJson ? unpackIndustrySeedPayload(indJson, { returnOnly: true, asDemo: true }) : null;
+    applyPublicDemoSanitization(tmpSeed, { forceDemoCoIds: true, skipBackup: true });
+    return {
+      models: tmpSeed.models || {},
+      records: tmpSeed.records || {},
+      industryLive: demoLive,
+      industryLegacyIdMap: (demoLive && demoLive._legacyIdMap) || null
+    };
+  }
+
+  function attachDemoBundleToActiveSandbox(bundle) {
+    if (!bundle) return;
+    SEED.models = bundle.models;
+    SEED.records = bundle.records;
+    SEED.sentinels = [];
+    SEED.industryLive = bundle.industryLive;
+    SEED._industryLegacyIdMap = bundle.industryLegacyIdMap || null;
+    SEED._industryRev = (SEED._industryRev || 0) + 1;
+    SEED._coreReady = true;
+    SEED._recordsReady = true;
+    SEED._demoSpinePresent = false;
+    SEED._multiIndustrySpineSeeded = false;
+    SEED._liveIndustrySpineOnlyReady = false;
+    _demoSanitizedActive = true;
+    window.MFG_SEED = SEED;
+    if (SEED.industryLive) {
+      SEED._industryLiveSpineMergedRev = -1;
+      mergeIndustryLiveSpineIntoRecords();
     }
-    if (SEED) SEED._liveIndustrySpineOnlyReady = false;
     ensureMultiIndustrySpineSeeded();
+    _demoCompanySandboxSeed = {
+      models: SEED.models,
+      records: SEED.records,
+      industryLive: SEED.industryLive,
+      industryLegacyIdMap: SEED._industryLegacyIdMap,
+      voidedSnap: (_demoCompanySandboxSeed && _demoCompanySandboxSeed.voidedSnap) || {},
+      bundleReady: true
+    };
+    _preloadedDemoBundle = null;
+    if (typeof upgradeLegacyIndustryStores === 'function') upgradeLegacyIndustryStores();
+    if (typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
+    _officialLookupSig = '';
+    SEED._canonicalById = null;
+    SEED._canonicalByMain = null;
+    SEED._origModelMasters = null;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    STATE._indCustomRev = (STATE._indCustomRev || 0) + 1;
     if (_hspOpsCache) _hspOpsCache.clear();
+    _reOpsSig = '';
+    if (typeof _indGlModelCache !== 'undefined' && _indGlModelCache) _indGlModelCache.clear();
+    if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
+  }
+
+  function ensureDemoCompanySeedLoaded() {
+    if (_demoCompanySandboxSeed && _demoCompanySandboxSeed.bundleReady) {
+      return Promise.resolve(_demoCompanySandboxSeed.industryLive);
+    }
+    if (_preloadedDemoBundle) {
+      if (_demoCompanySandboxActive) {
+        attachDemoBundleToActiveSandbox(_preloadedDemoBundle);
+        safeRender();
+        return Promise.resolve(_demoCompanySandboxSeed.industryLive);
+      }
+      return Promise.resolve(_preloadedDemoBundle.industryLive);
+    }
+    if (_demoCompanyIndPromise) return _demoCompanyIndPromise;
+    const demoCoreUrl = (typeof SEED_MANIFEST !== 'undefined' && SEED_MANIFEST && SEED_MANIFEST.demoCore) || './js/seed_demo_core.json';
+    const demoRecUrl = (typeof SEED_MANIFEST !== 'undefined' && SEED_MANIFEST && SEED_MANIFEST.demoRecords) || './js/seed_demo_records.json';
+    const demoIndUrl = (typeof SEED_MANIFEST !== 'undefined' && SEED_MANIFEST && SEED_MANIFEST.demoIndustries) || './js/seed_demo_industries.json';
+    _demoCompanyIndPromise = Promise.all([
+      fetchSeedPayloadJson(demoCoreUrl, false).catch(() => null),
+      fetchSeedPayloadJson(demoRecUrl, false).catch(() => null),
+      fetchSeedPayloadJson(demoIndUrl, false).catch(() => null)
+    ])
+      .then(async ([coreJson, recJson, indJson]) => {
+        if (!coreJson && !recJson && !indJson) return null;
+        const bundle = await buildStandaloneDemoBundle(coreJson, recJson, indJson);
+        _preloadedDemoBundle = bundle;
+        if (_demoCompanySandboxActive) {
+          attachDemoBundleToActiveSandbox(bundle);
+          safeRender();
+        }
+        return bundle.industryLive;
+      })
+      .catch(() => null)
+      .finally(() => {
+        _demoCompanyIndPromise = null;
+      });
+    return _demoCompanyIndPromise;
+  }
+  window.__mfgEnsureDemoCompanyReady = ensureDemoCompanySeedLoaded;
+
+  function syncDemoScopeDataState() {
+    if (!SEED) return;
+    if (isDemoSandboxSession()) {
+      if (SEED._rawIndustryPayload) unpackIndustrySeedPayload(SEED._rawIndustryPayload);
+      SEED._liveIndustrySpineOnlyReady = false;
+      ensureMultiIndustrySpineSeeded();
+      if (_hspOpsCache) _hspOpsCache.clear();
+      _reOpsSig = '';
+      if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
+      return;
+    }
+    const wantSandbox = STATE.company === DEMO_COMPANY_KEY;
+    if (wantSandbox && !_demoCompanySandboxActive) {
+      const voidedSnap = {};
+      Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => {
+        if (SEED_VOIDED_ARCHIVE[k] instanceof Map) voidedSnap[k] = new Map(SEED_VOIDED_ARCHIVE[k]);
+      });
+      const origArchiveSnap = {};
+      Object.keys(SEED_ORIG_ARCHIVE).forEach(k => {
+        origArchiveSnap[k] = SEED_ORIG_ARCHIVE[k];
+      });
+      _demoCompanyLiveSnap = {
+        models: SEED.models || {},
+        records: SEED.records || {},
+        sentinels: Array.isArray(SEED.sentinels) ? JSON.parse(JSON.stringify(SEED.sentinels)) : [],
+        voidedSnap,
+        origArchiveSnap,
+        coreReady: Boolean(SEED._coreReady),
+        recordsReady: Boolean(SEED._recordsReady),
+        rawIndustryPayload: SEED._rawIndustryPayload || null,
+        industryLive: SEED.industryLive || null,
+        industryLegacyIdMap: SEED._industryLegacyIdMap || null,
+        industryRev: SEED._industryRev || 0,
+        industryLiveSpineMergedRev: SEED._industryLiveSpineMergedRev || 0,
+        liveIndustrySpineOnlyReady: Boolean(SEED._liveIndustrySpineOnlyReady),
+        multiIndustrySpineSeeded: Boolean(SEED._multiIndustrySpineSeeded),
+        needsCustomApply: false,
+        customRecords: STATE.customRecords,
+        industryCustomRows: STATE.industryCustomRows,
+        industryRowEdits: STATE.industryRowEdits,
+        pendingCloudPush: Boolean(STATE.pendingCloudPush),
+        sentinelReviews: JSON.parse(JSON.stringify(STATE.sentinelReviews || {})),
+        stepUpAudits: Array.isArray(STATE.stepUpAudits) ? JSON.parse(JSON.stringify(STATE.stepUpAudits)) : []
+      };
+
+      Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => { delete SEED_VOIDED_ARCHIVE[k]; });
+      Object.keys(SEED_ORIG_ARCHIVE).forEach(k => { delete SEED_ORIG_ARCHIVE[k]; });
+      STATE.customRecords = _demoCompanySandboxStores.customRecords || {};
+      STATE.industryCustomRows = _demoCompanySandboxStores.industryCustomRows || {};
+      STATE.industryRowEdits = _demoCompanySandboxStores.industryRowEdits || {};
+      STATE.pendingCloudPush = false;
+      _demoCompanySandboxActive = true;
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
+        window.MFG_AI_EDGE.resetTransientDemoInputs();
+      }
+
+      if (_demoCompanySandboxSeed && _demoCompanySandboxSeed.bundleReady) {
+        SEED.models = _demoCompanySandboxSeed.models;
+        SEED.records = _demoCompanySandboxSeed.records;
+        SEED.sentinels = [];
+        SEED.industryLive = _demoCompanySandboxSeed.industryLive;
+        SEED._industryLegacyIdMap = _demoCompanySandboxSeed.industryLegacyIdMap || null;
+        SEED._industryRev = (SEED._industryRev || 0) + 1;
+        SEED._coreReady = true;
+        SEED._recordsReady = true;
+        window.MFG_SEED = SEED;
+        Object.keys(_demoCompanySandboxSeed.voidedSnap || {}).forEach(k => {
+          SEED_VOIDED_ARCHIVE[k] = new Map(_demoCompanySandboxSeed.voidedSnap[k]);
+        });
+        SEED._demoSpinePresent = true;
+        SEED._multiIndustrySpineSeeded = true;
+        SEED._liveIndustrySpineOnlyReady = false;
+        _demoSanitizedActive = true;
+        if (SEED.industryLive) {
+          SEED._industryLiveSpineMergedRev = -1;
+          mergeIndustryLiveSpineIntoRecords();
+        }
+        ensureMultiIndustrySpineSeeded();
+        if (typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
+      } else if (_preloadedDemoBundle) {
+        attachDemoBundleToActiveSandbox(_preloadedDemoBundle);
+      } else {
+        SEED.models = {};
+        SEED.records = {};
+        SEED.sentinels = [];
+        SEED.industryLive = null;
+        SEED._industryLegacyIdMap = null;
+        SEED._industryRev = (SEED._industryRev || 0) + 1;
+        SEED._demoSpinePresent = false;
+        SEED._multiIndustrySpineSeeded = false;
+        SEED._liveIndustrySpineOnlyReady = false;
+        _demoSanitizedActive = true;
+        ensureMultiIndustrySpineSeeded();
+        if (typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
+        ensureDemoCompanySeedLoaded();
+      }
+    } else if (!wantSandbox && _demoCompanySandboxActive && _demoCompanyLiveSnap) {
+      _demoCompanySandboxStores.customRecords = STATE.customRecords || {};
+      _demoCompanySandboxStores.industryCustomRows = STATE.industryCustomRows || {};
+      _demoCompanySandboxStores.industryRowEdits = STATE.industryRowEdits || {};
+      if (_demoCompanySandboxSeed) {
+        const sbxVoid = {};
+        Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => {
+          if (SEED_VOIDED_ARCHIVE[k] instanceof Map) sbxVoid[k] = new Map(SEED_VOIDED_ARCHIVE[k]);
+        });
+        _demoCompanySandboxSeed.voidedSnap = sbxVoid;
+      }
+
+      SEED.models = _demoCompanyLiveSnap.models;
+      SEED.records = _demoCompanyLiveSnap.records;
+      SEED.sentinels = _demoCompanyLiveSnap.sentinels;
+      SEED._coreReady = Boolean(_demoCompanyLiveSnap.coreReady);
+      SEED._recordsReady = Boolean(_demoCompanyLiveSnap.recordsReady);
+      SEED._rawIndustryPayload = _demoCompanyLiveSnap.rawIndustryPayload || null;
+      SEED._industryLegacyIdMap = _demoCompanyLiveSnap.industryLegacyIdMap || null;
+      Object.keys(SEED_VOIDED_ARCHIVE).forEach(k => { delete SEED_VOIDED_ARCHIVE[k]; });
+      Object.keys(_demoCompanyLiveSnap.voidedSnap || {}).forEach(k => {
+        SEED_VOIDED_ARCHIVE[k] = new Map(_demoCompanyLiveSnap.voidedSnap[k]);
+      });
+      Object.keys(SEED_ORIG_ARCHIVE).forEach(k => { delete SEED_ORIG_ARCHIVE[k]; });
+      Object.keys(_demoCompanyLiveSnap.origArchiveSnap || {}).forEach(k => {
+        SEED_ORIG_ARCHIVE[k] = _demoCompanyLiveSnap.origArchiveSnap[k];
+      });
+
+      SEED.industryLive = _demoCompanyLiveSnap.industryLive;
+      SEED._industryRev = (SEED._industryRev || 0) + 1;
+      const needsDeferredLiveMerge = Boolean(SEED.industryLive && _demoCompanyLiveSnap.industryLiveSpineMergedRev === -1);
+      const needsCustomApply = Boolean(_demoCompanyLiveSnap.needsCustomApply || needsDeferredLiveMerge);
+      SEED._industryLiveSpineMergedRev = needsDeferredLiveMerge
+        ? -1
+        : ((_demoCompanyLiveSnap.industryLiveSpineMergedRev === _demoCompanyLiveSnap.industryRev)
+          ? SEED._industryRev
+          : _demoCompanyLiveSnap.industryLiveSpineMergedRev);
+      SEED._liveIndustrySpineOnlyReady = _demoCompanyLiveSnap.liveIndustrySpineOnlyReady;
+      SEED._multiIndustrySpineSeeded = _demoCompanyLiveSnap.multiIndustrySpineSeeded;
+      SEED._demoSpinePresent = false;
+
+      STATE.customRecords = _demoCompanyLiveSnap.customRecords;
+      STATE.industryCustomRows = _demoCompanyLiveSnap.industryCustomRows;
+      STATE.industryRowEdits = _demoCompanyLiveSnap.industryRowEdits;
+      STATE.pendingCloudPush = Boolean(_demoCompanyLiveSnap.pendingCloudPush);
+      STATE.sentinelReviews = _demoCompanyLiveSnap.sentinelReviews;
+      STATE.stepUpAudits = _demoCompanyLiveSnap.stepUpAudits;
+
+      _demoSanitizedActive = false;
+      _demoSanitizeBackup = null;
+      _demoCompanySandboxActive = false;
+      _demoCompanyLiveSnap = null;
+
+      if (SEED._industryLegacyIdMap && typeof upgradeLegacyIndustryStores === 'function') {
+        upgradeLegacyIndustryStores();
+      }
+      if (needsDeferredLiveMerge) mergeIndustryLiveSpineIntoRecords();
+      if (needsCustomApply && typeof applyCustomRecordsToSeed === 'function') applyCustomRecordsToSeed();
+      if (SEED._coreReady) {
+        const periodSelInit = $('periodSelect');
+        const gp = (((SEED.models || {})['manufacturing-group'] || {}).periods) || {};
+        if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
+      }
+      if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.resetTransientDemoInputs === 'function') {
+        window.MFG_AI_EDGE.resetTransientDemoInputs();
+      }
+    }
+    _officialLookupSig = '';
+    SEED._canonicalById = null;
+    SEED._canonicalByMain = null;
+    SEED._origModelMasters = null;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    STATE._indCustomRev = (STATE._indCustomRev || 0) + 1;
+    if (_hspOpsCache) _hspOpsCache.clear();
+    _reOpsSig = '';
+    if (typeof _icInteractionsSig !== 'undefined') _icInteractionsSig = '';
+    if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.invalidateCache === 'function') {
+      window.MFG_CMD_PALETTE.invalidateCache();
+    }
     if (typeof invalidateAllSeedCaches === 'function') invalidateAllSeedCaches();
   }
 
   function setDemoCompanyIndustry(indId) {
     if (!indId || !INDUSTRY_SIDEBAR_SPEC[indId]) return;
+    if (STATE.company && STATE.company !== DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
     STATE.company = DEMO_COMPANY_KEY;
@@ -108224,6 +108620,7 @@
   let _coPickOpenSession = false;
   function selectCompanyScope(coKey, closePopover = true, opts = null) {
     if (!coKey) return;
+    if (STATE.company && STATE.company !== DEMO_COMPANY_KEY && coKey === DEMO_COMPANY_KEY) _demoCompanyPrevRealCo = STATE.company;
     const prevDemo = isDemoScopeActive();
     const prevInd = getActiveIndustry(STATE.company);
     const nextInd = getActiveIndustry(coKey);
@@ -109437,6 +109834,24 @@
         sessionStorage.removeItem('isabi_mfg_sw_resume');
       } catch (_) {}
     } else {
+      if (STATE.company === DEMO_COMPANY_KEY || _demoCompanySandboxActive) {
+        STATE.company = (_demoCompanyPrevRealCo && _demoCompanyPrevRealCo !== DEMO_COMPANY_KEY) ? _demoCompanyPrevRealCo : 'manufacturing-group';
+        try { syncDemoScopeDataState(); } catch (_) {}
+      }
+      _demoCompanyLiveSnap = null;
+      _demoCompanySandboxSeed = null;
+      _demoCompanyIndPromise = null;
+      _demoCompanySandboxActive = false;
+      _demoSanitizedActive = false;
+      _demoCompanySandboxStores.customRecords = {};
+      _demoCompanySandboxStores.industryCustomRows = {};
+      _demoCompanySandboxStores.industryRowEdits = {};
+      try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const k = sessionStorage.key(i);
+          if (k && k.startsWith('demo_sbx_')) sessionStorage.removeItem(k);
+        }
+      } catch (_) {}
       if (hasServerApi()) {
         try { edgeApiFetch('./api/auth/logout', { method: 'POST' }).catch(() => {}); } catch (_) {}
       }
@@ -112072,11 +112487,11 @@
         { lbl: 'Quick Transfer ($)', field: 'ik_usd', vals: ['15000', '25000', '50000', '100000'] }
       ],
       raw: [
-        { lbl: 'Facility Counterparties', field: 'ik_lender', vals: ['Bdeir Family Holding Trust', 'Central Group Treasury Pool', 'Corporate Legal & Cadastral Advisory'] },
+        { lbl: 'Facility Counterparties', field: 'ik_lender', vals: ['Cedar Capital Partners Trust', 'Central Group Treasury Pool', 'Corporate Legal & Cadastral Advisory'] },
         { lbl: 'Facility Types', field: 'ik_type', vals: ['Term Credit Facility', 'Board Capital Resolution', 'Sister Working Capital Line'] }
       ],
       fuel: [
-        { lbl: 'Managing Partners', field: 'ik_partner', vals: ['Hussein Bdeir', 'Bdeir Family Holding Trust'] },
+        { lbl: 'Managing Partners', field: 'ik_partner', vals: ['Rami Haddad', 'Cedar Capital Partners Trust'] },
         { lbl: 'Quick Draw ($)', field: 'ik_drawn', vals: ['10000', '25000', '50000'] }
       ]
     }
@@ -112309,7 +112724,7 @@
           ${fld('Holding Entity *', coSel)}
           ${fld('Facility / Resolution # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="LN-HLD-842">`)}
           ${fld('Execution Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
-          ${fld('Facility Provider / Counterparty *', `<input type="text" id="ik_lender" style="${inpStyle}" value="Bdeir Family Holding Trust">`)}
+          ${fld('Facility Provider / Counterparty *', `<input type="text" id="ik_lender" style="${inpStyle}" value="Cedar Capital Partners Trust">`)}
           ${fld('Facility Type *', `<input type="text" id="ik_type" style="${inpStyle}" value="Term Credit Facility">`)}
           ${fld('Approved Principal ($) *', `<input type="number" id="ik_prin" class="mono" step="1000" min="1" style="${inpStyle}" value="100000">`)}
           ${fld('Repaid / Settled ($) *', `<input type="number" id="ik_rep" class="mono" step="500" min="0" style="${inpStyle}" value="20000">`)}
@@ -112320,7 +112735,7 @@
           ${fld('Holding Entity *', coSel)}
           ${fld('Distribution Voucher # *', `<input type="text" id="ik_id" class="mono" style="${inpStyle}" value="JV-HLD-843">`)}
           ${fld('Effective Date *', `<input type="date" id="ik_date" style="${inpStyle}" value="${today}">`)}
-          ${fld('Managing Partner *', `<input type="text" id="ik_partner" style="${inpStyle}" value="Hussein Bdeir">`)}
+          ${fld('Managing Partner *', `<input type="text" id="ik_partner" style="${inpStyle}" value="Rami Haddad">`)}
           ${fld('Equity Share (%) *', `<input type="number" id="ik_pct" class="mono" step="1" min="1" max="100" style="${inpStyle}" value="50">`)}
           ${fld('Distributable Pool ($) *', `<input type="number" id="ik_pool" class="mono" step="1000" min="1" style="${inpStyle}" value="200000">`)}
           ${fld('Partner Draw Amount ($) *', `<input type="number" id="ik_drawn" class="mono" step="500" min="0" style="${inpStyle}" value="40000">`)}
@@ -112831,7 +113246,7 @@
           badge: 'HOLDING FACILITY SCHEDULE',
           refLabel: 'FACILITY #',
           counterpartyLbl: 'Facility Provider',
-          counterparty: strV('ik_lender') || 'Bdeir Family Holding Trust',
+          counterparty: strV('ik_lender') || 'Cedar Capital Partners Trust',
           scopeLbl: 'Facility Type',
           scopeVal: strV('ik_type') || 'Term Credit Facility',
           itemLbl: 'Principal & Repaid Status',
@@ -112854,7 +113269,7 @@
         badge: 'EQUITY & DIVIDEND DESK',
         refLabel: 'VOUCHER #',
         counterpartyLbl: 'Managing Partner',
-        counterparty: strV('ik_partner') || 'Hussein Bdeir',
+        counterparty: strV('ik_partner') || 'Rami Haddad',
         scopeLbl: 'Equity Share & Pool',
         scopeVal: `${numV('ik_pct') || 50}% of ${fmtUSD(numV('ik_pool') || 200000, 2)}`,
         itemLbl: 'Partner Draw Instruction',
@@ -113059,7 +113474,7 @@
         const rep = Math.min(prin, numV('ik_rep'));
         postedBucket = 'hld_loans';
         postedRow = addIndustryCustomRow('hld_loans', {
-          id: recId, date: dt, company: co, lender: strV('ik_lender') || 'Bdeir Family Holding Trust',
+          id: recId, date: dt, company: co, lender: strV('ik_lender') || 'Cedar Capital Partners Trust',
           type: strV('ik_type') || 'Term Credit Facility', principal_usd: prin,
           repaid_usd: rep, balance_usd: round2(prin - rep),
           status: prin - rep <= 0 ? 'Settled' : 'Active Facility'
@@ -113071,7 +113486,7 @@
         const drw = Math.min(ent, numV('ik_drawn'));
         postedBucket = 'hld_partners';
         postedRow = addIndustryCustomRow('hld_partners', {
-          id: recId, entity: co, partner: strV('ik_partner') || 'Hussein Bdeir',
+          id: recId, entity: co, partner: strV('ik_partner') || 'Rami Haddad',
           pct, pool_usd: pool, entitled_usd: ent, drawn_usd: drw,
           open_usd: round2(ent - drw), start_date: dt,
           status: ent - drw <= 0 ? 'Settled' : 'Active Agreement'
@@ -114000,7 +114415,7 @@
   }
 
   async function postWorkScheduleMutation(bodyObj) {
-    if (!hasServerApi() || isDemoSandboxSession()) return;
+    if (!hasServerApi() || isDemoScopeActive()) return;
     try {
       const payload = Object.assign({}, bodyObj || {}, { work_schedules: ensureWorkSchedulesState() });
       await edgeApiFetch('./api/work_schedules', {
@@ -115422,7 +115837,7 @@
 
     saveLocalAuthAndRecords();
     await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoSandboxSession()) {
+    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
       try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
     }
     syncWithCloud(true);
@@ -115467,7 +115882,7 @@
     }
     saveLocalAuthAndRecords();
     await persistStaffBiometricEntryNow(targetKey, bioObj);
-    if (entry.userObj && hasServerApi() && !isDemoSandboxSession()) {
+    if (entry.userObj && hasServerApi() && !isDemoScopeActive()) {
       try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
     }
     syncWithCloud(true);
@@ -124384,6 +124799,9 @@
     if (themeMeta) themeMeta.setAttribute('content', STATE.theme === 'dark' ? '#090D16' : '#F8FAFC');
 
     applyUserRlsAndPermissions();
+    if (!isDemoSandboxSession() && SEED && SEED._recordsReady && (STATE.company === DEMO_COMPANY_KEY) !== _demoCompanySandboxActive) {
+      syncDemoScopeDataState();
+    }
     ensureItemsCatalogSeeded();
     ensureMultiIndustrySpineSeeded();
     const user = activeUser();
@@ -127836,7 +128254,7 @@
         renderQuickSeatsInAuthGate();
         updateAuthFaceUi();
         toast(`Seat sign-in requirement for ${u.full_name}: ${seatAuthBadgeLabel(u)}`);
-        if (!u.isKioskStaffOnly && hasServerApi() && !isDemoSandboxSession()) {
+        if (!u.isKioskStaffOnly && hasServerApi() && !isDemoScopeActive()) {
           try { await edgeApiFetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u }) }); } catch (_) {}
         }
         syncWithCloud(true);
@@ -128200,7 +128618,7 @@
         const parsedSw = JSON.parse(rawSw);
         if (parsedSw && parsedSw.email && (Date.now() - Number(parsedSw.ts || 0)) < 30000) {
           swResumeEmail = parsedSw.email;
-          if (parsedSw.company && COMPANY_LABELS[parsedSw.company] && !PARAMS.get('industry')) STATE.company = parsedSw.company;
+          if (parsedSw.company && parsedSw.company !== DEMO_COMPANY_KEY && COMPANY_LABELS[parsedSw.company] && !PARAMS.get('industry')) STATE.company = parsedSw.company;
           if (parsedSw.view && VIEW_TITLES[parsedSw.view]) swResumeView = parsedSw.view;
           if (parsedSw.activeTableKey) STATE.activeTableKey = parsedSw.activeTableKey;
           if (parsedSw.activeUnivRegKey) STATE.activeUnivRegKey = parsedSw.activeUnivRegKey;
@@ -129376,6 +129794,7 @@
         hasServerApi,
         edgeApiFetch,
         isDemoSandboxSession,
+        isDemoScopeActive,
         appStoreGetRaw,
         appStoreSetRaw,
         saveLocalAuthAndRecords,
@@ -130136,7 +130555,7 @@
           if (STATE.authed && activeUser() && activeUser().email) {
             sessionStorage.setItem('isabi_mfg_sw_resume', JSON.stringify({
               email: activeUser().email,
-              company: STATE.company,
+              company: STATE.company === DEMO_COMPANY_KEY ? (_demoCompanyPrevRealCo || 'manufacturing-group') : STATE.company,
               view: STATE.view,
               activeTableKey: STATE.activeTableKey || '',
               activeUnivRegKey: STATE.activeUnivRegKey || '',
@@ -130362,9 +130781,11 @@
     </div>`;
   }
 
-  function unpackIndustrySeedPayload(P) {
-    if (!P || typeof P !== 'object' || (!P.industries && !P.tables)) return;
-    SEED._rawIndustryPayload = P;
+  function unpackIndustrySeedPayload(P, opts = {}) {
+    if (!P || typeof P !== 'object' || (!P.industries && !P.tables)) return null;
+    if (!(opts && opts.returnOnly) && !_demoCompanySandboxActive) {
+      SEED._rawIndustryPayload = P;
+    }
     const S = P._s || [];
     const live = { until: P.cutoff_date || P.until || '2026-11-06' };
     const unpackTable = t => {
@@ -130436,7 +130857,9 @@
       demoPinnedSet.add(newId.toUpperCase());
       row.id = newId;
     };
-    if (isDemoScopeActive()) {
+    const isDeferredLiveForSnap = Boolean(!(opts && opts.returnOnly) && _demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSandboxSession() && !(opts && opts.asDemo));
+    const applyDemoPins = Boolean((opts && opts.asDemo) || (!(opts && opts.returnOnly) && !isDeferredLiveForSnap && isDemoScopeActive() && !(opts && opts.forceLive)));
+    if (applyDemoPins) {
       const setCoId = (arr, co, nth, newId) => {
         if (!Array.isArray(arr)) return;
         let seen = 0;
@@ -130477,7 +130900,9 @@
         setCoId(live.trading.grnRows, 'Shacman', 0, 'GRN-SH-2026-041');
         setCoId(live.trading.grnRows, 'Korri Auto', 0, 'GRN-KA-2026-058');
         setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
-        setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
+        if (Array.isArray(live.trading.serialUnits) && live.trading.serialUnits.some(r => r && r.company === 'Korri Auto')) {
+          setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
+        }
         if (Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
           demoPinnedSet.add('SU-KA-001');
           live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2026, warehouse: 'Al Ghazieh', location: 'Al-Ghazieh Service Bay', fob_usd: 29500, landed_add_usd: 4700, landed_cost_usd: 34200, list_price_usd: 42900, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
@@ -130545,7 +130970,7 @@
         if (ag && ag.id) addFallbackAlias('AGR-' + String(idx + 1).padStart(3, '0'), ag.id);
       });
     }
-    if (!isDemoScopeActive()) {
+    if (!applyDemoPins) {
       if (live.hospitality) {
         addFallbackAlias('MEM-2026-001', pickCoId(live.hospitality.membershipRows, 'Blanca', 0));
         addFallbackAlias('MEM-2026-003', pickCoId(live.hospitality.membershipRows, 'Palms', 0));
@@ -130590,11 +131015,22 @@
         addFallbackAlias('CLM-2026-003', pickCoId(live.insurance.claims, 'Insurance Company', 2));
       }
     }
+    Object.defineProperty(live, '_legacyIdMap', { value: legMap, enumerable: false, configurable: true, writable: true });
+    if (opts && opts.returnOnly) return live;
+    if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSandboxSession()) {
+      _demoCompanyLiveSnap.rawIndustryPayload = P;
+      _demoCompanyLiveSnap.industryLive = live;
+      _demoCompanyLiveSnap.industryLegacyIdMap = legMap;
+      _demoCompanyLiveSnap.industryRev = (SEED._industryRev || 0) + 1;
+      _demoCompanyLiveSnap.industryLiveSpineMergedRev = -1;
+      return live;
+    }
     SEED._industryLegacyIdMap = legMap;
     SEED.industryLive = live;
     SEED._industryRev = (SEED._industryRev || 0) + 1;
     upgradeLegacyIndustryStores();
     mergeIndustryLiveSpineIntoRecords();
+    return live;
   }
 
   function mergeIndustryLiveSpineIntoRecords() {
@@ -130650,25 +131086,34 @@
     });
   }
 
-  async function unpackPackedRecordsIntoSeed(P, shouldYield) {
+  async function unpackPackedRecordsIntoSeed(P, shouldYield, targetSeed) {
     if (!P || typeof P !== 'object') return;
-    if (P.generated_at) SEED.generated_at = P.generated_at;
+    const resolveTgt = () => targetSeed || ((_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSandboxSession()) ? _demoCompanyLiveSnap : SEED);
+    const tgt0 = resolveTgt();
+    if (!tgt0) return;
+    if (P.generated_at && tgt0 === SEED) SEED.generated_at = P.generated_at;
     if (P.models && typeof P.models === 'object' && Object.keys(P.models).length) {
-      SEED.models = P.models;
-      SEED._origModelMasters = null;
+      tgt0.models = P.models;
+      if (tgt0 === SEED) SEED._origModelMasters = null;
     }
     if (P.sentinels && typeof P.sentinels === 'object' && Object.keys(P.sentinels).length) {
-      SEED.sentinels = P.sentinels;
+      tgt0.sentinels = P.sentinels;
     }
     const S = P._s || [];
     const entries = Object.entries(P.records || {});
     let sliceStart = performance.now();
     for (let ei = 0; ei < entries.length; ei++) {
       const [k, t] = entries[ei];
-      delete SEED_ORIG_ARCHIVE[k];
-      delete SEED_VOIDED_ARCHIVE[k];
+      const curTgt = resolveTgt();
+      if (!curTgt.records) curTgt.records = {};
+      if (curTgt === SEED) {
+        delete SEED_ORIG_ARCHIVE[k];
+        delete SEED_VOIDED_ARCHIVE[k];
+      } else if (curTgt === _demoCompanyLiveSnap) {
+        if (curTgt.voidedSnap) delete curTgt.voidedSnap[k];
+      }
       if (!t || !t.c) {
-        SEED.records[k] = Array.isArray(t) ? t : [];
+        curTgt.records[k] = Array.isArray(t) ? t : [];
         continue;
       }
       const cols = t.c, sc = t.sc, pf = t.p, hr = t.hr;
@@ -130713,7 +131158,9 @@
           }
         }
       }
-      SEED.records[k] = out;
+      const endTgt = resolveTgt();
+      if (!endTgt.records) endTgt.records = {};
+      endTgt.records[k] = out;
       if (shouldYield && (performance.now() - sliceStart) > (STATE.authed ? 12 : 4)) {
         await new Promise(r => setTimeout(r, STATE.authed ? 0 : 12));
         sliceStart = performance.now();
@@ -130728,55 +131175,84 @@
     const p = new URLSearchParams(location.search);
     return p.get('demo') === '1' || p.get('autologin') === '1' || Boolean(STATE.demoVisitor);
   }
-  function applyPublicDemoSanitization() {
-    if (!SEED) return false;
-    if (!_demoSanitizeBackup) {
-      const recSnap = {};
-      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance', 'external_movements', 'loans', 'loan_settlements'];
-      recKeys.forEach(k => {
-        if (SEED.records && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
-          recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
-        }
-      });
-      _demoSanitizeBackup = {
-        modelsJson: JSON.stringify(SEED.models || {}),
-        recSnap,
-        demoVisitor: STATE.demoVisitor
-      };
-    } else if (_demoSanitizeBackup.recSnap && SEED.records) {
-      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance', 'external_movements', 'loans', 'loan_settlements'].forEach(k => {
-        if (!_demoSanitizeBackup.recSnap[k] && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
-          _demoSanitizeBackup.recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
-        }
-      });
+  function applyPublicDemoSanitization(optTargetSeed, opts = {}) {
+    const tgt = optTargetSeed || SEED;
+    if (!tgt) return false;
+    const isMainSeed = tgt === SEED;
+    if (isMainSeed && !(opts && opts.skipBackup)) {
+      if (!_demoSanitizeBackup) {
+        const recSnap = {};
+        Object.keys(SEED.records || {}).forEach(k => {
+          if (Array.isArray(SEED.records[k]) && SEED.records[k].length) {
+            recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
+          }
+        });
+        _demoSanitizeBackup = {
+          modelsJson: JSON.stringify(SEED.models || {}),
+          sentinelsJson: JSON.stringify(SEED.sentinels || []),
+          recSnap,
+          demoVisitor: STATE.demoVisitor
+        };
+      } else if (_demoSanitizeBackup.recSnap && SEED.records) {
+        Object.keys(SEED.records || {}).forEach(k => {
+          if (!_demoSanitizeBackup.recSnap[k] && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
+            _demoSanitizeBackup.recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
+          }
+        });
+      }
     }
+    const PRESERVED_ENTITIES = new Set([
+      'wtc', 'wtc (world trading & construction)', 'bbconstruction', 'bb construction', 'bbc',
+      'lionstransport', 'lions transport', 'lions', 'bdeirholding', 'bdeir holding',
+      'blanca', 'launa', 'la una', 'palms', 'voile', 'platinum',
+      'korriauto', 'korri auto', 'shacman',
+      'properties', '4235company', '4235 company', '4235 company s.a.l', '4235',
+      'insurance', 'insurance company', 'bdeir insurance brokerage',
+      'manufacturing-group', 'all', 'shared', 'company fleet', 'third party', 'unknown',
+      'cash', 'walk-in', 'general', 'n/a', 'none', '-', '—',
+      'medgulf', 'allianz sna', 'axa middle east', 'bankers', 'fidelity', 'arope',
+      'lia assurrex', 'cumberland', 'libano-suisse', 'securite', 'trust compass'
+    ]);
+    const isPreservedEntity = raw => {
+      const s = String(raw || '').trim();
+      if (!s || s.startsWith('(')) return true;
+      return PRESERVED_ENTITIES.has(norm(s));
+    };
     const DEMO_CUSTS = [
       'Cedar Ready-Mix S.A.L.', 'Levant Infrastructure Corp.', 'Bekaa Concrete & Aggregates',
       'Mediterranean Civil Works', 'Mount Lebanon Builders Co.', 'Byblos Structural Contracting',
       'Phoenicia Urban Development', 'Horizon Foundations S.A.R.L.', 'Summit Roads & Bridges',
       'Metn Industrial Concrete', 'Batroun Marine & Quarry Works', 'Koura Engineering Group',
-      'Matn Civil Constructors', 'Keserwan Aggregate Supply', 'Nabatieh Concrete Works', 'Saida Port Contractors'
+      'Matn Civil Constructors', 'Keserwan Aggregate Supply', 'Nabatieh Concrete Works', 'Saida Port Contractors',
+      'Jounieh Commercial Towers', 'Aley Highland Builders', 'Chouf Structural Systems', 'Zgharta Civil Engineering'
     ];
     const DEMO_SUPPS = [
       'Al-Jabal Quarry Partners', 'Eastern Haulage & Aggregates', 'Tripoli Industrial Supply',
       'Zahle Heavy Logistics Co.', 'Chouf Stone & Crushing', 'Litani Fuel & Lubricants',
-      'Apex Machinery Parts S.A.L.', 'Northern Aggregate Carriers', 'Bekaavalley Transport Co.', 'Highland Crushing Ltd.'
+      'Apex Machinery Parts S.A.L.', 'Northern Aggregate Carriers', 'Bekaavalley Transport Co.', 'Highland Crushing Ltd.',
+      'Coastal Cement & Admixtures', 'Cedar Fleet Hydraulics', 'Levant Industrial Tires', 'Byblos Quarry Hauliers'
     ];
     const DEMO_SITES = [
       'Zouk Industrial Zone', 'Dbayeh Highway Lot 4', 'Zahle Bypass Sector B',
       'Batroun Coastal Project', 'Choueifat Logistics Park', 'Jbeil Commercial Hub',
-      'Baabda Retaining Wall', 'Chtaura Industrial Yard', 'Antelias Bridge Approach', 'Halat Industrial Lot'
+      'Baabda Retaining Wall', 'Chtaura Industrial Yard', 'Antelias Bridge Approach', 'Halat Industrial Lot',
+      'Nahr Ibrahim Viaduct', 'Sin El Fil Tower Foundation', 'Amchit Logistics Terminal'
     ];
     const DEMO_PEOPLE = [
       'Rami Haddad', 'Karim Mansour', 'Nabil Khoury', 'Tarek Nassar', 'Sami Farah',
       'Walid Azar', 'Jad Karam', 'Fadi Rizk', 'Ziad Saab', 'Marwan Ghanem',
-      'Elie Bassil', 'fouad Salameh'.replace(/^f/, 'F')
+      'Elie Bassil', 'Fouad Salameh', 'Nadine Maalouf', 'Maya Abi Saab', 'Lara Chamoun',
+      'Hadi Moussa', 'Bassam Harb', 'Ghassan Rahme', 'Chadi Tannous', 'Rony Hayek'
+    ];
+    const DEMO_REGIONS = [
+      'Greater Beirut', 'Metn Corridor', 'Keserwan Coast', 'Byblos Sector',
+      'Batroun North', 'Bekaa Central', 'Chouf Highlands', 'South Coastal'
     ];
     const makeMapper = (pool, prefix) => {
       const map = new Map();
       return raw => {
         const s = String(raw || '').trim();
-        if (!s || s === '—' || s === '-' || s.startsWith('(')) return raw;
+        if (!s || isPreservedEntity(s)) return raw;
         const k = norm(s);
         if (!k) return raw;
         if (!map.has(k)) {
@@ -130786,120 +131262,258 @@
         return map.get(k);
       };
     };
+    const makeCodeMapper = prefix => {
+      const map = new Map();
+      return raw => {
+        const s = String(raw || '').trim();
+        if (!s || isPreservedEntity(s)) return raw;
+        const k = norm(s);
+        if (!k) return raw;
+        if (!map.has(k)) map.set(k, `${prefix}-${String(map.size + 1).padStart(3, '0')}`);
+        return map.get(k);
+      };
+    };
     const mapCust = makeMapper(DEMO_CUSTS, 'Corporate Client');
     const mapSupp = makeMapper(DEMO_SUPPS, 'Industrial Vendor');
     const mapSite = makeMapper(DEMO_SITES, 'Project Site');
     const mapPerson = makeMapper(DEMO_PEOPLE, 'Plant Operator');
+    const mapRegion = makeMapper(DEMO_REGIONS, 'Sector');
+    const mapEquip = makeCodeMapper('UNIT');
+    const mapPlate = makeCodeMapper('DEMO-TRK');
 
-    const rec = SEED.records || {};
-    (rec.customers || []).forEach(c => {
+    const CLEAR_TEXT_KEYS = new Set([
+      'notes', 'note', 'remarks', 'remark', 'description', 'audit_note', 'discount_reason',
+      'items_desc', 'scope', 'contact', 'address', 'location', 'storage_location', 'part_serial',
+      'tax_no', 'vat_no', 'mof_no', 'financial_no', 'iban', 'bank_account', 'id_number',
+      'national_id', 'id_no', 'passport_no', 'license_no', 'check_no', 'cheque_no',
+      'ref_doc', 'reference', 'trucks', 'drivers', 'external_invoice'
+    ]);
+    const scrubRowSensitiveFields = (r, idx) => {
+      if (!r || typeof r !== 'object') return;
+      for (const fk of Object.keys(r)) {
+        const fl = fk.toLowerCase();
+        if (fl === 'attachments' || fl === 'driver_rows' || fl === 'adj_windows') {
+          r[fk] = [];
+        } else if (fl === 'admin_overrides' || fl === '_seed_orig') {
+          delete r[fk];
+        } else if (fl === 'phone' || fl === 'mobile' || fl === 'tel') {
+          if (r[fk]) r[fk] = `+961 70 000 ${String((idx % 899) + 100).padStart(3, '0')}`;
+        } else if (fl === 'email') {
+          if (r[fk]) r[fk] = `contact${(idx % 99) + 1}@demo-client.example`;
+        } else if (CLEAR_TEXT_KEYS.has(fl)) {
+          r[fk] = '';
+        } else if ((fl === 'plate' || fl === 'plate_no' || fl.includes('plate')) && typeof r[fk] === 'string' && r[fk].trim()) {
+          r[fk] = mapPlate(r[fk]);
+        }
+      }
+      for (const ck of ['customer', 'Customer', 'buyer', 'client', 'tenant', 'member']) {
+        if (typeof r[ck] === 'string' && r[ck].trim()) r[ck] = mapCust(r[ck]);
+      }
+      for (const sk of ['supplier', 'Supplier', 'site_owner', 'truck_owner', 'vendor', 'vendor_or_buyer', 'contractor', 'appraiser']) {
+        if (typeof r[sk] === 'string' && r[sk].trim()) r[sk] = mapSupp(r[sk]);
+      }
+      for (const tk of ['site', 'Site', 'from_site', 'to_site']) {
+        if (typeof r[tk] === 'string' && r[tk].trim()) r[tk] = mapSite(r[tk]);
+      }
+      for (const pk of ['driver', 'default_driver', 'day_operator', 'night_operator', 'staff', 'employee', 'cashier', 'producer', 'adjuster', 'entered_by', 'approved_by', 'freelancer', 'reported_by', 'voided_by', 'modified_by']) {
+        if (typeof r[pk] === 'string' && r[pk].trim()) r[pk] = mapPerson(r[pk]);
+      }
+      for (const ek of ['equipment', 'Equipment', 'truck', 'Truck', 'vehicle', 'target_equipment']) {
+        if (typeof r[ek] === 'string' && r[ek].trim()) r[ek] = mapEquip(r[ek]);
+      }
+      if (typeof r.for_equipment === 'string' && r.for_equipment.trim()) r.for_equipment = mapEquip(r.for_equipment);
+      for (const rk of ['region', 'Region']) {
+        if (typeof r[rk] === 'string' && r[rk].trim()) r[rk] = mapRegion(r[rk]);
+      }
+    };
+
+    const rec = tgt.records || {};
+    (rec.regions || []).forEach((rg, idx) => {
+      if (!rg) return;
+      scrubRowSensitiveFields(rg, idx);
+      if (rg.name) rg.name = mapRegion(rg.name);
+    });
+    (rec.customers || []).forEach((c, idx) => {
       if (!c) return;
+      scrubRowSensitiveFields(c, idx);
       c.name = mapCust(c.name);
-      if (c.Customer) c.Customer = mapCust(c.Customer);
+      if ('official_name' in c) c.official_name = c.name;
       c.vat_registered = true;
     });
-    (rec.suppliers || []).forEach(s => {
+    (rec.suppliers || []).forEach((s, idx) => {
       if (!s) return;
+      scrubRowSensitiveFields(s, idx);
       s.name = mapSupp(s.name);
-      if (s.Supplier) s.Supplier = mapSupp(s.Supplier);
+      if ('official_name' in s) s.official_name = s.name;
     });
-    (rec.sites || []).forEach(st => { if (st) { st.name = mapSite(st.name); if (st.Site) st.Site = mapSite(st.Site); } });
-    (rec.drivers || []).forEach(d => { if (d) d.name = mapPerson(d.name); });
-    (rec.company_drivers || []).forEach(d => { if (d) { d.driver = mapPerson(d.driver); d.name = mapPerson(d.name); } });
-    (rec.company_equipment || []).forEach(e => {
+    (rec.sites || []).forEach((st, idx) => {
+      if (!st) return;
+      scrubRowSensitiveFields(st, idx);
+      st.name = mapSite(st.name);
+    });
+    (rec.equipment || []).forEach((eq, idx) => {
+      if (!eq) return;
+      scrubRowSensitiveFields(eq, idx);
+      if (eq.name) eq.name = mapEquip(eq.name);
+      if (eq.code) eq.code = `EQ-${String(idx + 1).padStart(3, '0')}`;
+    });
+    (rec.company_equipment || []).forEach((e, idx) => {
       if (!e) return;
-      if (e.supplier) e.supplier = mapSupp(e.supplier);
-      if (e.default_driver) e.default_driver = mapPerson(e.default_driver);
-      if (e.site) e.site = mapSite(e.site);
-      if (e.day_operator) e.day_operator = mapPerson(e.day_operator);
-      if (e.night_operator) e.night_operator = mapPerson(e.night_operator);
+      scrubRowSensitiveFields(e, idx);
+      if (e.name) e.name = mapEquip(e.name);
     });
-    (rec.employments || []).forEach(em => { if (em) { em.staff = mapPerson(em.staff); em.name = mapPerson(em.name || em.staff); } });
-    (rec.salaries || []).forEach(sl => { if (sl && sl.staff) sl.staff = mapPerson(sl.staff); });
-    (rec.attendance || []).forEach(at => { if (at && at.staff) at.staff = mapPerson(at.staff); });
-    (rec.sales_tickets || []).forEach(t => {
-      if (!t) return;
-      if (t.customer) t.customer = mapCust(t.customer);
-      if (t.site) t.site = mapSite(t.site);
-      if (t.driver) t.driver = mapPerson(t.driver);
-      if (t.truck_owner) t.truck_owner = mapSupp(t.truck_owner);
-      const sgn = ticketSign(t);
-      if (sgn !== 0) {
-        const net = Number(t.total != null ? t.total : (Number(t.price || 0) + Number(t.trans_price || 0)));
-        if (Math.abs(Number(t.vat || 0)) < 0.005 && Math.abs(net) > 0.005) {
-          const v = round2(net * 0.11);
-          t.vat = v;
-          t.total_ttc = round2(net + v);
-        }
-        t.iva = true;
-      }
+    (rec.drivers || []).forEach((d, idx) => {
+      if (!d) return;
+      scrubRowSensitiveFields(d, idx);
+      d.name = mapPerson(d.name);
+      if ('official_name' in d) d.official_name = d.name;
     });
-    (rec.receipts || []).forEach(r => { if (r && r.customer) r.customer = mapCust(r.customer); });
-    (rec.vat_invoices || []).forEach(v => { if (v && v.customer) v.customer = mapCust(v.customer); });
-    (rec.price_rules || []).forEach(pr => {
-      if (!pr) return;
-      if (pr.customer) pr.customer = mapCust(pr.customer);
-      if (pr.supplier) pr.supplier = mapSupp(pr.supplier);
-      if (pr.site) pr.site = mapSite(pr.site);
+    (rec.company_drivers || []).forEach((d, idx) => {
+      if (!d) return;
+      scrubRowSensitiveFields(d, idx);
+      if (d.name) d.name = mapPerson(d.name);
     });
-    (rec.credit_terms || []).forEach(ct => { if (ct && ct.customer) ct.customer = mapCust(ct.customer); });
-    (rec.raw_purchases || []).forEach(r => {
-      if (!r) return;
-      if (r.site) r.site = mapSite(r.site);
-      if (r.site_owner) r.site_owner = mapSupp(r.site_owner);
-      if (r.truck_owner) r.truck_owner = mapSupp(r.truck_owner);
-      if (r.driver) r.driver = mapPerson(r.driver);
-    });
-    (rec.expenses || []).forEach(x => { if (x && x.supplier) x.supplier = mapSupp(x.supplier); });
-    (rec.recurring_expenses || []).forEach(rx => {
-      if (!rx) return;
-      if (rx.supplier) {
-        rx.supplier = mapSupp(rx.supplier);
-        if (rx.name) rx.name = `RECUR ${rx.start_date || rx.date || ''} ${rx.supplier}${rx.wb_index ? ' #' + rx.wb_index : ''}`;
-      }
-    });
-    (rec.settlements || []).forEach(sp => { if (sp && sp.supplier) sp.supplier = mapSupp(sp.supplier); });
-    const groupCoSet = new Set(['wtc', 'bbconstruction', 'lions transport', 'bdeir holding', 'blanca', 'la una', 'palms', 'voile', 'platinum', 'korri auto', 'shacman', 'properties', '4235 company s.a.l', 'insurance company']);
-    const mapExtParty = v => {
-      const s = String(v || '').trim();
-      if (!s || groupCoSet.has(s.toLowerCase())) return v;
-      return mapPerson(s);
-    };
-    (rec.external_movements || []).forEach(em => {
+    (rec.employments || []).forEach((em, idx) => {
       if (!em) return;
-      if (em.counterparty) em.counterparty = mapExtParty(em.counterparty);
-      if (em.party) em.party = mapExtParty(em.party);
-      if (em.lender) em.lender = mapExtParty(em.lender);
-      if (em.borrower) em.borrower = mapExtParty(em.borrower);
-      const cpLbl = em.counterparty || em.party || 'Stakeholder';
-      if (em.name) em.name = `${/^extended$/i.test(String(em.kind || '')) ? 'EXTD' : 'EXT'} ${em.date || ''} ${cpLbl}${em.wb_index ? ' #' + em.wb_index : ''}`.trim();
-      if (em.notes) em.notes = em.wb_index ? `Voucher #${em.wb_index}` : 'Treasury stakeholder movement';
+      scrubRowSensitiveFields(em, idx);
+      em.name = em.staff || mapPerson(em.name);
+      if ('official_name' in em) em.official_name = em.name;
     });
-    (rec.loans || []).forEach(ln => {
-      if (!ln) return;
-      if (ln.counterparty) ln.counterparty = mapExtParty(ln.counterparty);
-      if (ln.lender) ln.lender = mapExtParty(ln.lender);
-      if (ln.borrower) ln.borrower = mapExtParty(ln.borrower);
-      const cpLbl = ln.counterparty || ln.lender || ln.borrower || 'Counterparty';
-      if (ln.name) ln.name = `LOAN ${ln.start_date || ln.date || ''} ${cpLbl}`.trim();
-      if (ln.notes) ln.notes = 'Corporate treasury facility';
-    });
-    (rec.loan_settlements || []).forEach(ls => {
-      if (!ls) return;
-      if (ls.counterparty) ls.counterparty = mapExtParty(ls.counterparty);
-      if (ls.lender) ls.lender = mapExtParty(ls.lender);
-      if (ls.borrower) ls.borrower = mapExtParty(ls.borrower);
-      if (ls.loan) ls.loan = mapExtParty(ls.loan);
-      const cpLbl = ls.counterparty || ls.loan || 'Counterparty';
-      if (ls.name) ls.name = `LSET ${ls.date || ''} ${cpLbl}`.trim();
-      if (ls.notes) ls.notes = 'Facility repayment voucher';
+    (rec.staff_members || []).forEach((sm, idx) => {
+      if (!sm) return;
+      scrubRowSensitiveFields(sm, idx);
+      if (sm.name) sm.name = mapPerson(sm.name);
+      if ('official_name' in sm) sm.official_name = sm.name;
     });
 
-    Object.values(SEED.models || {}).forEach(m => {
+    const anonymizeDemoCoIds = Boolean((opts && opts.forceDemoCoIds) || (STATE.company === DEMO_COMPANY_KEY && !isDemoSandboxSession()));
+    const MASTER_HANDLED = new Set(['regions', 'customers', 'suppliers', 'sites', 'equipment', 'company_equipment', 'drivers', 'company_drivers', 'employments', 'staff_members', 'documents']);
+    rec.documents = [];
+
+    Object.keys(rec).forEach(tblKey => {
+      if (MASTER_HANDLED.has(tblKey) || !Array.isArray(rec[tblKey])) return;
+      rec[tblKey].forEach((r, idx) => {
+        if (!r) return;
+        scrubRowSensitiveFields(r, idx);
+        if (tblKey === 'sales_tickets') {
+          if (anonymizeDemoCoIds && r.ticket_no != null && String(r.ticket_no).trim() !== '') {
+            r.ticket_no = `DM-${idx + 10001}`;
+          }
+          if (r.vat_invoice) r.vat_invoice = `DM-VAT-${(idx % 80) + 1001}`;
+          r.name = `#${r.ticket_no || (idx + 1)} · ${r.date || ''}`;
+          const sgn = ticketSign(r);
+          if (sgn !== 0) {
+            const net = Number(r.total != null ? r.total : (Number(r.price || 0) + Number(r.trans_price || 0)));
+            if (Math.abs(Number(r.vat || 0)) < 0.005 && Math.abs(net) > 0.005) {
+              const v = round2(net * 0.11);
+              r.vat = v;
+              r.total_ttc = round2(net + v);
+            }
+            r.iva = true;
+          }
+        } else if (tblKey === 'raw_purchases') {
+          if (anonymizeDemoCoIds && r.ticket_no != null && String(r.ticket_no).trim() !== '') {
+            r.ticket_no = `DM-RAW-${idx + 20001}`;
+          }
+          r.name = `#${r.ticket_no || (idx + 1)} · ${r.date || ''}`;
+        } else if (tblKey === 'fuel_intakes') {
+          if (anonymizeDemoCoIds && r.ticket_no != null && String(r.ticket_no).trim() !== '') {
+            r.ticket_no = `DM-FUL-${idx + 30001}`;
+          }
+          r.name = `FUL-${idx + 10001}`;
+        } else if (tblKey === 'fuel_malfunctions') {
+          if (r.ticket_no) r.ticket_no = `DM-FUL-${idx + 301}`;
+          r.name = `Fuel Variance #${idx + 101}`;
+        } else if (tblKey === 'vat_invoices') {
+          if (anonymizeDemoCoIds && r.invoice_no != null && String(r.invoice_no).trim() !== '') {
+            r.invoice_no = `DM-VAT-${idx + 1001}`;
+          }
+          r.name = `Tax Invoice #${idx + 1001}`;
+        } else if (tblKey === 'price_rules') {
+          r.name = `Rate Rule #${String(idx + 1).padStart(4, '0')}`;
+        } else if (tblKey === 'credit_terms') {
+          r.name = `Credit Term · ${r.customer || 'Client'}`;
+        } else if (tblKey === 'expenses') {
+          if (r.invoice && r.invoice !== '-') r.invoice = `INV-DM-${idx + 1001}`;
+          r.name = `EXP ${r.date || ''} ${r.supplier || 'Vendor'} #${idx + 1001}`;
+        } else if (tblKey === 'expense_items') {
+          if (r.expense_ref) r.expense_ref = `EXP ${r.date || ''} ${r.supplier || 'Vendor'}`;
+          r.name = `EXI-${String(idx + 1).padStart(5, '0')}`;
+        } else if (tblKey === 'recurring_expenses') {
+          r.name = `RECUR ${r.start_date || r.date || ''} ${r.supplier || 'Vendor'} #${idx + 1}`;
+        } else if (tblKey === 'receipts') {
+          r.name = `RCPT ${r.date || ''} ${r.customer || 'Client'} #${idx + 1001}`;
+        } else if (tblKey === 'settlements') {
+          if (r.invoice && r.invoice !== '-') r.invoice = `INV-DM-${idx + 2001}`;
+          if (r.expense_record) r.expense_record = '';
+          r.name = `SETTLE ${r.date || ''} ${r.supplier || 'Vendor'} #${idx + 2001}`;
+        } else if (tblKey === 'salaries') {
+          r.name = `SAL ${r.date || ''} ${r.staff || 'Operator'} #${idx + 1001}`;
+        } else if (tblKey === 'attendance') {
+          if (r.name) r.name = `ATT-${idx + 10001}`;
+        } else if (tblKey === 'loans') {
+          for (const lk of ['lender', 'counterparty', 'party', 'borrower']) {
+            if (typeof r[lk] === 'string' && r[lk].trim() && !isPreservedEntity(r[lk])) r[lk] = mapSupp(r[lk]);
+          }
+          r.name = `Loan ${r.start_date || r.date || ''} ${r.counterparty || r.lender || 'Partner'} #${idx + 101}`;
+        } else if (tblKey === 'loan_settlements') {
+          for (const lk of ['borrower', 'counterparty', 'lender', 'party']) {
+            if (typeof r[lk] === 'string' && r[lk].trim() && !isPreservedEntity(r[lk])) r[lk] = mapSupp(r[lk]);
+          }
+          const cpLabel = r.counterparty || r.borrower || 'Partner';
+          if (r.loan) r.loan = `Loan ${cpLabel}`;
+          r.name = `BRW ${r.date || ''} ${cpLabel} #${idx + 101}`;
+        } else if (tblKey === 'external_movements') {
+          for (const pk of ['counterparty', 'party', 'from_party', 'to_party', 'lender', 'borrower']) {
+            if (typeof r[pk] === 'string' && r[pk].trim() && !isPreservedEntity(r[pk])) r[pk] = mapSupp(r[pk]);
+          }
+          r.name = `${/^extended$/i.test(String(r.kind || '')) ? 'EXTD' : 'EXT'} ${r.date || ''} ${r.counterparty || 'Counterparty'} #${idx + 1001}`;
+        } else if (tblKey === 'conversions') {
+          r.name = `FX ${r.date || ''} #${idx + 101}`;
+        } else if (tblKey === 'jv_partnerships') {
+          for (const pk of ['partner', 'partner_name']) {
+            if (typeof r[pk] === 'string' && r[pk].trim() && !isPreservedEntity(r[pk])) r[pk] = mapSupp(r[pk]);
+          }
+          r.name = `${r.site || 'Project'} · ${r.partner || 'Partner'}${r.percentage != null ? ' ' + r.percentage + '%' : ''}`;
+        } else if (tblKey === 'jv_distributions') {
+          for (const pk of ['partner', 'partner_name']) {
+            if (typeof r[pk] === 'string' && r[pk].trim() && !isPreservedEntity(r[pk])) r[pk] = mapSupp(r[pk]);
+          }
+          r.name = `JVD ${r.date || ''} ${r.partner || 'Partner'} #${idx + 1}`;
+        } else if (tblKey === 'logistics_allowances') {
+          r.name = `Allowance #${idx + 101}`;
+        } else if (tblKey === 'overtime_rates') {
+          r.name = `Overtime Schedule #${idx + 1}`;
+        } else if (tblKey === 'equipment_oil_logs') {
+          r.name = `Service Log #${idx + 1}`;
+        } else if (tblKey === 'work_schedules') {
+          r.name = `Schedule #${idx + 1}`;
+        } else if (tblKey === 'freelance_entries') {
+          r.name = `FRL ${r.date || ''} ${r.freelancer || 'Contractor'} #${idx + 1001}`.trim();
+        } else if (tblKey === 'freelance_payments') {
+          r.name = `FPAY ${r.date || ''} ${r.freelancer || 'Contractor'} #${idx + 1001}`.trim();
+        } else if (tblKey === 'equipment_defects') {
+          r.name = `DEF ${r.date || ''} ${r.equipment || 'UNIT'} #${idx + 101}`.trim();
+        } else if (tblKey === 'equipment_repairs') {
+          r.name = `REP ${r.date || ''} ${r.equipment || 'UNIT'} #${idx + 101}`.trim();
+        } else if (tblKey === 'repair_items') {
+          r.name = `RITM-${String(idx + 1).padStart(4, '0')}`;
+        } else if (tblKey === 'part_movements') {
+          r.name = `PMOV ${r.date || ''} #${idx + 101}`.trim();
+        } else if (tblKey === 'warehouse_movements') {
+          r.name = `WMOV ${r.date || ''} #${idx + 101}`.trim();
+        }
+      });
+    });
+
+    tgt.sentinels = [];
+
+    Object.values(tgt.models || {}).forEach(m => {
       if (!m) return;
       (m.customers || []).forEach(c => {
         if (!c) return;
         c.Customer = mapCust(c.Customer);
+        if (c.name) c.name = mapCust(c.name);
         c['VAT Registered'] = 'Yes';
         const net = Number(c.net_sales || 0);
         if (net > 0) {
@@ -130907,9 +131521,85 @@
           c.sales_ttc = round2(net + c.sales_vat);
         }
       });
-      (m.suppliers || []).forEach(s => { if (s && s.Supplier) s.Supplier = mapSupp(s.Supplier); });
-      (m.sites || []).forEach(st => { if (st && st.Site) st.Site = mapSite(st.Site); });
-      (m.soa_stream || []).forEach(sr => { if (sr && sr.party) sr.party = mapCust(sr.party); });
+      (m.suppliers || []).forEach(s => {
+        if (!s) return;
+        if (s.Supplier) s.Supplier = mapSupp(s.Supplier);
+        if (s.name) s.name = mapSupp(s.name);
+      });
+      (m.sites || []).forEach(st => {
+        if (!st) return;
+        if (st.Site) st.Site = mapSite(st.Site);
+        if (st.name) st.name = mapSite(st.name);
+      });
+      (m.equipment || []).forEach((eq, idx) => {
+        if (!eq) return;
+        scrubRowSensitiveFields(eq, idx);
+        if (eq.Equipment) eq.Equipment = mapEquip(eq.Equipment);
+        if (eq.name) eq.name = mapEquip(eq.name);
+        for (const dk of ['driver', 'default_driver', 'operator']) {
+          if (eq[dk]) eq[dk] = mapPerson(eq[dk]);
+        }
+        for (const sk of ['supplier', 'owner']) {
+          if (eq[sk]) eq[sk] = mapSupp(eq[sk]);
+        }
+      });
+      (m.drivers || []).forEach((dr, idx) => {
+        if (!dr) return;
+        scrubRowSensitiveFields(dr, idx);
+        for (const dk of ['Driver', 'driver', 'name']) {
+          if (dr[dk]) dr[dk] = mapPerson(dr[dk]);
+        }
+        for (const sk of ['truck_owner', 'supplier']) {
+          if (dr[sk]) dr[sk] = mapSupp(dr[sk]);
+        }
+      });
+      if (m.site_regions && typeof m.site_regions === 'object') {
+        const mappedSr = {};
+        Object.entries(m.site_regions).forEach(([sk, sv]) => {
+          mappedSr[mapSite(sk)] = mapRegion(sv);
+        });
+        m.site_regions = mappedSr;
+      }
+      if (Array.isArray(m.vat_adj)) {
+        m.vat_adj.forEach((va, idx) => {
+          if (!va) return;
+          scrubRowSensitiveFields(va, idx);
+          for (const ck of ['customer', 'Customer', 'party', 'name']) {
+            if (typeof va[ck] === 'string' && va[ck].trim() && !isPreservedEntity(va[ck])) va[ck] = mapCust(va[ck]);
+          }
+          for (const sk of ['supplier', 'Supplier']) {
+            if (typeof va[sk] === 'string' && va[sk].trim() && !isPreservedEntity(va[sk])) va[sk] = mapSupp(va[sk]);
+          }
+        });
+      }
+      (m.soa_stream || []).forEach((sr, idx) => {
+        if (!sr) return;
+        scrubRowSensitiveFields(sr, idx);
+        if (sr.party && !isPreservedEntity(sr.party)) {
+          const pType = String(sr.party_type || '').toLowerCase();
+          sr.party = pType.includes('sup') ? mapSupp(sr.party) : mapCust(sr.party);
+        }
+        if (sr.detail && !isPreservedEntity(sr.detail)) {
+          const codeStr = String(sr.code || '');
+          sr.detail = codeStr.startsWith('40') ? mapSupp(sr.detail) : (codeStr.startsWith('42') ? mapPerson(sr.detail) : mapCust(sr.detail));
+        }
+        sr.doc = `JRN-DEMO-${idx + 1001}`;
+        sr.desc = `${sr.account || 'Ledger Entry'} · ${sr.doc}`;
+      });
+      if (m.cash_flow_sheet && m.cash_flow_sheet.tables && typeof m.cash_flow_sheet.tables === 'object') {
+        Object.entries(m.cash_flow_sheet.tables).forEach(([secK, secV]) => {
+          if (!secV || !Array.isArray(secV.rows)) return;
+          secV.rows.forEach(cr => {
+            if (!cr || typeof cr.name !== 'string') return;
+            const nm = cr.name.trim();
+            if (!nm || isPreservedEntity(nm)) return;
+            const nl = nm.toLowerCase();
+            if (nl === 'configuration' || nl === 'interest' || nl === 'usd to lbp' || nl === 'lbp to usd') return;
+            const sl = secK.toLowerCase();
+            cr.name = (sl.includes('sal') || sl.includes('staff')) ? mapPerson(nm) : ((sl.includes('sales') || sl.includes('rec')) ? mapCust(nm) : mapSupp(nm));
+          });
+        });
+      }
       Object.values(m.periods || {}).forEach(pk => {
         if (!pk) return;
         const gs = Number(pk.gross_sales != null ? pk.gross_sales : pk.net_sales || 0);
@@ -130930,19 +131620,24 @@
       });
     });
 
-    normalizeDistinctSiteCategories(SEED);
-    _demoSanitizedActive = true;
-    _officialLookupSig = '';
-    SEED._canonicalById = null;
-    SEED._canonicalByMain = null;
-    SEED._origModelMasters = null;
-    SEED._customRev = (SEED._customRev || 0) + 1;
-    invalidateAllSeedCaches();
+    normalizeDistinctSiteCategories(tgt);
+    if (isMainSeed) {
+      _demoSanitizedActive = true;
+      _officialLookupSig = '';
+      SEED._canonicalById = null;
+      SEED._canonicalByMain = null;
+      SEED._origModelMasters = null;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+      invalidateAllSeedCaches();
+    }
     return true;
   }
   function restorePublicDemoSanitization() {
     if (!_demoSanitizeBackup || !SEED) return false;
     try { SEED.models = JSON.parse(_demoSanitizeBackup.modelsJson); } catch (_) {}
+    if (_demoSanitizeBackup.sentinelsJson != null) {
+      try { SEED.sentinels = JSON.parse(_demoSanitizeBackup.sentinelsJson); } catch (_) {}
+    }
     if (_demoSanitizeBackup.recSnap && SEED.records) {
       Object.keys(_demoSanitizeBackup.recSnap).forEach(k => {
         SEED.records[k] = _demoSanitizeBackup.recSnap[k].map(r => Object.assign({}, r));
@@ -130985,6 +131680,24 @@
       const isBounded = Boolean(expRange || (!ignorePeriod && periodRange()));
       const isEmptyBounded = isBounded && !(ic.byPair && ic.byPair.length) && !exps.length;
       const roll = isEmptyBounded ? null : computeEnterpriseRollup();
+      const hldSched = typeof computeHoldingSchedules === 'function' ? computeHoldingSchedules() : { partnerAgreements: [] };
+      const schedPartners = Array.isArray(hldSched.partnerAgreements) ? hldSched.partnerAgreements : [];
+      const partners = isEmptyBounded
+        ? []
+        : (schedPartners.length
+          ? schedPartners.map(p => ({
+              partner: p.partner,
+              role: p.entity || 'Partner Pool',
+              sharePct: Number(p.pct || 0),
+              opening: Number(p.pool_usd || 0),
+              draws: Number(p.drawn_usd || 0),
+              allocatedOverhead: 0,
+              closingBalance: Number(p.open_usd || 0)
+            }))
+          : (isDemoScopeActive() ? [
+              { partner: 'Rami Haddad', role: 'Managing Shareholder', sharePct: 50.0, opening: 1250000, draws: 85000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 85000 - expTotal * 0.5) },
+              { partner: 'Cedar Capital Partners Trust', role: 'Principal Partner', sharePct: 50.0, opening: 1250000, draws: 65000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 65000 - expTotal * 0.5) }
+            ] : []));
       return {
         kpis: {
           totalExpenses: expTotal,
@@ -131004,10 +131717,7 @@
           net: p.openUsd,
           status: p.openUsd > 0 ? 'Open Leg' : 'Reconciled'
         })),
-        partners: isEmptyBounded ? [] : [
-          { partner: 'Hussein Bdeir', role: 'Managing Shareholder', sharePct: 50.0, opening: 1250000, draws: 85000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 85000 - expTotal * 0.5) },
-          { partner: 'Bdeir Family Holding Trust', role: 'Principal Partner', sharePct: 50.0, opening: 1250000, draws: 65000, allocatedOverhead: round2(expTotal * 0.5), closingBalance: round2(1250000 - 65000 - expTotal * 0.5) }
-        ]
+        partners
       };
     },
     computeIntercompanyInteractions: typeof computeIntercompanyInteractions === 'function' ? computeIntercompanyInteractions : null,
@@ -131086,7 +131796,7 @@
         ? []
         : (isBounded
             ? validSales.filter(r => r.chassis && !/^PARTS|^WH-|^GAP/i.test(String(r.chassis)))
-            : (trd.serialUnits || trd.truckRows || trd.unitRows || validSales.slice(0, 8)));
+            : ((Array.isArray(trd.serialUnits) && trd.serialUnits.length) ? trd.serialUnits : (isDemoScopeActive() ? validSales.slice(0, 8) : [])));
       return {
         kpis: {
           salesTotal: s.totalSalesTtc,
@@ -131108,19 +131818,24 @@
           customer: r.customer,
           description: r.item,
           totalTtc: r.ttc_usd,
-          balanceUsd: round2(r.ttc_usd - (r.paid_usd != null ? r.paid_usd : r.ttc_usd * 0.7))
+          balanceUsd: round2(r.balance_usd != null ? r.balance_usd : (r.ttc_usd - Number(r.paid_usd != null ? r.paid_usd : (isDemoScopeActive() ? r.ttc_usd * 0.7 : 0))))
         })),
-        vehicleRows: rawUnits.map((v, idx) => ({
-          vin: v.chassis_vin || v.vin || v.chassis || (`LZGJL484${idx + 10}X00${idx + 1}`),
-          company: v.company || 'Shacman',
-          model: v.model || v.item || 'Shacman X3000 6x4 Tractor',
-          customsNo: v.customs_no || v.engine_no || (`BEY-2026-IM-${410 + idx}`),
-          buyer: v.buyer || v.customer || 'Showroom Yard',
-          landedCostUsd: v.landed_cost_usd != null ? v.landed_cost_usd : (v.landed_usd || v.cost_usd || 64500),
-          salePriceUsd: v.list_price_usd != null ? v.list_price_usd : (v.price_usd || v.ttc_usd || 78000),
-          marginUsd: v.margin_usd != null ? v.margin_usd : 13500,
-          status: v.status || 'Delivered'
-        })),
+        vehicleRows: rawUnits.map((v, idx) => {
+          const demo = isDemoScopeActive();
+          const landedCostUsd = Number(v.landed_cost_usd ?? v.landed_usd ?? v.cost_usd ?? (demo ? 64500 : 0));
+          const salePriceUsd = Number(v.list_price_usd ?? v.ask_price_usd ?? v.price_usd ?? v.ttc_usd ?? (demo ? 78000 : 0));
+          return {
+            vin: v.chassis_vin || v.vin || v.chassis || (demo ? `LZGJL484${idx + 10}X00${idx + 1}` : ''),
+            company: v.company || (demo ? 'Shacman' : ''),
+            model: v.model || v.item || (demo ? 'Shacman X3000 6x4 Tractor' : ''),
+            customsNo: v.customs_no || v.engine_no || v.id || (demo ? `BEY-2026-IM-${410 + idx}` : ''),
+            buyer: v.buyer || v.customer || (demo ? 'Showroom Yard' : ''),
+            landedCostUsd: round2(landedCostUsd),
+            salePriceUsd: round2(salePriceUsd),
+            marginUsd: round2(v.margin_usd != null ? v.margin_usd : (salePriceUsd - landedCostUsd)),
+            status: v.status || 'In Showroom'
+          };
+        }),
         stockRows: isEmptyBounded ? [] : (trd.stockRows || [])
       };
     },
@@ -131213,19 +131928,28 @@
       const expRange = (opts && opts.range && opts.range.from && opts.range.to) ? opts.range : null;
       const ins = computeInsuranceOperations({ range: expRange, ignorePeriod: Boolean(opts && opts.ignorePeriod === true) && !expRange });
       const s = ins.summary;
+      const demo = isDemoScopeActive();
+      const insExps = filterRecords((SEED && SEED.records && SEED.records.expenses) || [], { company: 'insurance', strictBu: true, ignoreSearch: true, ignorePeriod: true });
+      const liveExpUsd = round2(insExps.reduce((a, x) => a + expenseSign(x) * Number(x.total || x.amount || 0), 0));
+      const expDeduct = liveExpUsd > 0 ? liveExpUsd : (demo ? 11400 : 0);
+      const incurredClaimsUsd = round2((ins.claims || []).reduce((a, c) => a + Number(c.claimed_usd || 0), 0));
+      const dueRenewals = (ins.renewals || []).filter(r => Number(r.days_left) >= 0 && Number(r.days_left) <= 90);
+      const renewalGwp60d = dueRenewals.length
+        ? round2(dueRenewals.reduce((a, r) => a + Number(r.expiring_gwp_usd || r.gross_prem_usd || r.gwp_usd || 0), 0))
+        : (demo ? round2(s.gwpUsd * 0.24) : 0);
       return {
         kpis: {
           gwpTotal: s.gwpUsd,
           policyCount: s.totalPolicyCount,
           commTotal: s.netCommUsd,
           avgCommYield: s.gwpUsd > 0 ? round2((s.netCommUsd / s.gwpUsd) * 100) : 0,
-          netBrokerageIncome: s.gwpUsd > 0 ? round2(s.netCommUsd + s.policyFees7064Usd - 11400) : 0,
+          netBrokerageIncome: s.gwpUsd > 0 ? round2(s.netCommUsd + s.policyFees7064Usd - expDeduct) : 0,
           unpaidPremUsd: s.openClientAr4112Usd,
           carrierPayableUsd: s.payableToCarriers4017Usd,
           renewing60d: s.gwpUsd > 0 ? s.dueRenewals90dCount : 0,
-          renewalGwp60d: round2(s.gwpUsd * 0.24),
-          incurredClaimsUsd: (ins.claims || []).reduce((a, c) => a + Number(c.claimed_usd || 0), 0),
-          lossRatioPct: s.gwpUsd > 0 ? 38.4 : 0
+          renewalGwp60d: s.gwpUsd > 0 ? renewalGwp60d : 0,
+          incurredClaimsUsd,
+          lossRatioPct: s.gwpUsd > 0 ? round2((incurredClaimsUsd / s.gwpUsd) * 100) : 0
         },
         policies: (ins.policies || []).map(p => {
           const endIso = String(p.end_date || p.expiry || '').slice(0, 10);
@@ -131245,16 +131969,23 @@
           };
         }),
         carrierMatrix: (ins.statements || []).map(c => {
-          const gwp = Number(c.gwp_usd || (Number(c.expected_comm_4117_usd || 0) * 6.5));
+          const polsForCarrier = (ins.policies || []).filter(p => p && p.carrier === c.carrier);
+          const remsForCarrier = (ins.remittances || []).filter(r => r && r.carrier === c.carrier);
+          const remGross = round2(remsForCarrier.reduce((a, r) => a + Number(r.gross_prem_usd || 0), 0));
+          const polGross = round2(polsForCarrier.reduce((a, p) => a + Number(p.gross_prem_usd || p.gwp_usd || 0), 0));
+          const gwp = Number(c.gwp_usd || remGross || polGross || (demo ? Number(c.expected_comm_4117_usd || 0) * 6.5 : 0));
           const comm = Number(c.expected_comm_usd != null ? c.expected_comm_usd : c.expected_comm_4117_usd || 0);
+          const remSettled = round2(remsForCarrier.reduce((a, r) => a + Number(r.settled_to_carrier_usd || 0), 0));
+          const remPayable = round2(remsForCarrier.reduce((a, r) => a + Number(r.net_payable_4017_usd || 0), 0));
+          const hasRealRem = remsForCarrier.length > 0;
           return {
             carrier: c.carrier,
-            policies: c.policies_count || 6,
+            policies: c.policies_count != null ? Number(c.policies_count) : (polsForCarrier.length || (demo ? 6 : 0)),
             gwpUsd: round2(gwp),
             commUsd: comm,
-            netPayableUsd: round2(gwp - comm),
-            remittedUsd: round2((gwp - comm) * 0.75),
-            balanceDueUsd: round2((gwp - comm) * 0.25)
+            netPayableUsd: hasRealRem ? round2(remSettled + remPayable) : round2(gwp - comm),
+            remittedUsd: hasRealRem ? remSettled : (demo ? round2((gwp - comm) * 0.75) : 0),
+            balanceDueUsd: hasRealRem ? remPayable : (demo ? round2((gwp - comm) * 0.25) : round2(gwp - comm))
           };
         })
       };
@@ -131453,20 +132184,26 @@
         const indFetchPromise = fetchSeedPayloadJson(industriesUrl, useAuthedApi).catch(() => null);
         const corePayload = await fetchSeedPayloadJson(coreUrl, useAuthedApi);
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
-        normalizeDistinctSiteCategories(SEED);
-        SEED._coreReady = true;
-        SEED._canonicalById = null;
-        SEED._canonicalByMain = null;
-        SEED._origModelMasters = null;
-        if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
-        const periodSelInit = $('periodSelect');
-        const gp = ((SEED.models['manufacturing-group'] || {}).periods) || {};
-        if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
-        invalidateAllSeedCaches();
-        applyCustomRecordsToSeed();
+        if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
+          normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
+          _demoCompanyLiveSnap.coreReady = true;
+          _demoCompanyLiveSnap.needsCustomApply = true;
+        } else {
+          normalizeDistinctSiteCategories(SEED);
+          SEED._coreReady = true;
+          SEED._canonicalById = null;
+          SEED._canonicalByMain = null;
+          SEED._origModelMasters = null;
+          if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
+          const periodSelInit = $('periodSelect');
+          const gp = (((SEED.models || {})['manufacturing-group'] || {}).periods) || {};
+          if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
+          invalidateAllSeedCaches();
+          applyCustomRecordsToSeed();
+        }
         window.__mfgCoreSeedLoaded = true;
         try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
-        if (STATE.authed || isAutoTest) safeRender();
+        if ((STATE.authed || isAutoTest) && !_demoCompanySandboxActive) safeRender();
 
         if (!STATE.authed && !isAutoTest && !FACE_STATE.authCamStoppedByUser && !FACE_STATE.authCamOnDemand) {
           await new Promise(resolve => {
@@ -131477,20 +132214,42 @@
           });
         }
 
-        const [recPayload, indPayload] = await Promise.all([
+        const [recPayload, indPayload, demoBundlePayloads] = await Promise.all([
           fetchSeedPayloadJson(recordsUrl, useAuthedApi),
-          indFetchPromise
+          indFetchPromise,
+          (!isDemoSbx && isAutoTest && !_demoCompanySandboxSeed && !_preloadedDemoBundle)
+            ? Promise.all([
+                fetchSeedPayloadJson(SEED_MANIFEST.demoCore || './js/seed_demo_core.json', false).catch(() => null),
+                fetchSeedPayloadJson(SEED_MANIFEST.demoRecords || './js/seed_demo_records.json', false).catch(() => null),
+                fetchSeedPayloadJson(SEED_MANIFEST.demoIndustries || './js/seed_demo_industries.json', false).catch(() => null)
+              ])
+            : Promise.resolve(null)
         ]);
+        if (demoBundlePayloads && !_demoCompanySandboxSeed && !_preloadedDemoBundle) {
+          const [dCore, dRec, dInd] = demoBundlePayloads;
+          if (dCore || dRec || dInd) {
+            _preloadedDemoBundle = await buildStandaloneDemoBundle(dCore, dRec, dInd);
+            if (_demoCompanySandboxActive) attachDemoBundleToActiveSandbox(_preloadedDemoBundle);
+          }
+        }
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
         if (indPayload) unpackIndustrySeedPayload(indPayload);
-        normalizeDistinctSiteCategories(SEED);
-        SEED._canonicalById = null;
-        SEED._canonicalByMain = null;
-        SEED._recordsReady = true;
-        if (indPayload) mergeIndustryLiveSpineIntoRecords();
-        if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
-        invalidateAllSeedCaches();
-        applyCustomRecordsToSeed();
+        if (_demoCompanySandboxActive && _demoCompanyLiveSnap && !isDemoSbx) {
+          normalizeDistinctSiteCategories(_demoCompanyLiveSnap);
+          if (indPayload) _demoCompanyLiveSnap.rawIndustryPayload = indPayload;
+          _demoCompanyLiveSnap.recordsReady = true;
+          _demoCompanyLiveSnap.needsCustomApply = true;
+        } else {
+          normalizeDistinctSiteCategories(SEED);
+          SEED._canonicalById = null;
+          SEED._canonicalByMain = null;
+          SEED._recordsReady = true;
+          if (indPayload) mergeIndustryLiveSpineIntoRecords();
+          if (!isDemoSbx && shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
+          invalidateAllSeedCaches();
+          applyCustomRecordsToSeed();
+          if (STATE.company === DEMO_COMPANY_KEY && !isDemoSbx) syncDemoScopeDataState();
+        }
         window.MFG_SEED = SEED;
         try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
         if (STATE.authed || isAutoTest) {

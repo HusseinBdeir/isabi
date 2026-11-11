@@ -144,11 +144,12 @@ html.phone-scan-companion #mobileSearchBtn {
     min-width: 0;
   }
   #topbar .entity-bar.entity-picker-box {
-    width: 174px;
-    min-width: 174px;
-    max-width: 174px;
+    width: 188px;
+    min-width: 188px;
+    max-width: 188px;
   }
   #topbar .entity-picker-trigger {
+    width: 100%;
     padding: 2px 5px;
     gap: 3px;
   }
@@ -156,10 +157,10 @@ html.phone-scan-companion #mobileSearchBtn {
     display: none;
   }
   #topbar .entity-picker-trigger .ep-seg-ind {
-    max-width: 72px;
+    max-width: 68px;
   }
   #topbar .entity-picker-trigger .ep-seg-co {
-    min-width: 64px;
+    min-width: 84px;
   }
   #topbar .period-basis-row {
     gap: 3px;
@@ -217,15 +218,15 @@ html.phone-scan-companion #mobileSearchBtn {
 
 @media (min-width: 861px) and (max-width: 1420px) {
   #topbar .entity-bar.entity-picker-box {
-    width: 154px;
-    min-width: 154px;
-    max-width: 154px;
+    width: 184px;
+    min-width: 184px;
+    max-width: 184px;
   }
   #topbar .entity-picker-trigger .ep-seg-ind {
-    max-width: 62px;
+    max-width: 64px;
   }
   #topbar .entity-picker-trigger .ep-seg-co {
-    min-width: 56px;
+    min-width: 84px;
   }
   #topbar #askIsabiBtn span {
     display: none;
@@ -235,6 +236,20 @@ html.phone-scan-companion #mobileSearchBtn {
     min-width: 29px;
     padding: 0;
     justify-content: center;
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1320px) {
+  #topbar .entity-bar.entity-picker-box {
+    width: 156px;
+    min-width: 156px;
+    max-width: 156px;
+  }
+  #topbar .entity-picker-trigger .ep-seg-ind {
+    max-width: 60px;
+  }
+  #topbar .entity-picker-trigger .ep-seg-co {
+    min-width: 58px;
   }
 }
 

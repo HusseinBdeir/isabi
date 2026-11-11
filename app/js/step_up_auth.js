@@ -431,7 +431,8 @@
     st.stepUpAudits = st.stepUpAudits.slice(0, MAX_AUDITS);
     persistAuditsLocal();
     _briefState.data = null;
-    if (C && typeof C.syncWithCloud === 'function') {
+    const inDemoScope = Boolean(C && ((C.isDemoScopeActive && C.isDemoScopeActive()) || (C.isDemoSandboxSession && C.isDemoSandboxSession())));
+    if (!inDemoScope && C && typeof C.syncWithCloud === 'function') {
       C.syncWithCloud(true);
     }
     scheduleMountWatchdog();

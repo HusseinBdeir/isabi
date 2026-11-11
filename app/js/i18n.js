@@ -10288,7 +10288,14 @@
       "✓ AI Smart Scan Extracted:": "✓ استخراج المسح الذكي:",
       "✓ Geographic Containment Verified:": "✓ تم التحقق من الاحتواء الجغرافي:",
       "✓ SAVED": "✓ محفوظ",
-      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة"
+      "✕ Show All Extended Entries": "✕ عرض جميع القيود الموسّعة",
+      "Isolated Showcase Sandbox": "بيئة عرض معزولة",
+      "Vertical:": "القطاع:",
+      "Official VAT Collected": "ضريبة القيمة المضافة الرسمية المحصلة",
+      "Properties portfolio (VAT-exempt)": "محفظة العقارات (معفاة من ضريبة القيمة المضافة)",
+      "11% corporate property VAT collected": "ضريبة القيمة المضافة العقارية للشركات 11% المحصلة",
+      "0 Properties plots in scope": "0 عقارات في النطاق الحالي",
+      "3-leg credit minus settlements": "الذمم الدائنة مطروحاً منها التسويات"
     },
     fr: {
       "#1 Grade:": "Calibre n°1 :",
@@ -16921,7 +16928,7 @@
       "Plant Consumables": "Consommables Centrale",
       "Plant Diesel Tank Remaining (L)": "Stock restant cuve gasoil centrale (L)",
       "Plant Hub to Site and back to Plant Hub": "Aller-retour Centrale vers Chantier",
-      "Plant Issue": "Sortie Centrale",
+      "Plant Issue": "Sortie Usine",
       "Plant Kiosks": "Bornes Terrain & Centrale",
       "Plant Lube Bay": "Baie de Graissage Centrale",
       "Plant Lube Bay (Bulk Drum)": "Baie de Graissage Centrale (Fût)",
@@ -20558,7 +20565,14 @@
       "✓ AI Smart Scan Extracted:": "✓ Extraction Smart Scan IA :",
       "✓ Geographic Containment Verified:": "✓ Inclusion géographique vérifiée :",
       "✓ SAVED": "✓ ENREGISTRÉ",
-      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues"
+      "✕ Show All Extended Entries": "✕ Afficher toutes les écritures étendues",
+      "Isolated Showcase Sandbox": "Bac à sable vitrine isolé",
+      "Vertical:": "Secteur :",
+      "Official VAT Collected": "TVA officielle encaissée",
+      "Properties portfolio (VAT-exempt)": "Portefeuille immobilier (exonéré de TVA)",
+      "11% corporate property VAT collected": "TVA immobilière société 11 % encaissée",
+      "0 Properties plots in scope": "0 parcelle immobilière dans le périmètre",
+      "3-leg credit minus settlements": "Crédits fournisseurs moins règlements"
     }
   };
 
@@ -21458,6 +21472,18 @@
 
     m = trimmed.match(/^Rem\.?\s+([+-]?\$[\d,.]+[kMB]?)$/i);
     if (m) return lang === 'ar' ? `المتبقي ${m[1]}` : `Reste ${m[1]}`;
+
+    m = trimmed.match(/^(\d+)\s+Gaps?\s*\(([^)]+)\)$/i);
+    if (m) return lang === 'ar' ? `${m[1]} فجوة (${m[2]})` : `${m[1]} ${Number(m[1]) > 1 ? 'Écarts' : 'Écart'} (${m[2]})`;
+
+    m = trimmed.match(/^Korri\s+(\d+)\s+entered\s*\((\d+)\s+gaps?\)\s*·\s*Shacman\s+(\d+\/\d+)\s+(clean|\(\d+\s+gaps?\))$/i);
+    if (m) {
+      const shacAr = m[4].toLowerCase() === 'clean' ? 'متسلسل بالكامل' : m[4].replace(/gaps?/i, 'فجوة');
+      const shacFr = m[4].toLowerCase() === 'clean' ? 'conforme' : m[4].replace(/gaps?/i, 'écarts');
+      return lang === 'ar'
+        ? `Korri ${m[1]} مدخلة (${m[2]} فجوة) · Shacman ${m[3]} ${shacAr}`
+        : `Korri ${m[1]} saisies (${m[2]} ${Number(m[2]) > 1 ? 'écarts' : 'écart'}) · Shacman ${m[3]} ${shacFr}`;
+    }
 
     m = trimmed.match(/^All\s+(\d+)\s+Industries(?:\s*\((\d+)\))?$/i);
     if (m) {
@@ -23447,6 +23473,15 @@
 
     m = trimmed.match(/^(\d+)\s+Split Lines?$/i);
     if (m) return lang === 'ar' ? `${m[1]} بنود مجزأة` : `${m[1]} lignes ventilées`;
+
+    m = trimmed.match(/^([+-]?[\d,]+(?:\.\d+)?)\s*L\s+Var$/i);
+    if (m) return lang === 'ar' ? `${m[1]} لتر فرق` : `${m[1]} L écart`;
+
+    m = trimmed.match(/^([\d,]+)\s+New Master Records?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} سجل رئيسي جديد` : `${m[1]} Nouvel(s) Enregistrement(s) Maître(s)`;
+
+    m = trimmed.match(/^([\d,]+)\s+New Master Additions?$/i);
+    if (m) return lang === 'ar' ? `${m[1]} إضافة رئيسية جديدة` : `${m[1]} Ajout(s) au Répertoire`;
 
     m = trimmed.match(/^Line\s+(\d+)\s+destination$/i);
     if (m) return lang === 'ar' ? `وجهة البند ${m[1]}` : `Affectation ligne ${m[1]}`;
