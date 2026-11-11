@@ -57044,6 +57044,9 @@
   }
 
   function closeIndustryDomainEntryModal() {
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
+      window.MFG_AI_EDGE.stopVoiceCapture();
+    }
     const modal = $('indDomainEntryModal');
     if (modal) modal.hidden = true;
   }
@@ -59038,6 +59041,9 @@
     }
 
     modal.hidden = false;
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+      window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
   }
 
   function lookupIndustryDomainRecord(queryStr) {
@@ -92048,6 +92054,7 @@
           const t = ev && ev.target;
           if (!t || !t.closest) return;
           if (t.closest('.modal-foot')) return;
+          if (t.closest('.aie-voice-strip') && !t.closest('#aieMfgVoiceApplyBtn, #aieMfgVoiceSampleBtn')) return;
           if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput')) return;
           if (ev.type === 'click') {
             if (t.closest('#btnEntryAttUpload, #btnEntryAttCamera, [data-entry-att-preview]')) return;
@@ -92305,6 +92312,9 @@
       if (typeof window.MFG_SMART_SCAN.resetModalState === 'function') window.MFG_SMART_SCAN.resetModalState();
       if (typeof window.MFG_SMART_SCAN.mountOnEntryModal === 'function') window.MFG_SMART_SCAN.mountOnEntryModal();
     }
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.syncAllSurfacesNow === 'function') {
+      window.MFG_AI_EDGE.syncAllSurfacesNow();
+    }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
     if (window.MFG_I18N && window.MFG_I18N.getLang() !== 'en') {
       window.MFG_I18N.translateDom(modal || document.body);
@@ -92325,6 +92335,9 @@
     FORM_UI.initialModalSig = '';
     if (window.MFG_SMART_SCAN && typeof window.MFG_SMART_SCAN.resetModalState === 'function') {
       window.MFG_SMART_SCAN.resetModalState();
+    }
+    if (window.MFG_AI_EDGE && typeof window.MFG_AI_EDGE.stopVoiceCapture === 'function') {
+      window.MFG_AI_EDGE.stopVoiceCapture();
     }
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
@@ -126737,8 +126750,11 @@
         getFreqIndex,
         todayISO,
         defaultEntryCompany,
+        allowedCompanyNames,
         getActiveIndustry,
         canEnterForm,
+        canModifyTextOnly,
+        isFieldAdminUnlocked,
         canVoid,
         openEntryModal,
         openIndustryDomainEntryModal,
@@ -126771,6 +126787,8 @@
         resolveCanonicalEquipmentName,
         applyCustomRecordsToSeed,
         saveLocalAuthAndRecords,
+        postRecordToLocalApi,
+        syncWithCloud,
         renderApp,
         toast,
         fmtUSD,

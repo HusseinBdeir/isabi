@@ -862,15 +862,63 @@ def warn_weak_seat_pins(env: dict):
         print("Seat PIN hash check: 100% of active seat PINs are PBKDF2-SHA256 hashed.")
 
 
+def run_live_parity_gate(sync_release_log: bool = True) -> bool:
+    """Polls `/app/sw.js` propagation (up to 60s), then runs `build/verify_live_parity.mjs` against `isabisystems.com`."""
+    script_path = ISABI_ROOT / "build" / "verify_live_parity.mjs"
+    if not script_path.is_file():
+        print(f"WARN: Live parity script missing at {script_path}")
+        return False
+    sw_local = ISABI_ROOT / "app" / "sw.js"
+    want_sw_line = ""
+    if sw_local.is_file():
+        want_sw_line = (sw_local.read_text(encoding="utf-8", errors="replace").splitlines() or [""])[0].strip()
+    if want_sw_line:
+        for attempt in range(1, 7):
+            try:
+                probe_url = f"https://isabisystems.com/app/sw.js?probe={int(time.time())}_{attempt}"
+                req = urllib.request.Request(probe_url, headers={"Cache-Control": "no-cache", "User-Agent": "ISABI-Deploy-Gate/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    live_first = (resp.read().decode("utf-8", errors="replace").splitlines() or [""])[0].strip()
+                if live_first == want_sw_line:
+                    break
+            except Exception:
+                pass
+            if attempt < 6:
+                time.sleep(5)
+    node_bin = shutil.which("node") or str(pathlib.Path.home() / ".local" / "node" / "node.exe")
+    cmd = [node_bin, str(script_path)]
+    if sync_release_log:
+        cmd.append("--sync-release-log")
+    print("\nRunning post-deploy live parity & security gate (`build/verify_live_parity.mjs`)...")
+    r = subprocess.run(cmd, cwd=str(ISABI_ROOT), check=False)
+    if r.returncode != 0:
+        print(f"ERROR: Post-deploy live parity gate FAILED (exit code {r.returncode}).")
+        return False
+    print("Post-deploy live parity gate PASSED.")
+    return True
+
+
 def main():
     if "--check-seat-pins" in sys.argv:
         env = build_env()
         warn_weak_seat_pins(env)
         return
+    if "--parity-only" in sys.argv:
+        ok_parity = run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv))
+        sys.exit(0 if ok_parity else 1)
     env = build_env()
     ok, acct_id = ensure_logged_in(env)
     if not ok:
         sys.exit(2)
+    if "--pages-only" in sys.argv:
+        deploy_pages(env)
+        warn_weak_seat_pins(env)
+        cleanup_preview_deployments_and_purge_cache(acct_id)
+        if "--skip-live-parity" not in sys.argv:
+            if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
+                sys.exit(1)
+        print("\nPAGES + EDGE FUNCTIONS BUNDLE DEPLOYMENT COMPLETE!")
+        return
     d1_uuid = ensure_d1_database(env)
     r2_ok = ensure_r2_bucket(env)
     stamp_wrangler_toml(d1_uuid, r2_ok)
@@ -883,6 +931,9 @@ def main():
     warn_weak_seat_pins(env)
     configure_domain_and_dns(acct_id)
     cleanup_preview_deployments_and_purge_cache(acct_id)
+    if "--skip-live-parity" not in sys.argv:
+        if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
+            sys.exit(1)
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")
     print("Production URL:             https://isabisystems.com/")
     print("Command Center URL:         https://isabisystems.com/app/")

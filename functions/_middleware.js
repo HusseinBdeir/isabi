@@ -79,6 +79,8 @@ export async function onRequest(context) {
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
         'X-ISABI-Edge': '1'
       }
     });
@@ -94,7 +96,7 @@ export async function onRequest(context) {
         'X-Robots-Tag': 'noindex, nofollow',
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
-        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Permissions-Policy': 'microphone=(self), camera=(self), geolocation=(self)',
         'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
         'Referrer-Policy': 'strict-origin-when-cross-origin',

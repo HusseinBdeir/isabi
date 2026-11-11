@@ -859,10 +859,51 @@
     return out;
   }
 
+  function isEditingAnyMfgRecord() {
+    return Boolean(
+      D && D.STATE && (
+        D.STATE.editingRecord ||
+        D.STATE.editingPendingExpenseId ||
+        D.STATE.editingPendingRawId ||
+        D.STATE.editingPendingSalaryId
+      )
+    );
+  }
+
+  function canUseBatchIntake() {
+    if (!D) return false;
+    if (typeof D.canEnterForm === 'function' && !D.canEnterForm('expense')) return false;
+    if (typeof D.canModifyTextOnly === 'function' && D.canModifyTextOnly()) return false;
+    return true;
+  }
+
+  function isControlLockedForVoice(el) {
+    if (!el || el.disabled || el.readOnly) return true;
+    if (el.classList && el.classList.contains('pa-locked-input')) return true;
+    if (el.dataset && el.dataset.policyLockedNow === '1') {
+      const unlocked = D && typeof D.isFieldAdminUnlocked === 'function' && el.id && D.isFieldAdminUnlocked(el.id);
+      if (!unlocked) return true;
+    }
+    return false;
+  }
+
+  function canUnlockMeterForVoice(mEl) {
+    if (!mEl || mEl.disabled) return false;
+    if (mEl.classList && mEl.classList.contains('pa-locked-input')) return false;
+    if (mEl.dataset && mEl.dataset.policyLockedNow === '1') {
+      const unlocked = D && typeof D.isFieldAdminUnlocked === 'function' && mEl.id && D.isFieldAdminUnlocked(mEl.id);
+      if (!unlocked) return false;
+    }
+    if (isEditingAnyMfgRecord() && D && typeof D.canModifyTextOnly === 'function' && D.canModifyTextOnly()) {
+      return false;
+    }
+    return true;
+  }
+
   function setInputVal(id, val) {
     if (val == null || val === '') return false;
     const el = $(id);
-    if (!el || el.disabled) return false;
+    if (isControlLockedForVoice(el)) return false;
     el.value = String(val);
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -910,7 +951,7 @@
     }
 
     // Switch Smart Entry modal tab if voice clearly names another form
-    if (parsed.formType && D && D.STATE && D.STATE.modalForm !== parsed.formType && !D.STATE.editingRecord && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
+    if (parsed.formType && D && D.STATE && D.STATE.modalForm !== parsed.formType && !isEditingAnyMfgRecord() && typeof D.openEntryModal === 'function' && (!D.canEnterForm || D.canEnterForm(parsed.formType))) {
       D.openEntryModal(parsed.formType, null, { forceSwitch: true });
     }
 
@@ -936,7 +977,7 @@
         setInputVal('f_metertype', Number(parsed.meter) < 40000 ? 'hours' : 'odometer');
       }
       const mEl = $('f_meter');
-      if (mEl) mEl.readOnly = false;
+      if (canUnlockMeterForVoice(mEl)) mEl.readOnly = false;
       if (setInputVal('f_meter', parsed.meter)) filled++;
       if (setInputVal('f_odometer', parsed.meter)) filled++;
     }
@@ -949,13 +990,26 @@
     if (setInputVal('f_notes', sanitizeOutward(parsed.notes || clean))) filled++;
 
     if (D && typeof D.recalcForm === 'function') D.recalcForm();
-    if (parsed.meter != null && $('f_meter')) {
+    if (parsed.meter != null && $('f_meter') && canUnlockMeterForVoice($('f_meter'))) {
       $('f_meter').readOnly = false;
       if (!$('f_meter').value) setInputVal('f_meter', parsed.meter);
     }
     EDGE_STATE.lastVoiceStatus = `${tr('Voice Auto-Fill Applied')} (${filled || 1})`;
     if (D && typeof D.toast === 'function') D.toast(tr('Voice fields populated: review deterministic totals before posting'), 'ok');
     return { ok: true, filled: Math.max(1, filled), parsed };
+  }
+
+  function stopVoiceCapture() {
+    if (EDGE_STATE.speechRec) {
+      try { EDGE_STATE.speechRec.stop(); } catch (_) {}
+      EDGE_STATE.speechRec = null;
+    }
+    EDGE_STATE.voiceActive = false;
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('#aieMfgVoiceMicBtn.is-recording, #aieIndVoiceMicBtn.is-recording').forEach(btn => {
+        btn.classList.remove('is-recording');
+      });
+    }
   }
 
   function startLiveSpeechCapture(inputEl, micBtn) {
@@ -966,9 +1020,7 @@
       return;
     }
     if (EDGE_STATE.voiceActive && EDGE_STATE.speechRec) {
-      try { EDGE_STATE.speechRec.stop(); } catch (_) {}
-      EDGE_STATE.voiceActive = false;
-      if (micBtn) micBtn.classList.remove('is-recording');
+      stopVoiceCapture();
       return;
     }
     const rec = new SR();
@@ -1032,7 +1084,11 @@
     const indName = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
       ? D.getActiveIndustry(D.STATE.company)
       : 'Manufacturing';
-    barEl.insertAdjacentHTML('afterend', buildVoiceStripHtml(prefix, indName));
+    const splitCol = (!isDomainModal && barEl.parentElement.classList && barEl.parentElement.classList.contains('ss-split-open'))
+      ? barEl.parentElement.querySelector('.ss-split-form-col')
+      : null;
+    if (splitCol) splitCol.insertAdjacentHTML('afterbegin', buildVoiceStripHtml(prefix, indName));
+    else barEl.insertAdjacentHTML('afterend', buildVoiceStripHtml(prefix, indName));
 
     const strip = $(`${prefix}VoiceStrip`);
     if (!strip) return;
@@ -1041,6 +1097,10 @@
     const applyBtn = strip.querySelector(`#${prefix}VoiceApplyBtn`);
     const smpBtn = strip.querySelector(`#${prefix}VoiceSampleBtn`);
     const batchBtn = strip.querySelector(`#${prefix}OpenBatchBtn`);
+    const isSingleRecordEdit = isDomainModal
+      ? Boolean($('indEntryModalEyebrow') && /EDIT DOMAIN RECORD/i.test($('indEntryModalEyebrow').textContent || ''))
+      : isEditingAnyMfgRecord();
+    if (batchBtn && (isSingleRecordEdit || !canUseBatchIntake())) batchBtn.hidden = true;
 
     strip.querySelectorAll('[data-aie-vlang]').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -1194,7 +1254,43 @@
     });
   }
 
+  function normCoMatch(s) {
+    return String(s || '').trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ');
+  }
+
+  function resolveAuthorizedBatchCompany() {
+    const mfgModal = $('entryModal');
+    const indModal = $('indDomainEntryModal');
+    let candidate = '';
+    if (mfgModal && !mfgModal.hidden && $('f_company') && $('f_company').value) {
+      candidate = String($('f_company').value).trim();
+    } else if (indModal && !indModal.hidden && $('ide_company') && $('ide_company').value) {
+      candidate = String($('ide_company').value).trim();
+    }
+    const defCo = (D && typeof D.defaultEntryCompany === 'function') ? String(D.defaultEntryCompany() || '').trim() : '';
+    if (!candidate) candidate = defCo || 'WTC';
+
+    const isDemoScope = Boolean(D && D.STATE && String(D.STATE.company || '') === 'democompany');
+    if (isDemoScope) return candidate;
+
+    if (D && typeof D.allowedCompanyNames === 'function') {
+      const allowed = D.allowedCompanyNames() || [];
+      if (!allowed.length) return '';
+      const candKey = normCoMatch(candidate);
+      const exactHit = allowed.find(a => normCoMatch(a) === candKey);
+      if (exactHit) return exactHit;
+      const defKey = normCoMatch(defCo);
+      const defHit = defKey ? allowed.find(a => normCoMatch(a) === defKey) : '';
+      return defHit || allowed[0] || '';
+    }
+    return candidate;
+  }
+
   function openBatchIntakeModal(initialText) {
+    if (D && !canUseBatchIntake()) {
+      if (typeof D.toast === 'function') D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
+      return;
+    }
     EDGE_STATE.batchOpen = true;
     const activeInd = (D && typeof D.getActiveIndustry === 'function' && D.STATE)
       ? D.getActiveIndustry(D.STATE.company)
@@ -1216,18 +1312,47 @@
   }
 
   function commitSelectedBatchRows() {
+    if (!D || !canUseBatchIntake()) {
+      if (D && typeof D.toast === 'function') {
+        D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
+      }
+      return 0;
+    }
     const selected = (EDGE_STATE.batchRows || []).filter(r => r && r.selected && r.lineTotal > 0);
-    if (!selected.length || !D) return 0;
-    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(D.STATE.company) : 'Manufacturing';
-    const co = typeof D.defaultEntryCompany === 'function' ? D.defaultEntryCompany() : 'WTC';
+    if (!selected.length) return 0;
+
+    const co = resolveAuthorizedBatchCompany();
+    if (!co) {
+      if (typeof D.toast === 'function') {
+        D.toast(tr('Expense bills require Expenses hub permission.'), 'err');
+      }
+      return 0;
+    }
+
+    const coKey = (D.COMPANY_KEY_BY_NAME && D.COMPANY_KEY_BY_NAME[co]) || D.STATE.company;
+    const activeInd = typeof D.getActiveIndustry === 'function' ? D.getActiveIndustry(coKey) : 'Manufacturing';
+
+    for (let i = 0; i < selected.length; i++) {
+      const r = selected[i];
+      const pGuard = checkPeriodCloseGuard(co, r.date, r.date, { industry: activeInd });
+      if (pGuard && pGuard.blocked) {
+        if (typeof D.toast === 'function') {
+          D.toast(pGuard.message || tr('Month-end period lock reopened for authorized adjustment'), 'err');
+        }
+        return 0;
+      }
+    }
+
+    const batchEntropy = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const postedRecs = [];
 
     if (D.STATE && D.STATE.customRecords) {
       if (!Array.isArray(D.STATE.customRecords.expenses)) D.STATE.customRecords.expenses = [];
       selected.forEach((r, idx) => {
-        const recId = `ai_batch_${Date.now()}_${idx}`;
+        const recId = `ai_batch_${batchEntropy}_${idx}`;
         const expRec = {
           id: recId,
-          name: `EXP-${r.date.replace(/-/g, '')}-BATCH-${idx + 1}`,
+          name: `EXP-${r.date.replace(/-/g, '')}-BATCH-${batchEntropy.slice(-4).toUpperCase()}-${idx + 1}`,
           date: r.date,
           rep_date: r.date,
           company: co,
@@ -1248,9 +1373,14 @@
           modified_at: new Date().toISOString()
         };
         D.STATE.customRecords.expenses.unshift(expRec);
+        postedRecs.push(expRec);
       });
       if (typeof D.applyCustomRecordsToSeed === 'function') D.applyCustomRecordsToSeed();
       if (typeof D.saveLocalAuthAndRecords === 'function') D.saveLocalAuthAndRecords();
+      if (typeof D.postRecordToLocalApi === 'function') {
+        postedRecs.forEach(rec => { D.postRecordToLocalApi('expenses', rec); });
+      }
+      if (typeof D.syncWithCloud === 'function') D.syncWithCloud(true);
       if (typeof D.renderApp === 'function') D.renderApp();
     }
 
@@ -1735,7 +1865,10 @@
     });
 
     const batchBtn = panel.querySelector('#aieOpenBatchFromSnBtn');
-    if (batchBtn) batchBtn.onclick = () => openBatchIntakeModal();
+    if (batchBtn) {
+      if (!canUseBatchIntake()) batchBtn.hidden = true;
+      batchBtn.onclick = () => openBatchIntakeModal();
+    }
 
     const deepBtn = panel.querySelector('#aieRunDeepBehavBtn');
     if (deepBtn) {
@@ -5650,11 +5783,31 @@
     if (['hld_consolidation', 'hld_interactions', 'hld_open_recon', 'hld_due_matrix', 'hld_loans', 'hld_distributions', 'entities', 'ledger', 'statements'].includes(v)) mountHoldingCloseGatePanel();
     if (v === 'daily_ops') mountDailyOpsRootCauseButton();
 
+    const mfgModal = $('entryModal');
     const mfgScanBar = $('entrySmartScanBar');
-    if (mfgScanBar && !$('aieMfgVoiceStrip')) mountVoiceAndBatchOnEntryBar(mfgScanBar, false);
+    const mfgSaveBtn = $('dynSaveModalBtn');
+    const mfgEditable = Boolean(mfgModal && !mfgModal.hidden && mfgScanBar && mfgSaveBtn && !mfgSaveBtn.hidden && !mfgSaveBtn.disabled);
+    if (!mfgEditable) {
+      const staleMfg = $('aieMfgVoiceStrip');
+      if (staleMfg) staleMfg.remove();
+    } else if (!$('aieMfgVoiceStrip')) {
+      mountVoiceAndBatchOnEntryBar(mfgScanBar, false);
+    }
 
+    const indModal = $('indDomainEntryModal');
     const indScanBar = $('indEntrySmartScanBar');
-    if (indScanBar && !$('aieIndVoiceStrip')) mountVoiceAndBatchOnEntryBar(indScanBar, true);
+    const indSaveBtn = $('ideSaveBtn');
+    const indEditable = Boolean(indModal && !indModal.hidden && indScanBar && indSaveBtn && !indSaveBtn.hidden && !indSaveBtn.disabled);
+    if (!indEditable) {
+      const staleInd = $('aieIndVoiceStrip');
+      if (staleInd) staleInd.remove();
+    } else if (!$('aieIndVoiceStrip')) {
+      mountVoiceAndBatchOnEntryBar(indScanBar, true);
+    }
+
+    if (EDGE_STATE.voiceActive && (!mfgModal || mfgModal.hidden) && (!indModal || indModal.hidden)) {
+      stopVoiceCapture();
+    }
 
     const inspBody = $('inspectorBody');
     const inspModal = $('recordInspector');
@@ -5699,7 +5852,14 @@
       });
     }
 
-    const obs = new MutationObserver(() => {
+    let obs = null;
+    const observeModalTarget = el => {
+      if (!el || !obs || el._aieObserved) return;
+      el._aieObserved = true;
+      obs.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    };
+    obs = new MutationObserver(() => {
+      observeModalTarget($('indDomainEntryModal'));
       scheduleSyncSurfaces();
     });
     const shell = $('appShell') || document.body;
@@ -5707,6 +5867,9 @@
       obs.observe(shell, { childList: true, subtree: true });
     }
     obs.observe(document.body, { childList: true, subtree: false });
+    observeModalTarget($('entryModal'));
+    observeModalTarget($('recordInspector'));
+    observeModalTarget($('indDomainEntryModal'));
 
     document.addEventListener('keydown', ev => {
       if (ev.key === 'Escape' && EDGE_STATE.batchOpen) {
@@ -5770,6 +5933,7 @@
     getPhase17CloseSnapshot,
     parseVoiceUtteranceLocal,
     applyVoiceToActiveModal,
+    stopVoiceCapture,
     parseBatchTextToRows,
     openBatchIntakeModal,
     closeBatchIntakeModal,

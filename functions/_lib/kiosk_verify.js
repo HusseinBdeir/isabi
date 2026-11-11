@@ -4,7 +4,12 @@
 
 const KIOSK_CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kiosk-Key, X-ISABI-Demo'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Kiosk-Key, X-ISABI-Demo',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-ISABI-Edge': '1'
 };
 
 function kioskJson(obj, status = 200) {

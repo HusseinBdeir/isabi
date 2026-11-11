@@ -3346,6 +3346,66 @@ finally:
         sharedNat: [e36SharedNatOv5, e36SharedNatLoginOk.status]
       }));
     }
+
+    // =========================================================================
+    // 37. Universal Security Headers across JSON, OPTIONS, Kiosk, Seed, Blobs & 404 Middleware
+    // =========================================================================
+    function hasUniversalSecHeaders(hdrs) {
+      if (!hdrs) return false;
+      const hsts = String(hdrs['strict-transport-security'] || '');
+      const xfo = String(hdrs['x-frame-options'] || '').toUpperCase();
+      const xcto = String(hdrs['x-content-type-options'] || '').toLowerCase();
+      const refp = String(hdrs['referrer-policy'] || '').toLowerCase();
+      const edge = String(hdrs['x-isabi-edge'] || '');
+      return (
+        hsts.includes('max-age=31536000') &&
+        hsts.includes('includeSubDomains') &&
+        (xfo === 'DENY' || xfo === 'SAMEORIGIN') &&
+        xcto === 'nosniff' &&
+        refp.includes('origin') &&
+        edge === '1'
+      );
+    }
+    const e37Status = await httpReq('GET', '/app/api/status');
+    const e37OptStatus = await httpReq('OPTIONS', '/app/api/status');
+    const e37OptKiosk = await httpReq('OPTIONS', '/app/api/kiosk/verify');
+    const e37KioskPost = await httpReq('POST', '/app/api/kiosk/verify', {});
+    const e37SeedAnon = await httpReq('GET', '/app/api/seed/core');
+    const e37SeedAuth = await httpReq('GET', '/app/api/seed/core', null, { 'X-ISABI-Session': ownerToken });
+    const e37BlobsRaw = await httpReq('GET', '/app/api/blobs?raw=1&id=nonexistent', null, { 'X-ISABI-Session': ownerToken });
+    const e37BlockedWrangler = await httpReq('GET', '/wrangler.toml');
+    const e37BlockedSeedJson = await httpReq('GET', '/app/js/seed_core.json');
+    const e37ResetPage = await httpReq('GET', '/app/reset');
+    if (
+      e37Status.status === 200 && hasUniversalSecHeaders(e37Status.headers) &&
+      e37OptStatus.status === 204 && hasUniversalSecHeaders(e37OptStatus.headers) &&
+      e37OptKiosk.status === 204 && hasUniversalSecHeaders(e37OptKiosk.headers) &&
+      hasUniversalSecHeaders(e37KioskPost.headers) &&
+      e37SeedAnon.status === 401 && hasUniversalSecHeaders(e37SeedAnon.headers) &&
+      (e37SeedAuth.status === 200 || e37SeedAuth.status === 404) && hasUniversalSecHeaders(e37SeedAuth.headers) &&
+      hasUniversalSecHeaders(e37BlobsRaw.headers) &&
+      e37BlockedWrangler.status === 404 && hasUniversalSecHeaders(e37BlockedWrangler.headers) &&
+      e37BlockedSeedJson.status === 404 && hasUniversalSecHeaders(e37BlockedSeedJson.headers) &&
+      e37ResetPage.status === 200 && hasUniversalSecHeaders(e37ResetPage.headers)
+    ) {
+      pass(
+        'edge-37-universal-security-headers',
+        'HSTS + X-Frame-Options: DENY + nosniff + Referrer-Policy + X-ISABI-Edge: 1 across JSON, 204 OPTIONS, kiosk, seed, blobs?raw=1, /reset & 404 middleware'
+      );
+    } else {
+      fail('edge-37-universal-security-headers', JSON.stringify({
+        status: [e37Status.status, hasUniversalSecHeaders(e37Status.headers)],
+        optStatus: [e37OptStatus.status, hasUniversalSecHeaders(e37OptStatus.headers)],
+        optKiosk: [e37OptKiosk.status, hasUniversalSecHeaders(e37OptKiosk.headers)],
+        kioskPost: [e37KioskPost.status, hasUniversalSecHeaders(e37KioskPost.headers)],
+        seedAnon: [e37SeedAnon.status, hasUniversalSecHeaders(e37SeedAnon.headers)],
+        seedAuth: [e37SeedAuth.status, hasUniversalSecHeaders(e37SeedAuth.headers)],
+        blobsRaw: [e37BlobsRaw.status, hasUniversalSecHeaders(e37BlobsRaw.headers)],
+        wrangler: [e37BlockedWrangler.status, hasUniversalSecHeaders(e37BlockedWrangler.headers)],
+        seedJson: [e37BlockedSeedJson.status, hasUniversalSecHeaders(e37BlockedSeedJson.headers)],
+        resetPage: [e37ResetPage.status, hasUniversalSecHeaders(e37ResetPage.headers)]
+      }));
+    }
   } finally {
     try { if (ws) ws.close(); } catch (_) {}
     killTree(edgeProc.pid);

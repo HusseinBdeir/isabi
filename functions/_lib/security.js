@@ -535,23 +535,27 @@ export async function verifyActiveEdgeSession(session, env) {
   }
 }
 
+export const DEFAULT_EDGE_SECURITY_HEADERS = Object.freeze({
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-ISABI-Edge': '1'
+});
+
 export function applyEdgeCors(response, request, env = null) {
   if (!response || !request) return response;
+  const headers = new Headers(response.headers);
+  for (const [k, v] of Object.entries(DEFAULT_EDGE_SECURITY_HEADERS)) {
+    if (!headers.has(k)) headers.set(k, v);
+  }
   const origin = String(request.headers.get('Origin') || '').trim();
   if (!origin || !isAllowedCorsOrigin(origin, request, env)) {
-    if (!response.headers.has('Access-Control-Allow-Origin')) return response;
-    const strippedHeaders = new Headers(response.headers);
-    strippedHeaders.delete('Access-Control-Allow-Origin');
-    const isNull = response.status === 204 || response.status === 304;
-    return new Response(isNull ? null : response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: strippedHeaders
-    });
+    headers.delete('Access-Control-Allow-Origin');
+  } else {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
   }
-  const headers = new Headers(response.headers);
-  headers.set('Access-Control-Allow-Origin', origin);
-  headers.set('Vary', 'Origin');
   const isNullBody = response.status === 204 || response.status === 304;
   return new Response(isNullBody ? null : response.body, {
     status: response.status,
@@ -564,11 +568,9 @@ export function jsonResponse(payload, status = 200, extraHeaders = {}) {
   const headers = Object.assign({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-    'X-ISABI-Edge': '1',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-ISABI-Session, X-ISABI-Demo'
-  }, extraHeaders);
+  }, DEFAULT_EDGE_SECURITY_HEADERS, extraHeaders);
   if (status === 204 || status === 304) {
     delete headers['Content-Type'];
     return new Response(null, { status, headers });
