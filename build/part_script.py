@@ -4472,24 +4472,37 @@ JS = r"""
     ].join('\n');
   }
 
-  // ---------------- SCROLL REVEAL (progressive, reduced-motion safe) ----------------
+  // ---------------- SCROLL REVEAL (progressive, reduced-motion & crawler safe) ----------------
   function initReveal() {
     const els = document.querySelectorAll('.reveal');
-    if (!els.length || !('IntersectionObserver' in window)) return;
+    if (!els.length) return;
+    const ua = (navigator && navigator.userAgent) || '';
+    const isCrawler = /\b(?:googlebot|google-inspectiontool|storebot-google|adsbot-google|apis-google|mediapartners-google|bingbot|adidxbot|msnbot|slurp|duckduckbot|baiduspider|yandexbot|applebot|facebookexternalhit|meta-externalagent|linkedinbot|twitterbot|slackbot|whatsapp|telegrambot|discordbot|pinterestbot|gptbot|oai-searchbot|chatgpt-user|claudebot|anthropic-ai|perplexitybot|amazonbot|bytespider|ccbot)\b/i.test(ua);
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) return;
+    if (isCrawler || reduce || !('IntersectionObserver' in window)) {
+      els.forEach(el => el.classList.add('in', 'done'));
+      return;
+    }
     document.documentElement.classList.add('js-io');
+    const revealEl = el => {
+      el.classList.add('in');
+      el.addEventListener('transitionend', () => el.classList.add('done'), { once: true });
+      setTimeout(() => el.classList.add('done'), 1200);
+    };
     const io = new IntersectionObserver(entries => {
       entries.forEach(en => {
         if (!en.isIntersecting) return;
-        const el = en.target;
-        el.classList.add('in');
-        el.addEventListener('transitionend', () => el.classList.add('done'), { once: true });
-        setTimeout(() => el.classList.add('done'), 1200);
-        io.unobserve(el);
+        revealEl(en.target);
+        io.unobserve(en.target);
       });
     }, { threshold: 0.08, rootMargin: '0px 0px -5% 0px' });
     els.forEach(el => io.observe(el));
+    setTimeout(() => {
+      els.forEach(el => {
+        if (!el.classList.contains('in')) revealEl(el);
+        io.unobserve(el);
+      });
+    }, 900);
   }
 
   // ---------------- THEME MANAGEMENT ----------------

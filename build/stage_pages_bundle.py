@@ -33,6 +33,7 @@ ROOT_ALLOWLIST = (
     "icon-512.png",
     "icon-512-maskable.png",
     "404.html",
+    "c4b9e2a7d18f406395e1a82c7d3f6b90.txt",
 )
 
 APP_FORBIDDEN_REL = {
@@ -72,7 +73,7 @@ def stage_pages_bundle(dest_dir: pathlib.Path) -> int:
     copied = 0
 
     # 1. Root Showcase public files (normalizing text control files to LF)
-    lf_files = {"_headers", "_routes.json", "CNAME", "robots.txt", "sitemap.xml"}
+    lf_files = {"_headers", "_routes.json", "CNAME", "robots.txt", "sitemap.xml", "c4b9e2a7d18f406395e1a82c7d3f6b90.txt"}
     for fname in ROOT_ALLOWLIST:
         src = ISABI_ROOT / fname
         if not src.is_file():

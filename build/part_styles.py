@@ -5535,10 +5535,10 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     font-size: 11.2px;
   }
   .stack-cards {
-    gap: 8px;
+    gap: 6px;
   }
   .stack-card {
-    padding: 10px 12px;
+    padding: 8px 12px;
   }
   .stack-card-hdr {
     margin-bottom: 3px;
@@ -5572,13 +5572,13 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     font-size: 11px;
   }
   .ai-prompt-pills {
-    padding: 7px 14px;
+    padding: 5px 14px;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
   }
   .ai-pill-btn {
-    padding: 5px 9px;
+    padding: 4.5px 9px;
     font-size: 11px;
     white-space: normal;
     overflow: visible;
@@ -5586,8 +5586,8 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     line-height: 1.25;
   }
   .ai-thread {
-    padding: 10px 14px;
-    max-height: 205px;
+    padding: 8px 14px;
+    max-height: 185px;
     gap: 8px;
   }
   .ai-bot-bubble {

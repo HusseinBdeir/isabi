@@ -1,16 +1,16 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.33';
+const CACHE_NAME = 'isabi-systems-pwa-v6.34';
 const CACHE_VER = CACHE_NAME.replace(/^isabi-systems-pwa-v/, '');
 const SHELL_DIR = new URL('./', self.location.href).pathname;
 const STATIC_ASSETS = [
-  './manifest.json?v=6.33',
-  './favicon.ico?v=6.33',
-  './favicon-dark.ico?v=6.33',
-  './icon.svg?v=6.33',
-  './icon-dark.svg?v=6.33',
-  './icon-180.png?v=6.33',
-  './icon-192.png?v=6.33',
-  './icon-512.png?v=6.33',
-  './icon-512-maskable.png?v=6.33'
+  './manifest.json?v=6.34',
+  './favicon.ico?v=6.34',
+  './favicon-dark.ico?v=6.34',
+  './icon.svg?v=6.34',
+  './icon-dark.svg?v=6.34',
+  './icon-180.png?v=6.34',
+  './icon-192.png?v=6.34',
+  './icon-512.png?v=6.34',
+  './icon-512-maskable.png?v=6.34'
 ];
 
 function isSameOriginUrl(rawUrl) {
@@ -89,7 +89,10 @@ self.addEventListener('fetch', event => {
     /\/reset(?:\.html)?$/i.test(url.pathname) ||
     url.pathname.includes('/api/') ||
     url.pathname.endsWith('/robots.txt') ||
-    url.pathname.endsWith('/sitemap.xml')
+    url.pathname.endsWith('/sitemap.xml') ||
+    /\/404(?:\/|\.html)?$/i.test(url.pathname) ||
+    url.pathname.endsWith('/c4b9e2a7d18f406395e1a82c7d3f6b90.txt') ||
+    /^\/isabi(?:\/|$)/i.test(url.pathname)
   ) return;
 
   const isAnyNav = req.mode === 'navigate';

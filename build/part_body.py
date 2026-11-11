@@ -846,10 +846,10 @@ BODY = f"""
 
             <div class="direct-channel-box">
               <small>{ICONS["mail"]} Email</small>
-              <strong>husseinbdeir@isabisystems.com</strong>
+              <!--email_off--><strong>husseinbdeir@isabisystems.com</strong>
               <p>Send RFP documents, chart of accounts structures, or formal project inquiries directly to Hussein's inbox.</p>
               <div style="display:flex;gap:8px">
-                <a href="mailto:husseinbdeir@isabisystems.com?subject=ISABI%20Systems%20-%20Enterprise%20Software%20Inquiry" class="btn btn-brass" style="flex:1">{ICONS["mail"]} Compose Email</a>
+                <a href="mailto:husseinbdeir@isabisystems.com?subject=ISABI%20Systems%20-%20Enterprise%20Software%20Inquiry" class="btn btn-brass" style="flex:1">{ICONS["mail"]} Compose Email</a><!--/email_off-->
                 <button type="button" class="btn btn-outline" id="copy-email-btn">Copy Email</button>
               </div>
             </div>
@@ -887,7 +887,7 @@ BODY = f"""
         <div class="ftr-contact">
           <b>{ICONS["cloud"]} Client Website:</b> <a href="https://isabisystems.com/">isabisystems.com</a> · <b>{ICONS["lock"]} ISABI App:</b> <a href="app/">isabisystems.com/app</a><br>
           <b>{ICONS["wa"]} Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener">+961 70 444 955</a><br>
-          <b>{ICONS["mail"]} Direct Email:</b> <a href="mailto:husseinbdeir@isabisystems.com">husseinbdeir@isabisystems.com</a>
+          <b>{ICONS["mail"]} Direct Email:</b> <!--email_off--><a href="mailto:husseinbdeir@isabisystems.com">husseinbdeir@isabisystems.com</a><!--/email_off-->
         </div>
       </div>
 
@@ -920,7 +920,7 @@ BODY = f"""
           <li><a href="#pricing">{ICONS["diamond"]} Transparent Investment Tiers</a></li>
           <li><a href="#scope-configurator">{ICONS["scope"]} Custom Scope Builder</a></li>
           <li><a href="https://wa.me/96170444955" target="_blank" rel="noopener">{ICONS["wa"]} WhatsApp (+961 70 444 955)</a></li>
-          <li><a href="mailto:husseinbdeir@isabisystems.com">{ICONS["mail"]} Email Hussein Bdeir</a></li>
+          <li><!--email_off--><a href="mailto:husseinbdeir@isabisystems.com">{ICONS["mail"]} Email Hussein Bdeir</a><!--/email_off--></li>
           <li><a href="#portal" id="ftr-install-link">{ICONS["download"]} Install App Shortcut</a></li>
         </ul>
       </div>

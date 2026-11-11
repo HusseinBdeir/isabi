@@ -20,7 +20,7 @@ def run_dom_and_screenshots():
         import base64
         import glob
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for fname in ('index.html', 'manifest.json', 'robots.txt', 'sitemap.xml'):
+        for fname in ('index.html', '404.html', 'manifest.json', 'robots.txt', 'sitemap.xml'):
             fpath = os.path.join(repo_root, fname)
             assert os.path.exists(fpath), f"Missing required file: {fname}"
             txt = open(fpath, 'r', encoding='utf-8').read()
@@ -32,6 +32,9 @@ def run_dom_and_screenshots():
                 txt, flags=re.IGNORECASE
             )
             assert not jargon, f"Overspecified technical jargon found in {fname}: {jargon[:10]}"
+            if fname in ('index.html', '404.html'):
+                assert '—' not in txt and '→' not in txt, f"Forbidden em-dash/arrow in {fname}"
+                assert not re.search(r'\bTHEO\b', txt, flags=re.IGNORECASE), f"Forbidden THEO mention in {fname}"
             print(f'[CLEAN] {fname}: 0 forbidden vendor terms & 0 technical plumbing jargon')
 
         relay_pat = re.compile(r'powerplatform\.com|powerautomate|dynamics\.com|sharepoint\.com|pollinations\.ai', re.IGNORECASE)
@@ -62,7 +65,18 @@ def run_dom_and_screenshots():
         assert '<loc>https://isabisystems.com/</loc>' in sitemap_txt and '/app/' not in sitemap_txt, f"Invalid sitemap.xml: {sitemap_txt!r}"
         cname_txt = open(os.path.join(repo_root, 'CNAME'), 'r', encoding='utf-8').read().strip()
         assert cname_txt == 'isabisystems.com', f"Invalid CNAME: {cname_txt!r}"
-        print('[SEO] robots.txt, sitemap.xml (valid XML) & CNAME verified')
+        indexnow_txt = open(os.path.join(repo_root, 'c4b9e2a7d18f406395e1a82c7d3f6b90.txt'), 'r', encoding='utf-8').read().strip()
+        assert indexnow_txt == 'c4b9e2a7d18f406395e1a82c7d3f6b90', f"Invalid IndexNow key file: {indexnow_txt!r}"
+        raw_idx_html = open(os.path.join(repo_root, 'index.html'), 'r', encoding='utf-8').read()
+        assert raw_idx_html.count('<!--email_off-->') == 3 and raw_idx_html.count('<!--/email_off-->') == 3, "Expected 3 <!--email_off--> wrappers in index.html"
+        assert '/cdn-cgi/l/email-protection' not in raw_idx_html, "Unexpected Cloudflare email-protection link in index.html"
+        assert '"sameAs": ["https://github.com/HusseinBdeir", "https://github.com/HusseinBdeir/isabi"]' in raw_idx_html, "Missing verified sameAs URLs in ORG_JSONLD"
+        bot_res = subprocess.run(
+            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--user-agent=Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--window-size=1440,900', '--dump-dom', URL],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
+        )
+        assert 'class="js-io"' not in bot_res.stdout and 'reveal in done' in bot_res.stdout, "Googlebot UA must bypass js-io opacity gate and immediately reveal cards"
+        print('[SEO] robots.txt, sitemap.xml (valid XML), CNAME, IndexNow key, email_off, sameAs & Googlebot reveal verified')
 
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
         res = subprocess.run(
@@ -781,7 +795,47 @@ document.addEventListener('DOMContentLoaded', function() {
         for d_k, d_rgb in v4['darkChecks'].items():
             assert 0 <= d_rgb <= 120, f"Dark Mode surface {d_k} did not switch to dark palette (RGB sum={d_rgb}): {v4['darkChecks']}"
 
-        # 3. Capture fresh screenshots of Hero & #portal at 1366x768
+        # 3. Verify 404.html headless DOM, RTL & zero-overflow geometry at 390x844 & 1366x768 across en/ar/fr
+        base_href = 'file:///' + repo_root.replace('\\', '/') + '/'
+        for vw_w, vw_h in ((390, 844), (1366, 768)):
+            for loc in ('en', 'ar', 'fr'):
+                probe_404 = os.path.join(ud, f'_diag_404_{loc}_{vw_w}.html')
+                raw_404 = open(os.path.join(repo_root, '404.html'), 'r', encoding='utf-8').read()
+                inj_404 = (
+                    f'<base href="{base_href}">'
+                    f"<script>try{{localStorage.setItem('isabi.lang.v1','{loc}');}}catch(e){{}}"
+                    "window.addEventListener('load',function(){var d=document.documentElement,b=document.body;"
+                    "var effW=window.innerWidth<600?390:d.clientWidth;"
+                    "if(window.innerWidth<600){d.style.width='390px';b.style.width='390px';}"
+                    "var br=b.getBoundingClientRect(),cr=(document.querySelector('.card')||{getBoundingClientRect:function(){return{right:0,left:0,width:0};}}).getBoundingClientRect();"
+                    "var pre=document.createElement('pre');pre.id='__d404';"
+                    "pre.textContent=JSON.stringify({lang:d.lang,dir:d.dir,sw:b.scrollWidth,cw:effW,cardR:Math.round(cr.right-br.left),cardL:Math.round(cr.left-br.left),"
+                    "h1:(document.querySelector('h1')||{}).textContent||''});"
+                    "b.appendChild(pre);});</script>"
+                )
+                with open(probe_404, 'w', encoding='utf-8') as pf:
+                    pf.write(raw_404.replace('</head>', inj_404 + '</head>'))
+                try:
+                    p_url = 'file:///' + probe_404.replace('\\', '/')
+                    out_404 = subprocess.check_output(
+                        [EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', f'--window-size={vw_w},{vw_h}', '--dump-dom', p_url],
+                        timeout=20
+                    ).decode('utf-8', errors='ignore')
+                    m404 = re.search(r'<pre id="__d404">(.*?)</pre>', out_404, flags=re.DOTALL)
+                    assert m404, f"Missing __d404 probe in 404.html ({loc} {vw_w}x{vw_h})"
+                    j404 = json.loads(html.unescape(m404.group(1)))
+                    assert j404['lang'] == loc, f"404.html lang mismatch: {j404}"
+                    assert j404['dir'] == ('rtl' if loc == 'ar' else 'ltr'), f"404.html dir mismatch: {j404}"
+                    if vw_w == 390:
+                        assert j404['cw'] == 390 and j404['sw'] <= 391 and j404['cardR'] <= 391 and j404['cardL'] >= -1, f"404.html mobile 390px geometry failed ({loc}): {j404}"
+                    assert j404['sw'] <= j404['cw'] + 1 and j404['cardR'] <= j404['cw'] + 1, f"404.html horizontal overflow at {vw_w}x{vw_h} ({loc}): {j404}"
+                    assert len(j404['h1'].strip()) > 3, f"404.html empty title ({loc}): {j404}"
+                finally:
+                    if os.path.exists(probe_404):
+                        os.remove(probe_404)
+        print('[404-DOM] Verified 404.html en/ar(RTL)/fr layout & zero horizontal overflow at 390x844 and 1366x768')
+
+        # 4. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)
         shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v63.png')
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_hero}', URL], timeout=25)

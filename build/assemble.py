@@ -46,21 +46,21 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.33">
-  <link rel="icon" href="icon.svg?v=6.33" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="icon-dark.svg?v=6.33" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="icon.svg?v=6.33" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
-  <link rel="shortcut icon" href="favicon.ico?v=6.33">
-  <link rel="icon" href="favicon-dark.ico?v=6.33" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
-  <link rel="icon" href="favicon.ico?v=6.33" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
-  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.33">
+  <link rel="manifest" href="manifest.json?v=6.34">
+  <link rel="icon" href="icon.svg?v=6.34" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="icon-dark.svg?v=6.34" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icon.svg?v=6.34" type="image/svg+xml" sizes="any" media="(prefers-color-scheme: light)">
+  <link rel="shortcut icon" href="favicon.ico?v=6.34">
+  <link rel="icon" href="favicon-dark.ico?v=6.34" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.ico?v=6.34" sizes="256x256 128x128 64x64 48x48 32x32 16x16" media="(prefers-color-scheme: light)">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=6.34">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
   <script id="pre-theme">
     (function(){
       try {
-        if (/^www\\.isabisystems\\.com$/i.test(location.hostname || '') && !/[?&]noredirect=1\\b/i.test(location.search || '')) {
+        if (/^(?:www\\.isabisystems\\.com|isabi-systems\\.pages\\.dev)$/i.test(location.hostname || '') && !/[?&]noredirect=1\\b/i.test(location.search || '')) {
           location.replace('https://isabisystems.com' + (location.pathname || '/') + (location.search || '') + (location.hash || ''));
           return;
         }
@@ -101,8 +101,12 @@ ORG_JSONLD = _json.dumps({
     "name": "ISABI Systems",
     "legalName": "Isabi Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.33",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.34",
     "image": "https://isabisystems.com/og-image.png",
+    "sameAs": [
+        "https://github.com/HusseinBdeir",
+        "https://github.com/HusseinBdeir/isabi"
+    ],
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, What-If scenario studios, interactive executive dashboards, automated statement matching, fleet GPS telematics, field kiosks, and the Ask ISABI assistant with simple per-seat pricing.",
     "email": "husseinbdeir@isabisystems.com",
@@ -115,6 +119,8 @@ ORG_JSONLD = _json.dumps({
     "priceRange": "$3,000 to $11,000+ setup + $50 to $100/seat/mo"
 }, ensure_ascii=False)
 HEAD = HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD).replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
+
+INDEXNOW_KEY = "c4b9e2a7d18f406395e1a82c7d3f6b90"
 
 ROBOTS_TXT = """User-agent: *
 Allow: /
@@ -159,6 +165,26 @@ def main():
     today_iso = datetime.date.today().isoformat()
     with open(os.path.join(ROOT, 'sitemap.xml'), 'wb') as f:
         f.write(build_sitemap_xml(today_iso).replace('\r\n', '\n').encode('utf-8'))
+    with open(os.path.join(ROOT, f'{INDEXNOW_KEY}.txt'), 'wb') as f:
+        f.write(INDEXNOW_KEY.encode('utf-8'))
+
+    sw_path = os.path.join(ROOT, 'sw.js')
+    p404_path = os.path.join(ROOT, '404.html')
+    if os.path.exists(sw_path) and os.path.exists(p404_path):
+        import re as _re
+        sw_src = open(sw_path, 'r', encoding='utf-8').read()
+        m_ver = _re.search(r"CACHE_NAME\s*=\s*'isabi-systems-pwa-v([^']+)'", sw_src)
+        if m_ver:
+            sw_ver = m_ver.group(1)
+            raw_404 = open(p404_path, 'r', encoding='utf-8').read()
+            stamped_404 = _re.sub(
+                r'(/(?:icon(?:-dark)?\.svg|favicon\.ico))(?:\?v=[0-9.]+)?',
+                rf'\1?v={sw_ver}',
+                raw_404,
+            )
+            if stamped_404 != raw_404:
+                with open(p404_path, 'wb') as f404:
+                    f404.write(stamped_404.replace('\r\n', '\n').encode('utf-8'))
 
     # Check JS syntax with node --check (falls back to VS Code Electron-as-Node if node is not on PATH)
     tmp_js = os.path.join(ROOT, 'build', '_check_syntax.js')
@@ -186,7 +212,7 @@ def main():
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
     if os.path.isdir(mirror_dir):
         import shutil
-        for mf in ('index.html', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'favicon-dark.ico', 'icon.svg', 'icon-dark.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
+        for mf in ('index.html', '404.html', f'{INDEXNOW_KEY}.txt', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'favicon-dark.ico', 'icon.svg', 'icon-dark.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
             msrc = os.path.join(ROOT, mf)
             if os.path.exists(msrc):
                 shutil.copy2(msrc, os.path.join(mirror_dir, mf))

@@ -73,8 +73,12 @@ function httpReq(method, urlPath, bodyObj = null, extraHeaders = {}) {
 
 // Copy local D1 state into an isolated temp persistence dir so verification never mutates .wrangler/state
 const tmpPersist = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-persist-'));
-const srcWranglerState = path.join(ROOT, '.wrangler', 'state');
-if (fs.existsSync(srcWranglerState)) {
+const srcWranglerState = [
+  path.join(ROOT, '.wrangler', 'state'),
+  path.resolve(ROOT, '..', '..', 'isabi', '.wrangler', 'state'),
+  path.resolve(ROOT, '..', 'isabi', '.wrangler', 'state')
+].find(p => fs.existsSync(p));
+if (srcWranglerState) {
   fs.cpSync(srcWranglerState, tmpPersist, { recursive: true });
 }
 const tmpBundle = fs.mkdtempSync(path.join(os.tmpdir(), 'isabi-cf-bundle-'));
@@ -103,7 +107,10 @@ wranglerEnv.CI = '1';
 wranglerEnv.WRANGLER_SEND_METRICS = 'false';
 
 // Populate local R2 `isabi-vault/seeds/seed_*.json` for Phase 1B authenticated seed gating
-const appJsSrcDir = path.resolve(ROOT, '..', 'isabi-app', 'js');
+const appJsSrcDir = [
+  path.resolve(ROOT, '..', 'isabi-app', 'js'),
+  path.resolve(ROOT, '..', '..', 'isabi-app', 'js')
+].find(p => fs.existsSync(p)) || path.resolve(ROOT, '..', 'isabi-app', 'js');
 for (const kind of ['core', 'records', 'industries']) {
   const seedFile = path.join(appJsSrcDir, `seed_${kind}.json`);
   if (fs.existsSync(seedFile)) {
@@ -404,7 +411,12 @@ async function main() {
       source: `try { localStorage.setItem('isabi_edge_active_v1', '1'); } catch (_) {}`
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${PORT}/` });
-    await sleep(1600);
+    for (let i = 0; i < 25; i++) {
+      const rdy11 = await evalJs(`Boolean(window.ISABI_I18N && document.querySelector('h1'))`).catch(() => false);
+      if (rdy11) break;
+      await sleep(250);
+    }
+    await sleep(300);
     const sboxProbe = await evalJs(`(() => ({
       edgeFlag: Boolean(window.ISABI_HAS_EDGE_API),
       h1: (document.querySelector('h1')?.textContent || '').trim().replace(/\\s+/g, ' '),
@@ -3591,6 +3603,142 @@ finally:
         wrangler: [e37BlockedWrangler.status, hasUniversalSecHeaders(e37BlockedWrangler.headers)],
         seedJson: [e37BlockedSeedJson.status, hasUniversalSecHeaders(e37BlockedSeedJson.headers)],
         resetPage: [e37ResetPage.status, hasUniversalSecHeaders(e37ResetPage.headers)]
+      }));
+    }
+
+    // =========================================================================
+    // 38. SEO & Crawl Hygiene: Legacy /isabi/* & Host 301s, Open-Redirect Guard, 404 + Preview noindex & IndexNow Key
+    // =========================================================================
+    const e38IndexNow = await httpReq('GET', '/c4b9e2a7d18f406395e1a82c7d3f6b90.txt');
+    const e38LegacyRoot = await httpReq('GET', '/isabi');
+    const e38LegacySub = await httpReq('GET', '/isabi/pricing?ref=legacy');
+    const e38LegacyApp = await httpReq('GET', '/isabi/app');
+    const e38LegacyAppDeep = await httpReq('GET', '/isabi/app/tickets?bu=WTC');
+    const e38OpenRedir1 = await httpReq('GET', '/isabi//evil.example/phish');
+    const e38OpenRedir2 = await httpReq('GET', '/isabi/app//evil.example/phish');
+    const e38PagesHost = await httpReq('GET', '/?utm_source=test', null, { Host: 'isabi-systems.pages.dev' });
+    const e38WwwHost = await httpReq('GET', '/?utm_source=www', null, { Host: 'www.isabisystems.com' });
+    const e38PagesSw = await httpReq('GET', '/sw.js', null, { Host: 'isabi-systems.pages.dev' });
+    const e38PagesAppSw = await httpReq('GET', '/app/sw.js', null, { Host: 'isabi-systems.pages.dev' });
+    const e38WwwSw = await httpReq('GET', '/sw.js', null, { Host: 'www.isabisystems.com' });
+    const e38WwwAppSw = await httpReq('GET', '/app/sw.js', null, { Host: 'www.isabisystems.com' });
+    const e38PagesApi = await httpReq('GET', '/api/health', null, { Host: 'isabi-systems.pages.dev' });
+    const e38PagesAppApi = await httpReq('GET', '/app/api/status', null, { Host: 'isabi-systems.pages.dev' });
+    const e38WwwApi = await httpReq('GET', '/api/health', null, { Host: 'www.isabisystems.com' });
+    const e38WwwAppApi = await httpReq('GET', '/app/api/status', null, { Host: 'www.isabisystems.com' });
+    const e38PagesReset = await httpReq('GET', '/reset', null, { Host: 'isabi-systems.pages.dev' });
+    const e38WwwAppReset = await httpReq('GET', '/app/reset', null, { Host: 'www.isabisystems.com' });
+    const e38LegacyPostApi = await httpReq('POST', '/isabi/app/api/status', {});
+    const e38Ipv6Local = await httpReq('GET', '/isabi', null, { Host: `[::1]:${PORT}` });
+    const e38PagesTrailingDot = await httpReq('GET', '/?utm_source=fqdn', null, { Host: 'isabi-systems.pages.dev.' });
+    const e38PreviewHost = await httpReq('GET', '/robots.txt', null, { Host: 'preview-abc.isabi-systems.pages.dev' });
+    const e38PreviewTrailingDot = await httpReq('GET', '/robots.txt', null, { Host: 'preview-abc.isabi-systems.pages.dev.' });
+    const e38Unknown404 = await httpReq('GET', '/nonexistent-seo-hygiene-probe');
+    const e38Direct404 = await httpReq('GET', '/404');
+    const e38Direct404Slash = await httpReq('GET', '/404/');
+    const e38Direct404Html = await httpReq('GET', '/404.html');
+    const e38AppCssMissing404 = await httpReq('GET', '/app/css/missing-probe.css');
+    const e38PagesAppCss = await httpReq('GET', '/app/css/app.css', null, { Host: 'isabi-systems.pages.dev' });
+    const locOrigin = `http://127.0.0.1:${PORT}`;
+    if (
+      e38IndexNow.status === 200 &&
+      e38IndexNow.text.trim() === 'c4b9e2a7d18f406395e1a82c7d3f6b90' &&
+      e38LegacyRoot.status === 301 &&
+      e38LegacyRoot.headers['location'] === `${locOrigin}/` &&
+      e38LegacySub.status === 301 &&
+      e38LegacySub.headers['location'] === `${locOrigin}/?ref=legacy` &&
+      e38LegacyApp.status === 301 &&
+      e38LegacyApp.headers['location'] === `${locOrigin}/app/` &&
+      e38LegacyAppDeep.status === 301 &&
+      e38LegacyAppDeep.headers['location'] === `${locOrigin}/app/tickets?bu=WTC` &&
+      e38LegacyPostApi.status === 308 &&
+      e38LegacyPostApi.headers['location'] === `${locOrigin}/app/api/status` &&
+      e38OpenRedir1.status === 301 &&
+      String(e38OpenRedir1.headers['location'] || '').startsWith(`${locOrigin}/`) &&
+      !String(e38OpenRedir1.headers['location'] || '').includes('//evil.example') &&
+      e38OpenRedir2.status === 301 &&
+      String(e38OpenRedir2.headers['location'] || '').startsWith(`${locOrigin}/app/`) &&
+      !String(e38OpenRedir2.headers['location'] || '').includes('//evil.example') &&
+      e38PagesHost.status === 301 &&
+      e38PagesHost.headers['location'] === 'https://isabisystems.com/?utm_source=test' &&
+      e38WwwHost.status === 301 &&
+      e38WwwHost.headers['location'] === 'https://isabisystems.com/?utm_source=www' &&
+      e38PagesSw.status === 200 &&
+      String(e38PagesSw.headers['content-type'] || '').includes('javascript') &&
+      e38PagesSw.text.includes('client.navigate(client.url)') &&
+      !e38PagesSw.text.includes("navigate('https://") &&
+      e38PagesSw.text.includes('registration.unregister()') &&
+      e38PagesAppSw.status === 200 &&
+      e38PagesAppSw.headers['service-worker-allowed'] === '/app/' &&
+      e38PagesAppSw.text.includes('client.navigate(client.url)') &&
+      e38WwwSw.status === 200 &&
+      e38WwwSw.text.includes('client.navigate(client.url)') &&
+      e38WwwAppSw.status === 200 &&
+      e38WwwAppSw.headers['service-worker-allowed'] === '/app/' &&
+      e38PagesApi.status === 200 &&
+      e38PagesAppApi.status === 200 &&
+      e38WwwApi.status === 200 &&
+      e38WwwAppApi.status === 200 &&
+      e38PagesReset.status === 200 &&
+      e38PagesReset.text.includes('https://isabisystems.com/?reset=') &&
+      e38WwwAppReset.status === 200 &&
+      e38WwwAppReset.text.includes('https://isabisystems.com/app/?reset=') &&
+      e38Ipv6Local.status === 301 &&
+      !String(e38Ipv6Local.headers['location'] || '').startsWith('https://isabisystems.com') &&
+      e38PagesTrailingDot.status === 301 &&
+      e38PagesTrailingDot.headers['location'] === 'https://isabisystems.com/?utm_source=fqdn' &&
+      e38PreviewHost.status === 200 &&
+      String(e38PreviewHost.headers['x-robots-tag'] || '').includes('noindex') &&
+      e38PreviewTrailingDot.status === 200 &&
+      String(e38PreviewTrailingDot.headers['x-robots-tag'] || '').includes('noindex') &&
+      e38Unknown404.status === 404 &&
+      String(e38Unknown404.headers['x-robots-tag'] || '').includes('noindex') &&
+      String(e38Unknown404.headers['cache-control'] || '').includes('no-store') &&
+      e38Unknown404.text.includes('This page does not exist') &&
+      e38Direct404.status === 404 &&
+      String(e38Direct404.headers['x-robots-tag'] || '').includes('noindex') &&
+      String(e38Direct404.headers['cache-control'] || '').includes('no-store') &&
+      e38Direct404.text.includes('This page does not exist') &&
+      e38Direct404Slash.status === 404 &&
+      String(e38Direct404Slash.headers['x-robots-tag'] || '').includes('noindex') &&
+      e38Direct404Slash.text.includes('This page does not exist') &&
+      e38Direct404Html.status === 404 &&
+      String(e38Direct404Html.headers['x-robots-tag'] || '').includes('noindex') &&
+      String(e38Direct404Html.headers['cache-control'] || '').includes('no-store') &&
+      e38Direct404Html.text.includes('This page does not exist') &&
+      e38AppCssMissing404.status === 404 &&
+      String(e38AppCssMissing404.headers['x-robots-tag'] || '').includes('noindex') &&
+      String(e38AppCssMissing404.headers['cache-control'] || '').includes('no-store') &&
+      String(e38AppCssMissing404.headers['content-security-policy'] || '').includes("default-src 'self'") &&
+      e38PagesAppCss.status === 301 &&
+      e38PagesAppCss.headers['location'] === 'https://isabisystems.com/app/css/app.css' &&
+      String(e38PagesAppCss.headers['x-robots-tag'] || '').includes('noindex')
+    ) {
+      pass(
+        'edge-38-seo-hygiene-redirects-404-noindex-and-indexnow',
+        'IndexNow=200, /isabi(/*) 301/308, pages.dev+www 301s, /api+/reset+/sw.js same-origin=200, /404(.html)=404 noindex'
+      );
+    } else {
+      fail('edge-38-seo-hygiene-redirects-404-noindex-and-indexnow', JSON.stringify({
+        indexNow: [e38IndexNow.status, e38IndexNow.text.slice(0, 40)],
+        legacyRoot: [e38LegacyRoot.status, e38LegacyRoot.headers['location']],
+        legacySub: [e38LegacySub.status, e38LegacySub.headers['location']],
+        legacyApp: [e38LegacyApp.status, e38LegacyApp.headers['location']],
+        legacyAppDeep: [e38LegacyAppDeep.status, e38LegacyAppDeep.headers['location']],
+        legacyPostApi: [e38LegacyPostApi.status, e38LegacyPostApi.headers['location']],
+        openRedir1: [e38OpenRedir1.status, e38OpenRedir1.headers['location']],
+        openRedir2: [e38OpenRedir2.status, e38OpenRedir2.headers['location']],
+        pagesHost: [e38PagesHost.status, e38PagesHost.headers['location']],
+        wwwHost: [e38WwwHost.status, e38WwwHost.headers['location']],
+        pagesSw: [e38PagesSw.status, e38PagesSw.headers['content-type']],
+        pagesAppSw: [e38PagesAppSw.status, e38PagesAppSw.headers['service-worker-allowed']],
+        wwwSw: [e38WwwSw.status, e38WwwAppSw.status],
+        legacyApis: [e38PagesApi.status, e38PagesAppApi.status, e38WwwApi.status, e38WwwAppApi.status],
+        legacyResets: [e38PagesReset.status, e38WwwAppReset.status],
+        previewRobots: [e38PreviewHost.status, e38PreviewHost.headers['x-robots-tag']],
+        unknown404: [e38Unknown404.status, e38Unknown404.headers['x-robots-tag'], e38Unknown404.headers['cache-control']],
+        direct404: [e38Direct404.status, e38Direct404.headers['x-robots-tag']],
+        direct404Html: [e38Direct404Html.status, e38Direct404Html.headers['x-robots-tag']]
       }));
     }
   } finally {

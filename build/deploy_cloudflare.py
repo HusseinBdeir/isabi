@@ -621,6 +621,55 @@ def cleanup_preview_deployments_and_purge_cache(acct_id: str):
             print("Purged Cloudflare Edge CDN cache for `isabisystems.com`.")
 
 
+INDEXNOW_KEY = "c4b9e2a7d18f406395e1a82c7d3f6b90"
+
+
+def disable_email_obfuscation(token: str, zid: str) -> None:
+    """Best-effort disable Cloudflare Email Address Obfuscation on the zone (HTML also uses <!--email_off-->)."""
+    if not token or not zid:
+        return
+    res = cf_api("PATCH", f"/zones/{zid}/settings/email_obfuscation", token, {"value": "off"})
+    if res.get("success"):
+        print("Disabled Cloudflare Zone Email Address Obfuscation (`email_obfuscation=off`).")
+    else:
+        print("INFO: Zone `email_obfuscation` API skipped (OAuth scope read-only; HTML `<!--email_off-->` guards active).")
+
+
+def ping_indexnow() -> bool:
+    """Notifies IndexNow (Bing, Yandex, Naver, Seznam, Yep) of updated canonical Showcase URLs."""
+    payload = {
+        "host": "isabisystems.com",
+        "key": INDEXNOW_KEY,
+        "keyLocation": f"https://isabisystems.com/{INDEXNOW_KEY}.txt",
+        "urlList": [
+            "https://isabisystems.com/",
+        ],
+    }
+    req = urllib.request.Request(
+        "https://api.indexnow.org/indexnow",
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": "ISABI-Deploy-IndexNow/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            code = getattr(resp, "status", 200)
+            print(f"IndexNow ping accepted (HTTP {code}) for https://isabisystems.com/")
+            return code in (200, 202)
+    except urllib.error.HTTPError as e:
+        if e.code in (200, 202):
+            print(f"IndexNow ping accepted (HTTP {e.code}) for https://isabisystems.com/")
+            return True
+        print(f"WARN: IndexNow ping returned HTTP {e.code} (non-fatal).")
+        return False
+    except Exception as ex:
+        print(f"WARN: IndexNow ping skipped due to network error (non-fatal): {ex}")
+        return False
+
+
 def ensure_email_routing(token: str, acct_id: str, zid: str):
     """Idempotently ensures Cloudflare Email Routing destination `hbdeir16@gmail.com` and rule `husseinbdeir@isabisystems.com` -> `hbdeir16@gmail.com`."""
     if not token or not acct_id or not zid:
@@ -688,7 +737,7 @@ def ensure_email_routing(token: str, acct_id: str, zid: str):
             print(f"Provisioned Cloudflare Email Routing rule `{custom_email}` -> `{dest_email}`.")
 
 
-def configure_domain_and_dns(acct_id: str):
+def configure_domain_and_dns(acct_id: str, allow_zone_create: bool = True, purge_cache: bool = False):
     token = read_wrangler_oauth_token()
     if not token:
         return
@@ -702,7 +751,7 @@ def configure_domain_and_dns(acct_id: str):
     # 1. Ensure `isabisystems.com` Zone exists in Cloudflare
     z_list = cf_api("GET", "/zones?name=isabisystems.com", token)
     zone = (z_list.get("result") or [None])[0] if z_list.get("success") else None
-    if not zone:
+    if not zone and allow_zone_create:
         z_create = cf_api("POST", "/zones", token, {"name": "isabisystems.com", "account": {"id": acct_id}, "type": "full"})
         if z_create.get("success"):
             zone = z_create.get("result")
@@ -736,13 +785,21 @@ def configure_domain_and_dns(acct_id: str):
                 )
                 print(f"Healed DNS CNAME `{rec_name}` -> isabi-systems.pages.dev (Proxied)")
 
-        # 4. Ensure Cloudflare Edge 301 Redirect: `www.isabisystems.com/*` -> `https://isabisystems.com/*` (preserving path & query)
+        # 4. Ensure Cloudflare Edge 301 Redirect: `www.isabisystems.com/*` -> `https://isabisystems.com/*` (GET/HEAD non-/isabi paths; POST/PUT, /isabi*, /api*, /sw.js, and /reset* pass to Pages _middleware.js in 1 hop)
+        www_redirect_expr = (
+            'http.host eq "www.isabisystems.com" '
+            'and (http.request.method in {"GET" "HEAD"}) '
+            'and not starts_with(lower(http.request.uri.path), "/isabi") '
+            'and not starts_with(lower(http.request.uri.path), "/api/") '
+            'and not starts_with(lower(http.request.uri.path), "/app/api/") '
+            'and not (lower(http.request.uri.path) in {"/api" "/app/api" "/sw.js" "/app/sw.js" "/reset" "/reset.html" "/app/reset" "/app/reset.html"})'
+        )
         rs_get = cf_api("GET", f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint", token)
         redirect_configured = False
         if rs_get.get("success"):
             existing_rules = (rs_get.get("result") or {}).get("rules") or []
-            has_www_rule = any("www.isabisystems.com" in str(rl.get("expression") or "") for rl in existing_rules)
-            if has_www_rule:
+            has_exact_www_rule = any(str(rl.get("expression") or "").strip() == www_redirect_expr for rl in existing_rules)
+            if has_exact_www_rule:
                 redirect_configured = True
             else:
                 clean_rules = [
@@ -754,10 +811,10 @@ def configure_domain_and_dns(acct_id: str):
                         "enabled": rl.get("enabled", True),
                     }
                     for rl in existing_rules
-                    if rl.get("expression") and rl.get("action")
+                    if rl.get("expression") and rl.get("action") and "www.isabisystems.com" not in str(rl.get("expression") or "")
                 ]
                 clean_rules.append({
-                    "expression": 'http.host eq "www.isabisystems.com"',
+                    "expression": www_redirect_expr,
                     "description": "Canonical apex redirect www.isabisystems.com to isabisystems.com",
                     "action": "redirect",
                     "action_parameters": {
@@ -781,49 +838,61 @@ def configure_domain_and_dns(acct_id: str):
                     redirect_configured = True
                     print("Configured Cloudflare Edge 301 redirect rule: www.isabisystems.com -> https://isabisystems.com")
 
-        if not redirect_configured:
-            routes_res = cf_api("GET", f"/zones/{zid}/workers/routes", token)
-            existing_routes = (routes_res.get("result") or []) if routes_res.get("success") else []
+        routes_res = cf_api("GET", f"/zones/{zid}/workers/routes", token)
+        existing_routes = (routes_res.get("result") or []) if routes_res.get("success") else []
+        if redirect_configured:
+            for rt in existing_routes:
+                if str(rt.get("pattern") or "") == "www.isabisystems.com/*" and rt.get("script") == "isabi-www-redirect" and rt.get("id"):
+                    cf_api("DELETE", f"/zones/{zid}/workers/routes/{rt['id']}", token)
+        else:
             has_worker_route = any(
                 str(rt.get("pattern") or "") == "www.isabisystems.com/*" and rt.get("script") == "isabi-www-redirect"
                 for rt in existing_routes
             )
-            if not has_worker_route:
-                worker_js = (
-                    "addEventListener('fetch', event => {\n"
-                    "  const u = new URL(event.request.url);\n"
-                    "  u.hostname = 'isabisystems.com';\n"
-                    "  u.protocol = 'https:';\n"
-                    "  u.port = '';\n"
-                    "  const code = (event.request.method === 'GET' || event.request.method === 'HEAD') ? 301 : 308;\n"
-                    "  event.respondWith(Response.redirect(u.toString(), code));\n"
-                    "});\n"
-                ).encode("utf-8")
-                w_req = urllib.request.Request(
-                    f"https://api.cloudflare.com/client/v4/accounts/{acct_id}/workers/scripts/isabi-www-redirect",
-                    data=worker_js,
-                    method="PUT",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/javascript",
-                    },
+            worker_js = (
+                "addEventListener('fetch', event => {\n"
+                "  const u = new URL(event.request.url);\n"
+                "  const p = u.pathname.toLowerCase();\n"
+                "  if (p === '/isabi' || p.startsWith('/isabi/') || p === '/api' || p.startsWith('/api/') || p === '/app/api' || p.startsWith('/app/api/') || p === '/sw.js' || p === '/app/sw.js' || p === '/reset' || p === '/reset.html' || p === '/app/reset' || p === '/app/reset.html') {\n"
+                "    return;\n"
+                "  }\n"
+                "  u.hostname = 'isabisystems.com';\n"
+                "  u.protocol = 'https:';\n"
+                "  u.port = '';\n"
+                "  const code = (event.request.method === 'GET' || event.request.method === 'HEAD') ? 301 : 308;\n"
+                "  event.respondWith(Response.redirect(u.toString(), code));\n"
+                "});\n"
+            ).encode("utf-8")
+            w_req = urllib.request.Request(
+                f"https://api.cloudflare.com/client/v4/accounts/{acct_id}/workers/scripts/isabi-www-redirect",
+                data=worker_js,
+                method="PUT",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/javascript",
+                },
+            )
+            try:
+                with urllib.request.urlopen(w_req, timeout=20) as w_resp:
+                    w_out = json.loads(w_resp.read().decode("utf-8"))
+            except Exception as w_ex:
+                w_out = {"success": False, "error": str(w_ex)}
+            if w_out.get("success") and not has_worker_route:
+                rt_post = cf_api(
+                    "POST",
+                    f"/zones/{zid}/workers/routes",
+                    token,
+                    {"pattern": "www.isabisystems.com/*", "script": "isabi-www-redirect"},
                 )
-                try:
-                    with urllib.request.urlopen(w_req, timeout=20) as w_resp:
-                        w_out = json.loads(w_resp.read().decode("utf-8"))
-                except Exception as w_ex:
-                    w_out = {"success": False, "error": str(w_ex)}
-                if w_out.get("success"):
-                    rt_post = cf_api(
-                        "POST",
-                        f"/zones/{zid}/workers/routes",
-                        token,
-                        {"pattern": "www.isabisystems.com/*", "script": "isabi-www-redirect"},
-                    )
-                    if rt_post.get("success"):
-                        print("Configured Cloudflare Edge Worker 301 redirect: www.isabisystems.com/* -> https://isabisystems.com/*")
+                if rt_post.get("success"):
+                    print("Configured Cloudflare Edge Worker 301 redirect: www.isabisystems.com/* -> https://isabisystems.com/*")
 
         ensure_email_routing(token, acct_id, zid)
+        disable_email_obfuscation(token, zid)
+        if purge_cache:
+            p_res = cf_api("POST", f"/zones/{zid}/purge_cache", token, {"purge_everything": True})
+            if p_res.get("success"):
+                print("Purged Cloudflare CDN edge cache for `isabisystems.com`.")
 
         if str(zone.get("status") or "").lower() == "active":
             print(f"Cloudflare Zone `isabisystems.com` verified ACTIVE (id={zid}).")
@@ -899,6 +968,18 @@ def run_live_parity_gate(sync_release_log: bool = True) -> bool:
 
 
 def main():
+    if "--configure-domain" in sys.argv:
+        configure_domain_and_dns(
+            os.environ.get("CLOUDFLARE_ACCOUNT_ID") or "",
+            allow_zone_create=False,
+            purge_cache=True,
+        )
+        if "--ping-indexnow" in sys.argv:
+            ping_indexnow()
+        return
+    if "--ping-indexnow" in sys.argv:
+        ping_indexnow()
+        return
     if "--check-seat-pins" in sys.argv:
         env = build_env()
         warn_weak_seat_pins(env)
@@ -913,10 +994,13 @@ def main():
     if "--pages-only" in sys.argv:
         deploy_pages(env)
         warn_weak_seat_pins(env)
+        configure_domain_and_dns(acct_id)
         cleanup_preview_deployments_and_purge_cache(acct_id)
         if "--skip-live-parity" not in sys.argv:
             if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
                 sys.exit(1)
+        if "--skip-indexnow" not in sys.argv:
+            ping_indexnow()
         print("\nPAGES + EDGE FUNCTIONS BUNDLE DEPLOYMENT COMPLETE!")
         return
     d1_uuid = ensure_d1_database(env)
@@ -934,6 +1018,8 @@ def main():
     if "--skip-live-parity" not in sys.argv:
         if not run_live_parity_gate(sync_release_log=("--no-sync-release-log" not in sys.argv)):
             sys.exit(1)
+    if "--skip-indexnow" not in sys.argv:
+        ping_indexnow()
     print("\nOPTION A CLOUDFLARE EDGE DEPLOYMENT COMPLETE!")
     print("Production URL:             https://isabisystems.com/")
     print("Command Center URL:         https://isabisystems.com/app/")
