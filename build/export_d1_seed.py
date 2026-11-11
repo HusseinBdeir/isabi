@@ -231,6 +231,7 @@ def _pick_newer_record(ra: dict, rb: dict) -> dict:
     revb = int(rb.get("rev") or 1)
     tsa = _rec_ts(ra)
     tsb = _rec_ts(rb)
+    winner = ra
     if va != vb:
         non_void = rb if va else ra
         void_rec = ra if va else rb
@@ -239,15 +240,170 @@ def _pick_newer_record(ra: dict, rb: dict) -> dict:
         nv_ts = tsb if va else tsa
         v_ts = tsa if va else tsb
         if non_void.get("_reopenedExplicitly") and (nv_rev > v_rev or (nv_ts and nv_ts > v_ts)):
-            return copy.deepcopy(non_void)
-        return copy.deepcopy(void_rec)
-    if (revb, tsb) > (reva, tsa):
-        return copy.deepcopy(rb)
-    if (reva, tsa) > (revb, tsb):
-        return copy.deepcopy(ra)
-    if _record_tie_key(rb) > _record_tie_key(ra):
-        return copy.deepcopy(rb)
-    return copy.deepcopy(ra)
+            winner = non_void
+        else:
+            winner = void_rec
+    elif (revb, tsb) > (reva, tsa):
+        winner = rb
+    elif (reva, tsa) > (revb, tsb):
+        winner = ra
+    elif _record_tie_key(rb) > _record_tie_key(ra):
+        winner = rb
+    out = copy.deepcopy(winner)
+    if not out.get("_seed_orig"):
+        orig = ra.get("_seed_orig") or rb.get("_seed_orig")
+        if orig is not None:
+            out["_seed_orig"] = copy.deepcopy(orig)
+    return out
+
+
+_TILL_OWNED_D1_RE = re.compile(r"^(?:POS-|TILL-|ZREP-)", re.IGNORECASE)
+_CURATED_MEM_D1_RE = re.compile(r"^MEM-\d{4}-9\d{2}$", re.IGNORECASE)
+_TRAIL_PAD_D1_RE = re.compile(r"^(.+)-0*(\d+)$")
+
+
+def _load_industry_legacy_map_for_d1(db_path: pathlib.Path, use_snap: bool) -> dict[str, str]:
+    out: dict[str, str] = {}
+    cand_paths = [db_path.parent / "industry_legacy_id_map.json"]
+    if use_snap:
+        cand_paths.append(APP_ROOT / "data" / "industry_legacy_id_map.json")
+    for mp in cand_paths:
+        if mp.exists():
+            try:
+                raw = json.loads(mp.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    for k, v in raw.items():
+                        ks, vs = str(k or "").strip().upper(), str(v or "").strip()
+                        if ks and vs and ks != vs.upper():
+                            out[ks] = vs
+                break
+            except Exception:
+                pass
+    if use_snap and SEED_INDUSTRIES_JSON.exists():
+        try:
+            ind_p = json.loads(SEED_INDUSTRIES_JSON.read_text(encoding="utf-8"))
+            s_pool = ind_p.get("_s") or []
+            agr_t = (ind_p.get("tables") or {}).get("insurance.agreements")
+            if isinstance(agr_t, dict) and "id" in (agr_t.get("c") or []):
+                ci = agr_t["c"].index("id")
+                is_sc = bool(agr_t["sc"][ci])
+                for idx, row in enumerate(agr_t.get("r") or []):
+                    v = row[ci]
+                    aid = str(s_pool[v] if (is_sc and isinstance(v, int)) else (v or "")).strip()
+                    alias = f"AGR-{idx + 1:03d}"
+                    if aid and alias not in out and alias != aid.upper():
+                        out[alias] = aid
+        except Exception:
+            pass
+    return out
+
+
+def _resolve_legacy_ind_id_d1(raw_id: object, leg_map: dict[str, str]) -> str:
+    s = str(raw_id or "").strip()
+    if not s or not leg_map or _CURATED_MEM_D1_RE.match(s) or _TILL_OWNED_D1_RE.match(s):
+        return ""
+    up = s.upper()
+    hit = leg_map.get(up)
+    if hit and hit.upper() != up:
+        return hit
+    m = _TRAIL_PAD_D1_RE.match(up)
+    if m:
+        pf, digits = m.group(1), m.group(2)
+        for w in (2, 3, 4):
+            cand = f"{pf}-{digits.zfill(w)}"
+            hit2 = leg_map.get(cand)
+            if hit2 and hit2.upper() != up:
+                return hit2
+    return ""
+
+
+def _upgrade_remote_industry_stores(remote: dict, leg_map: dict[str, str]) -> tuple[list[tuple[str, str]], list[str]]:
+    purged_rows: list[tuple[str, str]] = []
+    purged_edits: list[str] = []
+    if not isinstance(remote, dict) or not leg_map:
+        return (purged_rows, purged_edits)
+    edit_store = remote.get("industryRowEdits")
+    if isinstance(edit_store, dict) and edit_store:
+        new_edits: dict[str, dict] = {}
+        for ek, val in edit_store.items():
+            if not isinstance(val, dict):
+                continue
+            ek_s = str(ek).strip()
+            parts = ek_s.split("::")
+            tail_id = "::".join(parts[2:]).strip() if len(parts) >= 3 else ""
+            new_id = _resolve_legacy_ind_id_d1(tail_id, leg_map) if tail_id and not _TILL_OWNED_D1_RE.match(tail_id) else ""
+            target_key = f"{parts[0]}::{parts[1]}::{new_id}" if (new_id and new_id != tail_id) else ek_s
+            migrated = copy.deepcopy(val)
+            if new_id and new_id != tail_id:
+                purged_edits.append(ek_s)
+                if parts[0] != "WF":
+                    migrated["primaryId"] = new_id
+                    cells = migrated.get("cells")
+                    if isinstance(cells, list) and cells and str(cells[0] or "").strip().upper() == tail_id.upper():
+                        cells[0] = new_id
+            prev_e = new_edits.get(target_key)
+            if not prev_e:
+                new_edits[target_key] = migrated
+            else:
+                ev, mv = bool(prev_e.get("voided")), bool(migrated.get("voided"))
+                er, mr = int(prev_e.get("rev") or 1), int(migrated.get("rev") or 1)
+                ets = str(prev_e.get("updated_at") or prev_e.get("updatedAt") or "")
+                mts = str(migrated.get("updated_at") or migrated.get("updatedAt") or "")
+                if mv and not ev and mr >= er:
+                    new_edits[target_key] = {**prev_e, **migrated, "voided": True, "rev": max(er, mr)}
+                elif not (ev and not mv and er >= mr) and ((mr, mts) >= (er, ets)):
+                    new_edits[target_key] = {**prev_e, **migrated, "rev": max(er, mr)}
+        remote["industryRowEdits"] = new_edits
+
+    rows_store = remote.get("industryCustomRows")
+    if isinstance(rows_store, dict) and rows_store:
+        new_rows_store: dict[str, list] = {}
+        for bucket, arr in rows_store.items():
+            if not isinstance(arr, list):
+                continue
+            b_s = str(bucket).strip()
+            dedup_by_up: dict[str, dict] = {}
+            dedup_order: list[tuple[str, dict | None]] = []
+            for r in arr:
+                if not isinstance(r, dict):
+                    continue
+                rc = copy.deepcopy(r)
+                raw_id = str(rc.get("id") or rc.get("code") or "").strip()
+                new_id = _resolve_legacy_ind_id_d1(raw_id, leg_map)
+                if new_id and new_id != raw_id:
+                    if b_s and raw_id:
+                        purged_rows.append((b_s, raw_id))
+                    if rc.get("code") and str(rc["code"]).strip().upper() == raw_id.upper():
+                        rc["code"] = new_id
+                    rc["id"] = new_id
+                for fk_col in ("autoClosePriorId", "_auto_closed_by_id"):
+                    if rc.get(fk_col):
+                        up_fk = _resolve_legacy_ind_id_d1(rc[fk_col], leg_map)
+                        if up_fk and up_fk != rc[fk_col]:
+                            rc[fk_col] = up_fk
+                if isinstance(rc.get("autoClosePriorIds"), list):
+                    rc["autoClosePriorIds"] = [
+                        (_resolve_legacy_ind_id_d1(pid, leg_map) or pid) for pid in rc["autoClosePriorIds"]
+                    ]
+                k_up = str(rc.get("id") or rc.get("code") or "").strip().upper()
+                if not k_up:
+                    dedup_order.append(("", rc))
+                elif k_up not in dedup_by_up:
+                    dedup_by_up[k_up] = rc
+                    dedup_order.append((k_up, None))
+                else:
+                    pv = dedup_by_up[k_up]
+                    p_void, r_void = bool(pv.get("voided")), bool(rc.get("voided"))
+                    p_rev, r_rev = int(pv.get("rev") or 1), int(rc.get("rev") or 1)
+                    p_ts = str(pv.get("updated_at") or pv.get("_createdAt") or "")
+                    r_ts = str(rc.get("updated_at") or rc.get("_createdAt") or "")
+                    if r_void and not p_void and r_rev >= p_rev:
+                        dedup_by_up[k_up] = {**pv, **rc, "voided": True, "rev": max(p_rev, r_rev)}
+                    elif not (p_void and not r_void and p_rev >= r_rev) and ((r_rev, r_ts) >= (p_rev, p_ts)):
+                        dedup_by_up[k_up] = {**pv, **rc, "rev": max(p_rev, r_rev)}
+            new_rows_store[bucket] = [raw_r if raw_r is not None else dedup_by_up[ku] for ku, raw_r in dedup_order]
+        remote["industryCustomRows"] = new_rows_store
+    return (purged_rows, purged_edits)
 
 
 def _has_real_samples(u: dict) -> bool:
@@ -926,6 +1082,7 @@ def collect_target_rows(
     schema_cols: dict[str, list[str]],
     remote: dict,
     include_snapshot: bool | None = None,
+    explicit_delete_rks: set[str] | None = None,
 ) -> dict[str, str]:
     """Collect deduplicated canonical `(table, pk) -> SQL UPSERT` across SQLite + SharePoint snapshot + spine + live cloud state."""
     target_rows: dict[str, str] = {}
@@ -1062,6 +1219,191 @@ def collect_target_rows(
                 _put("auth_sessions", (sid,), build_upsert_stmt("auth_sessions", schema_cols["auth_sessions"], s))
 
         cr = remote.get("customRecords") or {}
+        if isinstance(cr, dict) and cr:
+            _legacy_pos_re = re.compile(
+                r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
+                r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
+                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$"
+            )
+            _seed_tx_re = re.compile(
+                r"^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})"
+                r"|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+"
+                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$"
+            )
+            _legacy_purged_entry_re = re.compile(
+                r"^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+"
+                r"|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+"
+                r"|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$"
+            )
+            _stable_exp_child_re = re.compile(
+                r"^(?:ex_[0-9a-f]{10,16}|dv-(?:hld|ins)-(?:exp|rec)-[0-9a-f]{8,16}|wbrecur-(?:wtc|bbc)-[0-9a-f]{8,16})-i\d+$"
+            )
+            _fallback_nm_re = re.compile(r"^(?:(?:ST|RP|FI|AT)-\d+|(?:EXP|SET|REC)-(?:INS|HLD)-\d+)$")
+
+            def _na_d1(v: object) -> str:
+                return re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", str(v or "").lower())
+
+            def _tno_d1(v: object) -> str:
+                return str(v or "").strip().lstrip("#").lower()
+
+            seed_by_table_id: dict[str, dict[str, dict]] = {}
+            for (_t_rk, (_t_name, _pk_tup, _rd_s)) in staged_dicts.items():
+                if len(_pk_tup) == 1 and _pk_tup[0]:
+                    seed_by_table_id.setdefault(_t_name, {})[_pk_tup[0]] = _rd_s
+
+            def _anchor_matches(ref_r: dict, s_row: dict | None) -> bool:
+                if not s_row:
+                    return False
+                if ref_r.get("company") and s_row.get("company"):
+                    if canonicalize_company(ref_r.get("company")) != canonicalize_company(s_row.get("company")):
+                        return False
+                if ref_r.get("date") and s_row.get("date"):
+                    if str(ref_r.get("date"))[:10] != str(s_row.get("date"))[:10]:
+                        return False
+                ref_nm = str(ref_r.get("name") or "").strip()
+                if ref_nm and s_row.get("name") and not _fallback_nm_re.match(ref_nm):
+                    if ref_nm != str(s_row.get("name")).strip():
+                        return False
+                if ref_r.get("ticket_no") and s_row.get("ticket_no"):
+                    if _tno_d1(ref_r.get("ticket_no")) != _tno_d1(s_row.get("ticket_no")):
+                        return False
+                return True
+
+            purged_set: set[str] = {
+                str(p).strip()
+                for p in (remote.get("_purgedOverrideIds") or [])
+                if p and _legacy_purged_entry_re.match(str(p).strip())
+            } if isinstance(remote.get("_purgedOverrideIds"), list) else set()
+            upgraded_map: dict[tuple[str, str], str] = {}
+            ordered_cr_keys = list(cr.keys())
+            if "expenses" in ordered_cr_keys and "expense_items" in ordered_cr_keys:
+                ordered_cr_keys.remove("expense_items")
+                ordered_cr_keys.insert(ordered_cr_keys.index("expenses") + 1, "expense_items")
+
+            def _mark_purged_legacy(ck: str, row_id_s: str) -> None:
+                entry = f"{ck}:{row_id_s}"
+                if _legacy_purged_entry_re.match(entry):
+                    purged_set.add(entry)
+                if explicit_delete_rks is not None:
+                    ct = CR_KEY_TO_TABLE.get(ck, ck)
+                    if ct in schema_cols and len(TABLE_PK_COLS.get(ct, ("id",))) == 1 and row_id_s:
+                        explicit_delete_rks.add(encode_row_key(ct, (row_id_s,)))
+
+            sanitized_cr: dict[str, list] = {}
+            for cr_key in ordered_cr_keys:
+                rows_in = cr.get(cr_key)
+                if not isinstance(rows_in, list):
+                    continue
+                canon_t = CR_KEY_TO_TABLE.get(cr_key, cr_key)
+                t_seeds = seed_by_table_id.get(canon_t, {})
+                valid_exp_parents: set[str] = set()
+                if cr_key == "expense_items":
+                    valid_exp_parents.update(seed_by_table_id.get("expenses", {}).keys())
+                    valid_exp_parents.update(seed_by_table_id.get("recurring_expenses", {}).keys())
+                    for ex_c in (sanitized_cr.get("expenses") or []) + (sanitized_cr.get("recurring_expenses") or []) + (cr.get("recurring_expenses") or []):
+                        if isinstance(ex_c, dict) and ex_c.get("id"):
+                            valid_exp_parents.add(str(ex_c["id"]))
+
+                dedup_by_id: dict[str, dict] = {}
+                dedup_order: list[str] = []
+                for raw_rec in rows_in:
+                    if not isinstance(raw_rec, dict) or not raw_rec.get("id"):
+                        continue
+                    rec = copy.deepcopy(raw_rec)
+                    rid = str(rec["id"]).strip()
+                    if cr_key == "expense_items":
+                        raw_p = str(rec.get("expense_id") or re.sub(r"-i\d+$", "", rid))
+                        up_p = upgraded_map.get(("expenses", raw_p))
+                        if up_p:
+                            rec["expense_id"] = up_p
+                            m_sfx = re.search(r"(-i\d+)$", rid)
+                            if m_sfx:
+                                next_cid = f"{up_p}{m_sfx.group(1)}"
+                                if next_cid != rid:
+                                    _mark_purged_legacy(cr_key, rid)
+                                rid = next_cid
+                                rec["id"] = rid
+                        if _stable_exp_child_re.match(rid):
+                            p_eid = str(rec.get("expense_id") or re.sub(r"-i\d+$", "", rid))
+                            if p_eid not in valid_exp_parents:
+                                _mark_purged_legacy(cr_key, rid)
+                                continue
+                            rec["expense_id"] = p_eid
+                            if rid not in dedup_by_id:
+                                dedup_by_id[rid] = rec
+                                dedup_order.append(rid)
+                            else:
+                                dedup_by_id[rid] = _pick_newer_record(dedup_by_id[rid], rec)
+                            continue
+
+                    if rid not in t_seeds and _legacy_pos_re.match(rid):
+                        orig = rec.get("_seed_orig")
+                        cands: list[dict] = []
+                        if isinstance(orig, dict):
+                            for sr in t_seeds.values():
+                                if not _anchor_matches(orig, sr):
+                                    continue
+                                matched_num = False
+                                num_ok = True
+                                for nk in ("total", "amount", "litres", "qty", "tally", "usd_amount"):
+                                    if orig.get(nk) is not None and sr.get(nk) is not None:
+                                        matched_num = True
+                                        if abs(float(orig.get(nk) or 0) - float(sr.get(nk) or 0)) > 0.05:
+                                            num_ok = False
+                                            break
+                                if not num_ok:
+                                    continue
+                                for pk in ("customer", "supplier", "staff", "equipment", "counterparty", "borrower"):
+                                    if orig.get(pk) and sr.get(pk) and _na_d1(orig.get(pk)) != _na_d1(sr.get(pk)):
+                                        num_ok = False
+                                        break
+                                if num_ok and (matched_num or orig.get("name") or orig.get("ticket_no")):
+                                    cands.append(sr)
+                        if len(cands) == 1 and cands[0].get("id"):
+                            new_id = str(cands[0]["id"])
+                            upgraded_map[(cr_key, rid)] = new_id
+                            _mark_purged_legacy(cr_key, rid)
+                            if isinstance(orig, dict):
+                                if _fallback_nm_re.match(str(orig.get("name") or "").strip()) and cands[0].get("name"):
+                                    if str(rec.get("name") or "").strip() == str(orig.get("name") or "").strip():
+                                        rec["name"] = cands[0]["name"]
+                                    orig["name"] = cands[0]["name"]
+                                orig["id"] = new_id
+                            rec["id"] = new_id
+                            rid = new_id
+                        else:
+                            _mark_purged_legacy(cr_key, rid)
+                            continue
+
+                    if _seed_tx_re.match(rid):
+                        s_row = t_seeds.get(rid)
+                        ref_r = rec.get("_seed_orig") if isinstance(rec.get("_seed_orig"), dict) else rec
+                        if not _anchor_matches(ref_r, s_row):
+                            _mark_purged_legacy(cr_key, rid)
+                            continue
+
+                    if rid not in dedup_by_id:
+                        dedup_by_id[rid] = rec
+                        dedup_order.append(rid)
+                    else:
+                        dedup_by_id[rid] = _pick_newer_record(dedup_by_id[rid], rec)
+                sanitized_cr[cr_key] = [dedup_by_id[k_d] for k_d in dedup_order]
+
+            if explicit_delete_rks is not None:
+                for p_entry in purged_set:
+                    ck_p, rid_p = p_entry.split(":", 1)
+                    ct_p = CR_KEY_TO_TABLE.get(ck_p, ck_p)
+                    if ct_p in schema_cols and len(TABLE_PK_COLS.get(ct_p, ("id",))) == 1 and rid_p:
+                        explicit_delete_rks.add(encode_row_key(ct_p, (rid_p,)))
+
+            remote = dict(remote)
+            remote["customRecords"] = sanitized_cr
+            if purged_set:
+                remote["_purgedOverrideIds"] = sorted(purged_set)
+            else:
+                remote.pop("_purgedOverrideIds", None)
+            cr = sanitized_cr
+
         for cr_key, rows in cr.items():
             if not isinstance(rows, list):
                 continue
@@ -1134,6 +1476,18 @@ def collect_target_rows(
                     f"VALUES ({sql_lit(cid)}, 'custom', {sql_lit(cr_rule)}, {sql_lit(cr_rule.get('updated_at', ''))})"
                 )
                 _put("alert_rules", (cid,), stmt)
+
+        remote = dict(remote)
+        purged_ind_rows, purged_ind_edits = _upgrade_remote_industry_stores(
+            remote, _load_industry_legacy_map_for_d1(db_path, use_snap)
+        )
+        if explicit_delete_rks is not None:
+            for bk_p, rid_p in purged_ind_rows:
+                if "industry_custom_rows" in schema_cols:
+                    explicit_delete_rks.add(encode_row_key("industry_custom_rows", (bk_p, rid_p)))
+            for ek_p in purged_ind_edits:
+                if "industry_row_edits" in schema_cols:
+                    explicit_delete_rks.add(encode_row_key("industry_row_edits", (ek_p,)))
 
         for bucket, arr in (remote.get("industryCustomRows") or {}).items():
             if not bucket or not isinstance(arr, list):
@@ -1232,7 +1586,11 @@ def export_all(
     schema_cols = parse_schema_columns(SCHEMA_SQL.read_text(encoding="utf-8"))
     valid_tables = set(schema_cols.keys())
     remote = fetch_live_cloud_store(offline=offline)
-    target_rows = collect_target_rows(db_path, schema_cols, remote, include_snapshot=include_snapshot)
+    explicit_delete_rks: set[str] = set()
+    target_rows = collect_target_rows(
+        db_path, schema_cols, remote, include_snapshot=include_snapshot, explicit_delete_rks=explicit_delete_rks
+    )
+    explicit_delete_rks -= set(target_rows.keys())
 
     cur_hashes = {rk: stmt_hash(stmt) for rk, stmt in target_rows.items()}
     prev_hashes: dict[str, str] = {}
@@ -1252,16 +1610,39 @@ def export_all(
     skipped_unchanged = 0
 
     if use_delta:
-        # 1. Delete vanished relational rows first; defer shrunk edge_kv_store tail chunks until after KV upserts
+        # 1. Delete vanished relational rows + upgraded/purged live legacy PKs first; defer shrunk edge_kv_store tail chunks until after KV upserts.
+        # Group >= 10 single-PK deletes per table into compact IN (...) clauses so large ID migrations stay in 1 batch.
         deferred_kv_deletes: list[str] = []
+        vanished_by_tbl: dict[str, list[list[str]]] = {}
+        delete_candidate_keys = set(explicit_delete_rks)
         for prev_key in prev_hashes.keys():
             if prev_key not in cur_hashes:
-                tbl, pk_vals = decode_row_key(prev_key)
+                delete_candidate_keys.add(prev_key)
+        for del_key in sorted(delete_candidate_keys):
+            tbl, pk_vals = decode_row_key(del_key)
+            if tbl not in valid_tables:
+                continue
+            if tbl == "edge_kv_store":
                 del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
                 if del_stmt:
-                    if tbl == "edge_kv_store":
-                        deferred_kv_deletes.append(del_stmt)
-                    else:
+                    deferred_kv_deletes.append(del_stmt)
+            else:
+                vanished_by_tbl.setdefault(tbl, []).append(pk_vals)
+
+        for tbl, pk_list in vanished_by_tbl.items():
+            pk_cols = TABLE_PK_COLS.get(tbl, ("id",))
+            if len(pk_cols) == 1 and len(pk_list) >= 10:
+                pk_col = pk_cols[0]
+                valid_vals = [vals[0] for vals in pk_list if len(vals) == 1]
+                for i in range(0, len(valid_vals), 250):
+                    chunk = valid_vals[i : i + 250]
+                    in_sql = ", ".join(sql_lit(v) for v in chunk)
+                    writer.add(f"DELETE FROM {tbl} WHERE {pk_col} IN ({in_sql})")
+                    emitted_deletes += len(chunk)
+            else:
+                for pk_vals in pk_list:
+                    del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
+                    if del_stmt:
                         writer.add(del_stmt)
                         emitted_deletes += 1
 
@@ -1278,6 +1659,13 @@ def export_all(
             writer.add(kv_del)
             emitted_deletes += 1
     else:
+        for del_key in sorted(explicit_delete_rks):
+            tbl, pk_vals = decode_row_key(del_key)
+            if tbl in valid_tables and tbl != "edge_kv_store":
+                del_stmt = build_delete_stmt(tbl, pk_vals, valid_tables)
+                if del_stmt:
+                    writer.add(del_stmt)
+                    emitted_deletes += 1
         for stmt in target_rows.values():
             writer.add(stmt)
             emitted_upserts += 1

@@ -469,6 +469,7 @@
     })(),
     sessions: lsGet('isabi_mfg_sessions_v2', null) || [],
     customRecords: lsGet('isabi_mfg_custom_recs_v2', null) || {},
+    _purgedOverrideIds: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_purged_overrides_v1', null) : null) || [],
     industryCustomRows: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_ind_custom_rows_v1', null) : null) || {},
     _indCustomRev: 0,
     indTablesSearch: '',
@@ -44007,6 +44008,26 @@
     `;
   }
 
+  function resolveLegacyIndustryId(rawId) {
+    const s = String(rawId == null ? '' : rawId).trim();
+    if (!s || /^MEM-\d{4}-9\d{2}$/i.test(s) || (typeof isTillOwnedRowId === 'function' && isTillOwnedRowId(s))) return '';
+    const map = SEED && SEED._industryLegacyIdMap;
+    if (!map || !map.size) return '';
+    const up = s.toUpperCase();
+    const direct = map.get(up);
+    if (direct && direct.toUpperCase() !== up) return direct;
+    const mPad = up.match(/^(.+)-0*(\d+)$/);
+    if (mPad) {
+      const pf = mPad[1], digits = mPad[2];
+      for (const w of [2, 3, 4]) {
+        const candKey = pf + '-' + digits.padStart(w, '0');
+        const hit = map.get(candKey);
+        if (hit && hit.toUpperCase() !== up) return hit;
+      }
+    }
+    return '';
+  }
+
   function applyChronoWindowOverlays(baseArr, customArr, wfBucket) {
     let list = (Array.isArray(baseArr) ? baseArr : []).map(r => Object.assign({}, r));
     const cust = Array.isArray(customArr) ? customArr : [];
@@ -44016,22 +44037,26 @@
     const voidedIds = new Set();
     rawBucketArr.slice().reverse().forEach(ca => {
       if (!ca) return;
-      const cidUp = String(ca.id || ca.code || '').trim().toUpperCase();
+      const rawCid = String(ca.id || ca.code || '').trim();
+      const cidUp = (resolveLegacyIndustryId(rawCid) || rawCid).toUpperCase();
       if (!cidUp) return;
       if (ca.voided || ca._scheduleVoided) voidedIds.add(cidUp);
       else voidedIds.delete(cidUp);
     });
     cust.slice().reverse().forEach(ca => {
       if (!ca || ca.voided) return;
-      const cidUp = String(ca.id || ca.code || '').trim().toUpperCase();
+      const rawCid = String(ca.id || ca.code || '').trim();
+      const upgId = resolveLegacyIndustryId(rawCid);
+      const effId = upgId || rawCid;
+      const cidUp = effId.toUpperCase();
       if (ca._scheduleVoided) {
         if (cidUp) voidedIds.add(cidUp);
         return;
       }
       if (cidUp) voidedIds.delete(cidUp);
       const idx = cidUp ? list.findIndex(x => x && String(x.id || x.code || '').trim().toUpperCase() === cidUp) : -1;
-      if (idx >= 0) list[idx] = Object.assign({}, list[idx], ca);
-      else list.unshift(Object.assign({}, ca));
+      if (idx >= 0) list[idx] = Object.assign({}, list[idx], ca, { id: list[idx].id || effId });
+      else list.unshift(Object.assign({}, ca, upgId ? { id: upgId } : {}));
     });
     if (voidedIds.size) {
       list = list.filter(x => x && !voidedIds.has(String(x.id || x.code || '').trim().toUpperCase()));
@@ -44042,7 +44067,8 @@
         ? ca.autoClosePriorIds
         : (ca.autoClosePriorId ? [ca.autoClosePriorId] : []);
       closeIds.forEach(cid => {
-        const hit = list.find(x => x && String(x.id || '').trim().toUpperCase() === String(cid || '').trim().toUpperCase());
+        const effCloseUp = (resolveLegacyIndustryId(cid) || String(cid || '').trim()).toUpperCase();
+        const hit = list.find(x => x && String(x.id || '').trim().toUpperCase() === effCloseUp);
         if (hit && ca.autoCloseDate) {
           hit.end_date = ca.autoCloseDate;
           hit.status = 'Closed Window';
@@ -46720,7 +46746,7 @@
       const r = wp ? Object.assign({}, rawR, wp) : rawR;
       const margin_usd = round2(r.ttc_usd - r.cost_usd);
       const margin_pct = r.ttc_usd > 0 ? round2((margin_usd / r.ttc_usd) * 100) : 0;
-      const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02');
+      const is_gap = Boolean(r.is_gap || r.id === 'PH-KA-2026-D02' || String(r.id || '').startsWith('PH-KA-2026-D02-'));
       return { ...r, margin_usd, margin_pct, is_gap };
     });
 
@@ -55288,6 +55314,12 @@
     ];
     domainDocs.forEach(d => {
       d._demoSpineRow = true;
+      d._origParentId = d.parent_id;
+      const resolvedPid = resolveLegacyIndustryId(d.parent_id);
+      if (resolvedPid) {
+        if (d.parent_label === d.parent_id) d.parent_label = resolvedPid;
+        d.parent_id = resolvedPid;
+      }
       if (!seenIds.has(d.id)) {
         seenIds.add(d.id);
         if (typeof buildSampleDocSvgDataUrl === 'function') {
@@ -56875,13 +56907,29 @@
     if (!hasServerApi() || isDemoSandboxSession()) return;
     if (rosterIsServerHeld() && !STATE.authed) return;
     try {
+      const pLeg = STATE._purgedIndustryLegacy || { rows: [], editKeys: [] };
+      const sentRows = Array.isArray(pLeg.rows) ? pLeg.rows.slice() : [];
+      const sentEdits = Array.isArray(pLeg.editKeys) ? pLeg.editKeys.slice() : [];
       edgeApiFetch('./api/industry_domain_store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           industryCustomRows: withoutTillOwnedRows(getIndustryCustomRowsStore()),
-          industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore())
+          industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore()),
+          purgedRows: sentRows,
+          purgedEditKeys: sentEdits
         })
+      }).then(res => {
+        if (res && res.ok && STATE._purgedIndustryLegacy) {
+          if (sentRows.length) {
+            const doneR = new Set(sentRows.map(x => x.bucket + '::' + x.row_id));
+            STATE._purgedIndustryLegacy.rows = (STATE._purgedIndustryLegacy.rows || []).filter(x => !doneR.has(x.bucket + '::' + x.row_id));
+          }
+          if (sentEdits.length) {
+            const doneE = new Set(sentEdits);
+            STATE._purgedIndustryLegacy.editKeys = (STATE._purgedIndustryLegacy.editKeys || []).filter(k => !doneE.has(k));
+          }
+        }
       }).catch(() => {});
     } catch (_) {}
   }
@@ -57037,13 +57085,16 @@
     const prepend = [];
     custList.forEach(cr => {
       if (!cr || typeof cr !== 'object') return;
-      const cid = String(cr.id || cr.code || '').trim().toUpperCase();
+      const rawId = String(cr.id || cr.code || '').trim();
+      const upgId = resolveLegacyIndustryId(rawId);
+      const effId = upgId || rawId;
+      const cid = effId.toUpperCase();
       if (!cid) { prepend.push(cr); return; }
       const idx = baseList.findIndex(sr => sr && String(sr.id || sr.code || '').trim().toUpperCase() === cid);
       if (idx >= 0) {
-        baseList[idx] = Object.assign({}, baseList[idx], cr);
+        baseList[idx] = Object.assign({}, baseList[idx], cr, { id: baseList[idx].id || effId });
       } else {
-        prepend.push(cr);
+        prepend.push(upgId ? Object.assign({}, cr, { id: upgId }) : cr);
       }
     });
     return prepend.concat(baseList);
@@ -57098,8 +57149,156 @@
     if (!bucket || !rowId) return null;
     if (isTillOwnedRowId(rowId)) return null;
     const store = getIndustryRowEditStore();
-    const hit = store[`WF::${bucket}::${String(rowId).trim()}`];
+    const cleanId = String(rowId).trim();
+    let hit = store[`WF::${bucket}::${cleanId}`];
+    if (!hit) {
+      const upg = resolveLegacyIndustryId(cleanId);
+      if (upg) hit = store[`WF::${bucket}::${upg}`];
+    }
     return (hit && typeof hit === 'object' && !hit.voided) ? hit : null;
+  }
+
+  function upgradeLegacyIndustryStores() {
+    const map = SEED && SEED._industryLegacyIdMap;
+    if (!map || !map.size) return false;
+    let changed = false;
+    if (!STATE._purgedIndustryLegacy || typeof STATE._purgedIndustryLegacy !== 'object') {
+      STATE._purgedIndustryLegacy = { rows: [], editKeys: [] };
+    }
+    const pEditSet = new Set(STATE._purgedIndustryLegacy.editKeys || []);
+    const pRowSet = new Set((STATE._purgedIndustryLegacy.rows || []).map(x => x.bucket + '::' + x.row_id));
+
+    const editStore = getIndustryRowEditStore();
+    if (editStore && typeof editStore === 'object') {
+      Object.keys(editStore).forEach(ek => {
+        if (isTillOwnedEditKey(ek)) return;
+        const val = editStore[ek];
+        if (!val || typeof val !== 'object') return;
+        const parts = ek.split('::');
+        if (parts.length < 3) return;
+        const tailId = parts.slice(2).join('::').trim();
+        const newId = resolveLegacyIndustryId(tailId);
+        if (!newId || newId === tailId) return;
+        const newKey = `${parts[0]}::${parts[1]}::${newId}`;
+        const migrated = Object.assign({}, val);
+        if (parts[0] !== 'WF') {
+          migrated.primaryId = newId;
+          if (Array.isArray(migrated.cells) && migrated.cells.length && String(migrated.cells[0] || '').trim().toUpperCase() === tailId.toUpperCase()) {
+            migrated.cells = migrated.cells.slice();
+            migrated.cells[0] = newId;
+          }
+        }
+        delete editStore[ek];
+        if (!pEditSet.has(ek)) {
+          pEditSet.add(ek);
+          STATE._purgedIndustryLegacy.editKeys.push(ek);
+        }
+        const existing = editStore[newKey];
+        if (!existing || typeof existing !== 'object') {
+          editStore[newKey] = migrated;
+        } else {
+          const eVoid = Boolean(existing.voided), mVoid = Boolean(migrated.voided);
+          const eRev = Number(existing.rev || 1), mRev = Number(migrated.rev || 1);
+          const eTs = String(existing.updated_at || existing.updatedAt || '');
+          const mTs = String(migrated.updated_at || migrated.updatedAt || '');
+          if (mVoid && !eVoid && mRev >= eRev) {
+            editStore[newKey] = Object.assign({}, existing, migrated, { voided: true, rev: Math.max(eRev, mRev) });
+          } else if (!(eVoid && !mVoid && eRev >= mRev) && (mRev > eRev || (mRev === eRev && mTs >= eTs))) {
+            editStore[newKey] = Object.assign({}, existing, migrated, { rev: Math.max(eRev, mRev) });
+          }
+        }
+        changed = true;
+      });
+    }
+
+    const rowsStore = getIndustryCustomRowsStore();
+    if (rowsStore && typeof rowsStore === 'object') {
+      Object.keys(rowsStore).forEach(bucket => {
+        const arr = rowsStore[bucket];
+        if (!Array.isArray(arr) || !arr.length) return;
+        let bucketChanged = false;
+        const dedupByUp = new Map();
+        const dedupOrder = [];
+        arr.forEach(r => {
+          if (!r || typeof r !== 'object') return;
+          const rawId = String(r.id || r.code || '').trim();
+          const newId = resolveLegacyIndustryId(rawId);
+          if (newId && newId !== rawId) {
+            if (r.code && String(r.code).trim().toUpperCase() === rawId.toUpperCase()) r.code = newId;
+            r.id = newId;
+            const rkPair = bucket + '::' + rawId;
+            if (!pRowSet.has(rkPair)) {
+              pRowSet.add(rkPair);
+              STATE._purgedIndustryLegacy.rows.push({ bucket, row_id: rawId });
+            }
+            bucketChanged = true;
+          }
+          if (r.autoClosePriorId) {
+            const upP = resolveLegacyIndustryId(r.autoClosePriorId);
+            if (upP && upP !== r.autoClosePriorId) { r.autoClosePriorId = upP; bucketChanged = true; }
+          }
+          if (Array.isArray(r.autoClosePriorIds)) {
+            let pidChanged = false;
+            const nextPids = r.autoClosePriorIds.map(pid => {
+              const upP = resolveLegacyIndustryId(pid);
+              if (upP && upP !== pid) { pidChanged = true; return upP; }
+              return pid;
+            });
+            if (pidChanged) { r.autoClosePriorIds = nextPids; bucketChanged = true; }
+          }
+          if (r._auto_closed_by_id) {
+            const upBy = resolveLegacyIndustryId(r._auto_closed_by_id);
+            if (upBy && upBy !== r._auto_closed_by_id) { r._auto_closed_by_id = upBy; bucketChanged = true; }
+          }
+          const keyUp = String(r.id || r.code || '').trim().toUpperCase();
+          if (!keyUp) {
+            dedupOrder.push({ raw: r });
+            return;
+          }
+          if (!dedupByUp.has(keyUp)) {
+            dedupByUp.set(keyUp, r);
+            dedupOrder.push({ keyUp });
+          } else {
+            bucketChanged = true;
+            const prev = dedupByUp.get(keyUp);
+            const pVoid = Boolean(prev.voided), rVoid = Boolean(r.voided);
+            const pRev = Number(prev.rev || 1), rRev = Number(r.rev || 1);
+            const pTs = String(prev.updated_at || prev._createdAt || '');
+            const rTs = String(r.updated_at || r._createdAt || '');
+            if (rVoid && !pVoid && rRev >= pRev) {
+              dedupByUp.set(keyUp, Object.assign({}, prev, r, { voided: true, rev: Math.max(pRev, rRev) }));
+            } else if (!(pVoid && !rVoid && pRev >= rRev) && (rRev > pRev || (rRev === pRev && rTs >= pTs))) {
+              dedupByUp.set(keyUp, Object.assign({}, prev, r, { rev: Math.max(pRev, rRev) }));
+            }
+          }
+        });
+        if (bucketChanged) {
+          rowsStore[bucket] = dedupOrder.map(it => it.raw || dedupByUp.get(it.keyUp));
+          changed = true;
+        }
+      });
+    }
+
+    const docArr = SEED && SEED.records && SEED.records.documents;
+    if (Array.isArray(docArr)) {
+      docArr.forEach(d => {
+        if (!d || !d._demoSpineRow) return;
+        const basePid = d._origParentId || d.parent_id;
+        const newPid = resolveLegacyIndustryId(basePid);
+        if (newPid && d.parent_id !== newPid) {
+          if (d.parent_label === d.parent_id || d.parent_label === basePid) d.parent_label = newPid;
+          d.parent_id = newPid;
+          changed = true;
+        }
+      });
+    }
+
+    if (changed) {
+      saveIndustryRowEditStore(editStore);
+      saveIndustryCustomRowsStore();
+      invalidateIndustryDomainCaches();
+    }
+    return changed;
   }
 
   function saveIndustryWorkflowPatch(bucket, rowId, patch) {
@@ -57236,8 +57435,11 @@
       });
     });
     if (changed) {
+      upgradeLegacyIndustryStores();
       saveIndustryCustomRowsStore();
       invalidateIndustryDomainCaches();
+    } else if (upgradeLegacyIndustryStores()) {
+      changed = true;
     }
     return changed;
   }
@@ -57289,8 +57491,11 @@
       }
     });
     if (changed) {
+      upgradeLegacyIndustryStores();
       saveIndustryRowEditStore(store);
       invalidateIndustryDomainCaches();
+    } else if (upgradeLegacyIndustryStores()) {
+      changed = true;
     }
     return changed;
   }
@@ -101942,6 +102147,9 @@
       appStoreSetRaw('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
       if (STATE.lbpFxUpdatedAt) appStoreSetRaw('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
       if (!IS_AUTOMATED_TEST) {
+        if (Array.isArray(STATE._purgedOverrideIds) && STATE._purgedOverrideIds.length) {
+          appStoreSetRaw('isabi_mfg_purged_overrides_v1', JSON.stringify(STATE._purgedOverrideIds.slice(-2000)));
+        }
         appStoreSetRaw('isabi_mfg_ind_row_edits_v1', JSON.stringify(getIndustryRowEditStore()));
         appStoreSetRaw('isabi_mfg_ind_custom_rows_v1', JSON.stringify(offloadIndustryCustomRowBlobs(getIndustryCustomRowsStore())));
       }
@@ -102286,31 +102494,120 @@
       });
       if (filtered.length !== arr.length) STATE.customRecords[k] = filtered;
     });
+    const legacyPurgedEntryRe = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+    if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
+    else STATE._purgedOverrideIds = STATE._purgedOverrideIds.filter(x => legacyPurgedEntryRe.test(String(x || '').trim()));
     if (SEED._recordsReady) {
-      const posRe = /^(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+(?:-i\d+)?$/;
-      CR_KEYS.forEach(k => {
+      const posRe = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))(?:-i\d+)?$/;
+      const legacyPosRe = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+      const stableExpChildRe = /^(?:ex_[0-9a-f]{10,16}|dv-(?:hld|ins)-(?:exp|rec)-[0-9a-f]{8,16}|wbrecur-(?:wtc|bbc)-[0-9a-f]{8,16})-i\d+$/;
+      const legacyFallbackNameRe = /^(?:(?:ST|RP|FI|AT)-\d+|(?:EXP|SET|REC)-(?:INS|HLD)-\d+)$/;
+      const upgradedSeedIds = new Map();
+      const orderedKeys = CR_KEYS.slice();
+      const exIdx = orderedKeys.indexOf('expenses');
+      const exiIdx = orderedKeys.indexOf('expense_items');
+      if (exIdx > -1 && exiIdx > -1 && exIdx > exiIdx) {
+        orderedKeys.splice(exIdx, 1);
+        orderedKeys.splice(exiIdx, 0, 'expenses');
+      }
+      orderedKeys.forEach(k => {
         const arr = STATE.customRecords && STATE.customRecords[k];
         const seedArr = SEED.records && SEED.records[k];
         if (!Array.isArray(arr) || !arr.length || !Array.isArray(seedArr) || !seedArr.length) return;
         const seedById = new Map(seedArr.map(x => [String(x.id), x]));
         const voidArch = SEED_VOIDED_ARCHIVE[k] || null;
+        let validParentExpIds = null;
+        if (k === 'expense_items') {
+          validParentExpIds = new Set();
+          ((SEED.records && SEED.records.expenses) || []).forEach(ex => { if (ex && ex.id) validParentExpIds.add(String(ex.id)); });
+          ((SEED.records && SEED.records.recurring_expenses) || []).forEach(rx => { if (rx && rx.id) validParentExpIds.add(String(rx.id)); });
+          if (SEED_ORIG_ARCHIVE.expenses) SEED_ORIG_ARCHIVE.expenses.forEach((_v, ek) => validParentExpIds.add(String(ek)));
+          if (SEED_VOIDED_ARCHIVE.expenses) SEED_VOIDED_ARCHIVE.expenses.forEach((_v, ek) => validParentExpIds.add(String(ek)));
+          ((STATE.customRecords && STATE.customRecords.expenses) || []).forEach(ex => { if (ex && ex.id) validParentExpIds.add(String(ex.id)); });
+          ((STATE.customRecords && STATE.customRecords.recurring_expenses) || []).forEach(rx => { if (rx && rx.id) validParentExpIds.add(String(rx.id)); });
+        }
         const nextArr = arr.filter(r => {
           if (!r) return false;
-          const rid = String(r.id == null ? '' : r.id);
+          let rid = String(r.id == null ? '' : r.id);
+          if (k === 'expense_items') {
+            const rawParent = String(r.expense_id || rid.replace(/-i\d+$/, ''));
+            if (rawParent && upgradedSeedIds.has('expenses:' + rawParent)) {
+              const newExpId = upgradedSeedIds.get('expenses:' + rawParent);
+              r.expense_id = newExpId;
+              if (/-i\d+$/.test(rid)) {
+                const sfx = rid.slice(rid.lastIndexOf('-i'));
+                const nextChildId = newExpId + sfx;
+                if (nextChildId !== rid) {
+                  if (legacyPurgedEntryRe.test(k + ':' + rid) && Array.isArray(STATE._purgedOverrideIds) && !STATE._purgedOverrideIds.includes(k + ':' + rid)) {
+                    STATE._purgedOverrideIds.push(k + ':' + rid);
+                  }
+                  rid = nextChildId;
+                  r.id = rid;
+                }
+              }
+              removedAny = true;
+            }
+            if (stableExpChildRe.test(rid)) {
+              const pEid = String(r.expense_id || rid.replace(/-i\d+$/, ''));
+              if (/^dv-(?:hld|ins)-(?:exp|rec)-/.test(pEid) && !SEED._industryLiveSpineMergedRev) {
+                if (!r.expense_id) r.expense_id = pEid;
+                return true;
+              }
+              if (!validParentExpIds || !validParentExpIds.has(pEid)) return false;
+              if (!r.expense_id) r.expense_id = pEid;
+              return true;
+            }
+          }
           if (!posRe.test(rid)) return true;
+          if (/^dv-(?:hld|ins)-/.test(rid) && !SEED._industryLiveSpineMergedRev) return true;
           const origArch = SEED_ORIG_ARCHIVE[k] || null;
           let sRow = (origArch && origArch.get(rid)) || (voidArch && voidArch.get(rid)) || null;
           if (!sRow) {
             const liveSeedRow = seedById.get(rid);
-            if (liveSeedRow && !isAppRecord(liveSeedRow)) {
+            const allowSpine = /^dv-(?:hld|ins)-/.test(rid);
+            if (liveSeedRow && !isAppRecord(liveSeedRow) && (allowSpine || !liveSeedRow._multiIndustrySeed) && !liveSeedRow._demoSample) {
               sRow = captureSeedOrigSnapshot(k, liveSeedRow) || liveSeedRow;
+            }
+          }
+          if (!sRow && legacyPosRe.test(rid) && r._seed_orig && typeof r._seed_orig === 'object') {
+            const orig = r._seed_orig;
+            const allowSpine = /^dv-(?:hld|ins)-/.test(rid);
+            const cands = seedArr.filter(sr => {
+              if (!sr || isAppRecord(sr) || (!allowSpine && sr._multiIndustrySeed) || sr._demoSample) return false;
+              if (orig.company && sr.company && String(orig.company) !== String(sr.company)) return false;
+              if (orig.date && sr.date && String(orig.date).slice(0, 10) !== String(sr.date).slice(0, 10)) return false;
+              if (orig.ticket_no && sr.ticket_no && String(orig.ticket_no).trim() !== String(sr.ticket_no).trim()) return false;
+              if (orig.name && sr.name && !legacyFallbackNameRe.test(String(orig.name).trim()) && String(orig.name).trim() !== String(sr.name).trim()) return false;
+              for (const nk of ['total', 'amount', 'litres', 'qty', 'tally', 'usd_amount']) {
+                if (orig[nk] != null && sr[nk] != null && Math.abs((Number(orig[nk]) || 0) - (Number(sr[nk]) || 0)) > 0.05) return false;
+              }
+              for (const pk of ['customer', 'supplier', 'staff', 'equipment', 'counterparty', 'borrower']) {
+                if (orig[pk] && sr[pk] && norm(orig[pk]) !== norm(sr[pk])) return false;
+              }
+              return true;
+            });
+            if (cands.length === 1 && cands[0].id) {
+              const newId = String(cands[0].id);
+              upgradedSeedIds.set(k + ':' + rid, newId);
+              if (Array.isArray(STATE._purgedOverrideIds) && !STATE._purgedOverrideIds.includes(k + ':' + rid)) {
+                STATE._purgedOverrideIds.push(k + ':' + rid);
+              }
+              if (legacyFallbackNameRe.test(String(orig.name || '').trim()) && cands[0].name) {
+                if (String(r.name || '').trim() === String(orig.name || '').trim()) r.name = cands[0].name;
+                orig.name = cands[0].name;
+              }
+              r.id = newId;
+              orig.id = newId;
+              rid = newId;
+              sRow = captureSeedOrigSnapshot(k, cands[0]) || cands[0];
+              removedAny = true;
             }
           }
           if (!sRow) return false;
           const refR = (r._seed_orig && typeof r._seed_orig === 'object') ? r._seed_orig : r;
           if (refR.date && sRow.date && String(refR.date).slice(0, 10) !== String(sRow.date).slice(0, 10)) return false;
           if (refR.ticket_no && sRow.ticket_no && String(refR.ticket_no).trim() !== String(sRow.ticket_no).trim()) return false;
-          if (refR.name && sRow.name && String(refR.name).trim() !== String(sRow.name).trim()) return false;
+          if (refR.name && sRow.name && !legacyFallbackNameRe.test(String(refR.name).trim()) && String(refR.name).trim() !== String(sRow.name).trim()) return false;
           if (!r._seed_orig) {
             if (refR.staff && sRow.staff && norm(refR.staff) !== norm(sRow.staff)) return false;
             if (refR.supplier && sRow.supplier && norm(refR.supplier) !== norm(sRow.supplier)) return false;
@@ -102318,8 +102615,59 @@
           }
           return true;
         });
-        if (nextArr.length !== arr.length) {
-          STATE.customRecords[k] = nextArr;
+        const dedupMap = new Map();
+        const dedupOrder = [];
+        let dedupCollapsed = false;
+        nextArr.forEach(r => {
+          const rid = String(r.id == null ? '' : r.id);
+          if (!dedupMap.has(rid)) {
+            dedupMap.set(rid, r);
+            dedupOrder.push(rid);
+          } else {
+            dedupCollapsed = true;
+            const prev = dedupMap.get(rid);
+            const rVoid = Boolean(r.voided), pVoid = Boolean(prev.voided);
+            const rRev = Number(r.rev || 1), pRev = Number(prev.rev || 1);
+            const rTs = Math.max(_stampMs(_recModTs(r)), _stampMs(r.voided_at), _stampMs(r.restored_at));
+            const pTs = Math.max(_stampMs(_recModTs(prev)), _stampMs(prev.voided_at), _stampMs(prev.restored_at));
+            const keepOrig = r._seed_orig || prev._seed_orig;
+            let rWins;
+            if (rVoid !== pVoid) {
+              const nonVoid = rVoid ? prev : r;
+              const voidRec = rVoid ? r : prev;
+              const nvRev = Number(nonVoid.rev || 1), vRev = Number(voidRec.rev || 1);
+              const nvRestMs = _stampMs(nonVoid.restored_at), vVoidMs = _stampMs(voidRec.voided_at);
+              const nvTs = rVoid ? pTs : rTs, vTs = rVoid ? rTs : pTs;
+              const reopenedWins = (nonVoid._reopenedExplicitly && (nvRev > vRev || (nvTs && nvTs > vTs)))
+                || (nvRestMs && (!vVoidMs || nvRestMs > vVoidMs));
+              rWins = rVoid ? !reopenedWins : reopenedWins;
+            } else {
+              rWins = rRev !== pRev ? rRev > pRev : rTs >= pTs;
+            }
+            if (rWins) {
+              const merged = Object.assign({}, prev, r);
+              if (keepOrig) merged._seed_orig = keepOrig;
+              dedupMap.set(rid, merged);
+            } else if (keepOrig && !prev._seed_orig) {
+              prev._seed_orig = keepOrig;
+            }
+          }
+        });
+        const finalArr = dedupCollapsed ? dedupOrder.map(id => dedupMap.get(id)) : nextArr;
+        if (dedupCollapsed || finalArr.length !== arr.length) {
+          STATE.customRecords[k] = finalArr;
+          removedAny = true;
+        }
+      });
+    }
+    if (STATE._purgedOverrideIds.length && STATE.customRecords) {
+      const purgedSet = new Set(STATE._purgedOverrideIds);
+      Object.keys(STATE.customRecords).forEach(k => {
+        const arr = STATE.customRecords[k];
+        if (!Array.isArray(arr) || !arr.length) return;
+        const kept = arr.filter(r => !r || r._reopenedExplicitly || !purgedSet.has(k + ':' + String(r.id == null ? '' : r.id)));
+        if (kept.length !== arr.length) {
+          STATE.customRecords[k] = kept;
           removedAny = true;
         }
       });
@@ -102617,6 +102965,8 @@
   function mergeCustomRecords(remote) {
     if (!remote || typeof remote !== 'object') return false;
     ensureUniversalCanonicalIndex();
+    if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
+    const purgedSet = new Set(STATE._purgedOverrideIds);
     let changed = false;
     const allMergeKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {}), ...Object.keys(remote || {})]));
     allMergeKeys.forEach(k => {
@@ -102626,6 +102976,7 @@
       const byId = new Map(mine.map(r => [r.id, r]));
       inc.forEach(r => {
         if (!r || !r.id) return;
+        if (purgedSet.has(k + ':' + String(r.id)) && !r._reopenedExplicitly) return;
         let cur = byId.get(r.id);
         if (!cur && !r.voided && k === 'receipts') {
           const rDate = String(r.date || '').slice(0, 10);
@@ -103330,6 +103681,7 @@
       sessions: STATE.sessions.slice(0, 25),
       stepUpAudits: Array.isArray(STATE.stepUpAudits) ? STATE.stepUpAudits.slice(0, 300) : [],
       customRecords: trimmed,
+      _purgedOverrideIds: Array.isArray(STATE._purgedOverrideIds) ? STATE._purgedOverrideIds.slice(-2000) : [],
       industryRowEdits: withoutTillOwnedEdits(getIndustryRowEditStore()),
       industryCustomRows: typeof offloadIndustryCustomRowBlobs === 'function' ? offloadIndustryCustomRowBlobs(withoutTillOwnedRows(getIndustryCustomRowsStore())) : withoutTillOwnedRows(getIndustryCustomRowsStore()),
       kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
@@ -103640,7 +103992,25 @@
       STATE.sessions.sort((a, b) => String(b.logged_in_at || '').localeCompare(String(a.logged_in_at || '')));
       STATE.sessions = STATE.sessions.slice(0, 50);
     }
+    let purgedAdded = false;
+    if (Array.isArray(remote._purgedOverrideIds) && remote._purgedOverrideIds.length) {
+      const legacyPurgedEntryRe = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+      if (!Array.isArray(STATE._purgedOverrideIds)) STATE._purgedOverrideIds = [];
+      const seenPurged = new Set(STATE._purgedOverrideIds);
+      remote._purgedOverrideIds.forEach(pid => {
+        const ps = String(pid || '').trim();
+        if (ps && legacyPurgedEntryRe.test(ps) && !seenPurged.has(ps)) {
+          STATE._purgedOverrideIds.push(ps);
+          seenPurged.add(ps);
+          purgedAdded = true;
+        }
+      });
+      if (STATE._purgedOverrideIds.length > 2000) {
+        STATE._purgedOverrideIds = STATE._purgedOverrideIds.slice(-2000);
+      }
+    }
     if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
+    else if (purgedAdded && sanitizeUniversalCustomRecords()) { changed = true; applyCustomRecordsToSeed(); }
     if (remote.industryRowEdits && mergeIndustryRowEdits(remote.industryRowEdits)) { changed = true; }
     if (remote.industryCustomRows && mergeIndustryCustomRows(remote.industryCustomRows)) { changed = true; }
     if (Array.isArray(remote.kioskPunches) && mergeKioskPunches(remote.kioskPunches)) { changed = true; }
@@ -129602,6 +129972,10 @@
     window.__applyIndustryDomRowEdits = root => applyIndustryDomRowEdits(root);
     window.__getIndustryRowEditStore = () => getIndustryRowEditStore();
     window.__saveIndustryRowEditStore = store => saveIndustryRowEditStore(store);
+    window.__getIndustryCustomRowsStore = () => getIndustryCustomRowsStore();
+    window.__mergeCustomOverSeededRows = (baseArr, customArr, opts) => mergeCustomOverSeededRows(baseArr, customArr, opts);
+    window.__resolveLegacyIndustryId = id => resolveLegacyIndustryId(id);
+    window.__ensureDomainSpecificDocumentsSeeded = arr => ensureDomainSpecificDocumentsSeeded(arr);
     window.__mergeWorkSchedules = incoming => mergeWorkSchedules(incoming);
     window.__bumpPendingCloudPush = () => setPendingCloudPush(true);
     window.__getPendingCloudPushState = () => ({ pending: Boolean(STATE.pendingCloudPush), seq: _localPushSeq });
@@ -129913,6 +130287,17 @@
       }
       live.hospitality.venueRows = head.concat(tail);
     }
+    const demoPinRemap = new Map();
+    const demoPinnedSet = new Set();
+    const pinRowId = (row, newId) => {
+      if (!row || !newId) return;
+      const prevId = String(row.id || '').trim();
+      if (prevId && prevId.toUpperCase() !== newId.toUpperCase()) {
+        demoPinRemap.set(prevId.toUpperCase(), newId);
+      }
+      demoPinnedSet.add(newId.toUpperCase());
+      row.id = newId;
+    };
     if (isDemoScopeActive()) {
       const setCoId = (arr, co, nth, newId) => {
         if (!Array.isArray(arr)) return;
@@ -129920,8 +130305,15 @@
         for (let i = 0; i < arr.length; i++) {
           const r = arr[i];
           if (!r || (co && r.company !== co)) continue;
-          if (seen === nth) { r.id = newId; return; }
+          if (seen === nth) { pinRowId(r, newId); return; }
           seen++;
+        }
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (!r || demoPinnedSet.has(String(r.id || '').toUpperCase())) continue;
+          if (co) r.company = co;
+          pinRowId(r, newId);
+          return;
         }
       };
       if (live.hospitality) {
@@ -129949,6 +130341,7 @@
         setCoId(live.trading.serialUnits, 'Shacman', 0, 'SU-SH-001');
         setCoId(live.trading.serialUnits, 'Korri Auto', 0, 'SU-KA-001');
         if (Array.isArray(live.trading.serialUnits) && !live.trading.serialUnits.some(r => r && r.id === 'SU-KA-001')) {
+          demoPinnedSet.add('SU-KA-001');
           live.trading.serialUnits.splice(1, 0, { id: 'SU-KA-001', company: 'Korri Auto', model: 'Korri Mobile Service & Lube Van 4x4', family: 'Service Fleet', chassis_vin: 'WDB9066571P391042', engine_no: 'OM651-955-301982', year: 2026, warehouse: 'Al Ghazieh', location: 'Al-Ghazieh Service Bay', fob_usd: 29500, landed_add_usd: 4700, landed_cost_usd: 34200, list_price_usd: 42900, ask_price_usd: 42900, status: 'In Service Fleet', buyer: 'Korri Field Service' });
         }
       }
@@ -129965,22 +130358,104 @@
         }
         if (Array.isArray(live.insurance.remittances)) {
           const mgf = live.insurance.remittances.find(r => r && r.carrier === 'MedGulf');
-          if (mgf) mgf.id = 'REM-2026-MGF-01';
+          if (mgf) pinRowId(mgf, 'REM-2026-MGF-01');
           const alz = live.insurance.remittances.find(r => r && r.carrier === 'Allianz SNA');
-          if (alz) alz.id = 'REM-2026-ALZ-01';
+          if (alz) pinRowId(alz, 'REM-2026-ALZ-01');
         }
         if (Array.isArray(live.insurance.statements)) {
           const axa = live.insurance.statements.find(r => r && r.carrier === 'AXA Middle East');
-          if (axa) axa.id = 'STM-AXA-2026-08';
+          if (axa) pinRowId(axa, 'STM-AXA-2026-08');
           const alzS = live.insurance.statements.find(r => r && r.carrier === 'Allianz SNA');
-          if (alzS) alzS.id = 'STM-ALZ-2026-09';
+          if (alzS) pinRowId(alzS, 'STM-ALZ-2026-09');
         }
         setCoId(live.insurance.claims, 'Insurance Company', 0, 'CLM-2026-001');
         setCoId(live.insurance.claims, 'Insurance Company', 2, 'CLM-2026-003');
       }
     }
+    const legMap = new Map();
+    if (P.legacy_id_map && typeof P.legacy_id_map === 'object') {
+      for (const [oldId, rawVal] of Object.entries(P.legacy_id_map)) {
+        const kUp = String(oldId || '').trim().toUpperCase();
+        if (!kUp || demoPinnedSet.has(kUp)) continue;
+        let targetId = typeof rawVal === 'number' ? S[rawVal] : rawVal;
+        targetId = String(targetId || '').trim();
+        if (!targetId) continue;
+        if (demoPinRemap.has(targetId.toUpperCase())) targetId = demoPinRemap.get(targetId.toUpperCase());
+        if (targetId.toUpperCase() !== kUp) legMap.set(kUp, targetId);
+      }
+    }
+    const addFallbackAlias = (alias, targetId) => {
+      const aUp = String(alias || '').trim().toUpperCase();
+      const tId = String(targetId || '').trim();
+      if (!aUp || !tId || demoPinnedSet.has(aUp) || legMap.has(aUp) || aUp === tId.toUpperCase()) return;
+      legMap.set(aUp, tId);
+    };
+    const pickCoId = (arr, co, nth) => {
+      if (!Array.isArray(arr)) return '';
+      let seen = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        if (!r || (co && r.company !== co)) continue;
+        if (seen === nth) return String(r.id || '').trim();
+        seen++;
+      }
+      const fb = arr[Math.min(nth || 0, Math.max(0, arr.length - 1))] || arr[0];
+      return fb && fb.id ? String(fb.id || '').trim() : '';
+    };
+    if (live.insurance && Array.isArray(live.insurance.agreements)) {
+      live.insurance.agreements.forEach((ag, idx) => {
+        if (ag && ag.id) addFallbackAlias('AGR-' + String(idx + 1).padStart(3, '0'), ag.id);
+      });
+    }
+    if (!isDemoScopeActive()) {
+      if (live.hospitality) {
+        addFallbackAlias('MEM-2026-001', pickCoId(live.hospitality.membershipRows, 'Blanca', 0));
+        addFallbackAlias('MEM-2026-003', pickCoId(live.hospitality.membershipRows, 'Palms', 0));
+        addFallbackAlias('MEM-2026-005', pickCoId(live.hospitality.membershipRows, 'Voile', 0));
+        addFallbackAlias('STK-HSP-01', pickCoId(live.hospitality.stockRows, 'La Una', 0));
+        addFallbackAlias('STK-HSP-03', pickCoId(live.hospitality.stockRows, 'Blanca', 0));
+        addFallbackAlias('STK-HSP-06', pickCoId(live.hospitality.stockRows, 'Platinum', 0));
+      }
+      if (live.trading) {
+        addFallbackAlias('IMP-SH-2026-014', pickCoId(live.trading.importRows, 'Shacman', 0));
+        addFallbackAlias('IMP-SH-2026-015', pickCoId(live.trading.importRows, 'Shacman', 1));
+        addFallbackAlias('IMP-KA-2026-021', pickCoId(live.trading.importRows, 'Korri Auto', 0));
+        addFallbackAlias('LC-SH-2026-014', pickCoId(live.trading.landedRows, 'Shacman', 0));
+        addFallbackAlias('LC-KA-2026-021', pickCoId(live.trading.landedRows, 'Korri Auto', 0));
+        addFallbackAlias('GRN-SH-2026-041', pickCoId(live.trading.grnRows, 'Shacman', 0));
+        addFallbackAlias('GRN-KA-2026-058', pickCoId(live.trading.grnRows, 'Korri Auto', 0));
+        addFallbackAlias('SU-SH-001', pickCoId(live.trading.serialUnits, 'Shacman', 0));
+        addFallbackAlias('SU-KA-001', pickCoId(live.trading.serialUnits, 'Korri Auto', 0));
+      }
+      if (live.realestate) {
+        addFallbackAlias('LSE-4235-001', pickCoId(live.realestate.leases, '4235 Company S.A.L', 0));
+        addFallbackAlias('LSE-4235-002', pickCoId(live.realestate.leases, '4235 Company S.A.L', 2));
+        addFallbackAlias('INV-4235-010', pickCoId(live.realestate.invoices, '4235 Company S.A.L', 5));
+        addFallbackAlias('INV-RE-001', pickCoId(live.realestate.invoices, '', 0));
+        addFallbackAlias('RCT-4235-101', pickCoId(live.realestate.receipts, '4235 Company S.A.L', 0));
+        addFallbackAlias('RCT-PROP-106', pickCoId(live.realestate.receipts, 'Properties', 0));
+      }
+      if (live.insurance) {
+        if (Array.isArray(live.insurance.remittances)) {
+          const mgf = live.insurance.remittances.find(r => r && r.carrier === 'MedGulf');
+          if (mgf && mgf.id) addFallbackAlias('REM-2026-MGF-01', mgf.id);
+          const alz = live.insurance.remittances.find(r => r && r.carrier === 'Allianz SNA');
+          if (alz && alz.id) addFallbackAlias('REM-2026-ALZ-01', alz.id);
+        }
+        if (Array.isArray(live.insurance.statements)) {
+          const axa = live.insurance.statements.find(r => r && r.carrier === 'AXA Middle East');
+          if (axa && axa.id) addFallbackAlias('STM-AXA-2026-08', axa.id);
+          const alzS = live.insurance.statements.find(r => r && r.carrier === 'Allianz SNA');
+          if (alzS && alzS.id) addFallbackAlias('STM-ALZ-2026-09', alzS.id);
+        }
+        addFallbackAlias('CLM-2026-001', pickCoId(live.insurance.claims, 'Insurance Company', 0));
+        addFallbackAlias('CLM-2026-003', pickCoId(live.insurance.claims, 'Insurance Company', 2));
+      }
+    }
+    SEED._industryLegacyIdMap = legMap;
     SEED.industryLive = live;
     SEED._industryRev = (SEED._industryRev || 0) + 1;
+    upgradeLegacyIndustryStores();
     mergeIndustryLiveSpineIntoRecords();
   }
 
@@ -130081,7 +130556,15 @@
           if (!o.method) o.method = 'Credit';
         }
         if (isRaw && !o.method) o.method = 'Credit';
-        if (pf && !o.name) o.name = o.ticket_no ? ('#' + o.ticket_no + ' · ' + (o.date || '')) : (pf.toUpperCase() + '-' + idx);
+        if (pf && !o.name) {
+          if (o.ticket_no) {
+            o.name = '#' + o.ticket_no + ' · ' + (o.date || '');
+          } else {
+            const idStr = String(o.id || '');
+            const usIdx = idStr.indexOf('_');
+            o.name = pf.toUpperCase() + '-' + (usIdx > 0 ? idStr.slice(usIdx + 1, usIdx + 9).toUpperCase() : idx);
+          }
+        }
         out[idx] = o;
         if (shouldYield) {
           const mask = STATE.authed ? 4095 : 1023;

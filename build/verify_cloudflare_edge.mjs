@@ -537,6 +537,16 @@ async function main() {
         updated_at: '2026-11-08T10:00:00.000Z'
       });
     }
+    batch95.push({
+      id: 'ex_a1b2c3d4e5f6',
+      company: 'WTC',
+      date: '2026-11-08',
+      code: 'EXP-STABLE-SEED-OVR',
+      name: 'Stable Seed Override Protected From Void',
+      amount: 42,
+      rev: 1,
+      updated_at: '2026-11-08T10:00:00.000Z'
+    });
     const docStep1 = Object.assign({}, baseDoc, {
       updatedAt: new Date(Date.now() + 1000).toISOString(),
       customRecords: Object.assign({}, baseDoc.customRecords || {}, {
@@ -595,10 +605,11 @@ async function main() {
     const sabahSeat = (ptDoc.users || []).find(u => String(u.email || '').toLowerCase() === 'sabahkassab@bhfirms.com');
     const blancaInjected = (ptDoc.customRecords?.expenses || []).some(r => r.id === 'exp-tamper-blanca');
 
-    // Step 4: Hard-remove `exp-dirty-diff-0` from `customRecords.expenses` and assert D1 voids it
+    // Step 4: Hard-remove `exp-dirty-diff-0` AND stable-seed override `ex_a1b2c3d4e5f6` from `customRecords.expenses`;
+    // assert D1 voids `exp-dirty-diff-0` while `POS_SEED_ID_RE` protects `ex_a1b2c3d4e5f6` from being voided!
     const docStep4 = JSON.parse(JSON.stringify(ptDoc));
     docStep4.updatedAt = new Date(Date.now() + 4000).toISOString();
-    docStep4.customRecords.expenses = (docStep4.customRecords.expenses || []).filter(r => r.id !== 'exp-dirty-diff-0');
+    docStep4.customRecords.expenses = (docStep4.customRecords.expenses || []).filter(r => r.id !== 'exp-dirty-diff-0' && r.id !== 'ex_a1b2c3d4e5f6');
     const syncStep4 = await httpReq('POST', '/app/api/sync', {
       op: 'patch',
       doc: 'mfg_web_store',
@@ -608,6 +619,7 @@ async function main() {
     }, { 'X-ISABI-Session': ownerToken });
     const checkExpAfterVoid = await httpReq('GET', '/app/api/records?table=expenses&company=WTC&limit=400', null, { 'X-ISABI-Session': ownerToken });
     const row0Voided = (checkExpAfterVoid.json?.rows || []).find(r => r.id === 'exp-dirty-diff-0');
+    const seedOvrRow = (checkExpAfterVoid.json?.rows || []).find(r => r.id === 'ex_a1b2c3d4e5f6');
 
     const ms2 = syncStep2.json?.mirrorStats || {};
     const ms4 = syncStep4.json?.mirrorStats || {};
@@ -620,7 +632,9 @@ async function main() {
       sabahSeat &&
       !String(sabahSeat.role || '').includes('Owner') &&
       ms4.voidedRemoved >= 1 &&
-      row0Voided?.voided === true
+      row0Voided?.voided === true &&
+      seedOvrRow &&
+      !seedOvrRow.voided
     ) {
       pass(
         'edge-15-dirty-row-only-sync-void-and-lateral-rls',
@@ -686,6 +700,151 @@ try:
     assert "1001-MOD" in sql3 and "'WTC'" in sql3, "canonicalized WTC + modified code missing"
     assert "DELETE FROM sales_tickets WHERE id = 'st1';" in sql3, f"missing st1 delete: {sql3}"
     assert "DELETE FROM industry_custom_rows WHERE bucket = 'hosp_folios' AND row_id = 'fol-1';" in sql3, f"missing composite delete: {sql3}"
+
+    # Run 3b: Stable content-derived seed IDs (st_<12hex>) — deleting 3 middle rows emits ONLY 3 deletes & 0 cascade upserts,
+    # and >= 10 vanished single-PK rows collapse into compact WHERE id IN (...) statement(s).
+    dbp_s = tmp / "mfg_stable.db"
+    man_s = tmp / "manifest_stable.json"
+    out_s = tmp / "batches_stable"
+    conn_s = sqlite3.connect(str(dbp_s))
+    conn_s.executescript("""
+        CREATE TABLE companies (key TEXT PRIMARY KEY, name TEXT, code TEXT);
+        CREATE TABLE sales_tickets (id TEXT PRIMARY KEY, name TEXT, ticket_no TEXT, date TEXT, company TEXT, customer TEXT, total REAL);
+        CREATE TABLE users (id TEXT PRIMARY KEY, full_name TEXT, email TEXT, pin_code TEXT, role TEXT, companies TEXT, status TEXT, face_samples TEXT, face_thumbs TEXT, face_required INTEGER, face_updated_at TEXT);
+    """)
+    for idx_t in range(25):
+        sid = f"st_{idx_t:012x}"
+        conn_s.execute(
+            "INSERT INTO sales_tickets VALUES (?, ?, ?, '2026-11-08', 'WTC', 'Alpha', ?)",
+            (sid, f"SALE {idx_t}", str(2000 + idx_t), float(100 + idx_t)),
+        )
+    conn_s.commit()
+    conn_s.close()
+    eds.fetch_live_cloud_store = lambda offline=False: {"updatedAt": "2026-11-08T10:00:00.000Z"}
+    eds.export_all(delta=True, manifest_path=man_s, db_path=dbp_s, out_dir=out_s)
+    eds.promote_pending_manifest(out_dir=out_s, manifest_path=man_s)
+
+    # Delete 3 middle rows -> 3 deletes, 0 upserts!
+    conn_s = sqlite3.connect(str(dbp_s))
+    for drop_i in (4, 11, 19):
+        conn_s.execute("DELETE FROM sales_tickets WHERE id = ?", (f"st_{drop_i:012x}",))
+    conn_s.commit()
+    conn_s.close()
+    files_3del, meta_3del = eds.export_all(delta=True, manifest_path=man_s, db_path=dbp_s, out_dir=out_s)
+    assert meta_3del["emitted_deletes"] == 3 and meta_3del["emitted_upserts"] == 0, f"expected 3 deletes & 0 upserts, got {meta_3del}"
+    eds.promote_pending_manifest(out_dir=out_s, manifest_path=man_s)
+
+    # Delete 12 more rows -> 12 deletes collapsed into 1 IN (...) statement, 0 upserts!
+    conn_s = sqlite3.connect(str(dbp_s))
+    for drop_i in (0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 12, 13):
+        conn_s.execute("DELETE FROM sales_tickets WHERE id = ?", (f"st_{drop_i:012x}",))
+    conn_s.commit()
+    conn_s.close()
+    files_12del, meta_12del = eds.export_all(delta=True, manifest_path=man_s, db_path=dbp_s, out_dir=out_s)
+    sql_12del = "\\n".join(f.read_text(encoding="utf-8") for f in files_12del)
+    assert meta_12del["emitted_deletes"] == 12 and meta_12del["emitted_upserts"] == 0, f"expected 12 deletes & 0 upserts, got {meta_12del}"
+    assert "DELETE FROM sales_tickets WHERE id IN (" in sql_12del, f"expected batched IN delete: {sql_12del}"
+
+    # Run 3c: Legacy positional override auto-upgrade in export_d1_seed.py (void, edit, & split expense_items -i1/-i2 without duplicate positional rows)
+    dbp_u = tmp / "mfg_upgrade.db"
+    man_u = tmp / "manifest_upgrade.json"
+    out_u = tmp / "batches_upgrade"
+    conn_u = sqlite3.connect(str(dbp_u))
+    conn_u.executescript("""
+        CREATE TABLE companies (key TEXT PRIMARY KEY, name TEXT, code TEXT);
+        CREATE TABLE sales_tickets (id TEXT PRIMARY KEY, name TEXT, ticket_no TEXT, date TEXT, company TEXT, customer TEXT, total REAL);
+        CREATE TABLE expenses (id TEXT PRIMARY KEY, name TEXT, date TEXT, company TEXT, supplier TEXT, category TEXT, amount REAL, equipment TEXT);
+        CREATE TABLE expense_items (id TEXT PRIMARY KEY, expense_id TEXT, date TEXT, company TEXT, item TEXT, total REAL);
+        CREATE TABLE users (id TEXT PRIMARY KEY, full_name TEXT, email TEXT, pin_code TEXT, role TEXT, companies TEXT, status TEXT, face_samples TEXT, face_thumbs TEXT, face_required INTEGER, face_updated_at TEXT);
+    """)
+    conn_u.execute("INSERT INTO sales_tickets VALUES ('st_000000000000', 'SALE U0', '3000', '2026-11-08', 'WTC', 'Alpha', 250.0)")
+    conn_u.execute("INSERT INTO sales_tickets VALUES ('st_000000000001', 'SALE U1', '3001', '2026-11-08', 'WTC', 'Beta', 400.0)")
+    conn_u.execute("INSERT INTO expenses VALUES ('ex_000000000001', 'EXP U1', '2026-11-08', 'WTC', 'FuelCo', 'Maintenance', 180.0, '')")
+    conn_u.commit()
+    conn_u.close()
+    (tmp / "industry_legacy_id_map.json").write_text(
+        json.dumps({"MEM-2025-001": "MEM-2025-a1b2c3d4e5", "AGR-001": "AGR-2026-f1e2d3c4b5"}),
+        encoding="utf-8",
+    )
+    eds.fetch_live_cloud_store = lambda offline=False: {
+        "updatedAt": "2026-11-08T10:20:00.000Z",
+        "industryRowEdits": {
+            "Hospitality & Resorts::Memberships Register::MEM-2025-001": {
+                "primaryId": "MEM-2025-001", "cells": ["MEM-2025-001", "Gold"], "rev": 2, "updated_at": "2026-11-08T10:18:00Z"
+            },
+            "WF::hsp_memberships::MEM-2025-001": {"status": "Paid", "rev": 2, "updated_at": "2026-11-08T10:19:00Z"}
+        },
+        "industryCustomRows": {
+            "hsp_memberships": [{"id": "MEM-2025-001", "status": "Paid", "rev": 2, "updated_at": "2026-11-08T10:19:00Z"}],
+            "ins_agreements": [{"id": "AGR-NEW-9", "autoClosePriorIds": ["AGR-001"], "rev": 1, "updated_at": "2026-11-08T10:19:30Z"}]
+        },
+        "customRecords": {
+            "sales_tickets": [
+                {
+                    "id": "st99", "name": "SALE U0", "ticket_no": "3000", "date": "2026-11-08", "company": "WTC", "customer": "Alpha",
+                    "total": 250.0, "voided": True, "voided_at": "2026-11-08T10:15:00Z",
+                    "_seed_orig": {"id": "st99", "name": "SALE U0", "ticket_no": "3000", "date": "2026-11-08", "company": "WTC", "customer": "Alpha", "total": 250.0}
+                },
+                {
+                    "id": "st98", "name": "SALE U1", "ticket_no": "3001", "date": "2026-11-08", "company": "WTC", "customer": "Beta",
+                    "total": 777.0, "modified_at": "2026-11-08T10:16:00Z",
+                    "_seed_orig": {"id": "st98", "name": "SALE U1", "ticket_no": "3001", "date": "2026-11-08", "company": "WTC", "customer": "Beta", "total": 400.0}
+                }
+            ],
+            "expenses": [
+                {
+                    "id": "ex99", "name": "EXP U1", "date": "2026-11-08", "company": "WTC", "supplier": "FuelCo", "category": "Maintenance",
+                    "amount": 180.0, "equipment": "TRK-09", "modified_at": "2026-11-08T10:17:00Z",
+                    "_seed_orig": {"id": "ex99", "name": "EXP U1", "date": "2026-11-08", "company": "WTC", "supplier": "FuelCo", "category": "Maintenance", "amount": 180.0}
+                }
+            ],
+            "expense_items": [
+                {"id": "ex99-i1", "expense_id": "ex99", "date": "2026-11-08", "company": "WTC", "item": "Filter", "total": 100.0},
+                {"id": "ex99-i2", "expense_id": "ex99", "date": "2026-11-08", "company": "WTC", "item": "Gasket", "total": 80.0}
+            ]
+        }
+    }
+    files_u, _meta_u = eds.export_all(delta=False, manifest_path=man_u, db_path=dbp_u, out_dir=out_u)
+    sql_u = "\\n".join(f.read_text(encoding="utf-8") for f in files_u)
+    d1_u = sqlite3.connect(str(tmp / "d1_upgrade_check.db"))
+    d1_u.executescript(eds.SCHEMA_SQL.read_text(encoding="utf-8"))
+    for f_u in files_u:
+        d1_u.executescript(f_u.read_text(encoding="utf-8"))
+    st_u_rows = {r[0]: (r[1], r[2]) for r in d1_u.execute("SELECT id, total, voided FROM sales_tickets").fetchall()}
+    assert "st99" not in st_u_rows and "st98" not in st_u_rows, f"leaked positional sales_tickets into D1: {st_u_rows}"
+    assert st_u_rows.get("st_000000000000") == (250.0, 1), f"legacy void failed to upgrade onto st_000000000000: {st_u_rows}"
+    assert st_u_rows.get("st_000000000001") == (777.0, 0), f"legacy edit failed to upgrade onto st_000000000001: {st_u_rows}"
+    ei_u_rows = {r[0]: r[1] for r in d1_u.execute("SELECT id, expense_id FROM expense_items").fetchall()}
+    assert ei_u_rows == {"ex_000000000001-i1": "ex_000000000001", "ex_000000000001-i2": "ex_000000000001"}, f"split expense_items upgrade mismatch: {ei_u_rows}"
+    kv_u_raw = d1_u.execute("SELECT payload_json FROM edge_kv_store WHERE doc_key = 'mfg_web_store'").fetchone()[0]
+    kv_u_doc = json.loads(kv_u_raw)
+    assert "expenses:ex99" in (kv_u_doc.get("_purgedOverrideIds") or []), f"missing expenses:ex99 in _purgedOverrideIds: {kv_u_doc.get('_purgedOverrideIds')}"
+    assert "sales_tickets:st99" in (kv_u_doc.get("_purgedOverrideIds") or []) and "sales_tickets:st98" in (kv_u_doc.get("_purgedOverrideIds") or []), "missing st99/st98 in _purgedOverrideIds"
+    ire_keys = {r[0] for r in d1_u.execute("SELECT edit_key FROM industry_row_edits").fetchall()}
+    assert ire_keys == {
+        "Hospitality & Resorts::Memberships Register::MEM-2025-a1b2c3d4e5",
+        "WF::hsp_memberships::MEM-2025-a1b2c3d4e5",
+    }, f"industry_row_edits failed to upgrade: {ire_keys}"
+    icr_rows = {(r[0], r[1]): json.loads(r[2]) for r in d1_u.execute("SELECT bucket, row_id, payload_json FROM industry_custom_rows").fetchall()}
+    assert ("hsp_memberships", "MEM-2025-a1b2c3d4e5") in icr_rows and ("hsp_memberships", "MEM-2025-001") not in icr_rows, f"industry_custom_rows upgrade mismatch: {icr_rows}"
+    assert icr_rows[("ins_agreements", "AGR-NEW-9")]["autoClosePriorIds"] == ["AGR-2026-f1e2d3c4b5"], f"autoClosePriorIds failed to upgrade: {icr_rows}"
+    assert "WF::hsp_memberships::MEM-2025-a1b2c3d4e5" in (kv_u_doc.get("industryRowEdits") or {}), "mfg_web_store KV industryRowEdits not upgraded"
+    # Verify delta=True also deletes live pre-upgrade rows absent from previous manifest_upgrade.json
+    shutil.copyfile(out_u / "pending_manifest.json", man_u)
+    d1_u.execute("INSERT OR REPLACE INTO industry_custom_rows (bucket, row_id, company, rev, voided, updated_at, payload_json) VALUES ('hsp_memberships', 'MEM-2025-001', 'Blanca', 1, 0, '2026-11-08T10:00:00Z', '{}')")
+    d1_u.execute("INSERT OR REPLACE INTO industry_row_edits (edit_key, rev, voided, updated_at, payload_json) VALUES ('WF::hsp_memberships::MEM-2025-001', 1, 0, '2026-11-08T10:00:00Z', '{}')")
+    d1_u.execute("INSERT OR REPLACE INTO expense_items (id, expense_id, date, company) VALUES ('ex99-i1', 'ex99', '2026-11-08', 'WTC')")
+    d1_u.commit()
+    files_ud, _meta_ud = eds.export_all(delta=True, manifest_path=man_u, db_path=dbp_u, out_dir=tmp / "batches_upgrade_delta")
+    for f_ud in files_ud:
+        d1_u.executescript(f_ud.read_text(encoding="utf-8"))
+    rem_icr = {r[1] for r in d1_u.execute("SELECT bucket, row_id FROM industry_custom_rows WHERE bucket = 'hsp_memberships'").fetchall()}
+    rem_ire = {r[0] for r in d1_u.execute("SELECT edit_key FROM industry_row_edits").fetchall()}
+    rem_ei = {r[0] for r in d1_u.execute("SELECT id FROM expense_items").fetchall()}
+    assert "MEM-2025-001" not in rem_icr and "MEM-2025-a1b2c3d4e5" in rem_icr, f"delta failed to delete un-manifested legacy industry_custom_rows: {rem_icr}"
+    assert "WF::hsp_memberships::MEM-2025-001" not in rem_ire and "WF::hsp_memberships::MEM-2025-a1b2c3d4e5" in rem_ire, f"delta failed to delete un-manifested legacy industry_row_edits: {rem_ire}"
+    assert "ex99-i1" not in rem_ei and "ex_000000000001-i1" in rem_ei, f"delta failed to delete un-manifested legacy expense_items: {rem_ei}"
+    d1_u.close()
 
     # Run 4: Dual-store union-merge preserves newer ISABI code edit across Edge D1 + Legacy Relay
     edge_doc = {
@@ -1135,8 +1294,16 @@ finally:
     doc20.customRecords = Object.assign({}, doc20.customRecords || {}, {
       expenses: [
         { id: 'exp-bbc-secret-20', company: 'BBConstruction', date: '2026-11-08', code: 'BBC-SEC', name: 'BBC Confidential', amount: 777, rev: 1, updated_at: doc20.updatedAt },
+        { id: 'ex_a1b2c3d4e5f6', company: 'BBConstruction', date: '2026-11-08', code: 'BBC-STBL', name: 'BBC Stable Override', amount: 888, rev: 1, updated_at: doc20.updatedAt },
+        { id: 'ex77777', company: 'BBConstruction', date: '2026-11-08', code: 'BBC-LEG', name: 'BBC Legacy Override', amount: 444, rev: 1, updated_at: doc20.updatedAt },
         ...(doc20.customRecords?.expenses || [])
       ]
+    });
+    doc20.industryCustomRows = Object.assign({}, doc20.industryCustomRows || {}, {
+      hsp_memberships: [{ id: 'MEM-2025-001', company: 'Blanca', status: 'Legacy', rev: 1, updated_at: doc20.updatedAt }]
+    });
+    doc20.industryRowEdits = Object.assign({}, doc20.industryRowEdits || {}, {
+      'WF::hsp_memberships::MEM-2025-001': { company: 'Blanca', status: 'Legacy', rev: 1, updated_at: doc20.updatedAt }
     });
     doc20.sentinelReviews = Object.assign({}, doc20.sentinelReviews || {}, {
       'sr-r3-bbc': { company: 'BBConstruction', status: 'Reviewed', note: 'BBC only', updated_at: doc20.updatedAt },
@@ -1173,9 +1340,10 @@ finally:
     const leakedSrGet = Boolean(entryDoc20.sentinelReviews && entryDoc20.sentinelReviews['sr-r3-bbc']);
     const otherSeatInSync = (entryDoc20.users || []).find(u => u && u.email === 'faceverify@bhfirms.com');
 
-    // Entry pushes scoped doc back -> BBConstruction rows must remain 100% intact in D1
+    // Entry pushes scoped doc back (including adversarial cross-BU/non-legacy _purgedOverrideIds) -> BBConstruction rows must remain 100% intact in D1
     const entryPushDoc20 = JSON.parse(JSON.stringify(entryDoc20));
     entryPushDoc20.updatedAt = new Date(Date.now() + 14000).toISOString();
+    entryPushDoc20._purgedOverrideIds = ['expenses:exp-bbc-secret-20', 'expenses:ex_a1b2c3d4e5f6', 'expenses:ex77777'];
     entryPushDoc20.customRecords = Object.assign({}, entryPushDoc20.customRecords || {}, {
       expenses: [
         { id: 'exp-wtc-entry-20', company: 'WTC', date: '2026-11-08', code: 'WTC-E20', name: 'Entry WTC', amount: 55, rev: 1, updated_at: entryPushDoc20.updatedAt },
@@ -1190,10 +1358,23 @@ finally:
       patch: { mfg_web_store: entryPushDoc20 }
     }, { 'X-ISABI-Session': entryToken });
 
-    // 20b: Owner removes `sr-r3-wtc-del` + `cr-r3-del` and updates `both2fa@bhfirms.com` via `users` sync mirror (preserving redacted PIN/Face)
+    // 20b: Owner removes `sr-r3-wtc-del` + `cr-r3-del`, upgrades `MEM-2025-001` -> `MEM-2025-a1b2c3d4e5`, and updates `both2fa@bhfirms.com`
     const ownerAfterEntry = await httpReq('POST', '/app/api/sync', { op: 'get_mfg', doc: 'mfg_web_store' }, { 'X-ISABI-Session': ownerToken });
     const ownerDoc20b = JSON.parse(JSON.stringify(ownerAfterEntry.json?.docs?.mfg_web_store || {}));
-    const bbcStillIntact20 = (ownerDoc20b.customRecords?.expenses || []).some(r => r && r.id === 'exp-bbc-secret-20');
+    const ownerPurged20b = Array.isArray(ownerDoc20b._purgedOverrideIds) ? ownerDoc20b._purgedOverrideIds : [];
+    const ownerExp20b = ownerDoc20b.customRecords?.expenses || [];
+    const bbcStillIntact20 = ownerExp20b.some(r => r && r.id === 'exp-bbc-secret-20')
+      && ownerExp20b.some(r => r && r.id === 'ex_a1b2c3d4e5f6')
+      && ownerExp20b.some(r => r && r.id === 'ex77777')
+      && !ownerPurged20b.includes('expenses:exp-bbc-secret-20')
+      && !ownerPurged20b.includes('expenses:ex_a1b2c3d4e5f6')
+      && !ownerPurged20b.includes('expenses:ex77777');
+    ownerDoc20b.industryCustomRows = Object.assign({}, ownerDoc20b.industryCustomRows || {}, {
+      hsp_memberships: [{ id: 'MEM-2025-a1b2c3d4e5', company: 'Blanca', status: 'Upgraded', rev: 2, updated_at: new Date(Date.now() + 15000).toISOString() }]
+    });
+    ownerDoc20b.industryRowEdits = Object.assign({}, ownerDoc20b.industryRowEdits || {});
+    delete ownerDoc20b.industryRowEdits['WF::hsp_memberships::MEM-2025-001'];
+    ownerDoc20b.industryRowEdits['WF::hsp_memberships::MEM-2025-a1b2c3d4e5'] = { company: 'Blanca', status: 'Upgraded', rev: 2, updated_at: new Date(Date.now() + 15000).toISOString() };
     delete ownerDoc20b.sentinelReviews['sr-r3-wtc-del'];
     ownerDoc20b.alertRules.custom = (ownerDoc20b.alertRules?.custom || []).filter(c => c && c.id !== 'cr-r3-del');
     const ownerUsersRes = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
@@ -1214,6 +1395,11 @@ finally:
 
     const arAfterDel = await httpReq('GET', '/app/api/alert_rules', null, { 'X-ISABI-Session': ownerToken });
     const srAfterDel = await httpReq('GET', '/app/api/sentinel_reviews', null, { 'X-ISABI-Session': ownerToken });
+    const indDomAfterDel = await httpReq('GET', '/app/api/industry_domain_store', null, { 'X-ISABI-Session': ownerToken });
+    const indDomCleaned = !(indDomAfterDel.json?.industryCustomRows?.hsp_memberships || []).some(r => r && r.id === 'MEM-2025-001')
+      && (indDomAfterDel.json?.industryCustomRows?.hsp_memberships || []).some(r => r && r.id === 'MEM-2025-a1b2c3d4e5')
+      && !(indDomAfterDel.json?.industryRowEdits && indDomAfterDel.json.industryRowEdits['WF::hsp_memberships::MEM-2025-001'])
+      && Boolean(indDomAfterDel.json?.industryRowEdits && indDomAfterDel.json.industryRowEdits['WF::hsp_memberships::MEM-2025-a1b2c3d4e5']);
     const usersAfterSyncMirror = await httpReq('GET', '/app/api/users', null, { 'X-ISABI-Session': ownerToken });
     const unauthUsers20 = await httpReq('GET', '/app/api/users');
     const mirroredBothSeat = (usersAfterSyncMirror.json?.users || []).find(u => u.email === 'both2fa@bhfirms.com');
@@ -1248,6 +1434,7 @@ finally:
       entryPatch20.status === 200 &&
       bbcStillIntact20 &&
       ownerDelSync20.status === 200 &&
+      indDomCleaned &&
       !(arAfterDel.json?.custom || []).some(c => c.id === 'cr-r3-del') &&
       !(srAfterDel.json?.reviews && srAfterDel.json.reviews['sr-r3-wtc-del']) &&
       mirroredBothSeat?.pbi_access === 'ops_only' &&

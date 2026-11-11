@@ -80,9 +80,11 @@ export function isServerOwnedRowEditKey(editKey) {
   return /(^|::)(HSP-REV-)?POS-[A-Z0-9_-]{1,64}-\d{8}-[0-9A-F]{6}$/.test(String(editKey || ''));
 }
 
+const LEGACY_PURGED_ENTRY_RE = /^[a-z_]+:(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
+
 // Removes every client copy of a server-owned row from a store document before it is stored or mirrored,
 // so one client's copy never reaches the other clients through the shared store.
-export function stripServerOwnedCustomRows(doc) {
+export function stripServerOwnedCustomRows(doc, prevDoc = null) {
   if (!doc || typeof doc !== 'object') return doc;
   const icr = doc.industryCustomRows;
   if (icr && typeof icr === 'object') {
@@ -97,6 +99,32 @@ export function stripServerOwnedCustomRows(doc) {
     for (const ek of Object.keys(ire)) {
       if (isServerOwnedRowEditKey(ek)) delete ire[ek];
     }
+  }
+  const purgedList = [];
+  const purgedSeen = new Set();
+  for (const src of [prevDoc && prevDoc._purgedOverrideIds, doc._purgedOverrideIds]) {
+    if (!Array.isArray(src)) continue;
+    for (const item of src) {
+      const s = String(item || '').trim();
+      if (s && LEGACY_PURGED_ENTRY_RE.test(s) && !purgedSeen.has(s)) {
+        purgedSeen.add(s);
+        purgedList.push(s);
+      }
+    }
+  }
+  if (purgedList.length) {
+    doc._purgedOverrideIds = purgedList.slice(-2000);
+    const purgedSet = new Set(doc._purgedOverrideIds);
+    const cr = doc.customRecords;
+    if (cr && typeof cr === 'object') {
+      for (const k of Object.keys(cr)) {
+        if (Array.isArray(cr[k])) {
+          cr[k] = cr[k].filter(r => !r || r._reopenedExplicitly || !purgedSet.has(`${k}:${String(r.id == null ? '' : r.id).trim()}`));
+        }
+      }
+    }
+  } else if (Object.prototype.hasOwnProperty.call(doc, '_purgedOverrideIds')) {
+    delete doc._purgedOverrideIds;
   }
   return doc;
 }
@@ -131,7 +159,8 @@ const CANON_COMPANY_MAP = {
   'bdeir insurance brokerage': 'Insurance Company'
 };
 
-const POS_SEED_ID_RE = /^(st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+(-i\d+)?$/;
+const POS_SEED_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)(?:\d+|_[0-9a-f]{10,16})|wbmalf-[a-z0-9-]+|wbrecur-[a-z0-9-]+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-(?:\d+|[0-9a-f]{8,16}))$/;
+const LEGACY_POS_SEED_ID_RE = /^(?:(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+|wbmalf-wtc-\d+|wbrecur-(?:wtc|bbc)-\d+|dv-(?:hld|ins)-(?:exp|sal|set|rec)-\d+)(?:-i\d+)?$/;
 
 export function canonicalizeCompanyName(raw) {
   const s = String(raw || '').trim();
@@ -2212,7 +2241,39 @@ export async function handleIndustryDomainStore(request, env, session, body) {
     ).bind(ek, incRev, incVoid, incTs, JSON.stringify(ev)).run();
     savedEdits++;
   }
-  return jsonResponse({ ok: true, rows: savedRows, edits: savedEdits, ignoredServerOwned });
+
+  let deletedLegacyRows = 0;
+  let deletedLegacyEdits = 0;
+  const purgedRows = Array.isArray(body && body.purgedRows) ? body.purgedRows : [];
+  for (const pr of purgedRows) {
+    if (!pr || typeof pr !== 'object') continue;
+    const bk = String(pr.bucket || '').trim();
+    const rid = String(pr.row_id || pr.id || '').trim();
+    if (!bk || !rid || isServerOwnedCustomRow(bk, rid)) continue;
+    const ex = await env.DB.prepare('SELECT company FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).first();
+    if (!ex) continue;
+    const exCo = String(ex.company || '').trim();
+    if (restrictRls && (!exCo || !canAccessCompany(session, exCo))) continue;
+    await env.DB.prepare('DELETE FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, rid).run();
+    deletedLegacyRows++;
+  }
+
+  const purgedEditKeys = Array.isArray(body && body.purgedEditKeys) ? body.purgedEditKeys : [];
+  for (const rawEk of purgedEditKeys) {
+    const ek = String(rawEk || '').trim();
+    if (!ek || isServerOwnedRowEditKey(ek)) continue;
+    const ex = await env.DB.prepare('SELECT payload_json FROM industry_row_edits WHERE edit_key = ?1').bind(ek).first();
+    if (!ex) continue;
+    if (restrictRls) {
+      const exObj = safeJsonParse(ex.payload_json, {});
+      const exCo = String((exObj && (exObj.company || exObj.resort || exObj.entity)) || '').trim();
+      if (!exCo || !canAccessCompany(session, exCo)) continue;
+    }
+    await env.DB.prepare('DELETE FROM industry_row_edits WHERE edit_key = ?1').bind(ek).run();
+    deletedLegacyEdits++;
+  }
+
+  return jsonResponse({ ok: true, rows: savedRows, edits: savedEdits, deletedLegacyRows, deletedLegacyEdits, ignoredServerOwned });
 }
 
 function buildBoundRecordUpsertStmt(db, canonTable, cols, rawRec) {
@@ -2293,6 +2354,10 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
         const rid = String(rec.id).trim();
         if (!rid) continue;
         seenIds.add(rid);
+        if (LEGACY_POS_SEED_ID_RE.test(rid)) {
+          stats.skippedRecords++;
+          continue;
+        }
         const prevEntry = prevMap.get(rid);
         const curSig = stableRowSig(rec);
         if (prevEntry && prevEntry.sig === curSig) {
@@ -2431,14 +2496,18 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
 
     const prevIcr = (hasPrev && prevStorePayload.industryCustomRows && typeof prevStorePayload.industryCustomRows === 'object') ? prevStorePayload.industryCustomRows : {};
     const curIcr = (storePayload.industryCustomRows && typeof storePayload.industryCustomRows === 'object') ? storePayload.industryCustomRows : {};
-    for (const [bk, arr] of Object.entries(curIcr)) {
-      if (!bk || !Array.isArray(arr)) continue;
+    for (const bk of new Set([...Object.keys(prevIcr), ...Object.keys(curIcr)])) {
+      if (!bk) continue;
+      const arr = Array.isArray(curIcr[bk]) ? curIcr[bk] : [];
       const pArr = Array.isArray(prevIcr[bk]) ? prevIcr[bk] : [];
       const pSigs = new Map(pArr.filter(x => x && (x.id || x.code)).map(x => [String(x.id || x.code).trim(), stableRowSig(x)]));
+      const curIds = new Set();
       for (const r of arr) {
         if (!r || typeof r !== 'object') continue;
         const rid = String(r.id || r.code || '').trim();
-        if (!rid || pSigs.get(rid) === stableRowSig(r)) continue;
+        if (!rid) continue;
+        curIds.add(rid);
+        if (pSigs.get(rid) === stableRowSig(r)) continue;
         if (isServerOwnedCustomRow(bk, rid)) continue;
         const co = canonicalizeCompanyName(r.company || r.resort || r.entity || '');
         if (restrictRls && (!co || !canAccessCompany(session, co))) continue;
@@ -2448,12 +2517,24 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           ).bind(bk, rid, co, Number(r.rev || 1), r.voided ? 1 : 0, String(r.updated_at || r._createdAt || ''), JSON.stringify(r))
         );
       }
+      if (hasPrev) {
+        for (const pr of pArr) {
+          if (!pr || typeof pr !== 'object') continue;
+          const prid = String(pr.id || pr.code || '').trim();
+          if (!prid || curIds.has(prid) || isServerOwnedCustomRow(bk, prid)) continue;
+          const pCo = canonicalizeCompanyName(pr.company || pr.resort || pr.entity || '');
+          if (restrictRls && (!pCo || !canAccessCompany(session, pCo))) continue;
+          subStmts.push(db.prepare('DELETE FROM industry_custom_rows WHERE bucket = ?1 AND row_id = ?2').bind(bk, prid));
+        }
+      }
     }
 
     const prevIre = (hasPrev && prevStorePayload.industryRowEdits && typeof prevStorePayload.industryRowEdits === 'object') ? prevStorePayload.industryRowEdits : {};
     const curIre = (storePayload.industryRowEdits && typeof storePayload.industryRowEdits === 'object') ? storePayload.industryRowEdits : {};
+    const curIreKeys = new Set();
     for (const [ek, ev] of Object.entries(curIre)) {
       if (!ek || !ev || typeof ev !== 'object') continue;
+      curIreKeys.add(ek);
       if (isServerOwnedRowEditKey(ek)) continue;
       if (prevIre[ek] && stableRowSig(prevIre[ek]) === stableRowSig(ev)) continue;
       const edCo = canonicalizeCompanyName(ev.company || ev.resort || ev.entity || '');
@@ -2463,6 +2544,14 @@ export async function mirrorStoreDeltaToD1Tables(db, storePayload, prevStorePayl
           'INSERT OR REPLACE INTO industry_row_edits (edit_key, rev, voided, updated_at, payload_json) VALUES (?1,?2,?3,?4,?5)'
         ).bind(ek, Number(ev.rev || 1), ev.voided ? 1 : 0, String(ev.updated_at || ev.updatedAt || ''), JSON.stringify(ev))
       );
+    }
+    if (hasPrev) {
+      for (const [pek, pev] of Object.entries(prevIre)) {
+        if (!pek || curIreKeys.has(pek) || isServerOwnedRowEditKey(pek)) continue;
+        const pEdCo = canonicalizeCompanyName((pev && (pev.company || pev.resort || pev.entity)) || '');
+        if (restrictRls && (!pEdCo || !canAccessCompany(session, pEdCo))) continue;
+        subStmts.push(db.prepare('DELETE FROM industry_row_edits WHERE edit_key = ?1').bind(pek));
+      }
     }
 
     if (!session || canReviewSentinelsSession(session)) {
@@ -2872,6 +2961,32 @@ async function enforceSyncRlsOnStoreDoc(db, incomingDoc, prevDoc, session) {
       incomingDoc.customRecords[k] = outList;
     }
   }
+
+  // 2b. Protect _purgedOverrideIds against cross-BU deletion or non-legacy ID injection
+  const prevPurgedArr = Array.isArray(prev._purgedOverrideIds)
+    ? prev._purgedOverrideIds.map(x => String(x || '').trim()).filter(x => LEGACY_PURGED_ENTRY_RE.test(x))
+    : [];
+  const prevPurgedSet = new Set(prevPurgedArr);
+  const safePurged = prevPurgedArr.slice();
+  if (Array.isArray(incomingDoc._purgedOverrideIds)) {
+    const prevCrForPurge = (prev.customRecords && typeof prev.customRecords === 'object') ? prev.customRecords : {};
+    for (const rawItem of incomingDoc._purgedOverrideIds) {
+      const s = String(rawItem || '').trim();
+      if (!s || !LEGACY_PURGED_ENTRY_RE.test(s) || prevPurgedSet.has(s)) continue;
+      const colon = s.indexOf(':');
+      const tbl = s.slice(0, colon);
+      const rid = s.slice(colon + 1);
+      const pArr = Array.isArray(prevCrForPurge[tbl]) ? prevCrForPurge[tbl] : [];
+      const pr = pArr.find(x => x && String(x.id || '').trim() === rid);
+      const prCo = String((pr && pr.company) || '').trim();
+      if (pr && prCo && canAccessCompany(session, prCo)) {
+        prevPurgedSet.add(s);
+        safePurged.push(s);
+      }
+    }
+  }
+  if (safePurged.length) incomingDoc._purgedOverrideIds = safePurged.slice(-2000);
+  else delete incomingDoc._purgedOverrideIds;
 
   // 3. Protect industryCustomRows & industryRowEdits
   const prevIcr = (prev.industryCustomRows && typeof prev.industryCustomRows === 'object') ? prev.industryCustomRows : {};
@@ -3388,6 +3503,20 @@ function scopeStoreDocForSession(docObj, session) {
     copyDoc.workSchedules = scopeWorkSchedulesForSession(docObj.workSchedules, session);
   }
 
+  if (Array.isArray(docObj._purgedOverrideIds)) {
+    const canMfg = canAccessCompany(session, 'WTC') || canAccessCompany(session, 'BBConstruction') || canAccessCompany(session, 'Lions Transport');
+    copyDoc._purgedOverrideIds = docObj._purgedOverrideIds.filter(raw => {
+      const s = String(raw || '').trim();
+      if (!LEGACY_PURGED_ENTRY_RE.test(s)) return false;
+      const rid = s.slice(s.indexOf(':') + 1);
+      if (rid.startsWith('dv-hld-')) return canAccessCompany(session, 'Bdeir Holding');
+      if (rid.startsWith('dv-ins-')) return canAccessCompany(session, 'Insurance Company');
+      if (rid.startsWith('wbmalf-wtc-') || rid.startsWith('wbrecur-wtc-')) return canAccessCompany(session, 'WTC');
+      if (rid.startsWith('wbrecur-bbc-')) return canAccessCompany(session, 'BBConstruction');
+      return canMfg;
+    });
+  }
+
   return copyDoc;
 }
 
@@ -3480,7 +3609,7 @@ export async function handleSync(request, env, session, body, _ctx) {
     if (pKey === 'mfg_web_store' && !isOwnerOrFullGroupSession(session)) {
       await enforceSyncRlsOnStoreDoc(env.DB, incomingDoc, prevDoc, session);
     }
-    if (pKey === 'mfg_web_store') stripServerOwnedCustomRows(incomingDoc);
+    if (pKey === 'mfg_web_store') stripServerOwnedCustomRows(incomingDoc, prevDoc);
     let newTs = String(incomingDoc.updatedAt || new Date().toISOString());
     if (newTs === currentTs) {
       const parsedMs = Date.parse(newTs);
