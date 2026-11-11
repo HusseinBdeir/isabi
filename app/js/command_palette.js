@@ -335,7 +335,7 @@
     staff_assignments: 'operator truck assignment role history poste affectation employé مهام الموظفين تعيين آلية',
     freelance_entries: 'daily worker casual labor contractor day rate journalier pigiste عمال مياومة عمل حر يومية',
     logistics_allowances: 'transport allowance commute bus taxi indemnité transport بدل نقل مواصلات انتقال',
-    external_movements: 'owner cash injection withdrawal external treasury apport retrait externe حركة خارجية سحب إيداع صندوق خارجي',
+    external_movements: 'owner cash injection withdrawal external treasury extended stakeholder owes difference took gave apport retrait externe حركة خارجية ممتد ذمم الشركاء سحب إيداع صندوق خارجي',
     loans: 'debt bank loan partner advance borrowing facility prêt emprunt avance associé قرض قروض سلفة شريك تسهيلات مصرفية دين',
     loan_settlements: 'loan repayment installment drawdown interés remboursement prêt échéance tirage سداد قرض قسط سحب دفعة قرض',
     conversions: 'currency exchange usd lbp lira dollar fx change devise taux livre تغذية صيرفة تحويل عملة دولار ليرة',
@@ -1414,7 +1414,7 @@
 
           ds.rows.forEach((rawCells, rIdx) => {
             if (!Array.isArray(rawCells) || !rawCells.length) return;
-            const origRowId = String(rawCells[0] || '').trim();
+            const origRowId = String(rawCells._rid || rawCells[0] || '').trim();
             if (!origRowId) return;
             let cells = rawCells;
             const isTillOwned = Boolean(_ctx.isTillOwnedRowId && _ctx.isTillOwnedRowId(origRowId));
@@ -1432,8 +1432,9 @@
                 }
               }
             }
-            const rowId = String(cells[0] || origRowId).trim();
+            const rowId = String(rawCells._rid || cells._rid || cells[0] || origRowId).trim();
             if (!rowId) return;
+            const visRef = String(cells[0] || '').trim();
             const rowCo = coColIdx >= 0 ? String(cells[coColIdx] || '').trim() : '';
             const normRowCo = rowCo ? normCoKey(rowCo) : '';
             if (normRowCo && !pctx.demoActive && pctx.catalogByNormName.has(normRowCo) && !pctx.allowedCosNormSet.has(normRowCo)) {
@@ -1466,14 +1467,15 @@
                 industry: pctx.activeInd !== ind ? ind : '',
                 badgeEn: 'Record',
                 freq: usageScore('record', `${tab.key}:${rowId}`) + indBoost(ind) + Math.max(1, 200 - rIdx),
-                exactAliases: [rowId, cells[1] ? String(cells[1]) : ''],
+                exactAliases: [rowId, visRef !== rowId ? visRef : '', cells[1] ? String(cells[1]) : ''],
                 extraHay: cells.slice(0, 5).join(' '),
                 run: runFn
               });
               items.push(candidate);
               pushExactRef(rowId, candidate);
+              if (visRef && visRef !== rowId) pushExactRef(visRef, candidate);
             } else {
-              pushExactRef(rowId, {
+              const fallbackHit = {
                 id: `domrec:${tab.key}:${rowId}:${rIdx}`,
                 kind: 'record',
                 icon: tab.view,
@@ -1488,7 +1490,9 @@
                 hay: '',
                 hayWords: [],
                 run: runFn
-              });
+              };
+              pushExactRef(rowId, fallbackHit);
+              if (visRef && visRef !== rowId) pushExactRef(visRef, fallbackHit);
             }
           });
           const domTblRef = (typeof domTableItemByKey !== 'undefined' && domTableItemByKey) ? domTableItemByKey.get(tab.key) : null;

@@ -1596,7 +1596,7 @@
     { key: 'external_movements', group: '5 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'external', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
       { id: 'all', label: 'All External & Extended' },
       { id: 'external', label: 'External Treasury', fn: r => String(r.kind || 'External').toLowerCase() !== 'extended' },
-      { id: 'extended', label: 'Extended Stakeholders', fn: r => String(r.kind || '').toLowerCase() === 'extended' }
+      { id: 'extended', label: 'Extended Stakeholders', cols: ['date', 'ext_ref', 'counterparty', 'ext_flow', 'ext_received_usd', 'ext_gave_usd', 'ext_owes_usd', 'ext_owes_lbp', 'notes'], fn: r => String(r.kind || '').toLowerCase() === 'extended' }
     ] },
     { key: 'loans', group: '5 · Cash Flow, Treasury & FX', label: 'Loans & Partner Advances', dvn: 'bhf_mfgloan', form: 'treasury', cols: ['name', 'company', 'counterparty', 'direction', 'principal', 'settled_amount', 'interest_rate', 'start_date', 'notes'], relTables: ['loan_settlements', 'external_movements'], views: [{ id: 'all', label: 'All Loans & Advances' }] },
     { key: 'loan_settlements', group: '5 · Cash Flow, Treasury & FX', label: 'Loan Repayments & Drawdowns', dvn: 'bhf_mfgloansettlement', form: 'treasury', cols: ['date', 'company', 'loan', 'type', 'method', 'usd_amount', 'notes'], relTables: ['loans', 'external_movements'], views: [{ id: 'all', label: 'All Loan Settlements' }] },
@@ -1928,7 +1928,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|ext_ref|ext_flow|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|workdays_label|day_schedule_summary|shift_code|is_bu_default|start_time|end_time|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -2925,11 +2925,32 @@
       if (uniq.length) return uniq.join(', ');
     }
     if (c === 'notes' && r.notes) {
+      if (tableKey === 'external_movements' && /^extended$/i.test(String(r.kind || '').trim()) && window.MFG_EXTENDED_HELPER && typeof window.MFG_EXTENDED_HELPER.cleanExtendedNotes === 'function') {
+        return window.MFG_EXTENDED_HELPER.cleanExtendedNotes(r.notes) || null;
+      }
       const cleaned = String(r.notes)
         .replace(/^Manufacturing\s*\([^)]+\)\s*(?:supplier|customer)\s*—\s*seeded from the workbooks\s*\d{4}-\d{2}-\d{2}\.?\s*/i, '')
         .replace(/\[wb:[^\]]+\]/gi, '')
         .trim();
+      if (/^(none|null|undefined)$/i.test(cleaned)) return null;
       return cleaned || null;
+    }
+    if (tableKey === 'external_movements') {
+      const extHelper = window.MFG_EXTENDED_HELPER;
+      if (/^ext_(ref|flow|received_usd|gave_usd|owes_usd|owes_lbp)$/.test(c) && extHelper && typeof extHelper.parseExtendedRow === 'function') {
+        const ex = extHelper.parseExtendedRow(r);
+        if (c === 'ext_ref') return ex.docRef;
+        if (c === 'ext_flow') return ex.flowLabel;
+        if (c === 'ext_received_usd') return Math.abs(ex.receivedUsd) >= 0.005 ? ex.receivedUsd : null;
+        if (c === 'ext_gave_usd') return Math.abs(ex.gaveUsd) >= 0.005 ? ex.gaveUsd : null;
+        if (c === 'ext_owes_usd') return ex.owesUsd;
+        if (c === 'ext_owes_lbp') return Math.abs(ex.owesLbp) > 1 ? ex.owesLbp : null;
+      }
+      if (c === 'usd_amount') {
+        const lRaw = Number(r.lbp_amount || 0);
+        if (r.usd_amount !== undefined && r.usd_amount !== null && r.usd_amount !== '') return Number(r.usd_amount);
+        return Math.abs(lRaw) > 0.5 ? null : (r.amount != null && r.amount !== '' ? Number(r.amount) : null);
+      }
     }
     if (tableKey === 'fuel_intakes' && c === 'uom') {
       return /grease|تشحيم|مشحمة/i.test(String(r.item || '')) ? 'kg' : 'L';
@@ -10183,7 +10204,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -10193,11 +10214,11 @@
                     const v = cellValue(r, c, meta.key, rel);
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
                     const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
-                    const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
-                    const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
+                    const isSignedUsd = !isBool && !nonNum && (c === 'usd_delta' || c === 'ext_owes_usd');
+                    const isSignedLbp = !isBool && !nonNum && (c === 'lbp_delta' || c === 'ext_owes_lbp');
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
-                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
-                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|ext_received_usd|ext_gave_usd|proceeds/.test(c) && !/rate$/.test(c);
+                    const isNum = !isBool && !nonNum && !isMoney && !isSignedUsd && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
                     else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
@@ -10214,13 +10235,16 @@
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
                       : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((meta.key === 'recurring_expenses' && c === 'item') || (meta.key === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
+                    const signedTone = /^ext_owes_/.test(c)
+                      ? (Number(v) > 0.005 ? 'var(--brass)' : (Number(v) < -0.005 ? 'var(--good)' : 'inherit'))
+                      : (Number(v) >= 0 ? 'var(--good)' : 'var(--crit)');
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
-                      ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
+                      ? `<strong style="color:${signedTone}">${esc(cell)}</strong>`
                       : null;
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
                       : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
-                    return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    return `<td class="${isMoney || isSignedUsd || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|ext_ref|_no$|plate|version|_delta$|^ext_owes_|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}
@@ -10236,11 +10260,11 @@
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, isL: false, isSU: false, isSL: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(col);
-                    const isSU = !isBoolCol && col === 'usd_delta';
-                    const isSL = !isBoolCol && col === 'lbp_delta';
+                    const isSU = !isBoolCol && (col === 'usd_delta' || col === 'ext_owes_usd');
+                    const isSL = !isBoolCol && (col === 'lbp_delta' || col === 'ext_owes_lbp');
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
-                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
-                    const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
+                    const isM = !isBoolCol && !isSU && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|ext_received_usd|ext_gave_usd|proceeds/.test(col) && !/rate$/.test(col);
+                    const isN = !isBoolCol && !isM && !isSU && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
                   const colSpecs = activeCols.map(c => {
@@ -10285,8 +10309,11 @@
                       : (isSL ? fmtSignedLBP(val)
                         : (isL ? fmtNum(val, 0) + ' LL'
                           : (isMoney ? fmtUSD(val, 2) : (c === 'vat_percent' ? fmtNum(val, 1) + '%' : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0)))));
+                    const footTone = /^ext_owes_/.test(c)
+                      ? (val > 0.005 ? 'var(--brass)' : (val < -0.005 ? 'var(--good)' : 'inherit'))
+                      : (val >= 0 ? 'var(--good)' : 'var(--crit)');
                     const footHtml = (isSU || isSL)
-                      ? `<strong style="color:${val >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(txt)}</strong>`
+                      ? `<strong style="color:${footTone}">${esc(txt)}</strong>`
                       : `<b>${txt}</b>`;
                     out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}${footHtml}</td>`);
                   }
@@ -10364,6 +10391,12 @@
     distance_km: 'Ref KM (WTC)',
     usd_delta: 'USD Change ($)',
     lbp_delta: 'LBP Change (LL)',
+    ext_ref: 'Ref',
+    ext_flow: 'Flow',
+    ext_received_usd: 'Received / Took ($)',
+    ext_gave_usd: 'Gave ($)',
+    ext_owes_usd: 'Difference / Owes ($)',
+    ext_owes_lbp: 'Owes (LL)',
     exchange_rate: 'Rate (LL/$)',
     removed_disposition: 'Piece Disposition',
     prior_defect_notified: 'Pre-Notified',

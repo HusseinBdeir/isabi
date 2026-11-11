@@ -3429,7 +3429,8 @@
       const flowStr = String(ex.flow || ex.method || '').trim();
       const isCfg = /^config$/i.test(flowStr);
       const lbpRaw = Number(ex.lbp_amount || 0);
-      const usdRaw = lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0);
+      const hasExpUsd = ex.usd_amount != null && ex.usd_amount !== '';
+      const usdRaw = hasExpUsd ? Number(ex.usd_amount || 0) : (Math.abs(lbpRaw) > 0.5 ? 0 : Number(ex.amount || 0));
       if (isCfg) {
         addMove(ex.date, usdRaw > 0 ? usdRaw : 0, usdRaw < 0 ? -usdRaw : 0, lbpRaw > 0 ? lbpRaw : 0, lbpRaw < 0 ? -lbpRaw : 0, mult);
       } else {
@@ -5007,7 +5008,7 @@
 
   function isTxOnlyBasisView(view = STATE.view) {
     const v = String(view || '');
-    if (v === 'daily_ops' || v === 'cashflow' || v === 'cashflow_analytics' || v === 'external' || v === 'conversions' || v === 'ledger_treasury') return true;
+    if (v === 'daily_ops' || v === 'cashflow' || v === 'cashflow_analytics' || v === 'external' || v === 'hld_extended' || v === 'conversions' || v === 'ledger_treasury') return true;
     if (v === 'pbi' && (STATE.pbiPage === 'p14_cashflow' || STATE.pbiPage === 'p15_treasury')) return true;
     if (v === 'statements' && String(STATE.activeStatement || '') === '04') return true;
     return false;
@@ -5015,7 +5016,7 @@
 
   function isTxOnlyTableViewKey(viewKey) {
     const vk = String(viewKey || '');
-    return vk === 'cf_moves' || vk === 'cf_daily' || vk === 'ext_entries' || vk === 'ext_parties' || vk === 'fx_conv' || vk === 'tr_loans' || vk === 'tr_moves' || vk === 'tr_fx' || isTxOnlyBasisView(vk);
+    return vk === 'cf_moves' || vk === 'cf_daily' || vk === 'ext_entries' || vk === 'ext_parties' || vk === 'hld_extd_entries' || vk === 'hld_extd_parties' || vk === 'tbl_external_movements' || vk === 'fx_conv' || vk === 'tr_loans' || vk === 'tr_moves' || vk === 'tr_fx' || isTxOnlyBasisView(vk);
   }
 
   function getDateActivityIndex() {
@@ -5989,6 +5990,16 @@
 
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
+    if (colKey === 'ext_ref' || colKey === 'ext_flow' || colKey === 'ext_received_usd' || colKey === 'ext_gave_usd' || colKey === 'ext_owes_usd' || colKey === 'ext_owes_lbp' || colKey === 'ext_notes') {
+      const ex = parseExtendedRow(r);
+      if (colKey === 'ext_ref') return ex.docRef || '';
+      if (colKey === 'ext_flow') return ex.flowLabel || '';
+      if (colKey === 'ext_received_usd') return ex.receivedUsd;
+      if (colKey === 'ext_gave_usd') return ex.gaveUsd;
+      if (colKey === 'ext_owes_usd') return ex.owesUsd;
+      if (colKey === 'ext_owes_lbp') return ex.owesLbp;
+      return ex.cleanNotes || '';
+    }
     if (colKey === 'set_date' || colKey === 'eff_date') return String(r.set_date || r.rep_date || r.date || '').slice(0, 10) || null;
     if (colKey === 'tx_date') return String(r.date || '').slice(0, 10) || null;
     if (colKey === 'date' && r.date !== undefined) return isTxOnlyTableViewKey(view) ? recordDateFor(r, 'tx') : recordDate(r);
@@ -6068,7 +6079,7 @@
     const k = String(colKey || '');
     if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type|sal_status_lbl)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
-    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|ap_settled|ap_on_credit|opening_ap|opening_ar|credit_sales_ttc|cash_sales_ttc|cash_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
+    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|rec_usd|gave_usd|owes_usd|owes_lbp|ext_received_usd|ext_gave_usd|ext_owes_usd|ext_owes_lbp|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|ap_settled|ap_on_credit|opening_ap|opening_ar|credit_sales_ttc|cash_sales_ttc|cash_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
 
   function isDefaultDescSortKey(colKey) {
@@ -8083,7 +8094,7 @@
     // Holding & Group Treasury industry hubs
     hld_consolidation: 'Group Consolidation',
     hld_interactions: 'Intercompany Hub',
-    hld_partners: 'Partners & Profit Splits',
+    hld_partners: 'Extended & Partners',
     hld_loans: 'Loans, Capital & Assets',
     // Hospitality & Resorts industry hubs (Phase 2)
     hsp_revenue: 'Revenue, POS & Chalets',
@@ -8645,8 +8656,8 @@
       group: 'plant',
       industry: 'Holding & Treasury',
       tabs: [
-        { view: 'hld_partners', label: 'Partner Capital & Current A/C', icon: 'hld_partners' },
         { view: 'hld_extended', label: 'Extended Ledger', icon: 'external' },
+        { view: 'hld_partners', label: 'Partner Capital & Current A/C', icon: 'hld_partners' },
         { view: 'hld_distributions', label: 'Profit Splits & Drawings', icon: 'hld_distributions' }
       ]
     },
@@ -41109,7 +41120,8 @@
       const isCfg = /^config$/i.test(flowStr);
       const isOut = /out|expense/i.test(String(ex.direction || flowStr));
       const lbpRaw = Number(ex.lbp_amount || 0);
-      const usdRaw = lbpRaw ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0);
+      const hasExpUsd = ex.usd_amount != null && ex.usd_amount !== '';
+      const usdRaw = hasExpUsd ? Number(ex.usd_amount || 0) : (Math.abs(lbpRaw) > 0.5 ? 0 : Number(ex.amount || 0));
       const uMag = round2(mult * (isCfg ? Math.abs(usdRaw) : Math.abs(usdRaw)));
       const lMag = Math.round(mult * Math.abs(lbpRaw));
       if (isExtd) {
@@ -41935,30 +41947,41 @@
 
         <div class="panel-card" id="cfExtdConvPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${isHoldingCf ? 'EXTENDED &amp; CURRENCY CONVERSIONS (USD ↔ LBP)' : 'CURRENCY CONVERSIONS (USD ↔ LBP)'}</span></div>
-            <span class="panel-meta">${exportBtn('cfExtdConvPanel', 'Cash_Flow_Conversions')}</span>
+            <div class="panel-title"><span>${isHoldingCf ? 'EXTENDED STAKEHOLDERS &amp; CURRENCY CONVERSIONS' : 'CURRENCY CONVERSIONS (USD / LBP)'}</span></div>
+            <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+              ${isHoldingCf ? `<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="hld_extended">${ic('external')} Open Extended Ledger</button>` : ''}
+              ${exportBtn('cfExtdConvPanel', 'Cash_Flow_Conversions')}
+            </span>
           </div>
-          ${isHoldingCf ? `
+          ${isHoldingCf ? (() => {
+            const extdSum = computeHoldingExtendedSummary({ ignoreSearch: false, basis: 'tx' });
+            const shRowsCf = extdSum.partyRows || [];
+            return `
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr><th>Extended Stakeholder</th><th class="r">Owes ($)</th><th class="r">Owes (LL)</th></tr></thead>
+              <thead><tr><th>Extended Stakeholder</th><th class="r">Received / Took ($)</th><th class="r">Gave ($)</th><th class="r">Difference / Owes ($)</th><th class="r">Owes (LL)</th></tr></thead>
               <tbody>
-                ${extdShown.map(r => `
-                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
-                    <td><strong>${esc(r.name)}</strong></td>
-                    <td class="r">${r.usd ? fmtUSD(r.usd, 2) : '—'}</td>
-                    <td class="r">${r.lbp ? fmtLBP(r.lbp) : '—'}</td>
-                  </tr>`).join('') || emptyRow(3, 'No extended balances for this entity')}
+                ${shRowsCf.map(p => `
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(p.counterparty)}" data-ui-tip="Click to filter Cash Till Register above to ${esc(p.counterparty)}">
+                    <td><strong>${esc(p.counterparty)}</strong></td>
+                    <td class="r mono">${Math.abs(p.rec_usd) >= 0.005 ? fmtUSD(p.rec_usd, 2) : '-'}</td>
+                    <td class="r mono">${Math.abs(p.gave_usd) >= 0.005 ? fmtUSD(p.gave_usd, 2) : '-'}</td>
+                    <td class="r mono"><strong style="color:${p.owes_usd > 0.005 ? 'var(--brass)' : (p.owes_usd < -0.005 ? 'var(--good)' : 'inherit')}">${fmtSignedUSD(p.owes_usd, 2)}</strong></td>
+                    <td class="r mono">${Math.abs(p.owes_lbp) > 1 ? fmtSignedLBP(p.owes_lbp) : '-'}</td>
+                  </tr>`).join('') || emptyRow(5, 'No extended balances for this entity')}
               </tbody>
               <tfoot>
                 <tr>
-                  <td><b>TOTAL EXTENDED</b></td>
-                  <td class="r"><b>${fmtUSD(tExtd.totals.usd, 2)}</b></td>
-                  <td class="r"><b>${fmtLBP(tExtd.totals.lbp)}</b></td>
+                  <td><b>TOTAL EXTENDED (${fmtNum(shRowsCf.length)})</b></td>
+                  <td class="r mono"><b>${fmtUSD(extdSum.totRecUsd, 2)}</b></td>
+                  <td class="r mono"><b>${fmtUSD(extdSum.totGaveUsd, 2)}</b></td>
+                  <td class="r mono"><b>${fmtSignedUSD(extdSum.totOwesUsd, 2)}</b></td>
+                  <td class="r mono"><b>${Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL'}</b></td>
                 </tr>
               </tfoot>
             </table>
-          </div>` : ''}
+          </div>`;
+          })() : ''}
           <div class="table-wrap"${isHoldingCf ? ' style="border-top:1px solid var(--line)"' : ''}>
             <table class="ledger-table">
               <thead><tr><th>Conversion Direction</th><th class="r">USD Change ($)</th><th class="r">LBP Change (LL)</th></tr></thead>
@@ -41968,10 +41991,10 @@
                   const uDelta = isU2L ? -Number(r.from_amt || 0) : Number(r.to_amt || 0);
                   const lDelta = isU2L ? Math.round(Number(r.to_amt || 0)) : -Math.round(Number(r.from_amt || 0));
                   return `
-                  <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" title="Click to filter Cash Till Register above to FX Conversions">
-                    <td><strong>${isU2L ? 'USD → LBP' : 'LBP → USD'}</strong></td>
-                    <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '—'}</strong></td>
-                    <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '—'}</strong></td>
+                  <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" data-ui-tip="Click to filter Cash Till Register above to FX Conversions">
+                    <td><strong>${isU2L ? 'USD to LBP' : 'LBP to USD'}</strong></td>
+                    <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '-'}</strong></td>
+                    <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '-'}</strong></td>
                   </tr>`;
                 }).join('') || emptyRow(3, 'No currency conversions')}
               </tbody>
@@ -44386,38 +44409,162 @@
     `;
   }
 
+  function cleanExtendedNotes(raw) {
+    let s = String(raw == null ? '' : raw).trim();
+    if (!s || /^(none|null|undefined|-|—)$/i.test(s)) return '';
+    s = s
+      .replace(/\[wb:[^\]]+\]/gi, '')
+      .replace(/(?:^|\s)\.?extended\.?(?=\s|$)/gi, ' ')
+      .replace(/^\s*extended\s*[.:;-]\s*/i, '')
+      .replace(/\s*[.:;-]\s*extended\.?\s*$/i, '')
+      .replace(/[—→]/g, '-')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[.\s]+|[.\s]+$/g, '')
+      .trim();
+    if (!s || /^(none|null|undefined|extended|-|—)$/i.test(s)) return '';
+    return s;
+  }
+
+  function extractExtendedDocRef(r) {
+    if (!r) return '-';
+    const nm = String(r.name || '').trim();
+    const hashMatch = nm.match(/#\d+[A-Za-z0-9-]*/);
+    if (hashMatch) return hashMatch[0];
+    const ref = String(r.reference || '').trim();
+    if (ref && !/^(none|null|extended\.?)$/i.test(ref) && !/^em\d+$/i.test(ref)) return ref.replace(/[—→]/g, '-');
+    const idStr = String(r.id || '').trim();
+    if (idStr && !/^em\d+$/i.test(idStr)) return idStr.slice(0, 18);
+    return nm ? nm.replace(/^EXTD\s+\d{4}-\d{2}-\d{2}\s+/i, '').slice(0, 18) : '-';
+  }
+
+  function parseExtendedRow(r) {
+    if (!r) {
+      return { isCfg: false, isOut: false, flowLabel: 'Gave (Inflow)', receivedUsd: 0, gaveUsd: 0, owesUsd: 0, receivedLbp: 0, gaveLbp: 0, owesLbp: 0, cashUsd: 0, cashLbp: 0, docRef: '-', cleanNotes: '' };
+    }
+    const flowStr = String(r.flow || r.method || '').trim();
+    const dirStr = String(r.direction || '').trim();
+    const isCfg = /^config$/i.test(flowStr) || /^config$/i.test(dirStr);
+    const lbpRaw = Number(r.lbp_amount || 0);
+    const hasExpUsd = r.usd_amount !== undefined && r.usd_amount !== null && r.usd_amount !== '';
+    const usdRaw = hasExpUsd
+      ? Number(r.usd_amount)
+      : (Math.abs(lbpRaw) > 0.5 ? 0 : Number(r.amount || 0));
+
+    let receivedUsd = 0, gaveUsd = 0, receivedLbp = 0, gaveLbp = 0;
+    let isOut = false;
+    if (isCfg) {
+      gaveUsd = round2(usdRaw);
+      gaveLbp = Math.round(lbpRaw);
+      isOut = gaveUsd < -0.004 || (Math.abs(gaveUsd) <= 0.004 && gaveLbp < -1);
+    } else {
+      isOut = /out|expense|withdraw|debit|took/i.test(dirStr || flowStr) && !/^inflow$/i.test(dirStr);
+      if (isOut) {
+        receivedUsd = round2(Math.abs(usdRaw));
+        receivedLbp = Math.round(Math.abs(lbpRaw));
+      } else {
+        gaveUsd = round2(Math.abs(usdRaw));
+        gaveLbp = Math.round(Math.abs(lbpRaw));
+      }
+    }
+    const owesUsd = round2(receivedUsd - gaveUsd);
+    const owesLbp = Math.round(receivedLbp - gaveLbp);
+    const cashUsd = round2(gaveUsd - receivedUsd);
+    const cashLbp = Math.round(gaveLbp - receivedLbp);
+    const flowLabel = isCfg ? 'Opening Balance' : (isOut ? 'Took (Outflow)' : 'Gave (Inflow)');
+    return {
+      isCfg,
+      isOut,
+      flowLabel,
+      receivedUsd,
+      gaveUsd,
+      owesUsd,
+      receivedLbp,
+      gaveLbp,
+      owesLbp,
+      cashUsd,
+      cashLbp,
+      docRef: extractExtendedDocRef(r),
+      cleanNotes: cleanExtendedNotes(r.notes)
+    };
+  }
+
+  function extendedPositionLabel(owesUsd, owesLbp) {
+    if (owesUsd > 0.005 || (Math.abs(owesUsd) <= 0.005 && owesLbp > 1)) return 'Owes Holding';
+    if (owesUsd < -0.005 || (Math.abs(owesUsd) <= 0.005 && owesLbp < -1)) return 'Holding Owes';
+    return 'Settled';
+  }
+
+  function computeHoldingExtendedSummary(filterOpts) {
+    const isExtendedRow = r => Boolean(r && !r.voided && /^extended$/i.test(String(r.kind || '').trim()));
+    const opts = Object.assign({ basis: 'tx' }, filterOpts || {});
+    const rows = filterRecords((SEED.records && SEED.records.external_movements) || [], opts).filter(isExtendedRow);
+    const partyMap = new Map();
+    let totRecUsd = 0, totGaveUsd = 0, totOwesUsd = 0;
+    let totRecLbp = 0, totGaveLbp = 0, totOwesLbp = 0;
+    let cfgCnt = 0, lbpCnt = 0;
+
+    rows.forEach(r => {
+      const a = parseExtendedRow(r);
+      if (a.isCfg) cfgCnt++;
+      if (Math.abs(a.owesLbp) > 1 || Math.abs(a.receivedLbp) > 1 || Math.abs(a.gaveLbp) > 1) lbpCnt++;
+      totRecUsd = round2(totRecUsd + a.receivedUsd);
+      totGaveUsd = round2(totGaveUsd + a.gaveUsd);
+      totOwesUsd = round2(totOwesUsd + a.owesUsd);
+      totRecLbp = Math.round(totRecLbp + a.receivedLbp);
+      totGaveLbp = Math.round(totGaveLbp + a.gaveLbp);
+      totOwesLbp = Math.round(totOwesLbp + a.owesLbp);
+
+      const cp = String(r.counterparty || r.party || 'Extended Stakeholder').trim() || 'Extended Stakeholder';
+      const pk = norm(cp);
+      let cur = partyMap.get(pk);
+      if (!cur) {
+        cur = { counterparty: cp, entries_cnt: 0, rec_usd: 0, gave_usd: 0, owes_usd: 0, rec_lbp: 0, gave_lbp: 0, owes_lbp: 0, last_date: '', position: 'Settled' };
+        partyMap.set(pk, cur);
+      }
+      cur.entries_cnt += 1;
+      cur.rec_usd = round2(cur.rec_usd + a.receivedUsd);
+      cur.gave_usd = round2(cur.gave_usd + a.gaveUsd);
+      cur.owes_usd = round2(cur.owes_usd + a.owesUsd);
+      cur.rec_lbp = Math.round(cur.rec_lbp + a.receivedLbp);
+      cur.gave_lbp = Math.round(cur.gave_lbp + a.gaveLbp);
+      cur.owes_lbp = Math.round(cur.owes_lbp + a.owesLbp);
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > cur.last_date) cur.last_date = dt;
+    });
+
+    const partyRows = Array.from(partyMap.values()).map(p => {
+      p.position = extendedPositionLabel(p.owes_usd, p.owes_lbp);
+      return p;
+    }).sort((a, b) => (b.entries_cnt - a.entries_cnt) || (Math.abs(b.owes_usd) - Math.abs(a.owes_usd)));
+
+    return {
+      rows,
+      partyRows,
+      totRecUsd,
+      totGaveUsd,
+      totOwesUsd,
+      totRecLbp,
+      totGaveLbp,
+      totOwesLbp,
+      cfgCnt,
+      lbpCnt
+    };
+  }
+
+  window.MFG_EXTENDED_HELPER = {
+    parseExtendedRow,
+    cleanExtendedNotes,
+    extractExtendedDocRef,
+    extendedPositionLabel,
+    computeHoldingExtendedSummary
+  };
+
   function renderHoldingExtended() {
     const u = activeUser();
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-    const isExtendedRow = r => Boolean(r && !r.voided && /^extended$/i.test(String(r.kind || '')));
-    const parseExtdAmounts = r => {
-      const flowStr = String(r.flow || r.method || '').trim();
-      const isCfg = /^config$/i.test(flowStr);
-      const lbpRaw = Number(r.lbp_amount || 0);
-      const usdRaw = lbpRaw ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : (r.amount || 0));
-      let cashUsd = 0, cashLbp = 0;
-      if (isCfg) {
-        cashUsd = round2(usdRaw);
-        cashLbp = Math.round(lbpRaw);
-      } else {
-        const isOut = /out|expense|withdraw|debit/i.test(String(r.direction || flowStr));
-        cashUsd = isOut ? -round2(Math.abs(usdRaw)) : round2(Math.abs(usdRaw));
-        cashLbp = isOut ? -Math.round(Math.abs(lbpRaw)) : Math.round(Math.abs(lbpRaw));
-      }
-      return {
-        isCfg,
-        cashUsd,
-        cashLbp,
-        inUsd: cashUsd > 0.004 ? cashUsd : 0,
-        outUsd: cashUsd < -0.004 ? round2(-cashUsd) : 0,
-        owesUsd: round2(-cashUsd),
-        owesLbp: Math.round(-cashLbp)
-      };
-    };
+    const isExtendedRow = r => Boolean(r && !r.voided && /^extended$/i.test(String(r.kind || '').trim()));
 
     const allPeriodExtd = filterRecords(SEED.records.external_movements || [], { ignoreSearch: true, basis: 'tx' }).filter(isExtendedRow);
-    const searchScopedExtd = filterRecords(SEED.records.external_movements || [], { basis: 'tx' }).filter(isExtendedRow);
-
     const pillPartyCounts = new Map();
     allPeriodExtd.forEach(r => {
       const cp = String(r.counterparty || r.party || 'Extended Stakeholder').trim() || 'Extended Stakeholder';
@@ -44429,67 +44576,59 @@
     const selAssetParty = getIndAssetSelection('hld_extended');
     const focusParty = STATE.cfFocusParty || (selAssetParty !== 'ALL' ? selAssetParty : '');
 
-    const partyMap = new Map();
-    let cfgCnt = 0, lbpCnt = 0;
-    searchScopedExtd.forEach(r => {
-      const a = parseExtdAmounts(r);
-      if (a.isCfg) cfgCnt++;
-      if (Math.abs(a.cashLbp) > 1) lbpCnt++;
-      const cp = String(r.counterparty || r.party || 'Extended Stakeholder').trim() || 'Extended Stakeholder';
-      const pk = norm(cp);
-      const cur = partyMap.get(pk) || { counterparty: cp, entries_cnt: 0, in_usd: 0, out_usd: 0, owes_usd: 0, owes_lbp: 0, last_date: '' };
-      cur.entries_cnt += 1;
-      cur.in_usd = round2(cur.in_usd + a.inUsd);
-      cur.out_usd = round2(cur.out_usd + a.outUsd);
-      cur.owes_usd = round2(cur.owes_usd + a.owesUsd);
-      cur.owes_lbp = Math.round(cur.owes_lbp + a.owesLbp);
-      const dt = String(r.date || '').slice(0, 10);
-      if (dt > cur.last_date) cur.last_date = dt;
-      partyMap.set(pk, cur);
-    });
-    const partyRows = sortRows(Array.from(partyMap.values()), 'hld_extd_parties', 'entries_cnt', 'desc');
+    const extdSummary = computeHoldingExtendedSummary({ basis: 'tx' });
+    const searchScopedExtd = extdSummary.rows;
+    const cfgCnt = extdSummary.cfgCnt;
+    const lbpCnt = extdSummary.lbpCnt;
+    const partyRows = sortRows(extdSummary.partyRows.slice(), 'hld_extd_parties', 'entries_cnt', 'desc');
 
     const partyScoped = focusParty
       ? searchScopedExtd.filter(r => norm(r.counterparty || r.party || 'Extended Stakeholder') === norm(focusParty))
       : searchScopedExtd;
 
     const extdRows = sortRows(partyScoped.filter(r => {
-      const a = parseExtdAmounts(r);
-      if (STATE.chipFilter === 'extd_in') return a.cashUsd > 0.004 || (Math.abs(a.cashUsd) <= 0.004 && a.cashLbp > 1);
-      if (STATE.chipFilter === 'extd_out') return a.cashUsd < -0.004 || (Math.abs(a.cashUsd) <= 0.004 && a.cashLbp < -1);
+      const a = parseExtendedRow(r);
+      if (STATE.chipFilter === 'extd_out') return !a.isCfg && a.isOut;
+      if (STATE.chipFilter === 'extd_in') return !a.isCfg && !a.isOut;
       if (STATE.chipFilter === 'extd_config') return a.isCfg;
-      if (STATE.chipFilter === 'extd_lbp') return Math.abs(a.cashLbp) > 1;
+      if (STATE.chipFilter === 'extd_lbp') return Math.abs(a.owesLbp) > 1 || Math.abs(a.receivedLbp) > 1 || Math.abs(a.gaveLbp) > 1;
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
     }), 'hld_extd_entries', 'date', 'desc');
     const shownExtd = extdRows.slice(0, shownCount('hld_extd_entries'));
 
-    let totInUsd = 0, totOutUsd = 0, totCashLbp = 0, totOwesUsd = 0, totOwesLbp = 0;
+    let totRecUsd = 0, totGaveUsd = 0, totOwesUsd = 0;
+    let totRecLbp = 0, totGaveLbp = 0, totOwesLbp = 0;
     extdRows.forEach(r => {
-      const a = parseExtdAmounts(r);
-      totInUsd = round2(totInUsd + a.inUsd);
-      totOutUsd = round2(totOutUsd + a.outUsd);
-      totCashLbp = Math.round(totCashLbp + a.cashLbp);
+      const a = parseExtendedRow(r);
+      totRecUsd = round2(totRecUsd + a.receivedUsd);
+      totGaveUsd = round2(totGaveUsd + a.gaveUsd);
       totOwesUsd = round2(totOwesUsd + a.owesUsd);
+      totRecLbp = Math.round(totRecLbp + a.receivedLbp);
+      totGaveLbp = Math.round(totGaveLbp + a.gaveLbp);
       totOwesLbp = Math.round(totOwesLbp + a.owesLbp);
     });
-    const netCashUsd = round2(totInUsd - totOutUsd);
+
+    const sumRecParties = round2(partyRows.reduce((s, p) => s + p.rec_usd, 0));
+    const sumGaveParties = round2(partyRows.reduce((s, p) => s + p.gave_usd, 0));
+    const sumOwesParties = round2(partyRows.reduce((s, p) => s + p.owes_usd, 0));
+    const sumOwesLbpParties = Math.round(partyRows.reduce((s, p) => s + p.owes_lbp, 0));
 
     const topP = partyRows.slice(0, 8);
-    const maxChartVal = Math.max(1, ...topP.map(p => Math.max(p.in_usd, p.out_usd, Math.abs(p.owes_usd))));
+    const maxChartVal = Math.max(1, ...topP.map(p => Math.max(Math.abs(p.rec_usd), Math.abs(p.gave_usd), Math.abs(p.owes_usd))));
     const svgH = Math.max(140, 24 + topP.length * 34);
     const extdChartSvg = `
-      <svg viewBox="0 0 680 ${svgH}" width="100%" height="${svgH}" role="img" aria-label="Extended Stakeholder Cash In vs Out and Net Balance" style="display:block;overflow:visible">
+      <svg viewBox="0 0 680 ${svgH}" width="100%" height="${svgH}" role="img" aria-label="Extended Stakeholder Received vs Gave and Net Difference" style="display:block;overflow:visible">
         ${topP.map((p, idx) => {
           const y = 8 + idx * 32;
-          const inW = Math.round((p.in_usd / maxChartVal) * 200);
-          const outW = Math.round((p.out_usd / maxChartVal) * 200);
+          const recW = Math.round((Math.max(0, p.rec_usd) / maxChartVal) * 190);
+          const gaveW = Math.round((Math.abs(p.gave_usd) / maxChartVal) * 190);
           return `
             <g transform="translate(0,${y})">
               <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(p.counterparty.slice(0, 24))} (${fmtNum(p.entries_cnt)})</text>
-              <rect x="195" y="3" width="${Math.max(3, inW)}" height="8" rx="3" fill="#059669" />
-              <rect x="195" y="13" width="${Math.max(3, outW)}" height="8" rx="3" fill="#dc2626" />
-              <text x="410" y="15" fill="var(--muted)" font-size="11" font-family="var(--font-mono)">In ${esc(fmtUSD(p.in_usd, 0))} · Out ${esc(fmtUSD(p.out_usd, 0))}</text>
+              <rect x="195" y="3" width="${Math.max(3, recW)}" height="8" rx="3" fill="#1D4ED8" />
+              <rect x="195" y="13" width="${Math.max(3, gaveW)}" height="8" rx="3" fill="#047857" />
+              <text x="396" y="15" fill="var(--muted)" font-size="10.8" font-family="var(--font-mono)">Took ${esc(fmtUSD(p.rec_usd, 0))} · Gave ${esc(fmtUSD(p.gave_usd, 0))}</text>
               <text x="675" y="15" text-anchor="end" fill="${p.owes_usd > 0.005 ? 'var(--brass)' : (p.owes_usd < -0.005 ? 'var(--good)' : 'var(--muted)')}" font-size="11.5" font-weight="700" font-family="var(--font-mono)">${esc(fmtSignedUSD(p.owes_usd, 2))}</text>
             </g>
           `;
@@ -44498,38 +44637,38 @@
     `;
 
     const showCoCol = STATE.company !== 'bdeirholding';
-    const entryColCount = showCoCol ? 8 : 7;
+    const entryColCount = showCoCol ? 10 : 9;
 
     return `
       ${renderIndSpecificAssetBar('hld_extended', 'Specific Stakeholder', Array.from(pillPartyCounts.values()), 'All Stakeholders')}
 
       <div class="kpi-grid" style="margin-bottom:14px">
         <div class="kpi-card">
+          <div class="kpi-label">RECEIVED / TOOK ($)</div>
+          <div class="kpi-val crit">${fmtUSD(totRecUsd, 2)}</div>
+          <div class="kpi-sub">Taken by stakeholders · LBP: <b>${Math.abs(totRecLbp) > 1 ? fmtLBP(totRecLbp) : '0 LL'}</b></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">GAVE ($)</div>
+          <div class="kpi-val good">${fmtUSD(totGaveUsd, 2)}</div>
+          <div class="kpi-sub">Paid in &amp; opening balance · LBP: <b>${Math.abs(totGaveLbp) > 1 ? fmtSignedLBP(totGaveLbp) : '0 LL'}</b></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">DIFFERENCE / OWES ($)</div>
+          <div class="kpi-val brass">${fmtSignedUSD(totOwesUsd, 2)}</div>
+          <div class="kpi-sub">Received minus Gave · LBP Owes: <b>${Math.abs(totOwesLbp) > 1 ? fmtSignedLBP(totOwesLbp) : '0 LL'}</b></div>
+        </div>
+        <div class="kpi-card">
           <div class="kpi-label">EXTENDED STAKEHOLDERS</div>
           <div class="kpi-val">${fmtNum(partyRows.length)}</div>
           <div class="kpi-sub">Across <b>${fmtNum(extdRows.length)}</b> Holding extended entries</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">EXTENDED CASH IN ($)</div>
-          <div class="kpi-val good">+${fmtUSD(totInUsd, 2)}</div>
-          <div class="kpi-sub">Stakeholder receipts &amp; opening credits</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">EXTENDED CASH OUT ($)</div>
-          <div class="kpi-val crit">-${fmtUSD(totOutUsd, 2)}</div>
-          <div class="kpi-sub">Advances, settlements &amp; LBP <b>${totOwesLbp ? fmtSignedLBP(-totOwesLbp) : '0 LL'}</b></div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">NET OWED TO HOLDING ($)</div>
-          <div class="kpi-val brass">${fmtSignedUSD(totOwesUsd, 2)}</div>
-          <div class="kpi-sub">LBP Owes: <b>${Math.abs(totOwesLbp) > 1 ? fmtLBP(totOwesLbp) : '0 LL'}</b> · Funded via WTC IC sweep</div>
         </div>
       </div>
 
       <div class="split-grid-2" style="margin-bottom:14px">
         <div class="panel-card" id="hldExtendedStakeholdersPanel">
           <div class="panel-head">
-            <div class="panel-title"><span>${ic('external')} EXTENDED STAKEHOLDER BALANCES (${fmtNum(partyRows.length)})</span></div>
+            <div class="panel-title"><span>${ic('external')} EXTENDED · SUMMARY BY STAKEHOLDER (${fmtNum(partyRows.length)})</span></div>
             <span class="panel-meta">${exportBtn('hldExtendedStakeholdersPanel', 'Holding_Extended_Stakeholders')}</span>
           </div>
           <div class="table-wrap">
@@ -44538,35 +44677,39 @@
                 <tr>
                   ${th('hld_extd_parties', 'Stakeholder', 'counterparty')}
                   ${th('hld_extd_parties', 'Entries', 'entries_cnt', 'r')}
-                  ${th('hld_extd_parties', 'Cash In ($)', 'in_usd', 'r')}
-                  ${th('hld_extd_parties', 'Cash Out ($)', 'out_usd', 'r')}
-                  ${th('hld_extd_parties', 'Owes ($)', 'owes_usd', 'r')}
+                  ${th('hld_extd_parties', 'Received / Took ($)', 'rec_usd', 'r')}
+                  ${th('hld_extd_parties', 'Gave ($)', 'gave_usd', 'r')}
+                  ${th('hld_extd_parties', 'Difference / Owes ($)', 'owes_usd', 'r')}
                   ${th('hld_extd_parties', 'Owes (LL)', 'owes_lbp', 'r')}
+                  ${th('hld_extd_parties', 'Position', 'position')}
                   ${th('hld_extd_parties', 'Last Activity', 'last_date')}
                 </tr>
               </thead>
               <tbody>
-                ${partyRows.length ? partyRows.map(p => `
-                  <tr class="cf-stream-row ${focusParty && norm(focusParty) === norm(p.counterparty) ? 'is-active' : ''}" data-cf-focus-party="${esc(p.counterparty)}" data-ui-tip="Click to filter Extended Ledger to ${esc(p.counterparty)}">
-                    <td><strong>${esc(p.counterparty)}</strong></td>
+                ${partyRows.length ? partyRows.map(p => {
+                  const posCls = p.position === 'Owes Holding' ? 'badge-brass' : (p.position === 'Holding Owes' ? 'badge-ok' : 'badge');
+                  return `
+                  <tr class="cf-stream-row ${focusParty && norm(focusParty) === norm(p.counterparty) ? 'is-active' : ''}" data-cf-focus-party="${esc(p.counterparty)}" data-ui-tip="Click to filter Extended Timeline to ${esc(p.counterparty)}">
+                    <td><strong data-no-i18n="1">${esc(p.counterparty)}</strong></td>
                     <td class="r mono">${fmtNum(p.entries_cnt)}</td>
-                    <td class="r mono">${p.in_usd >= 0.005 ? `<span style="color:var(--good)">+${fmtUSD(p.in_usd, 2)}</span>` : '-'}</td>
-                    <td class="r mono">${p.out_usd >= 0.005 ? `<span style="color:var(--crit)">-${fmtUSD(p.out_usd, 2)}</span>` : '-'}</td>
-                    <td class="r mono"><strong style="color:${p.owes_usd > 0.005 ? 'var(--brass)' : (p.owes_usd < -0.005 ? 'var(--good)' : 'inherit')}">${Math.abs(p.owes_usd) >= 0.005 ? fmtUSD(p.owes_usd, 2) : '$0.00'}</strong></td>
-                    <td class="r mono">${Math.abs(p.owes_lbp) > 1 ? fmtLBP(p.owes_lbp) : '-'}</td>
+                    <td class="r mono">${Math.abs(p.rec_usd) >= 0.005 ? `<span style="color:var(--crit)">${fmtUSD(p.rec_usd, 2)}</span>` : '-'}</td>
+                    <td class="r mono">${Math.abs(p.gave_usd) >= 0.005 ? `<span style="color:${p.gave_usd < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(p.gave_usd, 2)}</span>` : '-'}</td>
+                    <td class="r mono"><strong style="color:${p.owes_usd > 0.005 ? 'var(--brass)' : (p.owes_usd < -0.005 ? 'var(--good)' : 'inherit')}">${Math.abs(p.owes_usd) >= 0.005 ? fmtSignedUSD(p.owes_usd, 2) : '$0.00'}</strong></td>
+                    <td class="r mono">${Math.abs(p.owes_lbp) > 1 ? fmtSignedLBP(p.owes_lbp) : '-'}</td>
+                    <td><span class="badge ${posCls}">${esc(p.position)}</span></td>
                     <td class="mono">${esc(fmtDateDMY(p.last_date))}</td>
-                  </tr>
-                `).join('') : emptyRow(7, 'No extended stakeholders match the current filter')}
+                  </tr>`;
+                }).join('') : emptyRow(8, 'No extended stakeholders match the current filter')}
               </tbody>
               <tfoot>
                 <tr>
                   <td><b>TOTAL EXTENDED (${fmtNum(partyRows.length)})</b></td>
                   <td class="r mono"><b>${fmtNum(partyRows.reduce((s, p) => s + p.entries_cnt, 0))}</b></td>
-                  <td class="r mono"><b style="color:var(--good)">+${fmtUSD(partyRows.reduce((s, p) => s + p.in_usd, 0), 2)}</b></td>
-                  <td class="r mono"><b style="color:var(--crit)">-${fmtUSD(partyRows.reduce((s, p) => s + p.out_usd, 0), 2)}</b></td>
-                  <td class="r mono"><b>${fmtUSD(partyRows.reduce((s, p) => s + p.owes_usd, 0), 2)}</b></td>
-                  <td class="r mono"><b>${fmtLBP(partyRows.reduce((s, p) => s + p.owes_lbp, 0))}</b></td>
-                  <td></td>
+                  <td class="r mono"><b style="color:var(--crit)">${fmtUSD(sumRecParties, 2)}</b></td>
+                  <td class="r mono"><b style="color:var(--good)">${fmtUSD(sumGaveParties, 2)}</b></td>
+                  <td class="r mono"><b style="color:${sumOwesParties > 0.005 ? 'var(--brass)' : (sumOwesParties < -0.005 ? 'var(--good)' : 'inherit')}">${fmtSignedUSD(sumOwesParties, 2)}</b></td>
+                  <td class="r mono"><b>${Math.abs(sumOwesLbpParties) > 1 ? fmtSignedLBP(sumOwesLbpParties) : '0 LL'}</b></td>
+                  <td colspan="2"><span class="mono" style="font-size:11px;color:var(--muted)">+ Owes Holding / - Holding Owes</span></td>
                 </tr>
               </tfoot>
             </table>
@@ -44575,7 +44718,7 @@
 
         <div class="panel-card" id="hldExtendedChartPanel" style="padding:14px 16px">
           <div class="panel-head" style="margin-bottom:8px">
-            <div class="panel-title"><span>${ic('pbi')} STAKEHOLDER FLOWS &amp; NET OWED TO HOLDING</span></div>
+            <div class="panel-title"><span>${ic('pbi')} RECEIVED VS GAVE &amp; DIFFERENCE / OWES ($)</span></div>
           </div>
           ${extdChartSvg}
         </div>
@@ -44584,27 +44727,26 @@
       <div class="panel-card" id="hldExtendedEntriesPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search stakeholder, direction, notes, amount...')}
+            ${searchBox('Search stakeholder, ref, flow, notes, amount...')}
             <div class="chip-bar">
               ${chip('all', `All (${fmtNum(partyScoped.length)})`)}
-              ${chip('extd_in', '▲ Cash In')}
-              ${chip('extd_out', '▼ Cash Out')}
-              ${cfgCnt ? chip('extd_config', `Opening Config (${fmtNum(cfgCnt)})`) : ''}
+              ${chip('extd_out', 'Took / Received')}
+              ${chip('extd_in', 'Gave')}
+              ${cfgCnt ? chip('extd_config', `Opening Balance (${fmtNum(cfgCnt)})`) : ''}
               ${chip('extd_lbp', `LBP (${fmtNum(lbpCnt)})`)}
               ${chip('app', 'App-entered')}
             </div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${exportBtn('hldExtendedEntriesPanel', 'Holding_Extended_Ledger')}
-            <button type="button" class="btn btn-ghost-bar" data-ind-open-new="hld_extended">+ Domain Register Form</button>
-            ${canEnterForm('external', u) ? '<button type="button" class="btn btn-primary" data-open-modal="extended" data-prefill-co="Bdeir Holding" data-prefill-extkind="Extended">+ Extended Entry</button>' : ''}
+            ${canEnterForm('external', u) ? '<button type="button" class="btn btn-ghost-bar" data-ind-open-new="hld_extended">+ Domain Register Form</button><button type="button" class="btn btn-primary" data-open-modal="extended" data-prefill-co="Bdeir Holding" data-prefill-extkind="Extended">+ Extended Entry</button>' : ''}
           </div>
         </div>
 
         ${focusParty ? `
         <div class="cf-drill-strip" role="status">
           <span class="cf-drill-lbl">Active Stakeholder Filter:</span>
-          <button type="button" class="cf-active-pill" data-cf-clear-drill="party"><span>Stakeholder: <b>${esc(focusParty)}</b></span><span class="cf-pill-x">✕</span></button>
+          <button type="button" class="cf-active-pill" data-cf-clear-drill="party"><span>Stakeholder: <b data-no-i18n="1">${esc(focusParty)}</b></span><span class="cf-pill-x">✕</span></button>
           <button type="button" class="cf-clear-all-btn" data-cf-clear-drill="all">✕ Show All Extended Entries</button>
         </div>` : ''}
 
@@ -44614,31 +44756,34 @@
             <thead>
               <tr>
                 ${th('hld_extd_entries', 'Date', 'date')}
+                ${th('hld_extd_entries', 'Ref', 'ext_ref')}
                 ${showCoCol ? th('hld_extd_entries', 'Co.', 'company') : ''}
-                ${th('hld_extd_entries', 'Direction', 'direction')}
                 ${th('hld_extd_entries', 'Stakeholder', 'counterparty')}
-                ${th('hld_extd_entries', 'Notes', 'notes')}
-                ${th('hld_extd_entries', 'In ($)', 'usd_amount', 'r')}
-                ${th('hld_extd_entries', 'Out ($)', 'usd_amount', 'r')}
-                ${th('hld_extd_entries', 'LBP (LL)', 'lbp_amount', 'r')}
+                ${th('hld_extd_entries', 'Flow', 'ext_flow')}
+                ${th('hld_extd_entries', 'Received / Took ($)', 'ext_received_usd', 'r')}
+                ${th('hld_extd_entries', 'Gave ($)', 'ext_gave_usd', 'r')}
+                ${th('hld_extd_entries', 'Difference / Owes ($)', 'ext_owes_usd', 'r')}
+                ${th('hld_extd_entries', 'Owes (LL)', 'ext_owes_lbp', 'r')}
+                ${th('hld_extd_entries', 'Notes', 'ext_notes')}
               </tr>
             </thead>
             <tbody>
               ${shownExtd.map(r => {
-                const a = parseExtdAmounts(r);
-                const inFlag = a.cashUsd > 0.004 || (Math.abs(a.cashUsd) <= 0.004 && a.cashLbp > 1);
+                const a = parseExtendedRow(r);
                 const cp = r.counterparty || r.party || 'Extended Stakeholder';
-                const dirLbl = a.isCfg ? 'Opening Config' : (inFlag ? 'Extended In' : 'Extended Out');
+                const inFlag = a.cashUsd > 0.004 || (Math.abs(a.cashUsd) <= 0.004 && a.cashLbp > 1);
                 return `
                 <tr class="rrow" data-rkey="external_movements" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'external_movements')}</td>
+                  <td class="mono" data-no-i18n="1"><b>${esc(a.docRef)}</b></td>
                   ${showCoCol ? `<td>${coBadge(r.company)}</td>` : ''}
-                  <td class="cf-cat-cell"><span class="cf-flow-badge ${inFlag ? 'in' : 'out'}">${inFlag ? '▲' : '▼'}</span><span class="cf-cat-txt">${esc(dirLbl)}</span></td>
-                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" data-ui-tip="Filter Extended Ledger to ${esc(cp)}"><strong data-no-i18n="1">${esc(cp)}</strong></button></td>
-                  <td class="cf-detail-cell" data-ui-tip="${esc(r.notes || '')}">${esc(r.notes || '-')}</td>
-                  <td class="r">${a.inUsd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(a.inUsd, 2)}</strong>` : '-'}</td>
-                  <td class="r">${a.outUsd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(a.outUsd, 2)}</strong>` : '-'}</td>
-                  <td class="r">${Math.abs(a.cashLbp) > 1 ? `<strong style="color:${a.cashLbp < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtSignedLBP(a.cashLbp)}</strong>` : '-'}</td>
+                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" data-ui-tip="Filter Extended Timeline to ${esc(cp)}"><strong data-no-i18n="1">${esc(cp)}</strong></button></td>
+                  <td class="cf-cat-cell"><span class="cf-flow-badge ${a.isCfg ? 'cfg' : (inFlag ? 'in' : 'out')}">${a.isCfg ? '●' : (inFlag ? '▲' : '▼')}</span><span class="cf-cat-txt">${esc(a.flowLabel)}</span></td>
+                  <td class="r mono">${Math.abs(a.receivedUsd) >= 0.005 ? `<strong style="color:var(--crit)">${fmtUSD(a.receivedUsd, 2)}</strong>` : '-'}</td>
+                  <td class="r mono">${Math.abs(a.gaveUsd) >= 0.005 ? `<strong style="color:${a.gaveUsd < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtUSD(a.gaveUsd, 2)}</strong>` : '-'}</td>
+                  <td class="r mono"><strong style="color:${a.owesUsd > 0.005 ? 'var(--brass)' : (a.owesUsd < -0.005 ? 'var(--good)' : 'inherit')}">${Math.abs(a.owesUsd) >= 0.005 ? fmtSignedUSD(a.owesUsd, 2) : '$0.00'}</strong></td>
+                  <td class="r mono">${Math.abs(a.owesLbp) > 1 ? `<strong style="color:${a.owesLbp > 0 ? 'var(--brass)' : 'var(--good)'}">${fmtSignedLBP(a.owesLbp)}</strong>` : '-'}</td>
+                  <td class="cf-detail-cell" data-ui-tip="${esc(a.cleanNotes)}">${esc(a.cleanNotes || '-')}</td>
                 </tr>`;
               }).join('') || emptyRow(entryColCount, 'No extended entries match the active filter')}
               ${showMoreRow('hld_extd_entries', extdRows.length, entryColCount)}
@@ -44646,9 +44791,11 @@
             <tfoot>
               <tr>
                 <td colspan="${showCoCol ? 5 : 4}"><b>TOTAL (${fmtNum(extdRows.length)} ENTRIES)</b></td>
-                <td class="r"><b style="color:var(--good)">+${fmtUSD(totInUsd, 2)}</b></td>
-                <td class="r"><b style="color:var(--crit)">-${fmtUSD(totOutUsd, 2)}</b></td>
-                <td class="r"><b style="color:${totCashLbp < -1 ? 'var(--crit)' : (totCashLbp > 1 ? 'var(--good)' : 'inherit')}">${Math.abs(totCashLbp) > 1 ? fmtSignedLBP(totCashLbp) : '0 LL'}</b></td>
+                <td class="r mono"><b style="color:var(--crit)">${fmtUSD(totRecUsd, 2)}</b></td>
+                <td class="r mono"><b style="color:var(--good)">${fmtUSD(totGaveUsd, 2)}</b></td>
+                <td class="r mono"><b style="color:${totOwesUsd > 0.005 ? 'var(--brass)' : (totOwesUsd < -0.005 ? 'var(--good)' : 'inherit')}">${fmtSignedUSD(totOwesUsd, 2)}</b></td>
+                <td class="r mono"><b>${Math.abs(totOwesLbp) > 1 ? fmtSignedLBP(totOwesLbp) : '0 LL'}</b></td>
+                <td>-</td>
               </tr>
             </tfoot>
           </table>
@@ -52384,7 +52531,7 @@
     'Holding & Treasury': [
       { id: 'p01_overview', num: '01', label: 'Group Pulse', title: 'Consolidated 6-Industry Revenue, Operating Profit & Liquidity', view: 'hld_consolidation' },
       { id: 'p02_interactions', num: '02', label: 'Intercompany & Repayment', title: 'Sister Company Given vs. Paid Back, Net Owed & Bookkeeping Audit', view: 'hld_interactions' },
-      { id: 'p03_partners', num: '03', label: 'Partner Splits', title: '10-Slot Default Splits, Chronological Agreements & Partner Accounts', view: 'hld_partners' },
+      { id: 'p03_partners', num: '03', label: 'Extended & Partners', title: 'Extended Stakeholder Received, Gave & Difference ($) + Partner Splits', view: 'hld_extended' },
       { id: 'p04_loans', num: '04', label: 'Loans & Capital', title: 'Central Borrowing Facilities & Fixed Assets', view: 'hld_loans' },
       { id: 'p05_expenses', num: '05', label: 'Holding Overhead', title: 'HQ Shared Services, Recurring Schedules & Supplier AP', view: 'expenses' },
       { id: 'p06_financial', num: '06', label: 'Consolidated GL', title: '6-Industry Elimination Schedule & Double-Entry Trial Balance', view: 'hld_entities' }
@@ -52462,22 +52609,22 @@
       if (pIdx === 2) {
         const hldSched = computeHoldingSchedules();
         const basePartners = hldSched.partnerAgreements || [];
+        const extdSum = computeHoldingExtendedSummary({ ignoreCompany: true, ignoreSearch: true, basis: 'tx' });
         const totEnt = round2(basePartners.reduce((a, r) => a + Number(r.entitled_usd || 0), 0));
-        const totDrw = round2(basePartners.reduce((a, r) => a + Number(r.drawn_usd || 0), 0));
         const totOpn = round2(basePartners.reduce((a, r) => a + Number(r.open_usd || 0), 0));
         return {
           kpis: [
+            { label: 'Extended Received / Took ($)', val: fmtUSD(extdSum.totRecUsd, 2), sub: `${fmtNum(extdSum.rows.length)} extended movements`, cls: 'crit' },
+            { label: 'Extended Gave ($)', val: fmtUSD(extdSum.totGaveUsd, 2), sub: 'Paid in & opening balances', cls: 'good' },
+            { label: 'Extended Difference / Owes ($)', val: fmtSignedUSD(extdSum.totOwesUsd, 2), sub: `LBP Owes: ${Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL'}`, cls: 'brass' },
             { label: 'Active Partner Agreements', val: fmtNum(basePartners.length), sub: '10-slot chronological matrix', cls: 'good' },
-            { label: 'Total Distributable Pool', val: fmtUSD(basePartners.reduce((a, r) => a + Number(r.pool_usd || 0), 0), 0), sub: 'Across operating subsidiaries', cls: 'good' },
             { label: 'Partner Entitled Share', val: fmtUSD(totEnt, 0), sub: 'Computed by effective date window', cls: 'brass' },
-            { label: 'Partner Drawings Paid', val: fmtUSD(totDrw, 0), sub: 'Settled via central treasury', cls: 'good' },
-            { label: 'Unpaid Partner Current Acct', val: fmtUSD(totOpn, 0), sub: 'Accrued balance payable', cls: totOpn > 0 ? 'warn' : 'good' },
-            { label: 'Chronological Overlaps', val: '0 Overlaps', sub: 'Forward effective dates verified', cls: 'good' }
+            { label: 'Unpaid Partner Current Acct', val: fmtUSD(totOpn, 0), sub: 'Accrued balance payable', cls: totOpn > 0 ? 'warn' : 'good' }
           ],
-          chartTitle: 'Partner Entitled Share by Subsidiary Pool ($)',
-          bars: basePartners.map(p => ({ label: `${p.entity} · ${p.partner.split('(')[0].trim()}`, val: Number(p.entitled_usd || 0), sub: `${Number(p.pct || 0).toFixed(1)}% split · Drawn ${fmtUSD(p.drawn_usd, 0)}` })),
-          secondTitle: 'Remaining Payable Partner Balances ($)',
-          secondBars: basePartners.map(p => ({ label: p.id, val: isDemoScopeActive() ? Math.max(100, Number(p.open_usd || 0)) : Number(p.open_usd || 0), sub: `${p.entity} · ${p.status}` })),
+          chartTitle: 'Extended Stakeholder Net Difference / Owes ($)',
+          bars: (extdSum.partyRows || []).slice(0, 8).map(p => ({ label: `${p.counterparty} (${p.entries_cnt})`, val: Math.max(1, Math.abs(Number(p.owes_usd || 0))), sub: `Took ${fmtUSD(p.rec_usd, 0)} · Gave ${fmtUSD(p.gave_usd, 0)} · Diff ${fmtSignedUSD(p.owes_usd, 2)}` })),
+          secondTitle: 'Partner Entitled Share by Subsidiary Pool ($)',
+          secondBars: basePartners.map(p => ({ label: `${p.entity} · ${p.partner.split('(')[0].trim()}`, val: Number(p.entitled_usd || 0), sub: `${Number(p.pct || 0).toFixed(1)}% split · Open ${fmtUSD(p.open_usd, 0)}` })),
           tableTitle: '10-Slot Shareholder & Partner Profit-Share Allocations Register',
           headers: ['Agreement ID', 'Operating Scope', 'Partner / Slot Pool', 'Effective From', 'Effective To', 'Share %', 'Entitled ($)', 'Open Balance ($)'],
           rows: basePartners.map(p => [p.id, p.entity, p.partner, p.start_date, p.end_date || 'Open', `${Number(p.pct || 0).toFixed(1)}%`, fmtUSD(p.entitled_usd, 0), fmtUSD(p.open_usd, 0)]),
@@ -53202,9 +53349,16 @@
   function parseIndSortableCell(cell) {
     const s = String(cell == null ? '' : cell).trim();
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return { isNum: true, num: Date.parse(s.slice(0, 10) + 'T00:00:00Z') || 0, txt: s.toLowerCase() };
-    const cleaned = s.replace(/[$,%\s]|(L\/hr|hrs?|L|d|x)\b/gi, '').replace(/\([^)]*\)/g, '').trim();
+    const cleaned = s.replace(/[$,%\s]|(LL|L\/hr|hrs?|L|d|x)\b/gi, '').replace(/\([^)]*\)/g, '').trim();
     if (/^[-+]?\d+(\.\d+)?$/.test(cleaned)) return { isNum: true, num: parseFloat(cleaned), txt: s.toLowerCase() };
     return { isNum: false, num: 0, txt: s.toLowerCase() };
+  }
+
+  function isIndExplorerNumCol(h) {
+    const s = String(h || '').trim();
+    if (!s) return false;
+    if (/^(status|chrono status|occupancy|notes|direction|flow|repayment flow|position|season|term|type|period|date|start date|end date|effective from|effective to|expiry|expiry date|due date|loss date|last activity|last date)\b/i.test(s)) return false;
+    return /\(\$|\(ll|\(l\)|\(m²\)|%|\b(entries|transactions|covers|on-hand|min reorder|qty|days left|policies|run hrs|ratio|deed shares|solar offset|actual vs rated)\b/i.test(s);
   }
 
   function sortIndMatrixRows(rows, sortCol, sortDir) {
@@ -53229,7 +53383,8 @@
       const h = String((headers && headers[idx]) || '');
       const bStr = String(bt == null ? '' : bt).trim();
       if (/^\s*[-+]?\$/.test(bStr) || /\(\$\)|\$\s*$/i.test(h)) {
-        let dec = /\.\d{2}\b/.test(bStr) ? 2 : 0;
+        const dec = /\.\d{2}\b/.test(bStr) ? 2 : 0;
+        const isSignedCol = /difference|owes|net|variance/i.test(h) || /^\+\$/.test(bStr);
         let sum = 0;
         let hit = false;
         rows.forEach(r => {
@@ -53241,7 +53396,22 @@
             if (Number.isFinite(v)) { sum += sign * v; hit = true; }
           }
         });
-        return hit ? fmtUSD(round2(sum), dec) : (dec ? '$0.00' : '$0');
+        if (!hit) return dec ? '$0.00' : '$0';
+        return isSignedCol ? fmtSignedUSD(round2(sum), dec) : fmtUSD(round2(sum), dec);
+      }
+      if (/\(ll\)|\bll\s*$/i.test(h) || /\bll\s*$/i.test(bStr)) {
+        let sumL = 0;
+        let hitL = false;
+        rows.forEach(r => {
+          const raw = String(r[idx] == null ? '' : r[idx]).trim();
+          const m = raw.match(/^([-+]?)\s*([\d,]+)\s*LL$/i);
+          if (m) {
+            const sign = m[1] === '-' ? -1 : 1;
+            const v = parseInt(m[2].replace(/,/g, ''), 10);
+            if (Number.isFinite(v)) { sumL += sign * v; hitL = true; }
+          }
+        });
+        return hitL && Math.abs(sumL) > 1 ? fmtSignedLBP(sumL) : '0 LL';
       }
       if (/^\d[\d,]*$/.test(bStr) && !/year|period|date|book|seq/i.test(h)) {
         let sum = 0;
@@ -53286,7 +53456,7 @@
     pages: {
       'Holding & Treasury::p01_overview': { ar: 'نبض المجموعة الموحد', fr: 'Performance Groupe' },
       'Holding & Treasury::p02_interactions': { ar: 'ذمم الشركات الشقيقة والتسديد', fr: 'Flux inter-sociétés et remboursements' },
-      'Holding & Treasury::p03_partners': { ar: 'توزيعات حصص الشركاء', fr: 'Répartition des associés' },
+      'Holding & Treasury::p03_partners': { ar: 'حسابات الممتد وتوزيعات الشركاء', fr: 'Comptes Extended et associés' },
       'Holding & Treasury::p04_loans': { ar: 'التسهيلات الائتمانية ورأس المال', fr: 'Emprunts et capitaux' },
       'Holding & Treasury::p05_expenses': { ar: 'نفقات الإدارة المركزية', fr: 'Frais généraux Holding' },
       'Holding & Treasury::p06_financial': { ar: 'الأستاذ العام الموحد', fr: 'Grand livre consolidé' },
@@ -53414,7 +53584,7 @@
     const pageKey = `${ind}::${activePage.id}`;
     const pageLoc = IND_PBI_LOCALE_MAP.pages[pageKey] || { ar: activePage.label, fr: activePage.label };
     const indLoc = IND_PBI_LOCALE_MAP.industries[ind] || { ar: ind, fr: ind };
-    const restrictedBooksRe = /cash till|cash\s*&\s*bank|physical cash|fiduciary cash|consolidated cash|\bbank\b|\bar\b|receivable|payable|\bdebt\b|\bloan\b|arrears|credit facilit|trial balance|\bdebit\b|\bcredit\b|given to sisters|paid back by sisters|partner|drawing|entitled share|distributable pool/i;
+    const restrictedBooksRe = /cash till|cash\s*&\s*bank|physical cash|fiduciary cash|consolidated cash|\bbank\b|\bar\b|receivable|payable|\bdebt\b|\bloan\b|arrears|credit facilit|trial balance|\bdebit\b|\bcredit\b|given to sisters|paid back by sisters|partner|extended|\bowes\b|drawing|entitled share|distributable pool/i;
 
     const trPhrase = (enStr, lang) => {
       const raw = String(enStr == null ? '' : enStr).trim();
@@ -53989,16 +54159,16 @@
                 <tr>${headers.map((h, hIdx) => {
                   const isSorted = fState.sortCol === hIdx;
                   const arrow = isSorted ? (fState.sortDir === 'asc' ? ' ▲' : ' ▼') : '';
-                  return `<th class="${hIdx >= headers.length - 2 ? 'num' : ''}" data-ind-pbi-sort="${hIdx}" style="cursor:pointer;user-select:none" title="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
+                  return `<th class="${isIndExplorerNumCol(h) ? 'num' : ''}" data-ind-pbi-sort="${hIdx}" style="cursor:pointer;user-select:none" data-ui-tip="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
                 }).join('')}</tr>
               </thead>
               <tbody>
                 ${sortedRows.length ? sortedRows.map((r, rIdx) => `
-                  <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r[0])}" data-ind-inspect-surface="pbi">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
+                  <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r._rid || r[0])}" data-ind-inspect-surface="pbi">${r.map((c, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
                 `).join('') : emptyRow(headers.length, 'No records match the active dashboard filter')}
               </tbody>
               <tfoot>
-                <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${idx >= dynTotals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
+                <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
               </tfoot>
             </table>
           </div>
@@ -54613,38 +54783,54 @@
       };
     }
     if (mapped === 'hld_extended_custom') {
-      const extdRows = filterRecords((SEED.records && SEED.records.external_movements) || [], { ignoreSearch: true })
-        .filter(r => /^extended$/i.test(String(r.kind || '').trim()));
-      const isCfg = r => /^config$/i.test(String(r.flow || r.method || '').trim());
-      const isIn = r => isCfg(r)
-        ? (Number(r.usd_amount || r.amount || 0) > 0 || (Number(r.usd_amount || r.amount || 0) === 0 && Number(r.lbp_amount || 0) > 0))
-        : (/in|inject|received|credit|deposit/i.test(String(r.direction || '')) && !/out|withdraw|debit/i.test(String(r.direction || '')));
-      const uAbs = r => Math.abs(Number(r.lbp_amount ? (r.usd_amount || 0) : (r.usd_amount != null ? r.usd_amount : (r.amount || 0))));
-      let sumIn = 0, sumOut = 0, netLbp = 0;
-      const partySet = new Set();
+      const extdSum = computeHoldingExtendedSummary({ ignoreSearch: true, basis: 'tx' });
+      const extdRows = extdSum.rows || [];
+      const partyRows = extdSum.partyRows || [];
+      const summaryRows = partyRows.map(p => [
+        p.counterparty,
+        fmtNum(p.entries_cnt),
+        Math.abs(p.rec_usd) >= 0.005 ? fmtUSD(p.rec_usd, 2) : '$0.00',
+        Math.abs(p.gave_usd) >= 0.005 ? fmtUSD(p.gave_usd, 2) : '$0.00',
+        Math.abs(p.owes_usd) >= 0.005 ? fmtSignedUSD(p.owes_usd, 2) : '$0.00',
+        Math.abs(p.owes_lbp) > 1 ? fmtSignedLBP(p.owes_lbp) : '0 LL',
+        p.position
+      ]);
+      const summaryTotals = [
+        `Total (${partyRows.length} Stakeholders)`,
+        fmtNum(extdRows.length),
+        fmtUSD(extdSum.totRecUsd, 2),
+        fmtUSD(extdSum.totGaveUsd, 2),
+        fmtSignedUSD(extdSum.totOwesUsd, 2),
+        Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL',
+        '+ Owes Holding / - Holding Owes'
+      ];
       const rows = extdRows.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map(r => {
-        const inFlag = isIn(r);
-        const u = uAbs(r);
-        const l = Math.abs(Number(r.lbp_amount || 0));
-        if (inFlag) { sumIn += u; netLbp += l; } else { sumOut += u; netLbp -= l; }
+        const a = parseExtendedRow(r);
         const cp = String(r.counterparty || 'Stakeholder').trim();
-        partySet.add(norm(cp));
-        return [
-          String(r.id || r.name || 'EXTD'),
+        const rowArr = [
+          a.docRef,
           String(r.date || ''),
           cp,
-          inFlag ? 'Cash In' : 'Cash Out',
-          inFlag && u > 0 ? `+${fmtUSD(u, 2)}` : '$0.00',
-          !inFlag && u > 0 ? `-${fmtUSD(u, 2)}` : '$0.00',
-          l > 0 ? `${inFlag ? '+' : '-'}${fmtNum(l)} LL` : '0 LL',
-          String(r.notes || r.reference || '').replace(/[—→]/g, '-') || '-'
+          a.flowLabel,
+          Math.abs(a.receivedUsd) >= 0.005 ? fmtUSD(a.receivedUsd, 2) : '$0.00',
+          Math.abs(a.gaveUsd) >= 0.005 ? fmtUSD(a.gaveUsd, 2) : '$0.00',
+          Math.abs(a.owesUsd) >= 0.005 ? fmtSignedUSD(a.owesUsd, 2) : '$0.00',
+          Math.abs(a.owesLbp) > 1 ? fmtSignedLBP(a.owesLbp) : '0 LL',
+          a.cleanNotes || '-'
         ];
+        rowArr._rkey = 'external_movements';
+        rowArr._rid = String(r.id || '');
+        return rowArr;
       });
       return {
-        tableTitle: 'Holding Extended Stakeholder Ledger (Haj Mohamad & Counterparties)',
-        headers: ['Voucher ID', 'Date', 'Stakeholder', 'Direction', 'Cash In ($)', 'Cash Out ($)', 'LBP (LL)', 'Notes'],
+        tableTitle: 'Holding Extended Stakeholder Ledger (Received vs Gave & Difference)',
+        summaryTitle: 'Extended · Summary by Stakeholder (Took vs Gave & Difference)',
+        summaryHeaders: ['Stakeholder', 'Entries', 'Received / Took ($)', 'Gave ($)', 'Difference / Owes ($)', 'Owes (LL)', 'Position'],
+        summaryRows,
+        summaryTotals,
+        headers: ['Ref', 'Date', 'Stakeholder', 'Flow', 'Received / Took ($)', 'Gave ($)', 'Difference / Owes ($)', 'Owes (LL)', 'Notes'],
         rows,
-        totals: [`${rows.length} Entries`, 'Bdeir Holding', `${partySet.size} Stakeholders`, 'All Directions', `+${fmtUSD(round2(sumIn), 2)}`, `-${fmtUSD(round2(sumOut), 2)}`, `${netLbp >= 0 ? '+' : '-'}${fmtNum(Math.abs(Math.round(netLbp)))} LL`, `Net Owed ${fmtSignedUSD(round2(sumIn - sumOut), 2)}`]
+        totals: [`${rows.length} Entries`, 'Bdeir Holding', `${partyRows.length} Stakeholders`, 'Took minus Gave', fmtUSD(extdSum.totRecUsd, 2), fmtUSD(extdSum.totGaveUsd, 2), fmtSignedUSD(extdSum.totOwesUsd, 2), Math.abs(extdSum.totOwesLbp) > 1 ? fmtSignedLBP(extdSum.totOwesLbp) : '0 LL', 'Owes = Took - Gave']
       };
     }
     if (mapped === 'ins_stm_custom') {
@@ -54712,13 +54898,16 @@
     const allRows = ds.rows || [];
     const headers = ds.headers || [];
     const q = norm(STATE.indTablesSearch || '');
-    const filteredRows = q
-      ? allRows.filter(r => r.some(c => norm(c).includes(q)))
+    const activePartyFilter = activeTab.key === 'hld_extended_tbl' ? String(STATE.indTablesParty || '').trim() : '';
+    const activePartyNorm = norm(activePartyFilter);
+    const filteredRows = (q || activePartyNorm)
+      ? allRows.filter(r => (!activePartyNorm || norm(r[2]) === activePartyNorm) && (!q || r.some(c => norm(c).includes(q))))
       : allRows;
     if (!STATE.indTablesSort) STATE.indTablesSort = {};
     const sortSpec = STATE.indTablesSort[activeTab.key] || { col: -1, dir: 'desc' };
     const sortedRows = sortIndMatrixRows(filteredRows, sortSpec.col, sortSpec.dir);
     const dynTotals = computeDynamicDomainTotals(headers, sortedRows, ds.totals, allRows.length);
+    const canCreateIndRec = activeTab.key === 'hld_extended_tbl' ? canEnterForm('external') : true;
 
     return `
       <div class="panel-card" id="industryDomainTablesExplorer" data-ind-tbl-active="${esc(activeTab.key)}" style="margin-bottom:14px;padding:12px 16px">
@@ -54729,8 +54918,8 @@
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <input type="search" id="indTablesSearchInput" class="search-input" style="height:30px;min-width:190px;font-size:11.5px" value="${esc(STATE.indTablesSearch || '')}" placeholder="Filter ${esc(activeTab.label)}...">
-            ${(q || sortSpec.col >= 0) ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indTablesResetBtn">Reset</button>' : ''}
-            <button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-ind-open-new="${esc(activeTab.newView || activeTab.view)}">+ New Record</button>
+            ${(q || activePartyNorm || sortSpec.col >= 0) ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" id="indTablesResetBtn">Reset</button>' : ''}
+            ${canCreateIndRec ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-ind-open-new="${esc(activeTab.newView || activeTab.view)}">+ New Record</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-nav-jump="${esc(activeTab.view)}">Open Hub</button>
             ${exportBtn('industryDomainTablesExplorer', activeTab.key)}
           </div>
@@ -54742,22 +54931,47 @@
             </button>
           `).join('')}
         </div>
+        ${Array.isArray(ds.summaryRows) && ds.summaryRows.length ? `
+          <div style="margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg-alt,rgba(241,245,249,0.55))">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+              <div style="font-size:11.5px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:var(--ink)">${esc(ds.summaryTitle || 'Summary by Stakeholder')}</div>
+              <div style="font-size:11px;color:var(--muted)">${activePartyFilter ? `Filtered to Stakeholder: <b data-no-i18n="1">${esc(activePartyFilter)}</b> (click row again or Reset to clear)` : 'Click a stakeholder row to filter the Extended Timeline below'}</div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>${(ds.summaryHeaders || []).map(sh => `<th class="${isIndExplorerNumCol(sh) ? 'num' : ''}">${esc(sh)}</th>`).join('')}</tr>
+                </thead>
+                <tbody>
+                  ${ds.summaryRows.map(sr => {
+                    const isPartyFiltered = Boolean((activePartyNorm && norm(sr[0]) === activePartyNorm) || (!activePartyNorm && q && norm(sr[0]) === q));
+                    return `<tr class="extd-sum-row${isPartyFiltered ? ' is-active' : ''}" data-ind-tbl-party="${esc(sr[0])}" data-no-ind-inspect="1" style="cursor:pointer" data-ui-tip="Click to filter Extended Timeline to ${esc(sr[0])}">${sr.map((sc, sIdx) => `<td class="${isIndExplorerNumCol((ds.summaryHeaders || [])[sIdx]) ? 'num' : ''}"${sIdx === 0 ? ' data-no-i18n="1"' : ''}>${sIdx === 0 || sIdx === 4 ? `<b>${esc(sc)}</b>` : esc(sc)}</td>`).join('')}</tr>`;
+                  }).join('')}
+                  ${Array.isArray(ds.summaryTotals) && ds.summaryTotals.length ? `
+                    <tr class="total-row" data-no-ind-inspect="1">${ds.summaryTotals.map((st, sIdx) => `<td class="${isIndExplorerNumCol((ds.summaryHeaders || [])[sIdx]) ? 'num' : ''}"><b>${esc(st)}</b></td>`).join('')}</tr>
+                  ` : ''}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div style="font-size:11.5px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:var(--ink);margin:0 0 6px 2px">Extended Timeline (${fmtNum(sortedRows.length)} of ${fmtNum(allRows.length)} Entries)</div>
+        ` : ''}
         <div class="table-wrap">
           <table class="data-table" data-ind-table-title="${esc(ds.tableTitle || activeTab.label)}">
             <thead>
               <tr>${headers.map((h, hIdx) => {
                 const isSorted = sortSpec.col === hIdx;
                 const arrow = isSorted ? (sortSpec.dir === 'asc' ? ' ▲' : ' ▼') : '';
-                return `<th class="${hIdx >= headers.length - 2 ? 'num' : ''}" data-ind-tbl-sort="${hIdx}" style="cursor:pointer;user-select:none" title="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
+                return `<th class="${isIndExplorerNumCol(h) ? 'num' : ''}" data-ind-tbl-sort="${hIdx}" style="cursor:pointer;user-select:none" data-ui-tip="Sort by ${esc(h)}">${esc(h)}${arrow}</th>`;
               }).join('')}</tr>
             </thead>
             <tbody>
               ${sortedRows.length ? sortedRows.map((r, rIdx) => `
-                <tr class="rrow" data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r[0])}" data-ind-inspect-surface="tables">${r.map((c, idx) => `<td class="${idx >= r.length - 2 ? 'num' : ''}">${idx === 0 ? `<b>${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
+                <tr class="rrow" ${r._rkey && r._rid ? `data-rkey="${esc(r._rkey)}" data-rid="${esc(r._rid)}" data-ind-row-id="${esc(r._rid)}"` : `data-ind-inspect-row="${rIdx}" data-ind-row-id="${esc(r._rid || r[0])}" data-ind-inspect-surface="tables"`}>${r.map((c, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}">${idx === 0 ? `<b data-no-i18n="1">${esc(c)}</b>` : esc(c)}</td>`).join('')}</tr>
               `).join('') : emptyRow(headers.length, 'No records match the active filter')}
             </tbody>
             <tfoot>
-              <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${idx >= dynTotals.length - 2 ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
+              <tr class="total-row">${dynTotals.map((t, idx) => `<td class="${isIndExplorerNumCol(headers[idx]) ? 'num' : ''}"><b>${esc(t)}</b></td>`).join('')}</tr>
             </tfoot>
           </table>
         </div>
@@ -57969,12 +58183,16 @@
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
         return;
       }
-      const fallbackSpec = list.find(f => f && !isSiblingChronoFormKey(f.key)) || null;
+      const fallbackSpec = list.find(f => f && !isSiblingChronoFormKey(f.key) && (f.key !== 'hld_extended' || canEnterForm('external'))) || null;
       if (!fallbackSpec) {
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
         return;
       }
       spec = fallbackSpec;
+    }
+    if (spec.key === 'hld_extended' && !canEnterForm('external')) {
+      toast('Your seat has no entry rights for this form', 'err');
+      return;
     }
     if (window.MFG_CMD_PALETTE && typeof window.MFG_CMD_PALETTE.recordUsage === 'function' && spec && spec.key) {
       window.MFG_CMD_PALETTE.recordUsage('form', spec.key);
@@ -58418,7 +58636,9 @@
     } else if (spec.key === 'hld_extended') {
       const extdParties = freqRankCandidates('counterparty', ['Haj Mohamad', 'Haj Abo Ali', 'Haj Ibrahim', 'Walid Dalloul', 'Walid Dalloul Sibline', 'George', 'Blanca', 'Palms'].concat(((SEED.records && SEED.records.external_movements) || []).filter(r => /^extended$/i.test(String(r.kind || ''))).map(r => r.counterparty || r.name)));
       const defParty = prefill.counterparty || prefill.party || extdParties[0] || 'Haj Mohamad';
-      const defDir = /out|withdraw|paid/i.test(String(prefill.direction || '')) ? 'Outflow' : 'Inflow';
+      const rawPrefDir = String(prefill.flow || prefill.direction || prefill.method || '').trim();
+      const isCfgPref = Boolean(isEditMode && /^config$/i.test(rawPrefDir));
+      const defDir = isCfgPref ? 'Config' : (rawPrefDir ? (/out|withdraw|paid|took/i.test(rawPrefDir) ? 'Outflow' : 'Inflow') : 'Outflow');
       const defUsd = prefill.usd_amount != null ? prefill.usd_amount : (prefill.usd != null ? prefill.usd : (prefill.amount != null ? prefill.amount : '5000'));
       const defLbp = prefill.lbp_amount != null ? prefill.lbp_amount : (prefill.lbp != null ? prefill.lbp : '0');
       const fxNow = getLbpFxRate(prefill.date || today) || 89500;
@@ -58427,9 +58647,9 @@
         ${fldWrap('Extended Voucher # *', `<input type="text" id="ide_id" class="mono" ${idLockAttr} value="${esc(prefill.id || 'EXTD-2026-' + String(Math.floor(100 + Math.random() * 899)))}">`)}
         ${fldWrap('Transaction Date *', `<input type="date" id="ide_date" style="${inpStyle}" value="${esc(prefill.date || today)}">`)}
         ${fldWrap('Stakeholder / Counterparty *', `<input type="text" id="ide_party" list="dl_ide_hld_extd_parties" style="${inpStyle}" value="${esc(defParty)}" placeholder="Select or type stakeholder..."><datalist id="dl_ide_hld_extd_parties">${extdParties.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>`, 'Ranked by stakeholder transaction frequency')}
-        ${fldWrap('Cash Direction *', `<select id="ide_direction" data-plain-options="1" style="${inpStyle}"><option value="Inflow" ${defDir === 'Inflow' ? 'selected' : ''}>Cash Inflow (Received from Stakeholder)</option><option value="Outflow" ${defDir === 'Outflow' ? 'selected' : ''}>Cash Outflow (Paid to Stakeholder)</option></select>`)}
-        ${fldWrap('USD Amount ($)', `<input type="number" id="ide_usd" class="mono" step="0.01" min="0" style="${inpStyle}" value="${esc(defUsd)}">`)}
-        ${fldWrap('LBP Amount (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" min="0" style="${inpStyle}" value="${esc(defLbp)}">`)}
+        ${fldWrap('Cash Direction *', `<select id="ide_direction" data-plain-options="1" style="${inpStyle}"><option value="Outflow" ${defDir === 'Outflow' ? 'selected' : ''}>Took / Received from Holding (Owes +)</option><option value="Inflow" ${defDir === 'Inflow' ? 'selected' : ''}>Gave / Paid In to Holding (Owes -)</option>${isCfgPref ? '<option value="Config" selected>Opening Balance (Config)</option>' : ''}</select>`)}
+        ${fldWrap('USD Amount ($)', `<input type="number" id="ide_usd" class="mono" step="0.01" ${isCfgPref ? '' : 'min="0" '}style="${inpStyle}" value="${esc(defUsd)}">`)}
+        ${fldWrap('LBP Amount (LL)', `<input type="number" id="ide_lbp" class="mono" step="1000" ${isCfgPref ? '' : 'min="0" '}style="${inpStyle}" value="${esc(defLbp)}">`)}
         ${fldWrap(`Total USD Equivalent (${fmtNum(fxNow)} LL/$)`, `<input type="text" id="ide_tot_usd" class="mono" readonly style="${roStyle}" value="$5,000.00">`, 'Deterministic dual-currency FX conversion')}
         ${fldWrap('Reference & Ledger Notes', `<input type="text" id="ide_notes" style="${inpStyle}" value="${esc(prefill.notes || 'Extended stakeholder ledger movement')}">`)}
       `;
@@ -58477,7 +58697,7 @@
       ${datalistsHtml}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:10px;background:var(--bg-alt,#F8FAFC);border:1px solid var(--line,#E2E8F0);border-radius:8px">
         <div style="display:flex;gap:6px;flex-wrap:wrap" role="tablist" aria-label="Domain Register Forms">
-          ${list.map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${(isEditMode && f.key !== spec.key) || !canManageSiblingChronoSchedule(f.key) ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
+          ${list.filter(f => f.key !== 'hld_extended' || canEnterForm('external')).map(f => `<button type="button" class="btn ${f.key === spec.key ? 'btn-primary' : 'btn-ghost-bar'}" style="padding:4px 10px;font-size:11.5px" ${(isEditMode && f.key !== spec.key) || !canManageSiblingChronoSchedule(f.key) ? 'disabled' : ''} data-ide-switch-form="${esc(f.key)}">${esc(f.label)}</button>`).join('')}
         </div>
         <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" id="ideOpenSharedSpineBtn">Shared Expense / Cash Voucher</button>
       </div>
@@ -58723,12 +58943,20 @@
           return false;
         }
       } else if (spec.key === 'hld_extended') {
-        const usd = Math.max(0, numVal('ide_usd'));
-        const lbp = Math.max(0, numVal('ide_lbp'));
+        const dir = strVal('ide_direction') || 'Outflow';
+        const isCfg = /^config$/i.test(dir);
+        ['ide_usd', 'ide_lbp'].forEach(fid => {
+          const fEl = $(fid);
+          if (!fEl) return;
+          if (isCfg) fEl.removeAttribute('min');
+          else fEl.setAttribute('min', '0');
+        });
+        const usd = isCfg ? numVal('ide_usd') : Math.max(0, numVal('ide_usd'));
+        const lbp = isCfg ? numVal('ide_lbp') : Math.max(0, numVal('ide_lbp'));
         const fx = getLbpFxRate(strVal('ide_date') || today) || 89500;
         const tot = round2(usd + (lbp / fx));
-        const dir = strVal('ide_direction') || 'Inflow';
-        if ($('ide_tot_usd')) $('ide_tot_usd').value = `${dir === 'Inflow' ? '+' : '-'}${fmtUSD(tot, 2)} (${dir})`;
+        const owesDelta = isCfg ? -tot : (dir === 'Outflow' ? tot : -tot);
+        if ($('ide_tot_usd')) $('ide_tot_usd').value = `${fmtSignedUSD(owesDelta, 2)} Owes (${dir === 'Outflow' ? 'Took' : (isCfg ? 'Opening' : 'Gave')})`;
       } else if (spec.key === 'hld_interactions') {
         if (strVal('ide_from') && strVal('ide_from') === strVal('ide_to')) {
           showMsg('Intercompany Guard: Sender and Receiver sister entities must be distinct.', true);
@@ -59051,6 +59279,10 @@
       ev.preventDefault();
       if (!canManageSiblingChronoSchedule(spec.key)) {
         toast('Supervisor permission required to manage chronological rate schedules', 'err');
+        return;
+      }
+      if (spec.key === 'hld_extended' && !canEnterForm('external')) {
+        toast('Your seat has no entry rights for this form', 'err');
         return;
       }
       if (!recalcLive()) {
@@ -59724,14 +59956,17 @@
           addIndustryCustomRow('hld_loans', lnRec, { skipCloudSync: true });
         }
       } else if (spec.key === 'hld_extended') {
-        const party = strVal('ide_party') || 'Haj Mohamad';
-        const dir = strVal('ide_direction') || 'Inflow';
-        const usd = Math.max(0, round2(numVal('ide_usd')));
-        const lbp = Math.max(0, Math.round(numVal('ide_lbp')));
+        const party = strVal('ide_party');
+        if (!party) { showMsg('Stakeholder / Counterparty is required.', true); return; }
+        const dir = strVal('ide_direction') || 'Outflow';
+        const isCfg = /^config$/i.test(dir);
+        if (!isCfg && (numVal('ide_usd') < 0 || numVal('ide_lbp') < 0)) { showMsg('Extended Stakeholder Entry requires a positive USD or LBP amount.', true); return; }
+        const usd = isCfg ? round2(numVal('ide_usd')) : Math.max(0, round2(numVal('ide_usd')));
+        const lbp = isCfg ? Math.round(numVal('ide_lbp')) : Math.max(0, Math.round(numVal('ide_lbp')));
         const dt = strVal('ide_date') || today;
         const fx = getLbpFxRate(dt) || 89500;
         const totUsd = round2(usd + (lbp / fx));
-        if (!(totUsd > 0)) { showMsg('Extended Stakeholder Entry requires a positive USD or LBP amount.', true); return; }
+        if (isCfg ? !(Math.abs(totUsd) > 0) : !(totUsd > 0)) { showMsg('Extended Stakeholder Entry requires a positive USD or LBP amount.', true); return; }
         const notes = strVal('ide_notes') || 'Extended stakeholder ledger movement';
         const curSeat = activeUser() || {};
         const nowStamp = new Date().toISOString();
@@ -59747,6 +59982,7 @@
           counterparty: party,
           lender: party,
           borrower: 'Bdeir Holding',
+          flow: dir,
           direction: dir,
           method: dir,
           from_currency: lbp > 0 && usd === 0 ? 'LBP' : 'USD',
@@ -71596,7 +71832,7 @@
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'External Cash In (Injections)',
-            badge: `${fmtNum(extAll.filter(isExtIn).length)} Inflows`,
+            badge: `${fmtNum(extRows.filter(isExtIn).length)} Inflows`,
             badgeCls: 'emerald',
             val: `+${fmtUSD(inUsd, 2)}`,
             valCls: 'emerald',
@@ -71605,7 +71841,7 @@
           })}
           ${insightCard({
             label: 'External Cash Out (Sweeps)',
-            badge: `${fmtNum(extAll.filter(r => !isExtIn(r)).length)} Outflows`,
+            badge: `${fmtNum(extRows.filter(r => !isExtIn(r)).length)} Outflows`,
             badgeCls: 'amber',
             val: `-${fmtUSD(outUsd, 2)}`,
             valCls: 'amber',
@@ -71717,17 +71953,18 @@
                 const lAmt = Math.abs(Number(r.lbp_amount || 0));
                 const signedLbp = inFlag ? lAmt : -lAmt;
                 const cp = r.counterparty || 'Partner / Bank';
+                const dispNotes = extdFlag ? (cleanExtendedNotes(r.notes) || '-') : (String(r.notes || '').replace(/[—→]/g, '-') || '-');
                 return `
                 <tr class="rrow" data-rkey="external_movements" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'external_movements')}</td>
                   <td>${coBadge(r.company)}</td>
                   ${isHoldingExt ? `<td><span class="badge ${extdFlag ? 'badge-brass' : 'badge-info'}">${esc(r.kind || 'External')}</span></td>` : ''}
                   <td class="cf-cat-cell"><span class="cf-flow-badge ${inFlag ? 'in' : 'out'}">${inFlag ? '▲' : '▼'}</span><span class="cf-cat-txt">${esc(r.direction || (inFlag ? 'External In' : 'External Out'))}</span></td>
-                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" title="Filter all external entries for ${esc(cp)}"><strong data-no-i18n="1">${esc(cp)}</strong></button></td>
-                  <td class="cf-detail-cell" title="${esc(r.notes || '')}">${esc(r.notes || '—')}</td>
-                  <td class="r">${inFlag && uAmt >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(uAmt, 2)}</strong>` : '—'}</td>
-                  <td class="r">${!inFlag && uAmt >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(uAmt, 2)}</strong>` : '—'}</td>
-                  <td class="r">${lAmt > 1 ? `<strong style="color:${signedLbp < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtSignedLBP(signedLbp)}</strong>` : '—'}</td>
+                  <td><button type="button" class="cf-party-btn" data-cf-focus-party="${esc(cp)}" data-ui-tip="Filter all external entries for ${esc(cp)}"><strong data-no-i18n="1">${esc(cp)}</strong></button></td>
+                  <td class="cf-detail-cell" data-ui-tip="${esc(dispNotes === '-' ? '' : dispNotes)}">${esc(dispNotes)}</td>
+                  <td class="r">${inFlag && uAmt >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(uAmt, 2)}</strong>` : '-'}</td>
+                  <td class="r">${!inFlag && uAmt >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(uAmt, 2)}</strong>` : '-'}</td>
+                  <td class="r">${lAmt > 1 ? `<strong style="color:${signedLbp < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtSignedLBP(signedLbp)}</strong>` : '-'}</td>
                 </tr>`;
               }).join('') || emptyRow(extTableCols, 'No external entries match the active filter')}
               ${showMoreRow('ext_entries', extRows.length, extTableCols)}
@@ -81762,7 +81999,16 @@
             : `Total USD Value (${fmtNum(activeFx, 0)} LL/$) *`;
         }
         const amtLocked = applyFieldLockState('f_amount', true, `Dual-Currency FX Lock: ${STATE.modalForm === 'logistics' ? 'Daily Rate' : 'Total'} USD = USD + LBP ÷ ${fmtNum(activeFx, 0)}`);
-        if (aEl && amtLocked) aEl.value = (usd > 0 || lbp > 0) ? tot.toFixed(2) : '';
+        const isCfgDirNow = STATE.modalForm === 'external' && /^config$/i.test(String(val('f_direction') || '').trim());
+        if (STATE.modalForm === 'external') {
+          ['f_usd', 'f_lbp'].forEach(fid => {
+            const fEl = $(fid);
+            if (!fEl) return;
+            if (isCfgDirNow) fEl.removeAttribute('min');
+            else fEl.setAttribute('min', '0');
+          });
+        }
+        if (aEl && amtLocked) aEl.value = (isCfgDirNow ? (Math.abs(usd) > 0 || Math.abs(lbp) > 0) : (usd > 0 || lbp > 0)) ? tot.toFixed(2) : '';
         const thisPay = num('f_amount');
         let logPaidWinDays = 1;
 
@@ -82574,8 +82820,9 @@
             }
             const extKindLbl = (isHldCo && val('f_ext_kind') === 'Extended') ? 'Extended' : 'External';
             const dir = val('f_direction') || 'Inflow';
+            const isCfgDirExt = /^config$/i.test(dir);
             const netBefore = extPos ? round2(extPos.inflow - extPos.outflow) : 0;
-            const netAfter = round2(netBefore + (dir === 'Inflow' ? thisPay : -thisPay));
+            const netAfter = round2(netBefore + (isCfgDirExt ? thisPay : (dir === 'Inflow' ? thisPay : -thisPay)));
             if (trStrip) {
               if (!cp) {
                 trStrip.hidden = true;
@@ -82586,26 +82833,26 @@
                 trStrip.innerHTML = `
                   <div>
                     <strong>${esc((extPos && extPos.name) || cp)}</strong>
-                    <span class="badge ${dir === 'Inflow' ? 'badge-ok' : 'badge-warn'}">${dir === 'Inflow' ? `${extKindLbl} Inflow` : `${extKindLbl} Outflow`}</span>
+                    <span class="badge ${isCfgDirExt ? 'badge-neutral' : (dir === 'Inflow' ? 'badge-ok' : 'badge-warn')}">${isCfgDirExt ? `${extKindLbl} Opening Balance` : (dir === 'Inflow' ? `${extKindLbl} Inflow` : `${extKindLbl} Outflow`)}</span>
                   </div>
                   <div class="att-contract-metrics">
                     <span><small>Prior Inflows</small><b>${fmtUSD(extPos ? extPos.inflow : 0, 0)}</b></span>
                     <span><small>Prior Outflows</small><b>${fmtUSD(extPos ? extPos.outflow : 0, 0)}</b></span>
                     <span><small>Net Position</small><b>${fmtSignedUSD(netBefore, 0)}</b></span>
-                    ${thisPay > 0 ? `<span><small>After Entry</small><b>${fmtSignedUSD(netAfter, 0)}</b></span>` : ''}
+                    ${Math.abs(thisPay) > 0 ? `<span><small>After Entry</small><b>${fmtSignedUSD(netAfter, 0)}</b></span>` : ''}
                   </div>
                 `;
               }
             }
             setHint('hint_tr_usd', '', '');
             if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'Prior Net Position';
-            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = `${dir} Now`;
+            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = isCfgDirExt ? 'Opening Balance' : `${dir} Now`;
             if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Net Position After';
             if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Treasury Leg';
-            setText('calc_tr_c1', cp ? fmtSignedUSD(netBefore, 2) : '—');
-            setText('calc_tr_c2', fmtUSD(thisPay, 2));
-            setText('calc_tr_c3', cp ? fmtSignedUSD(netAfter, 2) : '—');
-            setText('calc_tr_c4', `${extKindLbl} ${dir}`);
+            setText('calc_tr_c1', cp ? fmtSignedUSD(netBefore, 2) : '-');
+            setText('calc_tr_c2', isCfgDirExt ? fmtSignedUSD(thisPay, 2) : fmtUSD(thisPay, 2));
+            setText('calc_tr_c3', cp ? fmtSignedUSD(netAfter, 2) : '-');
+            setText('calc_tr_c4', isCfgDirExt ? `${extKindLbl} Opening Balance` : `${extKindLbl} ${dir}`);
           }
         }
 
@@ -91285,13 +91532,18 @@
         };
       } else {
         const cp = val('f_counterparty'), amt = round2(num('f_amount'));
+        const isCfgDir = trt === 'external' && /^config$/i.test(String(val('f_direction') || '').trim());
         if (!cp) addErr('f_counterparty', 'Counterparty is required.');
-        if (!(amt > 0)) addErr('f_usd', 'Amount > 0 is required.');
+        if (trt === 'external' && !isCfgDir && (num('f_usd') < 0 || num('f_lbp') < 0)) {
+          addErr('f_usd', 'Amount > 0 is required.');
+        } else if (isCfgDir ? !(Math.abs(amt) > 0 || Math.abs(num('f_usd')) > 0 || Math.abs(num('f_lbp')) > 0) : !(amt > 0)) {
+          addErr('f_usd', isCfgDir ? 'Non-zero Opening Balance amount is required.' : 'Amount > 0 is required.');
+        }
         crKey = trt === 'loan_settlement' ? 'loan_settlements' : (trt === 'external' ? 'external_movements' : 'loans');
         const loanSide = val('f_loan_side') || 'Company lends';
         const isBorrow = /^company\s+borrows$/i.test(loanSide);
         const dirn = trt === 'external'
-          ? (val('f_direction') || 'Inflow')
+          ? (isCfgDir ? 'Config' : (val('f_direction') || 'Inflow'))
           : (trt === 'loan'
             ? loanSide
             : (isBorrow ? 'Outflow' : 'Inflow'));
@@ -91305,6 +91557,7 @@
           rep_date: repDate,
           ...(extKind ? { kind: extKind } : {}),
           ...(extKind === 'Extended' ? { _industry: 'Holding & Treasury' } : {}),
+          ...(trt === 'external' ? { flow: dirn } : {}),
           counterparty: cp,
           lender: (trt === 'loan' || trt === 'loan_settlement') ? (isBorrow ? cp : company) : cp,
           borrower: (trt === 'loan' || trt === 'loan_settlement') ? (isBorrow ? company : cp) : company,
@@ -91754,7 +92007,7 @@
         const priceDriverIds = [
           'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
           'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
-          'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
+          'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_direction', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
           'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor',
           'f_salary_pending', 'f_paytype', 'f_workdays', 'f_workhours'
@@ -94568,15 +94821,16 @@
         FORM_UI.lastLoanCp = cpVal;
         if ($('f_loan_side')) setModalControlVal('f_loan_side', isBorrowRow ? 'Company borrows' : 'Company lends');
         if ($('f_target_loan') && trt === 'loan_settlement') setModalControlVal('f_target_loan', row.loan || '');
-        const rawDir = String(row.direction || row.method || '');
-        const normDir = /out|lend|gave|sweep/i.test(rawDir) ? 'Outflow' : 'Inflow';
+        const rawDir = String(row.flow || row.direction || row.method || '');
+        const isCfgRow = trt === 'external' && /^config$/i.test(rawDir.trim());
+        const normDir = isCfgRow ? 'Config' : (/out|lend|gave|sweep/i.test(rawDir) ? 'Outflow' : 'Inflow');
         setModalControlVal('f_direction', normDir);
         if ($('f_ext_kind')) setModalControlVal('f_ext_kind', /extended/i.test(String(row.kind || '')) ? 'Extended' : 'External');
-        const lbpV = row.lbp_amount != null ? Math.abs(Number(row.lbp_amount)) : 0;
-        const usdV = row.usd_amount != null ? Math.abs(Number(row.usd_amount)) : (lbpV > 0 ? 0 : Math.abs(Number(row.amount || row.principal || 0)));
-        setModalControlVal('f_usd', usdV > 0 ? usdV : '');
-        setModalControlVal('f_lbp', lbpV > 0 ? lbpV : '');
-        setModalControlVal('f_amount', row.amount != null ? Math.abs(Number(row.amount)) : (row.principal != null ? Math.abs(Number(row.principal)) : usdV));
+        const lbpV = row.lbp_amount != null ? (isCfgRow ? Math.round(Number(row.lbp_amount)) : Math.abs(Number(row.lbp_amount))) : 0;
+        const usdV = row.usd_amount != null ? (isCfgRow ? Number(row.usd_amount) : Math.abs(Number(row.usd_amount))) : (Math.abs(lbpV) > 0 ? 0 : (isCfgRow ? Number(row.amount || row.principal || 0) : Math.abs(Number(row.amount || row.principal || 0))));
+        setModalControlVal('f_usd', (isCfgRow ? Math.abs(usdV) > 0 : usdV > 0) ? usdV : '');
+        setModalControlVal('f_lbp', (isCfgRow ? Math.abs(lbpV) > 0 : lbpV > 0) ? lbpV : '');
+        setModalControlVal('f_amount', row.amount != null ? (isCfgRow ? Number(row.amount) : Math.abs(Number(row.amount))) : (row.principal != null ? Math.abs(Number(row.principal)) : usdV));
         setModalControlVal('f_reference', row.reference || '');
       }
     } else if (form === 'jv') {
@@ -97382,18 +97636,22 @@
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
-      external_movements: [
-        { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
-        { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'counterparty', label: 'Counterparty *', type: 'combo', dl: 'dl_insp_counterparties', sec: 1 },
-        { key: 'direction', label: 'Cash Direction *', type: 'select', options: ['Inflow', 'Outflow'], sec: 1 },
-        { key: 'method', label: 'Movement Classification *', type: 'select', options: ['External Revenue', 'External Expense', 'Config', 'Inflow', 'Outflow'], sec: 3 },
-        { key: 'usd_amount', label: 'USD Amount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'lbp_amount', label: 'LBP Amount (LL)', type: 'number', step: '1000', min: '0', sec: 3 },
-        { key: 'amount', label: 'Total USD Equivalent ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
-        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-      ],
+      external_movements: (() => {
+        const isExtCfg = Boolean(row && /^config$/i.test(String(row.flow || row.direction || row.method || '').trim()));
+        const isExtdRow = Boolean(row && /^extended$/i.test(String(row.kind || row.type || '').trim()));
+        return [
+          { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
+          { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
+          { key: 'counterparty', label: 'Counterparty *', type: 'combo', dl: 'dl_insp_counterparties', sec: 1 },
+          { key: 'direction', label: 'Cash Direction *', type: 'select', options: (isExtCfg || isExtdRow) ? ['Inflow', 'Outflow', 'Config'] : ['Inflow', 'Outflow'], sec: 1, getVal: r => /^config$/i.test(String(r.flow || r.direction || r.method || '').trim()) ? 'Config' : (r.direction || 'Inflow') },
+          { key: 'method', label: 'Movement Classification *', type: 'select', options: ['External Revenue', 'External Expense', 'Config', 'Inflow', 'Outflow'], sec: 3 },
+          { key: 'usd_amount', label: 'USD Amount ($)', type: 'number', step: '0.01', ...(isExtCfg ? {} : { min: '0' }), sec: 3 },
+          { key: 'lbp_amount', label: 'LBP Amount (LL)', type: 'number', step: '1000', ...(isExtCfg ? {} : { min: '0' }), sec: 3 },
+          { key: 'amount', label: 'Total USD Equivalent ($)', type: 'number', step: '0.01', ...(isExtCfg ? {} : { min: '0' }), sec: 3 },
+          { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
+          { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+        ];
+      })(),
       loans: [
         { key: 'name', label: 'Loan / Advance Reference *', type: 'text', sec: 1 },
         { key: 'counterparty', label: 'Partner / Counterparty *', type: 'combo', dl: 'dl_insp_counterparties', sec: 1, getVal: r => r.counterparty || r.lender || '' },
@@ -101169,6 +101427,20 @@
         } else if (key === 'equipment_repairs') {
           if ('warehouse_parts_usd' in pendingUpdates || 'outside_parts_usd' in pendingUpdates || 'external_labor_usd' in pendingUpdates) {
             row.total_cost_usd = round2(Number(row.warehouse_parts_usd || 0) + Number(row.outside_parts_usd || 0) + Number(row.external_labor_usd || 0));
+          }
+        } else if (key === 'external_movements') {
+          if ('direction' in pendingUpdates && !('method' in pendingUpdates)) {
+            row.method = row.direction;
+          }
+          if ('direction' in pendingUpdates && ('flow' in row || /^config$/i.test(String(row.direction || '').trim()))) {
+            row.flow = row.direction;
+          }
+          if (('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && !('amount' in pendingUpdates)) {
+            const fxExt = Number(row.fx_rate || row.exchange_rate || getLbpFxRate(row.date || row.rep_date || todayISO()) || 89500);
+            const totExt = round2(Number(row.usd_amount || 0) + (Number(row.lbp_amount || 0) / fxExt));
+            row.amount = totExt;
+            if ('principal' in row) row.principal = totExt;
+            if ('settled_amount' in row) row.settled_amount = totExt;
           }
         } else if (!CR_KEYS.includes(key)) {
           resolveUniversalFutureTableCalc(origRowSnap, row, editedKeySet, getLbpFxRate(row.date || row.rep_date || todayISO()));
@@ -107299,7 +107571,7 @@
       slots: [
         { hub: 'hld_consolidation', view: 'hld_consolidation', label: 'Group Consolidation', pillId: '' },
         { hub: 'hld_interactions', view: 'hld_interactions', label: 'Intercompany Hub', pillId: 'navCountRaw' },
-        { hub: 'hld_partners', view: 'hld_partners', label: 'Partners & Profit Splits', pillId: 'navCountFleet' },
+        { hub: 'hld_partners', view: 'hld_extended', label: 'Extended & Partners', pillId: 'navCountFleet' },
         { hub: 'hld_loans', view: 'hld_loans', label: 'Loans, Capital & Assets', pillId: '' }
       ]
     },
@@ -124776,8 +125048,18 @@
         return;
       }
 
+      const indPartyTr = t.closest('tr[data-ind-tbl-party]');
+      if (indPartyTr && container.contains(indPartyTr)) {
+        const pName = String(indPartyTr.getAttribute('data-ind-tbl-party') || '').trim();
+        if (pName) {
+          STATE.indTablesParty = norm(STATE.indTablesParty) === norm(pName) ? '' : pName;
+          renderApp();
+        }
+        return;
+      }
+
       const indRow = t.closest('tr[data-ind-inspect-row]') || (getActiveIndustry(STATE.company) !== 'Manufacturing' ? t.closest('tbody tr') : null);
-      if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
+      if (indRow && container.contains(indRow) && !indRow.hasAttribute('data-no-ind-inspect') && !indRow.hasAttribute('data-rid') && !indRow.hasAttribute('data-ar-row') && !indRow.hasAttribute('data-staff-row') && !indRow.classList.contains('total-row') && !indRow.classList.contains('totals-row')) {
         if (t.closest('[data-rel-key], button, a, input, select, label')) return;
         const explorerWrap = indRow.closest('#industryDomainTablesExplorer');
         const activeExplorerTbl = explorerWrap ? explorerWrap.getAttribute('data-ind-tbl-active') : '';
@@ -125008,6 +125290,7 @@
       if (!STATE.indActiveDomainTable) STATE.indActiveDomainTable = {};
       STATE.indActiveDomainTable[ind] = btn.getAttribute('data-ind-tbl-key');
       STATE.indTablesSearch = '';
+      STATE.indTablesParty = '';
       renderApp();
     }));
     container.querySelectorAll('[data-ind-tbl-sort]').forEach(thEl => thEl.addEventListener('click', () => {
@@ -125027,6 +125310,7 @@
         const expEl = $('industryDomainTablesExplorer');
         const tKey = expEl ? (expEl.getAttribute('data-ind-tbl-active') || '') : '';
         STATE.indTablesSearch = '';
+        STATE.indTablesParty = '';
         if (STATE.indTablesSort && tKey) delete STATE.indTablesSort[tKey];
         renderApp();
       });
@@ -129819,7 +130103,7 @@
     if (!SEED) return false;
     if (!_demoSanitizeBackup) {
       const recSnap = {};
-      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'];
+      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance', 'external_movements', 'loans', 'loan_settlements'];
       recKeys.forEach(k => {
         if (SEED.records && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
           recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
@@ -129831,7 +130115,7 @@
         demoVisitor: STATE.demoVisitor
       };
     } else if (_demoSanitizeBackup.recSnap && SEED.records) {
-      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'].forEach(k => {
+      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance', 'external_movements', 'loans', 'loan_settlements'].forEach(k => {
         if (!_demoSanitizeBackup.recSnap[k] && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
           _demoSanitizeBackup.recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
         }
@@ -129946,6 +130230,41 @@
       }
     });
     (rec.settlements || []).forEach(sp => { if (sp && sp.supplier) sp.supplier = mapSupp(sp.supplier); });
+    const groupCoSet = new Set(['wtc', 'bbconstruction', 'lions transport', 'bdeir holding', 'blanca', 'la una', 'palms', 'voile', 'platinum', 'korri auto', 'shacman', 'properties', '4235 company s.a.l', 'insurance company']);
+    const mapExtParty = v => {
+      const s = String(v || '').trim();
+      if (!s || groupCoSet.has(s.toLowerCase())) return v;
+      return mapPerson(s);
+    };
+    (rec.external_movements || []).forEach(em => {
+      if (!em) return;
+      if (em.counterparty) em.counterparty = mapExtParty(em.counterparty);
+      if (em.party) em.party = mapExtParty(em.party);
+      if (em.lender) em.lender = mapExtParty(em.lender);
+      if (em.borrower) em.borrower = mapExtParty(em.borrower);
+      const cpLbl = em.counterparty || em.party || 'Stakeholder';
+      if (em.name) em.name = `${/^extended$/i.test(String(em.kind || '')) ? 'EXTD' : 'EXT'} ${em.date || ''} ${cpLbl}${em.wb_index ? ' #' + em.wb_index : ''}`.trim();
+      if (em.notes) em.notes = em.wb_index ? `Voucher #${em.wb_index}` : 'Treasury stakeholder movement';
+    });
+    (rec.loans || []).forEach(ln => {
+      if (!ln) return;
+      if (ln.counterparty) ln.counterparty = mapExtParty(ln.counterparty);
+      if (ln.lender) ln.lender = mapExtParty(ln.lender);
+      if (ln.borrower) ln.borrower = mapExtParty(ln.borrower);
+      const cpLbl = ln.counterparty || ln.lender || ln.borrower || 'Counterparty';
+      if (ln.name) ln.name = `LOAN ${ln.start_date || ln.date || ''} ${cpLbl}`.trim();
+      if (ln.notes) ln.notes = 'Corporate treasury facility';
+    });
+    (rec.loan_settlements || []).forEach(ls => {
+      if (!ls) return;
+      if (ls.counterparty) ls.counterparty = mapExtParty(ls.counterparty);
+      if (ls.lender) ls.lender = mapExtParty(ls.lender);
+      if (ls.borrower) ls.borrower = mapExtParty(ls.borrower);
+      if (ls.loan) ls.loan = mapExtParty(ls.loan);
+      const cpLbl = ls.counterparty || ls.loan || 'Counterparty';
+      if (ls.name) ls.name = `LSET ${ls.date || ''} ${cpLbl}`.trim();
+      if (ls.notes) ls.notes = 'Facility repayment voucher';
+    });
 
     Object.values(SEED.models || {}).forEach(m => {
       if (!m) return;
