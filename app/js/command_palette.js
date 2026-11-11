@@ -46,26 +46,26 @@
 
   const DOMAIN_TABLES_BY_IND = {
     'Holding & Treasury': [
-      { key: 'hld_entities_tbl', domKey: 'hld_interactions', label: '14-Entity Group Scorecard', view: 'hld_entities' },
-      { key: 'hld_open_ic_tbl', domKey: 'hld_interactions', label: 'Intercompany Repayment Ledger', view: 'hld_open_recon' },
-      { key: 'hld_pairs_tbl', domKey: 'hld_interactions', label: 'Sister Pair Matrix', view: 'hld_due_matrix' },
-      { key: 'hld_partners_tbl', domKey: 'hld_partners', label: 'Partner Splits & Agreements', view: 'hld_partners' },
-      { key: 'hld_extended_tbl', domKey: 'external_movements', label: 'Extended Stakeholder Ledger', view: 'hld_extended' },
-      { key: 'hld_loans_tbl', domKey: 'hld_loans', label: 'Facility Rate Schedules', view: 'hld_loans' }
+      { key: 'hld_entities_tbl', domKey: 'hld_interactions', label: '14-Entity Group Scorecard', view: 'hld_entities', panelId: 'hldEntitiesScorecardPanel' },
+      { key: 'hld_open_ic_tbl', domKey: 'hld_interactions', label: 'Intercompany Repayment Ledger', view: 'hld_open_recon', panelId: 'hldOpenReconPanel' },
+      { key: 'hld_pairs_tbl', domKey: 'hld_interactions', label: 'Sister Pair Matrix', view: 'hld_due_matrix', panelId: 'hldDueMatrixPanel' },
+      { key: 'hld_partners_tbl', domKey: 'hld_partners', label: 'Partner Splits & Agreements', view: 'hld_partners', panelId: 'hldPartnerChronoPanel' },
+      { key: 'hld_extended_tbl', domKey: 'external_movements', label: 'Extended Stakeholder Ledger', view: 'hld_extended', panelId: 'hldExtendedEntriesPanel' },
+      { key: 'hld_loans_tbl', domKey: 'hld_loans', label: 'Facility Rate Schedules', view: 'hld_loans', panelId: 'hldFacilitySchedulesPanel' }
     ],
     'Hospitality & Resorts': [
-      { key: 'hsp_rev_tbl', domKey: 'hsp_revenue', label: 'Venue Revenue & Chalet Closes', view: 'hsp_revenue' },
-      { key: 'hsp_memb_tbl', domKey: 'hsp_memberships', label: 'Seasonal Memberships & Arrears', view: 'hsp_memberships' },
-      { key: 'hsp_tariffs_tbl', domKey: 'hsp_tariffs', label: 'Seasonal Tariff Schedules', view: 'hsp_memberships' },
-      { key: 'hsp_stock_tbl', domKey: 'hsp_stock', label: 'Cellar, Kitchen & Recipe BOM', view: 'hsp_stock' },
-      { key: 'hsp_gen_tbl', domKey: 'hsp_energy', label: 'Generators, Diesel & Solar Logs', view: 'hsp_energy' }
+      { key: 'hsp_rev_tbl', domKey: 'hsp_revenue', label: 'Venue Revenue & Chalet Closes', view: 'hsp_revenue', panelId: 'hspRevenuePanel' },
+      { key: 'hsp_memb_tbl', domKey: 'hsp_memberships', label: 'Seasonal Memberships & Arrears', view: 'hsp_memberships', panelId: 'hspMembershipsPanel' },
+      { key: 'hsp_tariffs_tbl', domKey: 'hsp_tariffs', label: 'Seasonal Tariff Schedules', view: 'hsp_memberships', panelId: 'hspTariffsPanel' },
+      { key: 'hsp_stock_tbl', domKey: 'hsp_stock', label: 'Cellar, Kitchen & Recipe BOM', view: 'hsp_stock', panelId: 'hspStockPanel' },
+      { key: 'hsp_gen_tbl', domKey: 'hsp_energy', label: 'Generators, Diesel & Solar Logs', view: 'hsp_energy', panelId: 'hspEnergyPanel' }
     ],
     'Automotive & Heavy Trading': [
-      { key: 'trd_inv_tbl', domKey: 'trd_sales', label: 'Sales Invoices & Books', view: 'trd_sales' },
-      { key: 'trd_tgt_tbl', domKey: 'trd_targets', label: 'Price Lists & Tariffs', view: 'trd_targets' },
-      { key: 'trd_imp_tbl', domKey: 'trd_imports', label: 'Imports & Landed Cost', view: 'trd_purchases' },
-      { key: 'trd_vin_tbl', domKey: 'trd_trucks', label: 'Showroom Serial Units (VINs)', view: 'trd_trucks' },
-      { key: 'trd_wh_tbl', domKey: 'trd_parts', label: '5-Warehouse Spare Parts', view: 'trd_stock' }
+      { key: 'trd_inv_tbl', domKey: 'trd_sales', label: 'Sales Invoices & Books', view: 'trd_sales', panelId: 'trdSalesPanel' },
+      { key: 'trd_tgt_tbl', domKey: 'trd_targets', label: 'Price Lists & Tariffs', view: 'trd_targets', panelId: 'trdTargetsPanel' },
+      { key: 'trd_imp_tbl', domKey: 'trd_imports', label: 'Imports & Landed Cost', view: 'trd_purchases', panelId: 'trdPurchasesPanel' },
+      { key: 'trd_vin_tbl', domKey: 'trd_trucks', label: 'Showroom Serial Units (VINs)', view: 'trd_trucks', panelId: 'trdTrucksPanel' },
+      { key: 'trd_wh_tbl', domKey: 'trd_parts', label: '5-Warehouse Spare Parts', view: 'trd_stock', panelId: 'trdStockPanel' }
     ],
     'Real Estate & Property': [
       { key: 're_leases_tbl', domKey: 're_leases', label: 'Active Leases & Rent Roll', view: 're_leases' },
@@ -80,6 +80,227 @@
       { key: 'ins_clm_tbl', domKey: 'ins_claims', label: 'Claims & Recovery Register', view: 'ins_claims' }
     ]
   };
+
+  // Canonical sidebar hub/sub-tab & workspace panel target for all 53 TABLE_CATALOG registers
+  const SIDEBAR_TABLE_TARGET_MAP = {
+    sales_tickets: { view: 'sales', panelId: 'salesPanel' },
+    receipts: {
+      view: 'customers',
+      panelId: 'rcptPanel',
+      byInd: {
+        'Automotive & Heavy Trading': { view: 'trd_receivables', panelId: 'trdReceivablesPanel' },
+        'Real Estate & Property': { view: 're_receipts' },
+        'Insurance & Brokerage': { view: 'ins_billing' },
+        'Hospitality & Resorts': { view: 'hsp_memberships', panelId: 'hspMembershipsPanel' },
+        'Holding & Treasury': {
+          view: 'hld_open_recon',
+          panelId: 'hldOpenReconPanel',
+          fallbackView: 'reg_customers',
+          fallbackPanelId: 'connTableExplorerCard',
+          fallbackUnivRegKey: 'customers',
+          fallbackUnivConnTableKey: 'receipts'
+        }
+      }
+    },
+    credit_terms: {
+      view: 'reg_customers',
+      panelId: 'connTableExplorerCard',
+      univRegKey: 'customers',
+      univConnTableKey: 'credit_terms'
+    },
+    vat_invoices: { view: 'customers', panelId: 'vatInvPanel' },
+    price_rules: { view: 'pricing', panelId: 'pricingPanel' },
+    raw_purchases: { view: 'raw', panelId: 'rawPanel' },
+    jv_partnerships: { view: 'raw_jv', panelId: 'jvPartPanel' },
+    jv_distributions: { view: 'raw_jv', panelId: 'jvDistPanel' },
+    expenses: { view: 'expenses', panelId: 'expPanel' },
+    expense_items: { view: 'expenses', panelId: 'expItemsTicketPanel' },
+    recurring_expenses: { view: 'recurring_expenses', panelId: 'recurringExpPanel' },
+    documents: { view: 'documents', panelId: 'documentsPanel' },
+    settlements: { view: 'suppliers', panelId: 'settlePanel' },
+    warehouse_movements: { view: 'warehouse', panelId: 'warehouseMovesPanel' },
+    repair_items: { view: 'warehouse_parts', panelId: 'whRepairPartsPanel' },
+    fuel_intakes: { view: 'fleet', panelId: 'fuelPanel' },
+    fuel_malfunctions: { view: 'fleet', panelId: 'malfunctionsRegPanel' },
+    company_equipment: { view: 'fleet_equip', panelId: 'coFleetAssignPanel' },
+    equipment_defects: { view: 'fleet_maint', panelId: 'defectsPanel' },
+    equipment_repairs: { view: 'fleet_maint', panelId: 'repairsPanel' },
+    equipment_oil_logs: { view: 'fleet_maint', panelId: 'oilSchedulePanel' },
+    part_movements: { view: 'fleet_maint', panelId: 'partsLifecyclePanel' },
+    company_drivers: { view: 'fleet_drivers', panelId: 'coDriversPanel' },
+    overtime_rates: { view: 'fleet_drivers', panelId: 'otRatesPanel' },
+    salaries: { view: 'payroll', panelId: 'paySalPanel' },
+    attendance: { view: 'payroll_attendance', panelId: 'payAttPanel' },
+    work_shifts: { view: 'payroll_attendance', panelId: 'payShiftTimingsPanel' },
+    logistics_allowances: { view: 'payroll_allowances', panelId: 'payLogPanel' },
+    employments: { view: 'payroll_contracts', panelId: 'payEmpPanel' },
+    staff_assignments: { view: 'payroll_contracts', panelId: 'payRoleEquipLogPanel' },
+    freelance_entries: { view: 'payroll_contracts', panelId: 'payFreelancePanel' },
+    external_movements: { view: 'external', panelId: 'extEntriesPanel' },
+    loans: { view: 'ledger_treasury', panelId: 'treasuryLoansPanel' },
+    loan_settlements: { view: 'ledger_treasury', panelId: 'treasuryExtPanel' },
+    conversions: { view: 'conversions', panelId: 'fxConversionsPanel' },
+    gl_accounts: { view: 'gl_automation', panelId: 'glAutoPanel' },
+    customers: { view: 'reg_customers', panelId: 'univRegPanel', univRegKey: 'customers' },
+    suppliers: { view: 'reg_suppliers', panelId: 'univRegPanel', univRegKey: 'suppliers' },
+    sites: { view: 'reg_sites', panelId: 'sitesRegPanel' },
+    regions: { view: 'reg_regions', panelId: 'regionsRegPanel' },
+    products: { view: 'reg_products', panelId: 'univRegPanel', univRegKey: 'products' },
+    product_types: { view: 'reg_products', panelId: 'univRegPanel', univRegKey: 'product_types' },
+    items: { view: 'reg_items', panelId: 'univRegPanel', univRegKey: 'items' },
+    uoms: { view: 'reg_items', mfgView: 'reg_products', panelId: 'univRegPanel', univRegKey: 'uoms' },
+    expense_categories: { view: 'reg_categories', panelId: 'univRegPanel', univRegKey: 'expense_categories' },
+    expense_subcategories: { view: 'reg_categories', panelId: 'univRegPanel', univRegKey: 'expense_subcategories' },
+    equipment: { view: 'reg_equipment', panelId: 'univRegPanel', univRegKey: 'equipment' },
+    drivers: { view: 'reg_drivers', panelId: 'univRegPanel', univRegKey: 'drivers' },
+    staff_members: { view: 'reg_staff', panelId: 'univRegPanel', univRegKey: 'staff_members' },
+    staff_roles: { view: 'reg_roles', panelId: 'univRegPanel', univRegKey: 'staff_roles' },
+    fx_rates: { view: 'reg_fx_rates', panelId: 'univRegPanel', univRegKey: 'fx_rates' },
+    currencies: { view: 'reg_currencies', panelId: 'univRegPanel', univRegKey: 'currencies' },
+    vat_rates: { view: 'reg_vat_rates', panelId: 'univRegPanel', univRegKey: 'vat_rates' }
+  };
+
+  let _panelFlashTimer = null;
+  let _panelFocusRaf = 0;
+
+  function lookupHubInfoForView(viewId) {
+    const hubs = (_ctx && Array.isArray(_ctx.HUB_CATALOG)) ? _ctx.HUB_CATALOG : [];
+    const icMap = (typeof window !== 'undefined' && window.MFG_ICONS && window.MFG_ICONS.ICONS) ? window.MFG_ICONS.ICONS : null;
+    for (let i = 0; i < hubs.length; i++) {
+      const h = hubs[i];
+      if (!h || h.group === 'system') continue;
+      const tabs = Array.isArray(h.tabs) ? h.tabs : [];
+      for (let j = 0; j < tabs.length; j++) {
+        const t = tabs[j];
+        if (!t) continue;
+        if (t.view === viewId || (Array.isArray(t.match) && t.match.includes(viewId))) {
+          const resolvedIcon = icMap
+            ? ((t.icon && icMap[t.icon]) ? t.icon : ((h.id && icMap[h.id]) ? h.id : 'tables'))
+            : (t.icon || h.id || 'tables');
+          return {
+            hubId: h.id || '',
+            hubTitle: String(h.title || h.label || '').trim(),
+            tabTitle: String(t.label || '').trim(),
+            icon: resolvedIcon
+          };
+        }
+      }
+    }
+    return { hubId: '', hubTitle: '', tabTitle: '', icon: 'tables' };
+  }
+
+  function resolveSidebarTableTarget(tableKey, isMfgOnly, pctx) {
+    const base = SIDEBAR_TABLE_TARGET_MAP[tableKey];
+    if (!base) return null;
+    const u = pctx && pctx.user;
+    if (base.mfgView) {
+      const canBaseView = Boolean(_ctx && _ctx.canViewView && _ctx.canViewView(base.view, u));
+      const canMfgView = Boolean(_ctx && _ctx.canViewView && _ctx.canViewView(base.mfgView, u));
+      const useMfg = canMfgView && ((pctx && pctx.activeInd === 'Manufacturing') || !canBaseView);
+      return {
+        view: useMfg ? base.mfgView : base.view,
+        panelId: base.panelId || '',
+        univRegKey: base.univRegKey || '',
+        univConnTableKey: base.univConnTableKey || '',
+        forceInd: ''
+      };
+    }
+    if (!isMfgOnly && base.byInd && pctx && pctx.activeInd !== 'Manufacturing') {
+      const indSpec = base.byInd[pctx.activeInd];
+      if (indSpec) {
+        if (
+          _ctx && _ctx.canViewView &&
+          !_ctx.canViewView(indSpec.view, u) &&
+          indSpec.fallbackView &&
+          _ctx.canViewView(indSpec.fallbackView, u)
+        ) {
+          return {
+            view: indSpec.fallbackView,
+            panelId: indSpec.fallbackPanelId || '',
+            univRegKey: indSpec.fallbackUnivRegKey || '',
+            univConnTableKey: indSpec.fallbackUnivConnTableKey || '',
+            forceInd: ''
+          };
+        }
+        return {
+          view: indSpec.view,
+          panelId: indSpec.panelId || '',
+          univRegKey: indSpec.univRegKey || '',
+          univConnTableKey: indSpec.univConnTableKey || '',
+          forceInd: ''
+        };
+      }
+    }
+    return {
+      view: base.view,
+      panelId: base.panelId || '',
+      univRegKey: base.univRegKey || '',
+      univConnTableKey: base.univConnTableKey || '',
+      forceInd: isMfgOnly ? 'Manufacturing' : ''
+    };
+  }
+
+  function focusWorkspaceTablePanel(panelId, fallbackKey) {
+    if (typeof document === 'undefined') return;
+    if (_panelFocusRaf && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(_panelFocusRaf);
+      _panelFocusRaf = 0;
+    }
+    const expectedView = (_ctx && _ctx.STATE) ? _ctx.STATE.view : '';
+    const applyFocus = () => {
+      const ws = document.getElementById('workspace');
+      if (!ws) return;
+      let panelEl = panelId ? document.getElementById(panelId) : null;
+      if (!panelEl && fallbackKey) {
+        const rowHit = ws.querySelector(`[data-rkey="${fallbackKey}"], [data-ind-row-tbl="${fallbackKey}"]`);
+        if (rowHit && typeof rowHit.closest === 'function') {
+          panelEl = rowHit.closest('.conn-table-explorer-card, .panel-card, .panel, section');
+        }
+      }
+      if (!panelEl) {
+        const candidates = ws.querySelectorAll('.panel-card, .panel');
+        for (let i = 0; i < candidates.length; i++) {
+          if (candidates[i].querySelector('.table-wrap, table')) {
+            panelEl = candidates[i];
+            break;
+          }
+        }
+      }
+      if (!panelEl) return;
+
+      const wsRect = ws.getBoundingClientRect();
+      const panelRect = panelEl.getBoundingClientRect();
+      const thresholdPx = Math.min(240, Math.max(96, wsRect.height * 0.34));
+      const deltaTop = panelRect.top - wsRect.top;
+      if (deltaTop > thresholdPx || deltaTop < -8) {
+        const targetScroll = Math.max(0, Math.round(ws.scrollTop + deltaTop - 12));
+        if (Math.abs(ws.scrollTop - targetScroll) > 4) {
+          ws.scrollTop = targetScroll;
+        }
+      }
+
+      ws.querySelectorAll('.cmdp-panel-target-flash').forEach(el => {
+        if (el !== panelEl) el.classList.remove('cmdp-panel-target-flash');
+      });
+      panelEl.classList.remove('cmdp-panel-target-flash');
+      void panelEl.offsetWidth;
+      panelEl.classList.add('cmdp-panel-target-flash');
+      if (_panelFlashTimer) clearTimeout(_panelFlashTimer);
+      _panelFlashTimer = setTimeout(() => {
+        panelEl.classList.remove('cmdp-panel-target-flash');
+        _panelFlashTimer = null;
+      }, 1500);
+    };
+
+    applyFocus();
+    if (typeof requestAnimationFrame === 'function') {
+      _panelFocusRaf = requestAnimationFrame(() => {
+        _panelFocusRaf = 0;
+        if (_ctx && _ctx.STATE && expectedView && _ctx.STATE.view !== expectedView) return;
+        applyFocus();
+      });
+    }
+  }
 
   // Curated everyday words (EN + AR + FR + Lebanese operational terms) across all 6 industries
   const TABLE_ALIASES = {
@@ -372,8 +593,16 @@
     }
   }
 
+  let _suppressAutoTableUsage = false;
+  let _pendingUnivRegKey = '';
+
   function recordUsage(kind, key) {
+    if (kind === 'view' && _pendingUnivRegKey && _ctx && _ctx.STATE) {
+      _ctx.STATE.activeUnivRegKey = _pendingUnivRegKey;
+      _pendingUnivRegKey = '';
+    }
     if (!_ctx || !_ctx.STATE || !_ctx.STATE.authed || !kind || !key) return;
+    if (_suppressAutoTableUsage && kind === 'table') return;
     try {
       const u = _ctx.activeUser ? _ctx.activeUser() : null;
       if (!u) return;
@@ -573,12 +802,16 @@
     }
 
     if (isUniversal) {
+      const hasMultiSeed = Boolean(rawList._hasMultiIndustrySeed);
       return rawList.filter(r => {
         if (!r || r.voided) return false;
         if (!pctx.demoActive && r._demoSpineRow) return false;
         if (r.company && !pctx.demoActive && !isCompanyPermitted(r.company, pctx)) return false;
-        const rowInd = r._industry || 'Manufacturing';
-        if (!pctx.permittedIndustries.has(rowInd)) return false;
+        if (r._industry) {
+          if (!pctx.permittedIndustries.has(r._industry)) return false;
+        } else if (hasMultiSeed || MFG_ONLY_TABLES.has(tableKey)) {
+          if (!pctx.permittedIndustries.has('Manufacturing')) return false;
+        }
         if (!checkOff(r)) return false;
         return true;
       });
@@ -627,6 +860,7 @@
       ? [String(spec.titleEn || '').trim()].filter(Boolean)
       : getTrilingualVariants(spec.titleEn);
     const subVariants = spec.subEn ? getTrilingualVariants(spec.subEn) : [];
+    const subTabVariants = spec.subTabEn ? getTrilingualVariants(spec.subTabEn) : [];
     const exactSet = new Set();
     variants.forEach(v => {
       const nv = normSearch(v);
@@ -641,6 +875,7 @@
     const hayParts = []
       .concat(variants)
       .concat(subVariants)
+      .concat(subTabVariants)
       .concat(spec.aliases || '')
       .concat(spec.industry || '')
       .concat(spec.extraHay || '');
@@ -653,6 +888,7 @@
       titleEn: spec.titleEn,
       titleRaw: Boolean(spec.titleRaw),
       subEn: spec.subEn || '',
+      subTabEn: spec.subTabEn || '',
       subRaw: spec.subRaw || '',
       industry: spec.industry || '',
       badgeEn: spec.badgeEn || 'Table',
@@ -724,90 +960,122 @@
       return domainRegCache.get(ck);
     };
 
-    const canTablesView = Boolean(_ctx.canViewView && _ctx.canViewView('tables', u));
     const tableCatalog = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG : [];
 
-    // 1. All 52 Shared + Manufacturing TABLE_CATALOG Registers
-    if (canTablesView) {
-      for (let i = 0; i < tableCatalog.length; i++) {
-        const meta = tableCatalog[i];
-        if (!meta || !meta.key) continue;
-        if (!_ctx.canAccessTable || !_ctx.canAccessTable(meta.key, u)) continue;
-        const isMfgOnly = MFG_ONLY_TABLES.has(meta.key);
-        if (isMfgOnly && !pctx.permittedIndustries.has('Manufacturing')) continue;
-        if (meta.key === 'gl_accounts' && (!_ctx.canViewView || !_ctx.canViewView('ledger', u))) continue;
+    // 1. All 53 Shared + Manufacturing TABLE_CATALOG Registers (routed directly to Sidebar Hub & Sub-Tab)
+    for (let i = 0; i < tableCatalog.length; i++) {
+      const meta = tableCatalog[i];
+      if (!meta || !meta.key) continue;
+      if (!_ctx.canAccessTable || !_ctx.canAccessTable(meta.key, u)) continue;
+      const isMfgOnly = MFG_ONLY_TABLES.has(meta.key);
+      if (isMfgOnly && !pctx.permittedIndustries.has('Manufacturing')) continue;
+      if (meta.key === 'gl_accounts' && (!_ctx.canViewView || !_ctx.canViewView('ledger', u))) continue;
 
-        const rows = getScopedRows(meta.key, Boolean(meta.universal));
-        const rowCnt = rows.length;
-        const targetInd = isMfgOnly ? 'Manufacturing' : '';
-        const cleanGroup = String(meta.group || '').replace(/^\d+\s*·\s*/, '');
-        const exactAliases = [meta.key.replace(/_/g, ' ')];
-        if (meta.singularLabel) exactAliases.push(meta.singularLabel);
-        const aliasStr = TABLE_ALIASES[meta.key] || '';
-        aliasStr.split(/\s+/).forEach(tok => { if (tok.length >= 3) exactAliases.push(tok); });
+      const targetSpec = resolveSidebarTableTarget(meta.key, isMfgOnly, pctx);
+      const targetView = targetSpec ? targetSpec.view : '';
+      const canTargetView = Boolean(targetView && _ctx.canViewView && _ctx.canViewView(targetView, u));
+      if (!canTargetView) continue;
 
-        items.push(makeCandidate({
-          id: `table:${meta.key}`,
-          kind: 'table',
-          icon: 'tables',
-          titleEn: meta.label,
-          subEn: cleanGroup,
-          subRaw: `${rowCnt.toLocaleString('en-US')}`,
-          industry: isMfgOnly && pctx.activeInd !== 'Manufacturing' ? 'Manufacturing' : '',
-          badgeEn: 'Table',
-          freq: usageScore('table', meta.key) + indBoost(targetInd) + Math.min(45000, rowCnt),
-          exactAliases,
-          aliases: `${aliasStr} ${meta.singularLabel || ''} table register جدول سجل`,
-          run: () => {
-            if (isMfgOnly) ensureIndustryScope('Manufacturing', pctx);
-            pctx.STATE.activeTableKey = meta.key;
-            if (!pctx.STATE.tableViews) pctx.STATE.tableViews = {};
-            pctx.STATE.tableViews[meta.key] = 'all';
-            _ctx.setView('tables');
+      const rows = getScopedRows(meta.key, Boolean(meta.universal));
+      const rowCnt = rows.length;
+      const targetInd = (targetSpec && targetSpec.forceInd) ? targetSpec.forceInd : (isMfgOnly ? 'Manufacturing' : '');
+      const cleanGroup = String(meta.group || '').replace(/^\d+\s*·\s*/, '');
+      const hubInfo = lookupHubInfoForView(targetView);
+      const subHubTitle = hubInfo.hubTitle || cleanGroup;
+      const subTabTitle = (hubInfo.tabTitle && hubInfo.tabTitle !== subHubTitle && hubInfo.tabTitle !== meta.label)
+        ? hubInfo.tabTitle
+        : '';
+      const exactAliases = [meta.key.replace(/_/g, ' ')];
+      if (meta.singularLabel) exactAliases.push(meta.singularLabel);
+      const aliasStr = TABLE_ALIASES[meta.key] || '';
+      aliasStr.split(/\s+/).forEach(tok => { if (tok.length >= 3) exactAliases.push(tok); });
+
+      items.push(makeCandidate({
+        id: `table:${meta.key}`,
+        kind: 'table',
+        icon: hubInfo.icon || 'tables',
+        titleEn: meta.label,
+        subEn: subHubTitle,
+        subTabEn: subTabTitle,
+        subRaw: `${rowCnt.toLocaleString('en-US')}`,
+        industry: targetInd && pctx.activeInd !== targetInd ? targetInd : '',
+        badgeEn: 'Table',
+        freq: usageScore('table', meta.key) + indBoost(targetInd) + Math.min(45000, rowCnt),
+        exactAliases,
+        aliases: `${aliasStr} ${meta.singularLabel || ''} table register جدول سجل`,
+        extraHay: cleanGroup,
+        run: () => {
+          recordUsage('table', meta.key);
+          if (targetSpec && targetSpec.forceInd) {
+            ensureIndustryScope(targetSpec.forceInd, pctx);
           }
-        }));
-      }
-
-      // 2. All 24 Sibling-Industry Domain Registers
-      var domTableItemByKey = new Map();
-      Object.keys(DOMAIN_TABLES_BY_IND).forEach(ind => {
-        if (!pctx.permittedIndustries.has(ind)) return;
-        const domTabs = DOMAIN_TABLES_BY_IND[ind] || [];
-        domTabs.forEach((tab, idx) => {
-          if (!_ctx.canViewView || !_ctx.canViewView(tab.view, u)) return;
-          let domRowCnt = 25 - idx;
-          const ds = getDomainReg(ind, tab.key);
-          if (ds && Array.isArray(ds.rows)) domRowCnt = ds.rows.length;
-          const aliasStr = TABLE_ALIASES[tab.key] || '';
-          const exactAliases = [tab.label];
-          aliasStr.split(/\s+/).forEach(tok => { if (tok.length >= 3) exactAliases.push(tok); });
-
-          const domTblCandidate = makeCandidate({
-            id: `domtable:${tab.key}`,
-            kind: 'table',
-            icon: tab.view,
-            titleEn: tab.label,
-            subEn: ind,
-            subRaw: `${domRowCnt.toLocaleString('en-US')}`,
-            industry: pctx.activeInd !== ind ? ind : '',
-            badgeEn: 'Table',
-            freq: usageScore('table', tab.key) + indBoost(ind) + Math.min(40000, domRowCnt * 25),
-            exactAliases,
-            aliases: `${aliasStr} table register جدول سجل`,
-            run: () => {
-              recordUsage('table', tab.key);
-              ensureIndustryScope(ind, pctx);
-              if (!pctx.STATE.indActiveDomainTable) pctx.STATE.indActiveDomainTable = {};
-              pctx.STATE.indActiveDomainTable[ind] = tab.key;
-              pctx.STATE.indTablesSearch = '';
-              _ctx.setView('tables');
-            }
-          });
-          domTableItemByKey.set(tab.key, domTblCandidate);
-          items.push(domTblCandidate);
-        });
-      });
+          if (!pctx.STATE.tableViews) pctx.STATE.tableViews = {};
+          pctx.STATE.tableViews[meta.key] = 'all';
+          pctx.STATE.univConnTableKey = (targetSpec && targetSpec.univConnTableKey) || '';
+          pctx.STATE.univConnPartyFilter = '';
+          pctx.STATE.univConnSearch = '';
+          pctx.STATE.univConnView = '';
+          pctx.STATE.univConnSubRole = '';
+          _suppressAutoTableUsage = true;
+          _pendingUnivRegKey = (targetSpec && targetSpec.univRegKey) || '';
+          try {
+            _ctx.setView(targetView);
+          } finally {
+            _suppressAutoTableUsage = false;
+            _pendingUnivRegKey = '';
+          }
+          if (targetSpec && targetSpec.univRegKey && pctx.STATE.activeUnivRegKey !== targetSpec.univRegKey) {
+            pctx.STATE.activeUnivRegKey = targetSpec.univRegKey;
+          }
+          focusWorkspaceTablePanel(targetSpec ? targetSpec.panelId : '', meta.key);
+        }
+      }));
     }
+
+    // 2. All 24 Sibling-Industry Domain Registers (routed directly to Sidebar Hub & Sub-Tab)
+    var domTableItemByKey = new Map();
+    Object.keys(DOMAIN_TABLES_BY_IND).forEach(ind => {
+      if (!pctx.permittedIndustries.has(ind)) return;
+      const domTabs = DOMAIN_TABLES_BY_IND[ind] || [];
+      domTabs.forEach((tab, idx) => {
+        if (!_ctx.canViewView || !_ctx.canViewView(tab.view, u)) return;
+        let domRowCnt = 25 - idx;
+        const ds = getDomainReg(ind, tab.key);
+        if (ds && Array.isArray(ds.rows)) domRowCnt = ds.rows.length;
+        const aliasStr = TABLE_ALIASES[tab.key] || '';
+        const exactAliases = [tab.label];
+        aliasStr.split(/\s+/).forEach(tok => { if (tok.length >= 3) exactAliases.push(tok); });
+        const hubInfo = lookupHubInfoForView(tab.view);
+        const subHubTitle = hubInfo.hubTitle || ind;
+        const subTabTitle = (hubInfo.tabTitle && hubInfo.tabTitle !== subHubTitle && hubInfo.tabTitle !== tab.label)
+          ? hubInfo.tabTitle
+          : '';
+
+        const domTblCandidate = makeCandidate({
+          id: `domtable:${tab.key}`,
+          kind: 'table',
+          icon: hubInfo.icon || tab.view,
+          titleEn: tab.label,
+          subEn: subHubTitle,
+          subTabEn: subTabTitle,
+          subRaw: `${domRowCnt.toLocaleString('en-US')}`,
+          industry: pctx.activeInd !== ind ? ind : '',
+          badgeEn: 'Table',
+          freq: usageScore('table', tab.key) + indBoost(ind) + Math.min(40000, domRowCnt * 25),
+          exactAliases,
+          aliases: `${aliasStr} table register جدول سجل`,
+          extraHay: ind,
+          run: () => {
+            recordUsage('table', tab.key);
+            ensureIndustryScope(ind, pctx);
+            _ctx.setView(tab.view);
+            focusWorkspaceTablePanel(tab.panelId || '', tab.domKey || tab.key);
+          }
+        });
+        domTableItemByKey.set(tab.key, domTblCandidate);
+        items.push(domTblCandidate);
+      });
+    });
 
     // 3. Entry Forms (43 FORM_GROUPS + 23 Sibling-Industry Domain Forms)
     const formGroups = (window.MFG_FORMS && Array.isArray(window.MFG_FORMS.FORM_GROUPS)) ? window.MFG_FORMS.FORM_GROUPS : [];
@@ -1014,17 +1282,18 @@
         if (_ctx.canViewView && !_ctx.canViewView(t.view, u)) return;
         seenViews.add(t.view);
         const targetInd = h.industry || (['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) ? 'Manufacturing' : '');
+        const hubTitle = String(h.title || h.label || '').trim();
         items.push(makeCandidate({
           id: `view:${t.view}`,
           kind: 'dashboard',
           icon: h.id,
           titleEn: t.label,
-          subEn: h.label,
+          subEn: hubTitle,
           industry: targetInd && pctx.activeInd !== targetInd ? targetInd : '',
           badgeEn: 'Hub',
           freq: usageScore('view', t.view) + indBoost(targetInd) + (750 - hIdx * 20 - tIdx * 5),
-          exactAliases: [t.label, tIdx === 0 ? h.label : ''],
-          aliases: `${h.label} hub module page قسم شاشة module`,
+          exactAliases: [t.label, tIdx === 0 ? hubTitle : ''],
+          aliases: `${hubTitle} hub module page قسم شاشة module`,
           run: () => {
             if (targetInd) ensureIndustryScope(targetInd, pctx);
             _ctx.setView(t.view);
@@ -1658,6 +1927,7 @@
         : `<span>${escHtml(it.titleEn)}</span>`;
       const subParts = [];
       if (it.subEn) subParts.push(`<span>${escHtml(it.subEn)}</span>`);
+      if (it.subTabEn) subParts.push(`<span>${escHtml(it.subTabEn)}</span>`);
       if (it.subRaw) subParts.push(`<span data-no-i18n="1">${escHtml(it.subRaw)}</span>`);
       const indBadgeHtml = it.industry
         ? `<span class="cmdp-badge">${escHtml(it.industry)}</span>`
